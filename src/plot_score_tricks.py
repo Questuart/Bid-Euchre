@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from .simulation import simulate_many_hands
 
 
+MIN_BUCKET_COUNT = 5  # ignore score buckets with fewer than this many hands
+
+
 def get_scenarios(n_per: int) -> List[Tuple[str, Optional[str], str, int]]:
     """
     Return list of scenarios:
@@ -35,7 +38,7 @@ def plot_score_vs_tricks_for_scenario(
     """
     Run simulations for a single scenario and produce a scatter plot
     of Player 0 hand score vs Team 0 average tricks for that score bucket,
-    with a linear trendline overlaid.
+    with a linear trendline and a diagonal reference line.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -51,42 +54,70 @@ def plot_score_vs_tricks_for_scenario(
         print(f"No score buckets for scenario: {label}")
         return
 
-    # Sort by score
-    scores = sorted(buckets.keys())
-    avg_tricks = [buckets[s]["avg_tricks"] for s in scores]
-    counts = [buckets[s]["count"] for s in scores]
+    # Filter out buckets with too few samples
+    filtered_scores = []
+    filtered_avg_tricks = []
+    filtered_counts = []
 
-    x = np.array(scores, dtype=float)
-    y = np.array(avg_tricks, dtype=float)
+    for s, stats in buckets.items():
+        if stats["count"] >= MIN_BUCKET_COUNT:
+            filtered_scores.append(s)
+            filtered_avg_tricks.append(stats["avg_tricks"])
+            filtered_counts.append(stats["count"])
 
+    if len(filtered_scores) < 2:
+        print(f"Not enough populated buckets for scenario: {label}")
+        return
+
+    scores = np.array(sorted(filtered_scores), dtype=float)
+    avg_tricks = np.array(
+        [buckets[s]["avg_tricks"] for s in sorted(filtered_scores)],
+        dtype=float,
+    )
+
+    # Basic stats: correlation and R^2
+    corr = np.corrcoef(scores, avg_tricks)[0, 1]
+    coeffs = np.polyfit(scores, avg_tricks, 1)
+    slope, intercept = coeffs
+    y_pred = slope * scores + intercept
+    ss_res = np.sum((avg_tricks - y_pred) ** 2)
+    ss_tot = np.sum((avg_tricks - np.mean(avg_tricks)) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+
+    # Scatter
     plt.figure()
-    plt.title(f"Score vs Avg Tricks\n{label} (n={n_hands})")
+    plt.title(
+        f"Score vs Avg Tricks\n{label} (n={n_hands}, R²={r2:.3f}, ρ={corr:.3f})"
+    )
     plt.xlabel("Player 0 hand score (scalar)")
     plt.ylabel("Avg tricks for Team 0")
 
-    # Scatter only (no connecting lines between points)
-    plt.scatter(x, y, alpha=0.7)
+    plt.scatter(scores, avg_tricks, alpha=0.7)
 
-    # Linear trendline, if we have enough distinct points
-    if len(np.unique(x)) > 1:
-        coeffs = np.polyfit(x, y, 1)  # degree-1 polynomial (line)
-        slope, intercept = coeffs
-        x_line = np.linspace(x.min(), x.max(), 100)
-        y_line = slope * x_line + intercept
-        plt.plot(x_line, y_line, linewidth=2, alpha=0.8)
+    # Linear trendline
+    x_line = np.linspace(scores.min(), scores.max(), 100)
+    y_line = slope * x_line + intercept
+    plt.plot(x_line, y_line, linewidth=2, alpha=0.8)
 
-    # Annotate a couple of extreme buckets for sanity: min and max score
-    if len(scores) >= 2:
-        for idx in [0, -1]:
-            s = scores[idx]
-            b = buckets[s]
-            plt.annotate(
-                f"s={s}\n n={b['count']}",
-                (s, b["avg_tricks"]),
-                textcoords="offset points",
-                xytext=(5, 5),
-                fontsize=8,
-            )
+    # Diagonal reference line across the data range
+    # (purely visual; not y=x in score/tricks units)
+    y_min, y_max = avg_tricks.min(), avg_tricks.max()
+    x_min, x_max = scores.min(), scores.max()
+    diag_x = np.array([x_min, x_max])
+    diag_y = np.array([y_min, y_max])
+    plt.plot(diag_x, diag_y, linestyle="--", alpha=0.5)
+
+    # Annotate a couple of extreme buckets (min and max scores)
+    for idx in [0, -1]:
+        s = scores[idx]
+        stats = buckets[s]
+        plt.annotate(
+            f"s={int(s)}\n n={stats['count']}",
+            (s, stats["avg_tricks"]),
+            textcoords="offset points",
+            xytext=(5, 5),
+            fontsize=8,
+        )
 
     # Save to file
     suffix = (
@@ -101,7 +132,7 @@ def plot_score_vs_tricks_for_scenario(
 
     print(
         f"Saved plot for {label} to {filename} "
-        f"(score buckets: {len(scores)})"
+        f"(buckets used: {len(scores)}, R²={r2:.3f}, ρ={corr:.3f})"
     )
 
 
