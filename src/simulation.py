@@ -2,13 +2,13 @@ from typing import Dict, Tuple, Optional, List
 from .cards import create_deck, shuffle_deck, deal_hands, Card
 from .rules import trick_winner
 from .strategy import choose_card_basic
-from .hand_eval import score_hand
+from .hand_eval import score_hand, get_hand_features
 
 
 def play_single_hand(
     contract_type: str,
     trump_suit: Optional[str] = None,
-) -> Tuple[int, int, int]:
+) -> Tuple[int, int, int, Dict[str, int]]:
     """
     Play one full 10-trick hand with the basic bot.
 
@@ -16,11 +16,12 @@ def play_single_hand(
     trump_suit: required for "suit", must be None for "high"/"low"
 
     Returns:
-        (team0_tricks, team1_tricks, player0_score)
+        (team0_tricks, team1_tricks, player0_scalar_score, player0_features)
     where:
         - team 0 = players 0 and 2
         - team 1 = players 1 and 3
-        - player0_score = scalar hand score for Player 0's starting hand
+        - player0_scalar_score = scalar hand score for Player 0's starting hand
+        - player0_features = feature dict for Player 0's starting hand
     """
     if contract_type == "suit" and trump_suit is None:
         raise ValueError("trump_suit must be provided for 'suit' contracts")
@@ -33,11 +34,16 @@ def play_single_hand(
 
     # Copy starting hands for scoring (since we mutate hands as we play)
     starting_hands = [list(h) for h in hands]
-    player0_score = score_hand(
+    player0_scalar = score_hand(
         starting_hands[0],
         contract_type=contract_type,
         trump_suit=trump_suit,
         mode="scalar",
+    )
+    player0_features = get_hand_features(
+        starting_hands[0],
+        contract_type=contract_type,
+        trump_suit=trump_suit,
     )
 
     team_tricks = {0: 0, 1: 0}
@@ -76,7 +82,7 @@ def play_single_hand(
 
         leader = winner  # winner leads next trick
 
-    return team_tricks[0], team_tricks[1], player0_score
+    return team_tricks[0], team_tricks[1], player0_scalar, player0_features
 
 
 def simulate_many_hands(
@@ -96,18 +102,15 @@ def simulate_many_hands(
             "avg_team1": float,
             "distribution_team0": {0..10: count},
             "avg_score_player0": float,
-            "score_buckets_player0": {
-                score: {
-                    "count": int,
-                    "total_tricks": int,
-                    "avg_tricks": float,
-                },
-                ...
+            "score_buckets_player0": { score -> {count, total_tricks, avg_tricks} },
+            "feature_buckets_player0": {
+                feature_name -> {
+                    value -> {count, total_tricks, avg_tricks}
+                }
             },
         }
 
-    Where score/tricks refer to Player 0's starting hand in each simulated game
-    and the total tricks taken by Team 0 in that game.
+    We track scalar score and individual feature buckets for Player 0's hand.
     """
     dist_team0 = {i: 0 for i in range(11)}  # possible tricks 0–10
 
@@ -118,18 +121,27 @@ def simulate_many_hands(
     # score -> stats dict
     score_buckets: Dict[int, Dict[str, float]] = {}
 
+    # feature_name -> value -> stats dict
+    feature_buckets: Dict[str, Dict[int, Dict[str, float]]] = {}
+
     for _ in range(n):
-        t0, t1, score0 = play_single_hand(contract_type, trump_suit)
+        t0, t1, score0, feats0 = play_single_hand(contract_type, trump_suit)
         total0 += t0
         total1 += t1
         total_score0 += score0
         dist_team0[t0] += 1
 
-        bucket = score_buckets.setdefault(
-            score0, {"count": 0, "total_tricks": 0.0}
-        )
-        bucket["count"] += 1
-        bucket["total_tricks"] += t0
+        # Scalar score buckets
+        sb = score_buckets.setdefault(score0, {"count": 0, "total_tricks": 0.0})
+        sb["count"] += 1
+        sb["total_tricks"] += t0
+
+        # Feature buckets
+        for fname, val in feats0.items():
+            fb = feature_buckets.setdefault(fname, {})
+            vb = fb.setdefault(val, {"count": 0, "total_tricks": 0.0})
+            vb["count"] += 1
+            vb["total_tricks"] += t0
 
     # Compute avg_tricks in each score bucket
     for score, stats in score_buckets.items():
@@ -137,6 +149,14 @@ def simulate_many_hands(
             stats["avg_tricks"] = stats["total_tricks"] / stats["count"]
         else:
             stats["avg_tricks"] = 0.0
+
+    # Compute avg_tricks in each feature bucket
+    for fname, by_val in feature_buckets.items():
+        for val, stats in by_val.items():
+            if stats["count"] > 0:
+                stats["avg_tricks"] = stats["total_tricks"] / stats["count"]
+            else:
+                stats["avg_tricks"] = 0.0
 
     return {
         "hands": n,
@@ -147,6 +167,7 @@ def simulate_many_hands(
         "distribution_team0": dist_team0,
         "avg_score_player0": total_score0 / n,
         "score_buckets_player0": score_buckets,
+        "feature_buckets_player0": feature_buckets,
     }
 
 
