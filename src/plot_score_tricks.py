@@ -3,7 +3,7 @@ from typing import Optional, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .simulation import simulate_many_hands
+from .simulation import simulate_many_hands, USE_GREEDY
 
 MIN_BUCKET_COUNT = 5  # ignore buckets with fewer hands than this
 
@@ -28,7 +28,7 @@ def get_scenarios(n_per: int) -> List[Tuple[str, Optional[str], str, int]]:
 
 
 def compute_line_and_metrics(x: np.ndarray, y: np.ndarray):
-    """Return (slope, intercept, corr, r2)."""
+    """Return (slope, intercept, corr, r2) for a simple linear fit."""
     corr = np.corrcoef(x, y)[0, 1]
     coeffs = np.polyfit(x, y, 1)
     slope, intercept = coeffs
@@ -39,7 +39,13 @@ def compute_line_and_metrics(x: np.ndarray, y: np.ndarray):
     return slope, intercept, corr, r2
 
 
-def plot_scalar_score(results, label: str, output_dir: str, suffix: str):
+def plot_scalar_score(
+    results,
+    label: str,
+    output_dir: str,
+    suffix: str,
+    strategy_tag: str,
+):
     """Plot scalar hand score vs avg tricks."""
     buckets = results["score_buckets_player0"]
     if not buckets:
@@ -68,7 +74,8 @@ def plot_scalar_score(results, label: str, output_dir: str, suffix: str):
 
     plt.figure()
     plt.title(
-        f"Score vs Avg Tricks\n{label} (n={results['hands']}, R²={r2:.3f}, ρ={corr:.3f})"
+        f"Score vs Avg Tricks\n"
+        f"{label} [{strategy_tag}] (n={results['hands']}, R²={r2:.3f}, ρ={corr:.3f})"
     )
     plt.xlabel("Player 0 hand score (scalar)")
     plt.ylabel("Avg tricks for Team 0")
@@ -107,7 +114,7 @@ def plot_scalar_score(results, label: str, output_dir: str, suffix: str):
     plt.close()
 
     print(
-        f"Saved scalar plot for {label} to {filename} "
+        f"Saved scalar plot for {label} [{strategy_tag}] to {filename} "
         f"(buckets used: {len(scores)}, R²={r2:.3f}, ρ={corr:.3f})"
     )
 
@@ -118,6 +125,7 @@ def plot_feature(
     label: str,
     output_dir: str,
     suffix: str,
+    strategy_tag: str,
 ):
     """Plot a single feature vs avg tricks."""
     feature_buckets = results.get("feature_buckets_player0", {})
@@ -148,7 +156,8 @@ def plot_feature(
 
     plt.figure()
     plt.title(
-        f"{feature_name} vs Avg Tricks\n{label} (R²={r2:.3f}, ρ={corr:.3f})"
+        f"{feature_name} vs Avg Tricks\n"
+        f"{label} [{strategy_tag}] (R²={r2:.3f}, ρ={corr:.3f})"
     )
     plt.xlabel(f"Player 0 {feature_name}")
     plt.ylabel("Avg tricks for Team 0")
@@ -175,18 +184,21 @@ def plot_feature(
     plt.close()
 
     print(
-        f"Saved feature plot ({feature_name}) for {label} to {filename} "
-        f"(buckets used: {len(vals)}, R²={r2:.3f}, ρ={corr:.3f})"
+        f"Saved feature plot ({feature_name}) for {label} [{strategy_tag}] "
+        f"to {filename} (buckets used: {len(vals)}, R²={r2:.3f}, ρ={corr:.3f})"
     )
 
 
 def main():
     n_per = 5000  # hands per scenario
+    strategy_tag = "greedy" if USE_GREEDY else "basic"
+
+    print(f"Using strategy: {strategy_tag}")
     scenarios = get_scenarios(n_per)
 
     print(f"Running {len(scenarios)} scenarios, {n_per} hands each...")
     for contract_type, trump_suit, label, n_hands in scenarios:
-        print(f"\n=== Scenario: {label} ===")
+        print(f"\n=== Scenario: {label} [{strategy_tag}] ===")
         # Run simulation once per scenario
         results = simulate_many_hands(
             n=n_hands,
@@ -194,15 +206,20 @@ def main():
             trump_suit=trump_suit,
         )
 
-        # Build suffix used in filenames
-        suffix = (
-            f"{contract_type}"
-            if contract_type != "suit"
-            else f"{contract_type}_{trump_suit}"
-        )
+        # Build suffix used in filenames (include strategy tag)
+        if contract_type != "suit":
+            base_suffix = f"{contract_type}_{strategy_tag}"
+        else:
+            base_suffix = f"{contract_type}_{trump_suit}_{strategy_tag}"
 
         # 1) Scalar score plot
-        plot_scalar_score(results, label, output_dir="plots", suffix=suffix)
+        plot_scalar_score(
+            results,
+            label,
+            output_dir="plots",
+            suffix=base_suffix,
+            strategy_tag=strategy_tag,
+        )
 
         # 2) Feature plots
         if contract_type == "suit":
@@ -211,12 +228,14 @@ def main():
             feature_list = ["offsuit_aces", "rank_sum"]
 
         for feat in feature_list:
+            feat_suffix = f"{base_suffix}_{feat}"
             plot_feature(
                 results,
                 feature_name=feat,
                 label=label,
                 output_dir="plots",
-                suffix=f"{suffix}_{feat}",
+                suffix=feat_suffix,
+                strategy_tag=strategy_tag,
             )
 
 

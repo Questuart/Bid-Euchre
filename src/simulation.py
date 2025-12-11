@@ -1,8 +1,11 @@
 from typing import Dict, Tuple, Optional, List
 from .cards import create_deck, shuffle_deck, deal_hands, Card
 from .rules import trick_winner
-from .strategy import choose_card_basic
+from .strategy import choose_card_basic, choose_card_greedy
 from .hand_eval import score_hand, get_hand_features
+
+# Toggle between the ultra-basic and greedy strategy
+USE_GREEDY = True
 
 
 def play_single_hand(
@@ -10,7 +13,7 @@ def play_single_hand(
     trump_suit: Optional[str] = None,
 ) -> Tuple[int, int, int, Dict[str, int]]:
     """
-    Play one full 10-trick hand with the basic bot.
+    Play one full 10-trick hand with the chosen bot.
 
     contract_type: "suit", "high", or "low"
     trump_suit: required for "suit", must be None for "high"/"low"
@@ -27,6 +30,8 @@ def play_single_hand(
         raise ValueError("trump_suit must be provided for 'suit' contracts")
     if contract_type in ("high", "low") and trump_suit is not None:
         raise ValueError("trump_suit must be None for 'high'/'low' contracts")
+
+    strategy_fn = choose_card_greedy if USE_GREEDY else choose_card_basic
 
     deck: List[Card] = create_deck()
     shuffle_deck(deck)
@@ -58,7 +63,7 @@ def play_single_hand(
             player = (leader + offset) % 4
             hand = hands[player]
 
-            card_index = choose_card_basic(
+            card_index = strategy_fn(
                 hand=hand,
                 plays_so_far=plays,
                 contract_type=contract_type,
@@ -222,7 +227,7 @@ def run_all_scenarios(n_per: int = 5000) -> None:
         buckets = results["score_buckets_player0"]
         if buckets:
             print("\nSample of score buckets (Player 0 score → avg tricks for Team 0):")
-            for score in sorted(buckets.keys())[:8]:  # first few buckets
+            for score in sorted(buckets.keys())[:8]:
                 b = buckets[score]
                 print(f"  Score {score:3d}: "
                       f"n={b['count']:4d}, avg_tricks={b['avg_tricks']:.3f}")
