@@ -1,13 +1,15 @@
+from typing import Optional
 from .cards import create_deck, shuffle_deck, deal_hands
 from .rules import trick_winner
 from .strategy import choose_card_basic
 
-def play_full_hand(trump: str, trump_mode: str = "standard"):
+
+def play_full_hand(contract_type: str, trump_suit: Optional[str] = None):
     deck = create_deck()
     shuffle_deck(deck)
     hands = deal_hands(deck, num_players=4, hand_size=10)
 
-    print(f"Trump suit: {trump}   |   Mode: {trump_mode}")
+    print(f"Contract type: {contract_type}   |   Trump suit: {trump_suit}")
     for i, hand in enumerate(hands):
         print(f"Player {i} starting hand: {hand}")
 
@@ -29,8 +31,8 @@ def play_full_hand(trump: str, trump_mode: str = "standard"):
             card_index = choose_card_basic(
                 hand=hand,
                 plays_so_far=plays,
-                trump_suit=trump,
-                trump_mode=trump_mode,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
                 player_index=player,
             )
             card = hand.pop(card_index)
@@ -39,8 +41,8 @@ def play_full_hand(trump: str, trump_mode: str = "standard"):
 
         winner = trick_winner(
             plays,
-            trump_suit=trump,
-            trump_mode=trump_mode,
+            contract_type=contract_type,
+            trump_suit=trump_suit,
         )
         print(f"Trick winner: Player {winner}")
 
@@ -58,9 +60,16 @@ def play_full_hand(trump: str, trump_mode: str = "standard"):
 
 
 def main():
-    trump = "H"            # suit
-    trump_mode = "standard"  # "standard", "high", "low"
-    play_full_hand(trump, trump_mode)
+    # Examples:
+    # Suit contract: hearts trump
+    # play_full_hand(contract_type="suit", trump_suit="H")
+
+    # High no-trump:
+    # play_full_hand(contract_type="high", trump_suit=None)
+
+    # Low no-trump:
+    play_full_hand(contract_type="suit", trump_suit="H")
+
 
 if __name__ == "__main__":
     main()

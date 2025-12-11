@@ -1,12 +1,12 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 import random
 
 # Suits and ranks for this Bid Euchre variant
 SUITS = ["C", "D", "H", "S"]  # Clubs, Diamonds, Hearts, Spades
 RANKS = ["T", "J", "Q", "K", "A"]  # 10, Jack, Queen, King, Ace (no 9s)
 
-# Same-color suit mapping for left bower logic (standard mode only)
+# Same-color suit mapping for left bower logic (suit contracts only)
 SAME_COLOR_SUIT = {
     "S": "C",
     "C": "S",
@@ -56,7 +56,7 @@ def deal_hands(
     if len(deck) < num_players * hand_size:
         raise ValueError("Not enough cards in deck to deal")
 
-    hands = []
+    hands: List[List[Card]] = []
     index = 0
     for _ in range(num_players):
         hands.append(deck[index:index + hand_size])
@@ -67,7 +67,7 @@ def deal_hands(
 
 # ================================
 #        BOWER UTILITIES
-#  (apply only in standard mode)
+#  (apply only in SUIT contracts)
 # ================================
 
 def is_right_bower(card: Card, trump_suit: str) -> bool:
@@ -79,23 +79,27 @@ def is_left_bower(card: Card, trump_suit: str) -> bool:
 
 
 # ================================
-#  EFFECTIVE SUIT (depends on mode)
+#  EFFECTIVE SUIT (depends on contract)
 # ================================
 
-def effective_suit(card: Card, trump_suit: str, trump_mode: str):
+def effective_suit(
+    card: Card,
+    trump_suit: Optional[str],
+    contract_type: str,
+) -> str:
     """
-    Determine the effective suit under each trump mode.
+    Determine the effective suit of a card based on the contract.
 
-    Modes:
-      - "standard": bowers count as trump.
-      - "high": no bowers.
-      - "low": no bowers.
+    contract_type:
+      - "suit" : normal trump-suit game, bowers count as trump.
+      - "high" : no trump suit; suits are literal.
+      - "low"  : no trump suit; suits are literal.
     """
-    if trump_mode == "standard":
+    if contract_type == "suit" and trump_suit is not None:
         if is_right_bower(card, trump_suit) or is_left_bower(card, trump_suit):
             return trump_suit
 
-    # High & Low modes: no bowers → suit is real suit
+    # High & Low: no bowers, no trump; suit is always the printed suit.
     return card.suit
 
 
@@ -103,28 +107,24 @@ def effective_suit(card: Card, trump_suit: str, trump_mode: str):
 #       RANK STRENGTH
 # ================================
 
-def rank_strength(card: Card, trump_suit: str, trump_mode: str):
+def rank_strength(card: Card, contract_type: str) -> int:
     """
-    Returns a numeric strength for comparing ranks.
-    Lower index = weaker, higher index = stronger.
+    Returns a numeric strength for comparing ranks within a suit.
+
+    Higher index = stronger card.
+
+    For "suit" and "high":
+        T < J < Q < K < A
+
+    For "low":
+        A < K < Q < J < T   (T is strongest, A is weakest)
     """
 
-    # === STANDARD (Euchre-style) ===
-    # Order for non-bowers (bowers handled separately in rules.py)
-    if trump_mode == "standard":
-        order = ["T", "J", "Q", "K", "A"]  # T weakest, A strongest
-        return order.index(card.rank)
-
-    # === HIGH TRUMP ===
-    # A high, T low
-    if trump_mode == "high":
+    if contract_type in ("suit", "high"):
         order = ["T", "J", "Q", "K", "A"]
-        return order.index(card.rank)
+    elif contract_type == "low":
+        order = ["A", "K", "Q", "J", "T"]
+    else:
+        raise ValueError(f"Unknown contract_type: {contract_type}")
 
-    # === LOW TRUMP ===
-    # T high, A low  (REVERSED)
-    if trump_mode == "low":
-        order = ["A", "K", "Q", "J", "T"]  # A lowest, T highest
-        return order.index(card.rank)
-
-    raise ValueError(f"Unknown trump mode: {trump_mode}")
+    return order.index(card.rank)
