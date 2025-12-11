@@ -6,9 +6,7 @@ import random
 SUITS = ["C", "D", "H", "S"]  # Clubs, Diamonds, Hearts, Spades
 RANKS = ["T", "J", "Q", "K", "A"]  # 10, Jack, Queen, King, Ace (no 9s)
 
-# Same-color suit mapping for left bower logic:
-#  - Spades <-> Clubs (both black)
-#  - Hearts <-> Diamonds (both red)
+# Same-color suit mapping for left bower logic (standard mode only)
 SAME_COLOR_SUIT = {
     "S": "C",
     "C": "S",
@@ -23,7 +21,6 @@ class Card:
     rank: str  # "T", "J", "Q", "K", "A"
 
     def __str__(self) -> str:
-        # Example: "JH" for Jack of Hearts
         return f"{self.rank}{self.suit}"
 
     def __repr__(self) -> str:
@@ -34,19 +31,17 @@ def create_deck() -> List[Card]:
     """
     Create the deck for this Bid Euchre variant:
 
-    - Ranks: T, J, Q, K, A  (no 9s)
+    - Ranks: T, J, Q, K, A (no 9s)
     - Suits: C, D, H, S
     - 2 copies of every (suit, rank) combination.
 
-    Total cards: 4 suits * 5 ranks * 2 = 40.
+    Total cards = 4 suits * 5 ranks * 2 = 40 cards.
     """
     single = [Card(s, r) for s in SUITS for r in RANKS]
-    # Double-deck: 2 of each suit/rank
-    return single + list(single)
+    return single + list(single)  # double deck
 
 
 def shuffle_deck(deck: List[Card]) -> None:
-    """Shuffle the deck in place."""
     random.shuffle(deck)
 
 
@@ -56,50 +51,80 @@ def deal_hands(
     hand_size: int = 10,
 ) -> List[List[Card]]:
     """
-    Deal `hand_size` cards to `num_players` from the top of the deck.
-    Default: 4 players, 10 cards each (total 40 cards).
+    Deal hand_size cards to num_players from the top of the deck.
     """
     if len(deck) < num_players * hand_size:
         raise ValueError("Not enough cards in deck to deal")
 
-    hands: List[List[Card]] = []
+    hands = []
     index = 0
     for _ in range(num_players):
-        hand = deck[index:index + hand_size]
-        hands.append(hand)
+        hands.append(deck[index:index + hand_size])
         index += hand_size
+
     return hands
 
 
-# ----- Trump / bower utilities ----- #
+# ================================
+#        BOWER UTILITIES
+#  (apply only in standard mode)
+# ================================
 
 def is_right_bower(card: Card, trump_suit: str) -> bool:
-    """Right bower: Jack of trump suit."""
     return card.rank == "J" and card.suit == trump_suit
 
 
 def is_left_bower(card: Card, trump_suit: str) -> bool:
-    """
-    Left bower: Jack of the same-color suit as trump.
-    E.g. trump = Hearts -> left bower = Jack of Diamonds.
-    """
     return card.rank == "J" and card.suit == SAME_COLOR_SUIT[trump_suit]
 
 
-def effective_suit(card: Card, trump_suit: str) -> str:
+# ================================
+#  EFFECTIVE SUIT (depends on mode)
+# ================================
+
+def effective_suit(card: Card, trump_suit: str, trump_mode: str):
     """
-    In Bid Euchre, the left bower is treated as trump suit.
-    This returns the suit the card *plays as* given the trump.
+    Determine the effective suit under each trump mode.
+
+    Modes:
+      - "standard": bowers count as trump.
+      - "high": no bowers.
+      - "low": no bowers.
     """
-    if is_right_bower(card, trump_suit) or is_left_bower(card, trump_suit):
-        return trump_suit
+    if trump_mode == "standard":
+        if is_right_bower(card, trump_suit) or is_left_bower(card, trump_suit):
+            return trump_suit
+
+    # High & Low modes: no bowers → suit is real suit
     return card.suit
 
 
-def rank_strength(rank: str) -> int:
+# ================================
+#       RANK STRENGTH
+# ================================
+
+def rank_strength(card: Card, trump_suit: str, trump_mode: str):
     """
-    Strength of a rank within a suit (ignoring bowers).
-    Higher number = stronger card.
-    Order is T < J < Q < K < A.
+    Returns a numeric strength for comparing ranks.
+    Lower index = weaker, higher index = stronger.
     """
-    return RANKS.index(rank)
+
+    # === STANDARD (Euchre-style) ===
+    # Order for non-bowers (bowers handled separately in rules.py)
+    if trump_mode == "standard":
+        order = ["T", "J", "Q", "K", "A"]  # T weakest, A strongest
+        return order.index(card.rank)
+
+    # === HIGH TRUMP ===
+    # A high, T low
+    if trump_mode == "high":
+        order = ["T", "J", "Q", "K", "A"]
+        return order.index(card.rank)
+
+    # === LOW TRUMP ===
+    # T high, A low  (REVERSED)
+    if trump_mode == "low":
+        order = ["A", "K", "Q", "J", "T"]  # A lowest, T highest
+        return order.index(card.rank)
+
+    raise ValueError(f"Unknown trump mode: {trump_mode}")

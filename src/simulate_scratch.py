@@ -2,14 +2,14 @@ from .cards import create_deck, shuffle_deck, deal_hands
 from .rules import trick_winner
 from .strategy import choose_card_basic
 
-def play_full_hand(trump: str):
+def play_full_hand(trump: str, trump_mode: str = "standard"):
     deck = create_deck()
     shuffle_deck(deck)
     hands = deal_hands(deck, num_players=4, hand_size=10)
 
-    print("Trump suit:", trump)
+    print(f"Trump suit: {trump}   |   Mode: {trump_mode}")
     for i, hand in enumerate(hands):
-        print(f"Player {i} starting hand:", hand)
+        print(f"Player {i} starting hand: {hand}")
 
     # team 0 = players 0 and 2
     # team 1 = players 1 and 3
@@ -30,13 +30,18 @@ def play_full_hand(trump: str):
                 hand=hand,
                 plays_so_far=plays,
                 trump_suit=trump,
+                trump_mode=trump_mode,
                 player_index=player,
             )
             card = hand.pop(card_index)
             plays.append((player, card))
             print(f"Player {player} plays {card}")
 
-        winner = trick_winner(plays, trump_suit=trump)
+        winner = trick_winner(
+            plays,
+            trump_suit=trump,
+            trump_mode=trump_mode,
+        )
         print(f"Trick winner: Player {winner}")
 
         # assign trick to a team
@@ -53,9 +58,9 @@ def play_full_hand(trump: str):
 
 
 def main():
-    trump = "H"  # for now, fixed trump to keep things simple
-    play_full_hand(trump)
+    trump = "H"            # suit
+    trump_mode = "standard"  # "standard", "high", "low"
+    play_full_hand(trump, trump_mode)
 
 if __name__ == "__main__":
     main()
-
