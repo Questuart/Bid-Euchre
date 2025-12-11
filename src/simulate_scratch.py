@@ -1,4 +1,6 @@
 from typing import Optional
+import argparse
+
 from .cards import create_deck, shuffle_deck, deal_hands
 from .rules import trick_winner
 from .strategy import choose_card_basic
@@ -59,16 +61,49 @@ def play_full_hand(contract_type: str, trump_suit: Optional[str] = None):
     print("Team 1 (players 1 & 3) tricks:", team_tricks[1])
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Play a single 10-trick hand with basic bots."
+    )
+    parser.add_argument(
+        "contract_type",
+        nargs="?",
+        choices=["suit", "high", "low"],
+        default="suit",
+        help="Type of contract: 'suit', 'high', or 'low'. Default: suit.",
+    )
+    parser.add_argument(
+        "trump_suit",
+        nargs="?",
+        help="Trump suit for 'suit' contracts: C, D, H, or S. "
+             "Ignored for 'high' and 'low'. Default: H for suit.",
+    )
+    return parser.parse_args()
+
+
 def main():
-    # Examples:
-    # Suit contract: hearts trump
-    # play_full_hand(contract_type="suit", trump_suit="H")
+    args = parse_args()
+    contract_type = args.contract_type
+    trump_suit: Optional[str] = args.trump_suit
 
-    # High no-trump:
-    # play_full_hand(contract_type="high", trump_suit=None)
+    if contract_type == "suit":
+        # default trump suit if not provided
+        if trump_suit is None:
+            trump_suit = "H"
+        trump_suit = trump_suit.upper()
+        if trump_suit not in ("C", "D", "H", "S"):
+            raise ValueError(
+                f"Invalid trump suit '{trump_suit}'. Must be one of C, D, H, S."
+            )
+    else:
+        # high/low no-trump: ignore any trump_suit passed
+        if trump_suit is not None:
+            print(
+                f"Warning: trump_suit '{trump_suit}' ignored for contract_type={contract_type}."
+            )
+        trump_suit = None
 
-    # Low no-trump:
-    play_full_hand(contract_type="suit", trump_suit="H")
+    play_full_hand(contract_type=contract_type, trump_suit=trump_suit)
 
 
 if __name__ == "__main__":
