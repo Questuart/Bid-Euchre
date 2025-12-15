@@ -1,16 +1,184 @@
+# =============================================================================
 # Python
+# =============================================================================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.sqlite3
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# =============================================================================
 # Virtual environments
+# =============================================================================
 .venv/
 venv/
+ENV/
+env/
+.env
+.conda/
+conda/
 
-# macOS
-.DS_Store
+# =============================================================================
+# Data Science / ML
+# =============================================================================
+# Data files
+data/
+!data/.gitkeep
+experiments/
+!experiments/.gitkeep
 
+# Model artifacts and checkpoints
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pb
+*.onnx
+*.joblib
+*.model
+checkpoints/
+models/
+weights/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# TensorBoard
+runs/
+logs/
+
+# DVC
+.dvc/
+.dvc/tmp/
+.dvc/cache/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# =============================================================================
+# IDEs and Editors
+# =============================================================================
 # VS Code
 .vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# OS generated files
+# =============================================================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# =============================================================================
+# Logs and databases
+# =============================================================================
+*.log
+*.logs
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# =============================================================================
+# Temporary files
+# =============================================================================
+*.tmp
+*.temp
+*.swp
+*.bak
+*.backup
+.cache/
+.tmp/
+
+# =============================================================================
+# Project specific
+# =============================================================================
+# Generated plots (these are output, not source)
+plots/
+!plots/.gitkeep
+
+# Reports and documentation builds
+*.pdf
+*.docx
+docs/_build/
+docs/build/
+
+# Local configuration
+config.local.*
+secrets.*
+.env.local
