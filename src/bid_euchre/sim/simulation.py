@@ -2,7 +2,7 @@ from typing import Dict, Tuple, Optional, List
 from ..core.cards import create_deck, shuffle_deck, deal_hands, Card
 from ..core.rules import trick_winner
 from ..strategy.strategy import choose_card_basic, choose_card_greedy
-from ..features_hand_eval import score_hand, get_hand_features
+from ..features.hand_eval import score_hand, get_hand_features
 
 # Toggle between the ultra-basic and greedy strategy
 USE_GREEDY = True

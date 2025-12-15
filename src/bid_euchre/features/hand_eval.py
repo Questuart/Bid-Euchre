@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional, List
-from .core.cards import (
+from ..core.cards import (
     Card,
     is_right_bower,
     is_left_bower,
