@@ -1,17 +1,28 @@
-from typing import Optional
 import argparse
+from typing import Optional, Callable
 
 from .cards import create_deck, shuffle_deck, deal_hands
 from .rules import trick_winner
-from .strategy import choose_card_basic
+from .strategy import choose_card_basic, choose_card_greedy
+from .simulation import USE_GREEDY  # default strategy toggle
+from .cards import Card
 
 
-def play_full_hand(contract_type: str, trump_suit: Optional[str] = None):
+StrategyFn = Callable[[list[Card], list, str, Optional[str], int], int]
+
+
+def play_full_hand(
+    contract_type: str,
+    trump_suit: Optional[str],
+    strategy_fn: StrategyFn,
+    strategy_name: str,
+) -> None:
     deck = create_deck()
     shuffle_deck(deck)
     hands = deal_hands(deck, num_players=4, hand_size=10)
 
     print(f"Contract type: {contract_type}   |   Trump suit: {trump_suit}")
+    print(f"Strategy: {strategy_name}")
     for i, hand in enumerate(hands):
         print(f"Player {i} starting hand: {hand}")
 
@@ -30,7 +41,7 @@ def play_full_hand(contract_type: str, trump_suit: Optional[str] = None):
             player = (leader + offset) % 4
             hand = hands[player]
 
-            card_index = choose_card_basic(
+            card_index = strategy_fn(
                 hand=hand,
                 plays_so_far=plays,
                 contract_type=contract_type,
@@ -63,7 +74,7 @@ def play_full_hand(contract_type: str, trump_suit: Optional[str] = None):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Play a single 10-trick hand with basic bots."
+        description="Play a single 10-trick hand with basic or greedy bots."
     )
     parser.add_argument(
         "contract_type",
@@ -78,6 +89,12 @@ def parse_args() -> argparse.Namespace:
         help="Trump suit for 'suit' contracts: C, D, H, or S. "
              "Ignored for 'high' and 'low'. Default: H for suit.",
     )
+    parser.add_argument(
+        "--strategy",
+        choices=["basic", "greedy"],
+        help="Override strategy: 'basic' or 'greedy'. "
+             "Default is taken from simulation.USE_GREEDY.",
+    )
     return parser.parse_args()
 
 
@@ -86,8 +103,18 @@ def main():
     contract_type = args.contract_type
     trump_suit: Optional[str] = args.trump_suit
 
+    # Determine strategy
+    if args.strategy is not None:
+        strategy_name = args.strategy
+    else:
+        strategy_name = "greedy" if USE_GREEDY else "basic"
+
+    strategy_fn: StrategyFn = (
+        choose_card_greedy if strategy_name == "greedy" else choose_card_basic
+    )
+
+    # Validate trump_suit / contract_type combo
     if contract_type == "suit":
-        # default trump suit if not provided
         if trump_suit is None:
             trump_suit = "H"
         trump_suit = trump_suit.upper()
@@ -96,14 +123,19 @@ def main():
                 f"Invalid trump suit '{trump_suit}'. Must be one of C, D, H, S."
             )
     else:
-        # high/low no-trump: ignore any trump_suit passed
         if trump_suit is not None:
             print(
-                f"Warning: trump_suit '{trump_suit}' ignored for contract_type={contract_type}."
+                f"Warning: trump_suit '{trump_suit}' ignored "
+                f"for contract_type={contract_type}."
             )
         trump_suit = None
 
-    play_full_hand(contract_type=contract_type, trump_suit=trump_suit)
+    play_full_hand(
+        contract_type=contract_type,
+        trump_suit=trump_suit,
+        strategy_fn=strategy_fn,
+        strategy_name=strategy_name,
+    )
 
 
 if __name__ == "__main__":
