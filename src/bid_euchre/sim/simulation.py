@@ -1,7 +1,9 @@
+import random
+import argparse
 from typing import Dict, Tuple, Optional, List
 from ..core.cards import create_deck, shuffle_deck, deal_hands, Card
 from ..core.rules import trick_winner
-from ..strategy.strategy import choose_card_basic, choose_card_greedy
+from ..strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 from ..features.hand_eval import score_hand, get_hand_features
 
 # Toggle between the ultra-basic and greedy strategy
@@ -11,6 +13,7 @@ USE_GREEDY = True
 def play_single_hand(
     contract_type: str,
     trump_suit: Optional[str] = None,
+    strategy: Optional[Strategy] = None,
 ) -> Tuple[int, int, int, Dict[str, int]]:
     """
     Play one full 10-trick hand with the chosen bot.
@@ -31,7 +34,9 @@ def play_single_hand(
     if contract_type in ("high", "low") and trump_suit is not None:
         raise ValueError("trump_suit must be None for 'high'/'low' contracts")
 
-    strategy_fn = choose_card_greedy if USE_GREEDY else choose_card_basic
+    # Use provided strategy or default to GreedyStrategy
+    if strategy is None:
+        strategy = GreedyStrategy() if USE_GREEDY else BasicStrategy()
 
     deck: List[Card] = create_deck()
     shuffle_deck(deck)
@@ -52,7 +57,7 @@ def play_single_hand(
     )
 
     team_tricks = {0: 0, 1: 0}
-    leader = 0  # player who leads the first trick
+    leader = random.randrange(4)  # player who leads the first trick
 
     # 10 tricks in a 10-card hand
     for _ in range(10):
@@ -63,7 +68,7 @@ def play_single_hand(
             player = (leader + offset) % 4
             hand = hands[player]
 
-            card_index = strategy_fn(
+            card_index = strategy.choose_card(
                 hand=hand,
                 plays_so_far=plays,
                 contract_type=contract_type,
@@ -94,6 +99,8 @@ def simulate_many_hands(
     n: int,
     contract_type: str,
     trump_suit: Optional[str] = None,
+    seed: Optional[int] = None,
+    strategy: Optional[Strategy] = None,
 ) -> Dict:
     """
     Run Monte Carlo simulation of n hands.
@@ -117,6 +124,11 @@ def simulate_many_hands(
 
     We track scalar score and individual feature buckets for Player 0's hand.
     """
+    if seed is not None:
+        random.seed(seed)
+
+    leader_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+
     dist_team0 = {i: 0 for i in range(11)}  # possible tricks 0–10
 
     total0 = 0
@@ -130,7 +142,7 @@ def simulate_many_hands(
     feature_buckets: Dict[str, Dict[int, Dict[str, float]]] = {}
 
     for _ in range(n):
-        t0, t1, score0, feats0 = play_single_hand(contract_type, trump_suit)
+        t0, t1, score0, feats0 = play_single_hand(contract_type, trump_suit, strategy)
         total0 += t0
         total1 += t1
         total_score0 += score0
@@ -233,6 +245,25 @@ def run_all_scenarios(n_per: int = 5000) -> None:
                       f"n={b['count']:4d}, avg_tricks={b['avg_tricks']:.3f}")
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Run Bid Euchre simulations")
+    parser.add_argument(
+        "--n_per", "-n",
+        type=int,
+        default=5000,
+        help="Number of hands per scenario (default: 5000)"
+    )
+    parser.add_argument(
+        "--seed", "-s",
+        type=int,
+        default=42,
+        help="Random seed for reproducible results (default: 42)"
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # Run all scenarios with 5000 hands each
-    run_all_scenarios(n_per=5000)
+    args = parse_args()
+    # Run all scenarios with specified parameters
+    run_all_scenarios(n_per=args.n_per, seed=args.seed)

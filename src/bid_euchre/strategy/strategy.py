@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional
 from ..core.cards import (
     Card,
@@ -9,6 +10,78 @@ from ..core.cards import (
 from ..core.rules import trick_winner
 
 
+class Strategy(ABC):
+    """Abstract base class for Bid Euchre strategies."""
+
+    def __init__(self, name: str = "unnamed"):
+        self.name = name
+
+    @abstractmethod
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        """
+        Choose which card to play from the given hand.
+
+        Args:
+            hand: List of cards in player's hand
+            plays_so_far: List of (player_index, card) tuples played so far in trick
+            contract_type: "suit", "high", or "low"
+            trump_suit: Trump suit for "suit" contracts, None otherwise
+            player_index: Index of this player (0-3)
+
+        Returns:
+            Index of card to play from hand
+        """
+        pass
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}({self.name})"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+class BasicStrategy(Strategy):
+    """Basic strategy: play lowest card in suit, or lowest card overall."""
+
+    def __init__(self, name: str = "basic"):
+        super().__init__(name)
+
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        return choose_card_basic(hand, plays_so_far, contract_type, trump_suit, player_index)
+
+
+class GreedyStrategy(Strategy):
+    """Greedy strategy: choose card that wins trick if possible, otherwise dump lowest value card."""
+
+    def __init__(self, name: str = "greedy"):
+        super().__init__(name)
+
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        return choose_card_greedy(hand, plays_so_far, contract_type, trump_suit, player_index)
+
+
+# Legacy function interface (for backwards compatibility)
 def choose_card_basic(
     hand: List[Card],
     plays_so_far: List[Tuple[int, Card]],
