@@ -296,10 +296,30 @@ def main():
     print(f"📊 Generated {len(strategies) * len(scenarios)} result files")
     
     print("\n🎯 Next steps:")
-    print(f"   # Generate comparison report:")
-    print(f"   PYTHONPATH=src python experiments/generate_strategy_comparison.py \\")
-    print(f"       --run-dir {run_dir} --seed {seed if seed is not None else 42}")
+    print(f"   # Generate all reports:")
+    print(f"   PYTHONPATH=src python experiments/generate_all_reports.py \\")
+    print(f"       --run-dir {run_dir}")
     print()
+    
+    # Auto-generate reports if logs were created
+    if log_level_str != "none":
+        print("📊 Auto-generating reports...")
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["python", "experiments/generate_all_reports.py", "--run-dir", run_dir],
+                env={**os.environ, "PYTHONPATH": "src"},
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                print("✅ Reports generated automatically!")
+            else:
+                print("⚠️  Report generation encountered issues (run manually)")
+        except Exception as e:
+            print(f"⚠️  Could not auto-generate reports: {e}")
+            print(f"   Run manually: PYTHONPATH=src python experiments/generate_all_reports.py --run-dir {run_dir}")
+        print()
 
 
 if __name__ == "__main__":
