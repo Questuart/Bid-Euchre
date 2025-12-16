@@ -1,3 +1,13 @@
+"""
+⚠️ DEPRECATED: This script is deprecated and will be removed in a future version.
+
+Use the unified experiment runner instead:
+    PYTHONPATH=src python experiments/run_experiment.py \\
+        --config experiments/configs/baseline_greedy.yaml
+
+See REFACTORING_NOTES.md for migration guide.
+"""
+
 import json
 import os
 import argparse

@@ -35,13 +35,31 @@ print(f"Team 0 average tricks: {result['avg_team0']:.2f}")
 ```
 
 ### Run Experiments
-```bash
-# Run comprehensive baseline analysis
-PYTHONPATH=src python experiments/run_baseline_greedy.py --n_per 50000 --seed 42 --log-level hand
 
-# Generate dashboard for a specific run folder
-# (run_baseline_greedy prints the run folder path)
-PYTHONPATH=src python experiments/generate_dashboard.py --run-dir data/runs/<run_id> --strategy greedy --seed 42
+**Unified Runner** (recommended):
+```bash
+# Run experiment from YAML config
+PYTHONPATH=src python experiments/run_experiment.py \\
+    --config experiments/configs/strategy_comparison.yaml
+
+# Quick test (1k hands, 2 strategies, 2 scenarios, ~1 second)
+PYTHONPATH=src python experiments/run_experiment.py \\
+    --config experiments/configs/quick_test.yaml
+
+# Override config parameters
+PYTHONPATH=src python experiments/run_experiment.py \\
+    --config experiments/configs/baseline_greedy.yaml \\
+    --n_per 10000 --seed 99 --log-level none
+
+# Generate dashboard for a run
+PYTHONPATH=src python experiments/generate_dashboard.py \\
+    --run-dir data/runs/<run_id> --strategy greedy --seed 42
+```
+
+**Legacy Scripts** (deprecated, use unified runner):
+```bash
+# Old way (still works but deprecated)
+PYTHONPATH=src python experiments/run_baseline_greedy.py --n_per 50000 --seed 42
 ```
 
 ## 🏗️ Architecture

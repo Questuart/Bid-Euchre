@@ -1,5 +1,4 @@
 import random
-import argparse
 from typing import Dict, Tuple, Optional, List, TYPE_CHECKING
 from ..core.cards import create_deck, shuffle_deck, deal_hands, Card
 from ..core.rules import trick_winner, get_legal_indices
@@ -360,54 +359,3 @@ def run_all_scenarios(
                       f"n={b['count']:4d}, avg_tricks={b['avg_tricks']:.3f}")
 
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Run Bid Euchre simulations")
-    parser.add_argument(
-        "--n_per", "-n",
-        type=int,
-        default=5000,
-        help="Number of hands per scenario (default: 5000)"
-    )
-    parser.add_argument(
-        "--seed", "-s",
-        type=int,
-        default=42,
-        help="Random seed for reproducible results (default: 42)"
-    )
-    parser.add_argument(
-        "--log-level",
-        choices=["none", "hand", "trick"],
-        default="none",
-        help="JSONL logging level: none (default), hand (per-hand), trick (per-trick)"
-    )
-    parser.add_argument(
-        "--log-dir",
-        default="logs",
-        help="Directory for JSONL log files (default: logs)"
-    )
-    return parser.parse_args()
-
-
-if __name__ == "__main__":
-    args = parse_args()
-    
-    # Set up logging if requested
-    logger = None
-    if args.log_level != "none":
-        from ..logging import GameLogger, LogLevel
-        log_level = LogLevel(args.log_level)
-        logger = GameLogger(
-            run_id=f"simulation_{args.seed}",
-            strategy_id="greedy",
-            level=log_level,
-            output_dir=args.log_dir,
-        )
-        logger.open()
-    
-    try:
-        # Run all scenarios with specified parameters
-        run_all_scenarios(n_per=args.n_per, seed=args.seed, logger=logger)
-    finally:
-        if logger:
-            logger.close()

@@ -1,17 +1,19 @@
-experiment_name: "baseline_greedy_analysis"
+# Baseline Greedy Experiment Configuration
+# Run greedy strategy across all standard scenarios
+
+experiment_name: baseline_greedy
 
 strategies:
-  - name: "greedy"
-    class_name: "GreedyStrategy"
-    params: {}
+  - name: greedy
+    class_name: GreedyStrategy
 
 scenarios:
-  - contract_type: "suit"
-    trump_suit: "C,D,H,S"  # Will expand to separate scenarios
-  - contract_type: "high"
-  - contract_type: "low"
+  - contract_type: suit
+    trump_suit: C,D,H,S  # Expands to 4 scenarios
+  - contract_type: high
+  - contract_type: low
 
 parameters:
   n_per: 50000
   seed: 42
-  output_dir: "data/raw"
+  log_level: hand

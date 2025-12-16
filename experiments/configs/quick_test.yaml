@@ -1,0 +1,22 @@
+# Quick Test Configuration
+# Small run for testing and development
+
+experiment_name: quick_test
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+  
+  - name: always_highest
+    class_name: AlwaysHighestLegalStrategy
+
+scenarios:
+  - contract_type: suit
+    trump_suit: H  # Just one suit
+  - contract_type: high
+
+parameters:
+  n_per: 1000
+  seed: 42
+  log_level: none
+

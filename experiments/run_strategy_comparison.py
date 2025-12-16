@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 """
+⚠️ DEPRECATED: This script is deprecated and will be removed in a future version.
+
+Use the unified experiment runner instead:
+    PYTHONPATH=src python experiments/run_experiment.py \\
+        --config experiments/configs/strategy_comparison.yaml
+
+See REFACTORING_NOTES.md for migration guide.
+
+---
+
 Run a comprehensive strategy comparison with all baseline strategies on common deals.
 
 This script runs:
