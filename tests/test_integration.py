@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from bid_euchre.sim import simulation
 from bid_euchre.core.cards import create_deck, deal_hands
 from bid_euchre.core.rules import trick_winner
-from bid_euchre.strategy.strategy import choose_card_basic
+from bid_euchre.strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 
 
 class TestEndToEndSimulation:
@@ -84,16 +84,19 @@ class TestEndToEndSimulation:
 
     def test_strategy_comparison(self):
         """Test that different strategies produce different results."""
-        # This would require modifying USE_GREEDY, so we'll test the concept
-        # by running simulations and checking they're reasonably different
+        # Run with both strategies using the same seed for comparability
+        result_greedy = simulation.simulate_many_hands(
+            200, "suit", "H", seed=42, strategy=GreedyStrategy()
+        )
+        result_basic = simulation.simulate_many_hands(
+            200, "suit", "H", seed=42, strategy=BasicStrategy()
+        )
 
-        # Run with greedy (default)
-        result_greedy = simulation.simulate_many_hands(200, "suit", "H")
-
-        # For a full test, we'd need to temporarily change USE_GREEDY
-        # For now, just verify the simulation works
+        # Both should produce valid results
         assert result_greedy["hands"] == 200
+        assert result_basic["hands"] == 200
         assert 4.0 <= result_greedy["avg_team0"] <= 6.0
+        assert 4.0 <= result_basic["avg_team0"] <= 6.0
 
 
 class TestDataPipeline:

@@ -1,9 +1,14 @@
 import os
+import argparse
 from typing import Optional, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .simulation import simulate_many_hands, USE_GREEDY
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from bid_euchre.sim.simulation import simulate_many_hands
+from bid_euchre.strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 
 MIN_BUCKET_COUNT = 5  # ignore buckets with fewer hands than this
 
@@ -189,21 +194,39 @@ def plot_feature(
     )
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate score vs tricks plots")
+    parser.add_argument("--n_per", "-n", type=int, default=5000,
+                        help="Hands per scenario (default: 5000)")
+    parser.add_argument("--strategy", choices=["basic", "greedy"], default="greedy",
+                        help="Strategy to use (default: greedy)")
+    parser.add_argument("--seed", "-s", type=int, default=None,
+                        help="Random seed for reproducibility")
+    parser.add_argument("--output_dir", "-o", default="plots",
+                        help="Output directory for plots (default: plots)")
+    return parser.parse_args()
+
+
 def main():
-    n_per = 5000  # hands per scenario
-    strategy_tag = "greedy" if USE_GREEDY else "basic"
+    args = parse_args()
+    n_per = args.n_per
+    strategy: Strategy = GreedyStrategy() if args.strategy == "greedy" else BasicStrategy()
+    strategy_tag = args.strategy
 
     print(f"Using strategy: {strategy_tag}")
     scenarios = get_scenarios(n_per)
 
     print(f"Running {len(scenarios)} scenarios, {n_per} hands each...")
-    for contract_type, trump_suit, label, n_hands in scenarios:
+    for i, (contract_type, trump_suit, label, n_hands) in enumerate(scenarios):
         print(f"\n=== Scenario: {label} [{strategy_tag}] ===")
         # Run simulation once per scenario
+        scenario_seed = args.seed + i if args.seed is not None else None
         results = simulate_many_hands(
             n=n_hands,
             contract_type=contract_type,
             trump_suit=trump_suit,
+            seed=scenario_seed,
+            strategy=strategy,
         )
 
         # Build suffix used in filenames (include strategy tag)
@@ -216,7 +239,7 @@ def main():
         plot_scalar_score(
             results,
             label,
-            output_dir="plots",
+            output_dir=args.output_dir,
             suffix=base_suffix,
             strategy_tag=strategy_tag,
         )
@@ -233,7 +256,7 @@ def main():
                 results,
                 feature_name=feat,
                 label=label,
-                output_dir="plots",
+                output_dir=args.output_dir,
                 suffix=feat_suffix,
                 strategy_tag=strategy_tag,
             )

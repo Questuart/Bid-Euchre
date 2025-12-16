@@ -1,0 +1,17 @@
+experiment_name: "baseline_greedy_analysis"
+
+strategies:
+  - name: "greedy"
+    class_name: "GreedyStrategy"
+    params: {}
+
+scenarios:
+  - contract_type: "suit"
+    trump_suit: "C,D,H,S"  # Will expand to separate scenarios
+  - contract_type: "high"
+  - contract_type: "low"
+
+parameters:
+  n_per: 50000
+  seed: 42
+  output_dir: "data/raw"

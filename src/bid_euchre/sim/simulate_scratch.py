@@ -1,28 +1,23 @@
 import argparse
-from typing import Optional, Callable
+from typing import Optional
 
 from ..core.cards import create_deck, shuffle_deck, deal_hands
 from ..core.cards import Card
 from ..core.rules import trick_winner
-from ..strategy.strategy import choose_card_basic, choose_card_greedy
-from ..sim.simulation import USE_GREEDY  # default strategy toggle
-
-
-StrategyFn = Callable[[list[Card], list, str, Optional[str], int], int]
+from ..strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 
 
 def play_full_hand(
     contract_type: str,
     trump_suit: Optional[str],
-    strategy_fn: StrategyFn,
-    strategy_name: str,
+    strategy: Strategy,
 ) -> None:
     deck = create_deck()
     shuffle_deck(deck)
     hands = deal_hands(deck, num_players=4, hand_size=10)
 
     print(f"Contract type: {contract_type}   |   Trump suit: {trump_suit}")
-    print(f"Strategy: {strategy_name}")
+    print(f"Strategy: {strategy}")
     for i, hand in enumerate(hands):
         print(f"Player {i} starting hand: {hand}")
 
@@ -41,7 +36,7 @@ def play_full_hand(
             player = (leader + offset) % 4
             hand = hands[player]
 
-            card_index = strategy_fn(
+            card_index = strategy.choose_card(
                 hand=hand,
                 plays_so_far=plays,
                 contract_type=contract_type,
@@ -92,8 +87,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strategy",
         choices=["basic", "greedy"],
-        help="Override strategy: 'basic' or 'greedy'. "
-             "Default is taken from simulation.USE_GREEDY.",
+        default="greedy",
+        help="Strategy to use: 'basic' or 'greedy'. Default: greedy.",
     )
     return parser.parse_args()
 
@@ -103,14 +98,9 @@ def main():
     contract_type = args.contract_type
     trump_suit: Optional[str] = args.trump_suit
 
-    # Determine strategy
-    if args.strategy is not None:
-        strategy_name = args.strategy
-    else:
-        strategy_name = "greedy" if USE_GREEDY else "basic"
-
-    strategy_fn: StrategyFn = (
-        choose_card_greedy if strategy_name == "greedy" else choose_card_basic
+    # Create strategy instance
+    strategy: Strategy = (
+        GreedyStrategy() if args.strategy == "greedy" else BasicStrategy()
     )
 
     # Validate trump_suit / contract_type combo
@@ -133,8 +123,7 @@ def main():
     play_full_hand(
         contract_type=contract_type,
         trump_suit=trump_suit,
-        strategy_fn=strategy_fn,
-        strategy_name=strategy_name,
+        strategy=strategy,
     )
 
 

@@ -55,11 +55,14 @@ conda/
 # =============================================================================
 # Data Science / ML
 # =============================================================================
-# Data files
-data/
-!data/.gitkeep
-experiments/
-!experiments/.gitkeep
+# Generated data and reports (not source code)
+data/raw/
+data/reports/
+data/processed/
+
+# Experiment outputs (keep experiment scripts tracked)
+experiments/output/
+experiments/results/
 
 # Model artifacts and checkpoints
 *.pkl

@@ -6,10 +6,6 @@ from ..core.rules import trick_winner
 from ..strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 from ..features.hand_eval import score_hand, get_hand_features
 
-# Toggle between the ultra-basic and greedy strategy
-USE_GREEDY = True
-
-
 def play_single_hand(
     contract_type: str,
     trump_suit: Optional[str] = None,
@@ -36,7 +32,7 @@ def play_single_hand(
 
     # Use provided strategy or default to GreedyStrategy
     if strategy is None:
-        strategy = GreedyStrategy() if USE_GREEDY else BasicStrategy()
+        strategy = GreedyStrategy()
 
     deck: List[Card] = create_deck()
     shuffle_deck(deck)
@@ -127,8 +123,6 @@ def simulate_many_hands(
     if seed is not None:
         random.seed(seed)
 
-    leader_counts = {0: 0, 1: 0, 2: 0, 3: 0}
-
     dist_team0 = {i: 0 for i in range(11)}  # possible tricks 0–10
 
     total0 = 0
@@ -188,14 +182,21 @@ def simulate_many_hands(
     }
 
 
-def run_all_scenarios(n_per: int = 5000) -> None:
+def run_all_scenarios(
+    n_per: int = 5000,
+    seed: Optional[int] = None,
+    strategy: Optional[Strategy] = None,
+) -> None:
     """
     Run simulations for:
       - High no-trump
       - Low no-trump
       - Suit contracts for C, D, H, S
 
-    n_per: number of hands per scenario.
+    Args:
+        n_per: number of hands per scenario.
+        seed: random seed for reproducibility (each scenario gets seed + offset).
+        strategy: strategy to use (defaults to GreedyStrategy).
     """
     scenarios = []
 
@@ -208,11 +209,15 @@ def run_all_scenarios(n_per: int = 5000) -> None:
         label = f"Suit contract, trump={suit}"
         scenarios.append(("suit", suit, label))
 
-    for contract_type, trump_suit, label in scenarios:
+    for i, (contract_type, trump_suit, label) in enumerate(scenarios):
+        # Each scenario gets a different seed offset for variety
+        scenario_seed = seed + i if seed is not None else None
         results = simulate_many_hands(
             n=n_per,
             contract_type=contract_type,
             trump_suit=trump_suit,
+            seed=scenario_seed,
+            strategy=strategy,
         )
 
         print("\n========================================")
