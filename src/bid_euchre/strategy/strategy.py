@@ -7,7 +7,7 @@ from ..core.cards import (
     is_right_bower,
     is_left_bower,
 )
-from ..core.rules import trick_winner
+from ..core.rules import trick_winner, get_legal_indices
 
 
 class Strategy(ABC):
@@ -97,40 +97,14 @@ def choose_card_basic(
     Ignores trump/bower value beyond rank ordering.
     Returns the INDEX in `hand` of the chosen card.
     """
+    # Get legal plays using single source of truth
+    legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
-    # Determine led suit
-    if plays_so_far:
-        _, lead_card = plays_so_far[0]
-        led_suit = effective_suit(lead_card, trump_suit, contract_type)
-    else:
-        led_suit = None
+    # Play the lowest-ranked legal card
+    def card_rank(idx: int) -> int:
+        return rank_strength(hand[idx], contract_type)
 
-    # 1) Try to follow suit with lowest-rank card
-    best_idx: Optional[int] = None
-    best_rank: Optional[int] = None
-
-    if led_suit is not None:
-        for i, c in enumerate(hand):
-            if effective_suit(c, trump_suit, contract_type) == led_suit:
-                r = rank_strength(c, contract_type)
-                if best_rank is None or r < best_rank:
-                    best_rank = r
-                    best_idx = i
-
-        if best_idx is not None:
-            return best_idx
-
-    # 2) If we can't follow suit, play overall lowest-ranked card
-    best_idx = None
-    best_rank = None
-    for i, c in enumerate(hand):
-        r = rank_strength(c, contract_type)
-        if best_rank is None or r < best_rank:
-            best_rank = r
-            best_idx = i
-
-    assert best_idx is not None  # hand must be non-empty when called
-    return best_idx
+    return min(legal_indices, key=card_rank)
 
 
 def _card_value_for_dump(
@@ -180,31 +154,8 @@ def choose_card_greedy(
     This is still myopic (no lookahead across tricks), but much less dumb than
     always throwing the lowest rank, and it treats trump/bowers as valuable.
     """
-
-    # Determine led suit, if any
-    if plays_so_far:
-        _, lead_card = plays_so_far[0]
-        led_suit = effective_suit(lead_card, trump_suit, contract_type)
-    else:
-        led_suit = None
-
-    # Build list of legal indices given follow-suit rule
-    legal_indices: List[int] = []
-
-    if led_suit is not None:
-        follow_indices = [
-            i for i, c in enumerate(hand)
-            if effective_suit(c, trump_suit, contract_type) == led_suit
-        ]
-        if follow_indices:
-            legal_indices = follow_indices
-        else:
-            legal_indices = list(range(len(hand)))
-    else:
-        # On lead, anything goes
-        legal_indices = list(range(len(hand)))
-
-    assert legal_indices, "There must be at least one legal card to play"
+    # Get legal plays using single source of truth
+    legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
     # For each legal card, check if it currently wins the trick
     winning_candidates: List[int] = []
@@ -224,9 +175,7 @@ def choose_card_greedy(
 
     # If we have any card that is currently winning, play the cheapest winner
     if winning_candidates:
-        best_idx = min(winning_candidates, key=card_value)
-        return best_idx
+        return min(winning_candidates, key=card_value)
 
     # Otherwise, dump the cheapest legal card
-    best_idx = min(legal_indices, key=card_value)
-    return best_idx
+    return min(legal_indices, key=card_value)

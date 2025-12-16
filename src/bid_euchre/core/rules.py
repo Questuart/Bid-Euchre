@@ -8,6 +8,47 @@ from .cards import (
 )
 
 
+def get_legal_indices(
+    hand: List[Card],
+    plays_so_far: List[Tuple[int, Card]],
+    contract_type: str,
+    trump_suit: Optional[str],
+) -> List[int]:
+    """
+    Return indices of legal cards to play from hand.
+
+    This is the single source of truth for the follow-suit rule:
+    - If someone has led, you must follow suit if possible
+    - If you can't follow suit, any card is legal
+    - If you're leading, any card is legal
+
+    Args:
+        hand: List of cards in player's hand
+        plays_so_far: List of (player_index, card) tuples already played this trick
+        contract_type: "suit", "high", or "low"
+        trump_suit: Trump suit for "suit" contracts, None otherwise
+
+    Returns:
+        List of indices into hand representing legal plays
+    """
+    if not plays_so_far:
+        # Leading - any card is legal
+        return list(range(len(hand)))
+
+    # Someone has led - determine led suit
+    _, lead_card = plays_so_far[0]
+    led_suit = effective_suit(lead_card, trump_suit, contract_type)
+
+    # Find cards that follow suit
+    follow_indices = [
+        i for i, c in enumerate(hand)
+        if effective_suit(c, trump_suit, contract_type) == led_suit
+    ]
+
+    # Must follow suit if possible, otherwise any card is legal
+    return follow_indices if follow_indices else list(range(len(hand)))
+
+
 def trick_winner(
     plays: List[Tuple[int, Card]],
     contract_type: str,

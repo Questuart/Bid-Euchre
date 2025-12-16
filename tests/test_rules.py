@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.core.cards import Card
-from bid_euchre.core.rules import trick_winner, _highest_trump, _highest_in_suit
+from bid_euchre.core.rules import trick_winner, _highest_trump, _highest_in_suit, get_legal_indices
 
 
 class TestTrickWinner:
@@ -168,3 +168,73 @@ class TestHighestInSuit:
         """Test that empty suit plays raises error."""
         with pytest.raises(ValueError, match="No cards following led suit"):
             _highest_in_suit([], "high")
+
+
+class TestGetLegalIndices:
+    """Test get_legal_indices - single source of truth for legal plays."""
+
+    def test_leading_any_card_legal(self):
+        """When leading (no plays so far), any card is legal."""
+        hand = [Card("H", "A"), Card("S", "K"), Card("D", "Q")]
+        legal = get_legal_indices(hand, [], "suit", "H")
+        assert legal == [0, 1, 2]
+
+    def test_must_follow_led_suit(self):
+        """Must follow suit if you have cards in led suit."""
+        hand = [Card("H", "A"), Card("S", "K"), Card("H", "Q")]
+        plays_so_far = [(0, Card("H", "T"))]  # Hearts led
+        legal = get_legal_indices(hand, plays_so_far, "suit", "S")
+        # Only hearts are legal (indices 0 and 2)
+        assert legal == [0, 2]
+
+    def test_cannot_follow_suit_any_legal(self):
+        """If you can't follow suit, any card is legal."""
+        hand = [Card("S", "A"), Card("D", "K"), Card("C", "Q")]
+        plays_so_far = [(0, Card("H", "T"))]  # Hearts led
+        legal = get_legal_indices(hand, plays_so_far, "suit", "S")
+        # No hearts in hand, so any card is legal
+        assert legal == [0, 1, 2]
+
+    def test_left_bower_is_trump_suit(self):
+        """Left bower should be treated as trump suit for follow-suit."""
+        hand = [Card("D", "J"), Card("S", "K"), Card("C", "Q")]  # D-J is left bower when H is trump
+        plays_so_far = [(0, Card("H", "T"))]  # Hearts led
+        legal = get_legal_indices(hand, plays_so_far, "suit", "H")
+        # D-J has effective suit of Hearts (left bower), so it's the only legal play
+        assert legal == [0]
+
+    def test_high_contract_no_trump(self):
+        """High contract - follow suit normally."""
+        hand = [Card("H", "A"), Card("S", "K"), Card("H", "Q")]
+        plays_so_far = [(0, Card("H", "T"))]
+        legal = get_legal_indices(hand, plays_so_far, "high", None)
+        assert legal == [0, 2]
+
+    def test_low_contract_no_trump(self):
+        """Low contract - follow suit normally."""
+        hand = [Card("H", "A"), Card("S", "K"), Card("H", "Q")]
+        plays_so_far = [(0, Card("H", "T"))]
+        legal = get_legal_indices(hand, plays_so_far, "low", None)
+        assert legal == [0, 2]
+
+    def test_trump_led_must_follow_trump(self):
+        """When trump is led, must follow with trump if possible."""
+        hand = [Card("H", "A"), Card("S", "K"), Card("D", "Q")]  # S-K is only trump (spades trump)
+        plays_so_far = [(0, Card("S", "T"))]  # Spades (trump) led
+        legal = get_legal_indices(hand, plays_so_far, "suit", "S")
+        # Only S-K follows spades
+        assert legal == [1]
+
+    def test_single_card_hand(self):
+        """Single card in hand is always legal."""
+        hand = [Card("H", "A")]
+        plays_so_far = [(0, Card("S", "T"))]
+        legal = get_legal_indices(hand, plays_so_far, "suit", "S")
+        assert legal == [0]
+
+    def test_all_cards_follow_suit(self):
+        """When all cards follow suit, all are legal."""
+        hand = [Card("H", "A"), Card("H", "K"), Card("H", "Q")]
+        plays_so_far = [(0, Card("H", "T"))]
+        legal = get_legal_indices(hand, plays_so_far, "suit", "S")
+        assert legal == [0, 1, 2]
