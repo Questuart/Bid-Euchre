@@ -12,6 +12,7 @@ from ..strategy import (
     Strategy,
     BasicStrategy,
     GreedyStrategy,
+    ImprovedGreedyStrategy,
     RandomLegalStrategy,
     AlwaysLowestLegalStrategy,
     AlwaysHighestLegalStrategy,
@@ -31,6 +32,9 @@ class StrategyConfig:
             return BasicStrategy(name=self.name)
         elif self.class_name == "GreedyStrategy":
             return GreedyStrategy(name=self.name)
+        elif self.class_name == "ImprovedGreedyStrategy":
+            debug = self.params.get("debug", False)
+            return ImprovedGreedyStrategy(name=self.name, debug=debug)
         elif self.class_name == "RandomLegalStrategy":
             seed = self.params.get("seed", None)
             return RandomLegalStrategy(name=self.name, seed=seed)
@@ -169,6 +173,12 @@ def create_experiment(
             strategies.append(StrategyConfig(
                 name="greedy",
                 class_name="GreedyStrategy"
+            ))
+        elif strategy_name == "improved_greedy":
+            strategies.append(StrategyConfig(
+                name="improved_greedy",
+                class_name="ImprovedGreedyStrategy",
+                params={"debug": False}
             ))
         elif strategy_name == "random_legal":
             strategies.append(StrategyConfig(

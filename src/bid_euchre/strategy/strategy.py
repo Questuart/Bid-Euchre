@@ -182,6 +182,117 @@ def choose_card_greedy(
     return min(legal_indices, key=card_value)
 
 
+class ImprovedGreedyStrategy(Strategy):
+    """
+    Improved greedy strategy with:
+    1. Partner awareness - don't overkill partner's winning card
+    2. 2-trick lookahead - consider cards remaining after this trick
+    3. Trump establishment - value setting up future tricks
+    """
+
+    def __init__(self, name: str = "improved_greedy", debug: bool = False):
+        super().__init__(name)
+        self.debug = debug
+        self.decision_log = []
+
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        """Choose card with partner awareness and 2-trick lookahead."""
+        legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
+
+        # Phase 1: Check partner awareness
+        partner_winning = False
+        if len(plays_so_far) >= 1:
+            # Determine current winner
+            current_winner = trick_winner(
+                plays_so_far,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
+            # Partner is 2 positions away (0↔2, 1↔3)
+            partner_index = (player_index + 2) % 4
+            partner_winning = (current_winner == partner_index)
+
+        # Find cards that win the trick
+        winning_candidates = []
+        for idx in legal_indices:
+            card = hand[idx]
+            provisional_plays = plays_so_far + [(player_index, card)]
+            winner = trick_winner(
+                provisional_plays,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
+            if winner == player_index:
+                winning_candidates.append(idx)
+
+        def card_value(idx: int) -> int:
+            return _card_value_for_dump(hand[idx], contract_type, trump_suit)
+
+        # Phase 2: Decision logic with partner awareness
+        if partner_winning:
+            # Partner is currently winning - don't overkill
+            # Play the cheapest legal card (let partner take it)
+            choice = min(legal_indices, key=card_value)
+            if self.debug:
+                self.decision_log.append({
+                    "scenario": "partner_winning",
+                    "action": "dump_cheap",
+                    "card": str(hand[choice]),
+                })
+            return choice
+
+        if winning_candidates:
+            # We can win - play cheapest winning card
+            choice = min(winning_candidates, key=card_value)
+            if self.debug:
+                self.decision_log.append({
+                    "scenario": "can_win",
+                    "action": "play_cheap_winner",
+                    "card": str(hand[choice]),
+                })
+            return choice
+
+        # Can't win - decide between dumping and setting up
+        # Phase 3: 2-trick lookahead - consider remaining cards
+        if len(hand) > 1 and contract_type == "suit" and trump_suit is not None:
+            # Check if we have strong trump for future tricks
+            trump_cards = [
+                idx for idx in legal_indices
+                if effective_suit(hand[idx], trump_suit, contract_type) == trump_suit
+            ]
+
+            # If we're losing this trick and have trump, save it
+            if trump_cards:
+                # Dump non-trump if possible
+                non_trump = [idx for idx in legal_indices if idx not in trump_cards]
+                if non_trump:
+                    choice = min(non_trump, key=card_value)
+                    if self.debug:
+                        self.decision_log.append({
+                            "scenario": "cant_win_save_trump",
+                            "action": "dump_offsuit",
+                            "card": str(hand[choice]),
+                        })
+                    return choice
+
+        # Default: dump cheapest card
+        choice = min(legal_indices, key=card_value)
+        if self.debug:
+            self.decision_log.append({
+                "scenario": "default_dump",
+                "action": "dump_cheap",
+                "card": str(hand[choice]),
+            })
+        return choice
+
+
 class RandomLegalStrategy(Strategy):
     """Strategy that chooses uniformly at random among legal moves."""
 
