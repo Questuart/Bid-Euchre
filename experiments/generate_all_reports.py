@@ -31,6 +31,7 @@ import argparse
 import subprocess
 from glob import glob
 from datetime import datetime
+from typing import Dict
 
 
 def parse_args():
