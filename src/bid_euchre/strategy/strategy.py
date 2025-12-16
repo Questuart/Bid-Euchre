@@ -144,13 +144,11 @@ def choose_card_greedy(
     """
     Greedy trick-level bot:
 
-    - Determine the set of legal cards (must follow led suit if possible).
-    - For each legal card, simulate adding it to the trick and see who currently
-      wins the trick (using trick_winner on the partial trick).
-    - If any legal card is currently winning:
-        *play the cheapest winning card* by _card_value_for_dump.
-    - Otherwise:
-        *play the cheapest legal card* by _card_value_for_dump (dump trash).
+    - When LEADING: Play the highest-value card to establish dominance
+    - When FOLLOWING:
+      * For each legal card, simulate adding it to the trick and see who wins
+      * If any legal card wins: play the cheapest winning card
+      * Otherwise: dump the cheapest legal card
 
     This is still myopic (no lookahead across tricks), but much less dumb than
     always throwing the lowest rank, and it treats trump/bowers as valuable.
@@ -158,7 +156,14 @@ def choose_card_greedy(
     # Get legal plays using single source of truth
     legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
-    # For each legal card, check if it currently wins the trick
+    def card_value(idx: int) -> int:
+        return _card_value_for_dump(hand[idx], contract_type, trump_suit)
+
+    # SPECIAL CASE: When leading, play highest value card
+    if not plays_so_far:
+        return max(legal_indices, key=card_value)
+
+    # FOLLOWING: For each legal card, check if it currently wins the trick
     winning_candidates: List[int] = []
     for idx in legal_indices:
         card = hand[idx]
@@ -170,9 +175,6 @@ def choose_card_greedy(
         )
         if winner == player_index:
             winning_candidates.append(idx)
-
-    def card_value(idx: int) -> int:
-        return _card_value_for_dump(hand[idx], contract_type, trump_suit)
 
     # If we have any card that is currently winning, play the cheapest winner
     if winning_candidates:
@@ -206,6 +208,20 @@ class ImprovedGreedyStrategy(Strategy):
         """Choose card with partner awareness and 2-trick lookahead."""
         legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
+        def card_value(idx: int) -> int:
+            return _card_value_for_dump(hand[idx], contract_type, trump_suit)
+
+        # SPECIAL CASE: When leading, play highest value card (same as fixed greedy)
+        if not plays_so_far:
+            choice = max(legal_indices, key=card_value)
+            if self.debug:
+                self.decision_log.append({
+                    "scenario": "leading",
+                    "action": "play_highest",
+                    "card": str(hand[choice]),
+                })
+            return choice
+
         # Phase 1: Check partner awareness
         partner_winning = False
         if len(plays_so_far) >= 1:
@@ -231,9 +247,6 @@ class ImprovedGreedyStrategy(Strategy):
             )
             if winner == player_index:
                 winning_candidates.append(idx)
-
-        def card_value(idx: int) -> int:
-            return _card_value_for_dump(hand[idx], contract_type, trump_suit)
 
         # Phase 2: Decision logic with partner awareness
         if partner_winning:
