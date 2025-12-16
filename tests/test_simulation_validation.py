@@ -27,9 +27,14 @@ class TestSimulationStatistics:
         expected_keys = {
             "hands", "contract_type", "trump_suit",
             "avg_team0", "avg_team1", "distribution_team0",
+            # New: aggregated across all 4 players
+            "avg_score", "score_buckets", "feature_buckets", "player_samples",
+            # Backward compatibility aliases
             "avg_score_player0", "score_buckets_player0", "feature_buckets_player0"
         }
         assert set(results.keys()) == expected_keys
+        # Verify player_samples is 4x hands (all 4 players tracked)
+        assert results["player_samples"] == results["hands"] * 4
 
     def test_simulation_correct_hand_count(self, small_simulation_results):
         """Test that simulation reports correct number of hands."""
