@@ -19,6 +19,7 @@ def play_single_hand(
     hands: Optional[List[List[Card]]] = None,
     deal_seed: Optional[int] = None,
     initial_leader: Optional[int] = None,
+    rng: Optional[random.Random] = None,
 ) -> Tuple[int, int, List[int], List[Dict[str, int]], int]:
     """
     Play one full 10-trick hand with the chosen bot.
@@ -47,9 +48,9 @@ def play_single_hand(
         strategy = GreedyStrategy()
 
     if hands is None:
-        # Default behavior: random deal from global RNG
+        # Random deal using provided RNG (or global if None)
         deck: List[Card] = create_deck()
-        shuffle_deck(deck)
+        shuffle_deck(deck, rng=rng)
         hands = deal_hands(deck, num_players=4, hand_size=10)
     else:
         # Defensive copy: we mutate hands during play
@@ -64,15 +65,15 @@ def play_single_hand(
     for player_idx in range(4):
         score = score_hand(
             starting_hands[player_idx],
-            contract_type=contract_type,
-            trump_suit=trump_suit,
-            mode="scalar",
-        )
+        contract_type=contract_type,
+        trump_suit=trump_suit,
+        mode="scalar",
+    )
         features = get_hand_features(
             starting_hands[player_idx],
-            contract_type=contract_type,
-            trump_suit=trump_suit,
-        )
+        contract_type=contract_type,
+        trump_suit=trump_suit,
+    )
         all_player_scores.append(score)
         all_player_features.append(features)
 
@@ -82,7 +83,11 @@ def play_single_hand(
         if deal_seed is not None:
             initial_leader = generate_initial_leader(deal_seed, deal_id)
         else:
-            initial_leader = random.randrange(4)
+            # Use local RNG if available, otherwise global
+            if rng is not None:
+                initial_leader = rng.randrange(4)
+            else:
+                initial_leader = random.randrange(4)
     leader = initial_leader
 
     # 10 tricks in a 10-card hand
@@ -109,7 +114,7 @@ def play_single_hand(
                     f"Illegal play from strategy={getattr(strategy, 'name', type(strategy).__name__)} "
                     f"player={player} contract={contract_type} trump={trump_suit} "
                     f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
-                )
+            )
             card = hand.pop(card_index)
             plays.append((player, card))
 
@@ -175,10 +180,10 @@ def simulate_many_hands(
     Features are tracked for ALL 4 players per hand, bucketed by their team's tricks.
     This removes measurement anchoring and 4x the effective sample size.
     """
-    # Keep backwards-compat seed behavior (global RNG) for existing scripts,
-    # but prefer deal_seed for apples-to-apples strategy comparisons.
+    # Create local RNG for reproducibility (never mutate global random state)
+    local_rng = None
     if seed is not None and deal_seed is None:
-        random.seed(seed)
+        local_rng = random.Random(seed)
 
     dist_team0 = {i: 0 for i in range(11)}  # possible tricks 0–10
 
@@ -208,7 +213,7 @@ def simulate_many_hands(
             )
         else:
             t0, t1, all_scores, all_feats, initial_leader = play_single_hand(
-                contract_type, trump_suit, strategy, logger, deal_id
+                contract_type, trump_suit, strategy, logger, deal_id, rng=local_rng
             )
         
         # Log hand completion (if logger enabled)
@@ -244,14 +249,14 @@ def simulate_many_hands(
 
             # Scalar score buckets (by this player's team's tricks)
             sb = score_buckets.setdefault(score, {"count": 0, "total_tricks": 0.0})
-            sb["count"] += 1
+        sb["count"] += 1
             sb["total_tricks"] += team_tricks
 
             # Feature buckets (by this player's team's tricks)
             for fname, val in feats.items():
-                fb = feature_buckets.setdefault(fname, {})
-                vb = fb.setdefault(val, {"count": 0, "total_tricks": 0.0})
-                vb["count"] += 1
+            fb = feature_buckets.setdefault(fname, {})
+            vb = fb.setdefault(val, {"count": 0, "total_tricks": 0.0})
+            vb["count"] += 1
                 vb["total_tricks"] += team_tricks
 
     # Compute avg_tricks in each score bucket
@@ -300,7 +305,7 @@ def run_all_scenarios(
       - Suit contracts for C, D, H, S
 
     Args:
-        n_per: number of hands per scenario.
+    n_per: number of hands per scenario.
         seed: random seed for reproducibility (each scenario gets seed + offset).
         strategy: strategy to use (defaults to GreedyStrategy).
         logger: optional GameLogger for structured JSONL logging.

@@ -41,8 +41,19 @@ def create_deck() -> List[Card]:
     return single + list(single)  # double deck
 
 
-def shuffle_deck(deck: List[Card]) -> None:
-    random.shuffle(deck)
+def shuffle_deck(deck: List[Card], rng: Optional[random.Random] = None) -> None:
+    """
+    Shuffle a deck of cards.
+    
+    Args:
+        deck: List of cards to shuffle (modified in-place)
+        rng: Optional random.Random instance. If None, uses global random (not recommended for reproducibility)
+    """
+    if rng is None:
+        # Fallback to global random (not recommended for reproducibility)
+        random.shuffle(deck)
+    else:
+        rng.shuffle(deck)
 
 
 def deal_hands(

@@ -196,9 +196,16 @@ def generate_overall_summary(run_dir: str, meta: Dict):
         lines.append(f"- {label}\n")
     lines.append("\n")
     
-    if "performance" in meta:
+    # Load performance metrics (from perf.json if available, else meta.json)
+    perf_path = os.path.join(run_dir, "perf.json")
+    if os.path.exists(perf_path):
+        with open(perf_path) as f:
+            perf = json.load(f)
+    else:
+        perf = meta.get("performance")  # Backwards compatibility
+    
+    if perf:
         lines.append("## Performance\n\n")
-        perf = meta["performance"]
         lines.append(f"- **Total Duration**: {perf['total_duration_human']}\n")
         lines.append(f"- **Overall Throughput**: {perf['overall_throughput_hands_per_sec']:.0f} hands/sec\n\n")
         

@@ -259,7 +259,7 @@ def main():
     total_hands = len(strategies) * len(scenarios) * n_per
     overall_throughput = total_hands / total_duration if total_duration > 0 else 0
     
-    # Write metadata
+    # Write metadata (experiment config + results summary)
     meta = {
         "run_id": run_id,
         "experiment_name": config.experiment_name,
@@ -275,16 +275,23 @@ def main():
         "leader_randomized": True,  # Always true with new deal generator
         "common_deals": seed is not None,  # Only true if seed provided
         "total_hands": total_hands,
-        "performance": {
-            "total_duration_sec": round(total_duration, 2),
-            "total_duration_human": format_duration(total_duration),
-            "overall_throughput_hands_per_sec": round(overall_throughput, 1),
-            "by_scenario": scenario_metrics,
-        },
     }
     
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
+    
+    # Write performance metrics to separate file
+    perf = {
+        "run_id": run_id,
+        "total_duration_sec": round(total_duration, 2),
+        "total_duration_human": format_duration(total_duration),
+        "overall_throughput_hands_per_sec": round(overall_throughput, 1),
+        "total_hands": total_hands,
+        "by_scenario": scenario_metrics,
+    }
+    
+    with open(os.path.join(run_dir, "perf.json"), "w") as f:
+        json.dump(perf, f, indent=2)
     
     # Final summary
     print("\n" + "=" * 70)

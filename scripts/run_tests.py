@@ -112,7 +112,7 @@ def main():
 
     # Handle both CompletedProcess objects (from subprocess) and integers (from manual testing)
     if hasattr(result, 'returncode'):
-        return result.returncode
+    return result.returncode
     else:
         return result
 
