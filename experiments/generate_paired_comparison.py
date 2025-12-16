@@ -7,7 +7,7 @@ Includes confidence intervals, effect sizes, and proper statistical tests.
 
 Usage:
     PYTHONPATH=src python experiments/generate_paired_comparison.py \\
-        --run-dir data/runs/<run_id> --baseline greedy
+        --run-dir data/runs/<run_id> --baseline random_legal
 """
 
 import os
@@ -55,7 +55,7 @@ STRATEGY_COLORS = {
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate paired strategy comparison")
     parser.add_argument("--run-dir", type=str, required=True)
-    parser.add_argument("--baseline", type=str, default="greedy")
+    parser.add_argument("--baseline", type=str, default="random_legal")
     parser.add_argument("--output-dir", type=str, help="Override output directory")
     return parser.parse_args()
 

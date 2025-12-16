@@ -27,7 +27,7 @@ from bid_euchre.analysis import load_paired_data, compute_paired_deltas, paired_
 strategy_data = load_paired_data(run_dir, strategies)
 
 # Compute paired differences for each deal
-paired = compute_paired_deltas(strategy_data, baseline="greedy", comparison="improved_greedy")
+paired = compute_paired_deltas(strategy_data, baseline="random_legal", comparison="improved_greedy")
 
 # Get complete statistics
 summary = paired_comparison_summary(paired["deltas"])
@@ -60,7 +60,7 @@ summary = paired_comparison_summary(paired["deltas"])
 
 ```bash
 PYTHONPATH=src python experiments/generate_paired_comparison.py \
-    --run-dir data/runs/<run_id> --baseline greedy
+    --run-dir data/runs/<run_id> --baseline random_legal
 ```
 
 **Output**:
@@ -369,7 +369,7 @@ strategy_data = load_paired_data(
 # 2. Compute paired deltas
 paired = compute_paired_deltas(
     strategy_data,
-    baseline_strategy="greedy",
+    baseline_strategy="random_legal",
     comparison_strategy="improved_greedy",
     scenario="suit_H"  # Or None for all scenarios
 )

@@ -100,7 +100,7 @@ data/runs/strategy_comparison_42_<timestamp>/
 PYTHONPATH=src python experiments/generate_strategy_comparison.py \
     --run-dir data/runs/strategy_comparison_42_<timestamp> \
     --seed 42 \
-    --baseline greedy
+    --baseline random_legal
 ```
 
 **Output:**

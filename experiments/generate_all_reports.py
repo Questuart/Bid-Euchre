@@ -45,8 +45,8 @@ def parse_args():
     parser.add_argument(
         "--baseline",
         type=str,
-        default="greedy",
-        help="Baseline strategy for comparison (default: greedy)"
+        default="random_legal",
+        help="Baseline strategy for comparison (default: random_legal)"
     )
     return parser.parse_args()
 
