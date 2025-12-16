@@ -104,32 +104,32 @@ def score_hand_scalar(
         if trump_suit is None:
             raise ValueError("trump_suit must be provided for 'suit' contracts")
 
-        # Large gaps ensure strict ordering for trump vs offsuit
+        # Uniform spacing (10 points per rank difference)
         weights_trump = {
-            "A": 80,
-            "K": 70,
-            "Q": 60,
-            "J": 50,
-            "T": 40,
+            "A": 100,
+            "K": 90,
+            "Q": 80,
+            "J": 70,
+            "T": 60,
         }
 
         weights_offsuit = {
-            "A": 30,
-            "K": 20,
-            "Q": 10,
-            "J": 5,
-            "T": 1,
+            "A": 50,
+            "K": 40,
+            "Q": 30,
+            "J": 20,
+            "T": 10,
         }
 
         for card in hand:
             eff_suit = effective_suit(card, trump_suit, contract_type)
 
-            # Bowers override everything
+            # Bowers override everything (must be higher than any regular trump)
             if is_right_bower(card, trump_suit):
-                score += 100
+                score += 120
                 continue
             if is_left_bower(card, trump_suit):
-                score += 90
+                score += 110
                 continue
 
             # Trump cards
