@@ -8,7 +8,14 @@ import yaml
 import os
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-from ..strategy import Strategy, BasicStrategy, GreedyStrategy
+from ..strategy import (
+    Strategy,
+    BasicStrategy,
+    GreedyStrategy,
+    RandomLegalStrategy,
+    AlwaysLowestLegalStrategy,
+    AlwaysHighestLegalStrategy,
+)
 
 
 @dataclass
@@ -24,6 +31,13 @@ class StrategyConfig:
             return BasicStrategy(name=self.name)
         elif self.class_name == "GreedyStrategy":
             return GreedyStrategy(name=self.name)
+        elif self.class_name == "RandomLegalStrategy":
+            seed = self.params.get("seed", None)
+            return RandomLegalStrategy(name=self.name, seed=seed)
+        elif self.class_name == "AlwaysLowestLegalStrategy":
+            return AlwaysLowestLegalStrategy(name=self.name)
+        elif self.class_name == "AlwaysHighestLegalStrategy":
+            return AlwaysHighestLegalStrategy(name=self.name)
         else:
             raise ValueError(f"Unknown strategy class: {self.class_name}")
 
@@ -155,6 +169,22 @@ def create_experiment(
             strategies.append(StrategyConfig(
                 name="greedy",
                 class_name="GreedyStrategy"
+            ))
+        elif strategy_name == "random_legal":
+            strategies.append(StrategyConfig(
+                name="random_legal",
+                class_name="RandomLegalStrategy",
+                params={"seed": seed}
+            ))
+        elif strategy_name == "always_lowest":
+            strategies.append(StrategyConfig(
+                name="always_lowest",
+                class_name="AlwaysLowestLegalStrategy"
+            ))
+        elif strategy_name == "always_highest":
+            strategies.append(StrategyConfig(
+                name="always_highest",
+                class_name="AlwaysHighestLegalStrategy"
             ))
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bid-euchre"
+version = "0.1.0"
+description = "Bid Euchre AI research framework"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.21.0",
+  "matplotlib>=3.5.0",
+  "scipy>=1.7.0",
+  "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+

@@ -1,29 +1,42 @@
 import random
 import argparse
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, TYPE_CHECKING
 from ..core.cards import create_deck, shuffle_deck, deal_hands, Card
-from ..core.rules import trick_winner
+from ..core.rules import trick_winner, get_legal_indices
 from ..strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 from ..features.hand_eval import score_hand, get_hand_features
+from .deals import generate_deal, generate_initial_leader
+
+if TYPE_CHECKING:
+    from ..logging import GameLogger
+
 
 def play_single_hand(
     contract_type: str,
     trump_suit: Optional[str] = None,
     strategy: Optional[Strategy] = None,
-) -> Tuple[int, int, List[int], List[Dict[str, int]]]:
+    logger: Optional["GameLogger"] = None,
+    deal_id: int = 0,
+    hands: Optional[List[List[Card]]] = None,
+    deal_seed: Optional[int] = None,
+    initial_leader: Optional[int] = None,
+) -> Tuple[int, int, List[int], List[Dict[str, int]], int]:
     """
     Play one full 10-trick hand with the chosen bot.
 
     contract_type: "suit", "high", or "low"
     trump_suit: required for "suit", must be None for "high"/"low"
+    logger: optional GameLogger for structured logging
+    deal_id: hand number for logging purposes
 
     Returns:
-        (team0_tricks, team1_tricks, all_player_scores, all_player_features)
+        (team0_tricks, team1_tricks, all_player_scores, all_player_features, initial_leader)
     where:
         - team 0 = players 0 and 2
         - team 1 = players 1 and 3
         - all_player_scores = list of 4 scalar hand scores (one per player)
         - all_player_features = list of 4 feature dicts (one per player)
+        - initial_leader = player who led the first trick (0-3)
     """
     if contract_type == "suit" and trump_suit is None:
         raise ValueError("trump_suit must be provided for 'suit' contracts")
@@ -34,9 +47,14 @@ def play_single_hand(
     if strategy is None:
         strategy = GreedyStrategy()
 
-    deck: List[Card] = create_deck()
-    shuffle_deck(deck)
-    hands = deal_hands(deck, num_players=4, hand_size=10)
+    if hands is None:
+        # Default behavior: random deal from global RNG
+        deck: List[Card] = create_deck()
+        shuffle_deck(deck)
+        hands = deal_hands(deck, num_players=4, hand_size=10)
+    else:
+        # Defensive copy: we mutate hands during play
+        hands = [list(h) for h in hands]
 
     # Copy starting hands for scoring (since we mutate hands as we play)
     starting_hands = [list(h) for h in hands]
@@ -60,17 +78,26 @@ def play_single_hand(
         all_player_features.append(features)
 
     team_tricks = {0: 0, 1: 0}
-    leader = random.randrange(4)  # player who leads the first trick
+    if initial_leader is None:
+        # If deal_seed provided, make leader deterministic per deal_id
+        if deal_seed is not None:
+            initial_leader = generate_initial_leader(deal_seed, deal_id)
+        else:
+            initial_leader = random.randrange(4)
+    leader = initial_leader
 
     # 10 tricks in a 10-card hand
-    for _ in range(10):
+    for trick_num in range(10):
         plays = []
+        trick_leader = leader
 
         # Players act in order starting from leader
         for offset in range(4):
             player = (leader + offset) % 4
             hand = hands[player]
 
+            # Engine-level guardrail: enforce legal plays (not just in strategies).
+            legal_indices = get_legal_indices(hand, plays, contract_type, trump_suit)
             card_index = strategy.choose_card(
                 hand=hand,
                 plays_so_far=plays,
@@ -78,6 +105,12 @@ def play_single_hand(
                 trump_suit=trump_suit,
                 player_index=player,
             )
+            if card_index not in legal_indices:
+                raise ValueError(
+                    f"Illegal play from strategy={getattr(strategy, 'name', type(strategy).__name__)} "
+                    f"player={player} contract={contract_type} trump={trump_suit} "
+                    f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
+                )
             card = hand.pop(card_index)
             plays.append((player, card))
 
@@ -87,6 +120,10 @@ def play_single_hand(
             trump_suit=trump_suit,
         )
 
+        # Log trick completion (if logger enabled)
+        if logger and logger.log_tricks:
+            logger.log_trick_end(deal_id, trick_num, trick_leader, plays, winner)
+
         # Assign trick to a team
         if winner in (0, 2):
             team_tricks[0] += 1
@@ -95,7 +132,7 @@ def play_single_hand(
 
         leader = winner  # winner leads next trick
 
-    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features
+    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader
 
 
 def simulate_many_hands(
@@ -104,9 +141,19 @@ def simulate_many_hands(
     trump_suit: Optional[str] = None,
     seed: Optional[int] = None,
     strategy: Optional[Strategy] = None,
+    logger: Optional["GameLogger"] = None,
+    deal_seed: Optional[int] = None,
 ) -> Dict:
     """
     Run Monte Carlo simulation of n hands.
+
+    Args:
+        n: Number of hands to simulate
+        contract_type: "suit", "high", or "low"
+        trump_suit: Trump suit for suit contracts
+        seed: Random seed for reproducibility
+        strategy: Strategy to use (defaults to GreedyStrategy)
+        logger: Optional GameLogger for structured JSONL logging
 
     Returns a summary dict:
         {
@@ -129,7 +176,9 @@ def simulate_many_hands(
     Features are tracked for ALL 4 players per hand, bucketed by their team's tricks.
     This removes measurement anchoring and 4x the effective sample size.
     """
-    if seed is not None:
+    # Keep backwards-compat seed behavior (global RNG) for existing scripts,
+    # but prefer deal_seed for apples-to-apples strategy comparisons.
+    if seed is not None and deal_seed is None:
         random.seed(seed)
 
     dist_team0 = {i: 0 for i in range(11)}  # possible tricks 0–10
@@ -146,8 +195,36 @@ def simulate_many_hands(
 
     player_samples = 0  # count of player-hand observations
 
-    for _ in range(n):
-        t0, t1, all_scores, all_feats = play_single_hand(contract_type, trump_suit, strategy)
+    for deal_id in range(n):
+        if deal_seed is not None:
+            deal_hands_ = generate_deal(deal_seed, deal_id)
+            t0, t1, all_scores, all_feats, initial_leader = play_single_hand(
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+                strategy=strategy,
+                logger=logger,
+                deal_id=deal_id,
+                hands=deal_hands_,
+                deal_seed=deal_seed,
+            )
+        else:
+            t0, t1, all_scores, all_feats, initial_leader = play_single_hand(
+                contract_type, trump_suit, strategy, logger, deal_id
+            )
+        
+        # Log hand completion (if logger enabled)
+        if logger and logger.is_enabled:
+            logger.log_hand_end(
+                deal_id=deal_id,
+                seed=seed,
+                contract=contract_type,
+                trump=trump_suit,
+                leader=initial_leader,
+                t0=t0,
+                t1=t1,
+                features=all_feats,
+                scores=all_scores,
+            )
         total0 += t0
         total1 += t1
         dist_team0[t0] += 1
@@ -215,6 +292,7 @@ def run_all_scenarios(
     n_per: int = 5000,
     seed: Optional[int] = None,
     strategy: Optional[Strategy] = None,
+    logger: Optional["GameLogger"] = None,
 ) -> None:
     """
     Run simulations for:
@@ -226,6 +304,7 @@ def run_all_scenarios(
         n_per: number of hands per scenario.
         seed: random seed for reproducibility (each scenario gets seed + offset).
         strategy: strategy to use (defaults to GreedyStrategy).
+        logger: optional GameLogger for structured JSONL logging.
     """
     scenarios = []
 
@@ -247,6 +326,7 @@ def run_all_scenarios(
             trump_suit=trump_suit,
             seed=scenario_seed,
             strategy=strategy,
+            logger=logger,
         )
 
         print("\n========================================")
@@ -295,10 +375,39 @@ def parse_args():
         default=42,
         help="Random seed for reproducible results (default: 42)"
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["none", "hand", "trick"],
+        default="none",
+        help="JSONL logging level: none (default), hand (per-hand), trick (per-trick)"
+    )
+    parser.add_argument(
+        "--log-dir",
+        default="logs",
+        help="Directory for JSONL log files (default: logs)"
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    # Run all scenarios with specified parameters
-    run_all_scenarios(n_per=args.n_per, seed=args.seed)
+    
+    # Set up logging if requested
+    logger = None
+    if args.log_level != "none":
+        from ..logging import GameLogger, LogLevel
+        log_level = LogLevel(args.log_level)
+        logger = GameLogger(
+            run_id=f"simulation_{args.seed}",
+            strategy_id="greedy",
+            level=log_level,
+            output_dir=args.log_dir,
+        )
+        logger.open()
+    
+    try:
+        # Run all scenarios with specified parameters
+        run_all_scenarios(n_per=args.n_per, seed=args.seed, logger=logger)
+    finally:
+        if logger:
+            logger.close()

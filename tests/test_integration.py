@@ -1,11 +1,9 @@
 import pytest
-import sys
 import os
 import json
 import tempfile
 
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+pytestmark = pytest.mark.integration
 
 from bid_euchre.sim import simulation
 from bid_euchre.core.cards import create_deck, deal_hands
@@ -21,7 +19,7 @@ class TestEndToEndSimulation:
         # Play one complete hand
         result = simulation.play_single_hand("suit", "H")
 
-        team0_tricks, team1_tricks, all_scores, all_features = result
+        team0_tricks, team1_tricks, all_scores, all_features, initial_leader = result
 
         # Basic validation
         assert isinstance(team0_tricks, int)
@@ -29,6 +27,10 @@ class TestEndToEndSimulation:
         assert 0 <= team0_tricks <= 10
         assert 0 <= team1_tricks <= 10
         assert team0_tricks + team1_tricks == 10
+
+        # Initial leader should be 0-3
+        assert isinstance(initial_leader, int)
+        assert 0 <= initial_leader <= 3
 
         # Now returns features for ALL 4 players
         assert isinstance(all_scores, list)
@@ -56,7 +58,8 @@ class TestEndToEndSimulation:
                 os.path.join(os.path.dirname(__file__), '..', 'experiments', 'run_baseline_greedy.py'),
                 '--n_per', '50',
                 '--seed', '42',
-                '--output_dir', temp_dir
+                '--run-dir', temp_dir,
+                '--log-level', 'hand',
             ]
 
             # Set PYTHONPATH for the subprocess
@@ -68,26 +71,37 @@ class TestEndToEndSimulation:
             # Check that the command succeeded
             assert result.returncode == 0, f"Command failed: {result.stderr}"
 
-            # Check that output files were created
+            # Check that a run folder was created and contains expected results
+            run_folders = [p for p in os.listdir(temp_dir) if p.startswith("baseline_greedy_")]
+            assert len(run_folders) >= 1
+            run_folder = os.path.join(temp_dir, sorted(run_folders)[-1])
+
+            results_dir = os.path.join(run_folder, "results", "greedy")
+            assert os.path.isdir(results_dir)
+
             expected_files = [
-                "baseline_greedy_high.json",
-                "baseline_greedy_low.json",
-                "baseline_greedy_suit_C.json",
-                "baseline_greedy_suit_D.json",
-                "baseline_greedy_suit_H.json",
-                "baseline_greedy_suit_S.json"
+                "high.json",
+                "low.json",
+                "suit_C.json",
+                "suit_D.json",
+                "suit_H.json",
+                "suit_S.json",
             ]
 
             for filename in expected_files:
-                expected_file = os.path.join(temp_dir, filename)
+                expected_file = os.path.join(results_dir, filename)
                 assert os.path.exists(expected_file), f"Missing output file: {filename}"
 
-                # Check that file contains valid JSON
                 with open(expected_file, 'r') as f:
                     data = json.load(f)
                     assert data["hands"] == 50
                     assert "contract_type" in data
                     assert "trump_suit" in data or data["contract_type"] in ["high", "low"]
+
+            # Ensure logs exist
+            logs_dir = os.path.join(run_folder, "logs")
+            assert os.path.isdir(logs_dir)
+            assert any(name.endswith(".jsonl") for name in os.listdir(logs_dir))
 
     def test_strategy_comparison(self):
         """Test that different strategies produce different results."""

@@ -1,12 +1,12 @@
 import json
 import os
-import sys
 import argparse
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from datetime import datetime
+from typing import Dict, Any
 
 from bid_euchre.sim import simulation
+from bid_euchre.logging import GameLogger, LogLevel
+from bid_euchre.strategy import BasicStrategy, GreedyStrategy
 try:
     from bid_euchre.experiments import load_config, create_experiment
     HAS_CONFIG = True
@@ -36,12 +36,29 @@ def parse_args():
     parser.add_argument(
         "--output_dir", "-o",
         type=str,
-        default="data/raw",
-        help="Output directory for results (default: data/raw)"
+        default=None,
+        help="(Deprecated) Output directory for results. Prefer per-run layout under data/runs/."
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["none", "hand", "trick"],
+        default="none",
+        help="JSONL logging level: none (default), hand (per-hand), trick (per-trick)"
+    )
+    parser.add_argument(
+        "--log-dir",
+        default="logs",
+        help="Directory for JSONL log files (default: logs)"
+    )
+    parser.add_argument(
+        "--run-dir",
+        type=str,
+        default="data/runs",
+        help="Base directory for run outputs (default: data/runs)"
     )
     return parser.parse_args()
 
-def run_scenario(contract_type, trump_suit, n_hands=50_000, base_seed=None, scenario_index=0, strategy=None):
+def run_scenario(contract_type, trump_suit, n_hands=50_000, base_seed=None, scenario_index=0, strategy=None, logger=None):
     """Run simulation for a specific scenario and return results."""
     print(f"Running {contract_type} {'('+trump_suit+')' if trump_suit else ''} - {n_hands:,} hands...")
 
@@ -56,21 +73,21 @@ def run_scenario(contract_type, trump_suit, n_hands=50_000, base_seed=None, scen
         trump_suit=trump_suit,
         seed=scenario_seed,
         strategy=strategy,
+        logger=logger,
     )
 
     return results
 
-def save_results(results, contract_type, trump_suit, out_dir):
-    """Save results to appropriate JSON file."""
+def scenario_filename(contract_type: str, trump_suit: str | None) -> str:
     if contract_type == "suit":
-        filename = f"baseline_greedy_suit_{trump_suit}.json"
-    else:
-        filename = f"baseline_greedy_{contract_type}.json"
+        return f"suit_{trump_suit}.json"
+    return f"{contract_type}.json"
 
-    out_path = os.path.join(out_dir, filename)
+
+def save_results(results: Dict[str, Any], out_path: str) -> str:
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
-
     print(f"  → Saved to: {out_path}")
     return out_path
 
@@ -122,8 +139,16 @@ def main():
 
         config = FallbackConfig()
 
-    out_dir = args.output_dir
-    os.makedirs(out_dir, exist_ok=True)
+    # Create run_id and directory layout:
+    # data/runs/<run_id>/{meta.json,results/<strategy>/<scenario>.json,logs/<strategy>.jsonl}
+    seed = args.seed if args.seed is not None else config.parameters.get("seed")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = f"{config.experiment_name}_{seed if seed is not None else 'random'}_{timestamp}"
+    run_dir = os.path.join(args.run_dir, run_id)
+    results_dir = os.path.join(run_dir, "results")
+    logs_dir = os.path.join(run_dir, "logs")
+    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
 
     # Get scenarios from config
     scenarios = []
@@ -132,7 +157,6 @@ def main():
 
     # Override config parameters with command line args if provided
     n_per = args.n_per if args.n_per != 50000 else config.parameters.get("n_per", 50000)
-    seed = args.seed if args.seed is not None else config.parameters.get("seed")
 
     print("🚀 Starting comprehensive baseline greedy simulation")
     print("=" * 60)
@@ -141,44 +165,95 @@ def main():
     print(f"Parameters:")
     print(f"  Hands per scenario: {n_per:,}")
     print(f"  Random seed: {seed if seed is not None else 'None (random)'}")
-    print(f"  Output directory: {out_dir}")
+    print(f"  Run directory: {run_dir}")
+    print(f"  Log level: {args.log_level}")
     print(f"  Scenarios to run: {len(scenarios)}")
     print(f"  Total hands to simulate: {len(scenarios) * n_per:,}")
     print("=" * 60)
 
-    # Get the strategy from config (assuming single strategy for now)
-    strategy = config.get_strategies()[0] if config.strategies else None
+    # Get strategies from config (support multiple strategies)
+    strategies = config.get_strategies() if config.strategies else [GreedyStrategy()]
 
-    # Run all scenarios
-    saved_files = []
-    for i, (contract_type, trump_suit) in enumerate(scenarios, 1):
-        print(f"\n[{i}/{len(scenarios)}] ", end="")
+    # Write meta.json
+    meta = {
+        "run_id": run_id,
+        "experiment_name": config.experiment_name,
+        "seed": seed,
+        "n_per": n_per,
+        "log_level": args.log_level,
+        "timestamp": timestamp,
+        "scenarios": [{"contract_type": c, "trump_suit": t} for (c, t) in scenarios],
+        "strategies": [s.name for s in strategies],
+        "leader_randomized": True,
+        "common_deals": True,
+    }
+    with open(os.path.join(run_dir, "meta.json"), "w") as f:
+        json.dump(meta, f, indent=2)
 
-        # Run the simulation
-        results = run_scenario(contract_type, trump_suit, n_per, seed, i-1, strategy)
+    try:
+        # Run all scenarios for all strategies (common deals via deal_seed)
+        saved_files = []
+        for strat in strategies:
+            print("\n" + "-" * 60)
+            print(f"Strategy: {strat.name}")
+            print("-" * 60)
 
-        # Save results
-        saved_path = save_results(results, contract_type, trump_suit, out_dir)
+            # Set up logging per strategy if requested (write into run_dir/logs)
+            logger = None
+            if args.log_level != "none":
+                log_level = LogLevel(args.log_level)
+                logger = GameLogger(
+                    run_id=f"{run_id}_{strat.name}",
+                    strategy_id=strat.name,
+                    level=log_level,
+                    output_dir=logs_dir,
+                )
+                logger.open()
+                print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
 
-        # Print summary stats
-        team0_avg = results['avg_team0']
-        team1_avg = results['avg_team1']
-        print(f"{team0_avg:.1f} {team1_avg:.1f}")
+            try:
+                for i, (contract_type, trump_suit) in enumerate(scenarios, 1):
+                    print(f"\n[{i}/{len(scenarios)}] ", end="")
+                    scenario_seed = seed + (i - 1) if seed is not None else None
+                    if scenario_seed is not None:
+                        print(f"Running {contract_type} {'('+trump_suit+')' if trump_suit else ''} - {n_per:,} hands...  (deal_seed={scenario_seed})")
+                    else:
+                        print(f"Running {contract_type} {'('+trump_suit+')' if trump_suit else ''} - {n_per:,} hands...")
 
-        # Calculate win rate (6+ tricks)
-        win_hands = sum(count for tricks, count in results['distribution_team0'].items() if int(tricks) >= 6)
-        win_rate = win_hands / results['hands'] * 100
-        print(f"{win_rate:.1f}")
+                    results = simulation.simulate_many_hands(
+                        n=n_per,
+                        contract_type=contract_type,
+                        trump_suit=trump_suit,
+                        seed=None,  # do not touch global RNG; use deal_seed for reproducibility
+                        deal_seed=scenario_seed,
+                        strategy=strat,
+                        logger=logger,
+                    )
 
-        saved_files.append(saved_path)
+                    out_path = os.path.join(results_dir, strat.name, scenario_filename(contract_type, trump_suit))
+                    saved_path = save_results(results, out_path)
 
-    print("\n" + "=" * 60)
-    print("✅ All simulations completed!")
-    print(f"📁 Results saved to: {out_dir}/")
-    print(f"📊 Generated {len(saved_files)} data files:")
-    for file in saved_files:
-        print(f"   • {os.path.basename(file)}")
-    print("\n🎯 Next: Run analysis with make_phase1.5_report.py to visualize all results")
+                    team0_avg = results["avg_team0"]
+                    team1_avg = results["avg_team1"]
+                    print(f"  Team0: {team0_avg:.1f}  Team1: {team1_avg:.1f}")
+                    win_hands = sum(count for tricks, count in results["distribution_team0"].items() if int(tricks) >= 6)
+                    win_rate = win_hands / results["hands"] * 100
+                    print(f"  Win rate: {win_rate:.1f}%")
+                    saved_files.append(saved_path)
+            finally:
+                if logger:
+                    logger.close()
+
+        print("\n" + "=" * 60)
+        print("✅ All simulations completed!")
+        print(f"📁 Run saved to: {run_dir}/")
+        print(f"📊 Generated {len(saved_files)} result files:")
+        for file in saved_files:
+            print(f"   • {os.path.basename(file)}")
+        print("\n🎯 Next: Run dashboard:")
+        print(f"   PYTHONPATH=src python experiments/generate_dashboard.py --run-dir {run_dir} --strategy greedy --seed {seed if seed is not None else ''}".rstrip())
+    finally:
+        pass
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,267 @@
+"""
+Structured game logging for Bid Euchre simulations.
+
+Produces JSONL (JSON Lines) output with versioned schema for:
+- hand_end: Summary of each completed hand
+- trick_end: Per-trick play details (optional, more verbose)
+
+Usage:
+    logger = GameLogger(run_id="experiment_1", strategy_id="greedy", level=LogLevel.HAND)
+    logger.open("logs/experiment_1.jsonl")
+    
+    # In simulation loop:
+    logger.log_trick_end(deal_id, trick_num, leader, plays, winner)
+    logger.log_hand_end(deal_id, seed, contract, trump, leader, t0, t1, features)
+    
+    logger.close()
+"""
+
+import json
+import os
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from enum import Enum
+from typing import List, Dict, Any, Optional, Tuple
+from pathlib import Path
+
+
+# Current schema version - bump when fields change
+# v2 adds `scores` to hand_end records (one scalar score per player).
+SCHEMA_VERSION = 2
+
+
+class LogLevel(Enum):
+    """Logging verbosity level."""
+    NONE = "none"      # No JSONL output
+    HAND = "hand"      # hand_end records only
+    TRICK = "trick"    # hand_end + trick_end records
+
+
+@dataclass
+class HandEndRecord:
+    """Record emitted at the end of each hand."""
+    schema_version: int
+    event: str
+    run_id: str
+    strategy_id: str
+    deal_id: int
+    seed: Optional[int]
+    contract: str
+    trump: Optional[str]
+    leader: int
+    t0: int
+    t1: int
+    features: List[Dict[str, Any]]  # 4 feature dicts, one per player
+    scores: Optional[List[int]]     # 4 scalar scores, one per player (schema v2)
+    timestamp: str
+
+
+@dataclass
+class TrickEndRecord:
+    """Record emitted at the end of each trick (optional, verbose)."""
+    schema_version: int
+    event: str
+    run_id: str
+    deal_id: int
+    trick_num: int
+    leader: int
+    plays: List[List[Any]]  # [[player_idx, suit, rank], ...]
+    winner: int
+    timestamp: str
+
+
+class GameLogger:
+    """
+    Structured JSONL logger for game events.
+    
+    Disabled by default (level=LogLevel.NONE).
+    When enabled, writes one JSON object per line to the output file.
+    """
+    
+    def __init__(
+        self,
+        run_id: str = "",
+        strategy_id: str = "",
+        level: LogLevel = LogLevel.NONE,
+        output_dir: str = "logs",
+    ):
+        """
+        Initialize the game logger.
+        
+        Args:
+            run_id: Unique identifier for this run (e.g., "baseline_greedy_20251215")
+            strategy_id: Identifier for the strategy being used
+            level: Logging verbosity (NONE, HAND, TRICK)
+            output_dir: Directory to write log files to
+        """
+        self.run_id = run_id or self._generate_run_id()
+        self.strategy_id = strategy_id
+        self.level = level
+        self.output_dir = output_dir
+        self._file = None
+        self._filepath: Optional[str] = None
+    
+    def _generate_run_id(self) -> str:
+        """Generate a unique run ID based on timestamp."""
+        return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    def _timestamp(self) -> str:
+        """Get current ISO timestamp."""
+        return datetime.now().isoformat()
+    
+    @property
+    def is_enabled(self) -> bool:
+        """Check if logging is enabled."""
+        return self.level != LogLevel.NONE
+    
+    @property
+    def log_tricks(self) -> bool:
+        """Check if trick-level logging is enabled."""
+        return self.level == LogLevel.TRICK
+    
+    def open(self, filepath: Optional[str] = None) -> "GameLogger":
+        """
+        Open the log file for writing.
+        
+        Args:
+            filepath: Path to log file. If None, auto-generates in output_dir.
+        
+        Returns:
+            self (for chaining)
+        """
+        if not self.is_enabled:
+            return self
+        
+        if filepath is None:
+            os.makedirs(self.output_dir, exist_ok=True)
+            filepath = os.path.join(self.output_dir, f"{self.run_id}.jsonl")
+        
+        self._filepath = filepath
+        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+        self._file = open(filepath, "w")
+        
+        # Write header record
+        header = {
+            "schema_version": SCHEMA_VERSION,
+            "event": "run_start",
+            "run_id": self.run_id,
+            "strategy_id": self.strategy_id,
+            "log_level": self.level.value,
+            "timestamp": self._timestamp(),
+        }
+        self._write_record(header)
+        
+        return self
+    
+    def close(self) -> None:
+        """Close the log file."""
+        if self._file:
+            # Write footer record
+            footer = {
+                "schema_version": SCHEMA_VERSION,
+                "event": "run_end",
+                "run_id": self.run_id,
+                "timestamp": self._timestamp(),
+            }
+            self._write_record(footer)
+            self._file.close()
+            self._file = None
+    
+    def _write_record(self, record: Dict[str, Any]) -> None:
+        """Write a single JSON record to the log file."""
+        if self._file:
+            self._file.write(json.dumps(record, separators=(",", ":")) + "\n")
+    
+    def log_hand_end(
+        self,
+        deal_id: int,
+        seed: Optional[int],
+        contract: str,
+        trump: Optional[str],
+        leader: int,
+        t0: int,
+        t1: int,
+        features: List[Dict[str, Any]],
+        scores: Optional[List[int]] = None,
+    ) -> None:
+        """
+        Log the completion of a hand.
+        
+        Args:
+            deal_id: Hand number within this run
+            seed: Random seed used for this hand (if known)
+            contract: Contract type ("suit", "high", "low")
+            trump: Trump suit ("C", "D", "H", "S") or None
+            leader: Player who led the first trick (0-3)
+            t0: Tricks won by team 0
+            t1: Tricks won by team 1
+            features: List of 4 feature dicts, one per player
+        """
+        if not self.is_enabled:
+            return
+        
+        record = HandEndRecord(
+            schema_version=SCHEMA_VERSION,
+            event="hand_end",
+            run_id=self.run_id,
+            strategy_id=self.strategy_id,
+            deal_id=deal_id,
+            seed=seed,
+            contract=contract,
+            trump=trump,
+            leader=leader,
+            t0=t0,
+            t1=t1,
+            features=features,
+            scores=scores,
+            timestamp=self._timestamp(),
+        )
+        self._write_record(asdict(record))
+    
+    def log_trick_end(
+        self,
+        deal_id: int,
+        trick_num: int,
+        leader: int,
+        plays: List[Tuple[int, Any]],  # [(player_idx, Card), ...]
+        winner: int,
+    ) -> None:
+        """
+        Log the completion of a trick.
+        
+        Only emitted when level=LogLevel.TRICK.
+        
+        Args:
+            deal_id: Hand number within this run
+            trick_num: Trick number within this hand (0-9)
+            leader: Player who led this trick (0-3)
+            plays: List of (player_idx, Card) tuples in play order
+            winner: Player who won the trick (0-3)
+        """
+        if not self.log_tricks:
+            return
+        
+        # Convert Card objects to [suit, rank] lists for JSON serialization
+        plays_json = [[p[0], p[1].suit, p[1].rank] for p in plays]
+        
+        record = TrickEndRecord(
+            schema_version=SCHEMA_VERSION,
+            event="trick_end",
+            run_id=self.run_id,
+            deal_id=deal_id,
+            trick_num=trick_num,
+            leader=leader,
+            plays=plays_json,
+            winner=winner,
+            timestamp=self._timestamp(),
+        )
+        self._write_record(asdict(record))
+    
+    def __enter__(self) -> "GameLogger":
+        """Context manager entry."""
+        return self.open()
+    
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit."""
+        self.close()
+

@@ -1,10 +1,6 @@
 import pytest
-import sys
 import os
 from collections import Counter
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.core.cards import (
     Card, create_deck, shuffle_deck, deal_hands,

@@ -20,7 +20,10 @@ def run_pytest(args):
         print(f"Running: {' '.join(cmd)}")
         # Run pytest from project root directory (not scripts directory)
         project_root = os.path.join(os.path.dirname(__file__), "..")
-        return subprocess.run(cmd, cwd=project_root)
+        env = os.environ.copy()
+        # Ensure src-layout imports work without per-test sys.path hacks
+        env["PYTHONPATH"] = os.path.join(project_root, "src")
+        return subprocess.run(cmd, cwd=project_root, env=env)
     except (ImportError, FileNotFoundError):
         print("⚠️  pytest not found, running tests manually...")
         return run_manual_tests(args)
@@ -62,6 +65,12 @@ def main():
         help="Generate coverage report (requires pytest)"
     )
     parser.add_argument(
+        "--fail-under",
+        type=int,
+        default=None,
+        help="If set, fail if total coverage is below this percentage (e.g. 80). Default: do not fail on coverage."
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Verbose output"
@@ -69,21 +78,34 @@ def main():
 
     args = parser.parse_args()
 
-    # Determine which tests to run
+    # Determine which tests to run (translate to valid pytest args)
     test_args = []
-    if args.unit:
-        test_args.append("--unit")
-    elif args.integration:
-        test_args.append("--integration")
-    elif args.performance:
-        test_args.append("--performance")
-    # --all or default doesn't add flags
 
+    # Selection:
+    # - unit: exclude integration + slow
+    # - integration: integration marker
+    # - performance: slow marker
+    # - default/all: run everything
+    if args.unit:
+        test_args += ["-m", "not integration and not slow"]
+    elif args.integration:
+        test_args += ["-m", "integration"]
+    elif args.performance:
+        test_args += ["-m", "slow"]
+
+    # Coverage: pytest.ini already configures coverage by default. Keep flag for
+    # compatibility. When enabled, run with pytest-cov.
     if args.coverage:
-        test_args.append("--coverage")
+        test_args += [
+            "--cov=src/bid_euchre",
+            "--cov-report=term-missing",
+            "--cov-report=html:htmlcov",
+        ]
+        if args.fail_under is not None:
+            test_args.append(f"--cov-fail-under={args.fail_under}")
 
     if args.verbose:
-        test_args.append("--verbose")
+        test_args.append("-v")
 
     # Run tests
     result = run_pytest(test_args)

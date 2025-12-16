@@ -1,10 +1,8 @@
 import pytest
-import sys
 import os
 import numpy as np
 
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+pytestmark = pytest.mark.statistical
 
 from bid_euchre.sim import simulation
 

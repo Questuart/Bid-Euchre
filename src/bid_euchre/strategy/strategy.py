@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional
+import random
 from ..core.cards import (
     Card,
     effective_suit,
@@ -179,3 +180,119 @@ def choose_card_greedy(
 
     # Otherwise, dump the cheapest legal card
     return min(legal_indices, key=card_value)
+
+
+class RandomLegalStrategy(Strategy):
+    """Strategy that chooses uniformly at random among legal moves."""
+
+    def __init__(self, name: str = "random_legal", seed: Optional[int] = None):
+        super().__init__(name)
+        self.rng = random.Random(seed)
+
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        """Choose uniformly at random among legal cards."""
+        legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
+        return self.rng.choice(legal_indices)
+
+
+class AlwaysLowestLegalStrategy(Strategy):
+    """Strategy that always plays the lowest-ranked legal card."""
+
+    def __init__(self, name: str = "always_lowest"):
+        super().__init__(name)
+
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        """Choose the lowest-ranked legal card."""
+        legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
+
+        def card_rank(idx: int) -> float:
+            """
+            Return a numeric rank for a card, higher = stronger.
+            For AlwaysLowest, we'll use min of this value.
+            """
+            card = hand[idx]
+            
+            # Bowers only exist in suit contracts
+            if contract_type == "suit" and trump_suit is not None:
+                # Right bower is strongest
+                if is_right_bower(card, trump_suit):
+                    return 1000.0
+                
+                # Left bower is next
+                if is_left_bower(card, trump_suit):
+                    return 900.0
+                
+                # Trump cards (by rank)
+                eff_suit = effective_suit(card, trump_suit, contract_type)
+                if eff_suit == trump_suit:
+                    # Trump: A > K > Q > J > T (for non-bower J)
+                    base = rank_strength(card, contract_type)
+                    return 800.0 + base
+            
+            # Non-trump cards (or all cards in high/low contracts)
+            base = rank_strength(card, contract_type)
+            return base
+
+        return min(legal_indices, key=card_rank)
+
+
+class AlwaysHighestLegalStrategy(Strategy):
+    """Strategy that always plays the highest-ranked legal card."""
+
+    def __init__(self, name: str = "always_highest"):
+        super().__init__(name)
+
+    def choose_card(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> int:
+        """Choose the highest-ranked legal card."""
+        legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
+
+        def card_rank(idx: int) -> float:
+            """
+            Return a numeric rank for a card, higher = stronger.
+            For AlwaysHighest, we'll use max of this value.
+            """
+            card = hand[idx]
+            
+            # Bowers only exist in suit contracts
+            if contract_type == "suit" and trump_suit is not None:
+                # Right bower is strongest
+                if is_right_bower(card, trump_suit):
+                    return 1000.0
+                
+                # Left bower is next
+                if is_left_bower(card, trump_suit):
+                    return 900.0
+                
+                # Trump cards (by rank)
+                eff_suit = effective_suit(card, trump_suit, contract_type)
+                if eff_suit == trump_suit:
+                    # Trump: A > K > Q > J > T (for non-bower J)
+                    base = rank_strength(card, contract_type)
+                    return 800.0 + base
+            
+            # Non-trump cards (or all cards in high/low contracts)
+            base = rank_strength(card, contract_type)
+            return base
+
+        return max(legal_indices, key=card_rank)

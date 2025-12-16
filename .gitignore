@@ -59,6 +59,7 @@ conda/
 data/raw/
 data/reports/
 data/processed/
+data/runs/
 
 # Experiment outputs (keep experiment scripts tracked)
 experiments/output/

@@ -1,9 +1,5 @@
 import pytest
-import sys
 import os
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.core.cards import Card
 from bid_euchre.core.rules import trick_winner, _highest_trump, _highest_in_suit, get_legal_indices

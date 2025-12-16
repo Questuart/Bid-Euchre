@@ -103,7 +103,8 @@ def test_cli_interface():
             "experiments/run_baseline_greedy.py",
             "--n_per", "50",
             "--seed", "42",
-            "--output_dir", temp_dir
+            "--run-dir", temp_dir,
+            "--log-level", "hand",
         ]
 
         env = os.environ.copy()
@@ -113,13 +114,23 @@ def test_cli_interface():
 
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
 
-        # Check that files were created
+        # Check that a run folder was created and contains expected artifacts
         import glob
-        json_files = glob.glob(os.path.join(temp_dir, "*.json"))
-        assert len(json_files) == 6, f"Expected 6 JSON files, got {len(json_files)}"
+        run_folders = [p for p in glob.glob(os.path.join(temp_dir, "baseline_greedy_*")) if os.path.isdir(p)]
+        assert len(run_folders) >= 1, "Expected at least one run folder in run-dir"
+
+        run_folder = sorted(run_folders)[-1]
+        results_dir = os.path.join(run_folder, "results", "greedy")
+        json_files = glob.glob(os.path.join(results_dir, "*.json"))
+        assert len(json_files) == 6, f"Expected 6 scenario JSON files, got {len(json_files)}"
+
+        logs_dir = os.path.join(run_folder, "logs")
+        jsonl_files = glob.glob(os.path.join(logs_dir, "*.jsonl"))
+        assert len(jsonl_files) >= 1, "Expected at least one JSONL log file"
 
         print(f"  ✅ CLI executed successfully")
-        print(f"  ✅ Generated {len(json_files)} output files")
+        print(f"  ✅ Generated {len(json_files)} scenario files")
+        print(f"  ✅ Generated {len(jsonl_files)} log files")
 
     return True
 

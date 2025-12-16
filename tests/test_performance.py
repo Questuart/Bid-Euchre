@@ -1,10 +1,6 @@
 import pytest
-import sys
 import os
 import time
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.sim import simulation
 
@@ -26,7 +22,7 @@ class TestPerformanceRegression:
 
         # Should complete in reasonable time (adjust threshold as needed)
         # On a typical modern machine, 1000 hands should take < 5 seconds
-        assert duration < 10.0, ".2f"
+        assert duration < 10.0, f"{duration:.2f}"
 
         # Verify result is still correct
         assert result["hands"] == 1000
