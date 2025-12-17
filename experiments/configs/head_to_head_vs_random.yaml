@@ -1,0 +1,71 @@
+# Head-to-Head Strategy Comparison vs RandomLegal
+#
+# Tests each strategy against RandomLegal baseline in head-to-head matchups.
+# Includes seat swaps to check for positional bias.
+
+experiment_name: head_to_head_vs_random
+
+parameters:
+  n_per: 50000
+  seed: 42
+  log_level: hand
+  mode: head_to_head_matrix
+
+# Define all strategies that will be tested
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+  
+  - name: improved_greedy
+    class_name: ImprovedGreedyStrategy
+  
+  - name: random_legal
+    class_name: RandomLegalStrategy
+  
+  - name: always_highest
+    class_name: AlwaysHighestLegalStrategy
+  
+  - name: always_lowest
+    class_name: AlwaysLowestLegalStrategy
+
+# Define matchups (Team0 vs Team1)
+matchups:
+  # Greedy vs Random (both directions for seat bias check)
+  - team0: greedy
+    team1: random_legal
+  
+  - team0: random_legal
+    team1: greedy
+  
+  # Improved Greedy vs Random
+  - team0: improved_greedy
+    team1: random_legal
+  
+  - team0: random_legal
+    team1: improved_greedy
+  
+  # Always Highest vs Random
+  - team0: always_highest
+    team1: random_legal
+  
+  - team0: random_legal
+    team1: always_highest
+  
+  # Always Lowest vs Random
+  - team0: always_lowest
+    team1: random_legal
+  
+  - team0: random_legal
+    team1: always_lowest
+  
+  # Control: Random vs Random (should be ~5.0 tricks each)
+  - team0: random_legal
+    team1: random_legal
+
+# Scenarios to test (all contract types)
+scenarios:
+  - contract_type: suit
+    trump_suit: C,D,H,S
+  - contract_type: high
+  - contract_type: low
+
