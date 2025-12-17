@@ -133,6 +133,16 @@ def play_single_hand(
                     f"player={player} contract={contract_type} trump={trump_suit} "
                     f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
             )
+            
+            # Index integrity check: verify strategy returns valid index into actual hand
+            # (catches bugs where strategy sorts/filters hand and returns wrong index)
+            if card_index < 0 or card_index >= len(hand):
+                raise ValueError(
+                    f"Index integrity failure: strategy={getattr(strat, 'name', type(strat).__name__)} "
+                    f"returned out-of-bounds index {card_index} for hand of size {len(hand)} "
+                    f"player={player}"
+                )
+            
             card = hand.pop(card_index)
             plays.append((player, card))
 
