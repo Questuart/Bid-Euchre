@@ -2,13 +2,14 @@ import pytest
 import os
 import json
 import tempfile
+import sys
 
 pytestmark = pytest.mark.integration
 
 from bid_euchre.sim import simulation
 from bid_euchre.core.cards import create_deck, deal_hands
 from bid_euchre.core.rules import trick_winner
-from bid_euchre.strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
+from bid_euchre.strategy import Strategy, BasicStrategy, GreedyStrategy
 
 
 class TestEndToEndSimulation:
@@ -17,7 +18,7 @@ class TestEndToEndSimulation:
     def test_full_hand_simulation_basic_strategy(self):
         """Test simulating a complete hand with basic strategy."""
         # Play one complete hand
-        result = simulation.play_single_hand("suit", "H")
+        result = simulation.play_single_hand("suit", "H", strategy=BasicStrategy())
 
         team0_tricks, team1_tricks, all_scores, all_features, initial_leader = result
 
@@ -55,7 +56,9 @@ class TestEndToEndSimulation:
             # Run the experiment script with command line arguments
             cmd = [
                 sys.executable,
-                os.path.join(os.path.dirname(__file__), '..', 'experiments', 'run_baseline_greedy.py'),
+                os.path.join(os.path.dirname(__file__), '..', 'experiments', 'run_experiment.py'),
+                '--config',
+                os.path.join(os.path.dirname(__file__), '..', 'experiments', 'configs', 'baseline_greedy.yaml'),
                 '--n_per', '50',
                 '--seed', '42',
                 '--run-dir', temp_dir,

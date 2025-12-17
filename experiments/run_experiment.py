@@ -88,6 +88,16 @@ def parse_args():
         action="store_true",
         help="Print configuration and exit without running"
     )
+    parser.add_argument(
+        "--mode",
+        choices=["self_play", "head_to_head"],
+        help="Override: evaluation mode. self_play = same strategy all seats; head_to_head = team0 strategy vs fixed team1 strategy."
+    )
+    parser.add_argument(
+        "--team1-strategy",
+        type=str,
+        help="For head_to_head: name of strategy to use for Team 1 (players 1 & 3). Must be one of the strategies in the config."
+    )
     return parser.parse_args()
 
 
@@ -131,10 +141,54 @@ def main():
     n_per = args.n_per if args.n_per is not None else config.parameters.get("n_per", 50000)
     seed = args.seed if args.seed is not None else config.parameters.get("seed")
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
+    mode = args.mode if args.mode else config.parameters.get("mode", "self_play")
+    team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
     
     # Get strategies and scenarios
+    strategy_cfgs = config.strategies
     strategies = config.get_strategies()
     scenarios = config.get_scenario_configs()
+
+    # Resolve team1 strategy config for head-to-head mode (must exist in config)
+    team1_cfg = None
+    if mode == "head_to_head":
+        if not team1_strategy_name:
+            raise ValueError("head_to_head mode requires --team1-strategy (or parameters.team1_strategy in YAML)")
+        for sc in strategy_cfgs:
+            if sc.name == team1_strategy_name:
+                team1_cfg = sc
+                break
+        if team1_cfg is None:
+            raise ValueError(
+                f"Unknown team1 strategy '{team1_strategy_name}'. "
+                f"Must be one of: {', '.join(sc.name for sc in strategy_cfgs)}"
+            )
+
+    def _make_seat_strategies(team0_cfg):
+        """
+        Create per-seat strategy instances.
+        - self_play: [team0, team0, team0, team0] (distinct instances)
+        - head_to_head: team0 on seats 0&2, team1 on seats 1&3
+
+        Note: RandomLegal gets a per-seat seed offset to avoid identical RNG streams.
+        """
+        def _clone(cfg, seat_idx: int):
+            cfg_params = dict(cfg.params or {})
+            if cfg.class_name == "RandomLegalStrategy":
+                base_seed = cfg_params.get("seed", seed)
+                cfg_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
+            return cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
+
+        if mode == "self_play":
+            return [_clone(team0_cfg, i) for i in range(4)]
+
+        # head_to_head
+        return [
+            _clone(team0_cfg, 0),
+            _clone(team1_cfg, 1),
+            _clone(team0_cfg, 2),
+            _clone(team1_cfg, 3),
+        ]
     
     # Print experiment summary
     print("\n" + "=" * 70)
@@ -147,6 +201,9 @@ def main():
     print(f"Log level: {log_level_str}")
     print(f"Total hands to simulate: {len(strategies) * len(scenarios) * n_per:,}")
     print(f"Common deals: {'Yes' if seed is not None else 'No (random deals)'}")
+    print(f"Mode: {mode}")
+    if mode == "head_to_head":
+        print(f"Team1 strategy: {team1_strategy_name}")
     print("=" * 70)
     
     if args.dry_run:
@@ -207,13 +264,17 @@ def main():
                 scenario_start = time.time()
                 
                 # Run simulation
+                # Per-seat strategy instances (enables head-to-head evaluation)
+                team0_cfg = next(sc for sc in strategy_cfgs if sc.name == strategy.name)
+                seat_strategies = _make_seat_strategies(team0_cfg)
                 results = simulation.simulate_many_hands(
                     n=n_per,
                     contract_type=scenario.contract_type,
                     trump_suit=scenario.trump_suit,
                     seed=None,  # Don't touch global RNG
                     deal_seed=scenario_seed,  # Use for deterministic deals
-                    strategy=strategy,
+                    strategy=None,
+                    strategies=seat_strategies,
                     logger=logger,
                 )
                 
@@ -267,6 +328,8 @@ def main():
         "seed": seed,
         "n_per": n_per,
         "log_level": log_level_str,
+        "mode": mode,
+        "team1_strategy": team1_strategy_name if mode == "head_to_head" else None,
         "scenarios": [
             {"contract_type": s.contract_type, "trump_suit": s.trump_suit}
             for s in scenarios

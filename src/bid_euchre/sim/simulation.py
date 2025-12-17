@@ -1,9 +1,18 @@
+"""
+Core simulation engine for Bid Euchre.
+
+This module is library code (no CLI). It supports:
+- self-play (same strategy for all seats)
+- head-to-head by seat (different strategies per player)
+"""
+
 import random
 from typing import Dict, Tuple, Optional, List, TYPE_CHECKING
+
 from ..core.cards import create_deck, shuffle_deck, deal_hands, Card
 from ..core.rules import trick_winner, get_legal_indices
-from ..strategy.strategy import Strategy, BasicStrategy, GreedyStrategy
 from ..features.hand_eval import score_hand, get_hand_features
+from ..strategy import Strategy, GreedyStrategy
 from .deals import generate_deal, generate_initial_leader
 
 if TYPE_CHECKING:
@@ -14,6 +23,7 @@ def play_single_hand(
     contract_type: str,
     trump_suit: Optional[str] = None,
     strategy: Optional[Strategy] = None,
+    strategies: Optional[List[Strategy]] = None,
     logger: Optional["GameLogger"] = None,
     deal_id: int = 0,
     hands: Optional[List[List[Card]]] = None,
@@ -43,9 +53,16 @@ def play_single_hand(
     if contract_type in ("high", "low") and trump_suit is not None:
         raise ValueError("trump_suit must be None for 'high'/'low' contracts")
 
-    # Use provided strategy or default to GreedyStrategy
-    if strategy is None:
-        strategy = GreedyStrategy()
+    # Resolve strategy-per-seat.
+    # Backwards compatible: if `strategies` is None, use `strategy` for all seats.
+    if strategies is not None:
+        if len(strategies) != 4:
+            raise ValueError(f"`strategies` must have length 4 (got {len(strategies)})")
+        seat_strategies = strategies
+    else:
+        if strategy is None:
+            strategy = GreedyStrategy()
+        seat_strategies = [strategy, strategy, strategy, strategy]
 
     if hands is None:
         # Random deal using provided RNG (or global if None)
@@ -60,20 +77,20 @@ def play_single_hand(
     starting_hands = [list(h) for h in hands]
     
     # Extract features for ALL 4 players (removes measurement anchoring)
-    all_player_scores = []
-    all_player_features = []
+    all_player_scores: List[int] = []
+    all_player_features: List[Dict[str, int]] = []
     for player_idx in range(4):
         score = score_hand(
             starting_hands[player_idx],
-        contract_type=contract_type,
-        trump_suit=trump_suit,
-        mode="scalar",
-    )
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+            mode="scalar",
+        )
         features = get_hand_features(
             starting_hands[player_idx],
-        contract_type=contract_type,
-        trump_suit=trump_suit,
-    )
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+        )
         all_player_scores.append(score)
         all_player_features.append(features)
 
@@ -102,7 +119,8 @@ def play_single_hand(
 
             # Engine-level guardrail: enforce legal plays (not just in strategies).
             legal_indices = get_legal_indices(hand, plays, contract_type, trump_suit)
-            card_index = strategy.choose_card(
+            strat = seat_strategies[player]
+            card_index = strat.choose_card(
                 hand=hand,
                 plays_so_far=plays,
                 contract_type=contract_type,
@@ -111,7 +129,7 @@ def play_single_hand(
             )
             if card_index not in legal_indices:
                 raise ValueError(
-                    f"Illegal play from strategy={getattr(strategy, 'name', type(strategy).__name__)} "
+                    f"Illegal play from strategy={getattr(strat, 'name', type(strat).__name__)} "
                     f"player={player} contract={contract_type} trump={trump_suit} "
                     f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
             )
@@ -145,6 +163,7 @@ def simulate_many_hands(
     trump_suit: Optional[str] = None,
     seed: Optional[int] = None,
     strategy: Optional[Strategy] = None,
+    strategies: Optional[List[Strategy]] = None,
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
 ) -> Dict:
@@ -181,7 +200,7 @@ def simulate_many_hands(
     This removes measurement anchoring and 4x the effective sample size.
     """
     # Create local RNG for reproducibility (never mutate global random state)
-    local_rng = None
+    local_rng: Optional[random.Random] = None
     if seed is not None and deal_seed is None:
         local_rng = random.Random(seed)
 
@@ -206,6 +225,7 @@ def simulate_many_hands(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
+                strategies=strategies,
                 logger=logger,
                 deal_id=deal_id,
                 hands=deal_hands_,
@@ -213,7 +233,13 @@ def simulate_many_hands(
             )
         else:
             t0, t1, all_scores, all_feats, initial_leader = play_single_hand(
-                contract_type, trump_suit, strategy, logger, deal_id, rng=local_rng
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+                strategy=strategy,
+                strategies=strategies,
+                logger=logger,
+                deal_id=deal_id,
+                rng=local_rng,
             )
         
         # Log hand completion (if logger enabled)
@@ -249,14 +275,14 @@ def simulate_many_hands(
 
             # Scalar score buckets (by this player's team's tricks)
             sb = score_buckets.setdefault(score, {"count": 0, "total_tricks": 0.0})
-        sb["count"] += 1
+            sb["count"] += 1
             sb["total_tricks"] += team_tricks
 
             # Feature buckets (by this player's team's tricks)
             for fname, val in feats.items():
-            fb = feature_buckets.setdefault(fname, {})
-            vb = fb.setdefault(val, {"count": 0, "total_tricks": 0.0})
-            vb["count"] += 1
+                fb = feature_buckets.setdefault(fname, {})
+                vb = fb.setdefault(val, {"count": 0, "total_tricks": 0.0})
+                vb["count"] += 1
                 vb["total_tricks"] += team_tricks
 
     # Compute avg_tricks in each score bucket

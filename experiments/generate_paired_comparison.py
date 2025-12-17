@@ -36,7 +36,7 @@ from bid_euchre.analysis import (
 
 # Strategy display configuration
 STRATEGY_NAMES = {
-    "greedy": "Greedy (fixed)",
+    "greedy": "Greedy",
     "improved_greedy": "Improved Greedy",
     "random_legal": "Random Legal",
     "always_lowest": "Always Lowest",

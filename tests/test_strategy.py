@@ -2,8 +2,10 @@ import pytest
 import os
 
 from bid_euchre.core.cards import Card
-from bid_euchre.strategy.strategy import (
-    choose_card_basic, choose_card_greedy, _card_value_for_dump
+from bid_euchre.strategy import (
+    choose_card_basic,
+    choose_card_greedy,
+    card_value_for_dump,
 )
 
 
@@ -134,22 +136,22 @@ class TestCardValueForDump:
     def test_card_value_regular_cards(self):
         """Test valuation of regular cards."""
         # Higher rank = higher value
-        assert _card_value_for_dump(Card("H", "T"), "high", None) == 0
-        assert _card_value_for_dump(Card("H", "J"), "high", None) == 1
-        assert _card_value_for_dump(Card("H", "A"), "high", None) == 4
+        assert card_value_for_dump(Card("H", "T"), "high", None) == 0
+        assert card_value_for_dump(Card("H", "J"), "high", None) == 1
+        assert card_value_for_dump(Card("H", "A"), "high", None) == 4
 
     def test_card_value_trump_cards(self):
         """Test that trump cards have higher value."""
         # Trump cards get +10 bonus
-        offsuit_ace = _card_value_for_dump(Card("H", "A"), "suit", "S")
-        trump_ace = _card_value_for_dump(Card("S", "A"), "suit", "S")
+        offsuit_ace = card_value_for_dump(Card("H", "A"), "suit", "S")
+        trump_ace = card_value_for_dump(Card("S", "A"), "suit", "S")
         assert trump_ace == offsuit_ace + 10
 
     def test_card_value_bowers(self):
         """Test that bowers have very high value."""
-        regular_trump = _card_value_for_dump(Card("S", "A"), "suit", "S")
-        left_bower = _card_value_for_dump(Card("D", "J"), "suit", "H")  # Left bower (Diamonds when Hearts trump)
-        right_bower = _card_value_for_dump(Card("H", "J"), "suit", "H")  # Right bower
+        regular_trump = card_value_for_dump(Card("S", "A"), "suit", "S")
+        left_bower = card_value_for_dump(Card("D", "J"), "suit", "H")  # Left bower (Diamonds when Hearts trump)
+        right_bower = card_value_for_dump(Card("H", "J"), "suit", "H")  # Right bower
 
         # Right bower should be most valuable
         assert right_bower > left_bower > regular_trump
@@ -157,6 +159,20 @@ class TestCardValueForDump:
     def test_card_value_low_contract(self):
         """Test card valuation in low contracts."""
         # In low contracts, ranking is reversed but valuation still applies
-        ace_value = _card_value_for_dump(Card("H", "A"), "low", None)
-        ten_value = _card_value_for_dump(Card("H", "T"), "low", None)
+        ace_value = card_value_for_dump(Card("H", "A"), "low", None)
+        ten_value = card_value_for_dump(Card("H", "T"), "low", None)
         assert ten_value > ace_value  # 10 is more valuable in low
+
+
+class TestGreedyPolicyOracle:
+    """Validate GreedyStrategy policy matches its intended definition."""
+
+    def test_greedy_on_lead_plays_highest_value(self):
+        hand = [
+            Card("H", "T"),
+            Card("S", "A"),
+            Card("H", "A"),
+        ]
+        # On lead: should play a highest-valued card under contract rules (ties break by first max).
+        idx = choose_card_greedy(hand, [], "high", None, 0)
+        assert idx == 1

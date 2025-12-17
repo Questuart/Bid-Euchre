@@ -340,7 +340,7 @@ After Bug Fix (50k hands/scenario, 1.5M total):
 │ Always Lowest       │  42.3%   │  +2.7%  │ Solid      │
 │ Random Legal        │  40.6%   │  +1.0%  │ Baseline   │
 │ Improved Greedy     │  40.3%   │  +0.7%  │ Marginal   │
-│ Greedy (fixed)      │  39.6%   │  baseline│ Weak       │
+│ Greedy              │  39.6%   │  baseline│ Weak       │
 └─────────────────────┴──────────┴─────────┴────────────┘
 ```
 

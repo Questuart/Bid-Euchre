@@ -114,16 +114,16 @@ class TestAlwaysHighestLegalStrategy:
         """Should choose highest card when leading."""
         strategy = AlwaysHighestLegalStrategy()
         hand = [
-            Card("C", "A"),  # idx 0 - HIGHEST (A)
+            Card("C", "A"),  # idx 0 - offsuit ace
             Card("D", "T"),  # idx 1
-            Card("H", "K"),  # idx 2
+            Card("H", "K"),  # idx 2 - TRUMP king (beats any offsuit)
             Card("S", "Q"),  # idx 3
         ]
         
-        # Leading - should choose highest (C-A)
+        # Leading - should choose highest under contract rules (trump beats offsuit)
         plays_so_far = []
         choice = strategy.choose_card(hand, plays_so_far, "suit", "H", 0)
-        assert choice == 0  # C-A
+        assert choice == 2  # H-K (trump)
     
     def test_prefers_bowers(self):
         """Should prefer playing bowers over other cards."""
