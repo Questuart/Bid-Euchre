@@ -3,6 +3,7 @@ import os
 import json
 import tempfile
 import sys
+import subprocess
 
 pytestmark = pytest.mark.integration
 
@@ -139,14 +140,39 @@ class TestDataPipeline:
         assert parsed["contract_type"] == result["contract_type"]
         assert parsed["trump_suit"] == result["trump_suit"]
 
-    def test_experiment_data_directory_structure(self):
-        """Test that experiment script creates expected directory structure."""
-        # This would test the actual experiment script output
-        # For now, just verify directories exist
-        assert os.path.exists("data")
-        assert os.path.exists("data/raw")
-        assert os.path.exists("data/processed")
-        assert os.path.exists("data/reports")
+    def test_experiment_output_structure_smoke(self, tmp_path):
+        run_root = tmp_path / "runs"
+
+        cmd = [
+            sys.executable,
+            "experiments/run_experiment.py",
+            "--config",
+            "experiments/configs/quick_test.yaml",
+            "--run-dir",
+            str(run_root),
+            "--n_per",
+            "50",
+            "--seed",
+            "1",
+            "--log-level",
+            "none",
+        ]
+
+        env = dict(os.environ)
+        env["PYTHONPATH"] = "src"
+
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+        assert run_root.exists()
+        runs = [p for p in run_root.iterdir() if p.is_dir()]
+        assert len(runs) == 1
+
+        run_dir = runs[0]
+        assert (run_dir / "meta.json").exists()
+        assert (run_dir / "perf.json").exists()
+        assert (run_dir / "results").exists()
+
 
     def test_simulation_reproducibility(self):
         """Test that simulations with same seed produce same results."""
