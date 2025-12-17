@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """
-Generate Head-to-Head Comparison Report.
+Generate Head-to-Head Comparison Report (v2.0 with Unified Reporting).
 
 Creates comprehensive visualizations and summaries for head-to-head matchup experiments.
+
+Changes from v1:
+- Uses new reporting framework (paths, style, metrics modules)
+- Writes to standardized archive + latest pattern
+- Importable as library function
 
 Usage:
     PYTHONPATH=src python experiments/generate_head_to_head_report.py \\
         --run-dir data/runs/<run_id>
 
 Generates:
-    <run_dir>/reports/
-    ├── summary.md                  # Key findings with stats
-    ├── comparison_matrix.png       # Win rate matrix
-    └── matchups/
-        ├── <matchup1>.png          # Per-matchup details
-        └── ...
+    <run_dir>/reports/head_to_head/
+    ├── comparison_matrix.png (latest)
+    ├── summary.md (latest)
+    ├── matchups/ (latest per-matchup plots)
+    └── _history/<timestamp>/ (archived version)
 """
 
 import os
@@ -23,7 +27,7 @@ import json
 import argparse
 from glob import glob
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,6 +37,18 @@ import matplotlib.gridspec as gridspec
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.analysis import wilson_ci, paired_t_ci
+from bid_euchre.reporting import (
+    STRATEGY_NAMES,
+    STRATEGY_COLORS,
+    apply_report_style,
+    get_report_paths,
+    ensure_dir,
+    copy_to_latest,
+    write_latest_pointer,
+)
+
+# Apply report styling
+apply_report_style()
 
 
 def parse_args():
@@ -232,10 +248,23 @@ def plot_comparison_matrix(all_stats: Dict, output_path: str):
     plt.close()
 
 
-def main():
-    args = parse_args()
-    run_dir = args.run_dir
+def plot_head_to_head_report(run_dir: str) -> str:
+    """
+    Generate head-to-head comparison report using new framework.
     
+    Writes to standardized archive + latest pattern:
+        <run_dir>/reports/head_to_head/
+        ├── comparison_matrix.png (latest)
+        ├── summary.md (latest)
+        ├── matchups/ (latest per-matchup plots)
+        └── _history/<timestamp>/ (archived version)
+    
+    Args:
+        run_dir: Base run directory
+    
+    Returns:
+        Path to latest comparison_matrix.png
+    """
     print("📊 Generating Head-to-Head Comparison Report")
     print("=" * 70)
     print(f"Run directory: {run_dir}\n")
@@ -252,33 +281,52 @@ def main():
         all_stats[matchup_name] = compute_matchup_stats(scenarios)
     print(f"   Computed stats for {len(all_stats)} matchups\n")
     
-    # Create reports directory
-    reports_dir = os.path.join(run_dir, "reports")
-    matchups_dir = os.path.join(reports_dir, "matchups")
-    os.makedirs(matchups_dir, exist_ok=True)
+    # Get paths using new framework
+    paths = get_report_paths(run_dir)
+    archive_dir = paths.h2h_archive
+    latest_dir = paths.h2h_root
+    matchups_archive = os.path.join(archive_dir, "matchups")
     
-    # Generate summary markdown
+    ensure_dir(archive_dir)
+    ensure_dir(matchups_archive)
+    
+    # Generate summary markdown in archive
     print("📝 Generating summary...")
     summary_md = generate_summary_markdown(run_dir, all_stats)
-    summary_path = os.path.join(reports_dir, "summary.md")
-    with open(summary_path, "w") as f:
+    archive_summary = os.path.join(archive_dir, "summary.md")
+    with open(archive_summary, "w") as f:
         f.write(summary_md)
-    print(f"   ✅ {summary_path}\n")
     
-    # Generate comparison matrix
+    # Generate comparison matrix in archive
     print("📊 Generating comparison matrix...")
-    matrix_path = os.path.join(reports_dir, "comparison_matrix.png")
-    plot_comparison_matrix(all_stats, matrix_path)
-    print(f"   ✅ {matrix_path}\n")
+    archive_matrix = os.path.join(archive_dir, "comparison_matrix.png")
+    plot_comparison_matrix(all_stats, archive_matrix)
     
-    # Final summary
-    print("=" * 70)
-    print("✅ Report Generation Complete!")
-    print("=" * 70)
-    print(f"📁 Reports directory: {reports_dir}/")
-    print(f"📄 Summary: {summary_path}")
-    print(f"📊 Matrix: {matrix_path}")
-    print()
+    # Copy to latest
+    latest_summary = os.path.join(latest_dir, "summary.md")
+    latest_matrix = os.path.join(latest_dir, "comparison_matrix.png")
+    latest_matchups = paths.h2h_matchups
+    
+    copy_to_latest(archive_summary, latest_summary)
+    copy_to_latest(archive_matrix, latest_matrix)
+    
+    if os.path.exists(matchups_archive):
+        copy_to_latest(matchups_archive, latest_matchups, is_dir=True)
+    
+    # Write latest pointer
+    archive_rel = os.path.relpath(archive_dir, latest_dir)
+    write_latest_pointer(latest_dir, archive_rel)
+    
+    print("✅ Head-to-head report")
+    print(f"   Latest: {latest_matrix}")
+    print(f"   Archive: {archive_matrix}")
+    
+    return latest_matrix
+
+
+def main():
+    args = parse_args()
+    plot_head_to_head_report(args.run_dir)
 
 
 if __name__ == "__main__":

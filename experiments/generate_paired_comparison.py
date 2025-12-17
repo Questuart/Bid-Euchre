@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Generate Paired Strategy Comparison Report (Statistical Rigor Edition).
+Generate Paired Strategy Comparison Report (v2.0 with Unified Reporting).
 
 Uses JSONL logs as source of truth for paired deal-level comparisons.
 Includes confidence intervals, effect sizes, and proper statistical tests.
+
+Changes from v1:
+- Uses new reporting framework (paths, style, metrics modules)
+- Writes to standardized archive + latest pattern
+- Importable as library function
 
 Usage:
     PYTHONPATH=src python experiments/generate_paired_comparison.py \\
@@ -16,14 +21,14 @@ import argparse
 from glob import glob
 from datetime import datetime
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy import stats as scipy_stats
 
-# Import our analysis utilities
+# Import reporting framework and analysis utilities
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from bid_euchre.analysis import (
@@ -33,23 +38,18 @@ from bid_euchre.analysis import (
     wilson_ci,
     mean_with_ci,
 )
+from bid_euchre.reporting import (
+    STRATEGY_NAMES,
+    STRATEGY_COLORS,
+    apply_report_style,
+    get_report_paths,
+    ensure_dir,
+    copy_to_latest,
+    write_latest_pointer,
+)
 
-# Strategy display configuration
-STRATEGY_NAMES = {
-    "greedy": "Greedy",
-    "improved_greedy": "Improved Greedy",
-    "random_legal": "Random Legal",
-    "always_lowest": "Always Lowest",
-    "always_highest": "Always Highest",
-}
-
-STRATEGY_COLORS = {
-    "greedy": "#2ecc71",
-    "improved_greedy": "#27ae60",
-    "random_legal": "#95a5a6",
-    "always_lowest": "#3498db",
-    "always_highest": "#e74c3c",
-}
+# Apply report styling
+apply_report_style()
 
 
 def parse_args():
@@ -63,10 +63,25 @@ def parse_args():
 def plot_paired_comparison(
     run_dir: str,
     baseline: str,
-    output_dir: str
-):
-    """Generate comprehensive paired comparison report."""
+    output_dir: Optional[str] = None
+) -> str:
+    """
+    Generate comprehensive paired comparison report using new framework.
     
+    Writes to standardized archive + latest pattern:
+        <run_dir>/reports/paired/
+        ├── paired_comparison.png (latest)
+        ├── summary.md (latest)
+        └── _history/<timestamp>/ (archived version)
+    
+    Args:
+        run_dir: Base run directory
+        baseline: Baseline strategy name
+        output_dir: Optional override for output location (for backwards compat)
+    
+    Returns:
+        Path to latest paired_comparison.png
+    """
     # Load metadata
     meta_path = os.path.join(run_dir, "meta.json")
     with open(meta_path) as f:
@@ -78,6 +93,21 @@ def plot_paired_comparison(
     print("📂 Loading paired data from JSONL logs...")
     strategy_data = load_paired_data(run_dir, strategies)
     print(f"   Loaded {len(strategy_data)} strategies")
+    
+    # Determine output paths
+    if output_dir:
+        # Legacy mode: use provided output_dir
+        archive_dir = output_dir
+        latest_dir = None
+        use_new_paths = False
+    else:
+        # New mode: use reporting framework
+        paths = get_report_paths(run_dir)
+        archive_dir = paths.paired_archive
+        latest_dir = paths.paired_root
+        use_new_paths = True
+    
+    ensure_dir(archive_dir)
     
     # Create figure
     fig = plt.figure(figsize=(18, 12))
@@ -114,10 +144,37 @@ def plot_paired_comparison(
     ax7 = fig.add_subplot(gs[2, 2])
     plot_paired_summary_table(ax7, strategy_data, baseline)
     
+    # Save to archive
     plt.tight_layout()
-    plt.savefig(output_dir + "/paired_comparison.png", dpi=150, bbox_inches="tight")
-    print(f"✅ Paired comparison saved: {output_dir}/paired_comparison.png")
+    archive_png = os.path.join(archive_dir, "paired_comparison.png")
+    plt.savefig(archive_png, dpi=150, bbox_inches="tight")
     plt.close()
+    
+    # Generate summary markdown
+    _generate_paired_summary_md(archive_dir, strategy_data, baseline, meta)
+    
+    # Copy to latest if using new paths
+    if use_new_paths and latest_dir:
+        latest_png = os.path.join(latest_dir, "paired_comparison.png")
+        latest_md = os.path.join(latest_dir, "summary.md")
+        
+        copy_to_latest(archive_png, latest_png)
+        copy_to_latest(
+            os.path.join(archive_dir, "summary.md"),
+            latest_md
+        )
+        
+        # Write latest pointer
+        archive_rel = os.path.relpath(archive_dir, latest_dir)
+        write_latest_pointer(latest_dir, archive_rel)
+        
+        print(f"✅ Paired comparison report")
+        print(f"   Latest: {latest_png}")
+        print(f"   Archive: {archive_png}")
+        return latest_png
+    else:
+        print(f"✅ Paired comparison saved: {archive_png}")
+        return archive_png
 
 
 def plot_paired_delta_distribution(ax, strategy_data, baseline):
@@ -406,23 +463,15 @@ def plot_paired_summary_table(ax, strategy_data, baseline):
 def main():
     args = parse_args()
     
-    # Determine output directory
-    if args.output_dir:
-        output_dir = args.output_dir
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = os.path.join(args.run_dir, "dashboard", f"paired_{timestamp}")
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
     print("🎯 Generating Paired Strategy Comparison Report")
     print("=" * 60)
     
-    # Generate report
-    plot_paired_comparison(args.run_dir, args.baseline, output_dir)
-    
-    # Also generate summary markdown
-    generate_summary_markdown(args.run_dir, args.baseline, output_dir)
+    # Generate report (uses new paths framework by default)
+    plot_paired_comparison(
+        args.run_dir,
+        args.baseline,
+        output_dir=args.output_dir  # Will use new paths if None
+    )
     
     print(f"\n📁 Output directory: {output_dir}/")
     print(f"   • paired_comparison.png")
@@ -430,15 +479,14 @@ def main():
     print()
 
 
-def generate_summary_markdown(run_dir: str, baseline: str, output_dir: str):
-    """Generate summary.md with key metrics."""
-    # Load metadata
-    meta_path = os.path.join(run_dir, "meta.json")
-    with open(meta_path) as f:
-        meta = json.load(f)
-    
-    strategies = meta["strategies"]
-    strategy_data = load_paired_data(run_dir, strategies)
+def _generate_paired_summary_md(
+    output_dir: str,
+    strategy_data: Dict,
+    baseline: str,
+    meta: Dict
+):
+    """Generate summary.md with key metrics (internal helper)."""
+    strategies = list(strategy_data.keys())
     
     lines = []
     lines.append(f"# Strategy Comparison Summary\n")

@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-Unified Dashboard Report Generator for Bid Euchre Simulations (v4.1).
+Unified Dashboard Report Generator for Bid Euchre Simulations (v5.0).
 
 Generates a streamlined 3x3 multi-panel figure with:
 - Baseline Analysis (tricks, features, score calibration)
 - Strategy Metrics (win rates, correlations, heatmaps)
 
-Changes from v4:
-- Score→Tricks: 2 grouped plots (NT vs Suits) instead of 6 tiny facets
-- Trick PMF: Label on mean line
-- Violin: Annotation for omitted bins
-- Suit Symmetry: Raw means above bars
-- Heatmap: n per cell
-- Feature panels: Increased min n threshold
+Changes from v4.1:
+- Uses new reporting framework (paths, style, metrics modules)
+- Writes to standardized archive + latest pattern
+- Importable as library function (not just CLI)
 
 Usage:
     PYTHONPATH=src python experiments/generate_dashboard.py
@@ -34,29 +31,21 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy import stats as scipy_stats
 
+# Import new reporting framework
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from bid_euchre.reporting import (
+    CONTRACT_LABELS, CONTRACT_COLORS,
+    apply_report_style, get_report_paths,
+    dashboard_paths, ensure_dir, copy_to_latest,
+    write_latest_pointer,
+)
+
 # ============================================================================
 # Configuration
 # ============================================================================
 
-# Standardized contract labels
-CONTRACT_LABELS = {
-    "high": "NT-High",
-    "low": "NT-Low",
-    "suit_C": "Trump-C",
-    "suit_D": "Trump-D",
-    "suit_H": "Trump-H",
-    "suit_S": "Trump-S",
-}
-
-# Color palette for contract types (consistent across all panels)
-CONTRACT_COLORS = {
-    "high": "#2ecc71",      # green
-    "low": "#e74c3c",       # red
-    "suit_C": "#3498db",    # blue (clubs)
-    "suit_D": "#e67e22",    # orange (diamonds)
-    "suit_H": "#9b59b6",    # purple (hearts)
-    "suit_S": "#34495e",    # dark gray (spades)
-}
+# Apply shared report styling
+apply_report_style()
 
 # Line styles for overlaid plots
 CONTRACT_LINESTYLES = {
@@ -84,25 +73,13 @@ FEATURE_RANGES = {
     "high_offsuit": (0, 8),
 }
 
-# Minimum sample size for plotting (increased for v4.1)
+# Minimum sample size for plotting
 MIN_SAMPLES_FOR_PLOT = 200
 MIN_SAMPLES_FOR_PLOT_LOW = 50  # Lower threshold for heatmap cells
 
 # Consistent y-axis limits for "avg tricks" plots
 TRICKS_YLIM = (4.0, 6.0)
 TRICKS_YLIM_EXTENDED = (3.0, 8.0)  # For individual plots with full range
-
-# Figure styling
-plt.rcParams.update({
-    "font.family": "sans-serif",
-    "font.size": 9,
-    "axes.titlesize": 10,
-    "axes.labelsize": 9,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 7,
-    "figure.titlesize": 12,
-})
 
 
 # ============================================================================
@@ -1481,6 +1458,116 @@ def generate_dashboard(
     print(f"\n✅ Dashboard saved to: {filepath}")
     print(f"📁 Run folder: {run_dir}")
     return filepath
+
+
+# ============================================================================
+# Library API (New Reporting Framework)
+# ============================================================================
+
+def plot_dashboard(
+    run_dir: str,
+    strategy: str,
+    seed: Optional[int] = None,
+    save_individual: bool = True,
+) -> str:
+    """
+    Generate dashboard using new reporting framework (v5.0).
+    
+    Writes to standardized archive + latest pattern:
+        <run_dir>/reports/dashboards/<strategy>/
+        ├── dashboard.png (latest)
+        ├── plots/ (latest individual plots)
+        └── _history/<timestamp>/ (archived version)
+    
+    Args:
+        run_dir: Base run directory (data/runs/<run_id>)
+        strategy: Strategy name
+        seed: Random seed (for display only)
+        save_individual: Whether to save individual plots
+    
+    Returns:
+        Path to latest dashboard.png
+    """
+    # Load data
+    results = load_json_results_from_run_dir(run_dir, strategy)
+    hand_records = load_jsonl_logs_from_run_dir(run_dir, strategy)
+    
+    # Get paths using new framework
+    paths = get_report_paths(run_dir)
+    archive_dir, latest_dir, latest_txt = dashboard_paths(paths, strategy)
+    
+    # Create archive directory
+    ensure_dir(archive_dir)
+    
+    # Generate individual plots (in archive)
+    if save_individual:
+        plots_dir = os.path.join(archive_dir, "plots")
+        generate_individual_plots(results, hand_records, plots_dir, strategy, seed)
+    
+    # Generate main dashboard figure
+    fig = plt.figure(figsize=(14, 12), facecolor="white")
+    fig.suptitle(
+        f"BID EUCHRE ANALYSIS DASHBOARD — {strategy.upper()} (v5.0)",
+        fontsize=14, fontweight="bold", y=0.98
+    )
+    
+    gs = gridspec.GridSpec(3, 3, figure=fig, hspace=0.4, wspace=0.35,
+                           left=0.06, right=0.96, top=0.92, bottom=0.06)
+    
+    # Row 1
+    ax1 = fig.add_subplot(gs[0, 0])
+    plot_trick_distribution(ax1, results)
+    
+    ax2 = fig.add_subplot(gs[0, 1])
+    plot_tricks_vs_score_violin(ax2, results, hand_records)
+    
+    plot_feature_vs_tricks_faceted(fig, gs[0, 2], results)
+    
+    # Row 2
+    plot_score_tricks_grouped(fig, gs[1, 0], results)
+    
+    ax5 = fig.add_subplot(gs[1, 1])
+    plot_suit_symmetry(ax5, results)
+    
+    ax6 = fig.add_subplot(gs[1, 2])
+    plot_win_rate_by_contract(ax6, results)
+    
+    # Row 3
+    ax7 = fig.add_subplot(gs[2, 0])
+    plotted = plot_trump_bowers_heatmap_from_logs(ax7, hand_records)
+    if not plotted:
+        plot_trump_bowers_heatmap(ax7, results)
+    
+    ax8 = fig.add_subplot(gs[2, 1])
+    plot_feature_correlations(ax8, results, hand_records)
+    
+    ax9 = fig.add_subplot(gs[2, 2])
+    plot_summary_with_metadata(ax9, results, hand_records, strategy, seed)
+    
+    # Save to archive
+    archive_png = os.path.join(archive_dir, "dashboard.png")
+    fig.savefig(archive_png, dpi=150, facecolor="white", edgecolor="none")
+    plt.close(fig)
+    
+    # Copy to latest
+    latest_png = os.path.join(latest_dir, "dashboard.png")
+    copy_to_latest(archive_png, latest_png)
+    
+    if save_individual:
+        archive_plots = os.path.join(archive_dir, "plots")
+        latest_plots = os.path.join(latest_dir, "plots")
+        if os.path.exists(archive_plots):
+            copy_to_latest(archive_plots, latest_plots, is_dir=True)
+    
+    # Write latest pointer
+    archive_rel = os.path.relpath(archive_dir, latest_dir)
+    write_latest_pointer(latest_dir, archive_rel)
+    
+    print(f"✅ Dashboard: {strategy}")
+    print(f"   Latest: {latest_png}")
+    print(f"   Archive: {archive_png}")
+    
+    return latest_png
 
 
 def generate_dashboard_from_loaded(
