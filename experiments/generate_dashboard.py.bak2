@@ -1473,7 +1473,7 @@ def generate_dashboard(
     plot_suit_symmetry(ax5, results)
     
     ax6 = fig.add_subplot(gs[1, 2])
-    plot_win_push_loss_by_contract(ax6, results)
+    plot_win_rate_by_contract(ax6, results)
     
     # Row 3
     ax7 = fig.add_subplot(gs[2, 0])
@@ -1569,7 +1569,7 @@ def plot_dashboard(
     plot_suit_symmetry(ax5, results)
     
     ax6 = fig.add_subplot(gs[1, 2])
-    plot_win_push_loss_by_contract(ax6, results)
+    plot_win_rate_by_contract(ax6, results)
     
     # Row 3
     ax7 = fig.add_subplot(gs[2, 0])
@@ -1654,7 +1654,7 @@ def generate_dashboard_from_loaded(
     plot_suit_symmetry(ax5, results)
 
     ax6 = fig.add_subplot(gs[1, 2])
-    plot_win_push_loss_by_contract(ax6, results)
+    plot_win_rate_by_contract(ax6, results)
 
     # Row 3
     ax7 = fig.add_subplot(gs[2, 0])

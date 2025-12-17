@@ -12,6 +12,8 @@ from .style import (
     CONTRACT_COLORS,
     STRATEGY_NAMES,
     STRATEGY_COLORS,
+    OUTCOME_COLORS,
+    OUTCOME_LABELS,
     apply_report_style,
     format_pct,
     format_ci,
@@ -38,6 +40,8 @@ __all__ = [
     "CONTRACT_COLORS",
     "STRATEGY_NAMES",
     "STRATEGY_COLORS",
+    "OUTCOME_COLORS",
+    "OUTCOME_LABELS",
     "apply_report_style",
     "format_pct",
     "format_ci",
@@ -53,4 +57,3 @@ __all__ = [
     "compute_outcome_stats",
     "outcome_rates_with_ci",
 ]
-
