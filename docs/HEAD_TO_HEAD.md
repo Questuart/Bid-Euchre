@@ -2,104 +2,89 @@
 
 ## Overview
 
-The head-to-head evaluation system tests strategies against each other in direct matchups using common deals. This provides a clear answer to "does strategy X beat strategy Y?"
+Head-to-head evaluation tests strategies against each other in **direct 2v2 matchups** on **common deals**. This answers the practical question: **“does strategy X beat strategy Y?”**
 
 ## Key Difference from Self-Play
 
 | Mode | Setup | Measures |
 |------|-------|----------|
-| **Self-Play** | All 4 players use same strategy | Strategy behavior / game dynamics |
-| **Head-to-Head** | Team 0 vs Team 1 (2v2) | Competitive advantage |
-
-**Example**: In self-play, if all players are greedy, average tricks ≈ 5.0 (symmetric). In head-to-head, greedy vs random shows greedy wins ~6.3 tricks vs ~3.7.
+| **Self-play** | All 4 seats use the same strategy | Behavior / calibration (symmetric results) |
+| **Head-to-head** | Team 0 vs Team 1 (seats 0&2 vs 1&3) | Competitive advantage |
 
 ## Quick Start
 
-### Run Head-to-Head Experiment
+### Run a head-to-head matrix experiment (recommended)
 
 ```bash
-# Test strategies against RandomLegal baseline
-PYTHONPATH=src python experiments/run_head_to_head.py \
-    --config experiments/configs/head_to_head_vs_random.yaml
+# Run the matchup matrix defined in YAML
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/head_to_head_vs_random.yaml \
+  --mode head_to_head_matrix
 
-# With custom parameters
-PYTHONPATH=src python experiments/run_head_to_head.py \
-    --config experiments/configs/head_to_head_vs_random.yaml \
-    --n_per 50000 --seed 42
+# Override parameters
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/head_to_head_vs_random.yaml \
+  --mode head_to_head_matrix \
+  --n_per 50000 \
+  --seed 42
 ```
 
-### Generate Reports
+> Note: `experiments/run_head_to_head.py` is kept only as a deprecated wrapper.
+
+### Generate reports
 
 ```bash
+# Mode-aware: generates the correct report suite for the run
+PYTHONPATH=src python experiments/generate_all_reports.py \
+  --run-dir data/runs/<run_id>
+
+# Or run the head-to-head report directly
 PYTHONPATH=src python experiments/generate_head_to_head_report.py \
-    --run-dir data/runs/<run_id>
+  --run-dir data/runs/<run_id>
 ```
 
 ## Output Structure
 
 ```
 data/runs/<experiment_name>_<seed>_<timestamp>/
-├── meta.json                      # Experiment configuration
-├── perf.json                      # Performance metrics
+├── meta.json
+├── perf.json
 ├── results/
-│   ├── greedy_vs_random/          # One folder per matchup
+│   ├── greedy_vs_random_legal/
 │   │   ├── suit_C.json
 │   │   └── ...
-│   └── random_vs_greedy/          # Seat-swapped matchup
+│   └── random_legal_vs_greedy/
 │       └── ...
-├── logs/
-│   ├── <run_id>_greedy_vs_random.jsonl
+├── logs/                          # Optional (depends on log level)
+│   ├── <run_id>_<matchup>.jsonl
 │   └── ...
 └── reports/
-    ├── summary.md                 # Key findings with stats
-    └── comparison_matrix.png      # Win rate heatmap
+    └── head_to_head/
+        ├── comparison_matrix.png
+        ├── summary.md
+        └── matchups/
+            ├── greedy_vs_random_legal.png
+            └── ...
 ```
-
-## Key Findings from Initial Experiments
-
-### vs RandomLegal Baseline (6,000 hands)
-
-| Strategy | Δ Tricks | Win Rate | Significance |
-|----------|----------|----------|--------------|
-| **ImprovedGreedy** | +2.87 | 67.5% | ✅ Significantly better |
-| **Greedy** | +2.60 | 65.2% | ✅ Significantly better |
-| **AlwaysHighest** | +0.29 | 41.9% | ❌ Significantly worse |
-| **AlwaysLowest** | -1.35 | 26.2% | ❌ Significantly worse |
-
-### Interpretation
-
-1. **Greedy strategies DO beat random** - This answers the key question
-2. **Partner awareness helps** - ImprovedGreedy (+0.27 tricks vs Greedy)
-3. **Playing highest card is bad** - Worse than random (wastes power)
-4. **Playing lowest card is terrible** - Never takes tricks when possible
 
 ## Creating Custom Matchups
 
 Edit `experiments/configs/head_to_head_vs_random.yaml`:
 
 ```yaml
+mode: head_to_head_matrix
+
 matchups:
-  # Your custom matchup
-  - team0: my_new_strategy
-    team1: greedy
-  
-  # Always include seat swap to check for positional bias
   - team0: greedy
-    team1: my_new_strategy
+    team1: random_legal
+
+  # Always include seat swap to check positional bias
+  - team0: random_legal
+    team1: greedy
 ```
 
-## Architecture Notes
+## Notes / Guardrails
 
-- **Common deals**: All matchups use same seed → fair comparison
-- **Seat swap**: Running both T0 vs T1 and T1 vs T0 checks for first-player advantage
-- **Separate from self-play**: Different runner/reporter for clarity
-- **Source of truth**: JSONL logs contain all hand-level data
-- **Regeneratable**: Reports can be regenerated without re-running simulations
-
-## Next Steps
-
-1. **Run full-scale experiment**: Use `--n_per 50000` for statistical power
-2. **Test new strategies**: Add to config and compare vs baselines
-3. **Analyze specific scenarios**: Filter JSONL logs by contract type
-4. **Perfect information baseline**: Compare to oracle that sees all cards
-
+- **Common deals**: comparisons are only meaningful if matchups share the same deals.
+- **Seat swap**: running both directions helps detect positional bias.
+- **Source of truth**: JSONL logs are the most detailed dataset (when enabled).
