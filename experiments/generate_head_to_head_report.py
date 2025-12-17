@@ -40,6 +40,7 @@ from bid_euchre.analysis import wilson_ci, paired_t_ci
 from bid_euchre.reporting import (
     STRATEGY_NAMES,
     STRATEGY_COLORS,
+    OUTCOME_COLORS,
     apply_report_style,
     get_report_paths,
     ensure_dir,
@@ -183,7 +184,7 @@ def generate_summary_markdown(run_dir: str, all_stats: Dict) -> str:
         f"",
         f"## Detailed Reports",
         f"",
-        f"Individual matchup visualizations available in `reports/matchups/`",
+        f"Individual matchup visualizations available in `reports/head_to_head/matchups/`",
         f"",
     ])
     
@@ -248,6 +249,146 @@ def plot_comparison_matrix(all_stats: Dict, output_path: str):
     plt.close()
 
 
+def _scenario_sort_key(name: str) -> tuple:
+    order = {
+        'suit_C': 0,
+        'suit_D': 1,
+        'suit_H': 2,
+        'suit_S': 3,
+        'high': 4,
+        'low': 5,
+    }
+    return (order.get(name, 999), name)
+
+
+def _outcome_counts_from_distribution(dist: Dict) -> Dict[str, int]:
+    win = 0
+    push = 0
+    loss = 0
+    for k, v in dist.items():
+        t = int(k)
+        c = int(v)
+        if t >= 6:
+            win += c
+        elif t == 5:
+            push += c
+        else:
+            loss += c
+    return {'win': win, 'push': push, 'loss': loss, 'n': win + push + loss}
+
+
+def _pretty_matchup_name(matchup_name: str) -> str:
+    if '_vs_' not in matchup_name:
+        return matchup_name
+    team0, team1 = matchup_name.split('_vs_', 1)
+    t0 = STRATEGY_NAMES.get(team0, team0)
+    t1 = STRATEGY_NAMES.get(team1, team1)
+    return f"{t0} vs {t1}"
+
+
+def plot_matchup_detail(matchup_name: str, scenarios: Dict, output_path: str) -> None:
+    """Per-matchup PNG showing Δ tricks + Win/Push/Loss by scenario."""
+    scenario_names = sorted(scenarios.keys(), key=_scenario_sort_key)
+    if not scenario_names:
+        return
+
+    labels = []
+    deltas = []
+    avg0 = []
+    avg1 = []
+    n_hands = []
+    win_rates = []
+    push_rates = []
+    loss_rates = []
+
+    for s in scenario_names:
+        data = scenarios[s]
+        hands = int(data.get('hands', 0))
+        a0 = float(data.get('avg_team0', 0.0))
+        a1 = float(data.get('avg_team1', 0.0))
+        dist0 = data.get('distribution_team0', {})
+
+        counts = _outcome_counts_from_distribution(dist0)
+        n = int(counts['n'] if counts['n'] > 0 else hands)
+
+        labels.append(s)
+        deltas.append(a0 - a1)
+        avg0.append(a0)
+        avg1.append(a1)
+        n_hands.append(n)
+
+        win_rates.append((counts['win'] / n) if n else 0.0)
+        push_rates.append((counts['push'] / n) if n else 0.0)
+        loss_rates.append((counts['loss'] / n) if n else 0.0)
+
+    y = np.arange(len(labels))
+    fig = plt.figure(figsize=(14, 8), facecolor='white')
+    gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.35, wspace=0.25)
+    fig.suptitle(f"Head-to-Head Matchup Detail — {_pretty_matchup_name(matchup_name)}",
+                 fontsize=14, fontweight='bold', y=0.98)
+
+    ax1 = fig.add_subplot(gs[0, 0])
+    colors = ['#27ae60' if d > 0 else '#e74c3c' if d < 0 else '#95a5a6' for d in deltas]
+    ax1.barh(y, deltas, color=colors, alpha=0.85, edgecolor='white', linewidth=0.5)
+    ax1.axvline(0, color='#7f8c8d', linewidth=1, alpha=0.7)
+    ax1.set_yticks(y)
+    ax1.set_yticklabels(labels, fontsize=9)
+    ax1.set_xlabel('Δ Tricks (Team0 − Team1)', fontsize=10)
+    ax1.set_title('Per-Scenario Δ Tricks', fontsize=11, fontweight='bold')
+    for i, (d, n) in enumerate(zip(deltas, n_hands)):
+        ax1.text(d + (0.02 if d >= 0 else -0.02), i, f"{d:+.2f} (n={n:,})",
+                 va='center', ha='left' if d >= 0 else 'right', fontsize=8, color='#2c3e50')
+
+    ax2 = fig.add_subplot(gs[0, 1])
+    loss_pct = [lr * 100 for lr in loss_rates]
+    push_pct = [pr * 100 for pr in push_rates]
+    win_pct = [wr * 100 for wr in win_rates]
+    ax2.barh(y, loss_pct, color=OUTCOME_COLORS['loss'], alpha=0.85, edgecolor='white', linewidth=0.5, label='Loss (≤4)')
+    ax2.barh(y, push_pct, left=loss_pct, color=OUTCOME_COLORS['push'], alpha=0.85, edgecolor='white', linewidth=0.5, label='Push (5)')
+    ax2.barh(y, win_pct, left=[a + b for a, b in zip(loss_pct, push_pct)],
+             color=OUTCOME_COLORS['win'], alpha=0.85, edgecolor='white', linewidth=0.5, label='Win (≥6)')
+    ax2.set_yticks(y)
+    ax2.set_yticklabels(labels, fontsize=9)
+    ax2.set_xlim(0, 100)
+    ax2.set_xlabel('Outcome Rate (%)', fontsize=10)
+    ax2.set_title('Team0 Outcomes by Scenario', fontsize=11, fontweight='bold')
+    ax2.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
+    ax3 = fig.add_subplot(gs[1, 0])
+    ax3.plot(avg0, y, marker='o', label='Team0', color='#2c3e50')
+    ax3.plot(avg1, y, marker='o', label='Team1', color='#95a5a6')
+    ax3.axvline(5.0, color='#bdc3c7', linestyle='--', linewidth=1, alpha=0.6)
+    ax3.set_yticks(y)
+    ax3.set_yticklabels(labels, fontsize=9)
+    ax3.set_xlabel('Average Tricks', fontsize=10)
+    ax3.set_title('Average Tricks by Scenario', fontsize=11, fontweight='bold')
+    ax3.set_xlim(3, 8)
+    ax3.legend(loc='lower right', fontsize=8, framealpha=0.9)
+
+    ax4 = fig.add_subplot(gs[1, 1])
+    ax4.axis('off')
+    total_n = sum(n_hands)
+    mean_delta = float(np.average(deltas, weights=n_hands)) if total_n > 0 else float(np.mean(deltas))
+    overall_win = float(np.average(win_rates, weights=n_hands)) if total_n > 0 else float(np.mean(win_rates))
+    ax4.text(0.02, 0.95, '\n'.join([
+        f"Matchup: {_pretty_matchup_name(matchup_name)}",
+        f"Scenarios: {len(labels)}",
+        f"Total hands: {total_n:,}",
+        '',
+        f"Weighted mean Δ tricks: {mean_delta:+.3f}",
+        f"Weighted win rate: {overall_win*100:.1f}%",
+        '',
+        'Win: Team0 tricks ≥ 6',
+        'Push: Team0 tricks = 5',
+    ]),
+    va='top', ha='left', fontsize=10,
+    bbox=dict(boxstyle='round', facecolor='white', edgecolor='#ecf0f1', alpha=0.95))
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+
 def plot_head_to_head_report(run_dir: str) -> str:
     """
     Generate head-to-head comparison report using new framework.
@@ -301,6 +442,14 @@ def plot_head_to_head_report(run_dir: str) -> str:
     print("📊 Generating comparison matrix...")
     archive_matrix = os.path.join(archive_dir, "comparison_matrix.png")
     plot_comparison_matrix(all_stats, archive_matrix)
+
+    # Generate per-matchup detail plots in archive
+    print("🧩 Generating per-matchup detail plots...")
+    for matchup_name, scenarios in matchup_results.items():
+        try:
+            plot_matchup_detail(matchup_name, scenarios, os.path.join(matchups_archive, f"{matchup_name}.png"))
+        except Exception as e:
+            print(f"   ⚠️  Failed matchup plot {matchup_name}: {e}")
     
     # Copy to latest
     latest_summary = os.path.join(latest_dir, "summary.md")

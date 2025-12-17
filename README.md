@@ -36,6 +36,17 @@ print(f"Team 0 average tricks: {result['avg_team0']:.2f}")
 
 ### Run Experiments
 
+### Head-to-Head Evaluation
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/head_to_head_vs_random.yaml \
+  --mode head_to_head_matrix
+
+PYTHONPATH=src python experiments/generate_all_reports.py \
+  --run-dir data/runs/<run_id>
+```
+
 **Unified Runner** (recommended):
 ```bash
 # Run experiment from YAML config
@@ -112,30 +123,17 @@ parameters:
 
 ## 🧪 Testing
 
-### Quick Validation (Recommended)
 ```bash
-python scripts/validate_tests.py
-```
-Fast validation of all core functionality (no pytest required).
+# Run the full test suite
+PYTHONPATH=src pytest -q
 
-### Full Test Suite (Requires pytest)
-```bash
-# Install pytest first
-pip install pytest pytest-cov
+# Verbose
+PYTHONPATH=src pytest -v
 
-# Then run tests
-python scripts/run_tests.py --unit        # Core functionality
-python scripts/run_tests.py --integration # End-to-end workflows
-python scripts/run_tests.py --performance # Speed & scalability
-
-# Coverage (optional):
-python scripts/run_tests.py --all --coverage --fail-under 80
+# Coverage (optional)
+PYTHONPATH=src pytest --cov=src/bid_euchre --cov-report=term-missing
 ```
 
-### Direct pytest Usage
-```bash
-PYTHONPATH=src pytest tests/ -v --cov=src/bid_euchre
-```
 
 ## 📈 Analysis Features
 

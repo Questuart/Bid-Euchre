@@ -67,6 +67,8 @@ class ExperimentConfig:
     strategies: List[StrategyConfig]
     scenarios: List[Dict[str, Any]]  # Will be converted to ScenarioConfig objects
     parameters: Dict[str, Any]
+    mode: str = "self_play"
+    matchups: Optional[List[Dict[str, str]]] = None
 
     def __post_init__(self):
         """Process scenarios into ScenarioConfig objects."""
@@ -127,9 +129,11 @@ def load_config(config_path: str) -> ExperimentConfig:
 
     return ExperimentConfig(
         experiment_name=config_dict["experiment_name"],
+        mode=config_dict.get("mode", config_dict.get("parameters", {}).get("mode", "self_play")),
         strategies=strategies,
         scenarios=config_dict["scenarios"],
-        parameters=config_dict.get("parameters", {})
+        parameters=config_dict.get("parameters", {}),
+        matchups=config_dict.get("matchups")
     )
 
 
