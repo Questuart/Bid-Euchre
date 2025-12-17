@@ -90,7 +90,7 @@ def parse_args():
     )
     parser.add_argument(
         "--mode",
-        choices=["self_play", "head_to_head"],
+        choices=["self_play", "head_to_head", "head_to_head_matrix"],
         help="Override: evaluation mode. self_play = same strategy all seats; head_to_head = team0 strategy vs fixed team1 strategy."
     )
     parser.add_argument(
@@ -141,7 +141,7 @@ def main():
     n_per = args.n_per if args.n_per is not None else config.parameters.get("n_per", 50000)
     seed = args.seed if args.seed is not None else config.parameters.get("seed")
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
-    mode = args.mode if args.mode else config.parameters.get("mode", "self_play")
+    mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
     
     # Get strategies and scenarios
@@ -191,6 +191,11 @@ def main():
         ]
     
     # Print experiment summary
+    plan_count = len(strategies)
+    if mode == "head_to_head_matrix":
+        matchups = getattr(config, "matchups", None) or config.parameters.get("matchups") or []
+        plan_count = len(matchups)
+
     print("\n" + "=" * 70)
     print(f"🚀 Experiment: {config.experiment_name}")
     print("=" * 70)
@@ -199,7 +204,7 @@ def main():
     print(f"Hands per scenario: {n_per:,}")
     print(f"Random seed: {seed if seed is not None else 'None (random)'}")
     print(f"Log level: {log_level_str}")
-    print(f"Total hands to simulate: {len(strategies) * len(scenarios) * n_per:,}")
+    print(f"Total hands to simulate: {plan_count * len(scenarios) * n_per:,}")
     print(f"Common deals: {'Yes' if seed is not None else 'No (random deals)'}")
     print(f"Mode: {mode}")
     if mode == "head_to_head":
@@ -227,97 +232,208 @@ def main():
     scenario_metrics = []
     
     # Run all strategies × scenarios
-    for strategy in strategies:
-        print("-" * 70)
-        print(f"Strategy: {strategy.name}")
-        print("-" * 70)
-        
-        # Set up logging
-        logger = None
-        if log_level_str != "none":
-            log_level = LogLevel(log_level_str)
-            logger = GameLogger(
-                run_id=f"{run_id}_{strategy.name}",
-                strategy_id=strategy.name,
-                level=log_level,
-                output_dir=logs_dir,
-            )
-            logger.open()
-            print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
-        
-        try:
-            for i, scenario in enumerate(scenarios, 1):
-                # Generate deterministic seed per scenario
-                scenario_seed = seed + (i - 1) if seed is not None else None
-                
-                label = scenario.contract_type
-                if scenario.trump_suit:
-                    label += f" ({scenario.trump_suit})"
-                
-                print(f"\n[{i}/{len(scenarios)}] {label} - {n_per:,} hands", end="")
-                if scenario_seed is not None:
-                    print(f" (deal_seed={scenario_seed})")
-                else:
-                    print()
-                
-                # Time the scenario
-                scenario_start = time.time()
-                
-                # Run simulation
-                # Per-seat strategy instances (enables head-to-head evaluation)
-                team0_cfg = next(sc for sc in strategy_cfgs if sc.name == strategy.name)
-                seat_strategies = _make_seat_strategies(team0_cfg)
-                results = simulation.simulate_many_hands(
-                    n=n_per,
-                    contract_type=scenario.contract_type,
-                    trump_suit=scenario.trump_suit,
-                    seed=None,  # Don't touch global RNG
-                    deal_seed=scenario_seed,  # Use for deterministic deals
-                    strategy=None,
-                    strategies=seat_strategies,
-                    logger=logger,
+    # Run experiments
+    if mode == "head_to_head_matrix":
+        matchups = getattr(config, "matchups", None) or config.parameters.get("matchups")
+        if not matchups:
+            raise ValueError("head_to_head_matrix mode requires config.matchups in YAML")
+
+        # Map strategy name -> StrategyConfig
+        cfg_by_name = {sc.name: sc for sc in strategy_cfgs}
+
+        # Each matchup: results/<team0>_vs_<team1>/..., logs/<run_id>_<matchup>.jsonl
+        for m in matchups:
+            team0_name = m["team0"]
+            team1_name = m["team1"]
+            if team0_name not in cfg_by_name or team1_name not in cfg_by_name:
+                raise ValueError(
+                    f"Unknown matchup strategy in {m}. Must be among: {', '.join(cfg_by_name.keys())}"
                 )
-                
-                scenario_duration = time.time() - scenario_start
-                hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
-                
-                # Save results
-                out_path = os.path.join(
-                    results_dir,
-                    strategy.name,
-                    scenario_filename(scenario.contract_type, scenario.trump_suit)
+
+            matchup_id = f"{team0_name}_vs_{team1_name}"
+            print("-" * 70)
+            print(f"Matchup: {matchup_id}")
+            print("-" * 70)
+
+            # Set up logging
+            logger = None
+            if log_level_str != "none":
+                log_level = LogLevel(log_level_str)
+                logger = GameLogger(
+                    run_id=f"{run_id}_{matchup_id}",
+                    strategy_id=matchup_id,
+                    level=log_level,
+                    output_dir=logs_dir,
                 )
-                save_results(results, out_path)
-                
-                # Print summary
-                team0_avg = results["avg_team0"]
-                team1_avg = results["avg_team1"]
-                win_hands = sum(
-                    count
-                    for tricks, count in results["distribution_team0"].items()
-                    if int(tricks) >= 6
+                logger.open()
+                print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
+
+            try:
+                team0_cfg = cfg_by_name[team0_name]
+                team1_cfg_local = cfg_by_name[team1_name]
+
+                # Create per-seat strategies (team0 seats 0&2, team1 seats 1&3)
+                # Reuse cloning logic from _make_seat_strategies
+                def _clone(cfg, seat_idx: int):
+                    cfg_params = dict(cfg.params or {})
+                    if cfg.class_name == "RandomLegalStrategy":
+                        base_seed = cfg_params.get("seed", seed)
+                        cfg_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
+                    return cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
+
+                seat_strategies = [
+                    _clone(team0_cfg, 0),
+                    _clone(team1_cfg_local, 1),
+                    _clone(team0_cfg, 2),
+                    _clone(team1_cfg_local, 3),
+                ]
+
+                for i, scenario in enumerate(scenarios, 1):
+                    scenario_seed = seed + (i - 1) if seed is not None else None
+
+                    label = scenario.contract_type
+                    if scenario.trump_suit:
+                        label += f" ({scenario.trump_suit})"
+
+                    print(f"\n[{i}/{len(scenarios)}] {label} - {n_per:,} hands", end="")
+                    if scenario_seed is not None:
+                        print(f" (deal_seed={scenario_seed})")
+                    else:
+                        print()
+
+                    scenario_start = time.time()
+
+                    results = simulation.simulate_many_hands(
+                        n=n_per,
+                        contract_type=scenario.contract_type,
+                        trump_suit=scenario.trump_suit,
+                        seed=None,
+                        deal_seed=scenario_seed,
+                        strategy=None,
+                        strategies=seat_strategies,
+                        logger=logger,
+                    )
+
+                    scenario_duration = time.time() - scenario_start
+                    hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
+
+                    out_path = os.path.join(
+                        results_dir,
+                        matchup_id,
+                        scenario_filename(scenario.contract_type, scenario.trump_suit),
+                    )
+                    save_results(results, out_path)
+
+                    team0_avg = results["avg_team0"]
+                    team1_avg = results["avg_team1"]
+                    win_hands = sum(
+                        count
+                        for tricks, count in results["distribution_team0"].items()
+                        if int(tricks) >= 6
+                    )
+                    win_rate = win_hands / results["hands"] * 100
+
+                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  Win: {win_rate:.1f}%")
+                    print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
+
+                    scenario_metrics.append({
+                        "strategy": matchup_id,
+                        "scenario": label,
+                        "duration_sec": round(scenario_duration, 2),
+                        "hands_per_sec": round(hands_per_sec, 1),
+                        "total_hands": n_per,
+                    })
+
+            finally:
+                if logger:
+                    logger.close()
+
+    else:
+        # Run all strategies × scenarios (self_play or head_to_head)
+        for strategy in strategies:
+            print("-" * 70)
+            print(f"Strategy: {strategy.name}")
+            print("-" * 70)
+
+            # Set up logging
+            logger = None
+            if log_level_str != "none":
+                log_level = LogLevel(log_level_str)
+                logger = GameLogger(
+                    run_id=f"{run_id}_{strategy.name}",
+                    strategy_id=strategy.name,
+                    level=log_level,
+                    output_dir=logs_dir,
                 )
-                win_rate = win_hands / results["hands"] * 100
-                
-                print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  Win: {win_rate:.1f}%")
-                print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
-                
-                # Record metrics
-                scenario_metrics.append({
-                    "strategy": strategy.name,
-                    "scenario": label,
-                    "duration_sec": round(scenario_duration, 2),
-                    "hands_per_sec": round(hands_per_sec, 1),
-                    "total_hands": n_per,
-                })
-        
-        finally:
-            if logger:
-                logger.close()
-    
+                logger.open()
+                print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
+
+            try:
+                for i, scenario in enumerate(scenarios, 1):
+                    scenario_seed = seed + (i - 1) if seed is not None else None
+
+                    label = scenario.contract_type
+                    if scenario.trump_suit:
+                        label += f" ({scenario.trump_suit})"
+
+                    print(f"\n[{i}/{len(scenarios)}] {label} - {n_per:,} hands", end="")
+                    if scenario_seed is not None:
+                        print(f" (deal_seed={scenario_seed})")
+                    else:
+                        print()
+
+                    scenario_start = time.time()
+
+                    team0_cfg = next(sc for sc in strategy_cfgs if sc.name == strategy.name)
+                    seat_strategies = _make_seat_strategies(team0_cfg)
+                    results = simulation.simulate_many_hands(
+                        n=n_per,
+                        contract_type=scenario.contract_type,
+                        trump_suit=scenario.trump_suit,
+                        seed=None,
+                        deal_seed=scenario_seed,
+                        strategy=None,
+                        strategies=seat_strategies,
+                        logger=logger,
+                    )
+
+                    scenario_duration = time.time() - scenario_start
+                    hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
+
+                    out_path = os.path.join(
+                        results_dir,
+                        strategy.name,
+                        scenario_filename(scenario.contract_type, scenario.trump_suit)
+                    )
+                    save_results(results, out_path)
+
+                    team0_avg = results["avg_team0"]
+                    team1_avg = results["avg_team1"]
+                    win_hands = sum(
+                        count
+                        for tricks, count in results["distribution_team0"].items()
+                        if int(tricks) >= 6
+                    )
+                    win_rate = win_hands / results["hands"] * 100
+
+                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  Win: {win_rate:.1f}%")
+                    print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
+
+                    scenario_metrics.append({
+                        "strategy": strategy.name,
+                        "scenario": label,
+                        "duration_sec": round(scenario_duration, 2),
+                        "hands_per_sec": round(hands_per_sec, 1),
+                        "total_hands": n_per,
+                    })
+
+            finally:
+                if logger:
+                    logger.close()
+
     # Calculate total metrics
     total_duration = time.time() - start_time
-    total_hands = len(strategies) * len(scenarios) * n_per
+    total_hands = plan_count * len(scenarios) * n_per
     overall_throughput = total_hands / total_duration if total_duration > 0 else 0
     
     # Write metadata (experiment config + results summary)
@@ -363,7 +479,7 @@ def main():
     print(f"📁 Results: {run_dir}/")
     print(f"⏱️  Duration: {format_duration(total_duration)}")
     print(f"🚀 Throughput: {overall_throughput:.0f} hands/sec")
-    print(f"📊 Generated {len(strategies) * len(scenarios)} result files")
+    print(f"📊 Generated {plan_count * len(scenarios)} result files")
     
     print("\n🎯 Next steps:")
     print(f"   # Generate all reports:")
