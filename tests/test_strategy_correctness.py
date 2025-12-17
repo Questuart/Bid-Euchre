@@ -6,17 +6,121 @@ obvious winning moves in deterministic scenarios.
 
 Key principle: If a winning move exists and is unambiguous, the strategy
 must take it. This catches bugs in strategy logic, not just legality.
+
+The oracle pattern enumerates all legal moves, partitions them into winners/losers,
+and validates strategy choices against expected behavior. This makes tests:
+- More maintainable (single validation function)
+- More extensible (easy to add new expected behaviors)
+- Better at debugging (comprehensive error messages)
 """
 
 import pytest
 from bid_euchre.core.cards import Card
-from bid_euchre.core.rules import trick_winner
+from bid_euchre.core.rules import trick_winner, get_legal_indices
 from bid_euchre.strategy import (
     GreedyStrategy,
     ImprovedGreedyStrategy,
     AlwaysHighestLegalStrategy,
+    card_value_for_dump,
     # Intentionally exclude RandomLegal and AlwaysLowest (they don't try to win)
 )
+
+
+def validate_greedy_algorithm(
+    strategy,
+    hand,
+    plays_so_far,
+    contract_type,
+    trump_suit,
+    player_index,
+    expected_behavior="cheapest_winner_or_dump"
+):
+    """
+    Oracle validator for greedy algorithm logic.
+    
+    Enumerates all legal moves, partitions them into winners/losers,
+    and verifies the strategy picks according to the expected behavior.
+    
+    This is the single source of truth for validating greedy decision logic.
+    
+    Args:
+        strategy: Strategy instance to test
+        hand: Current hand (list of Cards)
+        plays_so_far: Cards played so far in trick [(player, Card), ...]
+        contract_type: "suit", "high", or "low"
+        trump_suit: Trump suit (or None)
+        player_index: Player making the decision (0-3)
+        expected_behavior: 
+            - "cheapest_winner_or_dump": Pick cheapest winner if exists, else cheapest dump
+            - "any_winner": Pick any winning card (for non-greedy strategies)
+    
+    Returns:
+        choice (int): The index chosen by the strategy
+        
+    Raises:
+        AssertionError: If strategy violates expected behavior with detailed diagnostics
+    """
+    legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
+    
+    # Enumerate and partition legal moves
+    winning_moves = []  # [(idx, card, value), ...]
+    losing_moves = []
+    
+    for idx in legal_indices:
+        card = hand[idx]
+        value = card_value_for_dump(card, contract_type, trump_suit)
+        
+        # Check if this move would win
+        test_plays = plays_so_far + [(player_index, card)]
+        winner = trick_winner(test_plays, contract_type, trump_suit)
+        
+        if winner == player_index:
+            winning_moves.append((idx, card, value))
+        else:
+            losing_moves.append((idx, card, value))
+    
+    # Get strategy's choice
+    choice = strategy.choose_card(hand, plays_so_far, contract_type, trump_suit, player_index)
+    chosen_card = hand[choice]
+    chosen_value = card_value_for_dump(chosen_card, contract_type, trump_suit)
+    
+    # Validate based on expected behavior
+    if expected_behavior == "cheapest_winner_or_dump":
+        if winning_moves:
+            # Must pick cheapest winner
+            cheapest_winner = min(winning_moves, key=lambda x: x[2])
+            assert choice == cheapest_winner[0], (
+                f"\n{strategy} FAILED: Should pick cheapest winner\n"
+                f"  Expected: {cheapest_winner[1]} (idx {cheapest_winner[0]}, value {cheapest_winner[2]})\n"
+                f"  Actual:   {chosen_card} (idx {choice}, value {chosen_value})\n"
+                f"  All winners: {[(i, str(c), v) for i, c, v in winning_moves]}\n"
+                f"  State: contract={contract_type}, trump={trump_suit}, plays={len(plays_so_far)}"
+            )
+        else:
+            # Must pick cheapest dump
+            if not losing_moves:
+                raise AssertionError(f"No legal moves found! hand={hand}, legal_indices={legal_indices}")
+            cheapest_dump = min(losing_moves, key=lambda x: x[2])
+            assert choice == cheapest_dump[0], (
+                f"\n{strategy} FAILED: Should pick cheapest dump\n"
+                f"  Expected: {cheapest_dump[1]} (idx {cheapest_dump[0]}, value {cheapest_dump[2]})\n"
+                f"  Actual:   {chosen_card} (idx {choice}, value {chosen_value})\n"
+                f"  All losers: {[(i, str(c), v) for i, c, v in losing_moves]}\n"
+                f"  State: contract={contract_type}, trump={trump_suit}, plays={len(plays_so_far)}"
+            )
+    
+    elif expected_behavior == "any_winner":
+        if winning_moves:
+            # Must pick some winning card
+            winning_indices = [idx for idx, _, _ in winning_moves]
+            assert choice in winning_indices, (
+                f"\n{strategy} FAILED: Should pick a winning card\n"
+                f"  Actual:   {chosen_card} (idx {choice}) - LOSES\n"
+                f"  Winners:  {[(i, str(c), v) for i, c, v in winning_moves]}\n"
+                f"  State: contract={contract_type}, trump={trump_suit}, plays={len(plays_so_far)}"
+            )
+    
+    return choice
 
 
 class TestWinningMoveOracle:
@@ -38,29 +142,20 @@ class TestWinningMoveOracle:
     def test_obvious_win_2nd_to_act_followsuit(self, strategy):
         """
         Scenario: 2nd to act, can follow suit with winning card.
-        Oracle: MUST play the winning card.
+        Oracle: MUST play a winning card.
         """
         hand = [
             Card("H", "T"),  # idx 0 - Ten of hearts (loses to Q)
             Card("H", "A"),  # idx 1 - Ace of hearts (WINS)
             Card("S", "K"),  # idx 2 - King of spades (offsuit)
         ]
+        plays_so_far = [(0, Card("H", "Q"))]
         
-        plays_so_far = [(0, Card("H", "Q"))]  # Queen of hearts led
-        
-        choice = strategy.choose_card(hand, plays_so_far, "high", None, 1)
-        chosen_card = hand[choice]
-        
-        # Verify the chosen card wins
-        test_plays = plays_so_far + [(1, chosen_card)]
-        winner = trick_winner(test_plays, "high", None)
-        
-        assert winner == 1, (
-            f"{strategy} failed to win obvious trick. "
-            f"Chose {chosen_card} (idx {choice}) but should win. "
-            f"Winner was player {winner}"
+        # Oracle validates strategy picks a winner
+        validate_greedy_algorithm(
+            strategy, hand, plays_so_far, "high", None, 1,
+            expected_behavior="any_winner"
         )
-        assert choice == 1, f"Expected to choose H-A (idx 1), got {choice} ({chosen_card})"
     
     @pytest.mark.parametrize("strategy", WINNING_STRATEGIES)
     def test_obvious_win_3rd_to_act_trump_beats_offsuit(self, strategy):
@@ -74,26 +169,16 @@ class TestWinningMoveOracle:
             Card("D", "T"),  # idx 1 - Ten of diamonds (weak offsuit)
             Card("C", "Q"),  # idx 2 - Queen of clubs (weak offsuit)
         ]
-        
-        # Spades led, Spade King is winning, we can't follow
         plays_so_far = [
             (0, Card("S", "J")),  # Spades Jack led
             (1, Card("S", "K")),  # Spades King (currently winning)
         ]
         
-        choice = strategy.choose_card(hand, plays_so_far, "suit", "H", 2)
-        chosen_card = hand[choice]
-        
-        # Verify the chosen card wins
-        test_plays = plays_so_far + [(2, chosen_card)]
-        winner = trick_winner(test_plays, "suit", "H")
-        
-        assert winner == 2, (
-            f"{strategy} failed to trump obvious trick. "
-            f"Chose {chosen_card} (idx {choice}) but should win with H-A. "
-            f"Winner was player {winner}"
+        # Oracle validates strategy trumps to win
+        validate_greedy_algorithm(
+            strategy, hand, plays_so_far, "suit", "H", 2,
+            expected_behavior="any_winner"
         )
-        assert choice == 0, f"Expected to trump with H-A (idx 0), got {choice} ({chosen_card})"
     
     @pytest.mark.parametrize("strategy", WINNING_STRATEGIES)
     def test_obvious_win_4th_to_act_followsuit(self, strategy):
@@ -105,27 +190,17 @@ class TestWinningMoveOracle:
             Card("C", "A"),  # idx 0 - Ace of clubs (WINS)
             Card("C", "T"),  # idx 1 - Ten of clubs (loses)
         ]
-        
-        # Clubs led, King is currently best
         plays_so_far = [
             (0, Card("C", "Q")),  # Clubs Queen led
             (1, Card("C", "J")),  # Clubs Jack
             (2, Card("C", "K")),  # Clubs King (currently winning)
         ]
         
-        choice = strategy.choose_card(hand, plays_so_far, "high", None, 3)
-        chosen_card = hand[choice]
-        
-        # Verify the chosen card wins
-        test_plays = plays_so_far + [(3, chosen_card)]
-        winner = trick_winner(test_plays, "high", None)
-        
-        assert winner == 3, (
-            f"{strategy} failed to win as 4th player. "
-            f"Chose {chosen_card} (idx {choice}) but should win with C-A. "
-            f"Winner was player {winner}"
+        # Oracle validates strategy wins as last player
+        validate_greedy_algorithm(
+            strategy, hand, plays_so_far, "high", None, 3,
+            expected_behavior="any_winner"
         )
-        assert choice == 0, f"Expected to win with C-A (idx 0), got {choice} ({chosen_card})"
     
     # Only test greedy strategies for "cheapest winner" logic
     # AlwaysHighest intentionally plays highest card, not cheapest winner
@@ -143,24 +218,15 @@ class TestWinningMoveOracle:
         """
         hand = [
             Card("H", "K"),  # idx 0 - King (expensive winner)
-            Card("H", "Q"),  # idx 1 - Queen (CHEAP winner)
+            Card("H", "Q"),  # idx 1 - Queen (cheaper winner)
             Card("H", "J"),  # idx 2 - Jack (CHEAPEST winner)
         ]
+        plays_so_far = [(0, Card("H", "T"))]
         
-        plays_so_far = [(0, Card("H", "T"))]  # Ten led
-        
-        choice = strategy.choose_card(hand, plays_so_far, "high", None, 1)
-        chosen_card = hand[choice]
-        
-        # Verify chosen card wins
-        test_plays = plays_so_far + [(1, chosen_card)]
-        winner = trick_winner(test_plays, "high", None)
-        assert winner == 1, f"Chosen card {chosen_card} should win"
-        
-        # Verify it's the cheapest winner (Jack)
-        assert choice == 2, (
-            f"{strategy} should choose cheapest winner (H-J, idx 2), "
-            f"got {choice} ({chosen_card})"
+        # Oracle validates cheapest winner is chosen
+        validate_greedy_algorithm(
+            strategy, hand, plays_so_far, "high", None, 1,
+            expected_behavior="cheapest_winner_or_dump"
         )
 
 
@@ -281,19 +347,14 @@ class TestNoWinningMove:
             Card("H", "K"),  # idx 1 - King of hearts (expensive offsuit)
             Card("H", "T"),  # idx 2 - Ten of hearts (CHEAPEST offsuit)
         ]
-        
-        # Opponent led and played trump Ace (we can't beat it)
         plays_so_far = [
-            (0, Card("C", "J")),  # Opponent led Clubs (trump right bower equivalent in this context)
+            (0, Card("C", "J")),  # Opponent led Clubs (trump)
             (1, Card("C", "A")),  # Clubs Ace
         ]
         
-        choice = strategy.choose_card(hand, plays_so_far, "suit", "C", 2)
-        chosen_card = hand[choice]
-        
-        # Should dump cheapest card (H-T)
-        assert choice == 2, (
-            f"{strategy} should dump cheapest when losing, "
-            f"but chose {chosen_card} (idx {choice})"
+        # Oracle validates cheapest dump is chosen
+        validate_greedy_algorithm(
+            strategy, hand, plays_so_far, "suit", "C", 2,
+            expected_behavior="cheapest_winner_or_dump"
         )
 
