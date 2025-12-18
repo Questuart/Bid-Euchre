@@ -1,6 +1,6 @@
 # Bid Euchre JSONL Log Schema
 
-**Schema Version:** 2  
+**Schema Version:** 3  
 **Format:** JSONL (JSON Lines) - one JSON object per line
 
 ## Overview
@@ -24,7 +24,7 @@ Emitted once at the beginning of a logging session.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "event": "run_start",
   "run_id": "baseline_greedy_42",
   "strategy_id": "greedy",
@@ -50,7 +50,7 @@ Emitted at the end of each hand.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "event": "hand_end",
   "run_id": "baseline_greedy_42",
   "strategy_id": "greedy",
@@ -67,6 +67,12 @@ Emitted at the end of each hand.
     {"bowers": 0, "trump_count": 3, "offsuit_aces": 1, "high_offsuit": 2, "rank_sum": 28},
     {"bowers": 1, "trump_count": 2, "offsuit_aces": 3, "high_offsuit": 0, "rank_sum": 35},
     {"bowers": 0, "trump_count": 1, "offsuit_aces": 0, "high_offsuit": 3, "rank_sum": 25}
+  ],
+  "hands": [
+    [["H","J"], ["H","K"], ["H","Q"], ["H","A"], ["C","A"], ["D","A"], ["S","T"], ["S","Q"], ["C","T"], ["D","Q"]],
+    [["H","T"], ["H","T"], ["C","J"], ["C","K"], ["C","Q"], ["D","K"], ["D","T"], ["S","K"], ["S","A"], ["S","J"]],
+    [["C","J"], ["H","J"], ["H","A"], ["C","K"], ["C","T"], ["D","A"], ["D","A"], ["D","Q"], ["S","Q"], ["S","A"]],
+    [["H","K"], ["H","Q"], ["C","Q"], ["C","A"], ["D","J"], ["D","K"], ["D","T"], ["D","J"], ["S","K"], ["S","T"]]
   ],
   "timestamp": "2025-12-15T18:00:01.234567"
 }
@@ -85,8 +91,9 @@ Emitted at the end of each hand.
 | `leader` | int | Player who led the first trick (0-3) |
 | `t0` | int | Tricks won by team 0 (players 0, 2) |
 | `t1` | int | Tricks won by team 1 (players 1, 3) |
-| `scores` | array\|null | Array of 4 scalar hand scores, one per player (schema v2) |
+| `scores` | array\|null | Array of 4 scalar hand scores, one per player (schema v2+) |
 | `features` | array | Array of 4 feature dicts, one per player |
+| `hands` | array\|null | Array of 4 hands, each card as `[suit, rank]` (schema v3+) |
 | `timestamp` | string | ISO 8601 timestamp |
 
 #### Feature Fields
@@ -98,6 +105,25 @@ Emitted at the end of each hand.
 | `offsuit_aces` | int | Number of non-trump aces (0-6) |
 | `high_offsuit` | int | Count of high non-trump cards |
 | `rank_sum` | int | Sum of card ranks |
+
+#### Hands Format (Schema v3+)
+
+The `hands` field contains the full dealt hands for all 4 players. Each hand is an array of 10 cards, where each card is represented as a 2-element array `[suit, rank]`:
+
+- **suit**: `"C"`, `"D"`, `"H"`, `"S"` (Clubs, Diamonds, Hearts, Spades)
+- **rank**: `"T"`, `"J"`, `"Q"`, `"K"`, `"A"` (Ten, Jack, Queen, King, Ace)
+
+Example:
+```json
+"hands": [
+  [["H","J"], ["H","K"], ["H","Q"], ...],  // Player 0 (10 cards)
+  [["C","J"], ["D","K"], ["S","A"], ...],  // Player 1 (10 cards)
+  [["H","A"], ["C","K"], ["D","Q"], ...],  // Player 2 (10 cards)
+  [["S","T"], ["C","A"], ["D","J"], ...]   // Player 3 (10 cards)
+]
+```
+
+This format matches the `plays` format used in `trick_end` events for consistency.
 
 ---
 
@@ -205,11 +231,20 @@ The `schema_version` field ensures backward compatibility:
 | Version | Changes |
 |---------|---------|
 | 1 | Initial schema |
+| 2 | Added `scores` field to `hand_end` events (4 scalar hand scores, one per player) |
+| 3 | Added `hands` field to `hand_end` events (full hand contents for each player) |
 
 When the schema changes:
 1. Bump `schema_version` in `game_logger.py`
 2. Document changes in this file
 3. Update consumers to handle multiple versions
+
+### Backward Compatibility
+
+- Schema v3 is backward compatible with v1 and v2
+- The `scores` field (v2+) is optional and may be `null`
+- The `hands` field (v3+) is optional and may be `null`
+- Older consumers can ignore fields they don't recognize
 
 ---
 

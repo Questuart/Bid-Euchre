@@ -21,7 +21,7 @@ class TestEndToEndSimulation:
         # Play one complete hand
         result = simulation.play_single_hand("suit", "H", strategy=BasicStrategy())
 
-        team0_tricks, team1_tricks, all_scores, all_features, initial_leader = result
+        team0_tricks, team1_tricks, all_scores, all_features, initial_leader, starting_hands = result
 
         # Basic validation
         assert isinstance(team0_tricks, int)
@@ -47,6 +47,13 @@ class TestEndToEndSimulation:
         for features in all_features:
             assert isinstance(features, dict)
             assert set(features.keys()) == expected_features
+
+        # Validate starting_hands
+        assert isinstance(starting_hands, list)
+        assert len(starting_hands) == 4
+        for hand in starting_hands:
+            assert isinstance(hand, list)
+            assert len(hand) == 10  # Each player gets 10 cards
 
     def test_experiment_script_workflow(self):
         """Test the complete experiment script workflow."""

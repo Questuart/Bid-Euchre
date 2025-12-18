@@ -1,0 +1,22 @@
+# Hand Evaluation Testing Configuration
+# Small run to test full 40+ feature logging
+
+experiment_name: hand_eval_test_greedy
+
+strategies:
+  - name: improved_greedy
+    class_name: ImprovedGreedyStrategy
+
+scenarios:
+  - contract_type: suit
+    trump_suit: H
+  - contract_type: suit
+    trump_suit: S
+  - contract_type: high
+  - contract_type: low
+
+parameters:
+  n_per: 50000  # 2500 hands per scenario = 10k total
+  seed: 43
+  log_level: hand  # Enable full hand logging with all features
+

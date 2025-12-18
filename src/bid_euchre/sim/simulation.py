@@ -30,7 +30,7 @@ def play_single_hand(
     deal_seed: Optional[int] = None,
     initial_leader: Optional[int] = None,
     rng: Optional[random.Random] = None,
-) -> Tuple[int, int, List[int], List[Dict[str, int]], int]:
+) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]]]:
     """
     Play one full 10-trick hand with the chosen bot.
 
@@ -40,13 +40,14 @@ def play_single_hand(
     deal_id: hand number for logging purposes
 
     Returns:
-        (team0_tricks, team1_tricks, all_player_scores, all_player_features, initial_leader)
+        (team0_tricks, team1_tricks, all_player_scores, all_player_features, initial_leader, starting_hands)
     where:
         - team 0 = players 0 and 2
         - team 1 = players 1 and 3
         - all_player_scores = list of 4 scalar hand scores (one per player)
         - all_player_features = list of 4 feature dicts (one per player)
         - initial_leader = player who led the first trick (0-3)
+        - starting_hands = list of 4 hands as dealt (list of Cards for each player)
     """
     if contract_type == "suit" and trump_suit is None:
         raise ValueError("trump_suit must be provided for 'suit' contracts")
@@ -164,7 +165,7 @@ def play_single_hand(
 
         leader = winner  # winner leads next trick
 
-    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader
+    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands
 
 
 def simulate_many_hands(
@@ -231,7 +232,7 @@ def simulate_many_hands(
     for deal_id in range(n):
         if deal_seed is not None:
             deal_hands_ = generate_deal(deal_seed, deal_id)
-            t0, t1, all_scores, all_feats, initial_leader = play_single_hand(
+            t0, t1, all_scores, all_feats, initial_leader, starting_hands = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -242,7 +243,7 @@ def simulate_many_hands(
                 deal_seed=deal_seed,
             )
         else:
-            t0, t1, all_scores, all_feats, initial_leader = play_single_hand(
+            t0, t1, all_scores, all_feats, initial_leader, starting_hands = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -264,6 +265,7 @@ def simulate_many_hands(
                 t1=t1,
                 features=all_feats,
                 scores=all_scores,
+                hands=starting_hands,
             )
         total0 += t0
         total1 += t1

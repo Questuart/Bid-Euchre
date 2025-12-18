@@ -27,7 +27,8 @@ from pathlib import Path
 
 # Current schema version - bump when fields change
 # v2 adds `scores` to hand_end records (one scalar score per player).
-SCHEMA_VERSION = 2
+# v3 adds `hands` to hand_end records (full hand contents for each player).
+SCHEMA_VERSION = 3
 
 
 class LogLevel(Enum):
@@ -53,6 +54,7 @@ class HandEndRecord:
     t1: int
     features: List[Dict[str, Any]]  # 4 feature dicts, one per player
     scores: Optional[List[int]]     # 4 scalar scores, one per player (schema v2)
+    hands: Optional[List[List[List[str]]]]  # 4 hands, each card as [suit, rank] (schema v3)
     timestamp: str
 
 
@@ -183,6 +185,7 @@ class GameLogger:
         t1: int,
         features: List[Dict[str, Any]],
         scores: Optional[List[int]] = None,
+        hands: Optional[List[List[Any]]] = None,
     ) -> None:
         """
         Log the completion of a hand.
@@ -196,9 +199,19 @@ class GameLogger:
             t0: Tricks won by team 0
             t1: Tricks won by team 1
             features: List of 4 feature dicts, one per player
+            scores: List of 4 scalar scores, one per player (schema v2+)
+            hands: List of 4 hands (each hand is a list of Cards) (schema v3+)
         """
         if not self.is_enabled:
             return
+        
+        # Convert Card objects to [suit, rank] lists for JSON serialization
+        hands_json: Optional[List[List[List[str]]]] = None
+        if hands is not None:
+            hands_json = [
+                [[card.suit, card.rank] for card in hand]
+                for hand in hands
+            ]
         
         record = HandEndRecord(
             schema_version=SCHEMA_VERSION,
@@ -214,6 +227,7 @@ class GameLogger:
             t1=t1,
             features=features,
             scores=scores,
+            hands=hands_json,
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))

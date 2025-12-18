@@ -51,6 +51,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from experiments.generate_dashboard import plot_dashboard
 from experiments.generate_paired_comparison import plot_paired_comparison
 from experiments.generate_head_to_head_report import plot_head_to_head_report
+from experiments.generate_health_dashboard import generate_health_dashboard
+from experiments.generate_trick_strategy_dashboard import generate_trick_strategy_dashboard
+from experiments.generate_hand_eval_dashboard import generate_hand_eval_dashboard
 from bid_euchre.reporting import get_report_paths, ensure_dir
 
 
@@ -83,8 +86,13 @@ def detect_mode(meta: Dict) -> str:
         return mode
     
     # Fallback: infer from structure
-    if len(meta["strategies"]) > 1:
-        return "head_to_head"
+    if "matchups" in meta:
+        return "head_to_head_matrix"
+    elif "strategies" in meta:
+        if len(meta["strategies"]) > 1:
+            return "head_to_head"
+        else:
+            return "self_play"
     else:
         return "self_play"
 
@@ -104,12 +112,28 @@ def main():
     # Detect mode
     mode = detect_mode(meta)
     
+    # Extract strategies (handle both strategies and matchups)
+    if "strategies" in meta:
+        strategies = meta["strategies"]
+    elif "matchups" in meta:
+        # Extract unique strategies from matchups
+        strategies_set = set()
+        for matchup in meta["matchups"]:
+            strategies_set.add(matchup["team0"])
+            strategies_set.add(matchup["team1"])
+        strategies = sorted(list(strategies_set))
+    else:
+        strategies = []
+    
     print("=" * 70)
     print(f"🎯 Generating All Reports")
     print("=" * 70)
     print(f"Run: {meta['run_id']}")
     print(f"Mode: {mode}")
-    print(f"Strategies: {', '.join(meta['strategies'])}")
+    if strategies:
+        print(f"Strategies: {', '.join(strategies)}")
+    if "matchups" in meta:
+        print(f"Matchups: {len(meta['matchups'])}")
     print(f"Scenarios: {len(meta['scenarios'])}")
     print(f"Total hands: {meta['total_hands']:,}")
     print(f"Common deals: {meta.get('common_deals', False)}")
@@ -119,7 +143,6 @@ def main():
     logs_dir = os.path.join(args.run_dir, "logs")
     has_logs = os.path.exists(logs_dir) and len(glob(os.path.join(logs_dir, "*.jsonl"))) > 0
     
-    strategies = meta["strategies"]
     seed = meta.get("seed", 42)
     
     # Track what was generated
@@ -130,7 +153,41 @@ def main():
     }
     
     # =======================================================================
-    # 1. Generate individual strategy dashboards (if logs available)
+    # 1. Generate health dashboard (data quality checks)
+    # =======================================================================
+    
+    print("\n🏥 Generating health dashboard...")
+    try:
+        latest_png = generate_health_dashboard(args.run_dir)
+        print(f"   ✅ Health dashboard")
+        manifest["reports"].append({
+            "type": "health",
+            "path": os.path.relpath(latest_png, args.run_dir),
+        })
+    except Exception as e:
+        print(f"   ⚠️  Failed to generate health dashboard: {e}")
+    
+    # =======================================================================
+    # 2. Generate hand evaluation dashboard (if logs available)
+    # =======================================================================
+    
+    if has_logs:
+        print("\n📊 Generating hand evaluation dashboard...")
+        try:
+            latest_png = generate_hand_eval_dashboard(args.run_dir)
+            if latest_png:
+                print(f"   ✅ Hand evaluation dashboard")
+                manifest["reports"].append({
+                    "type": "hand_eval",
+                    "path": os.path.relpath(latest_png, args.run_dir),
+                })
+        except Exception as e:
+            print(f"   ⚠️  Failed to generate hand evaluation dashboard: {e}")
+    else:
+        print("\n⚠️  Skipping hand evaluation dashboard (no JSONL logs found)")
+    
+    # =======================================================================
+    # 3. Generate individual strategy dashboards (if logs available)
     # =======================================================================
     
     if has_logs and mode != "head_to_head_matrix":
@@ -158,7 +215,7 @@ def main():
             print("\n⚠️  Skipping dashboards (head_to_head_matrix mode)")
     
     # =======================================================================
-    # 2. Generate paired comparison (if multiple strategies with common deals)
+    # 4. Generate paired comparison (if multiple strategies with common deals)
     # =======================================================================
     
     if mode == "head_to_head" and len(strategies) > 1 and meta.get("common_deals", False):
@@ -186,7 +243,7 @@ def main():
             print(f"\n⚠️  Skipping paired comparison (mode={mode})")
     
     # =======================================================================
-    # 3. Generate head-to-head matrix (if head_to_head_matrix mode)
+    # 5. Generate head-to-head matrix (if head_to_head_matrix mode)
     # =======================================================================
     
     if mode == "head_to_head_matrix":
@@ -200,9 +257,25 @@ def main():
             })
         except Exception as e:
             print(f"   ❌ Failed to generate head-to-head report: {e}")
+        
+        # Generate trick strategy dashboard (consolidated view)
+        print("\n📊 Generating trick strategy dashboard...")
+        try:
+            latest_png = generate_trick_strategy_dashboard(
+                run_dir=args.run_dir,
+                baseline=args.baseline
+            )
+            print(f"   ✅ Trick strategy dashboard")
+            manifest["reports"].append({
+                "type": "trick_strategy",
+                "baseline": args.baseline,
+                "path": os.path.relpath(latest_png, args.run_dir),
+            })
+        except Exception as e:
+            print(f"   ⚠️  Failed to generate trick strategy dashboard: {e}")
     
     # =======================================================================
-    # 4. Generate overall summary markdown
+    # 7. Generate overall summary markdown
     # =======================================================================
     
     print("\n📝 Generating overall summary...")
@@ -210,7 +283,7 @@ def main():
     print(f"   ✅ summary.md")
     
     # =======================================================================
-    # 5. Write manifest
+    # 8. Write manifest
     # =======================================================================
     
     paths = get_report_paths(args.run_dir)
@@ -249,10 +322,25 @@ def generate_overall_summary(run_dir: str, meta: Dict, manifest: Dict, mode: str
     lines.append(f"- **Leader Randomized**: {meta.get('leader_randomized', True)}\n")
     lines.append(f"- **Log Level**: {meta.get('log_level', 'none')}\n\n")
     
-    lines.append("## Strategies\n\n")
-    for strategy in meta['strategies']:
-        lines.append(f"- `{strategy}`\n")
-    lines.append("\n")
+    # Handle both strategies and matchups formats
+    if "strategies" in meta:
+        lines.append("## Strategies\n\n")
+        for strategy in meta['strategies']:
+            lines.append(f"- `{strategy}`\n")
+        lines.append("\n")
+    elif "matchups" in meta:
+        # Extract unique strategies from matchups
+        strategies_set = set()
+        for matchup in meta["matchups"]:
+            strategies_set.add(matchup["team0"])
+            strategies_set.add(matchup["team1"])
+        lines.append("## Strategies\n\n")
+        for strategy in sorted(strategies_set):
+            lines.append(f"- `{strategy}`\n")
+        lines.append("\n")
+        
+        lines.append(f"## Matchups\n\n")
+        lines.append(f"Total matchups: {len(meta['matchups'])}\n\n")
     
     lines.append("## Scenarios\n\n")
     for scenario in meta['scenarios']:
@@ -273,20 +361,38 @@ def generate_overall_summary(run_dir: str, meta: Dict, manifest: Dict, mode: str
         lines.append(f"- **Overall Throughput**: {perf['overall_throughput_hands_per_sec']:.0f} hands/sec\n\n")
         
         lines.append("### Per-Scenario Performance\n\n")
-        lines.append("| Strategy | Scenario | Duration | Hands/sec |\n")
-        lines.append("|----------|----------|----------|----------|\n")
-        for metric in perf['by_scenario'][:10]:  # Show first 10
-            lines.append(
-                f"| {metric['strategy']} | {metric['scenario']} | "
-                f"{metric['duration_sec']:.1f}s | {metric['hands_per_sec']:.0f} |\n"
-            )
+        # Handle both strategy and matchup formats
+        if perf['by_scenario'] and 'strategy' in perf['by_scenario'][0]:
+            lines.append("| Strategy | Scenario | Duration | Hands/sec |\n")
+            lines.append("|----------|----------|----------|----------|\n")
+            for metric in perf['by_scenario'][:10]:  # Show first 10
+                lines.append(
+                    f"| {metric['strategy']} | {metric['scenario']} | "
+                    f"{metric['duration_sec']:.1f}s | {metric['hands_per_sec']:.0f} |\n"
+                )
+        elif perf['by_scenario'] and 'matchup' in perf['by_scenario'][0]:
+            lines.append("| Matchup | Scenario | Duration | Hands/sec |\n")
+            lines.append("|---------|----------|----------|----------|\n")
+            for metric in perf['by_scenario'][:10]:  # Show first 10
+                lines.append(
+                    f"| {metric['matchup']} | {metric['scenario']} | "
+                    f"{metric['duration_sec']:.1f}s | {metric['hands_per_sec']:.0f} |\n"
+                )
         if len(perf['by_scenario']) > 10:
             lines.append(f"| ... | ... | ... | ... |\n")
         lines.append("\n")
     
     lines.append("## Generated Reports\n\n")
     for report in manifest["reports"]:
-        if report["type"] == "dashboard":
+        if report["type"] == "health":
+            lines.append(f"### Health Dashboard\n\n")
+            lines.append(f"Data quality and sanity checks\n\n")
+            lines.append(f"- `{report['path']}`\n\n")
+        elif report["type"] == "hand_eval":
+            lines.append(f"### Hand Evaluation Dashboard\n\n")
+            lines.append(f"Feature analysis and hand scoring calibration\n\n")
+            lines.append(f"- `{report['path']}`\n\n")
+        elif report["type"] == "dashboard":
             lines.append(f"### Strategy Dashboard: {report['strategy']}\n\n")
             lines.append(f"- `{report['path']}`\n\n")
         elif report["type"] == "paired":
@@ -295,16 +401,25 @@ def generate_overall_summary(run_dir: str, meta: Dict, manifest: Dict, mode: str
         elif report["type"] == "head_to_head":
             lines.append(f"### Head-to-Head Matrix\n\n")
             lines.append(f"- `{report['path']}`\n\n")
+        elif report["type"] == "trick_strategy":
+            lines.append(f"### Trick Strategy Dashboard (baseline: {report['baseline']})\n\n")
+            lines.append(f"Consolidated strategy performance analysis\n\n")
+            lines.append(f"- `{report['path']}`\n\n")
     
     lines.append("## Quick View\n\n")
     lines.append("```bash\n")
     lines.append(f"# View latest reports\n")
+    lines.append(f"open {run_dir}/reports/health/health_dashboard.png\n")
+    # Check if hand eval dashboard exists
+    if os.path.exists(os.path.join(run_dir, "reports/bidding_strategy/hand_eval_dashboard.png")):
+        lines.append(f"open {run_dir}/reports/bidding_strategy/hand_eval_dashboard.png\n")
     if mode != "head_to_head_matrix":
         lines.append(f"open {run_dir}/reports/dashboards/*/dashboard.png\n")
     if mode == "head_to_head":
         lines.append(f"open {run_dir}/reports/paired/paired_comparison.png\n")
     if mode == "head_to_head_matrix":
         lines.append(f"open {run_dir}/reports/head_to_head/comparison_matrix.png\n")
+        lines.append(f"open {run_dir}/reports/trick_strategy/comprehensive_dashboard.png\n")
     lines.append("```\n")
     
     with open(paths.summary_md, "w") as f:

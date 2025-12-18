@@ -1,0 +1,29 @@
+# random v random experiment configuration
+
+experiment_name: prelim_hand_eval
+
+parameters:
+  n_per: 50000
+  seed: 42
+  log_level: hand
+  mode: head_to_head_matrix
+
+strategies:
+  - name: random_legal
+    class_name: RandomLegalStrategy
+
+  - name: improved_greedy
+    class_name: ImprovedGreedyStrategy
+
+matchups:
+  - team0: random_legal
+    team1: random_legal
+
+  - team0: improved_greedy
+    team1: improved_greedy
+
+scenarios:
+  - contract_type: suit
+    trump_suit: C,D,H,S
+  - contract_type: high
+  - contract_type: low

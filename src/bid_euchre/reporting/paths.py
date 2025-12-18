@@ -21,36 +21,63 @@ class ReportPaths:
     Standardized paths for a report generation run.
     
     Structure:
-        <run_dir>/reports/
-        ├── dashboards/<strategy>/
-        │   ├── dashboard.png           # Latest
-        │   ├── plots/                  # Latest
-        │   └── _history/<timestamp>/   # Archive
-        ├── paired/
-        │   ├── paired_comparison.png   # Latest
-        │   ├── summary.md
-        │   └── _history/<timestamp>/
-        ├── head_to_head/
-        │   ├── comparison_matrix.png   # Latest
-        │   ├── summary.md
-        │   ├── matchups/               # Latest per-matchup plots
-        │   └── _history/<timestamp>/
-        ├── summary.md                  # Overall summary
-        └── manifest.json               # What was generated
+        <run_dir>/
+        ├── raw/                        # Raw simulation data
+        │   ├── logs/                   # JSONL logs
+        │   └── results/                # JSON results
+        └── reports/
+            ├── health/                 # Data quality & sanity checks
+            │   ├── health_dashboard.png
+            │   ├── summary.md
+            │   ├── plots/
+            │   └── _history/<timestamp>/
+            ├── trick_strategy/         # Strategy performance analysis
+            │   ├── paired/
+            │   ├── head_to_head/
+            │   └── _history/<timestamp>/
+            ├── bidding_strategy/       # Hand evaluation & bidding
+            │   └── README.md (placeholder)
+            ├── dashboards/<strategy>/  # DEPRECATED: Legacy location
+            │   ├── dashboard.png
+            │   ├── plots/
+            │   └── _history/<timestamp>/
+            ├── paired/                 # DEPRECATED: Legacy location
+            ├── head_to_head/           # DEPRECATED: Legacy location
+            ├── summary.md
+            └── manifest.json
     """
     run_dir: str
     timestamp: str
     reports_root: str
     
-    # Dashboard paths
+    # Raw data paths (with backward compatibility)
+    raw_root: str
+    logs_dir: str
+    results_dir: str
+    
+    # Health dashboard paths
+    health_root: str
+    health_archive: str
+    health_plots: str
+    
+    # Trick strategy paths
+    trick_strategy_root: str
+    trick_strategy_archive: str
+    trick_strategy_paired: str
+    trick_strategy_h2h: str
+    
+    # Bidding strategy paths
+    bidding_strategy_root: str
+    
+    # Legacy dashboard paths (for backward compatibility)
     dashboards_root: str
     dashboards_archive: str
     
-    # Paired comparison paths
+    # Legacy paired comparison paths
     paired_root: str
     paired_archive: str
     
-    # Head-to-head paths
+    # Legacy head-to-head paths
     h2h_root: str
     h2h_archive: str
     h2h_matchups: str
@@ -75,21 +102,50 @@ def get_report_paths(run_dir: str, timestamp: Optional[str] = None) -> ReportPat
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     reports_root = os.path.join(run_dir, "reports")
+    raw_root = os.path.join(run_dir, "raw")
+    
+    # Backward compatibility: check if raw/ exists, otherwise use legacy locations
+    if os.path.exists(raw_root):
+        logs_dir = os.path.join(raw_root, "logs")
+        results_dir = os.path.join(raw_root, "results")
+    else:
+        # Legacy locations (directly under run_dir)
+        logs_dir = os.path.join(run_dir, "logs")
+        results_dir = os.path.join(run_dir, "results")
     
     return ReportPaths(
         run_dir=run_dir,
         timestamp=timestamp,
         reports_root=reports_root,
         
-        # Dashboard paths
+        # Raw data paths
+        raw_root=raw_root,
+        logs_dir=logs_dir,
+        results_dir=results_dir,
+        
+        # Health dashboard paths
+        health_root=os.path.join(reports_root, "health"),
+        health_archive=os.path.join(reports_root, "_history", "health", timestamp),
+        health_plots=os.path.join(reports_root, "health", "plots"),
+        
+        # Trick strategy paths
+        trick_strategy_root=os.path.join(reports_root, "trick_strategy"),
+        trick_strategy_archive=os.path.join(reports_root, "_history", "trick_strategy", timestamp),
+        trick_strategy_paired=os.path.join(reports_root, "trick_strategy", "paired"),
+        trick_strategy_h2h=os.path.join(reports_root, "trick_strategy", "head_to_head"),
+        
+        # Bidding strategy paths
+        bidding_strategy_root=os.path.join(reports_root, "bidding_strategy"),
+        
+        # Legacy dashboard paths (for backward compatibility)
         dashboards_root=os.path.join(reports_root, "dashboards"),
         dashboards_archive=os.path.join(reports_root, "_history", "dashboards", timestamp),
         
-        # Paired comparison paths
+        # Legacy paired comparison paths
         paired_root=os.path.join(reports_root, "paired"),
         paired_archive=os.path.join(reports_root, "_history", "paired", timestamp),
         
-        # Head-to-head paths
+        # Legacy head-to-head paths
         h2h_root=os.path.join(reports_root, "head_to_head"),
         h2h_archive=os.path.join(reports_root, "_history", "head_to_head", timestamp),
         h2h_matchups=os.path.join(reports_root, "head_to_head", "matchups"),
@@ -157,4 +213,21 @@ def dashboard_paths(
     latest_txt = os.path.join(latest_dir, "latest.txt")
     
     return archive_dir, latest_dir, latest_txt
+
+
+def get_data_paths(run_dir: str) -> Tuple[str, str]:
+    """
+    Get data paths with backward compatibility.
+    
+    Returns logs and results directories, checking both new (raw/) and legacy
+    locations.
+    
+    Args:
+        run_dir: Base run directory
+    
+    Returns:
+        (logs_dir, results_dir)
+    """
+    paths = get_report_paths(run_dir)
+    return paths.logs_dir, paths.results_dir
 
