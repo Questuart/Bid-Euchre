@@ -615,6 +615,53 @@ class TestScoringFunctions:
 
 
 # ============================================================================
+# Test: Hand Value Feature
+# ============================================================================
+
+class TestHandValueFeature:
+    """Test the hand_value feature added for OLSa HV."""
+    
+    def test_hand_value_suit(self):
+        """Verify suit weighting logic (Bowers=120/110, Trump A=100, Offsuit A=50)."""
+        hand = [
+            Card("H", "J"),  # Right Bower: 120
+            Card("D", "J"),  # Left Bower: 110
+            Card("H", "A"),  # Trump Ace: 100
+            Card("C", "A"),  # Offsuit Ace: 50
+            Card("S", "T"),  # Offsuit Ten: 10
+        ]
+        features = get_hand_features(hand, contract_type="suit", trump_suit="H")
+        # 120 + 110 + 100 + 50 + 10 = 390
+        assert features["hand_value"] == 390
+
+    def test_hand_value_high(self):
+        """Verify high weighting logic (A=50, K=40, Q=30, J=20, T=10)."""
+        hand = [
+            Card("H", "A"),  # 50
+            Card("D", "K"),  # 40
+            Card("C", "Q"),  # 30
+            Card("S", "J"),  # 20
+            Card("H", "T"),  # 10
+        ]
+        features = get_hand_features(hand, contract_type="high", trump_suit=None)
+        # 50 + 40 + 30 + 20 + 10 = 150
+        assert features["hand_value"] == 150
+
+    def test_hand_value_low(self):
+        """Verify low weighting logic uses fixed weights (A=50, T=10) as requested."""
+        hand = [
+            Card("H", "A"),  # 50 (bad in low, but requested fixed weights)
+            Card("D", "K"),  # 40
+            Card("C", "Q"),  # 30
+            Card("S", "J"),  # 20
+            Card("H", "T"),  # 10 (good in low, but requested fixed weights)
+        ]
+        features = get_hand_features(hand, contract_type="low", trump_suit=None)
+        # 50 + 40 + 30 + 20 + 10 = 150
+        assert features["hand_value"] == 150
+
+
+# ============================================================================
 # Test: Feature Completeness
 # ============================================================================
 

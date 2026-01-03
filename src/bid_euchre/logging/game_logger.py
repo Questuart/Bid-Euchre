@@ -28,7 +28,8 @@ from pathlib import Path
 # Current schema version - bump when fields change
 # v2 adds `scores` to hand_end records (one scalar score per player).
 # v3 adds `hands` to hand_end records (full hand contents for each player).
-SCHEMA_VERSION = 3
+# v4 adds `winning_bid` to hand_end records.
+SCHEMA_VERSION = 4
 
 
 class LogLevel(Enum):
@@ -55,7 +56,8 @@ class HandEndRecord:
     features: List[Dict[str, Any]]  # 4 feature dicts, one per player
     scores: Optional[List[int]]     # 4 scalar scores, one per player (schema v2)
     hands: Optional[List[List[List[str]]]]  # 4 hands, each card as [suit, rank] (schema v3)
-    timestamp: str
+    winning_bid: Optional[int] = None      # The high bid for this hand (schema v4)
+    timestamp: str = ""
 
 
 @dataclass
@@ -186,6 +188,7 @@ class GameLogger:
         features: List[Dict[str, Any]],
         scores: Optional[List[int]] = None,
         hands: Optional[List[List[Any]]] = None,
+        winning_bid: Optional[int] = None,
     ) -> None:
         """
         Log the completion of a hand.
@@ -201,6 +204,7 @@ class GameLogger:
             features: List of 4 feature dicts, one per player
             scores: List of 4 scalar scores, one per player (schema v2+)
             hands: List of 4 hands (each hand is a list of Cards) (schema v3+)
+            winning_bid: The high bid for this hand (schema v4+)
         """
         if not self.is_enabled:
             return
@@ -228,6 +232,7 @@ class GameLogger:
             features=features,
             scores=scores,
             hands=hands_json,
+            winning_bid=winning_bid,
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))

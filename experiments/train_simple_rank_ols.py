@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
 """
-Train baseline OLS regression models for trick prediction.
+Train "Simple Rank" OLS regression models (OLSa SR).
+These models use only the 'rank_sum' feature as a baseline.
 
 Usage:
-    python experiments/train_baseline_regression.py
+    python experiments/train_simple_rank_ols.py
 """
 
 import json
 import numpy as np
 import pickle
 import os
-from bid_euchre.analysis.models import SimpleOLS
 
 # Paths
 GREEDY_TRAIN = "data/runs/hand_eval_test_greedy_42_20251217_200200/splits/hand_eval_test_42_20251217_200200_improved_greedy.train.jsonl"
 GREEDY_VAL = "data/runs/hand_eval_test_greedy_42_20251217_200200/splits/hand_eval_test_42_20251217_200200_improved_greedy.val.jsonl"
 GREEDY_TEST = "data/runs/hand_eval_test_greedy_42_20251217_200200/splits/hand_eval_test_42_20251217_200200_improved_greedy.test.jsonl"
 
-OUTPUT_DIR = "data/models/baseline_regression"
+OUTPUT_DIR = "data/models/simple_rank_ols"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Feature specifications
 FEATURES = {
-    # Updated SUIT baseline: split bowers into RB/LB
-    'suit': ['trump_count', 'trump_rb_count', 'trump_lb_count', 'offsuit_aces'],
-    'high': ['offsuit_aces'],
-    'low': ['offsuit_tens_count']
+    'suit': ['rank_sum'],
+    'high': ['rank_sum'],
+    'low': ['rank_sum']
 }
 
 def load_data(jsonl_path, contract_type, feature_names):
@@ -78,6 +77,7 @@ def r2_score(y_true, y_pred):
     """Calculate R² score."""
     ss_res = np.sum((y_true - y_pred) ** 2)
     ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    if ss_tot == 0: return 0.0
     return 1 - (ss_res / ss_tot)
 
 def mean_absolute_error(y_true, y_pred):
@@ -88,10 +88,35 @@ def mean_squared_error(y_true, y_pred):
     """Calculate MSE."""
     return np.mean((y_true - y_pred) ** 2)
 
+class SimpleOLS:
+    """Simple OLS regression using numpy."""
+    def __init__(self):
+        self.coef_ = None
+        self.intercept_ = None
+    
+    def fit(self, X, y):
+        """Fit OLS using normal equation."""
+        # Add intercept column
+        X_with_intercept = np.column_stack([np.ones(len(X)), X])
+        
+        # Normal equation: beta = (X'X)^-1 X'y
+        XtX = X_with_intercept.T @ X_with_intercept
+        Xty = X_with_intercept.T @ y
+        beta = np.linalg.solve(XtX, Xty)
+        
+        self.intercept_ = beta[0]
+        self.coef_ = beta[1:]
+        
+        return self
+    
+    def predict(self, X):
+        """Make predictions."""
+        return X @ self.coef_ + self.intercept_
+
 def train_and_evaluate(contract_type, feature_names):
     """Train OLS model for a contract type."""
     print(f"\n{'='*80}")
-    print(f"Training: baseline_regression_{contract_type}")
+    print(f"Training: olsa_sr_{contract_type} (Simple Rank)")
     print(f"Features: {', '.join(feature_names)}")
     print('='*80)
     
@@ -147,7 +172,7 @@ def train_and_evaluate(contract_type, feature_names):
         print(f"  {fname:<30} {coef:+.4f}")
     
     # Save model
-    model_path = os.path.join(OUTPUT_DIR, f"baseline_regression_{contract_type}.pkl")
+    model_path = os.path.join(OUTPUT_DIR, f"olsa_sr_{contract_type}.pkl")
     with open(model_path, 'wb') as f:
         pickle.dump({
             'model': model,
@@ -172,12 +197,8 @@ def train_and_evaluate(contract_type, feature_names):
 
 def main():
     print("=" * 80)
-    print("BASELINE OLS REGRESSION MODELS")
+    print("SIMPLE RANK OLS REGRESSION MODELS (OLSa SR)")
     print("=" * 80)
-    print("\nTraining 3 models:")
-    print("  • baseline_regression_suit (4 features)")
-    print("  • baseline_regression_high (1 feature)")
-    print("  • baseline_regression_low  (1 feature)")
     
     results = []
     for contract_type, feature_names in FEATURES.items():
@@ -187,24 +208,20 @@ def main():
     
     # Summary
     print("\n" + "=" * 80)
-    print("SUMMARY - ALL MODELS")
+    print("SUMMARY - ALL SIMPLE RANK MODELS")
     print("=" * 80)
     print(f"\n{'Model':<25} {'Features':<15} {'Train R²':<12} {'Val R²':<12} {'Test R²':<12} {'Test MAE':<12}")
     print("-" * 80)
     
     for r in results:
-        model_name = f"baseline_{r['contract_type']}"
+        model_name = f"olsa_sr_{r['contract_type']}"
         n_feat = r['n_features']
         print(f"{model_name:<25} {n_feat:<15} {r['train_r2']:<12.4f} {r['val_r2']:<12.4f} {r['test_r2']:<12.4f} {r['test_mae']:<12.4f}")
     
     print("\n" + "=" * 80)
-    print("✅ All baseline models trained!")
+    print("✅ All simple rank models trained!")
     print("=" * 80)
     print(f"\nModels saved to: {OUTPUT_DIR}/")
-    print("\nNext steps:")
-    print("  1. Compare these to dummy baseline (always predict 5.0)")
-    print("  2. Try multi-feature models to see if R² improves")
-    print("  3. Try Ridge regression if overfitting detected")
 
 if __name__ == "__main__":
     main()

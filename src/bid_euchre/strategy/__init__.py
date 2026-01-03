@@ -29,6 +29,9 @@ from .greedy import (
     choose_card_greedy,
 )
 
+# Regression strategies
+from .regression import RegressionBidder
+
 __all__ = [
     # Base
     "Strategy",
@@ -41,6 +44,8 @@ __all__ = [
     # Greedy
     "GreedyStrategy",
     "ImprovedGreedyStrategy",
+    # Regression
+    "RegressionBidder",
     # Legacy functions
     "choose_card_basic",
     "choose_card_greedy",

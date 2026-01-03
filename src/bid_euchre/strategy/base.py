@@ -43,6 +43,31 @@ class Strategy(ABC):
         """
         pass
 
+    def decide_bid(
+        self,
+        hand: List[Card],
+        current_high_bid: int,
+        current_winner_index: Optional[int],
+        partner_index: int,
+        player_index: int,
+    ) -> Tuple[int, Optional[str], Optional[str]]:
+        """
+        Decide how many tricks to bid and for which contract.
+
+        Args:
+            hand: List of cards in player's hand
+            current_high_bid: The current highest bid so far
+            current_winner_index: Index of player who holds the high bid
+            partner_index: Index of this player's partner
+            player_index: Index of this player (0-3)
+
+        Returns:
+            Tuple of (bid_amount, contract_type, trump_suit)
+            If bid_amount <= current_high_bid, it's treated as a PASS.
+        """
+        # Default: Always pass
+        return 0, None, None
+
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"
 

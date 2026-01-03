@@ -10,29 +10,57 @@ This document summarizes the complete regression modeling exercise for predictin
 
 | Model | Features | SUIT R² | HIGH R² | LOW R² | Avg MAE | Complexity |
 |-------|----------|---------|---------|--------|---------|------------|
-| **Baseline OLS** | 1-3 | 0.2123 | 0.1936 | 0.2056 | 1.42 | ✅ Simple |
-| **Expanded OLS** | 5-6 | 0.2180 | 0.1969 | 0.2098 | 1.42 | ⚠️ Medium |
-| **Ridge** | 5-6 | 0.2180 | 0.1969 | 0.2098 | 1.42 | ⚠️ Medium |
+| **Simple Rank** | 1 | 0.0161 | 0.1159 | 0.1216 | 1.49 | ✅✅ Simplest |
+| **Baseline OLS** | 1-4 | 0.2207 | 0.1936 | 0.2056 | 1.42 | ✅ Simple |
+| **Expanded OLS** | 5-6 | 0.2220 | 0.1969 | 0.2098 | 1.42 | ⚠️ Medium |
+| **Ridge** | 5-6 | 0.2220 | 0.1969 | 0.2098 | 1.42 | ⚠️ Medium |
 
 ### Key Finding: **All models achieve similar performance!**
+
+---
+
+## 🎯 Simple Rank (OLSa SR)
+
+**Features:**
+- ALL (1): `rank_sum` (Sum of raw ranks of all 10 cards)
+
+**Performance:**
+- SUIT Test R²: 0.0161 (Virtually no predictive power)
+- HIGH Test R²: 0.1159 (Weak but significant)
+- LOW Test R²: 0.1216 (Weak but significant)
+- Test MAE: 1.41-1.64 tricks
+
+**Formula (High):**
+```
+tricks = 0.0873 + 0.1638×rank_sum
+```
+
+**Pros:**
+- ✅ Simplest possible baseline
+- ✅ Proves that "High Card Points" matter, but aren't everything
+- ✅ Highlights the difference between Suit and No-Trump contracts
+
+**Cons:**
+- ❌ Fails miserably on Suit contracts (missing trump/bower context)
+- ❌ R² is ~50% lower than Baseline OLS in High/Low
 
 ---
 
 ## 🎯 Baseline OLS (Recommended)
 
 **Features:**
-- SUIT (3): `bowers`, `trump_count`, `offsuit_aces`
+- SUIT (4): `trump_count`, `trump_rb_count`, `trump_lb_count`, `offsuit_aces`
 - HIGH (1): `offsuit_aces`
 - LOW (1): `offsuit_tens_count`
 
 **Performance:**
-- Test R²: 0.19-0.21
+- Test R²: 0.19-0.22
 - Test MAE: 1.35-1.46 tricks
 - Win rate: 60.8% (vs 59.9% dummy baseline)
 
 **Formulas:**
 ```
-SUIT:  tricks = 2.13 + 0.50×bowers + 0.49×trump_count + 0.60×offsuit_aces
+SUIT:  tricks = 2.13 + 0.49×trump_count + 0.71×trump_rb_count + 0.29×trump_lb_count + 0.60×offsuit_aces
 HIGH:  tricks = 3.47 + 0.77×offsuit_aces
 LOW:   tricks = 3.49 + 0.76×offsuit_tens_count
 ```
@@ -203,7 +231,12 @@ Trade-off: Complexity and interpretability vs. performance gain
 
 **Location:** `data/models/`
 
-1. **Baseline OLS** (recommended):
+1. **Simple Rank OLS** (OLSa SR):
+   - `simple_rank_ols/olsa_sr_suit.pkl`
+   - `simple_rank_ols/olsa_sr_high.pkl`
+   - `simple_rank_ols/olsa_sr_low.pkl`
+
+2. **Baseline OLS** (recommended):
    - `baseline_regression/baseline_regression_suit.pkl`
    - `baseline_regression/baseline_regression_high.pkl`
    - `baseline_regression/baseline_regression_low.pkl`
@@ -222,6 +255,7 @@ Trade-off: Complexity and interpretability vs. performance gain
 
 ## 📊 Evaluation Scripts
 
+- `experiments/train_simple_rank_ols.py` - Train simple rank OLS
 - `experiments/train_baseline_regression.py` - Train baseline OLS
 - `experiments/train_expanded_ols.py` - Train expanded OLS
 - `experiments/train_ridge_regression.py` - Train Ridge with CV

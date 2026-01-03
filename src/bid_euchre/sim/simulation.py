@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def play_single_hand(
-    contract_type: str,
+    contract_type: Optional[str],
     trump_suit: Optional[str] = None,
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
@@ -30,32 +30,14 @@ def play_single_hand(
     deal_seed: Optional[int] = None,
     initial_leader: Optional[int] = None,
     rng: Optional[random.Random] = None,
-) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]]]:
+) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int]]:
     """
-    Play one full 10-trick hand with the chosen bot.
-
-    contract_type: "suit", "high", or "low"
-    trump_suit: required for "suit", must be None for "high"/"low"
-    logger: optional GameLogger for structured logging
-    deal_id: hand number for logging purposes
-
-    Returns:
-        (team0_tricks, team1_tricks, all_player_scores, all_player_features, initial_leader, starting_hands)
-    where:
-        - team 0 = players 0 and 2
-        - team 1 = players 1 and 3
-        - all_player_scores = list of 4 scalar hand scores (one per player)
-        - all_player_features = list of 4 feature dicts (one per player)
-        - initial_leader = player who led the first trick (0-3)
-        - starting_hands = list of 4 hands as dealt (list of Cards for each player)
+    Play one full 10-trick hand.
+    
+    If contract_type is None, a bidding phase is conducted first.
+    The winner of the bid chooses the contract and leads the first trick.
     """
-    if contract_type == "suit" and trump_suit is None:
-        raise ValueError("trump_suit must be provided for 'suit' contracts")
-    if contract_type in ("high", "low") and trump_suit is not None:
-        raise ValueError("trump_suit must be None for 'high'/'low' contracts")
-
     # Resolve strategy-per-seat.
-    # Backwards compatible: if `strategies` is None, use `strategy` for all seats.
     if strategies is not None:
         if len(strategies) != 4:
             raise ValueError(f"`strategies` must have length 4 (got {len(strategies)})")
@@ -66,18 +48,82 @@ def play_single_hand(
         seat_strategies = [strategy, strategy, strategy, strategy]
 
     if hands is None:
-        # Random deal using provided RNG (or global if None)
         deck: List[Card] = create_deck()
         shuffle_deck(deck, rng=rng)
         hands = deal_hands(deck, num_players=4, hand_size=10)
     else:
-        # Defensive copy: we mutate hands during play
         hands = [list(h) for h in hands]
 
-    # Copy starting hands for scoring (since we mutate hands as we play)
     starting_hands = [list(h) for h in hands]
-    
-    # Extract features for ALL 4 players (removes measurement anchoring)
+
+    # BIDDING PHASE
+    bidding_data = None
+    if contract_type is None:
+        # Determine dealer
+        if initial_leader is not None:
+            dealer_index = (initial_leader - 1) % 4
+        else:
+            if rng is not None:
+                dealer_index = rng.randrange(4)
+            else:
+                dealer_index = random.randrange(4)
+        
+        current_high_bid = 0
+        winning_bidder = None
+        final_contract = None
+        final_trump = None
+        
+        # Bidding order: LOD, Partner of LOD, ROD, Dealer
+        for i in range(1, 5):
+            player_idx = (dealer_index + i) % 4
+            partner_idx = (player_idx + 2) % 4
+            strat = seat_strategies[player_idx]
+            
+            bid, ctype, trump = strat.decide_bid(
+                hand=starting_hands[player_idx],
+                current_high_bid=current_high_bid,
+                current_winner_index=winning_bidder,
+                partner_index=partner_idx,
+                player_index=player_idx
+            )
+            
+            # Dealer-partner pass rule: dealer passes if partner has the high bid
+            if player_idx == dealer_index and winning_bidder == partner_idx:
+                continue
+                
+            if bid > current_high_bid:
+                current_high_bid = bid
+                winning_bidder = player_idx
+                final_contract = ctype
+                final_trump = trump
+        
+        if winning_bidder is None:
+            # Misdeal: everyone passed
+            # Return zeros but still need scores/features (use dummy contract for logging)
+            # Actually, let's just use 'high' as a dummy for feature extraction in misdeals
+            dummy_ctype = "high"
+            all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
+            all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
+            return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0
+            
+        contract_type = final_contract
+        trump_suit = final_trump
+        initial_leader = winning_bidder
+        bidding_data = {
+            "winner": winning_bidder,
+            "bid": current_high_bid,
+            "contract": contract_type,
+            "trump": trump_suit
+        }
+    else:
+        # Contract was fixed, no bid was made
+        current_high_bid = None
+
+    # Validation (now that contract is decided)
+    if contract_type == "suit" and trump_suit is None:
+        raise ValueError("trump_suit must be provided or decided for 'suit' contracts")
+
+    # Extract features for ALL 4 players
     all_player_scores: List[int] = []
     all_player_features: List[Dict[str, int]] = []
     for player_idx in range(4):
@@ -95,13 +141,18 @@ def play_single_hand(
         all_player_scores.append(score)
         all_player_features.append(features)
 
+    # Log bidding if it happened
+    if logger and bidding_data:
+        # We need a new log event or just include it in hand_end.
+        # For now, we can pass it via logger context if we had one.
+        # Let's assume the logger will be updated or we'll just use the hand_end features.
+        pass
+
     team_tricks = {0: 0, 1: 0}
     if initial_leader is None:
-        # If deal_seed provided, make leader deterministic per deal_id
         if deal_seed is not None:
             initial_leader = generate_initial_leader(deal_seed, deal_id)
         else:
-            # Use local RNG if available, otherwise global
             if rng is not None:
                 initial_leader = rng.randrange(4)
             else:
@@ -165,7 +216,7 @@ def play_single_hand(
 
         leader = winner  # winner leads next trick
 
-    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands
+    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands, current_high_bid
 
 
 def simulate_many_hands(
@@ -232,7 +283,7 @@ def simulate_many_hands(
     for deal_id in range(n):
         if deal_seed is not None:
             deal_hands_ = generate_deal(deal_seed, deal_id)
-            t0, t1, all_scores, all_feats, initial_leader, starting_hands = play_single_hand(
+            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -243,7 +294,7 @@ def simulate_many_hands(
                 deal_seed=deal_seed,
             )
         else:
-            t0, t1, all_scores, all_feats, initial_leader, starting_hands = play_single_hand(
+            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -266,6 +317,7 @@ def simulate_many_hands(
                 features=all_feats,
                 scores=all_scores,
                 hands=starting_hands,
+                winning_bid=winning_bid,
             )
         total0 += t0
         total1 += t1
