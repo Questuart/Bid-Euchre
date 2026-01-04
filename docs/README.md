@@ -1,38 +1,172 @@
-# BUD EUCHRE — Bid Euchre Simulation + Strategy Lab
+# Bid Euchre AI Research Framework
 
-This repo is a simulation and analysis environment for **Bid Euchre**. The goal is to:
-1) simulate large volumes of games/hands with configurable player strategies  
-2) evaluate bidding + play policies (baseline → heuristic → learned)  
-3) produce clear reports/plots that compare strategies and reveal why one policy wins
+A comprehensive framework for simulating and analyzing the card game Bid Euchre with various AI strategies and experimental configurations.
 
-## What success looks like
-- We can run reproducible simulations (seeded).
-- We can swap strategies easily (bidding strategy, play strategy, partner modeling).
-- We can score outcomes in multiple ways (points/EV, tricks, contract success, etc.).
-- We can generate reports/plots that make differences obvious (not just “winrate”).
+## 🎯 Overview
 
-## Core concepts
-- **Hand evaluation (`hand_eval`)**: functions that turn a hand into interpretable scores (often tuple-based).
-- **Strategies**: “null/simple bots” first, then greedy/heuristics, then regression/ML policies.
-- **Simulation**: deals hands, runs bidding, plays tricks, scores, logs results.
-- **Reports & Plots**: aggregate across thousands of hands/games; compare strategies.
+Bid Euchre is a trick-taking card game similar to standard Euchre but with some key differences:
+- **40-card deck** (4 suits × 5 ranks, no 9s)
+- **4 players** in teams of 2
+- **Special mechanics**: Left/right bowers (Jack of opposite suit)
+- **Contract types**: Suit, High, Low
 
-## Getting started (typical workflow)
-1) run a baseline simulation (simple/null bots) to confirm everything works  
-2) add/adjust one strategy (e.g., greedy)  
-3) re-run simulation with controlled seeds  
-4) compare outcomes using the report + plot scripts  
-5) iterate: refine evaluation features, then strategies, then reporting
+This framework provides a complete research platform for developing and testing AI strategies for Bid Euchre.
 
-## Where to look first
-- `hand_eval/` (hand scoring primitives)
-- `strategies/` (bidding + trick-play policies)
-- `simulation/` (game loop / dealing / scoring)
-- `reports/` and `plots/` (analysis outputs)
-- `simulate_scratch.*` (dev harness used during iteration)
+## 🚀 Quick Start
 
-## Output expectations
-- Scripts should write outputs to an `outputs/` folder (or similar), separated by:
-  - strategy set name
-  - run timestamp or run-id
-  - seed / config hash
+### Installation
+```bash
+# Clone the repository
+git clone <repository-url>
+cd bid-euchre
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Basic Usage
+```python
+from bid_euchre.sim import simulation
+from bid_euchre.strategy import GreedyStrategy
+
+# Run a simulation with Greedy strategy
+result = simulation.simulate_many_hands(1000, "suit", "H", strategy=GreedyStrategy())
+print(f"Team 0 average tricks: {result['avg_team0']:.2f}")
+```
+
+### Run Experiments
+
+### Head-to-Head Evaluation
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/head_to_head_vs_random.yaml \
+  --mode head_to_head_matrix
+
+PYTHONPATH=src python experiments/generate_all_reports.py \
+  --run-dir data/runs/<run_id>
+```
+
+**Unified Runner** (recommended):
+```bash
+# Run experiment from YAML config
+PYTHONPATH=src python experiments/run_experiment.py \\
+    --config experiments/configs/strategy_comparison.yaml
+
+# Quick test (1k hands, 2 strategies, 2 scenarios, ~1 second)
+PYTHONPATH=src python experiments/run_experiment.py \\
+    --config experiments/configs/quick_test.yaml
+
+# Override config parameters
+PYTHONPATH=src python experiments/run_experiment.py \\
+    --config experiments/configs/baseline_greedy.yaml \\
+    --n_per 10000 --seed 99 --log-level none
+
+# Generate dashboard for a run
+PYTHONPATH=src python experiments/generate_dashboard.py \\
+    --run-dir data/runs/<run_id> --strategy greedy --seed 42
+```
+
+**Legacy Scripts** (deprecated, use unified runner):
+```bash
+# Old way (still works but deprecated)
+PYTHONPATH=src python experiments/run_baseline_greedy.py --n_per 50000 --seed 42
+```
+
+## 🏗️ Architecture
+
+```
+bid-euchre/
+├── src/bid_euchre/           # Core package
+│   ├── core/                  # Game mechanics (cards, rules)
+│   ├── strategy/              # AI strategy implementations
+│   ├── features/              # Hand evaluation features
+│   ├── sim/                   # Simulation engines
+│   └── experiments/           # Configuration system
+├── experiments/               # Research scripts & configs
+├── tests/                     # Comprehensive test suite
+└── data/                      # Simulation results & reports
+```
+
+## 🤖 Available Strategies
+
+- **BasicStrategy**: Simple rule-based strategy
+- **GreedyStrategy**: One-trick lookahead optimization
+
+### Custom Strategies
+```python
+from bid_euchre.strategy import Strategy
+
+class MyStrategy(Strategy):
+    def choose_card(self, hand, plays_so_far, contract_type, trump_suit, player_index):
+        # Your AI logic here
+        return card_index
+```
+
+## 📊 Experiment Configuration
+
+Experiments can be configured via YAML:
+
+```yaml
+experiment_name: "strategy_comparison"
+strategies:
+  - name: "greedy"
+    class_name: "GreedyStrategy"
+scenarios:
+  - contract_type: "suit"
+    trump_suit: "C,D,H,S"
+  - contract_type: "high"
+parameters:
+  n_per: 50000
+  seed: 42
+```
+
+## 🧪 Testing
+
+```bash
+# Run the full test suite
+PYTHONPATH=src pytest -q
+
+# Verbose
+PYTHONPATH=src pytest -v
+
+# Coverage (optional)
+PYTHONPATH=src pytest --cov=src/bid_euchre --cov-report=term-missing
+```
+
+
+## 📈 Analysis Features
+
+- **Statistical validation**: Monte Carlo analysis with confidence intervals
+- **Strategy comparison**: Automated performance metrics
+- **Feature correlation**: Hand strength analysis (79+ visualization plots)
+- **Data export**: JSON results with comprehensive metadata
+
+## 🎯 Research Applications
+
+- **Strategy development**: Build and test AI players
+- **Game analysis**: Understand optimal play patterns
+- **Statistical modeling**: Trick probability distributions
+- **Feature engineering**: Hand strength evaluation
+
+## 📚 Documentation
+
+- `tests/README.md`: Test suite documentation
+- Inline code documentation with comprehensive docstrings
+- Example usage in experiment scripts
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Run the full test suite
+5. Submit a pull request
+
+## 📄 License
+
+[Add license information here]
+
+## 🙏 Acknowledgments
+
+Built for AI research in trick-taking card games. Special thanks to the Euchre community for the inspiration.

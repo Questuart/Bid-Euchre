@@ -28,19 +28,19 @@ class ReportPaths:
         └── reports/
             ├── health/                 # Data quality & sanity checks
             │   ├── health_dashboard.png
-            │   ├── summary.md
+        │   ├── summary.md
             │   ├── plots/
             │   └── _history/<timestamp>/
             ├── trick_strategy/         # Strategy performance analysis
             │   ├── paired/
             │   ├── head_to_head/
-            │   └── _history/<timestamp>/
+        │   └── _history/<timestamp>/
             ├── bidding_strategy/       # Hand evaluation & bidding
             │   └── README.md (placeholder)
             ├── dashboards/<strategy>/  # DEPRECATED: Legacy location
             │   ├── dashboard.png
             │   ├── plots/
-            │   └── _history/<timestamp>/
+        │   └── _history/<timestamp>/
             ├── paired/                 # DEPRECATED: Legacy location
             ├── head_to_head/           # DEPRECATED: Legacy location
             ├── summary.md

@@ -155,3 +155,4 @@ def migrate_legacy_model(legacy_path: str, output_path: str, features: List[str]
     )
     
     print(f"✅ Migration complete: {output_path}")
+

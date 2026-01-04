@@ -22,3 +22,4 @@ parameters:
   seed: 42
   log_level: hand  # Enable full hand logging with all features
   mode: self_play  # All 4 players use olsa_sr_floor
+
