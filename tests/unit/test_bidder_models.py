@@ -61,7 +61,7 @@ def test_simple_ols_multiple_features():
 def test_olsa_v2_models_exist():
     """Test that OLSa_v2 model files exist."""
     for contract in ['suit', 'high', 'low']:
-        model_path = f'data/models/olsa_v2/olsa_v2_{contract}.pkl'
+        model_path = f'data/models/current/olsa_v2/olsa_v2_{contract}.pkl'
         assert os.path.exists(model_path), f"Model not found: {model_path}"
     
     print("✅ OLSa_v2 model files exist")
@@ -70,7 +70,7 @@ def test_olsa_v2_models_exist():
 def test_olsa_sr_v2_models_exist():
     """Test that OLSa_SR_v2 model files exist."""
     for contract in ['suit', 'high', 'low']:
-        model_path = f'data/models/olsa_sr_v2/olsa_sr_v2_{contract}.pkl'
+        model_path = f'data/models/current/olsa_sr_v2/olsa_sr_v2_{contract}.pkl'
         assert os.path.exists(model_path), f"Model not found: {model_path}"
     
     print("✅ OLSa_SR_v2 model files exist")
@@ -78,7 +78,7 @@ def test_olsa_sr_v2_models_exist():
 
 def test_olsa_v2_suit_model_predictions():
     """Test OLSa_v2 suit model makes sensible predictions."""
-    model_path = 'data/models/olsa_v2/olsa_v2_suit.pkl'
+    model_path = 'data/models/current/olsa_v2/olsa_v2_suit.pkl'
     if not os.path.exists(model_path):
         print("⚠️  Skipping test - model not found")
         return
@@ -109,7 +109,7 @@ def test_olsa_v2_suit_model_predictions():
 
 def test_olsa_v2_is_bidder_effect():
     """Test that is_bidder coefficient increases prediction as expected."""
-    model_path = 'data/models/olsa_v2/olsa_v2_suit.pkl'
+    model_path = 'data/models/current/olsa_v2/olsa_v2_suit.pkl'
     if not os.path.exists(model_path):
         print("⚠️  Skipping test - model not found")
         return
@@ -138,7 +138,7 @@ def test_olsa_v2_is_bidder_effect():
 
 def test_olsa_v2_low_bidder_advantage():
     """Test that LOW contract shows massive bidder advantage."""
-    model_path = 'data/models/olsa_v2/olsa_v2_low.pkl'
+    model_path = 'data/models/current/olsa_v2/olsa_v2_low.pkl'
     if not os.path.exists(model_path):
         print("⚠️  Skipping test - model not found")
         return
@@ -165,7 +165,7 @@ def test_olsa_v2_low_bidder_advantage():
 
 def test_olsa_v2_high_bidder_disadvantage():
     """Test that HIGH contract shows slight bidder disadvantage."""
-    model_path = 'data/models/olsa_v2/olsa_v2_high.pkl'
+    model_path = 'data/models/current/olsa_v2/olsa_v2_high.pkl'
     if not os.path.exists(model_path):
         print("⚠️  Skipping test - model not found")
         return
@@ -193,7 +193,7 @@ def test_olsa_v2_high_bidder_disadvantage():
 
 def test_olsa_sr_v2_hand_value_sensitivity():
     """Test that hand_value increases prediction in OLSa_SR_v2."""
-    model_path = 'data/models/olsa_sr_v2/olsa_sr_v2_suit.pkl'
+    model_path = 'data/models/current/olsa_sr_v2/olsa_sr_v2_suit.pkl'
     if not os.path.exists(model_path):
         print("⚠️  Skipping test - model not found")
         return
@@ -218,12 +218,12 @@ def test_olsa_sr_v2_hand_value_sensitivity():
 def test_model_coefficients_reasonable():
     """Test that all model coefficients are in reasonable ranges."""
     models_to_check = [
-        ('data/models/olsa_v2/olsa_v2_suit.pkl', 'OLSa_v2_suit', 5),
-        ('data/models/olsa_v2/olsa_v2_high.pkl', 'OLSa_v2_high', 3),
-        ('data/models/olsa_v2/olsa_v2_low.pkl', 'OLSa_v2_low', 2),
-        ('data/models/olsa_sr_v2/olsa_sr_v2_suit.pkl', 'OLSa_SR_v2_suit', 2),
-        ('data/models/olsa_sr_v2/olsa_sr_v2_high.pkl', 'OLSa_SR_v2_high', 2),
-        ('data/models/olsa_sr_v2/olsa_sr_v2_low.pkl', 'OLSa_SR_v2_low', 2),
+        ('data/models/current/olsa_v2/olsa_v2_suit.pkl', 'OLSa_v2_suit', 5),
+        ('data/models/current/olsa_v2/olsa_v2_high.pkl', 'OLSa_v2_high', 3),
+        ('data/models/current/olsa_v2/olsa_v2_low.pkl', 'OLSa_v2_low', 2),
+        ('data/models/current/olsa_sr_v2/olsa_sr_v2_suit.pkl', 'OLSa_SR_v2_suit', 2),
+        ('data/models/current/olsa_sr_v2/olsa_sr_v2_high.pkl', 'OLSa_SR_v2_high', 2),
+        ('data/models/current/olsa_sr_v2/olsa_sr_v2_low.pkl', 'OLSa_SR_v2_low', 2),
     ]
     
     for model_path, name, expected_n_features in models_to_check:
@@ -257,7 +257,7 @@ def test_predictions_in_valid_range():
     # Test many random feature combinations
     np.random.seed(42)
     
-    model_path = 'data/models/olsa_v2/olsa_v2_suit.pkl'
+    model_path = 'data/models/current/olsa_v2/olsa_v2_suit.pkl'
     if not os.path.exists(model_path):
         print("⚠️  Skipping test - model not found")
         return

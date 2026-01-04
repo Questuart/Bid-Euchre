@@ -20,9 +20,9 @@ from bid_euchre.logging import GameLogger, LogLevel
 def test_olsa_v2_loads_successfully():
     """Test that OLSa_v2 models can be loaded."""
     model_paths = {
-        'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-        'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-        'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+        'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+        'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+        'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
     }
     
     for contract, path in model_paths.items():
@@ -44,9 +44,9 @@ def test_olsa_v2_plays_single_hand():
     try:
         strategy = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-                'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-                'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+                'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+                'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+                'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
             },
             policy='round'
         )
@@ -83,9 +83,9 @@ def test_olsa_v2_plays_multiple_hands():
     try:
         strategy = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-                'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-                'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+                'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+                'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+                'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
             },
             policy='round'
         )
@@ -121,9 +121,9 @@ def test_olsa_sr_v2_plays_single_hand():
     try:
         strategy = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_sr_v2/olsa_sr_v2_suit.pkl',
-                'high': 'data/models/olsa_sr_v2/olsa_sr_v2_high.pkl',
-                'low': 'data/models/olsa_sr_v2/olsa_sr_v2_low.pkl',
+                'suit': 'data/models/current/olsa_sr_v2/olsa_sr_v2_suit.pkl',
+                'high': 'data/models/current/olsa_sr_v2/olsa_sr_v2_high.pkl',
+                'low': 'data/models/current/olsa_sr_v2/olsa_sr_v2_low.pkl',
             },
             policy='round'
         )
@@ -156,9 +156,9 @@ def test_olsa_v2_vs_random():
     try:
         olsa_v2 = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-                'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-                'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+                'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+                'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+                'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
             },
             policy='round'
         )
@@ -200,9 +200,9 @@ def test_olsa_v2_bidding_behavior():
     try:
         strategy = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-                'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-                'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+                'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+                'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+                'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
             },
             policy='round'
         )
@@ -240,9 +240,9 @@ def test_olsa_v2_make_bid_rate():
     try:
         strategy = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-                'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-                'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+                'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+                'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+                'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
             },
             policy='round'
         )
@@ -287,9 +287,9 @@ def test_no_crashes_with_edge_cases():
     try:
         strategy = RegressionBidder(
             model_paths={
-                'suit': 'data/models/olsa_v2/olsa_v2_suit.pkl',
-                'high': 'data/models/olsa_v2/olsa_v2_high.pkl',
-                'low': 'data/models/olsa_v2/olsa_v2_low.pkl',
+                'suit': 'data/models/current/olsa_v2/olsa_v2_suit.pkl',
+                'high': 'data/models/current/olsa_v2/olsa_v2_high.pkl',
+                'low': 'data/models/current/olsa_v2/olsa_v2_low.pkl',
             },
             policy='round'
         )

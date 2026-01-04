@@ -8,9 +8,9 @@ strategies:
     class_name: RegressionBidder
     params:
       model_paths:
-        suit: data/models/hand_value_ols/hand_value_ols_suit.pkl
-        high: data/models/hand_value_ols/hand_value_ols_high.pkl
-        low: data/models/hand_value_ols/hand_value_ols_low.pkl
+        suit: data/models/legacy/hand_value_ols/hand_value_ols_suit.pkl
+        high: data/models/legacy/hand_value_ols/hand_value_ols_high.pkl
+        low: data/models/legacy/hand_value_ols/hand_value_ols_low.pkl
       policy: floor
 
 # No fixed scenarios - bidding determines contract

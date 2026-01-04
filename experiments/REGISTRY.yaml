@@ -4,6 +4,17 @@
 # This file documents all experiments, their configs, runners, and outputs.
 # Use this to understand what experiments exist and how to reproduce them.
 #
+# FOLDER STRUCTURE (Updated 2026-01-04):
+#   experiments/
+#   ├── analysis/          - Analysis scripts (analyze_*)
+#   ├── comparisons/       - Head-to-head comparisons (compare_*, run_*_comparison)
+#   ├── dashboards/        - Dashboard generators (generate_*_dashboard)
+#   ├── data_generation/   - Training data generation and conversion
+#   ├── plotting/          - Plot generators (plot_*)
+#   ├── training/          - Model training scripts
+#   ├── configs/           - YAML configuration files
+#   └── run_experiment.py  - Main unified experiment runner
+#
 # Status values:
 #   - active: Currently used in production/analysis
 #   - stable: Working but not actively used

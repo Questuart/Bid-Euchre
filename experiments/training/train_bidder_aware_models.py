@@ -19,8 +19,8 @@ Usage:
     PYTHONPATH=src python experiments/train_bidder_aware_models.py
 
 Output:
-    data/models/olsa_v2/olsa_v2_{suit,high,low}.pkl
-    data/models/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl
+    data/models/current/olsa_v2/olsa_v2_{suit,high,low}.pkl
+    data/models/current/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl
     data/reports/bidder_models_comparison.txt
 """
 
@@ -148,7 +148,7 @@ def train_olsa_v2_models():
         
         # Save model (in dict format for RegressionBidder compatibility)
         os.makedirs('data/models/olsa_v2', exist_ok=True)
-        model_path = f'data/models/olsa_v2/olsa_v2_{contract}.pkl'
+        model_path = f'data/models/current/olsa_v2/olsa_v2_{contract}.pkl'
         model_dict = {
             'model': model,
             'features': features[contract],
@@ -237,7 +237,7 @@ def train_olsa_sr_v2_models():
         
         # Save model (in dict format for RegressionBidder compatibility)
         os.makedirs('data/models/olsa_sr_v2', exist_ok=True)
-        model_path = f'data/models/olsa_sr_v2/olsa_sr_v2_{contract}.pkl'
+        model_path = f'data/models/current/olsa_sr_v2/olsa_sr_v2_{contract}.pkl'
         model_dict = {
             'model': model,
             'features': features[contract],
@@ -367,8 +367,8 @@ def main():
     print("✅ Training Complete!")
     print("="*80)
     print("\nModels saved:")
-    print("  data/models/olsa_v2/olsa_v2_{suit,high,low}.pkl")
-    print("  data/models/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl")
+    print("  data/models/current/olsa_v2/olsa_v2_{suit,high,low}.pkl")
+    print("  data/models/current/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl")
     print("\nReport:")
     print("  data/reports/bidder_models_comparison.txt")
     print("\n🎯 Next step: Test models in head-to-head simulation")
