@@ -121,6 +121,12 @@ class RegressionBidder(ImprovedGreedyStrategy):
             bid_amount = int(np.floor(best_expected_tricks))
         elif self.policy == "ceil":
             bid_amount = int(np.ceil(best_expected_tricks))
+        elif self.policy == "ccrider":
+            # CCrider policy: ceiling for suit when >7, round for high/low, otherwise round
+            if best_contract == "suit" and best_expected_tricks > 7:
+                bid_amount = int(np.ceil(best_expected_tricks))
+            else:
+                bid_amount = int(np.round(best_expected_tricks))
         else:
             bid_amount = int(np.round(best_expected_tricks))
 

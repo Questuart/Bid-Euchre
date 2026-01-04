@@ -1,0 +1,18 @@
+# Position Impact Test Experiment
+# Test the new positional tracking features
+
+run_id: "position_test"
+hands: 5000
+seed: 42
+
+# Use OLSa vs OLSa (self-play) to isolate positional effects
+bidding_strategies:
+  - name: "olsa"
+    type: "regression"
+    models_dir: "data/models/baseline_regression"
+    policy: "round"
+
+logging:
+  enabled: true
+  level: "hand"
+  output_dir: "data/hand_logs"

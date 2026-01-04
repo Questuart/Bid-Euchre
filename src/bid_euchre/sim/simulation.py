@@ -30,7 +30,7 @@ def play_single_hand(
     deal_seed: Optional[int] = None,
     initial_leader: Optional[int] = None,
     rng: Optional[random.Random] = None,
-) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int]]:
+) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int], Optional[int], Optional[int]]:
     """
     Play one full 10-trick hand.
     
@@ -58,6 +58,9 @@ def play_single_hand(
 
     # BIDDING PHASE
     bidding_data = None
+    dealer_index = None  # Track dealer position (0-3 or None if no bidding)
+    bidder_position = None  # Track auction winner (0-3 or None)
+    
     if contract_type is None:
         # Determine dealer
         if initial_leader is not None:
@@ -104,11 +107,13 @@ def play_single_hand(
             dummy_ctype = "high"
             all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
             all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
-            return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0
+            # dealer_index is known, bidder_position is None (misdeal)
+            return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0, dealer_index, None
             
         contract_type = final_contract
         trump_suit = final_trump
         initial_leader = winning_bidder
+        bidder_position = winning_bidder  # Capture bidder for logging
         bidding_data = {
             "winner": winning_bidder,
             "bid": current_high_bid,
@@ -118,6 +123,9 @@ def play_single_hand(
     else:
         # Contract was fixed, no bid was made
         current_high_bid = None
+        # No bidding phase: dealer and bidder are unknown
+        dealer_index = None
+        bidder_position = None
 
     # Validation (now that contract is decided)
     if contract_type == "suit" and trump_suit is None:
@@ -216,7 +224,7 @@ def play_single_hand(
 
         leader = winner  # winner leads next trick
 
-    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands, current_high_bid
+    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands, current_high_bid, dealer_index, bidder_position
 
 
 def simulate_many_hands(
@@ -283,7 +291,7 @@ def simulate_many_hands(
     for deal_id in range(n):
         if deal_seed is not None:
             deal_hands_ = generate_deal(deal_seed, deal_id)
-            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid = play_single_hand(
+            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -294,7 +302,7 @@ def simulate_many_hands(
                 deal_seed=deal_seed,
             )
         else:
-            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid = play_single_hand(
+            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -318,6 +326,8 @@ def simulate_many_hands(
                 scores=all_scores,
                 hands=starting_hands,
                 winning_bid=winning_bid,
+                dealer_position=dealer_pos,
+                bidder_position=bidder_pos,
             )
         total0 += t0
         total1 += t1

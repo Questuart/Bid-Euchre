@@ -76,7 +76,7 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
         rng = random.Random(seed)
 
         for i in range(n_hands):
-            t0, t1, _, _, leader, _, bid = play_single_hand(
+            t0, t1, _, _, leader, _, bid, _, _ = play_single_hand(
                 contract_type=None, # Trigger bidding phase
                 strategies=strategies,
                 rng=rng,

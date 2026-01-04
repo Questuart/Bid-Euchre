@@ -1,6 +1,6 @@
 # Bid Euchre JSONL Log Schema
 
-**Schema Version:** 3  
+**Schema Version:** 5  
 **Format:** JSONL (JSON Lines) - one JSON object per line
 
 ## Overview
@@ -50,7 +50,7 @@ Emitted at the end of each hand.
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 5,
   "event": "hand_end",
   "run_id": "baseline_greedy_42",
   "strategy_id": "greedy",
@@ -74,6 +74,9 @@ Emitted at the end of each hand.
     [["C","J"], ["H","J"], ["H","A"], ["C","K"], ["C","T"], ["D","A"], ["D","A"], ["D","Q"], ["S","Q"], ["S","A"]],
     [["H","K"], ["H","Q"], ["C","Q"], ["C","A"], ["D","J"], ["D","K"], ["D","T"], ["D","J"], ["S","K"], ["S","T"]]
   ],
+  "winning_bid": 6,
+  "dealer_position": 1,
+  "bidder_position": 2,
   "timestamp": "2025-12-15T18:00:01.234567"
 }
 ```
@@ -88,12 +91,15 @@ Emitted at the end of each hand.
 | `seed` | int\|null | Random seed used (null if unseeded) |
 | `contract` | string | Contract type: `"suit"`, `"high"`, or `"low"` |
 | `trump` | string\|null | Trump suit (`"C"`, `"D"`, `"H"`, `"S"`) or null for no-trump |
-| `leader` | int | Player who led the first trick (0-3) |
+| `leader` | int | Player who led the first trick (0-3, or -1 for misdeal) |
 | `t0` | int | Tricks won by team 0 (players 0, 2) |
 | `t1` | int | Tricks won by team 1 (players 1, 3) |
 | `scores` | array\|null | Array of 4 scalar hand scores, one per player (schema v2+) |
 | `features` | array | Array of 4 feature dicts, one per player |
 | `hands` | array\|null | Array of 4 hands, each card as `[suit, rank]` (schema v3+) |
+| `winning_bid` | int\|null | The high bid amount for this hand (schema v4+) |
+| `dealer_position` | int\|null | Dealer seat position 0-3 (schema v5+, null if no bidding) |
+| `bidder_position` | int\|null | Auction winner seat 0-3 (schema v5+, null if misdeal/no bidding) |
 | `timestamp` | string | ISO 8601 timestamp |
 
 #### Feature Fields
@@ -233,6 +239,8 @@ The `schema_version` field ensures backward compatibility:
 | 1 | Initial schema |
 | 2 | Added `scores` field to `hand_end` events (4 scalar hand scores, one per player) |
 | 3 | Added `hands` field to `hand_end` events (full hand contents for each player) |
+| 4 | Added `winning_bid` field to `hand_end` events (the high bid amount) |
+| 5 | Added `dealer_position` and `bidder_position` fields to `hand_end` events (seat positions 0-3) |
 
 When the schema changes:
 1. Bump `schema_version` in `game_logger.py`
@@ -241,9 +249,12 @@ When the schema changes:
 
 ### Backward Compatibility
 
-- Schema v3 is backward compatible with v1 and v2
+- Schema v5 is backward compatible with v1-v4
 - The `scores` field (v2+) is optional and may be `null`
 - The `hands` field (v3+) is optional and may be `null`
+- The `winning_bid` field (v4+) is optional and may be `null`
+- The `dealer_position` field (v5+) is optional and may be `null` (if no bidding phase)
+- The `bidder_position` field (v5+) is optional and may be `null` (if misdeal or no bidding phase)
 - Older consumers can ignore fields they don't recognize
 
 ---

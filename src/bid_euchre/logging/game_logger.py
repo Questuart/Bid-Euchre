@@ -29,7 +29,8 @@ from pathlib import Path
 # v2 adds `scores` to hand_end records (one scalar score per player).
 # v3 adds `hands` to hand_end records (full hand contents for each player).
 # v4 adds `winning_bid` to hand_end records.
-SCHEMA_VERSION = 4
+# v5 adds `dealer_position` and `bidder_position` to hand_end records.
+SCHEMA_VERSION = 5
 
 
 class LogLevel(Enum):
@@ -57,6 +58,8 @@ class HandEndRecord:
     scores: Optional[List[int]]     # 4 scalar scores, one per player (schema v2)
     hands: Optional[List[List[List[str]]]]  # 4 hands, each card as [suit, rank] (schema v3)
     winning_bid: Optional[int] = None      # The high bid for this hand (schema v4)
+    dealer_position: Optional[int] = None  # Dealer seat (0-3) (schema v5)
+    bidder_position: Optional[int] = None  # Auction winner seat (0-3) (schema v5)
     timestamp: str = ""
 
 
@@ -189,6 +192,8 @@ class GameLogger:
         scores: Optional[List[int]] = None,
         hands: Optional[List[List[Any]]] = None,
         winning_bid: Optional[int] = None,
+        dealer_position: Optional[int] = None,
+        bidder_position: Optional[int] = None,
     ) -> None:
         """
         Log the completion of a hand.
@@ -205,6 +210,8 @@ class GameLogger:
             scores: List of 4 scalar scores, one per player (schema v2+)
             hands: List of 4 hands (each hand is a list of Cards) (schema v3+)
             winning_bid: The high bid for this hand (schema v4+)
+            dealer_position: Dealer seat (0-3) (schema v5+)
+            bidder_position: Auction winner seat (0-3) (schema v5+)
         """
         if not self.is_enabled:
             return
@@ -233,6 +240,8 @@ class GameLogger:
             scores=scores,
             hands=hands_json,
             winning_bid=winning_bid,
+            dealer_position=dealer_position,
+            bidder_position=bidder_position,
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))

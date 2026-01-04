@@ -21,7 +21,7 @@ class TestEndToEndSimulation:
         # Play one complete hand
         result = simulation.play_single_hand("suit", "H", strategy=BasicStrategy())
 
-        team0_tricks, team1_tricks, all_scores, all_features, initial_leader, starting_hands = result
+        team0_tricks, team1_tricks, all_scores, all_features, initial_leader, starting_hands, _, _, _ = result
 
         # Basic validation
         assert isinstance(team0_tricks, int)
