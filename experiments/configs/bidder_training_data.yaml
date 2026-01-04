@@ -1,0 +1,24 @@
+# Bidder Training Data Generation
+# Generate 30k hands with full bidding for training bidder-aware models
+
+experiment_name: bidder_training_data
+
+strategies:
+  - name: olsa_sr_floor
+    class_name: RegressionBidder
+    params:
+      model_paths:
+        suit: data/models/hand_value_ols/hand_value_ols_suit.pkl
+        high: data/models/hand_value_ols/hand_value_ols_high.pkl
+        low: data/models/hand_value_ols/hand_value_ols_low.pkl
+      policy: floor
+
+# No fixed scenarios - bidding determines contract
+# This triggers bidding phase (contract_type=None in simulation)
+scenarios: []
+
+parameters:
+  n_per: 30000  # 30k hands with full bidding
+  seed: 42
+  log_level: hand  # Enable full hand logging with all features
+  mode: self_play  # All 4 players use olsa_sr_floor
