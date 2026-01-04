@@ -184,3 +184,64 @@ You should:
 - ensure deterministic re-run instructions exist
 - keep outputs versioned and labeled
 - avoid speculative changes that aren’t requested or measurable
+
+---
+
+## Experiment Standards (MANDATORY - Added 2026-01-04)
+
+**Before adding any new experiment script, follow these rules:**
+
+### 1. Can this use `run_experiment.py`?
+
+**If YES** → Create YAML config only (no new script needed)  
+**If NO** → Proceed to steps 2-5
+
+### 2. Create Config File FIRST
+
+```yaml
+# experiments/configs/my_experiment.yaml
+experiment_name: my_experiment
+parameters:
+  n_hands: 10000
+  seed: 42
+  # All parameters here - NO HARDCODING in Python!
+```
+
+### 3. Accept `--config` Argument
+
+```python
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', required=True)
+args = parser.parse_args()
+config = load_config(args.config)
+```
+
+### 4. Write Integration Test
+
+```python
+# tests/test_my_experiment.py
+def test_runs_with_small_data():
+    # Test with 10 hands, assert no crashes
+    pass
+```
+
+### 5. Update Registry
+
+Add entry to `experiments/REGISTRY.yaml`
+
+### Red Flags 🚩
+
+- Hardcoded parameters in Python
+- No config file
+- No tests
+- Can't reproduce from config alone
+
+### Green Lights ✅
+
+- Config file exists
+- Accepts `--config`
+- Has integration test
+- In REGISTRY.yaml
+- Outputs include metadata
+
