@@ -1,0 +1,86 @@
+# =============================================================================
+# Train Bidder-Aware Models Configuration
+# =============================================================================
+# Trains two families of OLS models with is_bidder feature:
+#   1. OLSa_v2: Baseline features + is_bidder
+#   2. OLSa_SR_v2: Hand Value + is_bidder
+#
+# Usage:
+#   PYTHONPATH=src python experiments/train_bidder_aware_models.py \
+#     --config experiments/configs/train_bidder_models.yaml
+#
+# =============================================================================
+
+experiment_name: train_bidder_models
+
+# Training data paths
+data:
+  train: data/training/bidder_aware_train.csv
+  val: data/training/bidder_aware_val.csv
+  test: data/training/bidder_aware_test.csv
+
+# Model families to train
+model_families:
+  # OLSa_v2: Baseline features + is_bidder
+  olsa_v2:
+    description: "Baseline trump/offsuit features with bidder indicator"
+    features:
+      suit:
+        - trump_count
+        - trump_rb_count
+        - trump_lb_count
+        - offsuit_aces
+        - is_bidder
+      high:
+        - offsuit_aces
+        - offsuit_length_3plus_count
+        - is_bidder
+      low:
+        - offsuit_length_3plus_count
+        - is_bidder
+    output_dir: data/models/olsa_v2
+    
+  # OLSa_SR_v2: Hand Value + is_bidder
+  olsa_sr_v2:
+    description: "Aggregated hand value score with bidder indicator"
+    features:
+      suit:
+        - hand_value
+        - is_bidder
+      high:
+        - hand_value
+        - is_bidder
+      low:
+        - hand_value
+        - is_bidder
+    output_dir: data/models/olsa_sr_v2
+
+# Output configuration
+outputs:
+  models_dir: data/models
+  report: data/reports/bidder_models_comparison.txt
+  dashboard: data/reports/bidder_models_dashboard.png
+
+# Evaluation metrics to compute
+metrics:
+  - r2
+  - mae
+  - rmse
+  - bias
+
+# Contracts to train models for
+contracts:
+  - suit
+  - high
+  - low
+
+# =============================================================================
+# METADATA (for reproducibility)
+# =============================================================================
+# Training data generated: 2026-01-03
+# Training data source: experiments/generate_bidder_training_data.py
+# Training data config: experiments/configs/bidder_training_data.yaml
+# Training data strategy: OLSa_SR_Floor self-play (50k hands)
+# Training data schema: v5 (includes dealer_position, bidder_position, is_bidder)
+# Data split: 70/15/15 (train/val/test)
+# =============================================================================

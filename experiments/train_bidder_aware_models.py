@@ -146,11 +146,16 @@ def train_olsa_v2_models():
             print(f"    {fname:<30} {coef:>8.3f}")
         print(f"    {'intercept':<30} {model.intercept_:>8.3f}")
         
-        # Save model
+        # Save model (in dict format for RegressionBidder compatibility)
         os.makedirs('data/models/olsa_v2', exist_ok=True)
         model_path = f'data/models/olsa_v2/olsa_v2_{contract}.pkl'
+        model_dict = {
+            'model': model,
+            'features': features[contract],
+            'contract_type': contract
+        }
         with open(model_path, 'wb') as f:
-            pickle.dump(model, f)
+            pickle.dump(model_dict, f)
         print(f"  ✅ Saved to: {model_path}")
         
         models[contract] = model
@@ -230,11 +235,16 @@ def train_olsa_sr_v2_models():
             print(f"    {fname:<30} {coef:>8.3f}")
         print(f"    {'intercept':<30} {model.intercept_:>8.3f}")
         
-        # Save model
+        # Save model (in dict format for RegressionBidder compatibility)
         os.makedirs('data/models/olsa_sr_v2', exist_ok=True)
         model_path = f'data/models/olsa_sr_v2/olsa_sr_v2_{contract}.pkl'
+        model_dict = {
+            'model': model,
+            'features': features[contract],
+            'contract_type': contract
+        }
         with open(model_path, 'wb') as f:
-            pickle.dump(model, f)
+            pickle.dump(model_dict, f)
         print(f"  ✅ Saved to: {model_path}")
         
         models[contract] = model

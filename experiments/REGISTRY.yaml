@@ -1,0 +1,440 @@
+# =============================================================================
+# EXPERIMENT REGISTRY
+# =============================================================================
+# This file documents all experiments, their configs, runners, and outputs.
+# Use this to understand what experiments exist and how to reproduce them.
+#
+# Status values:
+#   - active: Currently used in production/analysis
+#   - stable: Working but not actively used
+#   - needs_config: Missing YAML config file
+#   - deprecated: Superseded by another experiment
+#   - one_off: Exploratory, not meant to be rerun
+#
+# Last updated: 2026-01-04
+# =============================================================================
+
+# =============================================================================
+# CORE EXPERIMENT RUNNER
+# =============================================================================
+
+unified_experiment_runner:
+  description: "Unified runner for strategy comparisons via YAML configs"
+  runner: experiments/run_experiment.py
+  config_pattern: experiments/configs/*.yaml
+  status: active
+  usage: |
+    PYTHONPATH=src python experiments/run_experiment.py \
+      --config experiments/configs/<name>.yaml
+  outputs: data/runs/<experiment_name>_<seed>_<timestamp>/
+  notes: "This is the preferred way to run experiments"
+
+# =============================================================================
+# STRATEGY COMPARISON EXPERIMENTS (via unified runner)
+# =============================================================================
+
+strategy_comparison:
+  description: "Compare greedy, improved_greedy, random, and baselines"
+  config: experiments/configs/strategy_comparison.yaml
+  runner: experiments/run_experiment.py
+  status: active
+  last_run: 2025-12-17
+  outputs: data/runs/strategy_comparison_*/
+
+baseline_greedy:
+  description: "Baseline greedy strategy evaluation"
+  config: experiments/configs/baseline_greedy.yaml
+  runner: experiments/run_experiment.py
+  status: stable
+
+quick_test:
+  description: "Quick test configuration for debugging"
+  config: experiments/configs/quick_test.yaml
+  runner: experiments/run_experiment.py
+  status: active
+
+head_to_head_vs_random:
+  description: "Head-to-head strategy vs random baseline"
+  config: experiments/configs/head_to_head_vs_random.yaml
+  runner: experiments/run_experiment.py
+  status: stable
+
+# =============================================================================
+# HAND EVALUATION EXPERIMENTS
+# =============================================================================
+
+hand_eval_test_random:
+  description: "Generate hand eval data from random vs random play"
+  config: experiments/configs/hand_eval_test_random.yaml
+  runner: experiments/run_experiment.py
+  status: stable
+  outputs: data/runs/hand_eval_test_random_*/
+  purpose: "Training data for hand evaluation models"
+  notes: "Uses 50k hands, train/val/test split applied"
+
+hand_eval_test_greedy:
+  description: "Generate hand eval data from greedy vs greedy play"
+  config: experiments/configs/hand_eval_test_greedy.yaml
+  runner: experiments/run_experiment.py
+  status: stable
+  outputs: data/runs/hand_eval_test_greedy_*/
+  purpose: "Training data to test if greedy play affects feature correlations"
+
+prelim_hand_eval:
+  description: "Preliminary hand evaluation analysis"
+  config: experiments/configs/prelim_hand_eval.yaml
+  runner: experiments/run_experiment.py
+  status: deprecated
+  notes: "Superseded by hand_eval_test_random/greedy"
+
+# =============================================================================
+# BIDDING MODEL EXPERIMENTS
+# =============================================================================
+
+bidder_training_data:
+  description: "Generate training data with full bidding (50k hands)"
+  config: experiments/configs/bidder_training_data.yaml
+  runner: experiments/generate_bidder_training_data.py
+  status: active
+  last_run: 2026-01-03
+  outputs: 
+    - data/runs/bidder_training_data_42_*/logs/
+    - data/training/bidder_aware_{train,val,test}.csv
+  strategy: OLSa_SR_Floor self-play
+  notes: "Schema v5 with dealer_position, bidder_position, is_bidder"
+
+train_bidder_models:
+  description: "Train OLSa_v2 and OLSa_SR_v2 bidder-aware models"
+  config: experiments/configs/train_bidder_models.yaml  # TODO: CREATE
+  runner: experiments/train_bidder_aware_models.py
+  status: needs_config
+  last_run: 2026-01-04
+  inputs: data/training/bidder_aware_{train,val,test}.csv
+  outputs:
+    - data/models/olsa_v2/olsa_v2_{suit,high,low}.pkl
+    - data/models/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl
+    - data/reports/bidder_models_comparison.txt
+    - data/reports/bidder_models_dashboard.png
+  notes: "NEEDS CONFIG FILE - parameters currently hardcoded"
+
+position_test:
+  description: "Test impact of bidder position on outcomes"
+  config: experiments/configs/position_test.yaml
+  runner: experiments/run_position_test.py
+  status: stable
+  last_run: 2026-01-03
+  outputs: data/runs/position_test_*/
+  notes: "Validates schema v5 positional logging"
+
+# =============================================================================
+# BIDDING STRATEGY HEAD-TO-HEAD COMPARISONS
+# =============================================================================
+
+three_horse_race:
+  description: "FiveHeadFred vs OLSa vs OLSa_SR in 3-way competition"
+  config: null  # Inline configuration
+  runner: experiments/run_bidding_comparison.py
+  status: one_off
+  last_run: 2025-12-XX
+  outputs: data/runs/three_horse_race_*/
+  notes: "Initial bidding strategy comparison"
+
+full_head_to_head:
+  description: "All-pairs head-to-head bidding strategy comparison"
+  config: null  # Inline configuration
+  runner: experiments/run_full_head_to_head.py
+  status: stable
+  last_run: 2025-12-XX
+  outputs: data/reports/head_to_head_heatmaps.png
+  strategies: [OLSa, OLSa_Floor, OLSa_Ceil, OLSa_CCrider, OLSa_SR, FiveHeadFred]
+  notes: "Generates make-bid rate heatmaps"
+
+six_way_head_to_head:
+  description: "Six-way strategy comparison (horse race)"
+  config: null  # Inline configuration
+  runner: experiments/run_six_way_head_to_head.py
+  status: stable
+  outputs: data/reports/strategy_comparison_dashboard.png
+
+olsa_policy_comparison:
+  description: "Compare OLSa rounding policies (floor vs ceil)"
+  config: null  # Inline configuration
+  runner: experiments/run_olsa_policy_comparison.py
+  status: stable
+  outputs: data/runs/olsa_policy_comparison_*/
+
+olsa_vs_ccrider:
+  description: "Head-to-head: OLSa vs OLSa_CCrider"
+  config: null  # Inline configuration
+  runner: experiments/run_olsa_vs_ccrider.py
+  status: one_off
+  outputs: data/runs/olsa_vs_ccrider_*/
+
+# =============================================================================
+# MODEL TRAINING (HISTORICAL)
+# =============================================================================
+
+train_baseline_regression:
+  description: "Train original baseline OLS models"
+  config: null
+  runner: experiments/train_baseline_regression.py
+  status: deprecated
+  notes: "Superseded by train_bidder_aware_models.py"
+  outputs: data/models/baseline_ols/
+
+train_hand_value_ols:
+  description: "Train Hand Value (OLSa_SR) models"
+  config: null
+  runner: experiments/train_hand_value_ols.py
+  status: deprecated
+  notes: "Superseded by train_bidder_aware_models.py"
+  outputs: data/models/hand_value_ols/
+
+train_linear_v2_regression:
+  description: "Train improved baseline OLS models (v2)"
+  config: null
+  runner: experiments/train_linear_v2_regression.py
+  status: deprecated
+  notes: "Superseded by train_bidder_aware_models.py"
+
+train_simple_rank_ols:
+  description: "Train simple rank-based OLS"
+  config: null
+  runner: experiments/train_simple_rank_ols.py
+  status: deprecated
+
+train_expanded_ols:
+  description: "Train OLS with expanded feature set"
+  config: null
+  runner: experiments/train_expanded_ols.py
+  status: deprecated
+  notes: "Exploratory - found multicollinearity issues"
+
+train_ridge_regression:
+  description: "Train Ridge regression models"
+  config: null
+  runner: experiments/train_ridge_regression.py
+  status: deprecated
+  notes: "Minimal improvement over OLS"
+
+# =============================================================================
+# ANALYSIS SCRIPTS
+# =============================================================================
+
+analyze_predicted_vs_actual:
+  description: "Analyze predicted tricks vs actual for bidding models"
+  runner: experiments/analyze_predicted_vs_actual.py
+  status: stable
+  outputs: data/reports/olsa_predicted_vs_actual.png
+  notes: "Generates scatter plots with gridlines"
+
+analyze_bid_winners:
+  description: "Analyze which player position wins bids"
+  runner: experiments/analyze_bid_winners.py
+  status: stable
+  outputs: data/reports/bid_winners_by_seat.png
+
+analyze_bidding_distributions:
+  description: "Analyze distribution of bid amounts by strategy"
+  runner: experiments/analyze_bidding_distributions.py
+  status: stable
+  outputs: data/reports/bidding_distributions.png
+
+analyze_suit_trick_distribution:
+  description: "Analyze trick distributions for suit contracts"
+  runner: experiments/analyze_suit_trick_distribution.py
+  status: stable
+  outputs: data/reports/suit_trick_distributions.png
+
+analyze_ccrider_vs_ceiling:
+  description: "Detailed analysis of CCrider vs OLSa_Ceiling"
+  runner: experiments/analyze_ccrider_vs_ceiling.py
+  status: one_off
+  notes: "Deep dive on specific strategy comparison"
+
+analyze_position_impact:
+  description: "Analyze impact of bidder position on outcomes"
+  runner: experiments/analyze_position_impact.py
+  status: stable
+  outputs: data/reports/position_impact.png
+  notes: "Shows bidder advantage by position"
+
+# =============================================================================
+# REPORT GENERATORS
+# =============================================================================
+
+generate_strategy_comparison_dashboard:
+  description: "Generate comprehensive strategy comparison dashboard"
+  runner: experiments/generate_strategy_comparison_dashboard.py
+  status: active
+  outputs: data/reports/strategy_comparison_dashboard.png
+  notes: "Multi-panel comparison of all strategies"
+
+generate_bidder_models_dashboard:
+  description: "Generate OLSa_v2 vs OLSa_SR_v2 comparison dashboard"
+  runner: experiments/generate_bidder_models_dashboard.py
+  status: active
+  last_run: 2026-01-04
+  outputs: data/reports/bidder_models_dashboard.png
+
+generate_hand_eval_dashboard:
+  description: "Generate hand evaluation feature analysis dashboard"
+  runner: experiments/generate_hand_eval_dashboard.py
+  status: stable
+  outputs: data/reports/hand_eval_dashboard.png
+  notes: "Feature correlations, distributions, etc."
+
+generate_top_four_metrics_heatmap:
+  description: "Generate heatmap of top 4 strategies"
+  runner: experiments/generate_top_four_metrics_heatmap.py
+  status: stable
+  outputs: data/reports/top_four_heatmap.png
+
+generate_auction_points_heatmaps:
+  description: "Generate auction/bidding points analysis heatmaps"
+  runner: experiments/generate_auction_points_heatmaps.py
+  status: stable
+
+generate_head_to_head_report:
+  description: "Generate head-to-head comparison report"
+  runner: experiments/generate_head_to_head_report.py
+  status: stable
+
+generate_health_dashboard:
+  description: "Generate system health dashboard"
+  runner: experiments/generate_health_dashboard.py
+  status: deprecated
+  notes: "Not maintained"
+
+generate_trick_strategy_dashboard:
+  description: "Generate trick-taking strategy dashboard"
+  runner: experiments/generate_trick_strategy_dashboard.py
+  status: stable
+
+generate_paired_comparison:
+  description: "Generate paired comparison analysis"
+  runner: experiments/generate_paired_comparison.py
+  status: stable
+
+generate_all_reports:
+  description: "Master script to generate all reports"
+  runner: experiments/generate_all_reports.py
+  status: deprecated
+  notes: "Outdated - many reports have changed"
+
+generate_advanced_visualizations:
+  description: "Generate advanced visualizations (hexbin, violin plots)"
+  runner: experiments/generate_advanced_visualizations.py
+  status: stable
+  notes: "Top 9 features with density plots"
+
+generate_reports_from_split:
+  description: "Generate reports from train/val/test splits"
+  runner: experiments/generate_reports_from_split.py
+  status: stable
+  notes: "Used for hand eval analysis"
+
+generate_dashboard:
+  description: "Generic dashboard generator (deprecated)"
+  runner: experiments/generate_dashboard.py
+  status: deprecated
+
+# =============================================================================
+# PLOTTING UTILITIES
+# =============================================================================
+
+plot_all_feature_correlations:
+  description: "Plot all 40 features correlations with tricks"
+  runner: experiments/plot_all_feature_correlations.py
+  status: stable
+  outputs: data/reports/all_feature_correlations.png
+
+plot_correlations_by_contract:
+  description: "Plot correlations faceted by contract type"
+  runner: experiments/plot_correlations_by_contract.py
+  status: stable
+
+plot_top_features_scatter:
+  description: "Top 9 features scatter plots with linear regression"
+  runner: experiments/plot_top_features_scatter.py
+  status: stable
+
+plot_top_features_improved:
+  description: "Improved top features plots (hexbin + violin)"
+  runner: experiments/plot_top_features_improved.py
+  status: stable
+
+plot_predicted_vs_actual:
+  description: "Predicted vs actual tricks scatter plots"
+  runner: experiments/plot_predicted_vs_actual.py
+  status: stable
+
+# =============================================================================
+# UTILITY SCRIPTS
+# =============================================================================
+
+split_train_val_test:
+  description: "Split JSONL logs into train/val/test sets (70/15/15)"
+  runner: experiments/split_train_val_test.py
+  status: active
+  usage: |
+    python experiments/split_train_val_test.py \
+      --input data/runs/<run_id>/logs/*.jsonl \
+      --output data/runs/<run_id>/splits/ \
+      --train-ratio 0.7 --val-ratio 0.15
+
+convert_splits_to_csv:
+  description: "Convert JSONL splits to CSV for model training"
+  runner: experiments/convert_splits_to_csv.py
+  status: active
+  last_run: 2026-01-03
+  inputs: data/runs/*/splits/*.jsonl
+  outputs: data/training/*.csv
+  notes: "Extracts features, is_bidder, positions into tabular format"
+
+compare_top_four:
+  description: "Compare top 4 strategies (OLSa variants)"
+  runner: experiments/compare_top_four.py
+  status: stable
+
+compare_top_three:
+  description: "Compare top 3 strategies"
+  runner: experiments/compare_top_three.py
+  status: stable
+
+evaluate_bidding_performance:
+  description: "Evaluate bidding model performance metrics"
+  runner: experiments/evaluate_bidding_performance.py
+  status: stable
+
+evaluate_dummy_baseline:
+  description: "Evaluate dummy bidder (always bid 5)"
+  runner: experiments/evaluate_dummy_baseline.py
+  status: stable
+
+# =============================================================================
+# DEPRECATED (moved to experiments/_deprecated/)
+# =============================================================================
+
+_deprecated_experiments:
+  description: "Old experiments superseded by unified runner"
+  location: experiments/_deprecated/
+  files:
+    - generate_strategy_comparison.py
+    - run_baseline_greedy.py
+    - run_extended_comparison.py
+    - run_strategy_comparison.py
+  notes: "See experiments/_deprecated/README.md for details"
+
+# =============================================================================
+# MAINTENANCE NOTES
+# =============================================================================
+# 
+# TODO: Cleanup priorities
+# 1. Create missing config files (marked as needs_config)
+# 2. Consolidate similar report generators
+# 3. Move one_off experiments to _deprecated if no longer needed
+# 4. Add configs for all head-to-head comparison scripts
+# 5. Document reproduction steps for all active experiments
+#
+# =============================================================================

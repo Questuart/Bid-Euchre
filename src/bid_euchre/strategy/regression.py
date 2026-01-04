@@ -97,6 +97,9 @@ class RegressionBidder(ImprovedGreedyStrategy):
             # Extract features
             feats = get_hand_features(hand, contract_type=ctype, trump_suit=trump)
             
+            # Add is_bidder feature (assume we are the bidder during evaluation)
+            feats['is_bidder'] = 1
+            
             # Get the right model
             model_data = self.models.get(ctype)
             if not model_data:
