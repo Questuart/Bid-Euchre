@@ -50,7 +50,7 @@ def collect_prediction_data(n_hands: int = 50000, seed: int = 42):
         if i % 10000 == 0:
             print(f"  Progress: {i:,}/{n_hands:,} hands")
         
-        t0, t1, _, _, leader, starting_hands, bid, _, _ = play_single_hand(
+        t0, t1, _, _, leader, starting_hands, bid, _, _, _, _, _, _ = play_single_hand(
             contract_type=None,  # Trigger bidding
             strategies=strategies,
             rng=rng,

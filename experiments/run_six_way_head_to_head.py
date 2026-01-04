@@ -89,7 +89,7 @@ def run_six_way_head_to_head(n_hands: int = 10000, seed: int = 42):
             rng = random.Random(seed)
             
             for i in range(n_hands):
-                t0, t1, _, _, leader, _, bid, _, _ = play_single_hand(
+                t0, t1, _, _, leader, _, bid, _, _, _, _, _, _ = play_single_hand(
                     contract_type=None,
                     strategies=strategies,
                     rng=rng,

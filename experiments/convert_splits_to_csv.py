@@ -28,7 +28,7 @@ Output:
 import os
 import sys
 import json
-import pandas as pd
+import csv
 from typing import List, Dict
 from collections import defaultdict
 
@@ -89,8 +89,8 @@ def parse_jsonl_to_records(jsonl_path: str) -> List[Dict]:
     return records
 
 
-def convert_split(run_dir: str, split_name: str) -> pd.DataFrame:
-    """Convert a single split (train/val/test) to DataFrame."""
+def convert_split(run_dir: str, split_name: str, output_dir: str) -> Dict:
+    """Convert a single split (train/val/test) to CSV."""
     splits_dir = os.path.join(run_dir, "splits")
     
     # Find JSONL file for this split
@@ -109,18 +109,46 @@ def convert_split(run_dir: str, split_name: str) -> pd.DataFrame:
     records = parse_jsonl_to_records(jsonl_path)
     print(f"  Extracted {len(records):,} player-hand records")
     
-    # Convert to DataFrame
-    df = pd.DataFrame(records)
+    if len(records) == 0:
+        print(f"  ⚠️  No records found in {split_name} split (this is expected if split is empty)")
+        return None
     
-    # Reorder columns for readability
+    # Determine column order
     first_cols = [
         'deal_id', 'player_idx', 'contract_type', 'trump_suit',
-        'is_bidder', 'actual_tricks'
+        'is_bidder', 'actual_tricks', 'dealer_position', 'bidder_position'
     ]
-    other_cols = [c for c in df.columns if c not in first_cols]
-    df = df[first_cols + sorted(other_cols)]
+    all_keys = set()
+    for record in records:
+        all_keys.update(record.keys())
+    other_cols = sorted(all_keys - set(first_cols))
+    column_order = first_cols + other_cols
     
-    return df
+    # Write CSV
+    output_path = os.path.join(output_dir, f"bidder_aware_{split_name}.csv")
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=column_order)
+        writer.writeheader()
+        writer.writerows(records)
+    
+    # Calculate statistics
+    bidders = sum(1 for r in records if r['is_bidder'] == 1)
+    defenders = len(records) - bidders
+    suit_hands = sum(1 for r in records if r['contract_type'] == 'suit')
+    high_hands = sum(1 for r in records if r['contract_type'] == 'high')
+    low_hands = sum(1 for r in records if r['contract_type'] == 'low')
+    
+    stats = {
+        'rows': len(records),
+        'bidders': bidders,
+        'defenders': defenders,
+        'suit_hands': suit_hands,
+        'high_hands': high_hands,
+        'low_hands': low_hands,
+        'output_path': output_path
+    }
+    
+    return stats
 
 
 def main():
@@ -158,29 +186,22 @@ def main():
         print("-" * 80)
         
         try:
-            df = convert_split(run_dir, split_name)
+            stats = convert_split(run_dir, split_name, output_dir)
             
-            # Save to CSV
-            output_path = os.path.join(output_dir, f"bidder_aware_{split_name}.csv")
-            df.to_csv(output_path, index=False)
+            if stats is None:
+                continue
             
-            # Collect statistics
-            split_stats[split_name] = {
-                'rows': len(df),
-                'bidders': df['is_bidder'].sum(),
-                'defenders': (df['is_bidder'] == 0).sum(),
-                'suit_hands': (df['contract_type'] == 'suit').sum(),
-                'high_hands': (df['contract_type'] == 'high').sum(),
-                'low_hands': (df['contract_type'] == 'low').sum(),
-            }
+            split_stats[split_name] = stats
             
-            print(f"  ✅ Saved to: {output_path}")
-            print(f"  Rows: {len(df):,}")
-            print(f"  Bidders: {split_stats[split_name]['bidders']:,} ({split_stats[split_name]['bidders']/len(df)*100:.1f}%)")
-            print(f"  Defenders: {split_stats[split_name]['defenders']:,} ({split_stats[split_name]['defenders']/len(df)*100:.1f}%)")
+            print(f"  ✅ Saved to: {stats['output_path']}")
+            print(f"  Rows: {stats['rows']:,}")
+            print(f"  Bidders: {stats['bidders']:,} ({stats['bidders']/stats['rows']*100:.1f}%)")
+            print(f"  Defenders: {stats['defenders']:,} ({stats['defenders']/stats['rows']*100:.1f}%)")
             
         except Exception as e:
             print(f"  ❌ Error converting {split_name}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     # Print summary

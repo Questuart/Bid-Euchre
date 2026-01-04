@@ -57,7 +57,7 @@ def run_analysis(n_hands: int = 20000, seed: int = 42):
         if i % 5000 == 0 and i > 0:
             print(f"  Progress: {i:,}/{n_hands:,} hands")
         
-        t0, t1, _, _, leader, starting_hands, bid, _, _ = play_single_hand(
+        t0, t1, _, _, leader, starting_hands, bid, _, _, _, _, _, _ = play_single_hand(
             contract_type=None,
             strategies=strategies,
             rng=rng,
