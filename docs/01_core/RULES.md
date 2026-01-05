@@ -203,15 +203,15 @@ Define `effective_suit(card, contract_type, trump)`:
 
 - If `contract_type != "suit"`: effective suit = printed suit (bowers inactive).
 - If `contract_type = "suit"`:
-  - If card is the **Right Bower** (`J` of trump): effective suit = `trump`
-  - If card is the **Left Bower** (`J` of same-color suit): effective suit = `trump`
-  - Otherwise: effective suit = printed suit
+- If card is the **Right Bower** (`J` of trump): effective suit = `trump`
+- If card is the **Left Bower** (`J` of same-color suit): effective suit = `trump`
+- Otherwise: effective suit = printed suit
 
 Important implication ("suit" contracts):
 - The Left Bower is considered **trump for all purposes**:
-  - following suit
-  - determining the led suit (effective)
-  - determining trick winner
+- following suit
+- determining the led suit (effective)
+- determining trick winner
 
 ### 4.4 Trump ordering (suit contracts only, with bowers)
 
