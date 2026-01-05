@@ -1,7 +1,7 @@
 # Statistical Improvements & Paired Analysis
 
-**Date**: December 15, 2025  
-**Status**: ✅ Complete  
+**Date**: December 15, 2025
+**Status**: ✅ Complete
 **Impact**: High - Transforms analysis from descriptive to rigorous
 
 ---
@@ -83,7 +83,7 @@ data/runs/<run_id>/dashboard/paired_<timestamp>/
 1. **Wilson CI for Proportions**
    ```python
    from bid_euchre.analysis import wilson_ci
-   
+
    p, lower, upper = wilson_ci(successes=120, trials=300, confidence=0.95)
    # Better than normal approximation, especially for small p or small n
    ```
@@ -91,7 +91,7 @@ data/runs/<run_id>/dashboard/paired_<timestamp>/
 2. **Paired T-Test CI**
    ```python
    from bid_euchre.analysis import paired_t_ci
-   
+
    mean_diff, lower, upper = paired_t_ci(differences=[0.01, -0.02, 0.03, ...])
    # Proper CI for paired differences
    ```
@@ -99,7 +99,7 @@ data/runs/<run_id>/dashboard/paired_<timestamp>/
 3. **Cohen's d Effect Size**
    ```python
    from bid_euchre.analysis import compute_effect_size
-   
+
    d = compute_effect_size(group1=[5.0, 5.1, 4.9], group2=[5.1, 5.2, 5.0])
    # Standardized mean difference (independent of sample size)
    ```
@@ -107,7 +107,7 @@ data/runs/<run_id>/dashboard/paired_<timestamp>/
 4. **Bootstrap CI**
    ```python
    from bid_euchre.analysis import bootstrap_ci
-   
+
    stat, lower, upper = bootstrap_ci(data, statistic=np.median, n_bootstrap=10000)
    # General-purpose CI for any statistic
    ```
@@ -148,10 +148,10 @@ JSONL used for:                  JSON used for:
 def load_paired_data(run_dir: str, strategies: List[str]) -> Dict:
     """
     Load hand-level data from JSONL logs.
-    
+
     Returns:
         {strategy: {scenario: [hand_records]}}
-    
+
     Each hand_record has:
         deal_id, seed, contract, trump, leader, t0, t1, features, scores
     """
@@ -164,12 +164,12 @@ def compute_paired_deltas(
 ) -> Dict:
     """
     Compute paired differences for deals both strategies played.
-    
+
     Matches by (deal_id, seed) and verifies:
     - Same contract
     - Same trump
     - Same leader
-    
+
     Returns:
         {
             "deltas": [list of t0_comp - t0_base],
@@ -494,9 +494,7 @@ plt.show()
 
 ---
 
-**Status**: ✅ Production Ready  
-**Documentation**: ✅ Complete  
-**Testing**: ⚠️ Manual validation complete, unit tests needed  
+**Status**: ✅ Production Ready
+**Documentation**: ✅ Complete
+**Testing**: ⚠️ Manual validation complete, unit tests needed
 **Impact**: 🔥 High - Enables rigorous strategy evaluation
-
-

@@ -16,4 +16,3 @@ logging:
   enabled: true
   level: "hand"
   output_dir: "data/hand_logs"
-

@@ -6,20 +6,20 @@ experiment_name: strategy_comparison
 strategies:
   - name: greedy
     class_name: GreedyStrategy
-  
+
   - name: improved_greedy
     class_name: ImprovedGreedyStrategy
     params:
       debug: false
-  
+
   - name: random_legal
     class_name: RandomLegalStrategy
     params:
       seed: 42
-  
+
   - name: always_lowest
     class_name: AlwaysLowestLegalStrategy
-  
+
   - name: always_highest
     class_name: AlwaysHighestLegalStrategy
 
@@ -33,4 +33,3 @@ parameters:
   n_per: 50000
   seed: 42
   log_level: hand
-

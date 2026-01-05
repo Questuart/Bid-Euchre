@@ -15,17 +15,17 @@ from ..core.rules import trick_winner, get_legal_indices
 class GreedyStrategy(Strategy):
     """
     Greedy strategy with 1-trick lookahead.
-    
+
     Strategy:
     - When LEADING: Play the highest-value card to establish dominance
     - When FOLLOWING:
       * If any legal card wins the trick: play the cheapest winning card
       * Otherwise: dump the cheapest legal card
-    
+
     Strengths:
     - Simple and fast
     - Treats trump/bowers as valuable
-    
+
     Weaknesses:
     - No partner awareness (may overkill partner's winning card)
     - No multi-trick lookahead
@@ -77,12 +77,12 @@ class GreedyStrategy(Strategy):
 class ImprovedGreedyStrategy(Strategy):
     """
     Improved greedy strategy with partner awareness and trump conservation.
-    
+
     Improvements over GreedyStrategy:
     1. Partner awareness - don't overkill partner's winning card
     2. Trump conservation - save trump when losing to set up future tricks
     3. Decision logging - optional debug output
-    
+
     Strategy:
     - When LEADING: Play highest value card
     - When FOLLOWING:
@@ -90,11 +90,11 @@ class ImprovedGreedyStrategy(Strategy):
       * If we can win: play cheapest winning card
       * If we can't win and have trump: save trump for later, dump offsuit
       * Otherwise: dump cheapest legal card
-    
+
     Strengths:
     - Partner-aware (doesn't waste cards overkilling partner)
     - Trump conservation (saves strong cards when losing)
-    
+
     Weaknesses:
     - Still mostly myopic (only 1-trick lookahead)
     - Conservative bias (may miss aggressive opportunities)
@@ -242,4 +242,3 @@ def choose_card_greedy(
     Kept for backwards compatibility.
     """
     return GreedyStrategy().choose_card(hand, plays_so_far, contract_type, trump_suit, player_index)
-

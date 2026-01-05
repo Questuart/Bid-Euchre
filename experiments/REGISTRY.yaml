@@ -108,7 +108,7 @@ bidder_training_data:
   runner: experiments/generate_bidder_training_data.py
   status: active
   last_run: 2026-01-03
-  outputs: 
+  outputs:
     - data/runs/bidder_training_data_42_*/logs/
     - data/training/bidder_aware_{train,val,test}.csv
   strategy: OLSa_SR_Floor self-play
@@ -440,7 +440,7 @@ _deprecated_experiments:
 # =============================================================================
 # MAINTENANCE NOTES
 # =============================================================================
-# 
+#
 # TODO: Cleanup priorities
 # 1. Create missing config files (marked as needs_config)
 # 2. Consolidate similar report generators
@@ -449,4 +449,3 @@ _deprecated_experiments:
 # 5. Document reproduction steps for all active experiments
 #
 # =============================================================================
-

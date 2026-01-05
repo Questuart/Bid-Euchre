@@ -15,16 +15,16 @@ parameters:
 strategies:
   - name: greedy
     class_name: GreedyStrategy
-  
+
   - name: improved_greedy
     class_name: ImprovedGreedyStrategy
-  
+
   - name: random_legal
     class_name: RandomLegalStrategy
-  
+
   - name: always_highest
     class_name: AlwaysHighestLegalStrategy
-  
+
   - name: always_lowest
     class_name: AlwaysLowestLegalStrategy
 
@@ -33,31 +33,31 @@ matchups:
   # Greedy vs Random (both directions for seat bias check)
   - team0: greedy
     team1: random_legal
-  
+
   - team0: random_legal
     team1: greedy
-  
+
   # Improved Greedy vs Random
   - team0: improved_greedy
     team1: random_legal
-  
+
   - team0: random_legal
     team1: improved_greedy
-  
+
   # Always Highest vs Random
   - team0: always_highest
     team1: random_legal
-  
+
   - team0: random_legal
     team1: always_highest
-  
+
   # Always Lowest vs Random
   - team0: always_lowest
     team1: random_legal
-  
+
   - team0: random_legal
     team1: always_lowest
-  
+
   # Control: Random vs Random (should be ~5.0 tricks each)
   - team0: random_legal
     team1: random_legal
@@ -68,4 +68,3 @@ scenarios:
     trump_suit: C,D,H,S
   - contract_type: high
   - contract_type: low
-

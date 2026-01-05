@@ -33,10 +33,10 @@ def play_single_hand(
 ) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int], Optional[int], Optional[int], str, Optional[str]]:
     """
     Play one full 10-trick hand.
-    
+
     If contract_type is None, a bidding phase is conducted first.
     The winner of the bid chooses the contract and leads the first trick.
-    
+
     Returns:
         (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump)
     """
@@ -63,7 +63,7 @@ def play_single_hand(
     bidding_data = None
     dealer_index = None  # Track dealer position (0-3 or None if no bidding)
     bidder_position = None  # Track auction winner (0-3 or None)
-    
+
     if contract_type is None:
         # Determine dealer
         if initial_leader is not None:
@@ -73,18 +73,18 @@ def play_single_hand(
                 dealer_index = rng.randrange(4)
             else:
                 dealer_index = random.randrange(4)
-        
+
         current_high_bid = 0
         winning_bidder = None
         final_contract = None
         final_trump = None
-        
+
         # Bidding order: LOD, Partner of LOD, ROD, Dealer
         for i in range(1, 5):
             player_idx = (dealer_index + i) % 4
             partner_idx = (player_idx + 2) % 4
             strat = seat_strategies[player_idx]
-            
+
             bid, ctype, trump = strat.decide_bid(
                 hand=starting_hands[player_idx],
                 current_high_bid=current_high_bid,
@@ -92,17 +92,17 @@ def play_single_hand(
                 partner_index=partner_idx,
                 player_index=player_idx
             )
-            
+
             # Dealer-partner pass rule: dealer passes if partner has the high bid
             if player_idx == dealer_index and winning_bidder == partner_idx:
                 continue
-                
+
             if bid > current_high_bid:
                 current_high_bid = bid
                 winning_bidder = player_idx
                 final_contract = ctype
                 final_trump = trump
-        
+
         if winning_bidder is None:
             # Misdeal: everyone passed
             # Return zeros but still need scores/features (use dummy contract for logging)
@@ -112,7 +112,7 @@ def play_single_hand(
             all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
             # dealer_index is known, bidder_position is None (misdeal)
             return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0, dealer_index, None, dummy_ctype, None
-            
+
         contract_type = final_contract
         trump_suit = final_trump
         initial_leader = winning_bidder
@@ -196,7 +196,7 @@ def play_single_hand(
                     f"player={player} contract={contract_type} trump={trump_suit} "
                     f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
             )
-            
+
             # Index integrity check: verify strategy returns valid index into actual hand
             # (catches bugs where strategy sorts/filters hand and returns wrong index)
             if card_index < 0 or card_index >= len(hand):
@@ -205,7 +205,7 @@ def play_single_hand(
                     f"returned out-of-bounds index {card_index} for hand of size {len(hand)} "
                     f"player={player}"
                 )
-            
+
             card = hand.pop(card_index)
             plays.append((player, card))
 
@@ -314,7 +314,7 @@ def simulate_many_hands(
                 deal_id=deal_id,
                 rng=local_rng,
             )
-        
+
         # Log hand completion (if logger enabled)
         if logger and logger.is_enabled:
             logger.log_hand_end(
@@ -465,5 +465,3 @@ def run_all_scenarios(
                 b = buckets[score]
                 print(f"  Score {score:3d}: "
                       f"n={b['count']:4d}, avg_tricks={b['avg_tricks']:.3f}")
-
-

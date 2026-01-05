@@ -1,7 +1,7 @@
 # Code Changes for RULES.md Consistency
 
-**Created:** 2026-01-04  
-**Source:** RULES.md consistency review  
+**Created:** 2026-01-04
+**Source:** RULES.md consistency review
 **Status:** Not yet implemented
 
 This document tracks code changes needed to align the codebase with RULES.md specifications. These were identified during consistency review but deferred for future implementation.
@@ -31,12 +31,12 @@ def calculate_points(
 ) -> Tuple[int, int]:
     """Calculate points per RULES.md Section 6.3"""
     points_defending = tricks_defending
-    
+
     if tricks_declaring >= bid_tricks:  # Make
         points_declaring = tricks_declaring
     else:  # Set
         points_declaring = -bid_tricks
-    
+
     # Map to team0/team1
     if declarer_team == 0:
         return points_declaring, points_defending
@@ -49,7 +49,7 @@ def calculate_points(
 - `src/bid_euchre/logging/game_logger.py` - Log points fields
 - Tests - Add scoring validation tests
 
-**Effort:** 2-3 hours  
+**Effort:** 2-3 hours
 **Impact:** HIGH - Required for proper strategy evaluation
 
 **Blockers:** None - can be implemented independently
@@ -93,7 +93,7 @@ Modify `simulation.py` to log each bid action during the auction loop.
 - `src/bid_euchre/sim/simulation.py` - Call logger in bidding loop
 - Increase `SCHEMA_VERSION` to 6
 
-**Effort:** 1-2 hours  
+**Effort:** 1-2 hours
 **Impact:** HIGH - Essential for debugging bidding strategies
 
 **Blockers:** None
@@ -123,7 +123,7 @@ Modify `simulation.py` to log each bid action during the auction loop.
 - If different: `src/bid_euchre/logging/game_logger.py` - Add `hand_id` field
 - If same: `docs/01_core/METRICS.md` - Remove duplicate or clarify they're the same
 
-**Effort:** 
+**Effort:**
 - Clarification only: 0 hours (documentation question)
 - Implementation (if different): 30 minutes
 
@@ -173,7 +173,7 @@ def deal_hands_with_ids(deck: List[Card], ...) -> List[List[Card]]:
 - `src/bid_euchre/sim/simulation.py` - Pass through instance IDs
 - ALL test files - Update Card construction
 
-**Effort:** 2-3 hours (plus test updates)  
+**Effort:** 2-3 hours (plus test updates)
 **Impact:** HIGH - Required for deterministic replay
 
 **Blockers:** This will break existing Card construction everywhere. Consider making `instance_id` optional with default=0 for backward compatibility.
@@ -206,7 +206,7 @@ Update `simulation.py` misdeal handling to set `redeal_flag=True`.
 - `src/bid_euchre/sim/simulation.py` - Pass `redeal_flag=True` for misdeals
 - Increase `SCHEMA_VERSION` to 6 (or 7 if 1.2 is done first)
 
-**Effort:** 15-30 minutes  
+**Effort:** 15-30 minutes
 **Impact:** MEDIUM - Improves log clarity
 
 **Blockers:** None
@@ -242,7 +242,7 @@ made_bid = (tricks_declaring >= contract_tricks)
 - `src/bid_euchre/sim/simulation.py` - Compute and pass `made_bid`
 - Increase `SCHEMA_VERSION` if other changes require it
 
-**Effort:** 30 minutes  
+**Effort:** 30 minutes
 **Impact:** MEDIUM - Improves log clarity and enables explicit declarer success tracking
 
 **Blockers:** None - Easy derivative field
@@ -284,7 +284,7 @@ Update `simulation.py` to extract strategy IDs from strategies per seat and map 
 - Experiment runners - Pass strategy IDs appropriately
 - Increase `SCHEMA_VERSION`
 
-**Effort:** 1-2 hours  
+**Effort:** 1-2 hours
 **Impact:** HIGH - Required for asymmetric matchup analysis and play/bid strategy separation
 
 **Blockers:** None - Independent change
@@ -310,7 +310,7 @@ Update `simulation.py` to extract strategy IDs from strategies per seat and map 
 - All experiment scripts that reference this field
 - All test files
 
-**Effort:** 30-60 minutes (careful find/replace)  
+**Effort:** 30-60 minutes (careful find/replace)
 **Impact:** MEDIUM - Improves clarity and consistency
 
 **Blockers:** Will break any analysis scripts that read logs with `bidder_position`
@@ -332,7 +332,7 @@ Update `simulation.py` to extract strategy IDs from strategies per seat and map 
 - `src/bid_euchre/sim/simulation.py` - `dealer_index` → `dealer_seat`
 - `src/bid_euchre/logging/game_logger.py` - `dealer_position` → `dealer_seat`
 
-**Effort:** 15-30 minutes  
+**Effort:** 15-30 minutes
 **Impact:** LOW-MEDIUM - Improves consistency
 
 **Blockers:** Same as 3.1
@@ -368,11 +368,11 @@ Update `simulation.py` to extract strategy IDs from strategies per seat and map 
 - Consider: `src/bid_euchre/logging/game_logger.py` - Field names in `HandEndRecord` (if renaming)
 - Report generators - Field name mapping/compatibility
 
-**Effort:** 
+**Effort:**
 - Terminology (comments/docstrings): 15-30 minutes
 - Field renaming (if done): 1-2 hours (breaking change, requires migration)
 
-**Impact:** 
+**Impact:**
 - Terminology: LOW - Mostly comments/docstrings
 - Field renaming: LOW-MEDIUM - Breaking change, but improves METRICS.md consistency
 
@@ -405,7 +405,7 @@ After scoring system is implemented (1.1):
 - `src/bid_euchre/analysis/stats.py` - Add points-based outcome stats if needed
 - Report generators - Include both metrics
 
-**Effort:** 1-2 hours (after scoring system)  
+**Effort:** 1-2 hours (after scoring system)
 **Impact:** HIGH - Required for proper evaluation per METRICS.md specification
 
 **Blockers:** Depends on scoring system implementation (1.1)
@@ -491,7 +491,7 @@ After scoring system is implemented (1.1):
 - `src/bid_euchre/logging/game_logger.py` - Add hand strength fields to `HandEndRecord`
 - Report generators - Add role-conditioned strength derivation
 
-**Effort:** 
+**Effort:**
 - v0.1 function + seat/team logging: 2-3 hours
 - Bucketing logic: 2-3 hours (future work)
 
@@ -546,7 +546,7 @@ After scoring system is implemented (1.1):
 - Experiment configs - Add seat_assignment_mode (default to TEAM_RANDOMIZED)
 - Tests - Add tests for randomized assignments
 
-**Effort:** 2-3 hours  
+**Effort:** 2-3 hours
 **Impact:** HIGH - Required for proper strategy comparisons. Current fixed assignments may introduce bias.
 
 **Blockers:** None - Can be implemented independently. Note: This affects all existing experiments if made default.
@@ -580,10 +580,10 @@ After scoring system is implemented (1.1):
        """Extract points_for_play[S] or points_for_bid[S] per hand."""
        # For each hand, find which team uses this strategy
        # Extract points for that team
-   
+
    def compute_strategy_centric_metrics(hand_records):
        """Compute play_mean_points[S], play_mean_net_points[S], etc."""
-   
+
    def compute_paired_delta(hand_records, strategy_a, strategy_b):
        """Compute delta_net_points_A_minus_B per hand."""
    ```
@@ -598,7 +598,7 @@ After scoring system is implemented (1.1):
 - Report generators - Include strategy-centric tables
 - Dashboard generators - Add strategy-centric panels
 
-**Effort:** 3-4 hours  
+**Effort:** 3-4 hours
 **Impact:** HIGH - Required for proper evaluation under TEAM_RANDOMIZED. Team-level metrics are insufficient.
 
 **Blockers:** Depends on strategy ID logging (2.4) and TEAM_RANDOMIZED protocol (3.6)
@@ -636,7 +636,7 @@ def log_hand_end(
 - `src/bid_euchre/sim/simulation.py` - Update call sites
 - All experiment scripts that use the logger
 
-**Effort:** 10-15 minutes  
+**Effort:** 10-15 minutes
 **Impact:** LOW - Improves clarity
 
 **Blockers:** None
@@ -651,7 +651,7 @@ def log_hand_end(
 - `tricks_declaring`, `tricks_defending`
 - `points_declaring_team`, `points_defending_team`
 
-**Effort:** 5-10 minutes (after 1.1 is done)  
+**Effort:** 5-10 minutes (after 1.1 is done)
 **Impact:** LOW - Nice to have, but derivable
 
 **Blockers:** Depends on 1.1
@@ -700,7 +700,7 @@ Reports must include:
 - `experiments/run_experiment.py` - Capture metadata at experiment start
 - Report template/formatter - Standardize metadata display
 
-**Effort:** 1-2 hours  
+**Effort:** 1-2 hours
 **Impact:** MEDIUM - Enables verification of experiment comparability. Important for reproducibility audits.
 
 **Blockers:** None - Can be implemented independently
@@ -745,7 +745,7 @@ Reports must include:
 - Dashboard generators - Add breakout panels/plots
 - Analysis scripts - Add breakout analysis functions
 
-**Effort:** 2-3 hours (excluding auction context, which depends on 1.2)  
+**Effort:** 2-3 hours (excluding auction context, which depends on 1.2)
 **Impact:** LOW-MEDIUM - Enhances analysis depth. Marked as "strongly recommended" not "required".
 
 **Blockers:** Auction context breakouts depend on auction transcript logging (1.2)
@@ -786,7 +786,7 @@ Reports must include:
 - Dashboard generators - Add visual indicators
 - Table formatters - Include low-sample annotations
 
-**Effort:** 1 hour  
+**Effort:** 1 hour
 **Impact:** LOW - Recommended best practice. Improves interpretation clarity.
 
 **Blockers:** None - Can be implemented independently
@@ -890,7 +890,7 @@ When implementing any of these:
 **Files to modify:**
 - `docs/02_agent/AGENTS.md` - Add schema versioning recipe to Section 10
 
-**Effort:** 15 minutes  
+**Effort:** 15 minutes
 **Impact:** MEDIUM - Prevents logger breaking changes
 
 **Blockers:** None
@@ -916,7 +916,7 @@ When implementing any of these:
 **Files to modify:**
 - `docs/02_agent/AGENTS.md` - Add TODO tracker guidance to Section 7
 
-**Effort:** 10 minutes  
+**Effort:** 10 minutes
 **Impact:** MEDIUM - Improves doc/code consistency tracking
 
 **Blockers:** None
@@ -945,7 +945,7 @@ When implementing any of these:
 **Files to modify:**
 - `docs/02_agent/AGENTS.md` - Clarify Section 8 (No-Go List)
 
-**Effort:** 10 minutes  
+**Effort:** 10 minutes
 **Impact:** LOW-MEDIUM - Reduces confusion about what to commit
 
 **Blockers:** None
@@ -972,7 +972,7 @@ When implementing any of these:
 **Files to modify:**
 - `docs/02_agent/AGENTS.md` - Update Section 11 (Deprecation Policy)
 
-**Effort:** 10 minutes  
+**Effort:** 10 minutes
 **Impact:** LOW-MEDIUM - Clarifies archival policy
 
 **Blockers:** None
@@ -990,15 +990,15 @@ When implementing any of these:
 
 **Required note in AGENTS.md Section 1:**
 ```markdown
-**Note:** The root `README.md` may reference legacy scripts for backward compatibility. 
-Always prefer the workflows documented here. Legacy scripts in `experiments/_deprecated/` 
+**Note:** The root `README.md` may reference legacy scripts for backward compatibility.
+Always prefer the workflows documented here. Legacy scripts in `experiments/_deprecated/`
 are preserved for historical reference only.
 ```
 
 **Files to modify:**
 - `docs/02_agent/AGENTS.md` - Add note to Section 1
 
-**Effort:** 5 minutes  
+**Effort:** 5 minutes
 **Impact:** LOW - Clarifies precedence
 
 **Blockers:** None
@@ -1032,7 +1032,7 @@ are preserved for historical reference only.
 - `docs/01_core/EXPERIMENTS.md` - New file (extract from AGENTS.md Section 10)
 - `docs/01_core/TESTING_STRATEGY.md` - New file (extract from AGENTS.md Section 6)
 
-**Effort:** 2-3 hours  
+**Effort:** 2-3 hours
 **Impact:** MEDIUM - Improves doc organization
 
 **Blockers:** None
@@ -1061,7 +1061,7 @@ are preserved for historical reference only.
 **Files to create:**
 - `docs/01_core/STYLEGUIDE.md` - New file
 
-**Effort:** 1-2 hours  
+**Effort:** 1-2 hours
 **Impact:** LOW-MEDIUM - Documents existing practices
 
 **Blockers:** None
@@ -1088,7 +1088,7 @@ are preserved for historical reference only.
 - All Python files in `src/bid_euchre/`
 - Focus on: `experiments/`, `reporting/`, `logging/`
 
-**Effort:** 1-2 hours  
+**Effort:** 1-2 hours
 **Impact:** LOW - Documentation cleanup
 
 **Blockers:** None
@@ -1118,7 +1118,7 @@ are preserved for historical reference only.
 **Files to create:**
 - `docs/archive/README.md` - New file
 
-**Effort:** 30 minutes  
+**Effort:** 30 minutes
 **Impact:** LOW - Documentation organization
 
 **Blockers:** None
@@ -1150,7 +1150,7 @@ are preserved for historical reference only.
 **Files to modify:**
 - `docs/02_agent/AGENTS.md` - Add Section 12
 
-**Effort:** 15 minutes  
+**Effort:** 15 minutes
 **Impact:** LOW-MEDIUM - Improves agent efficiency
 
 **Blockers:** None

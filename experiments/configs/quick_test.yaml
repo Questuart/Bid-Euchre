@@ -6,7 +6,7 @@ experiment_name: quick_test
 strategies:
   - name: greedy
     class_name: GreedyStrategy
-  
+
   - name: always_highest
     class_name: AlwaysHighestLegalStrategy
 
@@ -19,4 +19,3 @@ parameters:
   n_per: 1000
   seed: 42
   log_level: none
-

@@ -83,33 +83,33 @@ def format_duration(seconds: float) -> str:
 
 def main():
     args = parse_args()
-    
+
     # Configuration
     experiment_name = "bidder_training_data"
     n_hands = args.hands
     seed = args.seed
     strategy_name = "olsa_sr_floor"
-    
+
     # Print experiment summary
     print("\n" + "=" * 80)
-    print(f"🚀 Generating Bidder Training Data")
+    print("🚀 Generating Bidder Training Data")
     print("=" * 80)
     print(f"Strategy: {strategy_name} (Hand Value OLS, floor policy)")
-    print(f"Mode: Self-play with full bidding")
+    print("Mode: Self-play with full bidding")
     print(f"Hands: {n_hands:,}")
     print(f"Random seed: {seed}")
-    print(f"Log level: hand (schema v5 with position data)")
+    print("Log level: hand (schema v5 with position data)")
     print("=" * 80)
-    
+
     # Create run directory structure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"{experiment_name}_{seed}_{timestamp}"
     run_dir = os.path.join(args.run_dir, run_id)
     logs_dir = os.path.join(run_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
-    
+
     print(f"\n📁 Run directory: {run_dir}\n")
-    
+
     # Load strategy (Hand Value OLS with floor policy)
     print("Loading Hand Value OLS models...")
     hand_value_models = {
@@ -117,16 +117,16 @@ def main():
         'high': 'data/models/hand_value_ols/hand_value_ols_high.pkl',
         'low': 'data/models/hand_value_ols/hand_value_ols_low.pkl'
     }
-    
+
     strategy = RegressionBidder(
         model_paths=hand_value_models,
         name="OLSa_SR_Floor",
         policy="floor"
     )
-    
+
     # All 4 players use same strategy (self-play)
     strategies = [strategy, strategy, strategy, strategy]
-    
+
     # Setup logger
     logger = GameLogger(
         run_id=f"{run_id}_{strategy_name}",
@@ -134,14 +134,14 @@ def main():
         level=LogLevel.HAND,
         output_dir=logs_dir,
     )
-    
+
     print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
     print(f"\n🎲 Running {n_hands:,} hands with full bidding...")
     print("-" * 80)
-    
+
     # Run simulation with bidding
     start_time = time.time()
-    
+
     logger.open()
     try:
         results = simulation.simulate_many_hands(
@@ -156,17 +156,17 @@ def main():
         )
     finally:
         logger.close()
-    
+
     duration = time.time() - start_time
     hands_per_sec = n_hands / duration if duration > 0 else 0
-    
+
     # Print results summary
     print("-" * 80)
-    print(f"\n✅ Simulation complete!")
+    print("\n✅ Simulation complete!")
     print(f"   Duration: {format_duration(duration)}")
     print(f"   Throughput: {hands_per_sec:.0f} hands/sec")
     print(f"   Total hands: {results['hands']:,}")
-    
+
     # Write metadata
     meta = {
         "run_id": run_id,
@@ -183,22 +183,22 @@ def main():
         "duration_sec": round(duration, 2),
         "hands_per_sec": round(hands_per_sec, 1),
     }
-    
+
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
-    
+
     print(f"\n📄 Metadata saved to: {run_dir}/meta.json")
-    
+
     # Print next steps
     print("\n" + "=" * 80)
     print("🎯 Next Steps:")
     print("=" * 80)
-    print(f"\n1. Split data into train/val/test:")
+    print("\n1. Split data into train/val/test:")
     print(f"   python experiments/split_train_val_test.py {run_dir}")
-    print(f"\n2. Convert splits to CSV:")
+    print("\n2. Convert splits to CSV:")
     print(f"   PYTHONPATH=src python experiments/convert_splits_to_csv.py {run_dir}")
-    print(f"\n3. Train bidder-aware models:")
-    print(f"   PYTHONPATH=src python experiments/train_bidder_models.py")
+    print("\n3. Train bidder-aware models:")
+    print("   PYTHONPATH=src python experiments/train_bidder_models.py")
     print("=" * 80)
 
 

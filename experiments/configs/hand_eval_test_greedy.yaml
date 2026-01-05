@@ -19,4 +19,3 @@ parameters:
   n_per: 50000  # 2500 hands per scenario = 10k total
   seed: 43
   log_level: hand  # Enable full hand logging with all features
-

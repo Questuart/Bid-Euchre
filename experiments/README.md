@@ -1,6 +1,6 @@
 # Experiments Directory
 
-**Last updated:** 2026-01-04  
+**Last updated:** 2026-01-04
 **Organization:** Function-based subdirectories
 
 This directory contains all experiment scripts for Bid Euchre simulation and analysis.
@@ -289,4 +289,3 @@ ls experiments/<subdirectory>/
 - `configs/` - All experiment configurations
 - `docs/CONTRIBUTING.md` - Experiment standards
 - `docs/ANTI_PATTERNS.md` - What to avoid
-

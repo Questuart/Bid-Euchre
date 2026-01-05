@@ -7,11 +7,9 @@ import os
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any
 
-from .base import Strategy
 from .greedy import ImprovedGreedyStrategy
 from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
-from ..analysis.models import SimpleOLS
 
 class RegressionBidder(ImprovedGreedyStrategy):
     """
@@ -20,8 +18,8 @@ class RegressionBidder(ImprovedGreedyStrategy):
     """
 
     def __init__(
-        self, 
-        model_paths: Dict[str, str], 
+        self,
+        model_paths: Dict[str, str],
         name: str = "regression_bidder",
         policy: str = "round",
         fixed_bid: Optional[int] = None,
@@ -50,7 +48,7 @@ class RegressionBidder(ImprovedGreedyStrategy):
                     path = alt_path
                 else:
                     raise FileNotFoundError(f"Model file not found: {path}")
-            
+
             with open(path, 'rb') as f:
                 models[ctype] = pickle.load(f)
         return models
@@ -67,9 +65,7 @@ class RegressionBidder(ImprovedGreedyStrategy):
         Evaluate all 6 possible contracts and choose the best one.
         """
         # Dealer-partner pass rule: if partner already holds the high bid, pass
-        is_dealer = (player_index == 3) # Assuming dealer is always index 3 in a round
-        # Wait, the simulation should tell us if we are the dealer or not.
-        # Let's assume the caller passes the correct context.
+        # (dealer is player_index == 3, but simulation handles this context)
         # Actually, in Bid Euchre, dealer is just one of the seats.
         # Let's use the partner_index comparison.
         if current_winner_index == partner_index:
@@ -78,10 +74,6 @@ class RegressionBidder(ImprovedGreedyStrategy):
             # We need to know who the dealer is. Let's assume for now the dealer is always the last bidder in the sequence.
             # But the simulation loop might be different.
             pass # We'll check this in the simulation loop or pass a flag.
-
-        best_bid = 0
-        best_contract = None
-        best_trump = None
         best_expected_tricks = -1.0
 
         # Evaluate all 6 scenarios
@@ -96,24 +88,24 @@ class RegressionBidder(ImprovedGreedyStrategy):
         for ctype, trump in scenarios:
             # Extract features
             feats = get_hand_features(hand, contract_type=ctype, trump_suit=trump)
-            
+
             # Add is_bidder feature (assume we are the bidder during evaluation)
             feats['is_bidder'] = 1
-            
+
             # Get the right model
             model_data = self.models.get(ctype)
             if not model_data:
                 continue
-                
+
             model = model_data['model']
             feature_names = model_data['features']
-            
+
             # Prepare feature vector
             X = np.array([feats[fname] for fname in feature_names]).reshape(1, -1)
-            
+
             # Predict
             pred = model.predict(X)[0]
-            
+
             if pred > best_expected_tricks:
                 best_expected_tricks = pred
                 best_contract = ctype

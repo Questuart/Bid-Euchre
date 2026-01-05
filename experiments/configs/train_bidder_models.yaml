@@ -39,7 +39,7 @@ model_families:
         - offsuit_length_3plus_count
         - is_bidder
     output_dir: data/models/olsa_v2
-    
+
   # OLSa_SR_v2: Hand Value + is_bidder
   olsa_sr_v2:
     description: "Aggregated hand value score with bidder indicator"
@@ -84,4 +84,3 @@ contracts:
 # Training data schema: v5 (includes dealer_position, bidder_position, is_bidder)
 # Data split: 70/15/15 (train/val/test)
 # =============================================================================
-

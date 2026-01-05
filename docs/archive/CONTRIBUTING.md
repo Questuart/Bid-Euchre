@@ -193,7 +193,7 @@ You should:
 
 ### 1. Can this use `run_experiment.py`?
 
-**If YES** → Create YAML config only (no new script needed)  
+**If YES** → Create YAML config only (no new script needed)
 **If NO** → Proceed to steps 2-5
 
 ### 2. Create Config File FIRST
@@ -244,4 +244,3 @@ Add entry to `experiments/REGISTRY.yaml`
 - Has integration test
 - In REGISTRY.yaml
 - Outputs include metadata
-

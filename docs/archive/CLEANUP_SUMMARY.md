@@ -145,13 +145,13 @@
 ## ⚠️ Remaining Tasks (Optional)
 
 ### 1. Pre-commit Hook (cleanup_7)
-**Status:** Optional  
-**Why:** Would enforce standards automatically, but requires setup  
+**Status:** Optional
+**Why:** Would enforce standards automatically, but requires setup
 **Next steps:** Create `scripts/check_experiment_standards.sh` if desired
 
 ### 2. OLSa_v2 Validation Test (cleanup_10)
-**Status:** Recommended  
-**Why:** Should test OLSa_v2 head-to-head vs OLSa before declaring "production ready"  
+**Status:** Recommended
+**Why:** Should test OLSa_v2 head-to-head vs OLSa before declaring "production ready"
 **Next steps:** Run 10k+ hand comparison: OLSa_v2 vs OLSa vs OLSa_SR
 
 ---
@@ -204,7 +204,7 @@
 The repository is now **significantly more maintainable**:
 
 1. ✅ **Discoverable** - REGISTRY.yaml shows what exists
-2. ✅ **Reproducible** - Configs enable exact reproduction  
+2. ✅ **Reproducible** - Configs enable exact reproduction
 3. ✅ **Tested** - 19 tests cover critical paths
 4. ✅ **Documented** - READMEs explain data, models, standards
 5. ✅ **Organized** - Deprecated scripts clearly separated
@@ -234,10 +234,10 @@ The repository is now **significantly more maintainable**:
 
 ---
 
-**Cleanup completed:** 2026-01-04  
-**Total time:** ~2 hours  
-**Files touched:** 21  
-**Tests added:** 19  
-**Documentation pages:** 3  
+**Cleanup completed:** 2026-01-04
+**Total time:** ~2 hours
+**Files touched:** 21
+**Tests added:** 19
+**Documentation pages:** 3
 
 **Status:** ✅ **COMPLETE** (8/10 tasks, 2 optional remaining)

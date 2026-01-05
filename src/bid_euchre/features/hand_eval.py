@@ -32,21 +32,21 @@ def get_hand_features(
         - High/Low specific features
     """
     from collections import Counter
-    
+
     if contract_type == "suit" and trump_suit is None:
         raise ValueError("trump_suit must be provided for 'suit' contracts")
 
     # ===========================
     # Initialize Counters
     # ===========================
-    
+
     # Legacy features (keep for backward compatibility)
     bowers = 0
     trump_count = 0
     offsuit_aces = 0
     high_offsuit = 0
     rank_sum = 0
-    
+
     # Trump features (suit contracts only)
     trump_rb_count = 0
     trump_lb_count = 0
@@ -56,25 +56,25 @@ def get_hand_features(
     trump_ten_count = 0
     trump_ranks = []  # List of trump rank values for top-3 calculation
     trump_rank_counts = Counter()  # For duplicate pairs
-    
+
     # Offsuit control
     offsuit_king_count_total = 0
     offsuit_queen_count_total = 0
     offsuit_by_suit = {"C": [], "D": [], "H": [], "S": []}  # Track cards by suit
-    
+
     # High/Low card counts (all contracts)
     high_card_count = 0  # Aces + Kings
     low_card_count = 0   # Jacks + Tens
-    
+
     # ===========================
     # First Pass: Categorize Cards
     # ===========================
-    
+
     for card in hand:
         # Legacy rank_sum (keep for compatibility)
         rv = rank_strength(card, contract_type) + 1
         rank_sum += rv
-        
+
         # High/Low card counts
         if card.rank in ("A", "K"):
             high_card_count += 1
@@ -83,12 +83,12 @@ def get_hand_features(
 
         if contract_type == "suit":
             eff_suit = effective_suit(card, trump_suit, contract_type)
-            
+
             # Categorize as trump or offsuit
             if eff_suit == trump_suit:
                 # TRUMP CARDS
                 trump_count += 1
-                
+
                 # Right bower
                 if is_right_bower(card, trump_suit):
                     trump_rb_count += 1
@@ -121,7 +121,7 @@ def get_hand_features(
             else:
                 # OFFSUIT CARDS
                 offsuit_by_suit[card.suit].append(card)
-                
+
                 if card.rank == "A":
                     offsuit_aces += 1
                 elif card.rank == "K":
@@ -137,7 +137,7 @@ def get_hand_features(
         else:
             # HIGH / LOW contracts - all cards are "offsuit"
             offsuit_by_suit[card.suit].append(card)
-            
+
             if card.rank == "A":
                 offsuit_aces += 1
             elif card.rank == "K":
@@ -150,88 +150,88 @@ def get_hand_features(
                 high_offsuit += 1
             elif card.rank == "T":
                 high_offsuit += 1
-    
+
     # ===========================
     # Trump Features (Suit Contracts)
     # ===========================
-    
+
     top_trump_count = trump_rb_count + trump_lb_count + trump_ace_count
-    
+
     # Top 3 trump ranks (sorted descending, pad with 0s)
     trump_ranks_sorted = sorted(trump_ranks, reverse=True)
     highest_trump_rank = trump_ranks_sorted[0] if len(trump_ranks_sorted) > 0 else 0
     second_highest_trump_rank = trump_ranks_sorted[1] if len(trump_ranks_sorted) > 1 else 0
     third_highest_trump_rank = trump_ranks_sorted[2] if len(trump_ranks_sorted) > 2 else 0
-    
+
     # Trump power
     trump_power_sum = sum(trump_ranks)
     trump_power_avg = trump_power_sum / max(trump_count, 1)
-    
+
     # Trump duplicate pairs (count of ranks with exactly 2 cards)
     trump_duplicate_pairs = sum(1 for count in trump_rank_counts.values() if count == 2)
-    
+
     # Top trump sum
     top_trump_sum = bowers + trump_ace_count
-    
+
     # ===========================
     # Offsuit Control Features
     # ===========================
-    
+
     offsuit_suits_with_ace = 0
     offsuit_suits_with_double_ace = 0
     offsuit_suits_with_ace_and_king = 0
-    
+
     for suit, cards in offsuit_by_suit.items():
         ace_count = sum(1 for c in cards if c.rank == "A")
         king_count = sum(1 for c in cards if c.rank == "K")
-        
+
         if ace_count >= 1:
             offsuit_suits_with_ace += 1
         if ace_count == 2:
             offsuit_suits_with_double_ace += 1
         if ace_count >= 1 and king_count >= 1:
             offsuit_suits_with_ace_and_king += 1
-    
+
     # ===========================
     # Distribution Features
     # ===========================
-    
+
     # Suit lengths (for all 4 suits)
     suit_lengths = [len(cards) for cards in offsuit_by_suit.values()]
     suit_lengths_sorted = sorted(suit_lengths, reverse=True)
-    
+
     max_suit_len = suit_lengths_sorted[0] if len(suit_lengths_sorted) > 0 else 0
     second_suit_len = suit_lengths_sorted[1] if len(suit_lengths_sorted) > 1 else 0
     third_suit_len = suit_lengths_sorted[2] if len(suit_lengths_sorted) > 2 else 0
     fourth_suit_len = suit_lengths_sorted[3] if len(suit_lengths_sorted) > 3 else 0
-    
+
     void_count = sum(1 for length in suit_lengths if length == 0)
     num_singletons = sum(1 for length in suit_lengths if length == 1)
     num_doubletons = sum(1 for length in suit_lengths if length == 2)
-    
+
     # Offsuit length 3+ count
     offsuit_length_3plus_count = sum(1 for length in suit_lengths if length >= 3)
-    
+
     # Offsuit tens count
     offsuit_tens_count = sum(
         1 for cards in offsuit_by_suit.values()
         for c in cards if c.rank == "T"
     )
-    
+
     # Best and second-best offsuit rank sums
     offsuit_rank_sums = []
     for suit, cards in offsuit_by_suit.items():
         suit_rank_sum = sum(rank_strength(c, contract_type) + 1 for c in cards)
         offsuit_rank_sums.append(suit_rank_sum)
-    
+
     offsuit_rank_sums_sorted = sorted(offsuit_rank_sums, reverse=True)
     offsuit_best_rank_sum = offsuit_rank_sums_sorted[0] if len(offsuit_rank_sums_sorted) > 0 else 0
     offsuit_secondbest_rank_sum = offsuit_rank_sums_sorted[1] if len(offsuit_rank_sums_sorted) > 1 else 0
-    
+
     # ===========================
     # High/Low Specific Features
     # ===========================
-    
+
     # Double-ten-jack count: suits with 2 tens AND at least 1 jack
     double_ten_jack_count = 0
     for suit, cards in offsuit_by_suit.items():
@@ -239,11 +239,11 @@ def get_hand_features(
         jack_count = sum(1 for c in cards if c.rank == "J")
         if ten_count == 2 and jack_count >= 1:
             double_ten_jack_count += 1
-    
+
     # Interaction terms (only meaningful for suit contracts)
     trump_count_x_void_count = trump_count * void_count if contract_type == "suit" else 0
     trump_count_x_offsuit_ace = trump_count * offsuit_aces if contract_type == "suit" else 0
-    
+
     # Hand Value (used for OLSa HV / OLSa SR)
     hand_value = score_hand_scalar(hand, contract_type, trump_suit)
     # Special adjustment for Low: use fixed offsuit weights if requested by user logic
@@ -259,7 +259,7 @@ def get_hand_features(
     # ===========================
     # Return Feature Dictionary
     # ===========================
-    
+
     return {
         # Legacy features (backward compatibility)
         "bowers": bowers,
@@ -268,7 +268,7 @@ def get_hand_features(
         "high_offsuit": high_offsuit,
         "rank_sum": rank_sum,
         "hand_value": hand_value,
-        
+
         # Trump features (suit contracts)
         "trump_rb_count": trump_rb_count,
         "trump_lb_count": trump_lb_count,
@@ -284,14 +284,14 @@ def get_hand_features(
         "trump_power_avg": trump_power_avg,
         "trump_duplicate_pairs": trump_duplicate_pairs,
         "top_trump_sum": top_trump_sum,
-        
+
         # Offsuit control
         "offsuit_king_count_total": offsuit_king_count_total,
         "offsuit_queen_count_total": offsuit_queen_count_total,
         "offsuit_suits_with_ace": offsuit_suits_with_ace,
         "offsuit_suits_with_double_ace": offsuit_suits_with_double_ace,
         "offsuit_suits_with_ace_and_king": offsuit_suits_with_ace_and_king,
-        
+
         # Distribution features
         "void_count": void_count,
         "max_suit_len": max_suit_len,
@@ -304,7 +304,7 @@ def get_hand_features(
         "offsuit_length_3plus_count": offsuit_length_3plus_count,
         "offsuit_best_rank_sum": offsuit_best_rank_sum,
         "offsuit_secondbest_rank_sum": offsuit_secondbest_rank_sum,
-        
+
         # High/Low specific
         "double_ten_jack_count": double_ten_jack_count,
         "high_card_count": high_card_count,

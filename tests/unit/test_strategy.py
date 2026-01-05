@@ -1,5 +1,3 @@
-import pytest
-import os
 
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import (

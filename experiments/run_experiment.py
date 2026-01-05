@@ -39,7 +39,7 @@ import json
 import time
 import argparse
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -132,18 +132,18 @@ def format_duration(seconds: float) -> str:
 
 def main():
     args = parse_args()
-    
+
     # Load configuration
     print(f"📄 Loading configuration: {args.config}")
     config = load_config(args.config)
-    
+
     # Apply command-line overrides
     n_per = args.n_per if args.n_per is not None else config.parameters.get("n_per", 50000)
     seed = args.seed if args.seed is not None else config.parameters.get("seed")
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
     mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
-    
+
     # Get strategies and scenarios
     strategy_cfgs = config.strategies
     strategies = config.get_strategies()
@@ -189,7 +189,7 @@ def main():
             _clone(team0_cfg, 2),
             _clone(team1_cfg, 3),
         ]
-    
+
     # Print experiment summary
     plan_count = len(strategies)
     if mode == "head_to_head_matrix":
@@ -210,11 +210,11 @@ def main():
     if mode == "head_to_head":
         print(f"Team1 strategy: {team1_strategy_name}")
     print("=" * 70)
-    
+
     if args.dry_run:
         print("\n✅ Dry run complete. Configuration valid.")
         return
-    
+
     # Create run directory structure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     seed_str = str(seed) if seed is not None else "random"
@@ -224,13 +224,13 @@ def main():
     logs_dir = os.path.join(run_dir, "logs")
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
-    
+
     print(f"\n📁 Run directory: {run_dir}\n")
-    
+
     # Track performance metrics
     start_time = time.time()
     scenario_metrics = []
-    
+
     # Run all strategies × scenarios
     # Run experiments
     if mode == "head_to_head_matrix":
@@ -435,7 +435,7 @@ def main():
     total_duration = time.time() - start_time
     total_hands = plan_count * len(scenarios) * n_per
     overall_throughput = total_hands / total_duration if total_duration > 0 else 0
-    
+
     # Write metadata (experiment config + results summary)
     meta = {
         "run_id": run_id,
@@ -455,10 +455,10 @@ def main():
         "common_deals": seed is not None,  # Only true if seed provided
         "total_hands": total_hands,
     }
-    
+
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
-    
+
     # Write performance metrics to separate file
     perf = {
         "run_id": run_id,
@@ -468,10 +468,10 @@ def main():
         "total_hands": total_hands,
         "by_scenario": scenario_metrics,
     }
-    
+
     with open(os.path.join(run_dir, "perf.json"), "w") as f:
         json.dump(perf, f, indent=2)
-    
+
     # Final summary
     print("\n" + "=" * 70)
     print("✅ Experiment completed!")
@@ -480,13 +480,13 @@ def main():
     print(f"⏱️  Duration: {format_duration(total_duration)}")
     print(f"🚀 Throughput: {overall_throughput:.0f} hands/sec")
     print(f"📊 Generated {plan_count * len(scenarios)} result files")
-    
+
     print("\n🎯 Next steps:")
-    print(f"   # Generate all reports:")
-    print(f"   PYTHONPATH=src python experiments/generate_all_reports.py \\")
+    print("   # Generate all reports:")
+    print("   PYTHONPATH=src python experiments/generate_all_reports.py \\")
     print(f"       --run-dir {run_dir}")
     print()
-    
+
     # Auto-generate reports if logs were created
     if log_level_str != "none":
         print("📊 Auto-generating reports...")
@@ -510,4 +510,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

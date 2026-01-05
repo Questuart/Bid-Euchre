@@ -1,6 +1,6 @@
 # Bid Euchre JSONL Log Schema
 
-**Schema Version:** 5  
+**Schema Version:** 5
 **Format:** JSONL (JSON Lines) - one JSON object per line
 
 ## Overview
@@ -269,4 +269,3 @@ logs/
 ```
 
 Log files are named `{run_id}.jsonl` by default.
-

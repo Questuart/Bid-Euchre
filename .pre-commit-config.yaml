@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(data/|experiments/|scripts/)
+      - id: end-of-file-fixer
+        exclude: ^(data/|experiments/|scripts/)
+      - id: check-yaml
+        exclude: ^(data/|experiments/|scripts/)
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        exclude: ^(data/.*|experiments/.*|scripts/.*)

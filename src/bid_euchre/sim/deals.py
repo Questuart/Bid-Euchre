@@ -49,5 +49,3 @@ def generate_initial_leader(seed: int, deal_id: int) -> int:
     """Deterministically choose an initial leader (0-3) for a given (seed, deal_id)."""
     rng = _deal_rng(seed, deal_id)
     return rng.randrange(4)
-
-

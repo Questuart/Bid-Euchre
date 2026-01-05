@@ -8,9 +8,7 @@ import subprocess
 pytestmark = pytest.mark.integration
 
 from bid_euchre.sim import simulation
-from bid_euchre.core.cards import create_deck, deal_hands
-from bid_euchre.core.rules import trick_winner
-from bid_euchre.strategy import Strategy, BasicStrategy, GreedyStrategy
+from bid_euchre.strategy import BasicStrategy, GreedyStrategy
 
 
 class TestEndToEndSimulation:
@@ -65,7 +63,7 @@ class TestEndToEndSimulation:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Get repo root (tests/integration/../../ = repo root)
             repo_root = os.path.join(os.path.dirname(__file__), '..', '..')
-            
+
             # Run the experiment script with command line arguments
             cmd = [
                 sys.executable,

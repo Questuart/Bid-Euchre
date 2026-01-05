@@ -1,6 +1,6 @@
 # AGENTS.md — How to Work in This Repo (Bid Euchre)
 
-This repo is a **card game simulator + strategy framework + experiment runner + reporting**.  
+This repo is a **card game simulator + strategy framework + experiment runner + reporting**.
 This document defines the **operating rules** for AI agents making changes here.
 
 For game rules and scoring details, see `docs/01_core/RULES.md`.
@@ -300,4 +300,3 @@ PYTHONPATH=src python experiments/run_experiment.py --config <file.yaml> --n_per
 - If replacing a script or workflow, move the old version into the appropriate `_deprecated/` folder.
 - Update any `_deprecated/README.md` with the reason and the replacement path.
 - Prefer “strangler” migrations: keep old path working until new path is proven with tests and seeded runs.
-

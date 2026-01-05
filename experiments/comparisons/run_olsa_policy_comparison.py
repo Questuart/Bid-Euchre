@@ -8,14 +8,9 @@ Usage:
     PYTHONPATH=src python experiments/run_olsa_policy_comparison.py
 """
 
-import os
-import json
-import numpy as np
-from typing import List, Dict, Any
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder
-from bid_euchre.logging.game_logger import GameLogger, LogLevel
 
 # Model Paths
 BASELINE_MODELS = {
@@ -31,18 +26,18 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
 
     # 1. Define Personalities with different policies
     olsa_floor = RegressionBidder(
-        model_paths=BASELINE_MODELS, 
-        name="OLSa_Floor", 
+        model_paths=BASELINE_MODELS,
+        name="OLSa_Floor",
         policy="floor"
     )
     olsa_ceil = RegressionBidder(
-        model_paths=BASELINE_MODELS, 
-        name="OLSa_Ceil", 
+        model_paths=BASELINE_MODELS,
+        name="OLSa_Ceil",
         policy="ceil"
     )
     olsa_round = RegressionBidder(
-        model_paths=BASELINE_MODELS, 
-        name="OLSa_Round", 
+        model_paths=BASELINE_MODELS,
+        name="OLSa_Round",
         policy="round"
     )
 
@@ -58,19 +53,19 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
         print(f"\nMatchup: {label}")
         print("Team 0 (Seats 0, 2):", strategies[0].name)
         print("Team 1 (Seats 1, 3):", strategies[1].name)
-        
+
         team0_wins = 0
         team1_wins = 0
         misdeals = 0
-        
+
         team0_tricks_total = 0
         team1_tricks_total = 0
-        
+
         # Track bid success
         bid_attempts = {0: 0, 1: 0}
         bid_successes = {0: 0, 1: 0}
         bid_totals = {0: 0, 1: 0}
-        
+
         # For reproducibility
         import random
         rng = random.Random(seed)
@@ -82,24 +77,24 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
                 rng=rng,
                 deal_id=i
             )
-            
+
             if leader == -1:
                 misdeals += 1
                 continue
-                
+
             team0_tricks_total += t0
             team1_tricks_total += t1
-            
+
             # Winning bidder's team
             winning_team = 0 if leader in (0, 2) else 1
             bid_attempts[winning_team] += 1
             bid_totals[winning_team] += bid
-            
+
             # Did they make the bid?
             tricks_won = t0 if winning_team == 0 else t1
             if tricks_won >= bid:
                 bid_successes[winning_team] += 1
-            
+
             # Who won the hand?
             if t0 > t1:
                 team0_wins += 1
@@ -112,10 +107,10 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
         valid_hands = n_hands - misdeals
         win_rate0 = team0_wins / valid_hands if valid_hands > 0 else 0
         win_rate1 = team1_wins / valid_hands if valid_hands > 0 else 0
-        
+
         make_rate0 = bid_successes[0] / bid_attempts[0] if bid_attempts[0] > 0 else 0
         make_rate1 = bid_successes[1] / bid_attempts[1] if bid_attempts[1] > 0 else 0
-        
+
         avg_bid0 = bid_totals[0] / bid_attempts[0] if bid_attempts[0] > 0 else 0
         avg_bid1 = bid_totals[1] / bid_attempts[1] if bid_attempts[1] > 0 else 0
 
@@ -128,7 +123,7 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
         print(f"    Win Rate:      {win_rate1:.1%}")
         print(f"    Make Rate:     {make_rate1:.1%}")
         print(f"    Avg Bid:       {avg_bid1:.2f}")
-        
+
         overall_results.append({
             "matchup": label,
             "team0_name": strategies[0].name,

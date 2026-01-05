@@ -1,6 +1,4 @@
 import pytest
-import os
-import numpy as np
 
 pytestmark = pytest.mark.statistical
 

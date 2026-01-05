@@ -219,8 +219,7 @@ The results are **robust and reproducible**.
 
 ---
 
-**Run ID**: `strategy_comparison_42_20251215_215239`  
-**Total Hands Simulated**: 1,200,000  
-**Execution Time**: ~10 minutes  
+**Run ID**: `strategy_comparison_42_20251215_215239`
+**Total Hands Simulated**: 1,200,000
+**Execution Time**: ~10 minutes
 **Date**: December 15, 2025 @ 21:52-22:03
-
