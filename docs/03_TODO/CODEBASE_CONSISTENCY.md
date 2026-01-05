@@ -812,6 +812,10 @@ Reports must include:
 13. **Cleanup (1 hr):** 3.1-3.3 - Terminology standardization (includes field name mapping documentation)
 14. **Best practice (1 hr):** 4.5 - Minimum sample thresholds
 15. **Clarification needed:** 2.1.1 - `hand_id` vs `deal_id` field requirement
+16. **Doc improvements (1 hr total):** 5.1-5.5, 5.9-5.10 - AGENTS.md updates and quick fixes
+17. **Future work (3-4 hrs):** 5.6 - Populate EXPERIMENTS.md and TESTING_STRATEGY.md
+18. **Future work (1-2 hrs):** 5.7 - Create STYLEGUIDE.md
+19. **Cleanup (1-2 hrs):** 5.8 - Clean up docstring path references
 
 ### **Or defer all for now** if current system is working for your analysis.
 
@@ -837,8 +841,14 @@ Reports must include:
 | 4.3 Comparability metadata | 2-3 | 1-2 hrs | MEDIUM - Enables comparability verification |
 | 4.4 Recommended breakouts | 3-4 | 2-3 hrs | LOW-MEDIUM - Analysis enhancements |
 | 4.5 Sample thresholds | 2-3 | 1 hr | LOW - Best practice |
+| 5.1-5.5 AGENTS.md updates | 1-2 | 1 hr | MEDIUM - Improves agent guidance |
+| 5.6 Core doc population | 2-3 | 3-4 hrs | MEDIUM - EXPERIMENTS.md, TESTING_STRATEGY.md |
+| 5.7 STYLEGUIDE.md | 1 | 1-2 hrs | LOW-MEDIUM - Documents code standards |
+| 5.8 Docstring cleanup | 10+ | 1-2 hrs | LOW - Path reference updates |
+| 5.9 Archive README | 1 | 30 min | LOW - Archive organization |
+| 5.10 Quick reference | 1 | 15 min | LOW-MEDIUM - Agent efficiency |
 
-**Total estimated effort:** 20-28 hours for all changes (excluding deferred hand strength bucketing)
+**Total estimated effort:** 27-38 hours for all changes (excluding deferred hand strength bucketing)
 
 ---
 
@@ -853,6 +863,297 @@ When implementing any of these:
 - [ ] Update relevant documentation
 - [ ] Run full test suite
 - [ ] Consider backward compatibility
+
+---
+
+## 🟣 Priority 5: DOCUMENTATION & AGENT GUIDANCE
+
+### 5.1 Add Schema Versioning Recipe to AGENTS.md (Section 10)
+
+**Issue:** AGENTS.md Section 10 describes adding strategies but doesn't mention schema versioning when touching the logger.
+
+**Current state:**
+- No guidance on when/how to bump `SCHEMA_VERSION`
+- Agents might add logger fields without versioning
+- Risk of breaking log compatibility
+
+**Required addition to AGENTS.md Section 10:**
+```markdown
+### Change logger schema (requires version bump)
+1) Review: `docs/01_core/SCHEMA_VERSIONING.md`
+2) Update `SCHEMA_VERSION` in: `src/bid_euchre/logging/game_logger.py`
+3) Document changes in schema version comments
+4) Add migration notes if breaking change
+5) Update tests that validate log structure
+```
+
+**Files to modify:**
+- `docs/02_agent/AGENTS.md` - Add schema versioning recipe to Section 10
+
+**Effort:** 15 minutes  
+**Impact:** MEDIUM - Prevents logger breaking changes
+
+**Blockers:** None
+
+---
+
+### 5.2 Add TODO Tracker Guidance to AGENTS.md (Section 7)
+
+**Issue:** No mention of the TODO tracker or how to use it in PR workflow.
+
+**Current state:**
+- Agents don't know about `docs/03_TODO/CODEBASE_CONSISTENCY.md`
+- Doc/code inconsistencies not tracked systematically
+- No guidance on marking TODOs complete
+
+**Required addition to AGENTS.md Section 7:**
+```markdown
+- Check `docs/03_TODO/CODEBASE_CONSISTENCY.md` for known gaps
+- If you discover new doc/code inconsistencies, add them to the TODO tracker
+- If implementing a TODO item, mark it complete in the same PR
+```
+
+**Files to modify:**
+- `docs/02_agent/AGENTS.md` - Add TODO tracker guidance to Section 7
+
+**Effort:** 10 minutes  
+**Impact:** MEDIUM - Improves doc/code consistency tracking
+
+**Blockers:** None
+
+---
+
+### 5.3 Clarify data/ Directory Exceptions in AGENTS.md (Section 8)
+
+**Issue:** Section 8 says "Do not commit generated outputs under `data/runs/` or `data/reports/`" but `data/training/` has committed CSV files, causing confusion.
+
+**Current state:**
+- `data/training/` contains committed CSV files
+- `data/_deprecated/` contains committed PNG files
+- No clear rule on what's allowed in `data/`
+
+**Required clarification in AGENTS.md Section 8:**
+```markdown
+- Do not commit generated outputs under `data/runs/` or `data/reports/`
+- **Exception:** Training data CSVs in `data/training/` MAY be committed if:
+  - They are small (<10MB)
+  - They are required for reproducibility
+  - They are documented in `data/training/README.md`
+- Historical data in `data/_deprecated/` is preserved but don't add new files there
+```
+
+**Files to modify:**
+- `docs/02_agent/AGENTS.md` - Clarify Section 8 (No-Go List)
+
+**Effort:** 10 minutes  
+**Impact:** LOW-MEDIUM - Reduces confusion about what to commit
+
+**Blockers:** None
+
+---
+
+### 5.4 Clarify Archive Folder Usage in AGENTS.md (Section 11)
+
+**Issue:** `docs/archive/` exists with many files, but AGENTS.md doesn't explain when/how to use it.
+
+**Current state:**
+- Section 11 only mentions `_deprecated/` folders
+- No guidance on when to archive docs vs delete them
+- `docs/archive/` has no README explaining organization
+
+**Required update to AGENTS.md Section 11:**
+```markdown
+- If replacing a doc or workflow, move the old version to `docs/archive/` (for docs) or appropriate `_deprecated/` folder (for code)
+- Update `docs/archive/README.md` with the reason and the replacement path
+- For code deprecation, use `experiments/_deprecated/` with README updates
+- Prefer "strangler" migrations: keep old path working until new path is proven with tests and seeded runs
+```
+
+**Files to modify:**
+- `docs/02_agent/AGENTS.md` - Update Section 11 (Deprecation Policy)
+
+**Effort:** 10 minutes  
+**Impact:** LOW-MEDIUM - Clarifies archival policy
+
+**Blockers:** None
+
+---
+
+### 5.5 Add README.md Consistency Note to AGENTS.md (Section 1)
+
+**Issue:** Root README.md shows different command patterns and mentions legacy scripts "still work but deprecated", potentially confusing agents.
+
+**Current state:**
+- Root README.md references legacy scripts for backward compatibility
+- AGENTS.md doesn't acknowledge this discrepancy
+- Agents might follow outdated patterns from README.md
+
+**Required note in AGENTS.md Section 1:**
+```markdown
+**Note:** The root `README.md` may reference legacy scripts for backward compatibility. 
+Always prefer the workflows documented here. Legacy scripts in `experiments/_deprecated/` 
+are preserved for historical reference only.
+```
+
+**Files to modify:**
+- `docs/02_agent/AGENTS.md` - Add note to Section 1
+
+**Effort:** 5 minutes  
+**Impact:** LOW - Clarifies precedence
+
+**Blockers:** None
+
+---
+
+### 5.6 Populate Empty Core Documentation (EXPERIMENTS.md, TESTING_STRATEGY.md)
+
+**Issue:** AGENTS.md references concepts that should live in empty core docs.
+
+**Current state:**
+- `docs/01_core/EXPERIMENTS.md` - Empty
+- `docs/01_core/TESTING_STRATEGY.md` - Empty
+- AGENTS.md duplicates content that should live in these files
+
+**EXPERIMENTS.md should contain:**
+- Experiment config schema and YAML structure
+- How to create new configs
+- Common experiment patterns (self-play, head-to-head, matrix)
+- Output directory structure (`data/runs/`)
+- Metadata files and their purposes
+
+**TESTING_STRATEGY.md should contain:**
+- Test organization (unit/integration/performance)
+- What to test when (from AGENTS.md Section 6)
+- Test naming conventions
+- Fixture patterns
+- Performance test thresholds
+
+**Files to create:**
+- `docs/01_core/EXPERIMENTS.md` - New file (extract from AGENTS.md Section 10)
+- `docs/01_core/TESTING_STRATEGY.md` - New file (extract from AGENTS.md Section 6)
+
+**Effort:** 2-3 hours  
+**Impact:** MEDIUM - Improves doc organization
+
+**Blockers:** None
+
+**Note:** Consider extracting content from AGENTS.md after creating these files, or leave as duplication with cross-references.
+
+---
+
+### 5.7 Create STYLEGUIDE.md (Referenced in TODO 5.2 Addition)
+
+**Issue:** Code quality standards should be documented, but no `STYLEGUIDE.md` exists in `docs/01_core/`.
+
+**Current state:**
+- No documented code style standards
+- Inconsistent formatting and naming conventions
+- No guidance on docstrings, imports, type hints
+
+**Required content:**
+- Python style standards (PEP 8, Black, etc.)
+- Naming conventions (classes, functions, variables)
+- Docstring standards (Google/NumPy/Sphinx style)
+- Import organization
+- Type hints policy
+- Comment conventions
+
+**Files to create:**
+- `docs/01_core/STYLEGUIDE.md` - New file
+
+**Effort:** 1-2 hours  
+**Impact:** LOW-MEDIUM - Documents existing practices
+
+**Blockers:** None
+
+**Note:** Can document incrementally. Start with observed patterns, formalize over time.
+
+---
+
+### 5.8 Clean Up Docstring Path References
+
+**Issue:** AGENTS.md Section 10 notes "Some existing docstrings reference outdated paths."
+
+**Current state:**
+- Docstrings may reference old experiment locations
+- References to deprecated scripts
+- Outdated file paths in comments
+
+**Required action:**
+- Audit all docstrings in `src/` for path references
+- Update to current file locations
+- Common issues: References to old experiment locations, deprecated scripts
+
+**Files to audit:**
+- All Python files in `src/bid_euchre/`
+- Focus on: `experiments/`, `reporting/`, `logging/`
+
+**Effort:** 1-2 hours  
+**Impact:** LOW - Documentation cleanup
+
+**Blockers:** None
+
+**Note:** Can be done incrementally. Grep for common old paths and fix.
+
+---
+
+### 5.9 Create Archive Folder README
+
+**Issue:** `docs/archive/` contains many files but no clear organization or README explaining the archive policy.
+
+**Current state:**
+- `docs/archive/` has 25+ files
+- No README explaining what should be archived vs deleted
+- No retention policy
+- No index of archived content
+
+**Required action:**
+- Create `docs/archive/README.md` explaining:
+  - What goes in archive vs deletion
+  - How to reference archived docs
+  - Retention policy (if any)
+  - Index of major archived content
+- Review archived files for any that should be in `03_TODO` instead
+
+**Files to create:**
+- `docs/archive/README.md` - New file
+
+**Effort:** 30 minutes  
+**Impact:** LOW - Documentation organization
+
+**Blockers:** None
+
+---
+
+### 5.10 Add Quick Reference Card to AGENTS.md (Section 12)
+
+**Issue:** Common commands are scattered across sections, making quick reference difficult.
+
+**Current state:**
+- Commands distributed across Sections 1, 9, 10
+- No quick lookup for common operations
+- Agents must search multiple sections
+
+**Required addition (new Section 12):**
+```markdown
+## 12) Quick Reference Card
+
+**Run fast tests:** `PYTHONPATH=src pytest -m "not slow" tests/`
+**Run all tests:** `PYTHONPATH=src pytest tests/`
+**Run specific test type:** `PYTHONPATH=src pytest tests/unit/` (or `/integration/`, `/performance/`)
+**Smoke test config:** `PYTHONPATH=src python experiments/run_experiment.py --config <yaml> --dry-run`
+**Run experiment:** `PYTHONPATH=src python experiments/run_experiment.py --config <yaml> --n_per 200 --seed 42`
+**Check TODO tracker:** `cat docs/03_TODO/CODEBASE_CONSISTENCY.md`
+**Validate METRICS.md compliance:** Review Section 2 (fields), Section 6 (breakouts), Section 7 (uncertainty)
+```
+
+**Files to modify:**
+- `docs/02_agent/AGENTS.md` - Add Section 12
+
+**Effort:** 15 minutes  
+**Impact:** LOW-MEDIUM - Improves agent efficiency
+
+**Blockers:** None
 
 ---
 
