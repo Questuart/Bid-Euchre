@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 import os
+import pytest
 from typing import Dict, Any
 
 from bid_euchre.core.cards import Card
@@ -11,7 +12,8 @@ from bid_euchre.strategy.baselines import RandomLegalStrategy
 # Dummy model paths for testing
 DUMMY_MODEL_DIR = "tests/dummy_models"
 
-def dummy_models_setup():
+@pytest.fixture
+def dummy_models():
     """Create dummy models for testing."""
     os.makedirs(DUMMY_MODEL_DIR, exist_ok=True)
     

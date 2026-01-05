@@ -43,10 +43,12 @@ class TestEndToEndSimulation:
 
         assert isinstance(all_features, list)
         assert len(all_features) == 4
-        expected_features = {"bowers", "trump_count", "offsuit_aces", "high_offsuit", "rank_sum"}
+        # Check for core features (allow additional features from hand_eval evolution)
+        core_features = {"bowers", "trump_count", "offsuit_aces", "high_offsuit", "rank_sum"}
         for features in all_features:
             assert isinstance(features, dict)
-            assert set(features.keys()) == expected_features
+            assert core_features.issubset(set(features.keys())), \
+                f"Missing core features. Expected {core_features}, got {set(features.keys())}"
 
         # Validate starting_hands
         assert isinstance(starting_hands, list)
