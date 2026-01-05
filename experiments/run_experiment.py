@@ -39,7 +39,7 @@ import json
 import time
 import argparse
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -482,8 +482,8 @@ def main():
     print(f"📊 Generated {plan_count * len(scenarios)} result files")
     
     print("\n🎯 Next steps:")
-    print(f"   # Generate all reports:")
-    print(f"   PYTHONPATH=src python experiments/generate_all_reports.py \\")
+    print("   # Generate all reports:")
+    print("   PYTHONPATH=src python experiments/generate_all_reports.py \\")
     print(f"       --run-dir {run_dir}")
     print()
     

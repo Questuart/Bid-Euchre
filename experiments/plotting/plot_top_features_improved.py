@@ -117,7 +117,7 @@ def plot_hexbin_with_trend(ax, x, y, feature_name, corr_value):
                 
                 # Plot trend line with confidence band
                 ax.plot(bin_centers, bin_means, color='#e74c3c', linewidth=3, 
-                       label=f'Binned mean', zorder=10)
+                       label='Binned mean', zorder=10)
                 ax.fill_between(bin_centers, 
                                bin_means - 1.96 * bin_stds,
                                bin_means + 1.96 * bin_stds,

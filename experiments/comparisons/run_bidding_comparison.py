@@ -11,14 +11,9 @@ Usage:
     PYTHONPATH=src python experiments/run_bidding_comparison.py
 """
 
-import os
-import json
-import numpy as np
-from typing import List, Dict, Any
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder
-from bid_euchre.logging.game_logger import GameLogger, LogLevel
 
 # Model Paths
 BASELINE_MODELS = {

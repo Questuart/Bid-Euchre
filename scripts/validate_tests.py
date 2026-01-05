@@ -128,7 +128,7 @@ def test_cli_interface():
         jsonl_files = glob.glob(os.path.join(logs_dir, "*.jsonl"))
         assert len(jsonl_files) >= 1, "Expected at least one JSONL log file"
 
-        print(f"  ✅ CLI executed successfully")
+        print("  ✅ CLI executed successfully")
         print(f"  ✅ Generated {len(json_files)} scenario files")
         print(f"  ✅ Generated {len(jsonl_files)} log files")
 

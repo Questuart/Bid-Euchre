@@ -2,7 +2,6 @@
 Tests for null baseline strategies (RandomLegal, AlwaysLowest, AlwaysHighest).
 """
 
-import pytest
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import (
     RandomLegalStrategy,

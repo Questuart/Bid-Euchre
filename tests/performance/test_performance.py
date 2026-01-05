@@ -1,5 +1,4 @@
 import pytest
-import os
 import time
 
 from bid_euchre.sim import simulation

@@ -3,15 +3,12 @@
 Generate comparison dashboard for OLSa_v2 vs OLSa_SR_v2 models.
 """
 
-import os
 import sys
 import csv
 import pickle
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
 sys.path.insert(0, 'src')
-from bid_euchre.analysis.models import SimpleOLS
 
 
 def load_data(csv_path, contract_type, features):

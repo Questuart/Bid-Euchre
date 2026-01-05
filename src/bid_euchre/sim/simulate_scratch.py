@@ -2,7 +2,6 @@ import argparse
 from typing import Optional
 
 from ..core.cards import create_deck, shuffle_deck, deal_hands
-from ..core.cards import Card
 from ..core.rules import trick_winner
 from ..strategy import Strategy, BasicStrategy, GreedyStrategy
 

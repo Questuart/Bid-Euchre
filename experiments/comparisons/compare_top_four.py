@@ -365,14 +365,14 @@ def create_top_four_dashboard(results: Dict, strategy_names: List[str], output_d
     
     print(f"\n★★★ BEST STRATEGY: {winner} ★★★")
     print(f"\nPoints Per Hand: {pts_per_hand[best_idx]:+.3f}")
-    print(f"\nPerformance vs Others:")
+    print("\nPerformance vs Others:")
     for i, strat in enumerate(strategy_names):
         if i != best_idx:
             diff = pts_per_hand[best_idx] - pts_per_hand[i]
             pct_better = (diff / pts_per_hand[i]) * 100
             print(f"  • {pct_better:+.1f}% better than {strat}")
     
-    print(f"\nKey Strengths:")
+    print("\nKey Strengths:")
     print(f"  • Make Rate: {make_rates[best_idx]:.1f}%")
     print(f"  • EV: {evs[best_idx]:+.2f}")
     print(f"  • Volatility: {volatilities[best_idx]:.2f}")

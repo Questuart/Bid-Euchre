@@ -10,9 +10,6 @@ Usage:
     PYTHONPATH=src python experiments/run_olsa_vs_ccrider.py
 """
 
-import os
-import numpy as np
-from typing import Dict
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder
@@ -169,7 +166,7 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
     print("="*80)
     print(f"Valid hands: {valid:,} (Misdeals: {results['misdeals']})")
     print()
-    print(f"OLSa (Team 0):")
+    print("OLSa (Team 0):")
     print(f"  Win Rate:           {win_rate_0:.2f}%")
     print(f"  Total Points:       {results['team0_points']:+,}")
     print(f"  Avg Points/Hand:    {avg_points_per_hand_0:+.3f}")
@@ -178,7 +175,7 @@ def run_comparison(n_hands: int = 10000, seed: int = 42):
     print(f"  Avg Bid:            {avg_bid_0:.2f}")
     print(f"  Bids Won:           {results['team0_bid_attempts']:,}")
     print()
-    print(f"OLSa_CCrider (Team 1):")
+    print("OLSa_CCrider (Team 1):")
     print(f"  Win Rate:           {win_rate_1:.2f}%")
     print(f"  Total Points:       {results['team1_points']:+,}")
     print(f"  Avg Points/Hand:    {avg_points_per_hand_1:+.3f}")

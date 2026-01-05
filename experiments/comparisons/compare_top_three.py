@@ -358,19 +358,19 @@ def create_top_three_dashboard(results: Dict, strategy_names: List[str], output_
     
     print(f"\n★★★ BEST STRATEGY: {winner} ★★★")
     print(f"\nPoints Per Hand: {pts_per_hand[best_idx]:+.3f}")
-    print(f"Reasoning:")
-    print(f"  • Highest average points per hand across all matchups")
+    print("Reasoning:")
+    print("  • Highest average points per hand across all matchups")
     
     if winner == "OLSa_Floor":
         print(f"  • Excellent make rate ({make_rates[best_idx]:.1f}%) = Consistent")
         print(f"  • Low volatility ({volatilities[best_idx]:.2f}) = Reliable")
-        print(f"  • Conservative bidding wins through accuracy")
+        print("  • Conservative bidding wins through accuracy")
     elif winner == "OLSa_SR":
         print(f"  • Strong make rate ({make_rates[best_idx]:.1f}%)")
-        print(f"  • Balanced risk-reward profile")
-        print(f"  • Superior hand evaluation model")
+        print("  • Balanced risk-reward profile")
+        print("  • Superior hand evaluation model")
     else:
-        print(f"  • Solid all-around performance")
+        print("  • Solid all-around performance")
     
     print("="*80)
 

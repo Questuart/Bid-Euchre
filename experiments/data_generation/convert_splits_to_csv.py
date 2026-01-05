@@ -30,7 +30,6 @@ import sys
 import json
 import csv
 from typing import List, Dict
-from collections import defaultdict
 
 
 def parse_jsonl_to_records(jsonl_path: str) -> List[Dict]:
@@ -218,11 +217,11 @@ def main():
     print(f"  Val:   {split_stats.get('val', {}).get('rows', 0):,} ({split_stats.get('val', {}).get('rows', 0)/total_rows*100:.1f}%)")
     print(f"  Test:  {split_stats.get('test', {}).get('rows', 0):,} ({split_stats.get('test', {}).get('rows', 0)/total_rows*100:.1f}%)")
     
-    print(f"\nBidder/Defender split:")
+    print("\nBidder/Defender split:")
     print(f"  Bidders:   {total_bidders:,} ({total_bidders/total_rows*100:.1f}%)")
     print(f"  Defenders: {total_defenders:,} ({total_defenders/total_rows*100:.1f}%)")
     
-    print(f"\nContract distribution (train):")
+    print("\nContract distribution (train):")
     if 'train' in split_stats:
         train_total = split_stats['train']['rows']
         print(f"  Suit: {split_stats['train']['suit_hands']:,} ({split_stats['train']['suit_hands']/train_total*100:.1f}%)")
@@ -232,7 +231,7 @@ def main():
     print("\n" + "=" * 80)
     print("✅ Conversion complete!")
     print("=" * 80)
-    print(f"\nOutput files:")
+    print("\nOutput files:")
     print(f"  {output_dir}/bidder_aware_train.csv")
     print(f"  {output_dir}/bidder_aware_val.csv")
     print(f"  {output_dir}/bidder_aware_test.csv")

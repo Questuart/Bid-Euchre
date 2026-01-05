@@ -92,13 +92,13 @@ def main():
     
     # Print experiment summary
     print("\n" + "=" * 80)
-    print(f"🚀 Generating Bidder Training Data")
+    print("🚀 Generating Bidder Training Data")
     print("=" * 80)
     print(f"Strategy: {strategy_name} (Hand Value OLS, floor policy)")
-    print(f"Mode: Self-play with full bidding")
+    print("Mode: Self-play with full bidding")
     print(f"Hands: {n_hands:,}")
     print(f"Random seed: {seed}")
-    print(f"Log level: hand (schema v5 with position data)")
+    print("Log level: hand (schema v5 with position data)")
     print("=" * 80)
     
     # Create run directory structure
@@ -162,7 +162,7 @@ def main():
     
     # Print results summary
     print("-" * 80)
-    print(f"\n✅ Simulation complete!")
+    print("\n✅ Simulation complete!")
     print(f"   Duration: {format_duration(duration)}")
     print(f"   Throughput: {hands_per_sec:.0f} hands/sec")
     print(f"   Total hands: {results['hands']:,}")
@@ -193,12 +193,12 @@ def main():
     print("\n" + "=" * 80)
     print("🎯 Next Steps:")
     print("=" * 80)
-    print(f"\n1. Split data into train/val/test:")
+    print("\n1. Split data into train/val/test:")
     print(f"   python experiments/split_train_val_test.py {run_dir}")
-    print(f"\n2. Convert splits to CSV:")
+    print("\n2. Convert splits to CSV:")
     print(f"   PYTHONPATH=src python experiments/convert_splits_to_csv.py {run_dir}")
-    print(f"\n3. Train bidder-aware models:")
-    print(f"   PYTHONPATH=src python experiments/train_bidder_models.py")
+    print("\n3. Train bidder-aware models:")
+    print("   PYTHONPATH=src python experiments/train_bidder_models.py")
     print("=" * 80)
 
 

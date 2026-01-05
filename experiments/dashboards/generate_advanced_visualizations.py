@@ -11,7 +11,6 @@ Generate advanced visualizations for hand evaluation analysis.
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 from collections import defaultdict
 import os
 
@@ -174,7 +173,7 @@ def plot_2d_interaction_heatmap(data, contract_type, feat1, feat2):
     print(f"  Generating 2D interaction: {feat1} × {feat2}...")
     
     if feat1 not in data[contract_type] or feat2 not in data[contract_type]:
-        print(f"    Skipping (features not found)")
+        print("    Skipping (features not found)")
         return
     
     X1 = data[contract_type][feat1]
@@ -230,7 +229,7 @@ def plot_2d_interaction_heatmap(data, contract_type, feat1, feat2):
 
 def plot_tricks_distribution(data):
     """Plot tricks-won distribution by contract type."""
-    print(f"  Generating tricks distribution...")
+    print("  Generating tricks distribution...")
     
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     

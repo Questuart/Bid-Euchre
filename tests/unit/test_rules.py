@@ -1,5 +1,4 @@
 import pytest
-import os
 
 from bid_euchre.core.cards import Card
 from bid_euchre.core.rules import trick_winner, _highest_trump, _highest_in_suit, get_legal_indices

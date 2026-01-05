@@ -195,7 +195,7 @@ def print_results(results, strategy_name):
         print(f"  Avg win margin:    {avg_win_margin:.2f} tricks (overbid safety)")
         print(f"  Avg loss margin:   {avg_loss_margin:.2f} tricks (underbid penalty)")
         print()
-        print(f"  Risk metrics:")
+        print("  Risk metrics:")
         print(f"    Max overbid:     {max(r['win_margins']) if r['win_margins'] else 0} tricks")
         print(f"    Max underbid:    {max(r['loss_margins']) if r['loss_margins'] else 0} tricks")
 
@@ -286,7 +286,7 @@ def main():
     d_win_rate = d_all['wins'] / d_total * 100
     o_win_rate = o_all['wins'] / o_total * 100
     
-    print(f"1. WIN RATE IMPROVEMENT:")
+    print("1. WIN RATE IMPROVEMENT:")
     print(f"   Dummy: {d_win_rate:.2f}% | OLS: {o_win_rate:.2f}% | Δ = {o_win_rate - d_win_rate:+.2f}%")
     print()
     
@@ -295,7 +295,7 @@ def main():
     o_avg_bid = np.mean(o_all['bids'])
     avg_actual = np.mean(d_all['actuals'])  # Same for both
     
-    print(f"2. BIDDING CALIBRATION:")
+    print("2. BIDDING CALIBRATION:")
     print(f"   Actual avg:  {avg_actual:.2f} tricks")
     print(f"   Dummy bids:  {d_avg_bid:.2f} tricks (bias = {d_avg_bid - avg_actual:+.2f})")
     print(f"   OLS bids:    {o_avg_bid:.2f} tricks (bias = {o_avg_bid - avg_actual:+.2f})")
@@ -308,10 +308,10 @@ def main():
     d_avg_loss = np.mean(d_all['loss_margins']) if d_all['loss_margins'] else 0
     o_avg_loss = np.mean(o_all['loss_margins']) if o_all['loss_margins'] else 0
     
-    print(f"3. RISK PROFILE:")
-    print(f"   When winning (safety margin):")
+    print("3. RISK PROFILE:")
+    print("   When winning (safety margin):")
     print(f"     Dummy: {d_avg_win:.2f} tricks | OLS: {o_avg_win:.2f} tricks")
-    print(f"   When losing (penalty):")
+    print("   When losing (penalty):")
     print(f"     Dummy: {d_avg_loss:.2f} tricks | OLS: {o_avg_loss:.2f} tricks")
     print()
     

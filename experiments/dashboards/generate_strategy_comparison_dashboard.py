@@ -15,7 +15,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, List
-from collections import defaultdict
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder
@@ -35,7 +34,7 @@ HAND_VALUE_MODELS = {
 
 def run_comprehensive_analysis(n_hands_per_matchup: int = 20000, seed: int = 42):
     """Run all strategies and collect comprehensive statistics."""
-    print(f"Collecting comprehensive strategy statistics...")
+    print("Collecting comprehensive strategy statistics...")
     print(f"Running {n_hands_per_matchup:,} hands per matchup")
     print("-" * 80)
     

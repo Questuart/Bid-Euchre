@@ -19,7 +19,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 def parse_hand_logs(log_path: str) -> List[Dict]:
     """Parse JSONL logs and extract hand_end records."""
@@ -232,7 +232,7 @@ def generate_position_report(results: Dict, output_dir: str):
     print(f"Bidder Team Avg Tricks:   {np.mean(bidder_tricks):.3f}")
     print(f"Defender Team Avg Tricks: {np.mean(defender_tricks):.3f}")
     print(f"Bidder Advantage:         +{np.mean(bidder_tricks) - np.mean(defender_tricks):.3f} tricks")
-    print(f"(Expected: 0.0 if no positional advantage)")
+    print("(Expected: 0.0 if no positional advantage)")
     
     print("\n3. KEY INSIGHTS:")
     print("-" * 80)

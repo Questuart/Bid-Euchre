@@ -6,7 +6,7 @@ import json
 import os
 from glob import glob
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 from .stats import paired_t_ci

@@ -11,8 +11,7 @@ Usage:
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
-from typing import List, Dict, Any
+from typing import List, Dict
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder
@@ -214,7 +213,7 @@ def plot_bid_distributions(bid_data: Dict[str, List[int]], output_path: str):
             
             # Bid frequency
             unique, counts = np.unique(bids, return_counts=True)
-            print(f"  Bid frequency:")
+            print("  Bid frequency:")
             for bid_val, count in zip(unique, counts):
                 pct = 100 * count / len(bids)
                 print(f"    {bid_val}: {count:>6,} ({pct:>5.1f}%)")

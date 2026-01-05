@@ -11,8 +11,7 @@ Usage:
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
-from typing import List, Dict, Any
+from typing import Dict
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder
@@ -95,7 +94,7 @@ def collect_prediction_data(n_hands: int = 50000, seed: int = 42):
         data[key]['predicted'].append(predicted_tricks)
         data[key]['actual'].append(actual_tricks)
     
-    print(f"✅ Data collection complete!")
+    print("✅ Data collection complete!")
     return data
 
 def create_predicted_vs_actual_plot(data: Dict, output_path: str):

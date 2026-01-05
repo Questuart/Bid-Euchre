@@ -320,7 +320,7 @@ class TestBowerHandling:
         # Should choose right bower (strongest trump, but also cheapest winner here)
         # Both cards win, but right bower is technically "cheaper" in greedy's valuation
         # (Actually both are expensive, but the test verifies a win is taken)
-        assert choice in [0, 1], f"Should choose a winning card"
+        assert choice in [0, 1], "Should choose a winning card"
 
 
 class TestNoWinningMove:

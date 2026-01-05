@@ -29,7 +29,6 @@ from scipy import stats as scipy_stats
 # Import reporting framework
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from bid_euchre.reporting import (
-    CONTRACT_LABELS, CONTRACT_COLORS,
     apply_report_style, get_report_paths,
     ensure_dir, copy_to_latest, write_latest_pointer,
 )

@@ -9,7 +9,6 @@ Usage:
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.regression import RegressionBidder

@@ -21,11 +21,11 @@ def main():
     n_hands = 5000
     seed = 42
     
-    print(f"\nConfiguration:")
+    print("\nConfiguration:")
     print(f"  Hands: {n_hands:,}")
     print(f"  Seed: {seed}")
-    print(f"  Strategy: OLSa vs OLSa (self-play)")
-    print(f"  Logging: Schema v5 (with position data)")
+    print("  Strategy: OLSa vs OLSa (self-play)")
+    print("  Logging: Schema v5 (with position data)")
     
     # Load models
     baseline_models = {
@@ -67,16 +67,16 @@ def main():
         # Close logger
         logger.close()
     
-    print(f"\n✅ Simulation complete!")
+    print("\n✅ Simulation complete!")
     print(f"   Total hands: {results['hands']:,}")
     if 'team0_wins' in results:
         print(f"   Team 0 wins: {results['team0_wins']:,} ({results['team0_wins']/results['hands']*100:.1f}%)")
         print(f"   Team 1 wins: {results['team1_wins']:,} ({results['team1_wins']/results['hands']*100:.1f}%)")
     else:
-        print(f"   (Team stats not tracked in bidding mode)")
+        print("   (Team stats not tracked in bidding mode)")
     
-    print(f"\n📊 Next step: Run analysis")
-    print(f"   PYTHONPATH=src python experiments/analyze_position_impact.py")
+    print("\n📊 Next step: Run analysis")
+    print("   PYTHONPATH=src python experiments/analyze_position_impact.py")
     
     print("="*80)
 

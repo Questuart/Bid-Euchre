@@ -19,6 +19,7 @@ dependencies = [
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
+  "ruff>=0.8.0,<0.10",
 ]
 
 [tool.setuptools]
@@ -27,4 +28,24 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.ruff]
+extend-exclude = [
+  "data/",
+  "experiments/_deprecated/",
+  "experiments/analysis/",
+  "experiments/comparisons/",
+  "experiments/dashboards/",
+  "experiments/plotting/",
+  "experiments/training/",
+  "experiments/data_generation/",
+  "scripts/",
+]
 
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = [
+  "E501",  # Line length (let formatter handle)
+  "E402",  # Module level import not at top (pytest markers)
+  "E712",  # Comparison to True/False (test assertions)
+  "E741",  # Ambiguous variable name (math notation)
+]

@@ -189,7 +189,7 @@ def main():
     print(f"Loading data from: {jsonl_path}")
     correlations_by_contract = compute_correlations_by_contract(jsonl_path)
     
-    print(f"\nGenerating 3x3 scatterplot dashboards...")
+    print("\nGenerating 3x3 scatterplot dashboards...")
     
     for contract_type in ['suit', 'high', 'low']:
         print(f"\n{'='*80}")

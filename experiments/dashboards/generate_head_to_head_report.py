@@ -26,8 +26,7 @@ import sys
 import json
 import argparse
 from glob import glob
-from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,10 +35,9 @@ import matplotlib.gridspec as gridspec
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from bid_euchre.analysis import wilson_ci, paired_t_ci
+from bid_euchre.analysis import wilson_ci
 from bid_euchre.reporting import (
     STRATEGY_NAMES,
-    STRATEGY_COLORS,
     OUTCOME_COLORS,
     apply_report_style,
     get_report_paths,
@@ -126,8 +124,8 @@ def generate_summary_markdown(run_dir: str, all_stats: Dict) -> str:
         perf = json.load(f)
     
     lines = [
-        f"# Head-to-Head Matchup Results",
-        f"",
+        "# Head-to-Head Matchup Results",
+        "",
         f"**Experiment**: {meta['experiment_name']}",
         f"**Run ID**: {meta['run_id']}",
         f"**Date**: {meta['timestamp']}",
@@ -135,11 +133,11 @@ def generate_summary_markdown(run_dir: str, all_stats: Dict) -> str:
         f"**Hands per Matchup**: {meta['n_per'] * len(meta['scenarios']):,}",
         f"**Duration**: {perf['total_duration_human']}",
         f"**Throughput**: {perf['overall_throughput_hands_per_sec']:.0f} hands/sec",
-        f"",
-        f"## Summary Statistics",
-        f"",
-        f"| Matchup | Team 0 Avg Tricks | Team 1 Avg Tricks | Δ Tricks | Team 0 Win Rate | 95% CI |",
-        f"|---------|-------------------|-------------------|----------|-----------------|--------|",
+        "",
+        "## Summary Statistics",
+        "",
+        "| Matchup | Team 0 Avg Tricks | Team 1 Avg Tricks | Δ Tricks | Team 0 Win Rate | 95% CI |",
+        "|---------|-------------------|-------------------|----------|-----------------|--------|",
     ]
     
     for matchup_name in sorted(all_stats.keys()):
@@ -153,11 +151,11 @@ def generate_summary_markdown(run_dir: str, all_stats: Dict) -> str:
         )
     
     lines.extend([
-        f"",
-        f"## Key Findings",
-        f"",
-        f"### Strategies That Beat Random",
-        f"",
+        "",
+        "## Key Findings",
+        "",
+        "### Strategies That Beat Random",
+        "",
     ])
     
     # Find matchups where strategy beats random
@@ -181,11 +179,11 @@ def generate_summary_markdown(run_dir: str, all_stats: Dict) -> str:
         lines.append(f"- **{strategy}**: Δ {delta:+.3f} tricks, {win_rate*100:.1f}% win rate - {sig}")
     
     lines.extend([
-        f"",
-        f"## Detailed Reports",
-        f"",
-        f"Individual matchup visualizations available in `reports/head_to_head/matchups/`",
-        f"",
+        "",
+        "## Detailed Reports",
+        "",
+        "Individual matchup visualizations available in `reports/head_to_head/matchups/`",
+        "",
     ])
     
     return "\n".join(lines)

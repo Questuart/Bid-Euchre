@@ -190,7 +190,7 @@ def main():
     print(f"Loading data from: {jsonl_path}")
     correlations_by_contract = compute_correlations_by_contract(jsonl_path)
     
-    print(f"\nGenerating charts by contract type...")
+    print("\nGenerating charts by contract type...")
     plot_contract_correlations(correlations_by_contract, output_dir, title_prefix)
     
     print_summary_table(correlations_by_contract)

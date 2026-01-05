@@ -21,18 +21,15 @@ import sys
 import json
 import argparse
 from glob import glob
-from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.patches import Rectangle
 
 # Import reporting framework
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from bid_euchre.reporting import (
-    STRATEGY_NAMES, STRATEGY_COLORS, CONTRACT_LABELS,
     apply_report_style, get_report_paths,
     ensure_dir, copy_to_latest, write_latest_pointer,
 )

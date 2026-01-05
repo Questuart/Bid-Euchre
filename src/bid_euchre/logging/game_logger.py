@@ -22,7 +22,6 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from enum import Enum
 from typing import List, Dict, Any, Optional, Tuple
-from pathlib import Path
 
 
 # Current schema version - bump when fields change

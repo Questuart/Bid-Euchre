@@ -2,10 +2,10 @@ import numpy as np
 import pickle
 import os
 import pytest
-from typing import Dict, Any
 
 from bid_euchre.core.cards import Card
-from bid_euchre.strategy.regression import RegressionBidder, SimpleOLS
+from bid_euchre.strategy.regression import RegressionBidder
+from bid_euchre.analysis.models import SimpleOLS
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.baselines import RandomLegalStrategy
 
@@ -58,9 +58,7 @@ def test_regression_bidder_policy(dummy_models):
     
     # Let's try a policy with non-integers
     # We'll mock the prediction directly if possible or just use cards.
-    # If we use 1 Ace (5) and 9 Tens (9), rank_sum = 14.
-    hand_small = [Card("H", "A")] + [Card("H", "T")] * 9
-    # rank_sum = 14.0
+    # Example: 1 Ace (5) and 9 Tens (9) would give rank_sum = 14.0
     
     # To test rounding/floor/ceil, we need a model that returns a float.
     model_float = SimpleOLS()

@@ -18,15 +18,11 @@ Usage:
 import os
 import json
 import argparse
-from glob import glob
-from datetime import datetime
-from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from scipy import stats as scipy_stats
 
 # Import reporting framework and analysis utilities
 import sys
@@ -36,7 +32,6 @@ from bid_euchre.analysis import (
     compute_paired_deltas,
     paired_comparison_summary,
     wilson_ci,
-    mean_with_ci,
 )
 from bid_euchre.reporting import (
     STRATEGY_NAMES,
@@ -168,7 +163,7 @@ def plot_paired_comparison(
         archive_rel = os.path.relpath(archive_dir, latest_dir)
         write_latest_pointer(latest_dir, archive_rel)
         
-        print(f"✅ Paired comparison report")
+        print("✅ Paired comparison report")
         print(f"   Latest: {latest_png}")
         print(f"   Archive: {archive_png}")
         return latest_png
@@ -474,8 +469,8 @@ def main():
     )
     
     print(f"\n📁 Output directory: {output_dir}/")
-    print(f"   • paired_comparison.png")
-    print(f"   • summary.md")
+    print("   • paired_comparison.png")
+    print("   • summary.md")
     print()
 
 
@@ -489,7 +484,7 @@ def _generate_paired_summary_md(
     strategies = list(strategy_data.keys())
     
     lines = []
-    lines.append(f"# Strategy Comparison Summary\n")
+    lines.append("# Strategy Comparison Summary\n")
     lines.append(f"**Run**: `{meta['run_id']}`  ")
     lines.append(f"**Baseline**: {STRATEGY_NAMES.get(baseline, baseline)}  ")
     lines.append(f"**Date**: {meta['timestamp']}  ")

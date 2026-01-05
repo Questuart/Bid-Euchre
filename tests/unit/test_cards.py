@@ -1,5 +1,4 @@
 import pytest
-import os
 from collections import Counter
 
 from bid_euchre.core.cards import (
