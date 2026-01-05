@@ -1,8 +1,13 @@
+
 import pytest
-import os
 
 from bid_euchre.core.cards import Card
-from bid_euchre.core.rules import trick_winner, _highest_trump, _highest_in_suit, get_legal_indices
+from bid_euchre.core.rules import (
+    _highest_in_suit,
+    _highest_trump,
+    get_legal_indices,
+    trick_winner,
+)
 
 
 class TestTrickWinner:

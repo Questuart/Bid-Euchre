@@ -15,12 +15,13 @@ and validates strategy choices against expected behavior. This makes tests:
 """
 
 import pytest
+
 from bid_euchre.core.cards import Card
-from bid_euchre.core.rules import trick_winner, get_legal_indices
+from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.strategy import (
+    AlwaysHighestLegalStrategy,
     GreedyStrategy,
     ImprovedGreedyStrategy,
-    AlwaysHighestLegalStrategy,
     card_value_for_dump,
     # Intentionally exclude RandomLegal and AlwaysLowest (they don't try to win)
 )
@@ -320,7 +321,7 @@ class TestBowerHandling:
         # Should choose right bower (strongest trump, but also cheapest winner here)
         # Both cards win, but right bower is technically "cheaper" in greedy's valuation
         # (Actually both are expensive, but the test verifies a win is taken)
-        assert choice in [0, 1], f"Should choose a winning card"
+        assert choice in [0, 1], "Should choose a winning card"
 
 
 class TestNoWinningMove:

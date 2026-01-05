@@ -2,9 +2,10 @@
 Statistical utility functions for analysis and reporting.
 """
 
+from typing import List, Tuple
+
 import numpy as np
 from scipy import stats as scipy_stats
-from typing import Tuple, List
 
 
 def wilson_ci(successes: int, trials: int, confidence: float = 0.95) -> Tuple[float, float, float]:

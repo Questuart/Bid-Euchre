@@ -19,6 +19,8 @@ dependencies = [
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=4.0.0",
+  "ruff>=0.8.0,<0.10",
+  "pre-commit>=3.0,<5",
 ]
 
 [tool.setuptools]
@@ -27,4 +29,12 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.ruff]
+extend-exclude = ["data/", "experiments/", "scripts/"]
 
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501", "E402", "E712", "E741"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bid_euchre"]

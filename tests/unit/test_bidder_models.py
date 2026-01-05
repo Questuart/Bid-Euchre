@@ -5,8 +5,9 @@ Tests model predictions, feature sensitivity, and bidder advantage effects.
 """
 
 import os
-import sys
 import pickle
+import sys
+
 import numpy as np
 import pytest
 

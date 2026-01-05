@@ -18,12 +18,10 @@ Usage:
 
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
-from typing import List, Dict, Any, Optional, Tuple
-from pathlib import Path
-
+from typing import Any, Dict, List, Optional, Tuple
 
 # Current schema version - bump when fields change
 # v2 adds `scores` to hand_end records (one scalar score per player).

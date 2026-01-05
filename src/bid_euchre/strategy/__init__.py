@@ -14,10 +14,10 @@ from .base import Strategy, card_value_for_dump
 
 # Baseline strategies
 from .baselines import (
+    AlwaysHighestLegalStrategy,
+    AlwaysLowestLegalStrategy,
     BasicStrategy,
     RandomLegalStrategy,
-    AlwaysLowestLegalStrategy,
-    AlwaysHighestLegalStrategy,
 )
 
 # Greedy strategies

@@ -3,13 +3,14 @@ Base strategy class and shared utilities.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 from ..core.cards import (
     Card,
     effective_suit,
-    rank_strength,
-    is_right_bower,
     is_left_bower,
+    is_right_bower,
+    rank_strength,
 )
 
 

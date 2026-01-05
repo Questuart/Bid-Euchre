@@ -5,7 +5,7 @@ This package contains shared utility functions used across the codebase:
 - validation: Configuration and data validation helpers
 """
 
-from .model_io import save_model, load_model
+from .model_io import load_model, save_model
 
 __all__ = ['save_model', 'load_model']
 

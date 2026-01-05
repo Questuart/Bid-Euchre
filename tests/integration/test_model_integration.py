@@ -6,16 +6,16 @@ and that they produce reasonable results.
 """
 
 import os
-import sys
 import pickle
+import sys
+
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from bid_euchre.sim.simulation import play_single_hand, simulate_many_hands
-from bid_euchre.strategy.regression import RegressionBidder
+from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.baselines import RandomLegalStrategy
-from bid_euchre.logging import GameLogger, LogLevel
+from bid_euchre.strategy.regression import RegressionBidder
 
 # Check if model files exist
 OLSA_V2_EXISTS = all(os.path.exists(f'data/models/current/olsa_v2/olsa_v2_{c}.pkl') for c in ['suit', 'high', 'low'])
@@ -73,7 +73,7 @@ def test_olsa_v2_plays_single_hand():
         assert 0 <= t0 <= 10, f"Team 0 tricks out of range: {t0}"
         assert 0 <= t1 <= 10, f"Team 1 tricks out of range: {t1}"
         assert t0 + t1 == 10, f"Tricks don't sum to 10: {t0} + {t1}"
-        assert bid is not None, f"Bid should not be None"
+        assert bid is not None, "Bid should not be None"
         assert 5 <= bid <= 10, f"Bid out of range: {bid}"
         
         print(f"✅ OLSa_v2 played single hand: {t0}-{t1}, bid={bid}, contract={contract}")
@@ -147,7 +147,7 @@ def test_olsa_sr_v2_plays_single_hand():
         
         assert 0 <= t0 <= 10, f"Team 0 tricks out of range: {t0}"
         assert 0 <= t1 <= 10, f"Team 1 tricks out of range: {t1}"
-        assert t0 + t1 == 10, f"Tricks don't sum to 10"
+        assert t0 + t1 == 10, "Tricks don't sum to 10"
         
         print(f"✅ OLSa_SR_v2 played single hand: {t0}-{t1}, bid={bid}")
         
@@ -197,7 +197,7 @@ def test_olsa_v2_vs_random():
     win_rate = team0_wins / 50
     
     print(f"✅ OLSa_v2 vs Random: {team0_wins}-{team1_wins} (win rate: {win_rate:.2%})")
-    print(f"   (Note: with bidding, win rates are complex due to points scoring)")
+    print("   (Note: with bidding, win rates are complex due to points scoring)")
 
 
 def test_olsa_v2_bidding_behavior():

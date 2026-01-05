@@ -2,7 +2,6 @@
 Tests to verify the leading bug fix for greedy strategies.
 """
 
-import pytest
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import GreedyStrategy, ImprovedGreedyStrategy
 
@@ -157,9 +156,9 @@ class TestCompareLeadingBehavior:
     def test_all_strategies_lead_with_reasonable_cards(self):
         """All strategies should make reasonable leading decisions."""
         from bid_euchre.strategy import (
+            AlwaysHighestLegalStrategy,
             GreedyStrategy,
             ImprovedGreedyStrategy,
-            AlwaysHighestLegalStrategy,
         )
         
         strategies = [

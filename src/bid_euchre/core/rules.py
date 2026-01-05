@@ -1,9 +1,10 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 from .cards import (
     Card,
     effective_suit,
-    is_right_bower,
     is_left_bower,
+    is_right_bower,
     rank_strength,
 )
 

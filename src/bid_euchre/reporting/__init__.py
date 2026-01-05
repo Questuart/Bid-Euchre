@@ -7,31 +7,29 @@ Provides shared utilities for generating consistent, high-quality reports:
 - metrics: Core metric calculations (Win/Push/Loss rates with CI)
 """
 
-from .style import (
-    CONTRACT_LABELS,
-    CONTRACT_COLORS,
-    STRATEGY_NAMES,
-    STRATEGY_COLORS,
-    OUTCOME_COLORS,
-    OUTCOME_LABELS,
-    apply_report_style,
-    format_pct,
-    format_ci,
-)
-
-from .paths import (
-    ReportPaths,
-    get_report_paths,
-    write_latest_pointer,
-    copy_to_latest,
-    dashboard_paths,
-    ensure_dir,
-)
-
 from .metrics import (
     OutcomeStats,
     compute_outcome_stats,
     outcome_rates_with_ci,
+)
+from .paths import (
+    ReportPaths,
+    copy_to_latest,
+    dashboard_paths,
+    ensure_dir,
+    get_report_paths,
+    write_latest_pointer,
+)
+from .style import (
+    CONTRACT_COLORS,
+    CONTRACT_LABELS,
+    OUTCOME_COLORS,
+    OUTCOME_LABELS,
+    STRATEGY_COLORS,
+    STRATEGY_NAMES,
+    apply_report_style,
+    format_ci,
+    format_pct,
 )
 
 __all__ = [

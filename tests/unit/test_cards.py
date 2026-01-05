@@ -1,11 +1,19 @@
-import pytest
-import os
 from collections import Counter
 
+import pytest
+
 from bid_euchre.core.cards import (
-    Card, create_deck, shuffle_deck, deal_hands,
-    is_right_bower, is_left_bower, effective_suit, rank_strength,
-    SUITS, RANKS, SAME_COLOR_SUIT
+    RANKS,
+    SAME_COLOR_SUIT,
+    SUITS,
+    Card,
+    create_deck,
+    deal_hands,
+    effective_suit,
+    is_left_bower,
+    is_right_bower,
+    rank_strength,
+    shuffle_deck,
 )
 
 

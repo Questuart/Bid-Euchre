@@ -1,12 +1,12 @@
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
 from ..core.cards import (
     Card,
-    is_right_bower,
-    is_left_bower,
     effective_suit,
+    is_left_bower,
+    is_right_bower,
     rank_strength,
 )
-
 
 # ===========================
 #  FEATURE EXTRACTION
