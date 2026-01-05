@@ -1157,4 +1157,37 @@ are preserved for historical reference only.
 
 ---
 
+### 5.11 Add Ruff Format Check to CI (Follow-up to PR #5)
+
+**Issue:** PR #5 added `ruff check` (lint) but deferred `ruff format --check` to avoid formatting churn in that PR.
+
+**Required action:**
+1. Run `ruff format .` to auto-format entire codebase
+2. Review and commit formatting changes  
+3. Add `ruff format --check` step to `.github/workflows/ci.yml`
+4. Update `pyproject.toml` with format config:
+   ```toml
+   [tool.ruff.format]
+   quote-style = "double"
+   indent-style = "space"
+   ```
+
+**Files to modify:**
+- Run `ruff format .` on entire codebase (will touch many files)
+- `.github/workflows/ci.yml` - Add format check step
+- `pyproject.toml` - Add `[tool.ruff.format]` config
+
+**Effort:** 1-2 hrs (review formatting changes)  
+**Impact:** MEDIUM - Enforces consistent code style, prevents formatting bikeshedding
+
+**Blockers:** PR #5 (Ruff lint gate) must be merged first
+
+**Notes:**
+- Intentionally deferred from PR #5 to keep that PR focused on lint only
+- Ruff auto-formatter is opinionated but consistent (black-compatible)
+- Expect one-time formatting churn, then enforced going forward
+- Consider excluding experiments/ if formatting changes are too noisy
+
+---
+
 **Questions or blockers?** Add notes here and discuss before implementing.
