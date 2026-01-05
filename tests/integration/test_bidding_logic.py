@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 import os
+import pytest
 from typing import Dict, Any
 
 from bid_euchre.core.cards import Card
@@ -11,7 +12,8 @@ from bid_euchre.strategy.baselines import RandomLegalStrategy
 # Dummy model paths for testing
 DUMMY_MODEL_DIR = "tests/dummy_models"
 
-def dummy_models_setup():
+@pytest.fixture
+def dummy_models():
     """Create dummy models for testing."""
     os.makedirs(DUMMY_MODEL_DIR, exist_ok=True)
     
@@ -98,7 +100,7 @@ def test_misdeal_logic():
     # RandomLegalStrategy always returns 0 for decide_bid (default)
     strategies = [RandomLegalStrategy() for _ in range(4)]
     
-    t0, t1, scores, feats, leader, hands, bid, _, _, _, _, _, _ = play_single_hand(
+    t0, t1, scores, feats, leader, hands, bid, _, _, _, _ = play_single_hand(
         contract_type=None,
         strategies=strategies
     )
@@ -123,7 +125,7 @@ def test_partner_pass_rule(dummy_models):
     
     # Play hand with contract_type=None to trigger bidding
     # Seat 3 is dealer if initial_leader=0 (LOD)
-    t0, t1, _, _, leader, _, bid, _, _, _, _, _, _ = play_single_hand(
+    t0, t1, _, _, leader, _, bid, _, _, _, _ = play_single_hand(
         contract_type=None,
         strategies=strategies,
         initial_leader=0 
@@ -142,7 +144,7 @@ def test_bid_winner_leads(dummy_models):
         RandomLegalStrategy()
     ]
     
-    t0, t1, _, _, leader, _, bid, _, _, _, _, _, _ = play_single_hand(
+    t0, t1, _, _, leader, _, bid, _, _, _, _ = play_single_hand(
         contract_type=None,
         strategies=strategies,
         initial_leader=1 # make someone else dealer so Seat 0 is LOD

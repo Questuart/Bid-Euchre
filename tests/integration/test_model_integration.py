@@ -8,6 +8,7 @@ and that they produce reasonable results.
 import os
 import sys
 import pickle
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -16,7 +17,11 @@ from bid_euchre.strategy.regression import RegressionBidder
 from bid_euchre.strategy.baselines import RandomLegalStrategy
 from bid_euchre.logging import GameLogger, LogLevel
 
+# Check if model files exist
+OLSA_V2_EXISTS = all(os.path.exists(f'data/models/current/olsa_v2/olsa_v2_{c}.pkl') for c in ['suit', 'high', 'low'])
 
+
+@pytest.mark.skipif(not OLSA_V2_EXISTS, reason="OLSa_v2 model files not found")
 def test_olsa_v2_loads_successfully():
     """Test that OLSa_v2 models can be loaded."""
     model_paths = {
