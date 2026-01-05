@@ -185,6 +185,21 @@ class TestDataPipeline:
         assert (run_dir / "perf.json").exists()
         assert (run_dir / "results").exists()
 
+        # Validate meta.json contract (schema v2)
+        meta_path = run_dir / "meta.json"
+        meta = json.loads(meta_path.read_text())
+
+        assert meta["schema_version"] == 2
+        assert meta["created_at_utc"].endswith("Z")
+        assert "git_sha" in meta
+        assert meta["git_sha"] == "unknown" or len(meta["git_sha"]) >= 7
+        assert meta["config_path"] == "experiments/configs/quick_test.yaml"
+        assert len(meta["config_sha256"]) == 64
+
+        # Backward-compatible fields
+        assert meta["n_per"] == 50
+        assert meta["seed"] == 1
+
 
     def test_simulation_reproducibility(self):
         """Test that simulations with same seed produce same results."""
