@@ -240,7 +240,13 @@ def test_model_coefficients_reasonable():
             continue
         
         with open(model_path, 'rb') as f:
-            model = pickle.load(f)
+            model_data = pickle.load(f)
+        
+        # Unwrap dict to get actual model object (standard format)
+        if isinstance(model_data, dict):
+            model = model_data['model']
+        else:
+            model = model_data  # Legacy format
         
         # Check number of coefficients
         assert len(model.coef_) == expected_n_features, \
