@@ -104,6 +104,8 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --dry-run
 ~~~
 
+**Run metadata**: Every run writes `meta.json` with reproducibility metadata (git SHA, config hash, seed). For the schema contract, see `docs/01_core/schemas/meta_json.md`.
+
 ### Logging (debugging)
 The experiment runner supports JSONL logging:
 
