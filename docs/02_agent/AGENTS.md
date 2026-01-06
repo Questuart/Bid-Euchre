@@ -33,6 +33,24 @@ This doc is the **operational guide**. Before working in this repo, also review:
 
 ## 1) Gold Path Commands (Blessed Workflow)
 
+### Run before opening a PR
+
+Run everything CI runs:
+
+~~~bash
+make check
+~~~
+
+Run individual checks:
+
+~~~bash
+make repo-lint  # Repo linter only
+make lint       # Ruff only
+make test       # Tests only
+~~~
+
+**Agents must use these commands. Do not invent one-off runners.**
+
 ### Setup (recommended)
 Use an editable install so imports work everywhere.
 
