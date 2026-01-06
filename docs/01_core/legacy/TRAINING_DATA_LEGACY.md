@@ -2,9 +2,9 @@
 
 ## Bidder-Aware Training Data (Current)
 
-**Generated:** 2026-01-03  
-**Schema Version:** v5  
-**Total Records:** 200,000 (50,000 hands × 4 players/hand)  
+**Generated:** 2026-01-03
+**Schema Version:** v5
+**Total Records:** 200,000 (50,000 hands × 4 players/hand)
 **Data Split:** 70/15/15 (train/val/test)
 
 ### Files
@@ -115,4 +115,3 @@ Previous training datasets (if any) are stored in `data/_deprecated/training/` w
 - Data generation: See `experiments/generate_bidder_training_data.py`
 - Model training: See `experiments/train_bidder_aware_models.py`
 - Schema documentation: See `docs/schemas/hand_record.md`
-

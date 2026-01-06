@@ -14,7 +14,7 @@ This document describes the strategy comparison framework for evaluating Bid Euc
 ### 2. RandomLegalStrategy
 - **Algorithm**: Uniform random selection among legal moves
 - **Behavior**: Chooses uniformly at random from all legal cards
-- **Purpose**: 
+- **Purpose**:
   - Sets a floor (greedy should beat it)
   - Catches bugs (if random wins too often, something is wrong)
   - Validates suit-following enforcement
@@ -203,4 +203,3 @@ PYTHONPATH=src python scripts/validate_tests.py
 - Trick-Taking Game AI: [Wikipedia](https://en.wikipedia.org/wiki/Trick-taking_game)
 - Monte Carlo Evaluation: Silver et al. (2016)
 - Common Random Numbers: Law & Kelton (2000)
-

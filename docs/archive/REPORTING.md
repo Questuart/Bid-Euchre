@@ -5,7 +5,7 @@
 The reporting system generates comprehensive visualizations and summaries for simulation runs, organized into three main categories:
 
 1. **Health Dashboard** - Data quality and sanity checks
-2. **Trick Strategy Analysis** - Strategy performance comparisons  
+2. **Trick Strategy Analysis** - Strategy performance comparisons
 3. **Bidding Strategy Analysis** - Hand evaluation and bidding (future)
 
 ## Report Structure
@@ -46,17 +46,17 @@ All reports are stored under `data/runs/<run_id>/reports/`:
    - Shows probability mass function of tricks won (0-10)
    - Color-coded: red (<5), orange (=5), green (>5)
    - Displays mean, std dev, and sample size
-   
+
 2. **Score by Trick Count (Violin)** - Shows score variance and outliers
    - Violin plot of hand scores by tricks won
    - Uses exact scores from JSONL logs when available
    - Helps identify scoring anomalies
-   
+
 3. **Suit Symmetry** - Ensures no suit bias in dealing
    - Mean tricks by suit with 95% confidence intervals
    - Kruskal-Wallis test for statistical significance
    - Effect size (Cohen's d) for practical significance
-   
+
 4. **Tricks by Contract Type (Violin)** - Validates High/Low/Suit behavior
    - Distribution of tricks by contract type
    - Ensures contract types behave as expected
@@ -102,7 +102,7 @@ PYTHONPATH=src python experiments/generate_dashboard.py \
 **Generated for**: head-to-head mode with common_deals=True
 
 **Plots**:
-- Delta score distributions  
+- Delta score distributions
 - Win/push/loss rates with confidence intervals
 - Effect sizes (Cohen's d)
 

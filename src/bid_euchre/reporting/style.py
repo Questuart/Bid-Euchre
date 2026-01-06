@@ -66,19 +66,19 @@ REPORT_STYLE = {
     "ytick.labelsize": 9,
     "legend.fontsize": 8,
     "figure.titlesize": 14,
-    
+
     # Line widths
     "lines.linewidth": 1.5,
     "axes.linewidth": 1.0,
     "grid.linewidth": 0.5,
-    
+
     # Colors
     "axes.facecolor": "white",
     "figure.facecolor": "white",
     "axes.edgecolor": "#333",
     "grid.color": "#ccc",
     "grid.alpha": 0.3,
-    
+
     # Grid
     "axes.grid": False,  # Enable per-plot
     "grid.linestyle": "--",
@@ -160,4 +160,3 @@ def get_strategy_name(strategy_id: str) -> str:
 def get_strategy_color(strategy_id: str) -> str:
     """Get color for a strategy."""
     return STRATEGY_COLORS.get(strategy_id, "#95a5a6")
-

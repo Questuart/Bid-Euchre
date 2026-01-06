@@ -7,8 +7,8 @@ Trained two families of bidder-aware models to compare feature engineering appro
 1. **OLSa_v2**: Baseline trump/offsuit features + `is_bidder`
 2. **OLSa_SR_v2**: Hand Value (single aggregated score) + `is_bidder`
 
-**Training Data**: 50k hands of OLSa_SR_Floor self-play (200k player-hand records)  
-**Splits**: 70% train / 15% val / 15% test  
+**Training Data**: 50k hands of OLSa_SR_Floor self-play (200k player-hand records)
+**Splits**: 70% train / 15% val / 15% test
 **Date**: 2026-01-04
 
 ---

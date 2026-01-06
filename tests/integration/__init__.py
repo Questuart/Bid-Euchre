@@ -2,4 +2,3 @@
 
 Tests that verify multiple components work together correctly.
 """
-

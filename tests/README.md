@@ -1,6 +1,6 @@
 # Bid Euchre Tests
 
-**Last updated:** 2026-01-04  
+**Last updated:** 2026-01-04
 **Organization:** Tests organized by type (unit/integration/performance)
 
 This directory contains comprehensive tests for the Bid Euchre simulation project.
@@ -12,7 +12,7 @@ This directory contains comprehensive tests for the Bid Euchre simulation projec
 ```
 tests/
 ├── unit/                  # Fast, isolated tests (9 files)
-├── integration/           # Multi-component tests (4 files)  
+├── integration/           # Multi-component tests (4 files)
 ├── performance/           # Speed/memory tests (1 file)
 └── README.md             # This file
 ```
@@ -158,10 +158,10 @@ def test_specific_behavior():
     """Test that X does Y when Z."""
     # Arrange
     input_data = ...
-    
+
     # Act
     result = my_function(input_data)
-    
+
     # Assert
     assert result == expected, f"Expected {expected}, got {result}"
 

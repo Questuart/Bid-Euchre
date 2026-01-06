@@ -24,7 +24,7 @@ from .base import Strategy
 class BasicStrategy(Strategy):
     """
     Basic strategy: always play lowest-ranked legal card.
-    
+
     Simple rule-based approach with no lookahead or trump consideration.
     """
 
@@ -51,7 +51,7 @@ class BasicStrategy(Strategy):
 class RandomLegalStrategy(Strategy):
     """
     Strategy that chooses uniformly at random among legal moves.
-    
+
     Serves as:
     - "No intelligence" baseline
     - Sanity check (should lose to all intelligent strategies)
@@ -78,7 +78,7 @@ class RandomLegalStrategy(Strategy):
 class AlwaysLowestLegalStrategy(Strategy):
     """
     Strategy that always plays the lowest-ranked legal card.
-    
+
     Extreme conservatism: never spend power unless forced.
     Useful for:
     - Testing card ordering logic (effective suit, bowers, trump ranking)
@@ -106,24 +106,24 @@ class AlwaysLowestLegalStrategy(Strategy):
             Includes bower and trump logic for proper ordering.
             """
             card = hand[idx]
-            
+
             # Bowers only exist in suit contracts
             if contract_type == "suit" and trump_suit is not None:
                 # Right bower is strongest
                 if is_right_bower(card, trump_suit):
                     return 1000.0
-                
+
                 # Left bower is next
                 if is_left_bower(card, trump_suit):
                     return 900.0
-                
+
                 # Trump cards (by rank)
                 eff_suit = effective_suit(card, trump_suit, contract_type)
                 if eff_suit == trump_suit:
                     # Trump: A > K > Q > J > T (for non-bower J)
                     base = rank_strength(card, contract_type)
                     return 800.0 + base
-            
+
             # Non-trump cards (or all cards in high/low contracts)
             base = rank_strength(card, contract_type)
             return base
@@ -134,13 +134,13 @@ class AlwaysLowestLegalStrategy(Strategy):
 class AlwaysHighestLegalStrategy(Strategy):
     """
     Strategy that always plays the highest-ranked legal card.
-    
+
     Extreme aggression: cash everything immediately.
     Useful for:
     - Stressing trick resolution logic
     - Showing how bad "myopic max strength" is
     - Exposing waste patterns (burning bowers/trump early)
-    
+
     In many trick-taking games, this looks powerful but performs poorly because it:
     - Overkills cheap tricks
     - Wastes trump when a low card would win
@@ -167,27 +167,26 @@ class AlwaysHighestLegalStrategy(Strategy):
             Includes bower and trump logic for proper ordering.
             """
             card = hand[idx]
-            
+
             # Bowers only exist in suit contracts
             if contract_type == "suit" and trump_suit is not None:
                 # Right bower is strongest
                 if is_right_bower(card, trump_suit):
                     return 1000.0
-                
+
                 # Left bower is next
                 if is_left_bower(card, trump_suit):
                     return 900.0
-                
+
                 # Trump cards (by rank)
                 eff_suit = effective_suit(card, trump_suit, contract_type)
                 if eff_suit == trump_suit:
                     # Trump: A > K > Q > J > T (for non-bower J)
                     base = rank_strength(card, contract_type)
                     return 800.0 + base
-            
+
             # Non-trump cards (or all cards in high/low contracts)
             base = rank_strength(card, contract_type)
             return base
 
         return max(legal_indices, key=card_rank)
-

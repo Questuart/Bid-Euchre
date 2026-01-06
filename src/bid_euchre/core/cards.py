@@ -44,7 +44,7 @@ def create_deck() -> List[Card]:
 def shuffle_deck(deck: List[Card], rng: Optional[random.Random] = None) -> None:
     """
     Shuffle a deck of cards.
-    
+
     Args:
         deck: List of cards to shuffle (modified in-place)
         rng: Optional random.Random instance. If None, uses global random (not recommended for reproducibility)

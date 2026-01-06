@@ -1,18 +1,18 @@
 ## Summary
-- 
+-
 
 ## Why
-- 
+-
 
 ## Repro / Validation
 **Command(s) run:**
-- 
+-
 
 **Config (if applicable):**
-- 
+-
 
 **Seed (if applicable):**
-- 
+-
 
 ## Tests
 - [ ] `PYTHONPATH=src python -m pytest -m "not slow" tests/`

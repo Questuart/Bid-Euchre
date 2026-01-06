@@ -49,7 +49,7 @@ PYTHONPATH=src python experiments/run_experiment.py \\
 
 **Problem**: `common_deals` was always set to `True` regardless of whether a seed was provided.
 
-**Solution**: 
+**Solution**:
 ```python
 "common_deals": seed is not None  # Only true if seed provided
 ```
@@ -164,7 +164,7 @@ experiment_name: my_experiment
 strategies:
   - name: greedy
     class_name: GreedyStrategy
-  
+
   - name: my_new_strategy
     class_name: MyNewStrategy
     params:
@@ -274,10 +274,9 @@ Performance is now **tracked and visible** in `meta.json`.
 
 ---
 
-**Date**: December 15, 2025  
-**Lines Added**: ~400  
-**Lines Removed**: ~50  
+**Date**: December 15, 2025
+**Lines Added**: ~400
+**Lines Removed**: ~50
 **Net Code Reduction**: After deprecation removal, will reduce by ~600 lines
 
 **Migration Status**: ✅ Complete and tested
-

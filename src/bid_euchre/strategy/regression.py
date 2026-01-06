@@ -20,8 +20,8 @@ class RegressionBidder(ImprovedGreedyStrategy):
     """
 
     def __init__(
-        self, 
-        model_paths: Dict[str, str], 
+        self,
+        model_paths: Dict[str, str],
         name: str = "regression_bidder",
         policy: str = "round",
         fixed_bid: Optional[int] = None,
@@ -50,7 +50,7 @@ class RegressionBidder(ImprovedGreedyStrategy):
                     path = alt_path
                 else:
                     raise FileNotFoundError(f"Model file not found: {path}")
-            
+
             with open(path, 'rb') as f:
                 models[ctype] = pickle.load(f)
         return models
@@ -93,24 +93,24 @@ class RegressionBidder(ImprovedGreedyStrategy):
         for ctype, trump in scenarios:
             # Extract features
             feats = get_hand_features(hand, contract_type=ctype, trump_suit=trump)
-            
+
             # Add is_bidder feature (assume we are the bidder during evaluation)
             feats['is_bidder'] = 1
-            
+
             # Get the right model
             model_data = self.models.get(ctype)
             if not model_data:
                 continue
-                
+
             model = model_data['model']
             feature_names = model_data['features']
-            
+
             # Prepare feature vector
             X = np.array([feats[fname] for fname in feature_names]).reshape(1, -1)
-            
+
             # Predict
             pred = model.predict(X)[0]
-            
+
             if pred > best_expected_tricks:
                 best_expected_tricks = pred
                 best_contract = ctype

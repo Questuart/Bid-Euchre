@@ -8,11 +8,11 @@ This document describes the training data generated for bidder-aware regression 
 
 ## Dataset Summary
 
-**Generated:** 2026-01-03  
-**Strategy:** OLSa_SR_Floor (Hand Value OLS, floor policy)  
-**Mode:** Self-play with full bidding  
-**Total Hands:** 50,000  
-**Total Records:** 200,000 (50k hands × 4 players)  
+**Generated:** 2026-01-03
+**Strategy:** OLSa_SR_Floor (Hand Value OLS, floor policy)
+**Mode:** Self-play with full bidding
+**Total Hands:** 50,000
+**Total Records:** 200,000 (50k hands × 4 players)
 **Seed:** 42 (reproducible)
 
 ### Splits
@@ -105,7 +105,7 @@ PYTHONPATH=src python experiments/generate_bidder_training_data.py \
     --hands 50000 --seed 42
 ```
 
-**Output:** `data/runs/bidder_training_data_42_<timestamp>/logs/*.jsonl`  
+**Output:** `data/runs/bidder_training_data_42_<timestamp>/logs/*.jsonl`
 **Duration:** ~53.6 seconds (933 hands/sec)
 
 ### 2. Split into Train/Val/Test
@@ -114,7 +114,7 @@ python experiments/split_train_val_test.py \
     data/runs/bidder_training_data_42_<timestamp>
 ```
 
-**Output:** `data/runs/bidder_training_data_42_<timestamp>/splits/*.{train,val,test}.jsonl`  
+**Output:** `data/runs/bidder_training_data_42_<timestamp>/splits/*.{train,val,test}.jsonl`
 **Split Logic:** Deterministic based on `deal_id` ranges
 
 ### 3. Convert to CSV
@@ -209,8 +209,8 @@ Example candidate features:
 
 ### Phase 3: Model Comparison
 
-**Test:** New bidder-aware models vs current OLSa models  
-**Metrics:** R², MAE, make-bid rate, points per hand  
+**Test:** New bidder-aware models vs current OLSa models
+**Metrics:** R², MAE, make-bid rate, points per hand
 **Goal:** +10-15% improvement in bidding performance
 
 ---
@@ -237,17 +237,17 @@ Example candidate features:
 ## Validation Checks
 
 ### Data Integrity
-✅ All 50k hands logged with schema v5  
-✅ Bidder/defender split exactly 25/75  
-✅ Contract types correctly logged (not null)  
-✅ Proper train/val/test split (70/15/15)  
-✅ All 40+ features present in CSV  
+✅ All 50k hands logged with schema v5
+✅ Bidder/defender split exactly 25/75
+✅ Contract types correctly logged (not null)
+✅ Proper train/val/test split (70/15/15)
+✅ All 40+ features present in CSV
 ✅ No misdeals in training data (leader != -1)
 
 ### Reproducibility
-✅ Seed 42 for deterministic generation  
-✅ Split logic based on deal_id ranges  
-✅ All scripts committed to git  
+✅ Seed 42 for deterministic generation
+✅ Split logic based on deal_id ranges
+✅ All scripts committed to git
 ✅ Clear pipeline documentation
 
 ---
@@ -258,7 +258,7 @@ Example candidate features:
 
 The logs use schema v5 which includes:
 - `dealer_position` - Who deals
-- `bidder_position` - Who won auction  
+- `bidder_position` - Who won auction
 - `winning_bid` - Bid amount (not used in features)
 
 ### Bidding Mechanics
@@ -271,11 +271,11 @@ From `simulation.py`:
 
 ### Performance
 
-**Generation:** 933 hands/sec (50k hands in 53.6s)  
-**Splitting:** ~instant  
+**Generation:** 933 hands/sec (50k hands in 53.6s)
+**Splitting:** ~instant
 **Conversion:** ~2-3 seconds
 
 ---
 
-**Status:** ✅ Dataset ready for model training  
+**Status:** ✅ Dataset ready for model training
 **Next:** Train bidder/defender models and compare to baseline

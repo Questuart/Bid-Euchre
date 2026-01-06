@@ -115,13 +115,13 @@ features = {
 
 ### Option 2: Train Separate Bidder/Defender Models
 ```
-Model A: "Bidder Trick Model" 
+Model A: "Bidder Trick Model"
   - Train on: hands where is_bidder=1
   - Predict: tricks when YOU won the auction
   - Use for: deciding whether to bid
 
 Model B: "Defender Trick Model"
-  - Train on: hands where is_bidder=0  
+  - Train on: hands where is_bidder=0
   - Predict: tricks when OPPONENT won
   - Use for: evaluating defensive prospects
 ```
@@ -185,7 +185,7 @@ The generated dashboard (`position_impact_analysis.png`) shows:
 
 **Bidding Position Names:**
 - **LOD** = (dealer + 1) % 4
-- **Partner** = (dealer + 2) % 4  
+- **Partner** = (dealer + 2) % 4
 - **ROD** = (dealer + 3) % 4
 - **Dealer** = dealer
 

@@ -1,6 +1,6 @@
 # Hand Logging Implementation - Schema v3
 
-**Date**: December 17, 2025  
+**Date**: December 17, 2025
 **Status**: ✅ Complete and Tested
 
 ---
@@ -64,7 +64,7 @@ Added full hand logging to the simulation framework. Each player's complete deal
 
 Each card is represented as a 2-element array: `[suit, rank]`
 
-**Suits**: `"C"`, `"D"`, `"H"`, `"S"` (Clubs, Diamonds, Hearts, Spades)  
+**Suits**: `"C"`, `"D"`, `"H"`, `"S"` (Clubs, Diamonds, Hearts, Spades)
 **Ranks**: `"T"`, `"J"`, `"Q"`, `"K"`, `"A"` (Ten, Jack, Queen, King, Ace)
 
 ### Hand Format
@@ -108,7 +108,7 @@ All tests passed:
 
 **Test coverage**:
 - Return signature validation
-- Hand structure validation  
+- Hand structure validation
 - Schema version detection
 - Card format validation (suit/rank values)
 - Logging enabled/disabled scenarios
@@ -179,7 +179,7 @@ Potential future enhancements:
 
 ---
 
-**Implementation Time**: ~30 minutes  
-**Token Cost**: ~8,000 tokens (including testing and documentation)  
-**Difficulty**: Easy ⭐  
+**Implementation Time**: ~30 minutes
+**Token Cost**: ~8,000 tokens (including testing and documentation)
+**Difficulty**: Easy ⭐
 **Risk**: Low (backward compatible, well-tested)

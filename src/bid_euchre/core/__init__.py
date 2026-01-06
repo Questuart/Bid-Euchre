@@ -18,4 +18,3 @@ __all__ = [
     "trick_winner",
     "get_legal_indices",
 ]
-
