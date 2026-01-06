@@ -1,8 +1,8 @@
 # BUD EUCHRE — Bid Euchre Simulation + Strategy Lab
 
 This repo is a simulation and analysis environment for **Bid Euchre**. The goal is to:
-1) simulate large volumes of games/hands with configurable player strategies  
-2) evaluate bidding + play policies (baseline → heuristic → learned)  
+1) simulate large volumes of games/hands with configurable player strategies
+2) evaluate bidding + play policies (baseline → heuristic → learned)
 3) produce clear reports/plots that compare strategies and reveal why one policy wins
 
 ## What success looks like
@@ -18,10 +18,10 @@ This repo is a simulation and analysis environment for **Bid Euchre**. The goal 
 - **Reports & Plots**: aggregate across thousands of hands/games; compare strategies.
 
 ## Getting started (typical workflow)
-1) run a baseline simulation (simple/null bots) to confirm everything works  
-2) add/adjust one strategy (e.g., greedy)  
-3) re-run simulation with controlled seeds  
-4) compare outcomes using the report + plot scripts  
+1) run a baseline simulation (simple/null bots) to confirm everything works
+2) add/adjust one strategy (e.g., greedy)
+3) re-run simulation with controlled seeds
+4) compare outcomes using the report + plot scripts
 5) iterate: refine evaluation features, then strategies, then reporting
 
 ## Where to look first

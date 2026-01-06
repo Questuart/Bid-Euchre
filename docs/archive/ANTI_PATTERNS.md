@@ -1,6 +1,6 @@
 # Anti-Patterns and Prevention Guide
 
-**Created:** 2026-01-04  
+**Created:** 2026-01-04
 **Purpose:** Document common mistakes and how to prevent them
 
 This document catalogs **recurring problems** identified during cleanup and establishes **guardrails** to prevent them in the future.

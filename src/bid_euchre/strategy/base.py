@@ -101,4 +101,3 @@ def card_value_for_dump(
                 base += 4
 
     return base
-

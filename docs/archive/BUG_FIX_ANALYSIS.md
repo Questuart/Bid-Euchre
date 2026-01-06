@@ -75,14 +75,14 @@ Added special case for leading in both `choose_card_greedy` and `ImprovedGreedyS
 ```python
 def choose_card_greedy(...):
     legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
-    
+
     def card_value(idx: int) -> int:
         return _card_value_for_dump(hand[idx], contract_type, trump_suit)
-    
+
     # SPECIAL CASE: When leading, play highest value card
     if not plays_so_far:
         return max(legal_indices, key=card_value)
-    
+
     # FOLLOWING: Original logic (check if can win, play cheapest winner or dump)
     winning_candidates = []
     for idx in legal_indices:
@@ -91,10 +91,10 @@ def choose_card_greedy(...):
         winner = trick_winner(provisional_plays, contract_type, trump_suit)
         if winner == player_index:
             winning_candidates.append(idx)
-    
+
     if winning_candidates:
         return min(winning_candidates, key=card_value)
-    
+
     return min(legal_indices, key=card_value)
 ```
 
@@ -356,7 +356,6 @@ After Bug Fix (50k hands/scenario, 1.5M total):
 - `data/runs/extended_comparison_42_20251215_225242/`: Full 1.5M hand comparison
 - Updated comparison reports and dashboards
 
-**Date**: December 15, 2025  
-**Total Hands Simulated**: 3,000,000 (before + after fix)  
+**Date**: December 15, 2025
+**Total Hands Simulated**: 3,000,000 (before + after fix)
 **Execution Time**: ~25 minutes total
-

@@ -64,7 +64,7 @@ class TestEndToEndSimulation:
         with tempfile.TemporaryDirectory() as temp_dir:
             # Get repo root (tests/integration/../../ = repo root)
             repo_root = os.path.join(os.path.dirname(__file__), '..', '..')
-            
+
             # Run the experiment script with command line arguments
             cmd = [
                 sys.executable,

@@ -1,6 +1,6 @@
 # meta.json schema (v2)
 
-Every experiment run writes `data/runs/<run_id>/meta.json`.  
+Every experiment run writes `data/runs/<run_id>/meta.json`.
 This file is the **reproducibility contract**: it captures the minimum metadata needed to trace and reproduce a run.
 
 ## Location

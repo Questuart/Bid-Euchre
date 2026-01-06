@@ -142,7 +142,7 @@ def test_engine_invariants_via_trick_logs(tmp_path: Path, contract_type: str, tr
     - Trick integrity (10 tricks; 4 plays per trick; trick_num 0..9)
     - Card conservation (played multiset == dealt multiset; 10 plays per player)
     - Legality post-check (every card played was legal per get_legal_indices)
-    
+
     Parametrized across all contract types to catch contract-specific bugs.
     """
     log_path = tmp_path / f"invariants_{contract_type}_{deal_seed}.jsonl"

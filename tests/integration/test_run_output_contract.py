@@ -19,10 +19,10 @@ def run_experiment(config_path: str, extra_args: list[str] | None = None, run_di
         args.extend(extra_args)
     if run_dir:
         args.extend(["--run-dir", run_dir])
-    
+
     env = os.environ.copy()
     env["PYTHONPATH"] = "src"
-    
+
     return subprocess.run(
         args,
         capture_output=True,
@@ -40,20 +40,20 @@ def test_run_output_structure_contract():
             ["--seed", "42", "--n_per", "5"],
             run_dir=tmpdir
         )
-        
+
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
-        
+
         # Find the run directory (should be only one)
         run_dirs = list(Path(tmpdir).glob("*"))
         assert len(run_dirs) == 1, f"Expected 1 run directory, found {len(run_dirs)}"
-        
+
         run_dir = run_dirs[0]
-        
+
         # Verify required files exist
         assert (run_dir / "meta.json").exists(), "meta.json should exist"
         assert (run_dir / "config_effective.yaml").exists(), "config_effective.yaml should exist"
         assert (run_dir / "perf.json").exists(), "perf.json should exist"
-        
+
         # Verify required directories exist
         assert (run_dir / "results").is_dir(), "results/ directory should exist"
         assert (run_dir / "logs").is_dir(), "logs/ directory should exist"
@@ -71,34 +71,34 @@ def test_config_effective_is_valid_and_useful():
             ["--seed", "42", "--n_per", "10"],
             run_dir=tmpdir
         )
-        
+
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
-        
+
         run_dirs = list(Path(tmpdir).glob("*"))
         run_dir = run_dirs[0]
-        
+
         config_path = run_dir / "config_effective.yaml"
         assert config_path.exists(), "config_effective.yaml should exist"
-        
+
         # Parse as YAML
         with open(config_path) as f:
             effective_config = yaml.safe_load(f)
-        
+
         assert effective_config is not None, "Config should be valid YAML"
         assert isinstance(effective_config, dict), "Config should be a dict"
-        
+
         # Verify it contains the overridden values
         assert "parameters" in effective_config, "Config should have parameters section"
         params = effective_config["parameters"]
-        
+
         assert params["seed"] == 42, f"Seed should be 42 (overridden), got {params.get('seed')}"
         assert params["n_per"] == 10, f"n_per should be 10 (overridden), got {params.get('n_per')}"
         assert params["log_level"] == "none", "log_level should be set"
-        
+
         # Verify it has strategies and scenarios
         assert "strategies" in effective_config, "Config should have strategies"
         assert len(effective_config["strategies"]) > 0, "Should have at least one strategy"
-        
+
         assert "scenarios" in effective_config, "Config should have scenarios"
         assert len(effective_config["scenarios"]) > 0, "Should have at least one scenario"
 
@@ -111,19 +111,19 @@ def test_run_output_is_self_contained():
             ["--seed", "42", "--n_per", "5"],
             run_dir=tmpdir
         )
-        
+
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
-        
+
         run_dirs = list(Path(tmpdir).glob("*"))
         run_dir = run_dirs[0]
-        
+
         # Count all files written (recursively)
         all_files = list(run_dir.rglob("*"))
         files_only = [f for f in all_files if f.is_file()]
-        
+
         # Should have at least: meta.json, config_effective.yaml, perf.json, and some result files
         assert len(files_only) >= 3, f"Should have multiple output files, found {len(files_only)}"
-        
+
         # All files should be under the run directory
         for file_path in files_only:
             assert file_path.is_relative_to(run_dir), \
@@ -138,12 +138,12 @@ def test_empty_directories_are_created():
             ["--seed", "42", "--n_per", "5", "--log-level", "none"],
             run_dir=tmpdir
         )
-        
+
         assert result.returncode == 0, f"Run should succeed. Error: {result.stderr}"
-        
+
         run_dirs = list(Path(tmpdir).glob("*"))
         run_dir = run_dirs[0]
-        
+
         # These directories might be empty but should still exist
         for dir_name in ["splits", "artifacts", "reports"]:
             dir_path = run_dir / dir_name

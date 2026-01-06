@@ -8,11 +8,11 @@ Produces JSONL (JSON Lines) output with versioned schema for:
 Usage:
     logger = GameLogger(run_id="experiment_1", strategy_id="greedy", level=LogLevel.HAND)
     logger.open("logs/experiment_1.jsonl")
-    
+
     # In simulation loop:
     logger.log_trick_end(deal_id, trick_num, leader, plays, winner)
     logger.log_hand_end(deal_id, seed, contract, trump, leader, t0, t1, features)
-    
+
     logger.close()
 """
 
@@ -78,11 +78,11 @@ class TrickEndRecord:
 class GameLogger:
     """
     Structured JSONL logger for game events.
-    
+
     Disabled by default (level=LogLevel.NONE).
     When enabled, writes one JSON object per line to the output file.
     """
-    
+
     def __init__(
         self,
         run_id: str = "",
@@ -92,7 +92,7 @@ class GameLogger:
     ):
         """
         Initialize the game logger.
-        
+
         Args:
             run_id: Unique identifier for this run (e.g., "baseline_greedy_20251215")
             strategy_id: Identifier for the strategy being used
@@ -105,46 +105,46 @@ class GameLogger:
         self.output_dir = output_dir
         self._file = None
         self._filepath: Optional[str] = None
-    
+
     def _generate_run_id(self) -> str:
         """Generate a unique run ID based on timestamp."""
         return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
     def _timestamp(self) -> str:
         """Get current ISO timestamp."""
         return datetime.now().isoformat()
-    
+
     @property
     def is_enabled(self) -> bool:
         """Check if logging is enabled."""
         return self.level != LogLevel.NONE
-    
+
     @property
     def log_tricks(self) -> bool:
         """Check if trick-level logging is enabled."""
         return self.level == LogLevel.TRICK
-    
+
     def open(self, filepath: Optional[str] = None) -> "GameLogger":
         """
         Open the log file for writing.
-        
+
         Args:
             filepath: Path to log file. If None, auto-generates in output_dir.
-        
+
         Returns:
             self (for chaining)
         """
         if not self.is_enabled:
             return self
-        
+
         if filepath is None:
             os.makedirs(self.output_dir, exist_ok=True)
             filepath = os.path.join(self.output_dir, f"{self.run_id}.jsonl")
-        
+
         self._filepath = filepath
         os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
         self._file = open(filepath, "w")
-        
+
         # Write header record
         header = {
             "schema_version": SCHEMA_VERSION,
@@ -155,9 +155,9 @@ class GameLogger:
             "timestamp": self._timestamp(),
         }
         self._write_record(header)
-        
+
         return self
-    
+
     def close(self) -> None:
         """Close the log file."""
         if self._file:
@@ -171,12 +171,12 @@ class GameLogger:
             self._write_record(footer)
             self._file.close()
             self._file = None
-    
+
     def _write_record(self, record: Dict[str, Any]) -> None:
         """Write a single JSON record to the log file."""
         if self._file:
             self._file.write(json.dumps(record, separators=(",", ":")) + "\n")
-    
+
     def log_hand_end(
         self,
         deal_id: int,
@@ -195,7 +195,7 @@ class GameLogger:
     ) -> None:
         """
         Log the completion of a hand.
-        
+
         Args:
             deal_id: Hand number within this run
             seed: Random seed used for this hand (if known)
@@ -213,7 +213,7 @@ class GameLogger:
         """
         if not self.is_enabled:
             return
-        
+
         # Convert Card objects to [suit, rank] lists for JSON serialization
         hands_json: Optional[List[List[List[str]]]] = None
         if hands is not None:
@@ -221,7 +221,7 @@ class GameLogger:
                 [[card.suit, card.rank] for card in hand]
                 for hand in hands
             ]
-        
+
         record = HandEndRecord(
             schema_version=SCHEMA_VERSION,
             event="hand_end",
@@ -243,7 +243,7 @@ class GameLogger:
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))
-    
+
     def log_trick_end(
         self,
         deal_id: int,
@@ -254,9 +254,9 @@ class GameLogger:
     ) -> None:
         """
         Log the completion of a trick.
-        
+
         Only emitted when level=LogLevel.TRICK.
-        
+
         Args:
             deal_id: Hand number within this run
             trick_num: Trick number within this hand (0-9)
@@ -266,10 +266,10 @@ class GameLogger:
         """
         if not self.log_tricks:
             return
-        
+
         # Convert Card objects to [suit, rank] lists for JSON serialization
         plays_json = [[p[0], p[1].suit, p[1].rank] for p in plays]
-        
+
         record = TrickEndRecord(
             schema_version=SCHEMA_VERSION,
             event="trick_end",
@@ -282,12 +282,11 @@ class GameLogger:
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))
-    
+
     def __enter__(self) -> "GameLogger":
         """Context manager entry."""
         return self.open()
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Context manager exit."""
         self.close()
-

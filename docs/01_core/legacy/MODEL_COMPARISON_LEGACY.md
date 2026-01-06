@@ -279,7 +279,6 @@ R² ≈ 0.20 is not "low" - it's the **ceiling** for pre-hand prediction. The re
 
 ---
 
-**Date:** December 17, 2025  
-**Data:** 200k hands of improved_greedy self-play  
+**Date:** December 17, 2025
+**Data:** 200k hands of improved_greedy self-play
 **Splits:** 70% train, 15% val, 15% test
-
