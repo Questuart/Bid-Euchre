@@ -33,9 +33,9 @@ Output Structure:
         └── <run_id>_<strategy>.jsonl
 """
 
+import json
 import os
 import sys
-import json
 import time
 import argparse
 from datetime import datetime
@@ -47,6 +47,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from bid_euchre.sim import simulation
 from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.experiments import load_config
+from bid_euchre.experiments.meta import utc_now_iso, sha256_file, get_git_sha
+
+# Metadata schema version
+META_JSON_SCHEMA_VERSION = 2  # v2: add created_at_utc, git_sha, config_path, config_sha256
 
 
 def parse_args():
@@ -438,9 +442,14 @@ def main():
     
     # Write metadata (experiment config + results summary)
     meta = {
+        "schema_version": META_JSON_SCHEMA_VERSION,
         "run_id": run_id,
+        "created_at_utc": utc_now_iso(),
+        "git_sha": get_git_sha(),
+        "config_path": args.config,
+        "config_sha256": sha256_file(args.config),
         "experiment_name": config.experiment_name,
-        "timestamp": timestamp,
+        "timestamp": timestamp,  # legacy/human-readable; keep for compatibility
         "seed": seed,
         "n_per": n_per,
         "log_level": log_level_str,
@@ -457,7 +466,7 @@ def main():
     }
     
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
-        json.dump(meta, f, indent=2)
+        json.dump(meta, f, indent=2, sort_keys=True)
     
     # Write performance metrics to separate file
     perf = {
