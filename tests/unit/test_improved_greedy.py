@@ -2,9 +2,8 @@
 Tests for ImprovedGreedyStrategy (partner awareness + 2-trick lookahead).
 """
 
-import pytest
 from bid_euchre.core.cards import Card
-from bid_euchre.strategy import ImprovedGreedyStrategy, GreedyStrategy
+from bid_euchre.strategy import GreedyStrategy, ImprovedGreedyStrategy
 
 
 class TestPartnerAwareness:

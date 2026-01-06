@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class SimpleOLS:
     """
     Simple OLS regression implementation using normal equation.

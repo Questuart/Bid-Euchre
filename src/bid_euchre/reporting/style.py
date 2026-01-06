@@ -4,9 +4,8 @@ Shared visual styling for all Bid Euchre reports.
 Ensures consistency across dashboards, paired comparisons, and head-to-head reports.
 """
 
-import matplotlib.pyplot as plt
-from typing import Tuple
 
+import matplotlib.pyplot as plt
 
 # ================================
 # Contract Styling

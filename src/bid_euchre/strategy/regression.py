@@ -2,16 +2,16 @@
 Regression-based bidding strategies.
 """
 
-import pickle
 import os
-import numpy as np
-from typing import List, Tuple, Optional, Dict, Any
+import pickle
+from typing import Any, Dict, List, Optional, Tuple
 
-from .base import Strategy
-from .greedy import ImprovedGreedyStrategy
+import numpy as np
+
 from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
-from ..analysis.models import SimpleOLS
+from .greedy import ImprovedGreedyStrategy
+
 
 class RegressionBidder(ImprovedGreedyStrategy):
     """
@@ -67,7 +67,7 @@ class RegressionBidder(ImprovedGreedyStrategy):
         Evaluate all 6 possible contracts and choose the best one.
         """
         # Dealer-partner pass rule: if partner already holds the high bid, pass
-        is_dealer = (player_index == 3) # Assuming dealer is always index 3 in a round
+        # Note: is_dealer would be (player_index == 3) but we don't use it yet
         # Wait, the simulation should tell us if we are the dealer or not.
         # Let's assume the caller passes the correct context.
         # Actually, in Bid Euchre, dealer is just one of the seats.
@@ -79,9 +79,6 @@ class RegressionBidder(ImprovedGreedyStrategy):
             # But the simulation loop might be different.
             pass # We'll check this in the simulation loop or pass a flag.
 
-        best_bid = 0
-        best_contract = None
-        best_trump = None
         best_expected_tricks = -1.0
 
         # Evaluate all 6 scenarios

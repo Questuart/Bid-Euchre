@@ -1,6 +1,6 @@
+import random
 from dataclasses import dataclass
 from typing import List, Optional
-import random
 
 # Suits and ranks for this Bid Euchre variant
 SUITS = ["C", "D", "H", "S"]  # Clubs, Diamonds, Hearts, Spades

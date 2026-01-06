@@ -4,18 +4,20 @@ Experiment Configuration System
 This module provides classes and functions for configuring and managing experiments.
 """
 
-import yaml
 import os
-from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+import yaml
+
 from ..strategy import (
-    Strategy,
+    AlwaysHighestLegalStrategy,
+    AlwaysLowestLegalStrategy,
     BasicStrategy,
     GreedyStrategy,
     ImprovedGreedyStrategy,
     RandomLegalStrategy,
-    AlwaysLowestLegalStrategy,
-    AlwaysHighestLegalStrategy,
+    Strategy,
 )
 
 

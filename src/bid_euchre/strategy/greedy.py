@@ -5,11 +5,11 @@ These strategies try to win the current trick if possible,
 with variations that add partner awareness and trump conservation.
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
-from .base import Strategy, card_value_for_dump
 from ..core.cards import Card, effective_suit
-from ..core.rules import trick_winner, get_legal_indices
+from ..core.rules import get_legal_indices, trick_winner
+from .base import Strategy, card_value_for_dump
 
 
 class GreedyStrategy(Strategy):

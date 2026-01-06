@@ -7,12 +7,12 @@ This module is library code (no CLI). It supports:
 """
 
 import random
-from typing import Dict, Tuple, Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-from ..core.cards import create_deck, shuffle_deck, deal_hands, Card
-from ..core.rules import trick_winner, get_legal_indices
-from ..features.hand_eval import score_hand, get_hand_features
-from ..strategy import Strategy, GreedyStrategy
+from ..core.cards import Card, create_deck, deal_hands, shuffle_deck
+from ..core.rules import get_legal_indices, trick_winner
+from ..features.hand_eval import get_hand_features, score_hand
+from ..strategy import GreedyStrategy, Strategy
 from .deals import generate_deal, generate_initial_leader
 
 if TYPE_CHECKING:

@@ -1,6 +1,6 @@
-import pytest
-import os
 import time
+
+import pytest
 
 from bid_euchre.sim import simulation
 

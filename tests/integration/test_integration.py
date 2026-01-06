@@ -1,16 +1,15 @@
-import pytest
-import os
 import json
-import tempfile
-import sys
+import os
 import subprocess
+import sys
+import tempfile
+
+import pytest
 
 pytestmark = pytest.mark.integration
 
 from bid_euchre.sim import simulation
-from bid_euchre.core.cards import create_deck, deal_hands
-from bid_euchre.core.rules import trick_winner
-from bid_euchre.strategy import Strategy, BasicStrategy, GreedyStrategy
+from bid_euchre.strategy import BasicStrategy, GreedyStrategy
 
 
 class TestEndToEndSimulation:

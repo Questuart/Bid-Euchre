@@ -1,11 +1,9 @@
-import pytest
-import os
 
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy import (
+    card_value_for_dump,
     choose_card_basic,
     choose_card_greedy,
-    card_value_for_dump,
 )
 
 

@@ -20,11 +20,10 @@ Usage:
     features = model_data['features']
 """
 
-import pickle
 import os
-from typing import Any, List, Dict, Optional
+import pickle
 from datetime import datetime
-
+from typing import Any, Dict, List, Optional
 
 CURRENT_SCHEMA_VERSION = 1
 

@@ -7,12 +7,18 @@ These are simple, deterministic (or random) strategies that serve as:
 - Examples of different strategic approaches
 """
 
-from typing import List, Tuple, Optional
 import random
+from typing import List, Optional, Tuple
 
-from .base import Strategy
-from ..core.cards import Card, effective_suit, rank_strength, is_right_bower, is_left_bower
+from ..core.cards import (
+    Card,
+    effective_suit,
+    is_left_bower,
+    is_right_bower,
+    rank_strength,
+)
 from ..core.rules import get_legal_indices
+from .base import Strategy
 
 
 class BasicStrategy(Strategy):

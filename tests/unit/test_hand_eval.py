@@ -10,14 +10,14 @@ Tests all 40+ features from get_hand_features() including:
 """
 
 import pytest
+
 from bid_euchre.core.cards import Card
 from bid_euchre.features.hand_eval import (
     get_hand_features,
+    score_hand,
     score_hand_scalar,
     score_hand_tuple,
-    score_hand,
 )
-
 
 # ============================================================================
 # Test Fixtures
