@@ -1,0 +1,13 @@
+# Git blame ignore revisions
+# This file lists commits that should be ignored by git blame
+# to avoid noise from mechanical formatting/hygiene changes.
+#
+# Usage:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Or use --ignore-revs-file flag:
+#   git blame --ignore-revs-file .git-blame-ignore-revs <file>
+
+# Pre-commit hygiene sweep (whitespace/EOF/YAML) - PR #19
+# chore: pre-commit hygiene sweep (whitespace/EOF/YAML)
+5aad48a6d7f9e8c5b4a3d2e1f0c9b8a7d6e5f4c3
