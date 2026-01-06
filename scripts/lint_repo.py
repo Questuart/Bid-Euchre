@@ -18,6 +18,7 @@ from pathlib import Path
 
 
 ALLOWED_ARTIFACT_FILENAMES = {".gitkeep"}
+FIXTURE_SIZE_LIMIT_BYTES = 102400  # 100KB
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,49 @@ def check_no_deprecated_changes(changed: list[str]) -> list[Violation]:
     return violations
 
 
+def check_data_fixtures_allowlist(changed: list[str], repo_root: Path) -> list[Violation]:
+    """
+    Enforce that only data/fixtures/** and data/.gitkeep may be committed under data/.
+    Also enforce 100KB size limit on fixtures.
+    """
+    violations: list[Violation] = []
+    for p in changed:
+        if not is_under(p, "data/"):
+            continue
+
+        # Check if allowlisted
+        is_gitkeep = p == "data/.gitkeep"
+        is_fixture = is_under(p, "data/fixtures/")
+
+        if not (is_gitkeep or is_fixture):
+            # Block everything else under data/
+            violations.append(
+                Violation(
+                    rule="data-fixtures-allowlist",
+                    path=p,
+                    message=f"{p} is not allowed (only data/fixtures/** and data/.gitkeep may be committed)",
+                )
+            )
+            continue
+
+        # Check fixture size limit
+        if is_fixture:
+            abs_path = repo_root / p
+            if abs_path.exists():
+                size_bytes = abs_path.stat().st_size
+                if size_bytes > FIXTURE_SIZE_LIMIT_BYTES:
+                    size_kb = (size_bytes + 1023) // 1024  # Round up
+                    violations.append(
+                        Violation(
+                            rule="data-fixtures-allowlist",
+                            path=p,
+                            message=f"data/fixtures/{Path(p).name} exceeds 100KB limit (size: {size_kb}KB, limit: 100KB)",
+                        )
+                    )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -163,6 +207,7 @@ def main() -> int:
     violations += check_no_generated_artifacts(changed)
     violations += check_no_deprecated_changes(changed)
     violations += check_src_no_experiments_or_tests_imports(changed, repo_root)
+    violations += check_data_fixtures_allowlist(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
