@@ -1,0 +1,113 @@
+# Running Experiments
+
+## Quick Start
+
+Run an experiment with a configuration file:
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/quick_test.yaml \
+  --seed 42 \
+  --n_per 10
+```
+
+## Run Output Structure
+
+Every experiment run creates a standardized output directory under `data/runs/<run_id>/` with the following structure:
+
+```
+data/runs/<run_id>/
+├── meta.json                 # Run metadata (schema v2)
+├── config_effective.yaml     # Effective configuration snapshot
+├── perf.json                 # Performance metrics (timing, throughput)
+├── results/                  # Machine-readable outputs (JSON/CSV)
+│   └── <strategy>/
+│       ├── suit_H.json
+│       └── high.json
+├── logs/                     # Structured logs (JSONL hand logs)
+├── reports/                  # Generated charts and dashboards
+├── splits/                   # Train/test/val data splits (if generated)
+└── artifacts/                # Model binaries and intermediates (if generated)
+```
+
+### Required Files
+
+- **`meta.json`**: Run metadata including git SHA, config path, seed, and parameters (schema v2)
+- **`config_effective.yaml`**: Snapshot of the fully-resolved configuration used for the run, including all CLI overrides
+
+### Required Directories
+
+All directories are created for every run, even if empty:
+
+- **`results/`**: Machine-readable outputs (JSON, JSONL, CSV, Parquet)
+- **`logs/`**: Structured logs and JSONL hand logs
+- **`reports/`**: Generated charts, dashboards, and analyses
+- **`splits/`**: Train/test/validation data splits (if training/evaluation workflows generate them)
+- **`artifacts/`**: Model binaries, checkpoints, and intermediate artifacts
+
+## Configuration Snapshot
+
+The `config_effective.yaml` file is the authoritative record of the configuration used for the run. It includes:
+
+- Original configuration file contents
+- All CLI overrides applied (`--seed`, `--n_per`, `--log-level`, etc.)
+- Resolved default values
+
+This file can be used to:
+- Reproduce the exact run configuration
+- Debug configuration issues
+- Compare configurations across runs
+
+**Example**:
+
+```yaml
+experiment_name: quick_test
+mode: self_play
+parameters:
+  log_level: none
+  n_per: 10      # from CLI (original config: 1000)
+  seed: 42       # from CLI (original config: 42)
+scenarios:
+- contract_type: suit
+  trump_suit: H
+- contract_type: high
+strategies:
+- class_name: GreedyStrategy
+  name: greedy
+```
+
+## Reproducing a Run
+
+To reproduce a run from its metadata:
+
+1. Open the run's `meta.json` to get the original config path
+2. Use the `config_effective.yaml` or extract parameters from `meta.json`
+3. Run with the same parameters:
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config <config_path from meta.json> \
+  --seed <seed from meta.json> \
+  --n_per <n_per from meta.json>
+```
+
+Or use the effective config directly:
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config data/runs/<run_id>/config_effective.yaml \
+  --seed <seed>
+```
+
+## Output Location
+
+By default, runs are written to `data/runs/`. You can customize the output directory:
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/quick_test.yaml \
+  --seed 42 \
+  --run-dir /path/to/custom/location
+```
+
+All outputs are self-contained within the run directory. No artifacts are written outside this location.

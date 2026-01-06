@@ -38,6 +38,7 @@ import os
 import sys
 import time
 import argparse
+import yaml
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -219,15 +220,45 @@ def main():
         print("\n✅ Dry run complete. Configuration valid.")
         return
     
-    # Create run directory structure
+    # Create run directory structure (full skeleton - always create all required dirs)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     seed_str = str(seed) if seed is not None else "random"
     run_id = f"{config.experiment_name}_{seed_str}_{timestamp}"
     run_dir = os.path.join(args.run_dir, run_id)
+    
+    # Create required subdirectories (even if empty)
     results_dir = os.path.join(run_dir, "results")
     logs_dir = os.path.join(run_dir, "logs")
-    os.makedirs(results_dir, exist_ok=True)
-    os.makedirs(logs_dir, exist_ok=True)
+    reports_dir = os.path.join(run_dir, "reports")
+    splits_dir = os.path.join(run_dir, "splits")
+    artifacts_dir = os.path.join(run_dir, "artifacts")
+    
+    for dir_path in [results_dir, logs_dir, reports_dir, splits_dir, artifacts_dir]:
+        os.makedirs(dir_path, exist_ok=True)
+    
+    # Write effective config snapshot (after all CLI overrides applied)
+    effective_config = {
+        "experiment_name": config.experiment_name,
+        "parameters": {
+            "n_per": n_per,
+            "seed": seed,
+            "log_level": log_level_str,
+        },
+        "mode": mode,
+        "strategies": [{"name": s.name, "class_name": getattr(s, "class_name", s.__class__.__name__)} for s in strategy_cfgs],
+        "scenarios": [
+            {"contract_type": s.contract_type, "trump_suit": s.trump_suit}
+            for s in scenarios
+        ],
+    }
+    
+    # Add mode-specific parameters
+    if mode == "head_to_head":
+        effective_config["parameters"]["team1_strategy"] = team1_strategy_name
+    
+    # Write as YAML with stable sorting
+    with open(os.path.join(run_dir, "config_effective.yaml"), "w") as f:
+        yaml.dump(effective_config, f, default_flow_style=False, sort_keys=True)
     
     print(f"\n📁 Run directory: {run_dir}\n")
     
