@@ -75,7 +75,12 @@ def parse_args():
     parser.add_argument(
         "--seed", "-s",
         type=int,
-        help="Override: random seed for reproducible results"
+        help="Random seed for reproducible results (required unless --allow-nondeterministic)"
+    )
+    parser.add_argument(
+        "--allow-nondeterministic",
+        action="store_true",
+        help="Allow nondeterministic runs without a seed (for exploration only)"
     )
     parser.add_argument(
         "--log-level",
@@ -145,6 +150,14 @@ def main():
     # Apply command-line overrides
     n_per = args.n_per if args.n_per is not None else config.parameters.get("n_per", 50000)
     seed = args.seed if args.seed is not None else config.parameters.get("seed")
+    
+    # Enforce determinism by default: seed required unless --allow-nondeterministic
+    if seed is None and not args.allow_nondeterministic:
+        raise SystemExit(
+            "Error: --seed is required for deterministic runs. "
+            "Use --seed <int> or --allow-nondeterministic for exploration."
+        )
+    
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
     mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
@@ -482,6 +495,7 @@ def main():
         "experiment_name": config.experiment_name,
         "timestamp": timestamp,  # legacy/human-readable; keep for compatibility
         "seed": seed,
+        "is_deterministic": seed is not None,  # True if seed provided (backward compatible field)
         "n_per": n_per,
         "log_level": log_level_str,
         "mode": mode,
