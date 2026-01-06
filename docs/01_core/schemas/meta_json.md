@@ -31,6 +31,7 @@ These are written by the experiment runner today but may expand over time:
 - `experiment_name` (str)
 - `timestamp` (str): legacy/human-readable timestamp (kept for backward compatibility)
 - `seed` (int|null)
+- `is_deterministic` (bool): whether the run is deterministic (true if seed provided)
 - `n_per` (int)
 - `log_level` (str): logging verbosity (e.g., `"INFO"`)
 - `mode` (str): experiment mode (e.g., `"TEAM_RANDOMIZED"`, `"head_to_head"`)
@@ -55,6 +56,7 @@ These are written by the experiment runner today but may expand over time:
   "experiment_name": "quick_test",
   "timestamp": "2026-01-05 17:20:33",
   "seed": 1,
+  "is_deterministic": true,
   "n_per": 50,
   "log_level": "INFO",
   "mode": "TEAM_RANDOMIZED",
