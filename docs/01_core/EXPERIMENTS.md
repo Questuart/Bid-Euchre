@@ -99,6 +99,63 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --seed <seed>
 ```
 
+## Generating Reports
+
+After running an experiment, generate reports and visualizations for analysis:
+
+```bash
+# Run an experiment first
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/quick_test.yaml \
+  --seed 42 \
+  --n_per 10
+
+# Generate report for that run
+PYTHONPATH=src python scripts/generate_report.py \
+  --run-dir data/runs/<run_id>
+```
+
+### Report Generator Behavior
+
+The report generator enforces a **strict I/O contract**:
+
+- **Reads only**: `<run_dir>/results/**`, `<run_dir>/meta.json`, `<run_dir>/config_effective.yaml`
+- **Writes only**: `<run_dir>/reports/**` (no outputs outside the run directory)
+
+**Overwrite behavior**:
+- If `reports/` is empty: proceeds normally
+- If `reports/` contains files and `--overwrite` not specified: exits with error
+- If `reports/` contains files and `--overwrite` specified: cleans and regenerates
+
+**Empty results handling**:
+- If `results/` is empty or contains no valid files: still generates `ANALYSIS_SUMMARY.md` noting "No results found"
+- Exit code 0 (success) even with no results
+
+### Report Outputs
+
+Every report generation creates:
+
+- **`ANALYSIS_SUMMARY.md`**: Text summary with run metadata, discovered results, and generated charts
+- Additional visualizations (if implemented): charts, dashboards, comparison plots
+
+### Examples
+
+```bash
+# Generate report (first time or empty reports/)
+PYTHONPATH=src python scripts/generate_report.py \
+  --run-dir data/runs/quick_test_42_20260105_123456
+
+# Regenerate report (overwrite existing)
+PYTHONPATH=src python scripts/generate_report.py \
+  --run-dir data/runs/quick_test_42_20260105_123456 \
+  --overwrite
+
+# Verbose mode (see discovered files and progress)
+PYTHONPATH=src python scripts/generate_report.py \
+  --run-dir data/runs/quick_test_42_20260105_123456 \
+  --verbose
+```
+
 ## Output Location
 
 By default, runs are written to `data/runs/`. You can customize the output directory:
