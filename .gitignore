@@ -60,6 +60,10 @@ data/raw/
 data/reports/
 data/processed/
 data/runs/
+data/_deprecated/
+data/hand_logs/
+data/training/
+data/models/
 
 # Experiment outputs (keep experiment scripts tracked)
 experiments/output/
