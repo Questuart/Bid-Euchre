@@ -246,6 +246,16 @@ Add or update:
 - Do not write new work into `_deprecated/` (historical only).
 - Do not change core rules without adding tests.
 
+### Automated enforcement (repo linter)
+
+`scripts/lint_repo.py` enforces in CI + pre-commit:
+
+1. **No generated artifacts** under `data/runs/` or `data/reports/` (except `.gitkeep`).
+2. **Import boundaries:** `src/` must not import from `experiments/` or `tests/`.
+3. **No deprecated edits:** do not modify `experiments/_deprecated/`.
+
+If the linter blocks your commit, fix the violation or discuss with maintainers if you believe the rule should be adjusted.
+
 ---
 
 ## 9) Debug / Failure Playbook
