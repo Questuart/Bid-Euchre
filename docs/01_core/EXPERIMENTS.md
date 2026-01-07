@@ -217,6 +217,49 @@ PYTHONPATH=src python scripts/run_suite.py \
 
 See `docs/01_core/BASELINE.md` for full details on baseline tiers, regression detection, and determinism requirements.
 
+## Auction / Bidding Mode
+
+The experiment runner supports **auction/bidding mode** by specifying `contract_type: null` in scenario configurations. This triggers the bidding phase of euchre gameplay where players bid for the right to choose trump and name the contract.
+
+### Configuration
+
+Use `contract_type: null` (YAML null) to enable auction mode:
+
+```yaml
+experiment_name: auction_example
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+scenarios:
+  - contract_type: null  # Enables auction/bidding mode
+
+parameters:
+  n_per: 1000
+  seed: 42
+  log_level: none
+```
+
+### Running Auction Experiments
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/auction_smoke.yaml \
+  --seed 42 \
+  --n_per 20
+```
+
+### Output Structure
+
+Auction mode results include bidding-specific metrics:
+
+- **`bidding_points.enabled`**: Always `true` for auction scenarios
+- **`bidding_points.hands_with_bids`**: Count of hands where bidding occurred
+- Standard team scoring and trick distribution metrics
+
+Results are written to `results/<strategy>/auction.json` (filenames use "auction" for `contract_type: null`).
+
 ---
 
 ## Output Location

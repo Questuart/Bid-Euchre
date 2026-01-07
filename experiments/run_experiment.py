@@ -111,10 +111,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def scenario_filename(contract_type: str, trump_suit: str | None) -> str:
+def scenario_filename(contract_type: str | None, trump_suit: str | None) -> str:
     """Generate standardized filename for scenario results."""
     if contract_type == "suit":
         return f"suit_{trump_suit}.json"
+    if contract_type is None:
+        return "auction.json"
     return f"{contract_type}.json"
 
 
@@ -167,6 +169,10 @@ def main():
     strategies = config.get_strategies()
     scenarios = config.get_scenario_configs()
 
+    # Validate scenarios are not empty
+    if not scenarios:
+        raise ValueError("No scenarios configured. Please specify at least one scenario in the config.")
+
     # Resolve team1 strategy config for head-to-head mode (must exist in config)
     team1_cfg = None
     if mode == "head_to_head":
@@ -218,7 +224,7 @@ def main():
     print(f"🚀 Experiment: {config.experiment_name}")
     print("=" * 70)
     print(f"Strategies: {', '.join(s.name for s in strategies)}")
-    print(f"Scenarios: {len(scenarios)} ({', '.join(s.contract_type + ('-' + s.trump_suit if s.trump_suit else '') for s in scenarios[:3])}{'...' if len(scenarios) > 3 else ''})")
+    print(f"Scenarios: {len(scenarios)} ({', '.join((s.contract_type or 'auction') + ('-' + s.trump_suit if s.trump_suit else '') for s in scenarios[:3])}{'...' if len(scenarios) > 3 else ''})")
     print(f"Hands per scenario: {n_per:,}")
     print(f"Random seed: {seed if seed is not None else 'None (random)'}")
     print(f"Log level: {log_level_str}")
@@ -339,7 +345,7 @@ def main():
                 for i, scenario in enumerate(scenarios, 1):
                     scenario_seed = seed + (i - 1) if seed is not None else None
 
-                    label = scenario.contract_type
+                    label = scenario.contract_type or "auction"
                     if scenario.trump_suit:
                         label += f" ({scenario.trump_suit})"
 
@@ -420,7 +426,7 @@ def main():
                 for i, scenario in enumerate(scenarios, 1):
                     scenario_seed = seed + (i - 1) if seed is not None else None
 
-                    label = scenario.contract_type
+                    label = scenario.contract_type or "auction"
                     if scenario.trump_suit:
                         label += f" ({scenario.trump_suit})"
 

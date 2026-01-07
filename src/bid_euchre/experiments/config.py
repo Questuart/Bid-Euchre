@@ -51,7 +51,7 @@ class StrategyConfig:
 @dataclass
 class ScenarioConfig:
     """Configuration for a simulation scenario."""
-    contract_type: str
+    contract_type: Optional[str]
     trump_suit: Optional[str] = None
 
     def __post_init__(self):
@@ -60,6 +60,11 @@ class ScenarioConfig:
             raise ValueError("trump_suit must be provided for 'suit' contracts")
         if self.contract_type in ["high", "low"] and self.trump_suit is not None:
             raise ValueError("trump_suit must be None for 'high'/'low' contracts")
+        if self.contract_type is None and self.trump_suit is not None:
+            raise ValueError("trump_suit must be None for auction contracts (contract_type: null)")
+        # Validate known contract types
+        if self.contract_type is not None and self.contract_type not in ["suit", "high", "low"]:
+            raise ValueError(f"Unknown contract_type: {self.contract_type}. Must be 'suit', 'high', 'low', or null for auction.")
 
 
 @dataclass
