@@ -204,11 +204,13 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --log-level none
 ```
 
-**Suite runner** (available in PR #20+):
+**Suite runner** (now available):
 
 ```bash
 PYTHONPATH=src python scripts/run_suite.py \
-  --suite experiments/suites/baseline_tiny.yaml
+  --suite experiments/suites/baseline_tiny.yaml \
+  --seed 42 \
+  --n-per 20
 ```
 
 **Outputs**: All runs go to `data/runs/<run_id>/` (never committed).
