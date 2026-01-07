@@ -134,14 +134,36 @@ def check_src_no_experiments_or_tests_imports(changed: list[str], repo_root: Pat
 
 
 def check_no_deprecated_changes(changed: list[str]) -> list[Violation]:
+    """
+    Block modifications to experiments/_deprecated/, except:
+    - README.md updates (for documenting new deprecations)
+    - New files being added (quarantining scripts is OK)
+    """
     violations: list[Violation] = []
     for p in changed:
         if is_under(p, "experiments/_deprecated/"):
+            # Allow README updates (documenting deprecations)
+            if p.endswith("README.md"):
+                continue
+            
+            # Check if this is a new file (added, not modified)
+            # Git shows renames as additions, which is what we want
+            status = subprocess.run(
+                ["git", "diff", "--name-status", "origin/main...HEAD", "--", p],
+                capture_output=True,
+                text=True
+            ).stdout.strip()
+            
+            # Allow additions (A) and renames (R) into _deprecated
+            if status.startswith(("A", "R")):
+                continue
+            
+            # Block modifications (M) to existing deprecated files
             violations.append(
                 Violation(
                     rule="no-deprecated-changes",
                     path=p,
-                    message="Do not modify experiments/_deprecated/. Create new code outside _deprecated instead.",
+                    message="Do not modify existing deprecated files. If quarantining, use git mv (shows as rename).",
                 )
             )
     return violations
