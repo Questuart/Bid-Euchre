@@ -536,8 +536,8 @@ def main():
     print(f"📊 Generated {plan_count * len(scenarios)} result files")
     
     print("\n🎯 Next steps:")
-    print(f"   # Generate all reports:")
-    print(f"   PYTHONPATH=src python experiments/generate_all_reports.py \\")
+    print(f"   # Generate reports:")
+    print(f"   PYTHONPATH=src python scripts/generate_report.py \\")
     print(f"       --run-dir {run_dir}")
     print()
     
@@ -547,7 +547,7 @@ def main():
         try:
             import subprocess
             result = subprocess.run(
-                ["python", "experiments/generate_all_reports.py", "--run-dir", run_dir],
+                ["python", "scripts/generate_report.py", "--run-dir", run_dir],
                 env={**os.environ, "PYTHONPATH": "src"},
                 capture_output=True,
                 text=True
@@ -558,7 +558,7 @@ def main():
                 print("⚠️  Report generation encountered issues (run manually)")
         except Exception as e:
             print(f"⚠️  Could not auto-generate reports: {e}")
-            print(f"   Run manually: PYTHONPATH=src python experiments/generate_all_reports.py --run-dir {run_dir}")
+            print(f"   Run manually: PYTHONPATH=src python scripts/generate_report.py --run-dir {run_dir}")
         print()
 
 

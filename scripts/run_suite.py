@@ -184,7 +184,7 @@ def run_experiment(
             text=True,
             check=True
         )
-        # Note: run_experiment.py may print deprecated generate_all_reports commands
+        # Note: run_experiment.py prints canonical report generation commands
         # These can be ignored; we use scripts/generate_report.py
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Experiment failed: {config_path}", file=sys.stderr)
