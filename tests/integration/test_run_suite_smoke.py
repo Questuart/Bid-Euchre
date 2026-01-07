@@ -123,6 +123,19 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
         assert "run_dir" in config, "config missing 'run_dir'"
         assert "status" in config, "config missing 'status'"
         assert config["status"] in ["ok", "failed"], f"Invalid status: {config['status']}"
+        
+        # Verify run_dir is relative (sibling directory name, not absolute path)
+        run_dir_value = config["run_dir"]
+        assert not run_dir_value.startswith("/"), (
+            f"run_dir should be relative (sibling dir name), not absolute: {run_dir_value}"
+        )
+        assert not run_dir_value.startswith("data/"), (
+            f"run_dir should be relative (sibling dir name), not path: {run_dir_value}"
+        )
+        # Should be just the directory name (e.g., "baseline_greedy_42_20260106_213640")
+        assert "/" not in run_dir_value, (
+            f"run_dir should be a single directory name (no slashes): {run_dir_value}"
+        )
     
     # Load and verify meta.json (schema v2)
     with (rollup_dir / "meta.json").open("r") as f:
@@ -175,6 +188,15 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
         )
         assert (run_dir / "results").is_dir(), (
             f"Missing results/ directory in {run_dir.name}"
+        )
+        
+        # Verify --no-reports worked (reports/ exists but is empty or only has dirs)
+        reports_dir = run_dir / "reports"
+        assert reports_dir.is_dir(), f"Missing reports/ directory in {run_dir.name}"
+        report_files = [f for f in reports_dir.iterdir() if f.is_file()]
+        assert len(report_files) == 0, (
+            f"--no-reports flag ignored: found {len(report_files)} files in "
+            f"{run_dir.name}/reports/: {[f.name for f in report_files]}"
         )
         
         # Verify meta.json is valid JSON (basic smoke test)
