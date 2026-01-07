@@ -2,7 +2,39 @@
 
 This directory contains experiments that have been superseded, are one-offs that shouldn't be rerun, or are no longer maintained.
 
-**Last updated:** 2026-01-04
+**Last updated:** 2026-01-07
+
+---
+
+## ⚠️ PR B Additions (2026-01-07): Quarantine Competing Entrypoints
+
+**What was quarantined:**
+- Scripts that bypass the unified runner (`run_experiment.py`)
+- Scripts that write to legacy output roots (`data/reports/`, `data/models/`, `data/training/`)
+- One-off dashboards, plots, and comparisons not meant as reproducible workflows
+- Exploratory analysis scripts that assume old data layouts
+
+**New subfolders added:**
+- `comparisons/` — Head-to-head matchups and bidding comparisons that bypass unified runner
+- `dashboards/` — One-off dashboard generators writing to legacy paths
+- `plotting/` — Exploratory plotting scripts
+- `data_generation/` — Training data generators tied to legacy workflows
+- `scratch/` — CLI demo code moved from `src/`
+
+**Canonical workflow (use this instead):**
+```bash
+# Run reproducible experiments
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/<config>.yaml \
+  --seed 42 \
+  --n_per 100
+
+# Generate reports
+PYTHONPATH=src python scripts/generate_report.py \
+  --run-dir data/runs/<run_id>
+```
+
+**Output contract:** All outputs must go under `data/runs/<run_id>/` only.
 
 ---
 
@@ -13,7 +45,12 @@ _deprecated/
 ├── README.md (this file)
 ├── training/       # Old model training scripts
 ├── reports/        # Outdated report generators
-├── analysis/       # One-off analysis scripts
+├── analysis/       # One-off analysis scripts (original batch)
+├── comparisons/    # [PR B] Head-to-head scripts bypassing runner
+├── dashboards/     # [PR B] Dashboard generators writing to legacy paths
+├── plotting/       # [PR B] One-off plotting scripts
+├── data_generation/ # [PR B] Training data tied to legacy workflows
+├── scratch/        # [PR B] CLI demo code from src/
 ├── generate_strategy_comparison.py
 ├── run_baseline_greedy.py
 ├── run_extended_comparison.py

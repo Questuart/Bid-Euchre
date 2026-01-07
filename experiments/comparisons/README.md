@@ -1,0 +1,37 @@
+# Comparisons - Wrapper Scripts Only
+
+**Status**: This folder contains backward-compatibility wrappers that forward to the unified runner.
+
+## Current Contents
+
+- **`run_head_to_head.py`** - Deprecated wrapper for head-to-head matchups
+  - **Use instead**: `experiments/run_experiment.py --mode head_to_head_matrix`
+  - This wrapper is kept for backward compatibility only
+
+## Canonical Workflow
+
+For reproducible experiments, always use:
+
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/<config>.yaml \
+  --seed 42 \
+  --n_per 100
+```
+
+## Output Contract
+
+All outputs must go under `data/runs/<run_id>/` only.
+
+**Never write to**:
+- `data/reports/`
+- `data/models/`
+- `data/training/`
+- Repository root
+
+## Note
+
+Other comparison scripts have been quarantined to `experiments/_deprecated/comparisons/` because they:
+- Bypass the unified runner (call simulation directly)
+- Write to legacy output roots
+- Are one-off explorations not meant as reproducible workflows
