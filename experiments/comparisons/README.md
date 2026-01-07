@@ -2,6 +2,8 @@
 
 **Status**: This folder contains backward-compatibility wrappers that forward to the unified runner.
 
+⚠️ **Do not add new scripts to this folder.** Use configs + the canonical runner instead.
+
 ## Current Contents
 
 - **`run_head_to_head.py`** - Deprecated wrapper for head-to-head matchups
@@ -12,11 +14,18 @@
 
 For reproducible experiments, always use:
 
+**Single run:**
 ```bash
 PYTHONPATH=src python experiments/run_experiment.py \
   --config experiments/configs/<config>.yaml \
   --seed 42 \
   --n_per 100
+```
+
+**Suite run (coming soon):**
+```bash
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/<suite>.yaml
 ```
 
 ## Output Contract
