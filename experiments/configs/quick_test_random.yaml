@@ -1,0 +1,20 @@
+# Quick Test Random Configuration
+# Ultra-fast sanity check for RandomLegalStrategy determinism
+
+experiment_name: quick_test_random
+
+strategies:
+  - name: random_legal
+    class_name: RandomLegalStrategy
+    params:
+      seed: 42
+
+scenarios:
+  - contract_type: suit
+    trump_suit: H  # Hearts only
+  - contract_type: high
+
+parameters:
+  n_per: 1000
+  seed: 42
+  log_level: none
