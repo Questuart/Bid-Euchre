@@ -71,12 +71,12 @@ def test_auction_mode_runner_smoke():
         assert "contract_type" in results, "Results should have 'contract_type' field"
         assert results["contract_type"] is None, "Contract type should be None for auction mode"
 
-        # Bidding-specific fields should exist (when bidding occurred)
-        # Note: these fields are only present when bidding actually happened
-        if "bidding_points" in results:
-            bidding_points = results["bidding_points"]
-            assert "enabled" in bidding_points, "bidding_points should have 'enabled' field"
-            assert bidding_points["enabled"] is True, "Bidding should be enabled for auction mode"
-            assert "hands_with_bids" in bidding_points, "bidding_points should have 'hands_with_bids' field"
-            assert isinstance(bidding_points["hands_with_bids"], int), "hands_with_bids should be an integer"
-            assert bidding_points["hands_with_bids"] >= 0, "hands_with_bids should be non-negative"
+        # Bidding-specific fields should exist (auction mode was attempted)
+        # Note: bidding_points is always present for auction scenarios, even if no bidding occurred
+        assert "bidding_points" in results, "bidding_points should exist for auction mode"
+        bidding_points = results["bidding_points"]
+        assert "enabled" in bidding_points, "bidding_points should have 'enabled' field"
+        assert isinstance(bidding_points["enabled"], bool), "enabled should be a boolean"
+        assert "hands_with_bids" in bidding_points, "bidding_points should have 'hands_with_bids' field"
+        assert isinstance(bidding_points["hands_with_bids"], int), "hands_with_bids should be an integer"
+        assert bidding_points["hands_with_bids"] >= 0, "hands_with_bids should be non-negative"
