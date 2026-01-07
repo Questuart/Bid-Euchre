@@ -212,6 +212,71 @@ def check_data_fixtures_allowlist(changed: list[str], repo_root: Path) -> list[V
     return violations
 
 
+def check_no_new_scripts_in_frozen_folders(changed: list[str]) -> list[Violation]:
+    """
+    Block new Python scripts in experiments/comparisons/ and experiments/training/.
+    These folders are frozen to prevent workflow sprawl.
+    
+    Allowlist:
+    - experiments/comparisons/run_head_to_head.py (existing wrapper)
+    - experiments/training/train_bidder_aware_models.py (existing training script)
+    - Any README.md files (documentation)
+    - Any __init__.py files (package markers)
+    """
+    FROZEN_FOLDERS = [
+        "experiments/comparisons/",
+        "experiments/training/",
+    ]
+    
+    ALLOWLIST = {
+        "experiments/comparisons/run_head_to_head.py",
+        "experiments/training/train_bidder_aware_models.py",
+    }
+    
+    violations: list[Violation] = []
+    for p in changed:
+        # Check if under frozen folders
+        in_frozen_folder = any(is_under(p, folder) for folder in FROZEN_FOLDERS)
+        if not in_frozen_folder:
+            continue
+        
+        # Allow README.md files
+        if p.endswith("README.md"):
+            continue
+        
+        # Allow __init__.py files
+        if p.endswith("__init__.py"):
+            continue
+        
+        # Allow allowlisted scripts
+        if p in ALLOWLIST:
+            continue
+        
+        # Check if this is a new Python file (added or renamed into folder)
+        if not p.endswith(".py"):
+            continue
+        
+        # Check git status to see if this is a new file
+        status = subprocess.run(
+            ["git", "diff", "--name-status", "origin/main...HEAD", "--", p],
+            capture_output=True,
+            text=True
+        ).stdout.strip()
+        
+        # Block additions (A) and renames (R) into frozen folders
+        if status.startswith(("A", "R")):
+            folder_name = "comparisons" if "comparisons" in p else "training"
+            violations.append(
+                Violation(
+                    rule="no-frozen-folder-sprawl",
+                    path=p,
+                    message=f"Do not add new scripts to experiments/{folder_name}/. Use configs + experiments/run_experiment.py (or suites) instead.",
+                )
+            )
+    
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -230,6 +295,7 @@ def main() -> int:
     violations += check_no_deprecated_changes(changed)
     violations += check_src_no_experiments_or_tests_imports(changed, repo_root)
     violations += check_data_fixtures_allowlist(changed, repo_root)
+    violations += check_no_new_scripts_in_frozen_folders(changed)
 
     if violations:
         print("Repo linter failed:\n")
