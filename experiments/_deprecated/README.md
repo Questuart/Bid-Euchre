@@ -6,6 +6,20 @@ This directory contains experiments that have been superseded, are one-offs that
 
 ---
 
+## ⚠️ PR B2 (2026-01-07): Deleted PR B Quarantined Scripts
+
+**Deleted 34 scripts** (all PR B quarantined items) after reference scan confirmed zero usage:
+- `comparisons/` folder — 8 scripts (deleted entire folder)
+- `dashboards/` folder — 9 scripts (deleted entire folder)
+- `plotting/` folder — 5 scripts (deleted entire folder)
+- `analysis/` — 7 scripts (kept 2 pre-existing deprecated scripts: `analyze_ccrider_vs_ceiling.py`, `evaluate_dummy_baseline.py`)
+- `data_generation/` folder — 3 scripts (deleted entire folder)
+- `scratch/` folder — 1 script: `simulate_scratch.py` (deleted entire folder)
+
+**Reference scan results**: No active code or configuration references found. Only documentation references updated.
+
+---
+
 ## ⚠️ PR B Additions (2026-01-07): Quarantine Competing Entrypoints
 
 **What was quarantined:**
