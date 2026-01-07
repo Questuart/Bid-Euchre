@@ -1,0 +1,17 @@
+# Auction/Bidding Mode Smoke Test
+# Tests support for contract_type: null (YAML null → Python None)
+# This triggers auction/bidding mode in the simulation engine
+
+experiment_name: auction_smoke
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+scenarios:
+  - contract_type: null  # Triggers auction/bidding mode
+
+parameters:
+  n_per: 20
+  seed: 42
+  log_level: none
