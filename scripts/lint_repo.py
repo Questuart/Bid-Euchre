@@ -277,6 +277,24 @@ def check_no_new_scripts_in_frozen_folders(changed: list[str]) -> list[Violation
     return violations
 
 
+def check_no_ds_store_files(changed: list[str]) -> list[Violation]:
+    """
+    Block any .DS_Store files from being added/modified in the diff.
+    .DS_Store files are macOS system files that should not be committed.
+    """
+    violations: list[Violation] = []
+    for p in changed:
+        if Path(p).name == ".DS_Store":
+            violations.append(
+                Violation(
+                    rule="no-ds-store",
+                    path=p,
+                    message=".DS_Store files are forbidden - these are macOS system files that should not be committed.",
+                )
+            )
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -296,6 +314,7 @@ def main() -> int:
     violations += check_src_no_experiments_or_tests_imports(changed, repo_root)
     violations += check_data_fixtures_allowlist(changed, repo_root)
     violations += check_no_new_scripts_in_frozen_folders(changed)
+    violations += check_no_ds_store_files(changed)
 
     if violations:
         print("Repo linter failed:\n")
