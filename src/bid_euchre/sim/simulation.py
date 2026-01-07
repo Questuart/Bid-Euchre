@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 from ..core.cards import Card, create_deck, deal_hands, shuffle_deck
 from ..core.rules import get_legal_indices, trick_winner
 from ..features.hand_eval import get_hand_features, score_hand
+from ..scoring import compute_points
 from ..strategy import GreedyStrategy, Strategy
 from .deals import generate_deal, generate_initial_leader
 
@@ -283,6 +284,19 @@ def simulate_many_hands(
     total1 = 0
     total_score_all = 0  # sum across all 4 players
 
+    # Points-based scoring aggregates
+    total_points_team0 = 0
+    total_points_team1 = 0
+    # Points distributions allow negative values (for sets), so we use dicts
+    dist_points_team0: Dict[int, int] = {}
+    dist_points_team1: Dict[int, int] = {}
+
+    # Bidding-related tracking (only when bidding occurred)
+    hands_with_bids = 0
+    bid_values: List[int] = []
+    made_count = 0
+    set_count = 0
+
     # score -> stats dict (aggregated across all players)
     score_buckets: Dict[int, Dict[str, float]] = {}
 
@@ -336,6 +350,23 @@ def simulate_many_hands(
         total1 += t1
         dist_team0[t0] += 1
 
+        # Compute and track points-based scoring
+        points_team0, points_team1 = compute_points(winning_bid, bidder_pos, t0, t1)
+        total_points_team0 += points_team0
+        total_points_team1 += points_team1
+        dist_points_team0[points_team0] = dist_points_team0.get(points_team0, 0) + 1
+        dist_points_team1[points_team1] = dist_points_team1.get(points_team1, 0) + 1
+
+        # Track bidding-related stats only when bidding occurred
+        if winning_bid is not None and bidder_pos is not None:
+            hands_with_bids += 1
+            bid_values.append(winning_bid)
+            bid_team_tricks = t0 if bidder_pos in (0, 2) else t1
+            if bid_team_tricks >= winning_bid:
+                made_count += 1
+            else:
+                set_count += 1
+
         # Process ALL 4 players' features
         for player_idx in range(4):
             # Determine this player's team's tricks
@@ -377,6 +408,19 @@ def simulate_many_hands(
             else:
                 stats["avg_tricks"] = 0.0
 
+    # Build bidding_points object
+    bidding_points = {
+        "enabled": hands_with_bids > 0,
+        "hands_with_bids": hands_with_bids,
+    }
+    if hands_with_bids > 0:
+        bidding_points.update({
+            "avg_bid": sum(bid_values) / len(bid_values),
+            "bid_distribution": {bid: bid_values.count(bid) for bid in set(bid_values)},
+            "make_rate": made_count / hands_with_bids,
+            "set_rate": set_count / hands_with_bids,
+        })
+
     return {
         "hands": n,
         "contract_type": contract_type,
@@ -388,6 +432,12 @@ def simulate_many_hands(
         "score_buckets": score_buckets,
         "feature_buckets": feature_buckets,
         "player_samples": player_samples,
+        # New points-based scoring aggregates
+        "avg_points_team0": total_points_team0 / n,
+        "avg_points_team1": total_points_team1 / n,
+        "distribution_points_team0": dist_points_team0,
+        "distribution_points_team1": dist_points_team1,
+        "bidding_points": bidding_points,
         # Backward compatibility aliases
         "avg_score_player0": total_score_all / player_samples if player_samples > 0 else 0,
         "score_buckets_player0": score_buckets,

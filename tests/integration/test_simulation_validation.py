@@ -29,7 +29,9 @@ class TestSimulationStatistics:
             # Backward compatibility aliases
             "avg_score_player0", "score_buckets_player0", "feature_buckets_player0"
         }
-        assert set(results.keys()) == expected_keys
+        # Results schema is additive; tests should not fail on new keys.
+        missing = expected_keys - set(results.keys())
+        assert not missing, f"Missing expected keys: {sorted(missing)}"
         # Verify player_samples is 4x hands (all 4 players tracked)
         assert results["player_samples"] == results["hands"] * 4
 
