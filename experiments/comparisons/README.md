@@ -40,7 +40,6 @@ All outputs must go under `data/runs/<run_id>/` only.
 
 ## Note
 
-Other comparison scripts have been quarantined to `experiments/_deprecated/comparisons/` because they:
-- Bypass the unified runner (call simulation directly)
-- Write to legacy output roots
-- Are one-off explorations not meant as reproducible workflows
+This folder contains only the blessed wrapper (`run_head_to_head.py`).
+
+Other comparison scripts were quarantined and deleted (PR B2) because they bypassed the unified runner, wrote to legacy paths, or were one-off analyses.
