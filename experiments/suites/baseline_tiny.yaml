@@ -1,0 +1,22 @@
+# Baseline Tiny Suite Definition
+# Developer-friendly deterministic baseline health check (play-only)
+
+suite_name: baseline_tiny
+
+purpose: Developer-friendly deterministic baseline health check (play-only)
+
+parameters:
+  seed: 42
+  n_per: 20
+  log_level: none
+
+configs:
+  - experiments/configs/quick_test_random.yaml
+  - experiments/configs/baseline_greedy.yaml
+  - experiments/configs/strategy_comparison.yaml
+
+notes:
+  - "This suite file is consumed starting in PR #20 (suite runner)."
+  - "PR #20 will invoke experiments/run_experiment.py once per config with --seed/--n_per overrides."
+  - "Outputs always go under data/runs/<run_id>/ (never committed)."
+  - "Total hands: ~760 (quick_test_random: 40, baseline_greedy: 120, strategy_comparison: 600)"

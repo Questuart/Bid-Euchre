@@ -156,6 +156,67 @@ PYTHONPATH=src python scripts/generate_report.py \
   --verbose
 ```
 
+## Baseline
+
+The **baseline suite** provides a deterministic health check and regression anchor for the simulation.
+
+**Full specification**: See `docs/01_core/BASELINE.md`
+
+**Suite definition**: `experiments/suites/baseline_tiny.yaml`
+
+### `baseline_tiny` — Developer-Friendly Health Check
+
+**Purpose**: Fast, deterministic regression guard (play-only)
+
+**Total hands**: ~760 (completes in seconds)
+
+**Parameters**: `seed=42`, `n_per=20`
+
+**Includes 3 configs**:
+1. `quick_test_random.yaml` — RandomLegal sanity (2 scenarios, 40 hands)
+2. `baseline_greedy.yaml` — Greedy anchor (6 scenarios, 120 hands)
+3. `strategy_comparison.yaml` — Multi-strategy comparison (6 scenarios × 5 strategies, 600 hands)
+
+### Running `baseline_tiny` (Manual)
+
+Run these commands in order (copy/paste):
+
+```bash
+# 1. Quick random sanity (2 scenarios)
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/quick_test_random.yaml \
+  --seed 42 \
+  --n_per 20 \
+  --log-level none
+
+# 2. Greedy anchor (full scenario set)
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/baseline_greedy.yaml \
+  --seed 42 \
+  --n_per 20 \
+  --log-level none
+
+# 3. Multi-strategy comparison (full scenario set, common deals)
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/strategy_comparison.yaml \
+  --seed 42 \
+  --n_per 20 \
+  --log-level none
+```
+
+**Suite runner** (available in PR #20+):
+
+```bash
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/baseline_tiny.yaml
+```
+
+**Outputs**: All runs go to `data/runs/<run_id>/` (never committed).
+
+See `docs/01_core/BASELINE.md` for full details on baseline tiers, regression detection, and determinism requirements.
+
+---
+
 ## Output Location
 
 By default, runs are written to `data/runs/`. You can customize the output directory:
