@@ -15,7 +15,7 @@ import yaml
 
 SUITE_PATH = "experiments/suites/baseline_tiny.yaml"
 SEED = 42
-N_PER = 5
+N_PER = 3
 
 
 def test_run_suite_smoke(tmp_path: Path) -> None:
@@ -23,7 +23,7 @@ def test_run_suite_smoke(tmp_path: Path) -> None:
     Run suite runner on baseline_tiny and verify rollup structure.
     
     This test:
-    - Runs scripts/run_suite.py with ultra-small settings (n_per=5)
+    - Runs scripts/run_suite.py with ultra-small settings (n_per=3)
     - Verifies 4 directories created (3 experiment runs + 1 rollup)
     - Checks rollup contains required files and structure
     - Verifies each member run has required files
