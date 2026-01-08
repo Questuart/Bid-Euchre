@@ -34,14 +34,14 @@ data/
 - ✅ **Allowed**: `data/fixtures/**` only (tiny, intentional; referenced by tests/docs)
 - ❌ **Forbidden**: Any generated outputs (runs, logs, models, training data, dashboards)
 
-**Legacy paths** (present today; to be removed from git in PR #14):
+**Legacy paths** (may exist locally; no longer tracked):
 - `data/_deprecated/` - Old dashboard PNGs
 - `data/hand_logs/` - Loose experiment logs
 - `data/training/` - Training CSVs
 - `data/models/` - Model binaries / legacy models
 - `data/reports/` - Top-level aggregated reports
 
-These are now ignored for new writes, but contain tracked artifacts that will be cleaned up in a future PR.
+These paths are now ignored by git. Do not write new outputs to these locations.
 
 ### Migration note
 
