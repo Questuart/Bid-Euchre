@@ -8,51 +8,22 @@ This document tracks code changes needed to align the codebase with RULES.md spe
 
 ---
 
-## 🔴 Priority 1: CRITICAL
+## ✅ COMPLETED: Scoring System Implemented
 
-### 1.1 Implement Scoring System (Section 6)
+**Status:** ✅ **COMPLETED** - Scoring system is fully implemented and in use.
 
-**Issue:** RULES.md Section 6 describes a comprehensive per-hand points scoring system, but code only tracks tricks.
+**Current state (as of 2026-01-04):**
+- `src/bid_euchre/scoring.py` contains `compute_points()` function
+- `simulation.py` calls `compute_points()` and tracks points-based metrics
+- Points are calculated correctly per euchre rules (make bid = tricks, set bid = -bid_amount)
+- Simulation results include both trick and points-based aggregates
 
-**Current state:**
-- `simulation.py` only returns `(t0, t1)` trick counts
-- No points calculation
-- No "make-bid" determination
-- No concept of "declaring team" vs "defending team" beyond partnership
+**Implementation details:**
+- Bid team gets tricks if bid made, -bid_amount if set
+- Non-bid team always gets their tricks
+- Points are tracked alongside tricks in simulation results
 
-**Required implementation:**
-```python
-# Add to simulation.py after tricks are counted
-def calculate_points(
-    tricks_declaring: int,
-    tricks_defending: int,
-    bid_tricks: int,
-    declarer_team: int
-) -> Tuple[int, int]:
-    """Calculate points per RULES.md Section 6.3"""
-    points_defending = tricks_defending
-
-    if tricks_declaring >= bid_tricks:  # Make
-        points_declaring = tricks_declaring
-    else:  # Set
-        points_declaring = -bid_tricks
-
-    # Map to team0/team1
-    if declarer_team == 0:
-        return points_declaring, points_defending
-    else:
-        return points_defending, points_declaring
-```
-
-**Files to modify:**
-- `src/bid_euchre/sim/simulation.py` - Add scoring logic
-- `src/bid_euchre/logging/game_logger.py` - Log points fields
-- Tests - Add scoring validation tests
-
-**Effort:** 2-3 hours
-**Impact:** HIGH - Required for proper strategy evaluation
-
-**Blockers:** None - can be implemented independently
+**No further work needed.** This TODO item should be moved to archive or deleted.
 
 ---
 
