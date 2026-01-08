@@ -21,7 +21,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import yaml
 
@@ -177,7 +177,7 @@ def run_experiment(
     print(f"  Running: {config_path}")
     
     try:
-        result = subprocess.run(
+        subprocess.run(
             cmd,
             env=env,
             capture_output=True,
@@ -332,20 +332,20 @@ def main():
     # Resolve parameters
     effective_params = resolve_parameters(suite, args)
     
-    print(f"======================================================================")
+    print("======================================================================")
     print(f"🚀 Suite: {suite_name}")
-    print(f"======================================================================")
+    print("======================================================================")
     print(f"Configs: {len(suite['configs'])}")
     print(f"Seed: {effective_params['seed']}")
     print(f"n_per: {effective_params['n_per']}")
     print(f"log_level: {effective_params['log_level']}")
     print(f"Generate reports: {not args.no_reports}")
-    print(f"======================================================================\n")
+    print("======================================================================\n")
     
     if args.dry_run:
         print("🔍 Dry run - commands that would be executed:\n")
         for config_path in suite["configs"]:
-            print(f"  python experiments/run_experiment.py \\")
+            print("  python experiments/run_experiment.py \\")
             print(f"    --config {config_path} \\")
             print(f"    --seed {effective_params['seed']} \\")
             print(f"    --n-per {effective_params['n_per']} \\")
@@ -418,12 +418,12 @@ def main():
         run_base
     )
     
-    print(f"======================================================================")
-    print(f"✅ Suite completed!")
-    print(f"======================================================================")
+    print("======================================================================")
+    print("✅ Suite completed!")
+    print("======================================================================")
     print(f"📁 Rollup directory: {rollup_dir}")
     print(f"📊 Member runs: {len([r for r in member_runs if r['status'] == 'ok'])}/{len(member_runs)} successful")
-    print(f"======================================================================\n")
+    print("======================================================================\n")
     
     # Return non-zero if any runs failed
     failed_count = len([r for r in member_runs if r["status"] == "failed"])
