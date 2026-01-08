@@ -45,8 +45,8 @@ PYTHONPATH=src python experiments/dashboards/generate_bidder_models_dashboard.py
 
 **Option 3: Find in Registry**
 ```bash
-# Check REGISTRY.yaml for usage instructions
-cat experiments/REGISTRY.yaml | grep -A 10 "my_experiment"
+# Check configs/ for current experiment configurations
+ls experiments/configs/
 ```
 
 ---
