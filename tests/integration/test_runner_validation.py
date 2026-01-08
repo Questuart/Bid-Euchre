@@ -40,17 +40,17 @@ def _write_config(tmp_path: Path, content: str) -> Path:
 
 def test_runner_fails_with_empty_scenarios(tmp_path: Path):
     config = """
-    experiment_name: empty_scenarios
-    strategies:
-      - name: greedy
-        class_name: GreedyStrategy
+experiment_name: empty_scenarios
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
 
-    scenarios: []
+scenarios: []
 
-    parameters:
-      seed: 42
-      n_per: 10
-    """
+parameters:
+  seed: 42
+  n_per: 10
+"""
 
     config_path = _write_config(tmp_path, config)
     result = run_experiment(str(config_path))
@@ -60,17 +60,17 @@ def test_runner_fails_with_empty_scenarios(tmp_path: Path):
 
 def test_runner_fails_with_empty_strategies(tmp_path: Path):
     config = """
-    experiment_name: empty_strategies
+experiment_name: empty_strategies
 
-    strategies: []
+strategies: []
 
-    scenarios:
-      - contract_type: high
+scenarios:
+  - contract_type: high
 
-    parameters:
-      seed: 42
-      n_per: 10
-    """
+parameters:
+  seed: 42
+  n_per: 10
+"""
 
     config_path = _write_config(tmp_path, config)
     result = run_experiment(str(config_path))
@@ -80,19 +80,19 @@ def test_runner_fails_with_empty_strategies(tmp_path: Path):
 
 def test_runner_fails_with_invalid_n_per(tmp_path: Path):
     config = """
-    experiment_name: invalid_n_per
+experiment_name: invalid_n_per
 
-    strategies:
-      - name: greedy
-        class_name: GreedyStrategy
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
 
-    scenarios:
-      - contract_type: high
+scenarios:
+  - contract_type: high
 
-    parameters:
-      seed: 42
-      n_per: 0
-    """
+parameters:
+  seed: 42
+  n_per: 0
+"""
 
     config_path = _write_config(tmp_path, config)
     result = run_experiment(str(config_path))
@@ -106,4 +106,3 @@ def test_runner_fails_when_config_file_missing(tmp_path: Path):
 
     expected = f"Configuration file not found: {missing_path}"
     _assert_validation_error(result, expected)
-
