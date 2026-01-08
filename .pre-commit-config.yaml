@@ -14,7 +14,7 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
-        exclude: ^(data/.*|experiments/.*|scripts/.*)
+        exclude: ^(data/.*|experiments/_deprecated/.*)
 
   - repo: local
     hooks:
