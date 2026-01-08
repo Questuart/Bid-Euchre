@@ -73,7 +73,12 @@ def play_single_hand(
             if rng is not None:
                 dealer_index = rng.randrange(4)
             else:
-                dealer_index = random.randrange(4)
+                # For determinism, derive dealer from deal_seed and deal_id when available
+                if deal_seed is not None:
+                    dealer_rng = random.Random(deal_seed + deal_id)
+                    dealer_index = dealer_rng.randrange(4)
+                else:
+                    dealer_index = random.randrange(4)
 
         current_high_bid = 0
         winning_bidder = None
