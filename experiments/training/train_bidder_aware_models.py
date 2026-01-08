@@ -24,11 +24,10 @@ Output:
     data/reports/bidder_models_comparison.txt
 """
 
-import os
-import sys
 import csv
+import os
 import pickle
-from collections import defaultdict
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -141,7 +140,7 @@ def train_olsa_v2_models():
         print(f"  Test R²:  {test_r2:.4f}  MAE: {test_mae:.3f}")
         
         # Print coefficients
-        print(f"\n  Coefficients:")
+        print("\n  Coefficients:")
         for fname, coef in zip(features[contract], model.coef_):
             print(f"    {fname:<30} {coef:>8.3f}")
         print(f"    {'intercept':<30} {model.intercept_:>8.3f}")
@@ -230,7 +229,7 @@ def train_olsa_sr_v2_models():
         print(f"  Test R²:  {test_r2:.4f}  MAE: {test_mae:.3f}")
         
         # Print coefficients
-        print(f"\n  Coefficients:")
+        print("\n  Coefficients:")
         for fname, coef in zip(features[contract], model.coef_):
             print(f"    {fname:<30} {coef:>8.3f}")
         print(f"    {'intercept':<30} {model.intercept_:>8.3f}")

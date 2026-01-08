@@ -12,10 +12,8 @@ import argparse
 import ast
 import os
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-
 
 ALLOWED_ARTIFACT_FILENAMES = {".gitkeep"}
 FIXTURE_SIZE_LIMIT_BYTES = 102400  # 100KB

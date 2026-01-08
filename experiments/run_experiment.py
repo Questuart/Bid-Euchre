@@ -33,22 +33,23 @@ Output Structure:
         └── <run_id>_<strategy>.jsonl
 """
 
+import argparse
 import json
 import os
 import sys
 import time
-import argparse
-import yaml
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Any, Dict
+
+import yaml
 
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from bid_euchre.sim import simulation
-from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.experiments import load_config
-from bid_euchre.experiments.meta import utc_now_iso, sha256_file, get_git_sha
+from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
+from bid_euchre.logging import GameLogger, LogLevel
+from bid_euchre.sim import simulation
 
 # Metadata schema version
 META_JSON_SCHEMA_VERSION = 2  # v2: add created_at_utc, git_sha, config_path, config_sha256
@@ -554,8 +555,8 @@ def main():
     print(f"📊 Generated {plan_count * len(scenarios)} result files")
     
     print("\n🎯 Next steps:")
-    print(f"   # Generate reports:")
-    print(f"   PYTHONPATH=src python scripts/generate_report.py \\")
+    print("   # Generate reports:")
+    print("   PYTHONPATH=src python scripts/generate_report.py \\")
     print(f"       --run-dir {run_dir}")
     print()
     

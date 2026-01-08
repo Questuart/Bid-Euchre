@@ -5,8 +5,8 @@ Simple test validation script that runs without pytest.
 This script validates the key fixes made to the test suite.
 """
 
-import sys
 import os
+import sys
 
 # Add src to path (scripts directory is at root level)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -15,8 +15,8 @@ def test_card_valuation():
     """Test that card valuation works correctly."""
     print("🃏 Testing card valuation...")
 
-    from bid_euchre.strategy.strategy import _card_value_for_dump
     from bid_euchre.core.cards import Card
+    from bid_euchre.strategy.strategy import _card_value_for_dump
 
     # Test the bower hierarchy
     regular_trump = _card_value_for_dump(Card("S", "A"), "suit", "S")  # 14
@@ -69,8 +69,8 @@ def test_strategy_framework():
     """Test that the strategy framework works."""
     print("🤖 Testing strategy framework...")
 
-    from bid_euchre.strategy import BasicStrategy, GreedyStrategy
     from bid_euchre.sim import simulation
+    from bid_euchre.strategy import BasicStrategy, GreedyStrategy
 
     # Test strategy creation
     basic = BasicStrategy("test_basic")
@@ -128,7 +128,7 @@ def test_cli_interface():
         jsonl_files = glob.glob(os.path.join(logs_dir, "*.jsonl"))
         assert len(jsonl_files) >= 1, "Expected at least one JSONL log file"
 
-        print(f"  ✅ CLI executed successfully")
+        print("  ✅ CLI executed successfully")
         print(f"  ✅ Generated {len(json_files)} scenario files")
         print(f"  ✅ Generated {len(jsonl_files)} log files")
 
