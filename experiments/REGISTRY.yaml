@@ -1,6 +1,10 @@
 # =============================================================================
-# EXPERIMENT REGISTRY
+# EXPERIMENT REGISTRY - ARCHIVED / NOT CANONICAL
 # =============================================================================
+# ⚠️  ARCHIVAL FILE - DO NOT USE FOR CURRENT WORKFLOWS
+# This file is historical and may contain outdated or deprecated experiments.
+# For current workflows: use experiments/configs/ and consult docs/README.md
+#
 # This file documents all experiments, their configs, runners, and outputs.
 # Use this to understand what experiments exist and how to reproduce them.
 #

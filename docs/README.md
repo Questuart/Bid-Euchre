@@ -43,7 +43,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --config experiments/configs/head_to_head_vs_random.yaml \
   --mode head_to_head_matrix
 
-PYTHONPATH=src python experiments/generate_all_reports.py \
+PYTHONPATH=src python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 
@@ -63,8 +63,8 @@ PYTHONPATH=src python experiments/run_experiment.py \\
     --n_per 10000 --seed 99 --log-level none
 
 # Generate dashboard for a run
-PYTHONPATH=src python experiments/generate_dashboard.py \\
-    --run-dir data/runs/<run_id> --strategy greedy --seed 42
+PYTHONPATH=src python scripts/generate_report.py \\
+    --run-dir data/runs/<run_id>
 ```
 
 **Legacy Scripts** (deprecated, use unified runner):
