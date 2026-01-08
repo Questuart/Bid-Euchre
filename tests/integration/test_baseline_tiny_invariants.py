@@ -107,6 +107,59 @@ def assert_scoring_contract(result: dict[str, Any]) -> None:
         )
 
 
+JSON_SCALAR_TYPES: tuple[type, ...] = (str, int, float, bool, type(None))
+
+
+def _assert_json_scalar(value: Any, field_name: str) -> None:
+    assert isinstance(value, JSON_SCALAR_TYPES), (
+        f"{field_name} must be JSON scalar-ish, got {type(value).__name__}"
+    )
+
+
+def _assert_nested_json_scalars(value: dict[str, Any], field_name: str) -> None:
+    assert isinstance(value, dict), f"{field_name} must be a dict"
+    for key, entry in value.items():
+        if isinstance(entry, dict):
+            _assert_nested_json_scalars(entry, f"{field_name}.{key}")
+            continue
+        _assert_json_scalar(entry, f"{field_name}[{key}]")
+
+
+def assert_results_json_shape(result: dict[str, Any]) -> None:
+    """Ensure the canonical runner emits stable top-level keys and types."""
+
+    required_types: dict[str, tuple[type, ...]] = {
+        "hands": (int,),
+        "contract_type": (str, type(None)),
+        "trump_suit": (str, type(None)),
+        "avg_team0": (int, float),
+        "avg_team1": (int, float),
+        "distribution_team0": (dict,),
+        "avg_score": (int, float),
+        "score_buckets": (dict,),
+        "feature_buckets": (dict,),
+        "player_samples": (int,),
+        "avg_points_team0": (int, float),
+        "avg_points_team1": (int, float),
+        "distribution_points_team0": (dict,),
+        "distribution_points_team1": (dict,),
+        "bidding_points": (dict,),
+    }
+
+    for key, expected in required_types.items():
+        assert key in result, f"Missing {key} in results payload"
+        assert isinstance(result[key], expected), (
+            f"{key} must be one of {expected}, got {type(result[key]).__name__}"
+        )
+
+    _assert_nested_json_scalars(result["distribution_team0"], "distribution_team0")
+    _assert_nested_json_scalars(result["distribution_points_team0"], "distribution_points_team0")
+    _assert_nested_json_scalars(result["distribution_points_team1"], "distribution_points_team1")
+    _assert_nested_json_scalars(result["score_buckets"], "score_buckets")
+    _assert_nested_json_scalars(result["feature_buckets"], "feature_buckets")
+    _assert_nested_json_scalars(result["bidding_points"], "bidding_points")
+
+
 def test_baseline_tiny_invariants(tmp_path: Path) -> None:
     """
     Run baseline_tiny suite and verify stable metrics match fixture exactly.
@@ -228,6 +281,7 @@ def test_baseline_tiny_invariants(tmp_path: Path) -> None:
 
             with result_file.open("r") as f:
                 result_data = json.load(f)
+            assert_results_json_shape(result_data)
             assert_scoring_contract(result_data)
 
             # Extract stable metrics only
