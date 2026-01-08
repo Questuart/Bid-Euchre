@@ -11,6 +11,27 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --n_per 10
 ```
 
+## Validation / Common errors
+
+The runner validates the configuration before any simulation starts and surfaces user-facing errors prefixed with `Error:` so that CI and automation can fail fast.
+
+- **Empty strategies**: Every config must define at least one strategy.
+  ```text
+  Error: No strategies configured in experiments/configs/foo.yaml. Please add at least one strategy.
+  ```
+- **Empty scenarios**: At least one scenario is required (after any filters or expansions).
+  ```text
+  Error: No scenarios configured in experiments/configs/foo.yaml. Please specify at least one scenario.
+  ```
+- **Numeric sanity**: Parameters like `n_per` must be positive.
+  ```text
+  Error: `n_per` must be greater than 0 (config: experiments/configs/foo.yaml, value: 0).
+  ```
+- **Missing config file**: Pointing at a non-existent YAML immediately fails.
+  ```text
+  Error: Configuration file not found: /path/to/experiments/configs/foo.yaml
+  ```
+
 ## Run Output Structure
 
 Every experiment run creates a standardized output directory under `data/runs/<run_id>/` with the following structure:

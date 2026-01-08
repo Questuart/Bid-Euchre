@@ -169,9 +169,21 @@ def main():
     strategies = config.get_strategies()
     scenarios = config.get_scenario_configs()
 
+    if not strategy_cfgs:
+        raise ValueError(
+            f"No strategies configured in {args.config}. Please add at least one strategy."
+        )
+
+    if n_per is not None and n_per <= 0:
+        raise ValueError(
+            f"`n_per` must be greater than 0 (config: {args.config}, value: {n_per})."
+        )
+
     # Validate scenarios are not empty
     if not scenarios:
-        raise ValueError("No scenarios configured. Please specify at least one scenario in the config.")
+        raise ValueError(
+            f"No scenarios configured in {args.config}. Please specify at least one scenario."
+        )
 
     # Resolve team1 strategy config for head-to-head mode (must exist in config)
     team1_cfg = None
@@ -569,5 +581,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(2)
 
