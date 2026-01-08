@@ -30,7 +30,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.ruff]
-extend-exclude = ["data/", "experiments/", "scripts/"]
+extend-exclude = ["data/", "experiments/_deprecated/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

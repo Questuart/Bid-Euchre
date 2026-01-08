@@ -62,7 +62,7 @@ PYTHONPATH=src python experiments/run_experiment.py \\
     --config experiments/configs/baseline_greedy.yaml \\
     --n_per 10000 --seed 99 --log-level none
 
-# Generate dashboard for a run
+# Generate report for a run
 PYTHONPATH=src python scripts/generate_report.py \\
     --run-dir data/runs/<run_id>
 ```

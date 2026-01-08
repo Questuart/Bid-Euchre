@@ -11,8 +11,8 @@ Usage:
     from bid_euchre.sim import simulation
     from bid_euchre.strategy import GreedyStrategy
 """
-import sys
 import os
+import sys
 
 _experiments_dir = os.path.dirname(__file__)
 _project_root = os.path.dirname(_experiments_dir)

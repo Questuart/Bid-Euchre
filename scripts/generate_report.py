@@ -13,12 +13,11 @@ Usage:
 
 import argparse
 import json
-import os
 import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import yaml
 
@@ -85,7 +84,7 @@ def check_overwrite_policy(run_dir: Path, overwrite: bool) -> None:
         
         if has_files and not overwrite:
             print(f"❌ Error: reports/ contains existing files and --overwrite not specified: {reports_dir}", file=sys.stderr)
-            print(f"   Use --overwrite to regenerate reports.", file=sys.stderr)
+            print("   Use --overwrite to regenerate reports.", file=sys.stderr)
             sys.exit(1)
         elif has_files and overwrite:
             # Clean existing report files
@@ -139,7 +138,7 @@ def load_metadata(run_dir: Path, verbose: bool) -> Dict:
                 metadata["seed"] = meta.get("seed", "unknown")
                 metadata["n_per"] = meta.get("n_per", "unknown")
                 if verbose:
-                    print(f"  ℹ️  Loaded meta.json")
+                    print("  ℹ️  Loaded meta.json")
         except Exception as e:
             if verbose:
                 print(f"  ⚠️  Warning: Could not parse meta.json: {e}")
@@ -158,7 +157,7 @@ def load_metadata(run_dir: Path, verbose: bool) -> Dict:
                 metadata["mode"] = config.get("mode", "unknown")
                 metadata["experiment_name"] = config.get("experiment_name", "unknown")
                 if verbose:
-                    print(f"  ℹ️  Loaded config_effective.yaml")
+                    print("  ℹ️  Loaded config_effective.yaml")
         except Exception as e:
             if verbose:
                 print(f"  ⚠️  Warning: Could not parse config_effective.yaml: {e}")
@@ -260,16 +259,16 @@ def main() -> int:
     check_overwrite_policy(run_dir, args.overwrite)
     
     if args.verbose:
-        print(f"📊 Generating report...")
+        print("📊 Generating report...")
     
     # Load metadata
     if args.verbose:
-        print(f"📖 Loading metadata...")
+        print("📖 Loading metadata...")
     metadata = load_metadata(run_dir, args.verbose)
     
     # Discover result files
     if args.verbose:
-        print(f"🔎 Discovering result files...")
+        print("🔎 Discovering result files...")
     result_files = discover_result_files(run_dir, args.verbose)
     
     # Generate charts (placeholder for now)
@@ -277,11 +276,11 @@ def main() -> int:
     
     # Generate summary
     if args.verbose:
-        print(f"📝 Generating ANALYSIS_SUMMARY.md...")
+        print("📝 Generating ANALYSIS_SUMMARY.md...")
     generate_analysis_summary(run_dir, metadata, result_files, chart_files, args.verbose)
     
     if args.verbose:
-        print(f"✅ Report generation complete!")
+        print("✅ Report generation complete!")
     else:
         # Always print success message even in quiet mode
         print(f"✅ Report generated: {run_dir / 'reports'}")

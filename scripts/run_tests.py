@@ -5,17 +5,16 @@ Test runner script for the Bid Euchre simulation project.
 This script provides convenient ways to run different test suites.
 """
 
-import sys
-import os
-import subprocess
 import argparse
 import importlib.util
+import os
+import subprocess
+import sys
 
 
 def run_pytest(args):
     """Try to run pytest, fallback to manual test execution if not available."""
-    try:
-        import pytest
+    if importlib.util.find_spec("pytest") is not None:
         cmd = [sys.executable, "-m", "pytest"] + args
         print(f"Running: {' '.join(cmd)}")
         # Run pytest from project root directory (not scripts directory)
@@ -24,7 +23,7 @@ def run_pytest(args):
         # Ensure src-layout imports work without per-test sys.path hacks
         env["PYTHONPATH"] = os.path.join(project_root, "src")
         return subprocess.run(cmd, cwd=project_root, env=env)
-    except (ImportError, FileNotFoundError):
+    else:
         print("⚠️  pytest not found, running tests manually...")
         return run_manual_tests(args)
 
@@ -112,7 +111,7 @@ def main():
 
     # Handle both CompletedProcess objects (from subprocess) and integers (from manual testing)
     if hasattr(result, 'returncode'):
-    return result.returncode
+        return result.returncode
     else:
         return result
 

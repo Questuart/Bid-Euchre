@@ -20,7 +20,7 @@ experiments/
 ├── configs/           (10 YAML)    - Experiment configurations
 ├── _deprecated/       (15 scripts) - Superseded experiments
 ├── __init__.py                     - Auto-setup (no sys.path needed!)
-├── REGISTRY.yaml                   - Historical experiment registry (archival)
+├── REGISTRY.yaml                   - Complete experiment catalog (includes active, stable, and deprecated)
 └── run_experiment.py               - Main unified runner
 ```
 
@@ -264,7 +264,8 @@ grep -A 10 "experiment_name" experiments/REGISTRY.yaml
 ls experiments/<subdirectory>/
 ```
 
-**For current workflows:** Use `experiments/configs/` and consult `docs/README.md`.
+**Or see:** `experiments/REGISTRY.yaml` for complete catalog with descriptions, usage, and outputs.
+*Note: Includes both current (active/stable) and deprecated experiments.*
 
 ---
 
@@ -285,7 +286,7 @@ ls experiments/<subdirectory>/
 ---
 
 **See also:**
-- `REGISTRY.yaml` - Historical experiment registry (do not use for current workflows)
+- `REGISTRY.yaml` - Complete experiment catalog (active, stable, and deprecated experiments)
 - `configs/` - All experiment configurations
 - `docs/CONTRIBUTING.md` - Experiment standards
 - `docs/ANTI_PATTERNS.md` - What to avoid
