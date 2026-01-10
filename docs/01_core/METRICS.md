@@ -22,42 +22,37 @@ A YAML configuration file defining an experiment setup, including strategies, sc
 ### Suite
 A collection of related configs that are run together, with aggregated results and rollup reporting.
 
-## Required Metrics for Non-Auction Matchups
+## Emitted vs Rollup-computed vs Planned Metrics
 
-### Win Rate (Planned - Not Yet Emitted)
-**Definition**: Proportion of hands where a team wins (takes ≥6 tricks).
+### Emitted in Results JSON
+These keys are directly present in results JSON files at `data/runs/<run_id>/results/<strategy>/<scenario>.json`:
 
-**Computation**: `n_wins / n_total_hands`
+**Tricks (Always emitted):**
+- `avg_team0`: Mean tricks for team 0
+- `avg_team1`: Mean tricks for team 1
+- `distribution_team0`: Count of hands by tricks taken (0-10)
 
-**Expected Range**: [0.0, 1.0]
+**Points (Only when bidding occurs):**
+- `avg_points_team0`: Mean points for team 0 (when bidding enabled)
+- `avg_points_team1`: Mean points for team 1 (when bidding enabled)
+- `distribution_points_team0`: Count of hands by points scored
+- `distribution_points_team1`: Count of hands by points scored
 
-**Keys**: `win_rate`, `push_rate`, `loss_rate` (with confidence intervals)
+### Rollup-computed Fields
+These are computed by aggregation scripts from emitted keys:
 
-**Status**: Planned for future implementation. Currently not emitted in results JSON.
+**Tricks Delta:**
+- `avg_tricks_delta`: `avg_team0 - avg_team1` (positive = team0 advantage)
 
-### Points
-**Definition**: Average points scored per hand under euchre point-based scoring rules.
+**Points Delta (when available):**
+- `avg_points_delta`: `avg_points_team0 - avg_points_team1` (positive = team0 advantage)
 
-**Computation**: Mean of points across all simulated hands.
-
-**Expected Range**: [-10.0, +10.0] (negative values possible for sets)
-
-**Keys**:
-- `avg_points_team0`: Mean points for team 0
-- `avg_points_team1`: Mean points for team 1
-- `avg_points_delta`: team0 - team1 (positive = team0 advantage)
-
-### Tricks
-**Definition**: Average tricks taken per hand.
-
-**Computation**: Mean of trick counts across all simulated hands.
-
-**Expected Range**: [0.0, 10.0]
-
-**Keys**:
-- `avg_tricks_team0`: Mean tricks for team 0
-- `avg_tricks_team1`: Mean tricks for team 1
-- `avg_tricks_delta`: team0 - team1 (positive = team0 advantage)
+### Planned (Not Yet Implemented)
+**Win Rate:**
+- `win_rate`: Proportion of hands where team wins (≥6 tricks)
+- `push_rate`: Proportion of hands with exactly 5 tricks (tie)
+- `loss_rate`: Proportion of hands where team loses (≤4 tricks)
+- Confidence intervals for all rates
 
 ## Auction Metrics (Optional)
 
@@ -68,18 +63,23 @@ When bidding is enabled, additional metrics will include:
 - Set rate: Proportion of hands where bidding team falls short of their bid
 - Average bid values
 
-## Source of Truth
+## Where to Find These Fields
 
-### Results JSON Keys vs Rollup Computed Fields
+### Results JSON Files
+Located at: `data/runs/<run_id>/results/<strategy>/<scenario>.json`
 
-**Results JSON** (primary source):
-- `avg_points_team0`, `avg_points_team1` - Directly computed from simulation
-- `avg_tricks_team0`, `avg_tricks_team1` - Directly computed from simulation (stored as `avg_team0`, `avg_team1` in current code)
+Example from `data/runs/quick_test_42_20260105_193308/results/greedy/high.json`:
+```json
+{
+  "hands": 50,
+  "avg_team0": 4.98,
+  "avg_team1": 5.02,
+  "distribution_team0": {"0": 0, "1": 0, "2": 1, "3": 2, "4": 8, "5": 15, "6": 16, "7": 6, "8": 2, "9": 0, "10": 0}
+}
+```
 
-**Rollup Computed Fields**:
-- `avg_points_delta` - Computed as `avg_points_team0 - avg_points_team1`
-- `avg_tricks_delta` - Computed as `avg_tricks_team0 - avg_tricks_team1`
-- `win_rate` - Planned: computed from trick distributions using ≥6 tricks threshold
+### Rollup Aggregation
+Suite rollups compute deltas from individual results files using `scripts/run_suite.py`.
 
 ### Delta Directionality
 
@@ -90,6 +90,6 @@ All delta metrics follow the convention: **team0 - team1**
 
 ### Validation
 
-Current results JSON example (from `data/fixtures/baseline_tiny/expected_metrics_seed42_nper3.json`):
-- Top-level keys: `['suite_name', 'seed', 'n_per', 'configs']`
-- No example JSON found with individual metric keys; contract based on code search in `src/bid_euchre/sim/simulation.py` and `src/bid_euchre/reporting/metrics.py`
+Results JSON keys verified from:
+- Code: `src/bid_euchre/sim/simulation.py` (simulate_many_hands function)
+- Examples: `data/runs/*/results/*/*.json` files in repo
