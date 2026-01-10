@@ -70,7 +70,7 @@ PYTHONPATH=src python scripts/generate_report.py \\
 **Suite Runner** (recommended for production):
 ```bash
 # Run full experiment suite
-PYTHONPATH=src python scripts/run_suite.py --config experiments/configs/baseline_greedy.yaml
+PYTHONPATH=src python scripts/run_suite.py --suite experiments/suites/baseline_tiny.yaml
 
 # Generate comprehensive report
 PYTHONPATH=src python scripts/generate_report.py --run-dir data/runs/<run_id>
