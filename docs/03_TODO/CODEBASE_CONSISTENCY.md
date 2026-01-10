@@ -359,12 +359,11 @@ Update `simulation.py` to extract strategy IDs from strategies per seat and map 
 
 **Current state:**
 - `metrics.py` implements trick-based win (`tricks >= 6`)
-- No points-based win tracking (requires scoring system first)
-- METRICS.md now documents both, but code only has one
+- No points-based win tracking (scoring system is now implemented)
+- METRICS.md documents both, but code only has one
 
 **Required implementation:**
 
-After scoring system is implemented (1.1):
 1. Update `metrics.py` to compute both:
    - `trick_win` (current implementation: `tricks >= 6`)
    - `points_win` (new: `points_team_0 > points_team_1`)
@@ -376,10 +375,10 @@ After scoring system is implemented (1.1):
 - `src/bid_euchre/analysis/stats.py` - Add points-based outcome stats if needed
 - Report generators - Include both metrics
 
-**Effort:** 1-2 hours (after scoring system)
+**Effort:** 1-2 hours
 **Impact:** HIGH - Required for proper evaluation per METRICS.md specification
 
-**Blockers:** Depends on scoring system implementation (1.1)
+**Blockers:** None
 
 ---
 
@@ -616,16 +615,16 @@ def log_hand_end(
 
 ### 4.2 Log Computed Scoring Fields (Section 8.5)
 
-**Issue:** Once scoring is implemented (1.1), should log derived fields.
+**Issue:** Now that scoring is implemented, should log derived fields.
 
-**Required after 1.1:**
+**Required:**
 - `tricks_declaring`, `tricks_defending`
 - `points_declaring_team`, `points_defending_team`
 
-**Effort:** 5-10 minutes (after 1.1 is done)
+**Effort:** 5-10 minutes
 **Impact:** LOW - Nice to have, but derivable
 
-**Blockers:** Depends on 1.1
+**Blockers:** None
 
 ---
 
@@ -770,7 +769,7 @@ Reports must include:
 
 1. **Quick win (30 min):** 2.2 - Add `redeal_flag`
 2. **Quick win (30 min):** 2.3 - Add `made_bid` field
-3. **Foundation (2-3 hrs):** 1.1 - Implement scoring system ⚠️ **BLOCKS 3.4**
+3. **Foundation (2-3 hrs):** 1.1 - Implement scoring system ✅ **COMPLETED**
 4. **High value (1-2 hrs):** 2.4 - Separate strategy IDs ⚠️ **REQUIRED FOR 3.7**
 5. **High value (2-3 hrs):** 3.6 - TEAM_RANDOMIZED protocol ⚠️ **REQUIRED FOR 3.7**
 6. **High value (3-4 hrs):** 3.7 - Strategy-centric metrics (after 2.4, 3.6)
@@ -796,7 +795,7 @@ Reports must include:
 
 | Change | Files | Effort | User Impact |
 |--------|-------|--------|-------------|
-| 1.1 Scoring | 3-5 | 2-3 hrs | HIGH - Can properly evaluate strategies ⚠️ BLOCKS 3.4 |
+| 1.1 Scoring | 3-5 | 2-3 hrs | HIGH - Can properly evaluate strategies ✅ COMPLETED |
 | 1.2 Auction logging | 2 | 1-2 hrs | HIGH - Can debug bidding |
 | 2.1 Card instance IDs | 10+ | 2-3 hrs | MEDIUM - Needed for perfect replay |
 | 2.2 Redeal flag | 2 | 15-30 min | MEDIUM - Improves log clarity |
