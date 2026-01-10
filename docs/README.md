@@ -67,10 +67,13 @@ PYTHONPATH=src python scripts/generate_report.py \\
     --run-dir data/runs/<run_id>
 ```
 
-**Legacy Scripts** (deprecated, use unified runner):
+**Suite Runner** (recommended for production):
 ```bash
-# Old way (still works but deprecated)
-PYTHONPATH=src python experiments/run_baseline_greedy.py --n_per 50000 --seed 42
+# Run full experiment suite
+PYTHONPATH=src python scripts/run_suite.py --suite experiments/suites/baseline_tiny.yaml
+
+# Generate comprehensive report
+PYTHONPATH=src python scripts/generate_report.py --run-dir data/runs/<run_id>
 ```
 
 ## 🏗️ Architecture
