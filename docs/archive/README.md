@@ -1,3 +1,14 @@
+> **⚠️ ARCHIVED — This folder contains historical documentation that may be outdated.**
+>
+> These docs reflect earlier project structure and conventions. For current documentation, see:
+> - `docs/01_core/` — Authoritative architecture and contracts
+> - `docs/02_agent/` — Agent operating guidelines
+> - `experiments/README.md` — Current experiment structure
+>
+> Do not treat these files as current truth.
+
+---
+
 # BUD EUCHRE — Bid Euchre Simulation + Strategy Lab
 
 This repo is a simulation and analysis environment for **Bid Euchre**. The goal is to:
