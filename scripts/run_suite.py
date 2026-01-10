@@ -21,7 +21,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import yaml
 
@@ -133,23 +133,28 @@ def compute_file_sha256(file_path: str) -> str:
     return sha256.hexdigest()
 
 
-def aggregate_run_metrics(run_dir: Path) -> Dict[str, Optional[float]]:
+def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
     """
     Aggregate metrics from a run's results directory.
 
     Walks results/<strategy>/<scenario>.json files and computes:
     - total_hands: sum of "hands" across all result files
     - avg_tricks: weighted average of avg_team0 (weighted by hands)
+    - reason: human-readable error reason if aggregation fails
+    - bad_files: list of problematic files (limited to 3)
 
     Returns:
-        Dict with "total_hands" (int or None) and "avg_tricks" (float or None)
+        Dict with "total_hands" (int or None), "avg_tricks" (float or None),
+        "reason" (str or None), and "bad_files" (list[str] or None)
     """
     results_dir = run_dir / "results"
     if not results_dir.exists():
-        return {"total_hands": None, "avg_tricks": None}
+        return {"total_hands": None, "avg_tricks": None, "reason": None, "bad_files": None}
 
     total_hands = 0
     weighted_tricks_sum = 0.0
+    bad_files = []
+    reasons = []
 
     # Walk results/<strategy>/<scenario>.json
     for strategy_dir in sorted(results_dir.iterdir()):
@@ -164,15 +169,46 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, Optional[float]]:
                 if hands > 0 and avg_team0 is not None:
                     total_hands += hands
                     weighted_tricks_sum += avg_team0 * hands
-            except (json.JSONDecodeError, KeyError, TypeError):
-                # Skip malformed files
-                continue
+                else:
+                    # Missing expected keys
+                    missing_keys = []
+                    if hands <= 0:
+                        missing_keys.append("hands")
+                    if avg_team0 is None:
+                        missing_keys.append("avg_team0")
+                    key_str = ", ".join(missing_keys)
+                    reason = f"missing_key:{key_str}: {result_file.name}"
+                    reasons.append(reason)
+                    bad_files.append(str(result_file.relative_to(run_dir)))
+            except json.JSONDecodeError:
+                reason = f"json_decode_error: {result_file.name}"
+                reasons.append(reason)
+                bad_files.append(str(result_file.relative_to(run_dir)))
+            except (KeyError, TypeError):
+                reason = f"parse_error: {result_file.name}"
+                reasons.append(reason)
+                bad_files.append(str(result_file.relative_to(run_dir)))
+
+    # Limit bad_files to 3 samples
+    if len(bad_files) > 3:
+        bad_files = bad_files[:3]
 
     if total_hands == 0:
-        return {"total_hands": None, "avg_tricks": None}
+        # If we had any parsing issues, report them
+        if reasons:
+            combined_reason = "; ".join(reasons[:3])
+            if len(reasons) > 3:
+                combined_reason += f" ({len(reasons) - 3} more)"
+            return {
+                "total_hands": None,
+                "avg_tricks": None,
+                "reason": combined_reason,
+                "bad_files": bad_files
+            }
+        return {"total_hands": None, "avg_tricks": None, "reason": None, "bad_files": None}
 
     avg_tricks = round(weighted_tricks_sum / total_hands, 2)
-    return {"total_hands": total_hands, "avg_tricks": avg_tricks}
+    return {"total_hands": total_hands, "avg_tricks": avg_tricks, "reason": None, "bad_files": None}
 
 
 def discover_new_run_dir(run_base: Path, dirs_before: set) -> Path:
@@ -339,7 +375,7 @@ def create_suite_rollup(
         if run["status"] == "ok" and run_path.exists():
             metrics = aggregate_run_metrics(run_path)
         else:
-            metrics = {"total_hands": None, "avg_tricks": None}
+            metrics = {"total_hands": None, "avg_tricks": None, "reason": None, "bad_files": None}
 
         config_name = Path(run["config_path"]).name
         summary.append({
@@ -347,7 +383,9 @@ def create_suite_rollup(
             "run_id": run["run_id"],
             "status": run["status"],
             "total_hands": metrics["total_hands"],
-            "avg_tricks": metrics["avg_tricks"]
+            "avg_tricks": metrics["avg_tricks"],
+            "reason": metrics.get("reason"),
+            "bad_files": metrics.get("bad_files")
         })
 
     # Write rollup.json (with metrics summary)
@@ -373,13 +411,14 @@ def create_suite_rollup(
 
         # Summary table
         f.write("## Summary\n\n")
-        f.write("| Config | Status | Hands | Avg Tricks |\n")
-        f.write("|--------|--------|------:|----------:|\n")
+        f.write("| Config | Status | Hands | Avg Tricks | Reason |\n")
+        f.write("|--------|--------|------:|----------:|--------|\n")
         for s in summary:
             status_icon = "✓" if s["status"] == "ok" else "✗"
             hands_str = str(s["total_hands"]) if s["total_hands"] is not None else "N/A"
             tricks_str = f"{s['avg_tricks']:.2f}" if s["avg_tricks"] is not None else "N/A"
-            f.write(f"| {s['config']} | {status_icon} | {hands_str} | {tricks_str} |\n")
+            reason_str = s.get("reason", "") or ""
+            f.write(f"| {s['config']} | {status_icon} | {hands_str} | {tricks_str} | {reason_str} |\n")
         f.write("\n")
 
         f.write("## Member Runs\n\n")
