@@ -1,0 +1,24 @@
+# Baseline Full Suite Definition
+#
+# Broad regression net covering gameplay interactions and auction plumbing.
+# Manual target runtime: ~5 minutes (n_per=500, seed=42).
+# Covers: strategy interactions (matchup matrix) + auction/bidding wiring.
+
+suite_name: baseline_full
+
+purpose: Broad regression net covering gameplay interactions and auction plumbing
+
+parameters:
+  seed: 42
+  n_per: 500
+  log_level: none
+
+configs:
+  - experiments/configs/baseline_matchups.yaml
+  - experiments/configs/auction_smoke.yaml
+
+notes:
+  - "This suite provides broader coverage than baseline_tiny (interaction effects + wiring)."
+  - "Includes 16 strategy matchups (4x4 matrix with self-play controls) + auction plumbing."
+  - "Target runtime: ~5 minutes manually (n_per=500, adjustable via --n-per)."
+  - "Intended for manual runs before merging changes to sim/core/scoring/strategy/runner."
