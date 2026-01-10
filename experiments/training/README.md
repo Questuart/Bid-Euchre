@@ -1,24 +1,28 @@
-# Training - Active Training Scripts
+# Training - Legacy Training Scripts
 
-**Status**: This folder contains current, blessed training scripts.
+**Status**: This folder contains legacy training scripts that are **not yet integrated** with the canonical experiment runner.
 
-⚠️ **Do not add new scripts to this folder.** Future training should be config-driven with a single blessed entrypoint.
+⚠️ **Do not add new scripts to this folder.** Future training should be config-driven via `experiments/run_experiment.py`.
 
 ## Current Contents
 
 - **`train_bidder_aware_models.py`** - Train bidder-aware regression models (OLSa_v2, OLSa_SR_v2)
   - Includes `is_bidder` feature for positional awareness
   - Supersedes all legacy training scripts in `_deprecated/training/`
-  - **Note**: This is a legacy script; future training workflows should write to `data/runs/<run_id>/`
+  - **Note**: This script does NOT use the config system; it has hardcoded paths
 
 ## Usage
 
-Train models with explicit configuration:
+Run the training script directly (no config flag):
 
 ```bash
-PYTHONPATH=src python experiments/training/train_bidder_aware_models.py \
-  --config experiments/configs/train_bidder_models.yaml
+PYTHONPATH=src python experiments/training/train_bidder_aware_models.py
 ```
+
+**Outputs**:
+- `data/models/current/olsa_v2/olsa_v2_{suit,high,low}.pkl`
+- `data/models/current/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl`
+- `data/reports/bidder_models_comparison.txt`
 
 ## Canonical Workflow (Future)
 
