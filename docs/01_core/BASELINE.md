@@ -38,17 +38,31 @@ Baseline is not:
 
 ---
 
-### `baseline_full` (Future: PR #23)
+### `baseline_full` (Manual: Strategy Interactions + Auction Plumbing)
 
-**Purpose**: Larger rerun for more confidence
+**Purpose**: Broader regression net beyond `baseline_tiny` (interaction effects + wiring)
 
-**Planned contract**:
-- Play-only
-- `n_per`: 10,000+ (TBD)
-- Same scenario/strategy coverage as `baseline_tiny`
-- Same determinism requirements
+**Contract**:
+- **Strategy interactions**: 4x4 matchup matrix (16 matchups including self-play controls)
+- **Auction plumbing**: Bidding mode smoke test
+- **Default seed**: `42`
+- **Default n_per**: `500` (hands per matchup/scenario)
+- **Total hands**: ~120,000 (16 × 6 × 500)
+- **Strategies**: greedy, random_legal, always_highest, always_lowest
+- **Scenarios**: Full coverage (6 scenarios: 4 suit contracts + high + low)
 
-*(Details deferred to PR #23)*
+**When to run**: Before merging changes to sim/core/scoring/strategy/runner (manual)
+
+**How to run**:
+
+```bash
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/baseline_full.yaml
+```
+
+**Expected runtime**: ~5 minutes (adjust n_per via `--n-per` if needed)
+
+**Outputs**: Rollup directory under `data/runs/suite_<timestamp>/` (never committed)
 
 ---
 
