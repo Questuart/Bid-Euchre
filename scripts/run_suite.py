@@ -21,7 +21,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import yaml
 
@@ -131,6 +131,48 @@ def compute_file_sha256(file_path: str) -> str:
         for chunk in iter(lambda: f.read(4096), b""):
             sha256.update(chunk)
     return sha256.hexdigest()
+
+
+def aggregate_run_metrics(run_dir: Path) -> Dict[str, Optional[float]]:
+    """
+    Aggregate metrics from a run's results directory.
+
+    Walks results/<strategy>/<scenario>.json files and computes:
+    - total_hands: sum of "hands" across all result files
+    - avg_tricks: weighted average of avg_team0 (weighted by hands)
+
+    Returns:
+        Dict with "total_hands" (int or None) and "avg_tricks" (float or None)
+    """
+    results_dir = run_dir / "results"
+    if not results_dir.exists():
+        return {"total_hands": None, "avg_tricks": None}
+
+    total_hands = 0
+    weighted_tricks_sum = 0.0
+
+    # Walk results/<strategy>/<scenario>.json
+    for strategy_dir in sorted(results_dir.iterdir()):
+        if not strategy_dir.is_dir():
+            continue
+        for result_file in sorted(strategy_dir.glob("*.json")):
+            try:
+                with result_file.open("r") as f:
+                    data = json.load(f)
+                hands = data.get("hands", 0)
+                avg_team0 = data.get("avg_team0")
+                if hands > 0 and avg_team0 is not None:
+                    total_hands += hands
+                    weighted_tricks_sum += avg_team0 * hands
+            except (json.JSONDecodeError, KeyError, TypeError):
+                # Skip malformed files
+                continue
+
+    if total_hands == 0:
+        return {"total_hands": None, "avg_tricks": None}
+
+    avg_tricks = round(weighted_tricks_sum / total_hands, 2)
+    return {"total_hands": total_hands, "avg_tricks": avg_tricks}
 
 
 def discover_new_run_dir(run_base: Path, dirs_before: set) -> Path:
@@ -290,32 +332,63 @@ def create_suite_rollup(
     with (rollup_dir / "meta.json").open("w") as f:
         json.dump(meta, f, indent=2)
     
-    # Write rollup.json (index only - no metrics aggregation)
+    # Aggregate metrics for each member run
+    summary = []
+    for run in member_runs:
+        run_path = run_base / run["run_dir"]
+        if run["status"] == "ok" and run_path.exists():
+            metrics = aggregate_run_metrics(run_path)
+        else:
+            metrics = {"total_hands": None, "avg_tricks": None}
+
+        config_name = Path(run["config_path"]).name
+        summary.append({
+            "config": config_name,
+            "run_id": run["run_id"],
+            "status": run["status"],
+            "total_hands": metrics["total_hands"],
+            "avg_tricks": metrics["avg_tricks"]
+        })
+
+    # Write rollup.json (with metrics summary)
     rollup = {
         "schema_version": 1,
         "suite_name": suite_name,
         "suite_seed": effective_params["seed"],
         "suite_n_per": effective_params["n_per"],
         "created_at_utc": created_at_utc,
-        "configs": member_runs
+        "configs": member_runs,
+        "summary": summary
     }
-    
+
     with (rollup_dir / "rollup.json").open("w") as f:
         json.dump(rollup, f, indent=2)
-    
+
     # Write reports/ROLLUP.md
     with (rollup_dir / "reports" / "ROLLUP.md").open("w") as f:
         f.write(f"# Suite Rollup: {suite_name}\n\n")
         f.write(f"**Seed**: {effective_params['seed']}\n\n")
         f.write(f"**n_per**: {effective_params['n_per']}\n\n")
         f.write(f"**Configs**: {len(member_runs)}\n\n")
+
+        # Summary table
+        f.write("## Summary\n\n")
+        f.write("| Config | Status | Hands | Avg Tricks |\n")
+        f.write("|--------|--------|------:|----------:|\n")
+        for s in summary:
+            status_icon = "✓" if s["status"] == "ok" else "✗"
+            hands_str = str(s["total_hands"]) if s["total_hands"] is not None else "N/A"
+            tricks_str = f"{s['avg_tricks']:.2f}" if s["avg_tricks"] is not None else "N/A"
+            f.write(f"| {s['config']} | {status_icon} | {hands_str} | {tricks_str} |\n")
+        f.write("\n")
+
         f.write("## Member Runs\n\n")
         for run in member_runs:
             status_icon = "✓" if run["status"] == "ok" else "✗"
             f.write(f"- {status_icon} `{run['run_dir']}/` - {run['config_path']}\n")
         f.write("\n---\n\n")
         f.write("**Note**: Open each run's `reports/` directory for detailed analysis.\n")
-    
+
     return rollup_dir
 
 
