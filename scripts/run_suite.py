@@ -372,7 +372,6 @@ def create_suite_rollup(
     
     # Aggregate metrics for each member run
     summary = []
-
     for run in member_runs:
         run_path = run_base / run["run_dir"]
         if run["status"] == "ok" and run_path.exists():
@@ -391,7 +390,8 @@ def create_suite_rollup(
             "bad_files": metrics.get("bad_files")
         })
 
-
+    # Sort summary by config name for deterministic ordering
+    summary.sort(key=lambda x: x["config"])
 
     # Write rollup.json (with metrics summary)
     rollup = {
@@ -506,8 +506,6 @@ def main():
                 "status": "ok",
                 "git_sha": run_git_sha
             })
-
-
             
             # Generate report unless --no-reports
             if not args.no_reports:
@@ -522,8 +520,6 @@ def main():
                 "status": "failed",
                 "git_sha": "unknown"
             })
-
-
             # Continue with remaining configs
         
         print()

@@ -9,7 +9,7 @@ Fixture Schema (v0):
   "default_tolerance": 0.01,
   "configs": {
     "config_name.yaml": {
-      "avg_tricks_team0": 4.23,
+      "avg_tricks": 4.23,
       "tolerance": 0.01  // optional, falls back to default_tolerance
     }
   }
@@ -110,7 +110,7 @@ def validate_fixture_structure(fixture: Dict[str, Any]) -> Tuple[Dict[str, Any],
         print("To populate the fixture:", file=sys.stderr)
         print("1. Run the baseline_full suite: python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml --seed 42 --n_per 100", file=sys.stderr)
         print("2. Extract avg_tricks values from the generated rollup.json summary array", file=sys.stderr)
-        print("3. Update data/fixtures/baseline_full_expected.json with avg_tricks_team0 values for each config", file=sys.stderr)
+        print("3. Update data/fixtures/baseline_full_expected.json with avg_tricks values for each config", file=sys.stderr)
         sys.exit(1)
 
     default_tolerance = fixture.get("default_tolerance", 0.01)
@@ -179,9 +179,9 @@ def compare_metrics(
             drift_messages.append(f"INVALID_FIXTURE_CONFIG: {config} - expected object, got {type(expected_data)}")
             continue
 
-        expected_value = expected_data.get("avg_tricks_team0")
+        expected_value = expected_data.get("avg_tricks")
         if expected_value is None:
-            drift_messages.append(f"INVALID_FIXTURE_CONFIG: {config} - missing avg_tricks_team0")
+            drift_messages.append(f"INVALID_FIXTURE_CONFIG: {config} - missing avg_tricks")
             continue
 
         # Use config-specific tolerance or default
@@ -192,7 +192,7 @@ def compare_metrics(
 
         diff = abs(actual_value - expected_value)
         if diff > tolerance:
-            drift_messages.append(f"DRIFT: {config} avg_tricks_team0: {actual_value:.6f} vs {expected_value:.6f} (diff: {diff:.6f}, tolerance: {tolerance:.6f})")
+            drift_messages.append(f"DRIFT: {config} avg_tricks: {actual_value:.6f} vs {expected_value:.6f} (diff: {diff:.6f}, tolerance: {tolerance:.6f})")
 
     return drift_messages
 
