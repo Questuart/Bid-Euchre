@@ -145,14 +145,23 @@ def compare_metrics(
     """Compare actual vs expected metrics, return list of drift messages."""
     drift_messages = []
 
-    # Build actual results dict
+    # Build actual results dict - skip auction_smoke for drift detection
     actual_results = {}
+    skipped_configs = []
     for entry in summary:
         if entry.get("status") == "ok":
             config = entry["config"]
             avg_tricks = entry.get("avg_tricks")
             if avg_tricks is not None:
+                # Skip auction_smoke configs for drift detection (smoke-only)
+                if config == "auction_smoke.yaml":
+                    skipped_configs.append(config)
+                    continue
                 actual_results[config] = avg_tricks
+
+    # Report skipped configs for visibility
+    if skipped_configs:
+        drift_messages.append(f"SKIPPED_FOR_DRIFT: {len(skipped_configs)} config(s) - {', '.join(sorted(skipped_configs))}")
 
     # Check for unexpected configs
     actual_configs = set(actual_results.keys())
