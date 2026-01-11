@@ -1,0 +1,123 @@
+name: baseline-full-drift
+
+on:
+  schedule:
+    # Run daily at 17:00 UTC (9am PT during standard time)
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: baseline_full_drift
+  cancel-in-progress: false
+
+jobs:
+  baseline_full_drift:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run baseline_full suite
+      run: |
+        PYTHONPATH=src python scripts/run_suite.py \
+          --suite experiments/suites/baseline_full.yaml \
+          --seed 42 \
+          --n-per 500 \
+          --run-dir nightly_runs
+
+    - name: Check for failures in rollup.json
+      run: |
+        # Find rollup.json file
+        ROLLUP_FILE=$(find nightly_runs -name "rollup.json" -type f | head -1)
+        if [ -z "$ROLLUP_FILE" ]; then
+          echo "Error: rollup.json not found"
+          exit 1
+        fi
+
+        # Check if any entry has status != "ok"
+        if jq -e '.summary[] | select(.status != "ok")' "$ROLLUP_FILE" > /dev/null; then
+          echo "Failure detected in rollup.json"
+          exit 1
+        else
+          echo "All tests passed"
+        fi
+
+    - name: Upload nightly runs artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: baseline-full-drift-runs
+        path: nightly_runs/
+        retention-days: 14
+
+    - name: Create or update GitHub Issue on failure
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const titlePrefix = '[drift] baseline_full failed';
+          const runUrl = context.payload.repository.html_url + '/actions/runs/' + context.runId;
+          const commitSha = context.sha;
+          const timestamp = new Date().toISOString();
+
+          // Determine failure reason
+          let failureReason = 'Suite runner exited non-zero';
+
+          // Search for existing open issue with the title prefix
+          const issues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            labels: ['drift']
+          });
+
+          const existingIssue = issues.data.find(issue =>
+            issue.title.startsWith(titlePrefix)
+          );
+
+          const issueBody = '## Baseline Full Drift Failure\n\n' +
+            'The scheduled baseline_full suite has failed.\n\n' +
+            '**Failure Reason:** ' + failureReason + '\n\n' +
+            '**Workflow Run:** ' + runUrl + '\n\n' +
+            '**Commit SHA:** ' + commitSha + '\n\n' +
+            '**Timestamp:** ' + timestamp + '\n\n' +
+            '**Artifact:** `baseline-full-drift-runs`\n\n' +
+            'Please investigate the failure and fix any issues.';
+
+          if (existingIssue) {
+            // Update existing issue with new comment
+            const commentBody = '## New Failure Detected\n\n' +
+              '**Failure Reason:** ' + failureReason + '\n\n' +
+              '**Workflow Run:** ' + runUrl + '\n\n' +
+              '**Commit SHA:** ' + commitSha + '\n\n' +
+              '**Timestamp:** ' + timestamp + '\n\n' +
+              '**Artifact:** `baseline-full-drift-runs`';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existingIssue.number,
+              body: commentBody
+            });
+          } else {
+            // Create new issue
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: titlePrefix,
+              body: issueBody,
+              labels: ['drift']
+            });
+          }
