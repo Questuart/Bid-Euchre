@@ -3,8 +3,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import pytest
-
 
 class TestRollupComparator:
     """Test rollup comparator behavior for various scenarios."""
