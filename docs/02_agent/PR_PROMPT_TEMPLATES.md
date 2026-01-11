@@ -2,11 +2,11 @@
 
 These templates are designed for **cheap agents** operating in a repo with strict determinism + reproducibility requirements, and for **parallel** PR execution without scope leaks.
 
-## Default: Full Permissions Mode
+## 🚨 DEFAULT: Full Permissions Mode (CRITICAL)
 
-**Run PR agents in full permissions mode by default** (Cursor: `required_permissions: ["all"]`).
+**Run ALL PR agents in full permissions mode by default** (Cursor: `required_permissions: ["all"]`).
 
-Why: Avoids macOS TLS/keychain errors (e.g., `OSStatus -26276`, certificate verification failures) that occur in sandboxed environments. GitHub API access via `gh` requires reliable TLS certificate validation and may fail in restricted sandbox modes.
+**WHY THIS IS CRITICAL**: macOS TLS/keychain sandbox issues (e.g., `OSStatus -26276`, certificate verification failures) prevent reliable GitHub API access via `gh` in restricted sandbox modes. Full permissions mode ensures TLS certificate validation works reliably for all `gh` commands.
 
 ## When to use which template
 
@@ -32,11 +32,18 @@ If you are running multiple agents in parallel:
 
 ## Local execution note (Cursor)
 
-These prompts assume the agent runs in **Cursor’s local terminal** (commands execute on the local machine).
+These prompts assume the agent runs in **Cursor's local terminal** (commands execute on the local machine).
 To make PR creation reliable:
-- `GH_TOKEN` must be set in the environment.
-- `gh api user -q .login` must work non-interactively.
-- `git ls-remote origin HEAD` must work non-interactively (usually implies SSH remote works).
+- `GH_TOKEN` must be set in the environment (non-interactive auth).
+- `gh api user -q .login` must succeed (non-interactive).
+- `git ls-remote origin HEAD` must succeed (non-interactive).
+- `git remote -v` must show SSH for origin (`git@github.com:...`).
+
+**SSH vs HTTPS clarification**:
+- `git` uses the origin remote protocol (SSH or HTTPS).
+- `gh` uses HTTPS API regardless.
+- SSH fixes `git` transport, but `gh` still requires TLS certificate validation.
+- Therefore: SSH does NOT replace TLS requirements for `gh` commands.
 
 ---
 
