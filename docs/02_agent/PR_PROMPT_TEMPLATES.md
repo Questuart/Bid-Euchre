@@ -30,6 +30,14 @@ If you are running multiple agents in parallel:
 - Always produce scope proof even if `git fetch` is blocked.
 - If you discover required changes outside scope that touch shared files: **STOP and report**.
 
+## Parallel Mode: git worktrees (REQUIRED for multi-agent runs)
+
+**Rationale (why this is required):**
+- Multiple agents switching branches in the same working directory causes accidental commits to `main` or to the wrong branch.
+- Worktrees isolate each agent in its own directory, eliminating branch-switch races.
+
+**Hard rule (parallel runs):** do NOT branch-switch the shared checkout. Create **one worktree per agent/PR** and do all edits/commits from inside that worktree.
+
 ## Local execution note (Cursor)
 
 These prompts assume the agent runs in **Cursor's local terminal** (commands execute on the local machine).
@@ -71,6 +79,7 @@ PARALLEL-SAFE RULES
 GIT HYGIENE (required)
 - Never work or commit on main.
 - Branch before edits.
+- In parallel runs: do NOT branch-switch the shared checkout; use git worktrees (one worktree per agent/PR).
 - Stage explicitly (no `git add .`).
 - Single commit per PR.
 - Return workspace to clean main at the end.
@@ -127,12 +136,31 @@ Run + paste outputs verbatim:
 - git fetch origin (or “fetch blocked”)
 
 Then:
-- You MUST be on main before branching:
-  - git checkout main
-  - git status -sb
+- Single-agent / non-parallel mode:
+  - You MUST be on main before branching:
+    - git checkout main
+    - git status -sb
+  - Create branch:
+    - git checkout -b <branch-name>
 
-Create branch:
-- git checkout -b <branch-name>
+- Parallel Mode (worktrees; REQUIRED for multi-agent runs):
+  - Do NOT branch-switch the shared checkout.
+  - Worktree creation (from the main repo root):
+    - BRANCH="<branch-name>"
+    - WT_DIR="../.worktrees/$BRANCH"
+    - mkdir -p ../.worktrees
+    - git fetch origin (or “fetch blocked”)
+    - git worktree add -b "$BRANCH" "$WT_DIR" origin/main
+    - cd "$WT_DIR"
+  - Proof (required in template):
+    - git worktree list
+    - git status -sb
+    - git merge-base --is-ancestor main HEAD && echo "based on main ✅" || echo "NOT based on main ❌"
+  - Work in the worktree as normal (edit, test, commit, push, gh pr create).
+  - After PR creation, cleanup (from the original repo root):
+    - cd -   (or cd back to the main repo root)
+    - git worktree remove "$WT_DIR"
+    - (optional) rmdir ../.worktrees  (only if empty)
 
 BASE PROOF (required)
 - git merge-base --is-ancestor main HEAD && echo "based on main ✅" || echo "NOT based on main ❌"
@@ -271,9 +299,13 @@ Cleanup always:
 ────────────────────────────────────────
 Return to main (MUST)
 
-- git checkout main
-- git pull --ff-only origin main (or “pull blocked”)
-- git status -sb (clean)
+- If you used Parallel Mode (worktrees):
+  - You do NOT need to checkout main; you remove the worktree (see Step -1 cleanup) and keep the shared checkout stable.
+
+- Single-agent / non-parallel mode:
+  - git checkout main
+  - git pull --ff-only origin main (or “pull blocked”)
+  - git status -sb (clean)
 
 PROOF REQUIRED:
 - Paste the final git status -sb output showing clean workspace.
@@ -320,6 +352,7 @@ PARALLEL-SAFE RULES
 GIT HYGIENE (required)
 - Do not work or commit on main.
 - Create/switch to a branch before editing.
+- In parallel runs: do NOT branch-switch the shared checkout; use git worktrees (one worktree per agent/PR).
 - Stage explicitly (no git add .) and only within scope.
 - Single commit per PR unless explicitly instructed otherwise.
 - Push branch and create a PR (gh preferred).
@@ -392,11 +425,31 @@ Run and PASTE outputs verbatim:
 - git fetch origin (if blocked, say “fetch blocked” and continue)
 
 Then:
-- You MUST be on main before branching:
-  - git checkout main
-  - git status -sb
-- Create/switch to branch:
-  - git checkout -b <branch-name>
+- Single-agent / non-parallel mode:
+  - You MUST be on main before branching:
+    - git checkout main
+    - git status -sb
+  - Create/switch to branch:
+    - git checkout -b <branch-name>
+
+- Parallel Mode (worktrees; REQUIRED for multi-agent runs):
+  - Do NOT branch-switch the shared checkout.
+  - Worktree creation (from the main repo root):
+    - BRANCH="<branch-name>"
+    - WT_DIR="../.worktrees/$BRANCH"
+    - mkdir -p ../.worktrees
+    - git fetch origin (or “fetch blocked”)
+    - git worktree add -b "$BRANCH" "$WT_DIR" origin/main
+    - cd "$WT_DIR"
+  - Proof (required in template):
+    - git worktree list
+    - git status -sb
+    - git merge-base --is-ancestor main HEAD && echo "based on main ✅" || echo "NOT based on main ❌"
+  - Work in the worktree as normal (edit, test, commit, push, gh pr create).
+  - After PR creation, cleanup (from the original repo root):
+    - cd -   (or cd back to the main repo root)
+    - git worktree remove "$WT_DIR"
+    - (optional) rmdir ../.worktrees  (only if empty)
 
 BASE PROOF (required)
 - git merge-base --is-ancestor main HEAD && echo "based on main ✅" || echo "NOT based on main ❌"
@@ -574,9 +627,13 @@ PR ID PROOF (required):
 ──────────────────────────────────────────────────────────────────────────────
 RETURN WORKSPACE TO MAIN (always)
 
-- git checkout main
-- git pull --ff-only origin main (if blocked, say “pull blocked”)
-- git status -sb (must be clean)
+- If you used Parallel Mode (worktrees):
+  - You do NOT need to checkout main; you remove the worktree (see Step -1 cleanup) and keep the shared checkout stable.
+
+- Single-agent / non-parallel mode:
+  - git checkout main
+  - git pull --ff-only origin main (if blocked, say “pull blocked”)
+  - git status -sb (must be clean)
 
 PROOF REQUIRED:
 - Paste final `git status -sb` output in your final response.
