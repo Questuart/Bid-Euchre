@@ -111,6 +111,19 @@ parameters:
 
 ---
 
+### Deprecated experiments (`_deprecated/`) ⚠️
+
+Content under `experiments/_deprecated/` is kept for reference only and is intentionally **not** held to the same bar as supported experiments.
+
+- **Not supported from a clean checkout**: scripts may depend on external artifacts (local data, legacy outputs, trained models, etc.) that are not included in this repo.
+- **Not for CI**: deprecated scripts are not expected to run in CI or as part of the standard `make` targets.
+- **May require external artifacts/models**: you may need to generate or fetch artifacts before running anything under `_deprecated/`.
+
+**See:** `experiments/_deprecated/README.md` for details and alternatives.  
+**Preferred workflow:** `experiments/run_experiment.py` with `experiments/configs/`.
+
+---
+
 ### `suites/` - Experiment Suite Definitions
 
 **Purpose:** Define collections of experiments to run together
@@ -119,19 +132,6 @@ parameters:
 - `baseline_tiny.yaml` - Small test suite for validation
 
 **When to add here:** YAML files defining multiple experiments to run as a batch
-
----
-
-### `_deprecated/` - Superseded Experiments
-
-**Purpose:** Historical experiments no longer used
-
-**See:** `_deprecated/README.md` for details on each deprecated script
-
-**When to add here:**
-- Script superseded by better version
-- One-off exploration completed
-- Functionality integrated into unified runner
 
 ---
 
