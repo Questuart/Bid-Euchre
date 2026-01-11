@@ -390,6 +390,9 @@ def create_suite_rollup(
             "bad_files": metrics.get("bad_files")
         })
 
+    # Sort summary by config name for deterministic ordering
+    summary.sort(key=lambda x: x["config"])
+
     # Write rollup.json (with metrics summary)
     rollup = {
         "schema_version": 1,
@@ -402,7 +405,7 @@ def create_suite_rollup(
     }
 
     with (rollup_dir / "rollup.json").open("w") as f:
-        json.dump(rollup, f, indent=2)
+        json.dump(rollup, f, indent=2, sort_keys=True)
 
     # Write reports/ROLLUP.md
     with (rollup_dir / "reports" / "ROLLUP.md").open("w") as f:

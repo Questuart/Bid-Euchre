@@ -1,7 +1,10 @@
 {
   "schema_version": 0,
-  "description": "Expected metrics for baseline_full suite configs - UNPOPULATED",
-  "default_tolerance": 0.01,
-  "note": "This fixture is not yet populated with expected values. To populate it: 1) Run baseline_full suite with scripts/run_suite.py, 2) Extract avg_tricks values from the generated rollup.json summary array, 3) Update the configs object below with avg_tricks_team0 values for each config.",
-  "configs": {}
+  "description": "Expected metrics for baseline_full suite configs (tricks-only, non-auction)",
+  "default_tolerance": 0,
+  "configs": {
+    "baseline_matchups.yaml": {
+      "avg_tricks": 5.0
+    }
+  }
 }
