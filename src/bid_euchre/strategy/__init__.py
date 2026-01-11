@@ -20,6 +20,15 @@ from .baselines import (
     RandomLegalStrategy,
 )
 
+# Bidding policies
+from .bidding import (
+    AlwaysPassBidder,
+    BidAction,
+    BiddingObservation,
+    BiddingPolicy,
+    StrictRaiserBidder,
+)
+
 # Greedy strategies
 from .greedy import (
     GreedyStrategy,
@@ -36,6 +45,12 @@ __all__ = [
     # Base
     "Strategy",
     "card_value_for_dump",
+    # Bidding
+    "BidAction",
+    "BiddingObservation",
+    "BiddingPolicy",
+    "AlwaysPassBidder",
+    "StrictRaiserBidder",
     # Baselines
     "BasicStrategy",
     "RandomLegalStrategy",
