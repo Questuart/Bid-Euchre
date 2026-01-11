@@ -1,8 +1,14 @@
 # Baseline Matchups Config
 #
-# All-vs-all matchup matrix across four core strategies (16 matchups total).
+# All-vs-all matchup matrix across 4 core strategies = 16 matchups total
+# - greedy: GreedyStrategy
+# - random_legal: RandomLegalStrategy
+# - always_highest: AlwaysHighestLegalStrategy
+# - always_lowest: AlwaysLowestLegalStrategy
+#
 # Includes self-play controls (A vs A) for regression testing.
 # Tests interaction effects and positional bias across strategy pairs.
+# Each matchup tests Team0 vs Team1 positioning effects.
 
 experiment_name: baseline_matchups
 
@@ -27,8 +33,9 @@ strategies:
     class_name: AlwaysLowestLegalStrategy
 
 # Define matchups (Team0 vs Team1) - all ordered pairs including self-play
+# Total: 4 strategies × 4 opponents = 16 matchups
 matchups:
-  # Greedy vs all
+  # Greedy vs all (4 matchups)
   - team0: greedy
     team1: greedy
 
@@ -41,7 +48,7 @@ matchups:
   - team0: greedy
     team1: always_lowest
 
-  # Random legal vs all
+  # Random legal vs all (4 matchups)
   - team0: random_legal
     team1: greedy
 
@@ -54,7 +61,7 @@ matchups:
   - team0: random_legal
     team1: always_lowest
 
-  # Always highest vs all
+  # Always highest vs all (4 matchups)
   - team0: always_highest
     team1: greedy
 
@@ -67,7 +74,7 @@ matchups:
   - team0: always_highest
     team1: always_lowest
 
-  # Always lowest vs all
+  # Always lowest vs all (4 matchups)
   - team0: always_lowest
     team1: greedy
 
@@ -81,6 +88,7 @@ matchups:
     team1: always_lowest
 
 # Scenarios to test (all contract types)
+# Total: 4 suit contracts (C/D/H/S) + 2 no-trump contracts = 6 scenarios
 scenarios:
   - contract_type: suit
     trump_suit: C,D,H,S
