@@ -52,12 +52,9 @@ The baseline fixture `data/fixtures/baseline_full_expected.json` contains expect
   "description": "Expected metrics for baseline_full suite configs",
   "default_tolerance": 0.01,
   "configs": {
-    "baseline_tiny.yaml": {
-      "avg_tricks_team0": 4.23,
+    "baseline_matchups.yaml": {
+      "avg_tricks": 5.0,
       "tolerance": 0.01
-    },
-    "another_config.yaml": {
-      "avg_tricks_team0": 5.12
     }
   }
 }
@@ -67,7 +64,7 @@ The baseline fixture `data/fixtures/baseline_full_expected.json` contains expect
 - `description`: Human-readable description
 - `default_tolerance`: Default tolerance for configs that don't specify one
 - `configs`: Map of config filename to expected metrics
-  - `avg_tricks_team0`: Expected average tricks won by team 0
+  - `avg_tricks`: Expected average tricks won by team 0
   - `tolerance`: Optional config-specific tolerance (falls back to default_tolerance)
 
 ## Usage
@@ -96,6 +93,6 @@ To update the fixture after intentional changes:
 
 2. Copy the `summary` array from the generated `rollup.json` to the fixture
 
-3. Update `avg_tricks_team0` values and tolerances as needed
+3. Update `avg_tricks` values and tolerances as needed
 
 **Note:** Do not commit generated rollup files - only commit the manually updated fixture.
