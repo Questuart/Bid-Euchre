@@ -378,6 +378,7 @@ def main():
                         deal_seed=scenario_seed,
                         strategy=None,
                         strategies=seat_strategies,
+                        bidding_policy=None,  # Will use default AlwaysPassBidder for auction
                         logger=logger,
                     )
 
@@ -461,6 +462,7 @@ def main():
                         deal_seed=scenario_seed,
                         strategy=None,
                         strategies=seat_strategies,
+                        bidding_policy=None,  # Will use default AlwaysPassBidder for auction
                         logger=logger,
                     )
 

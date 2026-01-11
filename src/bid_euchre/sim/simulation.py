@@ -14,10 +14,178 @@ from ..core.rules import get_legal_indices, trick_winner
 from ..features.hand_eval import get_hand_features, score_hand
 from ..scoring import compute_points
 from ..strategy import GreedyStrategy, Strategy
+from ..strategy.bidding import BiddingObservation, BiddingPolicy
 from .deals import generate_deal, generate_initial_leader
 
 if TYPE_CHECKING:
     from ..logging import GameLogger
+
+
+def _play_single_hand_legacy_bidding(
+    strategies: List[Strategy],
+    starting_hands: List[List[Card]],
+    initial_leader: Optional[int],
+    deal_seed: Optional[int],
+    deal_id: int,
+    rng: Optional[random.Random],
+    contract_type: Optional[str],
+    trump_suit: Optional[str],
+    logger: Optional["GameLogger"],
+) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int], Optional[int], Optional[int], str, Optional[str]]:
+    """
+    Legacy bidding implementation using Strategy.decide_bid for backward compatibility.
+    """
+    # Determine dealer
+    if initial_leader is not None:
+        dealer_index = (initial_leader - 1) % 4
+    else:
+        if rng is not None:
+            dealer_index = rng.randrange(4)
+        else:
+            # For determinism, derive dealer from deal_seed and deal_id when available
+            if deal_seed is not None:
+                dealer_rng = random.Random(deal_seed + deal_id)
+                dealer_index = dealer_rng.randrange(4)
+            else:
+                dealer_index = random.randrange(4)
+
+    current_high_bid = 0
+    winning_bidder = None
+    final_contract = None
+    final_trump = None
+
+    # Bidding order: LOD, Partner of LOD, ROD, Dealer
+    for i in range(1, 5):
+        player_idx = (dealer_index + i) % 4
+        partner_idx = (player_idx + 2) % 4
+        strat = strategies[player_idx]
+
+        bid, ctype, trump = strat.decide_bid(
+            hand=starting_hands[player_idx],
+            current_high_bid=current_high_bid,
+            current_winner_index=winning_bidder,
+            partner_index=partner_idx,
+            player_index=player_idx
+        )
+
+        # Dealer-partner pass rule: dealer passes if partner has the high bid
+        if player_idx == dealer_index and winning_bidder == partner_idx:
+            continue
+
+        if bid > current_high_bid:
+            current_high_bid = bid
+            winning_bidder = player_idx
+            final_contract = ctype
+            final_trump = trump
+
+    if winning_bidder is None:
+        # Misdeal: everyone passed
+        # Return zeros but still need scores/features (use dummy contract for logging)
+        # Actually, let's just use 'high' as a dummy for feature extraction in misdeals
+        dummy_ctype = "high"
+        all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
+        all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
+        # dealer_index is known, bidder_position is None (misdeal)
+        return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0, dealer_index, None, dummy_ctype, None
+
+    contract_type = final_contract
+    trump_suit = final_trump
+    initial_leader = winning_bidder
+    bidder_position = winning_bidder  # Capture bidder for logging
+    bidding_data = {
+        "winner": winning_bidder,
+        "bid": current_high_bid,
+        "contract": contract_type,
+        "trump": trump_suit
+    }
+
+    # Continue with the rest of the hand logic...
+    # Extract features for ALL 4 players
+    all_player_scores: List[int] = []
+    all_player_features: List[Dict[str, int]] = []
+    for player_idx in range(4):
+        score = score_hand(
+            starting_hands[player_idx],
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+            mode="scalar",
+        )
+        features = get_hand_features(
+            starting_hands[player_idx],
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+        )
+        all_player_scores.append(score)
+        all_player_features.append(features)
+
+    # Log bidding if it happened
+    if logger and bidding_data:
+        # We need a new log event or just include it in hand_end.
+        # For now, we can pass it via logger context if we had one.
+        # Let's assume the logger will be updated or we'll just use the hand_end features.
+        pass
+
+    team_tricks = {0: 0, 1: 0}
+    leader = initial_leader
+
+    # 10 tricks in a 10-card hand
+    for trick_num in range(10):
+        plays = []
+        trick_leader = leader
+
+        # Players act in order starting from leader
+        for offset in range(4):
+            player = (leader + offset) % 4
+            hand = starting_hands[player]
+
+            # Engine-level guardrail: enforce legal plays (not just in strategies).
+            legal_indices = get_legal_indices(hand, plays, contract_type, trump_suit)
+            strat = strategies[player]
+            card_index = strat.choose_card(
+                hand=hand,
+                plays_so_far=plays,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+                player_index=player,
+            )
+            if card_index not in legal_indices:
+                raise ValueError(
+                    f"Illegal play from strategy={getattr(strat, 'name', type(strat).__name__)} "
+                    f"player={player} contract={contract_type} trump={trump_suit} "
+                    f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
+                )
+
+            # Index integrity check: verify strategy returns valid index into actual hand
+            # (catches bugs where strategy sorts/filters hand and returns wrong index)
+            if card_index < 0 or card_index >= len(hand):
+                raise ValueError(
+                    f"Index integrity failure: strategy={getattr(strat, 'name', type(strat).__name__)} "
+                    f"returned out-of-bounds index {card_index} for hand of size {len(hand)} "
+                    f"player={player}"
+                )
+
+            card = hand.pop(card_index)
+            plays.append((player, card))
+
+        winner = trick_winner(
+            plays,
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+        )
+
+        # Log trick completion (if logger enabled)
+        if logger and logger.log_tricks:
+            logger.log_trick_end(deal_id, trick_num, trick_leader, plays, winner)
+
+        # Assign trick to a team
+        if winner in (0, 2):
+            team_tricks[0] += 1
+        else:
+            team_tricks[1] += 1
+
+        leader = winner  # winner leads next trick
+
+    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands, current_high_bid, dealer_index, bidder_position, contract_type, trump_suit
 
 
 def play_single_hand(
@@ -25,6 +193,7 @@ def play_single_hand(
     trump_suit: Optional[str] = None,
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
+    bidding_policy: Optional[BiddingPolicy] = None,
     logger: Optional["GameLogger"] = None,
     deal_id: int = 0,
     hands: Optional[List[List[Card]]] = None,
@@ -37,6 +206,19 @@ def play_single_hand(
 
     If contract_type is None, a bidding phase is conducted first.
     The winner of the bid chooses the contract and leads the first trick.
+
+    Args:
+        contract_type: Fixed contract type ("suit", "high", "low") or None for auction
+        trump_suit: Fixed trump suit for suit contracts
+        strategy: Strategy for card play (fallback if strategies not provided)
+        strategies: List of strategies per player for card play
+        bidding_policy: Bidding policy for auction mode (required if contract_type=None)
+        logger: Optional game logger
+        deal_id: Unique deal identifier
+        hands: Pre-dealt hands (optional)
+        deal_seed: Seed for deterministic dealing
+        initial_leader: Fixed initial leader (optional)
+        rng: Random number generator
 
     Returns:
         (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump)
@@ -66,6 +248,22 @@ def play_single_hand(
     bidder_position = None  # Track auction winner (0-3 or None)
 
     if contract_type is None:
+        # For backward compatibility: if no bidding_policy provided, use old Strategy.decide_bid interface
+        if bidding_policy is None:
+            # Fall back to old bidding logic using strategies
+            return _play_single_hand_legacy_bidding(
+                strategies=seat_strategies,
+                starting_hands=starting_hands,
+                initial_leader=initial_leader,
+                deal_seed=deal_seed,
+                deal_id=deal_id,
+                rng=rng,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+                logger=logger,
+            )
+
+        # Use new bidding policy interface
         # Determine dealer
         if initial_leader is not None:
             dealer_index = (initial_leader - 1) % 4
@@ -85,34 +283,34 @@ def play_single_hand(
         final_contract = None
         final_trump = None
 
-        # Bidding order: LOD, Partner of LOD, ROD, Dealer
-        for i in range(1, 5):
-            player_idx = (dealer_index + i) % 4
-            partner_idx = (player_idx + 2) % 4
-            strat = seat_strategies[player_idx]
+        # Simultaneous bidding: all players bid at once
+        # Bidding order doesn't matter for simultaneous bidding, but we maintain the same loop structure
+        for i in range(4):
+            player_idx = i
 
-            bid, ctype, trump = strat.decide_bid(
+            # Create bidding observation
+            obs = BiddingObservation(
                 hand=starting_hands[player_idx],
-                current_high_bid=current_high_bid,
-                current_winner_index=winning_bidder,
-                partner_index=partner_idx,
-                player_index=player_idx
+                seat=player_idx,
+                dealer_seat=dealer_index,
+                current_high_bid=current_high_bid
             )
 
-            # Dealer-partner pass rule: dealer passes if partner has the high bid
-            if player_idx == dealer_index and winning_bidder == partner_idx:
+            # Get bid from policy
+            bid_action = bidding_policy.choose_bid(obs)
+
+            # If bid is pass or <= current high bid, treat as pass
+            if bid_action.is_pass() or bid_action.n <= current_high_bid:
                 continue
 
-            if bid > current_high_bid:
-                current_high_bid = bid
-                winning_bidder = player_idx
-                final_contract = ctype
-                final_trump = trump
+            # Valid higher bid - accept it
+            current_high_bid = bid_action.n
+            winning_bidder = player_idx
+            final_contract, final_trump = bid_action.to_contract_tuple()
 
-        if winning_bidder is None:
-            # Misdeal: everyone passed
+        if winning_bidder is None or current_high_bid == 0:
+            # Misdeal: everyone passed or no valid bids
             # Return zeros but still need scores/features (use dummy contract for logging)
-            # Actually, let's just use 'high' as a dummy for feature extraction in misdeals
             dummy_ctype = "high"
             all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
             all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
@@ -243,6 +441,7 @@ def simulate_many_hands(
     seed: Optional[int] = None,
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
+    bidding_policy: Optional[BiddingPolicy] = None,
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
 ) -> Dict:
@@ -251,10 +450,12 @@ def simulate_many_hands(
 
     Args:
         n: Number of hands to simulate
-        contract_type: "suit", "high", or "low"
+        contract_type: "suit", "high", or "low" (or None for auction)
         trump_suit: Trump suit for suit contracts
         seed: Random seed for reproducibility
         strategy: Strategy to use (defaults to GreedyStrategy)
+        strategies: List of strategies per player
+        bidding_policy: Bidding policy for auction mode
         logger: Optional GameLogger for structured JSONL logging
 
     Returns a summary dict:
@@ -326,6 +527,7 @@ def simulate_many_hands(
                 trump_suit=trump_suit,
                 strategy=strategy,
                 strategies=strategies,
+                bidding_policy=bidding_policy,
                 logger=logger,
                 deal_id=deal_id,
                 hands=deal_hands_,
@@ -337,6 +539,7 @@ def simulate_many_hands(
                 trump_suit=trump_suit,
                 strategy=strategy,
                 strategies=strategies,
+                bidding_policy=bidding_policy,
                 logger=logger,
                 deal_id=deal_id,
                 rng=local_rng,
