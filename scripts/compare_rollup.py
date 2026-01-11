@@ -141,9 +141,16 @@ def compare_metrics(
     summary: List[Dict[str, Any]],
     expected_configs: Dict[str, Any],
     default_tolerance: float
-) -> List[str]:
-    """Compare actual vs expected metrics, return list of drift messages."""
+) -> Tuple[List[str], List[Tuple[str, float, float, float, float, bool]]]:
+    """Compare actual vs expected metrics.
+
+    Returns:
+        Tuple of (drift_messages, comparison_results)
+        - drift_messages: List of error/drift messages
+        - comparison_results: List of (config, actual, expected, diff, tolerance, passed) tuples
+    """
     drift_messages = []
+    comparison_results = []
 
     # Build actual results dict - skip auction_smoke for drift detection
     actual_results = {}
@@ -200,10 +207,35 @@ def compare_metrics(
             continue
 
         diff = abs(actual_value - expected_value)
-        if diff > tolerance:
-            drift_messages.append(f"DRIFT: {config} avg_tricks: {actual_value:.6f} vs {expected_value:.6f} (diff: {diff:.6f}, tolerance: {tolerance:.6f})")
+        passed = diff <= tolerance
+        comparison_results.append((config, actual_value, expected_value, diff, tolerance, passed))
 
-    return drift_messages
+        if not passed:
+            drift_messages.append(f"DRIFT: {config}")
+
+    return drift_messages, comparison_results
+
+
+def print_comparison_table(
+    comparison_results: List[Tuple[str, float, float, float, float, bool]],
+    default_tolerance: float
+) -> None:
+    """Print a formatted comparison table."""
+    if not comparison_results:
+        return
+
+    print("\nComparison Results:")
+    print("-" * 80)
+    print(f"{'Config':<30} {'Actual':>10} {'Expected':>10} {'Delta':>10} {'Tol':>8} {'Status':>8}")
+    print("-" * 80)
+
+    for config, actual, expected, diff, tolerance, passed in comparison_results:
+        status = "OK" if passed else "DRIFT"
+        # Truncate config name if too long
+        config_display = config[:28] + ".." if len(config) > 30 else config
+        print(f"{config_display:<30} {actual:>10.4f} {expected:>10.4f} {diff:>10.6f} {tolerance:>8.4f} {status:>8}")
+
+    print("-" * 80)
 
 
 def main():
@@ -221,7 +253,10 @@ def main():
     check_run_health(summary)
 
     # Compare metrics
-    drift_messages = compare_metrics(summary, expected_configs, default_tolerance)
+    drift_messages, comparison_results = compare_metrics(summary, expected_configs, default_tolerance)
+
+    # Print comparison table
+    print_comparison_table(comparison_results, default_tolerance)
 
     # Report results
     if drift_messages:
