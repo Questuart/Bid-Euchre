@@ -1,11 +1,21 @@
-> **⚠️ ARCHIVED — This folder contains historical documentation that may be outdated.**
+> # ⚠️ ARCHIVED — not authoritative
 >
-> These docs reflect earlier project structure and conventions. For current documentation, see:
-> - `docs/01_core/` — Authoritative architecture and contracts
-> - `docs/02_agent/` — Agent operating guidelines
-> - `experiments/README.md` — Current experiment structure
+> **You’re in `docs/archive/`.** This folder is intentionally **not canonical** and may be stale or contradictory.
 >
-> Do not treat these files as current truth.
+> For current, authoritative docs, start here:
+> - `docs/README.md`
+> - `docs/01_core/`
+> - `docs/02_agent/`
+> - `experiments/README.md`
+>
+> ## Canonical docs map (top 5)
+> 1. `docs/README.md` — docs entrypoint + navigation
+> 2. `docs/01_core/ARCHITECTURE.md` — architecture + contracts overview
+> 3. `docs/01_core/RULES.md` — game rules / definitions used by the code
+> 4. `docs/02_agent/AGENTS.md` — how to work in this repo (agents/automation)
+> 5. `experiments/README.md` — experiments layout + how to run them
+>
+> If you’re unsure, **do not cite `docs/archive/`**—cite the canonical paths above.
 
 ---
 
