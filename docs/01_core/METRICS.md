@@ -32,6 +32,11 @@ These keys are directly present in results JSON files at `data/runs/<run_id>/res
 - `avg_team1`: Mean tricks for team 1
 - `distribution_team0`: Count of hands by tricks taken (0-10)
 
+**Win Rates (Always emitted):**
+- `win_rate_team0`: Proportion of hands where team 0 wins (≥6 tricks, None if hands=0)
+- `win_rate_team1`: Proportion of hands where team 1 wins (≥6 tricks, None if hands=0)
+- `tie_rate`: Proportion of hands with exactly 5 tricks (tie, None if hands=0)
+
 **Points (Only when bidding occurs):**
 - `avg_points_team0`: Mean points for team 0 (when bidding enabled)
 - `avg_points_team1`: Mean points for team 1 (when bidding enabled)
@@ -41,18 +46,11 @@ These keys are directly present in results JSON files at `data/runs/<run_id>/res
 ### Rollup-computed Fields
 These are computed by aggregation scripts from emitted keys:
 
-**Tricks Delta:**
-- `avg_tricks_delta`: `avg_team0 - avg_team1` (positive = team0 advantage)
+**Tricks Aggregation:**
+- `avg_tricks`: Weighted average of `avg_team0` across all configs (weighted by hands)
 
-**Points Delta (when available):**
-- `avg_points_delta`: `avg_points_team0 - avg_points_team1` (positive = team0 advantage)
-
-### Planned (Not Yet Implemented)
-**Win Rate:**
-- `win_rate`: Proportion of hands where team wins (≥6 tricks)
-- `push_rate`: Proportion of hands with exactly 5 tricks (tie)
-- `loss_rate`: Proportion of hands where team loses (≤4 tricks)
-- Confidence intervals for all rates
+### Drift v1 Contract (Tricks-Only)
+Drift v1 compares the `avg_tricks_team0` field from rollup summary against expected values in `data/fixtures/baseline_full_expected.json`. This is the primary regression signal for tricks-based strategies.
 
 ## Auction Metrics (Optional)
 
@@ -68,13 +66,16 @@ When bidding is enabled, additional metrics will include:
 ### Results JSON Files
 Located at: `data/runs/<run_id>/results/<strategy>/<scenario>.json`
 
-Example from `data/runs/quick_test_42_20260105_193308/results/greedy/high.json`:
+Example from simulation results:
 ```json
 {
   "hands": 50,
   "avg_team0": 4.98,
   "avg_team1": 5.02,
-  "distribution_team0": {"0": 0, "1": 0, "2": 1, "3": 2, "4": 8, "5": 15, "6": 16, "7": 6, "8": 2, "9": 0, "10": 0}
+  "distribution_team0": {"0": 0, "1": 0, "2": 1, "3": 2, "4": 8, "5": 15, "6": 16, "7": 6, "8": 2, "9": 0, "10": 0},
+  "win_rate_team0": 0.52,
+  "win_rate_team1": 0.48,
+  "tie_rate": 0.0
 }
 ```
 
@@ -91,5 +92,6 @@ All delta metrics follow the convention: **team0 - team1**
 ### Validation
 
 Results JSON keys verified from:
-- Code: `src/bid_euchre/sim/simulation.py` (simulate_many_hands function)
-- Examples: `data/runs/*/results/*/*.json` files in repo
+- Code: `src/bid_euchre/sim/simulation.py` lines 265-270 (simulate_many_hands function return type)
+- Rollup computation: `scripts/run_suite.py` lines 142-213 (compute_suite_metrics function)
+- Drift comparison: `scripts/compare_rollup.py` lines 153-196 (drift detection logic)
