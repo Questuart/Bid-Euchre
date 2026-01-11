@@ -13,8 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 
 class TestCompareRollupExitCodes:
     """Test compare_rollup.py exit code behavior with various scenarios."""
