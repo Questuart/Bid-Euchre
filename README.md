@@ -4,26 +4,42 @@ A Python framework for deterministic simulation and strategy evaluation of the c
 
 ## Quick Start
 
+### Install
 ```bash
-# Verify setup
-make check
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
 
-# Run a quick deterministic experiment
+### Verify setup
+```bash
+make check
+```
+
+### Run experiment
+```bash
 PYTHONPATH=src python experiments/run_experiment.py \
   --config experiments/configs/quick_test.yaml \
   --seed 42 \
   --n_per 5
 ```
 
+### Run experiment suite
+```bash
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/baseline_tiny.yaml \
+  --seed 42 \
+  --n-per 20
+```
+
 **Note**: Experiment outputs go to `data/runs/<run_id>/` and are not committed to git.
 
 ## Documentation
 
-See **[docs/README.md](docs/README.md)** for full documentation.
-
-Key references:
-- [docs/01_core/ARCHITECTURE.md](docs/01_core/ARCHITECTURE.md) — System structure and boundaries
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — Development setup and workflow
+- [docs/01_core/EXPERIMENTS.md](docs/01_core/EXPERIMENTS.md) — Running experiments and suites
 - [docs/02_agent/AGENTS.md](docs/02_agent/AGENTS.md) — Development workflow and best practices
+- [docs/README.md](docs/README.md) — Full documentation index
 
 ## Requirements
 
