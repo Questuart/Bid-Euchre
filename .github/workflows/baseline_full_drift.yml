@@ -36,7 +36,8 @@ jobs:
           --n-per 500 \
           --run-dir nightly_runs
 
-    - name: Check for failures in rollup.json
+    - name: Find rollup.json
+      id: find_rollup
       run: |
         # Find rollup.json file
         ROLLUP_FILE=$(find nightly_runs -name "rollup.json" -type f | head -1)
@@ -44,36 +45,40 @@ jobs:
           echo "Error: rollup.json not found"
           exit 1
         fi
+        echo "rollup_file=$ROLLUP_FILE" >> $GITHUB_OUTPUT
 
-        # Check if any entry has status != "ok"
-        if jq -e '.summary[] | select(.status != "ok")' "$ROLLUP_FILE" > /dev/null; then
-          echo "Failure detected in rollup.json"
-          exit 1
-        else
-          echo "All tests passed"
-        fi
+    - name: Run drift comparator (tricks-only)
+      id: drift_check
+      run: |
+        ROLLUP_FILE="${{ steps.find_rollup.outputs.rollup_file }}"
+        echo "Running comparator on: $ROLLUP_FILE"
+        PYTHONPATH=src python scripts/compare_rollup.py \
+          --rollup "$ROLLUP_FILE" \
+          --fixture data/fixtures/baseline_full_expected.json
 
-    - name: Upload nightly runs artifact
+    - name: Upload artifacts (rollup + runs)
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: baseline-full-drift-runs
-        path: nightly_runs/
+        name: baseline-full-drift-results
+        path: |
+          ${{ steps.find_rollup.outputs.rollup_file }}
+          nightly_runs/
         retention-days: 14
 
-    - name: Create or update GitHub Issue on failure
-      if: failure()
+    - name: Create or update GitHub Issue on drift
+      if: steps.drift_check.outcome == 'failure'
       uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const titlePrefix = '[drift] baseline_full failed';
+          const titlePrefix = '[drift] baseline_full metrics drifted';
           const runUrl = context.payload.repository.html_url + '/actions/runs/' + context.runId;
           const commitSha = context.sha;
           const timestamp = new Date().toISOString();
 
-          // Determine failure reason
-          let failureReason = 'Suite runner exited non-zero';
+          // Determine drift reason
+          let driftReason = 'Drift comparator detected metric changes (tricks-only)';
 
           // Search for existing open issue with the title prefix
           const issues = await github.rest.issues.listForRepo({
@@ -87,23 +92,23 @@ jobs:
             issue.title.startsWith(titlePrefix)
           );
 
-          const issueBody = '## Baseline Full Drift Failure\n\n' +
-            'The scheduled baseline_full suite has failed.\n\n' +
-            '**Failure Reason:** ' + failureReason + '\n\n' +
+          const issueBody = '## Baseline Full Drift Detected\n\n' +
+            'The scheduled baseline_full suite completed successfully, but metrics have drifted from expected values.\n\n' +
+            '**Drift Reason:** ' + driftReason + '\n\n' +
             '**Workflow Run:** ' + runUrl + '\n\n' +
             '**Commit SHA:** ' + commitSha + '\n\n' +
             '**Timestamp:** ' + timestamp + '\n\n' +
-            '**Artifact:** `baseline-full-drift-runs`\n\n' +
-            'Please investigate the failure and fix any issues.';
+            '**Artifact:** `baseline-full-drift-results` (includes rollup.json and full run data)\n\n' +
+            'Please investigate the drift and determine if this is expected or requires fixing.';
 
           if (existingIssue) {
             // Update existing issue with new comment
-            const commentBody = '## New Failure Detected\n\n' +
-              '**Failure Reason:** ' + failureReason + '\n\n' +
+            const commentBody = '## New Drift Detected\n\n' +
+              '**Drift Reason:** ' + driftReason + '\n\n' +
               '**Workflow Run:** ' + runUrl + '\n\n' +
               '**Commit SHA:** ' + commitSha + '\n\n' +
               '**Timestamp:** ' + timestamp + '\n\n' +
-              '**Artifact:** `baseline-full-drift-runs`';
+              '**Artifact:** `baseline-full-drift-results` (includes rollup.json and full run data)';
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
