@@ -38,6 +38,44 @@ If you are running multiple agents in parallel:
 
 **Hard rule (parallel runs):** do NOT branch-switch the shared checkout. Create **one worktree per agent/PR** and do all edits/commits from inside that worktree.
 
+## Default: Worktree Mode (Parallel-Safe)
+
+**WHY THIS IS THE DEFAULT:** Prevents multiple agents from fighting over `main` branch state in the same working directory. Even single-agent runs should use worktrees to avoid accidental commits to `main`.
+
+**Hard rule:** If running >1 agent in parallel, you MUST use worktrees. Single-agent runs SHOULD also use worktrees for safety.
+
+**Note:** `gh` still requires HTTPS/TLS even if `git` uses SSH for transport.
+
+## Worktree Mode (DEFAULT) — Copy/Paste Block
+
+```bash
+# Set unique worktree identifiers
+WT_NAME="pr<NN>-<slug>"  # e.g., pr42-fix-bug
+WT_DIR="../wt-$WT_NAME"  # relative to repo root
+
+# From repo root: create worktree and switch to it
+git fetch origin
+git worktree add "$WT_DIR" origin/main
+cd "$WT_DIR"
+
+# Create feature branch inside worktree
+git checkout -b "$WT_NAME"
+
+# From this point: ALL commands run inside the worktree directory
+# Edit files, run tests, commit, push, create PR...
+```
+
+## Single working tree (single-agent only / not parallel-safe)
+
+**WARNING:** This mode is NOT safe for parallel runs. Only use for single-agent execution.
+
+```bash
+# Classic mode - NOT for parallel execution
+git checkout main
+git checkout -b <branch-name>
+# Edit, commit, etc...
+```
+
 ## Local execution note (Cursor)
 
 These prompts assume the agent runs in **Cursor's local terminal** (commands execute on the local machine).
@@ -138,7 +176,7 @@ Run + paste outputs verbatim:
 Then:
 - Single-agent / non-parallel mode:
   - You MUST be on main before branching:
-    - git checkout main
+    - cd out of worktree (cd - or cd ..)
     - git status -sb
   - Create branch:
     - git checkout -b <branch-name>
@@ -297,15 +335,14 @@ Cleanup always:
 - rm -f pr_body.md pr_body_raw.md
 
 ────────────────────────────────────────
-Return to main (MUST)
+Worktree cleanup (MUST)
 
-- If you used Parallel Mode (worktrees):
-  - You do NOT need to checkout main; you remove the worktree (see Step -1 cleanup) and keep the shared checkout stable.
+**WARNING:** Do NOT run `git checkout main` repeatedly in parallel runs - this causes branch conflicts between agents.
 
 - Single-agent / non-parallel mode:
-  - git checkout main
-  - git pull --ff-only origin main (or “pull blocked”)
-  - git status -sb (clean)
+  - cd out of worktree (cd - or cd ..)
+  - git worktree remove "$WT_DIR"
+  - git worktree prune
 
 PROOF REQUIRED:
 - Paste the final git status -sb output showing clean workspace.
@@ -427,7 +464,7 @@ Run and PASTE outputs verbatim:
 Then:
 - Single-agent / non-parallel mode:
   - You MUST be on main before branching:
-    - git checkout main
+    - cd out of worktree (cd - or cd ..)
     - git status -sb
   - Create/switch to branch:
     - git checkout -b <branch-name>
@@ -625,15 +662,14 @@ PR ID PROOF (required):
 - rm -f pr_body.md pr_body_raw.md
 
 ──────────────────────────────────────────────────────────────────────────────
-RETURN WORKSPACE TO MAIN (always)
+WORKTREE CLEANUP (always)
 
-- If you used Parallel Mode (worktrees):
-  - You do NOT need to checkout main; you remove the worktree (see Step -1 cleanup) and keep the shared checkout stable.
+**WARNING:** Do NOT run `git checkout main` repeatedly in parallel runs - this causes branch conflicts between agents.
 
 - Single-agent / non-parallel mode:
-  - git checkout main
-  - git pull --ff-only origin main (if blocked, say “pull blocked”)
-  - git status -sb (must be clean)
+  - cd out of worktree (cd - or cd ..)
+  - git worktree remove "$WT_DIR"
+  - git worktree prune
 
 PROOF REQUIRED:
 - Paste final `git status -sb` output in your final response.
