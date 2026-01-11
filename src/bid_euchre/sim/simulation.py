@@ -14,6 +14,7 @@ from ..core.rules import get_legal_indices, trick_winner
 from ..features.hand_eval import get_hand_features, score_hand
 from ..scoring import compute_points
 from ..strategy import GreedyStrategy, Strategy
+from ..strategy.bidding import BiddingObservation, BiddingPolicy
 from .deals import generate_deal, generate_initial_leader
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ def play_single_hand(
     trump_suit: Optional[str] = None,
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
+    bidding_policy: Optional[BiddingPolicy] = None,
     logger: Optional["GameLogger"] = None,
     deal_id: int = 0,
     hands: Optional[List[List[Card]]] = None,
@@ -85,34 +87,60 @@ def play_single_hand(
         final_contract = None
         final_trump = None
 
-        # Bidding order: LOD, Partner of LOD, ROD, Dealer
-        for i in range(1, 5):
-            player_idx = (dealer_index + i) % 4
-            partner_idx = (player_idx + 2) % 4
-            strat = seat_strategies[player_idx]
+        # Use new bidding policy interface if provided, otherwise fall back to old interface
+        if bidding_policy is not None:
+            # New interface: simultaneous bidding using BiddingPolicy
+            for i in range(4):
+                player_idx = i
 
-            bid, ctype, trump = strat.decide_bid(
-                hand=starting_hands[player_idx],
-                current_high_bid=current_high_bid,
-                current_winner_index=winning_bidder,
-                partner_index=partner_idx,
-                player_index=player_idx
-            )
+                # Create bidding observation
+                obs = BiddingObservation(
+                    hand=starting_hands[player_idx],
+                    seat=player_idx,
+                    dealer_seat=dealer_index,
+                    current_high_bid=current_high_bid
+                )
 
-            # Dealer-partner pass rule: dealer passes if partner has the high bid
-            if player_idx == dealer_index and winning_bidder == partner_idx:
-                continue
+                # Get bid from policy
+                bid_action = bidding_policy.choose_bid(obs)
 
-            if bid > current_high_bid:
-                current_high_bid = bid
+                # If bid is pass or <= current high bid, treat as pass
+                if bid_action.is_pass() or bid_action.n <= current_high_bid:
+                    continue
+
+                # Valid higher bid - accept it
+                current_high_bid = bid_action.n
                 winning_bidder = player_idx
-                final_contract = ctype
-                final_trump = trump
+                final_contract, final_trump = bid_action.to_contract_tuple()
+        else:
+            # Old interface: sequential bidding using Strategy.decide_bid
+            # Bidding order: LOD, Partner of LOD, ROD, Dealer
+            for i in range(1, 5):
+                player_idx = (dealer_index + i) % 4
+                partner_idx = (player_idx + 2) % 4
+                strat = seat_strategies[player_idx]
 
-        if winning_bidder is None:
-            # Misdeal: everyone passed
+                bid, ctype, trump = strat.decide_bid(
+                    hand=starting_hands[player_idx],
+                    current_high_bid=current_high_bid,
+                    current_winner_index=winning_bidder,
+                    partner_index=partner_idx,
+                    player_index=player_idx
+                )
+
+                # Dealer-partner pass rule: dealer passes if partner has the high bid
+                if player_idx == dealer_index and winning_bidder == partner_idx:
+                    continue
+
+                if bid > current_high_bid:
+                    current_high_bid = bid
+                    winning_bidder = player_idx
+                    final_contract = ctype
+                    final_trump = trump
+
+        if winning_bidder is None or current_high_bid == 0:
+            # Misdeal: everyone passed or no valid bids
             # Return zeros but still need scores/features (use dummy contract for logging)
-            # Actually, let's just use 'high' as a dummy for feature extraction in misdeals
             dummy_ctype = "high"
             all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
             all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
@@ -243,6 +271,7 @@ def simulate_many_hands(
     seed: Optional[int] = None,
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
+    bidding_policy: Optional[BiddingPolicy] = None,
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
 ) -> Dict:
@@ -326,6 +355,7 @@ def simulate_many_hands(
                 trump_suit=trump_suit,
                 strategy=strategy,
                 strategies=strategies,
+                bidding_policy=bidding_policy,
                 logger=logger,
                 deal_id=deal_id,
                 hands=deal_hands_,
@@ -337,6 +367,7 @@ def simulate_many_hands(
                 trump_suit=trump_suit,
                 strategy=strategy,
                 strategies=strategies,
+                bidding_policy=bidding_policy,
                 logger=logger,
                 deal_id=deal_id,
                 rng=local_rng,
