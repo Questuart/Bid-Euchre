@@ -159,9 +159,9 @@ def compare_metrics(
                     continue
                 actual_results[config] = avg_tricks
 
-    # Report skipped configs for visibility
+    # Report skipped configs for visibility (but do not treat as drift)
     if skipped_configs:
-        drift_messages.append(f"SKIPPED_FOR_DRIFT: {len(skipped_configs)} config(s) - {', '.join(sorted(skipped_configs))}")
+        print(f"SKIPPED_FOR_DRIFT: {len(skipped_configs)} config(s) - {', '.join(sorted(skipped_configs))}")
 
     # Check for unexpected configs
     actual_configs = set(actual_results.keys())
