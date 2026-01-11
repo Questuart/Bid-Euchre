@@ -137,7 +137,7 @@ Content under `experiments/_deprecated/` is kept for reference only and is inten
 
 ## 🚀 Creating New Experiments
 
-Follow these steps (from `CONTRIBUTING.md`):
+Follow these steps:
 
 1. **Check if you need a new script**
    - Can `run_experiment.py` handle this? → Use config only
@@ -216,6 +216,5 @@ ls experiments/<subdirectory>/
 **See also:**
 - `REGISTRY.md` - Complete experiment catalog (active, stable, and deprecated experiments)
 - `configs/` - All experiment configurations
-- `docs/CONTRIBUTING.md` - Experiment standards
-- `docs/ANTI_PATTERNS.md` - What to avoid
+- `docs/archive/ANTI_PATTERNS.md` - What to avoid
 

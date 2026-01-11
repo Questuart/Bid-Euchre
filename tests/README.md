@@ -272,6 +272,5 @@ PYTHONPATH=src python -m pytest tests/integration/
 
 ## Questions?
 
-- Test standards: See `docs/CONTRIBUTING.md`
 - Adding new experiments: See `experiments/README.md`
-- Anti-patterns: See `docs/ANTI_PATTERNS.md`
+- Anti-patterns: See `docs/archive/ANTI_PATTERNS.md`
