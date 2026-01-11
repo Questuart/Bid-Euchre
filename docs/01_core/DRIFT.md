@@ -88,7 +88,7 @@ To update the fixture after intentional changes:
 
 1. Run the baseline_full suite:
    ```bash
-   python scripts/run_suite.py --suite baseline_full --seed 42 --n_per 100
+   python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml --seed 42 --n_per 100
    ```
 
 2. Copy the `summary` array from the generated `rollup.json` to the fixture
