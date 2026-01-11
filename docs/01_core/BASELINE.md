@@ -64,6 +64,59 @@ PYTHONPATH=src python scripts/run_suite.py \
 
 **Outputs**: Rollup directory under `data/runs/suite_<timestamp>/` (never committed)
 
+### Drift Detection (v1 Contract)
+
+`baseline_full` serves as the **drift regression anchor**. The drift detection system compares run metrics against a committed fixture to catch regressions.
+
+**Components:**
+- **Fixture**: `data/fixtures/baseline_full_expected.json` (committed; schema v0)
+- **Comparator**: `scripts/compare_rollup.py`
+- **CI Workflow**: `.github/workflows/baseline_full_drift.yml` (daily scheduled run)
+
+**v1 Scope (tricks-only):**
+- **Metric gated**: `avg_tricks` (average tricks won by team 0)
+- **Tolerance**: 0 (exact match required; deterministic with seed=42)
+- **Configs checked**: `baseline_matchups.yaml` only
+- **Configs skipped**: `auction_smoke.yaml` (smoke test; no gameplay metrics)
+
+**Fixture Schema (v0):**
+```json
+{
+  "schema_version": 0,
+  "description": "Expected metrics for baseline_full suite configs (tricks-only)",
+  "default_tolerance": 0,
+  "configs": {
+    "baseline_matchups.yaml": {
+      "avg_tricks": 5.0
+    }
+  }
+}
+```
+
+**Manual Drift Check:**
+```bash
+# 1. Run baseline_full suite
+python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml
+
+# 2. Compare against fixture
+python scripts/compare_rollup.py \
+  --rollup data/runs/suite_baseline_full_<timestamp>/rollup.json \
+  --fixture data/fixtures/baseline_full_expected.json
+```
+
+**Exit Codes:**
+- 0: All metrics within tolerance (no drift)
+- 1: One or more metrics exceed tolerance (drift detected)
+- 2: Missing expected configs or unexpected configs present
+
+**When to Update the Fixture:**
+Update `data/fixtures/baseline_full_expected.json` after intentional changes that affect gameplay metrics:
+1. Run `baseline_full` with seed=42, n_per=500
+2. Extract `avg_tricks` from the rollup summary
+3. Update the fixture (commit the change)
+
+See `docs/01_core/DRIFT.md` for detailed fixture schema and comparator documentation.
+
 ---
 
 ## `baseline_tiny` Contents
