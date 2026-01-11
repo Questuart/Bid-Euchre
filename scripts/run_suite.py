@@ -189,13 +189,15 @@ def aggregate_run_metrics(run_dir: Path) -> Dict[str, any]:
                 reasons.append(reason)
                 bad_files.append(str(result_file.relative_to(run_dir)))
 
-    # Limit bad_files to 3 samples
+    # Limit bad_files to 3 samples (sort for deterministic ordering)
+    bad_files = sorted(bad_files)
     if len(bad_files) > 3:
         bad_files = bad_files[:3]
 
     if total_hands == 0:
         # If we had any parsing issues, report them
         if reasons:
+            reasons = sorted(reasons)  # Sort for deterministic ordering
             combined_reason = "; ".join(reasons[:3])
             if len(reasons) > 3:
                 combined_reason += f" ({len(reasons) - 3} more)"
@@ -417,7 +419,7 @@ def create_suite_rollup(
             status_icon = "✓" if s["status"] == "ok" else "✗"
             hands_str = str(s["total_hands"]) if s["total_hands"] is not None else "N/A"
             tricks_str = f"{s['avg_tricks']:.2f}" if s["avg_tricks"] is not None else "N/A"
-            reason_str = s.get("reason", "") or ""
+            reason_str = (s.get("reason", "") or "").replace("\n", " ").replace("|", "\\|")
             f.write(f"| {s['config']} | {status_icon} | {hands_str} | {tricks_str} | {reason_str} |\n")
         f.write("\n")
 
