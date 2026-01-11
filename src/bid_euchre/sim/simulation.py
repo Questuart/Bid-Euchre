@@ -265,6 +265,9 @@ def simulate_many_hands(
             "avg_team0": float,
             "avg_team1": float,
             "distribution_team0": {0..10: count},
+            "win_rate_team0": float or None,  # wins_team0 / hands (None if hands=0)
+            "win_rate_team1": float or None,  # wins_team1 / hands (None if hands=0)
+            "tie_rate": float or None,  # ties / hands (None if hands=0)
             "avg_score": float,  # avg across all 4 players
             "score_buckets": { score -> {count, total_tricks, avg_tricks} },
             "feature_buckets": {
@@ -288,6 +291,11 @@ def simulate_many_hands(
     total0 = 0
     total1 = 0
     total_score_all = 0  # sum across all 4 players
+
+    # Win-rate tracking
+    wins_team0 = 0
+    wins_team1 = 0
+    ties = 0
 
     # Points-based scoring aggregates
     total_points_team0 = 0
@@ -355,6 +363,14 @@ def simulate_many_hands(
         total1 += t1
         dist_team0[t0] += 1
 
+        # Track win-rate counts
+        if t0 > 5:
+            wins_team0 += 1
+        elif t0 < 5:
+            wins_team1 += 1
+        else:  # t0 == 5
+            ties += 1
+
         # Compute and track points-based scoring
         points_team0, points_team1 = compute_points(winning_bid, bidder_pos, t0, t1)
         total_points_team0 += points_team0
@@ -413,6 +429,16 @@ def simulate_many_hands(
             else:
                 stats["avg_tricks"] = 0.0
 
+    # Compute win rates (handle n=0 case)
+    if n > 0:
+        win_rate_team0 = wins_team0 / n
+        win_rate_team1 = wins_team1 / n
+        tie_rate = ties / n
+    else:
+        win_rate_team0 = None
+        win_rate_team1 = None
+        tie_rate = None
+
     # Build bidding_points object
     bidding_points = {
         "enabled": hands_with_bids > 0,
@@ -433,6 +459,9 @@ def simulate_many_hands(
         "avg_team0": total0 / n,
         "avg_team1": total1 / n,
         "distribution_team0": dist_team0,
+        "win_rate_team0": win_rate_team0,
+        "win_rate_team1": win_rate_team1,
+        "tie_rate": tie_rate,
         "avg_score": total_score_all / player_samples if player_samples > 0 else 0,
         "score_buckets": score_buckets,
         "feature_buckets": feature_buckets,
