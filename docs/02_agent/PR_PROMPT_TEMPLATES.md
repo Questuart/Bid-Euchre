@@ -2,6 +2,12 @@
 
 These templates are designed for **cheap agents** operating in a repo with strict determinism + reproducibility requirements, and for **parallel** PR execution without scope leaks.
 
+## Default: Full Permissions Mode
+
+**Run PR agents in full permissions mode by default** (Cursor: `required_permissions: ["all"]`).
+
+Why: Avoids macOS TLS/keychain errors (e.g., `OSStatus -26276`, certificate verification failures) that occur in sandboxed environments. GitHub API access via `gh` requires reliable TLS certificate validation and may fail in restricted sandbox modes.
+
 ## When to use which template
 
 - Use the **SHORT** template for:
@@ -143,8 +149,23 @@ Run + paste outputs verbatim:
 - gh --version (or “gh missing”)
 - gh auth status (or failure)
 - gh api user -q .login (or failure)
-- git remote -v
+- gh api https://api.github.com/meta >/dev/null && echo "GitHub API TLS OK ✅" || echo "GitHub API TLS FAIL ❌"
+- gh repo view Questuart/Bid-Euchre --json nameWithOwner,defaultBranchRef,url
+- git remote -v (must show SSH: git@github.com:)
 - git ls-remote origin HEAD (or failure)
+
+HARD RULE:
+- If "GitHub API TLS FAIL ❌" → STOP and re-run the entire agent in full permissions mode (Cursor: required_permissions: ["all"]).
+- If still FAIL in full permissions → STOP and paste the error from: `gh api https://api.github.com/meta`
+
+If git remote shows HTTPS instead of SSH:
+- git remote set-url origin git@github.com:Questuart/Bid-Euchre.git
+- Re-run git remote -v to confirm
+
+SSH vs HTTPS note:
+- `git` uses the origin remote protocol (SSH or HTTPS)
+- `gh` uses HTTPS API regardless
+- Therefore SSH does NOT replace TLS requirements for `gh`
 
 If auth is broken:
 - Do ONE retry in full permissions (Cursor: required_permissions: ["all"]).
@@ -218,8 +239,12 @@ PROOF REQUIRED:
 ────────────────────────────────────────
 Create PR (gh preferred)
 
+Branch context gate (required):
+- test "$(git branch --show-current)" != "main" && echo "On feature branch ✅" || (echo "On main ❌" && exit 1)
+
 Try:
-- gh pr create --base main --head <branch-name> --title "<PR Title>" --body-file pr_body.md
+- BRANCH="$(git branch --show-current)"
+- gh pr create --base main --head "$BRANCH" --title "<PR Title>" --body-file pr_body.md
 
 If it fails:
 - Do ONE remediation attempt (auth login OR full permissions: required_permissions: ["all"])
@@ -391,8 +416,23 @@ Run and paste outputs verbatim:
 - gh --version (or “gh missing”)
 - gh auth status (or failure)
 - gh api user -q .login (or failure)
-- git remote -v
+- gh api https://api.github.com/meta >/dev/null && echo "GitHub API TLS OK ✅" || echo "GitHub API TLS FAIL ❌"
+- gh repo view Questuart/Bid-Euchre --json nameWithOwner,defaultBranchRef,url
+- git remote -v (must show SSH: git@github.com:)
 - git ls-remote origin HEAD (or failure)
+
+HARD RULE:
+- If "GitHub API TLS FAIL ❌" → STOP and re-run the entire agent in full permissions mode (Cursor: required_permissions: ["all"]).
+- If still FAIL in full permissions → STOP and paste the error from: `gh api https://api.github.com/meta`
+
+If git remote shows HTTPS instead of SSH:
+- git remote set-url origin git@github.com:Questuart/Bid-Euchre.git
+- Re-run git remote -v to confirm
+
+SSH vs HTTPS note:
+- `git` uses the origin remote protocol (SSH or HTTPS)
+- `gh` uses HTTPS API regardless
+- Therefore SSH does NOT replace TLS requirements for `gh`
 
 If any of the above fails:
 - Do ONE retry in full permissions mode (Cursor: required_permissions: ["all"]).
@@ -498,8 +538,12 @@ PROOF REQUIRED (final response):
 ──────────────────────────────────────────────────────────────────────────────
 CREATE PR (gh preferred)
 
+Branch context gate (required):
+- test "$(git branch --show-current)" != "main" && echo "On feature branch ✅" || (echo "On main ❌" && exit 1)
+
 1) Attempt PR creation via gh:
-- gh pr create --base main --head <branch-name> --title "<PR Title>" --body-file pr_body.md
+- BRANCH="$(git branch --show-current)"
+- gh pr create --base main --head "$BRANCH" --title "<PR Title>" --body-file pr_body.md
 
 2) If gh fails:
 - Do ONE remediation attempt:
