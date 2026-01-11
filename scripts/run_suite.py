@@ -372,6 +372,7 @@ def create_suite_rollup(
     
     # Aggregate metrics for each member run
     summary = []
+
     for run in member_runs:
         run_path = run_base / run["run_dir"]
         if run["status"] == "ok" and run_path.exists():
@@ -390,6 +391,8 @@ def create_suite_rollup(
             "bad_files": metrics.get("bad_files")
         })
 
+
+
     # Write rollup.json (with metrics summary)
     rollup = {
         "schema_version": 1,
@@ -402,7 +405,7 @@ def create_suite_rollup(
     }
 
     with (rollup_dir / "rollup.json").open("w") as f:
-        json.dump(rollup, f, indent=2)
+        json.dump(rollup, f, indent=2, sort_keys=True)
 
     # Write reports/ROLLUP.md
     with (rollup_dir / "reports" / "ROLLUP.md").open("w") as f:
@@ -503,6 +506,8 @@ def main():
                 "status": "ok",
                 "git_sha": run_git_sha
             })
+
+
             
             # Generate report unless --no-reports
             if not args.no_reports:
@@ -517,6 +522,8 @@ def main():
                 "status": "failed",
                 "git_sha": "unknown"
             })
+
+
             # Continue with remaining configs
         
         print()
