@@ -289,11 +289,6 @@ def simulate_many_hands(
     total1 = 0
     total_score_all = 0  # sum across all 4 players
 
-    # Win-rate tracking
-    wins_team0 = 0
-    wins_team1 = 0
-    ties = 0
-
     # Points-based scoring aggregates
     total_points_team0 = 0
     total_points_team1 = 0
@@ -360,14 +355,6 @@ def simulate_many_hands(
         total1 += t1
         dist_team0[t0] += 1
 
-        # Track win-rate counts
-        if t0 > 5:
-            wins_team0 += 1
-        elif t0 < 5:
-            wins_team1 += 1
-        else:  # t0 == 5
-            ties += 1
-
         # Compute and track points-based scoring
         points_team0, points_team1 = compute_points(winning_bid, bidder_pos, t0, t1)
         total_points_team0 += points_team0
@@ -425,16 +412,6 @@ def simulate_many_hands(
                 stats["avg_tricks"] = stats["total_tricks"] / stats["count"]
             else:
                 stats["avg_tricks"] = 0.0
-
-    # Compute win rates (handle n=0 case)
-    if n > 0:
-        win_rate_team0 = wins_team0 / n
-        win_rate_team1 = wins_team1 / n
-        tie_rate = ties / n
-    else:
-        win_rate_team0 = None
-        win_rate_team1 = None
-        tie_rate = None
 
     # Build bidding_points object
     bidding_points = {
