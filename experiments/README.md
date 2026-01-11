@@ -87,16 +87,16 @@ ls experiments/configs/
 **Purpose:** Configuration files for all experiments
 
 **Current configs:**
-- `baseline_greedy.yaml`
-- `bidder_training_data.yaml`
-- `hand_eval_test_greedy.yaml`
-- `hand_eval_test_random.yaml`
-- `head_to_head_vs_random.yaml`
-- `position_test.yaml`
-- `prelim_hand_eval.yaml`
-- `quick_test.yaml`
-- `strategy_comparison.yaml`
-- `train_bidder_models.yaml`
+- `auction_smoke.yaml` - Auction mode smoke test
+- `baseline_greedy.yaml` - Greedy strategy baseline
+- `baseline_matchups.yaml` - 4x4 strategy matchup matrix
+- `hand_eval_test_greedy.yaml` - Hand evaluation with greedy
+- `hand_eval_test_random.yaml` - Hand evaluation with random
+- `head_to_head_vs_random.yaml` - Head-to-head vs random
+- `prelim_hand_eval.yaml` - Preliminary hand evaluation
+- `quick_test.yaml` - Quick validation test
+- `quick_test_random.yaml` - Quick test with random strategy
+- `strategy_comparison.yaml` - Multi-strategy comparison
 
 **Naming convention:** `<experiment_name>.yaml`
 
@@ -129,7 +129,8 @@ Content under `experiments/_deprecated/` is kept for reference only and is inten
 **Purpose:** Define collections of experiments to run together
 
 **Current suites:**
-- `baseline_tiny.yaml` - Small test suite for validation
+- `baseline_tiny.yaml` - Fast validation (~760 hands, seconds)
+- `baseline_full.yaml` - Comprehensive regression (~5 min, 16 matchups + auction smoke)
 
 **When to add here:** YAML files defining multiple experiments to run as a batch
 
