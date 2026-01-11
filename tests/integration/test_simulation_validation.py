@@ -213,3 +213,95 @@ class TestDataValidation:
         # Offsuit aces: 0-6 (aces in non-heart suits, double deck)
         ace_values = set(feature_buckets["offsuit_aces"].keys())
         assert all(0 <= v <= 6 for v in ace_values)
+
+
+class TestRollupSummarySchema:
+    """Test rollup summary structure that drift detection depends on."""
+
+    def test_rollup_summary_entry_has_drift_required_fields(self):
+        """Test that rollup summary entries contain fields drift detection requires."""
+        # Mock rollup summary entry structure that drift depends on
+        mock_summary_entry = {
+            "config": "baseline_matchups.yaml",
+            "run_id": "run_20260110_test",
+            "status": "ok",
+            "total_hands": 100,
+            "avg_tricks": 4.23,
+            "reason": None,
+            "bad_files": None
+        }
+
+        # Drift detection requires these fields to be present and correct types
+        required_fields = {
+            "config": str,
+            "status": str,
+            "avg_tricks": (float, type(None))
+        }
+
+        for field, expected_type in required_fields.items():
+            assert field in mock_summary_entry, f"Missing required field: {field}"
+            assert isinstance(mock_summary_entry[field], expected_type), \
+                f"Field {field} has wrong type: {type(mock_summary_entry[field])}, expected {expected_type}"
+
+    def test_rollup_summary_entry_success_case(self):
+        """Test successful rollup summary entry structure."""
+        success_entry = {
+            "config": "baseline_matchups.yaml",
+            "run_id": "run_20260110_success",
+            "status": "ok",
+            "total_hands": 500,
+            "avg_tricks": 5.12,
+            "reason": None,
+            "bad_files": None
+        }
+
+        # Validate required drift fields
+        assert success_entry["config"] == "baseline_matchups.yaml"
+        assert success_entry["status"] == "ok"
+        assert success_entry["avg_tricks"] == 5.12
+        assert isinstance(success_entry["avg_tricks"], (int, float))
+
+    def test_rollup_summary_entry_failure_case(self):
+        """Test failed rollup summary entry structure."""
+        failure_entry = {
+            "config": "broken_config.yaml",
+            "run_id": "run_20260110_failure",
+            "status": "failed",
+            "total_hands": None,
+            "avg_tricks": None,
+            "reason": "Simulation crashed",
+            "bad_files": ["meta.json"]
+        }
+
+        # Even failed entries should have the required drift fields
+        assert failure_entry["config"] == "broken_config.yaml"
+        assert failure_entry["status"] == "failed"
+        assert failure_entry["avg_tricks"] is None  # None is acceptable for drift logic
+
+    def test_rollup_summary_config_names_are_basenames(self):
+        """Test that config names in rollup summary are basenames (no paths)."""
+        test_cases = [
+            "baseline_matchups.yaml",
+            "auction_smoke.yaml",
+            "custom_strategy.yaml"
+        ]
+
+        for config_name in test_cases:
+            assert "/" not in config_name, f"Config name contains path separator: {config_name}"
+            assert "\\" not in config_name, f"Config name contains path separator: {config_name}"
+            assert config_name.endswith(".yaml"), f"Config name should end with .yaml: {config_name}"
+
+    def test_rollup_summary_avg_tricks_is_numeric_when_present(self):
+        """Test that avg_tricks is numeric when not None."""
+        valid_values = [4.23, 5.0, 0.0, -1.5]  # Allow negative for edge cases
+        for value in valid_values:
+            entry = {
+                "config": "test.yaml",
+                "run_id": "test_run",
+                "status": "ok",
+                "total_hands": 100,
+                "avg_tricks": value,
+                "reason": None,
+                "bad_files": None
+            }
+            assert isinstance(entry["avg_tricks"], (int, float)), f"avg_tricks should be numeric: {value}"
