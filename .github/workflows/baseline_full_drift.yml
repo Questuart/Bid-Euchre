@@ -52,11 +52,14 @@ jobs:
       run: |
         ROLLUP_FILE="${{ steps.find_rollup.outputs.rollup_file }}"
         echo "Running comparator on: $ROLLUP_FILE"
+        # Capture output to file for inclusion in issue body
         PYTHONPATH=src python scripts/compare_rollup.py \
           --rollup "$ROLLUP_FILE" \
-          --fixture data/fixtures/baseline_full_expected.json
+          --fixture data/fixtures/baseline_full_expected.json 2>&1 | tee comparator_output.txt
+        # Preserve exit code from comparator (not tee)
+        exit ${PIPESTATUS[0]}
 
-    - name: Upload artifacts (rollup + runs)
+    - name: Upload artifacts (rollup + logs + comparator output)
       uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -64,7 +67,23 @@ jobs:
         path: |
           ${{ steps.find_rollup.outputs.rollup_file }}
           nightly_runs/
+          comparator_output.txt
         retention-days: 14
+
+    - name: Read comparator output
+      if: steps.drift_check.outcome == 'failure'
+      id: comparator_output
+      run: |
+        if [ -f comparator_output.txt ]; then
+          # Read output and escape for GitHub Actions
+          OUTPUT=$(cat comparator_output.txt)
+          # Use heredoc to preserve multiline output
+          echo "output<<EOF" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "output=Comparator output not available" >> $GITHUB_OUTPUT
+        fi
 
     - name: Create or update GitHub Issue on drift
       if: steps.drift_check.outcome == 'failure'
@@ -74,11 +93,16 @@ jobs:
         script: |
           const titlePrefix = '[drift] baseline_full metrics drifted';
           const runUrl = context.payload.repository.html_url + '/actions/runs/' + context.runId;
+          const artifactUrl = runUrl + '#artifacts';
           const commitSha = context.sha;
+          const shortSha = commitSha.substring(0, 7);
           const timestamp = new Date().toISOString();
+          const comparatorOutput = process.env.COMPARATOR_OUTPUT || 'Output not available';
 
-          // Determine drift reason
-          let driftReason = 'Drift comparator detected metric changes (tricks-only)';
+          // Run metadata
+          const suiteName = 'baseline_full';
+          const seed = 42;
+          const nPer = 500;
 
           // Search for existing open issue with the title prefix
           const issues = await github.rest.issues.listForRepo({
@@ -92,24 +116,68 @@ jobs:
             issue.title.startsWith(titlePrefix)
           );
 
-          const issueBody = '## Baseline Full Drift Detected\n\n' +
-            'The scheduled baseline_full suite completed successfully, but metrics have drifted from expected values.\n\n' +
-            '**Drift Reason:** ' + driftReason + '\n\n' +
-            '**Workflow Run:** ' + runUrl + '\n\n' +
-            '**Commit SHA:** ' + commitSha + '\n\n' +
-            '**Timestamp:** ' + timestamp + '\n\n' +
-            '**Artifact:** `baseline-full-drift-results` (includes rollup.json and full run data)\n\n' +
-            'Please investigate the drift and determine if this is expected or requires fixing.';
+          // Build issue body with string concatenation (YAML-safe)
+          const issueBody = [
+            '## Baseline Full Drift Detected',
+            '',
+            'The scheduled baseline_full suite completed successfully, but metrics have drifted from expected values.',
+            '',
+            '### Run Details',
+            '',
+            '| Field | Value |',
+            '|-------|-------|',
+            '| **Suite** | `' + suiteName + '` |',
+            '| **Seed** | `' + seed + '` |',
+            '| **n_per** | `' + nPer + '` |',
+            '| **Commit** | `' + shortSha + '` |',
+            '| **Timestamp** | ' + timestamp + ' |',
+            '| **Workflow Run** | [View Run](' + runUrl + ') |',
+            '| **Artifacts** | [Download](' + artifactUrl + ') |',
+            '',
+            '### Comparator Output',
+            '',
+            '<details>',
+            '<summary>Click to expand comparison table</summary>',
+            '',
+            '```',
+            comparatorOutput,
+            '```',
+            '',
+            '</details>',
+            '',
+            '### Next Steps',
+            '',
+            '1. Download the `baseline-full-drift-results` artifact',
+            '2. Review the comparison table above to identify which configs drifted',
+            '3. Determine if this is an expected change (update fixture) or a regression (fix code)',
+          ].join('\n');
+
+          // Build comment body for existing issues
+          const commentBody = [
+            '## New Drift Detected',
+            '',
+            '| Field | Value |',
+            '|-------|-------|',
+            '| **Suite** | `' + suiteName + '` |',
+            '| **Seed** | `' + seed + '` |',
+            '| **n_per** | `' + nPer + '` |',
+            '| **Commit** | `' + shortSha + '` |',
+            '| **Timestamp** | ' + timestamp + ' |',
+            '| **Workflow Run** | [View Run](' + runUrl + ') |',
+            '| **Artifacts** | [Download](' + artifactUrl + ') |',
+            '',
+            '<details>',
+            '<summary>Comparator Output</summary>',
+            '',
+            '```',
+            comparatorOutput,
+            '```',
+            '',
+            '</details>',
+          ].join('\n');
 
           if (existingIssue) {
             // Update existing issue with new comment
-            const commentBody = '## New Drift Detected\n\n' +
-              '**Drift Reason:** ' + driftReason + '\n\n' +
-              '**Workflow Run:** ' + runUrl + '\n\n' +
-              '**Commit SHA:** ' + commitSha + '\n\n' +
-              '**Timestamp:** ' + timestamp + '\n\n' +
-              '**Artifact:** `baseline-full-drift-results` (includes rollup.json and full run data)';
-
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -126,3 +194,5 @@ jobs:
               labels: ['drift']
             });
           }
+      env:
+        COMPARATOR_OUTPUT: ${{ steps.comparator_output.outputs.output }}
