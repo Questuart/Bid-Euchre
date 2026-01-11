@@ -31,7 +31,7 @@ def run_pytest(args):
 def run_manual_tests(args):
     """Run tests manually without pytest."""
     print("🔧 Manual test execution not fully implemented.")
-    print("💡 Use: python scripts/validate_tests.py")
+    print("💡 Install dev dependencies and use: make test")
     print("   Or install pytest: pip install pytest pytest-cov")
     return 1
 
