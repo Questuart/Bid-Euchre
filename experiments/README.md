@@ -14,7 +14,7 @@ experiments/
 ├── comparisons/       (1 script)   - Head-to-head strategy comparisons
 ├── training/          (1 script)   - Model training
 ├── configs/           (10 YAML)    - Experiment configurations
-├── suites/            (1 YAML)     - Experiment suite definitions
+├── suites/            (2 YAML)     - Experiment suite definitions
 ├── _deprecated/       (15 scripts) - Superseded experiments
 ├── __init__.py                     - Auto-setup (no sys.path needed!)
 ├── REGISTRY.md                     - Complete experiment catalog (includes active, stable, and deprecated)

@@ -24,7 +24,7 @@ Structure:
 - **`run_experiment.py`** — **Blessed canonical runner** (use this for production workflows)
 - `configs/` — YAML experiment configurations (reproducible inputs)
 - `_deprecated/` — Legacy scripts (do not use or extend)
-- `analysis/`, `comparisons/`, `dashboards/`, `plotting/`, `data_generation/`, `training/` — Exploratory research scripts (not canonical; for ad-hoc exploration)
+- `comparisons/`, `training/` — Exploratory research scripts (not canonical; for ad-hoc exploration)
 
 **Note**: Only `run_experiment.py` is the blessed entrypoint. Other scripts in subfolders are for research exploration and must not define competing canonical paths.
 
@@ -34,9 +34,9 @@ Structure:
 Current scripts:
 - `generate_report.py` — Per-run report generator
 - `lint_repo.py` — Repository linter (enforces boundaries and data policy)
+- `run_suite.py` — Suite runner (batches experiments with rollup generation)
+- `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
 - `run_tests.py`, `validate_tests.py` — Test utilities
-
-Future additions (e.g., suite runner) belong here.
 
 ### `tests/`
 **Test suite only.**
