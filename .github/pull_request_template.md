@@ -28,6 +28,24 @@
 - [ ] Medium (strategy/experiments)
 - [ ] High (core rules/sim/scoring)
 
+## Worktree proof (required)
+**Paste outputs; PRs missing this may be rejected.**
+
+`pwd`:
+```
+(paste output here)
+```
+
+`git rev-parse --show-toplevel`:
+```
+(paste output here)
+```
+
+`git worktree list`:
+```
+(paste output here)
+```
+
 ## Checklist
 - [ ] No generated artifacts committed (`data/runs`, `data/reports`)
 - [ ] If behavior changed, tests updated/added to lock it

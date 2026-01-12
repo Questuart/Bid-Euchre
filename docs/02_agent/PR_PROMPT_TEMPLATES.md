@@ -30,51 +30,48 @@ If you are running multiple agents in parallel:
 - Always produce scope proof even if `git fetch` is blocked.
 - If you discover required changes outside scope that touch shared files: **STOP and report**.
 
-## Parallel Mode: git worktrees (REQUIRED for multi-agent runs)
+## WORKTREE ENFORCEMENT (HARD GATE)
 
-**Rationale (why this is required):**
+**Worktrees are MANDATORY. Branch-only workflows are FORBIDDEN.**
+
+**Rationale:**
 - Multiple agents switching branches in the same working directory causes accidental commits to `main` or to the wrong branch.
 - Worktrees isolate each agent in its own directory, eliminating branch-switch races.
+- Even single-agent runs MUST use worktrees to prevent accidental commits to `main`.
 
-**Hard rule (parallel runs):** do NOT branch-switch the shared checkout. Create **one worktree per agent/PR** and do all edits/commits from inside that worktree.
+**FORBIDDEN COMMANDS:**
+- `git checkout -b <branch>`
+- `git switch -c <branch>`
+- Committing from the main repo directory
 
-## Default: Worktree Mode (Parallel-Safe)
+**PROOF REQUIRED BEFORE ANY EDITS:**
+You MUST run and paste the following outputs BEFORE making any file changes:
+- `pwd`
+- `git rev-parse --show-toplevel`
+- `git worktree list`
+- `git status`
 
-**WHY THIS IS THE DEFAULT:** Prevents multiple agents from fighting over `main` branch state in the same working directory. Even single-agent runs should use worktrees to avoid accidental commits to `main`.
+**STOP CONDITION:** If you start editing files before showing proof that you are in a worktree, you MUST stop and restart.
 
-**Hard rule:** If running >1 agent in parallel, you MUST use worktrees. Single-agent runs SHOULD also use worktrees for safety.
+## Worktree Setup (MANDATORY) — Copy/Paste Block
+
+Use this exact setup for every PR. Do NOT improvise or use branch-only workflows.
+
+```bash
+git fetch origin
+BRANCH="<fill_me>"
+WT="../wt-${BRANCH//\//-}"
+git worktree add -b "$BRANCH" "$WT" origin/main
+cd "$WT"
+
+# PROOF (paste outputs)
+pwd
+git rev-parse --show-toplevel
+git worktree list
+git status
+```
 
 **Note:** `gh` still requires HTTPS/TLS even if `git` uses SSH for transport.
-
-## Worktree Mode (DEFAULT) — Copy/Paste Block
-
-```bash
-# Set unique worktree identifiers
-WT_NAME="pr<NN>-<slug>"  # e.g., pr42-fix-bug
-WT_DIR="../wt-$WT_NAME"  # relative to repo root
-
-# From repo root: create worktree and switch to it
-git fetch origin
-git worktree add "$WT_DIR" origin/main
-cd "$WT_DIR"
-
-# Create feature branch inside worktree
-git checkout -b "$WT_NAME"
-
-# From this point: ALL commands run inside the worktree directory
-# Edit files, run tests, commit, push, create PR...
-```
-
-## Single working tree (single-agent only / not parallel-safe)
-
-**WARNING:** This mode is NOT safe for parallel runs. Only use for single-agent execution.
-
-```bash
-# Classic mode - NOT for parallel execution
-git checkout main
-git checkout -b <branch-name>
-# Edit, commit, etc...
-```
 
 ## Local execution note (Cursor)
 
@@ -116,11 +113,11 @@ PARALLEL-SAFE RULES
 
 GIT HYGIENE (required)
 - Never work or commit on main.
-- Branch before edits.
-- In parallel runs: do NOT branch-switch the shared checkout; use git worktrees (one worktree per agent/PR).
+- **Worktrees required; prove with commands before any edits.**
+- Do NOT use `git checkout -b` or `git switch -c` from the main repo directory.
 - Stage explicitly (no `git add .`).
 - Single commit per PR.
-- Return workspace to clean main at the end.
+- Clean up worktree at the end (see worktree cleanup section).
 
 PERMISSIONS / GH ACCESS (critical)
 - Run GitHub + git-remote checks early (Step 0.2).
@@ -339,13 +336,13 @@ Worktree cleanup (MUST)
 
 **WARNING:** Do NOT run `git checkout main` repeatedly in parallel runs - this causes branch conflicts between agents.
 
-- Single-agent / non-parallel mode:
-  - cd out of worktree (cd - or cd ..)
-  - git worktree remove "$WT_DIR"
-  - git worktree prune
+Cleanup steps:
+- cd .. (return to parent directory)
+- git worktree remove "$WT"
+- git worktree prune
 
 PROOF REQUIRED:
-- Paste the final git status -sb output showing clean workspace.
+- Paste the final `git worktree list` and `git status -sb` outputs.
 
 ────────────────────────────────────────
 FINAL RESPONSE (MUST)
@@ -388,14 +385,14 @@ PARALLEL-SAFE RULES
 
 GIT HYGIENE (required)
 - Do not work or commit on main.
-- Create/switch to a branch before editing.
-- In parallel runs: do NOT branch-switch the shared checkout; use git worktrees (one worktree per agent/PR).
+- **Worktrees required; prove with commands before any edits.**
+- Do NOT use `git checkout -b` or `git switch -c` from the main repo directory.
 - Stage explicitly (no git add .) and only within scope.
 - Single commit per PR unless explicitly instructed otherwise.
 - Push branch and create a PR (gh preferred).
 - PR body MUST use .github/pull_request_template.md (prepend summary bullets).
 - Default to creating the PR automatically via gh.
-- Return workspace to clean main at the end.
+- Clean up worktree at the end (see worktree cleanup section).
 
 PERMISSIONS / ENV / GH ACCESS (critical)
 - You MUST run an early GitHub + git-remote capability check (Step 0.2).
@@ -666,13 +663,13 @@ WORKTREE CLEANUP (always)
 
 **WARNING:** Do NOT run `git checkout main` repeatedly in parallel runs - this causes branch conflicts between agents.
 
-- Single-agent / non-parallel mode:
-  - cd out of worktree (cd - or cd ..)
-  - git worktree remove "$WT_DIR"
-  - git worktree prune
+Cleanup steps:
+- cd .. (return to parent directory)
+- git worktree remove "$WT"
+- git worktree prune
 
 PROOF REQUIRED:
-- Paste final `git status -sb` output in your final response.
+- Paste final `git worktree list` and `git status -sb` outputs.
 
 ──────────────────────────────────────────────────────────────────────────────
 FINAL RESPONSE FORMAT (Required)
