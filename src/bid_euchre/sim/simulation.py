@@ -91,9 +91,9 @@ def play_single_hand(
 
         # Use new bidding policy interface if provided, otherwise fall back to old interface
         if bidding_policy is not None:
-            # New interface: simultaneous bidding using BiddingPolicy
-            for i in range(4):
-                player_idx = i
+            # New interface: sequential bidding (LOD order) using BiddingPolicy
+            for offset in range(1, 5):
+                player_idx = (dealer_index + offset) % 4
 
                 # Create bidding observation
                 obs = BiddingObservation(
