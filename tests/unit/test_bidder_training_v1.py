@@ -13,14 +13,21 @@ import pytest
 
 from bid_euchre.models.bidding_artifact import load_artifact, validate_artifact
 from bid_euchre.models.train_bidder import (
+    HeuristicSuitModel,
+    HighLowModel,
     StrictRaiserModel,
+    create_synthetic_observations_for_hand_based_bidders,
     create_synthetic_observations_for_strict_raiser,
     load_bidding_dataset_jsonl,
     train_and_save_model,
+    train_heuristic_suit_model,
+    train_high_low_model,
     train_strict_raiser_model,
 )
 from bid_euchre.strategy.bidding import (
     BiddingObservation,
+    HeuristicSuitBidder,
+    HighLowHeuristicBidder,
     StrictRaiserBidder,
 )
 
@@ -84,6 +91,149 @@ class TestStrictRaiserModel:
         validate_artifact(artifact)
 
 
+class TestHeuristicSuitModel:
+    """Test the HeuristicSuitModel class."""
+
+    def test_model_initialization(self):
+        """Test model initializes with correct rules."""
+        model = HeuristicSuitModel()
+
+        expected_rules = {
+            "suits": ["C", "D", "H", "S"],
+            "bid_thresholds": {"350": 6, "300": 5, "250": 4, "200": 3}
+        }
+        assert model.rules == expected_rules
+
+    def test_predict_bid_weak_hand(self):
+        """Test prediction for a weak hand."""
+        from bid_euchre.core.cards import Card
+        model = HeuristicSuitModel()
+
+        # Weak hand that should pass
+        weak_hand = [Card("S", "7"), Card("H", "8"), Card("D", "9"), Card("C", "T"), Card("C", "6")]
+        prediction = model.predict_bid(weak_hand, 0)
+        assert prediction is None  # Should pass
+
+    def test_predict_bid_strong_hand(self):
+        """Test prediction for a strong hand."""
+        from bid_euchre.core.cards import Card
+        model = HeuristicSuitModel()
+
+        # Strong hand in hearts
+        strong_hand = [Card("H", "A"), Card("H", "K"), Card("H", "Q"), Card("S", "A"), Card("C", "A")]
+        prediction = model.predict_bid(strong_hand, 0)
+        assert prediction is not None
+        assert prediction["contract"] == "H"  # Should pick hearts
+        assert prediction["n"] >= 3  # Should bid something
+
+    def test_predict_bid_respects_current_high(self):
+        """Test that model respects current high bid."""
+        from bid_euchre.core.cards import Card
+        model = HeuristicSuitModel()
+
+        # Strong hand
+        strong_hand = [Card("H", "A"), Card("H", "K"), Card("H", "Q"), Card("S", "A"), Card("C", "A")]
+        prediction = model.predict_bid(strong_hand, 6)  # Current high is 6
+        assert prediction is None  # Should pass since 6 > any bid amount
+
+    def test_to_artifact_dict(self):
+        """Test artifact dictionary creation."""
+        model = HeuristicSuitModel()
+
+        artifact = model.to_artifact_dict("H", seed=42)
+
+        # Check required fields
+        assert artifact["schema_version"] == "1"
+        assert artifact["model_type"] == "heuristic_suit_imitation_v1"
+        assert artifact["contract"] == "H"
+        assert artifact["model_params"] == model.rules
+        assert "metadata" in artifact
+        metadata = artifact["metadata"]
+        assert metadata["teacher_model"] == "HeuristicSuitBidder"
+        assert metadata["training_seed"] == 42
+
+        # Should validate successfully
+        validate_artifact(artifact)
+
+
+class TestHighLowModel:
+    """Test the HighLowModel class."""
+
+    def test_model_initialization(self):
+        """Test model initializes with correct rules."""
+        model = HighLowModel()
+
+        expected_rules = {
+            "contracts": ["HIGH", "LOW"],
+            "bid_thresholds": {"40": 5, "30": 4, "20": 3}
+        }
+        assert model.rules == expected_rules
+
+    def test_predict_bid_high_contract(self):
+        """Test prediction for a hand that should bid HIGH."""
+        from bid_euchre.core.cards import Card
+        model = HighLowModel()
+
+        # Hand with more high cards (A, K, Q, J, T - should pick HIGH)
+        high_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"), Card("C", "T")]
+        prediction = model.predict_bid(high_hand, 0)
+        assert prediction is not None
+        assert prediction["contract"] == "HIGH"
+        assert prediction["n"] >= 3
+
+    def test_predict_bid_low_contract(self):
+        """Test prediction for a hand that should bid LOW."""
+        from bid_euchre.core.cards import Card
+        model = HighLowModel()
+
+        # Hand with more low cards (J, T, T, T - should pick LOW)
+        low_hand = [Card("S", "J"), Card("H", "T"), Card("D", "T"), Card("C", "T"), Card("C", "Q")]
+        prediction = model.predict_bid(low_hand, 0)
+        assert prediction is not None
+        assert prediction["contract"] == "LOW"
+        assert prediction["n"] >= 3
+
+    def test_predict_bid_weak_hand_bids_low(self):
+        """Test prediction for a hand that bids LOW."""
+        from bid_euchre.core.cards import Card
+        model = HighLowModel()
+
+        # Hand with more low cards that should bid LOW
+        low_hand = [Card("S", "T"), Card("H", "T"), Card("D", "T"), Card("C", "T"), Card("C", "Q")]
+        prediction = model.predict_bid(low_hand, 0)
+        assert prediction is not None
+        assert prediction["contract"] == "LOW"
+        assert prediction["n"] >= 3
+
+    def test_to_artifact_dict_high(self):
+        """Test artifact dictionary creation for HIGH contract."""
+        model = HighLowModel()
+
+        artifact = model.to_artifact_dict("HIGH", seed=42)
+
+        # Check required fields
+        assert artifact["schema_version"] == "1"
+        assert artifact["model_type"] == "high_low_imitation_v1"
+        assert artifact["contract"] == "HIGH"
+        assert artifact["model_params"] == model.rules
+        assert "metadata" in artifact
+        metadata = artifact["metadata"]
+        assert metadata["teacher_model"] == "HighLowHeuristicBidder"
+        assert metadata["training_seed"] == 42
+
+        # Should validate successfully
+        validate_artifact(artifact)
+
+    def test_to_artifact_dict_low(self):
+        """Test artifact dictionary creation for LOW contract."""
+        model = HighLowModel()
+
+        artifact = model.to_artifact_dict("LOW", seed=42)
+
+        assert artifact["contract"] == "LOW"
+        validate_artifact(artifact)
+
+
 class TestTrainingPipeline:
     """Test the training pipeline functions."""
 
@@ -132,6 +282,109 @@ class TestTrainingPipeline:
             assert model_prediction == teacher_dict, (
                 f"Model prediction {model_prediction} != teacher {teacher_dict} "
                 f"for current_high_bid={obs.current_high_bid}"
+            )
+
+    def test_create_synthetic_observations_for_hand_based_bidders(self):
+        """Test creation of synthetic observations for hand-based bidders."""
+        observations = create_synthetic_observations_for_hand_based_bidders()
+
+        # Should have observations for multiple hands and bid levels
+        assert len(observations) > 0
+
+        # Check that all observations have the expected structure
+        for obs in observations:
+            assert isinstance(obs, BiddingObservation)
+            assert isinstance(obs.hand, list)
+            assert len(obs.hand) == 5  # Standard euchre hand size
+            assert 0 <= obs.seat <= 3
+            assert 0 <= obs.dealer_seat <= 3
+            assert 0 <= obs.current_high_bid <= 10
+
+    def test_train_heuristic_suit_model(self):
+        """Test training the HeuristicSuitModel."""
+        model = train_heuristic_suit_model("H")
+
+        assert isinstance(model, HeuristicSuitModel)
+
+        # Verify model matches HeuristicSuitBidder behavior
+        teacher = HeuristicSuitBidder()
+
+        # Test on synthetic observations
+        observations = create_synthetic_observations_for_hand_based_bidders()
+        for obs in observations:
+            teacher_action = teacher.choose_bid(obs)
+            model_prediction = model.predict_bid(obs.hand, obs.current_high_bid)
+
+            # Convert teacher action to dict format
+            if teacher_action.is_pass():
+                teacher_dict = None
+            else:
+                teacher_dict = {
+                    "n": teacher_action.n,
+                    "contract": teacher_action.contract
+                }
+
+            assert model_prediction == teacher_dict, (
+                f"HeuristicSuitModel prediction {model_prediction} != teacher {teacher_dict} "
+                f"for hand={obs.hand}, current_high_bid={obs.current_high_bid}"
+            )
+
+    def test_train_high_low_model_high(self):
+        """Test training the HighLowModel for HIGH contract."""
+        model = train_high_low_model("HIGH")
+
+        assert isinstance(model, HighLowModel)
+
+        # Verify model matches HighLowHeuristicBidder behavior
+        teacher = HighLowHeuristicBidder()
+
+        # Test on synthetic observations
+        observations = create_synthetic_observations_for_hand_based_bidders()
+        for obs in observations:
+            teacher_action = teacher.choose_bid(obs)
+            model_prediction = model.predict_bid(obs.hand, obs.current_high_bid)
+
+            # Convert teacher action to dict format
+            if teacher_action.is_pass():
+                teacher_dict = None
+            else:
+                teacher_dict = {
+                    "n": teacher_action.n,
+                    "contract": teacher_action.contract
+                }
+
+            assert model_prediction == teacher_dict, (
+                f"HighLowModel prediction {model_prediction} != teacher {teacher_dict} "
+                f"for hand={obs.hand}, current_high_bid={obs.current_high_bid}"
+            )
+
+    def test_train_high_low_model_low(self):
+        """Test training the HighLowModel for LOW contract."""
+        model = train_high_low_model("LOW")
+
+        assert isinstance(model, HighLowModel)
+
+        # Verify model matches HighLowHeuristicBidder behavior
+        teacher = HighLowHeuristicBidder()
+
+        # Test on synthetic observations
+        observations = create_synthetic_observations_for_hand_based_bidders()
+        for obs in observations:
+            teacher_action = teacher.choose_bid(obs)
+            model_prediction = model.predict_bid(obs.hand, obs.current_high_bid)
+
+            # Convert teacher action to dict format
+            if teacher_action.is_pass():
+                teacher_dict = None
+            else:
+                teacher_dict = {
+                    "n": teacher_action.n,
+                    "contract": teacher_action.contract
+                }
+
+            assert model_prediction == teacher_dict, (
+                f"HighLowModel prediction {model_prediction} != teacher {teacher_dict} "
+                f"for hand={obs.hand}, current_high_bid={obs.current_high_bid}"
             )
 
     def test_train_and_save_model(self):
@@ -197,6 +450,85 @@ class TestTrainingPipeline:
         assert artifact_s["contract"] == "S"
         assert artifact_h["contract"] == "H"
         assert artifact_s != artifact_h
+
+    def test_train_and_save_model_heuristic_suit(self):
+        """Test end-to-end training and saving for heuristic_suit bidder."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            output_path = f.name
+
+        try:
+            artifact = train_and_save_model(
+                contract="H",
+                output_path=output_path,
+                seed=42,
+                bidder_type="heuristic_suit"
+            )
+
+            # Check artifact was returned
+            assert isinstance(artifact, dict)
+            validate_artifact(artifact)
+
+            # Check model type and contract
+            assert artifact["model_type"] == "heuristic_suit_imitation_v1"
+            assert artifact["contract"] == "H"
+
+            # Check file was created and is valid
+            assert Path(output_path).exists()
+            loaded_artifact = load_artifact(output_path)
+            assert loaded_artifact == artifact
+
+        finally:
+            Path(output_path).unlink(missing_ok=True)
+
+    def test_train_and_save_model_high_low(self):
+        """Test end-to-end training and saving for high_low bidder."""
+        for contract in ["HIGH", "LOW"]:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                output_path = f.name
+
+            try:
+                artifact = train_and_save_model(
+                    contract=contract,
+                    output_path=output_path,
+                    seed=42,
+                    bidder_type="high_low"
+                )
+
+                # Check artifact was returned
+                assert isinstance(artifact, dict)
+                validate_artifact(artifact)
+
+                # Check model type and contract
+                assert artifact["model_type"] == "high_low_imitation_v1"
+                assert artifact["contract"] == contract
+
+                # Check file was created and is valid
+                assert Path(output_path).exists()
+                loaded_artifact = load_artifact(output_path)
+                assert loaded_artifact == artifact
+
+            finally:
+                Path(output_path).unlink(missing_ok=True)
+
+    def test_train_and_save_model_invalid_bidder_type(self):
+        """Test that invalid bidder_type raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown bidder_type"):
+            train_and_save_model(contract="S", bidder_type="invalid_type")
+
+    def test_determinism_different_bidder_types(self):
+        """Test that different bidder types produce different artifacts."""
+        strict_raiser = train_and_save_model(contract="S", seed=42, bidder_type="strict_raiser")
+        heuristic_suit = train_and_save_model(contract="H", seed=42, bidder_type="heuristic_suit")
+        high_low = train_and_save_model(contract="HIGH", seed=42, bidder_type="high_low")
+
+        assert strict_raiser["model_type"] == "strict_raiser_imitation_v1"
+        assert heuristic_suit["model_type"] == "heuristic_suit_imitation_v1"
+        assert high_low["model_type"] == "high_low_imitation_v1"
+
+        # All should be different
+        assert strict_raiser != heuristic_suit
+        assert strict_raiser != high_low
+        assert heuristic_suit != high_low
 
     def test_artifact_validation_integration(self):
         """Test that produced artifacts pass full validation."""

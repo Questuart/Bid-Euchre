@@ -18,7 +18,14 @@ from bid_euchre.models.train_bidder import train_and_save_model
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train deterministic bidding model for StrictRaiserBidder imitation"
+        description="Train deterministic bidding model for bidder imitation"
+    )
+    parser.add_argument(
+        "--bidder-type",
+        type=str,
+        default="strict_raiser",
+        choices=["strict_raiser", "heuristic_suit", "high_low"],
+        help="Type of bidder to imitate (default: strict_raiser)"
     )
     parser.add_argument(
         "--contract",
@@ -47,7 +54,8 @@ def main():
         artifact = train_and_save_model(
             contract=args.contract,
             output_path=args.output,
-            seed=args.seed
+            seed=args.seed,
+            bidder_type=args.bidder_type
         )
 
         print(f"✅ Successfully trained and saved model to {args.output}")
