@@ -11,10 +11,11 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from ..core.cards import Card, create_deck, deal_hands, shuffle_deck
 from ..core.rules import get_legal_indices, trick_winner
+from ..datasets.bidding import BiddingDatasetCollector
 from ..features.hand_eval import get_hand_features, score_hand
 from ..scoring import compute_points
 from ..strategy import GreedyStrategy, Strategy
-from ..strategy.bidding import BiddingObservation, BiddingPolicy
+from ..strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
 from .deals import generate_deal, generate_initial_leader
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ def play_single_hand(
     deal_seed: Optional[int] = None,
     initial_leader: Optional[int] = None,
     rng: Optional[random.Random] = None,
+    bidding_collector: Optional[BiddingDatasetCollector] = None,
 ) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int], Optional[int], Optional[int], str, Optional[str]]:
     """
     Play one full 10-trick hand.
@@ -104,6 +106,9 @@ def play_single_hand(
                 # Get bid from policy
                 bid_action = bidding_policy.choose_bid(obs)
 
+                if bidding_collector is not None:
+                    bidding_collector.record_decision(obs, bid_action, deal_id)
+
                 # If bid is pass or <= current high bid, treat as pass
                 if bid_action.is_pass() or bid_action.n <= current_high_bid:
                     continue
@@ -128,6 +133,24 @@ def play_single_hand(
                     player_index=player_idx
                 )
 
+                obs = BiddingObservation(
+                    hand=starting_hands[player_idx],
+                    seat=player_idx,
+                    dealer_seat=dealer_index,
+                    current_high_bid=current_high_bid,
+                )
+                bid_action = None
+                if bid == 0:
+                    bid_action = BidAction.pass_bid()
+                elif 1 <= bid <= 10:
+                    if ctype == "suit":
+                        contract_for_action = trump
+                    else:
+                        contract_for_action = ctype.upper() if isinstance(ctype, str) else ctype
+                    bid_action = BidAction.bid(bid, contract_for_action)
+                if bidding_collector is not None and bid_action is not None:
+                    bidding_collector.record_decision(obs, bid_action, deal_id)
+
                 # Dealer-partner pass rule: dealer passes if partner has the high bid
                 if player_idx == dealer_index and winning_bidder == partner_idx:
                     continue
@@ -145,10 +168,14 @@ def play_single_hand(
             all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
             all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
             # dealer_index is known, bidder_position is None (misdeal)
+            if bidding_collector is not None:
+                bidding_collector.set_final_contract(dummy_ctype, None)
             return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0, dealer_index, None, dummy_ctype, None
 
         contract_type = final_contract
         trump_suit = final_trump
+        if bidding_collector is not None:
+            bidding_collector.set_final_contract(contract_type, trump_suit)
         initial_leader = winning_bidder
         bidder_position = winning_bidder  # Capture bidder for logging
         bidding_data = {
@@ -266,7 +293,7 @@ def play_single_hand(
 
 def simulate_many_hands(
     n: int,
-    contract_type: str,
+    contract_type: Optional[str],
     trump_suit: Optional[str] = None,
     seed: Optional[int] = None,
     strategy: Optional[Strategy] = None,
@@ -274,6 +301,7 @@ def simulate_many_hands(
     bidding_policy: Optional[BiddingPolicy] = None,
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
+    bidding_dataset_run_id: Optional[str] = None,
 ) -> Dict:
     """
     Run Monte Carlo simulation of n hands.
@@ -347,7 +375,15 @@ def simulate_many_hands(
 
     player_samples = 0  # count of player-hand observations
 
+    collectors: List[BiddingDatasetCollector] = []
+    if bidding_dataset_run_id is not None and contract_type is None:
+        collectors = [
+            BiddingDatasetCollector(bidding_dataset_run_id, hand_id)
+            for hand_id in range(n)
+        ]
+
     for deal_id in range(n):
+        collector = collectors[deal_id] if collectors else None
         if deal_seed is not None:
             deal_hands_ = generate_deal(deal_seed, deal_id)
             t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
@@ -360,6 +396,7 @@ def simulate_many_hands(
                 deal_id=deal_id,
                 hands=deal_hands_,
                 deal_seed=deal_seed,
+                bidding_collector=collector,
             )
         else:
             t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
@@ -371,6 +408,7 @@ def simulate_many_hands(
                 logger=logger,
                 deal_id=deal_id,
                 rng=local_rng,
+                bidding_collector=collector,
             )
 
         # Log hand completion (if logger enabled)
@@ -483,6 +521,8 @@ def simulate_many_hands(
             "set_rate": set_count / hands_with_bids,
         })
 
+    bidding_collectors = [c for c in collectors if c.rows] if collectors else []
+
     return {
         "hands": n,
         "contract_type": contract_type,
@@ -507,6 +547,7 @@ def simulate_many_hands(
         "avg_score_player0": total_score_all / player_samples if player_samples > 0 else 0,
         "score_buckets_player0": score_buckets,
         "feature_buckets_player0": feature_buckets,
+        "bidding_collectors": bidding_collectors,
     }
 
 
