@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Train a deterministic bidding model to imitate StrictRaiserBidder.
+Train a deterministic bidding model to imitate a teacher bidding policy.
 
-This script trains a simple deterministic model that replicates StrictRaiserBidder
-behavior and emits a JSON artifact conforming to the bidding model schema.
+This script trains simple deterministic models that replicate teacher bidding behavior
+and emit JSON artifacts conforming to the bidding model schema.
+
+Supported teachers:
+- strict_raiser: StrictRaiserBidder (simple raising strategy)
+- heuristics: HeuristicsBidder (v1 baseline heuristic bidder)
 """
 
 import argparse
@@ -18,7 +22,14 @@ from bid_euchre.models.train_bidder import train_and_save_model
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train deterministic bidding model for StrictRaiserBidder imitation"
+        description="Train deterministic bidding model via imitation learning"
+    )
+    parser.add_argument(
+        "--teacher",
+        type=str,
+        default="strict_raiser",
+        choices=["strict_raiser", "heuristics"],
+        help="Teacher bidding policy to imitate (default: strict_raiser)"
     )
     parser.add_argument(
         "--contract",
@@ -47,10 +58,12 @@ def main():
         artifact = train_and_save_model(
             contract=args.contract,
             output_path=args.output,
-            seed=args.seed
+            seed=args.seed,
+            teacher=args.teacher
         )
 
         print(f"✅ Successfully trained and saved model to {args.output}")
+        print(f"   Teacher: {args.teacher}")
         print(f"   Model type: {artifact['model_type']}")
         print(f"   Contract: {artifact['contract']}")
         print(f"   Schema version: {artifact['schema_version']}")

@@ -288,3 +288,90 @@ class HighLowHeuristicBidder(BiddingPolicy):
             return BidAction.bid(bid_n, contract)
         else:
             return BidAction.pass_bid()
+
+
+class HeuristicsBidder(BiddingPolicy):
+    """
+    Composite heuristic bidder (v1 baseline) that evaluates all contract options.
+
+    This is the v1 baseline heuristic bidder that combines suit and HIGH/LOW evaluation:
+    - Evaluates hand strength for all suit contracts (C, D, H, S)
+    - Evaluates HIGH/LOW contracts based on hand composition
+    - Picks the contract+bid that gives the highest strength/bid ratio
+    - Complies with strict-increasing bid rule
+
+    This serves as the canonical "heuristics" teacher for imitation learning.
+    """
+
+    def __init__(self, name: str = "heuristics"):
+        super().__init__(name)
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        from ..features.hand_eval import score_hand_scalar
+
+        # Evaluate all contract options
+        candidates = []
+
+        # Evaluate suit contracts
+        for suit in ["C", "D", "H", "S"]:
+            strength = score_hand_scalar(obs.hand, "suit", suit)
+
+            # Map strength to bid amount using HeuristicSuitBidder thresholds
+            if strength >= 350:
+                bid_n = 6
+            elif strength >= 300:
+                bid_n = 5
+            elif strength >= 250:
+                bid_n = 4
+            elif strength >= 200:
+                bid_n = 3
+            else:
+                continue  # Too weak, skip this contract
+
+            # Check strict-increasing rule
+            if bid_n > obs.current_high_bid:
+                candidates.append((strength, bid_n, suit))
+
+        # Evaluate HIGH/LOW contracts
+        high_cards = sum(1 for card in obs.hand if card.rank in {"A", "K", "Q"})
+        low_cards = sum(1 for card in obs.hand if card.rank in {"J", "T"})
+
+        # HIGH contract
+        if high_cards >= low_cards:
+            strength_high = score_hand_scalar(obs.hand, "high", None)
+            if strength_high >= 40:
+                bid_n = 5
+            elif strength_high >= 30:
+                bid_n = 4
+            elif strength_high >= 20:
+                bid_n = 3
+            else:
+                bid_n = 0
+
+            if bid_n > obs.current_high_bid:
+                candidates.append((strength_high, bid_n, "HIGH"))
+
+        # LOW contract
+        if low_cards > high_cards:
+            strength_low = score_hand_scalar(obs.hand, "low", None)
+            if strength_low >= 40:
+                bid_n = 5
+            elif strength_low >= 30:
+                bid_n = 4
+            elif strength_low >= 20:
+                bid_n = 3
+            else:
+                bid_n = 0
+
+            if bid_n > obs.current_high_bid:
+                candidates.append((strength_low, bid_n, "LOW"))
+
+        # No valid candidates
+        if not candidates:
+            return BidAction.pass_bid()
+
+        # Pick best candidate (highest strength, break ties by highest bid, then alphabetically)
+        best = max(candidates, key=lambda x: (x[0], x[1], x[2]))
+        _, bid_n, contract = best
+
+        return BidAction.bid(bid_n, contract)

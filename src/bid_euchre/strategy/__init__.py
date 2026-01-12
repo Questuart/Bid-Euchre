@@ -27,6 +27,7 @@ from .bidding import (
     BiddingObservation,
     BiddingPolicy,
     FixedBidder,
+    HeuristicsBidder,
     HeuristicSuitBidder,
     HighLowHeuristicBidder,
     StrictRaiserBidder,
@@ -55,6 +56,7 @@ __all__ = [
     "AlwaysPassBidder",
     "FixedBidder",
     "HeuristicSuitBidder",
+    "HeuristicsBidder",
     "HighLowHeuristicBidder",
     "StrictRaiserBidder",
     # Baselines
