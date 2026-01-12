@@ -13,8 +13,12 @@ import yaml
 from ..strategy import (
     AlwaysHighestLegalStrategy,
     AlwaysLowestLegalStrategy,
+    AlwaysPassBidder,
+    ArtifactBidder,
     BasicStrategy,
+    BiddingPolicy,
     GreedyStrategy,
+    HeuristicsBidder,
     ImprovedGreedyStrategy,
     RandomLegalStrategy,
     Strategy,
@@ -49,6 +53,28 @@ class StrategyConfig:
 
 
 @dataclass
+class BiddingPolicyConfig:
+    """Configuration for a single bidding policy."""
+    name: str
+    class_name: str
+    params: Dict[str, Any] = field(default_factory=dict)
+
+    def create_bidding_policy(self) -> BiddingPolicy:
+        """Create a bidding policy instance from this configuration."""
+        if self.class_name == "AlwaysPassBidder":
+            return AlwaysPassBidder(name=self.name)
+        elif self.class_name == "ArtifactBidder":
+            artifact_path = self.params.get("artifact_path")
+            if not artifact_path:
+                raise ValueError("ArtifactBidder requires 'artifact_path' parameter")
+            return ArtifactBidder(artifact_path=artifact_path, name=self.name)
+        elif self.class_name == "HeuristicsBidder":
+            return HeuristicsBidder(name=self.name)
+        else:
+            raise ValueError(f"Unknown bidding policy class: {self.class_name}")
+
+
+@dataclass
 class ScenarioConfig:
     """Configuration for a simulation scenario."""
     contract_type: Optional[str]
@@ -71,9 +97,10 @@ class ScenarioConfig:
 class ExperimentConfig:
     """Configuration for a complete experiment."""
     experiment_name: str
-    strategies: List[StrategyConfig]
     scenarios: List[Dict[str, Any]]  # Will be converted to ScenarioConfig objects
     parameters: Dict[str, Any]
+    strategies: List[StrategyConfig] = field(default_factory=list)
+    bidding_policies: List[BiddingPolicyConfig] = field(default_factory=list)
     mode: str = "self_play"
     matchups: Optional[List[Dict[str, str]]] = None
 
@@ -108,6 +135,10 @@ class ExperimentConfig:
         """Get all strategy instances."""
         return [strategy_config.create_strategy() for strategy_config in self.strategies]
 
+    def get_bidding_policies(self) -> List[BiddingPolicy]:
+        """Get all bidding policy instances."""
+        return [policy_config.create_bidding_policy() for policy_config in self.bidding_policies]
+
     def get_scenario_configs(self) -> List[ScenarioConfig]:
         """Get all scenario configurations."""
         return self.scenarios
@@ -134,10 +165,16 @@ def load_config(config_path: str) -> ExperimentConfig:
     for strategy_dict in config_dict.get("strategies", []):
         strategies.append(StrategyConfig(**strategy_dict))
 
+    # Convert bidding policy configs
+    bidding_policies = []
+    for policy_dict in config_dict.get("bidding_policies", []):
+        bidding_policies.append(BiddingPolicyConfig(**policy_dict))
+
     return ExperimentConfig(
         experiment_name=config_dict["experiment_name"],
         mode=config_dict.get("mode", config_dict.get("parameters", {}).get("mode", "self_play")),
         strategies=strategies,
+        bidding_policies=bidding_policies,
         scenarios=config_dict["scenarios"],
         parameters=config_dict.get("parameters", {}),
         matchups=config_dict.get("matchups")

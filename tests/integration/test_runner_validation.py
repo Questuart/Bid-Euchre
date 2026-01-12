@@ -75,7 +75,7 @@ parameters:
     config_path = _write_config(tmp_path, config)
     result = run_experiment(str(config_path))
 
-    _assert_validation_error(result, "No strategies configured in")
+    _assert_validation_error(result, "No strategies or bidding_policies configured in")
 
 
 def test_runner_fails_with_invalid_n_per(tmp_path: Path):

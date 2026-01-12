@@ -177,14 +177,17 @@ def main():
     mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
     
-    # Get strategies and scenarios
+    # Get strategies and bidding policies
     strategy_cfgs = config.strategies
+    bidding_policy_cfgs = getattr(config, 'bidding_policies', [])
     strategies = config.get_strategies()
+    bidding_policies = config.get_bidding_policies() if hasattr(config, 'get_bidding_policies') else []
     scenarios = config.get_scenario_configs()
 
-    if not strategy_cfgs:
+    # Must have either strategies or bidding policies
+    if not strategy_cfgs and not bidding_policy_cfgs:
         raise ValueError(
-            f"No strategies configured in {args.config}. Please add at least one strategy."
+            f"No strategies or bidding_policies configured in {args.config}. Please add at least one."
         )
 
     if n_per is not None and n_per <= 0:
@@ -239,8 +242,19 @@ def main():
             _clone(team1_cfg, 3),
         ]
     
-    # Print experiment summary
-    plan_count = len(strategies)
+    # Determine what we're running
+    has_auction_scenarios = any(s.contract_type is None for s in scenarios)
+
+    if has_auction_scenarios and bidding_policies:
+        # Use bidding policies for auction scenarios
+        policies_to_run = bidding_policies
+        policy_type = "Bidding Policies"
+    else:
+        # Use strategies for non-auction scenarios
+        policies_to_run = strategies
+        policy_type = "Strategies"
+
+    plan_count = len(policies_to_run)
     if mode == "head_to_head_matrix":
         matchups = getattr(config, "matchups", None) or config.parameters.get("matchups") or []
         plan_count = len(matchups)
@@ -248,7 +262,7 @@ def main():
     print("\n" + "=" * 70)
     print(f"🚀 Experiment: {config.experiment_name}")
     print("=" * 70)
-    print(f"Strategies: {', '.join(s.name for s in strategies)}")
+    print(f"{policy_type}: {', '.join(p.name for p in policies_to_run)}")
     print(f"Scenarios: {len(scenarios)} ({', '.join((s.contract_type or 'auction') + ('-' + s.trump_suit if s.trump_suit else '') for s in scenarios[:3])}{'...' if len(scenarios) > 3 else ''})")
     print(f"Hands per scenario: {n_per:,}")
     print(f"Random seed: {seed if seed is not None else 'None (random)'}")
@@ -290,6 +304,7 @@ def main():
         },
         "mode": mode,
         "strategies": [{"name": s.name, "class_name": getattr(s, "class_name", s.__class__.__name__)} for s in strategy_cfgs],
+        "bidding_policies": [{"name": p.name, "class_name": getattr(p, "class_name", p.__class__.__name__)} for p in bidding_policy_cfgs],
         "scenarios": [
             {"contract_type": s.contract_type, "trump_suit": s.trump_suit}
             for s in scenarios
@@ -433,10 +448,21 @@ def main():
                     logger.close()
 
     else:
-        # Run all strategies × scenarios (self_play or head_to_head)
-        for strategy in strategies:
+        # Determine what to iterate over: strategies or bidding policies
+        has_auction_scenarios = any(s.contract_type is None for s in scenarios)
+
+        if has_auction_scenarios and bidding_policies:
+            # Use bidding policies for auction scenarios
+            policies_to_run = bidding_policies
+            policy_type = "bidding_policy"
+        else:
+            # Use strategies for non-auction scenarios
+            policies_to_run = strategies
+            policy_type = "strategy"
+
+        for policy in policies_to_run:
             print("-" * 70)
-            print(f"Strategy: {strategy.name}")
+            print(f"{policy_type.title()}: {policy.name}")
             print("-" * 70)
 
             # Set up logging
@@ -444,8 +470,8 @@ def main():
             if log_level_str != "none":
                 log_level = LogLevel(log_level_str)
                 logger = GameLogger(
-                    run_id=f"{run_id}_{strategy.name}",
-                    strategy_id=strategy.name,
+                    run_id=f"{run_id}_{policy.name}",
+                    strategy_id=policy.name,
                     level=log_level,
                     output_dir=logs_dir,
                 )
@@ -468,20 +494,36 @@ def main():
 
                     scenario_start = time.time()
 
-                    team0_cfg = next(sc for sc in strategy_cfgs if sc.name == strategy.name)
-                    seat_strategies = _make_seat_strategies(team0_cfg)
-                    results = simulation.simulate_many_hands(
-                        n=n_per,
-                        contract_type=scenario.contract_type,
-                        trump_suit=scenario.trump_suit,
-                        seed=None,
-                        deal_seed=scenario_seed,
-                        strategy=None,
-                        strategies=seat_strategies,
-                        bidding_policy=None,  # Use Strategy.decide_bid for backward compatibility
-                        logger=logger,
-                        bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
-                    )
+                    if policy_type == "bidding_policy":
+                        # For bidding policies, use the policy directly in auction mode
+                        results = simulation.simulate_many_hands(
+                            n=n_per,
+                            contract_type=scenario.contract_type,
+                            trump_suit=scenario.trump_suit,
+                            seed=None,
+                            deal_seed=scenario_seed,
+                            strategy=None,
+                            strategies=None,  # No strategies for auction mode
+                            bidding_policy=policy,
+                            logger=logger,
+                            bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                        )
+                    else:
+                        # For strategies, use the existing logic
+                        policy_cfg = next(sc for sc in strategy_cfgs if sc.name == policy.name)
+                        seat_strategies = _make_seat_strategies(policy_cfg)
+                        results = simulation.simulate_many_hands(
+                            n=n_per,
+                            contract_type=scenario.contract_type,
+                            trump_suit=scenario.trump_suit,
+                            seed=None,
+                            deal_seed=scenario_seed,
+                            strategy=None,
+                            strategies=seat_strategies,
+                            bidding_policy=None,
+                            logger=logger,
+                            bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                        )
                     bidding_collectors = results.pop("bidding_collectors", [])
                     all_bidding_collectors.extend(bidding_collectors)
 
@@ -490,7 +532,7 @@ def main():
 
                     out_path = os.path.join(
                         results_dir,
-                        strategy.name,
+                        policy.name,
                         scenario_filename(scenario.contract_type, scenario.trump_suit)
                     )
                     save_results(results, out_path)
@@ -508,7 +550,7 @@ def main():
                     print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
 
                     scenario_metrics.append({
-                        "strategy": strategy.name,
+                        "strategy": policy.name,
                         "scenario": label,
                         "duration_sec": round(scenario_duration, 2),
                         "hands_per_sec": round(hands_per_sec, 1),
@@ -545,6 +587,7 @@ def main():
             for s in scenarios
         ],
         "strategies": [s.name for s in strategies],
+        "bidding_policies": [p.name for p in bidding_policies],
         "leader_randomized": True,  # Always true with new deal generator
         "common_deals": seed is not None,  # Only true if seed provided
         "total_hands": total_hands,

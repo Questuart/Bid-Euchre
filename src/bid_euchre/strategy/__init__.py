@@ -23,6 +23,7 @@ from .baselines import (
 # Bidding policies
 from .bidding import (
     AlwaysPassBidder,
+    ArtifactBidder,
     BidAction,
     BiddingObservation,
     BiddingPolicy,
@@ -54,6 +55,7 @@ __all__ = [
     "BiddingObservation",
     "BiddingPolicy",
     "AlwaysPassBidder",
+    "ArtifactBidder",
     "FixedBidder",
     "HeuristicSuitBidder",
     "HeuristicsBidder",
