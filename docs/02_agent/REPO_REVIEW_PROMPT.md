@@ -1,6 +1,6 @@
 # Repo Review + Cleanup + Docs + Roadmap Prompt (ZIP-based)
 
-Last Updated: January 11, 2026 (post PR #81)
+Last Updated: January 12, 2026 (post PR #97 — bidding infrastructure foundation complete)
 
 ## ROLE
 
@@ -31,9 +31,36 @@ You MUST bias toward agent execution correctness and low-leak processes:
 
 ## GROUND TRUTH: PR HISTORY (MERGED)
 
-81 PRs total (January 5–11, 2026)
+97 PRs total (January 5–12, 2026)
 
-### Latest PRs (#76–81): Drift Pipeline Polish + Cleanup
+### Latest PRs (#88–97): Bidding Infrastructure Foundation
+
+**MAJOR MILESTONE**: 10 PRs in 3 days establishing bidding model development foundation
+
+| PR | Title | Theme |
+|----|-------|-------|
+| #97 | fix: wire bidding dataset emission flag (v1) | Bugfix |
+| #96 | feat: add heuristic baseline bidding policies (v1) | Feature |
+| #95 | test: add bidding dataset schema guard (v1) | Testing |
+| #94 | docs: add GitHub auth sandbox workflow guidance | Docs |
+| #93 | feat: emit bidding dataset (v1) | Feature |
+| #92 | test: lock auction bidding rules (v1) | Testing |
+| #91 | docs: enforce worktrees in PR templates | Docs |
+| #90 | feat: add bidding policy interface (v1) | Feature |
+| #89 | docs: define bidding contract (v1) | Docs |
+| #88 | docs: define bidding dataset contract (v1) | Docs |
+
+### PRs #82–87: Drift Polish + Documentation + Testing
+
+| PR | Title | Theme |
+|----|-------|-------|
+| #86 | test: cover suite aggregation + rollup comparator behavior | Testing |
+| #85 | docs: improve baseline_matchups readability | Docs |
+| #84 | docs: operationalize root README (gold path) | Docs |
+| #83 | test: add drift tooling regression tests | Testing |
+| #82 | docs: add repo review + cleanup + docs + roadmap prompt | Docs |
+
+### PRs #76–81: Drift Pipeline Polish + Cleanup
 
 | PR | Title | Theme |
 |----|-------|-------|
@@ -154,7 +181,7 @@ Closed (not merged): #6, #5 (conflicts; functionality in other PRs)
 
 ---
 
-## RECENTLY FIXED (January 8–11, 2026)
+## RECENTLY FIXED (January 8–12, 2026)
 
 The following issues were identified in earlier reviews and have been resolved:
 
@@ -177,22 +204,33 @@ The following issues were identified in earlier reviews and have been resolved:
 | DRIFT.md schema vs fixture mismatch | PR #78 | Schema example now matches `data/fixtures/baseline_full_expected.json` |
 | Comparator output not actionable | PR #79 | Improved formatting, shows expected/actual/delta, deterministic ordering |
 | Drift workflow issue not readable | PR #81 | GitHub issues now include run metadata table, artifact links, comparison output |
+| Repo review prompt needed | PR #82 | Added this document to guide future repo reviews |
+| Drift comparator lacked tests | PR #83 | Added regression tests for comparator behavior (skip logic, tolerance) |
+| Root README lacked gold path | PR #84 | Added clear "getting started" and "gold path" commands |
+| baseline_matchups readability | PR #85 | Improved YAML structure and comments |
+| Suite aggregation edge cases | PR #86 | Tests cover rollup generation and comparator edge cases |
+| **Bidding contract undefined** | **PR #88, #89** | **Documented bidding rules, observation contract, and dataset schema (v1)** |
+| **No bidding policy interface** | **PR #90** | **Added BidAction, BiddingObservation, BiddingPolicy abstractions** |
+| **Auction rules not locked** | **PR #92** | **Unit tests lock single round, strict raising, redeal on all pass** |
+| **No bidding dataset emission** | **PR #93, #97** | **Dataset emission flag wired, outputs to data/runs/<run_id>/datasets/bidding.jsonl** |
+| **No bidding schema guards** | **PR #95** | **Added fixture + schema validation tests for bidding dataset** |
+| **No baseline bidding policies** | **PR #96** | **Added 3 heuristic baseline bidders (FixedBidder, HeuristicSuitBidder, HighLowHeuristicBidder)** |
 
 ---
 
-## KNOWN ISSUES (still present as of January 11, 2026)
+## KNOWN ISSUES (still present as of January 12, 2026)
 
-### ALL HIGH/MEDIUM PRIORITY ISSUES RESOLVED
+### BIDDING MODEL PHASE 1 INCOMPLETE (post PR #97 / BID-PR-04)
 
-As of PR #81, all previously tracked high and medium priority issues have been resolved:
+**Status**: Foundation established (PRs #88–#97 / BID-PR-00 through BID-PR-04), but Phase 1 dataset correctness items remain:
 
-- ✅ Empty placeholder docs deleted (PR #76)
-- ✅ experiments/README.md config list accurate (PR #77)
-- ✅ DRIFT.md schema matches fixture (PR #78)
-- ✅ Comparator output actionable (PR #79)
-- ✅ Drift workflow creates readable GitHub issues (PR #81)
+| Issue | Priority | Description | Next Step |
+|-------|----------|-------------|-----------|
+| **Parquet emission not implemented** | HIGH | Docs say Parquet is primary format, but only JSONL emitted | BID-PR-05 |
+| **Attempted vs effective bids not tracked** | HIGH | Dataset doesn't distinguish attempted bid from effective action (illegal raises recorded as pass) | BID-PR-06 |
+| **Dataset identity depends on run_id timestamps** | MEDIUM | run_id timestamps embedded in rows break byte-identical determinism checks | BID-PR-07 (move to metadata) |
 
-### LOW PRIORITY (informational)
+### LEGACY ISSUES (informational only)
 
 **Issue:** Fixture only covers baseline_matchups.yaml
 - **Description:** `data/fixtures/baseline_full_expected.json` only has metrics for `baseline_matchups.yaml`; `auction_smoke.yaml` is explicitly skipped for drift comparison (by design)
@@ -272,6 +310,33 @@ Runs live under `data/runs/<run_id>/` with stable skeleton:
 - Determinism verified via `test_auction_repeatability.py`
 - **Note:** auction_smoke excluded from drift detection (smoke-only, no metrics)
 
+### Bidding Infrastructure (NEW as of PRs #88–#97)
+
+**Ground Truth (v1):**
+- **Bidding protocol**: Single round, left of dealer, simultaneous action, strictly increasing bids, redeal on all pass
+- **Contracts**: Suit (C/D/H/S), HIGH, LOW; n ∈ [0..10] where 0 = pass
+- **Observation contract (v1)**: hand + current_high_bid + seat + dealer_seat (but seat/dealer NOT used in v1 training inputs)
+- **Legality**: n > current_high_bid else effective action is PASS
+
+**Implementation:**
+- **Policy interface**: `BiddingPolicy` abstract base class with `choose_bid(obs: BiddingObservation) -> BidAction`
+- **Baseline policies**: AlwaysPassBidder, StrictRaiserBidder, FixedBidder, HeuristicSuitBidder, HighLowHeuristicBidder
+- **Dataset emission**: `--emit-bidding-dataset` flag, outputs to `data/runs/<run_id>/datasets/bidding.jsonl`
+- **Schema guards**: `data/fixtures/bidding_dataset_tiny.jsonl` + CI tests in `tests/unit/test_bidding_dataset_schema.py`
+
+**Dataset Contract (v1):**
+- **Row granularity**: 4 rows per hand (one per seat decision)
+- **Inputs**: hand_cards, hand_features (40+ features), current_high_bid
+- **Labels**: bid_n, bid_contract, bid_trump_suit
+- **Metadata**: run_id, hand_id, seat, dealer_seat, hand_feature_schema_version
+- **Determinism**: Fully deterministic when seeded
+
+**What's NOT done yet (Phase 1 remaining):**
+- Parquet emission (docs say Parquet primary, but only JSONL implemented)
+- Attempted vs effective bid tracking (illegal raises logged)
+- Stable dataset identity (run_id timestamps break byte-identical hashes)
+- Test that v1 training inputs exclude seat/dealer
+
 ---
 
 ## COMMIT HISTORY HIGHLIGHTS
@@ -291,6 +356,8 @@ Runs live under `data/runs/<run_id>/` with stable skeleton:
 | Jan 8–10, 2026 | Auction determinism fix + .DS_Store removal + Ruff coverage + docs cleanup (PRs #39–55) |
 | Jan 10–11, 2026 | baseline_full suite + drift comparator + CI drift workflow (PRs #56–75) |
 | Jan 11, 2026 | Drift pipeline polish + cleanup + actionable issue output (PRs #76–81) |
+| Jan 11, 2026 | Drift testing + docs polish (PRs #82–87) |
+| **Jan 11–12, 2026** | **Bidding infrastructure foundation: contracts, policies, dataset emission, schema guards, heuristic baselines (PRs #88–#97)** |
 
 ---
 
@@ -337,12 +404,23 @@ Runs live under `data/runs/<run_id>/` with stable skeleton:
 - Engine invariants
 - Scoring + shape guards
 - Runner validation tests
+- **NEW**: Bidding dataset schema guards + heuristic bidder tests
+
+### Bidding Infrastructure (NEW as of PRs #88–#97)
+
+- Bidding protocol documented and locked in tests (single round, strict raising)
+- Policy interface defined: BidAction, BiddingObservation, BiddingPolicy
+- 5 baseline bidders implemented (2 simple + 3 heuristic)
+- Dataset emission working (JSONL; Parquet next)
+- Schema guards in place
+- **Gap**: Phase 1 not complete (Parquet, attempted/effective, determinism polish, training input tests)
 
 ### Documentation Health
 
 - ✅ Empty docs deleted (PR #76)
 - ✅ experiments/README.md config list accurate (PR #77)
 - ✅ DRIFT.md schema matches actual fixture (PR #78)
+- ✅ Bidding contract + dataset schema documented (PRs #88, #89)
 
 ---
 
@@ -354,6 +432,11 @@ bid-euchre/
 │   ├── core/                # Cards, deck, rules, trick logic
 │   ├── sim/                 # Simulation engine (auction determinism fixed)
 │   ├── strategy/            # AI strategies (greedy, random, etc.)
+│   │   ├── bidding.py       # NEW: Bidding policy interface + 5 baseline bidders
+│   │   ├── baselines.py     # Play strategies
+│   │   └── ...
+│   ├── datasets/            # NEW: Dataset emission
+│   │   └── bidding.py       # Bidding dataset collection and emission (JSONL)
 │   ├── features/            # Hand evaluation (40+ features)
 │   ├── scoring.py           # Points calculation
 │   ├── analysis/            # Statistical analysis
@@ -381,6 +464,8 @@ bid-euchre/
 │   ├── 01_core/             # Architecture, contracts, specs
 │   │   ├── ARCHITECTURE.md  # System design, boundaries
 │   │   ├── BASELINE.md      # Baseline suite documentation
+│   │   ├── BIDDING.md       # NEW: Bidding contract (v1)
+│   │   ├── BIDDING_DATASET.md  # NEW: Bidding dataset schema (v1)
 │   │   ├── DRIFT.md         # Drift detection contract
 │   │   ├── METRICS.md       # Metrics contract v1
 │   │   ├── SCORING.md       # Points calculation
@@ -394,8 +479,12 @@ bid-euchre/
 │   └── README.md            # Docs overview
 ├── data/
 │   ├── fixtures/            # Committed test fixtures (size-capped)
-│   │   └── baseline_full_expected.json  # NEW: Drift fixture
+│   │   ├── baseline_full_expected.json  # Drift fixture
+│   │   └── bidding_dataset_tiny.jsonl   # NEW: Bidding dataset schema fixture
 │   └── runs/                # Generated outputs (gitignored)
+│       └── <run_id>/
+│           └── datasets/
+│               └── bidding.jsonl  # NEW: Emitted bidding dataset
 ├── Makefile                 # Gold path commands
 ├── pyproject.toml           # Ruff config (now lints runner/scripts)
 └── .github/
@@ -408,38 +497,59 @@ bid-euchre/
 
 ---
 
-## PRIORITIES (ranked)
+## PRIORITIES (ranked) — Updated post PR #97
 
-### 1. Agent Execution Correctness / Low Leak
+**Context**: Repo has pivoted from "drift detection polish" (complete) to **bidding model development** (foundation established, Phase 1 in progress).
 
-- Agents must use gold-path commands
-- Prevent new one-off runners/entrypoints
+### 1. Bidding Model Development (PRIMARY FOCUS)
+
+**Goal**: Build imitation learning → value model pipeline for bidding strategy optimization
+
+**Phase 0: Core Plumbing (DONE — GH PRs #91–#97)**
+- ✅ **BID-PR-00**: Worktrees enforced (GH #91)
+- ✅ **BID-PR-01**: Auction rules locked (GH #92)
+- ✅ **BID-PR-02**: GH auth sandbox guidance (GH #94)
+- ✅ **BID-PR-03**: Dataset schema guard (GH #95)
+- ✅ **BID-PR-04**: Dataset emission wired (GH #97)
+
+**Phase 1: Dataset Correctness + Determinism (must complete before training)**
+- ☐ **BID-PR-05**: Convert to Parquet (docs say Parquet primary, but only JSONL implemented)
+- ☐ **BID-PR-06**: Add attempted vs effective bid fields (illegal raises logged)
+- ☐ **BID-PR-07**: Stable dataset identity via Parquet metadata (ignore run_id timestamps)
+
+**Phase 2: Imitation Training v1 (after Phase 1)**
+- ☐ **BID-PR-08**: Define artifact schema (JSON-only, string contracts)
+- ☐ **BID-PR-09**: Training pipeline for three models (StrictRaiser, HeuristicSuit, HighLowHeuristic)
+- ☐ **BID-PR-10**: ModelBidder loads artifact, produces deterministic bids
+- ☐ **BID-PR-11**: Prediction determinism + artifact compatibility guards
+
+**Phase 3: Online Evaluation (after Phase 2)**
+- ☐ **BID-PR-12**: Config-driven bidder selection
+- ☐ **BID-PR-13**: Online evaluator (expected points, make-rate, CVaR-5%, downside variance)
+- ☐ **BID-PR-14**: bid_eval_tiny suite (fast end-to-end)
+- ☐ **BID-PR-15**: Scheduled bid_eval_full workflow (report-only first)
+
+**Phase 4: Future Expansion (long-term, deferred)**
+- ☐ **BID-PR-16**: Seat/dealer/position awareness (observation v2)
+- ☐ **BID-PR-17**: Partner bid awareness (observation v3)
+- ☐ **BID-PR-18**: Value model bidder (argmax over contracts, Q-learning)
+
+### 2. Agent Execution Correctness / Low Leak (ONGOING)
+
+- Agents must use gold-path commands ✅
+- Prevent new one-off runners/entrypoints ✅
 - Deterministic experiments by default ✅
 - Reproducibility is non-negotiable ✅
-- Strict layer boundaries and import hygiene
+- Strict layer boundaries and import hygiene ✅
 - No committed generated outputs, ever ✅
-- **Drift detection for regression protection** ✅
+- Drift detection for regression protection ✅
+- **NEW**: Bidding model training must be prediction-deterministic (byte-identical artifacts not required)
 
-### 2. Repo Cleanup
+### 3. Infrastructure Maintenance (LOW PRIORITY, stable)
 
-- Reduce ambiguity of "where code goes"
-- Delete or populate empty docs (6+ files at 0 bytes)
-- Quarantine/deprecate safely; delete later
-- Consolidate structure; remove duplicate entrypoints
-- Minimize "choose your own adventure" paths
-
-### 3. Docs Completion
-
-- Operational docs (copy/paste commands)
-- Minimal narrative; clear contracts
-- Keep docs aligned with gates
-- Delete or populate empty docs
-
-### 4. Roadmap
-
-- Small PRs; clear acceptance criteria
-- Staged improvements; low risk; agent-friendly
-- Stabilize baseline before expanding
+- Drift detection is production-ready (PRs #76–#86)
+- No new infrastructure work needed unless issues arise
+- Focus remains on bidding model development
 
 ---
 
@@ -531,79 +641,300 @@ Deliverable: 2–4 fully verified/updated docs + status assessment for others.
 
 ### D) Roadmap from Here (sequenced PRs)
 
-**Status:** PR #81 is complete. Drift detection is now production-ready: "drift happens → issue is readable/actionable" — which is the whole point.
+**Status:** PR #97 (GH #97 / BID-PR-04) is complete. Bidding infrastructure foundation established. Now completing Phase 1 (dataset correctness + determinism) before moving to training.
 
-#### Parallel Batch (run 2–3 agents at once) — Low risk, low conflict
+**Roadmap IDs:** Using **BID-PR-XX** as stable roadmap identifiers, mapped to GitHub PR numbers where known.
 
-**PR #82 — baseline_matchups readability (docs-only)**
-- Files: `experiments/configs/baseline_matchups.yaml` (maybe a tiny doc pointer)
-- Goal: Add comments/structure to baseline_matchups.yaml
-- Scope: Explicitly call out the 4 strategies and 16 matchups
-- Acceptance: YAML parses, `make check`
+---
 
-**PR #83 — comparator behavior tests**
-- Files: `tests/...` + maybe `scripts/compare_rollup.py` only if tiny refactor for testability
-- Goal: Insurance for drift — stop drift regressions
-- Scope: Test that skipped configs don't fail; test that real drift fails
-- Acceptance: New tests pass, `make check`
+#### **PHASE 0: Core Plumbing** (DONE — GH PRs #91–#97)
 
-**PR #84 — results schema guard extension**
-- Files: existing schema guard test(s)
-- Goal: Keep scope tight — only validate presence/types for keys drift depends on
-- Scope: Ensure guards cover fields drift depends on (`hands`, `avg_tricks`, etc.)
-- Acceptance: Tests pass, `make check`
+**BID-PR-00 — Docs: worktrees enforced in agent workflow** (DONE — GH #91)
+- **Files:** `.github/pull_request_template.md`, `docs/02_agent/PR_PROMPT_TEMPLATES.md`
+- **Summary:** Hard-gates worktrees + proof outputs so parallel PRs stop corrupting each other
+- **Captured answers:** Worktrees mandatory; agents must prove worktree before edits
 
-#### Critical Path (must be solid before expanding scope)
+**BID-PR-01 — Tests: lock auction bidding rules v1** (DONE — GH #92)
+- **Files:** `tests/unit/test_auction_bidding_rules.py`
+- **Summary:** Freezes: single-round auction, strict-increasing, redeal-on-all-pass, winner leads
+- **Captured answers:** Single round; all-pass redeal; strict increasing; action = (n, contract) with n=0 pass; contract set {S, H, D, C, HIGH, LOW}
 
-After #81, the critical path is:
-1. **#83 Comparator tests** (stop drift regressions)
-2. **#84 Schema guard** (stop accidental contract breakage)
-3. **#82 Readability** (prevents human error / misinterpretation)
+**BID-PR-02 — Docs: GH auth sandbox guidance** (DONE — GH #94)
+- **Files:** `docs/02_agent/PR_PROMPT_TEMPLATES.md`
+- **Summary:** Makes `gh` reliable in sandbox via GH_TOKEN + full-permissions mode
 
-Once those land, drift v1 becomes "boring" — which is exactly what you want.
+**BID-PR-03 — Tests: bidding dataset schema guard v1** (DONE — GH #95)
+- **Files:** `tests/unit/test_bidding_dataset_schema.py`, `data/fixtures/bidding_dataset_tiny.jsonl`
+- **Summary:** CI guardrail so dataset schema doesn't drift silently
 
-#### Tier 1: Hardening + Signal Quality (still low risk)
+**BID-PR-04 — Fix/Feature: wire `--emit-bidding-dataset` end-to-end** (DONE — GH #97)
+- **Files:** `experiments/run_experiment.py`, `src/bid_euchre/datasets/bidding.py`, `src/bid_euchre/sim/simulation.py`, `tests/unit/test_bidding_dataset_schema.py`
+- **Summary:** Flag now emits `<RUN_DIR>/datasets/bidding.jsonl`, gated to auction mode, deterministic modulo run_id timestamp
+- **Captured answers:** v1 emits per-seat decision rows; v1 observation = own hand + current_high_bid only (no history); no behavior change when flag off or non-auction
+- **Follow-up:** Dataset determinism "stable excluding run_id timestamp" — addressed in BID-PR-07
 
-**PR #85 — comparator ergonomics v2 (non-breaking)**
-- Improve output formatting for issues/CLI (group by config, show expected/actual/delta)
-- If already covered in #79/#81, skip
+---
 
-**PR #86 — fixture validation guard**
-- Add a tiny test that:
-  - Fixture file parses
-  - Required config keys exist
-  - Values are numeric
-  - fixture schema_version matches expected
-- This prevents "fixture got accidentally edited" errors
+#### **PHASE 1: Dataset Correctness + Parquet + Determinism Polish** (must complete before training)
 
-**PR #87 — rollup contract doc**
-- A single doc page: rollup.json schema (what's emitted vs computed), and what drift uses
+**BID-PR-05 — Feat: switch dataset to Parquet (canonical) with minimal churn**
+- **Files:** `src/bid_euchre/datasets/bidding.py`, `experiments/run_experiment.py`, `pyproject.toml` (add pyarrow dependency), docs + tests/fixtures
+- **Depends on:** BID-PR-04 (complete)
+- **Goal:** Make Parquet the canonical emitted dataset format
+- **Scope:**
+  - Add minimal dependency (pyarrow)
+  - Emit to `data/runs/<run_id>/datasets/bidding.parquet`
+  - Add `--bidding-dataset-format parquet|jsonl` flag (default: parquet)
+  - Keep JSONL as escape hatch for debugging/transition
+  - Keep emission gated to auction mode + `--emit-bidding-dataset` flag
+- **Acceptance:** Parquet emitted by default, schema matches docs, `make check` passes
+- **Priority:** HIGH (docs already say Parquet is primary, but only JSONL implemented)
+- **Captured answers:** Dataset format = **Parquet**; output under run dir; JSONL optional for debug
 
-#### Tier 2: Expand Drift Context Without Gating
+**BID-PR-06 — Feat/Test: attempted vs effective bid fields + schema bump**
+- **Files:** `src/bid_euchre/datasets/bidding.py`, `src/bid_euchre/sim/simulation.py`, `tests/unit/test_bidding_dataset_schema.py`, `data/fixtures/bidding_dataset_tiny.*`
+- **Depends on:** BID-PR-05
+- **Goal:** Add explicit columns to distinguish attempted bids from effective actions (for calibration analysis)
+- **Scope:**
+  - Add columns: `attempted_bid_n`, `attempted_bid_contract`, `attempted_bid_trump_suit`
+  - Add columns: `effective_bid_n`, `effective_bid_contract`, `effective_bid_trump_suit`
+  - Add column: `is_legal_raise` (bool)
+  - Update fixture (Parquet + JSONL if kept) and schema tests
+  - When policy proposes illegal raise (n ≤ current_high_bid), record attempted bid AND effective action (PASS)
+- **Acceptance:** Illegal proposals recorded with both attempted and effective fields, tests pass
+- **Priority:** HIGH (needed for calibration analysis and debugging bidding behavior)
+- **Captured answers:** **Record attempted bid**; legality rule: n=0 or n≤current_high_bid ⇒ effective PASS
 
-**PR #88 — secondary metrics in drift issue (report-only)**
-- Include win_rate/tie_rate/points in the issue output if they exist, but do not gate on them
-- This helps debugging without raising false alarms
+**BID-PR-07 — Feat: make dataset deterministic without "normalize run_id" hacks**
+- **Files:** `src/bid_euchre/datasets/bidding.py`, `tests/unit/test_bidding_dataset_schema.py`
+- **Depends on:** BID-PR-05 (can parallelize with BID-PR-06 but sequential safer)
+- **Goal:** Achieve byte-identical determinism across runs by removing timestamped run_id from row data
+- **Scope:**
+  - **Approach:** Move run_id to Parquet metadata instead of row-level data
+  - Add test verifying byte-identical datasets (same seed, different run_id timestamps)
+  - Document determinism guarantee in schema docs
+- **Acceptance:** sha256(dataset.parquet) matches across identical seeded runs
+- **Priority:** MEDIUM (determinism already verified modulo run_id; this enables easier diffing)
+- **Captured answers:** Training must be **prediction-deterministic**; use **Option 2** (Parquet metadata)
 
-#### Tier 3: Auction Boundary Clarity (don't do bidding yet)
+**Parallelism for Phase 1:**
+- **Sequential (recommended):** BID-PR-05 → BID-PR-06 → BID-PR-07
+  - Reason: All three touch dataset emitter; sequential avoids merge conflicts
+- **Alternative (if needed):** BID-PR-05 → (BID-PR-06 + BID-PR-07 parallel)
+  - Conflict risk: Both BID-PR-06 and BID-PR-07 modify emitter, but BID-PR-07 is metadata-only change (lower risk)
 
-**PR #89 — auction_smoke explicitly smoke-only everywhere**
-- Ensure suite/docs/workflow/comparator all treat it consistently (skip drift, still run wiring)
-- If already fully consistent after recent fixes, skip
+---
 
-#### Tier 4: Future-Facing (only after drift is stable)
+#### **PHASE 2: Imitation Training v1** (get models bidding end-to-end)
 
-**PR #90 — model evaluation report spec (v1)**
-- Define what a "decision-ready" report looks like (tables, deltas, confidence)
-- This is the bridge to retraining OLS / better strategies
+**BID-PR-08 — Feat: define model artifact v1 (JSON-only, string-based contracts)**
+- **Files:** `src/bid_euchre/models/bidding_artifact.py` (new), `docs/01_core/BIDDING_MODEL.md` (new)
+- **Depends on:** BID-PR-06 (final v1 dataset fields)
+- **Goal:** Define small, deterministic JSON artifact schema for bidding models
+- **Scope:**
+  - **Artifact format:** JSON only (no pickle/binaries)
+  - **Contract encoding:** Keep as strings ("C", "D", "H", "S", "HIGH", "LOW") — no enum needed
+  - **Fields:** schema_version, feature_schema_version, model_type (e.g., "logistic_regression"), teacher_policy_name, model_params
+  - Document artifact schema and versioning
+- **Acceptance:** Artifact schema documented, JSON-serializable, matches dataset contract
+- **Priority:** HIGH (required before training)
+- **Captured answers:** **JSON only**; contracts as **strings** (n, contract) format; no enum/int mapping needed
 
-#### Long-term considerations
+**BID-PR-09 — Feat: training pipeline v1 (imitation learning) for three teacher models**
+- **Files:** `src/bid_euchre/models/train_bidder.py` (new, library-first), minimal wrapper in `scripts/train_bidder.py` if needed
+- **Depends on:** BID-PR-08
+- **Goal:** Train **three** imitation models from different teacher policies
+- **Scope:**
+  - **Model A:** Imitates `StrictRaiserBidder` (deterministic baseline)
+  - **Model B-Suit:** Imitates `HeuristicSuitBidder` (hand-strength-based suit contracts)
+  - **Model B-HighLow:** Imitates `HighLowHeuristicBidder` (card-composition-based HIGH/LOW)
+  - All models use same dataset contract, produce JSON artifacts per BID-PR-08
+  - Prediction-deterministic training (same data/config → same predictions)
+  - Keep it simple: logistic regression or simple classifier (best choice for deterministic + serializable)
+- **Acceptance:** Three models trained, three JSON artifacts emitted, training deterministic
+- **Priority:** HIGH (core training pipeline)
+- **Captured answers:** v1 label strategy = **teacher imitation**; train **three models** separately; libraries: best choice for determinism
 
-- **baseline_overnight suite**: n_per: 10000, multiple seeds for research-grade validation
-- **Drift "secondary signals"**: Report (not gate on) win_rate, tie_rate, points
-- **Auction path future**: Add auction metrics drift checks once bidding policy exists
-- **Training reintroduction**: Only via config-driven approach
-- **Bidding strategy evaluation**: Extend baseline once play strategies stabilized
+**BID-PR-10 — Feat: ModelBidder loads artifact and produces deterministic bids**
+- **Files:** `src/bid_euchre/strategy/bidding.py` or `src/bid_euchre/strategy/model_bidder.py` (new)
+- **Depends on:** BID-PR-08
+- **Goal:** Deterministic inference wrapper that loads JSON artifacts and produces bids
+- **Scope:**
+  - Load JSON artifact
+  - Predict action deterministically (same observation → same output)
+  - Apply legality rules: if predicted n ≤ current_high_bid, effective action is PASS (but record attempted)
+  - Optionally emit attempted/effective fields for logging
+  - Integrate with experiment runner via config-driven selection
+- **Acceptance:** Inference deterministic, integrates with experiment runner, illegal bids handled correctly
+- **Priority:** HIGH (required for evaluation)
+- **Captured answers:** Inference must be **deterministic**; illegal bids treated as PASS but attempted recorded
+
+**BID-PR-11 — Tests: inference determinism + schema compatibility guards**
+- **Files:** `tests/unit/test_bidder_model_inference.py` (new), fixture artifacts (small JSON files)
+- **Depends on:** BID-PR-09 + BID-PR-10
+- **Goal:** Lock determinism and prevent "model loads but behaves differently" regressions
+- **Scope:**
+  - Given fixed fixture dataset + artifact: predictions identical across runs
+  - Feature schema version must match between artifact and dataset
+  - Contract mapping stability (strings stay strings)
+  - Test all three models (A, B-Suit, B-HighLow)
+- **Acceptance:** Tests pass, determinism verified for all three models
+- **Priority:** HIGH (prevents regressions)
+- **Captured answers:** **Prediction-deterministic** is required
+
+**Parallelism for Phase 2:**
+- **Sequential (required):** BID-PR-08 → BID-PR-09 → BID-PR-10 → BID-PR-11
+  - Reason: Each depends on previous; no parallelization possible
+
+---
+
+#### **PHASE 3: Online Evaluation as Truth + Suites + CI Signal**
+
+**BID-PR-12 — Feat: config-driven bidder selection (no new runners)**
+- **Files:** `experiments/run_experiment.py`, `experiments/configs/*.yaml`, config schema docs
+- **Depends on:** BID-PR-10 (ModelBidder inference ready)
+- **Goal:** Choose bidding policy/model via experiment config (canonical runner only)
+- **Scope:**
+  - Add config key for bidder selection (e.g., `bidding_policy: model_a` or `bidding_policy: heuristic_suit`)
+  - Support model artifact paths (e.g., `bidding_model_artifact: data/artifacts/model_a.json`)
+  - Preserve "no-policy default = non-auction random contract" **forever** (backward compat guarantee)
+  - No new runners — only canonical `experiments/run_experiment.py`
+- **Acceptance:** Config-driven selection works, backward compat maintained, model artifacts loadable
+- **Priority:** HIGH (required for evaluation)
+- **Captured answers:** **No-policy default** stays non-auction/random forever; canonical runner only
+
+**BID-PR-13 — Feat: online bidder evaluator CLI (truth metric) + per-hand risk metrics**
+- **Files:** `scripts/eval_bidder.py` (new), `src/bid_euchre/eval/bidding.py` (new, library helper)
+- **Depends on:** BID-PR-12
+- **Goal:** Run full simulations with bidder policies and report comprehensive metrics
+- **Scope:**
+  - **Primary metric:** `expected_points` (mean of bidder_team_points across all hands)
+  - **Secondary metric:** `make_rate` (fraction of contracts made by bidder's team)
+  - **Risk metrics (per-hand basis on `bidder_team_points`):**
+    - `cvar_5pct`: Conditional Value at Risk at 5th percentile (mean of worst 5% outcomes)
+    - `downside_variance`: Variance of negative per-hand points only
+  - **Debug metrics:** `team0_points`, `team1_points` (for sanity checking)
+  - Output: JSON report with all metrics, rollup structure compatible with drift detection
+  - CLI: `scripts/eval_bidder.py --config <path> --bidder <policy_name> --n_hands <N>`
+- **Acceptance:** Evaluator runs, all metrics calculated and reported, deterministic given seed
+- **Priority:** HIGH (core evaluation infrastructure)
+- **Captured answers:** **EV > make-rate > win-rate**; risk important; risk metrics basis = **per-hand bidder_team_points**; CVaR-5% + downside variance
+
+**BID-PR-14 — Code+Test: bid_eval_tiny suite (fast end-to-end)**
+- **Files:** `experiments/suites/bid_eval_tiny.yaml`, rollup wiring/tests
+- **Depends on:** BID-PR-13
+- **Goal:** One command produces a deterministic bidder evaluation rollup with new metrics
+- **Scope:**
+  - Small suite (< 1 minute, ~100 hands per bidder config)
+  - Compare 2-3 bidders (e.g., StrictRaiser vs Model A vs HeuristicSuit)
+  - Rollup emits: expected_points, make_rate, cvar_5pct, downside_variance, team0/team1 debug
+  - Reproducible results (seeded)
+  - Suite runner: `scripts/run_suite.py experiments/suites/bid_eval_tiny.yaml`
+- **Acceptance:** Suite runs, rollup JSON emitted with all metrics, deterministic
+- **Priority:** HIGH (fast validation before CI)
+- **Captured answers:** Fast validation suite for bidder comparison
+
+**BID-PR-15 — CI: scheduled bid_eval_full workflow (report-only first)**
+- **Files:** `.github/workflows/bid_eval_full.yml`
+- **Depends on:** BID-PR-14
+- **Goal:** Nightly/weekly evaluation producing trend artifacts and reports
+- **Scope:**
+  - Report-only (no PR gating yet — gating decision after stability period)
+  - Larger suite (5-10 minutes, ~1000 hands per bidder config)
+  - Compare all available bidders (heuristics + trained models)
+  - Create GitHub issue or comment with results table (expected_points, make_rate, cvar_5pct, downside_variance)
+  - Store artifacts for trend analysis
+- **Acceptance:** Workflow runs on schedule, report generated, no false positives
+- **Priority:** MEDIUM (can defer until models trained)
+- **Captured answers:** Start **report-only**; gating decision comes after stability
+
+**Parallelism for Phase 3:**
+- **Sequential (required):** BID-PR-12 → BID-PR-13 → BID-PR-14 → BID-PR-15
+  - Reason: Each depends on previous; BID-PR-15 can be developed in parallel with BID-PR-14 once BID-PR-13 is stable
+
+---
+
+#### **PHASE 4: Future Expansion** (long-term, explicitly postponed until Phase 3 stable)
+
+**BID-PR-16 — Feat: seat/dealer/position awareness (observation v2)**
+- **Files:** `src/bid_euchre/datasets/bidding.py`, observation contract docs, training pipeline
+- **Depends on:** BID-PR-15 (Phase 3 stable) + explicit decision to add positional awareness
+- **Goal:** Expand observation contract to include positional information
+- **Scope:**
+  - **v2 observation:** hand + current_high_bid + seat + dealer_seat (used in training, not just metadata)
+  - **Why deferred:** v1 explicitly excludes positional awareness to keep models simple and prevent overfitting to position-specific patterns before we understand baseline performance
+  - Update dataset schema version (v2)
+  - Retrain models with v2 observations
+  - Compare v1 vs v2 performance
+- **Acceptance:** v2 models trained, performance compared to v1, documented decision on whether to adopt
+- **Priority:** FUTURE (explicit v1 → v2 upgrade decision point)
+- **Captured answers:** **v1 explicitly no seat/dealer/position**; add later as v2
+
+**BID-PR-17 — Feat: partner bid awareness (observation v3)**
+- **Files:** `src/bid_euchre/datasets/bidding.py`, observation contract docs, training pipeline
+- **Depends on:** BID-PR-16 (v2 stable)
+- **Goal:** Add bidding history within the round (partner bid awareness)
+- **Scope:**
+  - **v3 observation:** v2 + partner's bid (n, contract) if available (still no opponent bids, no hand leakage)
+  - **Why deferred:** Single-round auction means limited partner signal; focus on hand-strength first
+  - Update dataset schema version (v3)
+  - Retrain models with v3 observations
+  - Compare v2 vs v3 performance
+- **Acceptance:** v3 models trained, performance gains documented
+- **Priority:** FUTURE (after v2 evaluation)
+- **Captured answers:** Bidding history (partner only first) added as v3
+
+**BID-PR-18 — Feat: value model (argmax over contracts) — postpone until v2+**
+- **Files:** `src/bid_euchre/datasets/bidding.py` (outcome labels), `src/bid_euchre/models/...`, `src/bid_euchre/strategy/...`
+- **Depends on:** BID-PR-15 (Phase 3 evaluation stable) + sufficient training data
+- **Goal:** Predict EV(points) for each (n, contract) action and select argmax
+- **Scope:**
+  - Extend dataset with outcome labels: `points_delta`, `made_bid`, `risk_signal` (per-hand)
+  - Train value model: Q(observation, action) → expected_points
+  - Inference: enumerate all legal (n, contract) pairs, predict value for each, select argmax
+  - Compare imitation (Phase 2) vs value model (Phase 4) performance
+- **Acceptance:** Value model trained, argmax selection works, outperforms imitation baseline
+- **Priority:** FUTURE (explicitly deferred until imitation + evaluation pipeline stable)
+- **Captured answers:** "Regress over all combos" approach; postpone until v2+
+
+**Versioning Summary:**
+- **v1 (current):** hand + current_high_bid only (no seat/dealer/position/history)
+- **v2 (future):** v1 + seat + dealer_seat (positional awareness)
+- **v3 (future):** v2 + partner bid history (limited history)
+- **v4+ (future):** Potentially full bidding history, opponent modeling, etc. (TBD)
+
+---
+
+#### **Next Immediate Steps** (recommended execution order)
+
+**Phase 1 (start now):**
+1. **BID-PR-05** (Parquet emission) — must go first
+2. **BID-PR-06** (attempted vs effective fields) — immediately after BID-PR-05
+3. **BID-PR-07** (stable dataset identity) — after BID-PR-06 (or parallel with conflict risk)
+
+**Phase 2 (after Phase 1 complete):**
+4. **BID-PR-08** (artifact spec) → **BID-PR-09** (training) → **BID-PR-10** (inference) → **BID-PR-11** (tests)
+   - Sequential only
+
+**Phase 3 (after Phase 2 complete):**
+5. **BID-PR-12** (config-driven) → **BID-PR-13** (evaluator) → **BID-PR-14** (tiny suite) → **BID-PR-15** (CI)
+   - Sequential, but BID-PR-15 can parallelize with BID-PR-14 once BID-PR-13 stable
+
+**Phase 4 (long-term):**
+6. Defer until Phase 3 demonstrates stable evaluation pipeline
+
+---
+
+## ROADMAP DECISIONS CAPTURED
+
+All roadmap design decisions have been resolved and incorporated into BID-PR-00 through BID-PR-18 above:
+
+1. **Teacher policies (BID-PR-09):** Train **three models** — Model A (StrictRaiser), Model B-Suit (HeuristicSuitBidder), Model B-HighLow (HighLowHeuristicBidder)
+2. **Contract encoding (BID-PR-08):** Use **strings** (no enum) — (n, contract) format matches current BidAction
+3. **Risk metrics (BID-PR-13):** **CVaR-5% + downside variance** on per-hand `bidder_team_points`, plus expected_points (primary) and make_rate (secondary)
+4. **Dataset determinism (BID-PR-07):** Move run_id to **Parquet metadata** (not row data)
+5. **Observation versioning:** v1 (current) excludes seat/dealer; v2 (future) adds position; v3 (future) adds partner history; v4+ (TBD)
+6. **Sequencing:** Strict phase gating (Phase 1 → Phase 2 → Phase 3 → Phase 4) with sequential execution within phases to minimize merge conflicts
 
 ---
 
@@ -629,22 +960,25 @@ Once those land, drift v1 becomes "boring" — which is exactly what you want.
 Run these to verify current state:
 
 ```bash
-# Verify empty docs were deleted (should all fail with "No such file")
-ls docs/01_core/ROADMAP.md docs/01_core/SCHEMA_VERSIONING.md docs/01_core/STYLEGUIDE.md docs/01_core/TESTING_STRATEGY.md docs/CHANGELOG.md docs/CONTRIBUTING.md
+# Verify bidding infrastructure exists
+ls docs/01_core/BIDDING.md docs/01_core/BIDDING_DATASET.md
+ls src/bid_euchre/datasets/bidding.py
+ls src/bid_euchre/strategy/bidding.py
+ls data/fixtures/bidding_dataset_tiny.jsonl
+ls tests/unit/test_bidding_dataset_schema.py
 
-# experiments/README.md config list (should show 10 configs)
-ls experiments/configs/
-# Compare to README listing
+# Verify bidding dataset emission flag
+python experiments/run_experiment.py --help | grep -A2 bidding
 
-# DRIFT.md schema vs fixture (should match)
-cat data/fixtures/baseline_full_expected.json
-# Compare to docs/01_core/DRIFT.md schema example
+# Verify baseline bidders exist (PR #96)
+grep "class.*Bidder" src/bid_euchre/strategy/bidding.py
 
-# Verify drift comparator works
-python scripts/compare_rollup.py --help
+# Verify dataset schema guard tests exist
+pytest tests/unit/test_bidding_dataset_schema.py -v
 
-# Verify CI workflow exists
+# Verify drift infrastructure still intact
 ls .github/workflows/baseline_full_drift.yml
+python scripts/compare_rollup.py --help
 
 # Run make check to validate everything
 make check
