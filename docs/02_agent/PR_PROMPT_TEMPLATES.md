@@ -155,6 +155,17 @@ To make PR creation reliable:
 
 ---
 
+## Comprehension plan (no user confirmation required)
+
+**Before editing any files, the agent must write:**
+- 2–3 sentences describing what the PR will change
+- the exact file list it expects to touch
+- how it will verify (commands/tests)
+
+Explicitly state: **do not ask the user to confirm; proceed after writing the plan.**
+
+---
+
 # REPO PR AGENT PROMPT TEMPLATE (ROBUST SHORT TEMPLATE FOR CHEAPER AGENTS — PARALLEL-SAFE)
 
 ROLE
@@ -176,6 +187,14 @@ PARALLEL-SAFE RULES
 - If you discover required changes outside scope that touch shared files: STOP and report.
 - Do not “fix” nearby lint/docs unless it is strictly required for the scoped change.
 
+## Dependency ordering / parallelism
+
+If PR B depends on PR A, the prompt must say **"A must land before B starts"**
+
+If PRs can be parallelized, the prompt must include:
+- a non-overlapping file/area split
+- explicit warning about conflict risk when touching the same emitter/runner/core file
+
 GIT HYGIENE (required)
 - Never work or commit on main.
 - **Worktrees required; prove with commands before any edits.**
@@ -183,6 +202,20 @@ GIT HYGIENE (required)
 - Stage explicitly (no `git add .`).
 - Single commit per PR.
 - Clean up worktree at the end (see worktree cleanup section).
+
+## Pre-commit hook recovery protocol
+
+Recommended: run `pre-commit run -a` before commit if available.
+
+If a commit fails because hooks modified files:
+```bash
+git status
+git add -A
+git commit -m "<same message>"
+```
+
+**Never use `--no-verify`** unless explicitly instructed.
+Mention typical auto-fixers (EOF/whitespace, YAML, ruff) briefly.
 
 PERMISSIONS / GH ACCESS (critical)
 - Run GitHub + git-remote checks early (Step 0.2).
@@ -214,6 +247,14 @@ Hard Gates / Acceptance
 - baseline/invariant tests pass unless explicitly listed
 - PR body MUST include EVERY “##” section header from .github/pull_request_template.md
 - Final response MUST include proof snippets (see below)
+
+## Expected outcomes checksum
+
+Expected files changed (explicit list)
+Expected tests changed (approx: "+2 tests", "no removals")
+Expected behavior changes (1–2 bullets)
+
+This is for self-audit; not a hard guarantee.
 
 DOC COMMAND VALIDATION (required for docs changes that add/modify commands)
 For every command you add or change, include proof for at least one of:
@@ -374,6 +415,8 @@ PROOF REQUIRED:
 ────────────────────────────────────────
 Create PR (gh preferred)
 
+Agents can run directly in the terminal (outside sandbox) now, so `gh` should usually work. Still include a fallback if `gh api` fails TLS: use `scripts/create_pr_curl.sh` (if present) or instruct to create PR via curl only if `gh` fails with TLS verification error.
+
 Branch context gate (required):
 - test "$(git branch --show-current)" != "main" && echo "On feature branch ✅" || (echo "On main ❌" && exit 1)
 
@@ -448,6 +491,14 @@ PARALLEL-SAFE RULES
 - Do not edit central/index files unless explicitly scoped (README, docs/README.md, AGENTS.md, pyproject.toml, Makefile).
 - If required change touches shared files outside scope: STOP and report.
 
+## Dependency ordering / parallelism
+
+If PR B depends on PR A, the prompt must say **"A must land before B starts"**
+
+If PRs can be parallelized, the prompt must include:
+- a non-overlapping file/area split
+- explicit warning about conflict risk when touching the same emitter/runner/core file
+
 GIT HYGIENE (required)
 - Do not work or commit on main.
 - **Worktrees required; prove with commands before any edits.**
@@ -458,6 +509,20 @@ GIT HYGIENE (required)
 - PR body MUST use .github/pull_request_template.md (prepend summary bullets).
 - Default to creating the PR automatically via gh.
 - Clean up worktree at the end (see worktree cleanup section).
+
+## Pre-commit hook recovery protocol
+
+Recommended: run `pre-commit run -a` before commit if available.
+
+If a commit fails because hooks modified files:
+```bash
+git status
+git add -A
+git commit -m "<same message>"
+```
+
+**Never use `--no-verify`** unless explicitly instructed.
+Mention typical auto-fixers (EOF/whitespace, YAML, ruff) briefly.
 
 PERMISSIONS / ENV / GH ACCESS (critical)
 - You MUST run an early GitHub + git-remote capability check (Step 0.2).
@@ -494,6 +559,14 @@ Hard Gates / Acceptance Criteria
 - Deterministic behavior preserved.
 - PR body MUST include EVERY “##” section header from .github/pull_request_template.md (no omissions).
 - Final response MUST include proof snippets (validation + clean workspace) and header validation confirmation.
+
+## Expected outcomes checksum
+
+Expected files changed (explicit list)
+Expected tests changed (approx: "+2 tests", "no removals")
+Expected behavior changes (1–2 bullets)
+
+This is for self-audit; not a hard guarantee.
 
 Inputs / Ground Truth
 - Repo is authoritative: prefer what exists in code/docs over assumptions.
@@ -696,6 +769,8 @@ PROOF REQUIRED (final response):
 
 ──────────────────────────────────────────────────────────────────────────────
 CREATE PR (gh preferred)
+
+Agents can run directly in the terminal (outside sandbox) now, so `gh` should usually work. Still include a fallback if `gh api` fails TLS: use `scripts/create_pr_curl.sh` (if present) or instruct to create PR via curl only if `gh` fails with TLS verification error.
 
 Branch context gate (required):
 - test "$(git branch --show-current)" != "main" && echo "On feature branch ✅" || (echo "On main ❌" && exit 1)
