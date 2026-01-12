@@ -2,7 +2,7 @@
 Unit tests for auction bidding rules correctness (v1).
 
 These tests lock the v1 auction bidding behavior:
-- One round, starting left of dealer (simultaneous bidding)
+- One round, starting left of dealer (sequential bidding in LOD order)
 - Strict-increasing bids (<= current high => pass/ignored)
 - Winner is highest accepted bid (unique)
 - All pass => redeal
@@ -112,21 +112,21 @@ class TestAuctionBiddingRules:
         assert final_contract == "low", f"Expected contract 'low', got {final_contract}"
         assert final_trump is None, f"Expected trump None for LOW contract, got {final_trump}"
 
-    def test_simultaneous_bidding_one_round(self):
-        """All players bid simultaneously in one round, not sequentially."""
+    def test_sequential_bidding_lod_order(self):
+        """Bidding proceeds sequentially in LOD order: left of dealer first, then clockwise, dealer last."""
 
-        class CallTracker(BiddingPolicy):
-            """Tracks how many times choose_bid is called."""
-            call_counts = [0, 0, 0, 0]  # Class variable to track calls per seat
+        class CallOrderTracker(BiddingPolicy):
+            """Tracks the order in which seats are called."""
+            call_order = []  # Class variable to track order of calls
 
             def choose_bid(self, obs: BiddingObservation) -> BidAction:
-                CallTracker.call_counts[obs.seat] += 1
+                CallOrderTracker.call_order.append(obs.seat)
                 return BidAction.pass_bid()  # All pass for this test
 
-        # Reset counters
-        CallTracker.call_counts = [0, 0, 0, 0]
+        # Reset order tracker
+        CallOrderTracker.call_order = []
 
-        bidding_policy = CallTracker()
+        bidding_policy = CallOrderTracker()
 
         fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
                       Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
@@ -134,16 +134,82 @@ class TestAuctionBiddingRules:
 
         hands = [fixed_hand.copy() for _ in range(4)]
 
+        # Dealer is seat 2 (initial_leader=3 means dealer is (3-1)%4 = 2)
+        # Expected LOD order: seat 3 (dealer+1), 0 (dealer+2), 1 (dealer+3), 2 (dealer)
         play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
             hands=hands,
-            initial_leader=3,  # Dealer is 3, bidding order doesn't matter for simultaneity
+            initial_leader=3,  # Dealer is seat 2
         )
 
-        # In simultaneous bidding, each seat's choose_bid should be called exactly once
-        for seat in range(4):
-            assert CallTracker.call_counts[seat] == 1, f"Seat {seat} was called {CallTracker.call_counts[seat]} times, expected 1 for simultaneous bidding"
+        # Verify sequential LOD order: [3, 0, 1, 2]
+        expected_order = [3, 0, 1, 2]
+        assert CallOrderTracker.call_order == expected_order, \
+            f"Expected LOD order {expected_order}, got {CallOrderTracker.call_order}"
+
+        # Verify each seat called exactly once
+        assert len(CallOrderTracker.call_order) == 4, \
+            f"Expected 4 calls (one round), got {len(CallOrderTracker.call_order)}"
+
+    def test_current_high_bid_progresses_sequentially(self):
+        """Verify that current_high_bid visible to each bidder reflects the sequential progression."""
+
+        class ObservationTracker(BiddingPolicy):
+            """Tracks the current_high_bid each seat observes and bids according to seat."""
+            observed_high_bids = {}  # seat -> current_high_bid at time of bidding
+
+            def choose_bid(self, obs: BiddingObservation) -> BidAction:
+                ObservationTracker.observed_high_bids[obs.seat] = obs.current_high_bid
+                # LOD (seat 3) bids 5, next (seat 0) tries 4 (will be ignored), next (seat 1) bids 6, dealer (seat 2) passes
+                if obs.seat == 3:
+                    return BidAction.bid(5, "S")  # LOD bids 5
+                elif obs.seat == 0:
+                    return BidAction.bid(4, "S")  # Attempts 4 (<= 5, will be ignored)
+                elif obs.seat == 1:
+                    return BidAction.bid(6, "H")  # Bids 6 (valid)
+                elif obs.seat == 2:
+                    return BidAction.pass_bid()  # Dealer passes
+                return BidAction.pass_bid()
+
+        # Reset tracker
+        ObservationTracker.observed_high_bids = {}
+
+        bidding_policy = ObservationTracker()
+
+        fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
+                      Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
+                      Card("S", "J"), Card("H", "T")]
+
+        hands = [fixed_hand.copy() for _ in range(4)]
+
+        # Dealer is seat 2, LOD order: [3, 0, 1, 2]
+        t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+            contract_type=None,
+            bidding_policy=bidding_policy,
+            hands=hands,
+            initial_leader=3,  # Dealer is seat 2
+        )
+
+        # Verify the winner is seat 1 (who bid 6)
+        assert bidder_pos == 1, f"Expected winner to be seat 1 (bid 6), got {bidder_pos}"
+        assert bid == 6, f"Expected winning bid to be 6, got {bid}"
+        assert final_contract == "suit", f"Expected contract 'suit', got {final_contract}"
+        assert final_trump == "H", f"Expected trump 'H', got {final_trump}"
+
+        # Verify current_high_bid progression:
+        # - Seat 3 (LOD) should see current_high_bid = 0 (no bids yet)
+        # - Seat 0 should see current_high_bid = 5 (seat 3's bid)
+        # - Seat 1 should see current_high_bid = 5 (seat 0's bid was ignored)
+        # - Seat 2 should see current_high_bid = 6 (seat 1's bid)
+        assert ObservationTracker.observed_high_bids[3] == 0, \
+            f"Seat 3 (LOD) should see current_high_bid=0, got {ObservationTracker.observed_high_bids[3]}"
+        assert ObservationTracker.observed_high_bids[0] == 5, \
+            f"Seat 0 should see current_high_bid=5 (from seat 3), got {ObservationTracker.observed_high_bids[0]}"
+        assert ObservationTracker.observed_high_bids[1] == 5, \
+            f"Seat 1 should see current_high_bid=5 (seat 0's bid ignored), got {ObservationTracker.observed_high_bids[1]}"
+        assert ObservationTracker.observed_high_bids[2] == 6, \
+            f"Seat 2 (dealer) should see current_high_bid=6 (from seat 1), got {ObservationTracker.observed_high_bids[2]}"
 
     def test_contract_types_supported(self):
         """Auction supports suit contracts (S,H,D,C) and HIGH/LOW contracts."""
