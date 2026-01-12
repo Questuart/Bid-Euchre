@@ -280,11 +280,27 @@ Run + paste outputs verbatim:
 - git branch --show-current
 - git fetch origin (or “fetch blocked”)
 
-Then:
-- Worktree creation (MANDATORY; branch-only workflows are forbidden):
-  - Do NOT branch-switch from the shared checkout.
-  - Worktree creation (from the main repo root):
-    - BRANCH="<branch-name>"
+Then determine execution mode and proceed:
+
+### Mode A — Cursor-managed worktree
+Hard rules:
+- DO NOT run `git worktree add`.
+- If you are on `main` in this worktree, create a feature branch *inside this worktree*:
+  - git switch -c <branch-name>
+
+Paste proofs:
+- pwd
+- git rev-parse --show-toplevel
+- git worktree list
+- git status -sb
+
+Base proof:
+- git merge-base --is-ancestor main HEAD && echo "based on main ✅" || echo "NOT based on main ❌"
+
+### Mode B — Manual worktree creation (ONLY if you are in the shared checkout and NOT already in an isolated worktree)
+From the shared repo root:
+```bash
+BRANCH="<branch-name>"
     - SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
     - WT_DIR="../.worktrees/${BRANCH//\//-}-$SUFFIX"
     - mkdir -p ../.worktrees
