@@ -1,0 +1,22 @@
+{
+  "contract": "H",
+  "metadata": {
+    "created_at": "2024-01-01T00:00:00Z",
+    "description": "Example bidding model artifact for hearts contract"
+  },
+  "model_params": {
+    "coefficients": [
+      0.1,
+      0.2,
+      -0.05
+    ],
+    "features": [
+      "trump_count",
+      "high_card_points",
+      "suit_length"
+    ],
+    "intercept": 0.5
+  },
+  "model_type": "linear_regression",
+  "schema_version": "1"
+}
