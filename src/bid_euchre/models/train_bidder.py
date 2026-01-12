@@ -6,11 +6,14 @@ that trains a simple model to imitate StrictRaiserBidder behavior.
 """
 
 import json
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ..strategy.bidding import BiddingObservation, StrictRaiserBidder
 from .bidding_artifact import dump_artifact, validate_artifact
+
+DETERMINISTIC_BASE_TIME = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
 
 class StrictRaiserModel:
@@ -54,7 +57,7 @@ class StrictRaiserModel:
             # Pass
             return None
 
-    def to_artifact_dict(self, contract: str) -> Dict[str, Any]:
+    def to_artifact_dict(self, contract: str, seed: int = 42) -> Dict[str, Any]:
         """
         Convert model to bidding artifact format.
 
@@ -64,15 +67,18 @@ class StrictRaiserModel:
         Returns:
             Artifact dictionary conforming to schema v1
         """
+        created_at = (DETERMINISTIC_BASE_TIME + timedelta(seconds=seed)).isoformat()
+
         return {
             "schema_version": "1",
             "model_type": "strict_raiser_imitation_v1",
             "contract": contract,
             "model_params": self.rules,
             "metadata": {
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": created_at,
                 "description": f"Deterministic imitation of StrictRaiserBidder for {contract} contract",
                 "training_data": "fixture dataset",
+                "training_seed": seed,
                 "teacher_model": "StrictRaiserBidder"
             }
         }
@@ -191,13 +197,16 @@ def train_and_save_model(
     model = train_strict_raiser_model(contract)
 
     # Create artifact
-    artifact = model.to_artifact_dict(contract)
+    artifact = model.to_artifact_dict(contract, seed)
 
     # Validate artifact
     validate_artifact(artifact)
 
     # Save if path provided
     if output_path:
-        dump_artifact(artifact, output_path)
+        artifact_path = output_path
+        if not os.path.dirname(artifact_path):
+            artifact_path = os.path.join(".", artifact_path)
+        dump_artifact(artifact, artifact_path)
 
     return artifact

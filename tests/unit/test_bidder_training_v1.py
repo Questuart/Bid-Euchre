@@ -67,7 +67,7 @@ class TestStrictRaiserModel:
         """Test artifact dictionary creation."""
         model = StrictRaiserModel()
 
-        artifact = model.to_artifact_dict("S")
+        artifact = model.to_artifact_dict("S", seed=42)
 
         # Check required fields
         assert artifact["schema_version"] == "1"
@@ -75,8 +75,10 @@ class TestStrictRaiserModel:
         assert artifact["contract"] == "S"
         assert artifact["model_params"] == model.rules
         assert "metadata" in artifact
-        assert artifact["metadata"]["teacher_model"] == "StrictRaiserBidder"
-        assert artifact["metadata"]["training_data"] == "fixture dataset"
+        metadata = artifact["metadata"]
+        assert metadata["teacher_model"] == "StrictRaiserBidder"
+        assert metadata["training_data"] == "fixture dataset"
+        assert metadata["training_seed"] == 42
 
         # Should validate successfully
         validate_artifact(artifact)
@@ -156,19 +158,36 @@ class TestTrainingPipeline:
         finally:
             Path(output_path).unlink(missing_ok=True)
 
+    def test_train_and_save_model_no_directory(self):
+        """Test saving the artifact to the current directory."""
+        artifact_name = "artifact_without_dir.json"
+        try:
+            artifact = train_and_save_model(
+                contract="S",
+                output_path=artifact_name,
+                seed=99
+            )
+
+            assert Path(artifact_name).exists()
+            loaded = load_artifact(artifact_name)
+            assert loaded == artifact
+        finally:
+            Path(artifact_name).unlink(missing_ok=True)
+
     def test_determinism_same_seed(self):
         """Test that training with same seed produces identical artifacts."""
-        artifacts = []
-
-        for _ in range(2):
-            artifact = train_and_save_model(contract="S", seed=42)
-            artifacts.append(artifact)
+        artifacts = [
+            train_and_save_model(contract="S", seed=42),
+            train_and_save_model(contract="S", seed=42),
+        ]
 
         # Should be identical
         assert artifacts[0] == artifacts[1]
 
-        # Check that timestamps are identical (deterministic)
+        # Check deterministic metadata
+        metadata = artifacts[0]["metadata"]
         assert artifacts[0]["metadata"]["created_at"] == artifacts[1]["metadata"]["created_at"]
+        assert metadata["training_seed"] == 42
 
     def test_different_contracts_produce_different_artifacts(self):
         """Test that different contracts produce different artifacts."""
