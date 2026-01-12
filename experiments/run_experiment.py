@@ -108,7 +108,13 @@ def parse_args():
     parser.add_argument(
         "--emit-bidding-dataset",
         action="store_true",
-        help="Emit bidding dataset to data/runs/<run_id>/datasets/bidding.jsonl (auction mode only)"
+        help="Emit bidding dataset to data/runs/<run_id>/datasets/ (auction mode only)"
+    )
+    parser.add_argument(
+        "--bidding-dataset-format",
+        choices=["parquet", "jsonl"],
+        default="parquet",
+        help="Format for bidding dataset emission (default: parquet)"
     )
     parser.add_argument(
         "--team1-strategy",
@@ -561,7 +567,7 @@ def main():
         json.dump(perf, f, indent=2)
     
     if args.emit_bidding_dataset and all_bidding_collectors:
-        dataset_path = emit_bidding_dataset(all_bidding_collectors, run_dir)
+        dataset_path = emit_bidding_dataset(all_bidding_collectors, run_dir, format=args.bidding_dataset_format)
         print(f"\n📊 Emitted bidding dataset: {dataset_path}")
 
     # Final summary
