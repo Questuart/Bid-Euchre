@@ -163,3 +163,128 @@ class StrictRaiserBidder(BiddingPolicy):
         else:
             # current >= 10, cannot raise further
             return BidAction.pass_bid()
+
+
+class FixedBidder(BiddingPolicy):
+    """
+    Baseline bidder that bids a fixed amount and contract.
+
+    If the fixed bid is higher than current_high_bid, bids it.
+    Otherwise, passes.
+    """
+
+    def __init__(self, n: int, contract: str, name: str = "fixed_bidder"):
+        super().__init__(name)
+        if n < 1 or n > 10:
+            raise ValueError(f"Fixed bid n must be 1-10, got {n}")
+        if contract not in {"C", "D", "H", "S", "HIGH", "LOW"}:
+            raise ValueError(f"Invalid contract: {contract}")
+        self.n = n
+        self.contract = contract
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        if self.n > obs.current_high_bid:
+            return BidAction.bid(self.n, self.contract)
+        else:
+            return BidAction.pass_bid()
+
+
+class HeuristicSuitBidder(BiddingPolicy):
+    """
+    Heuristic bidder that uses hand strength to choose suit contract.
+
+    - Evaluates hand strength for each suit (C, D, H, S)
+    - Picks the strongest suit deterministically
+    - Bids based on strength thresholds:
+      - strength >= 350: bid 6
+      - strength >= 300: bid 5
+      - strength >= 250: bid 4
+      - strength >= 200: bid 3
+      - else: pass
+    - Complies with strict-increasing rule (only bids if > current_high_bid)
+    """
+
+    def __init__(self, name: str = "heuristic_suit"):
+        super().__init__(name)
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        from ..features.hand_eval import score_hand_scalar
+
+        # Evaluate hand strength for each suit
+        suit_scores = {}
+        for suit in ["C", "D", "H", "S"]:
+            suit_scores[suit] = score_hand_scalar(obs.hand, "suit", suit)
+
+        # Pick strongest suit deterministically (ties broken alphabetically)
+        best_suit = max(suit_scores, key=lambda s: (suit_scores[s], s))
+        strength = suit_scores[best_suit]
+
+        # Determine bid amount based on strength thresholds
+        if strength >= 350:
+            bid_n = 6
+        elif strength >= 300:
+            bid_n = 5
+        elif strength >= 250:
+            bid_n = 4
+        elif strength >= 200:
+            bid_n = 3
+        else:
+            # Too weak, pass
+            return BidAction.pass_bid()
+
+        # Comply with strict-increasing rule
+        if bid_n > obs.current_high_bid:
+            return BidAction.bid(bid_n, best_suit)
+        else:
+            return BidAction.pass_bid()
+
+
+class HighLowHeuristicBidder(BiddingPolicy):
+    """
+    Heuristic bidder that chooses HIGH or LOW based on hand composition.
+
+    - Counts high cards (A, K, Q) vs low cards (J, T)
+    - If more high cards: bid HIGH
+    - If more low cards: bid LOW
+    - Ties: bid HIGH (deterministic)
+    - Bid amount based on strength:
+      - strength >= 40: bid 5
+      - strength >= 30: bid 4
+      - strength >= 20: bid 3
+      - else: pass
+    - Complies with strict-increasing rule
+    """
+
+    def __init__(self, name: str = "high_low_heuristic"):
+        super().__init__(name)
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        from ..features.hand_eval import score_hand_scalar
+
+        # Count high vs low cards
+        high_cards = sum(1 for card in obs.hand if card.rank in {"A", "K", "Q"})
+        low_cards = sum(1 for card in obs.hand if card.rank in {"J", "T"})
+
+        # Choose contract (HIGH if tied or more high cards)
+        if high_cards >= low_cards:
+            contract = "HIGH"
+            strength = score_hand_scalar(obs.hand, "high", None)
+        else:
+            contract = "LOW"
+            strength = score_hand_scalar(obs.hand, "low", None)
+
+        # Determine bid amount based on strength
+        if strength >= 40:
+            bid_n = 5
+        elif strength >= 30:
+            bid_n = 4
+        elif strength >= 20:
+            bid_n = 3
+        else:
+            return BidAction.pass_bid()
+
+        # Comply with strict-increasing rule
+        if bid_n > obs.current_high_bid:
+            return BidAction.bid(bid_n, contract)
+        else:
+            return BidAction.pass_bid()
