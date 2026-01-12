@@ -15,9 +15,9 @@ This doc is the **operational guide**. Before working in this repo, also review:
 - `RULES.md` - Game rules and logging requirements (Section 8)
 - `METRICS.md` - Evaluation metrics and reporting standards
 - `DATA_CONTRACT.md` - Logging schema and field definitions
-- `SCHEMA_VERSIONING.md` - How to version log schema changes
 - `REPRODUCIBILITY.md` - Seeding and determinism requirements
 - `ARCHITECTURE.md` - System design and module boundaries
+- `schemas/meta_json.md` - `meta.json` schema for reproducibility metadata
 
 **AI agent guidance (docs/02_agent/):**
 - `AI_BOUNDARIES.md` - What AI agents can/cannot do
@@ -138,24 +138,31 @@ PYTHONPATH=src python experiments/run_experiment.py \
 A PR is “done” only when all of these are true:
 
 1) **Tests are green**
-- At minimum: `pytest -m "not slow"`
-- If you touched rules/legality/scoring or the simulation loop: run integration too.
+   - At minimum: `pytest -m "not slow"`
+   - If you touched rules/legality/scoring or the simulation loop: run integration too.
 
-2) **Repro command is included in the PR description**
-- Provide the exact command you ran.
-- If results are compared, include `--seed` and the config path.
+2) **Reproduce command and tests run are documented**
+   - Provide the exact command you ran (include config paths and `--seed` where relevant).
+   - List every test command you executed so reviewers can rerun them.
 
-3) **No generated artifacts committed**
-- Do **not** commit `data/runs/` or `data/reports/` (ignored by design).
+3) **The PR description includes the PR URL and supporting context**
+   - Record the PR URL as reported by `gh`; do not claim a PR exists before you can cite the URL.
+   - Summarize the reproduce command + tests run in the PR description (can be the same text as above).
 
-4) **Behavior changes are intentional**
-- If you changed core rules or outcomes, you must add/adjust tests to lock behavior (see Testing Expectations).
+4) **Worktree-only workflow**
+   - All edits must happen inside a dedicated worktree; never switch branches on the shared checkout or commit from `main`.
 
-5) **METRICS.md compliance verified (if touching evaluation/reporting)**
-- If you changed evaluation, reporting, or logged fields, verify compliance with `docs/01_core/METRICS.md`
-- Check required fields (Section 2), breakouts (Section 6), uncertainty statistics (Section 7)
-- Cross-reference with `docs/03_TODO/CODEBASE_CONSISTENCY.md` for known gaps
-- Ensure your changes don't break existing metric definitions
+5) **No generated artifacts committed**
+   - Do **not** commit `data/runs/` or `data/reports/` (ignored by design).
+
+6) **Behavior changes are intentional**
+   - If you changed core rules or outcomes, you must add/adjust tests to lock behavior (see Testing Expectations).
+
+7) **METRICS.md compliance verified (if touching evaluation/reporting)**
+   - If you changed evaluation, reporting, or logged fields, verify compliance with `docs/01_core/METRICS.md`
+   - Check required fields (Section 2), breakouts (Section 6), uncertainty statistics (Section 7)
+   - Cross-reference with `docs/03_TODO/CODEBASE_CONSISTENCY.md` for known gaps
+   - Ensure your changes don't break existing metric definitions
 
 ---
 
