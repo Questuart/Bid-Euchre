@@ -181,6 +181,8 @@ STYLE
 ABSOLUTE RULES
 - Do NOT claim a PR exists until you have a PR URL (from gh).
 - Do NOT stop after “Step 0” unless a STOP CONDITION applies.
+- Task is not complete until a PR URL is produced.
+- If PR creation fails after one remediation retry, STOP and report (do not claim a PR exists without a URL).
 - FINAL RESPONSE must include validation proof + PR body header validation + clean workspace proof.
 - Paste terminal outputs **verbatim** when asked (do not summarize).
 
@@ -279,15 +281,8 @@ Run + paste outputs verbatim:
 - git fetch origin (or “fetch blocked”)
 
 Then:
-- Single-agent / non-parallel mode:
-  - You MUST be on main before branching:
-    - cd out of worktree (cd - or cd ..)
-    - git status -sb
-  - Create branch:
-    - git checkout -b <branch-name>
-
-- Parallel Mode (worktrees; REQUIRED for multi-agent runs):
-  - Do NOT branch-switch the shared checkout.
+- Worktree creation (MANDATORY; branch-only workflows are forbidden):
+  - Do NOT branch-switch from the shared checkout.
   - Worktree creation (from the main repo root):
     - BRANCH="<branch-name>"
     - SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
@@ -426,26 +421,36 @@ PROOF REQUIRED:
 ────────────────────────────────────────
 Create PR (gh preferred)
 
-Agents can run directly in the terminal (outside sandbox) now, so `gh` should usually work. Still include a fallback if `gh api` fails TLS: use `scripts/create_pr_curl.sh` (if present) or instruct to create PR via curl only if `gh` fails with TLS verification error.
+HARD GATES:
+- Task is not complete until a PR URL is produced and cited below.
+- If PR creation fails after one remediation retry, STOP and report (do not claim a PR exists without a URL).
 
 Branch context gate (required):
 - test "$(git branch --show-current)" != "main" && echo "On feature branch ✅" || (echo "On main ❌" && exit 1)
 
-Try:
-- BRANCH="$(git branch --show-current)"
-- gh pr create --base main --head "$BRANCH" --title "<PR Title>" --body-file pr_body.md
+Primary PR path (gold path):
+1) BRANCH="$(git branch --show-current)"
+   gh pr create --base main --head "$BRANCH" --title "<PR Title>" --body-file pr_body.md
+2) If `gh pr create` fails:
+   - Do ONE remediation attempt (fix auth/token/permissions; required_permissions: ["all"]).
+   - Retry `gh pr create` once.
+   - If it still fails for a non-TLS/auth reason: STOP and report.
+3) If PR was created successfully:
+   - gh pr diff --name-only (must match scope)
+   - gh pr checks --watch (or state “checks unavailable/pending”)
 
-If it fails:
-- Do ONE remediation attempt (auth login OR full permissions: required_permissions: ["all"])
-- Retry once
-- If still fails: STOP and report (manual PR mode is not allowed unless explicitly requested by the user).
+Fallback (TLS/auth edge case):
+- Primary path is `gh pr create ... --body-file pr_body.md`.
+- If TLS/auth prevents creation even after remediation and retry, run:
+  `scripts/create_pr_curl.sh "<PR Title>" pr_body.md main`
+- The script must print a PR URL. If the script is missing or does not produce the URL, STOP and report (do not invent a new script).
+- If the fallback succeeds, treat it as the PR creation step above and continue with proof/cleanup.
+- Manual PR mode is not allowed unless explicitly requested by the user.
+- Manual PR mode is not allowed unless explicitly requested by the user.
 
-If PR is created successfully:
-- gh pr diff --name-only (must match scope)
-- gh pr checks --watch (or state “checks unavailable/pending”)
-
-PR ID PROOF (required if PR created):
+PR ID PROOF (required):
 - gh pr view --json number,url,headRefName --jq '{number:.number,url:.url,branch:.headRefName}'
+- Final response must include the PR URL produced here.
 
 Cleanup always:
 - rm -f pr_body.md pr_body_raw.md
@@ -504,6 +509,8 @@ STYLE
 ABSOLUTE RULES (do not violate)
 - Do NOT claim a PR exists until you have a PR URL (from gh).
 - Do NOT stop after “Step 0 / Step 0.5” unless a STOP CONDITION applies.
+- Task is not complete until a PR URL is produced.
+- If PR creation fails after one remediation retry, STOP and report (do not claim a PR exists without a URL).
 - FINAL RESPONSE must include validation proof + PR body header validation + clean workspace proof.
 - Paste terminal outputs **verbatim** when asked (do not summarize).
 
@@ -800,32 +807,36 @@ PROOF REQUIRED (final response):
 ──────────────────────────────────────────────────────────────────────────────
 CREATE PR (gh preferred)
 
-Agents can run directly in the terminal (outside sandbox) now, so `gh` should usually work. Still include a fallback if `gh api` fails TLS: use `scripts/create_pr_curl.sh` (if present) or instruct to create PR via curl only if `gh` fails with TLS verification error.
+HARD GATES:
+- Task is not complete until a PR URL is produced and cited below.
+- If PR creation fails after one remediation retry, STOP and report (do not claim a PR exists without a URL).
 
 Branch context gate (required):
 - test "$(git branch --show-current)" != "main" && echo "On feature branch ✅" || (echo "On main ❌" && exit 1)
 
-1) Attempt PR creation via gh:
-- BRANCH="$(git branch --show-current)"
-- gh pr create --base main --head "$BRANCH" --title "<PR Title>" --body-file pr_body.md
+Primary PR path (gold path):
+1) BRANCH="$(git branch --show-current)"
+   gh pr create --base main --head "$BRANCH" --title "<PR Title>" --body-file pr_body.md
+2) If `gh pr create` fails:
+   - Do ONE remediation attempt (fix auth/token/permissions; required_permissions: ["all"]).
+   - Retry `gh pr create` once.
+   - If it still fails for a non-TLS/auth reason: STOP and report.
+3) If PR was created successfully:
+   - gh pr diff --name-only (must match scope)
+   - gh pr checks --watch (or state “checks unavailable/pending”)
 
-2) If gh fails:
-- Do ONE remediation attempt:
-  - If auth missing: fix auth / token / permissions (Cursor: required_permissions: ["all"])
-- Retry gh pr create once.
-
-3) If still failing:
-- STOP and report (manual PR mode is not allowed unless explicitly requested by the user).
-- Do NOT claim PR exists.
-
-4) If PR created successfully:
-- gh pr diff --name-only (must match scope)
-- gh pr checks --watch (or state “checks unavailable/pending”)
+Fallback (TLS/auth edge case):
+- Primary path is `gh pr create ... --body-file pr_body.md`.
+- If TLS/auth prevents creation even after remediation and retry, run:
+  `scripts/create_pr_curl.sh "<PR Title>" pr_body.md main`
+- The script must print a PR URL. If the script is missing or does not produce the URL, STOP and report (do not invent a new script).
+- If the fallback succeeds, treat it as the PR creation step above and continue with proof/cleanup.
 
 PR ID PROOF (required):
 - gh pr view --json number,url,headRefName --jq '{number:.number,url:.url,branch:.headRefName}'
+- Final response must include the PR URL produced here.
 
-5) Cleanup always:
+Cleanup always:
 - rm -f pr_body.md pr_body_raw.md
 
 ──────────────────────────────────────────────────────────────────────────────
