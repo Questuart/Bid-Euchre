@@ -1,0 +1,15 @@
+# Test configuration for artifact-backed bidding
+experiment_name: artifact_bidder_test
+
+bidding_policies:
+  - name: strict_raiser_artifact
+    class_name: ArtifactBidder
+    params:
+      artifact_path: data/fixtures/bidding_artifact_v1_tiny.json
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  n_per: 10
+  seed: 42

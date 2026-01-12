@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from ..core.cards import Card
+from ..models.bidding_artifact import load_artifact
 
 
 @dataclass(frozen=True)
@@ -359,6 +360,205 @@ class HeuristicsBidder(BiddingPolicy):
             elif strength_low >= 30:
                 bid_n = 4
             elif strength_low >= 20:
+                bid_n = 3
+            else:
+                bid_n = 0
+
+            if bid_n > obs.current_high_bid:
+                candidates.append((strength_low, bid_n, "LOW"))
+
+        # No valid candidates
+        if not candidates:
+            return BidAction.pass_bid()
+
+        # Pick best candidate (highest strength, break ties by highest bid, then alphabetically)
+        best = max(candidates, key=lambda x: (x[0], x[1], x[2]))
+        _, bid_n, contract = best
+
+        return BidAction.bid(bid_n, contract)
+
+
+class ArtifactBidder(BiddingPolicy):
+    """
+    Bidding policy that loads and executes a trained model from a bidding artifact file.
+
+    Supports multiple model types:
+    - 'linear_regression': Linear model with hand features
+    - 'strict_raiser_imitation_v1': Rule-based model replicating StrictRaiserBidder
+    - 'heuristics_imitation_v1': Rule-based model replicating HeuristicsBidder
+
+    The artifact is loaded and validated at initialization time.
+    """
+
+    def __init__(self, artifact_path: str, name: str = None):
+        """
+        Initialize bidder from artifact file.
+
+        Args:
+            artifact_path: Path to JSON bidding artifact file
+            name: Optional name for this bidder (defaults to artifact contract)
+
+        Raises:
+            FileNotFoundError: If artifact file doesn't exist
+            ValueError: If artifact is invalid or unsupported
+        """
+        # Load and validate artifact
+        try:
+            self.artifact = load_artifact(artifact_path)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Bidding artifact not found: {artifact_path}")
+        except ValueError as e:
+            raise ValueError(f"Invalid bidding artifact at {artifact_path}: {e}")
+
+        # Set name
+        if name is None:
+            name = f"artifact_{self.artifact['contract']}"
+
+        super().__init__(name)
+
+        # Initialize model-specific state
+        self.model_type = self.artifact["model_type"]
+        if self.model_type == "linear_regression":
+            self._init_linear_regression()
+        elif self.model_type == "strict_raiser_imitation_v1":
+            self._init_strict_raiser_imitation()
+        elif self.model_type == "heuristics_imitation_v1":
+            self._init_heuristics_imitation()
+        else:
+            raise ValueError(f"Unsupported model_type '{self.model_type}' in artifact {artifact_path}")
+
+    def _init_linear_regression(self):
+        """Initialize linear regression model parameters."""
+        params = self.artifact["model_params"]
+        required_keys = {"coefficients", "intercept"}
+        if not required_keys.issubset(params.keys()):
+            raise ValueError(f"Linear regression model missing required parameters: {required_keys - set(params.keys())}")
+
+        self.coefficients = params["coefficients"]
+        self.intercept = params["intercept"]
+
+        # Optional: feature names for validation/debugging
+        self.feature_names = params.get("features", [])
+
+        # Validate coefficients is a list/array-like
+        if not isinstance(self.coefficients, list):
+            raise ValueError("Linear regression coefficients must be a list")
+
+    def _init_strict_raiser_imitation(self):
+        """Initialize strict raiser imitation model parameters."""
+        params = self.artifact["model_params"]
+        required_keys = {"initial_bid", "raise_increment", "max_bid", "contract"}
+        if not required_keys.issubset(params.keys()):
+            raise ValueError(f"Strict raiser imitation model missing required parameters: {required_keys - set(params.keys())}")
+
+        self.rules = params
+
+    def _init_heuristics_imitation(self):
+        """Initialize heuristics imitation model parameters."""
+        params = self.artifact["model_params"]
+        required_keys = {"suit_thresholds", "high_low_thresholds", "high_card_ranks", "low_card_ranks"}
+        if not required_keys.issubset(params.keys()):
+            raise ValueError(f"Heuristics imitation model missing required parameters: {required_keys - set(params.keys())}")
+
+        self.rules = params
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        """
+        Choose a bid action using the loaded model.
+
+        Args:
+            obs: Current bidding observation
+
+        Returns:
+            BidAction to take
+        """
+        if self.model_type == "linear_regression":
+            return self._choose_bid_linear(obs)
+        elif self.model_type == "strict_raiser_imitation_v1":
+            return self._choose_bid_strict_raiser(obs)
+        elif self.model_type == "heuristics_imitation_v1":
+            return self._choose_bid_heuristics(obs)
+        else:
+            # Should never happen due to validation in __init__
+            raise ValueError(f"Unsupported model type: {self.model_type}")
+
+    def _choose_bid_linear(self, obs: BiddingObservation) -> BidAction:
+        """
+        Choose bid using linear regression model.
+
+        For now, this is a placeholder implementation that always passes.
+        Real implementation would extract features from the hand and compute
+        predicted bid value, then map to discrete bid actions.
+        """
+        # TODO: Implement feature extraction and prediction
+        # For now, always pass as this is a placeholder
+        return BidAction.pass_bid()
+
+    def _choose_bid_strict_raiser(self, obs: BiddingObservation) -> BidAction:
+        """Choose bid using strict raiser imitation model."""
+        current = obs.current_high_bid
+
+        if current == 0:
+            return BidAction.bid(self.rules["initial_bid"]["n"], self.rules["initial_bid"]["contract"])
+        elif current < self.rules["max_bid"]:
+            return BidAction.bid(current + self.rules["raise_increment"], self.rules["contract"])
+        else:
+            # current >= max_bid, cannot raise further
+            return BidAction.pass_bid()
+
+    def _choose_bid_heuristics(self, obs: BiddingObservation) -> BidAction:
+        """Choose bid using heuristics imitation model."""
+        from ..features.hand_eval import score_hand_scalar
+
+        # Evaluate all contract options
+        candidates = []
+
+        # Evaluate suit contracts
+        for suit in ["C", "D", "H", "S"]:
+            strength = score_hand_scalar(obs.hand, "suit", suit)
+
+            # Map strength to bid amount
+            if strength >= self.rules["suit_thresholds"]["bid_6"]:
+                bid_n = 6
+            elif strength >= self.rules["suit_thresholds"]["bid_5"]:
+                bid_n = 5
+            elif strength >= self.rules["suit_thresholds"]["bid_4"]:
+                bid_n = 4
+            elif strength >= self.rules["suit_thresholds"]["bid_3"]:
+                bid_n = 3
+            else:
+                continue  # Too weak
+
+            if bid_n > obs.current_high_bid:
+                candidates.append((strength, bid_n, suit))
+
+        # Evaluate HIGH/LOW contracts
+        high_cards = sum(1 for card in obs.hand if card.rank in self.rules["high_card_ranks"])
+        low_cards = sum(1 for card in obs.hand if card.rank in self.rules["low_card_ranks"])
+
+        # HIGH contract
+        if high_cards >= low_cards:
+            strength_high = score_hand_scalar(obs.hand, "high", None)
+            if strength_high >= self.rules["high_low_thresholds"]["bid_5"]:
+                bid_n = 5
+            elif strength_high >= self.rules["high_low_thresholds"]["bid_4"]:
+                bid_n = 4
+            elif strength_high >= self.rules["high_low_thresholds"]["bid_3"]:
+                bid_n = 3
+            else:
+                bid_n = 0
+
+            if bid_n > obs.current_high_bid:
+                candidates.append((strength_high, bid_n, "HIGH"))
+
+        # LOW contract
+        if low_cards > high_cards:
+            strength_low = score_hand_scalar(obs.hand, "low", None)
+            if strength_low >= self.rules["high_low_thresholds"]["bid_5"]:
+                bid_n = 5
+            elif strength_low >= self.rules["high_low_thresholds"]["bid_4"]:
+                bid_n = 4
+            elif strength_low >= self.rules["high_low_thresholds"]["bid_3"]:
                 bid_n = 3
             else:
                 bid_n = 0
