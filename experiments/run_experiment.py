@@ -39,13 +39,14 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import yaml
 
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+from bid_euchre.datasets.bidding import emit_bidding_dataset
 from bid_euchre.experiments import load_config
 from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
@@ -302,6 +303,7 @@ def main():
     # Track performance metrics
     start_time = time.time()
     scenario_metrics = []
+    all_bidding_collectors: List[Any] = []
     
     # Run all strategies × scenarios
     # Run experiments
@@ -385,7 +387,10 @@ def main():
                         strategies=seat_strategies,
                         bidding_policy=None,  # Use Strategy.decide_bid for backward compatibility
                         logger=logger,
+                        bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
                     )
+                    bidding_collectors = results.pop("bidding_collectors", [])
+                    all_bidding_collectors.extend(bidding_collectors)
 
                     scenario_duration = time.time() - scenario_start
                     hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
@@ -469,7 +474,10 @@ def main():
                         strategies=seat_strategies,
                         bidding_policy=None,  # Use Strategy.decide_bid for backward compatibility
                         logger=logger,
+                        bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
                     )
+                    bidding_collectors = results.pop("bidding_collectors", [])
+                    all_bidding_collectors.extend(bidding_collectors)
 
                     scenario_duration = time.time() - scenario_start
                     hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
@@ -552,6 +560,10 @@ def main():
     with open(os.path.join(run_dir, "perf.json"), "w") as f:
         json.dump(perf, f, indent=2)
     
+    if args.emit_bidding_dataset and all_bidding_collectors:
+        dataset_path = emit_bidding_dataset(all_bidding_collectors, run_dir)
+        print(f"\n📊 Emitted bidding dataset: {dataset_path}")
+
     # Final summary
     print("\n" + "=" * 70)
     print("✅ Experiment completed!")

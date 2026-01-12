@@ -183,3 +183,43 @@ class TestBiddingDatasetSchema:
                 # Different hands, should be sorted by hand_id
                 assert prev_hand <= curr_hand, \
                     f"Rows not sorted by hand_id: {prev_hand} > {curr_hand}"
+
+    def test_emit_bidding_dataset_flag_integration(self):
+        """Smoke test that --emit-bidding-dataset writes a dataset file under the run directory."""
+        import os
+        import subprocess
+        import sys
+        import tempfile
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "src"
+
+        with tempfile.TemporaryDirectory() as temp_base:
+            cmd = [
+                sys.executable,
+                "-m",
+                "experiments.run_experiment",
+                "--config",
+                "experiments/configs/auction_smoke.yaml",
+                "--run-dir",
+                temp_base,
+                "--seed",
+                "42",
+                "--emit-bidding-dataset",
+            ]
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=os.getcwd(), env=env)
+            assert result.returncode == 0, f"Runner failed: {result.stderr}"
+
+            run_dirs = sorted(Path(temp_base).glob("auction_smoke_*"))
+            assert run_dirs, f"No run directories found in {temp_base}"
+            run_dir = run_dirs[-1]
+            dataset_file = run_dir / "datasets" / "bidding.jsonl"
+            assert dataset_file.exists(), f"Dataset file missing: {dataset_file}"
+
+            with open(dataset_file, "r") as f:
+                lines = [line.strip() for line in f if line.strip()]
+
+            assert lines, f"Dataset file is empty: {dataset_file}"
+            first_row = json.loads(lines[0])
+            required_keys = {"run_id", "hand_id", "seat", "bid_n", "bid_contract"}
+            assert required_keys.issubset(first_row.keys()), f"Missing keys in dataset row: {first_row.keys()}"

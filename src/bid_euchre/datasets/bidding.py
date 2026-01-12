@@ -9,6 +9,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
 from ..strategy.bidding import BidAction, BiddingObservation
 
@@ -34,6 +35,10 @@ class BiddingDatasetCollector:
         self.run_id = run_id
         self.hand_id = hand_id
         self.rows: List[Dict[str, Any]] = []
+        self._hand_snapshot: Optional[List[Card]] = None
+        self._final_contract_type: Optional[str] = None
+        self._final_trump_suit: Optional[str] = None
+        self._computed_hand_features: Optional[Dict[str, Any]] = None
 
     def record_decision(
         self,
@@ -49,15 +54,11 @@ class BiddingDatasetCollector:
             action: Bid action taken
             deal_id: Optional deal identifier for reproducibility
         """
-        # Get hand features using existing feature computation
-        # For auction mode, we need to determine contract type for features
-        # Since this is auction mode, we'll use a dummy contract for feature computation
-        # The features will be computed assuming a "suit" contract with no specific trump
-        # This gives us the full feature set for training
-        hand_features = get_hand_features(obs.hand, "suit", None)
-
         # Serialize hand cards consistently
         hand_cards = [f"{card.rank}{card.suit}" for card in obs.hand]
+
+        if action.n < 0 or action.n > 10:
+            return
 
         # Convert bid action to dataset format
         if action.is_pass():
@@ -79,7 +80,7 @@ class BiddingDatasetCollector:
             "current_high_bid": obs.current_high_bid,
             # Inputs
             "hand_cards": hand_cards,
-            "hand_features": hand_features,
+            "hand_features": None,
             "hand_feature_schema_version": 1,
             # Labels
             "bid_n": bid_n,
@@ -87,6 +88,32 @@ class BiddingDatasetCollector:
         }
 
         self.rows.append(row)
+        if self._hand_snapshot is None:
+            self._hand_snapshot = list(obs.hand)
+
+    def set_final_contract(self, contract_type: Optional[str], trump_suit: Optional[str]) -> None:
+        """Record the final contract for this hand (used when computing features)."""
+        self._final_contract_type = contract_type
+        self._final_trump_suit = trump_suit
+        self._computed_hand_features = None
+
+    def _ensure_hand_features(self) -> None:
+        """Compute hand features once the final contract is known."""
+        if self._computed_hand_features is not None:
+            return
+
+        if self._hand_snapshot is None or self._final_contract_type is None:
+            features: Dict[str, Any] = {}
+        else:
+            features = get_hand_features(
+                self._hand_snapshot,
+                self._final_contract_type,
+                self._final_trump_suit,
+            )
+
+        self._computed_hand_features = features
+        for row in self.rows:
+            row["hand_features"] = features
 
     def get_rows_sorted(self) -> List[Dict[str, Any]]:
         """
@@ -94,6 +121,7 @@ class BiddingDatasetCollector:
 
         Returns rows sorted by (hand_id, seat) for stable ordering.
         """
+        self._ensure_hand_features()
         return sorted(self.rows, key=lambda r: (r["hand_id"], r["seat"]))
 
     def write_jsonl(self, output_path: str) -> None:
