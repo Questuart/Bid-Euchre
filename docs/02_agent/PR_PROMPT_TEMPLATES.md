@@ -625,14 +625,7 @@ Run and PASTE outputs verbatim:
 - git fetch origin (if blocked, say “fetch blocked” and continue)
 
 Then:
-- Single-agent / non-parallel mode:
-  - You MUST be on main before branching:
-    - cd out of worktree (cd - or cd ..)
-    - git status -sb
-  - Create/switch to branch:
-    - git checkout -b <branch-name>
-
-- Parallel Mode (worktrees; REQUIRED for multi-agent runs):
+- Worktree creation (MANDATORY for all runs, including single-agent):
   - Do NOT branch-switch the shared checkout.
   - Worktree creation (from the main repo root):
     - BRANCH="<branch-name>"
