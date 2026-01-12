@@ -105,6 +105,11 @@ def parse_args():
         help="Override: evaluation mode. self_play = same strategy all seats; head_to_head = team0 strategy vs fixed team1 strategy."
     )
     parser.add_argument(
+        "--emit-bidding-dataset",
+        action="store_true",
+        help="Emit bidding dataset to data/runs/<run_id>/datasets/bidding.jsonl (auction mode only)"
+    )
+    parser.add_argument(
         "--team1-strategy",
         type=str,
         help="For head_to_head: name of strategy to use for Team 1 (players 1 & 3). Must be one of the strategies in the config."
