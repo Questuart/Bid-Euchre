@@ -8,6 +8,67 @@ These templates are designed for **cheap agents** operating in a repo with stric
 
 **WHY THIS IS CRITICAL**: macOS TLS/keychain sandbox issues (e.g., `OSStatus -26276`, certificate verification failures) prevent reliable GitHub API access via `gh` in restricted sandbox modes. Full permissions mode ensures TLS certificate validation works reliably for all `gh` commands.
 
+---
+
+## 🔐 GitHub Authentication in Cursor's Sandbox
+
+Cursor runs commands in a sandboxed environment that **cannot access the macOS keychain**. This means:
+- `gh auth status` may work in your regular terminal but fail inside Cursor
+- The `gh` CLI's default keychain-based auth is blocked by the sandbox
+
+### Symptoms of this issue
+
+```
+github.com
+  X Failed to log in to github.com using token (GH_TOKEN)
+  - The token in GH_TOKEN is invalid.
+```
+
+...even though `gh auth status` works in your regular terminal.
+
+### Solution: Set GH_TOKEN explicitly
+
+The sandbox CAN read environment variables. Set `GH_TOKEN` in your shell profile:
+
+1. **Generate a personal access token** at https://github.com/settings/tokens/new
+   - Required scopes: `repo`, `workflow`
+   - Recommended: 90-day expiration
+
+2. **Add to `~/.zshrc`** (or `~/.bashrc`):
+   ```bash
+   export GH_TOKEN="ghp_your_token_here"
+   export GITHUB_TOKEN="$GH_TOKEN"
+   ```
+
+3. **Restart Cursor completely** (not just reload window)
+
+### Debugging auth issues
+
+Run these commands to diagnose:
+
+```bash
+# Check if token is set
+echo "GH_TOKEN set: ${GH_TOKEN:+yes}"
+echo "Token length: ${#GH_TOKEN}"
+
+# Test in restricted sandbox (will likely fail)
+gh auth status  # with required_permissions: ["network"]
+
+# Test outside sandbox (should work if token is valid)
+gh auth status  # with required_permissions: ["all"]
+```
+
+If the token works with `["all"]` but not `["network"]`, the sandbox is blocking keychain access. This is expected - use `["all"]` for all `gh` commands.
+
+### Token expiration
+
+If auth suddenly stops working after previously working:
+1. Your token likely expired
+2. Generate a new token and update `~/.zshrc`
+3. Restart Cursor
+
+---
+
 ## When to use which template
 
 - Use the **SHORT** template for:
@@ -76,8 +137,12 @@ git status
 ## Local execution note (Cursor)
 
 These prompts assume the agent runs in **Cursor's local terminal** (commands execute on the local machine).
+
+**⚠️ Cursor's sandbox blocks keychain access.** See "GitHub Authentication in Cursor's Sandbox" section above for setup instructions.
+
 To make PR creation reliable:
-- `GH_TOKEN` must be set in the environment (non-interactive auth).
+- `GH_TOKEN` must be set explicitly in `~/.zshrc` (keychain auth won't work in sandbox).
+- Use `required_permissions: ["all"]` for all `gh` commands.
 - `gh api user -q .login` must succeed (non-interactive).
 - `git ls-remote origin HEAD` must succeed (non-interactive).
 - `git remote -v` must show SSH for origin (`git@github.com:...`).
