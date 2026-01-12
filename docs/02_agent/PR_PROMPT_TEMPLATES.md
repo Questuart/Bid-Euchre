@@ -121,7 +121,9 @@ Use this exact setup for every PR. Do NOT improvise or use branch-only workflows
 ```bash
 git fetch origin
 BRANCH="<fill_me>"
-WT="../wt-${BRANCH//\//-}"
+SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
+WT="../.worktrees/${BRANCH//\//-}-$SUFFIX"
+mkdir -p ../.worktrees
 git worktree add -b "$BRANCH" "$WT" origin/main
 cd "$WT"
 
@@ -283,7 +285,8 @@ Then:
   - Do NOT branch-switch from the shared checkout.
   - Worktree creation (from the main repo root):
     - BRANCH="<branch-name>"
-    - WT_DIR="../.worktrees/$BRANCH"
+    - SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
+    - WT_DIR="../.worktrees/${BRANCH//\//-}-$SUFFIX"
     - mkdir -p ../.worktrees
     - git fetch origin (or “fetch blocked”)
     - git worktree add -b "$BRANCH" "$WT_DIR" origin/main
@@ -379,6 +382,14 @@ Fallback (if fetch blocked OR origin/main unavailable):
 And always:
 - git show --name-status --oneline -1
 
+**Shared file lock check (machine-checkable):**
+```bash
+SHARED_REGEX='^(pyproject\.toml|Makefile|\.github/|docs/02_agent/PR_PROMPT_TEMPLATES\.md|AGENTS\.md|scripts/lint_repo\.py)$'
+git diff --name-only origin/main...HEAD | rg -n "$SHARED_REGEX" && echo "SHARED FILE TOUCHED ❌" && exit 1 || echo "No shared files ✅"
+```
+
+If a PR touches shared files, the prompt must explicitly scope them; otherwise STOP.
+
 Must match Hard Scope.
 
 ────────────────────────────────────────
@@ -448,6 +459,16 @@ Cleanup always:
 Worktree cleanup (MUST)
 
 **WARNING:** Do NOT run `git checkout main` repeatedly in parallel runs - this causes branch conflicts between agents.
+
+**HARD GATE: PR URL before cleanup**
+Do not remove the worktree unless a PR URL exists OR a STOP condition applied.
+
+To prove PR exists, run:
+```bash
+gh pr view --json number,url,headRefName --jq '{number:.number,url:.url,branch:.headRefName}'
+```
+
+If this command fails and STOP conditions don't apply, do not cleanup; report failure.
 
 Cleanup steps:
 - cd .. (return to parent directory)
@@ -615,7 +636,8 @@ Then:
   - Do NOT branch-switch the shared checkout.
   - Worktree creation (from the main repo root):
     - BRANCH="<branch-name>"
-    - WT_DIR="../.worktrees/$BRANCH"
+    - SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
+    - WT_DIR="../.worktrees/${BRANCH//\//-}-$SUFFIX"
     - mkdir -p ../.worktrees
     - git fetch origin (or “fetch blocked”)
     - git worktree add -b "$BRANCH" "$WT_DIR" origin/main
@@ -741,6 +763,14 @@ Fallback (if fetch blocked OR origin/main unavailable):
 And always:
 - git show --name-status --oneline -1
 
+**Shared file lock check (machine-checkable):**
+```bash
+SHARED_REGEX='^(pyproject\.toml|Makefile|\.github/|docs/02_agent/PR_PROMPT_TEMPLATES\.md|AGENTS\.md|scripts/lint_repo\.py)$'
+git diff --name-only origin/main...HEAD | rg -n "$SHARED_REGEX" && echo "SHARED FILE TOUCHED ❌" && exit 1 || echo "No shared files ✅"
+```
+
+If a PR touches shared files, the prompt must explicitly scope them; otherwise STOP.
+
 ──────────────────────────────────────────────────────────────────────────────
 PUBLISH (Required)
 
@@ -813,6 +843,16 @@ Cleanup always:
 WORKTREE CLEANUP (always)
 
 **WARNING:** Do NOT run `git checkout main` repeatedly in parallel runs - this causes branch conflicts between agents.
+
+**HARD GATE: PR URL before cleanup**
+Do not remove the worktree unless a PR URL exists OR a STOP condition applied.
+
+To prove PR exists, run:
+```bash
+gh pr view --json number,url,headRefName --jq '{number:.number,url:.url,branch:.headRefName}'
+```
+
+If this command fails and STOP conditions don't apply, do not cleanup; report failure.
 
 Cleanup steps:
 - cd .. (return to parent directory)
