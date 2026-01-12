@@ -68,20 +68,28 @@ jobs:
         script: |
           const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
 
+          const issueBody = [
+            '## Nightly Baseline Full Failure',
+            '',
+            'The scheduled baseline_full suite has failed.',
+            '',
+            '| Field | Value |',
+            '|-------|-------|',
+            '| **Workflow Run** | [View Run](' + runUrl + ') |',
+            '| **Date** | ' + new Date().toISOString() + ' |',
+            '| **Branch** | `' + context.ref + '` |',
+            '',
+            '### Next Steps',
+            '',
+            '1. Check the workflow run logs above',
+            '2. Review the nightly-baseline-full-runs artifact',
+            '3. Investigate any test failures or runner issues',
+          ].join('\n');
+
           await github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,
             title: `🚨 Nightly baseline_full failure - ${new Date().toISOString().split('T')[0]}`,
-            body: `## Nightly Baseline Full Failure
-
-The scheduled baseline_full suite has failed.
-
-**Workflow Run:** ${runUrl}
-
-**Date:** ${new Date().toISOString()}
-
-**Branch:** ${context.ref}
-
-Please investigate the failure and fix any issues.`,
+            body: issueBody,
             labels: ['bug', 'ci-failure']
           });
