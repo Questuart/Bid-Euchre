@@ -84,6 +84,74 @@ class StrictRaiserModel:
         }
 
 
+class FiveHeadFredModel:
+    """
+    Deterministic model that always bids 5 if legal, else passes.
+
+    This is a minimal rule-based model for testing/baseline purposes.
+    """
+
+    def __init__(self, contract: str = "S"):
+        """
+        Initialize with FiveHeadFred rules.
+
+        Args:
+            contract: The contract to bid for (default: "S" for Spades)
+        """
+        # Encode the bidding rules as model parameters
+        self.rules = {
+            "target_bid": 5,
+            "contract": contract
+        }
+
+    def predict_bid(self, current_high_bid: int) -> Optional[Dict[str, Any]]:
+        """
+        Predict bid action based on current high bid.
+
+        Args:
+            current_high_bid: Current highest bid (0-10)
+
+        Returns:
+            Dict with 'n' and 'contract' keys, or None for pass
+        """
+        # Bid 5 if legal (strictly greater than current_high_bid)
+        if self.rules["target_bid"] > current_high_bid:
+            return {
+                "n": self.rules["target_bid"],
+                "contract": self.rules["contract"]
+            }
+        else:
+            # Pass if 5 is not legal
+            return None
+
+    def to_artifact_dict(self, contract: str, seed: int = 42) -> Dict[str, Any]:
+        """
+        Convert model to bidding artifact format.
+
+        Args:
+            contract: The contract this model is trained for
+            seed: Random seed for deterministic timestamp
+
+        Returns:
+            Artifact dictionary conforming to schema v1
+        """
+        created_at = (DETERMINISTIC_BASE_TIME + timedelta(seconds=seed)).isoformat()
+
+        return {
+            "schema_version": "1",
+            "model_type": "fiveheadfred_v1",
+            "contract": contract,
+            "model_params": self.rules,
+            "metadata": {
+                "created_at": created_at,
+                "description": f"FiveHeadFred baseline: always bids 5 for {contract} if legal, else passes",
+                "training_data": "deterministic rule",
+                "training_seed": seed,
+                "teacher_model": "FiveHeadFred"
+            }
+        }
+
+
 def load_bidding_dataset_jsonl(path: str) -> List[Dict[str, Any]]:
     """
     Load bidding dataset from JSONL file.
@@ -173,6 +241,43 @@ def train_strict_raiser_model(contract: str = "S") -> StrictRaiserModel:
                 f"Model prediction {model_prediction} does not match "
                 f"teacher action {teacher_dict} for current_high_bid={obs.current_high_bid}"
             )
+
+    return model
+
+
+def train_fiveheadfred_model(contract: str = "S") -> FiveHeadFredModel:
+    """
+    Train a deterministic model for FiveHeadFred baseline.
+
+    Args:
+        contract: Contract to train for (default: "S" for Spades)
+
+    Returns:
+        Trained FiveHeadFredModel instance
+    """
+    # Initialize model
+    model = FiveHeadFredModel(contract)
+
+    # Validate the model behavior for all possible current_high_bid values
+    for current_high_bid in range(0, 11):  # 0-10 inclusive
+        prediction = model.predict_bid(current_high_bid)
+
+        # Verify expected behavior
+        if current_high_bid < 5:
+            # Should bid 5
+            expected = {"n": 5, "contract": contract}
+            if prediction != expected:
+                raise ValueError(
+                    f"Model prediction {prediction} does not match "
+                    f"expected {expected} for current_high_bid={current_high_bid}"
+                )
+        else:
+            # Should pass
+            if prediction is not None:
+                raise ValueError(
+                    f"Model should pass for current_high_bid={current_high_bid}, "
+                    f"but predicted {prediction}"
+                )
 
     return model
 
@@ -409,7 +514,7 @@ def train_and_save_model(
         contract: Contract to train for
         output_path: Path to save artifact (optional)
         seed: Random seed for reproducibility
-        teacher: Teacher type ("strict_raiser" or "heuristics")
+        teacher: Teacher type ("strict_raiser", "heuristics", or "fiveheadfred")
 
     Returns:
         Artifact dictionary
@@ -419,6 +524,8 @@ def train_and_save_model(
         model = train_strict_raiser_model(contract)
     elif teacher == "heuristics":
         model = train_heuristics_model(contract)
+    elif teacher == "fiveheadfred":
+        model = train_fiveheadfred_model(contract)
     else:
         raise ValueError(f"Unknown teacher type: {teacher}")
 

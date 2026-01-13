@@ -13,12 +13,14 @@ import pytest
 
 from bid_euchre.models.bidding_artifact import load_artifact, validate_artifact
 from bid_euchre.models.train_bidder import (
+    FiveHeadFredModel,
     HeuristicsModel,
     StrictRaiserModel,
     create_synthetic_observations_for_heuristics,
     create_synthetic_observations_for_strict_raiser,
     load_bidding_dataset_jsonl,
     train_and_save_model,
+    train_fiveheadfred_model,
     train_heuristics_model,
     train_strict_raiser_model,
 )
@@ -86,6 +88,87 @@ class TestStrictRaiserModel:
 
         # Should validate successfully
         validate_artifact(artifact)
+
+
+class TestFiveHeadFredModel:
+    """Test the FiveHeadFredModel class."""
+
+    def test_model_initialization(self):
+        """Test model initializes with correct rules."""
+        model = FiveHeadFredModel("S")
+
+        expected_rules = {
+            "target_bid": 5,
+            "contract": "S"
+        }
+        assert model.rules == expected_rules
+
+    def test_predict_bid_legal_cases(self):
+        """Test prediction when 5 is legal (current_high_bid < 5)."""
+        model = FiveHeadFredModel("S")
+
+        # Test all cases where 5 > current_high_bid
+        assert model.predict_bid(0) == {"n": 5, "contract": "S"}
+        assert model.predict_bid(1) == {"n": 5, "contract": "S"}
+        assert model.predict_bid(2) == {"n": 5, "contract": "S"}
+        assert model.predict_bid(3) == {"n": 5, "contract": "S"}
+        assert model.predict_bid(4) == {"n": 5, "contract": "S"}
+
+    def test_predict_bid_illegal_cases(self):
+        """Test prediction when 5 is not legal (current_high_bid >= 5)."""
+        model = FiveHeadFredModel("S")
+
+        # Test all cases where 5 <= current_high_bid (should pass)
+        assert model.predict_bid(5) is None  # Pass
+        assert model.predict_bid(6) is None  # Pass
+        assert model.predict_bid(7) is None  # Pass
+        assert model.predict_bid(8) is None  # Pass
+        assert model.predict_bid(9) is None  # Pass
+        assert model.predict_bid(10) is None  # Pass
+
+    def test_different_contracts(self):
+        """Test model works with different contracts."""
+        for contract in ["C", "D", "H", "S", "HIGH", "LOW"]:
+            model = FiveHeadFredModel(contract)
+            assert model.rules["contract"] == contract
+            assert model.predict_bid(0) == {"n": 5, "contract": contract}
+            assert model.predict_bid(5) is None
+
+    def test_to_artifact_dict(self):
+        """Test artifact dictionary creation."""
+        model = FiveHeadFredModel("S")
+
+        artifact = model.to_artifact_dict("S", seed=42)
+
+        # Check required fields
+        assert artifact["schema_version"] == "1"
+        assert artifact["model_type"] == "fiveheadfred_v1"
+        assert artifact["contract"] == "S"
+        assert artifact["model_params"] == model.rules
+        assert "metadata" in artifact
+        metadata = artifact["metadata"]
+        assert metadata["teacher_model"] == "FiveHeadFred"
+        assert metadata["training_data"] == "deterministic rule"
+        assert metadata["training_seed"] == 42
+
+        # Should validate successfully
+        validate_artifact(artifact)
+
+    def test_artifact_determinism(self):
+        """Test that artifacts are deterministic for a given seed."""
+        model1 = FiveHeadFredModel("H")
+        model2 = FiveHeadFredModel("H")
+
+        artifact1 = model1.to_artifact_dict("H", seed=123)
+        artifact2 = model2.to_artifact_dict("H", seed=123)
+
+        # Should be identical
+        assert artifact1 == artifact2
+
+        # Different seeds should produce different timestamps but same structure
+        artifact3 = model1.to_artifact_dict("H", seed=456)
+        assert artifact1["metadata"]["created_at"] != artifact3["metadata"]["created_at"]
+        assert artifact1["model_params"] == artifact3["model_params"]
 
 
 class TestTrainingPipeline:
@@ -309,6 +392,53 @@ class TestHeuristicsTrainingPipeline:
                 f"Model prediction {model_prediction} != teacher {teacher_dict} "
                 f"for hand={obs.hand}, current_high_bid={obs.current_high_bid}"
             )
+
+    def test_train_fiveheadfred_model(self):
+        """Test training the FiveHeadFred model."""
+        model = train_fiveheadfred_model("D")
+
+        assert isinstance(model, FiveHeadFredModel)
+        assert model.rules["contract"] == "D"
+
+        # Verify model behavior for all edge cases
+        for current_high_bid in range(0, 11):
+            prediction = model.predict_bid(current_high_bid)
+
+            if current_high_bid < 5:
+                # Should bid 5
+                assert prediction == {"n": 5, "contract": "D"}
+            else:
+                # Should pass
+                assert prediction is None
+
+    def test_train_and_save_model_fiveheadfred(self):
+        """Test end-to-end training and saving for FiveHeadFred."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            output_path = f.name
+
+        try:
+            artifact = train_and_save_model(
+                contract="H",
+                output_path=output_path,
+                seed=99,
+                teacher="fiveheadfred"
+            )
+
+            # Check artifact was returned
+            assert isinstance(artifact, dict)
+            validate_artifact(artifact)
+
+            # Check model type
+            assert artifact["model_type"] == "fiveheadfred_v1"
+            assert artifact["contract"] == "H"
+
+            # Check file was created and is valid
+            assert Path(output_path).exists()
+            loaded_artifact = load_artifact(output_path)
+            assert loaded_artifact == artifact
+
+        finally:
+            Path(output_path).unlink(missing_ok=True)
 
     def test_train_and_save_model_heuristics(self):
         """Test end-to-end training and saving for heuristics."""
