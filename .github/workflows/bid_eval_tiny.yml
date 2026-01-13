@@ -36,7 +36,7 @@ jobs:
           rm -rf data/runs/bid_eval_tiny
           mkdir -p data/runs
           python scripts/run_suite.py \
-            --suite experiments/suites/baseline_tiny.yaml \
+            --suite experiments/suites/bid_eval_tiny.yaml \
             --seed 42 \
             --n-per 20 \
             --run-dir data/runs/bid_eval_tiny
