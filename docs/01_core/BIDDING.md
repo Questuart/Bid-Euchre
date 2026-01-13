@@ -8,7 +8,7 @@ Bid Euchre bidding mechanics define how players select contracts for each hand. 
 
 ### Round Structure
 - **Single round**: One bidding round starting left of dealer
-- **Simultaneous action**: All players bid `(n, contract)` simultaneously
+- **Sequential action**: Players bid `(n, contract)` in order: LOD → partner → ROD → dealer (clockwise from dealer)
 - **Bid values**: `n` ranges from 0–10 where `0` = pass
 - **Strictly increasing**: `n` must be `> current_high_bid` else treated as pass
 - **Redeal condition**: All players pass (bid 0) → redeal
