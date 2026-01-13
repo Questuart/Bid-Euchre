@@ -19,6 +19,7 @@ from ..strategy import (
     RandomLegalStrategy,
     Strategy,
 )
+from ..strategy.artifact_strategy import ArtifactGreedyStrategy
 
 
 @dataclass
@@ -44,6 +45,13 @@ class StrategyConfig:
             return AlwaysLowestLegalStrategy(name=self.name)
         elif self.class_name == "AlwaysHighestLegalStrategy":
             return AlwaysHighestLegalStrategy(name=self.name)
+        elif self.class_name == "ArtifactGreedyStrategy":
+            artifact_path = self.params.get("artifact_path")
+            if not artifact_path:
+                raise ValueError(
+                    "ArtifactGreedyStrategy requires 'artifact_path' parameter"
+                )
+            return ArtifactGreedyStrategy(name=self.name, artifact_path=artifact_path)
         else:
             raise ValueError(f"Unknown strategy class: {self.class_name}")
 

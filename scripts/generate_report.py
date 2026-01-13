@@ -21,6 +21,8 @@ from typing import Dict, List
 
 import yaml
 
+from bid_euchre.reporting.evaluator import generate_bidder_evaluation
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -278,6 +280,14 @@ def main() -> int:
     if args.verbose:
         print("📝 Generating ANALYSIS_SUMMARY.md...")
     generate_analysis_summary(run_dir, metadata, result_files, chart_files, args.verbose)
+    
+    evaluation_path = generate_bidder_evaluation(run_dir)
+    if evaluation_path:
+        rel_path = evaluation_path.relative_to(run_dir)
+        if args.verbose:
+            print(f"🧮 Generated bidder evaluation: {rel_path}")
+        else:
+            print(f"🧮 Bidder evaluation: {rel_path}")
     
     if args.verbose:
         print("✅ Report generation complete!")

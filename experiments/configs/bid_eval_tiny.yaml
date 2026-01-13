@@ -1,0 +1,15 @@
+experiment_name: bid_eval_tiny
+
+strategies:
+  - name: artifact_bidder
+    class_name: ArtifactGreedyStrategy
+    params:
+      artifact_path: data/fixtures/bidding_artifact_v1_tiny.json
+
+scenarios:
+  - contract_type: null
+
+parameters:
+  n_per: 40
+  seed: 42
+  log_level: hand
