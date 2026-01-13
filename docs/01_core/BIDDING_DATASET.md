@@ -10,7 +10,7 @@ One row per player per hand at bid decision time. Each row represents a single b
 
 ## Keys
 
-- `hand_id` (str): Unique hand identifier within the run
+- `hand_id` (int): Unique hand identifier within the run
 - `seat` (int): Player seat position (0-3)
 - `dealer_seat` (int): Dealer seat position (0-3)
 
@@ -19,7 +19,7 @@ One row per player per hand at bid decision time. Each row represents a single b
 ### `hand_cards` (list[str])
 Raw hand representation as list of card strings (e.g., `["AS", "KD", "QH", "JC", "TD"]`).
 - Cards represented as rank + suit (e.g., "A♠" = "AS", "10♣" = "TC")
-- Sorted alphabetically for consistency
+- Order preserved from the game state (not sorted)
 
 ### `hand_features` (dict)
 Derived feature vector from `get_hand_features()` in `src/bid_euchre/features/hand_eval.py`.
@@ -121,9 +121,9 @@ Trump suit for suit contracts:
 
 ## Determinism
 
-Dataset generation must be fully deterministic when a seed is provided to the experiment runner. Re-running the same seeded experiment must produce **byte-identical** Parquet files, even when run_id differs.
+Dataset generation must be fully deterministic when a seed is provided to the experiment runner. Re-running the same seeded experiment must produce **equivalent** Parquet files with identical row data, even when run_id differs.
 
-The `run_id` is stored in Parquet key-value metadata rather than row data to ensure identical output across runs with different identifiers.
+The `run_id` is stored in Parquet key-value metadata rather than row data. However, Parquet files may not be byte-identical due to metadata timestamps and other implementation details.
 
 ## CLI Usage
 
@@ -141,7 +141,7 @@ python experiments/run_experiment.py --config <config> --emit-bidding-dataset --
 
 By default, bidding datasets are emitted in Parquet format with JSONL available for debugging:
 
-- Canonical: `data/runs/<run_id>/datasets/bidding.parquet` (always written when format=parquet, byte-identical deterministic)
+- Canonical: `data/runs/<run_id>/datasets/bidding.parquet` (always written when format=parquet, deterministic row data)
 - Debug: `data/runs/<run_id>/datasets/bidding.jsonl` (written when format=parquet, includes run_id for inspection)
 - Metadata: `data/runs/<run_id>/datasets/bidding_meta.json` (run_id and schema versions)
 

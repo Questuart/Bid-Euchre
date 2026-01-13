@@ -86,16 +86,21 @@ class BiddingDatasetCollector:
                 attempted_bid_contract = action.contract
 
         # Determine effective bid and legality
-        is_legal_raise = True
-        if attempted_bid_n <= obs.current_high_bid:
-            # Illegal raise or pass - effective becomes PASS
+        if attempted_bid_n == 0:
+            # Pass is always legal
+            is_legal_raise = True
             effective_bid_n = 0
             effective_bid_contract = None
             effective_bid_trump_suit = None
-            if attempted_bid_n > obs.current_high_bid:
-                is_legal_raise = False
+        elif attempted_bid_n <= obs.current_high_bid:
+            # Illegal bid (not a strict raise) - effective becomes PASS
+            is_legal_raise = False
+            effective_bid_n = 0
+            effective_bid_contract = None
+            effective_bid_trump_suit = None
         else:
             # Legal raise - attempted == effective
+            is_legal_raise = True
             effective_bid_n = attempted_bid_n
             effective_bid_contract = attempted_bid_contract
             effective_bid_trump_suit = attempted_bid_trump_suit

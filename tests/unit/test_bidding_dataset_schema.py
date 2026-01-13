@@ -10,6 +10,10 @@ from pathlib import Path
 
 import pytest
 
+from bid_euchre.core.cards import Card
+from bid_euchre.datasets.bidding import BiddingDatasetCollector
+from bid_euchre.strategy.bidding import BidAction, BiddingObservation
+
 
 class TestBiddingDatasetSchema:
     """Test bidding dataset schema stability and validation."""
@@ -214,6 +218,58 @@ class TestBiddingDatasetSchema:
             else:
                 assert effective_n == attempted_n, f"Row {i}: legal raise should be effective"
                 assert is_legal == True, f"Row {i}: legal raise should be flagged as legal"
+
+    def test_illegal_bid_legality_flag(self):
+        """Test that the collector correctly flags illegal bids."""
+
+        # Create a mock observation with current_high_bid = 2
+        hand = [Card("S", "A"), Card("H", "K"),
+                Card("C", "Q"), Card("D", "J"),
+                Card("S", "T")]
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=0,
+            current_high_bid=2  # Some bid is already on the table
+        )
+
+        collector = BiddingDatasetCollector("test_run", 1)
+
+        # Test illegal bid: attempted_bid_n = 1 (which is <= current_high_bid = 2)
+        illegal_action = BidAction.bid(1, "S")  # This should be illegal
+        collector.record_decision(obs, illegal_action)
+
+        # Test legal bid: attempted_bid_n = 3 (which is > current_high_bid = 2)
+        legal_action = BidAction.bid(3, "H")
+        collector.record_decision(obs, legal_action)
+
+        # Test pass: always legal
+        pass_action = BidAction.pass_bid()
+        collector.record_decision(obs, pass_action)
+
+        rows = collector.rows
+
+        # Should have 3 rows
+        assert len(rows) == 3
+
+        # Find the rows by attempted_bid_n
+        illegal_row = next(r for r in rows if r["attempted_bid_n"] == 1)
+        legal_row = next(r for r in rows if r["attempted_bid_n"] == 3)
+        pass_row = next(r for r in rows if r["attempted_bid_n"] == 0)
+
+        # Illegal bid should be flagged as illegal and become effective pass
+        assert illegal_row["is_legal_raise"] == False
+        assert illegal_row["effective_bid_n"] == 0
+        assert illegal_row["effective_bid_contract"] is None
+
+        # Legal bid should be flagged as legal and remain effective
+        assert legal_row["is_legal_raise"] == True
+        assert legal_row["effective_bid_n"] == 3
+        assert legal_row["effective_bid_contract"] == "suit"
+
+        # Pass should be legal
+        assert pass_row["is_legal_raise"] == True
+        assert pass_row["effective_bid_n"] == 0
 
     def test_fixture_has_required_bid_types(self):
         """Test that fixture includes examples of all required bid types."""
