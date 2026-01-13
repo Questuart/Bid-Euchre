@@ -1,0 +1,48 @@
+name: Bid Eval Tiny Report
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bid_eval_tiny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run bid_eval_tiny suite
+        env:
+          PYTHONPATH: src
+        run: |
+          rm -rf data/runs/bid_eval_tiny
+          mkdir -p data/runs
+          python scripts/run_suite.py \
+            --suite experiments/suites/baseline_tiny.yaml \
+            --seed 42 \
+            --n-per 20 \
+            --run-dir data/runs/bid_eval_tiny
+
+      - name: Upload bid_eval_tiny reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: bid_eval_tiny-reports
+          path: data/runs/bid_eval_tiny
