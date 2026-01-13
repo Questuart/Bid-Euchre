@@ -85,9 +85,60 @@ def _round(value: Optional[float]) -> Optional[float]:
     return round(value, 5)
 
 
+def _generate_comparison_report(run_dir: Path, strategy_metrics: List[Dict]) -> None:
+    """
+    Generate a markdown comparison report for risk metrics.
+
+    Creates a clear table comparing EV, CVaR-5%, and downside variance across strategies.
+    """
+    output_dir = Path(run_dir) / "reports" / "bidding_strategy"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "RISK_METRICS_COMPARISON.md"
+
+    # Sort strategies by expected_points for consistent ordering
+    sorted_strategies = sorted(
+        strategy_metrics,
+        key=lambda s: s.get("expected_points", 0) or 0,
+        reverse=True
+    )
+
+    with output_path.open("w") as f:
+        f.write("# Risk Metrics Comparison\n\n")
+        f.write("**Run ID:** `{}`\n\n".format(Path(run_dir).name))
+        f.write("**Primary Series:** `bidder_team_points` (team points from successful bids)\n\n")
+        f.write("**Metric Definitions:**\n")
+        f.write("- **EV (Expected Value)**: Average points across all bidding hands\n")
+        f.write("- **CVaR-5%**: Average of worst 5% of outcomes (tail risk)\n")
+        f.write("- **Downside Variance**: Variance of outcomes below zero\n\n")
+
+        f.write("## Comparative Analysis\n\n")
+        f.write("| Strategy | Hands | EV | CVaR-5% | Downside Var | Make Rate |\n")
+        f.write("|----------|------:|---:|--------:|-------------:|-----------:|\n")
+
+        for strategy in sorted_strategies:
+            strategy_id = strategy["strategy_id"]
+            hands = strategy["hands_with_bids"]
+            ev = strategy.get("expected_points")
+            cvar = strategy.get("cvar_5")
+            downside_var = strategy.get("downside_variance")
+            make_rate = strategy.get("make_rate")
+
+            # Format values
+            ev_str = f"{ev:.3f}" if ev is not None else "N/A"
+            cvar_str = f"{cvar:.3f}" if cvar is not None else "N/A"
+            downside_str = f"{downside_var:.3f}" if downside_var is not None else "N/A"
+            make_rate_str = f"{make_rate:.1%}" if make_rate is not None else "N/A"
+
+            f.write(f"| {strategy_id} | {hands} | {ev_str} | {cvar_str} | {downside_str} | {make_rate_str} |\n")
+
+        f.write("\n")
+        f.write("**Note:** Higher EV and Make Rate are better. Lower CVaR-5% and Downside Variance indicate lower risk.\n\n")
+        f.write("*Generated: {}*\n".format(datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")))
+
+
 def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
     """
-    Generate evaluation JSON summarizing metrics per bidder strategy.
+    Generate evaluation JSON and markdown report summarizing metrics per bidder strategy.
 
     The primary series is always `bidder_team_points`. CVaR-5% is defined as
     the average of the worst 5% of outcomes. Downside variance is the variance
@@ -160,5 +211,8 @@ def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
     with output_path.open("w") as stream:
         json.dump(payload, stream, indent=2, sort_keys=True)
         stream.write("\n")
+
+    # Generate comparison markdown report
+    _generate_comparison_report(run_dir, strategy_metrics)
 
     return output_path

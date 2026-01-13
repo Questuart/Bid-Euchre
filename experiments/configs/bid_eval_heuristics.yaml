@@ -1,0 +1,14 @@
+experiment_name: bid_eval_heuristics
+
+bidding_policies:
+  - name: heuristics_bidder
+    class_name: HeuristicsBidder
+    params: {}
+
+scenarios:
+  - contract_type: null
+
+parameters:
+  n_per: 40
+  seed: 42
+  log_level: hand

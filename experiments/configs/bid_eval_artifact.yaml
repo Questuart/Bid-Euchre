@@ -1,0 +1,15 @@
+experiment_name: bid_eval_artifact
+
+bidding_policies:
+  - name: artifact_bidder
+    class_name: ArtifactBidder
+    params:
+      artifact_path: data/fixtures/bidding_artifact_v1_tiny.json
+
+scenarios:
+  - contract_type: null
+
+parameters:
+  n_per: 40
+  seed: 42
+  log_level: hand
