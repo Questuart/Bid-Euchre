@@ -38,7 +38,7 @@ def test_bid_eval_tiny_emits_evaluator(tmp_path: Path) -> None:
 
     dirs_after = set(run_base.iterdir())
     new_dirs = dirs_after - dirs_before
-    assert len(new_dirs) == 2, f"Expected 2 directories (run + rollup), found {len(new_dirs)}"
+    assert len(new_dirs) == 4, f"Expected 4 directories (3 runs + 1 rollup), found {len(new_dirs)}"
 
     rollup_dir = next(d for d in new_dirs if (d / "rollup.json").exists())
     assert (rollup_dir / "rollup.json").exists()

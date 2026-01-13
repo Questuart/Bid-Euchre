@@ -22,6 +22,7 @@ from ..strategy import (
     ImprovedGreedyStrategy,
     RandomLegalStrategy,
     Strategy,
+    StrictRaiserBidder,
 )
 from ..strategy.artifact_strategy import ArtifactGreedyStrategy
 
@@ -78,6 +79,8 @@ class BiddingPolicyConfig:
             return ArtifactBidder(artifact_path=artifact_path, name=self.name)
         elif self.class_name == "HeuristicsBidder":
             return HeuristicsBidder(name=self.name)
+        elif self.class_name == "StrictRaiserBidder":
+            return StrictRaiserBidder(name=self.name)
         else:
             raise ValueError(f"Unknown bidding policy class: {self.class_name}")
 

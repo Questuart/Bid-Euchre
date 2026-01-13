@@ -1,9 +1,10 @@
-# Tiny evaluation suite for artifact-backed bidders.
+# Tiny evaluation suite for baseline bidders comparison.
 # Uses auction mode with hand-level logging so risk metrics can be computed.
+# Compares strict, heuristics, and artifact-backed baselines.
 
 suite_name: bid_eval_tiny
 
-purpose: Evaluate artifact-backed bidders with risk-aware metrics (CVaR & downside variance).
+purpose: Compare baseline bidders with risk-aware metrics (EV, CVaR-5%, downside variance).
 
 parameters:
   seed: 42
@@ -11,7 +12,9 @@ parameters:
   log_level: hand
 
 configs:
-  - experiments/configs/bid_eval_tiny.yaml
+  - experiments/configs/bid_eval_strict.yaml
+  - experiments/configs/bid_eval_heuristics.yaml
+  - experiments/configs/bid_eval_artifact.yaml
 
 notes:
   - "Designed for quick evaluation of linear-regression artifact bidders."
