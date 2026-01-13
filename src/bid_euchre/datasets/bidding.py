@@ -9,9 +9,6 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-import pyarrow as pa
-import pyarrow.parquet as pq
-
 from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
 from ..strategy.bidding import BidAction, BiddingObservation
@@ -223,6 +220,15 @@ class BiddingDatasetCollector:
             output_path: Path to write the Parquet file
             run_id: Run ID to store in metadata (defaults to self.run_id)
         """
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+        except ImportError as e:
+            raise ImportError(
+                "pyarrow is required for Parquet output. "
+                "Install with: pip install pyarrow"
+            ) from e
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         rows = self.get_rows_sorted()
