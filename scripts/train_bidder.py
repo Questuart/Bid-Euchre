@@ -8,6 +8,7 @@ and emit JSON artifacts conforming to the bidding model schema.
 Supported teachers:
 - strict_raiser: StrictRaiserBidder (simple raising strategy)
 - heuristics: HeuristicsBidder (v1 baseline heuristic bidder)
+- fiveheadfred: FiveHeadFred (always bids 5 if legal, else passes)
 """
 
 import argparse
@@ -28,7 +29,7 @@ def main():
         "--teacher",
         type=str,
         default="strict_raiser",
-        choices=["strict_raiser", "heuristics"],
+        choices=["strict_raiser", "heuristics", "fiveheadfred"],
         help="Teacher bidding policy to imitate (default: strict_raiser)"
     )
     parser.add_argument(
