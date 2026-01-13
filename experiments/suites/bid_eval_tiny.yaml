@@ -1,0 +1,19 @@
+# Tiny evaluation suite for artifact-backed bidders.
+# Uses auction mode with hand-level logging so risk metrics can be computed.
+
+suite_name: bid_eval_tiny
+
+purpose: Evaluate artifact-backed bidders with risk-aware metrics (CVaR & downside variance).
+
+parameters:
+  seed: 42
+  n_per: 20
+  log_level: hand
+
+configs:
+  - experiments/configs/bid_eval_tiny.yaml
+
+notes:
+  - "Designed for quick evaluation of linear-regression artifact bidders."
+  - "Uses auction mode (contract_type: null) to measure bidding outcomes."
+  - "Logging level 'hand' enables structured evaluator output."
