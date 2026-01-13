@@ -122,6 +122,74 @@ model_artifact = load_artifact("models/hearts_v1.json")
 # Use model_artifact["model_params"] for inference
 ```
 
+## Teacher Baseline Roster
+
+The canonical "teacher baseline" roster consists of three deterministic bidding strategies that serve as training targets for imitation learning. These baselines establish a foundation for bidding model development and evaluation.
+
+### Baseline Teachers
+
+| Teacher | Description | Strategy |
+|---------|-------------|----------|
+| `strict_raiser` | StrictRaiserBidder | Simple raising strategy - bids if hand strength meets minimum threshold |
+| `heuristics` | HeuristicsBidder | Rule-based heuristics (v1 baseline) - considers position, cards, and opponents |
+| `fiveheadfred` | FiveHeadFred | Aggressive bidder - always bids 5 if legal, otherwise passes |
+
+### Training Commands
+
+Train each baseline teacher into a bidding artifact using `scripts/train_bidder.py`:
+
+```bash
+# Train strict_raiser teacher (default)
+PYTHONPATH=src python scripts/train_bidder.py \
+  --teacher strict_raiser \
+  --contract S \
+  --output data/artifacts/bidding_strict_raiser_S.json \
+  --seed 42
+
+# Train heuristics teacher
+PYTHONPATH=src python scripts/train_bidder.py \
+  --teacher heuristics \
+  --contract S \
+  --output data/artifacts/bidding_heuristics_S.json \
+  --seed 42
+
+# Train fiveheadfred teacher
+PYTHONPATH=src python scripts/train_bidder.py \
+  --teacher fiveheadfred \
+  --contract S \
+  --output data/artifacts/bidding_fiveheadfred_S.json \
+  --seed 42
+```
+
+**Output Convention**: Artifacts follow `data/artifacts/bidding_<teacher>_<contract>.json` naming.
+
+### Evaluation with `bid_eval_tiny`
+
+Evaluate trained artifacts using the `bid_eval_tiny` suite:
+
+```bash
+# Run evaluation on a single artifact
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/bid_eval_tiny.yaml \
+  --seed 42 \
+  --n-per 20
+```
+
+**Suite Configuration**: The suite uses `experiments/configs/bid_eval_tiny.yaml` with auction mode (`contract_type: null`) and hand-level logging for risk metrics.
+
+**Comparing Baselines**: Run `bid_eval_tiny` on each trained artifact to establish comparative performance. The suite generates structured logs enabling computation of risk-aware metrics (CVaR, downside variance).
+
+### Pause Point: Regression Loops Deferred
+
+**Regression/value modeling loops are intentionally paused after these baselines settle.**
+
+Further bidding model development (neural networks, advanced regression, reinforcement learning) should wait until:
+- Baseline teacher performance is well-characterized
+- `bid_eval_tiny` evaluation metrics stabilize
+- Comparative analysis between teachers is complete
+
+This ensures new modeling approaches build on a solid foundation rather than introducing confounding variables during baseline establishment.
+
 ## Migration Notes
 
 - **v1 is initial schema**: No migration path from earlier versions
