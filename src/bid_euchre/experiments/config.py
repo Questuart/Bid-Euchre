@@ -25,6 +25,7 @@ from ..strategy import (
     StrictRaiserBidder,
 )
 from ..strategy.artifact_strategy import ArtifactGreedyStrategy
+from .teacher_roster import load_teacher_roster
 
 
 @dataclass
@@ -114,6 +115,8 @@ class ExperimentConfig:
     bidding_policies: List[BiddingPolicyConfig] = field(default_factory=list)
     mode: str = "self_play"
     matchups: Optional[List[Dict[str, str]]] = None
+    strategy_roster_path: Optional[str] = None
+    include_baselines: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         """Process scenarios into ScenarioConfig objects."""
@@ -171,15 +174,55 @@ def load_config(config_path: str) -> ExperimentConfig:
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
 
-    # Convert strategy configs
-    strategies = []
-    for strategy_dict in config_dict.get("strategies", []):
-        strategies.append(StrategyConfig(**strategy_dict))
+    # Handle roster-based loading
+    strategy_roster_path = config_dict.get("strategy_roster_path")
+    include_baselines = config_dict.get("include_baselines", [])
 
-    # Convert bidding policy configs
-    bidding_policies = []
-    for policy_dict in config_dict.get("bidding_policies", []):
-        bidding_policies.append(BiddingPolicyConfig(**policy_dict))
+    if strategy_roster_path and include_baselines:
+        # Load roster and create configs from baselines
+        roster = load_teacher_roster(strategy_roster_path)
+
+        # Create lookup map of baseline id -> baseline config
+        baseline_map = {b['id']: b for b in roster['baselines']}
+
+        # Validate all requested baselines exist
+        missing_baselines = set(include_baselines) - set(baseline_map.keys())
+        if missing_baselines:
+            raise ValueError(f"Requested baselines not found in roster: {missing_baselines}")
+
+        # Convert baselines to appropriate configs
+        strategies = []
+        bidding_policies = []
+
+        for baseline_id in include_baselines:
+            baseline = baseline_map[baseline_id]
+
+            if baseline['kind'] == 'policy':
+                bidding_policies.append(BiddingPolicyConfig(
+                    name=baseline['display_name'],
+                    class_name=baseline['import_path'].split('.')[-1],
+                    params=baseline.get('params', {})
+                ))
+            elif baseline['kind'] == 'artifact_policy':
+                # For artifact policies, use ArtifactBidder for bidding
+                bidding_policies.append(BiddingPolicyConfig(
+                    name=baseline['display_name'],
+                    class_name='ArtifactBidder',
+                    params=baseline.get('params', {})
+                ))
+            else:
+                raise ValueError(f"Unsupported baseline kind: {baseline['kind']}")
+
+    else:
+        # Convert strategy configs (legacy path)
+        strategies = []
+        for strategy_dict in config_dict.get("strategies", []):
+            strategies.append(StrategyConfig(**strategy_dict))
+
+        # Convert bidding policy configs
+        bidding_policies = []
+        for policy_dict in config_dict.get("bidding_policies", []):
+            bidding_policies.append(BiddingPolicyConfig(**policy_dict))
 
     return ExperimentConfig(
         experiment_name=config_dict["experiment_name"],
@@ -188,7 +231,9 @@ def load_config(config_path: str) -> ExperimentConfig:
         bidding_policies=bidding_policies,
         scenarios=config_dict["scenarios"],
         parameters=config_dict.get("parameters", {}),
-        matchups=config_dict.get("matchups")
+        matchups=config_dict.get("matchups"),
+        strategy_roster_path=strategy_roster_path,
+        include_baselines=include_baselines
     )
 
 

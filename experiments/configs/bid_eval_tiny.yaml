@@ -1,10 +1,10 @@
 experiment_name: bid_eval_tiny
 
-strategies:
-  - name: artifact_bidder
-    class_name: ArtifactGreedyStrategy
-    params:
-      artifact_path: data/fixtures/bidding_artifact_v1_tiny.json
+strategy_roster_path: experiments/baselines/teacher_roster_v1.yaml
+include_baselines:
+  - strict_raiser
+  - heuristics
+  - artifact_bidder
 
 scenarios:
   - contract_type: null
