@@ -185,6 +185,18 @@ def main() -> None:
         # Find the roster manifest file
         roster_path = "experiments/baselines/teacher_roster_manifest_v1.yaml"
 
+        # Check if manifest exists (it won't until PR129 lands)
+        if not os.path.exists(roster_path):
+            print(f"⚠️  Teacher roster manifest not found: {roster_path}")
+            print("   (This is expected until PR129 lands)")
+            print("   Skipping roster validation, but validating artifact schema...")
+
+            # Still validate artifact schema invariants
+            validate_artifact_schema_invariants()
+            print("✓ Bidding artifact schema v1 invariants preserved")
+            print("✅ Validation passed (roster manifest validation will activate once PR129 lands)")
+            sys.exit(0)
+
         # 1. Validate roster manifest structure
         print(f"Loading roster manifest: {roster_path}")
         manifest = load_yaml_file(roster_path)

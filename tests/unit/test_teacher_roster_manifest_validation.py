@@ -244,7 +244,14 @@ class TestTeacherRosterManifestValidation:
         assert "Bidding artifact not found: nonexistent.json" in result.stderr
 
     def test_script_handles_missing_manifest_file(self, tmp_path):
-        """Test that the script fails gracefully when manifest file doesn't exist."""
+        """Test that the script succeeds gracefully when manifest file doesn't exist."""
+        # Copy the fixture artifact to the temp directory (needed for schema validation)
+        fixture_src = Path.cwd() / "data" / "fixtures" / "bidding_artifact_v1_tiny.json"
+        fixture_dst = tmp_path / "data" / "fixtures" / "bidding_artifact_v1_tiny.json"
+        fixture_dst.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy(fixture_src, fixture_dst)
+
         # Don't create the manifest file
         script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
         result = subprocess.run(
@@ -255,8 +262,11 @@ class TestTeacherRosterManifestValidation:
             env={**os.environ, "PYTHONPATH": str(Path.cwd() / "src")}
         )
 
-        assert result.returncode != 0
-        assert "YAML file not found" in result.stderr
+        # Should succeed with a warning (not fail)
+        assert result.returncode == 0
+        assert "Teacher roster manifest not found" in result.stdout
+        assert "This is expected until PR129 lands" in result.stdout
+        assert "Bidding artifact schema v1 invariants preserved" in result.stdout
 
     def test_script_runs_quickly(self, tmp_path):
         """Test that the validation script runs quickly (< 2 seconds)."""
