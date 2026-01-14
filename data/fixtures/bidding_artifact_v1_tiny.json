@@ -5,18 +5,11 @@
     "description": "Example bidding model artifact for hearts contract"
   },
   "model_params": {
-    "coefficients": [
-      0.1,
-      0.2,
-      -0.05
-    ],
-    "features": [
-      "trump_count",
-      "high_card_points",
-      "suit_length"
-    ],
-    "intercept": 0.5
+    "initial_bid": {"n": 3, "contract": "H"},
+    "raise_increment": 1,
+    "max_bid": 10,
+    "contract": "H"
   },
-  "model_type": "linear_regression",
+  "model_type": "strict_raiser_imitation_v1",
   "schema_version": "1"
 }

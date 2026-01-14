@@ -37,7 +37,7 @@ class TestBiddingArtifactSchema:
 
         # Check required fields are present
         assert artifact["schema_version"] == "1"
-        assert artifact["model_type"] == "linear_regression"
+        assert artifact["model_type"] == "strict_raiser_imitation_v1"
         assert artifact["contract"] == "H"
         assert isinstance(artifact["model_params"], dict)
         assert "metadata" in artifact

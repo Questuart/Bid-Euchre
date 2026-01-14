@@ -419,7 +419,10 @@ class ArtifactBidder(BiddingPolicy):
         # Initialize model-specific state
         self.model_type = self.artifact["model_type"]
         if self.model_type == "linear_regression":
-            self._init_linear_regression()
+            raise NotImplementedError(
+                "linear_regression artifacts are reserved for future work. This runtime path is not implemented and would silently pass. "
+                "Use strict_raiser_imitation_v1 or heuristics_imitation_v1 instead."
+            )
         elif self.model_type == "strict_raiser_imitation_v1":
             self._init_strict_raiser_imitation()
         elif self.model_type == "heuristics_imitation_v1":
