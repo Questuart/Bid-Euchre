@@ -21,6 +21,18 @@ Bidding model artifacts define a deterministic, JSON-serializable format for sto
 |-------|------|-------------|
 | `metadata` | object | JSON-serializable metadata (creation time, description, etc.) |
 
+## Model Types
+
+Currently supported model types in schema v1:
+
+| Model Type | Status | Implementation |
+|------------|--------|----------------|
+| `linear_regression` | ✅ Implemented | Scikit-learn LinearRegression |
+| `random_forest` | 🔄 Reserved | Not yet implemented |
+| `neural_network` | 🔄 Reserved | Not yet implemented |
+
+**Loading Behavior**: Models with unsupported `model_type` values will raise `NotImplementedError` with clear messaging indicating the type is reserved for future implementation.
+
 ## Contract Types
 
 Contracts are represented as single strings matching the bidding protocol:
@@ -179,11 +191,13 @@ PYTHONPATH=src python scripts/run_suite.py \
 
 **Comparing Baselines**: Run `bid_eval_tiny` on each trained artifact to establish comparative performance. The suite generates structured logs enabling computation of risk-aware metrics (CVaR, downside variance).
 
-### Pause Point: Regression Loops Deferred
+### Pause Point: Arc A vs Arc B Decision
 
-**Regression/value modeling loops are intentionally paused after these baselines settle.**
+**Bidding model development is currently paused at the teacher baseline loop.**
 
-Further bidding model development (neural networks, advanced regression, reinforcement learning) should wait until:
+See [TEACHER_BASELINES.md](TEACHER_BASELINES.md) for the current pause point and architectural decision between Arc A (regression/value modeling) and Arc B (reinforcement learning).
+
+Further bidding model development should wait until:
 - Baseline teacher performance is well-characterized
 - `bid_eval_tiny` evaluation metrics stabilize
 - Comparative analysis between teachers is complete
