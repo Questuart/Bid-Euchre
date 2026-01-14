@@ -1,4 +1,4 @@
-.PHONY: help repo-lint lint test check bid-train-teachers bid-eval-tiny bid-teacher-loop
+.PHONY: help repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop
 .DEFAULT_GOAL := help
 
 PYTHON ?= python
@@ -23,7 +23,7 @@ help:
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
 	@echo "  make bid-eval-tiny      - run bid_eval_tiny suite"
-	@echo "  make bid-teacher-loop   - train teachers then eval tiny"
+	@echo "  make bid-loop           - train teachers then eval tiny"
 	@echo ""
 
 repo-lint:
@@ -76,5 +76,5 @@ bid-eval-tiny:
 	@echo "✅ bid_eval_tiny complete"
 	@echo "Find latest run in: $(RUN_BASE)/"
 
-bid-teacher-loop: bid-train-teachers bid-eval-tiny
+bid-loop: bid-train-teachers bid-eval-tiny
 	@echo "✅ Teacher baseline loop complete"
