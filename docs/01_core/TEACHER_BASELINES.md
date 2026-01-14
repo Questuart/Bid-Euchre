@@ -1,100 +1,49 @@
-# Teacher Baseline Loop
+# Teacher Baselines + Loop
 
-This document describes the current "teacher baseline loop" - the process of training teacher artifacts and evaluating them using the bid_eval_tiny suite.
+## What exists today
 
-## Current State
+**Teacher baselines** (defined in `experiments/baselines/teacher_roster_v1.yaml`):
+- `strict_raiser`: StrictRaiserBidder - bids 3S initially, raises by 1 each time
+- `heuristics`: HeuristicsBidder - rule-based bidding using hand evaluation heuristics
+- `artifact_bidder`: ArtifactBidder - linear regression model with greedy card play (uses `data/fixtures/bidding_artifact_v1_tiny.json`)
 
-The teacher baseline loop consists of three deterministic bidding strategies that serve as training targets for imitation learning:
+**Artifact model types supported** (schema v1):
+- `linear_regression`: Scikit-learn LinearRegression (implemented)
+- `random_forest`, `neural_network`: Reserved for future implementation
 
-### Baseline Teachers
+## Gold path commands
 
-| Teacher | Description | Strategy Type |
-|---------|-------------|---------------|
-| `strict_raiser` | StrictRaiserBidder | Simple raising strategy - bids if hand strength meets minimum threshold |
-| `heuristics` | HeuristicsBidder | Rule-based heuristics (v1 baseline) - considers position, cards, and opponents |
-| `artifact_bidder` | ArtifactBidder | Linear regression model bidder trained from teacher data |
-
-### Supported Model Types
-
-Currently supported bidding model types in artifact schema v1:
-- `linear_regression`: Scikit-learn LinearRegression models
-- Other model types (`random_forest`, `neural_network`) are reserved but not yet implemented
-
-**Note**: `linear_regression` models that fail to load will raise `NotImplementedError` with clear messaging.
-
-## Gold Path Commands
-
-### Train Teacher Artifacts
-
-Train all baseline teachers across all contracts (C, D, H, S, HIGH, LOW):
-
+**Train teachers** → generates artifacts in `data/runs/<run_id>/artifacts/`:
 ```bash
 make bid-train-teachers
 ```
+*Proof*: `PYTHONPATH=src python scripts/train_bidder.py --help` shows `--teacher {strict_raiser,heuristics,fiveheadfred}` option
 
-This generates artifacts in `data/runs/<run_id>/artifacts/` with filenames like `strict_raiser-H.json`.
-
-### Run Evaluation
-
-Evaluate trained artifacts using the bid_eval_tiny suite:
-
+**Run bid_eval_tiny** → evaluates using suite `experiments/suites/bid_eval_tiny.yaml`:
 ```bash
 make bid-eval-tiny
 ```
+*Proof*: `PYTHONPATH=src python scripts/run_suite.py --help` shows `--suite` option for YAML configs
 
-This runs the suite defined in `experiments/suites/bid_eval_tiny.yaml` using the roster at `experiments/baselines/teacher_roster_v1.yaml`.
-
-### Complete Loop
-
-Run both training and evaluation in sequence:
-
+**Complete loop** (train + eval):
 ```bash
 make bid-teacher-loop
 ```
 
-## Artifact Storage
+**View reports**: Latest run outputs in `data/runs/` with `rollup.json` and `ROLLUP.md`
 
-### What Gets Committed
+## What's intentionally deferred
 
-- **Schema definition**: Artifact format specifications
-- **Roster manifests**: `experiments/baselines/teacher_roster_v1.yaml`
-- **Suite configurations**: `experiments/suites/bid_eval_tiny.yaml`, `experiments/configs/bid_eval_tiny.yaml`
-- **Validation scripts**: `scripts/validate_teacher_roster_manifest.py`
+- `random_forest`/`neural_network` model types (reserved in schema, not implemented)
+- Regression loops/value modeling architecture (Arc A)
+- Advanced awareness features beyond basic hand evaluation
+- RL-based bidding agents (Arc B)
 
-### What Doesn't Get Committed
+## Pause point
 
-- **Generated artifacts**: `data/runs/<run_id>/artifacts/*.json` - these are training outputs
-- **Evaluation results**: `data/runs/<run_id>/results/` and `data/runs/<run_id>/reports/` - these are experimental outputs
+We are pausing here to decide regression architecture (Arc A vs Arc B) before implementing advanced bidding models.
 
-## Evaluation Outputs
+## Troubleshooting
 
-The bid_eval_tiny suite produces:
-
-### Per-Strategy Metrics
-- `reports/bidding_strategy/evaluation.json`: Detailed metrics including EV, CVaR-5%, downside variance
-- `reports/bidding_strategy/RISK_METRICS_COMPARISON.md`: Comparative analysis table
-
-### Suite Rollup
-- `rollup.json`: Structured summary of all baseline runs
-- `reports/ROLLUP.md`: Human-readable summary table
-
-## Pause Point: Arc A vs Arc B Decision
-
-**The teacher baseline loop is currently paused here, awaiting architectural decision between Arc A and Arc B.**
-
-### Arc A: Regression/Value Modeling
-- Extend bidding model types (random_forest, neural_network)
-- Implement advanced regression techniques
-- Focus on imitation learning from teacher baselines
-
-### Arc B: Reinforcement Learning
-- Implement RL-based bidding agents
-- Train against teacher baselines or self-play
-- Explore policy gradient methods
-
-**Decision Criteria**:
-- Stability of baseline teacher performance metrics
-- Completion of comparative analysis between strict_raiser, heuristics, and artifact_bidder
-- Clear understanding of risk-adjusted performance characteristics
-
-Resume development only after baseline characterization is complete to avoid confounding variables during architectural exploration.
+- **GH_TOKEN/Cursor sandbox**: GitHub workflows run bid_eval_tiny automatically on PRs (see `.github/workflows/bid_eval_tiny.yml`)
+- **Optional dependency**: `pyarrow` only needed for Parquet emission in bidding datasets (falls back to JSONL if unavailable)
