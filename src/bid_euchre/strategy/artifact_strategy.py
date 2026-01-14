@@ -77,6 +77,6 @@ class ArtifactGreedyStrategy(ImprovedGreedyStrategy):
         if action.contract in {"C", "D", "H", "S"}:
             return action.n, "suit", action.contract
         elif action.contract in {"HIGH", "LOW"}:
-            return action.n, action.contract, None
+            return action.n, action.contract.lower(), None
         else:
             raise ValueError(f"Unexpected contract type from artifact: {action.contract}")
