@@ -1,0 +1,28 @@
+# Bidless Dataset Collection Configuration
+# Collects hand data without bidding decisions
+
+experiment_name: bidless_dataset_collection
+
+strategies:
+  - name: random_legal
+    class_name: RandomLegalStrategy
+    params:
+      seed: 42
+
+scenarios:
+  - contract_type: suit
+    trump_suit: H  # Hearts
+  - contract_type: suit
+    trump_suit: D  # Diamonds
+  - contract_type: suit
+    trump_suit: C  # Clubs
+  - contract_type: suit
+    trump_suit: S  # Spades
+  - contract_type: high
+  - contract_type: low
+
+parameters:
+  n_per: 10  # Small n_per for tiny suite
+  seed: 42
+  log_level: none
+  # TODO: Add bidless_dataset_collection: true when PR 140 lands

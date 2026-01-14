@@ -1,0 +1,19 @@
+# Bidless Dataset Tiny Suite Definition
+# Developer-friendly deterministic bidless dataset collection (no bidding)
+
+suite_name: bidless_dataset_tiny
+
+purpose: Developer-friendly deterministic bidless dataset collection for quick iteration
+
+parameters:
+  seed: 42
+  n_per: 10  # Small n_per for quick runs (~2 minutes)
+  log_level: none
+
+configs:
+  - experiments/configs/bidless_dataset_collection.yaml
+
+notes:
+  - "This suite collects hand-level data without bidding decisions."
+  - "Output is JSONL format for training dataset consumption."
+  - "Uses deterministic seeding for reproducible datasets."
