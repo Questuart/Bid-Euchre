@@ -43,8 +43,7 @@ from .greedy import (
     choose_card_greedy,
 )
 
-# Regression strategies
-from .regression import RegressionBidder
+# Regression strategies - REMOVED: RegressionBidder (legacy pickle path)
 
 __all__ = [
     # Base
@@ -69,8 +68,7 @@ __all__ = [
     # Greedy
     "GreedyStrategy",
     "ImprovedGreedyStrategy",
-    # Regression
-    "RegressionBidder",
+    # Regression - REMOVED: RegressionBidder (legacy pickle path)
     # Legacy functions
     "choose_card_basic",
     "choose_card_greedy",
