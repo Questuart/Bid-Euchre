@@ -68,3 +68,28 @@ def test_bid_eval_tiny_emits_evaluator(tmp_path: Path) -> None:
             assert "make_rate" in strategy
             assert "cvar_5" in strategy
             assert "downside_variance" in strategy
+
+        # Check that baseline matrix report exists
+        matrix_path = member_run / "reports" / "bidding_strategy" / "baseline_matrix.json"
+        assert matrix_path.exists(), f"Missing baseline matrix report: {matrix_path}"
+
+        with matrix_path.open() as mf:
+            matrix_data = json.load(mf)
+
+        assert "strategies" in matrix_data
+        assert isinstance(matrix_data["strategies"], list)
+        assert len(matrix_data["strategies"]) == len(data["strategies"])
+
+        # Verify deterministic ordering (sorted by strategy_id)
+        matrix_ids = [s["strategy_id"] for s in matrix_data["strategies"]]
+        sorted_ids = sorted(matrix_ids)
+        assert matrix_ids == sorted_ids, f"Matrix not deterministically ordered: {matrix_ids} != {sorted_ids}"
+
+        # Verify required fields are present in each strategy
+        for strategy in matrix_data["strategies"]:
+            assert "strategy_id" in strategy
+            assert "expected_points" in strategy
+            assert "make_rate" in strategy
+            assert "cvar_5" in strategy
+            assert "downside_variance" in strategy
+            assert "n_hands" in strategy

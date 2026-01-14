@@ -42,6 +42,7 @@ Each baseline run contains:
 - `results/` - Raw experimental results
 - `reports/bidding_strategy/evaluation.json` - Detailed metrics per strategy
 - `reports/bidding_strategy/RISK_METRICS_COMPARISON.md` - Comparative analysis table
+- `reports/bidding_strategy/baseline_matrix.json` - Deterministic baseline matrix with roster-driven strategy ordering
 
 The suite rollup provides:
 - `rollup.json` - Structured summary of all baseline runs
