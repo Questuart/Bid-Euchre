@@ -29,6 +29,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Validate teacher roster manifest + bidding artifact schema
+        env:
+          PYTHONPATH: src
+        run: |
+          python scripts/validate_teacher_roster.py
+
       - name: Run bid_eval_tiny suite
         env:
           PYTHONPATH: src
