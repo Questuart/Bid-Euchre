@@ -11,21 +11,30 @@ Compare baseline bidders across risk metrics:
 
 ## Baselines Compared
 
-The suite evaluates three baseline approaches:
+The suite evaluates baselines defined in the teacher roster manifest (`experiments/baselines/teacher_roster_v1.yaml`) with the `include_baselines` configuration:
 
-1. **strict**: `StrictRaiserBidder` - Rule-based bidder following strict raising rules
+Currently evaluates:
+1. **strict_raiser**: `StrictRaiserBidder` - Rule-based bidder following strict raising rules
 2. **heuristics**: `HeuristicsBidder` - v1 baseline heuristic bidder
-3. **artifact**: `ArtifactGreedyStrategy` - Linear regression model bidder
+3. **artifact_bidder**: `ArtifactBidder` - Linear regression model bidder using trained artifacts
+
+The roster manifest supports additional baseline types (policy, artifact_policy) for future expansion.
 
 ## Usage
 
-Run the complete baseline comparison:
+Run the complete baseline comparison using the gold path:
+
+```bash
+make bid-eval-tiny
+```
+
+Or run manually:
 
 ```bash
 PYTHONPATH=src python scripts/run_suite.py --suite experiments/suites/bid_eval_tiny.yaml
 ```
 
-This generates individual run directories for each baseline, plus a suite rollup with summary metrics.
+This generates individual run directories for each baseline in the roster, plus a suite rollup with summary metrics.
 
 ## Output Structure
 
@@ -33,6 +42,7 @@ Each baseline run contains:
 - `results/` - Raw experimental results
 - `reports/bidding_strategy/evaluation.json` - Detailed metrics per strategy
 - `reports/bidding_strategy/RISK_METRICS_COMPARISON.md` - Comparative analysis table
+- `reports/bidding_strategy/baseline_matrix.json` - Deterministic baseline matrix with roster-driven strategy ordering
 
 The suite rollup provides:
 - `rollup.json` - Structured summary of all baseline runs

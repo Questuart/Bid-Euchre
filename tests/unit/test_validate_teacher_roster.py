@@ -57,10 +57,10 @@ class TestValidateTeacherRoster:
     def test_validate_roster_manifest_structure_valid(self):
         """Test validation of valid roster manifest structure."""
         valid_manifest = {
-            "roster_version": 1,
+            "roster_version": "1",
             "baselines": [
-                {"id": "strict_raiser", "class_name": "StrictRaiserBidder"},
-                {"id": "heuristics", "class_name": "HeuristicsBidder", "type": "bidding_policy"}
+                {"id": "strict_raiser", "import_path": "bid_euchre.strategy.bidding.StrictRaiserBidder"},
+                {"id": "heuristics", "import_path": "bid_euchre.strategy.bidding.HeuristicsBidder", "kind": "policy"}
             ]
         }
         # Should not raise
@@ -74,23 +74,23 @@ class TestValidateTeacherRoster:
 
     def test_validate_roster_manifest_structure_wrong_version(self):
         """Test validation fails with wrong roster version."""
-        invalid_manifest = {"roster_version": 2, "baselines": []}
+        invalid_manifest = {"roster_version": "2", "baselines": []}
         with pytest.raises(ValueError, match="Unsupported roster_version"):
             validate_roster_manifest_structure(invalid_manifest)
 
     def test_validate_roster_manifest_structure_empty_baselines(self):
         """Test validation fails with empty baselines list."""
-        invalid_manifest = {"roster_version": 1, "baselines": []}
+        invalid_manifest = {"roster_version": "1", "baselines": []}
         with pytest.raises(ValueError, match="baselines list cannot be empty"):
             validate_roster_manifest_structure(invalid_manifest)
 
     def test_validate_roster_manifest_structure_duplicate_ids(self):
         """Test validation fails with duplicate baseline IDs."""
         invalid_manifest = {
-            "roster_version": 1,
+            "roster_version": "1",
             "baselines": [
-                {"id": "duplicate", "class_name": "Class1"},
-                {"id": "duplicate", "class_name": "Class2"}
+                {"id": "duplicate", "import_path": "module.Class1"},
+                {"id": "duplicate", "import_path": "module.Class2"}
             ]
         }
         with pytest.raises(ValueError, match="Duplicate baseline id"):
@@ -99,8 +99,8 @@ class TestValidateTeacherRoster:
     def test_validate_roster_manifest_structure_missing_baseline_keys(self):
         """Test validation fails with missing baseline required keys."""
         invalid_manifest = {
-            "roster_version": 1,
-            "baselines": [{"id": "test"}]  # missing class_name
+            "roster_version": "1",
+            "baselines": [{"id": "test"}]  # missing import_path
         }
         with pytest.raises(ValueError, match="missing required keys"):
             validate_roster_manifest_structure(invalid_manifest)
@@ -109,12 +109,12 @@ class TestValidateTeacherRoster:
         """Test validation of importable baseline classes."""
         # Mock manifest with a real class that should exist
         valid_manifest = {
-            "roster_version": 1,
+            "roster_version": "1",
             "baselines": [
                 {
                     "id": "strict_raiser",
-                    "class_name": "StrictRaiserBidder",
-                    "module_path": "bid_euchre.strategy.bidding"
+                    "import_path": "bid_euchre.strategy.bidding.StrictRaiserBidder",
+                    "kind": "policy"
                 }
             ]
         }
@@ -124,12 +124,11 @@ class TestValidateTeacherRoster:
     def test_validate_baseline_importability_missing_class(self):
         """Test validation fails with non-existent class."""
         invalid_manifest = {
-            "roster_version": 1,
+            "roster_version": "1",
             "baselines": [
                 {
                     "id": "nonexistent",
-                    "class_name": "NonExistentClass",
-                    "module_path": "bid_euchre.strategy.bidding"
+                    "import_path": "bid_euchre.strategy.bidding.NonExistentClass"
                 }
             ]
         }
@@ -144,11 +143,11 @@ class TestValidateTeacherRoster:
 
         try:
             valid_manifest = {
-                "roster_version": 1,
+                "roster_version": "1",
                 "baselines": [
                     {
                         "id": "test",
-                        "class_name": "TestClass",
+                        "import_path": "module.TestClass",
                         "params": {"artifact_path": temp_path}
                     }
                 ]
@@ -161,11 +160,11 @@ class TestValidateTeacherRoster:
     def test_validate_artifact_references_missing_file(self):
         """Test validation fails with missing artifact file."""
         invalid_manifest = {
-            "roster_version": 1,
+            "roster_version": "1",
             "baselines": [
                 {
                     "id": "test",
-                    "class_name": "TestClass",
+                    "import_path": "module.TestClass",
                     "params": {"artifact_path": "nonexistent_file.json"}
                 }
             ]
@@ -182,11 +181,18 @@ class TestValidateTeacherRoster:
     @patch('builtins.print')
     def test_main_no_manifest_file(self, mock_print, mock_exists):
         """Test main function when roster manifest doesn't exist."""
-        mock_exists.return_value = False
+        # Mock os.path.exists to return False for roster but True for fixture
+        def side_effect(path):
+            if "teacher_roster" in path:
+                return False
+            return True
 
-        with patch('sys.exit') as mock_exit:
-            main()
-            mock_exit.assert_called_once_with(0)
+        mock_exists.side_effect = side_effect
+
+        # Mock sys.exit to raise SystemExit so execution stops
+        with patch('sys.exit', side_effect=SystemExit):
+            with pytest.raises(SystemExit):
+                main()
 
         # Check that appropriate messages were printed
         printed_calls = [call.args[0] for call in mock_print.call_args_list]
@@ -195,7 +201,7 @@ class TestValidateTeacherRoster:
 
     def test_main_with_manifest_file(self):
         """Test main function with valid manifest file (if it exists)."""
-        roster_path = "experiments/baselines/teacher_roster_manifest_v1.yaml"
+        roster_path = "experiments/baselines/teacher_roster_v1.yaml"
 
         if os.path.exists(roster_path):
             # If the manifest exists, test that main runs without error

@@ -43,10 +43,9 @@ def validate_roster_manifest_structure(manifest: Dict[str, Any]) -> None:
     if missing:
         raise ValueError(f"Missing required top-level keys: {sorted(missing)}")
 
-    # Roster version (support both string and int)
-    roster_version = manifest["roster_version"]
-    if str(roster_version) != "1":
-        raise ValueError(f"Unsupported roster_version: {roster_version}, expected '1'")
+    # Roster version
+    if manifest["roster_version"] != 1:
+        raise ValueError(f"Unsupported roster_version: {manifest['roster_version']}, expected 1")
 
     # Baselines must be a list
     if not isinstance(manifest["baselines"], list):
@@ -61,8 +60,8 @@ def validate_roster_manifest_structure(manifest: Dict[str, Any]) -> None:
         if not isinstance(baseline, dict):
             raise ValueError(f"Baseline {i} must be a dictionary")
 
-        # Required baseline keys (import_path is the key field)
-        required_baseline_keys = {"id", "import_path"}
+        # Required baseline keys
+        required_baseline_keys = {"id", "class_name"}
         missing = required_baseline_keys - set(baseline.keys())
         if missing:
             raise ValueError(f"Baseline {i} missing required keys: {sorted(missing)}")
@@ -75,20 +74,20 @@ def validate_roster_manifest_structure(manifest: Dict[str, Any]) -> None:
             raise ValueError(f"Duplicate baseline id: {baseline_id}")
         seen_ids.add(baseline_id)
 
-        # Import path validation
-        import_path = baseline["import_path"]
-        if not isinstance(import_path, str) or not import_path.strip():
-            raise ValueError(f"Baseline {i} import_path must be a non-empty string")
+        # Class name validation
+        class_name = baseline["class_name"]
+        if not isinstance(class_name, str) or not class_name.strip():
+            raise ValueError(f"Baseline {i} class_name must be a non-empty string")
 
-        # Kind validation (if present)
-        if "kind" in baseline:
-            baseline_kind = baseline["kind"]
-            if not isinstance(baseline_kind, str) or not baseline_kind.strip():
-                raise ValueError(f"Baseline {i} kind must be a non-empty string")
-            # Allow known kinds
-            allowed_kinds = {"policy", "artifact_policy", "strategy"}
-            if baseline_kind not in allowed_kinds:
-                raise ValueError(f"Baseline {i} kind '{baseline_kind}' not in allowed kinds: {sorted(allowed_kinds)}")
+        # Type validation (if present)
+        if "type" in baseline:
+            baseline_type = baseline["type"]
+            if not isinstance(baseline_type, str) or not baseline_type.strip():
+                raise ValueError(f"Baseline {i} type must be a non-empty string")
+            # Allow known types - can be extended as needed
+            allowed_types = {"bidding_policy", "strategy"}
+            if baseline_type not in allowed_types:
+                raise ValueError(f"Baseline {i} type '{baseline_type}' not in allowed types: {sorted(allowed_types)}")
 
         # Params validation (if present)
         if "params" in baseline:
@@ -101,15 +100,16 @@ def validate_baseline_importability(manifest: Dict[str, Any]) -> None:
     """Validate that all baseline classes can be imported and instantiated."""
     for i, baseline in enumerate(manifest["baselines"]):
         baseline_id = baseline["id"]
-        import_path = baseline["import_path"]
+        class_name = baseline["class_name"]
 
-        # Parse import_path (format: "module.path.ClassName")
+        # Determine module path - check for explicit module_path or use default
+        if "module_path" in baseline:
+            module_path = baseline["module_path"]
+        else:
+            # Default import convention - assume from bid_euchre.strategy
+            module_path = "bid_euchre.strategy"
+
         try:
-            if "." not in import_path:
-                raise ValueError(f"import_path must contain at least one dot: {import_path}")
-
-            module_path, class_name = import_path.rsplit(".", 1)
-
             # Import the module
             module = importlib.import_module(module_path)
 
@@ -120,28 +120,27 @@ def validate_baseline_importability(manifest: Dict[str, Any]) -> None:
             cls = getattr(module, class_name)
 
             # Try to create an instance (with minimal params for testing)
-            # If instantiation fails, that's OK - we just validate the import works
             params = baseline.get("params", {})
 
-            try:
-                # Special handling for different class kinds
-                if baseline.get("kind") in ("policy", "artifact_policy"):
-                    # For bidding policies, try with name parameter
-                    try:
-                        cls(name=baseline_id, **params)
-                    except TypeError:
-                        # Fallback without name
-                        cls(**params)
-                else:
-                    # For other classes, try with provided params
+            # Special handling for different class types
+            if baseline.get("type") == "bidding_policy":
+                # For bidding policies, try with name parameter
+                try:
+                    cls(name=baseline_id, **params)
+                except TypeError:
+                    # Fallback without name
                     cls(**params)
-            except (TypeError, ValueError):
-                # Instantiation failed - that's OK, we just needed to verify import works
-                # The actual runtime instantiation will be validated elsewhere
-                pass
+            else:
+                # For other classes, try with provided params
+                try:
+                    cls(**params)
+                except TypeError:
+                    # If instantiation fails, that's OK - we just need to ensure import works
+                    # The actual instantiation will be validated elsewhere
+                    pass
 
-        except (ImportError, AttributeError) as e:
-            raise ValueError(f"Cannot import baseline '{baseline_id}' (import_path: {import_path}): {e}")
+        except (ImportError, AttributeError, TypeError) as e:
+            raise ValueError(f"Cannot import/instantiate baseline '{baseline_id}' ({class_name} from {module_path}): {e}")
 
 
 def validate_artifact_references(manifest: Dict[str, Any]) -> None:
@@ -173,22 +172,29 @@ def validate_artifact_schema_invariants() -> None:
     if artifact["schema_version"] != "1":
         raise ValueError(f"Fixture artifact has wrong schema version: {artifact['schema_version']}, expected '1'")
 
+    # Validate known supported model types still exist
+    supported_model_types = {"strict_raiser_imitation_v1", "heuristics_imitation_v1", "linear_regression"}
+    model_type = artifact["model_type"]
+    if model_type not in supported_model_types:
+        raise ValueError(f"Fixture artifact uses unsupported model type: {model_type}, expected one of: {sorted(supported_model_types)}")
+
 
 def main() -> None:
     """Main validation function."""
     try:
         # Find the roster manifest file
-        roster_path = "experiments/baselines/teacher_roster_v1.yaml"
+        roster_path = "experiments/baselines/teacher_roster_manifest_v1.yaml"
 
-        # Check if manifest exists
+        # Check if manifest exists (it won't until PR129 lands)
         if not os.path.exists(roster_path):
             print(f"⚠️  Teacher roster manifest not found: {roster_path}")
+            print("   (This is expected until PR129 lands)")
             print("   Skipping roster validation, but validating artifact schema...")
 
             # Still validate artifact schema invariants
             validate_artifact_schema_invariants()
             print("✓ Bidding artifact schema v1 invariants preserved")
-            print("✅ Validation passed (roster manifest validation will activate once manifest is created)")
+            print("✅ Validation passed (roster manifest validation will activate once PR129 lands)")
             sys.exit(0)
 
         # 1. Validate roster manifest structure

@@ -136,6 +136,45 @@ def _generate_comparison_report(run_dir: Path, strategy_metrics: List[Dict]) -> 
         f.write("*Generated: {}*\n".format(datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")))
 
 
+def _generate_baseline_matrix_report(run_dir: Path, strategy_metrics: List[Dict]) -> None:
+    """
+    Generate a baseline matrix JSON report with metrics per strategy.
+
+    Creates a deterministic matrix report containing key risk metrics for each strategy,
+    ordered by strategy_id for reproducible output.
+    """
+    output_dir = Path(run_dir) / "reports" / "bidding_strategy"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "baseline_matrix.json"
+
+    # Sort strategies by strategy_id for deterministic ordering
+    sorted_strategies = sorted(strategy_metrics, key=lambda s: s.get("strategy_id", ""))
+
+    # Build matrix with only the required fields
+    matrix = []
+    for strategy in sorted_strategies:
+        entry = {
+            "strategy_id": strategy["strategy_id"],
+            "expected_points": strategy.get("expected_points"),
+            "make_rate": strategy.get("make_rate"),
+            "cvar_5": strategy.get("cvar_5"),
+            "downside_variance": strategy.get("downside_variance"),
+            "n_hands": strategy.get("hands_with_bids", 0)
+        }
+        matrix.append(entry)
+
+    payload = {
+        "run_id": Path(run_dir).name,
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "description": "Baseline matrix report with deterministic strategy ordering",
+        "strategies": matrix
+    }
+
+    with output_path.open("w") as stream:
+        json.dump(payload, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+
 def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
     """
     Generate evaluation JSON and markdown report summarizing metrics per bidder strategy.
@@ -214,5 +253,8 @@ def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
 
     # Generate comparison markdown report
     _generate_comparison_report(run_dir, strategy_metrics)
+
+    # Generate baseline matrix JSON report
+    _generate_baseline_matrix_report(run_dir, strategy_metrics)
 
     return output_path

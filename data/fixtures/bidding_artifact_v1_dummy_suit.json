@@ -1,0 +1,15 @@
+{
+  "contract": "S",
+  "metadata": {
+    "created_at": "2024-01-01T00:00:00Z",
+    "description": "Dummy bidding model artifact for suit contract - deterministic test fixture"
+  },
+  "model_params": {
+    "initial_bid": {"n": 3, "contract": "S"},
+    "raise_increment": 1,
+    "max_bid": 10,
+    "contract": "S"
+  },
+  "model_type": "strict_raiser_imitation_v1",
+  "schema_version": "1"
+}
