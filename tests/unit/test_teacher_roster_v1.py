@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.bid_euchre.experiments.teacher_roster import load_teacher_roster
+from bid_euchre.experiments.teacher_roster import load_teacher_roster
 
 
 class TestTeacherRosterV1:
@@ -22,7 +22,7 @@ baselines:
   - id: test_policy
     display_name: "Test Policy"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.AlwaysPassBidder"
+    import_path: "bid_euchre.strategy.bidding.AlwaysPassBidder"
     params: {}
 """
         roster_file = tmp_path / "test_roster.yaml"
@@ -44,12 +44,12 @@ baselines:
   - id: duplicate
     display_name: "First"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.AlwaysPassBidder"
+    import_path: "bid_euchre.strategy.bidding.AlwaysPassBidder"
     params: {}
   - id: duplicate
     display_name: "Second"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.StrictRaiserBidder"
+    import_path: "bid_euchre.strategy.bidding.StrictRaiserBidder"
     params: {}
 """
         roster_file = tmp_path / "test_roster.yaml"
@@ -68,7 +68,7 @@ baselines:
   - id: invalid_kind
     display_name: "Invalid"
     kind: "invalid_type"
-    import_path: "src.bid_euchre.strategy.bidding.AlwaysPassBidder"
+    import_path: "bid_euchre.strategy.bidding.AlwaysPassBidder"
     params: {}
 """
         roster_file = tmp_path / "test_roster.yaml"
@@ -86,7 +86,7 @@ description: "Test roster"
 baselines:
   - display_name: "Missing ID"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.AlwaysPassBidder"
+    import_path: "bid_euchre.strategy.bidding.AlwaysPassBidder"
 """
         roster_file = tmp_path / "test_roster.yaml"
         roster_file.write_text(roster_content)
@@ -123,7 +123,7 @@ baselines:
   - id: missing_params
     display_name: "Missing Params"
     kind: "artifact_policy"
-    import_path: "src.bid_euchre.strategy.bidding.ArtifactBidder"
+    import_path: "bid_euchre.strategy.bidding.ArtifactBidder"
 """
         roster_file = tmp_path / "test_roster.yaml"
         roster_file.write_text(roster_content)
@@ -141,7 +141,7 @@ baselines:
   - id: missing_artifact_path
     display_name: "Missing Artifact Path"
     kind: "artifact_policy"
-    import_path: "src.bid_euchre.strategy.bidding.ArtifactBidder"
+    import_path: "bid_euchre.strategy.bidding.ArtifactBidder"
     params: {}
 """
         roster_file = tmp_path / "test_roster.yaml"
@@ -160,7 +160,7 @@ baselines:
   - id: nonexistent_artifact
     display_name: "Nonexistent Artifact"
     kind: "artifact_policy"
-    import_path: "src.bid_euchre.strategy.bidding.ArtifactBidder"
+    import_path: "bid_euchre.strategy.bidding.ArtifactBidder"
     params:
       artifact_path: "nonexistent/path.json"
 """

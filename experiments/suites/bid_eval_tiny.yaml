@@ -12,9 +12,7 @@ parameters:
   log_level: hand
 
 configs:
-  - experiments/configs/bid_eval_strict.yaml
-  - experiments/configs/bid_eval_heuristics.yaml
-  - experiments/configs/bid_eval_artifact.yaml
+  - experiments/configs/bid_eval_tiny.yaml
 
 notes:
   - "Designed for quick evaluation of linear-regression artifact bidders."

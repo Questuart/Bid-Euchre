@@ -5,24 +5,31 @@ baselines:
   - id: always_pass
     display_name: "Always Pass"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.AlwaysPassBidder"
+    import_path: "bid_euchre.strategy.bidding.AlwaysPassBidder"
     params: {}
     notes: "Always passes in auctions"
   - id: strict_raiser
     display_name: "Strict Raiser"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.StrictRaiserBidder"
+    import_path: "bid_euchre.strategy.bidding.StrictRaiserBidder"
     params: {}
     notes: "Bids 3S initially, raises by 1 each time"
   - id: heuristics
     display_name: "Heuristics"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.HeuristicsBidder"
+    import_path: "bid_euchre.strategy.bidding.HeuristicsBidder"
     params: {}
     notes: "Rule-based bidding using hand evaluation heuristics"
   - id: fixed_bidder
     display_name: "Fixed Bid (FiveHeadFred)"
     kind: "policy"
-    import_path: "src.bid_euchre.strategy.bidding.FixedBidder"
+    import_path: "bid_euchre.strategy.bidding.FixedBidder"
     params: {}
     notes: "Fixed-bid baseline for controlled experiments"
+  - id: artifact_bidder
+    display_name: "Artifact Bidder (Greedy Play)"
+    kind: "artifact_policy"
+    import_path: "bid_euchre.strategy.bidding.ArtifactBidder"
+    params:
+      artifact_path: "data/fixtures/bidding_artifact_v1_tiny.json"
+    notes: "Linear regression bidding model with greedy card play"
