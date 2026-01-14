@@ -6,6 +6,8 @@ artifacts (strict_raiser_imitation_v1, heuristics_imitation_v1) deterministicall
 """
 
 
+import pytest
+
 from bid_euchre.core.cards import Card
 from bid_euchre.models.bidding_artifact import dump_artifact
 from bid_euchre.strategy.artifact_strategy import ArtifactGreedyStrategy
@@ -226,8 +228,8 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
         else:
             assert suit is None  # HIGH/LOW don't specify suit
 
-    def test_linear_regression_still_works(self, tmp_path):
-        """Test that linear_regression artifacts still work (backward compatibility)."""
+    def test_linear_regression_fails_fast(self, tmp_path):
+        """Test that linear_regression artifacts fail fast with clear error message."""
         artifact = {
             "schema_version": "1",
             "model_type": "linear_regression",
@@ -245,29 +247,12 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
         artifact_path = tmp_path / "linear.json"
         dump_artifact(artifact, str(artifact_path))
 
-        # Should load without error
-        strategy = ArtifactGreedyStrategy(
-            name="test_linear",
-            artifact_path=str(artifact_path)
-        )
-
-        assert strategy.name == "test_linear"
-        assert strategy._contract_token == "H"
-
-        # Test bidding (should delegate to ArtifactBidder's linear logic)
-        hand = [Card("H", "A"), Card("H", "K"), Card("S", "Q"), Card("D", "J"), Card("C", "T")]
-
-        # Just verify it doesn't crash - linear_regression in ArtifactBidder passes for now
-        bid_amount, contract_type, suit = strategy.decide_bid(
-            hand=hand,
-            current_high_bid=0,
-            current_winner_index=None,
-            partner_index=2,
-            player_index=0
-        )
-
-        # ArtifactBidder._choose_bid_linear currently always passes (TODO in implementation)
-        assert bid_amount == 0
+        # Should fail at initialization with clear error message
+        with pytest.raises(NotImplementedError, match="linear_regression artifacts are reserved for future work"):
+            ArtifactGreedyStrategy(
+                name="test_linear",
+                artifact_path=str(artifact_path)
+            )
 
     def test_determinism_strict_raiser(self, tmp_path):
         """Test that strict_raiser artifact produces deterministic results."""

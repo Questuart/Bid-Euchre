@@ -501,6 +501,27 @@ def train_heuristics_model(contract: str = "S") -> HeuristicsModel:
     return model
 
 
+def train_teacher_model(teacher: str, contract: str = "S") -> Any:
+    """
+    Train a model to imitate the specified teacher.
+
+    Args:
+        teacher: Teacher type ("strict_raiser", "heuristics", or "fiveheadfred")
+        contract: Contract to train for
+
+    Returns:
+        Trained model instance
+    """
+    if teacher == "strict_raiser":
+        return train_strict_raiser_model(contract)
+    elif teacher == "heuristics":
+        return train_heuristics_model(contract)
+    elif teacher == "fiveheadfred":
+        return train_fiveheadfred_model(contract)
+    else:
+        raise ValueError(f"Unknown teacher type: {teacher}")
+
+
 def train_and_save_model(
     contract: str = "S",
     output_path: Optional[str] = None,
@@ -519,15 +540,8 @@ def train_and_save_model(
     Returns:
         Artifact dictionary
     """
-    # Train the model based on teacher type
-    if teacher == "strict_raiser":
-        model = train_strict_raiser_model(contract)
-    elif teacher == "heuristics":
-        model = train_heuristics_model(contract)
-    elif teacher == "fiveheadfred":
-        model = train_fiveheadfred_model(contract)
-    else:
-        raise ValueError(f"Unknown teacher type: {teacher}")
+    # Train the model
+    model = train_teacher_model(teacher, contract)
 
     # Create artifact
     artifact = model.to_artifact_dict(contract, seed)
