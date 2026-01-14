@@ -17,18 +17,18 @@ class TestTeacherRosterManifestValidation:
     """Test teacher roster manifest validation."""
 
     VALID_MANIFEST = {
-        "roster_version": 1,
+        "roster_version": "1",
         "baselines": [
             {
                 "id": "strict_raiser",
-                "class_name": "StrictRaiserBidder",
-                "type": "bidding_policy",
+                "import_path": "bid_euchre.strategy.bidding.StrictRaiserBidder",
+                "kind": "policy",
                 "params": {}
             },
             {
                 "id": "always_pass",
-                "class_name": "AlwaysPassBidder",
-                "type": "bidding_policy",
+                "import_path": "bid_euchre.strategy.bidding.AlwaysPassBidder",
+                "kind": "policy",
                 "params": {}
             }
         ]
@@ -44,13 +44,13 @@ class TestTeacherRosterManifestValidation:
         shutil.copy(fixture_src, fixture_dst)
 
         # Create a temporary manifest file
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(self.VALID_MANIFEST, f)
 
         # Run the validation script
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -68,19 +68,19 @@ class TestTeacherRosterManifestValidation:
         invalid_manifest = deepcopy(self.VALID_MANIFEST)
         invalid_manifest["baselines"].append({
             "id": "strict_raiser",  # Duplicate ID
-            "class_name": "AlwaysPassBidder",
-            "type": "bidding_policy",
+            "import_path": "bid_euchre.strategy.bidding.AlwaysPassBidder",
+            "kind": "policy",
             "params": {}
         })
 
         # Create a temporary manifest file
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
         # Run the validation script
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -97,12 +97,12 @@ class TestTeacherRosterManifestValidation:
         """Test that manifests missing required top-level keys are rejected."""
         invalid_manifest = {"baselines": []}  # Missing roster_version
 
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -119,12 +119,12 @@ class TestTeacherRosterManifestValidation:
         invalid_manifest = deepcopy(self.VALID_MANIFEST)
         invalid_manifest["roster_version"] = 2
 
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -134,19 +134,19 @@ class TestTeacherRosterManifestValidation:
         )
 
         assert result.returncode != 0
-        assert "Unsupported roster_version: 2, expected 1" in result.stderr
+        assert "Unsupported roster_version: 2, expected '1'" in result.stderr
 
     def test_empty_baselines_list_fails(self, tmp_path):
         """Test that manifests with empty baselines list are rejected."""
         invalid_manifest = deepcopy(self.VALID_MANIFEST)
         invalid_manifest["baselines"] = []
 
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -161,14 +161,14 @@ class TestTeacherRosterManifestValidation:
     def test_baseline_missing_required_keys_fails(self, tmp_path):
         """Test that baselines missing required keys are rejected."""
         invalid_manifest = deepcopy(self.VALID_MANIFEST)
-        invalid_manifest["baselines"][0] = {"id": "test"}  # Missing class_name
+        invalid_manifest["baselines"][0] = {"id": "test"}  # Missing import_path
 
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -185,17 +185,17 @@ class TestTeacherRosterManifestValidation:
         invalid_manifest = deepcopy(self.VALID_MANIFEST)
         invalid_manifest["baselines"][0] = {
             "id": "nonexistent",
-            "class_name": "NonExistentClass",
-            "type": "bidding_policy",
+            "import_path": "bid_euchre.strategy.bidding.NonExistentClass",
+            "kind": "policy",
             "params": {}
         }
 
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -205,7 +205,7 @@ class TestTeacherRosterManifestValidation:
         )
 
         assert result.returncode != 0
-        assert "Class 'NonExistentClass' not found in module 'bid_euchre.strategy'" in result.stderr
+        assert "Class 'NonExistentClass' not found in module 'bid_euchre.strategy.bidding'" in result.stderr
 
     def test_missing_artifact_file_fails(self, tmp_path):
         """Test that manifests referencing non-existent artifact files are rejected."""
@@ -219,19 +219,19 @@ class TestTeacherRosterManifestValidation:
         invalid_manifest = deepcopy(self.VALID_MANIFEST)
         invalid_manifest["baselines"].append({
             "id": "artifact_bidder",
-            "class_name": "ArtifactBidder",
-            "type": "bidding_policy",
+            "import_path": "bid_euchre.strategy.bidding.ArtifactBidder",
+            "kind": "artifact_policy",
             "params": {
                 "artifact_path": "nonexistent.json"
             }
         })
 
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(invalid_manifest, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -253,7 +253,7 @@ class TestTeacherRosterManifestValidation:
         shutil.copy(fixture_src, fixture_dst)
 
         # Don't create the manifest file
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
         result = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=tmp_path,
@@ -265,7 +265,7 @@ class TestTeacherRosterManifestValidation:
         # Should succeed with a warning (not fail)
         assert result.returncode == 0
         assert "Teacher roster manifest not found" in result.stdout
-        assert "This is expected until PR129 lands" in result.stdout
+        assert "roster manifest validation will activate once manifest is created" in result.stdout
         assert "Bidding artifact schema v1 invariants preserved" in result.stdout
 
     def test_script_runs_quickly(self, tmp_path):
@@ -280,12 +280,12 @@ class TestTeacherRosterManifestValidation:
         shutil.copy(fixture_src, fixture_dst)
 
         # Create a valid manifest file
-        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_manifest_v1.yaml"
+        manifest_path = tmp_path / "experiments" / "baselines" / "teacher_roster_v1.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(manifest_path, 'w') as f:
             yaml.dump(self.VALID_MANIFEST, f)
 
-        script_path = Path.cwd() / "scripts" / "validate_teacher_roster_manifest.py"
+        script_path = Path.cwd() / "scripts" / "validate_teacher_roster.py"
 
         start_time = time.time()
         result = subprocess.run(
