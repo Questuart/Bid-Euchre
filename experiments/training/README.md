@@ -6,23 +6,11 @@
 
 ## Current Contents
 
-- **`train_bidder_aware_models.py`** - Train bidder-aware regression models (OLSa_v2, OLSa_SR_v2)
-  - Includes `is_bidder` feature for positional awareness
-  - Supersedes all legacy training scripts in `_deprecated/training/`
-  - **Note**: This script does NOT use the config system; it has hardcoded paths
+**REMOVED**: `train_bidder_aware_models.py` - Legacy pickle model training script
 
 ## Usage
 
-Run the training script directly (no config flag):
-
-```bash
-PYTHONPATH=src python experiments/training/train_bidder_aware_models.py
-```
-
-**Outputs**:
-- `data/models/current/olsa_v2/olsa_v2_{suit,high,low}.pkl`
-- `data/models/current/olsa_sr_v2/olsa_sr_v2_{suit,high,low}.pkl`
-- `data/reports/bidder_models_comparison.txt`
+**REMOVED**: Legacy training script usage
 
 ## Canonical Workflow (Future)
 
