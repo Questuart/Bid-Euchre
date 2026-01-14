@@ -1,14 +1,14 @@
 {
-  "contract": "H",
+  "contract": "HIGH",
   "metadata": {
     "created_at": "2024-01-01T00:00:00Z",
-    "description": "Example bidding model artifact for hearts contract"
+    "description": "Dummy bidding model artifact for high contract - deterministic test fixture"
   },
   "model_params": {
-    "initial_bid": {"n": 3, "contract": "H"},
+    "initial_bid": {"n": 3, "contract": "HIGH"},
     "raise_increment": 1,
     "max_bid": 10,
-    "contract": "H"
+    "contract": "HIGH"
   },
   "model_type": "strict_raiser_imitation_v1",
   "schema_version": "1"
