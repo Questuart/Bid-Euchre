@@ -193,6 +193,7 @@ docs/build/
 config.local.*
 secrets.*
 .env.local
+CLAUDE.local.md
 
 # =============================================================================
 # Backup and temporary files
