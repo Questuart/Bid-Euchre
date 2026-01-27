@@ -1,6 +1,6 @@
 # Experiments Directory
 
-**Last updated:** 2026-01-04  
+**Last updated:** 2026-01-27
 **Organization:** Function-based subdirectories
 
 This directory contains all experiment scripts for Bid Euchre simulation and analysis.
@@ -13,8 +13,8 @@ This directory contains all experiment scripts for Bid Euchre simulation and ana
 experiments/
 ├── comparisons/       (1 script)   - Head-to-head strategy comparisons
 ├── training/          (1 script)   - Model training
-├── configs/           (10 YAML)    - Experiment configurations
-├── suites/            (2 YAML)     - Experiment suite definitions
+├── configs/           (16 YAML)    - Experiment configurations
+├── suites/            (4 YAML)     - Experiment suite definitions
 ├── _deprecated/       (15 scripts) - Superseded experiments
 ├── __init__.py                     - Auto-setup (no sys.path needed!)
 ├── REGISTRY.md                     - Complete experiment catalog (includes active, stable, and deprecated)
@@ -86,10 +86,16 @@ ls experiments/configs/
 
 **Purpose:** Configuration files for all experiments
 
-**Current configs:**
+**Current configs (16):**
+- `artifact_bidder_test.yaml` - Test artifact-based bidder loading
 - `auction_smoke.yaml` - Auction mode smoke test
 - `baseline_greedy.yaml` - Greedy strategy baseline
 - `baseline_matchups.yaml` - 4x4 strategy matchup matrix
+- `bid_eval_artifact.yaml` - Evaluate artifact-based bidders
+- `bid_eval_heuristics.yaml` - Evaluate heuristic bidders
+- `bid_eval_strict.yaml` - Strict bid evaluation
+- `bid_eval_tiny.yaml` - Fast bidder evaluation (~2 min)
+- `bidless_dataset_collection.yaml` - Collect bidless training data
 - `hand_eval_test_greedy.yaml` - Hand evaluation with greedy
 - `hand_eval_test_random.yaml` - Hand evaluation with random
 - `head_to_head_vs_random.yaml` - Head-to-head vs random
@@ -128,9 +134,11 @@ Content under `experiments/_deprecated/` is kept for reference only and is inten
 
 **Purpose:** Define collections of experiments to run together
 
-**Current suites:**
+**Current suites (4):**
 - `baseline_tiny.yaml` - Fast validation (~760 hands, seconds)
 - `baseline_full.yaml` - Comprehensive regression (~5 min, 16 matchups + auction smoke)
+- `bid_eval_tiny.yaml` - Fast bidder evaluation with teacher baselines
+- `bidless_dataset_tiny.yaml` - Quick bidless dataset collection for B0 training
 
 **When to add here:** YAML files defining multiple experiments to run as a batch
 
@@ -176,7 +184,8 @@ Follow these steps:
 - training/: 1
 - **Total active:** 2
 
-**Config files:** 10
+**Config files:** 16
+**Suite files:** 4
 
 **Deprecated:** 15
 
