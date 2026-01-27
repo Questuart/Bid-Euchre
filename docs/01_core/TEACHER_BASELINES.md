@@ -4,7 +4,7 @@
 
 **Teacher baselines** (defined in `experiments/baselines/teacher_roster_v1.yaml`):
 - `strict_raiser`: StrictRaiserBidder - bids 3S initially, raises by 1 each time
-- `heuristics`: HeuristicsBidder - rule-based bidding using hand evaluation heuristics
+- `rankthetank`: RanktheTank - rank-sum based bidding (v1 baseline)
 - `artifact_bidder`: ArtifactBidder - linear regression model with greedy card play (uses `data/fixtures/bidding_artifact_v1_tiny.json`)
 
 **Artifact model types supported** (schema v1):

@@ -28,9 +28,9 @@ from .bidding import (
     BiddingObservation,
     BiddingPolicy,
     FixedBidder,
-    HeuristicsBidder,
     HeuristicSuitBidder,
     HighLowHeuristicBidder,
+    RanktheTank,
     StrictRaiserBidder,
 )
 
@@ -57,7 +57,7 @@ __all__ = [
     "ArtifactBidder",
     "FixedBidder",
     "HeuristicSuitBidder",
-    "HeuristicsBidder",
+    "RanktheTank",
     "HighLowHeuristicBidder",
     "StrictRaiserBidder",
     # Baselines

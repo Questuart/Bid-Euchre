@@ -454,10 +454,10 @@ class TestArtifactBidder:
                 assert reference_action.contract == "S"
 
     def test_heuristics_bidding_behavior(self, tmp_path):
-        """Test that heuristics imitation behaves like HeuristicsBidder."""
+        """Test that heuristics imitation behaves like RanktheTank."""
         from bid_euchre.models.bidding_artifact import dump_artifact
 
-        # Create artifact that replicates HeuristicsBidder
+        # Create artifact that replicates RanktheTank
         artifact = {
             "schema_version": "1",
             "model_type": "heuristics_imitation_v1",

@@ -26,7 +26,7 @@ class ArtifactGreedyStrategy(GluttonStrategy):
     Supports all artifact model types by delegating to ArtifactBidder:
     - linear_regression: Linear model with hand features
     - strict_raiser_imitation_v1: Rule-based StrictRaiserBidder imitation
-    - heuristics_imitation_v1: Rule-based HeuristicsBidder imitation
+    - heuristics_imitation_v1: Rule-based RanktheTank imitation
     """
 
     def __init__(

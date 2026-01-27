@@ -92,7 +92,7 @@ ls experiments/configs/
 - `baseline_greedy.yaml` - Greedy strategy baseline
 - `baseline_matchups.yaml` - 4x4 strategy matchup matrix
 - `bid_eval_artifact.yaml` - Evaluate artifact-based bidders
-- `bid_eval_heuristics.yaml` - Evaluate heuristic bidders
+- `bid_eval_heuristics.yaml` - Evaluate RanktheTank bidder
 - `bid_eval_strict.yaml` - Strict bid evaluation
 - `bid_eval_tiny.yaml` - Fast bidder evaluation (~2 min)
 - `bidless_dataset_collection.yaml` - Collect bidless training data

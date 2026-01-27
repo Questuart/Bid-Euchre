@@ -291,20 +291,21 @@ class HighLowHeuristicBidder(BiddingPolicy):
             return BidAction.pass_bid()
 
 
-class HeuristicsBidder(BiddingPolicy):
+class RanktheTank(BiddingPolicy):
     """
-    Composite heuristic bidder (v1 baseline) that evaluates all contract options.
+    Rank-sum based bidder (v1 baseline) that evaluates all contract options.
 
-    This is the v1 baseline heuristic bidder that combines suit and HIGH/LOW evaluation:
+    This is the v1 baseline bidder that combines suit and HIGH/LOW evaluation:
     - Evaluates hand strength for all suit contracts (C, D, H, S)
     - Evaluates HIGH/LOW contracts based on hand composition
-    - Picks the contract+bid that gives the highest strength/bid ratio
+    - Maps strength to bid via thresholds (350→6, 300→5, 250→4, 200→3)
     - Complies with strict-increasing bid rule
 
-    This serves as the canonical "heuristics" teacher for imitation learning.
+    Named after the blog post character who bids based on "my hand looks big."
+    Serves as the canonical "rankthetank" teacher for imitation learning.
     """
 
-    def __init__(self, name: str = "heuristics"):
+    def __init__(self, name: str = "rankthetank"):
         super().__init__(name)
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
@@ -385,7 +386,7 @@ class ArtifactBidder(BiddingPolicy):
     Supports multiple model types:
     - 'linear_regression': Linear model with hand features
     - 'strict_raiser_imitation_v1': Rule-based model replicating StrictRaiserBidder
-    - 'heuristics_imitation_v1': Rule-based model replicating HeuristicsBidder
+    - 'heuristics_imitation_v1': Rule-based model replicating RanktheTank
 
     The artifact is loaded and validated at initialization time.
     """

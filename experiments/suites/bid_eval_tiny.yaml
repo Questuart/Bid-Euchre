@@ -1,6 +1,6 @@
 # Tiny evaluation suite for baseline bidders comparison.
 # Uses auction mode with hand-level logging so risk metrics can be computed.
-# Compares strict, heuristics, and artifact-backed baselines.
+# Compares strict, rankthetank, and artifact-backed baselines.
 
 suite_name: bid_eval_tiny
 

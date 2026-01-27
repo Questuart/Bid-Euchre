@@ -52,7 +52,7 @@ class TestRosterOrderingDeterminism:
         expected_ids = [
             "always_pass",
             "strict_raiser",
-            "heuristics",
+            "rankthetank",
             "fixed_bidder",
             "artifact_bidder"
         ]
@@ -72,7 +72,7 @@ class TestRosterOrderingDeterminism:
         test_config = {
             "experiment_name": "test_roster_ordering",
             "strategy_roster_path": "experiments/baselines/teacher_roster_v1.yaml",
-            "include_baselines": ["strict_raiser", "heuristics", "artifact_bidder"],
+            "include_baselines": ["strict_raiser", "rankthetank", "artifact_bidder"],
             "scenarios": [{"contract_type": None}],
             "parameters": {"n_per": 10, "seed": 42}
         }
@@ -97,7 +97,7 @@ class TestRosterOrderingDeterminism:
             assert policies1 == policies2 == policies3
 
             # Should match the include_baselines order
-            expected_order = ["Strict Raiser", "Heuristics", "Artifact Bidder (Greedy Play)"]
+            expected_order = ["Strict Raiser", "RanktheTank", "Artifact Bidder (Greedy Play)"]
             assert policies1 == expected_order
 
         finally:

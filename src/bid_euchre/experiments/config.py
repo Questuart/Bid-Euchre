@@ -19,8 +19,8 @@ from ..strategy import (
     BiddingPolicy,
     GluttonStrategy,
     GreedyStrategy,
-    HeuristicsBidder,
     RandomLegalStrategy,
+    RanktheTank,
     Strategy,
     StrictRaiserBidder,
 )
@@ -78,8 +78,8 @@ class BiddingPolicyConfig:
             if not artifact_path:
                 raise ValueError("ArtifactBidder requires 'artifact_path' parameter")
             return ArtifactBidder(artifact_path=artifact_path, name=self.name)
-        elif self.class_name == "HeuristicsBidder":
-            return HeuristicsBidder(name=self.name)
+        elif self.class_name == "RanktheTank":
+            return RanktheTank(name=self.name)
         elif self.class_name == "StrictRaiserBidder":
             return StrictRaiserBidder(name=self.name)
         else:

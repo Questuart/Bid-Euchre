@@ -60,7 +60,7 @@ class TestValidateTeacherRoster:
             "roster_version": "1",
             "baselines": [
                 {"id": "strict_raiser", "import_path": "bid_euchre.strategy.bidding.StrictRaiserBidder"},
-                {"id": "heuristics", "import_path": "bid_euchre.strategy.bidding.HeuristicsBidder", "kind": "policy"}
+                {"id": "heuristics", "import_path": "bid_euchre.strategy.bidding.RanktheTank", "kind": "policy"}
             ]
         }
         # Should not raise
