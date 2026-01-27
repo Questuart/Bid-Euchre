@@ -1,5 +1,19 @@
 # Bid Euchre AI Research Framework
 
+## Quick Navigation
+
+| You want to... | Read this |
+|----------------|-----------|
+| Make code changes (AI/human) | [02_agent/AGENTS.md](02_agent/AGENTS.md) |
+| Understand game rules | [01_core/RULES.md](01_core/RULES.md) |
+| Run experiments | [../experiments/README.md](../experiments/README.md) |
+| See known issues | [03_TODO/CODEBASE_CONSISTENCY.md](03_TODO/CODEBASE_CONSISTENCY.md) |
+| Train models | [01_core/BIDDING_MODEL.md](01_core/BIDDING_MODEL.md) |
+
+> **AI Assistants**: Start with [../CLAUDE.md](../CLAUDE.md) for task-based routing.
+
+---
+
 A comprehensive framework for simulating and analyzing the card game Bid Euchre with various AI strategies and experimental configurations.
 
 ## 🎯 Overview

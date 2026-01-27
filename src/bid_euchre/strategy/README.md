@@ -1,0 +1,34 @@
+# strategy/ — Bot Policies
+
+Bidding and play strategies for AI players.
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `base.py` | `Strategy` ABC, shared utilities (`card_value_for_dump`) |
+| `baselines.py` | Simple strategies: `BasicStrategy`, `RandomLegalStrategy`, `AlwaysLowest/HighestLegalStrategy` |
+| `greedy.py` | `GreedyStrategy`, `ImprovedGreedyStrategy` — 1-trick lookahead |
+| `bidding.py` | Bidding policies: `HeuristicsBidder`, `StrictRaiserBidder`, `ArtifactBidder`, etc. |
+| `artifact_strategy.py` | Artifact-based strategy loading |
+
+## Available Strategies
+
+**Play Strategies:**
+- `BasicStrategy` — Simple rule-based
+- `RandomLegalStrategy` — Random legal card
+- `GreedyStrategy` / `ImprovedGreedyStrategy` — 1-trick lookahead
+
+**Bidding Policies:**
+- `AlwaysPassBidder`, `FixedBidder` — Testing/baseline
+- `HeuristicsBidder`, `StrictRaiserBidder` — Rule-based
+- `ArtifactBidder` — ML model-based
+
+## Adding a New Strategy
+1. Implement in new file or extend existing (inherit from `Strategy` or `BiddingPolicy`)
+2. Export in `__init__.py`
+3. Register in `src/bid_euchre/experiments/config.py` (`StrategyConfig.create_strategy`)
+4. Add tests in `tests/unit/`
+
+## Contract
+- See [docs/02_agent/AGENTS.md](../../../docs/02_agent/AGENTS.md) Section 10 for recipes
