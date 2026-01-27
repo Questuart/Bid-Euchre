@@ -1,9 +1,9 @@
 """
-Tests for ImprovedGreedyStrategy (partner awareness + 2-trick lookahead).
+Tests for GluttonStrategy (partner awareness + 2-trick lookahead).
 """
 
 from bid_euchre.core.cards import Card
-from bid_euchre.strategy import GreedyStrategy, ImprovedGreedyStrategy
+from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
 
 
 class TestPartnerAwareness:
@@ -11,7 +11,7 @@ class TestPartnerAwareness:
 
     def test_dont_overkill_partner_winning_card(self):
         """Should not play high card when partner is winning (offsuit scenario)."""
-        improved = ImprovedGreedyStrategy(debug=True)
+        improved = GluttonStrategy(debug=True)
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (strongest trump)
@@ -37,7 +37,7 @@ class TestPartnerAwareness:
 
     def test_overkill_when_partner_not_winning(self):
         """Should play high card when partner is not winning."""
-        improved = ImprovedGreedyStrategy(debug=True)
+        improved = GluttonStrategy(debug=True)
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (can win)
@@ -61,7 +61,7 @@ class TestPartnerAwareness:
 
     def test_save_trump_when_losing(self):
         """Should save trump cards when can't win the trick (if not following suit)."""
-        improved = ImprovedGreedyStrategy(debug=True)
+        improved = GluttonStrategy(debug=True)
 
         hand = [
             Card("H", "T"),  # idx 0 - Trump T
@@ -88,9 +88,8 @@ class TestPartnerAwareness:
 class TestComparisonWithOriginalGreedy:
     """Compare improved vs original greedy behavior."""
 
-    def test_both_win_when_possible(self):
-        """Both strategies should try to win when they can."""
-        improved = ImprovedGreedyStrategy()
+    def test_original_greedy_wins_when_possible(self):
+        """Original greedy should try to win when it can (no sure-win logic)."""
         original = GreedyStrategy()
 
         hand = [
@@ -104,16 +103,59 @@ class TestComparisonWithOriginalGreedy:
             (0, Card("C", "K")),  # Clubs K led
         ]
 
-        improved_choice = improved.choose_card(hand, plays_so_far, "suit", "H", 1)
         original_choice = original.choose_card(hand, plays_so_far, "suit", "H", 1)
 
-        # Both should try to win with Clubs A (cheapest winner)
-        assert improved_choice == 0, f"Improved chose {improved_choice}"
+        # Original greedy should try to win with Clubs A
         assert original_choice == 0, f"Original chose {original_choice}"
+
+    def test_glutton_conservative_when_not_sure(self):
+        """Glutton with sure-win logic sloughs when not certain to win."""
+        glutton = GluttonStrategy()
+
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace (can win but trump could beat it)
+            Card("C", "T"),  # idx 1 - Clubs T
+            Card("D", "K"),  # idx 2 - Diamonds K
+        ]
+
+        # Clubs K led, hearts is trump - Clubs A is not a sure winner
+        # (opponents could trump in with hearts)
+        plays_so_far = [
+            (0, Card("C", "K")),  # Clubs K led
+        ]
+
+        glutton_choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 1)
+
+        # Glutton with sure-win logic should slough (C-T is cheapest legal)
+        # because C-A is not a sure winner (could be trumped)
+        assert glutton_choice == 1, f"Glutton should slough, chose {glutton_choice}"
+
+    def test_glutton_wins_when_sure(self):
+        """Glutton plays winner when it's guaranteed."""
+        glutton = GluttonStrategy()
+        # Simulate all trump already played
+        glutton._played_cards = {
+            Card("H", "J"), Card("D", "J"),  # Both bowers
+            Card("H", "A"), Card("H", "K"), Card("H", "Q"), Card("H", "T"),  # All other trump
+        }
+
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace (now a sure winner - no trump left)
+            Card("C", "T"),  # idx 1 - Clubs T
+        ]
+
+        plays_so_far = [
+            (0, Card("C", "K")),  # Clubs K led
+        ]
+
+        glutton_choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 1)
+
+        # Now C-A is a sure winner (no trump remaining to beat it)
+        assert glutton_choice == 0, f"Glutton should win with sure winner, chose {glutton_choice}"
 
     def test_differ_on_partner_winning(self):
         """Improved should differ from original when partner is winning."""
-        improved = ImprovedGreedyStrategy()
+        improved = GluttonStrategy()
         original = GreedyStrategy()
 
         hand = [
@@ -143,7 +185,7 @@ class TestEdgeCases:
 
     def test_leading_trick(self):
         """Should work when leading a trick (no partner to check)."""
-        improved = ImprovedGreedyStrategy()
+        improved = GluttonStrategy()
 
         hand = [
             Card("H", "A"),  # idx 0
@@ -159,7 +201,7 @@ class TestEdgeCases:
 
     def test_last_to_play(self):
         """Should work when playing last in trick."""
-        improved = ImprovedGreedyStrategy()
+        improved = GluttonStrategy()
 
         hand = [
             Card("H", "A"),  # idx 0 - Trump A
@@ -186,7 +228,7 @@ class TestEdgeCases:
 
     def test_no_trump_contract(self):
         """Should handle no-trump contracts correctly."""
-        improved = ImprovedGreedyStrategy()
+        improved = GluttonStrategy()
 
         hand = [
             Card("H", "A"),  # idx 0

@@ -12,15 +12,15 @@ strategies:
   - name: random_legal
     class_name: RandomLegalStrategy
 
-  - name: improved_greedy
-    class_name: ImprovedGreedyStrategy
+  - name: glutton
+    class_name: GluttonStrategy
 
 matchups:
   - team0: random_legal
     team1: random_legal
 
-  - team0: improved_greedy
-    team1: improved_greedy
+  - team0: glutton
+    team1: glutton
 
 scenarios:
   - contract_type: suit

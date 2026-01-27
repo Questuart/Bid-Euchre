@@ -13,15 +13,15 @@ from typing import Any, List
 from ..core.cards import Card
 from ..models.bidding_artifact import load_artifact
 from ..strategy.bidding import ArtifactBidder, BiddingObservation
-from ..strategy.greedy import ImprovedGreedyStrategy
+from ..strategy.greedy import GluttonStrategy
 
 
-class ArtifactGreedyStrategy(ImprovedGreedyStrategy):
+class ArtifactGreedyStrategy(GluttonStrategy):
     """
     Greedy card-play logic with artifact-backed bidding decisions.
 
     The artifact controls bidding for a single contract (suit/HIGH/LOW). Card
-    play defers to :class:`ImprovedGreedyStrategy`.
+    play defers to :class:`GluttonStrategy`.
 
     Supports all artifact model types by delegating to ArtifactBidder:
     - linear_regression: Linear model with hand features

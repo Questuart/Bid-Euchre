@@ -1,6 +1,6 @@
 import random
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Set
 
 # Suits and ranks for this Bid Euchre variant
 SUITS = ["C", "D", "H", "S"]  # Clubs, Diamonds, Hearts, Spades
@@ -139,3 +139,103 @@ def rank_strength(card: Card, contract_type: str) -> int:
         raise ValueError(f"Unknown contract_type: {contract_type}")
 
     return order.index(card.rank)
+
+
+# ================================
+#    CARD COMPARISON UTILITIES
+# ================================
+
+def card_strength_in_trick(
+    card: Card,
+    led_suit: str,
+    trump_suit: Optional[str],
+    contract_type: str,
+) -> tuple:
+    """
+    Returns a comparable tuple for card strength in a trick context.
+
+    Higher tuple = stronger card. Cards that can't win return (0, 0, 0).
+
+    For suit contracts:
+    - (3, 2, 0) = right bower (strongest)
+    - (3, 1, 0) = left bower
+    - (2, rank) = other trump
+    - (1, rank) = led suit (non-trump)
+    - (0, 0, 0) = offsuit that didn't lead (cannot win)
+
+    For high/low contracts:
+    - (1, rank) = led suit
+    - (0, 0, 0) = offsuit (cannot win)
+    """
+    eff_suit = effective_suit(card, trump_suit, contract_type)
+
+    if contract_type == "suit" and trump_suit is not None:
+        # Check for bowers
+        if is_right_bower(card, trump_suit):
+            return (3, 2, 0)
+        if is_left_bower(card, trump_suit):
+            return (3, 1, 0)
+
+        # Other trump
+        if eff_suit == trump_suit:
+            return (2, rank_strength(card, contract_type), 0)
+
+        # Led suit (non-trump)
+        if eff_suit == led_suit:
+            return (1, rank_strength(card, contract_type), 0)
+
+        # Offsuit - cannot win
+        return (0, 0, 0)
+
+    else:
+        # High or low contract - no trump
+        if card.suit == led_suit:
+            return (1, rank_strength(card, contract_type), 0)
+        return (0, 0, 0)
+
+
+def cards_that_beat(
+    candidate: Card,
+    led_suit: str,
+    trump_suit: Optional[str],
+    contract_type: str,
+) -> Set[Card]:
+    """
+    Returns set of all cards from the deck that can beat the candidate.
+
+    This is used for "sure win" logic: if no remaining card can beat
+    the candidate, it's a guaranteed winner.
+
+    Args:
+        candidate: The card we're considering playing
+        led_suit: The suit that was led (or will be led if candidate leads)
+        trump_suit: Trump suit for "suit" contracts, None otherwise
+        contract_type: "suit", "high", or "low"
+
+    Returns:
+        Set of Card objects that beat the candidate in this context
+    """
+    candidate_strength = card_strength_in_trick(candidate, led_suit, trump_suit, contract_type)
+
+    # If candidate can't even participate (offsuit in led suit scenario),
+    # everything that CAN participate beats it
+    if candidate_strength == (0, 0, 0):
+        # Return all cards that can win (all trump + all led suit)
+        result: Set[Card] = set()
+        for suit in SUITS:
+            for rank in RANKS:
+                card = Card(suit, rank)
+                if card_strength_in_trick(card, led_suit, trump_suit, contract_type) > (0, 0, 0):
+                    result.add(card)
+        return result
+
+    # Find all cards stronger than candidate
+    result = set()
+    for suit in SUITS:
+        for rank in RANKS:
+            card = Card(suit, rank)
+            card_strength = card_strength_in_trick(card, led_suit, trump_suit, contract_type)
+            if card_strength > candidate_strength:
+                result.add(card)
+
+    return result

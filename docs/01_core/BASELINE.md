@@ -160,7 +160,7 @@ The `baseline_tiny` suite includes **3 experiment configs** (3 invocations of `r
 **Purpose**: Compare 5 strategies on common deals
 
 **Details**:
-- **Strategies**: 5 (greedy, improved_greedy, random_legal, always_lowest, always_highest)
+- **Strategies**: 5 (greedy, glutton, random_legal, always_lowest, always_highest)
 - **Scenarios**: 6 (full grid)
 - **Hands** (with `n_per=20`): 5 × 6 × 20 = **600 hands**
 
