@@ -1,3 +1,5 @@
+<!-- AI-SKIP: This entire directory contains outdated documentation. Return to docs/02_agent/AGENTS.md -->
+
 > # ⚠️ ARCHIVED — not authoritative
 >
 > **You’re in `docs/archive/`.** This folder is intentionally **not canonical** and may be stale or contradictory.
