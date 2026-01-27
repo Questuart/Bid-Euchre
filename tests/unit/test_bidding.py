@@ -11,6 +11,7 @@ from bid_euchre.strategy.bidding import (
     ArtifactBidder,
     BidAction,
     BiddingObservation,
+    ModeloEspecifico,
     StrictRaiserBidder,
 )
 
@@ -590,3 +591,147 @@ class TestBiddingPolicyConfig:
 
         with pytest.raises(ValueError, match="Unknown bidding policy class"):
             config.create_bidding_policy()
+
+
+class TestModeloEspecifico:
+    """Test ModeloEspecifico feature-weighted bidder."""
+
+    def test_strong_hand_bids_correctly(self):
+        """Test a strong hand: 2 bowers + 2 trump + 1 offsuit ace = score 4.5 → bid 4."""
+        bidder = ModeloEspecifico()
+
+        # Hand: RB(H), LB(H), AH, KH, AS
+        # In Hearts trump: 2 bowers, 4 trump total (RB, LB, A, K), 1 offsuit ace (AS)
+        # Score = 1.0 * 2 + 0.5 * 4 + 0.5 * 1 = 2 + 2 + 0.5 = 4.5 → bid 4
+        hand = [
+            Card("H", "J"),  # Right bower
+            Card("D", "J"),  # Left bower (Jack of same-color suit)
+            Card("H", "A"),  # Trump Ace
+            Card("H", "K"),  # Trump King
+            Card("S", "A"),  # Offsuit Ace
+        ]
+
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=0
+        )
+
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n == 4
+        assert action.contract == "H"  # Hearts should score highest
+
+    def test_weak_hand_passes(self):
+        """Test a weak hand (score < 3) passes."""
+        bidder = ModeloEspecifico()
+
+        # Hand with no bowers, 2 trump, no offsuit aces
+        # Score = 0 + 0.5 * 2 + 0 = 1.0 → pass
+        hand = [
+            Card("S", "K"),  # Trump King
+            Card("S", "Q"),  # Trump Queen
+            Card("H", "K"),  # Offsuit (not ace)
+            Card("D", "Q"),  # Offsuit (not ace)
+            Card("C", "T"),  # Offsuit (not ace)
+        ]
+
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=0
+        )
+
+        action = bidder.choose_bid(obs)
+        assert action.is_pass()
+
+    def test_contract_selection_highest_score(self):
+        """Test that the contract with highest score is selected."""
+        bidder = ModeloEspecifico()
+
+        # Hand heavily favoring Spades trump
+        # In Spades: RB, LB, A (3 trump, 2 bowers) + 1 offsuit ace
+        # Score = 2 + 1.5 + 0.5 = 4.0 → bid 4
+        hand = [
+            Card("S", "J"),  # Right bower in Spades
+            Card("C", "J"),  # Left bower in Spades (Club J)
+            Card("S", "A"),  # Trump Ace
+            Card("H", "A"),  # Offsuit Ace
+            Card("D", "K"),  # Offsuit
+        ]
+
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=0
+        )
+
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.contract == "S"  # Spades should be chosen
+
+    def test_strict_increasing_compliance(self):
+        """Test that bids comply with strict-increasing rule."""
+        bidder = ModeloEspecifico()
+
+        # Strong hand that would normally bid 4
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "A"),
+        ]
+
+        # Current high bid is 4, so must bid higher or pass
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=4
+        )
+
+        action = bidder.choose_bid(obs)
+        # Score is 4.5 → floor to 4, but 4 is not > 4, so must pass
+        assert action.is_pass()
+
+    def test_borderline_bid_3(self):
+        """Test a hand that scores exactly 3 bids 3."""
+        bidder = ModeloEspecifico()
+
+        # Need score of exactly 3.0-3.99 for bid 3
+        # 0 bowers + 6 trump + 0 offsuit aces = 0 + 3 + 0 = 3.0 → bid 3
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("H", "T"),
+            Card("C", "A"),  # This would be offsuit ace, so let's use non-ace
+        ]
+        # Actually, let's construct it differently:
+        # 0 bowers, 6 trump, 0 offsuit aces → 0.5 * 6 = 3.0
+        # But we only have 5 cards in test hands sometimes...
+        # Let's do: 1 bower (1.0) + 4 trump (2.0) + 0 aces = 3.0
+        hand = [
+            Card("H", "J"),  # Right bower (1 bower, 1 trump)
+            Card("H", "K"),  # Trump
+            Card("H", "Q"),  # Trump
+            Card("H", "T"),  # Trump → total 4 trump, 1 bower
+            Card("D", "K"),  # Offsuit non-ace
+        ]
+        # Score = 1.0 * 1 + 0.5 * 4 + 0.5 * 0 = 1 + 2 + 0 = 3.0 → bid 3
+
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=0
+        )
+
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n == 3
+        assert action.contract == "H"

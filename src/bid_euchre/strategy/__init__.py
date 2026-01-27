@@ -30,6 +30,7 @@ from .bidding import (
     FixedBidder,
     HeuristicSuitBidder,
     HighLowHeuristicBidder,
+    ModeloEspecifico,
     RanktheTank,
     StrictRaiserBidder,
 )
@@ -57,8 +58,9 @@ __all__ = [
     "ArtifactBidder",
     "FixedBidder",
     "HeuristicSuitBidder",
-    "RanktheTank",
     "HighLowHeuristicBidder",
+    "ModeloEspecifico",
+    "RanktheTank",
     "StrictRaiserBidder",
     # Baselines
     "BasicStrategy",
