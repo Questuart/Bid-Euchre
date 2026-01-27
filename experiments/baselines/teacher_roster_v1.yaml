@@ -14,12 +14,12 @@ baselines:
     import_path: "bid_euchre.strategy.bidding.StrictRaiserBidder"
     params: {}
     notes: "Bids 3S initially, raises by 1 each time"
-  - id: heuristics
-    display_name: "Heuristics"
+  - id: rankthetank
+    display_name: "RanktheTank"
     kind: "policy"
-    import_path: "bid_euchre.strategy.bidding.HeuristicsBidder"
+    import_path: "bid_euchre.strategy.bidding.RanktheTank"
     params: {}
-    notes: "Rule-based bidding using hand evaluation heuristics"
+    notes: "Rank-sum based bidding (v1 baseline)"
   - id: fixed_bidder
     display_name: "Fixed Bid (FiveHeadFred)"
     kind: "policy"

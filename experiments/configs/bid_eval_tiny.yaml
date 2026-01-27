@@ -3,7 +3,7 @@ experiment_name: bid_eval_tiny
 strategy_roster_path: experiments/baselines/teacher_roster_v1.yaml
 include_baselines:
   - strict_raiser
-  - heuristics
+  - rankthetank
   - artifact_bidder
 
 scenarios:

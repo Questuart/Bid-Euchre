@@ -15,7 +15,7 @@ The suite evaluates baselines defined in the teacher roster manifest (`experimen
 
 Currently evaluates:
 1. **strict_raiser**: `StrictRaiserBidder` - Rule-based bidder following strict raising rules
-2. **heuristics**: `HeuristicsBidder` - v1 baseline heuristic bidder
+2. **rankthetank**: `RanktheTank` - v1 baseline rank-sum bidder
 3. **artifact_bidder**: `ArtifactBidder` - Linear regression model bidder using trained artifacts
 
 The roster manifest supports additional baseline types (policy, artifact_policy) for future expansion.

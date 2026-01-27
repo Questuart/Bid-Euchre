@@ -1,8 +1,8 @@
 experiment_name: bid_eval_heuristics
 
 bidding_policies:
-  - name: heuristics_bidder
-    class_name: HeuristicsBidder
+  - name: rankthetank_bidder
+    class_name: RanktheTank
     params: {}
 
 scenarios:

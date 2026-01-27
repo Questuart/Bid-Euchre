@@ -26,7 +26,7 @@ from bid_euchre.models.train_bidder import (
 )
 from bid_euchre.strategy.bidding import (
     BiddingObservation,
-    HeuristicsBidder,
+    RanktheTank,
     StrictRaiserBidder,
 )
 
@@ -337,7 +337,7 @@ class TestHeuristicsModel:
         assert artifact["model_params"] == model.rules
         assert "metadata" in artifact
         metadata = artifact["metadata"]
-        assert metadata["teacher_model"] == "HeuristicsBidder"
+        assert metadata["teacher_model"] == "RanktheTank"
         assert metadata["training_data"] == "synthetic observations"
         assert metadata["training_seed"] == 42
 
@@ -370,8 +370,8 @@ class TestHeuristicsTrainingPipeline:
 
         assert isinstance(model, HeuristicsModel)
 
-        # Verify model matches HeuristicsBidder behavior
-        teacher = HeuristicsBidder()
+        # Verify model matches RanktheTank behavior
+        teacher = RanktheTank()
 
         # Test on synthetic observations
         observations = create_synthetic_observations_for_heuristics()
@@ -513,7 +513,7 @@ class TestHeuristicsTrainingPipeline:
         assert "description" in metadata
         assert "training_data" in metadata
         assert "teacher_model" in metadata
-        assert metadata["teacher_model"] == "HeuristicsBidder"
+        assert metadata["teacher_model"] == "RanktheTank"
 
 
 class TestTeacherParameter:
@@ -539,7 +539,7 @@ class TestTeacherParameter:
         )
 
         assert artifact["model_type"] == "heuristics_imitation_v1"
-        assert artifact["metadata"]["teacher_model"] == "HeuristicsBidder"
+        assert artifact["metadata"]["teacher_model"] == "RanktheTank"
 
     def test_unknown_teacher_raises_error(self):
         """Test that unknown teacher raises ValueError."""

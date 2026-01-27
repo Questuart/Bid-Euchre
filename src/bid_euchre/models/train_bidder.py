@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from ..strategy.bidding import BiddingObservation, HeuristicsBidder, StrictRaiserBidder
+from ..strategy.bidding import BiddingObservation, RanktheTank, StrictRaiserBidder
 from .bidding_artifact import dump_artifact, validate_artifact
 
 DETERMINISTIC_BASE_TIME = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -284,14 +284,14 @@ def train_fiveheadfred_model(contract: str = "S") -> FiveHeadFredModel:
 
 class HeuristicsModel:
     """
-    Deterministic model that exactly replicates HeuristicsBidder logic.
+    Deterministic model that exactly replicates RanktheTank logic.
 
     This is a rule-based model that encodes the heuristic bidding strategy
     as parameters, including suit and HIGH/LOW evaluation thresholds.
     """
 
     def __init__(self):
-        """Initialize with HeuristicsBidder rules."""
+        """Initialize with RanktheTank rules."""
         # Encode the bidding rules as model parameters
         self.rules = {
             "suit_thresholds": {
@@ -407,17 +407,17 @@ class HeuristicsModel:
             "model_params": self.rules,
             "metadata": {
                 "created_at": created_at,
-                "description": "Deterministic imitation of HeuristicsBidder (v1 baseline)",
+                "description": "Deterministic imitation of RanktheTank (v1 baseline)",
                 "training_data": "synthetic observations",
                 "training_seed": seed,
-                "teacher_model": "HeuristicsBidder"
+                "teacher_model": "RanktheTank"
             }
         }
 
 
 def create_synthetic_observations_for_heuristics() -> List[BiddingObservation]:
     """
-    Create synthetic bidding observations to train HeuristicsBidder imitation.
+    Create synthetic bidding observations to train RanktheTank imitation.
 
     Creates diverse hands covering different contract preferences and strengths.
 
@@ -461,7 +461,7 @@ def create_synthetic_observations_for_heuristics() -> List[BiddingObservation]:
 
 def train_heuristics_model(contract: str = "S") -> HeuristicsModel:
     """
-    Train a deterministic model to imitate HeuristicsBidder.
+    Train a deterministic model to imitate RanktheTank.
 
     Args:
         contract: Contract to train for (nominal; heuristics evaluates all contracts)
@@ -475,8 +475,8 @@ def train_heuristics_model(contract: str = "S") -> HeuristicsModel:
     # Initialize model
     model = HeuristicsModel()
 
-    # "Train" by validating that our model matches HeuristicsBidder
-    teacher = HeuristicsBidder()
+    # "Train" by validating that our model matches RanktheTank
+    teacher = RanktheTank()
 
     for obs in observations:
         teacher_action = teacher.choose_bid(obs)

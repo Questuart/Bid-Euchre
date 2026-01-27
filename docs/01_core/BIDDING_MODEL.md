@@ -143,7 +143,7 @@ The canonical "teacher baseline" roster consists of three deterministic bidding 
 | Teacher | Description | Strategy |
 |---------|-------------|----------|
 | `strict_raiser` | StrictRaiserBidder | Simple raising strategy - bids if hand strength meets minimum threshold |
-| `heuristics` | HeuristicsBidder | Rule-based heuristics (v1 baseline) - considers position, cards, and opponents |
+| `rankthetank` | RanktheTank | Rank-sum based bidding (v1 baseline) - evaluates hand strength and maps to bid thresholds |
 | `fiveheadfred` | FiveHeadFred | Aggressive bidder - always bids 5 if legal, otherwise passes |
 
 ### Training Commands
@@ -158,11 +158,11 @@ PYTHONPATH=src python scripts/train_bidder.py \
   --output data/artifacts/bidding_strict_raiser_S.json \
   --seed 42
 
-# Train heuristics teacher
+# Train rankthetank teacher
 PYTHONPATH=src python scripts/train_bidder.py \
   --teacher heuristics \
   --contract S \
-  --output data/artifacts/bidding_heuristics_S.json \
+  --output data/artifacts/bidding_rankthetank_S.json \
   --seed 42
 
 # Train fiveheadfred teacher

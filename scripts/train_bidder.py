@@ -7,7 +7,7 @@ and emit JSON artifacts conforming to the bidding model schema.
 
 Supported teachers:
 - strict_raiser: StrictRaiserBidder (simple raising strategy)
-- heuristics: HeuristicsBidder (v1 baseline heuristic bidder)
+- heuristics: RanktheTank (v1 baseline rank-sum bidder)
 - fiveheadfred: FiveHeadFred (always bids 5 if legal, else passes)
 """
 

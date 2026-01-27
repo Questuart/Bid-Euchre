@@ -9,7 +9,7 @@ Bidding and play strategies for AI players.
 | `base.py` | `Strategy` ABC, shared utilities (`card_value_for_dump`) |
 | `baselines.py` | Simple strategies: `BasicStrategy`, `RandomLegalStrategy`, `AlwaysLowest/HighestLegalStrategy` |
 | `greedy.py` | `GreedyStrategy`, `GluttonStrategy` — 1-trick lookahead |
-| `bidding.py` | Bidding policies: `HeuristicsBidder`, `StrictRaiserBidder`, `ArtifactBidder`, etc. |
+| `bidding.py` | Bidding policies: `RanktheTank`, `StrictRaiserBidder`, `ArtifactBidder`, etc. |
 | `artifact_strategy.py` | Artifact-based strategy loading |
 
 ## Available Strategies
@@ -21,7 +21,7 @@ Bidding and play strategies for AI players.
 
 **Bidding Policies:**
 - `AlwaysPassBidder`, `FixedBidder` — Testing/baseline
-- `HeuristicsBidder`, `StrictRaiserBidder` — Rule-based
+- `RanktheTank`, `StrictRaiserBidder` — Rule-based
 - `ArtifactBidder` — ML model-based
 
 ## Adding a New Strategy
