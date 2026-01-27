@@ -61,15 +61,16 @@ class BidlessDatasetCollector:
             trump_suit: Trump suit for suit contracts ("C", "D", "H", "S", None for HIGH/LOW)
             deal_id: Optional deal identifier for reproducibility
         """
-        # Validate contract type
-        if contract_type not in ("suit", "HIGH", "LOW"):
+        # Validate contract type (accept both "high"/"low" and "HIGH"/"LOW")
+        ct_lower = contract_type.lower()
+        if ct_lower not in ("suit", "high", "low"):
             raise ValueError(f"Invalid contract_type: {contract_type}")
 
         # Validate trump_suit for suit contracts
-        if contract_type == "suit" and trump_suit is None:
+        if ct_lower == "suit" and trump_suit is None:
             raise ValueError("trump_suit must be provided for 'suit' contracts")
-        if contract_type in ("HIGH", "LOW") and trump_suit is not None:
-            raise ValueError("trump_suit must be None for HIGH/LOW contracts")
+        if ct_lower in ("high", "low") and trump_suit is not None:
+            raise ValueError("trump_suit must be None for high/low contracts")
 
         # Validate seat positions
         if not (0 <= seat <= 3):
@@ -106,12 +107,14 @@ class BidlessDatasetCollector:
 
         This should be called after recording all hands to enable feature computation.
         """
-        if contract_type not in ("suit", "HIGH", "LOW"):
+        # Validate contract type (accept both "high"/"low" and "HIGH"/"LOW")
+        ct_lower = contract_type.lower()
+        if ct_lower not in ("suit", "high", "low"):
             raise ValueError(f"Invalid contract_type: {contract_type}")
-        if contract_type == "suit" and trump_suit is None:
+        if ct_lower == "suit" and trump_suit is None:
             raise ValueError("trump_suit must be provided for 'suit' contracts")
-        if contract_type in ("HIGH", "LOW") and trump_suit is not None:
-            raise ValueError("trump_suit must be None for HIGH/LOW contracts")
+        if ct_lower in ("high", "low") and trump_suit is not None:
+            raise ValueError("trump_suit must be None for high/low contracts")
 
         self._contract_type = contract_type
         self._trump_suit = trump_suit
