@@ -31,6 +31,12 @@ from .style import (
     format_ci,
     format_pct,
 )
+from .validation import (
+    generate_validation_plots,
+    plot_feature_correlation,
+    plot_feature_distributions,
+    plot_hand_value_by_contract,
+)
 
 __all__ = [
     # Style
@@ -54,4 +60,9 @@ __all__ = [
     "OutcomeStats",
     "compute_outcome_stats",
     "outcome_rates_with_ci",
+    # Validation
+    "generate_validation_plots",
+    "plot_feature_distributions",
+    "plot_feature_correlation",
+    "plot_hand_value_by_contract",
 ]
