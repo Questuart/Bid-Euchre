@@ -379,6 +379,54 @@ class RanktheTank(BiddingPolicy):
         return BidAction.bid(bid_n, contract)
 
 
+class ModeloEspecifico(BiddingPolicy):
+    """
+    Feature-weighted bidder using hand-coded weights.
+
+    BidScore = 1.0 × bowers + 0.5 × trump_count + 0.5 × offsuit_aces
+
+    The score maps directly to bid amount (floored).
+    Named after the blog post's "specific model" baseline.
+    """
+
+    def __init__(self, name: str = "modelo_especifico"):
+        super().__init__(name)
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        from ..features.hand_eval import get_hand_features
+
+        candidates = []
+
+        # Evaluate suit contracts
+        for suit in ["C", "D", "H", "S"]:
+            features = get_hand_features(obs.hand, "suit", suit)
+            score = (
+                1.0 * features["bowers"]
+                + 0.5 * features["trump_count"]
+                + 0.5 * features["offsuit_aces"]
+            )
+            bid_n = int(score)  # floor
+            if 3 <= bid_n <= 6 and bid_n > obs.current_high_bid:
+                candidates.append((score, bid_n, suit))
+
+        # Evaluate HIGH/LOW contracts
+        # For HIGH/LOW, no bowers exist, so score is based on aces only
+        for contract in ["HIGH", "LOW"]:
+            features = get_hand_features(obs.hand, contract.lower(), None)
+            # No bowers in HIGH/LOW, trump_count = 0
+            score = 0.5 * features["offsuit_aces"]
+            bid_n = int(score)
+            if 3 <= bid_n <= 6 and bid_n > obs.current_high_bid:
+                candidates.append((score, bid_n, contract))
+
+        if not candidates:
+            return BidAction.pass_bid()
+
+        # Pick best: highest score, break ties by bid amount, then alphabetically
+        best = max(candidates, key=lambda x: (x[0], x[1], x[2]))
+        return BidAction.bid(best[1], best[2])
+
+
 class ArtifactBidder(BiddingPolicy):
     """
     Bidding policy that loads and executes a trained model from a bidding artifact file.
