@@ -20,8 +20,8 @@ from bid_euchre.core.cards import Card
 from bid_euchre.core.rules import get_legal_indices, trick_winner
 from bid_euchre.strategy import (
     AlwaysHighestLegalStrategy,
+    GluttonStrategy,
     GreedyStrategy,
-    ImprovedGreedyStrategy,
     card_value_for_dump,
     # Intentionally exclude RandomLegal and AlwaysLowest (they don't try to win)
 )
@@ -130,43 +130,55 @@ class TestWinningMoveOracle:
 
     These are "oracle" tests: if a strategy claims to try to win tricks,
     it must take obvious winning moves in deterministic scenarios.
+
+    Note: GluttonStrategy has "sure-win" logic and only commits to
+    winning when guaranteed. It's tested separately for sure-win scenarios.
     """
 
-    # Strategies that should try to win when possible
-    WINNING_STRATEGIES = [
+    # Strategies that aggressively try to win when possible
+    AGGRESSIVE_STRATEGIES = [
         pytest.param(GreedyStrategy(), id="greedy"),
-        pytest.param(ImprovedGreedyStrategy(), id="improved_greedy"),
         pytest.param(AlwaysHighestLegalStrategy(), id="always_highest"),
     ]
 
-    @pytest.mark.parametrize("strategy", WINNING_STRATEGIES)
-    def test_obvious_win_2nd_to_act_followsuit(self, strategy):
+    # All strategies including conservative ones (for tests with sure winners)
+    ALL_STRATEGIES = [
+        pytest.param(GreedyStrategy(), id="greedy"),
+        pytest.param(GluttonStrategy(), id="glutton"),
+        pytest.param(AlwaysHighestLegalStrategy(), id="always_highest"),
+    ]
+
+    @pytest.mark.parametrize("strategy", ALL_STRATEGIES)
+    def test_obvious_win_2nd_to_act_followsuit_high_contract(self, strategy):
         """
-        Scenario: 2nd to act, can follow suit with winning card.
-        Oracle: MUST play a winning card.
+        Scenario: 2nd to act, HIGH contract, can follow suit with ace (sure winner).
+        Oracle: ALL strategies MUST play the winning ace.
         """
         hand = [
             Card("H", "T"),  # idx 0 - Ten of hearts (loses to Q)
-            Card("H", "A"),  # idx 1 - Ace of hearts (WINS)
+            Card("H", "A"),  # idx 1 - Ace of hearts (SURE WINNER in high)
             Card("S", "K"),  # idx 2 - King of spades (offsuit)
         ]
         plays_so_far = [(0, Card("H", "Q"))]
 
         # Oracle validates strategy picks a winner
+        # In HIGH contract, ace of led suit is unbeatable - even Glutton plays it
         validate_greedy_algorithm(
             strategy, hand, plays_so_far, "high", None, 1,
             expected_behavior="any_winner"
         )
 
-    @pytest.mark.parametrize("strategy", WINNING_STRATEGIES)
+    @pytest.mark.parametrize("strategy", AGGRESSIVE_STRATEGIES)
     def test_obvious_win_3rd_to_act_trump_beats_offsuit(self, strategy):
         """
         Scenario: 3rd to act, led suit is non-trump, current best is K.
         You can't follow suit but have trump A.
-        Oracle: MUST trump to win.
+        Oracle: Aggressive strategies MUST trump to win.
+
+        Note: Glutton would slough here (trump A not a sure winner - bowers exist).
         """
         hand = [
-            Card("H", "A"),  # idx 0 - Ace of hearts (TRUMP - WINS)
+            Card("H", "A"),  # idx 0 - Ace of hearts (TRUMP - WINS but not sure)
             Card("D", "T"),  # idx 1 - Ten of diamonds (weak offsuit)
             Card("C", "Q"),  # idx 2 - Queen of clubs (weak offsuit)
         ]
@@ -175,17 +187,17 @@ class TestWinningMoveOracle:
             (1, Card("S", "K")),  # Spades King (currently winning)
         ]
 
-        # Oracle validates strategy trumps to win
+        # Oracle validates aggressive strategies trump to win
         validate_greedy_algorithm(
             strategy, hand, plays_so_far, "suit", "H", 2,
             expected_behavior="any_winner"
         )
 
-    @pytest.mark.parametrize("strategy", WINNING_STRATEGIES)
+    @pytest.mark.parametrize("strategy", ALL_STRATEGIES)
     def test_obvious_win_4th_to_act_followsuit(self, strategy):
         """
         Scenario: 4th to act (last player), can follow suit with winning card.
-        Oracle: MUST play the winning card.
+        Oracle: ALL strategies MUST play the winning card (safe as last player).
         """
         hand = [
             Card("C", "A"),  # idx 0 - Ace of clubs (WINS)
@@ -198,6 +210,7 @@ class TestWinningMoveOracle:
         ]
 
         # Oracle validates strategy wins as last player
+        # Even Glutton plays winner at 4th position (no one can beat us after)
         validate_greedy_algorithm(
             strategy, hand, plays_so_far, "high", None, 3,
             expected_behavior="any_winner"
@@ -207,7 +220,7 @@ class TestWinningMoveOracle:
     # AlwaysHighest intentionally plays highest card, not cheapest winner
     GREEDY_STRATEGIES = [
         pytest.param(GreedyStrategy(), id="greedy"),
-        pytest.param(ImprovedGreedyStrategy(), id="improved_greedy"),
+        pytest.param(GluttonStrategy(), id="glutton"),
     ]
 
     @pytest.mark.parametrize("strategy", GREEDY_STRATEGIES)
@@ -233,15 +246,15 @@ class TestWinningMoveOracle:
 
 class TestPartnerAwarenessOracle:
     """
-    Test partner-aware strategies (currently only ImprovedGreedy).
+    Test partner-aware strategies (currently only Glutton).
     """
 
-    def test_improved_greedy_does_not_overtake_partner(self):
+    def test_glutton_does_not_overtake_partner(self):
         """
         Scenario: Partner is winning, you have trump to overtake.
-        Oracle (ImprovedGreedy): Should NOT overtake partner.
+        Oracle (Glutton): Should NOT overtake partner.
         """
-        improved = ImprovedGreedyStrategy()
+        glutton = GluttonStrategy()
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (can overtake)
@@ -256,12 +269,12 @@ class TestPartnerAwarenessOracle:
             (1, Card("C", "Q")),  # Opponent played Clubs Q
         ]
 
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 2)
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
         chosen_card = hand[choice]
 
         # Should dump cheap offsuit, not overtake with trump
         assert choice == 1, (
-            f"ImprovedGreedy should dump when partner winning, "
+            f"Glutton should dump when partner winning, "
             f"but chose {chosen_card} (idx {choice})"
         )
 
@@ -295,7 +308,7 @@ class TestBowerHandling:
     Test that strategies correctly handle bower valuation in trump contracts.
     """
 
-    @pytest.mark.parametrize("strategy", TestWinningMoveOracle.WINNING_STRATEGIES)
+    @pytest.mark.parametrize("strategy", TestWinningMoveOracle.ALL_STRATEGIES)
     def test_right_bower_beats_all(self, strategy):
         """
         Scenario: Right bower should beat any card in trump contract.
@@ -333,7 +346,7 @@ class TestNoWinningMove:
     # AlwaysHighest intentionally plays highest card even when losing
     GREEDY_STRATEGIES = [
         pytest.param(GreedyStrategy(), id="greedy"),
-        pytest.param(ImprovedGreedyStrategy(), id="improved_greedy"),
+        pytest.param(GluttonStrategy(), id="glutton"),
     ]
 
     @pytest.mark.parametrize("strategy", GREEDY_STRATEGIES)

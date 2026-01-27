@@ -3,7 +3,7 @@ Tests to verify the leading bug fix for greedy strategies.
 """
 
 from bid_euchre.core.cards import Card
-from bid_euchre.strategy import GreedyStrategy, ImprovedGreedyStrategy
+from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
 
 
 class TestGreedyLeadingFix:
@@ -86,12 +86,12 @@ class TestGreedyLeadingFix:
         assert choice == 1, f"Expected to win with C-A (idx 1), got {choice} ({hand[choice]})"
 
 
-class TestImprovedGreedyLeadingFix:
-    """Tests that improved greedy plays strong cards when leading."""
+class TestGluttonLeadingFix:
+    """Tests that glutton plays strong cards when leading."""
 
-    def test_improved_greedy_leads_with_strong_card(self):
-        """Improved greedy should lead with strong card, not weak card."""
-        improved = ImprovedGreedyStrategy()
+    def test_glutton_leads_with_strong_card(self):
+        """Glutton should lead with strong card, not weak card."""
+        glutton = GluttonStrategy()
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (STRONGEST)
@@ -103,14 +103,14 @@ class TestImprovedGreedyLeadingFix:
         # Leading - no plays yet
         plays_so_far = []
 
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 0)
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 0)
 
         # Should play bower (idx 0) or trump ace (idx 1), NOT offsuit ten
         assert choice in [0, 1], f"Expected to lead with strong card (0 or 1), got {choice} ({hand[choice]})"
 
-    def test_improved_greedy_leads_with_bower(self):
-        """Improved greedy should lead with bower when available."""
-        improved = ImprovedGreedyStrategy(debug=True)
+    def test_glutton_leads_with_bower(self):
+        """Glutton should lead with bower when available."""
+        glutton = GluttonStrategy(debug=True)
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (STRONGEST)
@@ -121,15 +121,15 @@ class TestImprovedGreedyLeadingFix:
         # Leading in suit contract
         plays_so_far = []
 
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 0)
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 0)
 
         # Should lead with bower (highest value)
         assert choice == 0, f"Expected to lead with bower (idx 0), got {choice} ({hand[choice]})"
-        assert improved.decision_log[-1]["scenario"] == "leading"
+        assert glutton.decision_log[-1]["scenario"] == "leading"
 
-    def test_improved_greedy_still_has_partner_awareness_when_following(self):
-        """After fix, improved greedy should still avoid overkilling partner."""
-        improved = ImprovedGreedyStrategy(debug=True)
+    def test_glutton_still_has_partner_awareness_when_following(self):
+        """After fix, glutton should still avoid overkilling partner."""
+        glutton = GluttonStrategy(debug=True)
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower
@@ -143,11 +143,11 @@ class TestImprovedGreedyLeadingFix:
             (1, Card("C", "Q")),  # Opponent played lower
         ]
 
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 2)
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
         # Should dump cheapest (idx 1), not play trump
         assert choice == 1, f"Expected to dump when partner winning (idx 1), got {choice} ({hand[choice]})"
-        assert "partner_winning" in improved.decision_log[-1]["scenario"]
+        assert "partner_winning" in glutton.decision_log[-1]["scenario"]
 
 
 class TestCompareLeadingBehavior:
@@ -157,13 +157,13 @@ class TestCompareLeadingBehavior:
         """All strategies should make reasonable leading decisions."""
         from bid_euchre.strategy import (
             AlwaysHighestLegalStrategy,
+            GluttonStrategy,
             GreedyStrategy,
-            ImprovedGreedyStrategy,
         )
 
         strategies = [
             GreedyStrategy(),
-            ImprovedGreedyStrategy(),
+            GluttonStrategy(),
             AlwaysHighestLegalStrategy(),
         ]
 

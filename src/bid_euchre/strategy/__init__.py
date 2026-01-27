@@ -36,8 +36,8 @@ from .bidding import (
 
 # Greedy strategies
 from .greedy import (
+    GluttonStrategy,
     GreedyStrategy,
-    ImprovedGreedyStrategy,
     # Legacy functions for backwards compatibility
     choose_card_basic,
     choose_card_greedy,
@@ -67,7 +67,7 @@ __all__ = [
     "AlwaysHighestLegalStrategy",
     # Greedy
     "GreedyStrategy",
-    "ImprovedGreedyStrategy",
+    "GluttonStrategy",
     # Regression - REMOVED: RegressionBidder (legacy pickle path)
     # Legacy functions
     "choose_card_basic",

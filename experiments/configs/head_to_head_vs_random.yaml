@@ -16,8 +16,8 @@ strategies:
   - name: greedy
     class_name: GreedyStrategy
   
-  - name: improved_greedy
-    class_name: ImprovedGreedyStrategy
+  - name: glutton
+    class_name: GluttonStrategy
   
   - name: random_legal
     class_name: RandomLegalStrategy
@@ -38,11 +38,11 @@ matchups:
     team1: greedy
   
   # Improved Greedy vs Random
-  - team0: improved_greedy
+  - team0: glutton
     team1: random_legal
   
   - team0: random_legal
-    team1: improved_greedy
+    team1: glutton
   
   # Always Highest vs Random
   - team0: always_highest

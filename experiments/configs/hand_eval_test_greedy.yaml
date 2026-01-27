@@ -4,8 +4,8 @@
 experiment_name: hand_eval_test_greedy
 
 strategies:
-  - name: improved_greedy
-    class_name: ImprovedGreedyStrategy
+  - name: glutton
+    class_name: GluttonStrategy
 
 scenarios:
   - contract_type: suit

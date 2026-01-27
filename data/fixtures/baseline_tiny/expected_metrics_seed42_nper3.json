@@ -432,7 +432,7 @@
             "10": 0
           }
         },
-        "improved_greedy/high.json": {
+        "glutton/high.json": {
           "hands": 3,
           "distribution_team0": {
             "0": 0,
@@ -448,7 +448,7 @@
             "10": 0
           }
         },
-        "improved_greedy/low.json": {
+        "glutton/low.json": {
           "hands": 3,
           "distribution_team0": {
             "0": 0,
@@ -464,7 +464,7 @@
             "10": 0
           }
         },
-        "improved_greedy/suit_C.json": {
+        "glutton/suit_C.json": {
           "hands": 3,
           "distribution_team0": {
             "0": 0,
@@ -480,7 +480,7 @@
             "10": 0
           }
         },
-        "improved_greedy/suit_D.json": {
+        "glutton/suit_D.json": {
           "hands": 3,
           "distribution_team0": {
             "0": 0,
@@ -496,7 +496,7 @@
             "10": 0
           }
         },
-        "improved_greedy/suit_H.json": {
+        "glutton/suit_H.json": {
           "hands": 3,
           "distribution_team0": {
             "0": 0,
@@ -512,7 +512,7 @@
             "10": 0
           }
         },
-        "improved_greedy/suit_S.json": {
+        "glutton/suit_S.json": {
           "hands": 3,
           "distribution_team0": {
             "0": 0,
@@ -521,8 +521,8 @@
             "3": 0,
             "4": 0,
             "5": 1,
-            "6": 2,
-            "7": 0,
+            "6": 0,
+            "7": 2,
             "8": 0,
             "9": 0,
             "10": 0

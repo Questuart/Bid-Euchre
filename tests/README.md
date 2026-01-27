@@ -75,7 +75,7 @@ PYTHONPATH=src python -m pytest tests/ -v
 - `test_bidder_models.py` - Model predictions ⭐ NEW
 - `test_strategy.py` - Strategy interface
 - `test_null_strategies.py` - Baseline strategies
-- `test_improved_greedy.py` - Greedy variants
+- `test_glutton.py` - Greedy variants
 - `test_strategy_correctness.py` - Strategy validation
 - `test_leading_fix.py` - Lead mechanics
 

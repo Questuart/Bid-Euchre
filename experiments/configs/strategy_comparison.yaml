@@ -7,8 +7,8 @@ strategies:
   - name: greedy
     class_name: GreedyStrategy
   
-  - name: improved_greedy
-    class_name: ImprovedGreedyStrategy
+  - name: glutton
+    class_name: GluttonStrategy
     params:
       debug: false
   

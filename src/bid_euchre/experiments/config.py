@@ -17,9 +17,9 @@ from ..strategy import (
     ArtifactBidder,
     BasicStrategy,
     BiddingPolicy,
+    GluttonStrategy,
     GreedyStrategy,
     HeuristicsBidder,
-    ImprovedGreedyStrategy,
     RandomLegalStrategy,
     Strategy,
     StrictRaiserBidder,
@@ -41,9 +41,9 @@ class StrategyConfig:
             return BasicStrategy(name=self.name)
         elif self.class_name == "GreedyStrategy":
             return GreedyStrategy(name=self.name)
-        elif self.class_name == "ImprovedGreedyStrategy":
+        elif self.class_name == "GluttonStrategy":
             debug = self.params.get("debug", False)
-            return ImprovedGreedyStrategy(name=self.name, debug=debug)
+            return GluttonStrategy(name=self.name, debug=debug)
         elif self.class_name == "RandomLegalStrategy":
             seed = self.params.get("seed", None)
             return RandomLegalStrategy(name=self.name, seed=seed)
@@ -278,10 +278,10 @@ def create_experiment(
                 name="greedy",
                 class_name="GreedyStrategy"
             ))
-        elif strategy_name == "improved_greedy":
+        elif strategy_name == "glutton":
             strategies.append(StrategyConfig(
-                name="improved_greedy",
-                class_name="ImprovedGreedyStrategy",
+                name="glutton",
+                class_name="GluttonStrategy",
                 params={"debug": False}
             ))
         elif strategy_name == "random_legal":
