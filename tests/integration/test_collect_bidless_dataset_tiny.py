@@ -41,11 +41,15 @@ def test_collect_bidless_dataset_smoke():
             for line in lines:
                 # Each line should be valid JSON
                 data = json.loads(line.strip())
+                # Required fields from BidlessDatasetCollector schema
                 assert "hand_id" in data
-                assert "cards" in data
-                assert "features" in data
-                assert "seed" in data
+                assert "hand_cards" in data  # List of card strings
+                assert "hand_features" in data  # Feature dict
                 assert "run_id" in data
+                assert "seat" in data  # Player seat (0-3)
+                assert "dealer_seat" in data  # Dealer position
+                assert "contract_type" in data  # suit/high/low
+                assert "hand_feature_schema_version" in data
 
 
 def test_collect_bidless_dataset_deterministic():
