@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop
+.PHONY: help sync repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -27,6 +27,9 @@ help:
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
 	@echo "  make bid-eval-tiny      - run bid_eval_tiny suite"
 	@echo "  make bid-loop           - train teachers then eval tiny"
+	@echo ""
+	@echo "Diagnostics:"
+	@echo "  make bidless-diagnostics DATASET_DIR=path/to/datasets"
 	@echo ""
 
 sync:
@@ -85,3 +88,11 @@ bid-eval-tiny:
 
 bid-loop: bid-train-teachers bid-eval-tiny
 	@echo "✅ Teacher baseline loop complete"
+
+# Bidless diagnostics
+DATASET_DIR ?= data/runs/latest/datasets
+
+bidless-diagnostics:
+	@echo ">>> Running bidless diagnostics"
+	@echo "Dataset: $(DATASET_DIR)"
+	PYTHONPATH=src $(PYTHON) scripts/run_bidless_diagnostics.py --dataset $(DATASET_DIR)
