@@ -34,7 +34,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: |
-          python scripts/validate_teacher_roster.py
+          uv run python scripts/validate_teacher_roster.py
 
       - name: Run bid_eval_tiny suite
         env:
@@ -42,7 +42,7 @@ jobs:
         run: |
           rm -rf data/runs/bid_eval_tiny
           mkdir -p data/runs
-          python scripts/run_suite.py \
+          uv run python scripts/run_suite.py \
             --suite experiments/suites/bid_eval_tiny.yaml \
             --seed 42 \
             --n-per 20 \
