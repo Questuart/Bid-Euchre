@@ -18,6 +18,12 @@ from pathlib import Path
 ALLOWED_ARTIFACT_FILENAMES = {".gitkeep"}
 FIXTURE_SIZE_LIMIT_BYTES = 102400  # 100KB
 
+# Modules allowed to use global random (bare `random.` calls)
+# All other src/ modules should use local RNG instances for determinism
+RANDOM_ALLOWED_MODULES = {
+    "src/bid_euchre/sim/deals.py",  # Designated RNG module
+}
+
 
 @dataclass(frozen=True)
 class Violation:
@@ -293,6 +299,61 @@ def check_no_ds_store_files(changed: list[str]) -> list[Violation]:
     return violations
 
 
+def check_no_global_random(changed: list[str], repo_root: Path) -> list[Violation]:
+    """
+    Block bare 'random.' usage in src/ Python files (except designated RNG modules).
+
+    This prevents hidden nondeterminism from creeping into the codebase.
+    Code should use local RNG instances (random.Random(seed)) for reproducibility.
+
+    Allowed:
+    - Files in RANDOM_ALLOWED_MODULES (e.g., src/bid_euchre/sim/deals.py)
+    - Tests (tests/ directory)
+    - Experiments (experiments/ directory)
+    """
+    import re
+
+    # Pattern matches bare `random.` method calls that indicate global RNG usage
+    # This catches: random.choice, random.randint, random.shuffle, etc.
+    global_random_pattern = re.compile(
+        r"\brandom\.(choice|randint|randrange|shuffle|sample|uniform|random|seed"
+        r"|getstate|setstate)\b"
+    )
+
+    violations: list[Violation] = []
+    for p in changed:
+        # Only check src/ Python files
+        if not (p.startswith("src/") and p.endswith(".py")):
+            continue
+
+        # Skip allowed modules
+        if p in RANDOM_ALLOWED_MODULES:
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        text = abs_path.read_text(encoding="utf-8")
+
+        # Check for global random usage
+        matches = global_random_pattern.findall(text)
+        if matches:
+            unique_methods = sorted(set(matches))
+            violations.append(
+                Violation(
+                    rule="no-global-random",
+                    path=p,
+                    message=(
+                        f"Global random usage detected: random.{{{', '.join(unique_methods)}}}. "
+                        "Use a local RNG instance (random.Random(seed)) for determinism."
+                    ),
+                )
+            )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -313,6 +374,7 @@ def main() -> int:
     violations += check_data_fixtures_allowlist(changed, repo_root)
     violations += check_no_new_scripts_in_frozen_folders(changed)
     violations += check_no_ds_store_files(changed)
+    violations += check_no_global_random(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
