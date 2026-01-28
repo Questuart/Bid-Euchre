@@ -15,12 +15,16 @@ from .charts import (
     plot_cdf,
     plot_feature_correlation,
     plot_feature_distributions,
+    plot_feature_heatmap_by_suit,
     plot_feature_outcome_correlation,
     plot_feature_vs_outcome,
     plot_hand_value_by_contract,
     plot_hand_value_by_seat,
+    plot_hand_value_by_trump_suit,
+    plot_outcome_by_trump_suit,
     plot_outcome_distributions,
     plot_rolling_mean,
+    plot_suit_variance_summary,
 )
 from .health_checks import compute_health_scorecard, display_scorecard
 from .loaders import load_bidless_dataset, load_meta
@@ -53,6 +57,11 @@ __all__ = [
     "plot_feature_vs_outcome",
     "plot_outcome_distributions",
     "plot_feature_outcome_correlation",
+    # Charts - Trump Suit Analysis
+    "plot_hand_value_by_trump_suit",
+    "plot_outcome_by_trump_suit",
+    "plot_feature_heatmap_by_suit",
+    "plot_suit_variance_summary",
     # Charts - Strategy Comparison
     "plot_win_rate_heatmap",
     "plot_tricks_distribution_comparison",
