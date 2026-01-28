@@ -7,7 +7,7 @@ This module is library code (no CLI). It supports:
 """
 
 import random
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 from ..core.cards import Card, create_deck, deal_hands, shuffle_deck
 from ..core.rules import get_legal_indices, trick_winner
@@ -17,6 +17,7 @@ from ..scoring import compute_points
 from ..strategy import GreedyStrategy, Strategy
 from ..strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
 from .deals import generate_deal, generate_initial_leader
+from .hooks import BiddingDecisionEvent, HandEndEvent, SimulationHooks
 
 if TYPE_CHECKING:
     from ..logging import GameLogger
@@ -35,6 +36,7 @@ def play_single_hand(
     initial_leader: Optional[int] = None,
     rng: Optional[random.Random] = None,
     bidding_collector: Optional[BiddingDatasetCollector] = None,
+    on_bidding_decision: Optional[Callable[[BiddingDecisionEvent], None]] = None,
 ) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int], Optional[int], Optional[int], str, Optional[str]]:
     """
     Play one full 10-trick hand.
@@ -109,6 +111,20 @@ def play_single_hand(
                 if bidding_collector is not None:
                     bidding_collector.record_decision(obs, bid_action, deal_id)
 
+                # Fire bidding decision event if handler registered
+                if on_bidding_decision is not None:
+                    is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
+                    on_bidding_decision(BiddingDecisionEvent(
+                        deal_id=deal_id,
+                        seat=player_idx,
+                        hand=list(starting_hands[player_idx]),  # Copy to avoid aliasing
+                        dealer_seat=dealer_index,
+                        current_high_bid=current_high_bid,
+                        bid_amount=bid_action.n,
+                        bid_contract=bid_action.contract,
+                        is_legal=is_legal,
+                    ))
+
                 # If bid is pass or <= current high bid, treat as pass
                 if bid_action.is_pass() or bid_action.n <= current_high_bid:
                     continue
@@ -150,6 +166,20 @@ def play_single_hand(
                     bid_action = BidAction.bid(bid, contract_for_action)
                 if bidding_collector is not None and bid_action is not None:
                     bidding_collector.record_decision(obs, bid_action, deal_id)
+
+                # Fire bidding decision event if handler registered
+                if on_bidding_decision is not None and bid_action is not None:
+                    is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
+                    on_bidding_decision(BiddingDecisionEvent(
+                        deal_id=deal_id,
+                        seat=player_idx,
+                        hand=list(starting_hands[player_idx]),  # Copy to avoid aliasing
+                        dealer_seat=dealer_index,
+                        current_high_bid=current_high_bid,
+                        bid_amount=bid_action.n,
+                        bid_contract=bid_action.contract,
+                        is_legal=is_legal,
+                    ))
 
                 # Dealer-partner pass rule: dealer passes if partner has the high bid
                 if player_idx == dealer_index and winning_bidder == partner_idx:
@@ -302,17 +332,19 @@ def simulate_many_hands(
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
     bidding_dataset_run_id: Optional[str] = None,
+    hooks: Optional[SimulationHooks] = None,
 ) -> Dict:
     """
     Run Monte Carlo simulation of n hands.
 
     Args:
         n: Number of hands to simulate
-        contract_type: "suit", "high", or "low"
+        contract_type: "suit", "high", or "low" (None for auction mode)
         trump_suit: Trump suit for suit contracts
         seed: Random seed for reproducibility
         strategy: Strategy to use (defaults to GreedyStrategy)
         logger: Optional GameLogger for structured JSONL logging
+        hooks: Optional SimulationHooks for event-based instrumentation
 
     Returns a summary dict:
         {
@@ -384,6 +416,9 @@ def simulate_many_hands(
 
     for deal_id in range(n):
         collector = collectors[deal_id] if collectors else None
+        # Extract bidding decision callback from hooks if present
+        on_bidding_decision = hooks.on_bidding_decision if hooks else None
+
         if deal_seed is not None:
             deal_hands_ = generate_deal(deal_seed, deal_id)
             t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
@@ -397,6 +432,7 @@ def simulate_many_hands(
                 hands=deal_hands_,
                 deal_seed=deal_seed,
                 bidding_collector=collector,
+                on_bidding_decision=on_bidding_decision,
             )
         else:
             t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
@@ -409,6 +445,7 @@ def simulate_many_hands(
                 deal_id=deal_id,
                 rng=local_rng,
                 bidding_collector=collector,
+                on_bidding_decision=on_bidding_decision,
             )
 
         # Log hand completion (if logger enabled)
@@ -428,6 +465,25 @@ def simulate_many_hands(
                 dealer_position=dealer_pos,
                 bidder_position=bidder_pos,
             )
+
+        # Fire HandEndEvent if hooks registered
+        if hooks is not None:
+            hooks.fire_hand_end(HandEndEvent(
+                deal_id=deal_id,
+                seed=seed,
+                hands=[list(h) for h in starting_hands],  # Deep copy to avoid aliasing
+                dealer_seat=dealer_pos,
+                contract_type=actual_contract,
+                trump_suit=actual_trump,
+                initial_leader=initial_leader,
+                tricks_team0=t0,
+                tricks_team1=t1,
+                scores=list(all_scores),
+                features=[dict(f) for f in all_feats],  # Copy dicts to avoid aliasing
+                winning_bid=winning_bid,
+                bidder_seat=bidder_pos,
+            ))
+
         total0 += t0
         total1 += t1
         dist_team0[t0] += 1
