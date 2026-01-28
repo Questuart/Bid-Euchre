@@ -23,14 +23,16 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
     - name: Install dependencies
-      run: |
-        pip install -e ".[dev]"
+      run: uv sync --frozen --all-extras
 
     - name: Run baseline_full suite
       run: |
         mkdir -p nightly_runs
-        PYTHONPATH=src python scripts/run_suite.py \
+        PYTHONPATH=src uv run python scripts/run_suite.py \
           --suite experiments/suites/baseline_full.yaml \
           --seed 42 \
           --n-per 500 \

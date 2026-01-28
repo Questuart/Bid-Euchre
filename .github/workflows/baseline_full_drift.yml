@@ -23,14 +23,15 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[dev]"
+      run: uv sync --frozen --all-extras
 
     - name: Run baseline_full suite
       run: |
-        PYTHONPATH=src python scripts/run_suite.py \
+        PYTHONPATH=src uv run python scripts/run_suite.py \
           --suite experiments/suites/baseline_full.yaml \
           --seed 42 \
           --n-per 500 \
@@ -53,7 +54,7 @@ jobs:
         ROLLUP_FILE="${{ steps.find_rollup.outputs.rollup_file }}"
         echo "Running comparator on: $ROLLUP_FILE"
         # Capture output to file for inclusion in issue body
-        PYTHONPATH=src python scripts/compare_rollup.py \
+        PYTHONPATH=src uv run python scripts/compare_rollup.py \
           --rollup "$ROLLUP_FILE" \
           --fixture data/fixtures/baseline_full_expected.json 2>&1 | tee comparator_output.txt
         # Preserve exit code from comparator (not tee)

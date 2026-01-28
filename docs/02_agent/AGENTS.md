@@ -52,19 +52,22 @@ make test       # Tests only
 **Agents must use these commands. Do not invent one-off runners.**
 
 ### Setup (recommended)
-Use an editable install so imports work everywhere.
+Use uv for fast, reproducible installs:
 
+~~~bash
+uv sync
+~~~
+
+Or with pip (alternative):
 ~~~bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -U pip
-pip install -e .
 pip install -e ".[dev]"
 ~~~
 
 **Notes**
-- Repo examples often use `PYTHONPATH=src`. If you did `pip install -e .`, you typically do **not** need `PYTHONPATH=src`.
-- Dependencies live in `pyproject.toml` (and also `requirements.txt` in this repo).
+- Repo examples often use `PYTHONPATH=src`. If you did `uv sync` or `pip install -e .`, you typically do **not** need `PYTHONPATH=src`.
+- Dependencies live in `pyproject.toml`; use `uv sync --frozen` for reproducible installs from `uv.lock`.
 
 ### Run tests (default)
 Fast-ish suite:

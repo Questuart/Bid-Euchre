@@ -3,6 +3,12 @@
 ## Quick start
 
 ~~~bash
+uv sync
+uv run pre-commit install
+~~~
+
+Or with pip (alternative):
+~~~bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
