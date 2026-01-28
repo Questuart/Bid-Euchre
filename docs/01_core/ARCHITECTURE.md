@@ -15,6 +15,9 @@ Submodules:
 - `features/` — Hand evaluation
 - `sim/` — Simulation engines
 - `experiments/` — Configuration system (StrategyConfig, ExperimentConfig)
+- `datasets/` — Dataset collectors (bidding, bidless)
+- `models/` — Model training/inference
+- `diagnostics/` — Visualization and analysis tools
 - `reporting/`, `logging/`, `analysis/`, `utils/` — Supporting utilities
 
 ### `experiments/`
@@ -36,7 +39,9 @@ Current scripts:
 - `lint_repo.py` — Repository linter (enforces boundaries and data policy)
 - `run_suite.py` — Suite runner (batches experiments with rollup generation)
 - `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
-- `run_tests.py`, `validate_tests.py` — Test utilities
+- `run_tests.py`, `validate_teacher_roster.py` — Test utilities
+- `collect_bidless_dataset.py` — Bidless feature dataset collector
+- `train_bidder.py` — Bidder model training
 
 ### `tests/`
 **Test suite only.**

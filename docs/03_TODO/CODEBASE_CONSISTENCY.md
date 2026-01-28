@@ -1,7 +1,7 @@
 # CODEBASE_CONSISTENCY — doc/code gap tracker (RULES.md + METRICS.md)
 
 **Created:** 2026-01-04
-**Last verified on main:** 2026-01-11 (commit `b811119`)
+**Last verified on main:** 2026-01-27 (commit `279417d`)
 **Status:** Active
 
 ## How to read this file
@@ -133,6 +133,7 @@
 
 ## Done/Archived (verified in repo)
 
+- **Arc B bidding infrastructure complete:** `datasets/`, `models/`, and `diagnostics/` modules implemented; `train_bidder.py` and `collect_bidless_dataset.py` scripts operational; ModeloEspecifico and ArtifactBidder policies working.
 - **Scoring system implemented:** `src/bid_euchre/scoring.py::compute_points()` exists, simulation calls it, and unit tests cover exact scoring cases.
 - **`hand_id` vs `deal_id` clarification no longer needed:** `docs/01_core/METRICS.md` no longer references `hand_id`.
 - **Core docs populated:** `docs/01_core/EXPERIMENTS.md` exists and documents `meta.json` (schema v2) and reproducibility workflow.
