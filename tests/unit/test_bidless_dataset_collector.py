@@ -195,6 +195,100 @@ class TestBidlessDatasetSchema:
         assert "trump_count" in row["hand_features"]
         assert isinstance(row["hand_features"]["hand_value"], (int, float))
 
+    def test_features_differ_across_seats_when_hands_differ(self):
+        """Each seat row must have features computed from its own hand.
+
+        This catches the bug where features were computed once from seat 0's hand
+        and written to all 4 seat rows.
+        """
+        collector = BidlessDatasetCollector("test_run", 1)
+
+        # Create 4 distinct hands with different trump counts (spades trump)
+        # Seat 0: 5 spades (strong trump hand)
+        hand_0 = [
+            Card("S", "A"), Card("S", "K"), Card("S", "Q"), Card("S", "J"), Card("S", "T"),
+            Card("D", "A"), Card("D", "K"), Card("H", "A"), Card("C", "A"), Card("C", "K"),
+        ]
+        # Seat 1: 0 spades (no trump)
+        hand_1 = [
+            Card("D", "A"), Card("D", "K"), Card("D", "Q"), Card("D", "J"), Card("D", "T"),
+            Card("H", "A"), Card("H", "K"), Card("H", "Q"), Card("C", "A"), Card("C", "K"),
+        ]
+        # Seat 2: 2 spades (some trump)
+        hand_2 = [
+            Card("S", "A"), Card("S", "K"), Card("D", "A"), Card("D", "K"), Card("D", "Q"),
+            Card("H", "A"), Card("H", "K"), Card("H", "Q"), Card("C", "A"), Card("C", "K"),
+        ]
+        # Seat 3: 3 spades (moderate trump)
+        hand_3 = [
+            Card("S", "A"), Card("S", "K"), Card("S", "Q"), Card("D", "A"), Card("D", "K"),
+            Card("H", "A"), Card("H", "K"), Card("C", "A"), Card("C", "K"), Card("C", "Q"),
+        ]
+
+        for seat, hand in enumerate([hand_0, hand_1, hand_2, hand_3]):
+            collector.record_hand_value(
+                hand=hand,
+                seat=seat,
+                dealer_seat=0,
+                contract_type="suit",
+                trump_suit="S"
+            )
+
+        rows = collector.get_rows_sorted()
+
+        # Extract trump_count from each seat's features
+        trump_counts = {row["seat"]: row["hand_features"]["trump_count"] for row in rows}
+
+        # Verify each seat has the correct trump count
+        assert trump_counts[0] == 5, f"Seat 0 should have 5 trump, got {trump_counts[0]}"
+        assert trump_counts[1] == 0, f"Seat 1 should have 0 trump, got {trump_counts[1]}"
+        assert trump_counts[2] == 2, f"Seat 2 should have 2 trump, got {trump_counts[2]}"
+        assert trump_counts[3] == 3, f"Seat 3 should have 3 trump, got {trump_counts[3]}"
+
+        # Also verify hand_value differs (stronger hands should have higher value)
+        hand_values = {row["seat"]: row["hand_features"]["hand_value"] for row in rows}
+        assert hand_values[0] > hand_values[1], "Seat 0 (5 trump) should have higher value than seat 1 (0 trump)"
+
+    def test_no_shared_dict_aliasing_between_rows(self):
+        """Verify rows don't share the same dict object (aliasing bug).
+
+        This catches the bug where the same features dict was assigned to all rows,
+        causing mutations to affect all rows simultaneously.
+        """
+        collector = BidlessDatasetCollector("test_run", 1)
+
+        hand = [Card("S", "A"), Card("D", "K"), Card("H", "Q"), Card("C", "J"), Card("D", "T")]
+
+        for seat in range(4):
+            collector.record_hand_value(
+                hand=hand,
+                seat=seat,
+                dealer_seat=0,
+                contract_type="suit",
+                trump_suit="S"
+            )
+
+        rows = collector.get_rows_sorted()
+
+        # Get all hand_features dicts
+        feature_dicts = [row["hand_features"] for row in rows]
+
+        # Verify each row has its own dict object (no aliasing)
+        for i in range(len(feature_dicts)):
+            for j in range(i + 1, len(feature_dicts)):
+                assert id(feature_dicts[i]) != id(feature_dicts[j]), (
+                    f"Rows {i} and {j} share the same hand_features dict object (aliasing bug)"
+                )
+
+        # Additional check: mutating one dict shouldn't affect others
+        original_values = [d["trump_count"] for d in feature_dicts]
+        feature_dicts[0]["trump_count"] = 999  # Mutate first dict
+
+        for i in range(1, len(feature_dicts)):
+            assert feature_dicts[i]["trump_count"] == original_values[i], (
+                f"Mutating row 0's features affected row {i} (aliasing bug)"
+            )
+
     def test_write_jsonl(self):
         """Test JSONL writing functionality."""
         import tempfile
