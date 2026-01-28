@@ -47,10 +47,12 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.datasets.bidding import emit_bidding_dataset
+from bid_euchre.datasets.bidless import BidlessDatasetCollector, emit_bidless_dataset
 from bid_euchre.experiments import load_config
 from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.sim import simulation
+from bid_euchre.sim.hooks import HandEndEvent, SimulationHooks
 
 # Metadata schema version
 META_JSON_SCHEMA_VERSION = 2  # v2: add created_at_utc, git_sha, config_path, config_sha256
@@ -115,6 +117,17 @@ def parse_args():
         choices=["parquet", "jsonl"],
         default="parquet",
         help="Format for bidding dataset emission (default: parquet)"
+    )
+    parser.add_argument(
+        "--emit-bidless-dataset",
+        action="store_true",
+        help="Emit bidless dataset to data/runs/<run_id>/datasets/ (declared contract mode only)"
+    )
+    parser.add_argument(
+        "--bidless-dataset-format",
+        choices=["parquet", "jsonl"],
+        default="parquet",
+        help="Format for bidless dataset emission (default: parquet)"
     )
     parser.add_argument(
         "--team1-strategy",
@@ -325,7 +338,51 @@ def main():
     start_time = time.time()
     scenario_metrics = []
     all_bidding_collectors: List[Any] = []
-    
+    all_bidless_collectors: List[BidlessDatasetCollector] = []
+
+    # Create hooks for bidless dataset collection if requested
+    def create_bidless_hooks() -> SimulationHooks | None:
+        """Create hooks for bidless dataset collection."""
+        if not args.emit_bidless_dataset:
+            return None
+
+        # Collector indexed by deal_id
+        hand_collectors: Dict[int, BidlessDatasetCollector] = {}
+
+        def on_hand_end(event: HandEndEvent) -> None:
+            """Record hand data when each hand completes."""
+            # Skip auction mode hands (contract_type is None during auction)
+            # Bidless dataset is only for pre-declared contracts
+            if event.contract_type is None:
+                return
+
+            # Create collector for this hand if needed
+            if event.deal_id not in hand_collectors:
+                hand_collectors[event.deal_id] = BidlessDatasetCollector(run_id, event.deal_id)
+
+            collector = hand_collectors[event.deal_id]
+
+            # Record all 4 seats
+            for seat in range(4):
+                # Use dealer_seat=0 as default for bidless (not meaningful)
+                dealer_seat = event.dealer_seat if event.dealer_seat is not None else 0
+                collector.record_hand_value(
+                    hand=event.hands[seat],
+                    seat=seat,
+                    dealer_seat=dealer_seat,
+                    contract_type=event.contract_type,
+                    trump_suit=event.trump_suit,
+                    deal_id=event.deal_id,
+                )
+
+            # Add to list for later emission
+            if collector not in all_bidless_collectors:
+                all_bidless_collectors.append(collector)
+
+        return SimulationHooks(on_hand_end=on_hand_end)
+
+    bidless_hooks = create_bidless_hooks()
+
     # Run all strategies × scenarios
     # Run experiments
     if mode == "head_to_head_matrix":
@@ -409,6 +466,7 @@ def main():
                         bidding_policy=None,  # Use Strategy.decide_bid for backward compatibility
                         logger=logger,
                         bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                        hooks=bidless_hooks,
                     )
                     bidding_collectors = results.pop("bidding_collectors", [])
                     all_bidding_collectors.extend(bidding_collectors)
@@ -507,6 +565,7 @@ def main():
                             bidding_policy=policy,
                             logger=logger,
                             bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                            hooks=bidless_hooks,
                         )
                     else:
                         # For strategies, use the existing logic
@@ -523,6 +582,7 @@ def main():
                             bidding_policy=None,
                             logger=logger,
                             bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                            hooks=bidless_hooks,
                         )
                     bidding_collectors = results.pop("bidding_collectors", [])
                     all_bidding_collectors.extend(bidding_collectors)
@@ -612,6 +672,10 @@ def main():
     if args.emit_bidding_dataset and all_bidding_collectors:
         dataset_path = emit_bidding_dataset(all_bidding_collectors, run_dir, format=args.bidding_dataset_format)
         print(f"\n📊 Emitted bidding dataset: {dataset_path}")
+
+    if args.emit_bidless_dataset and all_bidless_collectors:
+        dataset_path = emit_bidless_dataset(all_bidless_collectors, run_dir, format=args.bidless_dataset_format)
+        print(f"\n📊 Emitted bidless dataset: {dataset_path}")
 
     # Final summary
     print("\n" + "=" * 70)
