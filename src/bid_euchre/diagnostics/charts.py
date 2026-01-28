@@ -597,3 +597,151 @@ def plot_feature_outcome_correlation(
 
     plt.tight_layout()
     return fig
+
+
+def plot_cdf(
+    df: pd.DataFrame,
+    column: str = "feat_hand_value",
+    figsize: Tuple[int, int] = (10, 6),
+    title: Optional[str] = None,
+    group_by: Optional[str] = None,
+) -> plt.Figure:
+    """Plot empirical CDF (Cumulative Distribution Function).
+
+    Shows the probability that a value is ≤ x for each x in the data.
+    Useful for understanding distribution shape and comparing subgroups.
+
+    Args:
+        df: DataFrame with column to analyze
+        column: Column name to plot CDF for
+        figsize: Figure size tuple
+        title: Optional title override
+        group_by: Optional column to group by (creates overlaid CDFs)
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if column not in df.columns:
+        ax.text(0.5, 0.5, f"Column '{column}' not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    if group_by is not None and group_by in df.columns:
+        # Plot CDF for each group
+        groups = sorted(df[group_by].unique())
+        colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+
+        for group, color in zip(groups, colors):
+            values = df[df[group_by] == group][column].dropna().sort_values()
+            if len(values) == 0:
+                continue
+            y = np.arange(1, len(values) + 1) / len(values)
+            ax.plot(values, y, label=str(group), color=color, linewidth=1.5)
+
+        ax.legend(title=group_by)
+    else:
+        # Single CDF
+        values = df[column].dropna().sort_values()
+        if len(values) == 0:
+            ax.text(0.5, 0.5, "No data to plot", ha="center", va="center", transform=ax.transAxes)
+            return fig
+
+        y = np.arange(1, len(values) + 1) / len(values)
+        ax.plot(values, y, color="#3498db", linewidth=2)
+
+        # Add reference lines at quartiles
+        for q, ls in [(0.25, ":"), (0.5, "--"), (0.75, ":")]:
+            q_val = values.quantile(q)
+            ax.axhline(q, color="gray", linestyle=ls, alpha=0.5)
+            ax.axvline(q_val, color="gray", linestyle=ls, alpha=0.5)
+
+    ax.set_xlabel(column.replace("feat_", "").replace("_", " ").title())
+    ax.set_ylabel("Cumulative Probability")
+    ax.set_title(title or f"Empirical CDF of {column.replace('feat_', '')}")
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_ccdf(
+    df: pd.DataFrame,
+    column: str = "feat_hand_value",
+    figsize: Tuple[int, int] = (10, 6),
+    log_scale: bool = True,
+    title: Optional[str] = None,
+    group_by: Optional[str] = None,
+) -> plt.Figure:
+    """Plot empirical CCDF (Complementary CDF) for tail risk analysis.
+
+    Shows the probability that a value is > x for each x in the data.
+    CCDF = 1 - CDF. Log scale is useful for visualizing heavy tails.
+
+    This is particularly useful for:
+    - Identifying rare but impactful high-value hands
+    - Comparing tail behavior across contract types
+    - Detecting power-law or exponential tail distributions
+
+    Args:
+        df: DataFrame with column to analyze
+        column: Column name to plot CCDF for
+        figsize: Figure size tuple
+        log_scale: Whether to use log scale for y-axis (default True)
+        title: Optional title override
+        group_by: Optional column to group by (creates overlaid CCDFs)
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if column not in df.columns:
+        ax.text(0.5, 0.5, f"Column '{column}' not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    if group_by is not None and group_by in df.columns:
+        # Plot CCDF for each group
+        groups = sorted(df[group_by].unique())
+        colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+
+        for group, color in zip(groups, colors):
+            values = df[df[group_by] == group][column].dropna().sort_values()
+            if len(values) == 0:
+                continue
+            # CCDF = 1 - CDF = P(X > x)
+            ccdf = 1 - np.arange(1, len(values) + 1) / len(values)
+            # Filter out zeros for log scale
+            mask = ccdf > 0
+            ax.plot(values[mask], ccdf[mask], label=str(group), color=color, linewidth=1.5)
+
+        ax.legend(title=group_by)
+    else:
+        # Single CCDF
+        values = df[column].dropna().sort_values()
+        if len(values) == 0:
+            ax.text(0.5, 0.5, "No data to plot", ha="center", va="center", transform=ax.transAxes)
+            return fig
+
+        ccdf = 1 - np.arange(1, len(values) + 1) / len(values)
+        # Filter out zeros for log scale
+        mask = ccdf > 0
+        ax.plot(values[mask], ccdf[mask], color="#e74c3c", linewidth=2)
+
+    ax.set_xlabel(column.replace("feat_", "").replace("_", " ").title())
+    ax.set_ylabel("P(X > x)")
+    ax.set_title(title or f"CCDF of {column.replace('feat_', '')} (Tail Distribution)")
+
+    if log_scale:
+        ax.set_yscale("log")
+        ax.set_ylim(1e-4, 1)
+    else:
+        ax.set_ylim(0, 1)
+
+    ax.grid(True, alpha=0.3, which="both")
+
+    plt.tight_layout()
+    return fig

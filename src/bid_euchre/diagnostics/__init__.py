@@ -11,6 +11,8 @@ The design philosophy is: logic lives here, notebooks are thin orchestration.
 """
 
 from .charts import (
+    plot_ccdf,
+    plot_cdf,
     plot_feature_correlation,
     plot_feature_distributions,
     plot_feature_outcome_correlation,
@@ -44,6 +46,9 @@ __all__ = [
     "plot_feature_distributions",
     "plot_feature_correlation",
     "plot_rolling_mean",
+    # Charts - Distribution Analysis
+    "plot_cdf",
+    "plot_ccdf",
     # Charts - Outcome Evaluation
     "plot_feature_vs_outcome",
     "plot_outcome_distributions",

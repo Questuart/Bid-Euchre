@@ -6,9 +6,9 @@ Interactive diagnostic notebook for analyzing bidless simulation datasets.
 
 1. **Generate a dataset** (if you don't have one):
    ```bash
-   PYTHONPATH=src python scripts/collect_bidless_dataset.py \
+   PYTHONPATH=src python experiments/run_experiment.py \
      --config experiments/configs/bidless_dataset_collection.yaml \
-     --seed 42 --n-per 1000
+     --seed 42 --n_per 1000 --emit-bidless-dataset
    ```
 
 2. **Open the notebook**:
