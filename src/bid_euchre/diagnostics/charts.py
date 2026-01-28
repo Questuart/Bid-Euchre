@@ -380,3 +380,220 @@ def plot_feature_vs_label(
     fig.suptitle(f"{feat_col.replace('feat_', '')} vs {label_col.replace('feat_', '')}", fontsize=12, y=1.02)
     plt.tight_layout()
     return fig
+
+
+def plot_feature_vs_outcome(
+    df: pd.DataFrame,
+    feature: str,
+    outcome: str = "tricks_won",
+    figsize: Tuple[int, int] = (12, 5),
+) -> plt.Figure:
+    """Plot scatter + binned boxplot for feature vs outcome with correlation.
+
+    Creates a two-panel figure showing the relationship between a feature
+    and an outcome variable (typically tricks_won from simulation).
+
+    Args:
+        df: DataFrame with feature columns and outcome column
+        feature: Feature column name (with or without feat_ prefix)
+        outcome: Outcome column name (default "tricks_won")
+        figsize: Figure size tuple
+
+    Returns:
+        matplotlib Figure with correlation coefficient in title
+    """
+    # Normalize column name
+    feat_col = feature if feature.startswith("feat_") else f"feat_{feature}"
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    if feat_col not in df.columns or outcome not in df.columns:
+        axes[0].text(0.5, 0.5, f"Required columns not found\n({feat_col}, {outcome})",
+                     ha="center", va="center")
+        return fig
+
+    # Compute correlation
+    valid_mask = df[feat_col].notna() & df[outcome].notna()
+    if valid_mask.sum() > 2:
+        corr = df.loc[valid_mask, feat_col].corr(df.loc[valid_mask, outcome])
+    else:
+        corr = np.nan
+
+    # Left: Scatter plot
+    ax = axes[0]
+    ax.scatter(df[feat_col], df[outcome], alpha=0.3, s=10, c="#3498db")
+    ax.set_xlabel(feat_col.replace("feat_", ""))
+    ax.set_ylabel(outcome.replace("_", " ").title())
+    ax.set_title("Scatter Plot")
+
+    # Add trend line
+    if valid_mask.sum() > 10:
+        z = np.polyfit(df.loc[valid_mask, feat_col], df.loc[valid_mask, outcome], 1)
+        p = np.poly1d(z)
+        x_range = np.linspace(df[feat_col].min(), df[feat_col].max(), 100)
+        ax.plot(x_range, p(x_range), color="red", linestyle="--", linewidth=2, label="Trend")
+        ax.legend()
+
+    ax.grid(True, alpha=0.3)
+
+    # Right: Binned boxplot
+    ax = axes[1]
+    try:
+        df_copy = df[[feat_col, outcome]].copy()
+        df_copy["_bin"] = pd.qcut(df_copy[feat_col], q=5, duplicates="drop")
+        if HAS_SEABORN:
+            sns.boxplot(data=df_copy, x="_bin", y=outcome, ax=ax)
+        else:
+            bins = df_copy.groupby("_bin")[outcome].apply(list).tolist()
+            ax.boxplot(bins)
+    except ValueError:
+        ax.text(0.5, 0.5, "Not enough unique values for binning", ha="center", va="center")
+
+    ax.set_xlabel(feat_col.replace("feat_", "") + " (binned)")
+    ax.set_ylabel(outcome.replace("_", " ").title())
+    ax.set_title("Binned Box Plot")
+    ax.tick_params(axis="x", rotation=45)
+    ax.grid(True, axis="y", alpha=0.3)
+
+    corr_str = f"r = {corr:.3f}" if not np.isnan(corr) else "r = N/A"
+    fig.suptitle(f"{feat_col.replace('feat_', '')} vs {outcome} ({corr_str})", fontsize=12, y=1.02)
+    plt.tight_layout()
+    return fig
+
+
+def plot_outcome_distributions(
+    df: pd.DataFrame,
+    outcome: str = "tricks_won",
+    group_by: str = "contract_type",
+    figsize: Tuple[int, int] = (10, 6),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Plot violin/box plots of outcome distribution grouped by category.
+
+    Args:
+        df: DataFrame with outcome column and grouping column
+        outcome: Outcome column name (default "tricks_won")
+        group_by: Column to group by (default "contract_type")
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if outcome not in df.columns or group_by not in df.columns:
+        ax.text(0.5, 0.5, f"Required columns not found\n({outcome}, {group_by})",
+                ha="center", va="center")
+        return fig
+
+    groups = sorted(df[group_by].unique())
+
+    if HAS_SEABORN:
+        sns.violinplot(data=df, x=group_by, y=outcome, ax=ax, order=groups, inner="box")
+    else:
+        data = [df[df[group_by] == g][outcome].values for g in groups]
+        bp = ax.boxplot(data, labels=groups, patch_artist=True)
+        colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+        for patch, color in zip(bp["boxes"], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+
+    ax.set_xlabel(group_by.replace("_", " ").title())
+    ax.set_ylabel(outcome.replace("_", " ").title())
+    ax.set_title(title or f"{outcome.replace('_', ' ').title()} Distribution by {group_by.replace('_', ' ').title()}")
+    ax.grid(True, axis="y", alpha=0.3)
+
+    # Add mean markers
+    means = [df[df[group_by] == g][outcome].mean() for g in groups]
+    ax.scatter(range(len(means)), means, color="red", marker="D", s=50, zorder=5, label="Mean")
+    ax.legend()
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_feature_outcome_correlation(
+    df: pd.DataFrame,
+    outcome: str = "tricks_won",
+    features: Optional[List[str]] = None,
+    top_n: int = 15,
+    figsize: Tuple[int, int] = (10, 8),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Plot horizontal bar chart of feature correlations with outcome.
+
+    Creates a bar chart sorted by absolute correlation, with colors
+    indicating positive (green) or negative (red) correlation.
+
+    Args:
+        df: DataFrame with feat_* columns and outcome column
+        outcome: Outcome column name (default "tricks_won")
+        features: Optional list of feature names to include (without feat_ prefix).
+                  If None, uses all numeric feat_* columns.
+        top_n: Maximum number of features to display (default 15)
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if outcome not in df.columns:
+        ax.text(0.5, 0.5, f"Outcome column '{outcome}' not found", ha="center", va="center")
+        return fig
+
+    # Get feature columns
+    feat_cols = [c for c in df.columns if c.startswith("feat_")]
+    numeric_cols = [c for c in feat_cols if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+
+    if features:
+        numeric_cols = [f"feat_{f}" for f in features if f"feat_{f}" in numeric_cols]
+
+    if not numeric_cols:
+        ax.text(0.5, 0.5, "No numeric features found", ha="center", va="center")
+        return fig
+
+    # Compute correlations
+    correlations = {}
+    for col in numeric_cols:
+        valid_mask = df[col].notna() & df[outcome].notna()
+        if valid_mask.sum() > 2:
+            corr = df.loc[valid_mask, col].corr(df.loc[valid_mask, outcome])
+            if not np.isnan(corr):
+                correlations[col] = corr
+
+    if not correlations:
+        ax.text(0.5, 0.5, "Could not compute correlations", ha="center", va="center")
+        return fig
+
+    # Sort by absolute correlation and take top N
+    sorted_items = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)[:top_n]
+    sorted_items = list(reversed(sorted_items))  # Reverse for horizontal bar
+
+    labels = [c.replace("feat_", "") for c, _ in sorted_items]
+    values = [v for _, v in sorted_items]
+    colors = ["#27ae60" if v > 0 else "#e74c3c" for v in values]
+
+    y_pos = np.arange(len(labels))
+    bars = ax.barh(y_pos, values, color=colors, alpha=0.8)
+
+    ax.axvline(0, color="black", linestyle="-", linewidth=1)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(labels)
+    ax.set_xlabel(f"Correlation with {outcome}")
+    ax.set_ylabel("Feature")
+    ax.set_title(title or f"Feature Correlation with {outcome.replace('_', ' ').title()}")
+    ax.grid(True, axis="x", alpha=0.3)
+    ax.set_xlim(-1.1, 1.1)
+
+    # Annotate bars with values
+    for bar, val in zip(bars, values):
+        x_pos = val + 0.02 if val >= 0 else val - 0.02
+        ha = "left" if val >= 0 else "right"
+        ax.text(x_pos, bar.get_y() + bar.get_height() / 2, f"{val:.3f}",
+                va="center", ha=ha, fontsize=8)
+
+    plt.tight_layout()
+    return fig
