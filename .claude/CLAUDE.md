@@ -4,17 +4,25 @@ This file is the entrypoint for Claude Code sessions. It imports the authoritati
 
 ## Imported Docs (Authoritative Sources)
 
-### Agent Workflow & Boundaries
-@docs/02_agent/AGENTS.md
-@docs/02_agent/AI_BOUNDARIES.md
-@docs/02_agent/QUALITY_BAR.md
-@docs/02_agent/REVIEW_CHECKLIST.md
+### Architecture & Execution
+@docs/01_core/ARCHITECTURE.md
+@docs/01_core/EXPERIMENTS.md
 
 ### Core Contracts
+@docs/01_core/RULES.md
 @docs/01_core/REPRODUCIBILITY.md
 @docs/01_core/DATA_CONTRACT.md
 @docs/01_core/METRICS.md
-@docs/01_core/RULES.md
+@docs/01_core/SCORING.md
+
+### Validation & Quality
+@docs/01_core/DRIFT.md
+@docs/02_agent/QUALITY_BAR.md
+@docs/02_agent/REVIEW_CHECKLIST.md
+
+### Agent Workflow
+@docs/02_agent/AGENTS.md
+@docs/02_agent/AI_BOUNDARIES.md
 
 ### PR Requirements
 @.github/pull_request_template.md
@@ -29,6 +37,7 @@ make help     # see all targets
 
 **Key constraints:**
 - Seed required for experiments: `--seed <int>`
+- Canonical runner: `experiments/run_experiment.py` (see @docs/01_core/EXPERIMENTS.md)
 - No commits to `data/runs/`, `data/reports/`, `data/models/`
 - One concept per PR; use PR template
 
