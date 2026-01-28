@@ -84,7 +84,8 @@ def play_single_hand(
                     dealer_rng = random.Random(deal_seed + deal_id)
                     dealer_index = dealer_rng.randrange(4)
                 else:
-                    dealer_index = random.randrange(4)
+                    # Fallback: use local RNG to avoid global random state
+                    dealer_index = random.Random().randrange(4)
 
         current_high_bid = 0
         winning_bidder = None
@@ -258,7 +259,8 @@ def play_single_hand(
             if rng is not None:
                 initial_leader = rng.randrange(4)
             else:
-                initial_leader = random.randrange(4)
+                # Fallback: use local RNG to avoid global random state
+                initial_leader = random.Random().randrange(4)
     leader = initial_leader
 
     # 10 tricks in a 10-card hand
