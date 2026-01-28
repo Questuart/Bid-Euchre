@@ -23,9 +23,11 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
     - name: Install dependencies
-      run: |
-        pip install -e ".[dev]"
+      run: uv sync --frozen
 
     - name: Run baseline_full suite
       run: |

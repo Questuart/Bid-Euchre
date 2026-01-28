@@ -1,4 +1,4 @@
-.PHONY: help repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop
+.PHONY: help sync repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop
 .DEFAULT_GOAL := help
 
 PYTHON ?= python
@@ -14,6 +14,9 @@ N_PER ?= 20
 
 help:
 	@echo ""
+	@echo "Setup:"
+	@echo "  make sync               - install dependencies with uv"
+	@echo ""
 	@echo "Gold path targets:"
 	@echo "  make check              - repo-lint + ruff + tests"
 	@echo "  make repo-lint          - repo linter (diff vs origin/main)"
@@ -25,6 +28,10 @@ help:
 	@echo "  make bid-eval-tiny      - run bid_eval_tiny suite"
 	@echo "  make bid-loop           - train teachers then eval tiny"
 	@echo ""
+
+sync:
+	@echo ">>> Syncing dependencies with uv"
+	uv sync
 
 repo-lint:
 	@echo ">>> Repo linter"

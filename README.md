@@ -6,6 +6,11 @@ A Python framework for deterministic simulation and strategy evaluation of the c
 
 ### Install
 ```bash
+uv sync
+```
+
+Or with pip (alternative):
+```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
@@ -44,4 +49,4 @@ PYTHONPATH=src python scripts/run_suite.py \
 ## Requirements
 
 - Python 3.10+
-- See `requirements.txt` or `pyproject.toml` for dependencies
+- See `pyproject.toml` for dependencies (install via `uv sync` or `pip install -e ".[dev]"`)
