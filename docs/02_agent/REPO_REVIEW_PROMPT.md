@@ -85,8 +85,8 @@ ls -d src/bid_euchre/*/
 
 ```bash
 # 5. Verify core modules import correctly
-PYTHONPATH=src python -c "from bid_euchre.core import Card, Deck; print('core OK')"
-PYTHONPATH=src python -c "from bid_euchre.sim import Simulation; print('sim OK')"
+PYTHONPATH=src python -c "from bid_euchre.core import Card, create_deck; print('core OK')"
+PYTHONPATH=src python -c "from bid_euchre.sim.simulation import play_single_hand; print('sim OK')"
 PYTHONPATH=src python -c "from bid_euchre.strategy import GreedyStrategy; print('strategy OK')"
 
 # 6. Verify newer modules (Arc B)
