@@ -25,7 +25,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install package + dev deps
-        run: uv sync --frozen
+        run: uv sync --frozen --all-extras
 
       - name: Repo linter
         run: make repo-lint
