@@ -36,10 +36,10 @@ class BidlessDatasetCollector:
         self.run_id = run_id
         self.hand_id = hand_id
         self.rows: List[Dict[str, Any]] = []
-        self._hand_snapshot: Optional[List[Card]] = None
+        self._hands_by_seat: Dict[int, List[Card]] = {}  # Store each seat's hand
         self._contract_type: Optional[str] = None
         self._trump_suit: Optional[str] = None
-        self._computed_hand_features: Optional[Dict[str, Any]] = None
+        self._features_computed: bool = False
 
     def record_hand_value(
         self,
@@ -98,8 +98,8 @@ class BidlessDatasetCollector:
         }
 
         self.rows.append(row)
-        if self._hand_snapshot is None:
-            self._hand_snapshot = list(hand)
+        # Store each seat's hand for per-seat feature computation
+        self._hands_by_seat[seat] = list(hand)
 
     def set_contract_context(self, contract_type: str, trump_suit: Optional[str] = None) -> None:
         """
@@ -118,34 +118,42 @@ class BidlessDatasetCollector:
 
         self._contract_type = contract_type
         self._trump_suit = trump_suit
-        self._computed_hand_features = None  # Force recomputation
+        self._features_computed = False  # Force recomputation
 
     def _ensure_hand_features(self) -> None:
-        """Compute hand features once the contract context is known."""
-        if self._computed_hand_features is not None:
+        """Compute hand features per-seat using contract info from each row."""
+        if self._features_computed:
             return
 
-        if self._hand_snapshot is None or self._contract_type is None:
-            # Provide minimal features when hand/contract info is unavailable
-            features: Dict[str, Any] = {
-                "trump_count": 0,
-                "trump_rb_count": 0,
-                "trump_lb_count": 0,
-                "offsuit_aces": 0,
-                "offsuit_length_3plus_count": 0,
-                "hand_value": 0.0,
-                "is_bidder": 0
-            }
-        else:
-            features = get_hand_features(
-                self._hand_snapshot,
-                self._contract_type,
-                self._trump_suit,
-            )
-
-        self._computed_hand_features = features
         for row in self.rows:
-            row["hand_features"] = features
+            seat = row["seat"]
+            hand = self._hands_by_seat.get(seat)
+            # Use contract info from the row itself (set during record_hand_value)
+            contract_type = row.get("contract_type")
+            trump_suit = row.get("trump_suit")
+
+            if hand is None or contract_type is None:
+                # Provide minimal features when hand/contract info is unavailable
+                features: Dict[str, Any] = {
+                    "trump_count": 0,
+                    "trump_rb_count": 0,
+                    "trump_lb_count": 0,
+                    "offsuit_aces": 0,
+                    "offsuit_length_3plus_count": 0,
+                    "hand_value": 0.0,
+                    "is_bidder": 0
+                }
+            else:
+                features = get_hand_features(
+                    hand,
+                    contract_type,
+                    trump_suit,
+                )
+
+            # Each row gets its own copy to avoid aliasing
+            row["hand_features"] = dict(features)
+
+        self._features_computed = True
 
     def get_rows_sorted(self) -> List[Dict[str, Any]]:
         """
