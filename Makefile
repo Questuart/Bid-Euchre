@@ -1,7 +1,7 @@
 .PHONY: help sync repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop
 .DEFAULT_GOAL := help
 
-PYTHON ?= python
+PYTHON ?= uv run python
 REPO_LINT_BASE ?= origin/main
 REPO_LINT_HEAD ?= HEAD
 
