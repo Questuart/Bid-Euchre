@@ -745,3 +745,324 @@ def plot_ccdf(
 
     plt.tight_layout()
     return fig
+
+
+def plot_hand_value_by_trump_suit(
+    df: pd.DataFrame,
+    figsize: Tuple[int, int] = (10, 6),
+    show_variance: bool = True,
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Box/violin plots of hand_value distribution by trump suit.
+
+    Compares hand strength distributions across trump suits (C, D, H, S).
+    Useful for detecting dealing bias or suit-specific patterns.
+
+    Args:
+        df: DataFrame with 'trump' and 'feat_hand_value' columns
+        figsize: Figure size tuple
+        show_variance: Whether to annotate with variance values
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if "feat_hand_value" not in df.columns:
+        ax.text(0.5, 0.5, "feat_hand_value column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    if "trump" not in df.columns:
+        ax.text(0.5, 0.5, "trump column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    # Filter to non-null trump values (suit contracts only)
+    suit_df = df[df["trump"].notna()].copy()
+    if len(suit_df) == 0:
+        ax.text(0.5, 0.5, "No suit contract data found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    suits = ["C", "D", "H", "S"]
+    available_suits = [s for s in suits if s in suit_df["trump"].values]
+    colors = [TRUMP_COLORS.get(s, "#95a5a6") for s in available_suits]
+
+    if HAS_SEABORN:
+        sns.boxplot(
+            data=suit_df, x="trump", y="feat_hand_value", ax=ax,
+            order=available_suits, palette=colors
+        )
+    else:
+        data = [suit_df[suit_df["trump"] == s]["feat_hand_value"].values for s in available_suits]
+        bp = ax.boxplot(data, labels=available_suits, patch_artist=True)
+        for patch, color in zip(bp["boxes"], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+
+    ax.set_xlabel("Trump Suit")
+    ax.set_ylabel("Hand Value")
+    ax.set_title(title or "Hand Value Distribution by Trump Suit")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    # Add mean markers
+    means = [suit_df[suit_df["trump"] == s]["feat_hand_value"].mean() for s in available_suits]
+    ax.scatter(range(len(means)), means, color="black", marker="D", s=50, zorder=5, label="Mean")
+
+    # Annotate with variance if requested
+    if show_variance:
+        variances = [suit_df[suit_df["trump"] == s]["feat_hand_value"].var() for s in available_suits]
+        for i, (s, var) in enumerate(zip(available_suits, variances)):
+            ax.annotate(f"σ²={var:.1f}", xy=(i, ax.get_ylim()[1]),
+                       ha="center", va="bottom", fontsize=8)
+
+    ax.legend()
+    plt.tight_layout()
+    return fig
+
+
+def plot_outcome_by_trump_suit(
+    df: pd.DataFrame,
+    outcome: str = "tricks_won",
+    figsize: Tuple[int, int] = (10, 6),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Outcome distribution by trump suit.
+
+    Shows how tricks won (or other outcome) varies by trump suit.
+    Useful for checking if certain suits systematically win more.
+
+    Args:
+        df: DataFrame with 'trump' and outcome columns
+        outcome: Outcome column name (default "tricks_won")
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if outcome not in df.columns:
+        ax.text(0.5, 0.5, f"'{outcome}' column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    if "trump" not in df.columns:
+        ax.text(0.5, 0.5, "trump column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    # Filter to non-null trump values
+    suit_df = df[df["trump"].notna()].copy()
+    if len(suit_df) == 0:
+        ax.text(0.5, 0.5, "No suit contract data found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    suits = ["C", "D", "H", "S"]
+    available_suits = [s for s in suits if s in suit_df["trump"].values]
+    colors = [TRUMP_COLORS.get(s, "#95a5a6") for s in available_suits]
+
+    if HAS_SEABORN:
+        sns.violinplot(
+            data=suit_df, x="trump", y=outcome, ax=ax,
+            order=available_suits, palette=colors, inner="box"
+        )
+    else:
+        data = [suit_df[suit_df["trump"] == s][outcome].values for s in available_suits]
+        bp = ax.boxplot(data, labels=available_suits, patch_artist=True)
+        for patch, color in zip(bp["boxes"], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+
+    ax.set_xlabel("Trump Suit")
+    ax.set_ylabel(outcome.replace("_", " ").title())
+    ax.set_title(title or f"{outcome.replace('_', ' ').title()} by Trump Suit")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    # Add mean markers
+    means = [suit_df[suit_df["trump"] == s][outcome].mean() for s in available_suits]
+    ax.scatter(range(len(means)), means, color="red", marker="D", s=50, zorder=5, label="Mean")
+    ax.legend()
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_feature_heatmap_by_suit(
+    df: pd.DataFrame,
+    features: Optional[List[str]] = None,
+    normalize: bool = True,
+    figsize: Tuple[int, int] = (12, 6),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Heatmap showing mean feature values by trump suit.
+
+    Visualizes which features vary most across trump suits.
+    Optionally normalizes features for comparability.
+
+    Args:
+        df: DataFrame with 'trump' and feat_* columns
+        features: List of feature names (without feat_ prefix).
+                  If None, uses top 10 features by variance.
+        normalize: Whether to z-score normalize features (default True)
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if "trump" not in df.columns:
+        ax.text(0.5, 0.5, "trump column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    # Filter to suit contracts
+    suit_df = df[df["trump"].notna()].copy()
+    if len(suit_df) == 0:
+        ax.text(0.5, 0.5, "No suit contract data found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    # Get feature columns
+    feat_cols = [c for c in df.columns if c.startswith("feat_")]
+    numeric_cols = [c for c in feat_cols if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+
+    if features:
+        plot_cols = [f"feat_{f}" for f in features if f"feat_{f}" in numeric_cols]
+    else:
+        # Top 10 by variance
+        variances = {c: suit_df[c].var() for c in numeric_cols}
+        sorted_cols = sorted(variances, key=variances.get, reverse=True)
+        plot_cols = sorted_cols[:10]
+
+    if not plot_cols:
+        ax.text(0.5, 0.5, "No numeric features found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    suits = ["C", "D", "H", "S"]
+    available_suits = [s for s in suits if s in suit_df["trump"].values]
+
+    # Compute mean values per suit
+    data = []
+    for suit in available_suits:
+        suit_data = suit_df[suit_df["trump"] == suit]
+        means = [suit_data[col].mean() for col in plot_cols]
+        data.append(means)
+
+    data = np.array(data)
+
+    # Normalize if requested
+    if normalize and data.shape[0] > 1:
+        # Z-score normalize each column
+        col_means = data.mean(axis=0)
+        col_stds = data.std(axis=0)
+        col_stds[col_stds == 0] = 1  # Avoid division by zero
+        data = (data - col_means) / col_stds
+
+    # Plot heatmap
+    labels = [c.replace("feat_", "") for c in plot_cols]
+
+    if HAS_SEABORN:
+        sns.heatmap(
+            data, annot=True, fmt=".2f", cmap="coolwarm" if normalize else "YlOrRd",
+            center=0 if normalize else None,
+            ax=ax, xticklabels=labels, yticklabels=available_suits,
+            cbar_kws={"label": "Z-score" if normalize else "Mean Value"}
+        )
+    else:
+        im = ax.imshow(data, cmap="coolwarm" if normalize else "YlOrRd", aspect="auto")
+        fig.colorbar(im, ax=ax, label="Z-score" if normalize else "Mean Value")
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.set_yticks(range(len(available_suits)))
+        ax.set_yticklabels(available_suits)
+
+        # Annotate
+        for i in range(len(available_suits)):
+            for j in range(len(labels)):
+                ax.text(j, i, f"{data[i, j]:.2f}", ha="center", va="center", fontsize=8)
+
+    ax.set_xlabel("Feature")
+    ax.set_ylabel("Trump Suit")
+    subtitle = " (Z-score normalized)" if normalize else ""
+    ax.set_title(title or f"Feature Means by Trump Suit{subtitle}")
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_suit_variance_summary(
+    df: pd.DataFrame,
+    column: str = "feat_hand_value",
+    figsize: Tuple[int, int] = (8, 5),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Bar chart comparing variance of a column across trump suits.
+
+    Quick visualization to check if variance differs by suit.
+
+    Args:
+        df: DataFrame with 'trump' and specified column
+        column: Column to compute variance for (default "feat_hand_value")
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if column not in df.columns:
+        ax.text(0.5, 0.5, f"'{column}' column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    if "trump" not in df.columns:
+        ax.text(0.5, 0.5, "trump column not found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    # Filter to suit contracts
+    suit_df = df[df["trump"].notna()].copy()
+    if len(suit_df) == 0:
+        ax.text(0.5, 0.5, "No suit contract data found",
+                ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    suits = ["C", "D", "H", "S"]
+    available_suits = [s for s in suits if s in suit_df["trump"].values]
+    colors = [TRUMP_COLORS.get(s, "#95a5a6") for s in available_suits]
+
+    # Compute variance for each suit
+    variances = [suit_df[suit_df["trump"] == s][column].var() for s in available_suits]
+    overall_var = suit_df[column].var()
+
+    # Plot bars
+    bars = ax.bar(range(len(available_suits)), variances, color=colors, alpha=0.8)
+
+    # Add overall variance reference line
+    ax.axhline(overall_var, color="red", linestyle="--", linewidth=2,
+               label=f"Overall: {overall_var:.1f}")
+
+    ax.set_xticks(range(len(available_suits)))
+    ax.set_xticklabels(available_suits)
+    ax.set_xlabel("Trump Suit")
+    ax.set_ylabel("Variance")
+    ax.set_title(title or f"Variance of {column.replace('feat_', '')} by Trump Suit")
+    ax.grid(True, alpha=0.3, axis="y")
+    ax.legend()
+
+    # Annotate bars with values
+    for bar, var in zip(bars, variances):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
+                f"{var:.1f}", ha="center", va="bottom", fontsize=10)
+
+    plt.tight_layout()
+    return fig
