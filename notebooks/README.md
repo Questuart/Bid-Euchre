@@ -15,9 +15,12 @@ notebooks/
 │   └── 30_model_dev_and_eval.ipynb    # Exploratory template
 ├── sandbox/         - Exploratory notebooks (dated, ad-hoc)
 │   └── YYYY_MM_DD_*.ipynb             # Individual explorations
+├── .archive/        - Archived/deprecated notebooks (for reference)
 ├── README.md        - This file
 └── .gitignore
 ```
+
+**Note:** Old Phase 0 notebook stubs have been archived in `.archive/` for reference.
 
 ---
 
