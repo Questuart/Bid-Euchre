@@ -1,0 +1,15 @@
+# Notebook outputs
+*.ipynb_checkpoints/
+.ipynb_checkpoints
+
+# Exploratory notebooks (dated, keep in sandbox instead)
+202[0-9]_[0-1][0-9]_[0-3][0-9]_*.ipynb
+
+# Cached data
+*.parquet
+*.jsonl
+*.json
+
+# Python cache
+__pycache__/
+*.pyc
