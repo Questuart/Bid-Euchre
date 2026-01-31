@@ -8,11 +8,19 @@
 
 ```
 notebooks/
-├── sandbox/         - Exploratory notebooks (not versioned outputs)
-│   └── *.ipynb      - Individual exploration notebooks
+├── phase0_bidless/  - Phase 0 (bidless) hand analysis & diagnostics
+│   ├── README.md                      # Phase 0 golden path guide
+│   ├── 10_health_checks.ipynb         # Quick dataset validation
+│   ├── 20_charts_reference.ipynb      # Comprehensive reference
+│   └── 30_model_dev_and_eval.ipynb    # Exploratory template
+├── sandbox/         - Exploratory notebooks (dated, ad-hoc)
+│   └── YYYY_MM_DD_*.ipynb             # Individual explorations
+├── diagnostics/     - DEPRECATED (see phase0_bidless/)
 ├── README.md        - This file
-└── .gitignore       - Keeps notebook outputs out of git
+└── .gitignore
 ```
+
+**Note:** The `diagnostics/` folder is deprecated. Use `phase0_bidless/` for bidless analysis.
 
 ---
 
