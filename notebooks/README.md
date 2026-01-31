@@ -15,12 +15,9 @@ notebooks/
 │   └── 30_model_dev_and_eval.ipynb    # Exploratory template
 ├── sandbox/         - Exploratory notebooks (dated, ad-hoc)
 │   └── YYYY_MM_DD_*.ipynb             # Individual explorations
-├── diagnostics/     - DEPRECATED (see phase0_bidless/)
 ├── README.md        - This file
 └── .gitignore
 ```
-
-**Note:** The `diagnostics/` folder is deprecated. Use `phase0_bidless/` for bidless analysis.
 
 ---
 
