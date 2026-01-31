@@ -2,15 +2,7 @@
 
 **Purpose:** Rapid exploration and hypothesis testing during Arc B development.
 
----
-
-## Phase 0 Notebooks Have Moved!
-
-Phase 0 (bidless hand analysis) notebooks are now in `notebooks/phase0_bidless/`:
-- `00_charts_reference.ipynb` → `../phase0_bidless/20_charts_reference.ipynb`
-- `00_starter_b0_exploration.ipynb` → `../phase0_bidless/30_model_dev_and_eval.ipynb`
-
-See [Phase 0 README](../phase0_bidless/README.md) for details.
+**Note:** For Phase 0 (bidless) analysis, see `notebooks/phase0_bidless/` instead of creating new sandbox notebooks.
 
 ---
 
