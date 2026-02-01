@@ -57,6 +57,38 @@ from bid_euchre.sim.hooks import HandEndEvent, SimulationHooks
 # Metadata schema version
 META_JSON_SCHEMA_VERSION = 2  # v2: add created_at_utc, git_sha, config_path, config_sha256
 
+# Maximum total hands by config
+# Note: total_hands = plan_count * len(scenarios) * n_per
+# where plan_count accounts for mode (matrix vs head_to_head, bidding policies, etc.)
+TOTAL_HANDS_BUDGETS = {
+    "quick_test": 1_000,
+    "baseline_tiny": 50_000,
+    "baseline_full": 5_000_000,
+}
+
+
+def check_total_hands_budget(config_name: str, total_hands: int, force: bool = False):
+    """Enforce total hands budget to prevent accidental expensive runs.
+
+    Args:
+        config_name: Config name (e.g., "quick_test")
+        total_hands: Total hands computed by runner (plan_count × scenarios × n_per)
+        force: If True, skip budget check
+
+    Raises:
+        ValueError: If budget exceeded and not forced
+    """
+    if force:
+        return
+
+    budget = TOTAL_HANDS_BUDGETS.get(config_name)
+    if budget and total_hands > budget:
+        raise ValueError(
+            f"Total hands budget exceeded for config '{config_name}': "
+            f"{total_hands:,} > {budget:,} total hands\n"
+            f"Use --force to override or reduce --n_per."
+        )
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -133,6 +165,11 @@ def parse_args():
         "--team1-strategy",
         type=str,
         help="For head_to_head: name of strategy to use for Team 1 (players 1 & 3). Must be one of the strategies in the config."
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Override work budget limits (use with caution)"
     )
     return parser.parse_args()
 
@@ -286,6 +323,10 @@ def main():
     if mode == "head_to_head":
         print(f"Team1 strategy: {team1_strategy_name}")
     print("=" * 70)
+
+    # Enforce work budget before starting simulation
+    total_hands_estimate = plan_count * len(scenarios) * n_per
+    check_total_hands_budget(config.experiment_name, total_hands_estimate, force=args.force)
     
     if args.dry_run:
         print("\n✅ Dry run complete. Configuration valid.")

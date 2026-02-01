@@ -36,6 +36,7 @@ from .strategy_charts import (
     plot_tricks_distribution_comparison,
     plot_win_rate_heatmap,
 )
+from .validators import SampleSizeValidator, SampleSizeWarning
 
 __all__ = [
     # Loaders
@@ -71,4 +72,7 @@ __all__ = [
     # Stats
     "compare_first_last_batch",
     "compute_seat_balance",
+    # Validators
+    "SampleSizeValidator",
+    "SampleSizeWarning",
 ]
