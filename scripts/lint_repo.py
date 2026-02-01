@@ -354,6 +354,106 @@ def check_no_global_random(changed: list[str], repo_root: Path) -> list[Violatio
     return violations
 
 
+def check_empty_test_functions(changed: list[str], repo_root: Path) -> list[Violation]:
+    """
+    Flag test functions that are literally empty (just pass or docstring).
+
+    Note: This replaces the "tests without asserts" check which had false
+    positives for valid tests using pytest.raises context managers.
+    """
+    violations: list[Violation] = []
+    for p in changed:
+        # Only check test files
+        if not (p.startswith("tests/") and p.endswith(".py")):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        text = abs_path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text, filename=p)
+        except SyntaxError:
+            # Skip files with syntax errors (will be caught by other tools)
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                # Check if function body is empty (only pass or docstring)
+                body_without_docstring = [
+                    n for n in node.body
+                    if not isinstance(n, ast.Expr) or
+                       not isinstance(n.value, ast.Constant) or
+                       not isinstance(n.value.value, str)
+                ]
+
+                # If only 'pass' statement remains, it's empty
+                if (len(body_without_docstring) == 1 and
+                    isinstance(body_without_docstring[0], ast.Pass)):
+                    violations.append(
+                        Violation(
+                            rule="empty-test-function",
+                            path=f"{p}:{node.lineno}",
+                            message=f"test function '{node.name}' is empty (only 'pass')",
+                        )
+                    )
+                elif len(body_without_docstring) == 0:
+                    violations.append(
+                        Violation(
+                            rule="empty-test-function",
+                            path=f"{p}:{node.lineno}",
+                            message=f"test function '{node.name}' is empty (only docstring)",
+                        )
+                    )
+
+    return violations
+
+
+def check_experiments_without_seed(changed: list[str], repo_root: Path) -> list[Violation]:
+    """
+    Flag experiment invocations in docs/scripts missing --seed.
+
+    All experiment invocations should either:
+    1. Use --seed <int> for reproducibility, or
+    2. Use --allow-nondeterministic for exploratory runs
+    """
+    import re
+
+    violations: list[Violation] = []
+
+    # Pattern matches experiment invocations
+    experiment_pattern = re.compile(r'python experiments/run_experiment\.py[^\n]*')
+
+    # Files to check
+    paths_to_check: list[Path] = []
+    for p in changed:
+        if p.endswith(".md") or (p.startswith("scripts/") and p.endswith(".py")):
+            abs_path = repo_root / p
+            if abs_path.exists():
+                paths_to_check.append(abs_path)
+
+    for abs_path in paths_to_check:
+        rel_path = abs_path.relative_to(repo_root)
+        text = abs_path.read_text(encoding="utf-8")
+
+        for match in experiment_pattern.finditer(text):
+            invocation = match.group(0)
+
+            # Check for --seed or --allow-nondeterministic
+            if "--seed" not in invocation and "--allow-nondeterministic" not in invocation:
+                lineno = text[:match.start()].count('\n') + 1
+                violations.append(
+                    Violation(
+                        rule="experiments-require-seed",
+                        path=f"{rel_path}:{lineno}",
+                        message="experiment invocation missing --seed or --allow-nondeterministic",
+                    )
+                )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -375,6 +475,8 @@ def main() -> int:
     violations += check_no_new_scripts_in_frozen_folders(changed)
     violations += check_no_ds_store_files(changed)
     violations += check_no_global_random(changed, repo_root)
+    violations += check_empty_test_functions(changed, repo_root)
+    violations += check_experiments_without_seed(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
