@@ -30,3 +30,11 @@ repos:
         language: system
         files: ^experiments/(configs|suites)/.*\.yaml$
         pass_filenames: false
+
+      - id: no-commits-from-main-checkout
+        name: Block commits from main checkout
+        entry: bash -c 'MAIN_DIR="/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre"; CURRENT_DIR="$(git rev-parse --show-toplevel)"; CURRENT_BRANCH="$(git branch --show-current)"; if [ "$CURRENT_DIR" = "$MAIN_DIR" ] && [ "$CURRENT_BRANCH" = "main" ]; then echo ""; echo "⛔ ERROR: Commits from main checkout are not allowed."; echo ""; echo "This repository requires worktree-only workflow."; echo "Create a worktree: git worktree add ../Bid-Euchre-<branch> <branch>"; echo ""; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]

@@ -41,6 +41,43 @@ make help     # see all targets
 - No commits to `data/runs/`, `data/reports/`, `data/models/`
 - One concept per PR; use PR template
 
+## Worktree-Only Workflow (MANDATORY)
+
+**CRITICAL:** All code changes MUST happen in dedicated git worktrees, never in the main checkout at `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre`.
+
+### Before Making Any Changes
+
+1. **Check current location:**
+   ```bash
+   git rev-parse --show-toplevel
+   git branch --show-current
+   ```
+
+2. **If on `main` branch in main checkout → STOP:**
+   - The user-prompt-submit hook will block you
+   - Create a worktree first: `git worktree add ../Bid-Euchre-<branch-name> <branch-name>`
+
+3. **Worktree creation pattern:**
+   ```bash
+   # From main checkout
+   git worktree add ../Bid-Euchre-<descriptive-name> <branch-name>
+   cd ../Bid-Euchre-<descriptive-name>
+   # Now work here
+   ```
+
+### Enforcement Rules
+
+- ❌ NEVER work from main checkout when on `main` branch
+- ❌ NEVER commit from main checkout
+- ✅ ALWAYS verify worktree location before starting
+- ✅ ALWAYS include worktree proof in PR descriptions
+
+Violations trigger:
+1. User-prompt-submit hook → blocks immediately
+2. Pre-commit hook → blocks at commit time
+
+See `docs/02_agent/AGENTS.md` for full workflow details.
+
 ## Compaction Instructions
 
 When compacting conversation context, preserve:
