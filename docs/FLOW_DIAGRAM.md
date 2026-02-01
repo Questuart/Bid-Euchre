@@ -712,9 +712,7 @@ This separation ensures reproducibility while allowing exploration of different 
 
 ### Run an experiment
 ```bash
-python experiments/run_experiment.py \
-  --config experiments/configs/quick_test.yaml \
-  --seed 42
+python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42
 ```
 
 ### Validate before PR
