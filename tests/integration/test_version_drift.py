@@ -33,8 +33,8 @@ from bid_euchre.strategy.baselines import AlwaysHighestLegalStrategy
 #   1. The change was unintentional (fix the bug), or
 #   2. The change was intentional (update the baseline)
 #
-# Last updated: 2025-01-27
-# Git SHA at baseline: (update when changing)
+# Last updated: 2026-02-01
+# Git SHA at baseline: cf2119e (after PR #183 round-robin dealing)
 # ============================================================================
 
 BASELINE_SUIT_HEARTS_SEED42 = {
@@ -42,8 +42,8 @@ BASELINE_SUIT_HEARTS_SEED42 = {
     "contract_type": "suit",
     "trump_suit": "H",
     "deal_seed": 42,
-    "expected_avg_team0": 5.05,
-    "expected_avg_team1": 4.95,
+    "expected_avg_team0": 5.33,
+    "expected_avg_team1": 4.67,
 }
 
 BASELINE_HIGH_SEED42 = {
@@ -51,8 +51,8 @@ BASELINE_HIGH_SEED42 = {
     "contract_type": "high",
     "trump_suit": None,
     "deal_seed": 42,
-    "expected_avg_team0": 4.97,
-    "expected_avg_team1": 5.03,
+    "expected_avg_team0": 4.79,
+    "expected_avg_team1": 5.21,
 }
 
 BASELINE_LOW_SEED42 = {
@@ -60,8 +60,8 @@ BASELINE_LOW_SEED42 = {
     "contract_type": "low",
     "trump_suit": None,
     "deal_seed": 42,
-    "expected_avg_team0": 4.96,
-    "expected_avg_team1": 5.04,
+    "expected_avg_team0": 5.39,
+    "expected_avg_team1": 4.61,
 }
 
 
