@@ -47,13 +47,12 @@ def shuffle_deck(deck: List[Card], rng: Optional[random.Random] = None) -> None:
 
     Args:
         deck: List of cards to shuffle (modified in-place)
-        rng: Optional random.Random instance. If None, uses global random (not recommended for reproducibility)
+        rng: Optional random.Random instance. If None, creates a new unseeded instance.
     """
     if rng is None:
-        # Fallback to global random (not recommended for reproducibility)
-        random.shuffle(deck)
-    else:
-        rng.shuffle(deck)
+        # Create local RNG instance for reproducibility compliance
+        rng = random.Random()
+    rng.shuffle(deck)
 
 
 def deal_hands(
