@@ -76,10 +76,7 @@ This ensures runs can be traced and reproduced.
 3. Run:
 
 ```bash
-python experiments/run_experiment.py \
-  --config <config_path from meta.json> \
-  --seed <seed from meta.json> \
-  --n_per <n_per from meta.json>
+python experiments/run_experiment.py --seed <seed from meta.json> --config <config_path from meta.json> --n_per <n_per from meta.json>
 ```
 
 The results should match the original run exactly (same aggregate metrics, same deal outcomes).
