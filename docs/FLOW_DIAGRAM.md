@@ -38,24 +38,48 @@ flowchart TB
             Strategies["greedy.py, glutton.py,<br/>random_strategy.py, etc."]
         end
 
-        subgraph Game["game/"]
-            Bidding["bidding.py"]
-            Scoring["scoring.py"]
-            Trick["trick.py"]
+        subgraph CoreMod["core/"]
+            Cards["cards.py<br/>(Card, Suit, EUCHRE_DECK)"]
+            Rules["rules.py<br/>(play_trick, legal_plays)"]
         end
+
+        Scoring["scoring.py<br/>(standalone module)"]
 
         subgraph Logging["logging/"]
             GameLogger["game_logger.py<br/>(JSONL schema v5)"]
         end
 
+        subgraph Reporting["reporting/"]
+            Evaluator["evaluator.py"]
+            Metrics["metrics.py"]
+            Validation["validation.py"]
+            Paths["paths.py"]
+            Style["style.py"]
+        end
+
         subgraph Diagnostics["diagnostics/"]
-            Charts["charts.py"]
+            Loaders["loaders.py"]
+            HealthChecks["health_checks.py"]
+            Validators["validators.py"]
             Stats["stats.py"]
-            Health["health_checks.py"]
+            Charts["charts.py"]
+            StrategyCharts["strategy_charts.py"]
         end
 
         subgraph Experiments["experiments/"]
             Config["config.py<br/>(YAML → dataclasses)"]
+            Meta["meta.py<br/>(metadata generation)"]
+            TeacherRoster["teacher_roster.py"]
+        end
+
+        subgraph Datasets["datasets/"]
+            Bidding["bidding.py<br/>(auction dataset)"]
+            Bidless["bidless.py<br/>(declared contract dataset)"]
+        end
+
+        subgraph Features["features/"]
+            HandEval["hand_eval.py"]
+            BidlessFeatures["bidless_hand_features.py"]
         end
     end
 
@@ -75,14 +99,18 @@ flowchart TB
     Config --> Simulation
     Deals --> Simulation
     Simulation --> Strategies
-    Simulation --> Game
+    Simulation --> CoreMod
+    Simulation --> Scoring
     Simulation --> Hooks
     Hooks --> GameLogger
     GameLogger --> Runs
-    Scripts --> Diagnostics
+    CLI --> Evaluator
+    Scripts --> Reporting
+    Reporting --> Diagnostics
     Diagnostics --> Runs
     Notebooks --> Runs
     Notebooks --> Diagnostics
+    Notebooks --> Reporting
 ```
 
 ---
@@ -99,10 +127,10 @@ flowchart TD
     ParseConfig --> CreateRunID["Generate run_id<br/>(timestamp-based)"]
     CreateRunID --> CreateRunDir["Create data/runs/&lt;run_id&gt;/"]
 
-    CreateRunDir --> SaveMeta["Save meta.json<br/>(schema v2: seed, timestamp, config)"]
-    SaveMeta --> SaveEffectiveConfig["Save config_effective.yaml<br/>(resolved configuration)"]
+    CreateRunDir --> SaveEffectiveConfig["Save config_effective.yaml<br/>(resolved configuration)"]
+    SaveEffectiveConfig --> SaveMeta["Save meta.json<br/>(schema v2: seed, timestamp, git_hash)"]
 
-    SaveEffectiveConfig --> InitLogger["Initialize GameLogger<br/>(JSONL schema v5)"]
+    SaveMeta --> InitLogger["Initialize GameLogger<br/>(JSONL schema v5)"]
     InitLogger --> InitStrategies["Instantiate strategies<br/>(GreedyStrategy, etc.)"]
 
     InitStrategies --> GenerateDeals["Generate deals<br/>(deals.derive_deal_from_index)"]
@@ -120,9 +148,10 @@ flowchart TD
     end
 
     NextDeal -->|No| Aggregate["Aggregate results<br/>(win rates, metrics)"]
-    Aggregate --> SaveResults["Save results/<br/>(performance_summary.json)"]
-    SaveResults --> SaveLogs["Save logs/<br/>(game_events.jsonl)"]
-    SaveLogs --> SaveDatasets["Save datasets/<br/>(bidding.parquet, etc.)"]
+    Aggregate --> SaveResults["Save results/&lt;strategy&gt;/*.json<br/>(suit_C.json, suit_D.json, high.json,<br/>low.json, auction.json)"]
+    SaveResults --> SavePerf["Save perf.json<br/>(performance metrics)"]
+    SavePerf --> SaveLogs["Save logs/*.jsonl<br/>(if --log-level != none)"]
+    SaveLogs --> SaveDatasets["Save datasets/<br/>(if --emit-bidding-dataset or<br/>--emit-bidless-dataset)"]
     SaveDatasets --> End([Experiment complete<br/>Output: data/runs/&lt;run_id&gt;/])
 
     style Start fill:#e1f5ff
@@ -140,35 +169,37 @@ flowchart LR
         direction TB
         Seed["Seed (--seed N)"]
         Config["Config YAML"]
+        Config --> ConfigEff["config_effective.yaml<br/>(written BEFORE simulation)"]
+        ConfigEff --> Meta["meta.json<br/>(written BEFORE simulation)"]
         Seed --> Deals["Deterministic Deals<br/>(derive_deal_from_index)"]
-        Config --> Sim["Simulation Engine"]
+        Meta --> Sim["Simulation Engine"]
         Deals --> Sim
         Sim --> Events["Event Stream<br/>(HandEndEvent, etc.)"]
     end
 
     subgraph Storage["Data Storage (data/runs/&lt;run_id&gt;/)"]
         direction TB
-        Meta["meta.json<br/>(run metadata)"]
-        ConfigEff["config_effective.yaml"]
-        Logs["logs/<br/>game_events.jsonl"]
-        Results["results/<br/>performance_summary.json"]
-        Datasets["datasets/<br/>bidding.parquet<br/>bidless.parquet"]
+        Logs["logs/*.jsonl<br/>(conditional: --log-level)"]
+        Results["results/&lt;strategy&gt;/*.json<br/>(suit_C, suit_D, high, low, auction)"]
+        Perf["perf.json<br/>(performance metrics)"]
+        Datasets["datasets/<br/>(conditional: --emit-*-dataset)"]
         Artifacts["artifacts/<br/>(model binaries)"]
         Reports["reports/<br/>(charts, figures)"]
     end
 
     subgraph Analysis["Analysis & Insights"]
         direction TB
+        Reporting["Reporting Module<br/>(evaluator, metrics, validation)"]
         Diagnostics["Diagnostics Module<br/>(charts, stats, health)"]
         Notebooks["Jupyter Notebooks<br/>(phase0_bidless/*.ipynb)"]
-        ReportGen["Report Generator<br/>(scripts/generate_report.py)"]
     end
 
-    Events --> Meta
     Events --> Logs
     Events --> Results
+    Events --> Perf
     Events --> Datasets
 
+    Results --> Reporting
     Logs --> Diagnostics
     Results --> Diagnostics
     Datasets --> Diagnostics
@@ -177,8 +208,8 @@ flowchart LR
     Results --> Notebooks
     Datasets --> Notebooks
 
+    Reporting --> Reports
     Diagnostics --> Reports
-    Diagnostics --> ReportGen
     Notebooks --> Reports
 
     style Generation fill:#e1f5ff
@@ -207,52 +238,61 @@ flowchart TD
         SimEngine["sim/simulation.py"]
         SimHooks["sim/hooks.py"]
 
-        GameBidding["game/bidding.py"]
-        GameTrick["game/trick.py"]
-        GameScoring["game/scoring.py"]
-        GameDeck["game/deck.py"]
+        CoreCards["core/cards.py"]
+        CoreRules["core/rules.py"]
+        Scoring["scoring.py"]
 
         StratBase["strategy/base.py"]
         StratImpl["strategy/greedy.py<br/>strategy/glutton.py<br/>etc."]
 
         Logger["logging/game_logger.py"]
 
+        RepEvaluator["reporting/evaluator.py"]
+        RepMetrics["reporting/metrics.py"]
+        RepValidation["reporting/validation.py"]
+
+        DiagLoaders["diagnostics/loaders.py"]
         DiagCharts["diagnostics/charts.py"]
         DiagStats["diagnostics/stats.py"]
         DiagHealth["diagnostics/health_checks.py"]
+        DiagValidators["diagnostics/validators.py"]
     end
 
     RunExp --> ExpConfig
     RunExp --> SimEngine
     RunExp --> Logger
+    RunExp --> RepEvaluator
 
     ExpConfig --> StratImpl
 
     SimEngine --> SimDeals
     SimEngine --> SimHooks
     SimEngine --> StratBase
-    SimEngine --> GameBidding
-    SimEngine --> GameTrick
-    SimEngine --> GameScoring
+    SimEngine --> CoreRules
+    SimEngine --> Scoring
 
-    GameBidding --> GameDeck
-    GameTrick --> GameDeck
-    GameScoring --> GameBidding
+    CoreRules --> CoreCards
+    Scoring --> CoreCards
 
     StratImpl --> StratBase
-    StratImpl --> GameBidding
+    StratImpl --> CoreCards
 
     SimHooks --> Logger
 
-    GenReport --> DiagCharts
-    GenReport --> DiagStats
+    GenReport --> RepEvaluator
+    GenReport --> RepMetrics
+
+    RepEvaluator --> DiagHealth
+    RepMetrics --> DiagStats
 
     Notebooks --> DiagCharts
     Notebooks --> DiagStats
     Notebooks --> DiagHealth
+    Notebooks --> DiagLoaders
 
     DiagCharts --> DiagStats
-    DiagHealth --> DiagStats
+    DiagHealth --> DiagValidators
+    DiagValidators --> DiagStats
 
     style External fill:#e1f5ff
     style Core fill:#fff9e1
@@ -270,15 +310,17 @@ flowchart TD
 
     subgraph DataSources["Data Sources"]
         Meta["meta.json<br/>(seed, config, timestamp)"]
-        Logs["logs/game_events.jsonl<br/>(structured events)"]
-        Datasets["datasets/*.parquet<br/>(bidding, bidless)"]
-        Results["results/*.json<br/>(aggregated metrics)"]
+        Logs["logs/*.jsonl<br/>(structured events, conditional)"]
+        Datasets["datasets/*<br/>(bidding, bidless, conditional)"]
+        Results["results/&lt;strategy&gt;/*.json<br/>(aggregated metrics)"]
+        Perf["perf.json<br/>(performance metrics)"]
     end
 
     LoadData --> Meta
     LoadData --> Logs
     LoadData --> Datasets
     LoadData --> Results
+    LoadData --> Perf
 
     subgraph Analysis["Analysis Tools"]
         direction TB
@@ -347,14 +389,15 @@ flowchart TD
             RunID["&lt;run_id&gt;/<br/>(e.g., 20260131_123456_abc123)"]
 
             subgraph RunContents["Run Contents"]
-                MetaFile["📄 meta.json<br/>(schema v2: seed, timestamp, git_hash)"]
-                ConfigFile["📄 config_effective.yaml<br/>(resolved configuration)"]
+                MetaFile["📄 meta.json<br/>(written BEFORE simulation)"]
+                ConfigFile["📄 config_effective.yaml<br/>(written BEFORE simulation)"]
+                PerfFile["📄 perf.json<br/>(performance metrics)"]
 
-                LogsDir["📁 logs/<br/>game_events.jsonl<br/>(schema v5: JSONL events)"]
+                LogsDir["📁 logs/<br/>*.jsonl (conditional)<br/>(requires --log-level)"]
 
-                ResultsDir["📁 results/<br/>performance_summary.json<br/>(win rates, metrics)"]
+                ResultsDir["📁 results/<br/>&lt;strategy&gt;/*.json<br/>(suit_C, suit_D, high, low, auction)"]
 
-                DatasetsDir["📁 datasets/<br/>bidding.parquet<br/>bidless.parquet<br/>(structured datasets)"]
+                DatasetsDir["📁 datasets/<br/>bidding.* / bidless.* (conditional)<br/>(requires --emit-*-dataset)"]
 
                 ReportsDir["📁 reports/<br/>*.png, *.html<br/>(generated charts)"]
 
@@ -365,6 +408,7 @@ flowchart TD
 
             RunID --> MetaFile
             RunID --> ConfigFile
+            RunID --> PerfFile
             RunID --> LogsDir
             RunID --> ResultsDir
             RunID --> DatasetsDir
@@ -387,32 +431,175 @@ flowchart TD
 
 ---
 
+## Run Invariants vs Optional Artifacts
+
+Every run directory has a guaranteed structure and conditional outputs based on CLI flags.
+
+### Always Present (Guaranteed)
+
+These files are created for every experiment run:
+
+- **meta.json** - Run metadata (seed, timestamp, git_hash), written BEFORE simulation starts
+- **config_effective.yaml** - Resolved configuration with all defaults applied, written BEFORE simulation
+- **perf.json** - Performance metrics (execution time, deals processed), written AFTER simulation completes
+- **results/** - Per-strategy metric rollups, organized by execution mode:
+  - `self_play`: `results/<strategy>/*.json`
+  - `head_to_head`: `results/<team0>_vs_<team1>/*.json`
+  - `head_to_head_matrix`: `results/<strat_a>_vs_<strat_b>/*.json`
+- **logs/** - Directory always created (contents conditional on --log-level)
+- **reports/** - Directory for generated visualizations
+- **splits/** - Reserved directory for train/test/val splits
+- **artifacts/** - Reserved directory for model binaries
+
+### Conditional Artifacts (Flag-Dependent)
+
+These files are only created when specific flags are provided:
+
+| Artifact | CLI Flag | When Generated | Notes |
+|----------|----------|----------------|-------|
+| `logs/*.jsonl` | `--log-level hand` or `--log-level trick` | During simulation | JSONL schema v5 event stream |
+| `datasets/bidding.*` | `--emit-bidding-dataset` | After simulation | Only in auction mode (contract_type: null) |
+| `datasets/bidless.*` | `--emit-bidless-dataset` | After simulation | Only in declared contract mode |
+
+### Checking for Conditional Artifacts
+
+When analyzing runs programmatically, always check for existence:
+
+```python
+from pathlib import Path
+
+run_dir = Path("data/runs/<run_id>")
+
+# Always present
+assert (run_dir / "meta.json").exists()
+assert (run_dir / "perf.json").exists()
+assert (run_dir / "config_effective.yaml").exists()
+
+# Conditional - check before loading
+logs_file = run_dir / "logs" / "game_events.jsonl"
+if logs_file.exists():
+    # Process logs
+    pass
+
+bidding_dataset = run_dir / "datasets" / "bidding.parquet"
+if bidding_dataset.exists():
+    # Analyze bidding decisions
+    pass
+```
+
+---
+
+## Modes and Scenario Types
+
+### Execution Modes
+
+The experiment runner supports three execution modes that determine how strategies compete:
+
+**self_play** (default):
+- All 4 seats use the same strategy
+- Results organized in: `results/<strategy>/`
+- One run per strategy listed in config
+- Example: Testing how well GreedyStrategy performs against itself
+
+**head_to_head**:
+- Team 0 (seats 0 & 2) vs Team 1 (seats 1 & 3)
+- Results organized in: `results/<team0>_vs_<team1>/`
+- Requires `--team1-strategy` CLI flag
+- Example: `--strategy greedy --team1-strategy random` → `results/greedy_vs_random/`
+
+**head_to_head_matrix**:
+- All-vs-all matchups from config
+- Results organized in: `results/<strat_a>_vs_<strat_b>/` for each matchup
+- Requires `matchups:` list in YAML config
+- Example config:
+  ```yaml
+  matchups:
+    - [greedy, random]
+    - [greedy, glutton]
+    - [random, glutton]
+  ```
+
+### Contract Modes
+
+Scenarios can operate in two fundamentally different contract modes:
+
+**Declared Contract** (contract_type specified):
+- No bidding phase - contract and trump are predetermined
+- Contract type and trump suit come from scenario configuration
+- Enables `--emit-bidless-dataset` collection
+- Result filenames by contract type:
+  - `suit_C.json` (Club contract)
+  - `suit_D.json` (Diamond contract)
+  - `suit_H.json` (Heart contract)
+  - `suit_S.json` (Spade contract)
+  - `high.json` (High no-trump contract)
+  - `low.json` (Low no-trump contract)
+
+**Auction Mode** (contract_type: null):
+- Bidding phase where strategies compete to set contract
+- Winner of auction chooses trump suit and contract type
+- Enables `--emit-bidding-dataset` collection
+- Result filename: `auction.json`
+
+### Example Directory Structure by Mode
+
+```
+# Self-play mode
+data/runs/<run_id>/results/
+├── greedy/
+│   ├── suit_C.json
+│   ├── suit_D.json
+│   └── auction.json
+└── random/
+    ├── suit_C.json
+    └── high.json
+
+# Head-to-head mode
+data/runs/<run_id>/results/
+└── greedy_vs_random/
+    ├── suit_C.json
+    └── auction.json
+
+# Head-to-head matrix mode
+data/runs/<run_id>/results/
+├── greedy_vs_random/
+│   └── auction.json
+├── greedy_vs_glutton/
+│   └── auction.json
+└── random_vs_glutton/
+    └── auction.json
+```
+
+---
+
 ## Deterministic Deal Generation
 
 ```mermaid
 flowchart LR
-    Seed["Seed<br/>(--seed N)"]
+    Seed["Scenario Seed<br/>(base_seed + scenario_index)"]
     DealIndex["Deal Index<br/>(0, 1, 2, ...)"]
+    Config["Scenario Config<br/>(contract_type, trump_suit)"]
 
     Seed --> DeriveFn["derive_deal_from_index()<br/>(deals.py)"]
     DealIndex --> DeriveFn
 
-    DeriveFn --> RNG["Per-deal RNG<br/>(Random(seed + index))"]
+    DeriveFn --> RNG["Per-deal RNG<br/>seed = scenario_seed × 1_000_003 + deal_id<br/>Random(seed)"]
 
-    RNG --> Shuffle["Shuffle deck<br/>(deterministic)"]
-    Shuffle --> Deal["52-card Deal<br/>(13 cards × 4 seats)"]
+    RNG --> Shuffle["Shuffle 40-card Euchre deck<br/>(2× T,J,Q,K,A × 4 suits)"]
+    Shuffle --> Deal["40-card Deal<br/>(10 cards × 4 seats)"]
 
-    Deal --> Trump["Random trump<br/>(H/D/C/S)"]
-    Deal --> Contract["Random contract<br/>(Suit/NT)"]
+    Deal --> Leader["Random leader<br/>(rng.randrange(4))"]
+    Config --> ContractTrump["Contract & Trump<br/>(from scenario config)"]
 
-    Trump --> Output["(Deal, Trump, Contract)<br/>Fully reproducible"]
-    Contract --> Output
+    Leader --> Output["(Deal, Leader, Contract, Trump)<br/>Fully reproducible"]
+    ContractTrump --> Output
 
-    Note["Same seed + same index<br/>→ Identical deal every time"]
+    Note["Deterministic: shuffle + leader from RNG<br/>Config-driven: contract + trump from scenario"]
 
     style Seed fill:#e1f5ff
+    style Config fill:#fff9e1
     style Output fill:#e1ffe1
-    style Note fill:#fff9e1
+    style Note fill:#fffacd
 ```
 
 ---
@@ -462,9 +649,46 @@ flowchart TD
 ## Key Principles
 
 ### Reproducibility
+
+#### Deterministic Execution
 - All experiments require `--seed <int>` for deterministic execution
 - Same seed + same config → identical results every time
 - Deal generation uses `derive_deal_from_index(seed, index)` for per-deal reproducibility
+
+#### Deck Specification
+- **40-card Euchre deck**: 2 copies of each (Ten, Jack, Queen, King, Ace) × 4 suits
+- **Hand size**: 10 cards per player (entire deck is dealt, no cards left over)
+- Total: 4 suits × 5 ranks × 2 copies = 40 cards
+
+#### RNG Formula
+Each deal gets a unique, deterministic random seed:
+
+```python
+# Scenario seed combines base seed with scenario index
+scenario_seed = base_seed + scenario_index
+
+# Deal seed uses large prime to avoid collisions
+rng_seed = scenario_seed * 1_000_003 + deal_id
+rng = random.Random(rng_seed)
+```
+
+This ensures:
+- Different scenarios never share deals (scenario_index offset)
+- Different deals within a scenario are independent (deal_id offset)
+- Same base seed reproduces entire experiment exactly
+
+#### What's Deterministic vs Config-Driven
+
+**Deterministic (from RNG)**:
+- ✅ Card shuffle - `rng.shuffle(deck)`
+- ✅ Leader selection - `rng.randrange(4)`
+- ✅ Dealer selection in auction mode - `rng.randrange(4)`
+
+**Config-Driven (from scenario)**:
+- ❌ Contract type - specified in scenario YAML (`contract_type: suit`, `high`, `low`, or `null` for auction)
+- ❌ Trump suit - specified in scenario YAML (`trump_suit: C/D/H/S`) or chosen by auction winner
+
+This separation ensures reproducibility while allowing exploration of different contract scenarios.
 
 ### Data Contract
 - **Outputs confined to**: `data/runs/<run_id>/` only
@@ -488,9 +712,7 @@ flowchart TD
 
 ### Run an experiment
 ```bash
-python experiments/run_experiment.py \
-  --config experiments/configs/quick_test.yaml \
-  --seed 42
+python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42
 ```
 
 ### Validate before PR
