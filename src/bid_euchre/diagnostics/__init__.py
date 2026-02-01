@@ -28,6 +28,7 @@ from .charts import (
 )
 from .health_checks import compute_health_scorecard, display_scorecard
 from .loaders import load_bidless_dataset, load_meta
+from .notebook_data import load_or_generate_features, load_or_generate_outcomes
 from .stats import compare_first_last_batch, compute_seat_balance
 from .strategy_charts import (
     plot_matchup_summary,
@@ -42,6 +43,9 @@ __all__ = [
     # Loaders
     "load_bidless_dataset",
     "load_meta",
+    # Notebook data generation
+    "load_or_generate_outcomes",
+    "load_or_generate_features",
     # Health checks
     "compute_health_scorecard",
     "display_scorecard",
