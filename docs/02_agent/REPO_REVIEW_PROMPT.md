@@ -276,7 +276,7 @@ For each contract doc, verify claims against reality:
 grep -h "^python\|^make\|^PYTHONPATH" docs/01_core/*.md docs/02_agent/*.md | head -10
 
 # Test sample commands (dry-run safe)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --dry-run
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42 --dry-run
 ```
 
 **Deliverable:** Documentation accuracy table with drift details.
@@ -330,7 +330,7 @@ grep -rn "def test_.*:.*pass$" tests/
 
 ```bash
 # Find experiment invocations in docs without --seed
-grep -rn "python experiments/run_experiment.py" docs/ | grep -v "\-\-seed\|\-\-allow-nondeterministic" | head -10
+grep -rn "python experiments/run_experiment.py" docs/ | grep -v -- "--seed\|--allow-nondeterministic" | head -10
 ```
 
 **Stale Reference Detection:**
@@ -805,21 +805,13 @@ make test       # Pytest fast suite
 
 ```bash
 # Seeded experiment (production)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/strategy_comparison.yaml \
-  --seed 42 \
-  --n_per 2000
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/strategy_comparison.yaml --seed 42 --n_per 2000
 
 # Quick smoke test (exploratory only, not for inference)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/quick_test.yaml \
-  --seed 42 \
-  --n_per 200
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42 --n_per 200
 
 # Dry-run validation (no simulation)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/strategy_comparison.yaml \
-  --dry-run
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/strategy_comparison.yaml --seed 42 --dry-run
 ```
 
 ### Report Generation
