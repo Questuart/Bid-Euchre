@@ -17,137 +17,165 @@ Phase 0 represents pre-bidding analysis: hands dealt with contracts assigned, bu
 - **Policy-dependent outcomes**: The `tricks_won` values depend on the play strategy used (e.g., RandomLegalStrategy, GreedyStrategy)
 - **Determinism**: Seed controls both deal generation and any strategy randomness
 
-## Quick Start: Three Workflows
+## Quick Start
 
-### Workflow 1: Quick Dataset Health Check (Start Here!)
+### Prerequisites
 
-**Use case:** You just generated a dataset and want to verify it's valid.
-
-1. Generate a small test dataset:
-   ```bash
-   PYTHONPATH=src python experiments/run_experiment.py \
-     --config experiments/configs/bidless_dataset_collection.yaml \
-     --seed 42 --n_per 2000 --emit-bidless-dataset
-   ```
-
-2. Open [10_health_checks.ipynb](10_health_checks.ipynb) and update `DATASET_DIR`:
-   ```python
-   DATASET_DIR = "../../data/runs/bidless_dataset_collection_YYYYMMDD_HHMMSS/datasets"
-   ```
-
-3. Run all cells. Look for the Health Scorecard (Section 0):
-   - ✅ All PASS = dataset is ready
-   - ⚠️ WARN = review warnings
-   - ❌ FAIL = fix issues before using dataset
-
-**Expected runtime:** ~30 seconds for 2,000 hands
-
-**Why 2,000 hands?** Meets minimum threshold for bias detection (per `docs/rules/05_rigor.md`: ≥2,000 for seat/suit bias checks).
-
-### Workflow 2: Production-Quality Analysis
-
-**Use case:** You're preparing a report or validating a large production dataset.
-
-1. Generate a large dataset (this takes time!):
-   ```bash
-   PYTHONPATH=src python experiments/run_experiment.py \
-     --config experiments/configs/bidless_dataset_collection.yaml \
-     --seed 42 --n_per 50000 --emit-bidless-dataset
-   ```
-
-2. Open [20_charts_reference.ipynb](20_charts_reference.ipynb)
-
-3. Set MODE in Config cell:
-   ```python
-   MODE = "full"        # Production quality
-   DEMO_MODE = False    # Load existing dataset
-   RUN_DIR = "../../data/runs/bidless_dataset_collection_YYYYMMDD_HHMMSS"
-   ```
-
-4. Run Phase 00-02 (Setup + Data Loading)
-
-5. Run Phase 03 (Fail-Fast Tests) - **STOP if gates fail**
-
-6. Explore Phases 04-08 for detailed analysis:
-   - Phase 04: Feature Quality Checks
-   - Phase 05: Bidless Analysis Charts
-   - Phase 06: Outcome Evaluation & Reporting
-   - Phase 07: Strategy Comparison & Multi-Suit Analysis
-   - Phase 08: Summary & Quick Reference
-
-**Expected runtime:**
-- QUICK mode (~5000 hands): ~20 minutes
-- FULL mode (≥50000 hands): ~2 hours (with caching, second run is instant)
-
-**Why 50,000 hands?** Meets production threshold (per `docs/rules/05_rigor.md`: ≥50,000 for production reports).
-
-### Workflow 3: Custom Exploration
-
-**Use case:** You want to explore a specific hypothesis or feature relationship.
-
-1. Copy the starter template:
-   ```bash
-   cp notebooks/phase0_bidless/30_model_dev_and_eval.ipynb \
-      notebooks/sandbox/$(date +%Y_%m_%d)_my_hypothesis.ipynb
-   ```
-
-2. Follow the template structure (autoreload is pre-configured)
-
-3. Use helpers from `src/bid_euchre/diagnostics/`:
-   ```python
-   from bid_euchre.diagnostics import (
-       load_bidless_dataset,
-       plot_feature_correlation,
-       compute_seat_balance,
-   )
-   ```
-
-4. Clear outputs before committing:
-   ```bash
-   jupyter nbconvert --ClearOutputPreprocessor.enabled=True \
-     --inplace notebooks/sandbox/$(date +%Y_%m_%d)_my_hypothesis.ipynb
-   ```
-
-**Note:** Dated notebooks in `sandbox/` are exploratory and may be archived later.
-
-## Understanding Directory Paths
-
-### RUN_DIR vs DATASET_DIR
-
-When you run an experiment, it creates a timestamped run directory:
-
-```
-data/runs/bidless_dataset_collection_20260130_143022/
-├── meta.json                 # Experiment metadata
-├── config_effective.yaml     # Config snapshot
-├── perf.json                 # Performance metrics
-└── datasets/                 # <-- DATASET_DIR (what notebooks need)
-    ├── bidless.parquet       # Main dataset (fast loading)
-    ├── bidless.jsonl         # Alternate format
-    └── bidless_meta.json     # Dataset metadata
+Ensure all dependencies are installed:
+```bash
+# From repo root
+uv sync --all-extras
 ```
 
-**In notebooks:**
-- Set `DATASET_DIR = "../../data/runs/<run_id>/datasets"` (points to datasets subfolder)
-- Set `RUN_DIR = "../../data/runs/<run_id>"` (points to run root)
+### Workflow
 
-**Why the distinction?**
-- `10_health_checks.ipynb` uses `DATASET_DIR` (only needs parquet files)
-- `20_charts_reference.ipynb` uses `RUN_DIR` (may load from run root or generate data)
-- `30_model_dev_and_eval.ipynb` uses either (depends on your exploration)
+**Step 1:** Run a notebook with on-the-fly data generation
+
+```bash
+# Navigate to notebook directory
+cd notebooks/phase0_bidless
+
+# Launch Jupyter
+jupyter lab
+```
+
+**Step 2:** Open any notebook and configure:
+
+```python
+MODE = "QUICK"  # Fast iteration (~2k deals, <1 min)
+# MODE = "FULL"   # Statistical rigor (~50k deals, ~5-10 min)
+
+SEED = 42       # For reproducibility
+```
+
+**Step 3:** Run all cells. Data will be generated automatically on first run and cached for subsequent runs.
+
+## Notebooks
+
+### 10_feature_health_checks.ipynb
+**Purpose:** Feature validation and bias detection
+
+**What it does:**
+- Validates hand feature distributions
+- Checks for seat bias (seats should have equal feature distributions)
+- Checks for trump bias (trump suits should be balanced)
+- Verifies feature schema compliance
+
+**When to use:**
+- After generating any bidless dataset
+- To validate feature extraction logic
+- Before training ML models
+
+**Runtime:** ~30 seconds (uses existing dataset, no generation needed)
+
+---
+
+### 20_outcome_health_checks.ipynb
+**Purpose:** Outcome validation (tricks_won)
+
+**What it does:**
+- Generates gameplay outcomes on-the-fly using `load_or_generate_outcomes()`
+- Validates outcome ranges (0-10 tricks)
+- Checks contract-type breakdown (suit/high/low)
+- Tests reproducibility (same seed → same results)
+- Analyzes outcome distributions by contract, seat, trump
+- Strategy matchup analysis (if multiple strategies)
+- CDF/CCDF tail analysis
+
+**When to use:**
+- To validate simulation outcomes
+- To check for gameplay bugs or biases
+- Before using outcomes for model training
+
+**Runtime:**
+- QUICK mode: ~30 seconds (generates ~300 hands)
+- FULL mode: ~5-10 min (generates ~10k+ hands, first run only - cached thereafter)
+
+**Key feature:** Uses `load_or_generate_outcomes()` which automatically:
+1. Generates experiment config
+2. Runs simulation
+3. Parses logs to extract tricks_won
+4. Caches results for instant reload
+
+---
+
+### 30_feature_outcome_eval.ipynb
+**Purpose:** Feature-outcome relationship analysis
+
+**What it does:**
+- Loads features + outcomes using `load_or_generate_features()`
+- **Section 2:** Computes feature-outcome correlations by contract type
+- **Section 3:** Analyzes seat position effects
+- **Section 4:** Examines trump suit effects (suit contracts only)
+- **Section 5:** Compares feature importance across contract types
+- **Section 6:** Health scorecard and model development recommendations
+
+**When to use:**
+- To identify predictive features for ML models
+- To understand which features matter for each contract type
+- Before feature selection or model training
+
+**Runtime:**
+- QUICK mode: ~1 min (includes data generation + analysis)
+- FULL mode: ~10-15 min (first run only)
+
+**Key outputs:**
+- Top 10-15 features per contract type (ranked by |correlation|)
+- Statistical significance tests (p-values)
+- Visualization: correlation bar charts, violin plots, heatmaps
+
+---
+
+## Data Generation Workflow
+
+All notebooks use the new `load_or_generate_*()` functions from `bid_euchre.diagnostics.notebook_data`:
+
+```python
+from bid_euchre.diagnostics.notebook_data import (
+    load_or_generate_outcomes,    # Outcomes only (tricks_won)
+    load_or_generate_features,    # Features + outcomes
+)
+
+# Generate or load cached outcomes
+df = load_or_generate_outcomes(
+    mode="QUICK",  # or "FULL"
+    seed=42,
+    contracts=['suit', 'high', 'low'],
+    trumps=['C', 'D', 'H', 'S'],
+    seats=[0, 1, 2, 3],
+)
+```
+
+**How it works:**
+1. Computes cache key from parameters (mode, seed, contracts, trumps, seats)
+2. Checks scratchpad cache for existing data
+3. If cache hit: loads and returns instantly
+4. If cache miss:
+   - Generates experiment config YAML on-the-fly
+   - Runs `experiments/run_experiment.py` via subprocess
+   - Parses JSONL logs to extract tricks_won
+   - Joins with bidless dataset (for features)
+   - Caches result
+   - Returns DataFrame
+
+**Benefits:**
+- ✅ No pre-generated datasets required
+- ✅ Reproducible (same seed → same results)
+- ✅ Fast iteration (cached after first run)
+- ✅ Mode-aware (QUICK for demos, FULL for rigor)
 
 ## Which Notebook Should I Use?
 
 | Notebook | Purpose | Input | Runtime | When to Use |
 |----------|---------|-------|---------|-------------|
-| [10_health_checks.ipynb](10_health_checks.ipynb) | Quick health check | Existing dataset | 30 sec | After generating any dataset |
-| [20_charts_reference.ipynb](20_charts_reference.ipynb) | Comprehensive analysis | Loads or generates data | 20 min - 2 hrs | Production reports, deep validation |
-| [30_model_dev_and_eval.ipynb](30_model_dev_and_eval.ipynb) | Custom analysis | Copy & modify | Varies | Hypothesis testing, feature exploration |
+| [10_feature_health_checks.ipynb](10_feature_health_checks.ipynb) | Feature validation | Existing dataset | ~30 sec | After generating any dataset |
+| [20_outcome_health_checks.ipynb](20_outcome_health_checks.ipynb) | Outcome validation | Generates on-the-fly | ~30 sec (QUICK) | To validate simulation outcomes |
+| [30_feature_outcome_eval.ipynb](30_feature_outcome_eval.ipynb) | Feature-outcome analysis | Generates on-the-fly | ~1 min (QUICK) | Before model training, feature selection |
 
 **Rule of thumb:**
-- **Not sure?** Start with `10_health_checks.ipynb`
-- **Need rigor?** Use `20_charts_reference.ipynb`
-- **Exploring?** Copy `30_model_dev_and_eval.ipynb` to `sandbox/`
+- **Not sure?** Start with `10_feature_health_checks.ipynb` on an existing dataset
+- **No dataset?** Use `20_outcome_health_checks.ipynb` to generate and validate outcomes
+- **ML prep?** Use `30_feature_outcome_eval.ipynb` to identify predictive features
 
 ## Architecture
 
@@ -156,6 +184,7 @@ All Phase 0 notebooks use importable helpers from `src/bid_euchre/diagnostics/`:
 ```
 src/bid_euchre/diagnostics/
 ├── loaders.py           # load_bidless_dataset(), load_meta()
+├── notebook_data.py     # load_or_generate_outcomes(), load_or_generate_features()
 ├── health_checks.py     # compute_health_scorecard()
 ├── charts.py            # plot_*() functions
 ├── stats.py             # statistical analysis helpers
@@ -169,30 +198,37 @@ src/bid_euchre/diagnostics/
 
 ## Dependencies
 
-Install all dev dependencies:
 ```bash
-pip install -e ".[dev]"
+# Install all dev dependencies
+uv sync --all-extras
 ```
 
 Required packages:
-- pandas, matplotlib, numpy, scipy
-
-Optional (for enhanced visualizations):
-- seaborn
+- pandas, matplotlib, numpy, scipy, seaborn
+- pyarrow (for Parquet support)
+- pyyaml (for config generation)
 
 ## Sample Size Guidelines
 
 From `docs/rules/05_rigor.md`:
 
-| Analysis Type | Minimum Sample Size | Purpose |
-|---------------|---------------------|---------|
-| Bias detection (seat/suit) | ≥2,000 deals | Quick validation |
-| Feature correlation | ≥1,000 samples per group | Initial exploration |
-| Tail analysis (CDF/CCDF) | ≥5,000 samples | Distribution tails |
-| Production reports | ≥50,000 samples | Statistical rigor |
+| Analysis Type | Minimum Sample Size | Mode | Purpose |
+|---------------|---------------------|------|---------|
+| Bias detection (seat/suit) | ≥2,000 deals | QUICK | Quick validation |
+| Feature correlation | ≥1,000 samples per group | QUICK | Initial exploration |
+| Tail analysis (CDF/CCDF) | ≥5,000 samples | FULL | Distribution tails |
+| Production reports | ≥50,000 samples | FULL+ | Statistical rigor |
 
-**For quick tests:** Use `--n_per 2000`
-**For production:** Use `--n_per 50000` or higher
+**For quick tests:** Use `MODE="QUICK"` (~2k deals)
+**For production:** Use `MODE="FULL"` (~50k deals) or customize `n_per` in config
+
+## Archived Notebooks
+
+Older notebooks have been archived to `archive/`:
+- `20_charts_reference.ipynb` - Monolithic comprehensive analysis (superseded by focused 20/30 notebooks)
+- `30_model_dev_and_eval.ipynb` - Old template (superseded by 30_feature_outcome_eval.ipynb)
+
+See `archive/README.md` for details on archived notebooks.
 
 ## See Also
 

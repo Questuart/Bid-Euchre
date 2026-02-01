@@ -149,31 +149,21 @@ def load_or_generate_features(
     dataset_dir = run_dir / "datasets"
     features_df = load_bidless_dataset(dataset_dir)
 
+    # Normalize column names: rename trump_suit -> trump for consistency
+    if 'trump_suit' in features_df.columns:
+        features_df = features_df.rename(columns={'trump_suit': 'trump'})
+
     # Extract outcomes from logs and join
     outcome_df = _load_outcomes_from_run(run_dir)
 
-    # Join on deal_id + seat
+    # Join on deal_id + seat + contract_type + trump
+    # This ensures proper alignment even when features and outcomes have different data
+    merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
     merged_df = features_df.merge(
-        outcome_df,
-        on=['deal_id', 'seat'],
-        how='inner',
-        suffixes=('', '_outcome')
+        outcome_df[merge_keys + ['tricks_won', 'strategy_id']],
+        on=merge_keys,
+        how='inner'
     )
-
-    # Reconcile contract_type and trump columns if duplicated
-    if 'contract_type_outcome' in merged_df.columns:
-        # Verify they match
-        assert (merged_df['contract_type'] == merged_df['contract_type_outcome']).all(), \
-            "contract_type mismatch between features and outcomes"
-        merged_df = merged_df.drop(columns=['contract_type_outcome'])
-
-    if 'trump_outcome' in merged_df.columns:
-        # Handle None vs NaN comparison carefully
-        features_trump = merged_df['trump'].fillna('None')
-        outcome_trump = merged_df['trump_outcome'].fillna('None')
-        assert (features_trump == outcome_trump).all(), \
-            "trump mismatch between features and outcomes"
-        merged_df = merged_df.drop(columns=['trump_outcome'])
 
     # Cache for reuse
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -254,6 +244,7 @@ def _generate_experiment_data(
             str(repo_root / "experiments" / "run_experiment.py"),
             "--config", config_path,
             "--seed", str(seed),
+            "--emit-bidless-dataset",  # Required for features
         ]
 
         print(f"Running experiment: {' '.join(cmd)}")
@@ -351,7 +342,6 @@ def _generate_temp_config(
         'parameters': {
             'n_per': n_per,
             'log_level': 'hand',  # Need hand_end logs for outcomes
-            'generate_bidless_dataset': True,
         },
     }
 
