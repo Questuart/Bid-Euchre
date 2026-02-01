@@ -648,17 +648,34 @@ class TestHandValueFeature:
         assert features["hand_value"] == 150
 
     def test_hand_value_low(self):
-        """Verify low weighting logic uses fixed weights (A=50, T=10) as requested."""
+        """Verify LOW contracts use inverted weights (T highest, A lowest)."""
         hand = [
-            Card("H", "A"),  # 50 (bad in low, but requested fixed weights)
-            Card("D", "K"),  # 40
+            Card("H", "A"),  # 10 (weakest in low)
+            Card("D", "K"),  # 20
             Card("C", "Q"),  # 30
-            Card("S", "J"),  # 20
-            Card("H", "T"),  # 10 (good in low, but requested fixed weights)
+            Card("S", "J"),  # 40
+            Card("H", "T"),  # 50 (strongest in low)
         ]
         features = get_hand_features(hand, contract_type="low", trump_suit=None)
-        # 50 + 40 + 30 + 20 + 10 = 150
+        # 10 + 20 + 30 + 40 + 50 = 150
         assert features["hand_value"] == 150
+
+    def test_high_low_contracts_differ(self):
+        """Verify HIGH and LOW produce different hand_value distributions."""
+        # Ace-heavy hand (good in HIGH, bad in LOW)
+        aces_hand = [Card("H", "A"), Card("D", "A"), Card("C", "A")]
+        # Ten-heavy hand (bad in HIGH, good in LOW)
+        tens_hand = [Card("H", "T"), Card("D", "T"), Card("C", "T")]
+
+        aces_high = get_hand_features(aces_hand, "high", None)["hand_value"]
+        aces_low = get_hand_features(aces_hand, "low", None)["hand_value"]
+        tens_high = get_hand_features(tens_hand, "high", None)["hand_value"]
+        tens_low = get_hand_features(tens_hand, "low", None)["hand_value"]
+
+        # In HIGH: Aces > Tens
+        assert aces_high > tens_high, "HIGH: Aces should beat Tens"
+        # In LOW: Tens > Aces (inverted!)
+        assert tens_low > aces_low, "LOW: Tens should beat Aces"
 
 
 # ============================================================================

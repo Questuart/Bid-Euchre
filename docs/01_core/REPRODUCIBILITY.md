@@ -19,6 +19,43 @@ python experiments/run_experiment.py --config <path> --allow-nondeterministic --
 
 The seed determines all deal generation using a stable derivation rule: `deal_seed = seed * 1_000_003 + deal_id`. This ensures every deal in a run is deterministic and reproducible.
 
+## Deal Generation Implementation
+
+### Shuffle Algorithm
+
+Python's `random.shuffle()` implements the Fisher-Yates (Knuth) shuffle, which produces uniformly distributed permutations. We use it as-is and do not need to reimplement it.
+
+### Dealing Method
+
+We use **round-robin dealing** to distribute shuffled cards to seats:
+
+- Seat 0 receives deck positions: 0, 4, 8, 12, ...
+- Seat 1 receives deck positions: 1, 5, 9, 13, ...
+- Seat 2 receives deck positions: 2, 6, 10, 14, ...
+- Seat 3 receives deck positions: 3, 7, 11, 15, ...
+
+**Why round-robin instead of block dealing?**
+
+Block dealing (giving contiguous slices like [0:10], [10:20], [20:30], [30:40]) can amplify seed-dependent patterns in the shuffled deck, causing specific seats to receive systematically higher or lower value cards for certain seeds.
+
+Round-robin dealing distributes deck positions evenly across seats, preventing any contiguous slice from concentrating in one seat.
+
+### Deal Method Configuration
+
+The `generate_deal()` function supports a `deal_method` parameter:
+
+- `"block"`: Contiguous slices (legacy, can amplify seed patterns)
+- `"round_robin"`: Alternating cards (default, provides better seat balance)
+
+**Configuration:**
+Set in experiment config via the `simulate_many_hands()` function's `deal_method` parameter (defaults to `"round_robin"`).
+
+**Reproducibility:**
+All run metadata should record the `deal_method` used, ensuring results are self-describing and reproducible.
+
+**Backward Compatibility:**
+Deal sequences changed when switching from block to round-robin dealing. The same (seed, deal_id) pair produces different hands between versions. This is intentional - we fixed a bias, not a feature. To reproduce old results, use `deal_method="block"`.
+
 ## Run metadata contract
 
 Every experiment run writes `data/runs/<run_id>/meta.json` containing:

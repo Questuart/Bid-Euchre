@@ -245,16 +245,10 @@ def get_hand_features(
     trump_count_x_offsuit_ace = trump_count * offsuit_aces if contract_type == "suit" else 0
 
     # Hand Value (used for OLSa HV / OLSa SR)
+    # score_hand_scalar handles all contract types correctly:
+    #   HIGH: A=50, K=40, Q=30, J=20, T=10
+    #   LOW:  T=50, J=40, Q=30, K=20, A=10 (inverted via rank_strength)
     hand_value = score_hand_scalar(hand, contract_type, trump_suit)
-    # Special adjustment for Low: use fixed offsuit weights if requested by user logic
-    # Actually, score_hand_scalar uses rank_strength which is already inverted for Low.
-    # To match the user's "offsuit weights" request for LOW (where A=50, T=10):
-    if contract_type == "low":
-        hand_value_fixed = 0
-        weights_fixed = {"A": 50, "K": 40, "Q": 30, "J": 20, "T": 10}
-        for card in hand:
-            hand_value_fixed += weights_fixed.get(card.rank, 0)
-        hand_value = hand_value_fixed
 
     # ===========================
     # Return Feature Dictionary
