@@ -13,7 +13,10 @@ You are an engineering lead performing a comprehensive review of the Bid Euchre 
 2. **Verify hard gates** (CI, contracts, rigor standards, boundaries)
 3. **Identify issues** (gaps, drift, rigor violations, anti-patterns)
 4. **Analyze impact** (severity, risk, effort assessment)
-5. **Produce actionable output** (structured issues, PR sequence, roadmap)
+5. **Produce actionable output** (structured issues; roadmap/PRs only when warranted)
+
+**Value Gate:** Only recommend changes that improve model training, evaluation correctness,
+or reproducibility. Avoid work that improves code cleanliness but does not improve outcomes.
 
 **Core Philosophy:** This repo prioritizes **technical correctness and statistical rigor** over accessibility or convenience. See `.claude/rules/05_rigor.md` for the authoritative rigor philosophy.
 
@@ -21,21 +24,25 @@ You are an engineering lead performing a comprehensive review of the Bid Euchre 
 
 ## TOOL ACCESS
 
-You have full tool access to explore the repository:
+This prompt is designed to work for both CLI-capable agents and non-CLI agents.
+Use the best available tools in your environment.
 
 | Tool | Purpose | Usage Notes |
 |------|---------|-------------|
 | **Read** | Read files by path | Use for specific file inspection |
-| **Grep** | Search file contents | Use for pattern-based discovery |
+| **Search** | Search file contents | Use for pattern-based discovery |
 | **Glob** | Find files by pattern | Use for structural enumeration |
-| **Bash** | Run verification commands | Prefer read-only; use for CI checks, counts, imports |
-| **Task/Explore** | Launch exploration agents | Use for complex multi-step searches |
+| **Shell (if available)** | Run verification commands | Prefer read-only; use for CI checks, counts, imports |
+| **Explore (optional)** | Launch exploration agents | Use for complex multi-step searches |
 
 **Execution Guidance:**
 - **Run commands in parallel** when independent (multiple Bash/Read in single message)
 - **Run sequentially** when dependent (one output informs next input)
 - **Discovery-oriented:** Use tools to verify current state, not hardcoded assumptions
 - **Evidence-based:** Every claim requires verification (command output, file quote, line reference)
+Note: Tool names may vary by environment; use the closest available search/shell tool.
+If you do not have CLI/Shell access, use Read/Search/Glob to gather evidence,
+and explicitly mark any command you cannot run.
 
 ---
 
@@ -49,7 +56,17 @@ This review follows a **5-phase systematic workflow**. Each phase has specific t
 
 **Goal:** Build an accurate, quantitative map of the current repository state.
 
-**Estimated Tool Calls:** 20-30 (many parallel groups)
+**Estimated Tool Calls:** 10-30 (use as needed; avoid unnecessary exploration)
+
+If you do not have CLI access, use Read/Search/Glob to approximate counts and
+explicitly mark any command you cannot run.
+
+**Non-CLI evidence example (Discovery):**
+```markdown
+- Module list: Read `docs/01_core/ARCHITECTURE.md` and compare to `src/bid_euchre/` via Glob.
+- Config count: Use Glob `experiments/configs/*.yaml` and count matches.
+- Script list: Use Glob `scripts/*.py`.
+```
 
 ### 1.1 Structure Discovery
 
@@ -81,12 +98,6 @@ ls docs/03_TODO/*.md
 # Notebook count
 find notebooks -name "*.ipynb" | wc -l
 ```
-
-**Expected State (PR #186):**
-- **Modules:** 13 (core, strategy, features, sim, experiments, datasets, models, diagnostics, reporting, logging, analysis, utils, validation)
-- **Configs:** 16-18
-- **Suites:** 4
-- **Scripts:** 10+
 
 ### 1.2 Version Context
 
@@ -135,16 +146,24 @@ PYTHONPATH=src python -c "from bid_euchre.diagnostics.notebook_data import load_
 
 **Goal:** Validate that the repo complies with all hard gates, contracts, and rigor standards.
 
-**Estimated Tool Calls:** 25-35
+**Estimated Tool Calls:** 10-35 (use as needed; avoid unnecessary exploration)
 
-### 2.1 CI Gates
+If you do not have CLI access, report that CI could not be run and continue only
+with file-based evidence, clearly marking gaps.
 
-**Run full CI check:**
+### 2.1 CI Gates (MANDATORY)
+
+**Run full CI check (always required):**
 
 ```bash
 # Full validation suite
 make check
 ```
+
+**If `make check` fails:** Stop the review and report the failure summary and logs
+in the Verification Evidence section. Do not proceed to later phases unless asked.
+If you cannot run CLI commands, explicitly state that CI could not be run and
+request a CLI-capable agent to execute `make check` before continuing.
 
 **Breakdown individual checks (if make check fails):**
 
@@ -169,7 +188,8 @@ make test       # Pytest fast suite
 
 ### 2.2 Rigor Validation ⭐ NEW
 
-**Goal:** Verify statistical rigor standards are enforced across the repo.
+**Goal:** Verify statistical rigor standards for production or decision-making artifacts.
+Exploratory notebooks should be flagged but are not required to have full tests/CIs.
 
 **Sample Size Validation:**
 
@@ -272,7 +292,7 @@ For each contract doc, verify claims against reality:
 **Command Verification:**
 
 ```bash
-# Extract commands from docs and test them
+# Extract commands from docs and test them (if CLI available)
 grep -h "^python\|^make\|^PYTHONPATH" docs/01_core/*.md docs/02_agent/*.md | head -10
 
 # Test sample commands (dry-run safe)
@@ -491,6 +511,8 @@ grep -rn "\.mean()\|\.median()" notebooks/ | head -20
 
 **Format:** Command → Output → Assessment table
 
+If any command could not be run (no CLI), record it with "NOT RUN" and explain why.
+
 | Verification | Command | Output | Expected | Status |
 |--------------|---------|--------|----------|--------|
 | Module count | `ls -d src/bid_euchre/*/ \| grep -v __pycache__ \| wc -l` | 13 | 13 | ✅ |
@@ -515,199 +537,91 @@ grep -rn "\.mean()\|\.median()" notebooks/ | head -20
 
 ### 5.4 Cleanup Plan
 
-**Format:** PR sequence with dependencies
+**Format:** PR sequence with dependencies (only if issues warrant PR sequencing).
+Only include if requested or if ≥1 critical issue requires sequencing.
 
 ```markdown
-## Cleanup Plan — PR Sequence
+## Cleanup Plan — PR Sequence (Template)
 
-### Sprint 1: Documentation Accuracy (Low Risk)
-
-**PR #187 — Update ARCHITECTURE.md module count**
-- **Files:** `docs/01_core/ARCHITECTURE.md`
-- **Goal:** Fix module count drift (14 → 13)
-- **Changes:** Update module list and count on line 22
-- **Acceptance:** `make check` passes, module count matches `ls src/bid_euchre/`
-- **Effort:** Trivial (5 min)
-- **Dependencies:** None
-
-**PR #188 — Update REPO_REVIEW_PROMPT.md to reflect PR #186 state**
-- **Files:** `docs/02_agent/REPO_REVIEW_PROMPT.md`
-- **Goal:** Rewrite with rigor focus, current structure, new modules
-- **Changes:** See plan in transcript
-- **Acceptance:** `make check` passes, all verification commands updated
-- **Effort:** Medium (1-2 hours)
-- **Dependencies:** None
-
-### Sprint 2: Rigor Enforcement (Medium Risk)
-
-**PR #189 — Add statistical tests to phase0_bidless notebooks**
-- **Files:** `notebooks/phase0_bidless/02_*.ipynb`, `03_*.ipynb`
-- **Goal:** Replace visual-only validation with statistical tests
-- **Changes:** Add ANOVA/t-test + CI to 4 notebooks
-- **Acceptance:** All notebooks have `assert` gates for statistical claims
-- **Effort:** Medium (2-3 hours)
-- **Dependencies:** None
-
-**PR #190 — Document quick_test.yaml as smoke test only**
-- **Files:** `experiments/configs/quick_test.yaml`
-- **Goal:** Clarify n_per=200 is for smoke testing, not inference
-- **Changes:** Add comment header explaining purpose
-- **Acceptance:** `make check` passes
-- **Effort:** Trivial (5 min)
-- **Dependencies:** None
-
-### Sprint 3: Code Cleanup (Low Risk)
-
-**PR #191 — Resolve or track TODO comments in src/**
-- **Files:** Various `src/bid_euchre/**/*.py`
-- **Goal:** Clean up TODO comments (resolve or convert to issues)
-- **Changes:** Fix 15 TODOs or create GitHub issues
-- **Acceptance:** `grep -r TODO src/ | wc -l` returns 0 OR all TODOs have issue references
-- **Effort:** Medium (1-2 hours)
-- **Dependencies:** None
+**PR #N — <title>**
+- **Files:** <list files>
+- **Goal:** <outcome tied to model training/evaluation/reproducibility>
+- **Acceptance:** `make check` passes + <specific criteria>
+- **Effort:** Trivial/Small/Medium/Large
+- **Dependencies:** <if any>
 ```
 
 ### 5.5 Rigor Assessment ⭐ NEW
 
-**Format:** Quantitative rigor metrics
+**Format:** Quantitative rigor metrics (template; populate only if relevant)
 
 ```markdown
-## Rigor Assessment
+## Rigor Assessment (Template)
 
 ### Sample Size Coverage
-
 | Metric | Value | Threshold | Status |
 |--------|-------|-----------|--------|
-| Configs with n_per ≥ 2000 | 12/16 (75%) | ≥80% | ⚠️ |
-| Configs with n_per ≥ 5000 | 8/16 (50%) | ≥50% | ✅ |
-| Median n_per | 3500 | ≥2000 | ✅ |
-| Min n_per (excluding smoke tests) | 1000 | ≥2000 | ❌ |
-
-**Action:** Document configs with n_per < 2000 as exploratory/smoke tests only.
+| <metric> | <value> | <threshold> | ✅/⚠️/❌ |
 
 ### Statistical Test Coverage
-
 | Notebook Category | With Tests | Total | Coverage | Status |
 |-------------------|------------|-------|----------|--------|
-| Health checks (00_*.ipynb) | 3/3 | 3 | 100% | ✅ |
-| Feature analysis (01-04_*.ipynb) | 8/12 | 12 | 67% | ⚠️ |
-| Model dev (05+_*.ipynb) | 2/5 | 5 | 40% | ❌ |
-
-**Action:** Add statistical tests to 4 feature analysis notebooks, 3 model dev notebooks.
+| <category> | <x>/<y> | <y> | <pct> | ✅/⚠️/❌ |
 
 ### Fail-Fast Gate Coverage
-
 | Location | Gates Found | Status |
 |----------|-------------|--------|
-| `src/bid_euchre/diagnostics/health_checks.py` | 15 assert statements | ✅ |
-| `notebooks/phase0_bidless/00_health_checks.ipynb` | 8 assert statements | ✅ |
-| Other notebooks | 3 assert statements | ❌ |
-
-**Action:** Add fail-fast gates to analysis notebooks (validate data properties before plotting).
+| <location> | <count> | ✅/⚠️/❌ |
 
 ### Anti-Pattern Detection
-
 | Anti-Pattern | Count | Examples | Status |
 |--------------|-------|----------|--------|
-| Visual-only validation ("looks balanced") | 3 | `notebooks/02_*.ipynb:45`, `03_*.ipynb:78` | ❌ |
-| Hardcoded seat=0 | 5 | `notebooks/demo.ipynb:12` | ⚠️ |
-| Hardcoded trump='H' | 2 | `notebooks/exploratory.ipynb:34` | ⚠️ |
-| Missing confidence intervals | 12 | Various notebooks | ❌ |
+| <pattern> | <count> | <examples> | ✅/⚠️/❌ |
 
-**Action:** Replace visual claims with statistical tests, parameterize hardcoded values.
-
-### Gold Standard Checklist Compliance
-
-For production analysis notebooks, assess against `.claude/rules/05_rigor.md` checklist:
-
+### Gold Standard Checklist Compliance (Production/Decision)
 | Criterion | Pass Rate | Status |
 |-----------|-----------|--------|
-| Sample size justified | 8/12 (67%) | ⚠️ |
-| Factors balanced/randomized | 12/12 (100%) | ✅ |
-| Statistical tests included | 8/12 (67%) | ⚠️ |
-| Confidence intervals present | 4/12 (33%) | ❌ |
-| Sanity gates/asserts | 5/12 (42%) | ❌ |
-| Confounders identified | 10/12 (83%) | ✅ |
-| Reproducible (seeds, versioned) | 12/12 (100%) | ✅ |
-| Limitations stated | 9/12 (75%) | ⚠️ |
+| <criterion> | <pct> | ✅/⚠️/❌ |
 
-**Overall Rigor Score:** 68/100 (needs improvement in CI, sanity gates, statistical tests)
+**Actions (Optional):** Only for production/decision artifacts.
 ```
 
-### 5.6 Documentation Roadmap
+### 5.6 Documentation Roadmap (Optional)
 
-**Priority 1 (Immediate — Next 2 PRs):**
-- `docs/01_core/ARCHITECTURE.md` — Fix module count drift
-- `docs/02_agent/REPO_REVIEW_PROMPT.md` — Comprehensive rewrite (current task)
+**Only include if requested or if ≥1 critical issue requires sequencing.**
 
-**Priority 2 (High — Next 5 PRs):**
-- `docs/01_core/EXPERIMENTS.md` — Verify config count, add new scripts
-- `docs/FLOW_DIAGRAM.md` — Verify all module references exist
-- `docs/03_TODO/CODEBASE_CONSISTENCY.md` — Update with latest drift findings
+```markdown
+## Documentation Roadmap (Template)
 
-**Priority 3 (Medium — Future):**
-- Create `docs/02_agent/RIGOR_VALIDATION.md` — Codify statistical validation standards
-- Create `docs/01_core/NOTEBOOKS.md` — Document notebook structure and standards
-- Update `docs/01_core/BASELINE.md` — Refresh with latest suite structure
+**Priority 1 (Immediate):**
+- <doc> — <specific fix>
 
-**New Docs Needed:**
-- `docs/02_agent/RIGOR_VALIDATION.md` — Formal rigor validation protocol
-- `docs/01_core/VALIDATION.md` — Schema validation standards (document validation/ module)
+**Priority 2 (High):**
+- <doc> — <specific fix>
 
-### 5.7 Development Roadmap
+**Priority 3 (Medium):**
+- <doc> — <specific fix>
 
-**Next 5 PRs (Detailed):**
+**New Docs Needed (Optional):**
+- <doc> — <purpose>
+```
 
-1. **PR #187 — Fix ARCHITECTURE.md module count drift**
-   - **Scope:** Update module count from 14 to 13, verify module list
-   - **Files:** `docs/01_core/ARCHITECTURE.md`
-   - **Acceptance:** Module count matches `ls src/bid_euchre/` output
-   - **Estimated Effort:** Trivial (5 min)
-   - **Risk:** None (doc-only)
+### 5.7 Development Roadmap (Optional)
 
-2. **PR #188 — Comprehensive rewrite of REPO_REVIEW_PROMPT.md**
-   - **Scope:** Update to reflect PR #186 state, add rigor validation, new structure
-   - **Files:** `docs/02_agent/REPO_REVIEW_PROMPT.md`
-   - **Acceptance:** All verification commands updated, new sections added
-   - **Estimated Effort:** Medium (1-2 hours)
-   - **Risk:** None (doc-only)
+**Only include if requested or if ≥1 critical issue requires sequencing.**
 
-3. **PR #189 — Add statistical tests to phase0_bidless notebooks**
-   - **Scope:** Add ANOVA/t-tests + confidence intervals to 4 analysis notebooks
-   - **Files:** `notebooks/phase0_bidless/02_*.ipynb`, `03_*.ipynb`
-   - **Acceptance:** All notebooks have statistical test + assert gates
-   - **Estimated Effort:** Medium (2-3 hours)
-   - **Risk:** Low (notebook-only, no code changes)
+```markdown
+## Development Roadmap (Template)
 
-4. **PR #190 — Document smoke test configs**
-   - **Scope:** Add headers to quick_test.yaml and other n_per < 2000 configs
-   - **Files:** `experiments/configs/quick_test.yaml`, others
-   - **Acceptance:** All configs with n_per < 2000 have "smoke test only" comment
-   - **Estimated Effort:** Trivial (10 min)
-   - **Risk:** None (config comments only)
+**Next 3-5 PRs (Optional):**
+- PR #N — <title> (scope, files, acceptance, effort, risk)
 
-5. **PR #191 — Resolve TODO comments in src/**
-   - **Scope:** Fix or track all TODO comments in src/
-   - **Files:** Various `src/bid_euchre/**/*.py`
-   - **Acceptance:** `grep -r TODO src/ | wc -l` returns 0 OR all have issue refs
-   - **Estimated Effort:** Medium (1-2 hours)
-   - **Risk:** Low-Medium (depends on TODO complexity)
+**Medium-Term Milestones (Optional):**
+- <milestone> — <goal> — <target>
 
-**Medium-Term Milestones (Next 3-6 Months):**
-
-| Milestone | Goal | Key PRs | Target |
-|-----------|------|---------|--------|
-| **Rigor Hardening** | 100% analysis notebooks with statistical tests + CIs | #189, #192-195 | PR #200 |
-| **Doc-Code Alignment** | Zero drift in core docs (ARCHITECTURE, EXPERIMENTS, DATA_CONTRACT) | #187-188, #196-198 | PR #205 |
-| **B0 Model Training** | Train first bidless hand evaluator on ≥50k samples | Arc B continuation | PR #210 |
-| **Drift Detection v2** | Extend drift detection to notebooks, configs | TBD | PR #220 |
-
-**Long-Term Vision (6-12 Months):**
-
-- **Full bidding system** (Arc C): Integrate hand evaluator with bidding policy
-- **Tournament suite**: Multi-strategy round-robin with ELO ratings
-- **Automated rigor validation**: CI check for notebook statistical test presence
-- **Public dataset release**: Curated bidless/bidding datasets for ML research
+**Long-Term Vision (Optional):**
+- <vision item>
+```
 
 ---
 
@@ -722,6 +636,14 @@ For production analysis notebooks, assess against `.claude/rules/05_rigor.md` ch
 - ✅ Every claim needs verification (command output, file quote, line ref)
 - ❌ No assertions without proof
 - ✅ Show command → output → assessment
+
+**CI Required:**
+- ✅ Always run `make check` and report results
+- ❌ Do not skip CI in reviews
+
+**Recommendation Scope:**
+- ✅ Default to top 5 issues by impact (expand only if requested)
+- ❌ Avoid speculative or low-outcome recommendations
 
 **Small PRs:**
 - ✅ Propose incremental, low-risk changes
@@ -761,6 +683,8 @@ For production analysis notebooks, assess against `.claude/rules/05_rigor.md` ch
 - **Confidence intervals:** All reported metrics need uncertainty quantification
 - **Anti-pattern elimination:** No hardcoded seats/trumps, no visual-only validation
 - **Confounder control:** Balance factors, randomize assignments, document limitations
+Note: Apply rigor requirements to production or decision-making artifacts.
+Exploratory notebooks may be flagged but are not required to meet full rigor gates.
 
 ### 3. Repo Cleanup
 
@@ -1011,7 +935,7 @@ Your review output **MUST** include all sections below in this order:
 - Repo Health Score (X/100 with component breakdown)
 - Key achievements since last review
 - Blockers (if any)
-- High-priority issues (top 3-5)
+- High-priority issues (top 3-5; keep to top 5 by impact)
 
 ### 2. Verification Evidence
 - Table: Command → Output → Expected → Status
@@ -1019,27 +943,30 @@ Your review output **MUST** include all sections below in this order:
 
 ### 3. Issue Registry
 - Table: ID | Severity | Location | Issue | Evidence | Recommendation
-- Include all issues found in Phase 3
+- Default: include top 5 issues by impact (expand only if requested)
 - Sort by severity (CRITICAL → HIGH → MEDIUM → LOW)
 
-### 4. Cleanup Plan
+### 4. Cleanup Plan (Optional)
+- Include only if issues warrant PR sequencing
 - PR sequence with clear scope, files, acceptance criteria
 - Dependencies diagram (if applicable)
 - Effort estimates (Trivial/Small/Medium/Large)
 
 ### 5. Rigor Assessment ⭐ NEW
-- Sample size coverage table
-- Statistical test coverage table
+- Sample size coverage table (production/decision artifacts vs exploratory)
+- Statistical test coverage table (production/decision artifacts vs exploratory)
 - Fail-fast gate coverage
 - Anti-pattern detection results
 - Gold standard checklist compliance
+Note: Apply rigor requirements to production or decision-making artifacts.
+Exploratory notebooks may be flagged but are not required to meet full rigor gates.
 
-### 6. Documentation Roadmap
+### 6. Documentation Roadmap (Optional)
 - Priority 1 (immediate), Priority 2 (high), Priority 3 (medium)
 - New docs needed
 - Stale docs to update/delete
 
-### 7. Development Roadmap
+### 7. Development Roadmap (Optional)
 - Next 5 PRs (detailed with acceptance criteria)
 - Medium-term milestones (3-6 months)
 - Long-term vision (6-12 months)
@@ -1055,6 +982,9 @@ Your review output **MUST** include all sections below in this order:
 3. **Add to issue registry** with specific error message
 4. **Propose fix** in cleanup plan with acceptance criteria
 5. **Continue review** (do not halt on first failure)
+
+**Exception:** If `make check` fails, stop the review after recording the failure
+summary and do not proceed to later phases unless explicitly asked.
 
 **If a tool call fails:**
 
