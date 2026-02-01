@@ -251,6 +251,7 @@ def emit_bidless_dataset(
     # Create collector with combined data for writing
     combined_collector = BidlessDatasetCollector(run_id, "combined")
     combined_collector.rows = all_rows_sorted
+    combined_collector._features_computed = True  # Features already computed in individual collectors
 
     # Always write primary format (parquet by default)
     if format == "parquet":
