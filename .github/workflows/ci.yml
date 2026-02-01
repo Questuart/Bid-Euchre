@@ -30,6 +30,9 @@ jobs:
       - name: Repo linter
         run: make repo-lint
 
+      - name: Validate configs
+        run: uv run python scripts/validate_configs.py
+
       - name: Ruff (lint)
         run: make lint
 

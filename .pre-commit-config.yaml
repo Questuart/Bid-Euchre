@@ -23,3 +23,10 @@ repos:
         entry: python scripts/lint_repo.py --base origin/main --head HEAD
         language: system
         pass_filenames: false
+
+      - id: validate-configs
+        name: Validate experiment configs
+        entry: python scripts/validate_configs.py
+        language: system
+        files: ^experiments/(configs|suites)/.*\.yaml$
+        pass_filenames: false
