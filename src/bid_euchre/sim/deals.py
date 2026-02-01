@@ -30,9 +30,18 @@ def _deal_rng(seed: int, deal_id: int) -> random.Random:
     return random.Random(combined)
 
 
-def generate_deal(seed: int, deal_id: int) -> List[List[Card]]:
+def generate_deal(
+    seed: int,
+    deal_id: int,
+    deal_method: str = "round_robin",
+) -> List[List[Card]]:
     """
     Generate a deterministic deal (4 hands of 10 cards) for a given (seed, deal_id).
+
+    Args:
+        seed: RNG seed
+        deal_id: Deal identifier (combined with seed for unique deals)
+        deal_method: "block" or "round_robin" (default "round_robin")
 
     Returns:
         hands: List[List[Card]] with shape [4][10]
@@ -40,7 +49,7 @@ def generate_deal(seed: int, deal_id: int) -> List[List[Card]]:
     rng = _deal_rng(seed, deal_id)
     deck = create_deck()
     rng.shuffle(deck)
-    hands = deal_hands(deck, num_players=4, hand_size=10)
+    hands = deal_hands(deck, num_players=4, hand_size=10, method=deal_method)
     # Defensive copy so callers can mutate
     return [list(h) for h in hands]
 

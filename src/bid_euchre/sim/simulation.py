@@ -335,6 +335,7 @@ def simulate_many_hands(
     deal_seed: Optional[int] = None,
     bidding_dataset_run_id: Optional[str] = None,
     hooks: Optional[SimulationHooks] = None,
+    deal_method: str = "round_robin",
 ) -> Dict:
     """
     Run Monte Carlo simulation of n hands.
@@ -422,7 +423,7 @@ def simulate_many_hands(
         on_bidding_decision = hooks.on_bidding_decision if hooks else None
 
         if deal_seed is not None:
-            deal_hands_ = generate_deal(deal_seed, deal_id)
+            deal_hands_ = generate_deal(deal_seed, deal_id, deal_method=deal_method)
             t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,

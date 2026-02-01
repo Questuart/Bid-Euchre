@@ -111,6 +111,67 @@ class TestDeckOperations:
         with pytest.raises(ValueError, match="Not enough cards"):
             deal_hands(small_deck, num_players=4, hand_size=10)
 
+    def test_deal_hands_round_robin(self):
+        """Verify round-robin dealing distributes deck positions correctly."""
+        # Create a test deck using object identity tracking
+        # We'll create unique Card objects to track positions
+        deck = []
+        for i in range(40):
+            suit = SUITS[i % 4]
+            rank = RANKS[i % 5]
+            deck.append(Card(suit, rank))
+
+        # Track original positions by object identity
+        original_positions = {id(card): idx for idx, card in enumerate(deck)}
+
+        # Deal using round-robin method
+        hands = deal_hands(deck, num_players=4, hand_size=10, method="round_robin")
+
+        # Verify round-robin pattern: seat i gets positions i, i+4, i+8, ...
+        for seat in range(4):
+            expected_positions = list(range(seat, 40, 4))
+            actual_positions = sorted([original_positions[id(card)] for card in hands[seat]])
+            assert actual_positions == expected_positions, \
+                f"Seat {seat} should get positions {expected_positions}, got {actual_positions}"
+
+        # Invariants
+        assert all(len(hand) == 10 for hand in hands), "Each hand should have 10 cards"
+        all_dealt_cards = [card for hand in hands for card in hand]
+        assert len(all_dealt_cards) == 40, "Should deal all 40 cards"
+
+    def test_deal_hands_block(self):
+        """Verify block dealing for backward compatibility."""
+        # Create a test deck using object identity tracking
+        deck = []
+        for i in range(40):
+            suit = SUITS[i % 4]
+            rank = RANKS[i % 5]
+            deck.append(Card(suit, rank))
+
+        # Track original positions by object identity
+        original_positions = {id(card): idx for idx, card in enumerate(deck)}
+
+        # Deal using block method
+        hands = deal_hands(deck, num_players=4, hand_size=10, method="block")
+
+        # Verify block pattern: seat i gets positions [i*10:(i+1)*10]
+        for seat in range(4):
+            expected_positions = list(range(seat * 10, (seat + 1) * 10))
+            actual_positions = sorted([original_positions[id(card)] for card in hands[seat]])
+            assert actual_positions == expected_positions, \
+                f"Seat {seat} should get positions {expected_positions}, got {actual_positions}"
+
+        # Invariants
+        assert all(len(hand) == 10 for hand in hands), "Each hand should have 10 cards"
+        all_dealt_cards = [card for hand in hands for card in hand]
+        assert len(all_dealt_cards) == 40, "Should deal all 40 cards"
+
+    def test_deal_hands_invalid_method(self):
+        """Test that invalid dealing method raises error."""
+        deck = create_deck()
+        with pytest.raises(ValueError, match="Unknown deal method"):
+            deal_hands(deck, method="invalid_method")
+
 
 class TestBowerLogic:
     """Test bower (jack) mechanics."""

@@ -47,33 +47,57 @@ def shuffle_deck(deck: List[Card], rng: Optional[random.Random] = None) -> None:
 
     Args:
         deck: List of cards to shuffle (modified in-place)
-        rng: Optional random.Random instance. If None, uses global random (not recommended for reproducibility)
+        rng: Optional random.Random instance. If None, creates a new unseeded instance.
     """
     if rng is None:
-        # Fallback to global random (not recommended for reproducibility)
-        random.shuffle(deck)
-    else:
-        rng.shuffle(deck)
+        # Create local RNG instance for reproducibility compliance
+        rng = random.Random()
+    rng.shuffle(deck)
 
 
 def deal_hands(
     deck: List[Card],
     num_players: int = 4,
     hand_size: int = 10,
+    method: str = "round_robin",
 ) -> List[List[Card]]:
     """
-    Deal hand_size cards to num_players from the top of the deck.
+    Deal hand_size cards to num_players from the deck.
+
+    Args:
+        deck: Shuffled deck of cards
+        num_players: Number of players (default 4)
+        hand_size: Cards per player (default 10)
+        method: Dealing method - "block" or "round_robin" (default "round_robin")
+
+    Methods:
+        - "block": Contiguous slices [0:10], [10:20], [20:30], [30:40]
+          (legacy, can amplify seed-dependent deck patterns)
+        - "round_robin": Alternating cards like real dealing
+          (seat 0: 0,4,8..., seat 1: 1,5,9..., etc.)
     """
     if len(deck) < num_players * hand_size:
         raise ValueError("Not enough cards in deck to deal")
 
-    hands: List[List[Card]] = []
-    index = 0
-    for _ in range(num_players):
-        hands.append(deck[index:index + hand_size])
-        index += hand_size
+    if method == "block":
+        # Block dealing: contiguous slices
+        hands: List[List[Card]] = []
+        index = 0
+        for _ in range(num_players):
+            hands.append(deck[index:index + hand_size])
+            index += hand_size
+        return hands
 
-    return hands
+    elif method == "round_robin":
+        # Round-robin dealing: alternate cards
+        hands: List[List[Card]] = [[] for _ in range(num_players)]
+        for i in range(num_players * hand_size):
+            seat = i % num_players
+            hands[seat].append(deck[i])
+        return hands
+
+    else:
+        raise ValueError(f"Unknown deal method: {method}")
 
 
 # ================================
