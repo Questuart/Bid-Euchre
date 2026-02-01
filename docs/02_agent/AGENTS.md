@@ -134,6 +134,64 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --run-dir data/runs
 ~~~
 
+### Comparing Experiment Runs
+
+To rigorously compare two runs (e.g., baseline vs candidate strategy):
+
+~~~bash
+python scripts/compare_runs.py \
+  --baseline data/runs/<baseline_run_id> \
+  --candidate data/runs/<candidate_run_id>
+~~~
+
+This computes:
+- Mean differences with 95% confidence intervals (seeded bootstrap)
+- Effect sizes (Cohen's d)
+- Statistical significance (bootstrap p-values)
+
+**Output formats:**
+
+~~~bash
+# Human-readable (default)
+python scripts/compare_runs.py \
+  --baseline data/runs/run1 \
+  --candidate data/runs/run2
+
+# Markdown for PR bodies
+python scripts/compare_runs.py \
+  --baseline data/runs/run1 \
+  --candidate data/runs/run2 \
+  --format markdown
+
+# JSON for automation
+python scripts/compare_runs.py \
+  --baseline data/runs/run1 \
+  --candidate data/runs/run2 \
+  --format json > comparison.json
+~~~
+
+**Bootstrap parameters:**
+
+~~~bash
+# Use more bootstrap samples for publication-quality
+python scripts/compare_runs.py \
+  --baseline data/runs/run1 \
+  --candidate data/runs/run2 \
+  --n-bootstrap 10000 \
+  --seed 42
+~~~
+
+**What it compares:**
+- Loads per-scenario result distributions from `results/**/*.json`
+- Compares `avg_tricks_team0` for all common scenarios
+- Reports significant differences (95% CI excludes zero)
+- Provides effect size interpretation (negligible/small/medium/large)
+
+**Requirements:**
+- Both runs must have overlapping scenarios (same strategy/contract combinations)
+- Results must include `distribution_team0` fields (standard output)
+- Bootstrap is deterministic with `--seed` flag (default 42)
+
 ---
 
 ## 2) Definition of Done (Hard Gates for PRs)
