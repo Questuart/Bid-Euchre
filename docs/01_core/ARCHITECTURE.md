@@ -94,10 +94,7 @@ make test           # Pytest (fast suite) only
 Use the unified runner:
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/<config>.yaml \
-  --seed <seed> \
-  --n_per <hands>
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42
 ```
 
 **Required**: `--seed` (unless you opt in to nondeterminism via `--allow-nondeterministic`)
