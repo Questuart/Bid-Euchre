@@ -30,6 +30,8 @@ def load_or_generate_outcomes(
     contracts: Optional[List[str]] = None,
     trumps: Optional[List[str]] = None,
     seats: Optional[List[int]] = None,
+    strategies: Optional[List[Dict[str, str]]] = None,
+    matchups: Optional[List[Dict[str, str]]] = None,
 ) -> pd.DataFrame:
     """Load or generate outcome dataset (tricks_won by seat).
 
@@ -41,6 +43,13 @@ def load_or_generate_outcomes(
         contracts: Contract types to include (default: ['suit', 'high', 'low'])
         trumps: Trump suits for suit contracts (default: ['C', 'D', 'H', 'S'])
         seats: Seats to include (default: [0, 1, 2, 3])
+        strategies: List of strategy configs, e.g.:
+            [{"name": "greedy", "class_name": "GreedyStrategy"},
+             {"name": "random_legal", "class_name": "RandomLegalStrategy"}]
+            Default: [{"name": "greedy", "class_name": "GreedyStrategy"}]
+        matchups: List of team matchups for head-to-head mode, e.g.:
+            [{"team0": "greedy", "team1": "random_legal"}]
+            Default: None (self-play mode)
 
     Returns:
         DataFrame with columns:
@@ -50,6 +59,10 @@ def load_or_generate_outcomes(
             - trump: str or None
             - tricks_won: int (0-10)
             - strategy_id: str
+
+        strategy_id reflects mode:
+        - Self-play: strategy_id = strategy name
+        - Head-to-head: strategy_id = "team0_vs_team1"
 
     Raises:
         ValueError: If mode not recognized or parameters invalid
@@ -67,7 +80,7 @@ def load_or_generate_outcomes(
         raise ValueError(f"mode must be 'QUICK' or 'FULL', got '{mode}'")
 
     # Check cache
-    cache_key = _compute_cache_key("outcomes", mode, seed, contracts, trumps, seats)
+    cache_key = _compute_cache_key("outcomes", mode, seed, contracts, trumps, seats, strategies, matchups)
     cache_path = _get_cache_path(cache_key)
 
     if cache_path.exists():
@@ -76,7 +89,7 @@ def load_or_generate_outcomes(
 
     # Generate new data
     print(f"Generating new outcome dataset (mode={mode}, seed={seed})...")
-    run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats)
+    run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats, strategies, matchups)
 
     # Extract outcomes from logs
     outcome_df = _load_outcomes_from_run(run_dir)
@@ -95,6 +108,8 @@ def load_or_generate_features(
     contracts: Optional[List[str]] = None,
     trumps: Optional[List[str]] = None,
     seats: Optional[List[int]] = None,
+    strategies: Optional[List[Dict[str, str]]] = None,
+    matchups: Optional[List[Dict[str, str]]] = None,
 ) -> pd.DataFrame:
     """Load or generate feature dataset (features + outcomes).
 
@@ -106,6 +121,13 @@ def load_or_generate_features(
         contracts: Contract types to include (default: ['suit', 'high', 'low'])
         trumps: Trump suits for suit contracts (default: ['C', 'D', 'H', 'S'])
         seats: Seats to include (default: [0, 1, 2, 3])
+        strategies: List of strategy configs, e.g.:
+            [{"name": "greedy", "class_name": "GreedyStrategy"},
+             {"name": "random_legal", "class_name": "RandomLegalStrategy"}]
+            Default: [{"name": "greedy", "class_name": "GreedyStrategy"}]
+        matchups: List of team matchups for head-to-head mode, e.g.:
+            [{"team0": "greedy", "team1": "random_legal"}]
+            Default: None (self-play mode)
 
     Returns:
         DataFrame with columns:
@@ -134,7 +156,7 @@ def load_or_generate_features(
         raise ValueError(f"mode must be 'QUICK' or 'FULL', got '{mode}'")
 
     # Check cache
-    cache_key = _compute_cache_key("features", mode, seed, contracts, trumps, seats)
+    cache_key = _compute_cache_key("features", mode, seed, contracts, trumps, seats, strategies, matchups)
     cache_path = _get_cache_path(cache_key)
 
     if cache_path.exists():
@@ -143,7 +165,7 @@ def load_or_generate_features(
 
     # Generate new data
     print(f"Generating new feature dataset (mode={mode}, seed={seed})...")
-    run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats)
+    run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats, strategies, matchups)
 
     # Load features from bidless dataset
     dataset_dir = run_dir / "datasets"
@@ -184,8 +206,15 @@ def _compute_cache_key(
     contracts: List[str],
     trumps: List[str],
     seats: List[int],
+    strategies: Optional[List[Dict[str, str]]] = None,
+    matchups: Optional[List[Dict[str, str]]] = None,
 ) -> str:
-    """Compute cache key from parameters."""
+    """Compute cache key from parameters.
+
+    Uses deterministic serialization to ensure cache key stability:
+    - Full strategy configs (name + class_name + params)
+    - Sorted JSON for consistent ordering
+    """
     key_parts = [
         data_type,
         mode,
@@ -194,6 +223,18 @@ def _compute_cache_key(
         "_".join(sorted(trumps)),
         "_".join(map(str, sorted(seats))),
     ]
+
+    # Include full strategy configs in cache key (not just names)
+    # Use deterministic JSON serialization for stability
+    if strategies:
+        strat_json = json.dumps(strategies, sort_keys=True)
+        key_parts.append(strat_json)
+
+    # Include matchups in cache key (deterministic order)
+    if matchups:
+        matchup_json = json.dumps(matchups, sort_keys=True)
+        key_parts.append(matchup_json)
+
     key_str = "|".join(key_parts)
     hash_hex = hashlib.sha256(key_str.encode()).hexdigest()[:16]
     return f"{data_type}_{mode}_{seed}_{hash_hex}"
@@ -216,6 +257,8 @@ def _generate_experiment_data(
     contracts: List[str],
     trumps: List[str],
     seats: List[int],
+    strategies: Optional[List[Dict[str, str]]] = None,
+    matchups: Optional[List[Dict[str, str]]] = None,
 ) -> Path:
     """Generate experiment data by running experiment runner.
 
@@ -223,7 +266,7 @@ def _generate_experiment_data(
         Path to run directory containing logs/ and datasets/
     """
     # Create temporary config
-    config = _generate_temp_config(mode, seed, contracts, trumps, seats)
+    config = _generate_temp_config(mode, seed, contracts, trumps, seats, strategies, matchups)
 
     # Write config to temp file
     with tempfile.NamedTemporaryFile(
@@ -301,49 +344,87 @@ def _generate_temp_config(
     contracts: List[str],
     trumps: List[str],
     seats: List[int],
+    strategies: Optional[List[Dict[str, str]]] = None,
+    matchups: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
-    """Generate temporary experiment config."""
+    """Generate temporary experiment config.
+
+    Supports both self-play and head-to-head modes.
+
+    Args:
+        matchups: None = self-play for all strategies
+                  List = head-to-head matchups
+
+    Note: MATCHUPS=None runs self-play for EACH strategy in STRATEGIES.
+          For single-strategy self-play, pass strategies=[{...}].
+    """
     # Sample sizes by mode
     if mode == "QUICK":
-        n_per = 50  # ~50 deals per scenario = ~2k total
+        n_per = 50  # ~50 deals per scenario
     elif mode == "FULL":
-        n_per = 2500  # ~2500 deals per scenario = ~50k total
+        n_per = 2500
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
-    # Build scenarios
+    # Default strategies
+    if strategies is None:
+        strategies = [{"name": "greedy", "class_name": "GreedyStrategy"}]
+
+    # Validate strategies
+    if not strategies:
+        raise ValueError("At least one strategy required")
+
+    # Validate matchups
+    if matchups is not None:
+        if not matchups:
+            raise ValueError(
+                "MATCHUPS cannot be empty list. Use None for self-play mode, "
+                "or provide at least one matchup for head-to-head mode."
+            )
+
+        # Validate matchup references
+        strategy_names = {s["name"] for s in strategies}
+        for matchup in matchups:
+            if matchup["team0"] not in strategy_names:
+                raise ValueError(
+                    f"Matchup references unknown strategy: {matchup['team0']}. "
+                    f"Available: {sorted(strategy_names)}"
+                )
+            if matchup["team1"] not in strategy_names:
+                raise ValueError(
+                    f"Matchup references unknown strategy: {matchup['team1']}. "
+                    f"Available: {sorted(strategy_names)}"
+                )
+
+    # Build scenarios (same as before)
     scenarios = []
     for contract in contracts:
         if contract == 'suit':
-            # One scenario per trump
             for trump in trumps:
                 scenarios.append({
                     'contract_type': 'suit',
                     'trump_suit': trump,
                 })
         elif contract in ['high', 'low']:
-            # Single scenario, no trump
-            scenarios.append({
-                'contract_type': contract,
-            })
+            scenarios.append({'contract_type': contract})
         else:
             raise ValueError(f"Unknown contract type: {contract}")
 
-    # Build config
+    # Build config based on mode
     config = {
         'experiment_name': f'notebook_temp_{mode}_{seed}',
-        'strategies': [
-            {
-                'name': 'greedy',
-                'class_name': 'GreedyStrategy',
-            }
-        ],
+        'strategies': strategies,
         'scenarios': scenarios,
         'parameters': {
             'n_per': n_per,
-            'log_level': 'hand',  # Need hand_end logs for outcomes
+            'log_level': 'hand',
         },
     }
+
+    # Add matchups if specified (head-to-head mode)
+    if matchups is not None:
+        config['parameters']['mode'] = 'head_to_head_matrix'
+        config['matchups'] = matchups
 
     return config
 
