@@ -51,6 +51,18 @@ make test       # Tests only
 
 **Agents must use these commands. Do not invent one-off runners.**
 
+### Notebook rules (Jupytext paired)
+
+**DO**
+- Edit paired `.py` files under `notebooks/` (percent format, reviewable)
+- Run `make notebook-sync` before committing
+- Run `make notebook-check` to verify sync + outputs cleared
+- Keep notebooks thin; move reusable logic into `src/bid_euchre/`
+
+**DON'T**
+- Hand-edit raw `.ipynb` JSON
+- Commit notebooks with outputs
+
 ### Setup (recommended)
 Use uv for fast, reproducible installs:
 

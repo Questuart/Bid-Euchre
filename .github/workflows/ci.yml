@@ -36,5 +36,8 @@ jobs:
       - name: Ruff (lint)
         run: make lint
 
+      - name: Notebook hygiene
+        run: make notebook-check
+
       - name: Tests (fast)
         run: make test

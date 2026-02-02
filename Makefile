@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
+.PHONY: help sync repo-lint lint test check notebook-sync notebook-check bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -22,6 +22,8 @@ help:
 	@echo "  make repo-lint          - repo linter (diff vs origin/main)"
 	@echo "  make lint               - ruff check ."
 	@echo "  make test               - pytest fast suite"
+	@echo "  make notebook-sync      - sync paired notebooks (Jupytext)"
+	@echo "  make notebook-check     - verify sync + outputs cleared"
 	@echo ""
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
@@ -48,8 +50,17 @@ test:
 	@echo ">>> Pytest (fast suite)"
 	PYTHONPATH=.:src $(PYTHON) -m pytest -m "not slow" tests/
 
-check: repo-lint lint test
+check: repo-lint lint test notebook-check
 	@echo "✓ All checks passed"
+
+notebook-sync:
+	@echo ">>> Jupytext sync (notebooks)"
+	$(PYTHON) -c "import glob, subprocess, sys; files=sorted(glob.glob('notebooks/**/*.ipynb', recursive=True)); sys.exit(0) if not files else None; cmd=[sys.executable, '-m', 'jupytext', '--sync', *files]; sys.exit(subprocess.call(cmd))"
+
+notebook-check:
+	@echo ">>> Notebook hygiene checks"
+	$(PYTHON) -c "import glob, subprocess, sys; files=sorted(glob.glob('notebooks/**/*.ipynb', recursive=True)); sys.exit(0) if not files else None; cmd=[sys.executable, '-m', 'jupytext', '--sync', *files]; code=subprocess.call(cmd); sys.exit(code) if code else None; cmd=[sys.executable, '-m', 'nbstripout', '--verify', *files]; sys.exit(subprocess.call(cmd))"
+	@git diff --exit-code -- notebooks/
 
 # Generate unique run ID for teacher training
 TEACHER_RUN_ID = teacher_baseline_$(shell date -u +%Y%m%d_%H%M%S)_$(shell printf "%04x" $$RANDOM)

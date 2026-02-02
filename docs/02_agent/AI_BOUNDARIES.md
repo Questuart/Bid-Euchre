@@ -2,7 +2,7 @@
 
 **Hard rules for AI agents working in this repository.**
 
-For detailed workflow guidance, see [AGENTS.md](AGENTS.md).  
+For detailed workflow guidance, see [AGENTS.md](AGENTS.md).
 For system structure, see [docs/01_core/ARCHITECTURE.md](../01_core/ARCHITECTURE.md).
 
 ---
