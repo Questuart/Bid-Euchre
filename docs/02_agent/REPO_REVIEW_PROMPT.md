@@ -1,6 +1,6 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Last Updated:** February 1, 2026 (post PR #186)
+**Last Updated:** February 1, 2026 (post PR #190)
 **Version:** 3.0 (Agent-Optimized, Rigor-Focused)
 
 ---
@@ -883,8 +883,8 @@ ls scripts/*.py | wc -l                # Expected: 10
 | **Bidless** | #144-155 | Hand value features | Arc B foundation, bidless dataset, feature engineering |
 | **Validation & Rigor** | #156-186 | Schema validation, rigor enforcement ⭐ | Quality gates hardened, statistical rigor, notebook standards |
 
-**Current State (PR #186):**
-- **Total PRs:** 186
+**Current State (PR #190):**
+- **Total PRs:** 190
 - **Current Era:** Validation & Rigor (ongoing)
 - **Next Milestone:** B0 model training (Arc B continuation)
 - **Long-term Goal:** Full bidding system integration (Arc C)
@@ -1031,5 +1031,5 @@ summary and do not proceed to later phases unless explicitly asked.
 ---
 
 *Template version: 3.0 (Agent-Optimized, Rigor-Focused)*
-*Last major revision: February 1, 2026 (post PR #186)*
+*Last major revision: February 1, 2026 (post PR #190)*
 *Previous version: 2.0 (January 27, 2026, post PR #155)*
