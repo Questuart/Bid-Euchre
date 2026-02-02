@@ -18,6 +18,7 @@ Submodules:
 - `datasets/` — Dataset collectors (bidding, bidless)
 - `models/` — Model training/inference
 - `diagnostics/` — Visualization and analysis tools
+- `validation/` — Schema validation
 - `reporting/`, `logging/`, `analysis/`, `utils/` — Supporting utilities
 
 ### `experiments/`
@@ -35,13 +36,16 @@ Structure:
 **Blessed tooling entrypoints.**
 
 Current scripts:
+- `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
+- `compare_runs.py` — Run comparison utility with bootstrap statistics
 - `generate_report.py` — Per-run report generator
 - `lint_repo.py` — Repository linter (enforces boundaries and data policy)
+- `run_bidless_diagnostics.py` — Bidless feature dataset diagnostics
 - `run_suite.py` — Suite runner (batches experiments with rollup generation)
-- `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
-- `run_tests.py`, `validate_teacher_roster.py` — Test utilities
-- `collect_bidless_dataset.py` — Bidless feature dataset collector
+- `run_tests.py` — Test runner utility
 - `train_bidder.py` — Bidder model training
+- `validate_configs.py` — Config validation utility
+- `validate_teacher_roster.py` — Teacher roster validation
 
 ### `tests/`
 **Test suite only.**
@@ -50,6 +54,7 @@ Structure:
 - `unit/` — Fast, isolated tests
 - `integration/` — Multi-component tests
 - `performance/` — Benchmarks (marked as slow)
+- `property/` — Property-based tests
 
 ### `data/`
 **Generated outputs and fixtures.**
