@@ -44,6 +44,14 @@ class HealthScorecard:
             counts[check.status] += 1
         return counts
 
+    def get_warnings(self) -> List[CheckResult]:
+        """Return all checks with WARN status."""
+        return [c for c in self.checks if c.status == "WARN"]
+
+    def get_failures(self) -> List[CheckResult]:
+        """Return all checks with FAIL status."""
+        return [c for c in self.checks if c.status == "FAIL"]
+
 
 def compute_health_scorecard(df: pd.DataFrame) -> HealthScorecard:
     """Compute health scorecard for a bidless dataset.
@@ -316,6 +324,37 @@ def display_scorecard(scorecard: HealthScorecard) -> str:
 
     for check in scorecard.checks:
         badge = {"PASS": "✅", "WARN": "⚠️", "FAIL": "❌"}[check.status]
+        lines.append(f"{badge} {check.name}: {check.message}")
+
+    return "\n".join(lines)
+
+
+def display_issues(scorecard: HealthScorecard) -> str:
+    """Format warnings and failures as compact list.
+
+    Returns empty string if no issues. Shows failures first, then warnings.
+
+    Example:
+        Issues found:
+        ❌ row_uniqueness: Found 3 duplicate pairs
+        ⚠️  feature_variance: 2 features have zero variance
+
+    Args:
+        scorecard: HealthScorecard to display issues from
+
+    Returns:
+        Formatted string with compact issue list, or empty string if no issues
+    """
+    failures = scorecard.get_failures()
+    warnings = scorecard.get_warnings()
+    issues = failures + warnings
+
+    if not issues:
+        return ""
+
+    lines = ["Issues found:"]
+    for check in issues:
+        badge = "❌" if check.status == "FAIL" else "⚠️ "
         lines.append(f"{badge} {check.name}: {check.message}")
 
     return "\n".join(lines)

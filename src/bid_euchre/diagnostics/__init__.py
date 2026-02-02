@@ -26,7 +26,7 @@ from .charts import (
     plot_rolling_mean,
     plot_suit_variance_summary,
 )
-from .health_checks import compute_health_scorecard, display_scorecard
+from .health_checks import compute_health_scorecard, display_issues, display_scorecard
 from .loaders import load_bidless_dataset, load_meta
 from .notebook_data import load_or_generate_features, load_or_generate_outcomes
 from .stats import compare_first_last_batch, compute_seat_balance
@@ -49,6 +49,7 @@ __all__ = [
     # Health checks
     "compute_health_scorecard",
     "display_scorecard",
+    "display_issues",
     # Charts - Feature Analysis
     "plot_hand_value_by_seat",
     "plot_hand_value_by_contract",
