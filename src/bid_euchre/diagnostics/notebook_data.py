@@ -47,8 +47,9 @@ def load_or_generate_outcomes(
             [{"name": "greedy", "class_name": "GreedyStrategy"},
              {"name": "random_legal", "class_name": "RandomLegalStrategy"}]
             Default: [{"name": "greedy", "class_name": "GreedyStrategy"}]
-        matchups: List of team matchups for head-to-head mode, e.g.:
-            [{"team0": "greedy", "team1": "random_legal"}]
+        matchups: List of matchups for head-to-head mode, e.g.:
+            Team-based: [{"team0": "greedy", "team1": "random_legal"}]
+            Seat-based: [{"seat_strategies": ["greedy", "random_legal", "greedy", "random_legal"]}]
             Default: None (self-play mode)
 
     Returns:
@@ -125,8 +126,9 @@ def load_or_generate_features(
             [{"name": "greedy", "class_name": "GreedyStrategy"},
              {"name": "random_legal", "class_name": "RandomLegalStrategy"}]
             Default: [{"name": "greedy", "class_name": "GreedyStrategy"}]
-        matchups: List of team matchups for head-to-head mode, e.g.:
-            [{"team0": "greedy", "team1": "random_legal"}]
+        matchups: List of matchups for head-to-head mode, e.g.:
+            Team-based: [{"team0": "greedy", "team1": "random_legal"}]
+            Seat-based: [{"seat_strategies": ["greedy", "random_legal", "greedy", "random_legal"]}]
             Default: None (self-play mode)
 
     Returns:
@@ -353,7 +355,7 @@ def _generate_temp_config(
 
     Args:
         matchups: None = self-play for all strategies
-                  List = head-to-head matchups
+                  List = head-to-head matchups (team-based or seat-based)
 
     Note: MATCHUPS=None runs self-play for EACH strategy in STRATEGIES.
           For single-strategy self-play, pass strategies=[{...}].
@@ -385,15 +387,35 @@ def _generate_temp_config(
         # Validate matchup references
         strategy_names = {s["name"] for s in strategies}
         for matchup in matchups:
-            if matchup["team0"] not in strategy_names:
+            team0 = matchup.get("team0")
+            team1 = matchup.get("team1")
+            seat_strategies = matchup.get("seat_strategies")
+
+            if team0 and team1:
+                if team0 not in strategy_names:
+                    raise ValueError(
+                        f"Matchup references unknown strategy: {team0}. "
+                        f"Available: {sorted(strategy_names)}"
+                    )
+                if team1 not in strategy_names:
+                    raise ValueError(
+                        f"Matchup references unknown strategy: {team1}. "
+                        f"Available: {sorted(strategy_names)}"
+                    )
+            elif seat_strategies:
+                if len(seat_strategies) != 4:
+                    raise ValueError(
+                        f"seat_strategies must have length 4 (got {len(seat_strategies)}): {matchup}"
+                    )
+                unknown = [name for name in seat_strategies if name not in strategy_names]
+                if unknown:
+                    raise ValueError(
+                        f"Matchup references unknown strategies: {unknown}. "
+                        f"Available: {sorted(strategy_names)}"
+                    )
+            else:
                 raise ValueError(
-                    f"Matchup references unknown strategy: {matchup['team0']}. "
-                    f"Available: {sorted(strategy_names)}"
-                )
-            if matchup["team1"] not in strategy_names:
-                raise ValueError(
-                    f"Matchup references unknown strategy: {matchup['team1']}. "
-                    f"Available: {sorted(strategy_names)}"
+                    "Matchups must include team0/team1 or seat_strategies."
                 )
 
     # Build scenarios (same as before)

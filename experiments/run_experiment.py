@@ -433,17 +433,48 @@ def main():
 
         # Map strategy name -> StrategyConfig
         cfg_by_name = {sc.name: sc for sc in strategy_cfgs}
+        policy_cfg_by_name = {pc.name: pc for pc in bidding_policy_cfgs}
 
         # Each matchup: results/<team0>_vs_<team1>/..., logs/<run_id>_<matchup>.jsonl
         for m in matchups:
-            team0_name = m["team0"]
-            team1_name = m["team1"]
-            if team0_name not in cfg_by_name or team1_name not in cfg_by_name:
+            team0_name = m.get("team0")
+            team1_name = m.get("team1")
+            seat_strategy_names = m.get("seat_strategies")
+            seat_bidding_policy_names = m.get("seat_bidding_policies")
+            if team0_name and team1_name:
+                if team0_name not in cfg_by_name or team1_name not in cfg_by_name:
+                    raise ValueError(
+                        f"Unknown matchup strategy in {m}. Must be among: {', '.join(cfg_by_name.keys())}"
+                    )
+                matchup_id = f"{team0_name}_vs_{team1_name}"
+            elif seat_strategy_names:
+                if len(seat_strategy_names) != 4:
+                    raise ValueError(
+                        f"seat_strategies must have length 4 (got {len(seat_strategy_names)}): {m}"
+                    )
+                unknown = [name for name in seat_strategy_names if name not in cfg_by_name]
+                if unknown:
+                    raise ValueError(
+                        f"Unknown seat_strategies {unknown} in {m}. "
+                        f"Must be among: {', '.join(cfg_by_name.keys())}"
+                    )
+                matchup_id = "seatmap__" + "__".join(seat_strategy_names)
+            else:
                 raise ValueError(
-                    f"Unknown matchup strategy in {m}. Must be among: {', '.join(cfg_by_name.keys())}"
+                    "head_to_head_matrix matchups require team0/team1 or seat_strategies."
                 )
 
-            matchup_id = f"{team0_name}_vs_{team1_name}"
+            if seat_bidding_policy_names:
+                if len(seat_bidding_policy_names) != 4:
+                    raise ValueError(
+                        f"seat_bidding_policies must have length 4 (got {len(seat_bidding_policy_names)}): {m}"
+                    )
+                unknown = [name for name in seat_bidding_policy_names if name not in policy_cfg_by_name]
+                if unknown:
+                    raise ValueError(
+                        f"Unknown seat_bidding_policies {unknown} in {m}. "
+                        f"Must be among: {', '.join(policy_cfg_by_name.keys())}"
+                    )
             print("-" * 70)
             print(f"Matchup: {matchup_id}")
             print("-" * 70)
@@ -462,10 +493,7 @@ def main():
                 print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
 
             try:
-                team0_cfg = cfg_by_name[team0_name]
-                team1_cfg_local = cfg_by_name[team1_name]
-
-                # Create per-seat strategies (team0 seats 0&2, team1 seats 1&3)
+                # Create per-seat strategies
                 # Reuse cloning logic from _make_seat_strategies
                 def _clone(cfg, seat_idx: int):
                     cfg_params = dict(cfg.params or {})
@@ -474,12 +502,27 @@ def main():
                         cfg_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
                     return cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
 
-                seat_strategies = [
-                    _clone(team0_cfg, 0),
-                    _clone(team1_cfg_local, 1),
-                    _clone(team0_cfg, 2),
-                    _clone(team1_cfg_local, 3),
-                ]
+                if team0_name and team1_name:
+                    team0_cfg = cfg_by_name[team0_name]
+                    team1_cfg_local = cfg_by_name[team1_name]
+                    seat_strategies = [
+                        _clone(team0_cfg, 0),
+                        _clone(team1_cfg_local, 1),
+                        _clone(team0_cfg, 2),
+                        _clone(team1_cfg_local, 3),
+                    ]
+                else:
+                    seat_strategies = [
+                        _clone(cfg_by_name[name], seat_idx)
+                        for seat_idx, name in enumerate(seat_strategy_names)
+                    ]
+
+                seat_bidding_policies = None
+                if seat_bidding_policy_names:
+                    seat_bidding_policies = [
+                        policy_cfg_by_name[name].create_bidding_policy()
+                        for name in seat_bidding_policy_names
+                    ]
 
                 for i, scenario in enumerate(scenarios, 1):
                     scenario_seed = seed + (i - 1) if seed is not None else None
@@ -505,6 +548,7 @@ def main():
                         strategy=None,
                         strategies=seat_strategies,
                         bidding_policy=None,  # Use Strategy.decide_bid for backward compatibility
+                        bidding_policies=seat_bidding_policies,
                         logger=logger,
                         bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
                         hooks=bidless_hooks,
