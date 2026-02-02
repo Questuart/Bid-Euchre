@@ -14,6 +14,7 @@ from bid_euchre.diagnostics import (
     compare_first_last_batch,
     compute_health_scorecard,
     compute_seat_balance,
+    display_issues,
     display_scorecard,
     load_bidless_dataset,
 )
@@ -32,7 +33,8 @@ def main():
 
     # Run health scorecard
     scorecard = compute_health_scorecard(df)
-    print("\n" + display_scorecard(scorecard))
+    if args.verbose:
+        print("\n" + display_scorecard(scorecard))
 
     # Additional stats
     balance = compute_seat_balance(df)
@@ -48,9 +50,17 @@ def main():
     summary = scorecard.summary()
     if summary["FAIL"] > 0:
         print(f"\n❌ {summary['FAIL']} check(s) FAILED")
+        if not args.verbose:
+            issues = display_issues(scorecard)
+            if issues:
+                print("\n" + issues)
         return 1
     elif summary["WARN"] > 0:
         print(f"\n⚠️ {summary['WARN']} warning(s), {summary['PASS']} passed")
+        if not args.verbose:
+            issues = display_issues(scorecard)
+            if issues:
+                print("\n" + issues)
         return 0
     else:
         print(f"\n✅ All {summary['PASS']} checks passed")
