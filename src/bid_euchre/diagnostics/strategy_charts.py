@@ -22,9 +22,17 @@ from ..reporting.style import (
     FIGSIZE_MATRIX,
     FIGSIZE_SINGLE_PLOT,
     apply_report_style,
+    apply_seaborn_style,
     get_strategy_color,
     get_strategy_name,
 )
+
+
+def _apply_style() -> None:
+    if HAS_SEABORN:
+        apply_seaborn_style()
+    else:
+        apply_report_style()
 
 
 def plot_win_rate_heatmap(
@@ -48,7 +56,7 @@ def plot_win_rate_heatmap(
     Returns:
         matplotlib Figure
     """
-    apply_report_style()
+    _apply_style()
 
     # Extract unique strategies (preserve order from first appearance)
     strategies = []
@@ -149,7 +157,7 @@ def plot_tricks_distribution_comparison(
     Returns:
         matplotlib Figure
     """
-    apply_report_style()
+    _apply_style()
 
     tricks_key = f"tricks_team{team}"
 
@@ -222,7 +230,7 @@ def plot_strategy_delta_bars(
     Returns:
         matplotlib Figure
     """
-    apply_report_style()
+    _apply_style()
 
     baseline_val = baseline_results.get(metric, 5.0)
 
@@ -318,7 +326,7 @@ def plot_self_play_control(
     Returns:
         matplotlib Figure
     """
-    apply_report_style()
+    _apply_style()
 
     strategies = []
     means = []
@@ -418,7 +426,7 @@ def plot_matchup_summary(
     Returns:
         matplotlib Figure with 3 subplots
     """
-    apply_report_style()
+    _apply_style()
 
     fig, axes = plt.subplots(1, 3, figsize=figsize)
 

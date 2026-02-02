@@ -185,6 +185,7 @@ All plots use consistent styling from `bid_euchre.reporting.style`:
   - Orange (#f39c12): Push/neutral
   - Blue (#3498db): General data
 - Statistical annotations (p-values, effect sizes)
+- Current plotting standards: `docs/plotting_style_guide.md`
 
 ## Data Sources
 

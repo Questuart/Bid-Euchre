@@ -21,15 +21,19 @@ from .paths import (
     write_latest_pointer,
 )
 from .style import (
+    BASE_COLORS,
     CONTRACT_COLORS,
     CONTRACT_LABELS,
     OUTCOME_COLORS,
     OUTCOME_LABELS,
     STRATEGY_COLORS,
     STRATEGY_NAMES,
+    apply_plotly_template,
     apply_report_style,
+    apply_seaborn_style,
     format_ci,
     format_pct,
+    get_plotly_template,
 )
 from .validation import (
     generate_validation_plots,
@@ -46,7 +50,11 @@ __all__ = [
     "STRATEGY_COLORS",
     "OUTCOME_COLORS",
     "OUTCOME_LABELS",
+    "BASE_COLORS",
     "apply_report_style",
+    "apply_seaborn_style",
+    "get_plotly_template",
+    "apply_plotly_template",
     "format_pct",
     "format_ci",
     # Paths
