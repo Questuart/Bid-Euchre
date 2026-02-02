@@ -105,16 +105,15 @@ PYTHONPATH=src python -m pytest tests/integration/
 Pick a small config and pass a seed:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py \
+PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
-  --n_per 200 \
-  --seed 42
+  --n_per 200
 ~~~
 
 Dry-run config validation:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py \
+PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
   --dry-run
 ~~~
@@ -125,10 +124,9 @@ PYTHONPATH=src python experiments/run_experiment.py \
 The experiment runner supports JSONL logging:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py \
+PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
   --n_per 50 \
-  --seed 42 \
   --log-level trick
 ~~~
 
@@ -140,9 +138,8 @@ By default, the runner writes under:
 You may override base output directory:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py \
+PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
-  --seed 42 \
   --run-dir data/runs
 ~~~
 
@@ -389,7 +386,7 @@ When something fails:
 2) Validate via:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --config <file.yaml> --dry-run
+PYTHONPATH=src python experiments/run_experiment.py --config <file.yaml> --dry-run --seed 42
 ~~~
 
 3) Run a small seeded smoke:
