@@ -29,6 +29,7 @@ def play_single_hand(
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
     bidding_policy: Optional[BiddingPolicy] = None,
+    bidding_policies: Optional[List[BiddingPolicy]] = None,
     logger: Optional["GameLogger"] = None,
     deal_id: int = 0,
     hands: Optional[List[List[Card]]] = None,
@@ -56,6 +57,16 @@ def play_single_hand(
         if strategy is None:
             strategy = GreedyStrategy()
         seat_strategies = [strategy, strategy, strategy, strategy]
+
+    # Resolve bidding policy-per-seat.
+    if bidding_policies is not None:
+        if len(bidding_policies) != 4:
+            raise ValueError(
+                f"`bidding_policies` must have length 4 (got {len(bidding_policies)})"
+            )
+        seat_bidding_policies = bidding_policies
+    else:
+        seat_bidding_policies = None
 
     if hands is None:
         deck: List[Card] = create_deck()
@@ -93,7 +104,48 @@ def play_single_hand(
         final_trump = None
 
         # Use new bidding policy interface if provided, otherwise fall back to old interface
-        if bidding_policy is not None:
+        if seat_bidding_policies is not None:
+            # New interface: per-seat bidding policies
+            for offset in range(1, 5):
+                player_idx = (dealer_index + offset) % 4
+
+                # Create bidding observation
+                obs = BiddingObservation(
+                    hand=starting_hands[player_idx],
+                    seat=player_idx,
+                    dealer_seat=dealer_index,
+                    current_high_bid=current_high_bid
+                )
+
+                # Get bid from policy
+                bid_action = seat_bidding_policies[player_idx].choose_bid(obs)
+
+                if bidding_collector is not None:
+                    bidding_collector.record_decision(obs, bid_action, deal_id)
+
+                # Fire bidding decision event if handler registered
+                if on_bidding_decision is not None:
+                    is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
+                    on_bidding_decision(BiddingDecisionEvent(
+                        deal_id=deal_id,
+                        seat=player_idx,
+                        hand=list(starting_hands[player_idx]),  # Copy to avoid aliasing
+                        dealer_seat=dealer_index,
+                        current_high_bid=current_high_bid,
+                        bid_amount=bid_action.n,
+                        bid_contract=bid_action.contract,
+                        is_legal=is_legal,
+                    ))
+
+                # If bid is pass or <= current high bid, treat as pass
+                if bid_action.is_pass() or bid_action.n <= current_high_bid:
+                    continue
+
+                # Valid higher bid - accept it
+                current_high_bid = bid_action.n
+                winning_bidder = player_idx
+                final_contract, final_trump = bid_action.to_contract_tuple()
+        elif bidding_policy is not None:
             # New interface: sequential bidding (LOD order) using BiddingPolicy
             for offset in range(1, 5):
                 player_idx = (dealer_index + offset) % 4
@@ -331,6 +383,7 @@ def simulate_many_hands(
     strategy: Optional[Strategy] = None,
     strategies: Optional[List[Strategy]] = None,
     bidding_policy: Optional[BiddingPolicy] = None,
+    bidding_policies: Optional[List[BiddingPolicy]] = None,
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
     bidding_dataset_run_id: Optional[str] = None,
@@ -346,6 +399,9 @@ def simulate_many_hands(
         trump_suit: Trump suit for suit contracts
         seed: Random seed for reproducibility
         strategy: Strategy to use (defaults to GreedyStrategy)
+        strategies: Optional per-seat strategies (length 4)
+        bidding_policy: Optional bidding policy (single policy used for all seats)
+        bidding_policies: Optional per-seat bidding policies (length 4)
         logger: Optional GameLogger for structured JSONL logging
         hooks: Optional SimulationHooks for event-based instrumentation
 
@@ -430,6 +486,7 @@ def simulate_many_hands(
                 strategy=strategy,
                 strategies=strategies,
                 bidding_policy=bidding_policy,
+                bidding_policies=bidding_policies,
                 logger=logger,
                 deal_id=deal_id,
                 hands=deal_hands_,
@@ -444,6 +501,7 @@ def simulate_many_hands(
                 strategy=strategy,
                 strategies=strategies,
                 bidding_policy=bidding_policy,
+                bidding_policies=bidding_policies,
                 logger=logger,
                 deal_id=deal_id,
                 rng=local_rng,
