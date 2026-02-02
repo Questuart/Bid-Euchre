@@ -5,6 +5,8 @@ Ensures consistency across dashboards, paired comparisons, and head-to-head repo
 """
 
 
+from typing import Dict
+
 import matplotlib.pyplot as plt
 
 # ================================
@@ -84,6 +86,20 @@ REPORT_STYLE = {
     "grid.linestyle": "--",
 }
 
+# ================================
+# Shared Palette
+# ================================
+
+BASE_COLORS = [
+    "#3498db",  # Blue
+    "#e67e22",  # Orange
+    "#2ecc71",  # Green
+    "#9b59b6",  # Purple
+    "#e74c3c",  # Red
+    "#f39c12",  # Yellow/Orange
+    "#95a5a6",  # Gray
+]
+
 
 # ================================
 # Outcome Styling (Win/Push/Loss)
@@ -120,6 +136,55 @@ def apply_report_style():
     """Apply standard report styling to matplotlib."""
     plt.rcParams.update(REPORT_STYLE)
 
+
+def apply_seaborn_style():
+    """Apply standard report styling to seaborn (and matplotlib)."""
+    try:
+        import seaborn as sns
+    except ImportError as exc:
+        raise ImportError("seaborn is required for apply_seaborn_style()") from exc
+
+    sns.set_theme(style="whitegrid", rc=REPORT_STYLE, palette=BASE_COLORS)
+
+
+def get_plotly_template() -> Dict:
+    """Return a Plotly template dict matching report styling."""
+    return {
+        "layout": {
+            "font": {"size": REPORT_STYLE["font.size"]},
+            "title": {"font": {"size": REPORT_STYLE["figure.titlesize"]}},
+            "paper_bgcolor": REPORT_STYLE["figure.facecolor"],
+            "plot_bgcolor": REPORT_STYLE["axes.facecolor"],
+            "colorway": BASE_COLORS,
+            "xaxis": {
+                "showgrid": REPORT_STYLE["axes.grid"],
+                "gridcolor": REPORT_STYLE["grid.color"],
+                "gridwidth": REPORT_STYLE["grid.linewidth"],
+                "zeroline": False,
+                "linecolor": REPORT_STYLE["axes.edgecolor"],
+            },
+            "yaxis": {
+                "showgrid": REPORT_STYLE["axes.grid"],
+                "gridcolor": REPORT_STYLE["grid.color"],
+                "gridwidth": REPORT_STYLE["grid.linewidth"],
+                "zeroline": False,
+                "linecolor": REPORT_STYLE["axes.edgecolor"],
+            },
+            "legend": {"font": {"size": REPORT_STYLE["legend.fontsize"]}},
+        }
+    }
+
+
+def apply_plotly_template(template_name: str = "bid_euchre") -> str:
+    """Register and set the default Plotly template."""
+    try:
+        import plotly.io as pio
+    except ImportError as exc:
+        raise ImportError("plotly is required for apply_plotly_template()") from exc
+
+    pio.templates[template_name] = get_plotly_template()
+    pio.templates.default = template_name
+    return template_name
 
 def format_pct(value: float, decimals: int = 1) -> str:
     """Format a proportion as percentage string."""
