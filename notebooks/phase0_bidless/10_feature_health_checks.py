@@ -116,7 +116,6 @@ from bid_euchre.diagnostics import (
     display_scorecard,
     load_bidless_dataset,
     load_meta,
-    plot_hand_value_by_contract,
 )
 from bid_euchre.diagnostics.loaders import get_dataset_summary
 
@@ -389,10 +388,6 @@ from scipy.stats import f_oneway, ttest_ind
 print("=" * 80)
 print("SECTION 4.1.0: HAND VALUE BY CONTRACT_TYPE")
 print("=" * 80)
-
-# Hand value by contract type visualization
-fig = plot_hand_value_by_contract(df)
-plt.show()
 
 # Statistics by contract type
 print("\n=== Descriptive Statistics by Contract Type ===")
