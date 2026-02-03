@@ -75,6 +75,7 @@ SEATS = [0, 1, 2, 3]
 STRATEGIES = [
     {"name": "greedy", "class_name": "GreedyStrategy"},
     {"name": "glutton", "class_name": "GluttonStrategy"},
+    {"name": "random", "class_name": "RandomLegalStrategy"},
     {"name": "always_highest", "class_name": "AlwaysHighestLegalStrategy"},
     {"name": "always_lowest", "class_name": "AlwaysLowestLegalStrategy"},
 ]

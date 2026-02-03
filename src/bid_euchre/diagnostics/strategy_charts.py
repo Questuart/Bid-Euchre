@@ -40,6 +40,7 @@ def plot_win_rate_heatmap(
     metric: str = "win_rate",
     figsize: Tuple[int, int] = FIGSIZE_MATRIX,
     title: Optional[str] = None,
+    fmt: Optional[str] = None,
 ) -> plt.Figure:
     """Plot heatmap of win rates for all strategy matchups.
 
@@ -52,6 +53,7 @@ def plot_win_rate_heatmap(
         metric: Key in result dict to plot (default "win_rate" for Team 0)
         figsize: Figure size tuple
         title: Optional title override
+        fmt: Format string for annotations. Default: ".1%" for win_rate, ".1f" otherwise
 
     Returns:
         matplotlib Figure
@@ -90,28 +92,39 @@ def plot_win_rate_heatmap(
     # Create figure
     fig, ax = plt.subplots(figsize=figsize)
 
+    # Determine format string
+    if fmt is None:
+        fmt = ".1%" if metric == "win_rate" else ".1f"
+
+    # Determine colorbar label and value range
+    is_win_rate = metric == "win_rate"
+    vmin = 0 if is_win_rate else None
+    vmax = 1 if is_win_rate else None
+    center = 0.5 if is_win_rate else None
+    cbar_label = "Win Rate (Team 0)" if is_win_rate else metric
+
     # Plot heatmap
     if HAS_SEABORN:
         labels = [get_strategy_name(s) for s in strategies]
         annot = np.array(
-            [[f"{v:.1%}" if not np.isnan(v) else "" for v in row] for row in matrix]
+            [[f"{v:{fmt}}" if not np.isnan(v) else "" for v in row] for row in matrix]
         )
         sns.heatmap(
             matrix,
             annot=annot,
             fmt="",
             cmap="RdYlGn",
-            center=0.5,
-            vmin=0,
-            vmax=1,
+            center=center,
+            vmin=vmin,
+            vmax=vmax,
             ax=ax,
             xticklabels=labels,
             yticklabels=labels,
-            cbar_kws={"label": "Win Rate (Team 0)"},
+            cbar_kws={"label": cbar_label},
         )
     else:
-        im = ax.imshow(matrix, cmap="RdYlGn", vmin=0, vmax=1, aspect="auto")
-        fig.colorbar(im, ax=ax, label="Win Rate (Team 0)")
+        im = ax.imshow(matrix, cmap="RdYlGn", vmin=vmin, vmax=vmax, aspect="auto")
+        fig.colorbar(im, ax=ax, label=cbar_label)
 
         # Labels
         labels = [get_strategy_name(s) for s in strategies]
@@ -125,9 +138,9 @@ def plot_win_rate_heatmap(
             for j in range(n):
                 val = matrix[i, j]
                 if not np.isnan(val):
-                    color = "white" if val < 0.3 or val > 0.7 else "black"
+                    color = "white" if (vmax and (val < 0.3 * vmax or val > 0.7 * vmax)) else "black"
                     ax.text(
-                        j, i, f"{val:.1%}", ha="center", va="center", color=color
+                        j, i, f"{val:{fmt}}", ha="center", va="center", color=color
                     )
 
     ax.set_xlabel("Team 1 Strategy")
