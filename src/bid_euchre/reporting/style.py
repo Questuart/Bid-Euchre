@@ -144,7 +144,7 @@ def apply_seaborn_style():
     except ImportError as exc:
         raise ImportError("seaborn is required for apply_seaborn_style()") from exc
 
-    sns.set_theme(style="whitegrid", rc=REPORT_STYLE, palette=BASE_COLORS)
+    sns.set_theme(style="white", rc=REPORT_STYLE, palette=BASE_COLORS)
 
 
 def get_plotly_template() -> Dict:
