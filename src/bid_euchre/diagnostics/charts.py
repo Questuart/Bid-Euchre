@@ -10,7 +10,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ..reporting.style import CONTRACT_COLORS, apply_report_style, apply_seaborn_style
+from ..reporting.style import (
+    BASE_COLORS,
+    CONTRACT_COLORS,
+    FIGSIZE_COMPARISON,
+    FIGSIZE_MATRIX,
+    FIGSIZE_SINGLE_PLOT,
+    OUTCOME_COLORS,
+    apply_report_style,
+    apply_seaborn_style,
+    get_contract_color,
+)
 
 # Try to import seaborn, fall back gracefully
 try:
@@ -20,14 +30,9 @@ except ImportError:
     HAS_SEABORN = False
 
 
-# Color schemes
-SEAT_COLORS = ["#3498db", "#e74c3c", "#2ecc71", "#9b59b6"]  # Blue, Red, Green, Purple
-TRUMP_COLORS = {
-    "C": "#2c3e50",  # Clubs - dark gray
-    "D": "#e67e22",  # Diamonds - orange
-    "H": "#c0392b",  # Hearts - red
-    "S": "#34495e",  # Spades - dark blue-gray
-}
+def _cycle_base_colors(n: int) -> List[str]:
+    """Cycle through BASE_COLORS to get n colors."""
+    return [BASE_COLORS[i % len(BASE_COLORS)] for i in range(n)]
 
 
 def _apply_style() -> None:
@@ -39,7 +44,7 @@ def _apply_style() -> None:
 
 def plot_hand_value_by_seat(
     df: pd.DataFrame,
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Plot hand_value distribution by seat.
@@ -67,11 +72,12 @@ def plot_hand_value_by_seat(
     seats = sorted(df["seat"].unique())
     data = [df[df["seat"] == s]["feat_hand_value"].values for s in seats]
 
+    seat_colors = _cycle_base_colors(len(seats))
     if HAS_SEABORN:
-        sns.boxplot(data=df, x="seat", y="feat_hand_value", ax=ax, palette=SEAT_COLORS)
+        sns.boxplot(data=df, x="seat", y="feat_hand_value", ax=ax, palette=seat_colors)
     else:
         bp = ax.boxplot(data, labels=[f"Seat {s}" for s in seats], patch_artist=True)
-        for patch, color in zip(bp["boxes"], SEAT_COLORS):
+        for patch, color in zip(bp["boxes"], seat_colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.7)
 
@@ -91,7 +97,7 @@ def plot_hand_value_by_seat(
 
 def plot_hand_value_by_contract(
     df: pd.DataFrame,
-    figsize: Tuple[int, int] = (12, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Plot hand_value distribution by contract type.
@@ -141,7 +147,7 @@ def plot_hand_value_by_contract(
 def plot_feature_distributions(
     df: pd.DataFrame,
     features: Optional[List[str]] = None,
-    figsize: Tuple[int, int] = (14, 10),
+    figsize: Tuple[int, int] = FIGSIZE_COMPARISON,
     ncols: int = 3,
 ) -> plt.Figure:
     """Plot histograms of multiple features in a grid.
@@ -187,7 +193,7 @@ def plot_feature_distributions(
         ax = axes[row, col_idx]
 
         values = df[col].dropna()
-        ax.hist(values, bins=30, color="#3498db", alpha=0.7, edgecolor="black")
+        ax.hist(values, bins=30, color=BASE_COLORS[0], alpha=0.7, edgecolor="black")
         ax.set_xlabel(col.replace("feat_", ""))
         ax.set_ylabel("Count")
         ax.axvline(values.mean(), color="red", linestyle="--", label=f"Mean: {values.mean():.2f}")
@@ -206,7 +212,7 @@ def plot_feature_distributions(
 def plot_feature_correlation(
     df: pd.DataFrame,
     features: Optional[List[str]] = None,
-    figsize: Tuple[int, int] = (10, 8),
+    figsize: Tuple[int, int] = FIGSIZE_MATRIX,
 ) -> plt.Figure:
     """Plot feature correlation heatmap.
 
@@ -281,7 +287,7 @@ def plot_rolling_mean(
     df: pd.DataFrame,
     column: str = "feat_hand_value",
     window: int = 100,
-    figsize: Tuple[int, int] = (12, 5),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Plot rolling mean of a column over hand index.
@@ -311,7 +317,7 @@ def plot_rolling_mean(
     values = df_sorted[column].values
     rolling = pd.Series(values).rolling(window=window, min_periods=1).mean()
 
-    ax.plot(rolling, color="#3498db", linewidth=1.5, label=f"Rolling mean (window={window})")
+    ax.plot(rolling, color=BASE_COLORS[0], linewidth=1.5, label=f"Rolling mean (window={window})")
     ax.axhline(values.mean(), color="red", linestyle="--", label=f"Global mean: {values.mean():.3f}")
 
     ax.set_xlabel("Row Index")
@@ -328,7 +334,7 @@ def plot_feature_vs_label(
     df: pd.DataFrame,
     feature: str,
     label: str = "feat_hand_value",
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
 ) -> plt.Figure:
     """Plot scatter/binned boxplot of feature vs label.
 
@@ -396,7 +402,7 @@ def plot_feature_vs_outcome(
     df: pd.DataFrame,
     feature: str,
     outcome: str = "tricks_won",
-    figsize: Tuple[int, int] = (12, 5),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
 ) -> plt.Figure:
     """Plot scatter + binned boxplot for feature vs outcome with correlation.
 
@@ -432,7 +438,7 @@ def plot_feature_vs_outcome(
 
     # Left: Scatter plot
     ax = axes[0]
-    ax.scatter(df[feat_col], df[outcome], alpha=0.3, s=10, c="#3498db")
+    ax.scatter(df[feat_col], df[outcome], alpha=0.3, s=10, c=BASE_COLORS[0])
     ax.set_xlabel(feat_col.replace("feat_", ""))
     ax.set_ylabel(outcome.replace("_", " ").title())
     ax.set_title("Scatter Plot")
@@ -476,7 +482,7 @@ def plot_outcome_distributions(
     df: pd.DataFrame,
     outcome: str = "tricks_won",
     group_by: str = "contract_type",
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Plot violin/box plots of outcome distribution grouped by category.
@@ -530,7 +536,7 @@ def plot_feature_outcome_correlation(
     outcome: str = "tricks_won",
     features: Optional[List[str]] = None,
     top_n: int = 15,
-    figsize: Tuple[int, int] = (10, 8),
+    figsize: Tuple[int, int] = FIGSIZE_MATRIX,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Plot horizontal bar chart of feature correlations with outcome.
@@ -587,7 +593,7 @@ def plot_feature_outcome_correlation(
 
     labels = [c.replace("feat_", "") for c, _ in sorted_items]
     values = [v for _, v in sorted_items]
-    colors = ["#27ae60" if v > 0 else "#e74c3c" for v in values]
+    colors = [OUTCOME_COLORS["win"] if v > 0 else OUTCOME_COLORS["loss"] for v in values]
 
     y_pos = np.arange(len(labels))
     bars = ax.barh(y_pos, values, color=colors, alpha=0.8)
@@ -615,7 +621,7 @@ def plot_feature_outcome_correlation(
 def plot_cdf(
     df: pd.DataFrame,
     column: str = "feat_hand_value",
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
     group_by: Optional[str] = None,
 ) -> plt.Figure:
@@ -645,7 +651,7 @@ def plot_cdf(
     if group_by is not None and group_by in df.columns:
         # Plot CDF for each group
         groups = sorted(df[group_by].unique())
-        colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+        colors = _cycle_base_colors(len(groups))
 
         for group, color in zip(groups, colors):
             values = df[df[group_by] == group][column].dropna().sort_values()
@@ -663,7 +669,7 @@ def plot_cdf(
             return fig
 
         y = np.arange(1, len(values) + 1) / len(values)
-        ax.plot(values, y, color="#3498db", linewidth=2)
+        ax.plot(values, y, color=BASE_COLORS[0], linewidth=2)
 
         # Add reference lines at quartiles
         for q, ls in [(0.25, ":"), (0.5, "--"), (0.75, ":")]:
@@ -684,7 +690,7 @@ def plot_cdf(
 def plot_ccdf(
     df: pd.DataFrame,
     column: str = "feat_hand_value",
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     log_scale: bool = True,
     title: Optional[str] = None,
     group_by: Optional[str] = None,
@@ -721,7 +727,7 @@ def plot_ccdf(
     if group_by is not None and group_by in df.columns:
         # Plot CCDF for each group
         groups = sorted(df[group_by].unique())
-        colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+        colors = _cycle_base_colors(len(groups))
 
         for group, color in zip(groups, colors):
             values = df[df[group_by] == group][column].dropna().sort_values()
@@ -744,7 +750,7 @@ def plot_ccdf(
         ccdf = 1 - np.arange(1, len(values) + 1) / len(values)
         # Filter out zeros for log scale
         mask = ccdf > 0
-        ax.plot(values[mask], ccdf[mask], color="#e74c3c", linewidth=2)
+        ax.plot(values[mask], ccdf[mask], color=OUTCOME_COLORS["loss"], linewidth=2)
 
     ax.set_xlabel(column.replace("feat_", "").replace("_", " ").title())
     ax.set_ylabel("P(X > x)")
@@ -764,7 +770,7 @@ def plot_ccdf(
 
 def plot_hand_value_by_trump_suit(
     df: pd.DataFrame,
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     show_variance: bool = True,
     title: Optional[str] = None,
 ) -> plt.Figure:
@@ -804,7 +810,7 @@ def plot_hand_value_by_trump_suit(
 
     suits = ["C", "D", "H", "S"]
     available_suits = [s for s in suits if s in suit_df["trump"].values]
-    colors = [TRUMP_COLORS.get(s, "#95a5a6") for s in available_suits]
+    colors = [get_contract_color("suit", s) for s in available_suits]
 
     if HAS_SEABORN:
         sns.boxplot(
@@ -842,7 +848,7 @@ def plot_hand_value_by_trump_suit(
 def plot_outcome_by_trump_suit(
     df: pd.DataFrame,
     outcome: str = "tricks_won",
-    figsize: Tuple[int, int] = (10, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Outcome distribution by trump suit.
@@ -881,7 +887,7 @@ def plot_outcome_by_trump_suit(
 
     suits = ["C", "D", "H", "S"]
     available_suits = [s for s in suits if s in suit_df["trump"].values]
-    colors = [TRUMP_COLORS.get(s, "#95a5a6") for s in available_suits]
+    colors = [get_contract_color("suit", s) for s in available_suits]
 
     if HAS_SEABORN:
         sns.violinplot(
@@ -913,7 +919,7 @@ def plot_feature_heatmap_by_suit(
     df: pd.DataFrame,
     features: Optional[List[str]] = None,
     normalize: bool = True,
-    figsize: Tuple[int, int] = (12, 6),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Heatmap showing mean feature values by trump suit.
@@ -1019,7 +1025,7 @@ def plot_feature_heatmap_by_suit(
 def plot_suit_variance_summary(
     df: pd.DataFrame,
     column: str = "feat_hand_value",
-    figsize: Tuple[int, int] = (8, 5),
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
     title: Optional[str] = None,
 ) -> plt.Figure:
     """Bar chart comparing variance of a column across trump suits.
@@ -1057,7 +1063,7 @@ def plot_suit_variance_summary(
 
     suits = ["C", "D", "H", "S"]
     available_suits = [s for s in suits if s in suit_df["trump"].values]
-    colors = [TRUMP_COLORS.get(s, "#95a5a6") for s in available_suits]
+    colors = [get_contract_color("suit", s) for s in available_suits]
 
     # Compute variance for each suit
     variances = [suit_df[suit_df["trump"] == s][column].var() for s in available_suits]
