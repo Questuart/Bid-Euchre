@@ -25,10 +25,31 @@
 # ---
 
 # %% [markdown]
-# # Phase 0: Outcome Health ChecksThis notebook validates simulation **outcomes** (tricks_won) for the bidless Euchre dataset.**Scope:**- Outcome validity (range, contract-type breakdown)- Reproducibility checks- Outcome distributions by contract type, seat, trump- Strategy matchup analysis- CDF/CCDF tail analysis**Counterpart:**- See `10_feature_health_checks.ipynb` for feature validation**Quick start:**1. Set `MODE = "QUICK"` or `MODE = "FULL"`2. Run all cells3. Review fail-fast assertions and summary
+# # Phase 0: Outcome Health Checks
+#
+# This notebook validates simulation **outcomes** (tricks_won) for the bidless Euchre dataset.
+#
+# **Scope:**
+# - Outcome validity (range, contract-type breakdown)
+# - Reproducibility checks
+# - Outcome distributions by contract type, seat, trump
+# - Strategy matchup analysis
+# - CDF/CCDF tail analysis
+#
+# **Counterpart:**
+# - See `10_feature_health_checks.ipynb` for feature validation
+#
+# **Quick start:**
+# 1. Set `MODE = "QUICK"` or `MODE = "FULL"`
+# 2. Run all cells
+# 3. Review fail-fast assertions and summary
 
 # %% [markdown]
-# ---## Section 0: Configuration & SetupSet experiment parameters and import utilities.
+# ---
+#
+# ## Section 0: Configuration & Setup
+#
+# Set experiment parameters and import utilities.
 
 # %%
 # ============================================================================
@@ -132,10 +153,16 @@ if 'strategy_id' in outcome_df.columns:
 print("=" * 70)
 
 # %% [markdown]
-# ---## Section 2: Fail-Fast Validation TestsCritical assertions that must pass before proceeding with analysis.
+# ---
+#
+# ## Section 2: Fail-Fast Validation Tests
+#
+# Critical assertions that must pass before proceeding with analysis.
 
 # %% [markdown]
-# ### Test 3: Outcome Validity (with Contract-Type Breakdown)**Enhancement:** This test now breaks down outcome statistics by contract type to detect contract-specific simulation bugs.
+# ### Test 3: Outcome Validity (with Contract-Type Breakdown)
+#
+# **Enhancement:** This test now breaks down outcome statistics by contract type to detect contract-specific simulation bugs.
 
 # %%
 # ============================================================================
@@ -209,7 +236,9 @@ else:
     print("\n⚠️  SKIPPED: outcome_df does not have tricks_won column")
 
 # %% [markdown]
-# ### Test 4: Reproducibility Check (Outcome Portion)Verify that running with the same seed produces identical outcomes.
+# ### Test 4: Reproducibility Check (Outcome Portion)
+#
+# Verify that running with the same seed produces identical outcomes.
 
 # %%
 # ============================================================================
@@ -265,7 +294,11 @@ print("✅ Reproducibility check PASSED")
 print("=" * 70)
 
 # %% [markdown]
-# ---## Section 3: Outcome Distributions by Contract TypeVisualize outcome distributions segregated by contract type using violin plots.
+# ---
+#
+# ## Section 3: Outcome Distributions by Contract Type
+#
+# Visualize outcome distributions segregated by contract type using violin plots.
 
 # %%
 # ============================================================================
@@ -336,7 +369,11 @@ plt.show()
 print("✓ Seat-level outcome distributions plotted")
 
 # %% [markdown]
-# ---## Section 4: Strategy Matchup AnalysisCompare outcomes across different strategy pairings (if applicable).
+# ---
+#
+# ## Section 4: Strategy Matchup Analysis
+#
+# Compare outcomes across different strategy pairings (if applicable).
 
 # %%
 # ============================================================================
@@ -433,7 +470,11 @@ else:
     print("  (Skipped - no strategy variation)")
 
 # %% [markdown]
-# ---## Section 5: Trump Suit Analysis (Suit Contracts Only)Examine outcome variation by trump suit for suit contracts.
+# ---
+#
+# ## Section 5: Trump Suit Analysis (Suit Contracts Only)
+#
+# Examine outcome variation by trump suit for suit contracts.
 
 # %%
 # ============================================================================
@@ -489,7 +530,11 @@ else:
     print("\n⚠️  No trump column - skipping trump analysis")
 
 # %% [markdown]
-# ---## Section 6: Distribution Analysis (CDF/CCDF)Cumulative distribution functions to examine tail behavior.
+# ---
+#
+# ## Section 6: Distribution Analysis (CDF/CCDF)
+#
+# Cumulative distribution functions to examine tail behavior.
 
 # %%
 # ============================================================================
@@ -555,7 +600,11 @@ plt.show()
 print("✓ CCDF plotted")
 
 # %% [markdown]
-# ---## Section 7: SummaryFinal health scorecard for outcome validation.
+# ---
+#
+# ## Section 7: Summary
+#
+# Final health scorecard for outcome validation.
 
 # %%
 # ============================================================================
@@ -632,4 +681,12 @@ else:
 print("=" * 70)
 
 # %% [markdown]
-# ---## End of Notebook**Next steps:**- If failures detected, investigate simulation logic- If warnings present, consider increasing sample size (use MODE="FULL")- See `10_feature_health_checks.ipynb` for feature validation- See `30_feature_outcome_eval.ipynb` for feature-label relationships
+# ---
+#
+# ## End of Notebook
+#
+# **Next steps:**
+# - If failures detected, investigate simulation logic
+# - If warnings present, consider increasing sample size (use MODE="FULL")
+# - See `10_feature_health_checks.ipynb` for feature validation
+# - See `30_feature_outcome_eval.ipynb` for feature-label relationships
