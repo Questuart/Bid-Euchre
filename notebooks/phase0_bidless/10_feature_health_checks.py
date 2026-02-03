@@ -2,6 +2,7 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: tags
+#     formats: py:percent,ipynb
 #     notebook_metadata_filter: jupytext,kernelspec,language_info
 #     text_representation:
 #       extension: .py
@@ -157,6 +158,35 @@ def plot_violin_box(data, x, y, ax, palette='Set2', box_width=0.15, **kwargs):
 
 
 print("✅ Shared plotting helper loaded")
+
+
+def is_paired_data(df: pd.DataFrame, group_col: str, value_col: str = 'hand_id') -> bool:
+    """Check if same hand_ids/deal_ids appear across all groups (paired design).
+
+    Args:
+        df: DataFrame with observations
+        group_col: Column defining groups (e.g., 'contract_type')
+        value_col: Column to check for pairing (default 'hand_id')
+
+    Returns:
+        True if all IDs appear in all groups (paired data)
+    """
+    groups = df[group_col].unique()
+    if len(groups) < 2:
+        return False
+
+    # Get IDs for each group
+    id_sets = [set(df[df[group_col] == g][value_col].unique()) for g in groups]
+
+    # Check if intersection equals all sets (same IDs in all groups)
+    common_ids = set.intersection(*id_sets)
+    all_ids = set.union(*id_sets)
+
+    # Consider paired if >90% of IDs appear in all groups
+    return len(common_ids) / len(all_ids) > 0.9 if all_ids else False
+
+
+print("✅ Paired data helper loaded")
 
 
 # %%
@@ -383,7 +413,7 @@ else:
 # SECTION 4.1.0: BY CONTRACT_TYPE
 # ============================================================================
 
-from scipy.stats import f_oneway, ttest_ind
+from scipy.stats import f_oneway, friedmanchisquare, ttest_ind
 
 print("=" * 80)
 print("SECTION 4.1.0: HAND VALUE BY CONTRACT_TYPE")
@@ -394,16 +424,26 @@ print("\n=== Descriptive Statistics by Contract Type ===")
 contract_stats = df.groupby('contract_type')['feat_hand_value'].agg(['count', 'mean', 'std', 'min', 'max'])
 display(contract_stats)
 
-# One-way ANOVA across contract types
+# Statistical test across contract types (paired or independent)
 contract_groups = [df[df['contract_type'] == ct]['feat_hand_value'].values
                    for ct in ['suit', 'high', 'low']]
 
-f_stat, p_value = f_oneway(*contract_groups)
+# Check if paired (same hand_ids across contract types)
+paired = is_paired_data(df, 'contract_type')
+if paired and len(contract_groups) >= 3:
+    min_len = min(len(g) for g in contract_groups)
+    aligned = [g[:min_len] for g in contract_groups]
+    stat, p_value = friedmanchisquare(*aligned)
+    test_name = "Friedman"
+else:
+    stat, p_value = f_oneway(*contract_groups)
+    test_name = "ANOVA"
 
-print("\n=== ANOVA: Hand Value ~ Contract_Type ===")
-print(f"  F-statistic: {f_stat:.4f}")
+print(f"\n=== {test_name}: Hand Value ~ Contract_Type ===")
+print(f"  {'Chi-squared' if test_name == 'Friedman' else 'F'}-statistic: {stat:.4f}")
 print(f"  p-value: {p_value:.4f}")
 print("  Significance level: α = 0.05")
+print(f"  Test type: {test_name} ({'paired' if paired else 'independent'})")
 
 # Effect size (eta-squared)
 grand_mean = df['feat_hand_value'].mean()
@@ -442,16 +482,26 @@ if len(suit_df) > 0:
     trump_stats = suit_df.groupby('trump_suit')['feat_hand_value'].agg(['count', 'mean', 'std'])
     display(trump_stats)
 
-    # One-way ANOVA for trump suit equivalence
+    # Statistical test for trump suit equivalence (paired or independent)
     groups = [suit_df[suit_df['trump_suit'] == suit]['feat_hand_value'].values
               for suit in ['C', 'D', 'H', 'S']]
 
-    f_stat, p_value = f_oneway(*groups)
+    # Check if paired (same hand_ids across trump suits)
+    paired = is_paired_data(suit_df, 'trump_suit')
+    if paired and len(groups) >= 3:
+        min_len = min(len(g) for g in groups)
+        aligned = [g[:min_len] for g in groups]
+        stat, p_value = friedmanchisquare(*aligned)
+        test_name = "Friedman"
+    else:
+        stat, p_value = f_oneway(*groups)
+        test_name = "ANOVA"
 
-    print("\n=== ANOVA: Hand Value ~ Trump Suit ===")
-    print(f"  F-statistic: {f_stat:.4f}")
+    print(f"\n=== {test_name}: Hand Value ~ Trump Suit ===")
+    print(f"  {'Chi-squared' if test_name == 'Friedman' else 'F'}-statistic: {stat:.4f}")
     print(f"  p-value: {p_value:.4f}")
     print("  Significance level: α = 0.05")
+    print(f"  Test type: {test_name} ({'paired' if paired else 'independent'})")
 
     # Effect size (eta-squared)
     grand_mean = suit_df['feat_hand_value'].mean()

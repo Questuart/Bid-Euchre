@@ -39,7 +39,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -226,6 +226,7 @@ def main():
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
     mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
+    pair_deals = config.parameters.get("pair_deals", False)
     
     # Get strategies and bidding policies
     strategy_cfgs = config.strategies
@@ -319,6 +320,7 @@ def main():
     print(f"Log level: {log_level_str}")
     print(f"Total hands to simulate: {plan_count * len(scenarios) * n_per:,}")
     print(f"Common deals: {'Yes' if seed is not None else 'No (random deals)'}")
+    print(f"Paired deals: {'Yes (same deals across scenarios)' if pair_deals else 'No'}")
     print(f"Mode: {mode}")
     if mode == "head_to_head":
         print(f"Team1 strategy: {team1_strategy_name}")
@@ -355,6 +357,7 @@ def main():
             "n_per": n_per,
             "seed": seed,
             "log_level": log_level_str,
+            "pair_deals": pair_deals,
         },
         "mode": mode,
         "strategies": [{"name": s.name, "class_name": getattr(s, "class_name", s.__class__.__name__)} for s in strategy_cfgs],
@@ -387,8 +390,9 @@ def main():
         if not args.emit_bidless_dataset:
             return None
 
-        # Collector indexed by deal_id
-        hand_collectors: Dict[int, BidlessDatasetCollector] = {}
+        # Collector indexed by (deal_id, contract_type, trump_suit) to avoid collisions
+        # when the same deal is played under different scenarios (e.g., pair_deals=True)
+        hand_collectors: Dict[Tuple[int, str, Optional[str]], BidlessDatasetCollector] = {}
 
         def on_hand_end(event: HandEndEvent) -> None:
             """Record hand data when each hand completes."""
@@ -397,11 +401,14 @@ def main():
             if event.contract_type is None:
                 return
 
-            # Create collector for this hand if needed
-            if event.deal_id not in hand_collectors:
-                hand_collectors[event.deal_id] = BidlessDatasetCollector(run_id, event.deal_id)
+            # Key by (deal_id, contract_type, trump_suit) to handle paired deals
+            collector_key = (event.deal_id, event.contract_type, event.trump_suit)
 
-            collector = hand_collectors[event.deal_id]
+            # Create collector for this hand if needed
+            if collector_key not in hand_collectors:
+                hand_collectors[collector_key] = BidlessDatasetCollector(run_id, event.deal_id)
+
+            collector = hand_collectors[collector_key]
 
             # Record all 4 seats
             for seat in range(4):
@@ -525,7 +532,12 @@ def main():
                     ]
 
                 for i, scenario in enumerate(scenarios, 1):
-                    scenario_seed = seed + (i - 1) if seed is not None else None
+                    # When pair_deals=True, use the same seed for all scenarios
+                    # so the same physical deals are played under different contracts
+                    if pair_deals and seed is not None:
+                        scenario_seed = seed  # Same seed = same physical deals
+                    else:
+                        scenario_seed = seed + (i - 1) if seed is not None else None
 
                     label = scenario.contract_type or "auction"
                     if scenario.trump_suit:
@@ -623,7 +635,12 @@ def main():
 
             try:
                 for i, scenario in enumerate(scenarios, 1):
-                    scenario_seed = seed + (i - 1) if seed is not None else None
+                    # When pair_deals=True, use the same seed for all scenarios
+                    # so the same physical deals are played under different contracts
+                    if pair_deals and seed is not None:
+                        scenario_seed = seed  # Same seed = same physical deals
+                    else:
+                        scenario_seed = seed + (i - 1) if seed is not None else None
 
                     label = scenario.contract_type or "auction"
                     if scenario.trump_suit:
@@ -735,6 +752,7 @@ def main():
         "bidding_policies": [p.name for p in bidding_policies],
         "leader_randomized": True,  # Always true with new deal generator
         "common_deals": seed is not None,  # Only true if seed provided
+        "pair_deals": pair_deals,  # True = same physical deals across all scenarios
         "total_hands": total_hands,
     }
     

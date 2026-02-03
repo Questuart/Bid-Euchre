@@ -116,7 +116,7 @@ import pandas as pd
 import seaborn as sns
 import statsmodels.api as sm
 from IPython.display import display
-from scipy.stats import f_oneway, pearsonr, ttest_ind
+from scipy.stats import f_oneway, friedmanchisquare, pearsonr, ttest_ind
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -142,6 +142,32 @@ sns.set_style('whitegrid')
 plt.rcParams['figure.figsize'] = (12, 6)
 
 print("Imports complete")
+
+
+def is_paired_data(df: pd.DataFrame, group_col: str, value_col: str = 'deal_id') -> bool:
+    """Check if same deal_ids appear across all groups (paired design).
+
+    Args:
+        df: DataFrame with observations
+        group_col: Column defining groups (e.g., 'contract_type')
+        value_col: Column to check for pairing (default 'deal_id')
+
+    Returns:
+        True if all deal_ids appear in all groups (paired data)
+    """
+    groups = df[group_col].unique()
+    if len(groups) < 2:
+        return False
+
+    # Get deal_ids for each group
+    deal_sets = [set(df[df[group_col] == g][value_col].unique()) for g in groups]
+
+    # Check if intersection equals all sets (same deals in all groups)
+    common_deals = set.intersection(*deal_sets)
+    all_deals = set.union(*deal_sets)
+
+    # Consider paired if >90% of deals appear in all groups
+    return len(common_deals) / len(all_deals) > 0.9 if all_deals else False
 
 
 # %%
@@ -608,26 +634,36 @@ for idx, strategy in enumerate(strategies):
 
     strat_df = analysis_df[analysis_df['seat_strategy'] == strategy]
 
-    # ANOVA across contract types
+    # Statistical test across contract types (paired or independent)
     contract_groups = [
         strat_df[strat_df['contract_type'] == ct]['tricks_won'].values
         for ct in CONTRACT_TYPES
         if len(strat_df[strat_df['contract_type'] == ct]) > 0
     ]
 
+    test_name = "ANOVA"
     if len(contract_groups) >= 2 and all(len(g) > 0 for g in contract_groups):
-        f_stat, p_value = f_oneway(*contract_groups)
-        # Eta-squared
+        # Check if paired (same deal_ids across contract types)
+        paired = is_paired_data(strat_df, 'contract_type')
+        if paired and len(contract_groups) >= 3:
+            min_len = min(len(g) for g in contract_groups)
+            aligned = [g[:min_len] for g in contract_groups]
+            stat, p_value = friedmanchisquare(*aligned)
+            test_name = "Friedman"
+        else:
+            stat, p_value = f_oneway(*contract_groups)
+        # Eta-squared (approximation for both tests)
         overall_mean = strat_df['tricks_won'].mean()
         ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in contract_groups)
         ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
         eta_sq = ss_between / ss_total if ss_total > 0 else 0
     else:
-        f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
+        stat, p_value, eta_sq = np.nan, np.nan, np.nan
 
     anova_results_contract.append({
         'strategy': strategy,
-        'f_stat': f_stat,
+        'test': test_name,
+        'stat': stat if 'stat' in dir() else np.nan,
         'p_value': p_value,
         'eta_sq': eta_sq,
         'n': len(strat_df),
@@ -698,25 +734,35 @@ if len(suit_only) > 0:
 
         strat_df = suit_only[suit_only['seat_strategy'] == strategy]
 
-        # ANOVA across trump suits
+        # Statistical test across trump suits (paired or independent)
         suit_groups = [
             strat_df[strat_df['trump'] == t]['tricks_won'].values
             for t in TRUMPS_FOR_SUIT_CONTRACTS
             if len(strat_df[strat_df['trump'] == t]) > 0
         ]
 
+        test_name = "ANOVA"
         if len(suit_groups) >= 2 and all(len(g) > 0 for g in suit_groups):
-            f_stat, p_value = f_oneway(*suit_groups)
+            # Check if paired (same deal_ids across trump suits)
+            paired = is_paired_data(strat_df, 'trump')
+            if paired and len(suit_groups) >= 3:
+                min_len = min(len(g) for g in suit_groups)
+                aligned = [g[:min_len] for g in suit_groups]
+                stat, p_value = friedmanchisquare(*aligned)
+                test_name = "Friedman"
+            else:
+                stat, p_value = f_oneway(*suit_groups)
             overall_mean = strat_df['tricks_won'].mean()
             ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in suit_groups)
             ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
             eta_sq = ss_between / ss_total if ss_total > 0 else 0
         else:
-            f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
+            stat, p_value, eta_sq = np.nan, np.nan, np.nan
 
         anova_results_suit.append({
             'strategy': strategy,
-            'f_stat': f_stat,
+            'test': test_name,
+            'stat': stat if 'stat' in dir() else np.nan,
             'p_value': p_value,
             'eta_sq': eta_sq,
             'n': len(strat_df),
