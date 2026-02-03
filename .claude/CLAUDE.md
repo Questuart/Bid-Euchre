@@ -44,7 +44,7 @@ make help     # see all targets
 
 ## Worktree-Only Workflow (MANDATORY)
 
-**CRITICAL:** All code changes MUST happen in dedicated git worktrees, never in the main checkout at `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre`.
+**CRITICAL:** All code changes MUST happen in dedicated git worktrees, never in the shared main checkout. Verify your checkout path with `git rev-parse --show-toplevel`.
 
 ### Before Making Any Changes
 
