@@ -415,8 +415,13 @@ if len(suit_df) > 0:
     fig, ax = plt.subplots(figsize=(10, 5))
     try:
         import seaborn as sns
+        # Violin plot for distribution shape
         sns.violinplot(data=suit_df, x='trump_suit', y='feat_hand_value', ax=ax,
-                       inner='quartile', cut=0, palette='Set2')
+                       inner=None, cut=0, palette='Set2')
+        # Boxplot overlay for summary statistics
+        sns.boxplot(data=suit_df, x='trump_suit', y='feat_hand_value', ax=ax,
+                    width=0.15, palette='Set2', boxprops={'zorder': 2},
+                    flierprops={'marker': 'o', 'markersize': 3})
     except ImportError:
         suit_df.boxplot(column='feat_hand_value', by='trump_suit', ax=ax)
     ax.set_title('Hand Value by Trump Suit')
