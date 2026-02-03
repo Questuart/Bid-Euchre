@@ -64,6 +64,17 @@ CONTRACT_TYPES = ['suit', 'high', 'low']
 TRUMPS_FOR_SUIT_CONTRACTS = ['C', 'D', 'H', 'S']
 SEATS = [0, 1, 2, 3]
 
+# Strategy configuration (head-to-head matchups)
+STRATEGIES = [
+    {"name": "greedy", "class_name": "GreedyStrategy"},
+    {"name": "glutton", "class_name": "GluttonStrategy"},
+    {"name": "always_highest", "class_name": "AlwaysHighestLegalStrategy"},
+    {"name": "always_lowest", "class_name": "AlwaysLowestLegalStrategy"},
+]
+
+MATCHUP_MODE = "reverse_matchups"  # "reverse_matchups" or "per_seat_rotations"
+INCLUDE_REVERSE_MATCHUPS = True
+
 # Display
 import warnings
 
@@ -75,18 +86,23 @@ print(f"  Seed: {SEED}")
 print(f"  Contract types: {CONTRACT_TYPES}")
 print(f"  Trumps (suit contracts): {TRUMPS_FOR_SUIT_CONTRACTS}")
 print(f"  Seats: {SEATS}")
+print(f"  Strategies: {[s['name'] for s in STRATEGIES]}")
+print(f"  Matchup mode: {MATCHUP_MODE}")
 
 # %%
 # ============================================================================
 # Imports
 # ============================================================================
 
+import itertools
 import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
+from scipy.stats import f_oneway
 
 # Add src to path
 repo_root = Path.cwd().parent.parent
@@ -96,19 +112,26 @@ from bid_euchre.diagnostics.notebook_data import load_or_generate_outcomes
 
 print("\n✓ Imports complete")
 
+
 # %%
 # ============================================================================
-# Imports
+# Matchup Builders
 # ============================================================================
-import sys
-from pathlib import Path
 
-# Add src to path
-repo_root = Path.cwd().parent.parent
-sys.path.insert(0, str(repo_root / 'src'))
+def build_round_robin_matchups(strategy_names, include_reverse=True):
+    """Build team0 vs team1 matchups with optional reversals."""
+    pairs = list(itertools.combinations(strategy_names, 2))
+    matchups = [{"team0": a, "team1": b} for a, b in pairs]
+    if include_reverse:
+        matchups += [{"team0": b, "team1": a} for a, b in pairs]
+    return matchups
 
 
-print("\n✓ Imports complete")
+STRATEGY_NAMES = [s["name"] for s in STRATEGIES]
+MATCHUPS = build_round_robin_matchups(STRATEGY_NAMES, include_reverse=INCLUDE_REVERSE_MATCHUPS)
+
+print(f"Built {len(MATCHUPS)} matchups")
+print(f"Matchup examples: {MATCHUPS[:3]}")
 
 # %%
 # ============================================================================
@@ -121,6 +144,8 @@ outcome_df = load_or_generate_outcomes(
     contracts=CONTRACT_TYPES,
     trumps=TRUMPS_FOR_SUIT_CONTRACTS,
     seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=MATCHUPS,
 )
 
 print(f"\nOutcome dataset shape: {outcome_df.shape}")
@@ -151,6 +176,60 @@ if 'strategy_id' in outcome_df.columns:
     print(outcome_df['strategy_id'].value_counts())
 
 print("=" * 70)
+
+
+# %%
+# ============================================================================
+# Parse Matchup IDs and Derive seat_strategy
+# ============================================================================
+
+def parse_matchup_id(strategy_id: str) -> dict:
+    """Parse strategy_id to extract per-seat strategy mapping."""
+    if "_vs_" in strategy_id:
+        team0, team1 = strategy_id.split("_vs_", maxsplit=1)
+        return {
+            'team0_strategy': team0,
+            'team1_strategy': team1,
+            'seat0_strategy': team0,
+            'seat1_strategy': team1,
+            'seat2_strategy': team0,
+            'seat3_strategy': team1,
+        }
+    if strategy_id.startswith("seatmap__"):
+        parts = strategy_id.split("__")[1:]
+        if len(parts) == 4:
+            return {
+                'team0_strategy': parts[0],
+                'team1_strategy': parts[1],
+                'seat0_strategy': parts[0],
+                'seat1_strategy': parts[1],
+                'seat2_strategy': parts[2],
+                'seat3_strategy': parts[3],
+            }
+    return {}
+
+
+def get_seat_strategy(row):
+    """Map a row's seat to its strategy from the parsed matchup metadata."""
+    seat = row['seat']
+    col_name = f'seat{seat}_strategy'
+    return row.get(col_name, None)
+
+
+# Parse matchup metadata
+if 'strategy_id' in outcome_df.columns:
+    matchup_meta = outcome_df['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
+    outcome_df = pd.concat([outcome_df, matchup_meta], axis=1)
+
+    # Derive seat_strategy
+    if 'seat0_strategy' in outcome_df.columns:
+        outcome_df['seat_strategy'] = outcome_df.apply(get_seat_strategy, axis=1)
+        print("Derived seat_strategy column")
+        print(f"Unique seat strategies: {sorted(outcome_df['seat_strategy'].dropna().unique())}")
+    else:
+        print("⚠️  Could not derive seat_strategy - matchup parsing failed")
+else:
+    print("⚠️  No strategy_id column - skipping matchup parsing")
 
 # %% [markdown]
 # ---
@@ -631,7 +710,7 @@ if 'tricks_won' in outcome_df.columns:
             contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
             mean_tricks = contract_df['tricks_won'].mean()
             if 4.0 <= mean_tricks <= 6.0:
-                summary['passes'].append(f"  ✅ {contract_type.UPPER()}: mean={mean_tricks:.3f} in [4.0, 6.0]")
+                summary['passes'].append(f"  ✅ {contract_type.upper()}: mean={mean_tricks:.3f} in [4.0, 6.0]")
             else:
                 summary['warnings'].append(f"  ⚠️  {contract_type.upper()}: mean={mean_tricks:.3f} outside [4.0, 6.0]")
     else:
@@ -651,7 +730,6 @@ if 'trump' in outcome_df.columns and outcome_df['contract_type'].eq('suit').any(
     try:
         suit_df = outcome_df[outcome_df['contract_type'] == 'suit']
         trump_groups = [suit_df[suit_df['trump'] == t]['tricks_won'] for t in TRUMPS_FOR_SUIT_CONTRACTS]
-        from scipy.stats import f_oneway
         f_stat, p_value = f_oneway(*trump_groups)
         if p_value >= 0.05:
             summary['passes'].append(f"✅ Trump balance: no significant bias (p={p_value:.3f})")
@@ -660,7 +738,85 @@ if 'trump' in outcome_df.columns and outcome_df['contract_type'].eq('suit').any(
     except Exception:
         summary['warnings'].append("⚠️  Could not test trump balance")
 
+# Per-strategy seat bias checks
+if 'seat_strategy' in outcome_df.columns:
+    print("\nPer-Strategy Seat Bias Checks:")
+    print("-" * 50)
+    for strategy in sorted(outcome_df['seat_strategy'].dropna().unique()):
+        strat_df = outcome_df[outcome_df['seat_strategy'] == strategy]
+        for contract_type in CONTRACT_TYPES:
+            contract_df = strat_df[strat_df['contract_type'] == contract_type]
+            if len(contract_df) < 20:
+                continue
+            seat_groups = [contract_df[contract_df['seat'] == s]['tricks_won'] for s in SEATS]
+            # Filter out empty groups
+            seat_groups = [g for g in seat_groups if len(g) > 0]
+            if len(seat_groups) < 2:
+                continue
+            f_stat, p_value = f_oneway(*seat_groups)
+            status = "⚠️  BIAS" if p_value < 0.05 else "✓"
+            print(f"  {strategy} / {contract_type}: p={p_value:.3f} {status}")
+            if p_value < 0.05:
+                summary['warnings'].append(f"⚠️  Seat bias ({strategy}/{contract_type}): p={p_value:.3f}")
+            else:
+                summary['passes'].append(f"✅ Seat balance ({strategy}/{contract_type}): p={p_value:.3f}")
+
+# Reversal consistency check (if reverse matchups enabled)
+if INCLUDE_REVERSE_MATCHUPS and 'team0_strategy' in outcome_df.columns:
+    print("\nReversal Consistency Check:")
+    print("-" * 50)
+
+    # Aggregate to deal level with team tricks
+    team0_seats = {0, 2}
+    team1_seats = {1, 3}
+
+    def _deal_team_tricks(group):
+        team0_tricks = group[group['seat'].isin(team0_seats)]['tricks_won'].mean()
+        team1_tricks = group[group['seat'].isin(team1_seats)]['tricks_won'].mean()
+        return pd.Series({
+            'team0_tricks': team0_tricks,
+            'team1_tricks': team1_tricks,
+            'delta_tricks': team0_tricks - team1_tricks,
+        })
+
+    deal_summary = outcome_df.groupby(
+        ['strategy_id', 'team0_strategy', 'team1_strategy', 'deal_id'],
+        dropna=False,
+    ).apply(_deal_team_tricks).reset_index()
+
+    # Check each pair for reversal consistency
+    checked_pairs = set()
+    for (a, b), group_ab in deal_summary.groupby(['team0_strategy', 'team1_strategy']):
+        if pd.isna(a) or pd.isna(b):
+            continue
+        pair = tuple(sorted([a, b]))
+        if pair in checked_pairs:
+            continue
+        checked_pairs.add(pair)
+
+        # Find reverse matchup
+        group_ba = deal_summary[
+            (deal_summary['team0_strategy'] == b) &
+            (deal_summary['team1_strategy'] == a)
+        ]
+
+        if len(group_ba) > 0:
+            delta_ab = group_ab['delta_tricks'].mean()
+            delta_ba = group_ba['delta_tricks'].mean()
+            actual_sum = delta_ab + delta_ba
+            status = "✓" if abs(actual_sum) < 0.5 else "⚠️"
+            print(f"  {a} vs {b}: delta_ab={delta_ab:+.2f}, delta_ba={delta_ba:+.2f}, sum={actual_sum:+.2f} {status}")
+
+            if abs(actual_sum) >= 0.5:
+                summary['warnings'].append(f"⚠️  Reversal asymmetry ({a} vs {b}): sum={actual_sum:+.2f}")
+            else:
+                summary['passes'].append(f"✅ Reversal consistent ({a} vs {b})")
+
 # Print summary
+print("\n" + "=" * 70)
+print("SUMMARY")
+print("=" * 70)
+
 print("\nPASSES:")
 for item in summary['passes']:
     print(f"  {item}")
