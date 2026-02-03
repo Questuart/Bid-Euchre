@@ -2,6 +2,7 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: tags
+#     formats: py:percent,ipynb
 #     notebook_metadata_filter: jupytext,kernelspec,language_info
 #     text_representation:
 #       extension: .py
@@ -35,19 +36,20 @@
 # %% [markdown]
 # ## Outline
 #
-# - **Section 0: Configuration** - Mode, strategies, matchups
+# - **Section 0: Configuration** - Mode, strategies, matchups, data source
 # - **Section 1: Data Loading** - Feature + outcome data validation
 # - **Section 2: Strategy Comparison**
 #   - 2.1 Win Rate Evaluation
 #   - 2.2 Trick Distribution by Strategy
 #   - 2.3 Matchup Summary Table
-#   - 2.4 Performance by Contract Type
-#   - 2.5 Performance by Suit
-#   - 2.6 Performance by Team
-#   - 2.7 Performance by Seat
+#   - 2.4 Performance by Contract Type (Self-Play)
+#   - 2.5 Performance by Suit (Self-Play)
+#   - 2.6 Performance by Team (Self-Play)
+#   - 2.7 Performance by Seat (Self-Play)
 #   - 2.8 Rolling Mean Delta
-# - **Section 3: Feature-Outcome Correlations**
-# - **Section 4: Predictive Modeling & Feature Importance**
+#   - 2.9 Greedy vs Glutton Deep Dive
+# - **Section 3: Feature-Outcome Correlations** (by matchup type)
+# - **Section 4: Predictive Modeling & Feature Importance** (by matchup type)
 # - **Section 5: Summary** - Health scorecard
 
 # %% [markdown]
@@ -58,6 +60,12 @@
 # Configuration (papermill parameters)
 MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
 SEED = 42
+
+# --- Data Source Mode ---
+DEMO_MODE = True  # If True, generates synthetic data; if False, loads from RUN_DIR
+
+# If DEMO_MODE=False, set this path:
+RUN_DIR = "../../data/runs/YOUR_RUN_ID"  # Will load outcomes from RUN_DIR/logs/
 
 # Game parameters
 CONTRACT_TYPES = ['suit', 'high', 'low']
@@ -91,13 +99,16 @@ print(f"Sample size: {N_DEALS} deals")
 print(f"Total observations: {N_DEALS * len(SEATS) * (len(CONTRACT_TYPES) - 1 + len(TRUMPS_FOR_SUIT_CONTRACTS))}")
 print(f"Strategies: {[s['name'] for s in STRATEGIES]}")
 print(f"Matchup mode: {MATCHUP_MODE}")
+print(f"Demo mode: {DEMO_MODE}")
 
 # %% [markdown]
 # ### Imports
 
 # %%
 import itertools
+import json
 import warnings
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -201,17 +212,106 @@ print(f"Matchups: {len(MATCHUPS)}")
 # ---
 # ## Section 1: Data Loading
 
+
+# %%
+# ============================================================================
+# Data Loading Helper for Production Mode
+# ============================================================================
+
+def load_features_from_run_dir(run_dir: str) -> pd.DataFrame:
+    """Load feature + outcome data from an existing experiment run directory.
+
+    Parses hand_end events from JSONL logs to extract tricks_won per seat,
+    plus any logged features.
+
+    Args:
+        run_dir: Path to run directory containing logs/*.jsonl
+
+    Returns:
+        DataFrame with columns: deal_id, seat, contract_type, trump, tricks_won, strategy_id, feat_*
+    """
+    run_path = Path(run_dir)
+    logs_dir = run_path / "logs"
+
+    if not logs_dir.exists():
+        raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
+
+    # Find all JSONL log files
+    log_files = list(logs_dir.glob("*.jsonl"))
+    if not log_files:
+        raise FileNotFoundError(f"No JSONL logs found in {logs_dir}")
+
+    # Parse all hand_end events
+    hand_records = []
+    for log_file in log_files:
+        with open(log_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                record = json.loads(line)
+                if record.get('event') == 'hand_end':
+                    hand_records.append(record)
+
+    if not hand_records:
+        raise ValueError(f"No hand_end events found in {logs_dir}")
+
+    # Convert to per-seat outcome records
+    outcome_records = []
+    for hand in hand_records:
+        deal_id = hand['deal_id']
+        contract_type = hand['contract']
+        trump = hand.get('trump')  # None for high/low
+        strategy_id = hand['strategy_id']
+        t0 = hand['t0']  # Team 0 tricks (seats 0 & 2)
+        t1 = hand['t1']  # Team 1 tricks (seats 1 & 3)
+
+        # Extract features if present
+        features = {k: v for k, v in hand.items() if k.startswith('feat_')}
+
+        # Create one record per seat
+        for seat in range(4):
+            tricks_won = t0 if seat in [0, 2] else t1
+            record = {
+                'deal_id': deal_id,
+                'seat': seat,
+                'contract_type': contract_type,
+                'trump': trump,
+                'tricks_won': tricks_won,
+                'strategy_id': strategy_id,
+            }
+            record.update(features)
+            outcome_records.append(record)
+
+    # Convert to DataFrame
+    df = pd.DataFrame(outcome_records)
+
+    # Sort for consistency
+    df = df.sort_values(['deal_id', 'seat']).reset_index(drop=True)
+
+    return df
+
+
+print("Data loading helper defined")
+
+
 # %%
 # Load feature + outcome data
-data_df = load_or_generate_features(
-    mode=MODE,
-    seed=SEED,
-    contracts=CONTRACT_TYPES,
-    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-    seats=SEATS,
-    strategies=STRATEGIES,
-    matchups=MATCHUPS,
-)
+if DEMO_MODE:
+    print(f"DEMO_MODE: Generating synthetic data (mode={MODE}, seed={SEED})...")
+    data_df = load_or_generate_features(
+        mode=MODE,
+        seed=SEED,
+        contracts=CONTRACT_TYPES,
+        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+        seats=SEATS,
+        strategies=STRATEGIES,
+        matchups=MATCHUPS,
+    )
+else:
+    print(f"Loading data from RUN_DIR: {RUN_DIR}")
+    data_df = load_features_from_run_dir(RUN_DIR)
 
 print(f"Loaded {len(data_df)} observations")
 print(f"\nColumns: {list(data_df.columns)}")
@@ -364,8 +464,8 @@ summary_df = pd.DataFrame(summary_rows).sort_values('mean_delta', ascending=Fals
 fig = plot_win_rate_heatmap(matchup_results, metric="win_rate")
 plt.show()
 
-# Mean delta heatmap
-fig = plot_win_rate_heatmap(matchup_results, metric="mean_tricks_team0", title="Mean Tricks (Team 0) Heatmap")
+# Mean tricks heatmap (using fmt=".1f" for integer-like display)
+fig = plot_win_rate_heatmap(matchup_results, metric="mean_tricks_team0", title="Mean Tricks (Team 0) Heatmap", fmt=".1f")
 plt.show()
 
 # Fairness check: ANOVA on delta_tricks across matchups
@@ -397,6 +497,15 @@ else:
 #
 # Faceted grid showing strategy-normalized delta for each strategy.
 # For each deal where a strategy appears, the delta is oriented so positive = advantage for that strategy.
+#
+# **Strategy-Normalized Trick Delta:**
+#
+# For each strategy, delta is computed from that strategy's perspective:
+# - When assigned to Team 0: delta = team0_tricks - team1_tricks
+# - When assigned to Team 1: delta = team1_tricks - team0_tricks (sign flipped)
+#
+# This allows direct comparison of how each strategy performs across all its matchups.
+# Positive values indicate the strategy gained tricks; negative indicates lost tricks.
 
 # %%
 # Build strategy-normalized delta DataFrame
@@ -451,7 +560,7 @@ for idx, strategy in enumerate(strategies):
     ax.set_title(f"{strategy}\n(n={n_samples})")
     ax.set_ylabel("Normalized Delta")
     ax.set_xticks([])
-    ax.set_ylim(-6, 6)
+    ax.set_ylim(-10, 10)
     ax.grid(axis='y', alpha=0.3)
 
 # Hide unused axes
@@ -547,7 +656,7 @@ for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Contract Type", fontsize=12)
+fig.suptitle("Strategy Performance by Contract Type (Self-Play Matchups)", fontsize=12)
 plt.tight_layout()
 plt.show()
 
@@ -636,7 +745,7 @@ if len(suit_only) > 0:
         row_idx, col_idx = divmod(idx, n_cols)
         axes[row_idx, col_idx].axis('off')
 
-    fig.suptitle("Strategy Performance by Trump Suit (Suit Contracts Only)", fontsize=12)
+    fig.suptitle("Strategy Performance by Trump Suit (Self-Play Matchups)", fontsize=12)
     plt.tight_layout()
     plt.show()
 
@@ -745,7 +854,7 @@ for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Team Assignment", fontsize=12)
+fig.suptitle("Strategy Performance by Team Assignment (Self-Play Matchups)", fontsize=12)
 plt.tight_layout()
 plt.show()
 
@@ -830,7 +939,7 @@ for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Seat Position", fontsize=12)
+fig.suptitle("Strategy Performance by Seat Position (Self-Play Matchups)", fontsize=12)
 plt.tight_layout()
 plt.show()
 
@@ -842,6 +951,14 @@ if len(valid_p) > 0:
     anova_seat_df.loc[valid_p.index, 'p_adj'] = p_adj
 
 print("\nANOVA Results by Strategy (Seat Position Effect):")
+print("\n" + "=" * 70)
+print("WARNING: SEAT-LEVEL ANALYSIS CAVEAT")
+print("=" * 70)
+print("Due to team-level logging, seats within the same team share identical tricks_won.")
+print("  - Seats 0 & 2 (Team 0): show identical team0_tricks")
+print("  - Seats 1 & 3 (Team 1): show identical team1_tricks")
+print("Apparent seat effects reflect team assignment, not individual seat performance.")
+print("=" * 70 + "\n")
 display(anova_seat_df.round(4))
 
 # %% [markdown]
@@ -853,52 +970,488 @@ display(anova_seat_df.round(4))
 # %%
 ROLLING_WINDOW = 50
 
+# Define smart strategies for highlighting
+SMART_STRATEGIES = {'greedy', 'glutton'}
+
 rolling_rows = []
 for (team0, team1), group in deal_summary.groupby(['team0_strategy', 'team1_strategy']):
     group_sorted = group.sort_values('deal_id')
     rolling = group_sorted['delta_tricks'].rolling(ROLLING_WINDOW, min_periods=10).mean()
+    # Determine if this is a smart strategy matchup
+    is_smart = team0 in SMART_STRATEGIES and team1 in SMART_STRATEGIES
     rolling_rows.append(pd.DataFrame({
         'deal_id': group_sorted['deal_id'],
         'rolling_delta': rolling,
         'matchup': f"{team0}_vs_{team1}",
+        'is_smart_matchup': is_smart,
     }))
 
 rolling_df = pd.concat(rolling_rows, ignore_index=True)
+n_deals_total = len(deal_summary)
+
+# Create plot with highlighted smart matchups
 plt.figure(figsize=(12, 6))
-sns.lineplot(data=rolling_df, x='deal_id', y='rolling_delta', hue='matchup', alpha=0.7)
+
+# Plot non-smart matchups in gray (background)
+non_smart_df = rolling_df[~rolling_df['is_smart_matchup']]
+if len(non_smart_df) > 0:
+    for matchup in non_smart_df['matchup'].unique():
+        matchup_data = non_smart_df[non_smart_df['matchup'] == matchup]
+        plt.plot(matchup_data['deal_id'], matchup_data['rolling_delta'],
+                 color='gray', alpha=0.3, linewidth=1, label=None)
+
+# Plot smart matchups in distinct colors (foreground)
+smart_df = rolling_df[rolling_df['is_smart_matchup']]
+smart_colors = {'greedy_vs_greedy': 'blue', 'glutton_vs_glutton': 'orange',
+                'greedy_vs_glutton': 'green', 'glutton_vs_greedy': 'red'}
+for matchup in smart_df['matchup'].unique():
+    matchup_data = smart_df[smart_df['matchup'] == matchup]
+    color = smart_colors.get(matchup, 'purple')
+    plt.plot(matchup_data['deal_id'], matchup_data['rolling_delta'],
+             color=color, alpha=0.9, linewidth=2, label=matchup)
+
 plt.axhline(0, color='black', linewidth=0.8)
-plt.title(f"Rolling Mean Delta (Team0 - Team1), window={ROLLING_WINDOW}")
+plt.title(f"Rolling Mean Delta (n={n_deals_total} deals, window={ROLLING_WINDOW})")
 plt.ylabel("Rolling Delta (tricks)")
 plt.xlabel("Deal ID")
-plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8)
+plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8,
+           title="Smart Matchups\n(others in gray)")
 plt.tight_layout()
 plt.show()
 
 print("Caption: Rolling mean of per-deal Δ (team0 - team1) for each matchup, ordered by deal_id.")
+print("         Smart strategy matchups (greedy/glutton) highlighted; others in gray.")
 print("         Stable lines near 0 indicate no drift; divergence may indicate seed/config issues.")
 
 # %% [markdown]
-# ---
-# ## Section 3: Feature-Outcome Correlations
+# ### 2.9 Greedy vs Glutton Deep Dive
 #
-# Identify which hand features correlate with tricks won.
+# Detailed analysis of smart strategy matchups including:
+# - **greedy vs greedy** (self-play)
+# - **glutton vs glutton** (self-play)
+# - **greedy vs glutton** (head-to-head, both directions)
 
 # %%
-# Compute correlations by contract type
+# ============================================================================
+# Section 2.9: Greedy vs Glutton Deep Dive
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("SECTION 2.9: GREEDY VS GLUTTON DEEP DIVE")
+print("=" * 70)
+
+# Filter deal_summary for smart strategy matchups
+SMART_STRATEGIES = ['greedy', 'glutton']
+smart_matchups = deal_summary[
+    (deal_summary['team0_strategy'].isin(SMART_STRATEGIES)) &
+    (deal_summary['team1_strategy'].isin(SMART_STRATEGIES))
+].copy()
+
+# Create matchup type column
+def classify_matchup(row):
+    t0, t1 = row['team0_strategy'], row['team1_strategy']
+    if t0 == t1 == 'greedy':
+        return 'greedy_self_play'
+    elif t0 == t1 == 'glutton':
+        return 'glutton_self_play'
+    else:
+        return 'greedy_vs_glutton'
+
+smart_matchups['matchup_type'] = smart_matchups.apply(classify_matchup, axis=1)
+
+print(f"\nSmart matchup deals: {len(smart_matchups)}")
+print("\nMatchup type distribution:")
+print(smart_matchups['matchup_type'].value_counts())
+
+# %%
+# Panel 1: Performance summary table
+print("\n--- Performance Summary by Matchup Type ---")
+
+summary_stats = []
+for matchup_type in ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']:
+    subset = smart_matchups[smart_matchups['matchup_type'] == matchup_type]
+    if len(subset) == 0:
+        continue
+
+    # For head-to-head, compute from greedy's perspective
+    if matchup_type == 'greedy_vs_glutton':
+        greedy_as_t0 = subset[subset['team0_strategy'] == 'greedy']
+        greedy_as_t1 = subset[subset['team0_strategy'] == 'glutton']
+
+        # Normalize delta from greedy's perspective
+        greedy_deltas = list(greedy_as_t0['delta_tricks']) + list(-greedy_as_t1['delta_tricks'])
+        mean_delta = np.mean(greedy_deltas) if greedy_deltas else 0
+        std_delta = np.std(greedy_deltas) if greedy_deltas else 0
+        n = len(greedy_deltas)
+
+        # Win rate from greedy's perspective
+        greedy_wins = (greedy_as_t0['team0_tricks'] > 5).sum() + (greedy_as_t1['team1_tricks'] > 5).sum()
+        win_rate = greedy_wins / n if n > 0 else 0
+    else:
+        # Self-play: delta should be ~0, win rate ~0.5
+        mean_delta = subset['delta_tricks'].mean()
+        std_delta = subset['delta_tricks'].std()
+        n = len(subset)
+        win_rate = (subset['team0_tricks'] > 5).mean()
+
+    # Bootstrap 95% CI for mean delta
+    ci_lower, ci_upper = np.nan, np.nan
+    if n >= 10:
+        bootstrap_means = []
+        rng = np.random.default_rng(SEED)
+        for _ in range(1000):
+            if matchup_type == 'greedy_vs_glutton':
+                sample = rng.choice(greedy_deltas, size=n, replace=True)
+            else:
+                sample = rng.choice(subset['delta_tricks'].values, size=n, replace=True)
+            bootstrap_means.append(np.mean(sample))
+        ci_lower, ci_upper = np.percentile(bootstrap_means, [2.5, 97.5])
+
+    summary_stats.append({
+        'matchup_type': matchup_type,
+        'n_deals': n,
+        'mean_delta': mean_delta,
+        'std_delta': std_delta,
+        'ci_lower': ci_lower,
+        'ci_upper': ci_upper,
+        'win_rate': win_rate,
+    })
+
+summary_stats_df = pd.DataFrame(summary_stats)
+display(summary_stats_df.round(3))
+
+# %%
+# Panel 2: Win rate bar chart by matchup type
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+# Win rate comparison
+ax1 = axes[0]
+colors = ['steelblue', 'darkorange', 'green']
+bars = ax1.bar(summary_stats_df['matchup_type'], summary_stats_df['win_rate'], color=colors, alpha=0.7)
+ax1.axhline(0.5, color='red', linestyle='--', linewidth=1, label='Fair (0.5)')
+ax1.set_ylabel("Win Rate")
+ax1.set_title("Win Rate by Matchup Type\n(greedy_vs_glutton: from greedy's perspective)")
+ax1.set_ylim(0, 1)
+ax1.tick_params(axis='x', rotation=45)
+for bar, rate in zip(bars, summary_stats_df['win_rate']):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
+             f'{rate:.3f}', ha='center', fontsize=9)
+ax1.legend()
+ax1.grid(axis='y', alpha=0.3)
+
+# Mean delta comparison
+ax2 = axes[1]
+bars = ax2.bar(summary_stats_df['matchup_type'], summary_stats_df['mean_delta'], color=colors, alpha=0.7)
+ax2.errorbar(range(len(summary_stats_df)), summary_stats_df['mean_delta'],
+             yerr=[(summary_stats_df['mean_delta'] - summary_stats_df['ci_lower']).values,
+                   (summary_stats_df['ci_upper'] - summary_stats_df['mean_delta']).values],
+             fmt='none', color='black', capsize=5)
+ax2.axhline(0, color='red', linestyle='--', linewidth=1)
+ax2.set_ylabel("Mean Delta (tricks)")
+ax2.set_title("Mean Delta with 95% CI\n(greedy_vs_glutton: from greedy's perspective)")
+ax2.tick_params(axis='x', rotation=45)
+ax2.grid(axis='y', alpha=0.3)
+
+# Sample size
+ax3 = axes[2]
+bars = ax3.bar(summary_stats_df['matchup_type'], summary_stats_df['n_deals'], color=colors, alpha=0.7)
+ax3.set_ylabel("Number of Deals")
+ax3.set_title("Sample Size by Matchup Type")
+ax3.tick_params(axis='x', rotation=45)
+for bar, n in zip(bars, summary_stats_df['n_deals']):
+    ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5,
+             f'{n}', ha='center', fontsize=9)
+ax3.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# %%
+# Panel 3: Delta distribution (violin + box) for each matchup
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+matchup_types = ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']
+titles = ['Greedy Self-Play', 'Glutton Self-Play', 'Greedy vs Glutton\n(from greedy perspective)']
+
+for ax, mtype, title in zip(axes, matchup_types, titles):
+    subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
+
+    if mtype == 'greedy_vs_glutton':
+        # Normalize from greedy's perspective
+        greedy_as_t0 = subset[subset['team0_strategy'] == 'greedy']['delta_tricks']
+        greedy_as_t1 = -subset[subset['team0_strategy'] == 'glutton']['delta_tricks']
+        data = pd.concat([greedy_as_t0, greedy_as_t1]).values
+    else:
+        data = subset['delta_tricks'].values
+
+    if len(data) > 0:
+        parts = ax.violinplot([data], positions=[0], showmeans=False, showmedians=False)
+        for pc in parts['bodies']:
+            pc.set_facecolor('steelblue' if 'greedy' in mtype else 'darkorange')
+            pc.set_alpha(0.6)
+        ax.boxplot([data], positions=[0], widths=0.2)
+        ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+
+        mean_val = np.mean(data)
+        ax.axhline(mean_val, color='green', linestyle='-', linewidth=1, alpha=0.7)
+        ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
+
+    ax.set_title(f"{title}\n(n={len(data)})")
+    ax.set_ylabel("Delta (tricks)")
+    ax.set_xticks([])
+    ax.set_ylim(-10, 10)
+    ax.grid(axis='y', alpha=0.3)
+
+plt.suptitle("Delta Distribution by Matchup Type", fontsize=12, y=1.02)
+plt.tight_layout()
+plt.show()
+
+# %%
+# Panel 4: Performance by contract type for greedy vs glutton
+h2h_only = smart_matchups[smart_matchups['matchup_type'] == 'greedy_vs_glutton']
+
+if len(h2h_only) > 0:
+    fig, axes = plt.subplots(1, len(CONTRACT_TYPES), figsize=(5 * len(CONTRACT_TYPES), 5))
+    if len(CONTRACT_TYPES) == 1:
+        axes = [axes]
+
+    for ax, ct in zip(axes, CONTRACT_TYPES):
+        ct_data = h2h_only[h2h_only['contract_type'] == ct]
+
+        if len(ct_data) > 0:
+            # Normalize from greedy's perspective
+            greedy_t0 = ct_data[ct_data['team0_strategy'] == 'greedy']['delta_tricks']
+            greedy_t1 = -ct_data[ct_data['team0_strategy'] == 'glutton']['delta_tricks']
+            deltas = pd.concat([greedy_t0, greedy_t1]).values
+
+            if len(deltas) > 0:
+                parts = ax.violinplot([deltas], positions=[0], showmeans=False, showmedians=False)
+                for pc in parts['bodies']:
+                    pc.set_facecolor('green')
+                    pc.set_alpha(0.6)
+                ax.boxplot([deltas], positions=[0], widths=0.2)
+                ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+
+                mean_val = np.mean(deltas)
+                ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
+
+                # T-test against 0
+                from scipy.stats import ttest_1samp
+                if len(deltas) > 1:
+                    t_stat, p_val = ttest_1samp(deltas, 0)
+                    status = "**" if p_val < 0.01 else "*" if p_val < 0.05 else ""
+                    ax.set_title(f"{ct.upper()}\n(n={len(deltas)}, p={p_val:.3f}{status})")
+                else:
+                    ax.set_title(f"{ct.upper()}\n(n={len(deltas)})")
+            else:
+                ax.set_title(f"{ct.upper()}\n(no data)")
+        else:
+            ax.set_title(f"{ct.upper()}\n(no data)")
+
+        ax.set_ylabel("Delta (greedy - glutton)")
+        ax.set_xticks([])
+        ax.set_ylim(-10, 10)
+        ax.grid(axis='y', alpha=0.3)
+
+    plt.suptitle("Greedy vs Glutton: Delta by Contract Type\n(from greedy's perspective)", fontsize=12, y=1.02)
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No greedy vs glutton matchups found")
+
+# %%
+# Statistical tests summary
+print("\n--- Statistical Summary ---")
+
+# Self-play fairness check (delta should be ~0)
+for mtype in ['greedy_self_play', 'glutton_self_play']:
+    subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
+    if len(subset) > 1:
+        from scipy.stats import ttest_1samp
+        t_stat, p_val = ttest_1samp(subset['delta_tricks'], 0)
+        mean_delta = subset['delta_tricks'].mean()
+        status = "PASS" if abs(mean_delta) < 0.5 else "WARN"
+        print(f"{mtype}: mean_delta={mean_delta:.3f}, t={t_stat:.3f}, p={p_val:.3f} [{status}]")
+
+# Greedy vs glutton comparison
+if len(h2h_only) > 0:
+    greedy_t0 = h2h_only[h2h_only['team0_strategy'] == 'greedy']['delta_tricks']
+    greedy_t1 = -h2h_only[h2h_only['team0_strategy'] == 'glutton']['delta_tricks']
+    all_deltas = pd.concat([greedy_t0, greedy_t1]).values
+
+    if len(all_deltas) > 1:
+        from scipy.stats import ttest_1samp
+        t_stat, p_val = ttest_1samp(all_deltas, 0)
+        mean_delta = np.mean(all_deltas)
+        status = "SIGNIFICANT" if p_val < 0.05 else "NOT SIGNIFICANT"
+        print(f"greedy_vs_glutton: mean_delta={mean_delta:.3f}, t={t_stat:.3f}, p={p_val:.3f} [{status}]")
+
+        if p_val < 0.05:
+            winner = "greedy" if mean_delta > 0 else "glutton"
+            print(f"  -> {winner} significantly outperforms the other (p < 0.05)")
+
+print("\n" + "=" * 70)
+
+# %% [markdown]
+# ---
+# ## Section 3: Feature-Outcome Correlations by Matchup Type
+#
+# Identify which hand features correlate with tricks won, faceted by matchup type:
+# - **greedy × greedy** (self-play)
+# - **glutton × glutton** (self-play)
+# - **greedy × glutton** (head-to-head)
+
+# %%
+# ============================================================================
+# Section 3: Correlations Faceted by Matchup Type
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("FEATURE-OUTCOME CORRELATIONS BY MATCHUP TYPE")
+print("=" * 70)
+
+# Define key matchups for faceting
+# We need to add matchup type information to data_df
+data_df_with_matchup = data_df.copy()
+
+# Parse matchup type from strategy_id
+def get_matchup_type(strategy_id):
+    """Classify strategy_id into matchup type."""
+    if '_vs_' in strategy_id:
+        parts = strategy_id.split('_vs_')
+        t0, t1 = parts[0], parts[1]
+        if t0 == t1 == 'greedy':
+            return 'greedy_self_play'
+        elif t0 == t1 == 'glutton':
+            return 'glutton_self_play'
+        elif {t0, t1} == {'greedy', 'glutton'}:
+            return 'greedy_vs_glutton'
+    return 'other'
+
+data_df_with_matchup['matchup_type'] = data_df_with_matchup['strategy_id'].apply(get_matchup_type)
+
+# Filter to key matchups only
+KEY_MATCHUP_TYPES = ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']
+smart_data = data_df_with_matchup[data_df_with_matchup['matchup_type'].isin(KEY_MATCHUP_TYPES)]
+
+print(f"\nData filtered to smart matchups: {len(smart_data)} rows")
+print(smart_data['matchup_type'].value_counts())
+
 feat_cols = [c for c in data_df.columns if c.startswith('feat_')]
+
+# %%
+# Compute correlations for each matchup type
+correlation_results_by_matchup = []
+
+for matchup_type in KEY_MATCHUP_TYPES:
+    matchup_df = smart_data[smart_data['matchup_type'] == matchup_type]
+
+    if len(matchup_df) < 50:
+        print(f"Skipping {matchup_type}: insufficient data ({len(matchup_df)} rows)")
+        continue
+
+    for feat in feat_cols:
+        # Skip if feature has no variance
+        if matchup_df[feat].std() == 0:
+            continue
+
+        # Compute Pearson correlation
+        corr, p_value = pearsonr(matchup_df[feat], matchup_df['tricks_won'])
+
+        correlation_results_by_matchup.append({
+            'matchup_type': matchup_type,
+            'feature': feat,
+            'correlation': corr,
+            'p_value': p_value,
+            'significant': p_value < 0.05,
+            'n_samples': len(matchup_df),
+        })
+
+corr_by_matchup_df = pd.DataFrame(correlation_results_by_matchup)
+
+# Apply FDR correction per matchup type
+corr_by_matchup_df['p_adj'] = np.nan
+corr_by_matchup_df['significant_adj'] = False
+for matchup_type in KEY_MATCHUP_TYPES:
+    mask = corr_by_matchup_df['matchup_type'] == matchup_type
+    pvals = corr_by_matchup_df.loc[mask, 'p_value'].values
+    if len(pvals) > 0:
+        _, p_adj, _, _ = multipletests(pvals, method="fdr_bh")
+        corr_by_matchup_df.loc[mask, 'p_adj'] = p_adj
+        corr_by_matchup_df.loc[mask, 'significant_adj'] = p_adj < 0.05
+
+# Display top correlations by matchup type
+print("\nTop Correlations by Matchup Type")
+print("=" * 80)
+
+for matchup_type in KEY_MATCHUP_TYPES:
+    matchup_corrs = corr_by_matchup_df[corr_by_matchup_df['matchup_type'] == matchup_type]
+    if len(matchup_corrs) == 0:
+        continue
+    top_corrs = matchup_corrs.sort_values('correlation', key=abs, ascending=False).head(15).copy()
+    top_corrs['feature'] = top_corrs['feature'].str.replace('feat_', '', regex=False)
+    display_cols = ['feature', 'correlation', 'p_value', 'p_adj', 'significant_adj', 'n_samples']
+    print(f"\n{matchup_type.upper()}")
+    display(top_corrs[display_cols])
+
+# %%
+# Side-by-side correlation bar charts by matchup type
+n_matchups = len([mt for mt in KEY_MATCHUP_TYPES if len(corr_by_matchup_df[corr_by_matchup_df['matchup_type'] == mt]) > 0])
+fig, axes = plt.subplots(1, n_matchups, figsize=(6 * n_matchups, 8))
+if n_matchups == 1:
+    axes = [axes]
+
+matchup_colors = {
+    'greedy_self_play': 'steelblue',
+    'glutton_self_play': 'darkorange',
+    'greedy_vs_glutton': 'green',
+}
+
+ax_idx = 0
+for matchup_type in KEY_MATCHUP_TYPES:
+    matchup_corrs = corr_by_matchup_df[corr_by_matchup_df['matchup_type'] == matchup_type]
+    if len(matchup_corrs) == 0:
+        continue
+
+    ax = axes[ax_idx]
+    top_corrs = matchup_corrs.sort_values('correlation', key=abs, ascending=False).head(15)
+
+    features = top_corrs['feature'].values
+    corrs = top_corrs['correlation'].values
+
+    # Color by sign
+    colors = ['red' if c < 0 else matchup_colors.get(matchup_type, 'green') for c in corrs]
+    ax.barh(range(len(features)), corrs, color=colors, alpha=0.7)
+    ax.set_yticks(range(len(features)))
+    ax.set_yticklabels([f.replace('feat_', '') for f in features], fontsize=8)
+    ax.invert_yaxis()
+    ax.set_xlabel('Correlation with Tricks Won')
+    n_samples = top_corrs['n_samples'].iloc[0] if len(top_corrs) > 0 else 0
+    ax.set_title(f'{matchup_type}\n(Top 15, n={n_samples})')
+    ax.axvline(0, color='black', linestyle='-', linewidth=0.5)
+    ax.grid(axis='x', alpha=0.3)
+    ax.set_xlim(-0.5, 0.5)
+
+    ax_idx += 1
+
+plt.suptitle("Feature-Outcome Correlations by Matchup Type", fontsize=12, y=1.02)
+plt.tight_layout()
+plt.show()
+
+# %%
+# Also show original contract-type correlations for reference
+print("\n" + "=" * 70)
+print("CORRELATIONS BY CONTRACT TYPE (ALL MATCHUPS)")
+print("=" * 70)
 
 correlation_results = []
 for contract_type in CONTRACT_TYPES:
     contract_df = data_df[data_df['contract_type'] == contract_type]
 
     for feat in feat_cols:
-        # Skip if feature has no variance
         if contract_df[feat].std() == 0:
             continue
-
-        # Compute Pearson correlation
         corr, p_value = pearsonr(contract_df[feat], contract_df['tricks_won'])
-
         correlation_results.append({
             'contract_type': contract_type,
             'feature': feat,
@@ -921,10 +1474,6 @@ for contract_type in CONTRACT_TYPES:
         corr_df.loc[mask, 'p_adj'] = p_adj
         corr_df.loc[mask, 'significant_adj'] = p_adj < 0.05
 
-# Display top correlations by contract type (as tables)
-print("Top Correlations by Contract Type")
-print("=" * 80)
-
 for contract_type in CONTRACT_TYPES:
     contract_corrs = corr_df[corr_df['contract_type'] == contract_type].sort_values(
         'correlation', key=abs, ascending=False
@@ -934,21 +1483,18 @@ for contract_type in CONTRACT_TYPES:
     print(f"\n{contract_type.upper()} Contracts")
     display(contract_corrs[display_cols])
 
-# %%
-# Correlation heatmap by contract type
+# Contract-type correlation bar charts
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
 for i, contract_type in enumerate(CONTRACT_TYPES):
     ax = axes[i]
     contract_corrs = corr_df[corr_df['contract_type'] == contract_type].sort_values(
         'correlation', key=abs, ascending=False
-    ).head(15)  # Top 15 features
+    ).head(15)
 
-    # Create heatmap data
     features = contract_corrs['feature'].values
     corrs = contract_corrs['correlation'].values
 
-    # Plot horizontal bar chart (highest correlations on top)
     colors = ['red' if c < 0 else 'green' for c in corrs]
     ax.barh(range(len(features)), corrs, color=colors, alpha=0.6)
     ax.set_yticks(range(len(features)))
@@ -966,17 +1512,132 @@ print("✓ Correlation analysis complete")
 
 # %% [markdown]
 # ---
-# ## Section 4: Predictive Modeling & Feature Importance
+# ## Section 4: Predictive Modeling & Feature Importance by Matchup Type
 #
-# Train simple predictive models per contract type and compute permutation-based feature importance.
+# Train Ridge regression models faceted by matchup type:
+# - **greedy × greedy** (self-play)
+# - **glutton × glutton** (self-play)
+# - **greedy × glutton** (head-to-head)
 
 # %%
-# Train/test models per contract type
+# ============================================================================
+# Section 4: Ridge Regression Faceted by Matchup Type
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("PREDICTIVE MODELING BY MATCHUP TYPE")
+print("=" * 70)
+
+# Ensure matchup_type is in smart_data (from Section 3)
+# smart_data already has matchup_type column
+
+model_rows_by_matchup = []
+importance_tables_by_matchup = {}
+
+feat_cols = [c for c in data_df.columns if c.startswith('feat_')]
+
+for matchup_type in KEY_MATCHUP_TYPES:
+    matchup_df = smart_data[smart_data['matchup_type'] == matchup_type]
+    X = matchup_df[feat_cols].select_dtypes(include=[np.number])
+    y = matchup_df['tricks_won']
+
+    if len(matchup_df) < 50:
+        print(f"Skipping {matchup_type}: not enough data ({len(matchup_df)} rows)")
+        continue
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=SEED
+    )
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    ridge = Ridge(alpha=1.0, random_state=SEED)
+    ridge.fit(X_train_scaled, y_train)
+
+    y_pred = ridge.predict(X_test_scaled)
+    model_rows_by_matchup.append({
+        'matchup_type': matchup_type,
+        'r2': r2_score(y_test, y_pred),
+        'mae': mean_absolute_error(y_test, y_pred),
+        'n_train': len(X_train),
+        'n_test': len(X_test),
+    })
+
+    perm = permutation_importance(
+        ridge, X_test_scaled, y_test, n_repeats=5, random_state=SEED
+    )
+    perm_df = pd.DataFrame({
+        'feature': X.columns,
+        'perm_importance': perm.importances_mean,
+        'perm_std': perm.importances_std,
+    }).sort_values('perm_importance', ascending=False)
+    perm_df['feature'] = perm_df['feature'].str.replace('feat_', '', regex=False)
+    importance_tables_by_matchup[matchup_type] = perm_df
+
+model_summary_by_matchup_df = pd.DataFrame(model_rows_by_matchup)
+print("\nModel Summary by Matchup Type:")
+display(model_summary_by_matchup_df.round(4))
+
+# %%
+# Display importance summaries by matchup type
+for matchup_type in KEY_MATCHUP_TYPES:
+    if matchup_type not in importance_tables_by_matchup:
+        continue
+    print(f"\n{matchup_type.upper()} - Permutation Importance (Top 10)")
+    display(importance_tables_by_matchup[matchup_type].head(10))
+
+# %%
+# Side-by-side feature importance comparison
+n_matchups = len(importance_tables_by_matchup)
+if n_matchups > 0:
+    fig, axes = plt.subplots(1, n_matchups, figsize=(6 * n_matchups, 8))
+    if n_matchups == 1:
+        axes = [axes]
+
+    ax_idx = 0
+    for matchup_type in KEY_MATCHUP_TYPES:
+        if matchup_type not in importance_tables_by_matchup:
+            continue
+
+        ax = axes[ax_idx]
+        perm_df = importance_tables_by_matchup[matchup_type].head(15)
+
+        features = perm_df['feature'].values
+        importances = perm_df['perm_importance'].values
+        stds = perm_df['perm_std'].values
+
+        color = matchup_colors.get(matchup_type, 'gray')
+        ax.barh(range(len(features)), importances, xerr=stds, color=color, alpha=0.7, capsize=3)
+        ax.set_yticks(range(len(features)))
+        ax.set_yticklabels(features, fontsize=8)
+        ax.invert_yaxis()
+        ax.set_xlabel('Permutation Importance')
+
+        # Get R² for title
+        r2 = model_summary_by_matchup_df[model_summary_by_matchup_df['matchup_type'] == matchup_type]['r2'].values
+        r2_str = f", R²={r2[0]:.3f}" if len(r2) > 0 else ""
+        n_train = model_summary_by_matchup_df[model_summary_by_matchup_df['matchup_type'] == matchup_type]['n_train'].values
+        n_str = f"n={n_train[0]}" if len(n_train) > 0 else ""
+        ax.set_title(f'{matchup_type}\n({n_str}{r2_str})')
+        ax.grid(axis='x', alpha=0.3)
+
+        ax_idx += 1
+
+    plt.suptitle("Feature Importance by Matchup Type (Ridge + Permutation)", fontsize=12, y=1.02)
+    plt.tight_layout()
+    plt.show()
+
+# %%
+# Also show original contract-type models for reference
+print("\n" + "=" * 70)
+print("PREDICTIVE MODELING BY CONTRACT TYPE (ALL MATCHUPS)")
+print("=" * 70)
+
 model_rows = []
 importance_tables = {}
 ols_tables = {}
-
-feat_cols = [c for c in data_df.columns if c.startswith('feat_')]
 
 for contract_type in CONTRACT_TYPES:
     contract_df = data_df[data_df['contract_type'] == contract_type]
@@ -1032,10 +1693,10 @@ for contract_type in CONTRACT_TYPES:
     ols_tables[contract_type] = ols_df
 
 model_summary_df = pd.DataFrame(model_rows)
-model_summary_df
+display(model_summary_df.round(4))
 
 # %%
-# Display importance and coefficient summaries
+# Display importance and coefficient summaries by contract type
 for contract_type in CONTRACT_TYPES:
     if contract_type not in importance_tables:
         continue

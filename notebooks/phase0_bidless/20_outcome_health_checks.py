@@ -2,6 +2,7 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: tags
+#     formats: py:percent,ipynb
 #     notebook_metadata_filter: jupytext,kernelspec,language_info
 #     text_representation:
 #       extension: .py
@@ -34,6 +35,8 @@
 # - Section 1: Fail-Fast Validation Tests
 # - Section 2: Outcome Distribution Analysis (Self-play)
 # - Section 3: Strategy Analysis (Head-to-head)
+#   - 3.1-3.5: Heatmaps and distribution grids
+#   - 3.6: Strategy Sanity Tests
 # - Section 4: Distribution Analysis (CDF/CCDF)
 # - Section 5: Summary
 #
@@ -113,7 +116,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import f_oneway, ttest_rel
+from scipy.stats import f_oneway, kendalltau, ttest_rel
 
 # Add src to path
 repo_root = Path.cwd().parent.parent
@@ -1124,6 +1127,310 @@ matchup_summary = matchup_summary.rename(columns={
 
 print("\nMatchup Summary Table:")
 print(matchup_summary.to_string(index=False))
+
+# %% [markdown]
+# ### 3.6 Strategy Sanity Tests
+#
+# Automated validation tests for strategy behavior:
+# - **3.6.1 Self-Play Fairness**: Self-play delta should be ~0
+# - **3.6.2 Transitivity Sanity**: If A > B and B > C, then A should > C (WARN on violations)
+# - **3.6.3 Random Baseline Dominance**: Smart strategies must beat random
+# - **3.6.4 Deterministic Strategy Consistency**: Variance check for deterministic strategies
+# - **3.6.5 Rankings Stability**: Kendall's tau for strategy rankings across contract types
+
+# %%
+# ============================================================================
+# Section 3.6: Strategy Sanity Tests
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("SECTION 3.6: STRATEGY SANITY TESTS")
+print("=" * 70)
+
+sanity_results = {'passes': [], 'warnings': [], 'failures': []}
+
+# %%
+# --- 3.6.1 Self-Play Fairness ---
+print("\n--- 3.6.1 Self-Play Fairness ---")
+print("Test: Self-play mean delta should be ~0 (within CI)")
+
+for strat in STRATEGY_NAMES:
+    # Filter self-play matchups for this strategy
+    self_play_df = df_h2h_deal[
+        (df_h2h_deal['team0_strategy'] == strat) &
+        (df_h2h_deal['team1_strategy'] == strat)
+    ]
+
+    if len(self_play_df) < 10:
+        sanity_results['warnings'].append(f"3.6.1 {strat}: Insufficient self-play data (n={len(self_play_df)})")
+        continue
+
+    mean_delta = self_play_df['delta_tricks'].mean()
+    std_delta = self_play_df['delta_tricks'].std()
+    n = len(self_play_df)
+
+    # Bootstrap 95% CI
+    rng = np.random.default_rng(SEED)
+    bootstrap_means = [np.mean(rng.choice(self_play_df['delta_tricks'].values, size=n, replace=True))
+                       for _ in range(1000)]
+    ci_lower, ci_upper = np.percentile(bootstrap_means, [2.5, 97.5])
+
+    # Test: CI contains 0 OR |mean| < 0.25
+    ci_contains_zero = ci_lower <= 0 <= ci_upper
+    mean_near_zero = abs(mean_delta) < 0.25
+
+    if ci_contains_zero or mean_near_zero:
+        sanity_results['passes'].append(
+            f"3.6.1 {strat}: Self-play fair (μ={mean_delta:.3f}, CI=[{ci_lower:.3f}, {ci_upper:.3f}])"
+        )
+        print(f"  PASS: {strat} μ={mean_delta:.3f}, 95% CI=[{ci_lower:.3f}, {ci_upper:.3f}]")
+    elif abs(mean_delta) >= 0.5:
+        sanity_results['failures'].append(
+            f"3.6.1 {strat}: Self-play bias detected (μ={mean_delta:.3f}, CI=[{ci_lower:.3f}, {ci_upper:.3f}])"
+        )
+        print(f"  FAIL: {strat} μ={mean_delta:.3f}, 95% CI=[{ci_lower:.3f}, {ci_upper:.3f}] (|μ| >= 0.5)")
+    else:
+        sanity_results['warnings'].append(
+            f"3.6.1 {strat}: Self-play marginal (μ={mean_delta:.3f}, CI=[{ci_lower:.3f}, {ci_upper:.3f}])"
+        )
+        print(f"  WARN: {strat} μ={mean_delta:.3f}, 95% CI=[{ci_lower:.3f}, {ci_upper:.3f}]")
+
+# %%
+# --- 3.6.2 Transitivity Sanity ---
+print("\n--- 3.6.2 Transitivity Sanity ---")
+print("Test: If A > B and B > C, then A should > C (informational)")
+
+# Build win matrix from head-to-head results
+win_matrix = {}
+for strat in STRATEGY_NAMES:
+    win_matrix[strat] = {}
+    for opp in STRATEGY_NAMES:
+        if strat == opp:
+            win_matrix[strat][opp] = 0.5
+            continue
+        matchup_df = df_h2h_deal[
+            (df_h2h_deal['team0_strategy'] == strat) &
+            (df_h2h_deal['team1_strategy'] == opp)
+        ]
+        if len(matchup_df) > 0:
+            win_matrix[strat][opp] = matchup_df['team0_win'].mean()
+        else:
+            win_matrix[strat][opp] = np.nan
+
+# Check transitivity
+transitivity_violations = []
+for a in STRATEGY_NAMES:
+    for b in STRATEGY_NAMES:
+        if a == b:
+            continue
+        for c in STRATEGY_NAMES:
+            if c == a or c == b:
+                continue
+            # A > B means win_matrix[A][B] > 0.5
+            a_beats_b = win_matrix[a].get(b, np.nan) > 0.5
+            b_beats_c = win_matrix[b].get(c, np.nan) > 0.5
+            a_beats_c = win_matrix[a].get(c, np.nan) > 0.5
+
+            if a_beats_b and b_beats_c and not a_beats_c:
+                transitivity_violations.append(f"{a} > {b} > {c}, but {a} does not > {c}")
+
+if transitivity_violations:
+    for v in transitivity_violations[:5]:  # Show max 5
+        print(f"  WARN: {v}")
+    sanity_results['warnings'].append(
+        f"3.6.2 Transitivity: {len(transitivity_violations)} violation(s) detected"
+    )
+else:
+    sanity_results['passes'].append("3.6.2 Transitivity: No violations detected")
+    print("  PASS: No transitivity violations detected")
+
+# %%
+# --- 3.6.3 Random Baseline Dominance ---
+print("\n--- 3.6.3 Random Baseline Dominance ---")
+print("Test: greedy and glutton must beat random (win_rate > 0.5)")
+
+SMART_STRATEGIES = ['greedy', 'glutton']
+RANDOM_STRATEGY = 'random'
+
+for smart in SMART_STRATEGIES:
+    # Smart as team0 vs random as team1
+    matchup_df = df_h2h_deal[
+        (df_h2h_deal['team0_strategy'] == smart) &
+        (df_h2h_deal['team1_strategy'] == RANDOM_STRATEGY)
+    ]
+
+    if len(matchup_df) < 10:
+        sanity_results['warnings'].append(f"3.6.3 {smart} vs random: Insufficient data (n={len(matchup_df)})")
+        continue
+
+    win_rate = matchup_df['team0_win'].mean()
+    n = len(matchup_df)
+
+    # Wilson score confidence interval
+    z = 1.96  # 95% CI
+    p = win_rate
+    denom = 1 + z**2 / n
+    center = (p + z**2 / (2 * n)) / denom
+    margin = z * np.sqrt((p * (1 - p) + z**2 / (4 * n)) / n) / denom
+    wilson_lower = center - margin
+    wilson_upper = center + margin
+
+    if win_rate > 0.5 and wilson_lower > 0.5:
+        sanity_results['passes'].append(
+            f"3.6.3 {smart} vs random: Dominance confirmed (win_rate={win_rate:.3f}, CI=[{wilson_lower:.3f}, {wilson_upper:.3f}])"
+        )
+        print(f"  PASS: {smart} beats random (win_rate={win_rate:.3f}, Wilson CI=[{wilson_lower:.3f}, {wilson_upper:.3f}])")
+    elif win_rate <= 0.5:
+        sanity_results['failures'].append(
+            f"3.6.3 {smart} vs random: Failed to beat random (win_rate={win_rate:.3f})"
+        )
+        print(f"  FAIL: {smart} does not beat random (win_rate={win_rate:.3f})")
+    else:
+        sanity_results['warnings'].append(
+            f"3.6.3 {smart} vs random: Marginal (win_rate={win_rate:.3f}, CI lower={wilson_lower:.3f})"
+        )
+        print(f"  WARN: {smart} marginally beats random (win_rate={win_rate:.3f}, Wilson CI lower={wilson_lower:.3f})")
+
+# %%
+# --- 3.6.4 Deterministic Strategy Consistency ---
+print("\n--- 3.6.4 Deterministic Strategy Consistency ---")
+print("Test: Deterministic strategies should have variance <= random * 1.2")
+
+DETERMINISTIC_STRATEGIES = ['always_highest', 'always_lowest', 'greedy', 'glutton']
+
+# Get random strategy variance as baseline
+random_self_play = df_h2h_deal[
+    (df_h2h_deal['team0_strategy'] == 'random') &
+    (df_h2h_deal['team1_strategy'] == 'random')
+]
+if len(random_self_play) > 0:
+    random_variance = random_self_play['delta_tricks'].var()
+    print(f"  Random self-play variance: {random_variance:.3f}")
+
+    for strat in DETERMINISTIC_STRATEGIES:
+        strat_self_play = df_h2h_deal[
+            (df_h2h_deal['team0_strategy'] == strat) &
+            (df_h2h_deal['team1_strategy'] == strat)
+        ]
+
+        if len(strat_self_play) < 10:
+            continue
+
+        strat_variance = strat_self_play['delta_tricks'].var()
+        variance_ratio = strat_variance / random_variance if random_variance > 0 else np.inf
+
+        if variance_ratio <= 1.2:
+            sanity_results['passes'].append(
+                f"3.6.4 {strat}: Variance consistent (var={strat_variance:.3f}, ratio={variance_ratio:.2f})"
+            )
+            print(f"  PASS: {strat} var={strat_variance:.3f}, ratio to random={variance_ratio:.2f}")
+        else:
+            sanity_results['warnings'].append(
+                f"3.6.4 {strat}: Higher variance than expected (var={strat_variance:.3f}, ratio={variance_ratio:.2f})"
+            )
+            print(f"  WARN: {strat} var={strat_variance:.3f}, ratio to random={variance_ratio:.2f} > 1.2")
+else:
+    sanity_results['warnings'].append("3.6.4: No random self-play data for baseline")
+    print("  SKIP: No random self-play data available")
+
+# %%
+# --- 3.6.5 Rankings Stability ---
+print("\n--- 3.6.5 Rankings Stability ---")
+print("Test: Strategy rankings should be stable across contract types (Kendall's tau > 0.6)")
+
+# Compute rankings per contract type
+rankings_by_contract = {}
+for ct in CONTRACT_TYPES:
+    ct_df = df_h2h_deal[df_h2h_deal['contract_type'] == ct]
+
+    # Compute average delta for each strategy (as team0)
+    strat_performance = {}
+    for strat in STRATEGY_NAMES:
+        strat_df = ct_df[ct_df['team0_strategy'] == strat]
+        if len(strat_df) > 0:
+            strat_performance[strat] = strat_df['delta_tricks'].mean()
+
+    if len(strat_performance) >= 3:
+        # Rank strategies by performance (higher delta = better)
+        rankings_by_contract[ct] = sorted(strat_performance.keys(),
+                                          key=lambda s: strat_performance[s], reverse=True)
+
+# Compute pairwise Kendall's tau
+if len(rankings_by_contract) >= 2:
+    contract_types_with_rankings = list(rankings_by_contract.keys())
+    tau_results = []
+
+    for i, ct1 in enumerate(contract_types_with_rankings):
+        for ct2 in contract_types_with_rankings[i+1:]:
+            # Convert rankings to numeric for Kendall's tau
+            rank1 = rankings_by_contract[ct1]
+            rank2 = rankings_by_contract[ct2]
+
+            # Get common strategies
+            common = [s for s in rank1 if s in rank2]
+            if len(common) < 3:
+                continue
+
+            # Create rank arrays
+            r1 = [rank1.index(s) for s in common]
+            r2 = [rank2.index(s) for s in common]
+
+            tau, p_val = kendalltau(r1, r2)
+            tau_results.append({
+                'contract1': ct1,
+                'contract2': ct2,
+                'tau': tau,
+                'p_value': p_val,
+            })
+            print(f"  {ct1} vs {ct2}: tau={tau:.3f}, p={p_val:.3f}")
+
+    if tau_results:
+        all_tau = [r['tau'] for r in tau_results]
+        min_tau = min(all_tau)
+
+        if min_tau > 0.6:
+            sanity_results['passes'].append(f"3.6.5 Rankings: Stable across contracts (min tau={min_tau:.3f})")
+            print(f"  PASS: All pairwise tau > 0.6 (min={min_tau:.3f})")
+        elif min_tau >= 0.3:
+            sanity_results['warnings'].append(f"3.6.5 Rankings: Moderate stability (min tau={min_tau:.3f})")
+            print(f"  WARN: Some pairwise tau in [0.3, 0.6] (min={min_tau:.3f})")
+        else:
+            sanity_results['failures'].append(f"3.6.5 Rankings: Unstable (min tau={min_tau:.3f})")
+            print(f"  FAIL: Rankings unstable (min tau={min_tau:.3f} < 0.3)")
+else:
+    sanity_results['warnings'].append("3.6.5 Rankings: Insufficient contract types for comparison")
+    print("  SKIP: Insufficient contract types for ranking comparison")
+
+# %%
+# --- Sanity Test Summary ---
+print("\n" + "=" * 70)
+print("STRATEGY SANITY TEST SUMMARY")
+print("=" * 70)
+
+print(f"\nPASSES ({len(sanity_results['passes'])}):")
+for item in sanity_results['passes']:
+    print(f"  ✅ {item}")
+
+if sanity_results['warnings']:
+    print(f"\nWARNINGS ({len(sanity_results['warnings'])}):")
+    for item in sanity_results['warnings']:
+        print(f"  ⚠️  {item}")
+
+if sanity_results['failures']:
+    print(f"\nFAILURES ({len(sanity_results['failures'])}):")
+    for item in sanity_results['failures']:
+        print(f"  ❌ {item}")
+
+    print("\n" + "=" * 70)
+    print("⚠️  STRATEGY SANITY TESTS DETECTED FAILURES")
+    print("=" * 70)
+    # Note: We don't raise AssertionError in SMOKE mode as data may be insufficient
+    if MODE != 'SMOKE':
+        assert len(sanity_results['failures']) == 0, f"Strategy sanity tests failed: {sanity_results['failures']}"
+else:
+    print("\n" + "=" * 70)
+    print("✅ ALL STRATEGY SANITY TESTS PASSED")
+    print("=" * 70)
 
 # %% [markdown]
 # ---
