@@ -631,7 +631,7 @@ if 'tricks_won' in outcome_df.columns:
             contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
             mean_tricks = contract_df['tricks_won'].mean()
             if 4.0 <= mean_tricks <= 6.0:
-                summary['passes'].append(f"  ✅ {contract_type.UPPER()}: mean={mean_tricks:.3f} in [4.0, 6.0]")
+                summary['passes'].append(f"  ✅ {contract_type.upper()}: mean={mean_tricks:.3f} in [4.0, 6.0]")
             else:
                 summary['warnings'].append(f"  ⚠️  {contract_type.upper()}: mean={mean_tricks:.3f} outside [4.0, 6.0]")
     else:
