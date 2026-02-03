@@ -114,13 +114,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import statsmodels.api as sm
 from IPython.display import display
 from scipy.stats import f_oneway, friedmanchisquare, pearsonr, ttest_ind
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
 from statsmodels.stats.multitest import multipletests
 
@@ -449,6 +448,16 @@ def get_seat_strategy(row):
 matchup_df['seat_strategy'] = matchup_df.apply(get_seat_strategy, axis=1)
 analysis_df = matchup_df[matchup_df['seat_strategy'].notna()].copy()
 
+# Create head-to-head only filtered DataFrames for Sections 2.4-2.7
+# These exclude self-play matchups (team0_strategy == team1_strategy)
+analysis_df_h2h = analysis_df[
+    analysis_df['team0_strategy'] != analysis_df['team1_strategy']
+].copy()
+
+deal_summary_h2h = deal_summary[
+    deal_summary['team0_strategy'] != deal_summary['team1_strategy']
+].copy()
+
 print(f"Deal summaries: {len(deal_summary)}")
 print(f"Analysis rows with seat_strategy: {len(analysis_df)}")
 print(f"Unique seat strategies: {sorted(analysis_df['seat_strategy'].unique())}")
@@ -586,13 +595,25 @@ for idx, strategy in enumerate(strategies):
     ax.set_title(f"{strategy}\n(n={n_samples})")
     ax.set_ylabel("Normalized Delta")
     ax.set_xticks([])
-    ax.set_ylim(-10, 10)
     ax.grid(axis='y', alpha=0.3)
 
 # Hide unused axes
 for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
+
+# Apply dynamic y-limits based on data percentiles (avoids outlier flattening)
+all_deltas = strategy_delta_df['normalized_delta']
+if len(all_deltas) == 0 or all_deltas.std() == 0:
+    y_limit = 1.0  # fallback
+else:
+    p1, p99 = np.percentile(all_deltas, [1, 99])
+    y_limit = max(abs(p1), abs(p99)) * 1.1
+
+for ax_row in axes:
+    for ax in np.atleast_1d(ax_row):
+        if ax.axison:  # Only set for visible axes
+            ax.set_ylim(-y_limit, y_limit)
 
 fig.suptitle("Strategy-Normalized Trick Delta (positive = strategy advantage)", fontsize=12)
 plt.tight_layout()
@@ -614,9 +635,10 @@ plt.show()
 # ### 2.4 Strategy Performance by Contract Type (B pattern)
 #
 # One subplot per strategy showing trick distribution by contract type, with ANOVA + FDR correction.
+# **Head-to-head matchups only** (excludes self-play).
 
 # %%
-strategies = sorted(analysis_df['seat_strategy'].unique())
+strategies = sorted(analysis_df_h2h['seat_strategy'].unique())
 n_strategies = len(strategies)
 n_cols = min(4, n_strategies)
 n_rows = (n_strategies + n_cols - 1) // n_cols
@@ -632,7 +654,7 @@ for idx, strategy in enumerate(strategies):
     row_idx, col_idx = divmod(idx, n_cols)
     ax = axes[row_idx, col_idx]
 
-    strat_df = analysis_df[analysis_df['seat_strategy'] == strategy]
+    strat_df = analysis_df_h2h[analysis_df_h2h['seat_strategy'] == strategy]
 
     # Statistical test across contract types (paired or independent)
     contract_groups = [
@@ -692,7 +714,7 @@ for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Contract Type (Self-Play Matchups)", fontsize=12)
+fig.suptitle("Strategy Performance by Contract Type (Head-to-Head Matchups)", fontsize=12)
 plt.tight_layout()
 plt.show()
 
@@ -711,9 +733,10 @@ display(anova_contract_df.round(4))
 # ### 2.5 Strategy Performance by Suit (B pattern)
 #
 # Suit contracts only: one subplot per strategy showing trick distribution by trump suit.
+# **Head-to-head matchups only** (excludes self-play).
 
 # %%
-suit_only = analysis_df[analysis_df['contract_type'] == 'suit']
+suit_only = analysis_df_h2h[analysis_df_h2h['contract_type'] == 'suit']
 
 if len(suit_only) > 0:
     strategies = sorted(suit_only['seat_strategy'].unique())
@@ -791,7 +814,7 @@ if len(suit_only) > 0:
         row_idx, col_idx = divmod(idx, n_cols)
         axes[row_idx, col_idx].axis('off')
 
-    fig.suptitle("Strategy Performance by Trump Suit (Self-Play Matchups)", fontsize=12)
+    fig.suptitle("Strategy Performance by Trump Suit (Head-to-Head Matchups)", fontsize=12)
     plt.tight_layout()
     plt.show()
 
@@ -811,11 +834,13 @@ else:
 # ### 2.6 Strategy Performance by Team (B pattern)
 #
 # One subplot per strategy showing trick distribution by team assignment (0 vs 1).
+# **Head-to-head matchups only** (excludes self-play).
 
 # %%
-# Convert deal_summary to long form with team perspective per strategy
+# Convert deal_summary_h2h to long form with team perspective per strategy
+# Head-to-head only: both perspectives are valid (no self-play double-counting issue)
 team_performance_rows = []
-for _, row in deal_summary.iterrows():
+for _, row in deal_summary_h2h.iterrows():
     team0, team1 = row['team0_strategy'], row['team1_strategy']
     deal_id = row['deal_id']
 
@@ -826,14 +851,13 @@ for _, row in deal_summary.iterrows():
         'team_tricks': row['team0_tricks'],
         'deal_id': deal_id,
     })
-    # Team 1 strategy's perspective
-    if team0 != team1:  # Avoid double-counting self-play
-        team_performance_rows.append({
-            'strategy': team1,
-            'team_assignment': 'team1',
-            'team_tricks': row['team1_tricks'],
-            'deal_id': deal_id,
-        })
+    # Team 1 strategy's perspective (always included in h2h since team0 != team1)
+    team_performance_rows.append({
+        'strategy': team1,
+        'team_assignment': 'team1',
+        'team_tricks': row['team1_tricks'],
+        'deal_id': deal_id,
+    })
 
 team_perf_df = pd.DataFrame(team_performance_rows)
 
@@ -900,7 +924,7 @@ for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Team Assignment (Self-Play Matchups)", fontsize=12)
+fig.suptitle("Strategy Performance by Team Assignment (Head-to-Head Matchups)", fontsize=12)
 plt.tight_layout()
 plt.show()
 
@@ -918,9 +942,10 @@ display(ttest_team_df.round(4))
 # ### 2.7 Strategy Performance by Seat (B pattern)
 #
 # One subplot per strategy showing trick distribution by seat position (0-3).
+# **Head-to-head matchups only** (excludes self-play).
 
 # %%
-strategies = sorted(analysis_df['seat_strategy'].unique())
+strategies = sorted(analysis_df_h2h['seat_strategy'].unique())
 n_strategies = len(strategies)
 n_cols = min(4, n_strategies)
 n_rows = (n_strategies + n_cols - 1) // n_cols
@@ -936,7 +961,7 @@ for idx, strategy in enumerate(strategies):
     row_idx, col_idx = divmod(idx, n_cols)
     ax = axes[row_idx, col_idx]
 
-    strat_df = analysis_df[analysis_df['seat_strategy'] == strategy]
+    strat_df = analysis_df_h2h[analysis_df_h2h['seat_strategy'] == strategy]
 
     # ANOVA across seats
     seat_groups = [
@@ -985,7 +1010,7 @@ for idx in range(n_strategies, n_rows * n_cols):
     row_idx, col_idx = divmod(idx, n_cols)
     axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Seat Position (Self-Play Matchups)", fontsize=12)
+fig.suptitle("Strategy Performance by Seat Position (Head-to-Head Matchups)", fontsize=12)
 plt.tight_layout()
 plt.show()
 
@@ -1213,67 +1238,138 @@ plt.tight_layout()
 plt.show()
 
 # %%
-# Panel 3: Delta distribution (violin + box) for each matchup
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+# Panel 3: Delta distribution (violin + box) for each matchup - DUAL PERSPECTIVE
+# Row 1: Greedy perspective, Row 2: Glutton perspective
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 
 matchup_types = ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']
-titles = ['Greedy Self-Play', 'Glutton Self-Play', 'Greedy vs Glutton\n(from greedy perspective)']
+perspective_labels = ['Greedy Perspective', 'Glutton Perspective']
 
-for ax, mtype, title in zip(axes, matchup_types, titles):
-    subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
-
+# Helper function to compute deltas from a given perspective
+def compute_perspective_deltas(subset, mtype, perspective):
+    """Compute normalized deltas from the given perspective."""
     if mtype == 'greedy_vs_glutton':
-        # Normalize from greedy's perspective
-        greedy_as_t0 = subset[subset['team0_strategy'] == 'greedy']['delta_tricks']
-        greedy_as_t1 = -subset[subset['team0_strategy'] == 'glutton']['delta_tricks']
-        data = pd.concat([greedy_as_t0, greedy_as_t1]).values
+        if perspective == 'greedy':
+            # Greedy perspective: positive = greedy advantage
+            greedy_as_t0 = subset[subset['team0_strategy'] == 'greedy']['delta_tricks']
+            greedy_as_t1 = -subset[subset['team0_strategy'] == 'glutton']['delta_tricks']
+            return pd.concat([greedy_as_t0, greedy_as_t1]).values
+        else:  # glutton perspective
+            # Glutton perspective: positive = glutton advantage (flip sign)
+            glutton_as_t0 = subset[subset['team0_strategy'] == 'glutton']['delta_tricks']
+            glutton_as_t1 = -subset[subset['team0_strategy'] == 'greedy']['delta_tricks']
+            return pd.concat([glutton_as_t0, glutton_as_t1]).values
     else:
-        data = subset['delta_tricks'].values
+        # Self-play: symmetric, same for both perspectives
+        return subset['delta_tricks'].values
 
-    if len(data) > 0:
-        parts = ax.violinplot([data], positions=[0], showmeans=False, showmedians=False)
-        for pc in parts['bodies']:
-            pc.set_facecolor('steelblue' if 'greedy' in mtype else 'darkorange')
-            pc.set_alpha(0.6)
-        ax.boxplot([data], positions=[0], widths=0.2)
-        ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+# Collect all deltas for dynamic y-limit
+all_panel3_deltas = []
+for mtype in matchup_types:
+    subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
+    for perspective in ['greedy', 'glutton']:
+        data = compute_perspective_deltas(subset, mtype, perspective)
+        if len(data) > 0:
+            all_panel3_deltas.extend(data)
 
-        mean_val = np.mean(data)
-        ax.axhline(mean_val, color='green', linestyle='-', linewidth=1, alpha=0.7)
-        ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
+# Compute dynamic y-limit
+if len(all_panel3_deltas) == 0 or np.std(all_panel3_deltas) == 0:
+    y_limit_p3 = 10.0
+else:
+    p1, p99 = np.percentile(all_panel3_deltas, [1, 99])
+    y_limit_p3 = max(abs(p1), abs(p99)) * 1.1
 
-    ax.set_title(f"{title}\n(n={len(data)})")
-    ax.set_ylabel("Delta (tricks)")
-    ax.set_xticks([])
-    ax.set_ylim(-10, 10)
-    ax.grid(axis='y', alpha=0.3)
+for row_idx, perspective in enumerate(['greedy', 'glutton']):
+    for col_idx, mtype in enumerate(matchup_types):
+        ax = axes[row_idx, col_idx]
+        subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
+        data = compute_perspective_deltas(subset, mtype, perspective)
 
-plt.suptitle("Delta Distribution by Matchup Type", fontsize=12, y=1.02)
+        if len(data) > 0:
+            color = 'steelblue' if perspective == 'greedy' else 'darkorange'
+            parts = ax.violinplot([data], positions=[0], showmeans=False, showmedians=False)
+            for pc in parts['bodies']:
+                pc.set_facecolor(color)
+                pc.set_alpha(0.6)
+            ax.boxplot([data], positions=[0], widths=0.2)
+            ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+
+            mean_val = np.mean(data)
+            ax.axhline(mean_val, color='green', linestyle='-', linewidth=1, alpha=0.7)
+            ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
+
+        # Titles: top row only shows matchup type, left column shows perspective
+        if row_idx == 0:
+            mtype_title = mtype.replace('_', ' ').title()
+            ax.set_title(f"{mtype_title}\n(n={len(data)})")
+        else:
+            ax.set_title(f"(n={len(data)})")
+
+        if col_idx == 0:
+            ax.set_ylabel(f"{perspective_labels[row_idx]}\nDelta (tricks)")
+        else:
+            ax.set_ylabel("")
+
+        ax.set_xticks([])
+        ax.set_ylim(-y_limit_p3, y_limit_p3)
+        ax.grid(axis='y', alpha=0.3)
+
+plt.suptitle("Delta Distribution by Matchup Type (Dual Perspective)", fontsize=12, y=1.02)
 plt.tight_layout()
 plt.show()
 
 # %%
-# Panel 4: Performance by contract type for greedy vs glutton
+# Panel 4: Performance by contract type for greedy vs glutton - DUAL PERSPECTIVE
+# Row 1: Greedy perspective, Row 2: Glutton perspective
 h2h_only = smart_matchups[smart_matchups['matchup_type'] == 'greedy_vs_glutton']
 
 if len(h2h_only) > 0:
-    fig, axes = plt.subplots(1, len(CONTRACT_TYPES), figsize=(5 * len(CONTRACT_TYPES), 5))
+    fig, axes = plt.subplots(2, len(CONTRACT_TYPES), figsize=(5 * len(CONTRACT_TYPES), 10))
     if len(CONTRACT_TYPES) == 1:
-        axes = [axes]
+        axes = axes.reshape(2, 1)
 
-    for ax, ct in zip(axes, CONTRACT_TYPES):
-        ct_data = h2h_only[h2h_only['contract_type'] == ct]
-
-        if len(ct_data) > 0:
-            # Normalize from greedy's perspective
+    # Helper to compute perspective deltas by contract type
+    def compute_ct_perspective_deltas(ct_data, perspective):
+        if perspective == 'greedy':
             greedy_t0 = ct_data[ct_data['team0_strategy'] == 'greedy']['delta_tricks']
             greedy_t1 = -ct_data[ct_data['team0_strategy'] == 'glutton']['delta_tricks']
-            deltas = pd.concat([greedy_t0, greedy_t1]).values
+            return pd.concat([greedy_t0, greedy_t1]).values if len(greedy_t0) + len(greedy_t1) > 0 else np.array([])
+        else:  # glutton perspective
+            glutton_t0 = ct_data[ct_data['team0_strategy'] == 'glutton']['delta_tricks']
+            glutton_t1 = -ct_data[ct_data['team0_strategy'] == 'greedy']['delta_tricks']
+            return pd.concat([glutton_t0, glutton_t1]).values if len(glutton_t0) + len(glutton_t1) > 0 else np.array([])
+
+    # Collect all deltas for dynamic y-limit
+    all_panel4_deltas = []
+    for ct in CONTRACT_TYPES:
+        ct_data = h2h_only[h2h_only['contract_type'] == ct]
+        for perspective in ['greedy', 'glutton']:
+            data = compute_ct_perspective_deltas(ct_data, perspective)
+            if len(data) > 0:
+                all_panel4_deltas.extend(data)
+
+    # Compute dynamic y-limit
+    if len(all_panel4_deltas) == 0 or np.std(all_panel4_deltas) == 0:
+        y_limit_p4 = 10.0
+    else:
+        p1, p99 = np.percentile(all_panel4_deltas, [1, 99])
+        y_limit_p4 = max(abs(p1), abs(p99)) * 1.1
+
+    perspective_labels = ['Greedy Perspective', 'Glutton Perspective']
+    perspective_colors = {'greedy': 'steelblue', 'glutton': 'darkorange'}
+
+    from scipy.stats import ttest_1samp
+
+    for row_idx, perspective in enumerate(['greedy', 'glutton']):
+        for col_idx, ct in enumerate(CONTRACT_TYPES):
+            ax = axes[row_idx, col_idx]
+            ct_data = h2h_only[h2h_only['contract_type'] == ct]
+            deltas = compute_ct_perspective_deltas(ct_data, perspective)
 
             if len(deltas) > 0:
                 parts = ax.violinplot([deltas], positions=[0], showmeans=False, showmedians=False)
                 for pc in parts['bodies']:
-                    pc.set_facecolor('green')
+                    pc.set_facecolor(perspective_colors[perspective])
                     pc.set_alpha(0.6)
                 ax.boxplot([deltas], positions=[0], widths=0.2)
                 ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
@@ -1282,24 +1378,33 @@ if len(h2h_only) > 0:
                 ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
 
                 # T-test against 0
-                from scipy.stats import ttest_1samp
                 if len(deltas) > 1:
                     t_stat, p_val = ttest_1samp(deltas, 0)
                     status = "**" if p_val < 0.01 else "*" if p_val < 0.05 else ""
-                    ax.set_title(f"{ct.upper()}\n(n={len(deltas)}, p={p_val:.3f}{status})")
+                    title_suffix = f"p={p_val:.3f}{status}"
                 else:
-                    ax.set_title(f"{ct.upper()}\n(n={len(deltas)})")
+                    title_suffix = ""
+
+                if row_idx == 0:
+                    ax.set_title(f"{ct.upper()}\n(n={len(deltas)}, {title_suffix})")
+                else:
+                    ax.set_title(f"(n={len(deltas)}, {title_suffix})")
             else:
-                ax.set_title(f"{ct.upper()}\n(no data)")
-        else:
-            ax.set_title(f"{ct.upper()}\n(no data)")
+                if row_idx == 0:
+                    ax.set_title(f"{ct.upper()}\n(no data)")
+                else:
+                    ax.set_title("(no data)")
 
-        ax.set_ylabel("Delta (greedy - glutton)")
-        ax.set_xticks([])
-        ax.set_ylim(-10, 10)
-        ax.grid(axis='y', alpha=0.3)
+            if col_idx == 0:
+                ax.set_ylabel(f"{perspective_labels[row_idx]}\nDelta (tricks)")
+            else:
+                ax.set_ylabel("")
 
-    plt.suptitle("Greedy vs Glutton: Delta by Contract Type\n(from greedy's perspective)", fontsize=12, y=1.02)
+            ax.set_xticks([])
+            ax.set_ylim(-y_limit_p4, y_limit_p4)
+            ax.grid(axis='y', alpha=0.3)
+
+    plt.suptitle("Greedy vs Glutton: Delta by Contract Type (Dual Perspective)", fontsize=12, y=1.02)
     plt.tight_layout()
     plt.show()
 else:
@@ -1340,27 +1445,26 @@ print("\n" + "=" * 70)
 
 # %% [markdown]
 # ---
-# ## Section 3: Feature-Outcome Correlations by Matchup Type
+# ## Section 3: Feature-Outcome Correlations (3×3 Grid)
 #
-# Identify which hand features correlate with tricks won, faceted by matchup type:
-# - **greedy × greedy** (self-play)
-# - **glutton × glutton** (self-play)
-# - **greedy × glutton** (head-to-head)
+# Unified analysis of feature-outcome correlations across:
+# - **Rows:** Contract types (suit, high, low)
+# - **Columns:** Matchup types (greedy_self_play, glutton_self_play, greedy_vs_glutton)
+#
+# Each cell shows top-10 features by |r| with FDR-adjusted significance markers.
 
 # %%
 # ============================================================================
-# Section 3: Correlations Faceted by Matchup Type
+# Section 3: Unified 3×3 Correlation Grid (contract_type × matchup_type)
 # ============================================================================
 
 print("\n" + "=" * 70)
-print("FEATURE-OUTCOME CORRELATIONS BY MATCHUP TYPE")
+print("FEATURE-OUTCOME CORRELATIONS (3×3 GRID)")
 print("=" * 70)
 
 # Define key matchups for faceting
-# We need to add matchup type information to data_df
 data_df_with_matchup = data_df.copy()
 
-# Parse matchup type from strategy_id
 def get_matchup_type(strategy_id):
     """Classify strategy_id into matchup type."""
     if '_vs_' in strategy_id:
@@ -1376,124 +1480,167 @@ def get_matchup_type(strategy_id):
 
 data_df_with_matchup['matchup_type'] = data_df_with_matchup['strategy_id'].apply(get_matchup_type)
 
-# Filter to key matchups only
 KEY_MATCHUP_TYPES = ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']
 smart_data = data_df_with_matchup[data_df_with_matchup['matchup_type'].isin(KEY_MATCHUP_TYPES)]
 
 print(f"\nData filtered to smart matchups: {len(smart_data)} rows")
-print(smart_data['matchup_type'].value_counts())
+print(smart_data.groupby(['contract_type', 'matchup_type']).size().unstack(fill_value=0))
 
 feat_cols = [c for c in data_df.columns if c.startswith('feat_')]
 
 # %%
-# Compute correlations for each matchup type
-correlation_results_by_matchup = []
+# Compute correlations for each (contract_type, matchup_type) cell
+correlation_results_grid = []
 
-for matchup_type in KEY_MATCHUP_TYPES:
-    matchup_df = smart_data[smart_data['matchup_type'] == matchup_type]
+for contract_type in CONTRACT_TYPES:
+    for matchup_type in KEY_MATCHUP_TYPES:
+        cell_df = smart_data[
+            (smart_data['contract_type'] == contract_type) &
+            (smart_data['matchup_type'] == matchup_type)
+        ]
 
-    if len(matchup_df) < 50:
-        print(f"Skipping {matchup_type}: insufficient data ({len(matchup_df)} rows)")
-        continue
-
-    for feat in feat_cols:
-        # Skip if feature has no variance
-        if matchup_df[feat].std() == 0:
+        if len(cell_df) < 50:
+            print(f"Skipping ({contract_type}, {matchup_type}): insufficient data ({len(cell_df)} rows)")
             continue
 
-        # Compute Pearson correlation
-        corr, p_value = pearsonr(matchup_df[feat], matchup_df['tricks_won'])
+        for feat in feat_cols:
+            if cell_df[feat].std() == 0:
+                continue
 
-        correlation_results_by_matchup.append({
-            'matchup_type': matchup_type,
-            'feature': feat,
-            'correlation': corr,
-            'p_value': p_value,
-            'significant': p_value < 0.05,
-            'n_samples': len(matchup_df),
-        })
+            corr, p_value = pearsonr(cell_df[feat], cell_df['tricks_won'])
 
-corr_by_matchup_df = pd.DataFrame(correlation_results_by_matchup)
+            correlation_results_grid.append({
+                'contract_type': contract_type,
+                'matchup_type': matchup_type,
+                'feature': feat,
+                'correlation': corr,
+                'p_value': p_value,
+                'significant': p_value < 0.05,
+                'n_samples': len(cell_df),
+            })
 
-# Apply FDR correction per matchup type
-corr_by_matchup_df['p_adj'] = np.nan
-corr_by_matchup_df['significant_adj'] = False
-for matchup_type in KEY_MATCHUP_TYPES:
-    mask = corr_by_matchup_df['matchup_type'] == matchup_type
-    pvals = corr_by_matchup_df.loc[mask, 'p_value'].values
-    if len(pvals) > 0:
-        _, p_adj, _, _ = multipletests(pvals, method="fdr_bh")
-        corr_by_matchup_df.loc[mask, 'p_adj'] = p_adj
-        corr_by_matchup_df.loc[mask, 'significant_adj'] = p_adj < 0.05
+corr_grid_df = pd.DataFrame(correlation_results_grid)
 
-# Display top correlations by matchup type
-print("\nTop Correlations by Matchup Type")
-print("=" * 80)
+# Apply FDR correction within each cell (contract_type, matchup_type)
+corr_grid_df['p_adj'] = np.nan
+corr_grid_df['significant_adj'] = False
 
-for matchup_type in KEY_MATCHUP_TYPES:
-    matchup_corrs = corr_by_matchup_df[corr_by_matchup_df['matchup_type'] == matchup_type]
-    if len(matchup_corrs) == 0:
-        continue
-    top_corrs = matchup_corrs.sort_values('correlation', key=abs, ascending=False).head(15).copy()
-    top_corrs['feature'] = top_corrs['feature'].str.replace('feat_', '', regex=False)
-    display_cols = ['feature', 'correlation', 'p_value', 'p_adj', 'significant_adj', 'n_samples']
-    print(f"\n{matchup_type.upper()}")
-    display(top_corrs[display_cols])
+for contract_type in CONTRACT_TYPES:
+    for matchup_type in KEY_MATCHUP_TYPES:
+        mask = (corr_grid_df['contract_type'] == contract_type) & (corr_grid_df['matchup_type'] == matchup_type)
+        pvals = corr_grid_df.loc[mask, 'p_value'].values
+        if len(pvals) > 0:
+            _, p_adj, _, _ = multipletests(pvals, method="fdr_bh")
+            corr_grid_df.loc[mask, 'p_adj'] = p_adj
+            corr_grid_df.loc[mask, 'significant_adj'] = p_adj < 0.05
+
+print(f"\nTotal correlation results: {len(corr_grid_df)}")
+print(f"Significant (FDR < 0.05): {corr_grid_df['significant_adj'].sum()}")
 
 # %%
-# Side-by-side correlation bar charts by matchup type
-n_matchups = len([mt for mt in KEY_MATCHUP_TYPES if len(corr_by_matchup_df[corr_by_matchup_df['matchup_type'] == mt]) > 0])
-fig, axes = plt.subplots(1, n_matchups, figsize=(6 * n_matchups, 8))
-if n_matchups == 1:
-    axes = [axes]
+# Display top correlations for each cell
+print("\n" + "=" * 80)
+print("TOP CORRELATIONS BY CELL (contract_type × matchup_type)")
+print("=" * 80)
 
+for contract_type in CONTRACT_TYPES:
+    for matchup_type in KEY_MATCHUP_TYPES:
+        cell_corrs = corr_grid_df[
+            (corr_grid_df['contract_type'] == contract_type) &
+            (corr_grid_df['matchup_type'] == matchup_type)
+        ]
+        if len(cell_corrs) == 0:
+            continue
+        top_corrs = cell_corrs.sort_values('correlation', key=abs, ascending=False).head(10).copy()
+        top_corrs['feature'] = top_corrs['feature'].str.replace('feat_', '', regex=False)
+        n_samples = top_corrs['n_samples'].iloc[0] if len(top_corrs) > 0 else 0
+        display_cols = ['feature', 'correlation', 'p_adj', 'significant_adj']
+        print(f"\n{contract_type.upper()} × {matchup_type} (n={n_samples})")
+        display(top_corrs[display_cols].round(4))
+
+# %%
+# 3×3 Correlation Grid Visualization
 matchup_colors = {
     'greedy_self_play': 'steelblue',
     'glutton_self_play': 'darkorange',
     'greedy_vs_glutton': 'green',
 }
 
-ax_idx = 0
-for matchup_type in KEY_MATCHUP_TYPES:
-    matchup_corrs = corr_by_matchup_df[corr_by_matchup_df['matchup_type'] == matchup_type]
-    if len(matchup_corrs) == 0:
-        continue
+fig, axes = plt.subplots(3, 3, figsize=(18, 15))
 
-    ax = axes[ax_idx]
-    top_corrs = matchup_corrs.sort_values('correlation', key=abs, ascending=False).head(15)
+for row_idx, contract_type in enumerate(CONTRACT_TYPES):
+    for col_idx, matchup_type in enumerate(KEY_MATCHUP_TYPES):
+        ax = axes[row_idx, col_idx]
 
-    features = top_corrs['feature'].values
-    corrs = top_corrs['correlation'].values
+        cell_corrs = corr_grid_df[
+            (corr_grid_df['contract_type'] == contract_type) &
+            (corr_grid_df['matchup_type'] == matchup_type)
+        ]
 
-    # Color by sign
-    colors = ['red' if c < 0 else matchup_colors.get(matchup_type, 'green') for c in corrs]
-    ax.barh(range(len(features)), corrs, color=colors, alpha=0.7)
-    ax.set_yticks(range(len(features)))
-    ax.set_yticklabels([f.replace('feat_', '') for f in features], fontsize=8)
-    ax.invert_yaxis()
-    ax.set_xlabel('Correlation with Tricks Won')
-    n_samples = top_corrs['n_samples'].iloc[0] if len(top_corrs) > 0 else 0
-    ax.set_title(f'{matchup_type}\n(Top 15, n={n_samples})')
-    ax.axvline(0, color='black', linestyle='-', linewidth=0.5)
-    ax.grid(axis='x', alpha=0.3)
-    ax.set_xlim(-0.5, 0.5)
+        if len(cell_corrs) == 0:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center', fontsize=12)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+        else:
+            top_corrs = cell_corrs.sort_values('correlation', key=abs, ascending=False).head(10)
+            features = top_corrs['feature'].values
+            corrs = top_corrs['correlation'].values
+            sig_adj = top_corrs['significant_adj'].values
 
-    ax_idx += 1
+            base_color = matchup_colors.get(matchup_type, 'gray')
+            colors = ['red' if c < 0 else base_color for c in corrs]
 
-plt.suptitle("Feature-Outcome Correlations by Matchup Type", fontsize=12, y=1.02)
+            bars = ax.barh(range(len(features)), corrs, color=colors, alpha=0.7)
+
+            # Add significance markers
+            for i, (bar, sig) in enumerate(zip(bars, sig_adj)):
+                if sig:
+                    x_pos = bar.get_width()
+                    offset = 0.02 if x_pos >= 0 else -0.02
+                    ax.text(x_pos + offset, i, '*', fontsize=12, va='center',
+                            ha='left' if x_pos >= 0 else 'right', fontweight='bold')
+
+            ax.set_yticks(range(len(features)))
+            ax.set_yticklabels([f.replace('feat_', '') for f in features], fontsize=7)
+            ax.invert_yaxis()
+            ax.axvline(0, color='black', linestyle='-', linewidth=0.5)
+            ax.grid(axis='x', alpha=0.3)
+            ax.set_xlim(-0.6, 0.6)
+
+        # Labels
+        if row_idx == 0:
+            ax.set_title(matchup_type.replace('_', '\n'), fontsize=10)
+        if col_idx == 0:
+            ax.set_ylabel(f"{contract_type.upper()}\n\nCorrelation", fontsize=10)
+        else:
+            ax.set_ylabel('')
+        if row_idx == 2:
+            ax.set_xlabel('Pearson r')
+
+        n_samples = cell_corrs['n_samples'].iloc[0] if len(cell_corrs) > 0 else 0
+        ax.text(0.98, 0.02, f'n={n_samples}', transform=ax.transAxes,
+                fontsize=8, ha='right', va='bottom', alpha=0.7)
+
+plt.suptitle("Feature-Outcome Correlations: 3×3 Grid (contract_type × matchup_type)\n* = FDR-adjusted p < 0.05",
+             fontsize=12, y=1.02)
 plt.tight_layout()
 plt.show()
 
 # %%
-# Also show original contract-type correlations for reference
-print("\n" + "=" * 70)
-print("CORRELATIONS BY CONTRACT TYPE (ALL MATCHUPS)")
-print("=" * 70)
+# Also compute by-contract and by-matchup aggregates for backward compatibility
+# These are used in Section 5 summary
 
+# By matchup type (aggregated across contracts)
+corr_by_matchup_df = corr_grid_df.groupby(['matchup_type', 'feature']).agg({
+    'correlation': 'mean',
+    'p_value': 'mean',
+    'n_samples': 'sum'
+}).reset_index()
+
+# By contract type (aggregated across matchups)
 correlation_results = []
 for contract_type in CONTRACT_TYPES:
     contract_df = data_df[data_df['contract_type'] == contract_type]
-
     for feat in feat_cols:
         if contract_df[feat].std() == 0:
             continue
@@ -1508,8 +1655,6 @@ for contract_type in CONTRACT_TYPES:
         })
 
 corr_df = pd.DataFrame(correlation_results)
-
-# Apply FDR correction per contract type
 corr_df['p_adj'] = np.nan
 corr_df['significant_adj'] = False
 for contract_type in CONTRACT_TYPES:
@@ -1520,135 +1665,193 @@ for contract_type in CONTRACT_TYPES:
         corr_df.loc[mask, 'p_adj'] = p_adj
         corr_df.loc[mask, 'significant_adj'] = p_adj < 0.05
 
+print("\n✓ Correlation analysis complete (3×3 grid + aggregates)")
+
+# Legacy variables for Section 5 compatibility
+# corr_df and corr_by_matchup_df are now available
+
+# %% [markdown]
+# ---
+# ## Section 4: Predictive Modeling & Feature Importance (3×3 Grid)
+#
+# Train Ridge regression models using a 3×3 grid (contract_type × matchup_type).
+#
+# **Critical improvement:** Uses deal-grouped train/test split to prevent data leakage
+# (multiple rows from the same deal cannot appear in both train and test sets).
+#
+# - **Rows:** Contract types (suit, high, low)
+# - **Columns:** Matchup types (greedy_self_play, glutton_self_play, greedy_vs_glutton)
+
+# %%
+# ============================================================================
+# Section 4: 3×3 Modeling Grid with Deal-Grouped Split
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("PREDICTIVE MODELING (3×3 GRID WITH DEAL-GROUPED SPLIT)")
+print("=" * 70)
+
+feat_cols = [c for c in data_df.columns if c.startswith('feat_')]
+
+matchup_colors = {
+    'greedy_self_play': 'steelblue',
+    'glutton_self_play': 'darkorange',
+    'greedy_vs_glutton': 'green',
+}
+
+# Store results for all cells
+model_results_grid = []
+importance_tables_grid = {}
+
+MIN_DEALS_THRESHOLD = 50  # Minimum unique deals required
+
 for contract_type in CONTRACT_TYPES:
-    contract_corrs = corr_df[corr_df['contract_type'] == contract_type].sort_values(
-        'correlation', key=abs, ascending=False
-    ).head(15).copy()
-    contract_corrs['feature'] = contract_corrs['feature'].str.replace('feat_', '', regex=False)
-    display_cols = ['feature', 'correlation', 'p_value', 'p_adj', 'significant_adj', 'n_samples']
-    print(f"\n{contract_type.upper()} Contracts")
-    display(contract_corrs[display_cols])
+    for matchup_type in KEY_MATCHUP_TYPES:
+        cell_df = smart_data[
+            (smart_data['contract_type'] == contract_type) &
+            (smart_data['matchup_type'] == matchup_type)
+        ].copy()
 
-# Contract-type correlation bar charts
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        n_deals = cell_df['deal_id'].nunique() if 'deal_id' in cell_df.columns else len(cell_df)
 
-for i, contract_type in enumerate(CONTRACT_TYPES):
-    ax = axes[i]
-    contract_corrs = corr_df[corr_df['contract_type'] == contract_type].sort_values(
-        'correlation', key=abs, ascending=False
-    ).head(15)
+        if n_deals < MIN_DEALS_THRESHOLD:
+            print(f"Skipping ({contract_type}, {matchup_type}): insufficient deals ({n_deals} < {MIN_DEALS_THRESHOLD})")
+            model_results_grid.append({
+                'contract_type': contract_type,
+                'matchup_type': matchup_type,
+                'r2': np.nan,
+                'mae': np.nan,
+                'n_train': 0,
+                'n_test': 0,
+                'n_deals_train': 0,
+                'n_deals_test': 0,
+                'status': 'insufficient_data',
+            })
+            continue
 
-    features = contract_corrs['feature'].values
-    corrs = contract_corrs['correlation'].values
+        X = cell_df[feat_cols].select_dtypes(include=[np.number])
+        y = cell_df['tricks_won']
+        groups = cell_df['deal_id'] if 'deal_id' in cell_df.columns else pd.Series(range(len(cell_df)))
 
-    colors = ['red' if c < 0 else 'green' for c in corrs]
-    ax.barh(range(len(features)), corrs, color=colors, alpha=0.6)
-    ax.set_yticks(range(len(features)))
-    ax.set_yticklabels([f.replace('feat_', '') for f in features], fontsize=8)
-    ax.invert_yaxis()
-    ax.set_xlabel('Correlation with Tricks Won')
-    ax.set_title(f'{contract_type.upper()} Contracts\n(Top 15 Features)')
-    ax.axvline(0, color='black', linestyle='-', linewidth=0.5)
-    ax.grid(axis='x', alpha=0.3)
+        # Deal-grouped split to prevent data leakage
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=SEED)
+        train_idx, test_idx = next(gss.split(X, y, groups=groups))
+
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+        n_deals_train = groups.iloc[train_idx].nunique()
+        n_deals_test = groups.iloc[test_idx].nunique()
+
+        # Fit model
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+        ridge = Ridge(alpha=1.0, random_state=SEED)
+        ridge.fit(X_train_scaled, y_train)
+
+        y_pred = ridge.predict(X_test_scaled)
+        r2 = r2_score(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+
+        model_results_grid.append({
+            'contract_type': contract_type,
+            'matchup_type': matchup_type,
+            'r2': r2,
+            'mae': mae,
+            'n_train': len(X_train),
+            'n_test': len(X_test),
+            'n_deals_train': n_deals_train,
+            'n_deals_test': n_deals_test,
+            'status': 'ok',
+        })
+
+        # Permutation importance on test set
+        perm = permutation_importance(
+            ridge, X_test_scaled, y_test, n_repeats=5, random_state=SEED
+        )
+        perm_df = pd.DataFrame({
+            'feature': X.columns,
+            'perm_importance': perm.importances_mean,
+            'perm_std': perm.importances_std,
+        }).sort_values('perm_importance', ascending=False)
+        perm_df['feature'] = perm_df['feature'].str.replace('feat_', '', regex=False)
+        importance_tables_grid[(contract_type, matchup_type)] = perm_df
+
+model_results_grid_df = pd.DataFrame(model_results_grid)
+print("\nModel Summary (3×3 Grid):")
+display(model_results_grid_df[model_results_grid_df['status'] == 'ok'].round(4))
+
+# %%
+# 3×3 R² Heatmap
+r2_matrix = model_results_grid_df.pivot(
+    index='contract_type', columns='matchup_type', values='r2'
+)
+# Reorder to match CONTRACT_TYPES and KEY_MATCHUP_TYPES order
+r2_matrix = r2_matrix.reindex(index=CONTRACT_TYPES, columns=KEY_MATCHUP_TYPES)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+mask = r2_matrix.isna()
+sns.heatmap(
+    r2_matrix, annot=True, fmt='.3f', cmap='RdYlGn', center=0,
+    mask=mask, ax=ax, vmin=-0.1, vmax=0.5,
+    cbar_kws={'label': 'R²'}
+)
+ax.set_title("R² by Contract Type × Matchup Type\n(Deal-Grouped Split)", fontsize=12)
+ax.set_xlabel("Matchup Type")
+ax.set_ylabel("Contract Type")
+
+# Add "insufficient data" annotations for NaN cells
+for i, ct in enumerate(CONTRACT_TYPES):
+    for j, mt in enumerate(KEY_MATCHUP_TYPES):
+        if pd.isna(r2_matrix.loc[ct, mt]):
+            ax.text(j + 0.5, i + 0.5, 'N/A', ha='center', va='center',
+                    fontsize=10, color='gray')
 
 plt.tight_layout()
 plt.show()
 
-print("✓ Correlation analysis complete")
-
-# %% [markdown]
-# ---
-# ## Section 4: Predictive Modeling & Feature Importance by Matchup Type
-#
-# Train Ridge regression models faceted by matchup type:
-# - **greedy × greedy** (self-play)
-# - **glutton × glutton** (self-play)
-# - **greedy × glutton** (head-to-head)
-
 # %%
-# ============================================================================
-# Section 4: Ridge Regression Faceted by Matchup Type
-# ============================================================================
-
+# Display importance summaries per cell
 print("\n" + "=" * 70)
-print("PREDICTIVE MODELING BY MATCHUP TYPE")
+print("TOP FEATURE IMPORTANCE BY CELL")
 print("=" * 70)
 
-# Ensure matchup_type is in smart_data (from Section 3)
-# smart_data already has matchup_type column
-
-model_rows_by_matchup = []
-importance_tables_by_matchup = {}
-
-feat_cols = [c for c in data_df.columns if c.startswith('feat_')]
-
-for matchup_type in KEY_MATCHUP_TYPES:
-    matchup_df = smart_data[smart_data['matchup_type'] == matchup_type]
-    X = matchup_df[feat_cols].select_dtypes(include=[np.number])
-    y = matchup_df['tricks_won']
-
-    if len(matchup_df) < 50:
-        print(f"Skipping {matchup_type}: not enough data ({len(matchup_df)} rows)")
-        continue
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=SEED
-    )
-
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    ridge = Ridge(alpha=1.0, random_state=SEED)
-    ridge.fit(X_train_scaled, y_train)
-
-    y_pred = ridge.predict(X_test_scaled)
-    model_rows_by_matchup.append({
-        'matchup_type': matchup_type,
-        'r2': r2_score(y_test, y_pred),
-        'mae': mean_absolute_error(y_test, y_pred),
-        'n_train': len(X_train),
-        'n_test': len(X_test),
-    })
-
-    perm = permutation_importance(
-        ridge, X_test_scaled, y_test, n_repeats=5, random_state=SEED
-    )
-    perm_df = pd.DataFrame({
-        'feature': X.columns,
-        'perm_importance': perm.importances_mean,
-        'perm_std': perm.importances_std,
-    }).sort_values('perm_importance', ascending=False)
-    perm_df['feature'] = perm_df['feature'].str.replace('feat_', '', regex=False)
-    importance_tables_by_matchup[matchup_type] = perm_df
-
-model_summary_by_matchup_df = pd.DataFrame(model_rows_by_matchup)
-print("\nModel Summary by Matchup Type:")
-display(model_summary_by_matchup_df.round(4))
+for contract_type in CONTRACT_TYPES:
+    for matchup_type in KEY_MATCHUP_TYPES:
+        key = (contract_type, matchup_type)
+        if key not in importance_tables_grid:
+            continue
+        perm_df = importance_tables_grid[key]
+        cell_result = model_results_grid_df[
+            (model_results_grid_df['contract_type'] == contract_type) &
+            (model_results_grid_df['matchup_type'] == matchup_type)
+        ].iloc[0]
+        r2 = cell_result['r2']
+        n_test = cell_result['n_test']
+        print(f"\n{contract_type.upper()} × {matchup_type} (R²={r2:.3f}, n_test={n_test})")
+        display(perm_df.head(10).round(4))
 
 # %%
-# Display importance summaries by matchup type
-for matchup_type in KEY_MATCHUP_TYPES:
-    if matchup_type not in importance_tables_by_matchup:
-        continue
-    print(f"\n{matchup_type.upper()} - Permutation Importance (Top 10)")
-    display(importance_tables_by_matchup[matchup_type].head(10))
+# Per-row importance comparison (one row per contract type, 3 matchup columns)
+for contract_type in CONTRACT_TYPES:
+    available_matchups = [
+        mt for mt in KEY_MATCHUP_TYPES
+        if (contract_type, mt) in importance_tables_grid
+    ]
 
-# %%
-# Side-by-side feature importance comparison
-n_matchups = len(importance_tables_by_matchup)
-if n_matchups > 0:
-    fig, axes = plt.subplots(1, n_matchups, figsize=(6 * n_matchups, 8))
-    if n_matchups == 1:
+    if len(available_matchups) == 0:
+        print(f"\n{contract_type.upper()}: No models available")
+        continue
+
+    n_cols = len(available_matchups)
+    fig, axes = plt.subplots(1, n_cols, figsize=(6 * n_cols, 8))
+    if n_cols == 1:
         axes = [axes]
 
-    ax_idx = 0
-    for matchup_type in KEY_MATCHUP_TYPES:
-        if matchup_type not in importance_tables_by_matchup:
-            continue
-
-        ax = axes[ax_idx]
-        perm_df = importance_tables_by_matchup[matchup_type].head(15)
+    for ax, matchup_type in zip(axes, available_matchups):
+        perm_df = importance_tables_grid[(contract_type, matchup_type)].head(15)
 
         features = perm_df['feature'].values
         importances = perm_df['perm_importance'].values
@@ -1661,102 +1864,52 @@ if n_matchups > 0:
         ax.invert_yaxis()
         ax.set_xlabel('Permutation Importance')
 
-        # Get R² for title
-        r2 = model_summary_by_matchup_df[model_summary_by_matchup_df['matchup_type'] == matchup_type]['r2'].values
-        r2_str = f", R²={r2[0]:.3f}" if len(r2) > 0 else ""
-        n_train = model_summary_by_matchup_df[model_summary_by_matchup_df['matchup_type'] == matchup_type]['n_train'].values
-        n_str = f"n={n_train[0]}" if len(n_train) > 0 else ""
-        ax.set_title(f'{matchup_type}\n({n_str}{r2_str})')
+        cell_result = model_results_grid_df[
+            (model_results_grid_df['contract_type'] == contract_type) &
+            (model_results_grid_df['matchup_type'] == matchup_type)
+        ].iloc[0]
+        r2 = cell_result['r2']
+        n_train = cell_result['n_train']
+        ax.set_title(f'{matchup_type}\n(n={n_train}, R²={r2:.3f})')
         ax.grid(axis='x', alpha=0.3)
 
-        ax_idx += 1
-
-    plt.suptitle("Feature Importance by Matchup Type (Ridge + Permutation)", fontsize=12, y=1.02)
+    fig.suptitle(f"{contract_type.upper()} Contracts: Feature Importance Comparison", fontsize=12, y=1.02)
     plt.tight_layout()
     plt.show()
 
 # %%
-# Also show original contract-type models for reference
-print("\n" + "=" * 70)
-print("PREDICTIVE MODELING BY CONTRACT TYPE (ALL MATCHUPS)")
-print("=" * 70)
-
-model_rows = []
+# Legacy variables for backward compatibility
 importance_tables = {}
-ols_tables = {}
+importance_tables_by_matchup = {}
 
+# Aggregate importance by contract type (across matchups)
 for contract_type in CONTRACT_TYPES:
-    contract_df = data_df[data_df['contract_type'] == contract_type]
-    X = contract_df[feat_cols].select_dtypes(include=[np.number])
-    y = contract_df['tricks_won']
+    dfs = [importance_tables_grid[(contract_type, mt)] for mt in KEY_MATCHUP_TYPES
+           if (contract_type, mt) in importance_tables_grid]
+    if dfs:
+        combined = pd.concat(dfs).groupby('feature').agg({
+            'perm_importance': 'mean',
+            'perm_std': 'mean'
+        }).reset_index().sort_values('perm_importance', ascending=False)
+        importance_tables[contract_type] = combined
 
-    if len(contract_df) < 50:
-        print(f"Skipping {contract_type}: not enough data")
-        continue
+# Aggregate importance by matchup type (across contracts)
+for matchup_type in KEY_MATCHUP_TYPES:
+    dfs = [importance_tables_grid[(ct, matchup_type)] for ct in CONTRACT_TYPES
+           if (ct, matchup_type) in importance_tables_grid]
+    if dfs:
+        combined = pd.concat(dfs).groupby('feature').agg({
+            'perm_importance': 'mean',
+            'perm_std': 'mean'
+        }).reset_index().sort_values('perm_importance', ascending=False)
+        importance_tables_by_matchup[matchup_type] = combined
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=SEED
-    )
-
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    ridge = Ridge(alpha=1.0, random_state=SEED)
-    ridge.fit(X_train_scaled, y_train)
-
-    y_pred = ridge.predict(X_test_scaled)
-    model_rows.append({
-        'contract_type': contract_type,
-        'r2': r2_score(y_test, y_pred),
-        'mae': mean_absolute_error(y_test, y_pred),
-        'n_train': len(X_train),
-        'n_test': len(X_test),
-    })
-
-    perm = permutation_importance(
-        ridge, X_test_scaled, y_test, n_repeats=5, random_state=SEED
-    )
-    perm_df = pd.DataFrame({
-        'feature': X.columns,
-        'perm_importance': perm.importances_mean,
-        'perm_std': perm.importances_std,
-    }).sort_values('perm_importance', ascending=False)
-    perm_df['feature'] = perm_df['feature'].str.replace('feat_', '', regex=False)
-    importance_tables[contract_type] = perm_df
-
-    X_train_sm = sm.add_constant(X_train_scaled)
-    ols = sm.OLS(y_train, X_train_sm).fit()
-    ci = ols.conf_int()
-    ols_df = pd.DataFrame({
-        'feature': ['const'] + list(X.columns),
-        'coef': ols.params,
-        'p_value': ols.pvalues,
-        'ci_lower': ci[0].values,
-        'ci_upper': ci[1].values,
-    })
-    ols_df['feature'] = ols_df['feature'].str.replace('feat_', '', regex=False)
-    ols_tables[contract_type] = ols_df
-
-model_summary_df = pd.DataFrame(model_rows)
-display(model_summary_df.round(4))
-
-# %%
-# Display importance and coefficient summaries by contract type
-for contract_type in CONTRACT_TYPES:
-    if contract_type not in importance_tables:
-        continue
-    print(f"\n{contract_type.upper()} - Permutation Importance (Top 10)")
-    display(importance_tables[contract_type].head(10))
-
-    coef_df = ols_tables[contract_type]
-    coef_df = coef_df[coef_df['feature'] != 'const'].copy()
-    coef_df['abs_coef'] = coef_df['coef'].abs()
-    print(f"\n{contract_type.upper()} - OLS Coefficients (Top 10 by |coef|)")
-    display(coef_df.sort_values('abs_coef', ascending=False).head(10))
+print("\n✓ Modeling complete (3×3 grid with deal-grouped split)")
 
 # %%
 # Top-9 feature relationship plots per contract type
+# Uses aggregated importance from the grid
+
 for contract_type in CONTRACT_TYPES:
     if contract_type not in importance_tables:
         continue
@@ -1787,9 +1940,43 @@ for contract_type in CONTRACT_TYPES:
     for ax in axes[len(feat_cols_for_plot):]:
         ax.axis('off')
 
-    fig.suptitle(f"{contract_type.upper()} Contracts - Top Feature Relationships", y=1.02)
+    fig.suptitle(f"{contract_type.upper()} Contracts - Top Feature Relationships (by contract)", y=1.02)
     plt.tight_layout()
     plt.show()
+
+# %%
+# Top-9 feature relationship plots by matchup type (greedy_vs_glutton only)
+# Faceted by contract type
+
+if 'greedy_vs_glutton' in importance_tables_by_matchup:
+    top_feats_h2h = importance_tables_by_matchup['greedy_vs_glutton']['feature'].head(9).tolist()
+    feat_cols_h2h = [f"feat_{name}" for name in top_feats_h2h if f"feat_{name}" in smart_data.columns]
+
+    if feat_cols_h2h:
+        h2h_data = smart_data[smart_data['matchup_type'] == 'greedy_vs_glutton']
+
+        fig, axes = plt.subplots(3, 3, figsize=(14, 12))
+        axes = axes.flatten()
+
+        for ax, feat_col in zip(axes, feat_cols_h2h):
+            sns.regplot(
+                data=h2h_data,
+                x=feat_col,
+                y='tricks_won',
+                ax=ax,
+                scatter_kws={'alpha': 0.3, 's': 10},
+                line_kws={'color': 'red'},
+            )
+            ax.set_title(feat_col.replace('feat_', ''))
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+
+        for ax in axes[len(feat_cols_h2h):]:
+            ax.axis('off')
+
+        fig.suptitle("Greedy vs Glutton - Top Feature Relationships (by matchup)", y=1.02)
+        plt.tight_layout()
+        plt.show()
 
 # %% [markdown]
 # ---
