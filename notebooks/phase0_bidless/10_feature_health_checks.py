@@ -35,11 +35,20 @@
 # 1. Run Summary & Data Loading
 # 2. Dataset Integrity Checks
 # 3. Strata Completeness
-# 4. By Contract/Trump Analysis
-# 5. By Seat Analysis
-# 6. Feature Distributions
-# 7. Feature-Label Relationships
-# 8. Time/Batch Drift Analysis
+# 4. Symmetry Analysis
+#    - 4.1.0 By Contract_Type
+#    - 4.1.1 By Suit (suit contracts only)
+#    - 4.1.2 By High/Low (high vs low contracts)
+#    - 4.2.0 By Team
+#    - 4.3.0 By Seat
+#    - 4.4.0 By Contract_Type and Team (interaction)
+# 5. Feature Distributions
+# 6. Feature-Label Relationships
+#    - 6.1 Correlation Heatmaps
+#    - 6.2 Correlation Tables
+#    - 6.3 Scatter Plots
+# 7. Time/Batch Drift Analysis
+# 8. Summary
 
 # %% [markdown]
 # ## Configuration
@@ -123,6 +132,32 @@ plt.rcParams['figure.figsize'] = (12, 6)
 plt.rcParams['figure.dpi'] = 100
 
 print("Imports successful!")
+
+
+# %%
+# ============================================================================
+# SHARED PLOTTING HELPER
+# ============================================================================
+
+def plot_violin_box(data, x, y, ax, palette='Set2', box_width=0.15, **kwargs):
+    """Violin plot with nested boxplot overlay.
+
+    Falls back to simple boxplot if seaborn unavailable.
+    """
+    try:
+        import seaborn as sns
+        sns.violinplot(data=data, x=x, y=y, ax=ax,
+                       inner=None, cut=0, palette=palette, **kwargs)
+        sns.boxplot(data=data, x=x, y=y, ax=ax,
+                    width=box_width, palette=palette,
+                    boxprops={'zorder': 2},
+                    flierprops={'marker': 'o', 'markersize': 3},
+                    **kwargs)
+    except ImportError:
+        data.boxplot(column=y, by=x, ax=ax)
+
+
+print("✅ Shared plotting helper loaded")
 
 
 # %%
@@ -339,38 +374,83 @@ else:
 
 # %% [markdown]
 # ---
-# ## Section 4: By Contract/Trump Analysis
+# ## Section 4: Symmetry Analysis
 #
-# Hand value distributions by contract type and trump suit.
+# Validates that hand value distributions are symmetric across contract types,
+# trump suits, teams, and seats.
 
 # %%
-# Hand value by contract type
+# ============================================================================
+# SECTION 4.1.0: BY CONTRACT_TYPE
+# ============================================================================
+
+from scipy.stats import f_oneway, ttest_ind
+
+print("=" * 80)
+print("SECTION 4.1.0: HAND VALUE BY CONTRACT_TYPE")
+print("=" * 80)
+
+# Hand value by contract type visualization
 fig = plot_hand_value_by_contract(df)
 plt.show()
 
-# Statistics by contract
-print("\n=== Statistics by Contract Type ===")
+# Statistics by contract type
+print("\n=== Descriptive Statistics by Contract Type ===")
 contract_stats = df.groupby('contract_type')['feat_hand_value'].agg(['count', 'mean', 'std', 'min', 'max'])
 display(contract_stats)
 
+# One-way ANOVA across contract types
+contract_groups = [df[df['contract_type'] == ct]['feat_hand_value'].values
+                   for ct in ['suit', 'high', 'low']]
+
+f_stat, p_value = f_oneway(*contract_groups)
+
+print("\n=== ANOVA: Hand Value ~ Contract_Type ===")
+print(f"  F-statistic: {f_stat:.4f}")
+print(f"  p-value: {p_value:.4f}")
+print("  Significance level: α = 0.05")
+
+# Effect size (eta-squared)
+grand_mean = df['feat_hand_value'].mean()
+ss_between = sum(len(df[df['contract_type'] == ct]) *
+                 (df[df['contract_type'] == ct]['feat_hand_value'].mean() - grand_mean)**2
+                 for ct in ['suit', 'high', 'low'])
+ss_total = ((df['feat_hand_value'] - grand_mean)**2).sum()
+eta_squared = ss_between / ss_total if ss_total > 0 else 0
+
+print(f"  Effect size (η²): {eta_squared:.4f}")
+print(f"  Interpretation: {eta_squared*100:.2f}% of variance explained by contract_type")
+
+# Violin+box plot by contract type
+fig, ax = plt.subplots(figsize=(10, 6))
+plot_violin_box(df, x='contract_type', y='feat_hand_value', ax=ax, palette='Set2')
+ax.set_title(f'Hand Value by Contract Type (ANOVA p={p_value:.4f})')
+ax.set_xlabel('Contract Type')
+ax.set_ylabel('Hand Value')
+plt.tight_layout()
+plt.show()
+
 # %%
-# Trump suit analysis (for suit contracts only)
+# ============================================================================
+# SECTION 4.1.1: BY SUIT (suit contracts only)
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("SECTION 4.1.1: HAND VALUE BY TRUMP SUIT (Suit Contracts Only)")
+print("=" * 80)
+
 suit_df = df[df['contract_type'] == 'suit']
+
 if len(suit_df) > 0:
-    print("=== Hand Value by Trump Suit (Suit Contracts Only) ===")
+    # Descriptive statistics
+    print("\n=== Descriptive Statistics by Trump Suit ===")
     trump_stats = suit_df.groupby('trump_suit')['feat_hand_value'].agg(['count', 'mean', 'std'])
     display(trump_stats)
 
-    # ========================================================================
-    # STATISTICAL TEST: One-way ANOVA for trump suit equivalence
-    # ========================================================================
-    from scipy.stats import f_oneway
-
-    # Extract hand values by trump suit
+    # One-way ANOVA for trump suit equivalence
     groups = [suit_df[suit_df['trump_suit'] == suit]['feat_hand_value'].values
               for suit in ['C', 'D', 'H', 'S']]
 
-    # One-way ANOVA
     f_stat, p_value = f_oneway(*groups)
 
     print("\n=== ANOVA: Hand Value ~ Trump Suit ===")
@@ -384,20 +464,17 @@ if len(suit_df) > 0:
                      (suit_df[suit_df['trump_suit'] == suit]['feat_hand_value'].mean() - grand_mean)**2
                      for suit in ['C', 'D', 'H', 'S'])
     ss_total = ((suit_df['feat_hand_value'] - grand_mean)**2).sum()
-    eta_squared = ss_between / ss_total
+    eta_squared = ss_between / ss_total if ss_total > 0 else 0
 
     print(f"  Effect size (η²): {eta_squared:.4f}")
     print(f"  Interpretation: {eta_squared*100:.2f}% of variance explained by trump suit")
 
-    # Validation gate: warn if bias detected (soft, doesn't raise error)
+    # Validation gate
     if p_value < 0.05:
         print(f"  ❌ FAIL: Trump suit bias detected (p={p_value:.4f})")
         print("         Mean hand values differ significantly across trump suits")
-    else:
-        print("  ✅ PASS: No significant trump suit bias")
 
-    # Post-hoc pairwise comparisons (only if ANOVA significant)
-    if p_value < 0.05:
+        # Post-hoc Tukey HSD
         from scipy.stats import tukey_hsd
         res = tukey_hsd(*groups)
         print("\n  Post-hoc pairwise comparisons (Tukey HSD):")
@@ -406,20 +483,13 @@ if len(suit_df) > 0:
             for j in range(i+1, len(suits)):
                 sig_marker = "***" if res.pvalue[i,j] < 0.05 else "n.s."
                 print(f"    {suits[i]} vs {suits[j]}: p={res.pvalue[i,j]:.4f} {sig_marker}")
+    else:
+        print("  ✅ PASS: No significant trump suit bias")
 
-    # ========================================================================
-    # END STATISTICAL TEST
-    # ========================================================================
-
-    # Plot if seaborn available
-    fig, ax = plt.subplots(figsize=(10, 5))
-    try:
-        import seaborn as sns
-        sns.violinplot(data=suit_df, x='trump_suit', y='feat_hand_value', ax=ax,
-                       inner='quartile', cut=0, palette='Set2')
-    except ImportError:
-        suit_df.boxplot(column='feat_hand_value', by='trump_suit', ax=ax)
-    ax.set_title('Hand Value by Trump Suit')
+    # Violin+box plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    plot_violin_box(suit_df, x='trump_suit', y='feat_hand_value', ax=ax, palette='Set2')
+    ax.set_title(f'Hand Value by Trump Suit (ANOVA p={p_value:.4f})')
     ax.set_xlabel('Trump Suit')
     ax.set_ylabel('Hand Value')
     plt.tight_layout()
@@ -427,31 +497,192 @@ if len(suit_df) > 0:
 else:
     print("No suit contracts in dataset")
 
-# %% [markdown]
-# ---
-# ## Section 5: By Seat Analysis
-#
-# **Critical check:** If seats 1-3 look identical to seat 0, the per-seat feature bug may exist!
+# %%
+# ============================================================================
+# SECTION 4.1.2: BY HIGH/LOW (high vs low contracts)
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("SECTION 4.1.2: HAND VALUE BY HIGH vs LOW")
+print("=" * 80)
+
+highlow_df = df[df['contract_type'].isin(['high', 'low'])]
+
+if len(highlow_df) > 0:
+    # Descriptive statistics
+    print("\n=== Descriptive Statistics by Contract Type (High/Low) ===")
+    hl_stats = highlow_df.groupby('contract_type')['feat_hand_value'].agg(['count', 'mean', 'std'])
+    display(hl_stats)
+
+    # Two-sample t-test
+    high_vals = highlow_df[highlow_df['contract_type'] == 'high']['feat_hand_value'].values
+    low_vals = highlow_df[highlow_df['contract_type'] == 'low']['feat_hand_value'].values
+
+    t_stat, p_value = ttest_ind(high_vals, low_vals)
+
+    print("\n=== t-test: Hand Value ~ High vs Low ===")
+    print(f"  t-statistic: {t_stat:.4f}")
+    print(f"  p-value: {p_value:.4f}")
+    print("  Significance level: α = 0.05")
+
+    # Effect size (Cohen's d)
+    mean_diff = high_vals.mean() - low_vals.mean()
+    pooled_std = ((high_vals.std()**2 + low_vals.std()**2) / 2)**0.5
+    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
+
+    print(f"  Effect size (Cohen's d): {cohens_d:.4f}")
+    if abs(cohens_d) < 0.2:
+        effect_interp = "negligible"
+    elif abs(cohens_d) < 0.5:
+        effect_interp = "small"
+    elif abs(cohens_d) < 0.8:
+        effect_interp = "medium"
+    else:
+        effect_interp = "large"
+    print(f"  Interpretation: {effect_interp} effect")
+
+    # Validation gate
+    if p_value < 0.05:
+        print(f"  ❌ FAIL: Significant difference between high and low (p={p_value:.4f})")
+    else:
+        print("  ✅ PASS: No significant difference between high and low")
+
+    # Violin+box plot
+    fig, ax = plt.subplots(figsize=(8, 6))
+    plot_violin_box(highlow_df, x='contract_type', y='feat_hand_value', ax=ax, palette='Set2')
+    ax.set_title(f'Hand Value: High vs Low (t-test p={p_value:.4f})')
+    ax.set_xlabel('Contract Type')
+    ax.set_ylabel('Hand Value')
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No high/low contracts in dataset")
 
 # %%
-# Hand value by seat - separated by contract type
-from scipy.stats import f_oneway
+# ============================================================================
+# SECTION 4.2.0: BY TEAM
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("SECTION 4.2.0: HAND VALUE BY TEAM")
+print("=" * 80)
+
+df['team'] = df['seat'].apply(lambda s: 0 if s in [0, 2] else 1)
+
+# Split by contract type for visualization
+suit_contracts = df[df['contract_type'] == 'suit']
+highlow_contracts = df[df['contract_type'].isin(['high', 'low'])]
+
+# Create side-by-side visualizations with violin+box overlay
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+# Plot 1: Suit contracts
+if len(suit_contracts) > 0:
+    plot_violin_box(suit_contracts, x='team', y='feat_hand_value', ax=axes[0], palette='Blues')
+    axes[0].set_xticklabels(['Team 0 (seats 0,2)', 'Team 1 (seats 1,3)'])
+    axes[0].set_title('Hand Value by Team (Suit Contracts)')
+    axes[0].set_xlabel('')
+    axes[0].set_ylabel('Hand Value')
+else:
+    axes[0].text(0.5, 0.5, 'No suit contracts', ha='center', va='center')
+    axes[0].set_title('Hand Value by Team (Suit Contracts)')
+
+# Plot 2: High/Low contracts
+if len(highlow_contracts) > 0:
+    plot_violin_box(highlow_contracts, x='team', y='feat_hand_value', ax=axes[1], palette='Greens')
+    axes[1].set_xticklabels(['Team 0 (seats 0,2)', 'Team 1 (seats 1,3)'])
+    axes[1].set_title('Hand Value by Team (High/Low Contracts)')
+    axes[1].set_xlabel('')
+    axes[1].set_ylabel('Hand Value')
+else:
+    axes[1].text(0.5, 0.5, 'No high/low contracts', ha='center', va='center')
+    axes[1].set_title('Hand Value by Team (High/Low Contracts)')
+
+plt.tight_layout()
+plt.show()
+
+# Statistical tests for team balance
+print("\n" + "=" * 70)
+print("TEAM BALANCE ANALYSIS (BY CONTRACT TYPE)")
+print("=" * 70)
+
+# Test 1: Suit Contracts
+if len(suit_contracts) > 0:
+    print("\n=== Two-Sample t-test: Hand Value ~ Team (Suit Contracts) ===")
+
+    suit_team_stats = suit_contracts.groupby('team')['feat_hand_value'].agg(['count', 'mean', 'std'])
+    display(suit_team_stats)
+
+    team0_suit = suit_contracts[suit_contracts['team'] == 0]['feat_hand_value'].values
+    team1_suit = suit_contracts[suit_contracts['team'] == 1]['feat_hand_value'].values
+
+    t_stat, p_value = ttest_ind(team0_suit, team1_suit)
+
+    print(f"\n  t-statistic: {t_stat:.4f}")
+    print(f"  p-value: {p_value:.4f}")
+
+    mean_diff = team0_suit.mean() - team1_suit.mean()
+    pooled_std = ((team0_suit.std()**2 + team1_suit.std()**2) / 2)**0.5
+    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
+    print(f"  Effect size (Cohen's d): {cohens_d:.4f}")
+
+    if p_value < 0.05:
+        print(f"  ❌ FAIL: Team bias detected in suit contracts (p={p_value:.4f})")
+    else:
+        print("  ✅ PASS: No significant team bias in suit contracts")
+
+# Test 2: High/Low Contracts
+if len(highlow_contracts) > 0:
+    print("\n=== Two-Sample t-test: Hand Value ~ Team (High/Low Contracts) ===")
+
+    highlow_team_stats = highlow_contracts.groupby('team')['feat_hand_value'].agg(['count', 'mean', 'std'])
+    display(highlow_team_stats)
+
+    team0_hl = highlow_contracts[highlow_contracts['team'] == 0]['feat_hand_value'].values
+    team1_hl = highlow_contracts[highlow_contracts['team'] == 1]['feat_hand_value'].values
+
+    t_stat, p_value = ttest_ind(team0_hl, team1_hl)
+
+    print(f"\n  t-statistic: {t_stat:.4f}")
+    print(f"  p-value: {p_value:.4f}")
+
+    mean_diff = team0_hl.mean() - team1_hl.mean()
+    pooled_std = ((team0_hl.std()**2 + team1_hl.std()**2) / 2)**0.5
+    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
+    print(f"  Effect size (Cohen's d): {cohens_d:.4f}")
+
+    if p_value < 0.05:
+        print(f"  ❌ FAIL: Team bias detected in high/low contracts (p={p_value:.4f})")
+    else:
+        print("  ✅ PASS: No significant team bias in high/low contracts")
+
+# Overall team balance
+print("\n" + "=" * 70)
+print("OVERALL TEAM BALANCE (ALL CONTRACTS)")
+print("=" * 70)
+
+team_stats = df.groupby('team')['feat_hand_value'].agg(['count', 'mean', 'std'])
+display(team_stats)
+
+# %%
+# ============================================================================
+# SECTION 4.3.0: BY SEAT
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("SECTION 4.3.0: HAND VALUE BY SEAT")
+print("=" * 80)
 
 # Split into suit vs high/low contracts
 suit_contracts = df[df['contract_type'] == 'suit']
 highlow_contracts = df[df['contract_type'].isin(['high', 'low'])]
 
-# Create side-by-side visualizations
+# Create side-by-side visualizations with violin+box overlay
 fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
 # Plot 1: Suit contracts
 if len(suit_contracts) > 0:
-    try:
-        import seaborn as sns
-        sns.violinplot(data=suit_contracts, x='seat', y='feat_hand_value', ax=axes[0],
-                       inner='quartile', cut=0, palette='Blues')
-    except ImportError:
-        suit_contracts.boxplot(column='feat_hand_value', by='seat', ax=axes[0])
+    plot_violin_box(suit_contracts, x='seat', y='feat_hand_value', ax=axes[0], palette='Blues')
     axes[0].set_title('Hand Value by Seat (Suit Contracts)')
     axes[0].set_xlabel('Seat')
     axes[0].set_ylabel('Hand Value')
@@ -461,12 +692,7 @@ else:
 
 # Plot 2: High/Low contracts
 if len(highlow_contracts) > 0:
-    try:
-        import seaborn as sns
-        sns.violinplot(data=highlow_contracts, x='seat', y='feat_hand_value', ax=axes[1],
-                       inner='quartile', cut=0, palette='Greens')
-    except ImportError:
-        highlow_contracts.boxplot(column='feat_hand_value', by='seat', ax=axes[1])
+    plot_violin_box(highlow_contracts, x='seat', y='feat_hand_value', ax=axes[1], palette='Greens')
     axes[1].set_title('Hand Value by Seat (High/Low Contracts)')
     axes[1].set_xlabel('Seat')
     axes[1].set_ylabel('Hand Value')
@@ -477,32 +703,25 @@ else:
 plt.tight_layout()
 plt.show()
 
-# ============================================================================
-# STATISTICAL TESTS: Seat balance within contract types
-# ============================================================================
-
+# Statistical tests for seat balance
 print("\n" + "=" * 70)
 print("SEAT BALANCE ANALYSIS (BY CONTRACT TYPE)")
 print("=" * 70)
 
-# --- Test 1: Suit Contracts ---
+# Test 1: Suit Contracts
 if len(suit_contracts) > 0:
     print("\n=== ANOVA: Hand Value ~ Seat (Suit Contracts) ===")
 
-    # Descriptive statistics
     suit_seat_stats = suit_contracts.groupby('seat')['feat_hand_value'].agg(['count', 'mean', 'std'])
     display(suit_seat_stats)
 
-    # Extract hand values by seat
     suit_groups = [suit_contracts[suit_contracts['seat'] == seat]['feat_hand_value'].values
                    for seat in range(4)]
 
-    # One-way ANOVA
     f_stat, p_value = f_oneway(*suit_groups)
 
     print(f"\n  F-statistic: {f_stat:.4f}")
     print(f"  p-value: {p_value:.4f}")
-    print("  Significance level: α = 0.05")
 
     # Effect size (eta-squared)
     grand_mean = suit_contracts['feat_hand_value'].mean()
@@ -510,20 +729,13 @@ if len(suit_contracts) > 0:
                      (suit_contracts[suit_contracts['seat'] == seat]['feat_hand_value'].mean() - grand_mean)**2
                      for seat in range(4))
     ss_total = ((suit_contracts['feat_hand_value'] - grand_mean)**2).sum()
-    eta_squared = ss_between / ss_total
+    eta_squared = ss_between / ss_total if ss_total > 0 else 0
 
     print(f"  Effect size (η²): {eta_squared:.4f}")
-    print(f"  Interpretation: {eta_squared*100:.2f}% of variance explained by seat")
 
-    # Validation gate
     if p_value < 0.05:
         print(f"  ❌ FAIL: Seat bias detected in suit contracts (p={p_value:.4f})")
-        print("         Mean hand values differ significantly across seats")
-    else:
-        print("  ✅ PASS: No significant seat bias in suit contracts")
 
-    # Post-hoc pairwise comparisons (only if ANOVA significant)
-    if p_value < 0.05:
         from scipy.stats import tukey_hsd
         res = tukey_hsd(*suit_groups)
         print("\n  Post-hoc pairwise comparisons (Tukey HSD):")
@@ -531,25 +743,23 @@ if len(suit_contracts) > 0:
             for j in range(i+1, 4):
                 sig_marker = "***" if res.pvalue[i,j] < 0.05 else "n.s."
                 print(f"    Seat {i} vs Seat {j}: p={res.pvalue[i,j]:.4f} {sig_marker}")
+    else:
+        print("  ✅ PASS: No significant seat bias in suit contracts")
 
-# --- Test 2: High/Low Contracts ---
+# Test 2: High/Low Contracts
 if len(highlow_contracts) > 0:
     print("\n=== ANOVA: Hand Value ~ Seat (High/Low Contracts) ===")
 
-    # Descriptive statistics
     highlow_seat_stats = highlow_contracts.groupby('seat')['feat_hand_value'].agg(['count', 'mean', 'std'])
     display(highlow_seat_stats)
 
-    # Extract hand values by seat
     highlow_groups = [highlow_contracts[highlow_contracts['seat'] == seat]['feat_hand_value'].values
                       for seat in range(4)]
 
-    # One-way ANOVA
     f_stat, p_value = f_oneway(*highlow_groups)
 
     print(f"\n  F-statistic: {f_stat:.4f}")
     print(f"  p-value: {p_value:.4f}")
-    print("  Significance level: α = 0.05")
 
     # Effect size (eta-squared)
     grand_mean = highlow_contracts['feat_hand_value'].mean()
@@ -557,20 +767,13 @@ if len(highlow_contracts) > 0:
                      (highlow_contracts[highlow_contracts['seat'] == seat]['feat_hand_value'].mean() - grand_mean)**2
                      for seat in range(4))
     ss_total = ((highlow_contracts['feat_hand_value'] - grand_mean)**2).sum()
-    eta_squared = ss_between / ss_total
+    eta_squared = ss_between / ss_total if ss_total > 0 else 0
 
     print(f"  Effect size (η²): {eta_squared:.4f}")
-    print(f"  Interpretation: {eta_squared*100:.2f}% of variance explained by seat")
 
-    # Validation gate
     if p_value < 0.05:
         print(f"  ❌ FAIL: Seat bias detected in high/low contracts (p={p_value:.4f})")
-        print("         Mean hand values differ significantly across seats")
-    else:
-        print("  ✅ PASS: No significant seat bias in high/low contracts")
 
-    # Post-hoc pairwise comparisons (only if ANOVA significant)
-    if p_value < 0.05:
         from scipy.stats import tukey_hsd
         res = tukey_hsd(*highlow_groups)
         print("\n  Post-hoc pairwise comparisons (Tukey HSD):")
@@ -578,12 +781,10 @@ if len(highlow_contracts) > 0:
             for j in range(i+1, 4):
                 sig_marker = "***" if res.pvalue[i,j] < 0.05 else "n.s."
                 print(f"    Seat {i} vs Seat {j}: p={res.pvalue[i,j]:.4f} {sig_marker}")
+    else:
+        print("  ✅ PASS: No significant seat bias in high/low contracts")
 
-# ============================================================================
-# END STATISTICAL TESTS
-# ============================================================================
-
-# Overall seat balance check (across all contract types)
+# Overall seat balance
 print("\n" + "=" * 70)
 print("OVERALL SEAT BALANCE (ALL CONTRACTS)")
 print("=" * 70)
@@ -599,183 +800,87 @@ balanced_status = '✅ Yes' if balance.is_balanced else '⚠️ No'
 print(f"  Balanced: {balanced_status}")
 
 # %%
-# Team analysis (seats 0,2 vs 1,3) - separated by contract type
-from scipy.stats import f_oneway
+# ============================================================================
+# SECTION 4.4.0: BY CONTRACT_TYPE AND TEAM (interaction)
+# ============================================================================
 
-df['team'] = df['seat'].apply(lambda s: 0 if s in [0, 2] else 1)
+print("\n" + "=" * 80)
+print("SECTION 4.4.0: CONTRACT_TYPE × TEAM INTERACTION")
+print("=" * 80)
 
-# Split into suit vs high/low contracts
-suit_contracts = df[df['contract_type'] == 'suit']
-highlow_contracts = df[df['contract_type'].isin(['high', 'low'])]
+# Create 1×3 faceted subplots: one per contract_type
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-# Create side-by-side visualizations
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+contract_types = ['suit', 'high', 'low']
+palettes = ['Blues', 'Greens', 'Purples']
 
-# Plot 1: Suit contracts
-if len(suit_contracts) > 0:
-    try:
-        import seaborn as sns
-        sns.violinplot(data=suit_contracts, x='team', y='feat_hand_value', ax=axes[0],
-                       inner='quartile', cut=0, palette='Blues')
-    except ImportError:
-        suit_contracts.boxplot(column='feat_hand_value', by='team', ax=axes[0])
-    axes[0].set_xticklabels(['Team 0 (seats 0,2)', 'Team 1 (seats 1,3)'])
-    axes[0].set_title('Hand Value by Team (Suit Contracts)')
-    axes[0].set_xlabel('')
-    axes[0].set_ylabel('Hand Value')
-else:
-    axes[0].text(0.5, 0.5, 'No suit contracts', ha='center', va='center')
-    axes[0].set_title('Hand Value by Team (Suit Contracts)')
+for idx, (ct, palette) in enumerate(zip(contract_types, palettes)):
+    ax = axes[idx]
+    subset = df[df['contract_type'] == ct]
 
-# Plot 2: High/Low contracts
-if len(highlow_contracts) > 0:
-    try:
-        import seaborn as sns
-        sns.violinplot(data=highlow_contracts, x='team', y='feat_hand_value', ax=axes[1],
-                       inner='quartile', cut=0, palette='Greens')
-    except ImportError:
-        highlow_contracts.boxplot(column='feat_hand_value', by='team', ax=axes[1])
-    axes[1].set_xticklabels(['Team 0 (seats 0,2)', 'Team 1 (seats 1,3)'])
-    axes[1].set_title('Hand Value by Team (High/Low Contracts)')
-    axes[1].set_xlabel('')
-    axes[1].set_ylabel('Hand Value')
-else:
-    axes[1].text(0.5, 0.5, 'No high/low contracts', ha='center', va='center')
-    axes[1].set_title('Hand Value by Team (High/Low Contracts)')
+    if len(subset) > 0:
+        plot_violin_box(subset, x='team', y='feat_hand_value', ax=ax, palette=palette)
+        ax.set_xticklabels(['Team 0', 'Team 1'])
+        ax.set_title(f'{ct.capitalize()} Contracts (n={len(subset):,})')
+        ax.set_xlabel('Team')
+        ax.set_ylabel('Hand Value')
+    else:
+        ax.text(0.5, 0.5, f'No {ct} contracts', ha='center', va='center')
+        ax.set_title(f'{ct.capitalize()} Contracts')
 
 plt.tight_layout()
 plt.show()
 
-# ============================================================================
-# STATISTICAL TESTS: Team balance within contract types
-# ============================================================================
+# Two-way ANOVA with interaction using statsmodels
+print("\n=== Two-Way ANOVA: Hand Value ~ Contract_Type * Team ===")
 
-print("\n" + "=" * 70)
-print("TEAM BALANCE ANALYSIS (BY CONTRACT TYPE)")
-print("=" * 70)
+try:
+    from statsmodels.formula.api import ols
+    from statsmodels.stats.anova import anova_lm
 
-# --- Test 1: Suit Contracts ---
-if len(suit_contracts) > 0:
-    print("\n=== Two-Sample t-test: Hand Value ~ Team (Suit Contracts) ===")
+    model = ols('feat_hand_value ~ C(contract_type) * C(team)', data=df).fit()
+    anova_table = anova_lm(model, typ=2)
+    print("\nType II ANOVA Table:")
+    display(anova_table)
 
-    # Descriptive statistics
-    suit_team_stats = suit_contracts.groupby('team')['feat_hand_value'].agg(['count', 'mean', 'std'])
-    display(suit_team_stats)
+    # Interpretation
+    ct_p = anova_table.loc['C(contract_type)', 'PR(>F)']
+    team_p = anova_table.loc['C(team)', 'PR(>F)']
+    interaction_p = anova_table.loc['C(contract_type):C(team)', 'PR(>F)']
 
-    # Extract hand values by team
-    team0_suit = suit_contracts[suit_contracts['team'] == 0]['feat_hand_value'].values
-    team1_suit = suit_contracts[suit_contracts['team'] == 1]['feat_hand_value'].values
+    print("\n  Main effect (Contract_Type): " + ("❌ SIGNIFICANT" if ct_p < 0.05 else "✅ Not significant"))
+    print("  Main effect (Team): " + ("❌ SIGNIFICANT" if team_p < 0.05 else "✅ Not significant"))
+    print("  Interaction: " + ("❌ SIGNIFICANT" if interaction_p < 0.05 else "✅ Not significant"))
 
-    # Independent samples t-test
-    from scipy.stats import ttest_ind
-    t_stat, p_value = ttest_ind(team0_suit, team1_suit)
+except ImportError:
+    print("statsmodels unavailable, running per-contract t-tests instead")
+    for ct in ['suit', 'high', 'low']:
+        subset = df[df['contract_type'] == ct]
+        if len(subset) > 0:
+            team0 = subset[subset['team'] == 0]['feat_hand_value']
+            team1 = subset[subset['team'] == 1]['feat_hand_value']
+            t_stat, p_val = ttest_ind(team0, team1)
+            status = "❌ FAIL" if p_val < 0.05 else "✅ PASS"
+            print(f"  {ct}: t={t_stat:.4f}, p={p_val:.4f} {status}")
 
-    print(f"\n  t-statistic: {t_stat:.4f}")
-    print(f"  p-value: {p_value:.4f}")
-    print("  Significance level: α = 0.05")
-
-    # Effect size (Cohen's d)
-    mean_diff = suit_contracts[suit_contracts['team'] == 0]['feat_hand_value'].mean() - \
-                suit_contracts[suit_contracts['team'] == 1]['feat_hand_value'].mean()
-    pooled_std = ((suit_contracts[suit_contracts['team'] == 0]['feat_hand_value'].std()**2 +
-                   suit_contracts[suit_contracts['team'] == 1]['feat_hand_value'].std()**2) / 2)**0.5
-    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
-
-    print(f"  Effect size (Cohen's d): {cohens_d:.4f}")
-    if abs(cohens_d) < 0.2:
-        effect_interp = "negligible"
-    elif abs(cohens_d) < 0.5:
-        effect_interp = "small"
-    elif abs(cohens_d) < 0.8:
-        effect_interp = "medium"
-    else:
-        effect_interp = "large"
-    print(f"  Interpretation: {effect_interp} effect")
-
-    # Validation gate
-    if p_value < 0.05:
-        print(f"  ❌ FAIL: Team bias detected in suit contracts (p={p_value:.4f})")
-        print("         Mean hand values differ significantly between teams")
-        print(f"         Team 0 mean: {suit_contracts[suit_contracts['team'] == 0]['feat_hand_value'].mean():.4f}")
-        print(f"         Team 1 mean: {suit_contracts[suit_contracts['team'] == 1]['feat_hand_value'].mean():.4f}")
-    else:
-        print("  ✅ PASS: No significant team bias in suit contracts")
-
-# --- Test 2: High/Low Contracts ---
-if len(highlow_contracts) > 0:
-    print("\n=== Two-Sample t-test: Hand Value ~ Team (High/Low Contracts) ===")
-
-    # Descriptive statistics
-    highlow_team_stats = highlow_contracts.groupby('team')['feat_hand_value'].agg(['count', 'mean', 'std'])
-    display(highlow_team_stats)
-
-    # Extract hand values by team
-    team0_highlow = highlow_contracts[highlow_contracts['team'] == 0]['feat_hand_value'].values
-    team1_highlow = highlow_contracts[highlow_contracts['team'] == 1]['feat_hand_value'].values
-
-    # Independent samples t-test
-    from scipy.stats import ttest_ind
-    t_stat, p_value = ttest_ind(team0_highlow, team1_highlow)
-
-    print(f"\n  t-statistic: {t_stat:.4f}")
-    print(f"  p-value: {p_value:.4f}")
-    print("  Significance level: α = 0.05")
-
-    # Effect size (Cohen's d)
-    mean_diff = highlow_contracts[highlow_contracts['team'] == 0]['feat_hand_value'].mean() - \
-                highlow_contracts[highlow_contracts['team'] == 1]['feat_hand_value'].mean()
-    pooled_std = ((highlow_contracts[highlow_contracts['team'] == 0]['feat_hand_value'].std()**2 +
-                   highlow_contracts[highlow_contracts['team'] == 1]['feat_hand_value'].std()**2) / 2)**0.5
-    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
-
-    print(f"  Effect size (Cohen's d): {cohens_d:.4f}")
-    if abs(cohens_d) < 0.2:
-        effect_interp = "negligible"
-    elif abs(cohens_d) < 0.5:
-        effect_interp = "small"
-    elif abs(cohens_d) < 0.8:
-        effect_interp = "medium"
-    else:
-        effect_interp = "large"
-    print(f"  Interpretation: {effect_interp} effect")
-
-    # Validation gate
-    if p_value < 0.05:
-        print(f"  ❌ FAIL: Team bias detected in high/low contracts (p={p_value:.4f})")
-        print("         Mean hand values differ significantly between teams")
-        print(f"         Team 0 mean: {highlow_contracts[highlow_contracts['team'] == 0]['feat_hand_value'].mean():.4f}")
-        print(f"         Team 1 mean: {highlow_contracts[highlow_contracts['team'] == 1]['feat_hand_value'].mean():.4f}")
-    else:
-        print("  ✅ PASS: No significant team bias in high/low contracts")
-
-# ============================================================================
-# END STATISTICAL TESTS
-# ============================================================================
-
-# Overall team balance check (across all contract types)
-print("\n" + "=" * 70)
-print("OVERALL TEAM BALANCE (ALL CONTRACTS)")
-print("=" * 70)
-
-team_stats = df.groupby('team')['feat_hand_value'].agg(['count', 'mean', 'std'])
-display(team_stats)
-
-# Clean up temporary column
+# Clean up team column
 df.drop('team', axis=1, inplace=True)
+
+print("\n✅ Section 4 Symmetry Analysis completed")
 
 # %% [markdown]
 # ---
-# ## Section 6: Feature Distributions
+# ## Section 5: Feature Distributions
 #
 # Histograms of key features.
 
 # %%
 # ============================================================================
-# SECTION 6: FEATURE DISTRIBUTIONS
+# SECTION 5: FEATURE DISTRIBUTIONS
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 6: FEATURE DISTRIBUTIONS")
+print("SECTION 5: FEATURE DISTRIBUTIONS")
 print("=" * 80)
 
 import numpy as np
@@ -843,9 +948,19 @@ if len(suit_df) > 0:
         ax.set_xlabel('Feature Value')
         ax.set_ylabel('Count')
         ax.set_title(feat_name.replace('_', ' ').title())
-        ax.set_xticks(x)
-        ax.set_xticklabels([f'{v:.1f}' if isinstance(v, float) else str(v)
-                            for v in feat_values], rotation=45)
+
+        # Fix x-axis readability for features with many unique values
+        if feat_name in ['trump_power_avg', 'trump_power_sum'] and len(feat_values) > 10:
+            # Select ~10 evenly spaced ticks
+            tick_indices = np.linspace(0, len(feat_values) - 1, 10, dtype=int)
+            ax.set_xticks([x[i] for i in tick_indices])
+            ax.set_xticklabels([f'{feat_values[i]:.1f}' if isinstance(feat_values[i], float)
+                               else str(feat_values[i]) for i in tick_indices], rotation=45)
+        else:
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'{v:.1f}' if isinstance(v, float) else str(v)
+                                for v in feat_values], rotation=45)
+
         if idx == 0:
             ax.legend(title='Trump Suit', loc='upper right')
 
@@ -1051,7 +1166,7 @@ if len(highlow_df) > 0:
     print("-" * 80)
 
 print("\n" + "=" * 80)
-print("END SECTION 6")
+print("END SECTION 5")
 print("=" * 80)
 
 # %%
@@ -1192,17 +1307,17 @@ print("=" * 80)
 
 # %% [markdown]
 # ---
-# ## Section 7: Feature-Label Relationships
+# ## Section 6: Feature-Label Relationships
 #
 # Correlation analysis and scatter plots.
 
 # %%
 # ============================================================================
-# SECTION 7.1: CORRELATION HEATMAPS BY CONTRACT TYPE
+# SECTION 6.1: CORRELATION HEATMAPS BY CONTRACT TYPE
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 7.1: CORRELATION HEATMAPS BY CONTRACT TYPE")
+print("SECTION 6.1: CORRELATION HEATMAPS BY CONTRACT TYPE")
 print("=" * 80)
 
 import numpy as np
@@ -1321,15 +1436,105 @@ if len(general_features) > 0:
 plt.tight_layout()
 plt.show()
 
-print("\n✅ Correlation heatmaps completed")
+print("\n✅ Variance-based correlation heatmaps completed")
+
+# ============================================================================
+# SECTION 6.1b: CORRELATION HEATMAPS - TOP 15 BY |CORR WITH HAND_VALUE|
+# ============================================================================
+
+print("\n" + "=" * 80)
+print("TOP 15 FEATURES BY |CORRELATION WITH HAND_VALUE|")
+print("=" * 80)
+
+fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+
+# Panel 1: Suit contracts - top 15 by |corr with hand_value|
+suit_df = df[df['contract_type'] == 'suit']
+if len(suit_df) > 0 and 'feat_hand_value' in suit_df.columns:
+    suit_feat_cols = [c for c in suit_df.columns if c.startswith('feat_') and c != 'feat_hand_value']
+    corrs = suit_df[suit_feat_cols].corrwith(suit_df['feat_hand_value']).abs()
+    top_by_corr = corrs.nlargest(15).index.tolist()
+
+    if len(top_by_corr) > 0:
+        # Feature-feature correlation matrix (excluding hand_value)
+        corr_matrix = suit_df[top_by_corr].corr()
+        try:
+            import seaborn as sns
+            sns.heatmap(corr_matrix, ax=axes[0], cmap='RdBu_r', center=0, vmin=-1, vmax=1,
+                       cbar_kws={'label': 'Correlation'}, annot=False)
+        except ImportError:
+            im = axes[0].imshow(corr_matrix, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
+            plt.colorbar(im, ax=axes[0])
+
+        axes[0].set_title(f'Suit Contracts (n={len(suit_df):,})\nTop 15 by |corr with hand_value|')
+        axes[0].set_xticklabels([label.get_text().replace('feat_', '')
+                                 for label in axes[0].get_xticklabels()], rotation=45, ha='right')
+        axes[0].set_yticklabels([label.get_text().replace('feat_', '')
+                                 for label in axes[0].get_yticklabels()], rotation=0)
+else:
+    axes[0].text(0.5, 0.5, 'No suit contracts', ha='center', va='center')
+    axes[0].set_title('Suit Contracts')
+
+# Panel 2: High/Low contracts - top 15 by |corr with hand_value|
+highlow_df = df[df['contract_type'].isin(['high', 'low'])]
+if len(highlow_df) > 0 and 'feat_hand_value' in highlow_df.columns:
+    hl_feat_cols = [c for c in highlow_df.columns if c.startswith('feat_') and c != 'feat_hand_value']
+    corrs = highlow_df[hl_feat_cols].corrwith(highlow_df['feat_hand_value']).abs()
+    top_by_corr = corrs.nlargest(15).index.tolist()
+
+    if len(top_by_corr) > 0:
+        corr_matrix = highlow_df[top_by_corr].corr()
+        try:
+            import seaborn as sns
+            sns.heatmap(corr_matrix, ax=axes[1], cmap='RdBu_r', center=0, vmin=-1, vmax=1,
+                       cbar_kws={'label': 'Correlation'}, annot=False)
+        except ImportError:
+            im = axes[1].imshow(corr_matrix, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
+            plt.colorbar(im, ax=axes[1])
+
+        axes[1].set_title(f'High/Low Contracts (n={len(highlow_df):,})\nTop 15 by |corr with hand_value|')
+        axes[1].set_xticklabels([label.get_text().replace('feat_', '')
+                                 for label in axes[1].get_xticklabels()], rotation=45, ha='right')
+        axes[1].set_yticklabels([label.get_text().replace('feat_', '')
+                                 for label in axes[1].get_yticklabels()], rotation=0)
+else:
+    axes[1].text(0.5, 0.5, 'No high/low contracts', ha='center', va='center')
+    axes[1].set_title('High/Low Contracts')
+
+# Panel 3: All contracts - top 15 general features by |corr with hand_value|
+if 'feat_hand_value' in df.columns:
+    all_feat_cols = [c for c in df.columns if c.startswith('feat_') and c != 'feat_hand_value']
+    corrs = df[all_feat_cols].corrwith(df['feat_hand_value']).abs()
+    top_by_corr = corrs.nlargest(15).index.tolist()
+
+    if len(top_by_corr) > 0:
+        corr_matrix = df[top_by_corr].corr()
+        try:
+            import seaborn as sns
+            sns.heatmap(corr_matrix, ax=axes[2], cmap='RdBu_r', center=0, vmin=-1, vmax=1,
+                       cbar_kws={'label': 'Correlation'}, annot=False)
+        except ImportError:
+            im = axes[2].imshow(corr_matrix, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
+            plt.colorbar(im, ax=axes[2])
+
+        axes[2].set_title(f'All Contracts (n={len(df):,})\nTop 15 by |corr with hand_value|')
+        axes[2].set_xticklabels([label.get_text().replace('feat_', '')
+                                 for label in axes[2].get_xticklabels()], rotation=45, ha='right')
+        axes[2].set_yticklabels([label.get_text().replace('feat_', '')
+                                 for label in axes[2].get_yticklabels()], rotation=0)
+
+plt.tight_layout()
+plt.show()
+
+print("\n✅ Correlation-based heatmaps completed")
 
 # %%
 # ============================================================================
-# SECTION 7.2: CORRELATION TABLES BY CONTRACT TYPE
+# SECTION 6.2: CORRELATION TABLES BY CONTRACT TYPE
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 7.2: CORRELATION WITH HAND_VALUE BY CONTRACT TYPE")
+print("SECTION 6.2: CORRELATION WITH HAND_VALUE BY CONTRACT TYPE")
 print("=" * 80)
 
 # Split by contract type
@@ -1402,18 +1607,14 @@ comparison_df = pd.DataFrame(comparison_data)
 display(comparison_df)
 
 print("\n✅ Correlation analysis completed")
-print("\nKey insights:")
-print("- Suit contracts: Trump features should dominate (trump_count, bowers, etc.)")
-print("- High/Low contracts: Card count features should be important")
-print("- Different features should be predictive for different contract types")
 
 # %%
 # ============================================================================
-# SECTION 7.3: SCATTER PLOTS BY CONTRACT TYPE
+# SECTION 6.3: SCATTER PLOTS BY CONTRACT TYPE
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 7.3: FEATURE-LABEL SCATTER PLOTS BY CONTRACT TYPE")
+print("SECTION 6.3: FEATURE-LABEL SCATTER PLOTS BY CONTRACT TYPE")
 print("=" * 80)
 
 # Split by contract type
@@ -1535,17 +1736,17 @@ print("- Similar patterns across trump suits (C, D, H, S) for suit contracts")
 
 # %% [markdown]
 # ---
-# ## Section 8: Time/Batch Drift Analysis
+# ## Section 7: Time/Batch Drift Analysis
 #
 # Check for drift over the course of data collection.
 
 # %%
 # ============================================================================
-# SECTION 8.1: ROLLING MEAN BY CONTRACT TYPE
+# SECTION 7.1: ROLLING MEAN BY CONTRACT TYPE
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 8.1: ROLLING MEAN ANALYSIS BY CONTRACT TYPE")
+print("SECTION 7.1: ROLLING MEAN ANALYSIS BY CONTRACT TYPE")
 print("=" * 80)
 
 # Split by contract type
@@ -1643,11 +1844,11 @@ print("         Similar patterns across all trump suits and contract types")
 
 # %%
 # ============================================================================
-# SECTION 8.2: DECILE ANALYSIS + STATISTICAL TESTS
+# SECTION 7.2: DECILE ANALYSIS + STATISTICAL TESTS
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 8.2: DECILE PROGRESSION ANALYSIS")
+print("SECTION 7.2: DECILE PROGRESSION ANALYSIS")
 print("=" * 80)
 
 from scipy.stats import f_oneway, linregress
@@ -1876,11 +2077,11 @@ print("\n✅ Decile analysis completed")
 
 # %%
 # ============================================================================
-# SECTION 8.3: DECILE BOXPLOTS BY CONTRACT TYPE
+# SECTION 7.3: DECILE BOXPLOTS BY CONTRACT TYPE
 # ============================================================================
 
 print("=" * 80)
-print("SECTION 8.3: DECILE BOXPLOTS BY CONTRACT TYPE")
+print("SECTION 7.3: DECILE BOXPLOTS BY CONTRACT TYPE")
 print("=" * 80)
 
 # Create decile labels
@@ -2006,7 +2207,7 @@ print("         Similar patterns across trump suits and contract types")
 
 # %% [markdown]
 # ---
-# ## Summary
+# ## Section 8: Summary
 #
 # Final health status and key findings.
 
