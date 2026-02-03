@@ -116,7 +116,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import f_oneway, kendalltau, ttest_rel
+from scipy.stats import f_oneway, friedmanchisquare, kendalltau, ttest_rel
 
 # Add src to path
 repo_root = Path.cwd().parent.parent
@@ -266,6 +266,77 @@ def downsample_for_plot(df: pd.DataFrame) -> pd.DataFrame:
     if DOWNSAMPLE_PLOTS and len(df) > PLOT_MAX_ROWS:
         return df.sample(PLOT_MAX_ROWS, random_state=PLOT_SAMPLE_SEED)
     return df
+
+
+def is_paired_data(df: pd.DataFrame, group_col: str, value_col: str = 'deal_id') -> bool:
+    """Check if same deal_ids appear across all groups (paired design).
+
+    Args:
+        df: DataFrame with observations
+        group_col: Column defining groups (e.g., 'contract_type')
+        value_col: Column to check for pairing (default 'deal_id')
+
+    Returns:
+        True if all deal_ids appear in all groups (paired data)
+    """
+    groups = df[group_col].unique()
+    if len(groups) < 2:
+        return False
+
+    # Get deal_ids for each group
+    deal_sets = [set(df[df[group_col] == g][value_col].unique()) for g in groups]
+
+    # Check if intersection equals all sets (same deals in all groups)
+    common_deals = set.intersection(*deal_sets)
+    all_deals = set.union(*deal_sets)
+
+    # Consider paired if >90% of deals appear in all groups
+    return len(common_deals) / len(all_deals) > 0.9 if all_deals else False
+
+
+def run_contract_comparison(df: pd.DataFrame, groups: list, group_names: list,
+                            value_col: str = 'team0_tricks') -> tuple:
+    """Run appropriate statistical test based on data pairing.
+
+    Args:
+        df: DataFrame with observations
+        groups: List of arrays, one per group
+        group_names: Names of the groups
+        value_col: Column being compared
+
+    Returns:
+        (stat, p_value, test_name) tuple
+    """
+    # Check if data is paired by examining deal_id overlap
+    if 'deal_id' not in df.columns:
+        # No deal_id, use independent test
+        f_stat, p_value = f_oneway(*groups)
+        return f_stat, p_value, "ANOVA"
+
+    # For paired test, we need equal-sized groups with matching deal_ids
+    # Try to detect if this is paired data
+    paired = is_paired_data(df, 'contract_type' if 'contract_type' in df.columns else df.columns[0])
+
+    if paired and len(groups) >= 2:
+        # For paired data, use Friedman test (non-parametric repeated measures)
+        # Need to align data by deal_id
+        try:
+            # Friedman requires equal-length arrays
+            min_len = min(len(g) for g in groups)
+            if min_len > 0:
+                aligned_groups = [g[:min_len] for g in groups]
+                if len(aligned_groups) >= 3:
+                    stat, p_value = friedmanchisquare(*aligned_groups)
+                    return stat, p_value, "Friedman"
+                elif len(aligned_groups) == 2:
+                    stat, p_value = ttest_rel(aligned_groups[0], aligned_groups[1])
+                    return stat, p_value, "Paired t-test"
+        except Exception:
+            pass  # Fall back to ANOVA
+
+    # Default: independent ANOVA
+    f_stat, p_value = f_oneway(*groups)
+    return f_stat, p_value, "ANOVA"
 
 
 print("✓ Helper functions defined")
@@ -591,15 +662,16 @@ for i, strat in enumerate(strategies):
         sns.violinplot(data=strat_df_plot, x='contract_type', y='team0_tricks', ax=ax,
                        palette='Set2', inner='quartile', order=CONTRACT_TYPES)
 
-        # ANOVA test across contract types
-        contract_groups = [strat_df[strat_df['contract_type'] == ct]['team0_tricks']
+        # Statistical test across contract types (paired or independent)
+        contract_groups = [strat_df[strat_df['contract_type'] == ct]['team0_tricks'].values
                           for ct in CONTRACT_TYPES]
         contract_groups = [g for g in contract_groups if len(g) > 0]
 
         if len(contract_groups) >= 2:
-            f_stat, p_value = f_oneway(*contract_groups)
+            stat, p_value, test_name = run_contract_comparison(
+                strat_df, contract_groups, CONTRACT_TYPES)
             status = "⚠️" if p_value < 0.05 else "✓"
-            ax.set_title(f"{strat}\n(n={len(strat_df)}, ANOVA p={p_value:.3f} {status})")
+            ax.set_title(f"{strat}\n(n={len(strat_df)}, {test_name} p={p_value:.3f} {status})")
         else:
             ax.set_title(f"{strat}\n(n={len(strat_df)})")
 
@@ -643,15 +715,24 @@ if len(suit_df_self) > 0:
                            palette='Set1', inner='quartile',
                            order=TRUMPS_FOR_SUIT_CONTRACTS)
 
-            # ANOVA test for trump bias
-            trump_groups = [strat_df[strat_df['trump'] == t]['tricks_won']
+            # Statistical test for trump bias (paired or independent)
+            trump_groups = [strat_df[strat_df['trump'] == t]['tricks_won'].values
                             for t in TRUMPS_FOR_SUIT_CONTRACTS]
             trump_groups = [g for g in trump_groups if len(g) > 0]
 
             if len(trump_groups) >= 2:
-                f_stat, p_value = f_oneway(*trump_groups)
+                # Check if paired (same deal_ids across trump suits)
+                paired = is_paired_data(strat_df, 'trump')
+                if paired and len(trump_groups) >= 3:
+                    min_len = min(len(g) for g in trump_groups)
+                    aligned = [g[:min_len] for g in trump_groups]
+                    stat, p_value = friedmanchisquare(*aligned)
+                    test_name = "Friedman"
+                else:
+                    stat, p_value = f_oneway(*trump_groups)
+                    test_name = "ANOVA"
                 status = "⚠️" if p_value < 0.05 else "✓"
-                ax.set_title(f"{strat}\n(n={len(strat_df)}, ANOVA p={p_value:.3f} {status})")
+                ax.set_title(f"{strat}\n(n={len(strat_df)}, {test_name} p={p_value:.3f} {status})")
             else:
                 ax.set_title(f"{strat}\n(n={len(strat_df)})")
 
@@ -695,14 +776,29 @@ if len(highlow_df) > 0:
             sns.violinplot(data=strat_df_plot, x='contract_type', y='team0_tricks', ax=ax,
                            palette='Set2', inner='quartile', order=['high', 'low'])
 
-            # ANOVA (F-test) for high vs low
-            high_vals = strat_df[strat_df['contract_type'] == 'high']['team0_tricks']
-            low_vals = strat_df[strat_df['contract_type'] == 'low']['team0_tricks']
+            # Statistical test for high vs low (paired or independent)
+            high_vals = strat_df[strat_df['contract_type'] == 'high']['team0_tricks'].values
+            low_vals = strat_df[strat_df['contract_type'] == 'low']['team0_tricks'].values
 
             if len(high_vals) > 0 and len(low_vals) > 0:
-                f_stat, p_value = f_oneway(high_vals, low_vals)
+                # Check if paired (same deal_ids in high and low)
+                paired = is_paired_data(strat_df, 'contract_type')
+                if paired:
+                    # Align by deal_id for paired t-test
+                    high_df = strat_df[strat_df['contract_type'] == 'high'][['deal_id', 'team0_tricks']]
+                    low_df = strat_df[strat_df['contract_type'] == 'low'][['deal_id', 'team0_tricks']]
+                    merged = high_df.merge(low_df, on='deal_id', suffixes=('_high', '_low'))
+                    if len(merged) > 1:
+                        stat, p_value = ttest_rel(merged['team0_tricks_high'], merged['team0_tricks_low'])
+                        test_name = "Paired t"
+                    else:
+                        stat, p_value = f_oneway(high_vals, low_vals)
+                        test_name = "F"
+                else:
+                    stat, p_value = f_oneway(high_vals, low_vals)
+                    test_name = "F"
                 status = "⚠️" if p_value < 0.05 else "✓"
-                ax.set_title(f"{strat}\n(n={len(strat_df)}, F={f_stat:.2f}, p={p_value:.3f} {status})")
+                ax.set_title(f"{strat}\n(n={len(strat_df)}, {test_name}={stat:.2f}, p={p_value:.3f} {status})")
             else:
                 ax.set_title(f"{strat}\n(n={len(strat_df)})")
 

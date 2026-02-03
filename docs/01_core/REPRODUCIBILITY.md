@@ -19,6 +19,39 @@ python experiments/run_experiment.py --config <path> --allow-nondeterministic --
 
 The seed determines all deal generation using a stable derivation rule: `deal_seed = seed * 1_000_003 + deal_id`. This ensures every deal in a run is deterministic and reproducible.
 
+## Paired Deals (Within-Subject Design)
+
+By default, each scenario uses a different seed offset, so different physical deals are generated per scenario. With `pair_deals: true`, the **same physical deals** are played under **all scenarios** (contract types and trump suits).
+
+**Benefits:**
+- Enables paired/repeated-measures statistical tests (e.g., paired t-test, Friedman test)
+- Increases statistical power by removing between-deal variance
+- Allows direct comparison of how the same hand performs under different contracts
+- Costs nothing extra—we already run all scenarios
+
+**How it works:**
+- `pair_deals: false` (default): Each scenario gets `scenario_seed = seed + (i - 1)`
+- `pair_deals: true`: All scenarios use `scenario_seed = seed`
+
+**Physical deal identity:**
+- A deal is uniquely identified by `(deal_seed, deal_id)`
+- With `pair_deals: true`, the same `(seed, deal_id)` produces identical hands across scenarios
+- Analysis can join on `deal_id` to compare the same physical deal across contract types
+
+**Configuration:**
+```yaml
+parameters:
+  seed: 42
+  n_per: 1000
+  pair_deals: true  # Same physical deals across all scenarios
+```
+
+**Analysis implications:**
+When `pair_deals: true`, notebooks should detect this and use:
+- **Paired t-test** instead of independent t-test for 2-group comparisons
+- **Friedman test** (or repeated-measures ANOVA) instead of one-way ANOVA for 3+ groups
+- Join data on `deal_id` to align observations across contract types
+
 ## Deal Generation Implementation
 
 ### Shuffle Algorithm
@@ -64,6 +97,7 @@ Every experiment run writes `data/runs/<run_id>/meta.json` containing:
 - UTC timestamp
 - Seed and run parameters
 - Determinism status (`is_deterministic: true/false`)
+- Paired deals status (`pair_deals: true/false`)
 
 This ensures runs can be traced and reproduced.
 
