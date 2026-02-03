@@ -51,12 +51,12 @@
 #
 # Set experiment parameters and import utilities.
 
-# %%
+# %% tags=["parameters"]
 # ============================================================================
-# Configuration
+# Configuration (papermill parameters)
 # ============================================================================
 
-MODE = "QUICK"  # "QUICK" (~2k deals) or "FULL" (~50k deals)
+MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
 SEED = 42
 
 # Contract space
@@ -340,12 +340,13 @@ outcome_df2 = load_or_generate_outcomes(
     matchups=MATCHUPS,
 )
 
-# Compare
+# Compare (only original columns, since outcome_df may have been augmented)
+original_columns = outcome_df2.columns.tolist()
 print("\nComparing datasets...")
-print(f"  Dataset 1 shape: {outcome_df.shape}")
+print(f"  Dataset 1 shape (original columns): {outcome_df[original_columns].shape}")
 print(f"  Dataset 2 shape: {outcome_df2.shape}")
 
-assert outcome_df.shape == outcome_df2.shape, "Shape mismatch"
+assert outcome_df[original_columns].shape == outcome_df2.shape, "Shape mismatch"
 
 # Compare tricks_won column
 if 'tricks_won' in outcome_df.columns:

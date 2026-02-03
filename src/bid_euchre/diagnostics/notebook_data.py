@@ -9,6 +9,14 @@ Usage:
 
     # Generate or load cached features with outcomes
     df = load_or_generate_features(mode="QUICK", seed=42)
+
+    # Fast smoke test (CI validation)
+    df = load_or_generate_outcomes(mode="SMOKE", seed=42)
+
+Modes:
+    SMOKE: ~100 total deals (~5 per scenario), fast CI validation
+    QUICK: ~2k total deals (~50 per scenario), statistical checks
+    FULL: ~50k total deals (~2500 per scenario), production rigor
 """
 
 import hashlib
@@ -38,7 +46,7 @@ def load_or_generate_outcomes(
     Checks cache first, generates new data if not found.
 
     Args:
-        mode: "QUICK" (~2k deals) or "FULL" (~50k deals)
+        mode: "SMOKE" (~100 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
         seed: Random seed for reproducibility
         contracts: Contract types to include (default: ['suit', 'high', 'low'])
         trumps: Trump suits for suit contracts (default: ['C', 'D', 'H', 'S'])
@@ -77,8 +85,8 @@ def load_or_generate_outcomes(
         seats = [0, 1, 2, 3]
 
     # Validate
-    if mode not in ["QUICK", "FULL"]:
-        raise ValueError(f"mode must be 'QUICK' or 'FULL', got '{mode}'")
+    if mode not in ["SMOKE", "QUICK", "FULL"]:
+        raise ValueError(f"mode must be 'SMOKE', 'QUICK', or 'FULL', got '{mode}'")
 
     # Check cache
     cache_key = _compute_cache_key("outcomes", mode, seed, contracts, trumps, seats, strategies, matchups)
@@ -117,7 +125,7 @@ def load_or_generate_features(
     Checks cache first, generates new data if not found.
 
     Args:
-        mode: "QUICK" (~2k deals) or "FULL" (~50k deals)
+        mode: "SMOKE" (~100 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
         seed: Random seed for reproducibility
         contracts: Contract types to include (default: ['suit', 'high', 'low'])
         trumps: Trump suits for suit contracts (default: ['C', 'D', 'H', 'S'])
@@ -154,8 +162,8 @@ def load_or_generate_features(
         seats = [0, 1, 2, 3]
 
     # Validate
-    if mode not in ["QUICK", "FULL"]:
-        raise ValueError(f"mode must be 'QUICK' or 'FULL', got '{mode}'")
+    if mode not in ["SMOKE", "QUICK", "FULL"]:
+        raise ValueError(f"mode must be 'SMOKE', 'QUICK', or 'FULL', got '{mode}'")
 
     # Check cache
     cache_key = _compute_cache_key("features", mode, seed, contracts, trumps, seats, strategies, matchups)
@@ -243,13 +251,9 @@ def _compute_cache_key(
 
 
 def _get_cache_path(cache_key: str) -> Path:
-    """Get cache file path in scratchpad directory."""
-    # Use scratchpad for session-specific caching
-    scratchpad = Path(
-        "/private/tmp/claude-503/-Users-claude-runner-Projects-Bid-Euchre-meta-Bid-Euchre/"
-        "f5763644-2c9b-43b5-b1cd-43f153e65728/scratchpad"
-    )
-    cache_dir = scratchpad / "notebook_cache"
+    """Get cache file path in system temp directory."""
+    # Use system temp directory for caching
+    cache_dir = Path(tempfile.gettempdir()) / "bid_euchre_notebook_cache"
     return cache_dir / f"{cache_key}.parquet"
 
 
@@ -361,7 +365,9 @@ def _generate_temp_config(
           For single-strategy self-play, pass strategies=[{...}].
     """
     # Sample sizes by mode
-    if mode == "QUICK":
+    if mode == "SMOKE":
+        n_per = 5  # ~5 deals per scenario (~30 total for 6 scenarios)
+    elif mode == "QUICK":
         n_per = 50  # ~50 deals per scenario
     elif mode == "FULL":
         n_per = 2500

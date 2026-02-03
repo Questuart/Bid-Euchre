@@ -63,6 +63,34 @@ make test       # Tests only
 - Hand-edit raw `.ipynb` JSON
 - Commit notebooks with outputs
 
+### Notebook execution validation
+
+Notebooks are validated by executing them with injected parameters. This catches import errors, shape mismatches, and assertion failures.
+
+**Commands:**
+~~~bash
+make notebook-run       # SMOKE mode (~30 deals, ~10s) - runs in CI
+make notebook-run-full  # QUICK mode (~2k deals, ~2-5min) - for local validation
+~~~
+
+**Modes:**
+| Mode | Deals | Purpose | When to use |
+|------|-------|---------|-------------|
+| SMOKE | ~30 | Catch import/shape errors | CI, quick local check |
+| QUICK | ~2k | Statistical validation | Before PRs touching notebooks |
+| FULL | ~50k | Production rigor | Manual, when needed |
+
+**How it works:**
+1. `scripts/run_notebooks.py` discovers notebooks in `notebooks/phase0_bidless/`
+2. Papermill injects `MODE` parameter (overrides notebook default)
+3. Notebooks execute with the injected mode
+4. Assertion failures or exceptions cause the run to fail
+
+**CI integration:**
+- `make notebook-run` (SMOKE mode) runs on every PR
+- Catches regressions that break notebook execution
+- Does NOT validate statistical rigor (use QUICK/FULL for that)
+
 ### Setup (recommended)
 Use uv for fast, reproducible installs:
 

@@ -31,6 +31,7 @@ dev = [
   "jupyterlab>=4.0.0",
   "jupytext>=1.16.2",
   "nbstripout>=0.7.1",
+  "papermill>=2.4.0",
 ]
 
 [tool.setuptools]
