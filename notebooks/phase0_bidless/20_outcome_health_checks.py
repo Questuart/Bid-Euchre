@@ -336,6 +336,8 @@ outcome_df2 = load_or_generate_outcomes(
     contracts=CONTRACT_TYPES,
     trumps=TRUMPS_FOR_SUIT_CONTRACTS,
     seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=MATCHUPS,
 )
 
 # Compare
