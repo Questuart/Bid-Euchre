@@ -29,12 +29,13 @@
 #
 # This notebook validates simulation **outcomes** (tricks_won) for the bidless Euchre dataset.
 #
-# **Scope:**
-# - Outcome validity (range, contract-type breakdown)
-# - Reproducibility checks
-# - Outcome distributions by contract type, seat, trump
-# - Strategy matchup analysis
-# - CDF/CCDF tail analysis
+# **Sections:**
+# - Section 0: Configuration and Setup
+# - Section 1: Fail-Fast Validation Tests
+# - Section 2: Outcome Distribution Analysis (Self-play)
+# - Section 3: Strategy Analysis (Head-to-head)
+# - Section 4: Distribution Analysis (CDF/CCDF)
+# - Section 5: Summary
 #
 # **Counterpart:**
 # - See `10_feature_health_checks.ipynb` for feature validation
@@ -47,9 +48,9 @@
 # %% [markdown]
 # ---
 #
-# ## Section 0: Configuration & Setup
+# ## Section 0: Configuration and Setup
 #
-# Set experiment parameters and import utilities.
+# Set experiment parameters, import utilities, and load datasets.
 
 # %% tags=["parameters"]
 # ============================================================================
@@ -64,7 +65,7 @@ CONTRACT_TYPES = ['suit', 'high', 'low']
 TRUMPS_FOR_SUIT_CONTRACTS = ['C', 'D', 'H', 'S']
 SEATS = [0, 1, 2, 3]
 
-# Strategy configuration (head-to-head matchups)
+# Strategy configuration
 STRATEGIES = [
     {"name": "greedy", "class_name": "GreedyStrategy"},
     {"name": "glutton", "class_name": "GluttonStrategy"},
@@ -72,8 +73,10 @@ STRATEGIES = [
     {"name": "always_lowest", "class_name": "AlwaysLowestLegalStrategy"},
 ]
 
-MATCHUP_MODE = "reverse_matchups"  # "reverse_matchups" or "per_seat_rotations"
-INCLUDE_REVERSE_MATCHUPS = True
+# Plot downsampling (for performance; never affects validations)
+PLOT_MAX_ROWS = 10_000
+PLOT_SAMPLE_SEED = 42
+DOWNSAMPLE_PLOTS = True
 
 # Display
 import warnings
@@ -87,14 +90,13 @@ print(f"  Contract types: {CONTRACT_TYPES}")
 print(f"  Trumps (suit contracts): {TRUMPS_FOR_SUIT_CONTRACTS}")
 print(f"  Seats: {SEATS}")
 print(f"  Strategies: {[s['name'] for s in STRATEGIES]}")
-print(f"  Matchup mode: {MATCHUP_MODE}")
+print(f"  Plot downsampling: {DOWNSAMPLE_PLOTS} (max {PLOT_MAX_ROWS} rows)")
 
 # %%
 # ============================================================================
 # Imports
 # ============================================================================
 
-import itertools
 import sys
 from pathlib import Path
 
@@ -115,72 +117,118 @@ print("\n✓ Imports complete")
 
 # %%
 # ============================================================================
-# Matchup Builders
+# Matchup Matrix Builder (N×N)
 # ============================================================================
 
-def build_round_robin_matchups(strategy_names, include_reverse=True):
-    """Build team0 vs team1 matchups with optional reversals."""
-    pairs = list(itertools.combinations(strategy_names, 2))
-    matchups = [{"team0": a, "team1": b} for a, b in pairs]
-    if include_reverse:
-        matchups += [{"team0": b, "team1": a} for a, b in pairs]
-    return matchups
-
-
 STRATEGY_NAMES = [s["name"] for s in STRATEGIES]
-MATCHUPS = build_round_robin_matchups(STRATEGY_NAMES, include_reverse=INCLUDE_REVERSE_MATCHUPS)
 
-print(f"Built {len(MATCHUPS)} matchups")
-print(f"Matchup examples: {MATCHUPS[:3]}")
+# Build full N×N matchup matrix (16 matchups for 4 strategies)
+MATCHUPS_MATRIX = [{"team0": a, "team1": b} for a in STRATEGY_NAMES for b in STRATEGY_NAMES]
+
+print(f"Built {len(MATCHUPS_MATRIX)} matchups (full {len(STRATEGY_NAMES)}×{len(STRATEGY_NAMES)} matrix)")
+print(f"Matchup examples: {MATCHUPS_MATRIX[:3]}")
+
 
 # %%
 # ============================================================================
-# Load/Generate Outcome Data
+# Deal-Level Frame Helper
 # ============================================================================
 
-outcome_df = load_or_generate_outcomes(
+def make_deal_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Build one row per deal with team0_tricks, team1_tricks, delta_tricks.
+
+    Note: load_or_generate_outcomes logs tricks_won as TEAM tricks:
+    - Seats 0 & 2 get team0_tricks
+    - Seats 1 & 3 get team1_tricks
+
+    So we can use seat 0 for team0 and seat 1 for team1 directly.
+
+    Args:
+        df: Outcome dataframe with seat-level rows
+
+    Returns:
+        DataFrame with columns: deal_id, contract_type, trump, strategy_id,
+                                team0_tricks, team1_tricks, delta_tricks, team0_win
+    """
+    keys = ['deal_id', 'contract_type', 'trump', 'strategy_id']
+
+    # Team 0: use seat 0 (which already has team0 tricks)
+    df_team0 = (
+        df[df.seat == 0][keys + ['tricks_won']]
+        .rename(columns={'tricks_won': 'team0_tricks'})
+    )
+
+    # Team 1: use seat 1 (which already has team1 tricks)
+    df_team1 = (
+        df[df.seat == 1][keys + ['tricks_won']]
+        .rename(columns={'tricks_won': 'team1_tricks'})
+    )
+
+    # Merge on stable keys
+    df_deal = df_team0.merge(df_team1, on=keys)
+    df_deal['delta_tricks'] = df_deal['team0_tricks'] - df_deal['team1_tricks']
+    df_deal['team0_win'] = df_deal['team0_tricks'] >= 6
+
+    return df_deal
+
+
+def downsample_for_plot(df: pd.DataFrame) -> pd.DataFrame:
+    """Downsample dataframe for plotting if enabled and needed."""
+    if DOWNSAMPLE_PLOTS and len(df) > PLOT_MAX_ROWS:
+        return df.sample(PLOT_MAX_ROWS, random_state=PLOT_SAMPLE_SEED)
+    return df
+
+
+print("✓ Helper functions defined")
+
+
+# %%
+# ============================================================================
+# Load/Generate Outcome Data: Self-play and Head-to-head
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("LOADING DATASETS")
+print("=" * 70)
+
+# Self-play dataset (each strategy plays against itself)
+print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
+df_self = load_or_generate_outcomes(
     mode=MODE,
     seed=SEED,
     contracts=CONTRACT_TYPES,
     trumps=TRUMPS_FOR_SUIT_CONTRACTS,
     seats=SEATS,
     strategies=STRATEGIES,
-    matchups=MATCHUPS,
+    matchups=None,  # None = self-play for each strategy
 )
 
-print(f"\nOutcome dataset shape: {outcome_df.shape}")
-print(f"Columns: {list(outcome_df.columns)}")
-print("\nFirst few rows:")
-print(outcome_df.head())
+print(f"   Self-play shape: {df_self.shape}")
+print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
 
-# %%
-# ============================================================================
-# Data Overview
-# ============================================================================
+# Head-to-head dataset (full N×N matchup matrix)
+print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
+df_h2h = load_or_generate_outcomes(
+    mode=MODE,
+    seed=SEED,
+    contracts=CONTRACT_TYPES,
+    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+    seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=MATCHUPS_MATRIX,
+)
 
-print("\nData Overview:")
-print("=" * 70)
-print(f"Total observations: {len(outcome_df)}")
-print("\nContract type distribution:")
-print(outcome_df['contract_type'].value_counts().sort_index())
+print(f"   Head-to-head shape: {df_h2h.shape}")
+print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
 
-if 'trump' in outcome_df.columns:
-    print("\nTrump distribution:")
-    print(outcome_df['trump'].value_counts().sort_index())
-
-print("\nSeat distribution:")
-print(outcome_df['seat'].value_counts().sort_index())
-
-if 'strategy_id' in outcome_df.columns:
-    print("\nStrategy distribution:")
-    print(outcome_df['strategy_id'].value_counts())
-
+print("\n" + "=" * 70)
+print("✓ Both datasets loaded")
 print("=" * 70)
 
 
 # %%
 # ============================================================================
-# Parse Matchup IDs and Derive seat_strategy
+# Parse Matchup IDs (for head-to-head data)
 # ============================================================================
 
 def parse_matchup_id(strategy_id: str) -> dict:
@@ -190,186 +238,200 @@ def parse_matchup_id(strategy_id: str) -> dict:
         return {
             'team0_strategy': team0,
             'team1_strategy': team1,
-            'seat0_strategy': team0,
-            'seat1_strategy': team1,
-            'seat2_strategy': team0,
-            'seat3_strategy': team1,
         }
-    if strategy_id.startswith("seatmap__"):
-        parts = strategy_id.split("__")[1:]
-        if len(parts) == 4:
-            return {
-                'team0_strategy': parts[0],
-                'team1_strategy': parts[1],
-                'seat0_strategy': parts[0],
-                'seat1_strategy': parts[1],
-                'seat2_strategy': parts[2],
-                'seat3_strategy': parts[3],
-            }
-    return {}
+    # Single strategy (self-play)
+    return {
+        'team0_strategy': strategy_id,
+        'team1_strategy': strategy_id,
+    }
 
 
-def get_seat_strategy(row):
-    """Map a row's seat to its strategy from the parsed matchup metadata."""
-    seat = row['seat']
-    col_name = f'seat{seat}_strategy'
-    return row.get(col_name, None)
+# Parse matchup metadata for head-to-head data
+if 'strategy_id' in df_h2h.columns:
+    matchup_meta = df_h2h['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
+    df_h2h = pd.concat([df_h2h, matchup_meta], axis=1)
+    print("Parsed matchup IDs for head-to-head data")
+    print(f"  Unique team0_strategy: {sorted(df_h2h['team0_strategy'].unique())}")
+    print(f"  Unique team1_strategy: {sorted(df_h2h['team1_strategy'].unique())}")
+
+# Also parse for self-play data
+if 'strategy_id' in df_self.columns:
+    matchup_meta_self = df_self['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
+    df_self = pd.concat([df_self, matchup_meta_self], axis=1)
+    print("Parsed matchup IDs for self-play data")
 
 
-# Parse matchup metadata
-if 'strategy_id' in outcome_df.columns:
-    matchup_meta = outcome_df['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
-    outcome_df = pd.concat([outcome_df, matchup_meta], axis=1)
+# %%
+# ============================================================================
+# Data Overview
+# ============================================================================
 
-    # Derive seat_strategy
-    if 'seat0_strategy' in outcome_df.columns:
-        outcome_df['seat_strategy'] = outcome_df.apply(get_seat_strategy, axis=1)
-        print("Derived seat_strategy column")
-        print(f"Unique seat strategies: {sorted(outcome_df['seat_strategy'].dropna().unique())}")
-    else:
-        print("⚠️  Could not derive seat_strategy - matchup parsing failed")
-else:
-    print("⚠️  No strategy_id column - skipping matchup parsing")
+print("\n" + "=" * 70)
+print("DATA OVERVIEW")
+print("=" * 70)
+
+print("\n--- Self-play Dataset ---")
+print(f"Total observations: {len(df_self)}")
+print("\nContract type distribution:")
+print(df_self['contract_type'].value_counts().sort_index())
+print("\nStrategy distribution:")
+print(df_self['strategy_id'].value_counts())
+
+print("\n--- Head-to-head Dataset ---")
+print(f"Total observations: {len(df_h2h)}")
+print("\nContract type distribution:")
+print(df_h2h['contract_type'].value_counts().sort_index())
+print("\nMatchup distribution (top 10):")
+print(df_h2h['strategy_id'].value_counts().head(10))
+
+print("=" * 70)
 
 # %% [markdown]
 # ---
 #
-# ## Section 2: Fail-Fast Validation Tests
+# ## Section 1: Fail-Fast Validation Tests
 #
 # Critical assertions that must pass before proceeding with analysis.
-
-# %% [markdown]
-# ### Test 3: Outcome Validity (with Contract-Type Breakdown)
-#
-# **Enhancement:** This test now breaks down outcome statistics by contract type to detect contract-specific simulation bugs.
+# Applied to both self-play and head-to-head datasets.
 
 # %%
 # ============================================================================
-# Test 3: Outcome Validity - tricks_won in Valid Range
+# Test 1.1: Outcome Validity
 # ============================================================================
 
 print("\n" + "=" * 70)
-print("TEST 3: Outcome Validity")
+print("TEST 1.1: Outcome Validity")
 print("=" * 70)
 
-if 'tricks_won' in outcome_df.columns:
-    print("\nChecking tricks_won values...")
+for name, df in [("Self-play", df_self), ("Head-to-head", df_h2h)]:
+    print(f"\n--- {name} Dataset ---")
 
-    # GLOBAL VALIDATION (fail-fast)
-    min_tricks = outcome_df['tricks_won'].min()
-    max_tricks = outcome_df['tricks_won'].max()
-    mean_tricks = outcome_df['tricks_won'].mean()
+    # Check required columns
+    required_cols = ['deal_id', 'seat', 'contract_type', 'trump', 'tricks_won', 'strategy_id']
+    missing_cols = [c for c in required_cols if c not in df.columns]
+    if missing_cols:
+        raise AssertionError(f"{name}: Missing required columns: {missing_cols}")
+    print("  ✓ Required columns present")
 
-    print(f"  Overall Range: [{min_tricks}, {max_tricks}]")
-    print(f"  Overall Mean: {mean_tricks:.3f}")
+    # Check for nulls (trump can be null for high/low)
+    non_null_cols = ['deal_id', 'seat', 'contract_type', 'tricks_won', 'strategy_id']
+    for col in non_null_cols:
+        null_count = df[col].isna().sum()
+        if null_count > 0:
+            raise AssertionError(f"{name}: Column '{col}' has {null_count} null values")
+    print("  ✓ No nulls in key columns")
 
-    # Assert valid range [0, 10] - FAIL FAST
-    if not outcome_df['tricks_won'].between(0, 10).all():
-        invalid_count = (~outcome_df['tricks_won'].between(0, 10)).sum()
-        invalid_values = outcome_df[~outcome_df['tricks_won'].between(0, 10)]['tricks_won'].unique()
-        print("\n❌ FAIL-FAST ABORT: tricks_won out of valid range")
-        print("=" * 70)
-        print(f"Found {invalid_count} invalid values: {sorted(invalid_values)}")
-        raise AssertionError("tricks_won contains values outside [0, 10] - simulation bug")
+    # Check tricks_won range [0, 10]
+    if not df['tricks_won'].between(0, 10).all():
+        invalid_count = (~df['tricks_won'].between(0, 10)).sum()
+        invalid_vals = df[~df['tricks_won'].between(0, 10)]['tricks_won'].unique()
+        raise AssertionError(f"{name}: tricks_won out of range [0,10]: {sorted(invalid_vals)}")
+    print("  ✓ All tricks_won in valid range [0, 10]")
 
-    print("  ✓ All tricks_won values in valid range [0, 10]")
+    # Check contract_type values
+    valid_contracts = {'suit', 'high', 'low'}
+    actual_contracts = set(df['contract_type'].unique())
+    invalid_contracts = actual_contracts - valid_contracts
+    if invalid_contracts:
+        raise AssertionError(f"{name}: Invalid contract_type values: {invalid_contracts}")
+    print(f"  ✓ Contract types valid: {sorted(actual_contracts)}")
 
-    # CONTRACT-TYPE BREAKDOWN
-    print("\n  Breakdown by contract type:")
-    print("  " + "-" * 60)
+    # Check trump for suit contracts
+    suit_df = df[df['contract_type'] == 'suit']
+    if len(suit_df) > 0:
+        valid_trumps = {'C', 'D', 'H', 'S'}
+        actual_trumps = set(suit_df['trump'].dropna().unique())
+        invalid_trumps = actual_trumps - valid_trumps
+        if invalid_trumps:
+            raise AssertionError(f"{name}: Invalid trump values: {invalid_trumps}")
+        print("  ✓ Trump suits valid for suit contracts")
 
-    for contract_type in CONTRACT_TYPES:  # ['suit', 'high', 'low']
-        contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
+print("\n" + "=" * 70)
+print("✅ Outcome validity PASSED (both datasets)")
+print("=" * 70)
 
-        min_tricks_c = contract_df['tricks_won'].min()
-        max_tricks_c = contract_df['tricks_won'].max()
-        mean_tricks_c = contract_df['tricks_won'].mean()
-        n_samples = len(contract_df)
-
-        assert n_samples > 0, f"Empty contract group: {contract_type}"
-
-        print(f"\n  Contract: {contract_type.upper()}")
-        print(f"    Samples: {n_samples}")
-        print(f"    Range: [{min_tricks_c}, {max_tricks_c}]")
-        print(f"    Mean: {mean_tricks_c:.3f}")
-
-        # Sanity check: mean should be close to 5.0 for fair self-play
-        if not (4.0 <= mean_tricks_c <= 6.0):
-            print(f"    ⚠️  WARNING: Mean = {mean_tricks_c:.3f}, expected ~5.0")
-            print("        Review contract-specific logic if this persists")
-        else:
-            print("    ✓ Mean in expected range [4.0, 6.0]")
-
-        # Tricks distribution for this contract type
-        value_counts = contract_df['tricks_won'].value_counts().sort_index()
-        print("    Distribution:")
-        for tricks, count in value_counts.items():
-            pct = 100 * count / len(contract_df)
-            print(f"      {tricks} tricks: {count:5d} ({pct:5.1f}%)")
-
-    print("\n" + "=" * 70)
-    print("✅ Outcome validity check PASSED (all contract types)")
-    print("=" * 70)
-
-else:
-    print("\n⚠️  SKIPPED: outcome_df does not have tricks_won column")
-
-# %% [markdown]
-# ### Test 4: Reproducibility Check (Outcome Portion)
-#
-# Verify that running with the same seed produces identical outcomes.
 
 # %%
 # ============================================================================
-# Test 4: Reproducibility - Verify Deterministic Outcomes
+# Test 1.2: Deal-Level Invariant (team0_tricks + team1_tricks == 10)
 # ============================================================================
 
 print("\n" + "=" * 70)
-print("TEST 4: Reproducibility Check (Outcomes)")
+print("TEST 1.2: Deal-Level Invariant")
 print("=" * 70)
 
-# Generate second dataset with same seed
-print(f"\nGenerating second outcome dataset with seed={SEED}...")
-outcome_df2 = load_or_generate_outcomes(
+for name, df in [("Self-play", df_self), ("Head-to-head", df_h2h)]:
+    print(f"\n--- {name} Dataset ---")
+
+    df_deal = make_deal_frame(df)
+
+    # Check that team0_tricks + team1_tricks == 10
+    total_tricks = df_deal['team0_tricks'] + df_deal['team1_tricks']
+    if not (total_tricks == 10).all():
+        invalid_count = (total_tricks != 10).sum()
+        print(f"\n❌ FAIL: {invalid_count} deals violate invariant")
+        print("\nSample violations:")
+        print(df_deal[total_tricks != 10].head())
+        raise AssertionError(f"{name}: team0_tricks + team1_tricks != 10")
+
+    print(f"  ✓ All {len(df_deal)} deals satisfy: team0_tricks + team1_tricks == 10")
+
+print("\n" + "=" * 70)
+print("✅ Deal-level invariant PASSED (both datasets)")
+print("=" * 70)
+
+
+# %%
+# ============================================================================
+# Test 1.3: Reproducibility Check
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("TEST 1.3: Reproducibility Check")
+print("=" * 70)
+
+# Re-generate self-play dataset with same seed
+print(f"\nRe-generating self-play dataset with seed={SEED}...")
+df_self_check = load_or_generate_outcomes(
     mode=MODE,
     seed=SEED,
     contracts=CONTRACT_TYPES,
     trumps=TRUMPS_FOR_SUIT_CONTRACTS,
     seats=SEATS,
     strategies=STRATEGIES,
-    matchups=MATCHUPS,
+    matchups=None,
 )
 
-# Compare (only original columns, since outcome_df may have been augmented)
-original_columns = outcome_df2.columns.tolist()
-print("\nComparing datasets...")
-print(f"  Dataset 1 shape (original columns): {outcome_df[original_columns].shape}")
-print(f"  Dataset 2 shape: {outcome_df2.shape}")
+# Compare canonical columns only
+canonical_cols = ['deal_id', 'seat', 'contract_type', 'trump', 'tricks_won', 'strategy_id']
 
-assert outcome_df[original_columns].shape == outcome_df2.shape, "Shape mismatch"
+# Sort both by stable keys for comparison
+sort_keys = ['deal_id', 'seat', 'contract_type', 'trump', 'strategy_id']
+df_self_sorted = df_self[canonical_cols].sort_values(sort_keys).reset_index(drop=True)
+df_check_sorted = df_self_check[canonical_cols].sort_values(sort_keys).reset_index(drop=True)
 
-# Compare tricks_won column
-if 'tricks_won' in outcome_df.columns:
-    tricks_match = (outcome_df['tricks_won'] == outcome_df2['tricks_won']).all()
-    print(f"  tricks_won match: {tricks_match}")
+print("\nComparing datasets (canonical columns only)...")
+print(f"  Dataset 1 shape: {df_self_sorted.shape}")
+print(f"  Dataset 2 shape: {df_check_sorted.shape}")
 
-    if not tricks_match:
-        diff_count = (outcome_df['tricks_won'] != outcome_df2['tricks_won']).sum()
-        print(f"\n❌ FAIL: {diff_count} mismatches in tricks_won")
-        print("\nFirst 10 mismatches:")
-        mismatches = outcome_df[outcome_df['tricks_won'] != outcome_df2['tricks_won']].head(10)
-        print(mismatches[['deal_id', 'seat', 'contract_type', 'tricks_won']])
-        print("\nvs Dataset 2:")
-        print(outcome_df2.loc[mismatches.index, ['deal_id', 'seat', 'contract_type', 'tricks_won']])
-        raise AssertionError("Non-deterministic outcomes detected")
+# Shape check
+if df_self_sorted.shape != df_check_sorted.shape:
+    raise AssertionError(f"Shape mismatch: {df_self_sorted.shape} vs {df_check_sorted.shape}")
 
-    print("  ✓ All tricks_won values match")
+# Value check - use fillna for null-safe comparison
+df1_filled = df_self_sorted.fillna('__NULL__')
+df2_filled = df_check_sorted.fillna('__NULL__')
+mismatches = (df1_filled != df2_filled).any(axis=1)
+if mismatches.any():
+    mismatch_count = mismatches.sum()
+    print(f"\n❌ FAIL: {mismatch_count} rows differ")
+    print("\nFirst 5 mismatches (original):")
+    print(df_self_sorted[mismatches].head())
+    print("\nFirst 5 mismatches (regenerated):")
+    print(df_check_sorted[mismatches].head())
+    raise AssertionError("Non-deterministic outcomes detected")
 
-# Compare deal_id alignment
-if 'deal_id' in outcome_df.columns:
-    deal_match = (outcome_df['deal_id'] == outcome_df2['deal_id']).all()
-    print(f"  deal_id match: {deal_match}")
-    assert deal_match, "deal_id mismatch - deal order changed"
+print("  ✓ All rows match")
 
 print("\n" + "=" * 70)
 print("✅ Reproducibility check PASSED")
@@ -378,257 +440,538 @@ print("=" * 70)
 # %% [markdown]
 # ---
 #
-# ## Section 3: Outcome Distributions by Contract Type
+# ## Section 2: Outcome Distribution Analysis (Self-play)
 #
-# Visualize outcome distributions segregated by contract type using violin plots.
-
-# %%
-# ============================================================================
-# Outcome Distribution by Contract Type
-# ============================================================================
-
-print("\nPlotting outcome distributions by contract type...")
-
-fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
-
-for i, contract_type in enumerate(CONTRACT_TYPES):
-    ax = axes[i]
-    contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
-
-    # Violin plot with box overlay
-    sns.violinplot(data=contract_df, y='tricks_won', ax=ax, color='lightblue')
-    sns.boxplot(data=contract_df, y='tricks_won', ax=ax,
-                width=0.3, boxprops={'zorder': 2}, color='white')
-
-    ax.set_title(f"{contract_type.upper()} Contracts (n={len(contract_df)})")
-    ax.set_ylabel("Tricks Won" if i == 0 else "")
-    ax.set_ylim(-0.5, 10.5)
-    ax.grid(axis='y', alpha=0.3)
-
-    # Add mean line
-    mean_val = contract_df['tricks_won'].mean()
-    ax.axhline(mean_val, color='red', linestyle='--', linewidth=1, alpha=0.7,
-               label=f'Mean={mean_val:.2f}')
-    ax.legend(loc='upper right', fontsize=8)
-
-plt.tight_layout()
-plt.show()
-
-print("✓ Contract-type distributions plotted")
-
-# %%
-# ============================================================================
-# Outcome Distribution by Seat (within each contract type)
-# ============================================================================
-
-print("\nPlotting outcome distributions by seat (per contract type)...")
-
-fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
-
-for i, contract_type in enumerate(CONTRACT_TYPES):
-    ax = axes[i]
-    contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
-
-    # Violin plot by seat
-    sns.violinplot(data=contract_df, x='seat', y='tricks_won', ax=ax,
-                   palette='Set2', inner='quartile')
-
-    ax.set_title(f"{contract_type.upper()} Contracts - By Seat")
-    ax.set_xlabel("Seat")
-    ax.set_ylabel("Tricks Won" if i == 0 else "")
-    ax.set_ylim(-0.5, 10.5)
-    ax.grid(axis='y', alpha=0.3)
-
-    # Add overall mean line
-    mean_val = contract_df['tricks_won'].mean()
-    ax.axhline(mean_val, color='red', linestyle='--', linewidth=1, alpha=0.5,
-               label=f'Overall={mean_val:.2f}')
-    ax.legend(loc='upper right', fontsize=8)
-
-plt.tight_layout()
-plt.show()
-
-print("✓ Seat-level outcome distributions plotted")
+# Analyze outcome distributions using the self-play dataset.
+# All plots are faceted by strategy.
+#
+# **Note:** The logging schema records `tricks_won` as team-level values:
+# - Seats 0 & 2 get team0 tricks
+# - Seats 1 & 3 get team1 tricks
+#
+# So seat-level plots show team distributions, not individual performance.
 
 # %% [markdown]
-# ---
+# ### 2.1 By Contract_Type
+
+# %%
+# ============================================================================
+# 2.1 Outcome Distribution by Contract Type (faceted by strategy)
+# ============================================================================
+
+print("\n2.1 Outcome distributions by contract type (faceted by strategy)...")
+
+strategies = sorted(df_self['strategy_id'].unique())
+n_strategies = len(strategies)
+
+fig, axes = plt.subplots(n_strategies, 3, figsize=(15, 4 * n_strategies), sharey=True)
+if n_strategies == 1:
+    axes = axes.reshape(1, -1)
+
+for i, strat in enumerate(strategies):
+    strat_df = df_self[df_self['strategy_id'] == strat]
+    strat_df_plot = downsample_for_plot(strat_df)
+
+    for j, contract_type in enumerate(CONTRACT_TYPES):
+        ax = axes[i, j]
+        contract_df = strat_df_plot[strat_df_plot['contract_type'] == contract_type]
+        contract_df_full = strat_df[strat_df['contract_type'] == contract_type]
+
+        if len(contract_df) > 0:
+            sns.violinplot(data=contract_df, y='tricks_won', ax=ax, color='lightblue', inner='quartile')
+
+            mean_val = contract_df_full['tricks_won'].mean()
+            ax.axhline(mean_val, color='red', linestyle='--', linewidth=1, alpha=0.7,
+                       label=f'Mean={mean_val:.2f}')
+            ax.legend(loc='upper right', fontsize=8)
+
+        ax.set_title(f"{strat}\n{contract_type.upper()} (n={len(contract_df_full)})")
+        ax.set_ylabel("Tricks Won" if j == 0 else "")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+print("✓ Contract-type distributions plotted (faceted by strategy)")
+
+# %% [markdown]
+# ### 2.1.1 By Suit (suit contracts only)
 #
-# ## Section 4: Strategy Matchup Analysis
-#
-# Compare outcomes across different strategy pairings (if applicable).
+# Includes ANOVA test for trump bias.
 
 # %%
 # ============================================================================
-# Check for Strategy Data
+# 2.1.1 Outcome Distribution by Trump Suit (faceted by strategy)
 # ============================================================================
 
-if 'strategy_id' in outcome_df.columns and outcome_df['strategy_id'].nunique() > 1:
-    print("\nStrategy data available - generating matchup analysis...")
-    has_strategies = True
-else:
-    print("\n⚠️  No strategy variation detected - skipping matchup analysis")
-    print("    (This is expected for self-play datasets)")
-    has_strategies = False
+print("\n2.1.1 Outcome distributions by trump suit (faceted by strategy)...")
 
-# %%
-# ============================================================================
-# Strategy Win Rate Heatmap
-# ============================================================================
+suit_df_self = df_self[df_self['contract_type'] == 'suit']
 
-if has_strategies:
-    print("\nComputing strategy win rates...")
-
-    # Define "win" threshold (>= 6 tricks)
-    outcome_df['won'] = outcome_df['tricks_won'] >= 6
-
-    # Aggregate by strategy
-    strategy_stats = outcome_df.groupby('strategy_id').agg({
-        'won': 'mean',
-        'tricks_won': ['mean', 'std', 'count']
-    }).round(3)
-
-    strategy_stats.columns = ['win_rate', 'mean_tricks', 'std_tricks', 'n_samples']
-    print("\nStrategy Statistics:")
-    print(strategy_stats)
-
-    # Heatmap if multiple strategies
-    strategies = sorted(outcome_df['strategy_id'].unique())
-    if len(strategies) > 1:
-        win_matrix = np.zeros((len(strategies), len(strategies)))
-
-        for i, strat in enumerate(strategies):
-            strat_df = outcome_df[outcome_df['strategy_id'] == strat]
-            win_matrix[i, :] = strat_df.groupby('strategy_id')['won'].mean().reindex(strategies, fill_value=0)
-
-        plt.figure(figsize=(8, 6))
-        sns.heatmap(win_matrix, annot=True, fmt='.3f', cmap='RdYlGn',
-                    xticklabels=strategies, yticklabels=strategies,
-                    vmin=0, vmax=1, center=0.5)
-        plt.title("Strategy Win Rate Matrix (rows vs columns)")
-        plt.xlabel("Opponent Strategy")
-        plt.ylabel("Player Strategy")
-        plt.tight_layout()
-        plt.show()
-
-        print("✓ Strategy matchup heatmap plotted")
-else:
-    print("  (Skipped - no strategy variation)")
-
-# %%
-# ============================================================================
-# Tricks Distribution Comparison (by strategy)
-# ============================================================================
-
-if has_strategies:
-    strategies = sorted(outcome_df['strategy_id'].unique())
-
-    fig, axes = plt.subplots(1, len(strategies), figsize=(5*len(strategies), 5), sharey=True)
-    if len(strategies) == 1:
+if len(suit_df_self) > 0:
+    fig, axes = plt.subplots(1, n_strategies, figsize=(5 * n_strategies, 5), sharey=True)
+    if n_strategies == 1:
         axes = [axes]
 
     for i, strat in enumerate(strategies):
         ax = axes[i]
-        strat_df = outcome_df[outcome_df['strategy_id'] == strat]
+        strat_df = suit_df_self[suit_df_self['strategy_id'] == strat]
+        strat_df_plot = downsample_for_plot(strat_df)
 
-        sns.violinplot(data=strat_df, y='tricks_won', ax=ax, color='skyblue')
-        sns.boxplot(data=strat_df, y='tricks_won', ax=ax, width=0.3,
-                    boxprops={'zorder': 2}, color='white')
+        if len(strat_df_plot) > 0:
+            sns.violinplot(data=strat_df_plot, x='trump', y='tricks_won', ax=ax,
+                           palette='Set1', inner='quartile',
+                           order=TRUMPS_FOR_SUIT_CONTRACTS)
 
-        ax.set_title(f"Strategy: {strat}\n(n={len(strat_df)})")
+            # ANOVA test for trump bias
+            trump_groups = [strat_df[strat_df['trump'] == t]['tricks_won']
+                            for t in TRUMPS_FOR_SUIT_CONTRACTS]
+            trump_groups = [g for g in trump_groups if len(g) > 0]
+
+            if len(trump_groups) >= 2:
+                f_stat, p_value = f_oneway(*trump_groups)
+                status = "⚠️" if p_value < 0.05 else "✓"
+                ax.set_title(f"{strat}\n(n={len(strat_df)}, ANOVA p={p_value:.3f} {status})")
+            else:
+                ax.set_title(f"{strat}\n(n={len(strat_df)})")
+
+        ax.set_xlabel("Trump Suit")
         ax.set_ylabel("Tricks Won" if i == 0 else "")
         ax.set_ylim(-0.5, 10.5)
         ax.grid(axis='y', alpha=0.3)
 
-        mean_val = strat_df['tricks_won'].mean()
-        ax.axhline(mean_val, color='red', linestyle='--', linewidth=1, alpha=0.7,
-                   label=f'Mean={mean_val:.2f}')
-        ax.legend(loc='upper right', fontsize=8)
+    plt.tight_layout()
+    plt.show()
+
+    print("✓ Trump suit distributions plotted with ANOVA tests")
+else:
+    print("⚠️  No suit contracts found - skipping trump analysis")
+
+# %% [markdown]
+# ### 2.1.2 By High/Low
+
+# %%
+# ============================================================================
+# 2.1.2 Outcome Distribution: High vs Low (faceted by strategy)
+# ============================================================================
+
+print("\n2.1.2 Outcome distributions: high vs low contracts (faceted by strategy)...")
+
+highlow_df = df_self[df_self['contract_type'].isin(['high', 'low'])]
+
+if len(highlow_df) > 0:
+    fig, axes = plt.subplots(1, n_strategies, figsize=(4 * n_strategies, 5), sharey=True)
+    if n_strategies == 1:
+        axes = [axes]
+
+    for i, strat in enumerate(strategies):
+        ax = axes[i]
+        strat_df = highlow_df[highlow_df['strategy_id'] == strat]
+        strat_df_plot = downsample_for_plot(strat_df)
+
+        if len(strat_df_plot) > 0:
+            sns.violinplot(data=strat_df_plot, x='contract_type', y='tricks_won', ax=ax,
+                           palette='Set2', inner='quartile', order=['high', 'low'])
+
+        ax.set_title(f"{strat}\n(n={len(strat_df)})")
+        ax.set_xlabel("Contract Type")
+        ax.set_ylabel("Tricks Won" if i == 0 else "")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
     plt.show()
 
-    print("✓ Strategy outcome distributions plotted")
+    print("✓ High vs Low distributions plotted")
 else:
-    print("  (Skipped - no strategy variation)")
+    print("⚠️  No high/low contracts found")
 
 # %% [markdown]
-# ---
+# ### 2.2 By Team
 #
-# ## Section 5: Trump Suit Analysis (Suit Contracts Only)
-#
-# Examine outcome variation by trump suit for suit contracts.
+# Using deal-level frame to compare team0_tricks vs team1_tricks distributions.
+# Self-play should be symmetric (both distributions should be similar).
 
 # %%
 # ============================================================================
-# Outcome by Trump Suit (Suit Contracts)
+# 2.2 Outcome Distribution by Team (faceted by strategy)
 # ============================================================================
 
-if 'trump' in outcome_df.columns:
-    suit_df = outcome_df[outcome_df['contract_type'] == 'suit']
+print("\n2.2 Outcome distributions by team (faceted by strategy)...")
 
-    if len(suit_df) > 0:
-        print(f"\nAnalyzing trump suit outcomes (n={len(suit_df)} suit contracts)...")
+df_self_deal = make_deal_frame(df_self)
 
-        # Summary statistics
-        trump_stats = suit_df.groupby('trump')['tricks_won'].agg(['mean', 'std', 'count'])
-        print("\nTrump Suit Statistics:")
-        print(trump_stats)
+fig, axes = plt.subplots(1, n_strategies, figsize=(5 * n_strategies, 5), sharey=True)
+if n_strategies == 1:
+    axes = [axes]
 
-        # Violin plot by trump
-        plt.figure(figsize=(10, 6))
-        sns.violinplot(data=suit_df, x='trump', y='tricks_won', palette='Set1', inner='quartile')
-        plt.title(f"Outcome by Trump Suit (Suit Contracts Only, n={len(suit_df)})")
-        plt.xlabel("Trump Suit")
-        plt.ylabel("Tricks Won")
-        plt.ylim(-0.5, 10.5)
-        plt.grid(axis='y', alpha=0.3)
+for i, strat in enumerate(strategies):
+    ax = axes[i]
+    strat_df = df_self_deal[df_self_deal['strategy_id'] == strat]
+    strat_df_plot = downsample_for_plot(strat_df)
 
-        # Add overall mean line
-        overall_mean = suit_df['tricks_won'].mean()
-        plt.axhline(overall_mean, color='red', linestyle='--', linewidth=1, alpha=0.5,
-                    label=f'Overall={overall_mean:.2f}')
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
+    # Melt to long format for violin plot
+    team_data = pd.melt(
+        strat_df_plot,
+        value_vars=['team0_tricks', 'team1_tricks'],
+        var_name='team',
+        value_name='tricks'
+    )
+    team_data['team'] = team_data['team'].map({
+        'team0_tricks': 'Team 0',
+        'team1_tricks': 'Team 1'
+    })
 
-        # Statistical test for trump bias
-        from scipy.stats import f_oneway
-        trump_groups = [suit_df[suit_df['trump'] == t]['tricks_won'] for t in TRUMPS_FOR_SUIT_CONTRACTS]
-        f_stat, p_value = f_oneway(*trump_groups)
+    if len(team_data) > 0:
+        sns.violinplot(data=team_data, x='team', y='tricks', ax=ax,
+                       palette='Pastel1', inner='quartile')
 
-        print("\nANOVA Test for Trump Suit Bias:")
-        print(f"  F-statistic: {f_stat:.4f}")
-        print(f"  p-value: {p_value:.4f}")
+        # Show means
+        mean0 = strat_df['team0_tricks'].mean()
+        mean1 = strat_df['team1_tricks'].mean()
+        ax.set_title(f"{strat}\n(μ₀={mean0:.2f}, μ₁={mean1:.2f})")
 
-        if p_value < 0.05:
-            print("  ⚠️  WARNING: Significant trump bias detected (p < 0.05)")
-        else:
-            print("  ✓ No significant trump bias (p >= 0.05)")
+    ax.set_xlabel("Team")
+    ax.set_ylabel("Tricks Won" if i == 0 else "")
+    ax.set_ylim(-0.5, 10.5)
+    ax.grid(axis='y', alpha=0.3)
 
-        print("\n✓ Trump suit analysis complete")
-    else:
-        print("\n⚠️  No suit contracts found - skipping trump analysis")
-else:
-    print("\n⚠️  No trump column - skipping trump analysis")
+plt.tight_layout()
+plt.show()
+
+print("✓ Team distributions plotted (self-play should be symmetric)")
+
+# %% [markdown]
+# ### 2.3 By Seat
+#
+# **Important:** Due to the logging schema, seats within the same team have
+# identical `tricks_won` values:
+# - Seats 0 & 2 (Team 0) show team0_tricks
+# - Seats 1 & 3 (Team 1) show team1_tricks
+
+# %%
+# ============================================================================
+# 2.3 Outcome Distribution by Seat (faceted by strategy)
+# ============================================================================
+
+print("\n2.3 Outcome distributions by seat (faceted by strategy)...")
+print("Note: Seats 0&2 (Team 0) and seats 1&3 (Team 1) show identical values due to team-level logging.")
+
+fig, axes = plt.subplots(n_strategies, 3, figsize=(15, 4 * n_strategies), sharey=True)
+if n_strategies == 1:
+    axes = axes.reshape(1, -1)
+
+for i, strat in enumerate(strategies):
+    strat_df = df_self[df_self['strategy_id'] == strat]
+    strat_df_plot = downsample_for_plot(strat_df)
+
+    for j, contract_type in enumerate(CONTRACT_TYPES):
+        ax = axes[i, j]
+        contract_df = strat_df_plot[strat_df_plot['contract_type'] == contract_type]
+
+        if len(contract_df) > 0:
+            sns.violinplot(data=contract_df, x='seat', y='tricks_won', ax=ax,
+                           palette='Set2', inner='quartile')
+
+        ax.set_title(f"{strat} - {contract_type.upper()}")
+        ax.set_xlabel("Seat")
+        ax.set_ylabel("Tricks Won" if j == 0 else "")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+print("✓ Seat-level distributions plotted")
+
+# %% [markdown]
+# ### 2.4 By Contract_Type and Team
+
+# %%
+# ============================================================================
+# 2.4 Outcome Distribution by Contract Type and Team
+# ============================================================================
+
+print("\n2.4 Outcome distributions by contract type and team...")
+
+fig, axes = plt.subplots(n_strategies, len(CONTRACT_TYPES), figsize=(15, 4 * n_strategies), sharey=True)
+if n_strategies == 1:
+    axes = axes.reshape(1, -1)
+
+for i, strat in enumerate(strategies):
+    strat_df = df_self_deal[df_self_deal['strategy_id'] == strat]
+    strat_df_plot = downsample_for_plot(strat_df)
+
+    for j, contract_type in enumerate(CONTRACT_TYPES):
+        ax = axes[i, j]
+        contract_df = strat_df_plot[strat_df_plot['contract_type'] == contract_type]
+        contract_df_full = strat_df[strat_df['contract_type'] == contract_type]
+
+        if len(contract_df) > 0:
+            # Melt for team comparison
+            team_data = pd.melt(
+                contract_df,
+                value_vars=['team0_tricks', 'team1_tricks'],
+                var_name='team',
+                value_name='tricks'
+            )
+            team_data['team'] = team_data['team'].map({
+                'team0_tricks': 'T0',
+                'team1_tricks': 'T1'
+            })
+
+            sns.violinplot(data=team_data, x='team', y='tricks', ax=ax,
+                           palette='Pastel1', inner='quartile')
+
+            mean0 = contract_df_full['team0_tricks'].mean()
+            mean1 = contract_df_full['team1_tricks'].mean()
+            ax.set_title(f"{strat} / {contract_type.upper()}\n(μ₀={mean0:.2f}, μ₁={mean1:.2f})")
+
+        ax.set_xlabel("Team")
+        ax.set_ylabel("Tricks Won" if j == 0 else "")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+print("✓ Contract×Team distributions plotted")
 
 # %% [markdown]
 # ---
 #
-# ## Section 6: Distribution Analysis (CDF/CCDF)
+# ## Section 3: Strategy Analysis (Head-to-head)
+#
+# Analyze strategy matchups using the head-to-head dataset with full N×N matrix.
+
+# %%
+# ============================================================================
+# Build Deal-Level Head-to-Head Frame
+# ============================================================================
+
+print("\nBuilding deal-level head-to-head frame...")
+
+# Create deal-level frame from h2h data
+df_h2h_deal = make_deal_frame(df_h2h)
+
+# Add team strategy columns
+df_h2h_deal = df_h2h_deal.merge(
+    df_h2h[['deal_id', 'contract_type', 'trump', 'strategy_id', 'team0_strategy', 'team1_strategy']].drop_duplicates(),
+    on=['deal_id', 'contract_type', 'trump', 'strategy_id'],
+    how='left'
+)
+
+print(f"Deal-level H2H frame: {len(df_h2h_deal)} rows")
+print(f"Unique matchups: {df_h2h_deal.groupby(['team0_strategy', 'team1_strategy']).ngroups}")
+
+# %% [markdown]
+# ### 3.1 Win Rate Heatmap
+#
+# N×N matrix showing P(team0_tricks >= 6) for each matchup.
+
+# %%
+# ============================================================================
+# Heatmap A: Win Rate (P(team0_tricks >= 6))
+# ============================================================================
+
+print("\n3.1 Win rate heatmap (P(team0 wins))...")
+
+# Compute win rate for each matchup
+win_rate_pivot = df_h2h_deal.groupby(['team0_strategy', 'team1_strategy'])['team0_win'].mean().unstack()
+
+# Ensure consistent ordering
+win_rate_pivot = win_rate_pivot.reindex(index=STRATEGY_NAMES, columns=STRATEGY_NAMES)
+
+plt.figure(figsize=(10, 8))
+sns.heatmap(win_rate_pivot, annot=True, fmt='.3f', cmap='RdYlGn',
+            vmin=0, vmax=1, center=0.5,
+            xticklabels=STRATEGY_NAMES, yticklabels=STRATEGY_NAMES)
+plt.title("Win Rate Heatmap: P(Team 0 Wins)\nRows = Team 0 strategy, Cols = Team 1 strategy")
+plt.xlabel("Team 1 Strategy")
+plt.ylabel("Team 0 Strategy")
+plt.tight_layout()
+plt.show()
+
+print("✓ Win rate heatmap plotted")
+print("\nExpected: Diagonal (self-play) should be ~0.5")
+diag_values = [win_rate_pivot.loc[s, s] for s in STRATEGY_NAMES if pd.notna(win_rate_pivot.loc[s, s])]
+if diag_values:
+    print(f"Diagonal win rates: {[f'{v:.3f}' for v in diag_values]}")
+
+# %% [markdown]
+# ### 3.2 Mean Delta Heatmap
+#
+# N×N matrix showing E[team0_tricks - team1_tricks] for each matchup.
+
+# %%
+# ============================================================================
+# Heatmap B: Mean Delta (E[team0_tricks - team1_tricks])
+# ============================================================================
+
+print("\n3.2 Mean delta heatmap (E[delta])...")
+
+# Compute mean delta for each matchup
+delta_pivot = df_h2h_deal.groupby(['team0_strategy', 'team1_strategy'])['delta_tricks'].mean().unstack()
+
+# Ensure consistent ordering
+delta_pivot = delta_pivot.reindex(index=STRATEGY_NAMES, columns=STRATEGY_NAMES)
+
+plt.figure(figsize=(10, 8))
+sns.heatmap(delta_pivot, annot=True, fmt='.2f', cmap='RdBu_r',
+            vmin=-5, vmax=5, center=0,
+            xticklabels=STRATEGY_NAMES, yticklabels=STRATEGY_NAMES)
+plt.title("Mean Delta Heatmap: E[Team 0 Tricks - Team 1 Tricks]\nRows = Team 0 strategy, Cols = Team 1 strategy")
+plt.xlabel("Team 1 Strategy")
+plt.ylabel("Team 0 Strategy")
+plt.tight_layout()
+plt.show()
+
+print("✓ Mean delta heatmap plotted")
+print("\nExpected: Diagonal (self-play) should be ~0")
+diag_deltas = [delta_pivot.loc[s, s] for s in STRATEGY_NAMES if pd.notna(delta_pivot.loc[s, s])]
+if diag_deltas:
+    print(f"Diagonal deltas: {[f'{v:.2f}' for v in diag_deltas]}")
+
+# %% [markdown]
+# ### 3.3 Distribution Grid: Team 0 Tricks
+#
+# N×N subplot grid showing violin plots of team0_tricks for each matchup.
+
+# %%
+# ============================================================================
+# Distribution Grid 1: Team 0 Tricks
+# ============================================================================
+
+print("\n3.3 Distribution grid: team0_tricks...")
+
+n = len(STRATEGY_NAMES)
+fig, axes = plt.subplots(n, n, figsize=(3 * n, 3 * n), sharex=True, sharey=True)
+
+for i, s0 in enumerate(STRATEGY_NAMES):
+    for j, s1 in enumerate(STRATEGY_NAMES):
+        ax = axes[i, j]
+        matchup_df = df_h2h_deal[
+            (df_h2h_deal['team0_strategy'] == s0) &
+            (df_h2h_deal['team1_strategy'] == s1)
+        ]
+
+        if len(matchup_df) > 0:
+            matchup_plot = downsample_for_plot(matchup_df)
+            # Violin only (no box overlay as per plan)
+            ax.violinplot(matchup_plot['team0_tricks'].dropna(), positions=[0], showmedians=True)
+            mean_val = matchup_df['team0_tricks'].mean()
+            ax.axhline(mean_val, color='red', linestyle='--', linewidth=0.5, alpha=0.7)
+            ax.text(0.95, 0.95, f'μ={mean_val:.1f}', transform=ax.transAxes,
+                    fontsize=7, va='top', ha='right')
+
+        ax.set_ylim(-0.5, 10.5)
+        ax.set_xticks([])
+        ax.grid(axis='y', alpha=0.3)
+
+        # Labels
+        if i == 0:
+            ax.set_title(s1[:8], fontsize=9)
+        if j == 0:
+            ax.set_ylabel(s0[:8], fontsize=9)
+
+fig.suptitle("Team 0 Tricks by Matchup\n(rows = team0, cols = team1)", y=1.02, fontsize=12)
+plt.tight_layout()
+plt.show()
+
+print("✓ Team 0 tricks distribution grid plotted")
+
+# %% [markdown]
+# ### 3.4 Distribution Grid: Delta Tricks
+#
+# N×N subplot grid showing violin plots of delta_tricks for each matchup.
+
+# %%
+# ============================================================================
+# Distribution Grid 2: Delta Tricks
+# ============================================================================
+
+print("\n3.4 Distribution grid: delta_tricks...")
+
+fig, axes = plt.subplots(n, n, figsize=(3 * n, 3 * n), sharex=True, sharey=True)
+
+for i, s0 in enumerate(STRATEGY_NAMES):
+    for j, s1 in enumerate(STRATEGY_NAMES):
+        ax = axes[i, j]
+        matchup_df = df_h2h_deal[
+            (df_h2h_deal['team0_strategy'] == s0) &
+            (df_h2h_deal['team1_strategy'] == s1)
+        ]
+
+        if len(matchup_df) > 0:
+            matchup_plot = downsample_for_plot(matchup_df)
+            ax.violinplot(matchup_plot['delta_tricks'].dropna(), positions=[0], showmedians=True)
+            mean_val = matchup_df['delta_tricks'].mean()
+            ax.axhline(mean_val, color='red', linestyle='--', linewidth=0.5, alpha=0.7)
+            ax.axhline(0, color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
+            ax.text(0.95, 0.95, f'μ={mean_val:+.1f}', transform=ax.transAxes,
+                    fontsize=7, va='top', ha='right')
+
+        ax.set_ylim(-10.5, 10.5)
+        ax.set_xticks([])
+        ax.grid(axis='y', alpha=0.3)
+
+        # Labels
+        if i == 0:
+            ax.set_title(s1[:8], fontsize=9)
+        if j == 0:
+            ax.set_ylabel(s0[:8], fontsize=9)
+
+fig.suptitle("Delta Tricks by Matchup (Team 0 - Team 1)\n(rows = team0, cols = team1)", y=1.02, fontsize=12)
+plt.tight_layout()
+plt.show()
+
+print("✓ Delta tricks distribution grid plotted")
+
+# %% [markdown]
+# ### 3.5 Tabular Summary
+
+# %%
+# ============================================================================
+# Tabular Summary of All Matchups
+# ============================================================================
+
+print("\n3.5 Tabular summary of all matchups...")
+
+matchup_summary = df_h2h_deal.groupby(['team0_strategy', 'team1_strategy']).agg(
+    n=('deal_id', 'count'),
+    mean_team0=('team0_tricks', 'mean'),
+    mean_delta=('delta_tricks', 'mean'),
+    win_rate=('team0_win', 'mean'),
+).round(3).reset_index()
+
+matchup_summary = matchup_summary.rename(columns={
+    'team0_strategy': 'team0',
+    'team1_strategy': 'team1',
+})
+
+print("\nMatchup Summary Table:")
+print(matchup_summary.to_string(index=False))
+
+# %% [markdown]
+# ---
+#
+# ## Section 4: Distribution Analysis (CDF/CCDF)
 #
 # Cumulative distribution functions to examine tail behavior.
 
 # %%
 # ============================================================================
-# CDF: Cumulative Distribution Function
+# CDF: Cumulative Distribution Function (by contract type)
 # ============================================================================
 
-print("\nPlotting CDF of tricks_won by contract type...")
+print("\n4.1 CDF of tricks_won by contract type...")
 
 fig, ax = plt.subplots(figsize=(10, 6))
 
+# Use self-play data for clean CDF
 for contract_type in CONTRACT_TYPES:
-    contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
+    contract_df = df_self[df_self['contract_type'] == contract_type]
 
     # Compute CDF
     sorted_tricks = np.sort(contract_df['tricks_won'])
@@ -639,7 +982,7 @@ for contract_type in CONTRACT_TYPES:
 
 ax.set_xlabel("Tricks Won")
 ax.set_ylabel("Cumulative Probability")
-ax.set_title("CDF of Tricks Won by Contract Type")
+ax.set_title("CDF of Tricks Won by Contract Type (Self-play)")
 ax.set_xlim(-0.5, 10.5)
 ax.set_ylim(0, 1)
 ax.grid(alpha=0.3)
@@ -649,42 +992,65 @@ plt.show()
 
 print("✓ CDF plotted")
 
+
 # %%
 # ============================================================================
-# CCDF: Complementary Cumulative Distribution Function (1 - CDF)
+# CCDF: Discrete Survival Function P(X >= k)
 # ============================================================================
 
-print("\nPlotting CCDF of tricks_won by contract type...")
+print("\n4.2 CCDF (discrete survival) of tricks_won by contract type...")
 
-fig, ax = plt.subplots(figsize=(10, 6))
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
+# Full range plot
+ax1 = axes[0]
 for contract_type in CONTRACT_TYPES:
-    contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
+    contract_df = df_self[df_self['contract_type'] == contract_type]
 
-    # Compute CCDF (1 - CDF)
-    sorted_tricks = np.sort(contract_df['tricks_won'])
-    ccdf = 1 - (np.arange(1, len(sorted_tricks) + 1) / len(sorted_tricks))
+    # Compute discrete survival P(X >= k) for k = 0..10
+    k_values = np.arange(11)
+    survival_probs = [(contract_df['tricks_won'] >= k).mean() for k in k_values]
 
-    ax.plot(sorted_tricks, ccdf, marker='o', markersize=3, linestyle='-',
-            label=f"{contract_type.upper()} (n={len(contract_df)})", alpha=0.7)
+    ax1.step(k_values, survival_probs, where='post', marker='o', markersize=4,
+             label=f"{contract_type.upper()} (n={len(contract_df)})", alpha=0.8)
 
-ax.set_xlabel("Tricks Won")
-ax.set_ylabel("P(Tricks >= x)")
-ax.set_title("CCDF of Tricks Won by Contract Type (Tail Probabilities)")
-ax.set_xlim(-0.5, 10.5)
-ax.set_ylim(0, 1)
-ax.set_yscale('log')  # Log scale to see tail behavior
-ax.grid(alpha=0.3, which='both')
-ax.legend()
+ax1.set_xlabel("k (Tricks)")
+ax1.set_ylabel("P(Tricks >= k)")
+ax1.set_title("CCDF: Survival Function (Full Range)")
+ax1.set_xlim(-0.5, 10.5)
+ax1.set_ylim(0, 1.05)
+ax1.grid(alpha=0.3)
+ax1.legend()
+
+# Tail-only plot (k >= 6) with log scale
+ax2 = axes[1]
+for contract_type in CONTRACT_TYPES:
+    contract_df = df_self[df_self['contract_type'] == contract_type]
+
+    k_values = np.arange(6, 11)
+    survival_probs = [(contract_df['tricks_won'] >= k).mean() for k in k_values]
+
+    ax2.step(k_values, survival_probs, where='post', marker='o', markersize=4,
+             label=f"{contract_type.upper()}", alpha=0.8)
+
+ax2.set_xlabel("k (Tricks)")
+ax2.set_ylabel("P(Tricks >= k)")
+ax2.set_title("CCDF: Tail Analysis (k >= 6, log scale)")
+ax2.set_xlim(5.5, 10.5)
+ax2.set_yscale('log')
+ax2.set_ylim(0.001, 1)
+ax2.grid(alpha=0.3, which='both')
+ax2.legend()
+
 plt.tight_layout()
 plt.show()
 
-print("✓ CCDF plotted")
+print("✓ CCDF (discrete survival) plotted")
 
 # %% [markdown]
 # ---
 #
-# ## Section 7: Summary
+# ## Section 5: Summary
 #
 # Final health scorecard for outcome validation.
 
@@ -703,117 +1069,60 @@ summary = {
     'failures': []
 }
 
-# Test 3: Outcome validity
-if 'tricks_won' in outcome_df.columns:
-    if outcome_df['tricks_won'].between(0, 10).all():
-        summary['passes'].append("✅ Test 3: All tricks_won in valid range [0, 10]")
+# Test 1.1: Outcome validity (already passed if we got here)
+summary['passes'].append("✅ 1.1 Outcome validity: All tricks_won in [0, 10], valid contract types")
 
-        # Check contract-specific means
-        for contract_type in CONTRACT_TYPES:
-            contract_df = outcome_df[outcome_df['contract_type'] == contract_type]
-            mean_tricks = contract_df['tricks_won'].mean()
-            if 4.0 <= mean_tricks <= 6.0:
-                summary['passes'].append(f"  ✅ {contract_type.upper()}: mean={mean_tricks:.3f} in [4.0, 6.0]")
-            else:
-                summary['warnings'].append(f"  ⚠️  {contract_type.upper()}: mean={mean_tricks:.3f} outside [4.0, 6.0]")
+# Test 1.2: Deal-level invariant (already passed if we got here)
+summary['passes'].append("✅ 1.2 Deal invariant: team0_tricks + team1_tricks == 10")
+
+# Test 1.3: Reproducibility (already passed if we got here)
+summary['passes'].append("✅ 1.3 Reproducibility: Outcomes deterministic with same seed")
+
+# Contract-specific mean checks
+for contract_type in CONTRACT_TYPES:
+    contract_df = df_self[df_self['contract_type'] == contract_type]
+    mean_tricks = contract_df['tricks_won'].mean()
+    if 4.0 <= mean_tricks <= 6.0:
+        summary['passes'].append(f"  ✅ {contract_type.upper()}: mean={mean_tricks:.3f} in [4.0, 6.0]")
     else:
-        summary['failures'].append("❌ Test 3: tricks_won contains invalid values")
+        summary['warnings'].append(f"  ⚠️  {contract_type.upper()}: mean={mean_tricks:.3f} outside [4.0, 6.0]")
 
-# Test 4: Reproducibility
-try:
-    if (outcome_df['tricks_won'] == outcome_df2['tricks_won']).all():
-        summary['passes'].append("✅ Test 4: Outcomes are deterministic")
-    else:
-        summary['failures'].append("❌ Test 4: Non-deterministic outcomes detected")
-except Exception:
-    summary['warnings'].append("⚠️  Test 4: Could not verify reproducibility")
+# Trump suit balance (suit contracts only)
+suit_df = df_self[df_self['contract_type'] == 'suit']
+if len(suit_df) > 0:
+    for strat in strategies:
+        strat_suit_df = suit_df[suit_df['strategy_id'] == strat]
+        if len(strat_suit_df) > 0:
+            trump_groups = [strat_suit_df[strat_suit_df['trump'] == t]['tricks_won']
+                            for t in TRUMPS_FOR_SUIT_CONTRACTS]
+            trump_groups = [g for g in trump_groups if len(g) > 0]
+            if len(trump_groups) >= 2:
+                f_stat, p_value = f_oneway(*trump_groups)
+                if p_value >= 0.05:
+                    summary['passes'].append(f"✅ Trump balance ({strat}): p={p_value:.3f}")
+                else:
+                    summary['warnings'].append(f"⚠️  Trump bias ({strat}): p={p_value:.3f}")
 
-# Trump suit balance (if applicable)
-if 'trump' in outcome_df.columns and outcome_df['contract_type'].eq('suit').any():
-    try:
-        suit_df = outcome_df[outcome_df['contract_type'] == 'suit']
-        trump_groups = [suit_df[suit_df['trump'] == t]['tricks_won'] for t in TRUMPS_FOR_SUIT_CONTRACTS]
-        f_stat, p_value = f_oneway(*trump_groups)
-        if p_value >= 0.05:
-            summary['passes'].append(f"✅ Trump balance: no significant bias (p={p_value:.3f})")
-        else:
-            summary['warnings'].append(f"⚠️  Trump balance: bias detected (p={p_value:.3f})")
-    except Exception:
-        summary['warnings'].append("⚠️  Could not test trump balance")
+# Heatmap checks (diagonal should show ~0.5 win rate, ~0 delta)
+if 'win_rate_pivot' in dir() and win_rate_pivot is not None:
+    for strat in STRATEGY_NAMES:
+        if strat in win_rate_pivot.index and strat in win_rate_pivot.columns:
+            diag_win = win_rate_pivot.loc[strat, strat]
+            if pd.notna(diag_win):
+                if 0.4 <= diag_win <= 0.6:
+                    summary['passes'].append(f"✅ Self-play win rate ({strat}): {diag_win:.3f} ~= 0.5")
+                else:
+                    summary['warnings'].append(f"⚠️  Self-play win rate ({strat}): {diag_win:.3f} != 0.5")
 
-# Per-strategy seat bias checks
-if 'seat_strategy' in outcome_df.columns:
-    print("\nPer-Strategy Seat Bias Checks:")
-    print("-" * 50)
-    for strategy in sorted(outcome_df['seat_strategy'].dropna().unique()):
-        strat_df = outcome_df[outcome_df['seat_strategy'] == strategy]
-        for contract_type in CONTRACT_TYPES:
-            contract_df = strat_df[strat_df['contract_type'] == contract_type]
-            if len(contract_df) < 20:
-                continue
-            seat_groups = [contract_df[contract_df['seat'] == s]['tricks_won'] for s in SEATS]
-            # Filter out empty groups
-            seat_groups = [g for g in seat_groups if len(g) > 0]
-            if len(seat_groups) < 2:
-                continue
-            f_stat, p_value = f_oneway(*seat_groups)
-            status = "⚠️  BIAS" if p_value < 0.05 else "✓"
-            print(f"  {strategy} / {contract_type}: p={p_value:.3f} {status}")
-            if p_value < 0.05:
-                summary['warnings'].append(f"⚠️  Seat bias ({strategy}/{contract_type}): p={p_value:.3f}")
-            else:
-                summary['passes'].append(f"✅ Seat balance ({strategy}/{contract_type}): p={p_value:.3f}")
-
-# Reversal consistency check (if reverse matchups enabled)
-if INCLUDE_REVERSE_MATCHUPS and 'team0_strategy' in outcome_df.columns:
-    print("\nReversal Consistency Check:")
-    print("-" * 50)
-
-    # Aggregate to deal level with team tricks
-    team0_seats = {0, 2}
-    team1_seats = {1, 3}
-
-    def _deal_team_tricks(group):
-        team0_tricks = group[group['seat'].isin(team0_seats)]['tricks_won'].mean()
-        team1_tricks = group[group['seat'].isin(team1_seats)]['tricks_won'].mean()
-        return pd.Series({
-            'team0_tricks': team0_tricks,
-            'team1_tricks': team1_tricks,
-            'delta_tricks': team0_tricks - team1_tricks,
-        })
-
-    deal_summary = outcome_df.groupby(
-        ['strategy_id', 'team0_strategy', 'team1_strategy', 'deal_id'],
-        dropna=False,
-    ).apply(_deal_team_tricks).reset_index()
-
-    # Check each pair for reversal consistency
-    checked_pairs = set()
-    for (a, b), group_ab in deal_summary.groupby(['team0_strategy', 'team1_strategy']):
-        if pd.isna(a) or pd.isna(b):
-            continue
-        pair = tuple(sorted([a, b]))
-        if pair in checked_pairs:
-            continue
-        checked_pairs.add(pair)
-
-        # Find reverse matchup
-        group_ba = deal_summary[
-            (deal_summary['team0_strategy'] == b) &
-            (deal_summary['team1_strategy'] == a)
-        ]
-
-        if len(group_ba) > 0:
-            delta_ab = group_ab['delta_tricks'].mean()
-            delta_ba = group_ba['delta_tricks'].mean()
-            actual_sum = delta_ab + delta_ba
-            status = "✓" if abs(actual_sum) < 0.5 else "⚠️"
-            print(f"  {a} vs {b}: delta_ab={delta_ab:+.2f}, delta_ba={delta_ba:+.2f}, sum={actual_sum:+.2f} {status}")
-
-            if abs(actual_sum) >= 0.5:
-                summary['warnings'].append(f"⚠️  Reversal asymmetry ({a} vs {b}): sum={actual_sum:+.2f}")
-            else:
-                summary['passes'].append(f"✅ Reversal consistent ({a} vs {b})")
+if 'delta_pivot' in dir() and delta_pivot is not None:
+    for strat in STRATEGY_NAMES:
+        if strat in delta_pivot.index and strat in delta_pivot.columns:
+            diag_delta = delta_pivot.loc[strat, strat]
+            if pd.notna(diag_delta):
+                if abs(diag_delta) < 0.5:
+                    summary['passes'].append(f"✅ Self-play delta ({strat}): {diag_delta:.2f} ~= 0")
+                else:
+                    summary['warnings'].append(f"⚠️  Self-play delta ({strat}): {diag_delta:.2f} != 0")
 
 # Print summary
 print("\n" + "=" * 70)
