@@ -39,5 +39,8 @@ jobs:
       - name: Notebook hygiene
         run: make notebook-check
 
+      - name: Execute notebooks (smoke)
+        run: make notebook-run
+
       - name: Tests (fast)
         run: make test

@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check notebook-sync notebook-check bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
+.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -24,6 +24,8 @@ help:
 	@echo "  make test               - pytest fast suite"
 	@echo "  make notebook-sync      - sync paired notebooks (Jupytext)"
 	@echo "  make notebook-check     - verify sync + outputs cleared"
+	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
+	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
 	@echo ""
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
@@ -61,6 +63,14 @@ notebook-check:
 	@echo ">>> Notebook hygiene checks"
 	$(PYTHON) -c "import glob, subprocess, sys; files=sorted(glob.glob('notebooks/**/*.ipynb', recursive=True)); sys.exit(0) if not files else None; cmd=[sys.executable, '-m', 'jupytext', '--sync', *files]; code=subprocess.call(cmd); sys.exit(code) if code else None; cmd=[sys.executable, '-m', 'nbstripout', '--verify', *files]; sys.exit(subprocess.call(cmd))"
 	@git diff --exit-code -- notebooks/
+
+notebook-run:
+	@echo ">>> Executing notebooks (SMOKE mode)"
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke
+
+notebook-run-full:
+	@echo ">>> Executing notebooks (QUICK mode)"
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode quick
 
 # Generate unique run ID for teacher training
 TEACHER_RUN_ID = teacher_baseline_$(shell date -u +%Y%m%d_%H%M%S)_$(shell printf "%04x" $$RANDOM)

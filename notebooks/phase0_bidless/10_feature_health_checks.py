@@ -46,18 +46,23 @@
 #
 # Set the path to your dataset directory here:
 
-# %%
-# === CONFIGURATION ===
+# %% tags=["parameters"]
+# === CONFIGURATION (papermill parameters) ===
+
+# --- Execution Mode ---
+# MODE controls sample size: "SMOKE" (~100 deals), "QUICK" (~2k deals), "FULL" (~50k deals)
+MODE = "QUICK"
 
 # --- Data Source Mode ---
-DEMO_MODE = False  # If True, generates synthetic data; if False, loads from RUN_DIR
+DEMO_MODE = True  # If True, generates synthetic data; if False, loads from RUN_DIR
 
 # If DEMO_MODE=False, set this path:
 RUN_DIR = "../../data/runs/YOUR_RUN_ID"  # Will load from RUN_DIR/datasets/
 
-# --- Demo Mode Parameters (used when DEMO_MODE=True) ---
+# --- Demo Mode Parameters (computed from MODE when DEMO_MODE=True) ---
 DEMO_SEED = 42
-DEMO_N_DEALS = 2000  # Minimum for bias detection per rigor standards
+_MODE_N_DEALS = {"SMOKE": 100, "QUICK": 2000, "FULL": 50000}
+DEMO_N_DEALS = _MODE_N_DEALS.get(MODE, 2000)  # Fallback to QUICK
 
 # --- Analysis Parameters ---
 ROLLING_WINDOW = 100  # Window size for rolling mean plots

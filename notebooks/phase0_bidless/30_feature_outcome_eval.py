@@ -37,9 +37,9 @@
 # ---
 # ## Section 0: Configuration
 
-# %%
-# Configuration
-MODE = "QUICK"  # or "FULL"
+# %% tags=["parameters"]
+# Configuration (papermill parameters)
+MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
 SEED = 42
 
 # Game parameters
@@ -61,6 +61,7 @@ N_ROTATIONS = 4  # Used when MATCHUP_MODE="per_seat_rotations"
 
 # Sample sizes by mode
 SAMPLE_SIZES = {
+    'SMOKE': 100,   # CI smoke test
     'QUICK': 1000,  # Quick validation
     'FULL': 10000,  # Statistical rigor
 }
