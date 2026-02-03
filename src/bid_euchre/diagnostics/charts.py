@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from ..reporting.style import CONTRACT_COLORS, apply_report_style, apply_seaborn_style
+
 # Try to import seaborn, fall back gracefully
 try:
     import seaborn as sns
@@ -20,17 +22,19 @@ except ImportError:
 
 # Color schemes
 SEAT_COLORS = ["#3498db", "#e74c3c", "#2ecc71", "#9b59b6"]  # Blue, Red, Green, Purple
-CONTRACT_COLORS = {
-    "suit": "#3498db",
-    "high": "#e74c3c",
-    "low": "#2ecc71",
-}
 TRUMP_COLORS = {
     "C": "#2c3e50",  # Clubs - dark gray
     "D": "#e67e22",  # Diamonds - orange
     "H": "#c0392b",  # Hearts - red
     "S": "#34495e",  # Spades - dark blue-gray
 }
+
+
+def _apply_style() -> None:
+    if HAS_SEABORN:
+        apply_seaborn_style()
+    else:
+        apply_report_style()
 
 
 def plot_hand_value_by_seat(
@@ -51,6 +55,7 @@ def plot_hand_value_by_seat(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if "feat_hand_value" not in df.columns:
@@ -101,6 +106,7 @@ def plot_hand_value_by_contract(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if "feat_hand_value" not in df.columns or "contract_type" not in df.columns:
@@ -150,6 +156,7 @@ def plot_feature_distributions(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     # Get feature columns
     feat_cols = [c for c in df.columns if c.startswith("feat_")]
     if not feat_cols:
@@ -212,6 +219,7 @@ def plot_feature_correlation(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     # Get feature columns
     feat_cols = [c for c in df.columns if c.startswith("feat_")]
     numeric_cols = [c for c in feat_cols if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
@@ -290,6 +298,7 @@ def plot_rolling_mean(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
@@ -332,6 +341,7 @@ def plot_feature_vs_label(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     # Normalize column names
     feat_col = feature if feature.startswith("feat_") else f"feat_{feature}"
     label_col = label if label.startswith("feat_") else f"feat_{label}"
@@ -402,6 +412,7 @@ def plot_feature_vs_outcome(
     Returns:
         matplotlib Figure with correlation coefficient in title
     """
+    _apply_style()
     # Normalize column name
     feat_col = feature if feature.startswith("feat_") else f"feat_{feature}"
 
@@ -480,6 +491,7 @@ def plot_outcome_distributions(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if outcome not in df.columns or group_by not in df.columns:
@@ -538,6 +550,7 @@ def plot_feature_outcome_correlation(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if outcome not in df.columns:
@@ -621,6 +634,7 @@ def plot_cdf(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
@@ -696,6 +710,7 @@ def plot_ccdf(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
@@ -767,6 +782,7 @@ def plot_hand_value_by_trump_suit(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if "feat_hand_value" not in df.columns:
@@ -843,6 +859,7 @@ def plot_outcome_by_trump_suit(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if outcome not in df.columns:
@@ -915,6 +932,7 @@ def plot_feature_heatmap_by_suit(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if "trump" not in df.columns:
@@ -1017,6 +1035,7 @@ def plot_suit_variance_summary(
     Returns:
         matplotlib Figure
     """
+    _apply_style()
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
