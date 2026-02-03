@@ -109,6 +109,9 @@ mlartifacts/
 .vscode/
 *.code-workspace
 
+# Cursor
+.cursor/
+
 # PyCharm
 .idea/
 *.iml
