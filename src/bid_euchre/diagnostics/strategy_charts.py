@@ -413,15 +413,19 @@ def plot_self_play_control(
 def plot_matchup_summary(
     matchup_results: Dict[Tuple[str, str], Dict[str, Any]],
     figsize: Tuple[int, int] = (16, 5),
+    metric_key: str = "mean_tricks_team0",
 ) -> plt.Figure:
     """Create a 3-panel summary of matchup results.
 
     Left: Win rate heatmap
-    Center: Trick distribution comparison
+    Center: Mean tricks (Team 0) by matchup
     Right: Self-play control chart
 
     Args:
-        matchup_results: Dict mapping (team0_name, team1_name) to result dict
+        matchup_results: Dict mapping (team0_name, team1_name) to result dict.
+            Expected keys per result: "win_rate", "mean_tricks_team0", "mean_tricks_team1".
+        figsize: Figure size tuple
+        metric_key: Key for mean tricks metric (default "mean_tricks_team0")
 
     Returns:
         matplotlib Figure with 3 subplots
@@ -432,7 +436,8 @@ def plot_matchup_summary(
 
     # Panel 1: Win rate heatmap
     ax = axes[0]
-    strategies = list(set(s for pair in matchup_results.keys() for s in pair))
+    # Use sorted() for deterministic ordering instead of set()
+    strategies = sorted(set(s for pair in matchup_results.keys() for s in pair))
     n = len(strategies)
 
     if n > 0:
@@ -459,13 +464,14 @@ def plot_matchup_summary(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
 
     # Panel 2: Mean tricks comparison
+    # Fix: Use metric_key parameter and get_strategy_name() for labels
     ax = axes[1]
     matchup_labels = []
     mean_tricks = []
 
-    for (team0, team1), result in matchup_results.items():
-        label = f"{team0[:4]} v {team1[:4]}"
-        mean = result.get("mean_tricks")
+    for (team0, team1), result in sorted(matchup_results.items()):
+        label = f"{get_strategy_name(team0)} v {get_strategy_name(team1)}"
+        mean = result.get(metric_key)
         if mean is not None:
             matchup_labels.append(label)
             mean_tricks.append(mean)
@@ -490,9 +496,11 @@ def plot_matchup_summary(
     }
 
     if self_play_data:
-        strat_names = [get_strategy_name(s) for s in self_play_data.keys()]
-        means = [r.get("mean_tricks", 5.0) for r in self_play_data.values()]
-        colors = [get_strategy_color(s) for s in self_play_data.keys()]
+        # Sort for deterministic ordering
+        sorted_strategies = sorted(self_play_data.keys())
+        strat_names = [get_strategy_name(s) for s in sorted_strategies]
+        means = [self_play_data[s].get(metric_key, 5.0) for s in sorted_strategies]
+        colors = [get_strategy_color(s) for s in sorted_strategies]
 
         ax.bar(range(len(means)), means, color=colors)
         ax.axhline(5.0, color="green", linestyle="-", linewidth=2)
@@ -502,7 +510,14 @@ def plot_matchup_summary(
         ax.set_ylabel("Mean Tricks")
         ax.set_title("Self-Play Control")
     else:
-        ax.text(0.5, 0.5, "No self-play data", ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            "No self-play data\n(add self-play matchups\nto configuration)",
+            ha="center",
+            va="center",
+            fontsize=10,
+        )
 
     fig.suptitle("Strategy Matchup Summary", fontsize=14, y=1.02)
     plt.tight_layout()

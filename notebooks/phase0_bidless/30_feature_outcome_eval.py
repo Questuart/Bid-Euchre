@@ -25,13 +25,30 @@
 # **Focus:**
 # - Predictive power of features
 # - Feature importance by contract type
-# - Seat position effects
-# - Strategy performance patterns
+# - Strategy performance patterns (per-strategy breakdowns)
 #
 # **Methodology:**
 # - Contract-type segregated analysis
-# - Statistical validation (correlation, ANOVA)
+# - Statistical validation (correlation, ANOVA with FDR correction)
 # - Bootstrap confidence intervals
+
+# %% [markdown]
+# ## Outline
+#
+# - **Section 0: Configuration** - Mode, strategies, matchups
+# - **Section 1: Data Loading** - Feature + outcome data validation
+# - **Section 2: Strategy Comparison**
+#   - 2.1 Win Rate Evaluation
+#   - 2.2 Trick Distribution by Strategy
+#   - 2.3 Matchup Summary Table
+#   - 2.4 Performance by Contract Type
+#   - 2.5 Performance by Suit
+#   - 2.6 Performance by Team
+#   - 2.7 Performance by Seat
+#   - 2.8 Rolling Mean Delta
+# - **Section 3: Feature-Outcome Correlations**
+# - **Section 4: Predictive Modeling & Feature Importance**
+# - **Section 5: Summary** - Health scorecard
 
 # %% [markdown]
 # ---
@@ -57,6 +74,7 @@ STRATEGIES = [
 
 MATCHUP_MODE = "reverse_matchups"  # "reverse_matchups" or "per_seat_rotations"
 INCLUDE_REVERSE_MATCHUPS = True
+INCLUDE_SELF_PLAY = True  # Include self-play matchups (strategy vs itself)
 N_ROTATIONS = 4  # Used when MATCHUP_MODE="per_seat_rotations"
 
 # Sample sizes by mode
@@ -86,7 +104,7 @@ import pandas as pd
 import seaborn as sns
 import statsmodels.api as sm
 from IPython.display import display
-from scipy.stats import f_oneway, pearsonr
+from scipy.stats import f_oneway, pearsonr, ttest_ind
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -102,7 +120,6 @@ from bid_euchre.diagnostics.notebook_data import (
 )
 from bid_euchre.diagnostics.strategy_charts import (
     plot_matchup_summary,
-    plot_tricks_distribution_comparison,
     plot_win_rate_heatmap,
 )
 
@@ -116,15 +133,37 @@ print("Imports complete")
 
 
 # %%
-def build_round_robin_matchups(strategy_names, include_reverse=True):
+def build_round_robin_matchups(strategy_names, include_reverse=True, include_self_play=True):
+    """Build matchups for team-based head-to-head evaluation.
+
+    Args:
+        strategy_names: List of strategy names
+        include_reverse: Include reversed matchups (B vs A for each A vs B)
+        include_self_play: Include self-play matchups (A vs A)
+
+    Returns:
+        List of matchup dicts with team0/team1 keys
+    """
     pairs = list(itertools.combinations(strategy_names, 2))
     matchups = [{"team0": a, "team1": b} for a, b in pairs]
     if include_reverse:
         matchups += [{"team0": b, "team1": a} for a, b in pairs]
+    if include_self_play:
+        matchups += [{"team0": s, "team1": s} for s in strategy_names]
     return matchups
 
 
-def build_per_seat_matchups(strategy_names, n_rotations=4):
+def build_per_seat_matchups(strategy_names, n_rotations=4, include_self_play=True):
+    """Build matchups for per-seat strategy evaluation.
+
+    Args:
+        strategy_names: List of strategy names
+        n_rotations: Number of seat rotations per pair
+        include_self_play: Include self-play matchups (all seats same strategy)
+
+    Returns:
+        List of matchup dicts with seat_strategies keys
+    """
     pairs = list(itertools.combinations(strategy_names, 2))
     rotations = [
         (0, 1, 2, 3),
@@ -140,14 +179,20 @@ def build_per_seat_matchups(strategy_names, n_rotations=4):
         for perm in rotations:
             seat_strategies = [base[i] for i in perm]
             matchups.append({"seat_strategies": seat_strategies})
+    if include_self_play:
+        matchups += [{"seat_strategies": [s, s, s, s]} for s in strategy_names]
     return matchups
 
 
 STRATEGY_NAMES = [s["name"] for s in STRATEGIES]
 if MATCHUP_MODE == "per_seat_rotations":
-    MATCHUPS = build_per_seat_matchups(STRATEGY_NAMES, n_rotations=N_ROTATIONS)
+    MATCHUPS = build_per_seat_matchups(
+        STRATEGY_NAMES, n_rotations=N_ROTATIONS, include_self_play=INCLUDE_SELF_PLAY
+    )
 else:
-    MATCHUPS = build_round_robin_matchups(STRATEGY_NAMES, include_reverse=INCLUDE_REVERSE_MATCHUPS)
+    MATCHUPS = build_round_robin_matchups(
+        STRATEGY_NAMES, include_reverse=INCLUDE_REVERSE_MATCHUPS, include_self_play=INCLUDE_SELF_PLAY
+    )
 
 print(f"Matchups: {len(MATCHUPS)}")
 
@@ -197,9 +242,19 @@ data_df[display_cols].head(10)
 
 # %% [markdown]
 # ---
-# ## Section 2: Strategy Comparison (Head-to-Head)
+# ## Section 2: Strategy Comparison
 #
-# Evaluate which strategies perform best in head-to-head matchups and whether performance drifts over time.
+# Evaluate strategy performance through multiple lenses: win rates, trick distributions,
+# and breakdowns by contract type, suit, team, and seat. Each subsection uses the
+# "B = one panel per strategy" pattern for consistent visualization.
+#
+# **Definitions:**
+# - `strategy_id`: Matchup identifier (e.g., "greedy_vs_glutton" or self-play "greedy_vs_greedy")
+# - Team win: `team0_tricks > 5` (more than half of 10 tricks)
+# - Win rate: P(team0_tricks > 5) per matchup
+# - Delta: `team0_tricks - team1_tricks`
+#
+# **Sample size note:** For stable ANOVA bias detection, ~2,000 deals per factor level is recommended.
 
 # %%
 # Build per-deal matchup summaries
@@ -207,6 +262,7 @@ matchup_df = data_df.copy()
 
 
 def parse_matchup_id(strategy_id: str) -> dict:
+    """Parse strategy_id to extract team and seat strategies."""
     if "_vs_" in strategy_id:
         team0, team1 = strategy_id.split("_vs_", maxsplit=1)
         return {
@@ -241,6 +297,7 @@ team1_seats = {1, 3}
 
 
 def _deal_team_tricks(group: pd.DataFrame) -> pd.Series:
+    """Compute team-level trick aggregates for a deal."""
     team0_tricks = group[group['seat'].isin(team0_seats)]['tricks_won'].mean()
     team1_tricks = group[group['seat'].isin(team1_seats)]['tricks_won'].mean()
     return pd.Series({
@@ -254,6 +311,20 @@ deal_summary = matchup_df.groupby(
     ['strategy_id', 'team0_strategy', 'team1_strategy', 'deal_id', 'contract_type', 'trump'],
     dropna=False,
 ).apply(_deal_team_tricks).reset_index()
+
+# Derive per-seat strategy for per-strategy analysis
+def get_seat_strategy(row):
+    """Map a row's seat to its strategy from the parsed matchup metadata."""
+    seat = row['seat']
+    col_name = f'seat{seat}_strategy'
+    return row.get(col_name, None)
+
+matchup_df['seat_strategy'] = matchup_df.apply(get_seat_strategy, axis=1)
+analysis_df = matchup_df[matchup_df['seat_strategy'].notna()].copy()
+
+print(f"Deal summaries: {len(deal_summary)}")
+print(f"Analysis rows with seat_strategy: {len(analysis_df)}")
+print(f"Unique seat strategies: {sorted(analysis_df['seat_strategy'].unique())}")
 
 # Build matchup results for plotting
 matchup_results = {}
@@ -281,23 +352,504 @@ for (team0, team1), group in deal_summary.groupby(['team0_strategy', 'team1_stra
     })
 
 summary_df = pd.DataFrame(summary_rows).sort_values('mean_delta', ascending=False)
-summary_df.head(10)
+
+# %% [markdown]
+# ### 2.1 Win Rate Evaluation
+#
+# Two-metric heatmaps showing win rate and mean delta across matchups, plus ANOVA on delta for fairness.
 
 # %%
 # Win-rate heatmap (Team 0 vs Team 1)
 fig = plot_win_rate_heatmap(matchup_results, metric="win_rate")
 plt.show()
 
-# Matchup summary table
-plot_matchup_summary(matchup_results)
+# Mean delta heatmap
+fig = plot_win_rate_heatmap(matchup_results, metric="mean_tricks_team0", title="Mean Tricks (Team 0) Heatmap")
 plt.show()
+
+# Fairness check: ANOVA on delta_tricks across matchups
+print("\nFairness Check: ANOVA on delta_tricks across matchups")
+print("=" * 60)
+matchup_groups = [
+    group['delta_tricks'].values
+    for _, group in deal_summary.groupby(['team0_strategy', 'team1_strategy'])
+]
+f_stat, p_value = f_oneway(*matchup_groups)
+n_matchups = len(matchup_groups)
+n_obs = sum(len(g) for g in matchup_groups)
+# Eta-squared effect size
+ss_between = sum(len(g) * (np.mean(g) - deal_summary['delta_tricks'].mean())**2 for g in matchup_groups)
+ss_total = ((deal_summary['delta_tricks'] - deal_summary['delta_tricks'].mean())**2).sum()
+eta_sq = ss_between / ss_total if ss_total > 0 else 0
+
+print(f"  Matchups: {n_matchups}, Total observations: {n_obs}")
+print(f"  F-statistic: {f_stat:.4f}")
+print(f"  p-value: {p_value:.4f}")
+print(f"  η² (effect size): {eta_sq:.4f}")
+if p_value < 0.05:
+    print("  ⚠️  Significant matchup effect detected (p < 0.05)")
+else:
+    print("  ✓ No significant matchup effect (p >= 0.05)")
+
+# %% [markdown]
+# ### 2.2 Trick Distribution by Strategy (B pattern)
+#
+# Faceted grid showing strategy-normalized delta for each strategy.
+# For each deal where a strategy appears, the delta is oriented so positive = advantage for that strategy.
 
 # %%
-# Trick distribution comparisons (Team 0 perspective)
-plot_tricks_distribution_comparison(matchup_results, team=0)
+# Build strategy-normalized delta DataFrame
+strategy_delta_rows = []
+for _, row in deal_summary.iterrows():
+    team0, team1 = row['team0_strategy'], row['team1_strategy']
+    delta = row['delta_tricks']
+    deal_id = row['deal_id']
+
+    # Strategy as team0: positive delta = advantage
+    strategy_delta_rows.append({
+        'strategy': team0,
+        'normalized_delta': delta,
+        'deal_id': deal_id,
+    })
+    # Strategy as team1: negative delta = advantage (flip sign)
+    if team0 != team1:  # Avoid double-counting self-play
+        strategy_delta_rows.append({
+            'strategy': team1,
+            'normalized_delta': -delta,
+            'deal_id': deal_id,
+        })
+
+strategy_delta_df = pd.DataFrame(strategy_delta_rows)
+
+# Faceted grid: one subplot per strategy
+strategies = sorted(strategy_delta_df['strategy'].unique())
+n_strategies = len(strategies)
+n_cols = min(4, n_strategies)
+n_rows = (n_strategies + n_cols - 1) // n_cols
+
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+if n_strategies == 1:
+    axes = np.array([[axes]])
+axes = np.atleast_2d(axes)
+
+for idx, strategy in enumerate(strategies):
+    row_idx, col_idx = divmod(idx, n_cols)
+    ax = axes[row_idx, col_idx]
+
+    strat_data = strategy_delta_df[strategy_delta_df['strategy'] == strategy]['normalized_delta']
+    n_samples = len(strat_data)
+
+    # Violin + box overlay
+    parts = ax.violinplot([strat_data.values], positions=[0], showmeans=False, showmedians=False)
+    for pc in parts['bodies']:
+        pc.set_facecolor('steelblue')
+        pc.set_alpha(0.6)
+    ax.boxplot([strat_data.values], positions=[0], widths=0.2)
+
+    ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+    ax.set_title(f"{strategy}\n(n={n_samples})")
+    ax.set_ylabel("Normalized Delta")
+    ax.set_xticks([])
+    ax.set_ylim(-6, 6)
+    ax.grid(axis='y', alpha=0.3)
+
+# Hide unused axes
+for idx in range(n_strategies, n_rows * n_cols):
+    row_idx, col_idx = divmod(idx, n_cols)
+    axes[row_idx, col_idx].axis('off')
+
+fig.suptitle("Strategy-Normalized Trick Delta (positive = strategy advantage)", fontsize=12)
+plt.tight_layout()
 plt.show()
 
-# Rolling delta timeline to detect drift
+# %% [markdown]
+# ### 2.3 Matchup Summary Table
+
+# %%
+# Display matchup summary
+print("Matchup Summary (sorted by mean_delta):")
+display(summary_df.round(3))
+
+# 3-panel summary plot (uses fixed plot_matchup_summary)
+plot_matchup_summary(matchup_results, metric_key="mean_tricks_team0")
+plt.show()
+
+# %% [markdown]
+# ### 2.4 Strategy Performance by Contract Type (B pattern)
+#
+# One subplot per strategy showing trick distribution by contract type, with ANOVA + FDR correction.
+
+# %%
+strategies = sorted(analysis_df['seat_strategy'].unique())
+n_strategies = len(strategies)
+n_cols = min(4, n_strategies)
+n_rows = (n_strategies + n_cols - 1) // n_cols
+
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+if n_strategies == 1:
+    axes = np.array([[axes]])
+axes = np.atleast_2d(axes)
+
+anova_results_contract = []
+
+for idx, strategy in enumerate(strategies):
+    row_idx, col_idx = divmod(idx, n_cols)
+    ax = axes[row_idx, col_idx]
+
+    strat_df = analysis_df[analysis_df['seat_strategy'] == strategy]
+
+    # ANOVA across contract types
+    contract_groups = [
+        strat_df[strat_df['contract_type'] == ct]['tricks_won'].values
+        for ct in CONTRACT_TYPES
+        if len(strat_df[strat_df['contract_type'] == ct]) > 0
+    ]
+
+    if len(contract_groups) >= 2 and all(len(g) > 0 for g in contract_groups):
+        f_stat, p_value = f_oneway(*contract_groups)
+        # Eta-squared
+        overall_mean = strat_df['tricks_won'].mean()
+        ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in contract_groups)
+        ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
+        eta_sq = ss_between / ss_total if ss_total > 0 else 0
+    else:
+        f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
+
+    anova_results_contract.append({
+        'strategy': strategy,
+        'f_stat': f_stat,
+        'p_value': p_value,
+        'eta_sq': eta_sq,
+        'n': len(strat_df),
+    })
+
+    # Violin plot by contract type
+    contract_data = [strat_df[strat_df['contract_type'] == ct]['tricks_won'].values for ct in CONTRACT_TYPES]
+    positions = range(len(CONTRACT_TYPES))
+
+    parts = ax.violinplot(contract_data, positions=positions, showmeans=False, showmedians=False)
+    for pc in parts['bodies']:
+        pc.set_facecolor('steelblue')
+        pc.set_alpha(0.6)
+    ax.boxplot(contract_data, positions=positions, widths=0.2)
+
+    ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+    ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
+    ax.set_xticks(positions)
+    ax.set_xticklabels(CONTRACT_TYPES, fontsize=8)
+    ax.set_ylabel("Tricks Won")
+    ax.set_ylim(-0.5, 10.5)
+    ax.grid(axis='y', alpha=0.3)
+
+# Hide unused axes
+for idx in range(n_strategies, n_rows * n_cols):
+    row_idx, col_idx = divmod(idx, n_cols)
+    axes[row_idx, col_idx].axis('off')
+
+fig.suptitle("Strategy Performance by Contract Type", fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# FDR correction
+anova_contract_df = pd.DataFrame(anova_results_contract)
+valid_p = anova_contract_df['p_value'].dropna()
+if len(valid_p) > 0:
+    _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+    anova_contract_df.loc[valid_p.index, 'p_adj'] = p_adj
+
+print("\nANOVA Results by Strategy (Contract Type Effect):")
+print("Note: Tricks are discrete (0-10); ANOVA is robust but Kruskal-Wallis is an alternative.")
+display(anova_contract_df.round(4))
+
+# %% [markdown]
+# ### 2.5 Strategy Performance by Suit (B pattern)
+#
+# Suit contracts only: one subplot per strategy showing trick distribution by trump suit.
+
+# %%
+suit_only = analysis_df[analysis_df['contract_type'] == 'suit']
+
+if len(suit_only) > 0:
+    strategies = sorted(suit_only['seat_strategy'].unique())
+    n_strategies = len(strategies)
+    n_cols = min(4, n_strategies)
+    n_rows = (n_strategies + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+    if n_strategies == 1:
+        axes = np.array([[axes]])
+    axes = np.atleast_2d(axes)
+
+    anova_results_suit = []
+
+    for idx, strategy in enumerate(strategies):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
+
+        strat_df = suit_only[suit_only['seat_strategy'] == strategy]
+
+        # ANOVA across trump suits
+        suit_groups = [
+            strat_df[strat_df['trump'] == t]['tricks_won'].values
+            for t in TRUMPS_FOR_SUIT_CONTRACTS
+            if len(strat_df[strat_df['trump'] == t]) > 0
+        ]
+
+        if len(suit_groups) >= 2 and all(len(g) > 0 for g in suit_groups):
+            f_stat, p_value = f_oneway(*suit_groups)
+            overall_mean = strat_df['tricks_won'].mean()
+            ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in suit_groups)
+            ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
+            eta_sq = ss_between / ss_total if ss_total > 0 else 0
+        else:
+            f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
+
+        anova_results_suit.append({
+            'strategy': strategy,
+            'f_stat': f_stat,
+            'p_value': p_value,
+            'eta_sq': eta_sq,
+            'n': len(strat_df),
+        })
+
+        # Violin plot by trump suit
+        suit_data = [strat_df[strat_df['trump'] == t]['tricks_won'].values for t in TRUMPS_FOR_SUIT_CONTRACTS]
+        positions = range(len(TRUMPS_FOR_SUIT_CONTRACTS))
+
+        parts = ax.violinplot(suit_data, positions=positions, showmeans=False, showmedians=False)
+        for pc in parts['bodies']:
+            pc.set_facecolor('darkgreen')
+            pc.set_alpha(0.6)
+        ax.boxplot(suit_data, positions=positions, widths=0.2)
+
+        ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+        ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(TRUMPS_FOR_SUIT_CONTRACTS, fontsize=8)
+        ax.set_ylabel("Tricks Won")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
+
+    # Hide unused axes
+    for idx in range(n_strategies, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis('off')
+
+    fig.suptitle("Strategy Performance by Trump Suit (Suit Contracts Only)", fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
+    # FDR correction
+    anova_suit_df = pd.DataFrame(anova_results_suit)
+    valid_p = anova_suit_df['p_value'].dropna()
+    if len(valid_p) > 0:
+        _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+        anova_suit_df.loc[valid_p.index, 'p_adj'] = p_adj
+
+    print("\nANOVA Results by Strategy (Trump Suit Effect):")
+    display(anova_suit_df.round(4))
+else:
+    print("⚠️  No suit contracts available for suit analysis")
+
+# %% [markdown]
+# ### 2.6 Strategy Performance by Team (B pattern)
+#
+# One subplot per strategy showing trick distribution by team assignment (0 vs 1).
+
+# %%
+# Convert deal_summary to long form with team perspective per strategy
+team_performance_rows = []
+for _, row in deal_summary.iterrows():
+    team0, team1 = row['team0_strategy'], row['team1_strategy']
+    deal_id = row['deal_id']
+
+    # Team 0 strategy's perspective
+    team_performance_rows.append({
+        'strategy': team0,
+        'team_assignment': 'team0',
+        'team_tricks': row['team0_tricks'],
+        'deal_id': deal_id,
+    })
+    # Team 1 strategy's perspective
+    if team0 != team1:  # Avoid double-counting self-play
+        team_performance_rows.append({
+            'strategy': team1,
+            'team_assignment': 'team1',
+            'team_tricks': row['team1_tricks'],
+            'deal_id': deal_id,
+        })
+
+team_perf_df = pd.DataFrame(team_performance_rows)
+
+strategies = sorted(team_perf_df['strategy'].unique())
+n_strategies = len(strategies)
+n_cols = min(4, n_strategies)
+n_rows = (n_strategies + n_cols - 1) // n_cols
+
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+if n_strategies == 1:
+    axes = np.array([[axes]])
+axes = np.atleast_2d(axes)
+
+ttest_results_team = []
+
+for idx, strategy in enumerate(strategies):
+    row_idx, col_idx = divmod(idx, n_cols)
+    ax = axes[row_idx, col_idx]
+
+    strat_df = team_perf_df[team_perf_df['strategy'] == strategy]
+    team0_data = strat_df[strat_df['team_assignment'] == 'team0']['team_tricks'].values
+    team1_data = strat_df[strat_df['team_assignment'] == 'team1']['team_tricks'].values
+
+    # T-test for team0 vs team1
+    if len(team0_data) > 0 and len(team1_data) > 0:
+        t_stat, p_value = ttest_ind(team0_data, team1_data)
+        # Cohen's d
+        pooled_std = np.sqrt(((len(team0_data) - 1) * np.var(team0_data, ddof=1) +
+                              (len(team1_data) - 1) * np.var(team1_data, ddof=1)) /
+                             (len(team0_data) + len(team1_data) - 2))
+        cohens_d = (np.mean(team0_data) - np.mean(team1_data)) / pooled_std if pooled_std > 0 else 0
+    else:
+        t_stat, p_value, cohens_d = np.nan, np.nan, np.nan
+
+    ttest_results_team.append({
+        'strategy': strategy,
+        't_stat': t_stat,
+        'p_value': p_value,
+        'cohens_d': cohens_d,
+        'n_team0': len(team0_data),
+        'n_team1': len(team1_data),
+    })
+
+    # Violin plot by team assignment
+    team_data = [team0_data, team1_data]
+    positions = [0, 1]
+
+    parts = ax.violinplot(team_data, positions=positions, showmeans=False, showmedians=False)
+    for pc in parts['bodies']:
+        pc.set_facecolor('darkorange')
+        pc.set_alpha(0.6)
+    ax.boxplot(team_data, positions=positions, widths=0.2)
+
+    ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+    ax.set_title(f"{strategy}\n(d={cohens_d:.3f})")
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Team 0', 'Team 1'], fontsize=8)
+    ax.set_ylabel("Team Tricks")
+    ax.set_ylim(-0.5, 10.5)
+    ax.grid(axis='y', alpha=0.3)
+
+# Hide unused axes
+for idx in range(n_strategies, n_rows * n_cols):
+    row_idx, col_idx = divmod(idx, n_cols)
+    axes[row_idx, col_idx].axis('off')
+
+fig.suptitle("Strategy Performance by Team Assignment", fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# FDR correction
+ttest_team_df = pd.DataFrame(ttest_results_team)
+valid_p = ttest_team_df['p_value'].dropna()
+if len(valid_p) > 0:
+    _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+    ttest_team_df.loc[valid_p.index, 'p_adj'] = p_adj
+
+print("\nT-Test Results by Strategy (Team Assignment Effect):")
+display(ttest_team_df.round(4))
+
+# %% [markdown]
+# ### 2.7 Strategy Performance by Seat (B pattern)
+#
+# One subplot per strategy showing trick distribution by seat position (0-3).
+
+# %%
+strategies = sorted(analysis_df['seat_strategy'].unique())
+n_strategies = len(strategies)
+n_cols = min(4, n_strategies)
+n_rows = (n_strategies + n_cols - 1) // n_cols
+
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+if n_strategies == 1:
+    axes = np.array([[axes]])
+axes = np.atleast_2d(axes)
+
+anova_results_seat = []
+
+for idx, strategy in enumerate(strategies):
+    row_idx, col_idx = divmod(idx, n_cols)
+    ax = axes[row_idx, col_idx]
+
+    strat_df = analysis_df[analysis_df['seat_strategy'] == strategy]
+
+    # ANOVA across seats
+    seat_groups = [
+        strat_df[strat_df['seat'] == s]['tricks_won'].values
+        for s in SEATS
+        if len(strat_df[strat_df['seat'] == s]) > 0
+    ]
+
+    if len(seat_groups) >= 2 and all(len(g) > 0 for g in seat_groups):
+        f_stat, p_value = f_oneway(*seat_groups)
+        overall_mean = strat_df['tricks_won'].mean()
+        ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in seat_groups)
+        ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
+        eta_sq = ss_between / ss_total if ss_total > 0 else 0
+    else:
+        f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
+
+    anova_results_seat.append({
+        'strategy': strategy,
+        'f_stat': f_stat,
+        'p_value': p_value,
+        'eta_sq': eta_sq,
+        'n': len(strat_df),
+    })
+
+    # Violin plot by seat
+    seat_data = [strat_df[strat_df['seat'] == s]['tricks_won'].values for s in SEATS]
+    positions = range(len(SEATS))
+
+    parts = ax.violinplot(seat_data, positions=positions, showmeans=False, showmedians=False)
+    for pc in parts['bodies']:
+        pc.set_facecolor('purple')
+        pc.set_alpha(0.6)
+    ax.boxplot(seat_data, positions=positions, widths=0.2)
+
+    ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+    ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
+    ax.set_xticks(positions)
+    ax.set_xticklabels([f"Seat {s}" for s in SEATS], fontsize=8)
+    ax.set_ylabel("Tricks Won")
+    ax.set_ylim(-0.5, 10.5)
+    ax.grid(axis='y', alpha=0.3)
+
+# Hide unused axes
+for idx in range(n_strategies, n_rows * n_cols):
+    row_idx, col_idx = divmod(idx, n_cols)
+    axes[row_idx, col_idx].axis('off')
+
+fig.suptitle("Strategy Performance by Seat Position", fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# FDR correction
+anova_seat_df = pd.DataFrame(anova_results_seat)
+valid_p = anova_seat_df['p_value'].dropna()
+if len(valid_p) > 0:
+    _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+    anova_seat_df.loc[valid_p.index, 'p_adj'] = p_adj
+
+print("\nANOVA Results by Strategy (Seat Position Effect):")
+display(anova_seat_df.round(4))
+
+# %% [markdown]
+# ### 2.8 Rolling Mean Delta
+#
+# Rolling mean of per-deal Δ (team0 - team1) for each matchup, ordered by deal_id.
+# Used to detect drift over time.
+
+# %%
 ROLLING_WINDOW = 50
 
 rolling_rows = []
@@ -314,123 +866,19 @@ rolling_df = pd.concat(rolling_rows, ignore_index=True)
 plt.figure(figsize=(12, 6))
 sns.lineplot(data=rolling_df, x='deal_id', y='rolling_delta', hue='matchup', alpha=0.7)
 plt.axhline(0, color='black', linewidth=0.8)
-plt.title(f"Rolling mean delta (Team0 - Team1), window={ROLLING_WINDOW}")
-plt.ylabel("Rolling delta tricks")
+plt.title(f"Rolling Mean Delta (Team0 - Team1), window={ROLLING_WINDOW}")
+plt.ylabel("Rolling Delta (tricks)")
 plt.xlabel("Deal ID")
-plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8)
 plt.tight_layout()
 plt.show()
 
+print("Caption: Rolling mean of per-deal Δ (team0 - team1) for each matchup, ordered by deal_id.")
+print("         Stable lines near 0 indicate no drift; divergence may indicate seed/config issues.")
 
 # %% [markdown]
 # ---
-# ## Section 3: Strategy Performance Analysis (Per-Seat)
-#
-# Analyze outcomes by **individual strategy** (not matchup-level), breaking down by seat position, contract type, and trump suit.
-#
-# **Critical Note:** In head-to-head mode, `strategy_id` is a matchup identifier (e.g., `"greedy_vs_glutton"`), NOT the per-seat strategy. We derive `seat_strategy` from the matchup metadata to analyze per-strategy performance.
-
-# %%
-# Derive per-seat strategy from matchup metadata
-# CRITICAL: In head-to-head mode, strategy_id is a matchup ID (e.g., "greedy_vs_glutton")
-# We must map each row's seat to its corresponding strategy
-
-def get_seat_strategy(row):
-    """Map a row's seat to its strategy from the parsed matchup metadata."""
-    seat = row['seat']
-    col_name = f'seat{seat}_strategy'
-    return row.get(col_name, None)
-
-# Apply to matchup_df (already has seat{N}_strategy columns from parse_matchup_id)
-matchup_df['seat_strategy'] = matchup_df.apply(get_seat_strategy, axis=1)
-
-# Filter to rows with valid seat_strategy
-analysis_df = matchup_df[matchup_df['seat_strategy'].notna()].copy()
-
-print(f"Analysis rows with seat_strategy: {len(analysis_df)}")
-print(f"Unique seat strategies: {sorted(analysis_df['seat_strategy'].unique())}")
-print("\nSeat strategy distribution:")
-print(analysis_df['seat_strategy'].value_counts())
-
-# %%
-# Strategy × Seat Heatmap
-# Shows mean tricks won by each strategy at each seat position (aggregated across contracts)
-
-strategy_seat = analysis_df.groupby(['seat_strategy', 'seat'])['tricks_won'].mean().unstack()
-
-fig, ax = plt.subplots(figsize=(10, 6))
-sns.heatmap(strategy_seat, annot=True, fmt='.2f', cmap='RdYlGn', center=5.0, ax=ax)
-ax.set_title('Mean Tricks Won by Strategy × Seat Position')
-ax.set_xlabel('Seat Position')
-ax.set_ylabel('Strategy')
-plt.tight_layout()
-plt.show()
-
-# Sample size check
-print("\nSample sizes per Strategy × Seat:")
-strategy_seat_counts = analysis_df.groupby(['seat_strategy', 'seat']).size().unstack()
-print(strategy_seat_counts)
-
-min_cell = strategy_seat_counts.min().min()
-if min_cell < 100:
-    print(f"\n⚠️  WARNING: Minimum cell count = {min_cell}. Consider MODE='FULL' for robust estimates.")
-
-# %%
-# Strategy × Contract Type Comparison
-# Shows mean tricks won by each strategy for each contract type
-
-strategy_contract = analysis_df.groupby(['seat_strategy', 'contract_type'])['tricks_won'].mean().unstack()
-
-fig, ax = plt.subplots(figsize=(12, 6))
-strategy_contract.plot(kind='bar', ax=ax, width=0.8)
-ax.set_title('Mean Tricks Won by Strategy × Contract Type')
-ax.set_xlabel('Strategy')
-ax.set_ylabel('Mean Tricks Won')
-ax.axhline(5.0, color='black', linestyle='--', alpha=0.5, label='Expected (5.0)')
-ax.legend(title='Contract Type')
-ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
-plt.tight_layout()
-plt.show()
-
-# Show numeric table
-print("\nStrategy × Contract Type (mean tricks):")
-print(strategy_contract.round(2))
-
-# %%
-# Strategy × Trump Suit Comparison (Suit Contracts Only)
-# Shows mean tricks won by each strategy for each trump suit
-
-suit_only = analysis_df[analysis_df['contract_type'] == 'suit']
-
-if len(suit_only) > 0:
-    strategy_trump = suit_only.groupby(['seat_strategy', 'trump'])['tricks_won'].mean().unstack()
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    strategy_trump.plot(kind='bar', ax=ax, width=0.8)
-    ax.set_title('Mean Tricks Won by Strategy × Trump Suit (Suit Contracts Only)')
-    ax.set_xlabel('Strategy')
-    ax.set_ylabel('Mean Tricks Won')
-    ax.axhline(5.0, color='black', linestyle='--', alpha=0.5)
-    ax.legend(title='Trump Suit')
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
-    plt.tight_layout()
-    plt.show()
-
-    # Show numeric table
-    print("\nStrategy × Trump (mean tricks, suit contracts only):")
-    print(strategy_trump.round(2))
-
-    # Sample size warning
-    strategy_trump_counts = suit_only.groupby(['seat_strategy', 'trump']).size().unstack()
-    min_cell = strategy_trump_counts.min().min()
-    if min_cell < 50:
-        print(f"\n⚠️  WARNING: Minimum cell count = {min_cell}. Recommend MODE='FULL' for Strategy × Trump analysis.")
-else:
-    print("⚠️  No suit contracts available for Strategy × Trump analysis")
-
-# %% [markdown]
-# ---
-# ## Section 4: Feature-Outcome Correlations
+# ## Section 3: Feature-Outcome Correlations
 #
 # Identify which hand features correlate with tricks won.
 
@@ -517,7 +965,7 @@ print("✓ Correlation analysis complete")
 
 # %% [markdown]
 # ---
-# ## Section 5: Predictive Modeling & Feature Importance
+# ## Section 4: Predictive Modeling & Feature Importance
 #
 # Train simple predictive models per contract type and compute permutation-based feature importance.
 
@@ -637,122 +1085,7 @@ for contract_type in CONTRACT_TYPES:
 
 # %% [markdown]
 # ---
-# ## Section 6: Seat Position Effects
-#
-# Analyze how seat position affects feature importance and outcomes.
-
-# %%
-# ANOVA test for seat effects on outcomes
-print("Seat Position Analysis:")
-print("=" * 80)
-
-for contract_type in CONTRACT_TYPES:
-    contract_df = data_df[data_df['contract_type'] == contract_type]
-
-    # Group by seat
-    seat_groups = [contract_df[contract_df['seat'] == s]['tricks_won'] for s in SEATS]
-
-    # ANOVA test
-    f_stat, p_value = f_oneway(*seat_groups)
-
-    print(f"\n{contract_type.upper()} Contracts:")
-    print(f"  F-statistic: {f_stat:.4f}")
-    print(f"  p-value: {p_value:.4f}")
-
-    if p_value < 0.05:
-        print("  ⚠️  WARNING: Significant seat bias detected (p < 0.05)")
-    else:
-        print("  ✓ No significant seat bias (p >= 0.05)")
-
-    # Show mean tricks won by seat
-    print("  Mean tricks won by seat:")
-    for seat in SEATS:
-        mean_tricks = contract_df[contract_df['seat'] == seat]['tricks_won'].mean()
-        print(f"    Seat {seat}: {mean_tricks:.2f}")
-
-print("\n" + "=" * 80)
-
-# %%
-# Violin plots of tricks won by seat and contract type
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-
-for i, contract_type in enumerate(CONTRACT_TYPES):
-    ax = axes[i]
-    contract_df = data_df[data_df['contract_type'] == contract_type]
-
-    sns.violinplot(data=contract_df, x='seat', y='tricks_won', ax=ax,
-                   palette='Set2', inner='quartile')
-
-    ax.set_title(f'{contract_type.upper()} Contracts - Tricks Won by Seat')
-    ax.set_xlabel('Seat Position')
-    ax.set_ylabel('Tricks Won')
-    ax.set_ylim(-0.5, 10.5)
-    ax.grid(axis='y', alpha=0.3)
-
-    # Add overall mean line
-    mean_val = contract_df['tricks_won'].mean()
-    ax.axhline(mean_val, color='red', linestyle='--', linewidth=1, alpha=0.5,
-               label=f'Overall={mean_val:.2f}')
-    ax.legend(loc='upper right', fontsize=8)
-
-plt.tight_layout()
-plt.show()
-
-print("✓ Seat analysis complete")
-
-# %% [markdown]
-# ---
-# ## Section 7: Trump Suit Effects (Suit Contracts Only)
-#
-# Examine how trump suit affects feature distributions and predictive power.
-
-# %%
-# Trump suit analysis (suit contracts only)
-suit_df = data_df[data_df['contract_type'] == 'suit']
-
-if len(suit_df) > 0:
-    print("Trump Suit Analysis:")
-    print("=" * 80)
-
-    # ANOVA test for trump bias
-    trump_groups = [suit_df[suit_df['trump'] == t]['tricks_won'] for t in TRUMPS_FOR_SUIT_CONTRACTS]
-    f_stat, p_value = f_oneway(*trump_groups)
-
-    print("\nANOVA Test for Trump Suit Bias:")
-    print(f"  F-statistic: {f_stat:.4f}")
-    print(f"  p-value: {p_value:.4f}")
-
-    if p_value < 0.05:
-        print("  ⚠️  WARNING: Significant trump bias detected (p < 0.05)")
-    else:
-        print("  ✓ No significant trump bias (p >= 0.05)")
-
-    # Show mean tricks won by trump
-    print("\n  Mean tricks won by trump suit:")
-    for trump in TRUMPS_FOR_SUIT_CONTRACTS:
-        mean_tricks = suit_df[suit_df['trump'] == trump]['tricks_won'].mean()
-        n_samples = len(suit_df[suit_df['trump'] == trump])
-        print(f"    {trump}: {mean_tricks:.2f} (n={n_samples})")
-
-    print("\n" + "=" * 80)
-else:
-    print("⚠️  No suit contracts found - skipping trump analysis")
-
-# %% [markdown]
-# ### Matchup Mode Notes
-#
-# - `reverse_matchups` uses team0/team1 with reversals to mitigate team assignment bias.
-# - `per_seat_rotations` uses `seat_strategies` permutations to explore seat effects (higher runtime).
-
-# %%
-if MATCHUP_MODE == "per_seat_rotations":
-    print(f"Per-seat rotations enabled (N_ROTATIONS={N_ROTATIONS})")
-else:
-    print("Reverse matchups enabled")
-
-# %% [markdown]
-# ---
-# ## Section 8: Summary
+# ## Section 5: Summary
 #
 # Health scorecard and recommendations for model development.
 
@@ -838,4 +1171,4 @@ print("\n🎯 Next Steps:")
 print("  1. If sample size warnings, run with MODE='FULL' for more data")
 print("  2. Use top features for model development")
 print("  3. Consider contract-specific models given different feature importance")
-print("  4. Review seat/trump warnings if present")
+print("  4. Review per-strategy bias results (Section 2.4-2.7) for significant effects")
