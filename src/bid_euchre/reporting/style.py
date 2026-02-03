@@ -39,6 +39,7 @@ CONTRACT_COLORS = {
 STRATEGY_NAMES = {
     "greedy": "Greedy",
     "glutton": "Glutton",
+    "random": "Random",
     "random_legal": "Random Legal",
     "always_lowest": "Always Lowest",
     "always_highest": "Always Highest",
@@ -48,6 +49,7 @@ STRATEGY_NAMES = {
 STRATEGY_COLORS = {
     "greedy": "#2ecc71",
     "glutton": "#27ae60",
+    "random": "#7f8c8d",
     "random_legal": "#95a5a6",
     "always_lowest": "#3498db",
     "always_highest": "#e74c3c",
