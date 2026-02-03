@@ -40,6 +40,7 @@ make help     # see all targets
 - Canonical runner: `experiments/run_experiment.py` (see @docs/01_core/EXPERIMENTS.md)
 - No commits to `data/runs/`, `data/reports/`, `data/models/`
 - One concept per PR; use PR template
+- Notebook edits: use paired `.py` under `notebooks/`; run `make notebook-sync` + `make notebook-check`
 
 ## Worktree-Only Workflow (MANDATORY)
 

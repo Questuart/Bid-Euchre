@@ -35,6 +35,22 @@ Notebooks here are **sandbox exploration tools**, not production artifacts:
 
 ---
 
+## Notebook Pairing (Jupytext)
+
+All notebooks under `notebooks/` are **paired** using Jupytext:
+
+- **Source of truth:** the `.py` file in percent format (review this in PRs)
+- **Execution artifact:** the `.ipynb` file (kept in sync for Jupyter)
+- **Sync rule:** run `make notebook-sync` before committing
+- **Hygiene rule:** run `make notebook-check` to verify sync + cleared outputs
+
+Template starter:
+
+- `notebooks/_templates/00_notebook_template.py`
+- `notebooks/_templates/00_notebook_template.ipynb`
+
+---
+
 ## Usage
 
 ### Setup
@@ -56,11 +72,11 @@ PYTHONPATH=src jupyter notebook notebooks/
 
 ### Before Committing
 
-Clear outputs to keep diffs clean:
+Sync paired files and verify outputs are cleared:
 
 ```bash
-# Clear all notebook outputs
-jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace notebooks/**/*.ipynb
+make notebook-sync
+make notebook-check
 ```
 
 ---

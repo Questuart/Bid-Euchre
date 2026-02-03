@@ -86,7 +86,7 @@ def _load_all_results(results_dir: Path) -> dict[str, object]:
 def test_determinism_repeatability(tmp_path: Path) -> None:
     """
     Run the canonical runner twice with same seed and assert stable outputs match.
-    
+
     This test:
     - Runs experiments/run_experiment.py twice with identical parameters
     - Compares stable artifacts (config_effective.yaml, results/**/*.json)
@@ -116,6 +116,6 @@ def test_determinism_repeatability(tmp_path: Path) -> None:
         f"Run 1: {sorted(res1.keys())}\n"
         f"Run 2: {sorted(res2.keys())}"
     )
-    
+
     for k in res1:
         assert res1[k] == res2[k], f"Results differ for {k}"

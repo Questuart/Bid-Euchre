@@ -29,6 +29,8 @@ dev = [
   "pandas>=2.0.0",
   "ipykernel>=6.0.0",
   "jupyterlab>=4.0.0",
+  "jupytext>=1.16.2",
+  "nbstripout>=0.7.1",
 ]
 
 [tool.setuptools]
