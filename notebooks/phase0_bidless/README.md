@@ -46,7 +46,18 @@ MODE = "QUICK"  # Fast iteration (~2k deals, <1 min)
 # MODE = "FULL"   # Statistical rigor (~50k deals, ~5-10 min)
 
 SEED = 42       # For reproducibility
+
+# --- Data Source Mode ---
+DEMO_MODE = True  # Default: generates synthetic data on-the-fly
+# DEMO_MODE = False  # Production: loads from RUN_DIR (see below)
+
+# If DEMO_MODE=False, set path to existing experiment run:
+RUN_DIR = "../../data/runs/YOUR_RUN_ID"
 ```
+
+**Data Source Modes:**
+- **`DEMO_MODE=True`** (default): Generates synthetic data using `load_or_generate_*()` functions. Does NOT read from `RUN_DIR`. Data is cached after first generation.
+- **`DEMO_MODE=False`**: Loads existing data from `RUN_DIR/logs/` (outcomes) and `RUN_DIR/datasets/` (features). Requires a prior experiment run.
 
 **Step 3:** Run all cells. Data will be generated automatically on first run and cached for subsequent runs.
 
@@ -210,7 +221,7 @@ Required packages:
 
 ## Sample Size Guidelines
 
-From `docs/rules/05_rigor.md`:
+From `.claude/rules/05_rigor.md`:
 
 | Analysis Type | Minimum Sample Size | Mode | Purpose |
 |---------------|---------------------|------|---------|
@@ -236,5 +247,5 @@ See `archive/README.md` for details on archived notebooks.
 - **Diagnostics Module:** `src/bid_euchre/diagnostics/` - Importable helpers
 - **Data Contract:** `docs/01_core/DATA_CONTRACT.md` - Dataset schema
 - **Experiment Configs:** `experiments/configs/bidless_dataset_collection.yaml`
-- **Rigor Standards:** `docs/rules/05_rigor.md` - Statistical requirements
+- **Rigor Standards:** `.claude/rules/05_rigor.md` - Statistical requirements
 - **Reproducibility:** `docs/01_core/REPRODUCIBILITY.md` - Determinism guarantees

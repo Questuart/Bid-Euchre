@@ -108,100 +108,33 @@ print(f"  Plot downsampling: {DOWNSAMPLE_PLOTS} (max {PLOT_MAX_ROWS} rows)")
 # Imports
 # ============================================================================
 
-import json
 import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from scipy.stats import f_oneway, friedmanchisquare, kendalltau, ttest_rel
+
+# Optional: seaborn for enhanced visualizations
+try:
+    import seaborn as sns
+    sns.set_theme(style="whitegrid")
+    HAS_SEABORN = True
+except ImportError:
+    print("seaborn not available, using matplotlib defaults")
+    HAS_SEABORN = False
 
 # Add src to path
 repo_root = Path.cwd().parent.parent
 sys.path.insert(0, str(repo_root / 'src'))
 
-from bid_euchre.diagnostics.notebook_data import load_or_generate_outcomes
+from bid_euchre.diagnostics.notebook_data import (
+    load_or_generate_outcomes,
+    load_outcomes_from_run_dir,
+)
 
 print("\n✓ Imports complete")
-
-
-# %%
-# ============================================================================
-# Data Loading Helper for Production Mode
-# ============================================================================
-
-def load_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
-    """Load outcome data from an existing experiment run directory.
-
-    Parses hand_end events from JSONL logs to extract tricks_won per seat.
-
-    Args:
-        run_dir: Path to run directory containing logs/*.jsonl
-
-    Returns:
-        DataFrame with columns: deal_id, seat, contract_type, trump, tricks_won, strategy_id
-    """
-    run_path = Path(run_dir)
-    logs_dir = run_path / "logs"
-
-    if not logs_dir.exists():
-        raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
-
-    # Find all JSONL log files
-    log_files = list(logs_dir.glob("*.jsonl"))
-    if not log_files:
-        raise FileNotFoundError(f"No JSONL logs found in {logs_dir}")
-
-    # Parse all hand_end events
-    hand_records = []
-    for log_file in log_files:
-        with open(log_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                record = json.loads(line)
-                if record.get('event') == 'hand_end':
-                    hand_records.append(record)
-
-    if not hand_records:
-        raise ValueError(f"No hand_end events found in {logs_dir}")
-
-    # Convert to per-seat outcome records
-    outcome_records = []
-    for hand in hand_records:
-        deal_id = hand['deal_id']
-        contract_type = hand['contract']
-        trump = hand.get('trump')  # None for high/low
-        strategy_id = hand['strategy_id']
-        t0 = hand['t0']  # Team 0 tricks (seats 0 & 2)
-        t1 = hand['t1']  # Team 1 tricks (seats 1 & 3)
-
-        # Create one record per seat
-        for seat in range(4):
-            tricks_won = t0 if seat in [0, 2] else t1
-            outcome_records.append({
-                'deal_id': deal_id,
-                'seat': seat,
-                'contract_type': contract_type,
-                'trump': trump,
-                'tricks_won': tricks_won,
-                'strategy_id': strategy_id,
-            })
-
-    # Convert to DataFrame
-    outcome_df = pd.DataFrame(outcome_records)
-
-    # Sort for consistency
-    outcome_df = outcome_df.sort_values(['deal_id', 'seat']).reset_index(drop=True)
-
-    return outcome_df
-
-
-print("✓ Data loading helper defined")
 
 
 # %%

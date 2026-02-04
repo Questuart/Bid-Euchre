@@ -106,16 +106,22 @@ print(f"Demo mode: {DEMO_MODE}")
 
 # %%
 import itertools
-import json
 import warnings
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from IPython.display import display
 from scipy.stats import f_oneway, friedmanchisquare, pearsonr, ttest_ind
+
+# Optional: seaborn for enhanced visualizations
+try:
+    import seaborn as sns
+    sns.set_theme(style="whitegrid")
+    HAS_SEABORN = True
+except ImportError:
+    print("seaborn not available, using matplotlib defaults")
+    HAS_SEABORN = False
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -127,6 +133,7 @@ warnings.filterwarnings('ignore')
 
 # Project imports
 from bid_euchre.diagnostics.notebook_data import (
+    load_features_and_outcomes_from_run_dir,
     load_or_generate_features,
 )
 from bid_euchre.diagnostics.strategy_charts import (
@@ -243,84 +250,6 @@ print(f"Matchups: {len(MATCHUPS)}")
 # Data Loading Helper for Production Mode
 # ============================================================================
 
-def load_features_from_run_dir(run_dir: str) -> pd.DataFrame:
-    """Load feature + outcome data from an existing experiment run directory.
-
-    Parses hand_end events from JSONL logs to extract tricks_won per seat,
-    plus any logged features.
-
-    Args:
-        run_dir: Path to run directory containing logs/*.jsonl
-
-    Returns:
-        DataFrame with columns: deal_id, seat, contract_type, trump, tricks_won, strategy_id, feat_*
-    """
-    run_path = Path(run_dir)
-    logs_dir = run_path / "logs"
-
-    if not logs_dir.exists():
-        raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
-
-    # Find all JSONL log files
-    log_files = list(logs_dir.glob("*.jsonl"))
-    if not log_files:
-        raise FileNotFoundError(f"No JSONL logs found in {logs_dir}")
-
-    # Parse all hand_end events
-    hand_records = []
-    for log_file in log_files:
-        with open(log_file, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                record = json.loads(line)
-                if record.get('event') == 'hand_end':
-                    hand_records.append(record)
-
-    if not hand_records:
-        raise ValueError(f"No hand_end events found in {logs_dir}")
-
-    # Convert to per-seat outcome records
-    outcome_records = []
-    for hand in hand_records:
-        deal_id = hand['deal_id']
-        contract_type = hand['contract']
-        trump = hand.get('trump')  # None for high/low
-        strategy_id = hand['strategy_id']
-        t0 = hand['t0']  # Team 0 tricks (seats 0 & 2)
-        t1 = hand['t1']  # Team 1 tricks (seats 1 & 3)
-
-        # Extract features if present
-        features = {k: v for k, v in hand.items() if k.startswith('feat_')}
-
-        # Create one record per seat
-        for seat in range(4):
-            tricks_won = t0 if seat in [0, 2] else t1
-            record = {
-                'deal_id': deal_id,
-                'seat': seat,
-                'contract_type': contract_type,
-                'trump': trump,
-                'tricks_won': tricks_won,
-                'strategy_id': strategy_id,
-            }
-            record.update(features)
-            outcome_records.append(record)
-
-    # Convert to DataFrame
-    df = pd.DataFrame(outcome_records)
-
-    # Sort for consistency
-    df = df.sort_values(['deal_id', 'seat']).reset_index(drop=True)
-
-    return df
-
-
-print("Data loading helper defined")
-
-
 # %%
 # Load feature + outcome data
 if DEMO_MODE:
@@ -336,7 +265,7 @@ if DEMO_MODE:
     )
 else:
     print(f"Loading data from RUN_DIR: {RUN_DIR}")
-    data_df = load_features_from_run_dir(RUN_DIR)
+    data_df = load_features_and_outcomes_from_run_dir(RUN_DIR)
 
 print(f"Loaded {len(data_df)} observations")
 print(f"\nColumns: {list(data_df.columns)}")
@@ -1978,6 +1907,198 @@ if 'greedy_vs_glutton' in importance_tables_by_matchup:
         fig.suptitle("Greedy vs Glutton - Top Feature Relationships (by matchup)", y=1.02)
         plt.tight_layout()
         plt.show()
+
+# %% [markdown]
+# ---
+# ## Section 4b: Deal-Level Wide Dataset Modeling
+#
+# **Different question than seat-level modeling:**
+# - **Seat-level (Section 4):** "Given one seat's features, how many tricks will that team win?"
+# - **Deal-level wide:** "Given all four seats' features together, how many tricks will team 0 win?"
+#
+# The wide dataset answers: "How do the features of all hands in a deal jointly predict the outcome?"
+#
+# This is useful for:
+# - Understanding feature interactions across seats
+# - Modeling the deal as a whole (all information available)
+# - Comparing to seat-level to see if more information helps
+#
+# **Methodology:**
+# - Pivot seat-level data to one row per deal with seat-prefixed features
+# - Predict `team0_tricks` from all 4 seats' features
+# - Use GroupShuffleSplit to prevent data leakage (same deal_id cannot appear in train and test)
+
+# %%
+# ============================================================================
+# Section 4b: Deal-Level Wide Dataset Modeling
+# ============================================================================
+
+
+def pivot_to_deal_level_wide(df: pd.DataFrame) -> pd.DataFrame:
+    """Transform seat-level DataFrame to deal-level with seat-prefixed features.
+
+    Input: seat-level DF with columns including deal_id, seat, contract_type, trump,
+           strategy_id, tricks_won, feat_* columns
+    Output: one row per deal with:
+        - seat0_feat_*, seat1_feat_*, seat2_feat_*, seat3_feat_*
+        - team0_tricks, team1_tricks, delta_tricks
+        - contract_type, trump, strategy_id
+
+    Args:
+        df: Seat-level DataFrame with features and outcomes
+
+    Returns:
+        Deal-level DataFrame with seat-prefixed features
+    """
+    # Get feature columns
+    feat_cols = [c for c in df.columns if c.startswith('feat_')]
+
+    # Key columns for joining
+    deal_keys = ['deal_id', 'contract_type', 'trump', 'strategy_id']
+
+    # Build wide dataset by pivoting each seat
+    wide_dfs = []
+    for seat in range(4):
+        seat_df = df[df['seat'] == seat].copy()
+        # Rename feature columns with seat prefix
+        rename_map = {feat: f'seat{seat}_{feat}' for feat in feat_cols}
+        rename_map['tricks_won'] = f'seat{seat}_tricks_won'
+        seat_df = seat_df.rename(columns=rename_map)
+        # Keep only deal keys and renamed columns
+        keep_cols = deal_keys + [c for c in seat_df.columns if c.startswith(f'seat{seat}_')]
+        wide_dfs.append(seat_df[keep_cols])
+
+    # Merge all seats on deal keys
+    result = wide_dfs[0]
+    for seat_df in wide_dfs[1:]:
+        result = result.merge(seat_df, on=deal_keys, how='inner')
+
+    # Add team-level outcomes (seats 0 & 2 are team 0, seats 1 & 3 are team 1)
+    # Note: tricks_won is already team-level in our logging, so seat0 == seat2 and seat1 == seat3
+    result['team0_tricks'] = result['seat0_seat0_tricks_won'] if 'seat0_seat0_tricks_won' in result.columns else result['seat0_tricks_won']
+    result['team1_tricks'] = result['seat1_seat1_tricks_won'] if 'seat1_seat1_tricks_won' in result.columns else result['seat1_tricks_won']
+
+    # Handle column name variants
+    for col in result.columns:
+        if col.endswith('_tricks_won'):
+            if col.startswith('seat0_') and 'team0_tricks' not in result.columns:
+                result['team0_tricks'] = result[col]
+            elif col.startswith('seat1_') and 'team1_tricks' not in result.columns:
+                result['team1_tricks'] = result[col]
+
+    result['delta_tricks'] = result['team0_tricks'] - result['team1_tricks']
+
+    return result
+
+
+print("\n" + "=" * 70)
+print("DEAL-LEVEL WIDE DATASET MODELING")
+print("=" * 70)
+
+# Pivot to wide format using smart_data (filtered to key matchups)
+wide_df = pivot_to_deal_level_wide(smart_data)
+print(f"\nWide dataset shape: {wide_df.shape}")
+print(f"Unique deals: {wide_df['deal_id'].nunique()}")
+
+# Get all seat-prefixed feature columns
+wide_feat_cols = [c for c in wide_df.columns if any(c.startswith(f'seat{s}_feat_') for s in range(4))]
+print(f"Total wide features: {len(wide_feat_cols)} (4 seats × {len(wide_feat_cols)//4} features)")
+
+# %%
+# Train wide model for greedy_vs_glutton matchup
+print("\n--- Training Deal-Level Wide Model (greedy_vs_glutton) ---")
+
+wide_h2h = wide_df[wide_df['strategy_id'].str.contains('greedy') & wide_df['strategy_id'].str.contains('glutton')]
+
+if len(wide_h2h) >= MIN_DEALS_THRESHOLD:
+    X_wide = wide_h2h[wide_feat_cols].select_dtypes(include=[np.number])
+    y_wide = wide_h2h['team0_tricks']
+    groups_wide = wide_h2h['deal_id']
+
+    # Deal-grouped split
+    gss_wide = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=SEED)
+    train_idx_w, test_idx_w = next(gss_wide.split(X_wide, y_wide, groups=groups_wide))
+
+    X_train_w, X_test_w = X_wide.iloc[train_idx_w], X_wide.iloc[test_idx_w]
+    y_train_w, y_test_w = y_wide.iloc[train_idx_w], y_wide.iloc[test_idx_w]
+
+    n_deals_train_w = groups_wide.iloc[train_idx_w].nunique()
+    n_deals_test_w = groups_wide.iloc[test_idx_w].nunique()
+
+    # Fit model
+    scaler_wide = StandardScaler()
+    X_train_w_scaled = scaler_wide.fit_transform(X_train_w)
+    X_test_w_scaled = scaler_wide.transform(X_test_w)
+
+    ridge_wide = Ridge(alpha=1.0, random_state=SEED)
+    ridge_wide.fit(X_train_w_scaled, y_train_w)
+
+    y_pred_w = ridge_wide.predict(X_test_w_scaled)
+    r2_wide = r2_score(y_test_w, y_pred_w)
+    mae_wide = mean_absolute_error(y_test_w, y_pred_w)
+
+    print(f"  Train deals: {n_deals_train_w}, Test deals: {n_deals_test_w}")
+    print(f"  R² (wide model): {r2_wide:.4f}")
+    print(f"  MAE (wide model): {mae_wide:.4f}")
+
+    # Compare to seat-level model R² for same matchup
+    seat_level_r2 = None
+    for ct in CONTRACT_TYPES:
+        key = (ct, 'greedy_vs_glutton')
+        if key in importance_tables_grid:
+            cell_result = model_results_grid_df[
+                (model_results_grid_df['contract_type'] == ct) &
+                (model_results_grid_df['matchup_type'] == 'greedy_vs_glutton')
+            ]
+            if len(cell_result) > 0 and not pd.isna(cell_result.iloc[0]['r2']):
+                if seat_level_r2 is None:
+                    seat_level_r2 = cell_result.iloc[0]['r2']
+                else:
+                    seat_level_r2 = max(seat_level_r2, cell_result.iloc[0]['r2'])
+
+    if seat_level_r2 is not None:
+        improvement = r2_wide - seat_level_r2
+        print("\n  Comparison to seat-level:")
+        print(f"    Best seat-level R²: {seat_level_r2:.4f}")
+        print(f"    Wide model R²: {r2_wide:.4f}")
+        print(f"    Improvement: {improvement:+.4f}")
+
+    # Permutation importance for wide model
+    perm_wide = permutation_importance(
+        ridge_wide, X_test_w_scaled, y_test_w, n_repeats=5, random_state=SEED
+    )
+    perm_wide_df = pd.DataFrame({
+        'feature': X_wide.columns,
+        'perm_importance': perm_wide.importances_mean,
+        'perm_std': perm_wide.importances_std,
+    }).sort_values('perm_importance', ascending=False)
+
+    print("\n  Top 15 features (wide model):")
+    display(perm_wide_df.head(15).round(4))
+
+    # Plot top features
+    fig, ax = plt.subplots(figsize=(12, 8))
+    top_wide = perm_wide_df.head(20)
+    colors = []
+    for feat in top_wide['feature']:
+        if 'seat0_' in feat or 'seat2_' in feat:
+            colors.append('steelblue')  # Team 0
+        else:
+            colors.append('darkorange')  # Team 1
+
+    ax.barh(range(len(top_wide)), top_wide['perm_importance'].values,
+            xerr=top_wide['perm_std'].values, color=colors, alpha=0.7, capsize=3)
+    ax.set_yticks(range(len(top_wide)))
+    ax.set_yticklabels([f.replace('feat_', '') for f in top_wide['feature']], fontsize=8)
+    ax.invert_yaxis()
+    ax.set_xlabel('Permutation Importance')
+    ax.set_title(f'Deal-Level Wide Model: Top 20 Features\n(R²={r2_wide:.3f}, greedy_vs_glutton)\nBlue=Team0 seats, Orange=Team1 seats')
+    ax.grid(axis='x', alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print(f"  Insufficient data for wide model (n={len(wide_h2h)} < {MIN_DEALS_THRESHOLD})")
 
 # %% [markdown]
 # ---
