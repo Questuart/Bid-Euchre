@@ -64,6 +64,10 @@ TOTAL_HANDS_BUDGETS = {
     "quick_test": 1_000,
     "baseline_tiny": 50_000,
     "baseline_full": 5_000_000,
+    # Canonical bidless experiment configs
+    "canonical_bidless_dataset": 1_000_000,  # 50k × 6 scenarios × 3 strategies = 900k
+    "canonical_bidless_outcomes_matrix_shallow": 500_000,  # 2k × 6 scenarios × 25 matchups = 300k
+    "canonical_bidless_outcomes_zoom": 4_000_000,  # 50k × 6 scenarios × 11 matchups = 3.3M
 }
 
 

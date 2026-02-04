@@ -1,0 +1,86 @@
+# Canonical Bidless Outcomes: Zoom Configuration
+#
+# Purpose: High-precision data for decision-relevant matchups.
+# This config concentrates budget on:
+#   1. Self-play controls (5 matchups) - verify fairness
+#   2. Decision-relevant head-to-heads (6 matchups) - key strategy comparisons
+#
+# Strategies:
+#   - greedy: Conservative play-to-win strategy
+#   - glutton: Aggressive trick-taking strategy
+#   - random_legal: Random baseline
+#   - always_highest: Always plays highest legal card
+#   - always_lowest: Always plays lowest legal card
+#
+# Total hands: 50,000 x 6 scenarios x 11 matchups = 3,300,000 hands
+#
+# Usage:
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#       --config experiments/configs/canonical_bidless_outcomes_zoom.yaml \
+#       --seed 42
+
+experiment_name: canonical_bidless_outcomes_zoom
+
+parameters:
+  seed: 42
+  n_per: 50000
+  log_level: none
+  mode: head_to_head_matrix
+  pair_deals: true
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+  - name: glutton
+    class_name: GluttonStrategy
+
+  - name: random_legal
+    class_name: RandomLegalStrategy
+    params:
+      seed: 42
+
+  - name: always_highest
+    class_name: AlwaysHighestLegalStrategy
+
+  - name: always_lowest
+    class_name: AlwaysLowestLegalStrategy
+
+# 11 matchups: 5 self-play controls + 6 decision-relevant head-to-heads
+matchups:
+  # Self-play controls (5 matchups) - verify fairness
+  - team0: greedy
+    team1: greedy
+  - team0: glutton
+    team1: glutton
+  - team0: random_legal
+    team1: random_legal
+  - team0: always_highest
+    team1: always_highest
+  - team0: always_lowest
+    team1: always_lowest
+
+  # Decision-relevant head-to-heads with reverse matchups (6 matchups)
+  # glutton vs greedy - primary strategic comparison
+  - team0: glutton
+    team1: greedy
+  - team0: greedy
+    team1: glutton
+
+  # greedy vs random_legal - baseline comparison
+  - team0: greedy
+    team1: random_legal
+  - team0: random_legal
+    team1: greedy
+
+  # glutton vs random_legal - baseline comparison
+  - team0: glutton
+    team1: random_legal
+  - team0: random_legal
+    team1: glutton
+
+scenarios:
+  - contract_type: suit
+    trump_suit: C,D,H,S
+  - contract_type: high
+  - contract_type: low
