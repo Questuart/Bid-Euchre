@@ -197,3 +197,58 @@ class TestBidlessDatasetWorkflow:
             files = os.listdir(datasets_dir)
             bidless_files = [f for f in files if f.startswith("bidless")]
             assert len(bidless_files) == 0, f"Found bidless files without flag: {bidless_files}"
+
+    def test_hand_id_uniqueness_across_strategies_and_scenarios(self, temp_run_dir):
+        """hand_id is globally unique across all strategies and scenarios.
+
+        This tests the fix for the hand_id collision bug where deal_id was used
+        as hand_id, causing collisions when multiple strategies or scenarios
+        share the same deal_id values (0..n_per-1).
+
+        The fix computes: hand_id = ((plan_id * num_scenarios + scenario_id) * n_per) + deal_id
+        """
+        # Use strategy_comparison.yaml which has 5 strategies
+        result = subprocess.run(
+            [
+                "python", "experiments/run_experiment.py",
+                "--config", "experiments/configs/strategy_comparison.yaml",
+                "--seed", "42",
+                "--n_per", "10",
+                "--run-dir", temp_run_dir,
+                "--emit-bidless-dataset",
+            ],
+            env={**os.environ, "PYTHONPATH": "src"},
+            capture_output=True,
+            text=True,
+            cwd=os.getcwd(),
+        )
+
+        assert result.returncode == 0, f"run_experiment.py failed:\n{result.stderr}"
+
+        run_dirs = [d for d in os.listdir(temp_run_dir) if d.startswith("strategy_comparison_42_")]
+        run_dir = os.path.join(temp_run_dir, run_dirs[0])
+        datasets_dir = os.path.join(run_dir, "datasets")
+
+        from bid_euchre.diagnostics import load_bidless_dataset
+
+        df = load_bidless_dataset(datasets_dir)
+
+        # Verify (hand_id, seat) uniqueness
+        # strategy_comparison.yaml: 5 strategies × 6 scenarios × 10 hands × 4 seats = 1200 rows
+        # Each unique hand_id should appear exactly 4 times (once per seat)
+        hand_id_counts = df.groupby("hand_id").size()
+        assert (hand_id_counts == 4).all(), "Some hand_ids don't have exactly 4 rows (one per seat)"
+
+        # Verify total unique hand_ids matches expected
+        num_strategies = 5  # greedy, glutton, random_legal, always_lowest, always_highest
+        num_scenarios = 6  # suit-C, suit-D, suit-H, suit-S, high, low
+        n_per = 10
+        expected_unique_hands = num_strategies * num_scenarios * n_per
+        assert df["hand_id"].nunique() == expected_unique_hands, (
+            f"Expected {expected_unique_hands} unique hand_ids, "
+            f"got {df['hand_id'].nunique()}"
+        )
+
+        # Verify (hand_id, seat) is truly unique (no duplicates)
+        duplicates = df.groupby(["hand_id", "seat"]).size()
+        assert (duplicates == 1).all(), "Found duplicate (hand_id, seat) pairs"

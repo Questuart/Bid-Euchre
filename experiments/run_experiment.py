@@ -39,7 +39,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import yaml
 
@@ -384,15 +384,22 @@ def main():
     all_bidding_collectors: List[Any] = []
     all_bidless_collectors: List[BidlessDatasetCollector] = []
 
+    # Track plan/scenario indices for globally unique hand_id computation
+    # Use a dict to make values mutable from within closures
+    num_scenarios = len(scenarios)
+    bidless_context: Dict[str, int] = {
+        "plan_id": 0,
+        "scenario_id": 0,
+    }
+
     # Create hooks for bidless dataset collection if requested
     def create_bidless_hooks() -> SimulationHooks | None:
         """Create hooks for bidless dataset collection."""
         if not args.emit_bidless_dataset:
             return None
 
-        # Collector indexed by (deal_id, contract_type, trump_suit) to avoid collisions
-        # when the same deal is played under different scenarios (e.g., pair_deals=True)
-        hand_collectors: Dict[Tuple[int, str, Optional[str]], BidlessDatasetCollector] = {}
+        # Collector indexed by globally unique hand_id to ensure uniqueness
+        hand_collectors: Dict[int, BidlessDatasetCollector] = {}
 
         def on_hand_end(event: HandEndEvent) -> None:
             """Record hand data when each hand completes."""
@@ -401,14 +408,18 @@ def main():
             if event.contract_type is None:
                 return
 
-            # Key by (deal_id, contract_type, trump_suit) to handle paired deals
-            collector_key = (event.deal_id, event.contract_type, event.trump_suit)
+            # Compute globally unique hand_id:
+            # hand_id = ((plan_id * num_scenarios + scenario_id) * n_per) + deal_id
+            # This ensures (hand_id, seat) is unique across the entire run
+            plan_id = bidless_context["plan_id"]
+            scenario_id = bidless_context["scenario_id"]
+            hand_id = ((plan_id * num_scenarios + scenario_id) * n_per) + event.deal_id
 
             # Create collector for this hand if needed
-            if collector_key not in hand_collectors:
-                hand_collectors[collector_key] = BidlessDatasetCollector(run_id, event.deal_id)
+            if hand_id not in hand_collectors:
+                hand_collectors[hand_id] = BidlessDatasetCollector(run_id, hand_id)
 
-            collector = hand_collectors[collector_key]
+            collector = hand_collectors[hand_id]
 
             # Record all 4 seats
             for seat in range(4):
@@ -443,7 +454,7 @@ def main():
         policy_cfg_by_name = {pc.name: pc for pc in bidding_policy_cfgs}
 
         # Each matchup: results/<team0>_vs_<team1>/..., logs/<run_id>_<matchup>.jsonl
-        for m in matchups:
+        for matchup_idx, m in enumerate(matchups):
             team0_name = m.get("team0")
             team1_name = m.get("team1")
             seat_strategy_names = m.get("seat_strategies")
@@ -532,6 +543,10 @@ def main():
                     ]
 
                 for i, scenario in enumerate(scenarios, 1):
+                    # Update bidless context for unique hand_id computation
+                    bidless_context["plan_id"] = matchup_idx
+                    bidless_context["scenario_id"] = i - 1  # 0-indexed
+
                     # When pair_deals=True, use the same seed for all scenarios
                     # so the same physical deals are played under different contracts
                     if pair_deals and seed is not None:
@@ -617,7 +632,7 @@ def main():
             policies_to_run = strategies
             policy_type = "strategy"
 
-        for policy in policies_to_run:
+        for policy_idx, policy in enumerate(policies_to_run):
             print("-" * 70)
             print(f"{policy_type.title()}: {policy.name}")
             print("-" * 70)
@@ -637,6 +652,10 @@ def main():
 
             try:
                 for i, scenario in enumerate(scenarios, 1):
+                    # Update bidless context for unique hand_id computation
+                    bidless_context["plan_id"] = policy_idx
+                    bidless_context["scenario_id"] = i - 1  # 0-indexed
+
                     # When pair_deals=True, use the same seed for all scenarios
                     # so the same physical deals are played under different contracts
                     if pair_deals and seed is not None:
