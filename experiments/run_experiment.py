@@ -580,16 +580,16 @@ def main():
 
                     team0_avg = results["avg_team0"]
                     team1_avg = results["avg_team1"]
-                    win_hands = sum(
+                    full_wins = sum(
                         count
                         for tricks, count in results["distribution_team0"].items()
                         if int(tricks) >= 6
                     )
-                    tie_hands = results["distribution_team0"].get(5, 0)
-                    # Adjusted win rate: ties split 50/50 so both sides' rates sum to 100%
-                    adjusted_win_rate = (win_hands + 0.5 * tie_hands) / results["hands"] * 100
+                    ties = results["distribution_team0"].get(5, 0)
+                    # Weighted win rate: full wins + 0.5 × ties (ties contribute half to each team)
+                    win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
-                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  AdjWin: {adjusted_win_rate:.1f}%")
+                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%")
                     print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
 
                     scenario_metrics.append({
@@ -703,16 +703,16 @@ def main():
 
                     team0_avg = results["avg_team0"]
                     team1_avg = results["avg_team1"]
-                    win_hands = sum(
+                    full_wins = sum(
                         count
                         for tricks, count in results["distribution_team0"].items()
                         if int(tricks) >= 6
                     )
-                    tie_hands = results["distribution_team0"].get(5, 0)
-                    # Adjusted win rate: ties split 50/50 so both sides' rates sum to 100%
-                    adjusted_win_rate = (win_hands + 0.5 * tie_hands) / results["hands"] * 100
+                    ties = results["distribution_team0"].get(5, 0)
+                    # Weighted win rate: full wins + 0.5 × ties (ties contribute half to each team)
+                    win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
-                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  AdjWin: {adjusted_win_rate:.1f}%")
+                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%")
                     print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
 
                     scenario_metrics.append({

@@ -483,9 +483,9 @@ def simulate_many_hands(
     total1 = 0
     total_score_all = 0  # sum across all 4 players
 
-    # Win-rate tracking
-    wins_team0 = 0
-    wins_team1 = 0
+    # Win-rate tracking (floats for weighted win rate with ties = 0.5)
+    wins_team0 = 0.0
+    wins_team1 = 0.0
     ties = 0
 
     # Points-based scoring aggregates
@@ -592,12 +592,14 @@ def simulate_many_hands(
         total1 += t1
         dist_team0[t0] += 1
 
-        # Track win-rate counts
+        # Track win-rate counts (weighted: ties contribute 0.5 to each team)
         if t0 > 5:
-            wins_team0 += 1
+            wins_team0 += 1.0
         elif t0 < 5:
-            wins_team1 += 1
-        else:  # t0 == 5
+            wins_team1 += 1.0
+        else:  # t0 == 5 (tie)
+            wins_team0 += 0.5
+            wins_team1 += 0.5
             ties += 1
 
         # Compute and track points-based scoring

@@ -210,7 +210,14 @@ def test_strategy_produces_valid_results(strategy, seed: int):
 @given(seed=st.integers(min_value=0, max_value=100_000))
 @settings(max_examples=20, deadline=None)
 def test_win_rates_sum_to_one(seed: int):
-    """Win rates for team0 + team1 + ties should sum to 1.0."""
+    """Weighted win rates for team0 + team1 should sum to 1.0.
+
+    With weighted win rate formula:
+    - Full wins (>=6 tricks) contribute 1.0
+    - Ties (=5 tricks) contribute 0.5 to each team
+
+    So win_rate_team0 + win_rate_team1 = 1.0 (ties are already counted 0.5 each).
+    """
     result = simulate_many_hands(
         n=10,
         contract_type="high",
@@ -221,9 +228,9 @@ def test_win_rates_sum_to_one(seed: int):
 
     win0 = result["win_rate_team0"]
     win1 = result["win_rate_team1"]
-    tie = result["tie_rate"]
 
-    total = win0 + win1 + tie
+    # With weighted win rate, team0 + team1 = 1.0 (ties counted 0.5 each)
+    total = win0 + win1
     assert abs(total - 1.0) < 0.001, (
-        f"Win rates don't sum to 1: {win0} + {win1} + {tie} = {total}"
+        f"Weighted win rates don't sum to 1: {win0} + {win1} = {total}"
     )

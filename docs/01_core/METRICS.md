@@ -33,9 +33,11 @@ These keys are directly present in results JSON files at `data/runs/<run_id>/res
 - `distribution_team0`: Count of hands by tricks taken (0-10)
 
 **Win Rates (Always emitted):**
-- `win_rate_team0`: Proportion of hands where team 0 wins (≥6 tricks, None if hands=0)
-- `win_rate_team1`: Proportion of hands where team 1 wins (≥6 tricks, None if hands=0)
+- `win_rate_team0`: Weighted win rate for team 0 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / total_hands
+- `win_rate_team1`: Weighted win rate for team 1 = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / total_hands
 - `tie_rate`: Proportion of hands with exactly 5 tricks (tie, None if hands=0)
+
+**Note:** Ties (exactly 5 tricks) contribute 0.5 to each team's win rate, ensuring win_rate_team0 + win_rate_team1 = 1.0
 
 **Points (Only when bidding occurs):**
 - `avg_points_team0`: Mean points for team 0 (when bidding enabled)
