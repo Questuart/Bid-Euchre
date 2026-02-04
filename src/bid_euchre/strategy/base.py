@@ -69,6 +69,52 @@ class Strategy(ABC):
         # Default: Always pass
         return 0, None, None
 
+    def on_hand_start(
+        self,
+        starting_hand: List[Card],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> None:
+        """
+        Called at the start of each hand to initialize state.
+
+        Override this to reset per-hand tracking state. This hook is called
+        once per unique strategy instance (deduplicated by instance identity)
+        before any choose_card calls for that hand.
+
+        Args:
+            starting_hand: The player's initial 10-card hand (copy, safe to store)
+            contract_type: "suit", "high", or "low"
+            trump_suit: Trump suit for "suit" contracts, None otherwise
+            player_index: Index of this player (0-3)
+        """
+        pass
+
+    def observe_play(
+        self,
+        player_index: int,
+        card: Card,
+        trick_plays: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+    ) -> None:
+        """
+        Called after each card is played to track game state.
+
+        Override this to track played cards, infer voids, etc. This hook is
+        called once per unique strategy instance (deduplicated by instance
+        identity) after each card is added to the trick.
+
+        Args:
+            player_index: The player who played the card (0-3)
+            card: The card that was played
+            trick_plays: All plays in the current trick so far (including this one)
+            contract_type: "suit", "high", or "low"
+            trump_suit: Trump suit for "suit" contracts, None otherwise
+        """
+        pass
+
     def __str__(self) -> str:
         return f"{self.__class__.__name__}({self.name})"
 

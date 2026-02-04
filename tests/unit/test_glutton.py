@@ -1,5 +1,12 @@
 """
-Tests for GluttonStrategy (partner awareness + 2-trick lookahead).
+Tests for GluttonStrategy (Greedy + partner awareness).
+
+GluttonStrategy is essentially GreedyStrategy with one key difference:
+when partner is winning the trick, Glutton dumps cheapest card instead of
+trying to overkill. This saves cards for future tricks.
+
+NOTE: GluttonStrategy also has hooks (on_hand_start, observe_play) for state
+tracking, though the simplified version doesn't use them for decision-making.
 """
 
 from bid_euchre.core.cards import Card
@@ -7,11 +14,11 @@ from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
 
 
 class TestPartnerAwareness:
-    """Tests for partner awareness feature."""
+    """Tests for partner awareness feature - the key difference from Greedy."""
 
     def test_dont_overkill_partner_winning_card(self):
-        """Should not play high card when partner is winning (offsuit scenario)."""
-        improved = GluttonStrategy(debug=True)
+        """Should not play high card when partner is winning."""
+        glutton = GluttonStrategy(debug=True)
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (strongest trump)
@@ -20,6 +27,9 @@ class TestPartnerAwareness:
             Card("S", "K"),  # idx 3 - Spades K
         ]
 
+        # Initialize state
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
         # Partner (player 0) is winning with Clubs A, we can't follow suit
         # Teams: 0+2, 1+3. Player 2's partner is 0
         plays_so_far = [
@@ -27,70 +37,83 @@ class TestPartnerAwareness:
             (1, Card("C", "Q")),  # Player 1 played Clubs Q
         ]
 
-        # Player 2's turn - partner (player 0) is winning, can't follow suit (no more clubs)
-        # Legal cards: all of them (can't follow suit)
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 2)
+        # Player 2's turn - partner (player 0) is winning, can't follow suit
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
-        # Should play cheapest card (C-T at idx 2) instead of trump
-        assert choice == 2, f"Expected to dump C-T (idx 2), got {choice}"
-        assert "partner_winning" in improved.decision_log[-1]["scenario"]
+        # Should dump cheapest card - C-T has lowest value
+        assert choice == 2, f"Expected to dump C-T (cheapest), got {choice} ({hand[choice]})"
+        # Scenario should indicate partner-related behavior
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
 
     def test_overkill_when_partner_not_winning(self):
-        """Should play high card when partner is not winning."""
-        improved = GluttonStrategy(debug=True)
+        """Should try to win when partner is NOT winning."""
+        glutton = GluttonStrategy(debug=True)
 
         hand = [
-            Card("H", "J"),  # idx 0 - Right bower (can win)
-            Card("C", "T"),  # idx 1 - Offsuit T
-            Card("D", "K"),  # idx 2 - Offsuit K
+            Card("H", "J"),  # idx 0 - Right bower (can trump in)
+            Card("S", "T"),  # idx 1 - Offsuit T (no clubs!)
+            Card("D", "K"),  # idx 2 - Offsuit K (no clubs!)
         ]
 
-        # Opponent is winning with Clubs A, can't follow suit
+        # Initialize state
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # Opponent is winning with Clubs A
+        # We can't follow suit (no clubs in hand), so we can trump in
         # Teams: 0+2, 1+3. Player 2's partner is 0
         plays_so_far = [
             (0, Card("C", "K")),  # Partner (player 0) led Clubs K (losing)
             (1, Card("C", "A")),  # Opponent (player 1) played Clubs A - WINNING
         ]
 
-        # Player 2's turn - opponent is winning, partner is not, can't follow suit
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 2)
+        # Player 2's turn - opponent is winning, partner is not
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
-        # Strategy will try to win if possible
-        assert choice in [0, 1], f"Should choose a card, got {choice}"
-        assert improved.decision_log[-1]["scenario"] in ["can_win", "cant_win_save_trump", "default_dump"]
+        # Should play right bower (cheapest winner that beats opponent)
+        assert choice == 0, f"Should play right bower to beat opponent, got {choice}"
 
-    def test_save_trump_when_losing(self):
-        """Should save trump cards when can't win the trick (if not following suit)."""
-        improved = GluttonStrategy(debug=True)
+    def test_greedy_would_overkill(self):
+        """GreedyStrategy would overkill partner - Glutton should not.
+
+        Setup: We can't follow clubs (no clubs in hand), so we can choose
+        to trump in (overkill) or dump.
+
+        NOTE: Using a low trump (not sure winner) so Glutton sees threats
+        and chooses to dump rather than overkill partner.
+        """
+        greedy = GreedyStrategy()
+        glutton = GluttonStrategy()
 
         hand = [
-            Card("H", "T"),  # idx 0 - Trump T
-            Card("C", "K"),  # idx 1 - Clubs K (can dump)
-            Card("D", "Q"),  # idx 2 - Diamonds Q (can dump)
+            Card("H", "T"),  # idx 0 - Low trump (can win, but bowers/A/K beat it)
+            Card("S", "T"),  # idx 1 - Spades T (cheapest, NOT clubs)
         ]
 
-        # Spades led - can't follow, can't win even with trump T (A and K higher)
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # Partner (player 0) is winning
+        # We CAN'T follow clubs (no clubs in hand), so we can trump or dump
         plays_so_far = [
-            (0, Card("S", "A")),  # Spades A led
-            (1, Card("S", "K")),  # Spades K played
+            (0, Card("C", "A")),  # Partner led and is winning
+            (1, Card("C", "Q")),  # Opponent played lower
         ]
 
-        # Player 2's turn - can't follow suit (no spades), can't win
-        # Should prefer to dump offsuit over trump
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 2)
+        greedy_choice = greedy.choose_card(hand, plays_so_far, "suit", "H", 2)
+        glutton_choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
-        # Should dump offsuit (C-K or D-Q), not trump
-        assert choice in [1, 2], f"Expected to dump offsuit (idx 1 or 2), got {choice}"
-        if improved.decision_log:
-            assert "save_trump" in improved.decision_log[-1]["scenario"] or "dump" in improved.decision_log[-1]["action"]
+        # Greedy would play the trump (overkill) - it wins the trick
+        assert greedy_choice == 0, f"Greedy should play trump, chose {greedy_choice}"
+
+        # Glutton should dump (partner is winning, trump has high threats)
+        assert glutton_choice == 1, f"Glutton should dump, chose {glutton_choice}"
 
 
-class TestComparisonWithOriginalGreedy:
-    """Compare improved vs original greedy behavior."""
+class TestGreedyLikeBehavior:
+    """Test that Glutton behaves like Greedy in non-partner-winning scenarios."""
 
-    def test_original_greedy_wins_when_possible(self):
-        """Original greedy should try to win when it can (no sure-win logic)."""
-        original = GreedyStrategy()
+    def test_wins_when_possible_opponent_winning(self):
+        """Should try to win when opponent is winning."""
+        glutton = GluttonStrategy()
 
         hand = [
             Card("C", "A"),  # idx 0 - Clubs Ace (can win by following suit)
@@ -98,147 +121,302 @@ class TestComparisonWithOriginalGreedy:
             Card("D", "K"),  # idx 2 - Diamonds K
         ]
 
-        # Can win with Clubs A by following suit
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # Opponent (player 1) is winning
         plays_so_far = [
-            (0, Card("C", "K")),  # Clubs K led
+            (0, Card("C", "Q")),  # Partner led Clubs Q
+            (1, Card("C", "K")),  # Opponent beat partner
         ]
 
-        original_choice = original.choose_card(hand, plays_so_far, "suit", "H", 1)
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
-        # Original greedy should try to win with Clubs A
-        assert original_choice == 0, f"Original chose {original_choice}"
+        # Should play cheapest winner (C-T beats C-K? No, C-A does)
+        # Wait, C-T doesn't beat C-K. C-A does.
+        assert choice == 0, f"Should play C-A to win, chose {choice}"
 
-    def test_glutton_conservative_when_not_sure(self):
-        """Glutton with sure-win logic sloughs when not certain to win."""
+    def test_leads_with_smart_selection(self):
+        """When leading, Glutton uses smart lead selection (differs from Greedy).
+
+        Glutton prioritizes: non-trump Aces → draw trump (>=4) → longest non-trump.
+        Greedy just leads with highest value card.
+        """
         glutton = GluttonStrategy()
+        greedy = GreedyStrategy()
 
         hand = [
-            Card("C", "A"),  # idx 0 - Clubs Ace (can win but trump could beat it)
-            Card("C", "T"),  # idx 1 - Clubs T
-            Card("D", "K"),  # idx 2 - Diamonds K
+            Card("H", "J"),  # idx 0 - Right bower (highest value)
+            Card("C", "T"),  # idx 1 - Only non-trump card (longest non-trump suit)
         ]
 
-        # Clubs K led, hearts is trump - Clubs A is not a sure winner
-        # (opponents could trump in with hearts)
-        plays_so_far = [
-            (0, Card("C", "K")),  # Clubs K led
-        ]
+        glutton.on_hand_start(hand, "suit", "H", player_index=0)
 
-        glutton_choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 1)
+        glutton_choice = glutton.choose_card(hand, [], "suit", "H", 0)
+        greedy_choice = greedy.choose_card(hand, [], "suit", "H", 0)
 
-        # Glutton with sure-win logic should slough (C-T is cheapest legal)
-        # because C-A is not a sure winner (could be trumped)
-        assert glutton_choice == 1, f"Glutton should slough, chose {glutton_choice}"
+        # Greedy leads highest value (bower)
+        assert greedy_choice == 0
+        # Glutton leads from longest non-trump suit (C-T)
+        assert glutton_choice == 1
 
-    def test_glutton_wins_when_sure(self):
-        """Glutton plays winner when it's guaranteed."""
-        glutton = GluttonStrategy()
-        # Simulate all trump already played
-        glutton._played_cards = {
-            Card("H", "J"), Card("D", "J"),  # Both bowers
-            Card("H", "A"), Card("H", "K"), Card("H", "Q"), Card("H", "T"),  # All other trump
-        }
+
+class TestPositionAwareness:
+    """Tests for position-aware aggression (Step 4) and partner covering (Step 5)."""
+
+    def test_3rd_seat_aggression_low_threats(self):
+        """In 3rd seat with low threat count, should take the trick."""
+        glutton = GluttonStrategy(debug=True)
 
         hand = [
-            Card("C", "A"),  # idx 0 - Clubs Ace (now a sure winner - no trump left)
-            Card("C", "T"),  # idx 1 - Clubs T
+            Card("C", "A"),  # idx 0 - Clubs Ace (can win, likely no threats)
+            Card("D", "T"),  # idx 1 - Diamonds T (cheapest discard)
         ]
 
-        plays_so_far = [
-            (0, Card("C", "K")),  # Clubs K led
-        ]
+        # Initialize state - pretend we've seen the other Clubs A already
+        glutton.on_hand_start(hand, "high", None, player_index=2)
+        glutton._seen_counts[Card("C", "A")] = 1  # One Ace already played
 
-        glutton_choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 1)
-
-        # Now C-A is a sure winner (no trump remaining to beat it)
-        assert glutton_choice == 0, f"Glutton should win with sure winner, chose {glutton_choice}"
-
-    def test_differ_on_partner_winning(self):
-        """Improved should differ from original when partner is winning."""
-        improved = GluttonStrategy()
-        original = GreedyStrategy()
-
-        hand = [
-            Card("H", "J"),  # idx 0 - Right bower (trump)
-            Card("C", "T"),  # idx 1 - Clubs T (cheap offsuit)
-            Card("D", "K"),  # idx 2 - Diamonds K
-        ]
-
-        # Partner (player 0) is winning with Clubs A, we can't follow suit
+        # 3rd seat scenario: 2 plays already made
         # Teams: 0+2, 1+3. Player 2's partner is 0
         plays_so_far = [
-            (0, Card("C", "A")),  # Partner (player 0) led Clubs A - WINNING
-            (1, Card("C", "Q")),  # Clubs Q
+            (0, Card("C", "K")),  # Partner leads Clubs K
+            (1, Card("C", "Q")),  # Opponent plays Clubs Q
         ]
 
-        improved_choice = improved.choose_card(hand, plays_so_far, "suit", "H", 2)
-        original_choice = original.choose_card(hand, plays_so_far, "suit", "H", 2)
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
 
-        # Improved should dump cheap offsuit when partner winning
-        assert improved_choice == 1, f"Improved should dump when partner winning, chose {improved_choice}"
-        # Original greedy doesn't have partner awareness, so behavior may vary
-        assert original_choice in [0, 1], f"Original choice should be valid, chose {original_choice}"
+        # Should take with Ace since threats are low (other Ace seen)
+        assert choice == 0, f"Should take trick with Ace, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
+
+    def test_3rd_seat_no_aggression_high_threats(self):
+        """In 3rd seat with high threat count, should defer to partner awareness."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Hand that can't follow clubs - gives us a choice between trump in or dump
+        hand = [
+            Card("H", "K"),  # idx 0 - Hearts King (trump - can win but Ace unseen)
+            Card("D", "T"),  # idx 1 - Diamonds T (cheapest discard)
+        ]
+
+        # Initialize state - NO trump cards seen (both Aces, both bowers still out)
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # 3rd seat scenario - partner is winning with clubs Ace
+        # We can't follow clubs, so can trump in or dump
+        plays_so_far = [
+            (0, Card("C", "A")),  # Partner leads Clubs Ace - winning
+            (1, Card("C", "Q")),  # Opponent plays lower
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # Partner is winning, our trump King has high threats (Ace, bowers out)
+        # Should dump D-T instead of overkilling with trump
+        assert choice == 1, f"Should dump when partner winning with high threats, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
+
+    def test_partner_cover_with_sure_winner(self):
+        """In 3rd seat, cover vulnerable partner with sure winner."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace (sure winner if other Ace seen)
+            Card("D", "T"),  # idx 1 - Diamonds T
+        ]
+
+        # Initialize state - both copies of all higher cards seen/in-hand
+        glutton.on_hand_start(hand, "high", None, player_index=2)
+        glutton._seen_counts[Card("C", "A")] = 1  # Other Ace seen
+
+        # Partner (player 0) leads weak card, opponent plays lower
+        # Partner is currently winning but 4th seat could beat them
+        plays_so_far = [
+            (0, Card("C", "K")),  # Partner leads King - currently winning
+            (1, Card("C", "Q")),  # Opponent plays Queen
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
+
+        # Partner winning but we have a sure winner (Ace with other Ace seen)
+        # 3rd seat aggression should trigger first since we have a winning card
+        # with low threats
+        assert choice == 0, f"Should cover with Ace, got {choice}"
+        # Could be either 3rd_seat_aggression or partner_vulnerable_cover
+        scenario = glutton.decision_log[-1]["scenario"]
+        assert scenario in ("3rd_seat_aggression", "partner_vulnerable_cover"), f"Got {scenario}"
+
+    def test_4th_seat_no_aggression_logic(self):
+        """4th seat should not trigger 3rd seat aggression logic."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace
+            Card("D", "T"),  # idx 1 - Diamonds T
+        ]
+
+        glutton.on_hand_start(hand, "high", None, player_index=3)
+
+        # 4th seat scenario - 3 plays made
+        # For player 3: partner is (3+2)%4 = 1
+        plays_so_far = [
+            (0, Card("C", "K")),  # Opponent leads
+            (1, Card("C", "Q")),  # Partner plays lower (not winning)
+            (2, Card("C", "T")),  # Opponent plays lowest - K is still winning
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 3)
+
+        # Opponent (0) is winning, we should win with Ace
+        assert choice == 0, f"Should win with Ace in 4th seat, got {choice}"
+        # Should be regular can_win, not 3rd_seat_aggression
+        assert glutton.decision_log[-1]["scenario"] == "can_win"
 
 
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
     def test_leading_trick(self):
-        """Should work when leading a trick (no partner to check)."""
-        improved = GluttonStrategy()
+        """Should work when leading a trick - uses smart lead selection."""
+        glutton = GluttonStrategy()
 
         hand = [
-            Card("H", "A"),  # idx 0
-            Card("C", "K"),  # idx 1
+            Card("H", "A"),  # idx 0 - Trump Ace
+            Card("C", "K"),  # idx 1 - Longest non-trump suit
         ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=0)
 
         # Leading - no plays yet
-        plays_so_far = []
+        choice = glutton.choose_card(hand, [], "suit", "H", 0)
 
-        # Should not crash
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 0)
-        assert choice in [0, 1]
+        # Glutton leads from longest non-trump suit (C-K)
+        # (No non-trump Aces, not >=4 trump to draw, so longest non-trump)
+        assert choice == 1
 
-    def test_last_to_play(self):
-        """Should work when playing last in trick."""
-        improved = GluttonStrategy()
+    def test_last_to_play_opponent_winning(self):
+        """In 4th position with opponent winning, should win if possible."""
+        glutton = GluttonStrategy()
 
         hand = [
-            Card("H", "A"),  # idx 0 - Trump A
-            Card("C", "T"),  # idx 1 - Offsuit T
+            Card("H", "A"),  # idx 0 - Trump A (can win by trumping)
+            Card("D", "T"),  # idx 1 - Offsuit T
         ]
 
-        # Last to play - all 3 opponents have played
+        glutton.on_hand_start(hand, "suit", "H", player_index=3)
+
+        # Player 0 (opponent) is winning
+        # For player 3: partner is (3+2)%4 = 1
         plays_so_far = [
-            (0, Card("C", "K")),
-            (1, Card("C", "Q")),
-            (2, Card("C", "J")),  # Partner winning with J
+            (0, Card("C", "K")),  # Opponent leads
+            (1, Card("C", "Q")),  # Partner plays lower
+            (2, Card("C", "T")),  # Opponent 2 plays lower
         ]
 
-        # Should not overkill partner (play offsuit)
-        choice = improved.choose_card(hand, plays_so_far, "suit", "H", 3)
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 3)
 
-        # Actually, at position 3 (last), can check partner at position 1
-        # (0 + 2) % 4 = 2, (1 + 2) % 4 = 3, (2 + 2) % 4 = 0, (3 + 2) % 4 = 1
-        # So partner of 3 is 1, who played C-Q (not winning)
-        # Partner of 2 is 0, who led C-K (winning!)
-        # So from player 3's perspective, partner (player 1) is not winning
-        # This should try to win if possible
-        assert choice in [0, 1]  # Either is valid
+        # Should trump to win (opponent is winning, we can beat them)
+        assert choice == 0, f"Should trump to win, got {choice}"
+
+    def test_last_to_play_partner_winning(self):
+        """In 4th position with partner winning, should dump."""
+        glutton = GluttonStrategy()
+
+        hand = [
+            Card("H", "A"),  # idx 0 - Trump A (could overkill)
+            Card("D", "T"),  # idx 1 - Offsuit T (cheapest)
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=3)
+
+        # Player 1 (partner) is winning
+        # For player 3: partner is (3+2)%4 = 1
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Opponent leads
+            (1, Card("C", "K")),  # Partner beats opponent
+            (2, Card("C", "T")),  # Opponent 2 can't beat partner
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 3)
+
+        # Partner is winning - should dump cheapest
+        assert choice == 1, f"Should dump when partner winning, got {choice}"
 
     def test_no_trump_contract(self):
         """Should handle no-trump contracts correctly."""
-        improved = GluttonStrategy()
+        glutton = GluttonStrategy()
 
         hand = [
-            Card("H", "A"),  # idx 0
+            Card("H", "A"),  # idx 0 - Ace of led suit
             Card("C", "K"),  # idx 1
         ]
 
+        glutton.on_hand_start(hand, "high", None, player_index=1)
+
         plays_so_far = [
-            (0, Card("H", "K")),
+            (0, Card("H", "K")),  # Hearts King led (opponent)
         ]
 
-        # No trump - should work normally
-        choice = improved.choose_card(hand, plays_so_far, "high", None, 1)
-        assert choice == 0  # Play A to win
+        # Opponent is winning, we can beat them with Ace
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 1)
+        assert choice == 0, "Should play Ace to win"
+
+
+class TestHooksIntegration:
+    """Test that hooks are properly called during simulation."""
+
+    def test_on_hand_start_initializes_state(self):
+        """on_hand_start should reset and initialize tracking state."""
+        strategy = GluttonStrategy()
+
+        # Pollute state
+        strategy._seen_counts = {Card("H", "A"): 2}
+        strategy._void_suits_by_seat[0].add("C")
+
+        hand = [Card("H", "J"), Card("C", "T")]
+        strategy.on_hand_start(hand, "suit", "H", player_index=0)
+
+        assert strategy._seen_counts == {}
+        assert all(len(v) == 0 for v in strategy._void_suits_by_seat.values())
+        assert strategy._contract_type == "suit"
+        assert strategy._trump_suit == "H"
+
+    def test_observe_play_tracks_cards(self):
+        """observe_play should increment seen counts."""
+        strategy = GluttonStrategy()
+        strategy.on_hand_start([Card("H", "A")], "suit", "H", player_index=0)
+
+        strategy.observe_play(
+            player_index=1,
+            card=Card("H", "K"),
+            trick_plays=[(1, Card("H", "K"))],
+            contract_type="suit",
+            trump_suit="H",
+        )
+
+        assert strategy._seen_counts.get(Card("H", "K"), 0) == 1
+
+    def test_observe_play_infers_voids(self):
+        """observe_play should infer voids when player doesn't follow suit."""
+        strategy = GluttonStrategy()
+        strategy.on_hand_start([Card("H", "A")], "suit", "H", player_index=0)
+
+        # Spades led
+        strategy.observe_play(
+            player_index=0,
+            card=Card("S", "K"),
+            trick_plays=[(0, Card("S", "K"))],
+            contract_type="suit",
+            trump_suit="H",
+        )
+
+        # Player 1 plays trump instead of following spades -> void in spades
+        strategy.observe_play(
+            player_index=1,
+            card=Card("H", "T"),
+            trick_plays=[(0, Card("S", "K")), (1, Card("H", "T"))],
+            contract_type="suit",
+            trump_suit="H",
+        )
+
+        assert "S" in strategy._void_suits_by_seat[1]

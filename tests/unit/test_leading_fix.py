@@ -1,5 +1,5 @@
 """
-Tests to verify the leading bug fix for greedy strategies.
+Tests to verify leading and partner awareness behavior for greedy strategies.
 """
 
 from bid_euchre.core.cards import Card
@@ -7,7 +7,7 @@ from bid_euchre.strategy import GluttonStrategy, GreedyStrategy
 
 
 class TestGreedyLeadingFix:
-    """Tests that greedy plays strong cards when leading."""
+    """Tests that Greedy plays strong cards when leading."""
 
     def test_greedy_leads_with_strong_card(self):
         """Greedy should lead with strong card, not weak card."""
@@ -87,7 +87,7 @@ class TestGreedyLeadingFix:
 
 
 class TestGluttonLeadingFix:
-    """Tests that glutton plays strong cards when leading."""
+    """Tests that Glutton plays strong cards when leading."""
 
     def test_glutton_leads_with_strong_card(self):
         """Glutton should lead with strong card, not weak card."""
@@ -127,27 +127,58 @@ class TestGluttonLeadingFix:
         assert choice == 0, f"Expected to lead with bower (idx 0), got {choice} ({hand[choice]})"
         assert glutton.decision_log[-1]["scenario"] == "leading"
 
-    def test_glutton_still_has_partner_awareness_when_following(self):
-        """After fix, glutton should still avoid overkilling partner."""
+    def test_glutton_partner_awareness_when_following(self):
+        """Glutton should dump when partner is winning and we have non-sure-winner trump.
+
+        NOTE: Using a low trump (not sure winner) so Glutton sees threats
+        and chooses to dump rather than overkill partner.
+        """
         glutton = GluttonStrategy(debug=True)
 
         hand = [
-            Card("H", "J"),  # idx 0 - Right bower
-            Card("C", "T"),  # idx 1 - Clubs Ten (cheapest)
+            Card("H", "T"),  # idx 0 - Low trump (bowers/A/K beat it)
+            Card("S", "T"),  # idx 1 - Spades Ten (cheapest)
             Card("D", "K"),  # idx 2 - Diamonds King
         ]
 
-        # Partner (player 0) is winning, we can't follow suit
+        # Initialize state
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # Partner (player 0) is winning, we can't follow suit (no clubs)
+        # Partner's card is vulnerable (could be trumped) but partner is still winning
         plays_so_far = [
-            (0, Card("C", "A")),  # Partner led and is winning
+            (0, Card("C", "A")),  # Partner led and is currently winning
             (1, Card("C", "Q")),  # Opponent played lower
         ]
 
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
-        # Should dump cheapest (idx 1), not play trump
-        assert choice == 1, f"Expected to dump when partner winning (idx 1), got {choice} ({hand[choice]})"
-        assert "partner_winning" in glutton.decision_log[-1]["scenario"]
+        # Should dump cheapest card (S-T) since partner is winning and trump has threats
+        assert choice == 1, f"Expected to dump S-T when partner winning, got {choice} ({hand[choice]})"
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
+
+    def test_glutton_takes_trick_when_opponent_winning(self):
+        """Glutton should take trick when opponent is winning."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "J"),  # idx 0 - Right bower (sure winner)
+            Card("S", "T"),  # idx 1 - Spades Ten
+            Card("D", "K"),  # idx 2 - Diamonds King
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # Opponent (player 1) is winning
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Partner led
+            (1, Card("C", "A")),  # Opponent beat partner - WINNING
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # Should play cheapest winner (right bower) to beat opponent
+        assert choice == 0, f"Expected to play right bower to win, got {choice} ({hand[choice]})"
 
 
 class TestCompareLeadingBehavior:

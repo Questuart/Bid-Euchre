@@ -5,7 +5,8 @@ These strategies try to win the current trick if possible,
 with variations that add partner awareness and trump conservation.
 """
 
-from typing import List, Optional, Set, Tuple
+from collections import Counter
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..core.cards import Card, cards_that_beat, effective_suit
 from ..core.rules import get_legal_indices, trick_winner
@@ -77,80 +78,253 @@ class GreedyStrategy(Strategy):
 class GluttonStrategy(Strategy):
     """
     Glutton strategy with partner awareness, trump conservation,
-    and card-aware "sure win" logic.
+    double-deck card tracking, position-aware aggression, and smart leads/discards.
 
     Improvements over GreedyStrategy:
     1. Partner awareness - don't overkill partner's winning card
     2. Trump conservation - save trump when losing to set up future tricks
-    3. Card awareness - track played cards to determine "sure winners"
-    4. Decision logging - optional debug output
+    3. Card awareness - track played cards (double-deck correct) for "sure winners"
+    4. Void inference - track which seats are void in which suits
+    5. Position-aware aggression - take likely wins in 3rd seat
+    6. Smart leads - lead Aces, draw trump appropriately, use longest suit
+    7. Smart discards - prefer shortest suit to create voids
+    8. Decision logging - optional debug output
 
-    Strategy:
-    - When LEADING: Play highest value card
-    - When FOLLOWING:
-      * If partner is winning: dump cheapest legal card (don't overkill)
-      * If we have a SURE winner (no remaining card can beat it): play cheapest sure winner
-      * If 4th to act and can win: play cheapest winner (safe since no one follows)
-      * Otherwise: dump cheapest legal card (don't commit uncertain cards)
-
-    "Sure winner" means: no card remaining in play (not in our hand, not already
-    played) can beat this card. For example, right bower is always a sure winner;
-    left bower is a sure winner only if right bower has been played.
+    "Sure winner" accounting for double deck: each card exists 2x, so a card
+    is only a sure winner when all copies of higher cards are accounted for.
 
     Strengths:
     - Partner-aware (doesn't waste cards overkilling partner)
     - Card-aware (tracks what's been played to make informed decisions)
-    - Conservative when uncertain (doesn't waste cards on risky wins)
+    - Position-aware (takes likely wins in advantageous positions)
+    - Human-like leads and discards
 
     Weaknesses:
-    - More conservative than basic greedy (may miss some aggressive opportunities)
+    - Deterministic (no randomness for variety)
+    - No multi-trick lookahead beyond "sure winner" logic
     """
 
     def __init__(self, name: str = "glutton", debug: bool = False):
         super().__init__(name)
         self.debug = debug
-        self.decision_log = []
-        # Card tracking for sure-win logic
-        self._played_cards: Set[Card] = set()
+        self.decision_log: List[dict] = []
+        # Double-deck aware tracking (each card exists 0-2 times)
+        self._seen_counts: Dict[Card, int] = {}
+        # Void inference: which seats are void in which effective suits
+        self._void_suits_by_seat: Dict[int, Set[str]] = {0: set(), 1: set(), 2: set(), 3: set()}
+        # Contract context (set by on_hand_start)
+        self._contract_type: str = "high"
+        self._trump_suit: Optional[str] = None
+        self._player_index: int = 0
+
+    def on_hand_start(
+        self,
+        starting_hand: List[Card],
+        contract_type: str,
+        trump_suit: Optional[str],
+        player_index: int,
+    ) -> None:
+        """Reset per-hand state at the start of each hand."""
+        self._seen_counts = {}
+        self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+        self._contract_type = contract_type
+        self._trump_suit = trump_suit
+        self._player_index = player_index
+        if self.debug:
+            self.decision_log = []
+
+    def observe_play(
+        self,
+        player_index: int,
+        card: Card,
+        trick_plays: List[Tuple[int, Card]],
+        contract_type: str,
+        trump_suit: Optional[str],
+    ) -> None:
+        """Track played cards and infer voids from play patterns."""
+        # Increment seen count (clamp at 2 for double deck)
+        self._seen_counts[card] = min(2, self._seen_counts.get(card, 0) + 1)
+
+        # Infer voids: if a player didn't follow suit, they're void in led suit
+        if len(trick_plays) >= 1:
+            led_suit = effective_suit(trick_plays[0][1], trump_suit, contract_type)
+            played_eff = effective_suit(card, trump_suit, contract_type)
+            if played_eff != led_suit:
+                self._void_suits_by_seat[player_index].add(led_suit)
+
+    def _threat_copies_remaining(
+        self,
+        card: Card,
+        led_suit: str,
+        hand: List[Card],
+    ) -> int:
+        """Count how many copies of cards that beat `card` are still unaccounted for."""
+        beating = cards_that_beat(card, led_suit, self._trump_suit, self._contract_type)
+        hand_counter = Counter(hand)
+        total = 0
+        for threat in beating:
+            seen = self._seen_counts.get(threat, 0)
+            in_hand = hand_counter.get(threat, 0)
+            remaining = max(0, 2 - seen - in_hand)
+            total += remaining
+        return total
 
     def _is_sure_winner(
         self,
         candidate: Card,
         plays_so_far: List[Tuple[int, Card]],
         hand: List[Card],
-        contract_type: str,
-        trump_suit: Optional[str],
     ) -> bool:
         """
         Returns True if candidate cannot be beaten by any remaining card.
 
-        A card is a "sure winner" if:
-        1. It currently wins the trick (beats all plays_so_far)
-        2. No remaining card in play (not in our hand, not already played) can beat it
-
-        This enables conservative play: only commit to winning when guaranteed.
+        Double-deck correct: a card is a sure winner only when all copies
+        of higher-ranked cards are either seen or in our hand.
         """
         # Determine led suit
         if plays_so_far:
-            led_suit = effective_suit(plays_so_far[0][1], trump_suit, contract_type)
+            led_suit = effective_suit(plays_so_far[0][1], self._trump_suit, self._contract_type)
         else:
-            led_suit = effective_suit(candidate, trump_suit, contract_type)
+            led_suit = effective_suit(candidate, self._trump_suit, self._contract_type)
 
         # Get all cards that could beat our candidate
-        beating_cards = cards_that_beat(candidate, led_suit, trump_suit, contract_type)
+        beating_cards = cards_that_beat(candidate, led_suit, self._trump_suit, self._contract_type)
 
-        # Remove cards already played (tracked across tricks)
-        remaining_threats = beating_cards - self._played_cards
+        # For each threat, check if all copies are accounted for
+        hand_counter = Counter(hand)
+        for threat in beating_cards:
+            seen = self._seen_counts.get(threat, 0)
+            in_hand = hand_counter.get(threat, 0)
+            remaining = 2 - seen - in_hand
+            if remaining > 0:
+                return False  # At least one copy of this threat still exists
 
-        # Remove cards in our hand (we know opponents don't have them)
-        remaining_threats = remaining_threats - set(hand)
+        return True
 
-        # Also remove cards played in current trick (already in plays_so_far)
-        for _, card in plays_so_far:
-            remaining_threats.discard(card)
+    def _count_effective_suit(self, hand: List[Card], suit: str) -> int:
+        """Count cards in hand that belong to the given effective suit."""
+        return sum(
+            1 for c in hand
+            if effective_suit(c, self._trump_suit, self._contract_type) == suit
+        )
 
-        # If no threats remain, it's a sure winner
-        return len(remaining_threats) == 0
+    def _get_suit_counts(self, hand: List[Card]) -> Dict[str, int]:
+        """Get count of cards by effective suit in hand."""
+        counts: Dict[str, int] = {}
+        for c in hand:
+            eff = effective_suit(c, self._trump_suit, self._contract_type)
+            counts[eff] = counts.get(eff, 0) + 1
+        return counts
+
+    def _choose_lead(
+        self,
+        hand: List[Card],
+        legal_indices: List[int],
+    ) -> int:
+        """Choose which card to lead with human-like heuristics."""
+
+        def card_value(idx: int) -> int:
+            return card_value_for_dump(hand[idx], self._contract_type, self._trump_suit)
+
+        suit_counts = self._get_suit_counts(hand)
+
+        if self._contract_type == "suit" and self._trump_suit is not None:
+            # SUIT CONTRACT LEADS
+
+            # 1. Look for non-trump Aces
+            non_trump_aces = [
+                idx for idx in legal_indices
+                if hand[idx].rank == "A"
+                and effective_suit(hand[idx], self._trump_suit, self._contract_type) != self._trump_suit
+            ]
+            if non_trump_aces:
+                # Prefer Ace from shortest non-trump suit (to create void potential)
+                def ace_priority(idx: int) -> Tuple[int, int]:
+                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    return (suit_counts.get(eff, 0), -card_value(idx))
+                return min(non_trump_aces, key=ace_priority)
+
+            # 2. Draw trump if holding >= 4 trumps and NOT holding both bowers
+            trump_count = self._count_effective_suit(hand, self._trump_suit)
+            trump_indices = [
+                idx for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type) == self._trump_suit
+            ]
+            if trump_count >= 4 and trump_indices:
+                # Check for both bowers
+                from ..core.cards import is_left_bower, is_right_bower
+                has_right = any(is_right_bower(hand[idx], self._trump_suit) for idx in trump_indices)
+                has_left = any(is_left_bower(hand[idx], self._trump_suit) for idx in trump_indices)
+                if not (has_right and has_left):
+                    # Lead lowest trump to draw trump without burning top cards
+                    return min(trump_indices, key=card_value)
+
+            # 3. Lead from longest non-trump suit, highest card in that suit
+            non_trump_suits = [s for s in suit_counts if s != self._trump_suit]
+            if non_trump_suits:
+                longest_suit = max(non_trump_suits, key=lambda s: suit_counts.get(s, 0))
+                longest_suit_indices = [
+                    idx for idx in legal_indices
+                    if effective_suit(hand[idx], self._trump_suit, self._contract_type) == longest_suit
+                ]
+                if longest_suit_indices:
+                    return max(longest_suit_indices, key=card_value)
+
+            # Fallback: highest value card
+            return max(legal_indices, key=card_value)
+
+        else:
+            # HIGH / LOW CONTRACT LEADS
+            # Lead from longest suit, strongest card in that suit
+            if suit_counts:
+                longest_suit = max(suit_counts.keys(), key=lambda s: suit_counts.get(s, 0))
+                longest_suit_indices = [
+                    idx for idx in legal_indices
+                    if hand[idx].suit == longest_suit
+                ]
+                if longest_suit_indices:
+                    return max(longest_suit_indices, key=card_value)
+
+            # Fallback: highest value card
+            return max(legal_indices, key=card_value)
+
+    def _choose_discard(
+        self,
+        hand: List[Card],
+        legal_indices: List[int],
+    ) -> int:
+        """Choose which card to discard with smart void-creation logic."""
+
+        def card_value(idx: int) -> int:
+            return card_value_for_dump(hand[idx], self._contract_type, self._trump_suit)
+
+        # Get suit distribution
+        suit_counts = self._get_suit_counts(hand)
+
+        if self._contract_type == "suit" and self._trump_suit is not None:
+            # Prefer non-trump cards
+            non_trump_indices = [
+                idx for idx in legal_indices
+                if effective_suit(hand[idx], self._trump_suit, self._contract_type) != self._trump_suit
+            ]
+
+            if non_trump_indices:
+                # Prefer shortest non-trump suit (to create/strengthen voids)
+                def discard_priority(idx: int) -> Tuple[int, int]:
+                    eff = effective_suit(hand[idx], self._trump_suit, self._contract_type)
+                    # Lower suit count = better (creating void)
+                    # Lower card value = better (save strong cards)
+                    return (suit_counts.get(eff, 0), card_value(idx))
+
+                return min(non_trump_indices, key=discard_priority)
+
+            # Only trump left - discard cheapest
+            return min(legal_indices, key=card_value)
+
+        else:
+            # HIGH / LOW - no trump, so void creation has no benefit
+            # Just discard the cheapest card (lowest value)
+            return min(legal_indices, key=card_value)
 
     def choose_card(
         self,
@@ -160,45 +334,40 @@ class GluttonStrategy(Strategy):
         trump_suit: Optional[str],
         player_index: int,
     ) -> int:
-        """Choose card with partner awareness, trump conservation, and sure-win logic."""
-        # Reset tracking on new hand (heuristic: full hand + leading = first trick)
-        if len(hand) == 10 and not plays_so_far:
-            self._played_cards = set()
+        """Choose card with partner awareness and opportunistic winning.
 
-        # Accumulate plays from current trick into tracking set
-        for _, card in plays_so_far:
-            self._played_cards.add(card)
+        Key strategy difference from Greedy:
+        - When partner is winning: dump cheapest card (don't overkill) -- this is the edge
+        - Otherwise: play like Greedy (take any winner available)
+
+        This gives Glutton a consistent edge by saving cards when partner
+        has the trick locked, while still being aggressive when needed.
+        """
+        # Fallback reset if on_hand_start wasn't called (backward compatibility)
+        if len(hand) == 10 and not plays_so_far:
+            self._seen_counts = {}
+            self._void_suits_by_seat = {0: set(), 1: set(), 2: set(), 3: set()}
+            self._contract_type = contract_type
+            self._trump_suit = trump_suit
+            self._player_index = player_index
 
         legal_indices = get_legal_indices(hand, plays_so_far, contract_type, trump_suit)
 
         def card_value(idx: int) -> int:
             return card_value_for_dump(hand[idx], contract_type, trump_suit)
 
-        # SPECIAL CASE: When leading, play highest value card
+        # SPECIAL CASE: When leading, use smart lead selection
         if not plays_so_far:
-            choice = max(legal_indices, key=card_value)
+            choice = self._choose_lead(hand, legal_indices)
             if self.debug:
                 self.decision_log.append({
                     "scenario": "leading",
-                    "action": "play_highest",
+                    "action": "smart_lead",
                     "card": str(hand[choice]),
                 })
-            # Record our play for tracking
-            self._played_cards.add(hand[choice])
             return choice
 
-        # Phase 1: Check partner awareness
-        partner_winning = False
-        if len(plays_so_far) >= 1:
-            current_winner = trick_winner(
-                plays_so_far,
-                contract_type=contract_type,
-                trump_suit=trump_suit,
-            )
-            partner_index = (player_index + 2) % 4
-            partner_winning = (current_winner == partner_index)
-
-        # Find cards that currently win the trick
+        # FOLLOWING: For each legal card, check if it currently wins the trick
         winning_candidates = []
         for idx in legal_indices:
             card = hand[idx]
@@ -211,79 +380,84 @@ class GluttonStrategy(Strategy):
             if winner == player_index:
                 winning_candidates.append(idx)
 
-        # Partition winning candidates into "sure winners" and "risky winners"
-        sure_winners = [
-            idx for idx in winning_candidates
-            if self._is_sure_winner(hand[idx], plays_so_far, hand, contract_type, trump_suit)
-        ]
+        # POSITION-AWARE AGGRESSION: In 3rd seat with low threat count, take the trick
+        pos = len(plays_so_far)  # 0=lead, 1=2nd, 2=3rd, 3=4th
+        if pos == 2 and winning_candidates:
+            # Find cheapest winner and check threat count
+            best_winner_idx = min(winning_candidates, key=card_value)
+            best_winner = hand[best_winner_idx]
+            led_suit = effective_suit(plays_so_far[0][1], trump_suit, contract_type)
+            threats = self._threat_copies_remaining(best_winner, led_suit, hand)
 
-        # Phase 2: Decision logic with partner awareness and sure-win logic
+            if threats <= 1:
+                # Safe to take - only 4th seat opponent might beat us
+                # and at most 1 copy of a beating card exists
+                if self.debug:
+                    self.decision_log.append({
+                        "scenario": "3rd_seat_aggression",
+                        "action": "take_likely_win",
+                        "card": str(best_winner),
+                        "threats": threats,
+                    })
+                return best_winner_idx
+
+        # PARTNER AWARENESS: Don't overkill partner's winning card
+        partner_index = (player_index + 2) % 4
+        current_winner = trick_winner(
+            plays_so_far,
+            contract_type=contract_type,
+            trump_suit=trump_suit,
+        )
+        partner_winning = (current_winner == partner_index)
+
         if partner_winning:
-            # Partner is currently winning - don't overkill
-            choice = min(legal_indices, key=card_value)
+            # Step 5: Check if partner is vulnerable to 4th seat
+            if pos == 2:  # We're 3rd seat, 4th seat opponent plays after
+                # Find sure winners among our winning candidates
+                sure_winners = [
+                    idx for idx in winning_candidates
+                    if self._is_sure_winner(hand[idx], plays_so_far, hand)
+                ]
+                if sure_winners:
+                    # Cover partner with cheapest sure winner
+                    choice = min(sure_winners, key=card_value)
+                    if self.debug:
+                        self.decision_log.append({
+                            "scenario": "partner_vulnerable_cover",
+                            "action": "play_sure_winner",
+                            "card": str(hand[choice]),
+                        })
+                    return choice
+
+            # Partner safe or no sure winner — smart discard
+            choice = self._choose_discard(hand, legal_indices)
             if self.debug:
                 self.decision_log.append({
                     "scenario": "partner_winning",
-                    "action": "dump_cheap",
+                    "action": "smart_discard",
                     "card": str(hand[choice]),
                 })
-            self._played_cards.add(hand[choice])
             return choice
 
-        if sure_winners:
-            # We have a guaranteed winner - play cheapest sure winner
-            choice = min(sure_winners, key=card_value)
-            if self.debug:
-                self.decision_log.append({
-                    "scenario": "sure_win",
-                    "action": "play_cheap_sure_winner",
-                    "card": str(hand[choice]),
-                })
-            self._played_cards.add(hand[choice])
-            return choice
-
-        if len(plays_so_far) == 3 and winning_candidates:
-            # Last to act (4th position) - any winner is safe, no one follows
+        # If we have any card that is currently winning, play the cheapest winner
+        if winning_candidates:
             choice = min(winning_candidates, key=card_value)
             if self.debug:
                 self.decision_log.append({
-                    "scenario": "last_to_act_win",
+                    "scenario": "can_win",
                     "action": "play_cheap_winner",
                     "card": str(hand[choice]),
                 })
-            self._played_cards.add(hand[choice])
             return choice
 
-        # Can't win safely - dump instead
-        # Phase 3: Trump conservation - save trump for future tricks
-        if len(hand) > 1 and contract_type == "suit" and trump_suit is not None:
-            trump_cards = [
-                idx for idx in legal_indices
-                if effective_suit(hand[idx], trump_suit, contract_type) == trump_suit
-            ]
-
-            if trump_cards:
-                non_trump = [idx for idx in legal_indices if idx not in trump_cards]
-                if non_trump:
-                    choice = min(non_trump, key=card_value)
-                    if self.debug:
-                        self.decision_log.append({
-                            "scenario": "cant_win_save_trump",
-                            "action": "dump_offsuit",
-                            "card": str(hand[choice]),
-                        })
-                    self._played_cards.add(hand[choice])
-                    return choice
-
-        # Default: dump cheapest card
-        choice = min(legal_indices, key=card_value)
+        # Otherwise, smart discard (prefer shortest suit for voids)
+        choice = self._choose_discard(hand, legal_indices)
         if self.debug:
             self.decision_log.append({
-                "scenario": "default_dump",
-                "action": "dump_cheap",
+                "scenario": "cant_win",
+                "action": "smart_discard",
                 "card": str(hand[choice]),
             })
-        self._played_cards.add(hand[choice])
         return choice
 
 
