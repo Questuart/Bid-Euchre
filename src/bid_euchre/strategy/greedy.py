@@ -380,28 +380,7 @@ class GluttonStrategy(Strategy):
             if winner == player_index:
                 winning_candidates.append(idx)
 
-        # POSITION-AWARE AGGRESSION: In 3rd seat with low threat count, take the trick
-        pos = len(plays_so_far)  # 0=lead, 1=2nd, 2=3rd, 3=4th
-        if pos == 2 and winning_candidates:
-            # Find cheapest winner and check threat count
-            best_winner_idx = min(winning_candidates, key=card_value)
-            best_winner = hand[best_winner_idx]
-            led_suit = effective_suit(plays_so_far[0][1], trump_suit, contract_type)
-            threats = self._threat_copies_remaining(best_winner, led_suit, hand)
-
-            if threats <= 1:
-                # Safe to take - only 4th seat opponent might beat us
-                # and at most 1 copy of a beating card exists
-                if self.debug:
-                    self.decision_log.append({
-                        "scenario": "3rd_seat_aggression",
-                        "action": "take_likely_win",
-                        "card": str(best_winner),
-                        "threats": threats,
-                    })
-                return best_winner_idx
-
-        # PARTNER AWARENESS: Don't overkill partner's winning card
+        # Calculate partner_winning FIRST (needed for both 3rd-seat and partner logic)
         partner_index = (player_index + 2) % 4
         current_winner = trick_winner(
             plays_so_far,
@@ -409,6 +388,37 @@ class GluttonStrategy(Strategy):
             trump_suit=trump_suit,
         )
         partner_winning = (current_winner == partner_index)
+
+        # POSITION-AWARE AGGRESSION: In 3rd seat with low threat count, take the trick
+        # Only when partner is NOT winning (otherwise defer to partner awareness)
+        pos = len(plays_so_far)  # 0=lead, 1=2nd, 2=3rd, 3=4th
+        if pos == 2 and winning_candidates and not partner_winning:
+            # Find cheapest winner and check threat count
+            best_winner_idx = min(winning_candidates, key=card_value)
+            best_winner = hand[best_winner_idx]
+            led_suit = effective_suit(plays_so_far[0][1], trump_suit, contract_type)
+            threats = self._threat_copies_remaining(best_winner, led_suit, hand)
+
+            # Trump gating: only aggressive trump-in if hand is small or trump-heavy
+            is_trump_winner = (
+                contract_type == "suit" and trump_suit is not None
+                and effective_suit(best_winner, trump_suit, contract_type) == trump_suit
+            )
+            can_gate = len(hand) <= 6 or self._count_effective_suit(hand, trump_suit or "") >= 3
+
+            if threats <= 1:
+                # Only take if not a trump play, or if gating conditions allow
+                if not is_trump_winner or can_gate:
+                    if self.debug:
+                        self.decision_log.append({
+                            "scenario": "3rd_seat_aggression",
+                            "action": "take_likely_win",
+                            "card": str(best_winner),
+                            "threats": threats,
+                        })
+                    return best_winner_idx
+
+        # PARTNER AWARENESS: Don't overkill partner's winning card
 
         if partner_winning:
             # Step 5: Check if partner is vulnerable to 4th seat
