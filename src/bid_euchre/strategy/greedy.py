@@ -326,6 +326,65 @@ class GluttonStrategy(Strategy):
             # Just discard the cheapest card (lowest value)
             return min(legal_indices, key=card_value)
 
+    def _should_trump_in(
+        self,
+        hand: List[Card],
+        plays_so_far: List[Tuple[int, Card]],
+        player_index: int,
+    ) -> bool:
+        """
+        Returns True if we should consider trumping in to protect partner.
+
+        Conditions (ALL must be true):
+        - Suit contract with trump
+        - Not leading (plays_so_far not empty)
+        - We are void in led suit (can't follow)
+        - We have trump in hand
+        - We are 3rd seat (4th seat opponent plays after us)
+        - 4th seat is void in led suit AND might have trump
+
+        This protects partner from having their winning card trumped by 4th seat.
+        """
+        # Guard: must be suit contract with trump
+        if self._contract_type != "suit" or self._trump_suit is None:
+            return False
+
+        # Guard: must be following (not leading)
+        if not plays_so_far:
+            return False
+
+        # Get led suit
+        led_suit = effective_suit(plays_so_far[0][1], self._trump_suit, self._contract_type)
+
+        # Check if we're void in led suit (can't follow)
+        can_follow = any(
+            effective_suit(hand[idx], self._trump_suit, self._contract_type) == led_suit
+            for idx in range(len(hand))
+        )
+        if can_follow:
+            return False  # Can follow suit, not a trump-in decision
+
+        # Check if we have trump
+        trump_in_hand = any(
+            effective_suit(c, self._trump_suit, self._contract_type) == self._trump_suit
+            for c in hand
+        )
+        if not trump_in_hand:
+            return False  # No trump to play
+
+        # Position check: only 3rd seat needs to worry about 4th seat
+        pos = len(plays_so_far)
+        if pos != 2:
+            return False  # Only 3rd seat considers this logic
+
+        # Check 4th seat's void status
+        fourth_seat = (player_index + 1) % 4
+        fourth_void_in_led = led_suit in self._void_suits_by_seat[fourth_seat]
+        fourth_might_have_trump = self._trump_suit not in self._void_suits_by_seat[fourth_seat]
+
+        # If 4th seat is void in led suit and might have trump, we should trump in
+        return fourth_void_in_led and fourth_might_have_trump
+
     def choose_card(
         self,
         hand: List[Card],
@@ -438,6 +497,23 @@ class GluttonStrategy(Strategy):
                             "card": str(hand[choice]),
                         })
                     return choice
+
+                # Probabilistic trump-in: protect partner from 4th seat trump
+                if self._should_trump_in(hand, plays_so_far, player_index):
+                    # Find cheapest trump winner
+                    trump_winners = [
+                        idx for idx in winning_candidates
+                        if effective_suit(hand[idx], trump_suit, contract_type) == trump_suit
+                    ]
+                    if trump_winners:
+                        choice = min(trump_winners, key=card_value)
+                        if self.debug:
+                            self.decision_log.append({
+                                "scenario": "probabilistic_trump_cover",
+                                "action": "trump_to_protect_partner",
+                                "card": str(hand[choice]),
+                            })
+                        return choice
 
             # Partner safe or no sure winner — smart discard
             choice = self._choose_discard(hand, legal_indices)
