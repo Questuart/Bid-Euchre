@@ -524,3 +524,142 @@ def _load_outcomes_from_run(run_dir: Union[str, Path]) -> pd.DataFrame:
     outcome_df = outcome_df.sort_values(['deal_id', 'seat']).reset_index(drop=True)
 
     return outcome_df
+
+
+# ============================================================================
+# Public RUN_DIR API (for loading from existing experiment runs)
+# ============================================================================
+
+
+def validate_run_dir(run_dir: str) -> Path:
+    """Verify run directory exists and has required structure.
+
+    Args:
+        run_dir: Path to run directory (as string)
+
+    Returns:
+        Validated Path object to the run directory
+
+    Raises:
+        FileNotFoundError: If run_dir doesn't exist or logs/ directory is missing
+        ValueError: If run_dir is not a directory
+    """
+    run_path = Path(run_dir)
+
+    if not run_path.exists():
+        raise FileNotFoundError(f"Run directory not found: {run_dir}")
+
+    if not run_path.is_dir():
+        raise ValueError(f"Path is not a directory: {run_dir}")
+
+    logs_dir = run_path / "logs"
+    if not logs_dir.exists():
+        raise FileNotFoundError(
+            f"Logs directory not found: {logs_dir}. "
+            "Expected run_dir/logs/ to contain JSONL log files."
+        )
+
+    return run_path
+
+
+def load_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
+    """Load outcome data from an existing experiment run directory.
+
+    Centralized parser: globs *.jsonl in logs/, extracts hand_end events,
+    and expands to seat-level outcome records.
+
+    Args:
+        run_dir: Path to run directory containing logs/*.jsonl
+
+    Returns:
+        DataFrame with columns:
+            - deal_id: int
+            - seat: int (0-3)
+            - contract_type: str ("suit", "high", "low")
+            - trump: str or None
+            - tricks_won: int (0-10)
+            - strategy_id: str
+
+    Raises:
+        FileNotFoundError: If run_dir or logs/ doesn't exist
+        ValueError: If no hand_end events found in logs
+    """
+    run_path = validate_run_dir(run_dir)
+    return _load_outcomes_from_run(run_path)
+
+
+def load_features_and_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
+    """Load features from datasets/ and outcomes from logs/, joined by deal_id + seat.
+
+    This function:
+    1. Validates the run directory structure
+    2. Loads feature data from run_dir/datasets/ (Parquet files)
+    3. Loads outcome data from run_dir/logs/ (JSONL files)
+    4. Joins on deal_id + seat + contract_type + trump
+
+    Args:
+        run_dir: Path to run directory containing datasets/ and logs/
+
+    Returns:
+        DataFrame with columns:
+            - deal_id: int
+            - seat: int (0-3)
+            - contract_type: str ("suit", "high", "low")
+            - trump: str or None (normalized from trump_suit)
+            - tricks_won: int (0-10)
+            - strategy_id: str
+            - feat_*: feature columns (trump_count, offsuit_aces, etc.)
+            - hand_cards: list of str (if available)
+
+    Raises:
+        FileNotFoundError: If run_dir, datasets/, or logs/ doesn't exist
+        ValueError: If no data found or join fails
+
+    Note:
+        The join is on [deal_id, seat, contract_type, trump] to ensure proper
+        alignment even when features and outcomes have different data coverage.
+    """
+    run_path = validate_run_dir(run_dir)
+
+    # Also verify datasets/ exists
+    dataset_dir = run_path / "datasets"
+    if not dataset_dir.exists():
+        raise FileNotFoundError(
+            f"Datasets directory not found: {dataset_dir}. "
+            "Expected run_dir/datasets/ to contain Parquet files."
+        )
+
+    # Load features from bidless dataset
+    features_df = load_bidless_dataset(dataset_dir)
+
+    # Normalize column names: rename trump_suit -> trump for consistency
+    if 'trump_suit' in features_df.columns:
+        features_df = features_df.rename(columns={'trump_suit': 'trump'})
+
+    # Load outcomes from logs
+    outcome_df = _load_outcomes_from_run(run_path)
+
+    # Join on deal_id + seat + contract_type + trump
+    # This ensures proper alignment even when features and outcomes have different data
+    merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
+
+    # Check that merge keys exist in both dataframes
+    for key in merge_keys:
+        if key not in features_df.columns:
+            raise ValueError(f"Missing merge key '{key}' in features DataFrame")
+        if key not in outcome_df.columns:
+            raise ValueError(f"Missing merge key '{key}' in outcomes DataFrame")
+
+    merged_df = features_df.merge(
+        outcome_df[merge_keys + ['tricks_won', 'strategy_id']],
+        on=merge_keys,
+        how='inner'
+    )
+
+    if len(merged_df) == 0:
+        raise ValueError(
+            "Join produced empty DataFrame. Check that features and outcomes "
+            "have matching deal_id + seat + contract_type + trump values."
+        )
+
+    return merged_df
