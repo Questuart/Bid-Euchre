@@ -1,0 +1,59 @@
+# Head-to-Head: Glutton vs Greedy Strategy Comparison
+#
+# This config validates that GluttonStrategy reliably beats GreedyStrategy
+# in deterministic head-to-head matchups across all bidless scenarios.
+#
+# Run with:
+#   uv run python experiments/run_experiment.py \
+#     --config experiments/configs/glutton_vs_greedy_head_to_head.yaml \
+#     --seed 42
+
+experiment_name: glutton_vs_greedy_head_to_head
+
+parameters:
+  n_per: 100000
+  seed: 42
+  log_level: none
+  mode: head_to_head_matrix
+
+# Define strategies for comparison
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+  - name: glutton
+    class_name: GluttonStrategy
+
+# Both matchup directions to control for seat/position effects
+matchups:
+  # Glutton as Team0
+  - team0: glutton
+    team1: greedy
+
+  # Glutton as Team1 (seat swap)
+  - team0: greedy
+    team1: glutton
+
+# All bidless scenarios
+scenarios:
+  - name: suit_C
+    contract_type: suit
+    trump_suit: C
+
+  - name: suit_D
+    contract_type: suit
+    trump_suit: D
+
+  - name: suit_H
+    contract_type: suit
+    trump_suit: H
+
+  - name: suit_S
+    contract_type: suit
+    trump_suit: S
+
+  - name: high
+    contract_type: high
+
+  - name: low
+    contract_type: low

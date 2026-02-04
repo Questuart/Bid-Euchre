@@ -315,6 +315,39 @@ def play_single_hand(
                 initial_leader = random.Random().randrange(4)
     leader = initial_leader
 
+    # Fire on_hand_start hooks for strategies that implement them
+    # CRITICAL: De-duplicate by instance identity to avoid calling hooks multiple times
+    # when a single strategy instance is shared across seats (common in self-play)
+    seen_strategy_ids: set = set()
+    unique_strategies = []
+    for s in seat_strategies:
+        if id(s) not in seen_strategy_ids:
+            seen_strategy_ids.add(id(s))
+            unique_strategies.append(s)
+
+    # Filter to strategies that override on_hand_start (not default no-op)
+    hand_start_targets = [
+        s for s in unique_strategies
+        if type(s).on_hand_start is not Strategy.on_hand_start
+    ]
+    for s in hand_start_targets:
+        # Find which seat(s) this strategy is assigned to (use first seat for player_index)
+        for seat_idx, seat_strat in enumerate(seat_strategies):
+            if seat_strat is s:
+                s.on_hand_start(
+                    starting_hand=list(starting_hands[seat_idx]),  # Copy to avoid aliasing
+                    contract_type=contract_type,
+                    trump_suit=trump_suit,
+                    player_index=seat_idx,
+                )
+                break
+
+    # Filter to strategies that override observe_play (not default no-op)
+    observe_play_targets = [
+        s for s in unique_strategies
+        if type(s).observe_play is not Strategy.observe_play
+    ]
+
     # 10 tricks in a 10-card hand
     for trick_num in range(10):
         plays = []
@@ -353,6 +386,16 @@ def play_single_hand(
 
             card = hand.pop(card_index)
             plays.append((player, card))
+
+            # Fire observe_play hooks for strategies that implement them
+            for s in observe_play_targets:
+                s.observe_play(
+                    player_index=player,
+                    card=card,
+                    trick_plays=list(plays),  # Copy to avoid aliasing
+                    contract_type=contract_type,
+                    trump_suit=trump_suit,
+                )
 
         winner = trick_winner(
             plays,
