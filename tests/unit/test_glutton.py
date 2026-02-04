@@ -132,14 +132,18 @@ class TestGreedyLikeBehavior:
         # Wait, C-T doesn't beat C-K. C-A does.
         assert choice == 0, f"Should play C-A to win, chose {choice}"
 
-    def test_leads_highest_value(self):
-        """When leading, should play highest value card (like Greedy)."""
+    def test_leads_with_smart_selection(self):
+        """When leading, Glutton uses smart lead selection (differs from Greedy).
+
+        Glutton prioritizes: non-trump Aces → draw trump (>=4) → longest non-trump.
+        Greedy just leads with highest value card.
+        """
         glutton = GluttonStrategy()
         greedy = GreedyStrategy()
 
         hand = [
             Card("H", "J"),  # idx 0 - Right bower (highest value)
-            Card("C", "T"),  # idx 1 - Low card
+            Card("C", "T"),  # idx 1 - Only non-trump card (longest non-trump suit)
         ]
 
         glutton.on_hand_start(hand, "suit", "H", player_index=0)
@@ -147,20 +151,22 @@ class TestGreedyLikeBehavior:
         glutton_choice = glutton.choose_card(hand, [], "suit", "H", 0)
         greedy_choice = greedy.choose_card(hand, [], "suit", "H", 0)
 
-        # Both should lead with highest value
-        assert glutton_choice == greedy_choice == 0
+        # Greedy leads highest value (bower)
+        assert greedy_choice == 0
+        # Glutton leads from longest non-trump suit (C-T)
+        assert glutton_choice == 1
 
 
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
     def test_leading_trick(self):
-        """Should work when leading a trick."""
+        """Should work when leading a trick - uses smart lead selection."""
         glutton = GluttonStrategy()
 
         hand = [
-            Card("H", "A"),  # idx 0
-            Card("C", "K"),  # idx 1
+            Card("H", "A"),  # idx 0 - Trump Ace
+            Card("C", "K"),  # idx 1 - Longest non-trump suit
         ]
 
         glutton.on_hand_start(hand, "suit", "H", player_index=0)
@@ -168,8 +174,9 @@ class TestEdgeCases:
         # Leading - no plays yet
         choice = glutton.choose_card(hand, [], "suit", "H", 0)
 
-        # Should play highest value (trump Ace)
-        assert choice == 0
+        # Glutton leads from longest non-trump suit (C-K)
+        # (No non-trump Aces, not >=4 trump to draw, so longest non-trump)
+        assert choice == 1
 
     def test_last_to_play_opponent_winning(self):
         """In 4th position with opponent winning, should win if possible."""

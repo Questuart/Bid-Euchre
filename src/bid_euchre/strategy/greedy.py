@@ -322,12 +322,9 @@ class GluttonStrategy(Strategy):
             return min(legal_indices, key=card_value)
 
         else:
-            # HIGH / LOW - prefer shortest suit, then cheapest
-            def discard_priority(idx: int) -> Tuple[int, int]:
-                eff = hand[idx].suit
-                return (suit_counts.get(eff, 0), card_value(idx))
-
-            return min(legal_indices, key=discard_priority)
+            # HIGH / LOW - no trump, so void creation has no benefit
+            # Just discard the cheapest card (lowest value)
+            return min(legal_indices, key=card_value)
 
     def choose_card(
         self,
@@ -359,13 +356,13 @@ class GluttonStrategy(Strategy):
         def card_value(idx: int) -> int:
             return card_value_for_dump(hand[idx], contract_type, trump_suit)
 
-        # SPECIAL CASE: When leading, play highest value card (like Greedy)
+        # SPECIAL CASE: When leading, use smart lead selection
         if not plays_so_far:
-            choice = max(legal_indices, key=card_value)
+            choice = self._choose_lead(hand, legal_indices)
             if self.debug:
                 self.decision_log.append({
                     "scenario": "leading",
-                    "action": "play_highest",
+                    "action": "smart_lead",
                     "card": str(hand[choice]),
                 })
             return choice
@@ -393,12 +390,12 @@ class GluttonStrategy(Strategy):
         partner_winning = (current_winner == partner_index)
 
         if partner_winning:
-            # Partner is currently winning - dump cheapest card
-            choice = min(legal_indices, key=card_value)
+            # Partner is currently winning - smart discard (prefer shortest suit for voids)
+            choice = self._choose_discard(hand, legal_indices)
             if self.debug:
                 self.decision_log.append({
                     "scenario": "partner_winning",
-                    "action": "dump_cheap",
+                    "action": "smart_discard",
                     "card": str(hand[choice]),
                 })
             return choice
@@ -414,12 +411,12 @@ class GluttonStrategy(Strategy):
                 })
             return choice
 
-        # Otherwise, dump the cheapest legal card
-        choice = min(legal_indices, key=card_value)
+        # Otherwise, smart discard (prefer shortest suit for voids)
+        choice = self._choose_discard(hand, legal_indices)
         if self.debug:
             self.decision_log.append({
                 "scenario": "cant_win",
-                "action": "dump_cheap",
+                "action": "smart_discard",
                 "card": str(hand[choice]),
             })
         return choice
