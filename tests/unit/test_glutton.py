@@ -164,7 +164,7 @@ class TestPositionAwareness:
     """Tests for position-aware aggression (Step 4) and partner covering (Step 5)."""
 
     def test_3rd_seat_aggression_low_threats(self):
-        """In 3rd seat with low threat count, should take the trick."""
+        """In 3rd seat with low threat count, should take the trick when opponent winning."""
         glutton = GluttonStrategy(debug=True)
 
         hand = [
@@ -176,16 +176,16 @@ class TestPositionAwareness:
         glutton.on_hand_start(hand, "high", None, player_index=2)
         glutton._seen_counts[Card("C", "A")] = 1  # One Ace already played
 
-        # 3rd seat scenario: 2 plays already made
+        # 3rd seat scenario: opponent (player 1) is winning
         # Teams: 0+2, 1+3. Player 2's partner is 0
         plays_so_far = [
-            (0, Card("C", "K")),  # Partner leads Clubs K
-            (1, Card("C", "Q")),  # Opponent plays Clubs Q
+            (0, Card("C", "Q")),  # Partner leads Clubs Q
+            (1, Card("C", "K")),  # Opponent plays Clubs K - WINNING
         ]
 
         choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
 
-        # Should take with Ace since threats are low (other Ace seen)
+        # Should take with Ace since threats are low (other Ace seen) and opponent winning
         assert choice == 0, f"Should take trick with Ace, got {choice}"
         assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
 
@@ -238,13 +238,61 @@ class TestPositionAwareness:
 
         choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
 
-        # Partner winning but we have a sure winner (Ace with other Ace seen)
-        # 3rd seat aggression should trigger first since we have a winning card
-        # with low threats
+        # Partner winning, so 3rd-seat aggression is skipped (partner_winning condition)
+        # Falls through to partner_vulnerable_cover since we have a sure winner
         assert choice == 0, f"Should cover with Ace, got {choice}"
-        # Could be either 3rd_seat_aggression or partner_vulnerable_cover
+        assert glutton.decision_log[-1]["scenario"] == "partner_vulnerable_cover"
+
+    def test_3rd_seat_skips_aggression_when_partner_winning(self):
+        """3rd seat aggression should NOT trigger when partner is already winning."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace (would win with low threats)
+            Card("D", "T"),  # idx 1 - Diamonds T (cheapest discard)
+        ]
+
+        glutton.on_hand_start(hand, "high", None, player_index=2)
+        glutton._seen_counts[Card("C", "A")] = 1  # Other Ace seen (low threat)
+
+        # Partner (player 0) is winning with King
+        plays_so_far = [
+            (0, Card("C", "K")),  # Partner leads King - WINNING
+            (1, Card("C", "Q")),  # Opponent plays lower
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
+
+        # Even though we have low threats, we should NOT trigger 3rd_seat_aggression
+        # because partner is winning. Should use partner_vulnerable_cover or partner_winning
+        assert choice == 0, f"Should cover partner with Ace, got {choice}"
         scenario = glutton.decision_log[-1]["scenario"]
-        assert scenario in ("3rd_seat_aggression", "partner_vulnerable_cover"), f"Got {scenario}"
+        assert scenario != "3rd_seat_aggression", f"Should NOT use 3rd_seat_aggression when partner winning, got {scenario}"
+        assert scenario == "partner_vulnerable_cover", f"Expected partner_vulnerable_cover, got {scenario}"
+
+    def test_3rd_seat_aggression_when_opponent_winning(self):
+        """3rd seat aggression SHOULD trigger when opponent is winning."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace (wins with low threats)
+            Card("D", "T"),  # idx 1 - Diamonds T
+        ]
+
+        glutton.on_hand_start(hand, "high", None, player_index=2)
+        glutton._seen_counts[Card("C", "A")] = 1  # Low threat count
+
+        # Opponent (player 1) is winning
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Partner leads Queen
+            (1, Card("C", "K")),  # Opponent plays King - WINNING
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
+
+        # Opponent winning, low threats, should trigger 3rd_seat_aggression
+        assert choice == 0, f"Should take with Ace via 3rd_seat_aggression, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
 
     def test_4th_seat_no_aggression_logic(self):
         """4th seat should not trigger 3rd seat aggression logic."""
@@ -271,6 +319,143 @@ class TestPositionAwareness:
         assert choice == 0, f"Should win with Ace in 4th seat, got {choice}"
         # Should be regular can_win, not 3rd_seat_aggression
         assert glutton.decision_log[-1]["scenario"] == "can_win"
+
+
+class TestTrumpGating:
+    """Tests for trump gating in 3rd-seat aggression (suit contracts only)."""
+
+    def test_trump_gating_small_hand_allows_trump(self):
+        """With small hand (<=6 cards), trump-in is allowed in 3rd seat."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Small hand - 4 cards (late game), void in clubs
+        hand = [
+            Card("H", "A"),  # idx 0 - Trump Ace (can trump in)
+            Card("D", "T"),  # idx 1 - Offsuit
+            Card("D", "K"),  # idx 2 - Offsuit
+            Card("S", "Q"),  # idx 3 - Offsuit
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+        # Mark both bowers as seen to make H-A a sure winner (low threats)
+        glutton._seen_counts[Card("H", "J")] = 2  # Both right bowers seen
+        glutton._seen_counts[Card("D", "J")] = 2  # Both left bowers seen
+        glutton._seen_counts[Card("H", "A")] = 1  # Other Ace seen
+
+        # Opponent winning with clubs, we're void in clubs
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Partner plays lower
+            (1, Card("C", "K")),  # Opponent winning
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # Small hand (4 cards <= 6), should allow trump-in via 3rd_seat_aggression
+        assert choice == 0, f"Should trump in with small hand, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
+
+    def test_trump_gating_trump_heavy_allows_trump(self):
+        """With trump-heavy hand (>=3 trump), trump-in is allowed."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Large hand but trump-heavy (3+ trump), void in clubs
+        hand = [
+            Card("H", "A"),  # idx 0 - Trump Ace
+            Card("H", "K"),  # idx 1 - Trump King
+            Card("H", "Q"),  # idx 2 - Trump Queen (cheapest winner)
+            Card("D", "T"),  # idx 3 - Offsuit
+            Card("D", "K"),  # idx 4 - Offsuit
+            Card("S", "Q"),  # idx 5 - Offsuit
+            Card("S", "T"),  # idx 6 - Offsuit
+            Card("S", "K"),  # idx 7 - Offsuit (8 cards total, > 6)
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+        # Mark both bowers as seen to make H-A a sure winner (low threats)
+        glutton._seen_counts[Card("H", "J")] = 2  # Both right bowers seen
+        glutton._seen_counts[Card("D", "J")] = 2  # Both left bowers seen
+        glutton._seen_counts[Card("H", "A")] = 1  # Other Ace seen
+
+        # Opponent winning with clubs, we're void in clubs
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Partner plays
+            (1, Card("C", "A")),  # Opponent winning
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # 8 cards > 6, but 3 trump >= 3, so gating allows trump-in
+        # Should play cheapest winning trump (H-Q at idx 2, threats=1 which is <=1)
+        assert choice == 2, f"Should trump in with cheapest trump (H-Q), got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
+
+    def test_trump_gating_large_hand_low_trump_skips_aggression(self):
+        """With large hand and few trump, trump-in should NOT use 3rd seat aggression."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Large hand with only 1 trump, void in clubs
+        hand = [
+            Card("H", "A"),  # idx 0 - Only trump
+            Card("D", "T"),  # idx 1 - Offsuit
+            Card("D", "K"),  # idx 2 - Offsuit
+            Card("S", "Q"),  # idx 3 - Offsuit
+            Card("S", "T"),  # idx 4 - Offsuit
+            Card("S", "K"),  # idx 5 - Offsuit
+            Card("S", "A"),  # idx 6 - Offsuit (7 cards > 6, only 1 trump < 3)
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+        # Mark both bowers as seen to make H-A a sure winner (low threats)
+        glutton._seen_counts[Card("H", "J")] = 2  # Both right bowers seen
+        glutton._seen_counts[Card("D", "J")] = 2  # Both left bowers seen
+        glutton._seen_counts[Card("H", "A")] = 1  # Other Ace seen
+
+        # Opponent winning with clubs, we're void
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Partner plays
+            (1, Card("C", "K")),  # Opponent winning
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # 7 cards > 6, only 1 trump < 3, gating should BLOCK trump-in
+        # Falls through to can_win path instead
+        assert choice == 0, f"Should still trump in via can_win path, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "can_win", (
+            f"Should skip 3rd_seat_aggression due to trump gating, got {glutton.decision_log[-1]['scenario']}"
+        )
+
+    def test_non_trump_winner_no_gating(self):
+        """Non-trump winners are not affected by trump gating (use high contract)."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Large hand in high contract (no trump gating applies)
+        hand = [
+            Card("C", "A"),  # idx 0 - Clubs Ace (following suit)
+            Card("C", "T"),  # idx 1 - Following suit
+            Card("D", "K"),  # idx 2 - Offsuit
+            Card("D", "Q"),  # idx 3 - Offsuit
+            Card("D", "T"),  # idx 4 - Offsuit
+            Card("S", "K"),  # idx 5 - Offsuit
+            Card("S", "Q"),  # idx 6 - Offsuit (7 cards > 6)
+        ]
+
+        glutton.on_hand_start(hand, "high", None, player_index=2)
+        # Make Clubs Ace low-threat (other Ace seen)
+        glutton._seen_counts[Card("C", "A")] = 1
+
+        # Opponent winning with clubs, we follow suit
+        plays_so_far = [
+            (0, Card("C", "Q")),  # Partner plays
+            (1, Card("C", "K")),  # Opponent winning
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
+
+        # In high contract, no trump gating applies - just threat count
+        # C-A has 0 threats (2 copies, 1 seen, 1 in hand)
+        assert choice == 0, f"Should take with Clubs Ace, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "3rd_seat_aggression"
 
 
 class TestEdgeCases:
