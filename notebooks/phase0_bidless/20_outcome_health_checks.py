@@ -1769,6 +1769,51 @@ for k in k_values:
     print()
 print("-" * 60)
 
+# Print percentile table by strategy (overall)
+print("\nPercentile Table by Strategy (% of deals where team0 wins k tricks):")
+print("-" * 80)
+header = f"{'k':>4} | "
+for strat in strategies:
+    header += f"{strat[:12]:>12} | "
+print(header)
+print("-" * 80)
+for k in k_values:
+    row = f"{k:>4} | "
+    for strat in strategies:
+        strat_df = df_self_deal[df_self_deal['strategy_id'] == strat]
+        if len(strat_df) > 0:
+            pct = (strat_df['team0_tricks'] == k).mean() * 100
+            row += f"{pct:>11.1f}% | "
+        else:
+            row += f"{'N/A':>12} | "
+    print(row)
+print("-" * 80)
+
+# Print percentile tables by strategy × contract type
+for ct in CONTRACT_TYPES:
+    ct_df = df_self_deal[df_self_deal['contract_type'] == ct]
+    if len(ct_df) == 0:
+        continue
+
+    print(f"\nPercentile Table: {ct.upper()} Contracts by Strategy")
+    print("-" * 80)
+    header = f"{'k':>4} | "
+    for strat in strategies:
+        header += f"{strat[:12]:>12} | "
+    print(header)
+    print("-" * 80)
+    for k in k_values:
+        row = f"{k:>4} | "
+        for strat in strategies:
+            strat_ct_df = ct_df[ct_df['strategy_id'] == strat]
+            if len(strat_ct_df) > 0:
+                pct = (strat_ct_df['team0_tricks'] == k).mean() * 100
+                row += f"{pct:>11.1f}% | "
+            else:
+                row += f"{'N/A':>12} | "
+        print(row)
+    print("-" * 80)
+
 print("✓ PMF plotted")
 
 # %% [markdown]
