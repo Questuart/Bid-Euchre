@@ -605,3 +605,155 @@ class TestHooksIntegration:
         )
 
         assert "S" in strategy._void_suits_by_seat[1]
+
+
+class TestProbabilisticTrumpIn:
+    """Tests for void-aware probabilistic trump-in decisions."""
+
+    def test_trump_in_when_fourth_seat_void(self):
+        """Should trump in when 4th seat is void in led suit and might have trump."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Void in clubs, have trump
+        hand = [
+            Card("H", "T"),  # idx 0 - Low trump
+            Card("D", "K"),  # idx 1 - Offsuit (can't follow clubs)
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # Mark 4th seat (player 3) as void in clubs (from earlier play)
+        glutton._void_suits_by_seat[3].add("C")
+
+        # Partner is winning with clubs Ace
+        plays_so_far = [
+            (0, Card("C", "A")),  # Partner leads Ace - winning
+            (1, Card("C", "Q")),  # Opponent plays lower
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # Should trump to protect partner from 4th seat trump
+        assert choice == 0, f"Should trump in, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "probabilistic_trump_cover"
+
+    def test_no_trump_in_when_fourth_seat_can_follow(self):
+        """Should not trump if 4th seat can follow suit."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "T"),  # idx 0 - Trump
+            Card("D", "K"),  # idx 1 - Offsuit
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # 4th seat is NOT void in clubs
+        # (no entry in _void_suits_by_seat[3] for "C")
+
+        plays_so_far = [
+            (0, Card("C", "A")),  # Partner leads Ace - winning
+            (1, Card("C", "Q")),  # Opponent plays lower
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # Should NOT trump (partner safe, 4th seat can follow suit)
+        assert choice == 1, f"Should discard, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
+
+    def test_no_trump_in_high_contract(self):
+        """Should not trigger trump-in logic in high contract."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "A"),  # idx 0 - Hearts Ace
+            Card("D", "K"),  # idx 1 - Offsuit
+        ]
+
+        glutton.on_hand_start(hand, "high", None, player_index=2)
+        glutton._void_suits_by_seat[3].add("C")  # Would trigger in suit contract
+
+        plays_so_far = [
+            (0, Card("C", "A")),  # Partner winning
+            (1, Card("C", "Q")),
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "high", None, 2)
+
+        # High contract - no trump-in logic applies
+        assert choice == 1  # Discard offsuit
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
+
+    def test_no_trump_in_when_fourth_seat_void_in_trump(self):
+        """Should not trump if 4th seat is void in trump (can't overtrump)."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "T"),  # idx 0 - Trump
+            Card("D", "K"),  # idx 1 - Offsuit
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+
+        # 4th seat is void in clubs AND void in hearts (trump)
+        glutton._void_suits_by_seat[3].add("C")
+        glutton._void_suits_by_seat[3].add("H")  # No trump!
+
+        plays_so_far = [
+            (0, Card("C", "A")),  # Partner leads Ace - winning
+            (1, Card("C", "Q")),  # Opponent plays lower
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # 4th seat is void in trump, can't overtrump partner's lead
+        assert choice == 1, f"Should discard, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
+
+    def test_no_trump_in_when_can_follow_suit(self):
+        """Should not consider trump-in if we can follow suit."""
+        glutton = GluttonStrategy(debug=True)
+
+        # Can follow clubs
+        hand = [
+            Card("H", "T"),  # idx 0 - Trump
+            Card("C", "K"),  # idx 1 - Can follow suit
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=2)
+        glutton._void_suits_by_seat[3].add("C")  # 4th seat void in clubs
+
+        plays_so_far = [
+            (0, Card("C", "A")),  # Partner leads Ace - winning
+            (1, Card("C", "Q")),  # Opponent plays lower
+        ]
+
+        choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
+
+        # We must follow suit with C-K
+        assert choice == 1, f"Should follow suit with C-K, got {choice}"
+        assert glutton.decision_log[-1]["scenario"] == "partner_winning"
+
+    def test_no_trump_in_not_third_seat(self):
+        """Probabilistic trump-in should only apply in 3rd seat."""
+        glutton = GluttonStrategy(debug=True)
+
+        hand = [
+            Card("H", "T"),  # idx 0 - Trump
+            Card("D", "K"),  # idx 1 - Offsuit
+        ]
+
+        glutton.on_hand_start(hand, "suit", "H", player_index=1)
+        glutton._void_suits_by_seat[2].add("C")  # Next player void
+
+        # 2nd seat position (only 1 play so far)
+        plays_so_far = [
+            (0, Card("C", "A")),  # Player 0 leads - partner is (1+2)%4=3, not 0
+        ]
+
+        glutton.choose_card(hand, plays_so_far, "suit", "H", 1)
+
+        # In 2nd seat, 4th seat protection doesn't apply
+        # Player 0 is opponent for player 1 - so we try to win
+        assert glutton.decision_log[-1]["scenario"] != "probabilistic_trump_cover"
