@@ -1629,6 +1629,7 @@ plt.show()
 # %%
 # Also compute by-contract and by-matchup aggregates for backward compatibility
 # These are used in Section 5 summary
+# NOTE: Uses smart_data (filtered to KEY_MATCHUP_TYPES) for consistency with 3x3 grid
 
 # By matchup type (aggregated across contracts)
 corr_by_matchup_df = corr_grid_df.groupby(['matchup_type', 'feature']).agg({
@@ -1640,7 +1641,7 @@ corr_by_matchup_df = corr_grid_df.groupby(['matchup_type', 'feature']).agg({
 # By contract type (aggregated across matchups)
 correlation_results = []
 for contract_type in CONTRACT_TYPES:
-    contract_df = data_df[data_df['contract_type'] == contract_type]
+    contract_df = smart_data[smart_data['contract_type'] == contract_type]
     for feat in feat_cols:
         if contract_df[feat].std() == 0:
             continue
@@ -2040,7 +2041,10 @@ for contract_type in CONTRACT_TYPES:
         'correlation', key=abs, ascending=False
     ).iloc[0]
     feat_name = top_feat['feature'].replace('feat_', '')
-    summary['info'].append(f"ℹ️  Top feature ({contract_type}): {feat_name} (r={top_feat['correlation']:+.3f})")
+    summary['info'].append(
+        f"ℹ️  Top feature ({contract_type}): {feat_name} "
+        f"(r={top_feat['correlation']:+.3f}, n={top_feat['n_samples']})"
+    )
 
 # Print summary
 print("\nPASSES:")
