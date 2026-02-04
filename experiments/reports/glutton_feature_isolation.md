@@ -109,9 +109,7 @@ Per repo rigor requirements (`docs/02_agent/05_rigor.md`):
 
 ```bash
 cd /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre-feat-glutton-feature-isolation
-PYTHONPATH=src uv run python experiments/run_experiment.py \
-  --config experiments/configs/glutton_feature_isolation.yaml \
-  --seed 42 --n_per 100000 --force
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/glutton_feature_isolation.yaml --seed 42 --n_per 100000 --force
 ```
 
 ---
@@ -317,10 +315,8 @@ cd ../Bid-Euchre-feat-glutton-feature-isolation
 # Install dependencies
 uv sync --all-extras
 
-# Run experiment (takes ~45 minutes)
-PYTHONPATH=src uv run python experiments/run_experiment.py \
-  --config experiments/configs/glutton_feature_isolation.yaml \
-  --seed 42 --n_per 100000 --force
+# Run experiment
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/glutton_feature_isolation.yaml --seed 42 --n_per 100000 --force
 ```
 
 ---
