@@ -380,6 +380,27 @@ class GluttonStrategy(Strategy):
             if winner == player_index:
                 winning_candidates.append(idx)
 
+        # POSITION-AWARE AGGRESSION: In 3rd seat with low threat count, take the trick
+        pos = len(plays_so_far)  # 0=lead, 1=2nd, 2=3rd, 3=4th
+        if pos == 2 and winning_candidates:
+            # Find cheapest winner and check threat count
+            best_winner_idx = min(winning_candidates, key=card_value)
+            best_winner = hand[best_winner_idx]
+            led_suit = effective_suit(plays_so_far[0][1], trump_suit, contract_type)
+            threats = self._threat_copies_remaining(best_winner, led_suit, hand)
+
+            if threats <= 1:
+                # Safe to take - only 4th seat opponent might beat us
+                # and at most 1 copy of a beating card exists
+                if self.debug:
+                    self.decision_log.append({
+                        "scenario": "3rd_seat_aggression",
+                        "action": "take_likely_win",
+                        "card": str(best_winner),
+                        "threats": threats,
+                    })
+                return best_winner_idx
+
         # PARTNER AWARENESS: Don't overkill partner's winning card
         partner_index = (player_index + 2) % 4
         current_winner = trick_winner(
@@ -390,7 +411,25 @@ class GluttonStrategy(Strategy):
         partner_winning = (current_winner == partner_index)
 
         if partner_winning:
-            # Partner is currently winning - smart discard (prefer shortest suit for voids)
+            # Step 5: Check if partner is vulnerable to 4th seat
+            if pos == 2:  # We're 3rd seat, 4th seat opponent plays after
+                # Find sure winners among our winning candidates
+                sure_winners = [
+                    idx for idx in winning_candidates
+                    if self._is_sure_winner(hand[idx], plays_so_far, hand)
+                ]
+                if sure_winners:
+                    # Cover partner with cheapest sure winner
+                    choice = min(sure_winners, key=card_value)
+                    if self.debug:
+                        self.decision_log.append({
+                            "scenario": "partner_vulnerable_cover",
+                            "action": "play_sure_winner",
+                            "card": str(hand[choice]),
+                        })
+                    return choice
+
+            # Partner safe or no sure winner — smart discard
             choice = self._choose_discard(hand, legal_indices)
             if self.debug:
                 self.decision_log.append({

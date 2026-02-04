@@ -128,11 +128,15 @@ class TestGluttonLeadingFix:
         assert glutton.decision_log[-1]["scenario"] == "leading"
 
     def test_glutton_partner_awareness_when_following(self):
-        """Glutton should dump when partner is winning."""
+        """Glutton should dump when partner is winning and we have non-sure-winner trump.
+
+        NOTE: Using a low trump (not sure winner) so Glutton sees threats
+        and chooses to dump rather than overkill partner.
+        """
         glutton = GluttonStrategy(debug=True)
 
         hand = [
-            Card("H", "J"),  # idx 0 - Right bower
+            Card("H", "T"),  # idx 0 - Low trump (bowers/A/K beat it)
             Card("S", "T"),  # idx 1 - Spades Ten (cheapest)
             Card("D", "K"),  # idx 2 - Diamonds King
         ]
@@ -149,7 +153,7 @@ class TestGluttonLeadingFix:
 
         choice = glutton.choose_card(hand, plays_so_far, "suit", "H", 2)
 
-        # Should dump cheapest card (S-T) since partner is winning
+        # Should dump cheapest card (S-T) since partner is winning and trump has threats
         assert choice == 1, f"Expected to dump S-T when partner winning, got {choice} ({hand[choice]})"
         assert glutton.decision_log[-1]["scenario"] == "partner_winning"
 
