@@ -394,7 +394,10 @@ print(f"Unique seat strategies: {sorted(analysis_df['seat_strategy'].unique())}"
 matchup_results = {}
 summary_rows = []
 for (team0, team1), group in deal_summary.groupby(['team0_strategy', 'team1_strategy']):
-    win_rate = (group['team0_tricks'] > 5).mean()
+    # Weighted win rate: full wins (>=6) + 0.5 × ties (=5)
+    full_wins = (group['team0_tricks'] > 5).sum()
+    ties = (group['team0_tricks'] == 5).sum()
+    win_rate = (full_wins + 0.5 * ties) / len(group)
     mean_team0 = group['team0_tricks'].mean()
     mean_team1 = group['team1_tricks'].mean()
     matchup_results[(team0, team1)] = {
@@ -1083,15 +1086,19 @@ for matchup_type in ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton
         std_delta = np.std(greedy_deltas) if greedy_deltas else 0
         n = len(greedy_deltas)
 
-        # Win rate from greedy's perspective
-        greedy_wins = (greedy_as_t0['team0_tricks'] > 5).sum() + (greedy_as_t1['team1_tricks'] > 5).sum()
-        win_rate = greedy_wins / n if n > 0 else 0
+        # Win rate from greedy's perspective (weighted: full wins + 0.5 × ties)
+        greedy_full_wins = (greedy_as_t0['team0_tricks'] > 5).sum() + (greedy_as_t1['team1_tricks'] > 5).sum()
+        greedy_ties = (greedy_as_t0['team0_tricks'] == 5).sum() + (greedy_as_t1['team1_tricks'] == 5).sum()
+        win_rate = (greedy_full_wins + 0.5 * greedy_ties) / n if n > 0 else 0
     else:
         # Self-play: delta should be ~0, win rate ~0.5
         mean_delta = subset['delta_tricks'].mean()
         std_delta = subset['delta_tricks'].std()
         n = len(subset)
-        win_rate = (subset['team0_tricks'] > 5).mean()
+        # Weighted win rate: full wins + 0.5 × ties
+        full_wins = (subset['team0_tricks'] > 5).sum()
+        ties = (subset['team0_tricks'] == 5).sum()
+        win_rate = (full_wins + 0.5 * ties) / n if n > 0 else 0
 
     # Bootstrap 95% CI for mean delta
     ci_lower, ci_upper = np.nan, np.nan

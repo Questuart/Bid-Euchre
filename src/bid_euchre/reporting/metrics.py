@@ -2,7 +2,8 @@
 Core metric calculations for strategy evaluation.
 
 Primary metrics:
-- Win rate: Team earned ≥6 tricks (won the hand)
+- Win rate: Weighted rate = (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / n_total
+  Ties (exactly 5 tricks) contribute 0.5 to win rate, ensuring both teams' win rates sum to 1.0
 - Push rate: Team earned exactly 5 tricks (tied)
 - Loss rate: Team earned ≤4 tricks (lost the hand)
 
@@ -135,13 +136,16 @@ def compute_outcome_stats(
     n_pushes = int(np.sum(trick_counts == 5))
     n_losses = int(np.sum(trick_counts <= 4))
 
-    # Compute rates
-    win_rate = n_wins / n_total
+    # Compute rates (weighted win rate: ties contribute 0.5)
+    weighted_wins = n_wins + 0.5 * n_pushes
+    win_rate = weighted_wins / n_total
     push_rate = n_pushes / n_total
     loss_rate = n_losses / n_total
 
     # Compute confidence intervals
-    win_ci = wilson_score_interval(n_wins, n_total, confidence)
+    # For weighted win rate CI, use the effective number of "successes"
+    # This is an approximation using Wilson score on the weighted count
+    win_ci = wilson_score_interval(weighted_wins, n_total, confidence)
     push_ci = wilson_score_interval(n_pushes, n_total, confidence)
     loss_ci = wilson_score_interval(n_losses, n_total, confidence)
 

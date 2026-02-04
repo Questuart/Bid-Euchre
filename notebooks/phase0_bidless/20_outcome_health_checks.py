@@ -189,7 +189,11 @@ def make_deal_frame(df: pd.DataFrame) -> pd.DataFrame:
     # Merge on stable keys
     df_deal = df_team0.merge(df_team1, on=keys)
     df_deal['delta_tricks'] = df_deal['team0_tricks'] - df_deal['team1_tricks']
-    df_deal['team0_win'] = df_deal['team0_tricks'] >= 6
+    # Weighted win: 1.0 for win (>=6), 0.5 for tie (=5), 0.0 for loss (<=4)
+    df_deal['team0_win'] = np.where(
+        df_deal['team0_tricks'] >= 6, 1.0,
+        np.where(df_deal['team0_tricks'] == 5, 0.5, 0.0)
+    )
 
     return df_deal
 
