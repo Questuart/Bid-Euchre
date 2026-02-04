@@ -17,6 +17,7 @@ from ..strategy import (
     ArtifactBidder,
     BasicStrategy,
     BiddingPolicy,
+    GluttonIsolatedStrategy,
     GluttonStrategy,
     GreedyStrategy,
     RandomLegalStrategy,
@@ -44,6 +45,19 @@ class StrategyConfig:
         elif self.class_name == "GluttonStrategy":
             debug = self.params.get("debug", False)
             return GluttonStrategy(name=self.name, debug=debug)
+        elif self.class_name == "GluttonIsolatedStrategy":
+            return GluttonIsolatedStrategy(
+                name=self.name,
+                debug=self.params.get("debug", False),
+                smart_leads=self.params.get("smart_leads", False),
+                smart_discards=self.params.get("smart_discards", False),
+                third_seat_aggression=self.params.get("third_seat_aggression", False),
+                partner_awareness=self.params.get("partner_awareness", False),
+                sure_winner_cover=self.params.get("sure_winner_cover", False),
+                partner_check=self.params.get("partner_check", False),
+                trump_gating=self.params.get("trump_gating", False),
+                probabilistic_trump_in=self.params.get("probabilistic_trump_in", False),
+            )
         elif self.class_name == "RandomLegalStrategy":
             seed = self.params.get("seed", None)
             return RandomLegalStrategy(name=self.name, seed=seed)

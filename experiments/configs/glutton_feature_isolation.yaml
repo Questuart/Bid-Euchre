@@ -1,0 +1,168 @@
+# Glutton Feature Isolation Experiments
+#
+# Tests each Glutton improvement individually against Greedy baseline.
+# Each feature is isolated to measure its individual contribution.
+#
+# Run with:
+#   cd /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre-feat-glutton-feature-isolation
+#   PYTHONPATH=src uv run python experiments/run_experiment.py \
+#     --config experiments/configs/glutton_feature_isolation.yaml \
+#     --seed 42 --n_per 100000
+
+experiment_name: glutton_feature_isolation
+
+parameters:
+  n_per: 100000
+  seed: 42
+  log_level: none
+  mode: head_to_head_matrix
+
+# Define strategies - each tests one feature in isolation
+strategies:
+  # Baseline: Greedy (no improvements)
+  - name: greedy
+    class_name: GreedyStrategy
+
+  # Feature 1: Smart Leads only
+  - name: f1_smart_leads
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+
+  # Feature 2: Smart Discards only
+  - name: f2_smart_discards
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_discards: true
+
+  # Feature 3: 3rd Seat Aggression only
+  - name: f3_third_seat_aggression
+    class_name: GluttonIsolatedStrategy
+    params:
+      third_seat_aggression: true
+
+  # Feature 4: Partner Awareness only
+  - name: f4_partner_awareness
+    class_name: GluttonIsolatedStrategy
+    params:
+      partner_awareness: true
+
+  # Feature 5: Sure Winner Cover only (requires partner_awareness)
+  - name: f5_sure_winner_cover
+    class_name: GluttonIsolatedStrategy
+    params:
+      partner_awareness: true
+      sure_winner_cover: true
+
+  # Feature 6: Partner Check (requires third_seat_aggression)
+  - name: f6_partner_check
+    class_name: GluttonIsolatedStrategy
+    params:
+      third_seat_aggression: true
+      partner_check: true
+
+  # Feature 7: Trump Gating (requires third_seat_aggression)
+  - name: f7_trump_gating
+    class_name: GluttonIsolatedStrategy
+    params:
+      third_seat_aggression: true
+      trump_gating: true
+
+  # Feature 8: Probabilistic Trump-In (requires partner_awareness + sure_winner_cover)
+  - name: f8_probabilistic_trump_in
+    class_name: GluttonIsolatedStrategy
+    params:
+      partner_awareness: true
+      sure_winner_cover: true
+      probabilistic_trump_in: true
+
+  # Cumulative: V1 (PR#226 features)
+  - name: v1_pr226_all
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+      smart_discards: true
+      third_seat_aggression: true
+      partner_awareness: true
+      sure_winner_cover: true
+
+  # Cumulative: V2 (PR#226 + PR#227 features)
+  - name: v2_pr227_all
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+      smart_discards: true
+      third_seat_aggression: true
+      partner_awareness: true
+      sure_winner_cover: true
+      partner_check: true
+      trump_gating: true
+
+  # Cumulative: V3 (PR#226 + PR#227 + PR#228 features) - Full Glutton
+  - name: v3_pr228_all
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+      smart_discards: true
+      third_seat_aggression: true
+      partner_awareness: true
+      sure_winner_cover: true
+      partner_check: true
+      trump_gating: true
+      probabilistic_trump_in: true
+
+# Head-to-head matchups: each strategy vs Greedy
+matchups:
+  # Feature isolations vs Greedy
+  - team0: f1_smart_leads
+    team1: greedy
+  - team0: f2_smart_discards
+    team1: greedy
+  - team0: f3_third_seat_aggression
+    team1: greedy
+  - team0: f4_partner_awareness
+    team1: greedy
+  - team0: f5_sure_winner_cover
+    team1: greedy
+  - team0: f6_partner_check
+    team1: greedy
+  - team0: f7_trump_gating
+    team1: greedy
+  - team0: f8_probabilistic_trump_in
+    team1: greedy
+
+  # Cumulative versions vs Greedy
+  - team0: v1_pr226_all
+    team1: greedy
+  - team0: v2_pr227_all
+    team1: greedy
+  - team0: v3_pr228_all
+    team1: greedy
+
+  # Greedy self-play baseline (sanity check)
+  - team0: greedy
+    team1: greedy
+
+# All bidless scenarios
+scenarios:
+  - name: suit_C
+    contract_type: suit
+    trump_suit: C
+
+  - name: suit_D
+    contract_type: suit
+    trump_suit: D
+
+  - name: suit_H
+    contract_type: suit
+    trump_suit: H
+
+  - name: suit_S
+    contract_type: suit
+    trump_suit: S
+
+  - name: high
+    contract_type: high
+
+  - name: low
+    contract_type: low
