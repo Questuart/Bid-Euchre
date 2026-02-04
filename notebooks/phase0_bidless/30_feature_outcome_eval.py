@@ -73,12 +73,11 @@ TRUMPS_FOR_SUIT_CONTRACTS = ['C', 'D', 'H', 'S']
 SEATS = [0, 1, 2, 3]
 
 # Strategy configuration (head-to-head matchups)
+# Only greedy and glutton are used in the analysis (KEY_MATCHUP_TYPES, SMART_STRATEGIES).
+# Using all 5 strategies generates 25 matchups causing OOM in CI.
 STRATEGIES = [
     {"name": "greedy", "class_name": "GreedyStrategy"},
     {"name": "glutton", "class_name": "GluttonStrategy"},
-    {"name": "random", "class_name": "RandomLegalStrategy"},
-    {"name": "always_highest", "class_name": "AlwaysHighestLegalStrategy"},
-    {"name": "always_lowest", "class_name": "AlwaysLowestLegalStrategy"},
 ]
 
 MATCHUP_MODE = "reverse_matchups"  # "reverse_matchups" or "per_seat_rotations"
