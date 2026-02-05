@@ -426,6 +426,7 @@ class BiddingDatasetWriter:
             row_with_run_id = {"run_id": self.run_id, **row}
             json.dump(row_with_run_id, self._jsonl_file, sort_keys=True)
             self._jsonl_file.write("\n")
+        self._jsonl_file.flush()
 
     def _write_jsonl_primary_chunk(self, rows: List[Dict[str, Any]]) -> None:
         """Append rows to primary JSONL file WITHOUT run_id (jsonl mode)."""
@@ -436,6 +437,7 @@ class BiddingDatasetWriter:
         for row in rows:
             json.dump(row, self._jsonl_file, sort_keys=True)
             self._jsonl_file.write("\n")
+        self._jsonl_file.flush()
 
     def finalize(self) -> str:
         """Flush remaining rows, close files, write metadata."""
