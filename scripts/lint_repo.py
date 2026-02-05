@@ -422,8 +422,8 @@ def check_experiments_without_seed(changed: list[str], repo_root: Path) -> list[
 
     violations: list[Violation] = []
 
-    # Pattern matches experiment invocations
-    experiment_pattern = re.compile(r'python experiments/run_experiment\.py[^\n]*')
+    # Pattern matches experiment invocations (including multi-line with backslash continuations)
+    experiment_pattern = re.compile(r'python experiments/run_experiment\.py(?:[^\n]*\\\n)*[^\n]*')
 
     # Files to check
     paths_to_check: list[Path] = []
