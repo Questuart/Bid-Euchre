@@ -34,10 +34,8 @@ These validate notebook execution but are **not** included in `make check`.
 
 ```bash
 # Canonical experiment runner (always use this)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/quick_test.yaml \
-  --seed 42 \
-  --n_per 10
+PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
+  --config experiments/configs/quick_test.yaml --n_per 10
 
 # Run experiment suite
 PYTHONPATH=src python scripts/run_suite.py \
@@ -46,9 +44,8 @@ PYTHONPATH=src python scripts/run_suite.py \
   --n-per 20
 
 # Dry-run config validation
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/quick_test.yaml \
-  --seed 42 --dry-run
+PYTHONPATH=src python experiments/run_experiment.py --seed 42 --dry-run \
+  --config experiments/configs/quick_test.yaml
 ```
 
 ### Comparing Experiment Runs
