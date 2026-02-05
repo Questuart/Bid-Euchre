@@ -47,7 +47,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.datasets.bidding import emit_bidding_dataset
-from bid_euchre.datasets.bidless import BidlessDatasetCollector, emit_bidless_dataset
+from bid_euchre.datasets.bidless import BidlessDatasetCollector, BidlessDatasetWriter
 from bid_euchre.datasets.bidless_outcomes import (
     BidlessOutcomesCollector,
     emit_bidless_outcomes_dataset,
@@ -403,7 +403,15 @@ def main():
     start_time = time.time()
     scenario_metrics = []
     all_bidding_collectors: List[Any] = []
-    all_bidless_collectors: List[BidlessDatasetCollector] = []
+
+    # Create streaming writer for bidless dataset if requested
+    bidless_writer: BidlessDatasetWriter | None = None
+    if args.emit_bidless_dataset:
+        bidless_writer = BidlessDatasetWriter(
+            run_dir=run_dir,
+            run_id=run_id,
+            format=args.bidless_dataset_format,
+        )
 
     # Track plan/scenario indices for globally unique hand_id computation
     # Use a dict to make values mutable from within closures
@@ -429,9 +437,6 @@ def main():
         if not args.emit_bidless_dataset and not args.emit_bidless_outcomes_dataset:
             return None
 
-        # Collector indexed by globally unique hand_id to ensure uniqueness
-        hand_collectors: Dict[int, BidlessDatasetCollector] = {}
-
         def on_hand_end(event: HandEndEvent) -> None:
             """Record hand data and outcomes when each hand completes."""
             # Skip auction mode hands (contract_type is None during auction)
@@ -447,11 +452,9 @@ def main():
             hand_id = ((plan_id * num_scenarios + scenario_id) * n_per) + event.deal_id
 
             # Record features dataset (per-seat) if requested
-            if args.emit_bidless_dataset:
-                if hand_id not in hand_collectors:
-                    hand_collectors[hand_id] = BidlessDatasetCollector(run_id, hand_id)
-
-                collector = hand_collectors[hand_id]
+            if args.emit_bidless_dataset and bidless_writer is not None:
+                # Create temporary collector for this hand only (no accumulation)
+                collector = BidlessDatasetCollector(run_id, hand_id)
 
                 # Record all 4 seats
                 for seat in range(4):
@@ -465,8 +468,10 @@ def main():
                         deal_id=event.deal_id,
                     )
 
-                if collector not in all_bidless_collectors:
-                    all_bidless_collectors.append(collector)
+                # Get computed rows and write immediately (no accumulation)
+                rows = collector.get_rows_sorted()
+                bidless_writer.append_rows(rows)
+                # collector goes out of scope here - no memory accumulation
 
             # Record outcomes dataset (per-hand) if requested
             if args.emit_bidless_outcomes_dataset and outcomes_collector is not None:
@@ -862,8 +867,8 @@ def main():
         dataset_path = emit_bidding_dataset(all_bidding_collectors, run_dir, format=args.bidding_dataset_format)
         print(f"\n📊 Emitted bidding dataset: {dataset_path}")
 
-    if args.emit_bidless_dataset and all_bidless_collectors:
-        dataset_path = emit_bidless_dataset(all_bidless_collectors, run_dir, format=args.bidless_dataset_format)
+    if args.emit_bidless_dataset and bidless_writer is not None:
+        dataset_path = bidless_writer.finalize()
         print(f"\n📊 Emitted bidless dataset: {dataset_path}")
 
     if args.emit_bidless_outcomes_dataset and outcomes_collector is not None and outcomes_collector.rows:

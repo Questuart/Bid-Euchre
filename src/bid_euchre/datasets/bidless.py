@@ -4,11 +4,15 @@ Bidless dataset collection and emission for training hand-strength/value models.
 This module provides utilities for collecting hand strength/value data during
 bidless simulations (declared contract/trump; no auction) and emitting them as
 structured datasets for training ML models.
+
+Includes both:
+- BidlessDatasetCollector: In-memory collector for small datasets
+- BidlessDatasetWriter: Streaming writer for memory-efficient large-scale emission
 """
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TextIO
 
 from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
@@ -285,3 +289,203 @@ def emit_bidless_dataset(
         json.dump(meta_data, f, indent=2)
 
     return primary_path
+
+
+class BidlessDatasetWriter:
+    """
+    Streaming writer for bidless dataset - writes rows incrementally to avoid memory accumulation.
+
+    This writer is designed for large-scale dataset emission where accumulating all rows
+    in memory would be prohibitive. It buffers rows and flushes them to disk incrementally.
+
+    Output format behavior (matches emit_bidless_dataset contract):
+    - format="parquet": Writes parquet as primary + debug JSONL with run_id injected
+    - format="jsonl": Writes JSONL as primary without run_id, no parquet emitted
+    """
+
+    def __init__(
+        self,
+        run_dir: str,
+        run_id: str,
+        format: str = "parquet",
+        flush_rows: int = 50_000,
+    ):
+        """
+        Initialize the streaming writer.
+
+        Args:
+            run_dir: Base run directory (datasets written to run_dir/datasets/)
+            run_id: Unique run identifier
+            format: Primary output format ("parquet" or "jsonl")
+            flush_rows: Number of rows to buffer before flushing to parquet
+        """
+        if format not in ("parquet", "jsonl"):
+            raise ValueError(f"format must be 'parquet' or 'jsonl', got: {format}")
+
+        self.run_dir = run_dir
+        self.run_id = run_id
+        self.format = format
+        self.flush_rows = flush_rows
+
+        # Create datasets directory
+        self._datasets_dir = os.path.join(run_dir, "datasets")
+        os.makedirs(self._datasets_dir, exist_ok=True)
+
+        # Internal state
+        self._buffer: List[Dict[str, Any]] = []
+        self._total_rows: int = 0
+        self._finalized: bool = False
+
+        # Parquet writer state (lazy-initialized)
+        self._parquet_writer: Any = None  # pq.ParquetWriter
+        self._parquet_schema: Any = None  # pa.Schema
+
+        # JSONL file handles
+        self._jsonl_file: Optional[TextIO] = None
+        self._debug_jsonl_file: Optional[TextIO] = None
+
+        # Open JSONL files based on format
+        if format == "parquet":
+            # Debug JSONL with run_id injected
+            debug_path = os.path.join(self._datasets_dir, "bidless.jsonl")
+            self._debug_jsonl_file = open(debug_path, "w")
+        else:
+            # Primary JSONL without run_id
+            primary_path = os.path.join(self._datasets_dir, "bidless.jsonl")
+            self._jsonl_file = open(primary_path, "w")
+
+    def append_rows(self, rows: List[Dict[str, Any]]) -> None:
+        """
+        Add rows to buffer. Flushes to parquet if buffer exceeds threshold.
+
+        Args:
+            rows: List of row dicts to append
+        """
+        if self._finalized:
+            raise RuntimeError("Cannot append rows after finalize() has been called")
+
+        self._buffer.extend(rows)
+
+        # Flush to parquet if buffer is large enough and format is parquet
+        if self.format == "parquet" and len(self._buffer) >= self.flush_rows:
+            self._flush_buffer()
+
+    def _flush_buffer(self) -> None:
+        """Flush buffered rows to disk (sorted by hand_id, seat)."""
+        if not self._buffer:
+            return
+
+        # Sort buffer deterministically
+        sorted_rows = sorted(self._buffer, key=lambda r: (r["hand_id"], r["seat"]))
+
+        if self.format == "parquet":
+            self._write_parquet_batch(sorted_rows)
+            # Also write to debug JSONL with run_id
+            if self._debug_jsonl_file is not None:
+                for row in sorted_rows:
+                    row_with_run_id = {"run_id": self.run_id, **row}
+                    json.dump(row_with_run_id, self._debug_jsonl_file, sort_keys=True)
+                    self._debug_jsonl_file.write("\n")
+        else:
+            # Write to primary JSONL without run_id
+            if self._jsonl_file is not None:
+                for row in sorted_rows:
+                    json.dump(row, self._jsonl_file, sort_keys=True)
+                    self._jsonl_file.write("\n")
+
+        self._total_rows += len(sorted_rows)
+        self._buffer = []
+
+    def _write_parquet_batch(self, rows: List[Dict[str, Any]]) -> None:
+        """Write a batch of rows to parquet, handling schema promotion for nullable fields."""
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+        except ImportError as e:
+            raise ImportError(
+                "pyarrow is required for Parquet output. "
+                "Install with: pip install pyarrow"
+            ) from e
+
+        # Build table from rows
+        table = pa.Table.from_pylist(rows)
+
+        if self._parquet_writer is None:
+            # First flush - initialize parquet writer with schema promotion
+            schema = table.schema
+
+            # Promote trump_suit from null to string if needed
+            # This handles the case where first batch is all high/low contracts (trump_suit=None)
+            trump_idx = schema.get_field_index("trump_suit")
+            if trump_idx >= 0:
+                trump_field = schema.field(trump_idx)
+                if pa.types.is_null(trump_field.type):
+                    # Promote null to nullable string
+                    new_fields = list(schema)
+                    new_fields[trump_idx] = pa.field("trump_suit", pa.string())
+                    schema = pa.schema(new_fields)
+                    # Rebuild table with promoted schema
+                    table = pa.Table.from_pylist(rows, schema=schema)
+
+            # Add metadata
+            metadata = {
+                "run_id": self.run_id,
+                "bidless_dataset_schema_version": "1",
+                "hand_feature_schema_version": "1",
+            }
+            metadata_bytes = {k: v.encode("utf-8") for k, v in metadata.items()}
+            schema = schema.with_metadata(metadata_bytes)
+
+            self._parquet_schema = schema
+            parquet_path = os.path.join(self._datasets_dir, "bidless.parquet")
+            self._parquet_writer = pq.ParquetWriter(parquet_path, schema)
+
+        # Ensure table matches expected schema (cast if needed)
+        if table.schema != self._parquet_schema.remove_metadata():
+            table = pa.Table.from_pylist(rows, schema=self._parquet_schema.remove_metadata())
+
+        self._parquet_writer.write_table(table)
+
+    def finalize(self) -> str:
+        """
+        Flush remaining rows, close writers, write metadata.
+
+        Returns:
+            Path to the primary output file (parquet or jsonl)
+        """
+        if self._finalized:
+            raise RuntimeError("finalize() has already been called")
+
+        # Flush any remaining rows
+        self._flush_buffer()
+
+        # Close parquet writer
+        if self._parquet_writer is not None:
+            self._parquet_writer.close()
+
+        # Close JSONL files
+        if self._jsonl_file is not None:
+            self._jsonl_file.close()
+        if self._debug_jsonl_file is not None:
+            self._debug_jsonl_file.close()
+
+        # Write metadata JSON
+        meta_path = os.path.join(self._datasets_dir, "bidless_meta.json")
+        meta_data = {
+            "run_id": self.run_id,
+            "bidless_dataset_schema_version": 1,
+            "hand_feature_schema_version": 1,
+            "parquet_path": "bidless.parquet" if self.format == "parquet" else None,
+            "jsonl_path": "bidless.jsonl",
+            "row_count": self._total_rows,
+        }
+        with open(meta_path, "w") as f:
+            json.dump(meta_data, f, indent=2)
+
+        self._finalized = True
+
+        # Return primary output path
+        if self.format == "parquet":
+            return os.path.join(self._datasets_dir, "bidless.parquet")
+        else:
+            return os.path.join(self._datasets_dir, "bidless.jsonl")
