@@ -30,11 +30,7 @@ All canonical runs use:
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_dataset_greedy.yaml \
-  --seed 42 \
-  --emit-bidless-dataset \
-  --emit-bidless-outcomes-dataset
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
 **Outputs** (in `<run_dir>/datasets/`):
@@ -55,11 +51,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml \
-  --seed 42 \
-  --emit-bidless-dataset \
-  --emit-bidless-outcomes-dataset
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
 ### B) Shallow Matrix (Broad Coverage)
@@ -76,9 +68,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml \
-  --seed 42
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
 ```
 
 ### C) Zoom Run (High Precision)
@@ -95,9 +85,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_outcomes_zoom.yaml \
-  --seed 42
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
 ```
 
 ## Output Structure
@@ -237,28 +225,16 @@ The loader will:
 
 ```bash
 # Training dataset (single-policy greedy, for ML)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_dataset_greedy.yaml \
-  --seed 42 \
-  --emit-bidless-dataset \
-  --emit-bidless-outcomes-dataset
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Analysis dataset (multi-policy, for diagnostics)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml \
-  --seed 42 \
-  --emit-bidless-dataset \
-  --emit-bidless-outcomes-dataset
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Shallow matrix (broad sanity checking)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml \
-  --seed 42
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
 
 # Zoom run (high-precision decision cells)
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_outcomes_zoom.yaml \
-  --seed 42
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
 
 # Generate report (after any run)
 PYTHONPATH=src python scripts/generate_report.py \
