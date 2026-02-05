@@ -32,6 +32,57 @@ PYTHONPATH=src python scripts/play_policy_gate.py \
 | **WARN** | CI overlaps zero somewhere | Review; may need larger N |
 | **FAIL** | Glutton significantly worse (CI < 0) | Do not freeze; investigate |
 
+## Decision Procedure
+
+### Step 1: Run the Gate
+
+```bash
+PYTHONPATH=src uv run python scripts/play_policy_gate.py --seeds 42,43,44 --n-per 20000
+```
+
+### Step 2: Check Gate Output
+
+Gate artifacts are written to each run directory:
+- `data/runs/<run_id>/artifacts/play_policy_gate.json` — Per-run results
+- `data/runs/<run_id>/artifacts/play_policy_gate.md` — Human-readable summary
+
+If multiple seeds, an aggregate summary is written to:
+- `data/runs/play_policy_gate_aggregate_<timestamp>.json`
+
+### Step 3: Interpret and Act
+
+| Gate Result | Decision | Next Action |
+|-------------|----------|-------------|
+| **PASS** | Glutton eligible to freeze | Run glutton dataset, promote to registry |
+| **WARN** | Inconclusive, do NOT freeze glutton | Rerun with higher `--n-per` and/or more seeds, OR stick with greedy and record rationale |
+| **FAIL** | Greedy stays frozen | Do not run glutton dataset; greedy is canonical |
+
+### Step 4: If PASS → Promotion Path
+
+1. Run glutton training dataset:
+   ```bash
+   PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+   ```
+
+2. Generate canonical summary:
+   ```bash
+   PYTHONPATH=src uv run python scripts/generate_report.py --run-dir data/runs/<run_id>
+   ```
+
+3. Verify `artifacts/canonical_summary.json` exists with PASS/WARN/FAIL counts
+
+4. Update registries:
+   - Add run_id to `CANONICAL_BIDLESS_RUNS.md` under "Blessed training datasets"
+   - Record decision in "Policy Freeze Record" section
+
+### Both Directions Required
+
+The gate validates both seat arrangements:
+- `glutton_vs_greedy` (glutton as team 0)
+- `greedy_vs_glutton` (glutton as team 1)
+
+Overall status is worst-of across both directions and all seeds.
+
 ## Gate Logic
 
 The gate computes "glutton advantage" (`adv`), normalized so positive
