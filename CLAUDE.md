@@ -34,24 +34,24 @@ These validate notebook execution but are **not** included in `make check`.
 
 ```bash
 # Canonical experiment runner (always use this)
-PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
+uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/quick_test.yaml --n_per 10
 
 # Run experiment suite
-PYTHONPATH=src python scripts/run_suite.py \
+uv run python scripts/run_suite.py \
   --suite experiments/suites/baseline_tiny.yaml \
   --seed 42 \
   --n-per 20
 
 # Dry-run config validation
-PYTHONPATH=src python experiments/run_experiment.py --seed 42 --dry-run \
+uv run python experiments/run_experiment.py --seed 42 --dry-run \
   --config experiments/configs/quick_test.yaml
 ```
 
 ### Comparing Experiment Runs
 ```bash
 # Compare two runs with bootstrap statistics
-PYTHONPATH=src python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --baseline data/runs/<baseline_run_id> \
   --candidate data/runs/<candidate_run_id> \
   --seed 42 \
@@ -62,13 +62,13 @@ PYTHONPATH=src python scripts/compare_runs.py \
 ### Running Tests
 
 ```bash
-PYTHONPATH=src python -m pytest -m "not slow" tests/     # Fast suite
-PYTHONPATH=src python -m pytest tests/unit/              # Unit only
-PYTHONPATH=src python -m pytest tests/integration/       # Integration only
-PYTHONPATH=src python -m pytest tests/unit/core/test_rules.py::test_specific  # Single test
+uv run python -m pytest -m "not slow" tests/     # Fast suite
+uv run python -m pytest tests/unit/              # Unit only
+uv run python -m pytest tests/integration/       # Integration only
+uv run python -m pytest tests/unit/core/test_rules.py::test_specific  # Single test
 ```
 
-**Tip:** If not using a venv, prefix commands with `uv run` (e.g., `uv run python ...`).
+**Note:** All commands use `uv run` which handles the virtualenv automatically. If already in an activated venv, plain `python` works too.
 
 ## Architecture
 
@@ -108,20 +108,17 @@ PYTHONPATH=src python -m pytest tests/unit/core/test_rules.py::test_specific  # 
 - **Never commit** `data/runs/`, `data/reports/`, `data/models/`
 - Only `data/fixtures/` may be committed (tiny test fixtures)
 
+### Statistical Rigor
+This repo prioritizes technical correctness over convenience. Key requirements:
+- **Sample size minimums:** ≥2,000 deals for bias detection, ≥50,000 for production reports
+- **Statistical validation required:** Hypothesis tests with p-values, confidence intervals, effect sizes
+- **No visual-only validation:** Statistical tests must accompany visual inspection
+- **Fail-fast gates:** Use assert-style sanity checks in notebooks and pipelines
+
+See `.claude/rules/05_rigor.md` for complete standards.
+
 ### Worktree-Only Workflow
-All code changes MUST happen in dedicated git worktrees, never on `main` in the shared checkout.
-
-```bash
-# Check current location before any work
-git rev-parse --show-toplevel
-git branch --show-current
-
-# If on main, create a worktree first
-git worktree add ../Bid-Euchre-<branch-name> -b <branch-name>
-cd ../Bid-Euchre-<branch-name>
-```
-
-Pre-commit hooks enforce this policy.
+All code changes MUST happen in dedicated git worktrees, never on `main` in the shared checkout. Pre-commit hooks enforce this policy. See `.claude/CLAUDE.md` for detailed workflow.
 
 ### PR Requirements
 - One concept per PR
