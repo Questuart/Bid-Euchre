@@ -401,20 +401,21 @@ class TestBiddingDatasetSchema:
             }
             assert required_keys.issubset(first_row.keys()), f"Missing keys in dataset row: {first_row.keys()}"
 
-    @pytest.mark.xfail(reason="Parquet file metadata (timestamps, etc.) causes non-deterministic hashes in CI")
     def test_bidding_dataset_determinism(self):
-        """Test that bidding datasets are byte-identical when seed/config are identical but run_id differs."""
-        import hashlib
+        """Test that bidding datasets have identical content when seed/config are identical."""
         import os
         import subprocess
         import sys
         import tempfile
 
+        import pandas as pd
+        import pyarrow.parquet as pq
+
         env = os.environ.copy()
         env["PYTHONPATH"] = "src"
 
         # Run the same experiment twice with different run directories
-        hashes = []
+        tables = []
         for i in range(2):
             with tempfile.TemporaryDirectory() as temp_base:
                 cmd = [
@@ -438,13 +439,16 @@ class TestBiddingDatasetSchema:
                 parquet_file = run_dir / "datasets" / "bidding.parquet"
                 assert parquet_file.exists(), f"Parquet file missing: {parquet_file}"
 
-                # Compute SHA256 hash of the Parquet file
-                with open(parquet_file, "rb") as f:
-                    file_hash = hashlib.sha256(f.read()).hexdigest()
-                hashes.append(file_hash)
+                # Read parquet content (not raw bytes)
+                table = pq.read_table(parquet_file)
+                tables.append(table)
 
-        # Assert that both Parquet files have identical hashes (byte-identical)
-        assert hashes[0] == hashes[1], f"Parquet files not identical: {hashes[0]} != {hashes[1]}"
+        # Sort by stable keys and compare content
+        sort_keys = ["hand_id", "seat", "attempted_bid_n"]
+        df1 = tables[0].to_pandas().sort_values(sort_keys).reset_index(drop=True)
+        df2 = tables[1].to_pandas().sort_values(sort_keys).reset_index(drop=True)
+
+        pd.testing.assert_frame_equal(df1, df2, check_like=True)
 
     def test_emit_bidding_dataset_jsonl_format(self):
         """Test that --bidding-dataset-format jsonl only writes JSONL file."""
