@@ -248,3 +248,45 @@ class TestBidlessDatasetWriter:
             with open(meta_path) as f:
                 meta = json.load(f)
             assert meta["row_count"] == 0
+
+    def test_jsonl_flush_before_finalize(self):
+        """Verify jsonl format flushes to disk before finalize() is called.
+
+        This tests the memory safety fix: format="jsonl" should flush rows to disk
+        when buffer exceeds flush_rows threshold, not buffer indefinitely until finalize().
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_id = "test_jsonl_flush"
+            writer = BidlessDatasetWriter(
+                run_dir=temp_dir,
+                run_id=run_id,
+                format="jsonl",
+                flush_rows=5,  # Flush after 5 rows
+            )
+
+            # Write 2 hands (8 rows total) - should trigger flush after 5
+            rows_hand1 = make_rows_for_hand(run_id, hand_id=0, contract_type="suit", trump_suit="H")
+            rows_hand2 = make_rows_for_hand(run_id, hand_id=1, contract_type="suit", trump_suit="S")
+            writer.append_rows(rows_hand1)  # 4 rows, no flush yet
+            writer.append_rows(rows_hand2)  # 8 rows total, flush triggered
+
+            # BEFORE finalize: verify file exists and has at least 5 rows
+            jsonl_path = os.path.join(temp_dir, "datasets", "bidless.jsonl")
+            assert os.path.isfile(jsonl_path), "JSONL file should exist before finalize()"
+
+            with open(jsonl_path) as f:
+                lines_before = [line.strip() for line in f if line.strip()]
+            assert len(lines_before) >= 5, (
+                f"Expected at least 5 flushed rows before finalize(), got {len(lines_before)}"
+            )
+
+            # Finalize and verify all 8 rows are present
+            primary_path = writer.finalize()
+            with open(primary_path) as f:
+                lines_after = [line.strip() for line in f if line.strip()]
+            assert len(lines_after) == 8, f"Expected 8 total rows after finalize(), got {len(lines_after)}"
+
+            # Verify ordering is (hand_id, seat)
+            parsed_rows = [json.loads(line) for line in lines_after]
+            assert [r["hand_id"] for r in parsed_rows] == [0, 0, 0, 0, 1, 1, 1, 1]
+            assert [r["seat"] for r in parsed_rows] == [0, 1, 2, 3, 0, 1, 2, 3]
