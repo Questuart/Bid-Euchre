@@ -17,9 +17,12 @@ from ..strategy import (
     ArtifactBidder,
     BasicStrategy,
     BiddingPolicy,
+    FixedBidder,
     GluttonIsolatedStrategy,
     GluttonStrategy,
     GreedyStrategy,
+    ModeloEspecifico,
+    OLSaBidder,
     RandomLegalStrategy,
     RanktheTank,
     Strategy,
@@ -96,6 +99,19 @@ class BiddingPolicyConfig:
             return RanktheTank(name=self.name)
         elif self.class_name in ("StrictHellRaiser", "StrictRaiserBidder"):
             return StrictHellRaiser(name=self.name)
+        elif self.class_name == "ModeloEspecifico":
+            return ModeloEspecifico(name=self.name)
+        elif self.class_name == "FixedBidder":
+            n = self.params.get("n")
+            contract = self.params.get("contract")
+            if n is None or contract is None:
+                raise ValueError("FixedBidder requires 'n' and 'contract' parameters")
+            return FixedBidder(n=n, contract=contract, name=self.name)
+        elif self.class_name == "OLSaBidder":
+            artifact_path = self.params.get("artifact_path")
+            if not artifact_path:
+                raise ValueError("OLSaBidder requires 'artifact_path' parameter")
+            return OLSaBidder(artifact_path=artifact_path, name=self.name)
         else:
             raise ValueError(f"Unknown bidding policy class: {self.class_name}")
 
