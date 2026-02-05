@@ -256,3 +256,146 @@ PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs
 PYTHONPATH=src python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
+
+## Promotion Checklist
+
+This section documents the sequential workflow for promoting canonical baseline runs with sanity gates.
+
+**Key principle:** Shallow→zoom gating prevents wasting compute on a broken baseline. The shallow run is cheap (~300K hands); if it fails sanity tests, fix the issue before running the expensive zoom run (~3.3M hands).
+
+### Step 1: Training Dataset (greedy-only)
+
+Run the experiment:
+
+```bash
+PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_dataset_greedy.yaml --emit-bidless-dataset --emit-bidless-outcomes-dataset
+```
+
+Capture the run directory:
+
+```bash
+DATASET_RUN=$(ls -td data/runs/canonical_bidless_dataset_greedy_42_* | head -1)
+```
+
+Generate report (required to create `artifacts/canonical_summary.*`):
+
+```bash
+PYTHONPATH=src uv run python scripts/generate_report.py --run-dir "$DATASET_RUN"
+```
+
+Verify:
+- `$DATASET_RUN/datasets/bidless.parquet` exists
+- `$DATASET_RUN/datasets/bidless_outcomes.parquet` exists
+- `$DATASET_RUN/artifacts/canonical_summary.json` exists
+
+### Step 2: Shallow Matrix + Sanity Gate
+
+Run the experiment:
+
+```bash
+PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml
+```
+
+Capture the run directory:
+
+```bash
+SHALLOW_RUN=$(ls -td data/runs/canonical_bidless_outcomes_matrix_shallow_42_* | head -1)
+```
+
+Run sanity gate:
+
+```bash
+PYTHONPATH=src uv run python scripts/generate_report.py --run-dir "$SHALLOW_RUN" --fail-on-sanity-failures
+```
+
+Gate semantics:
+- **Exit 0:** PASS or WARN → Proceed to Step 3
+- **Exit 1:** FAIL → **STOP.** Do not proceed. See "What to Do if Shallow FAILs" below.
+
+WARN does not block promotion; only FAIL blocks.
+
+### Step 3: Zoom Run (only if shallow passed)
+
+Run the experiment:
+
+```bash
+PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_zoom.yaml
+```
+
+Capture the run directory:
+
+```bash
+ZOOM_RUN=$(ls -td data/runs/canonical_bidless_outcomes_zoom_42_* | head -1)
+```
+
+Run sanity gate:
+
+```bash
+PYTHONPATH=src uv run python scripts/generate_report.py --run-dir "$ZOOM_RUN" --fail-on-sanity-failures
+```
+
+### Step 4: Verify Artifacts Exist
+
+For each run, confirm:
+- `artifacts/canonical_summary.json` exists
+- `artifacts/canonical_summary.md` exists
+- `reports/sanity_tests/strategy_sanity.json` exists (for shallow and zoom)
+
+### Step 5: Record in Registry
+
+Extract fields from `artifacts/canonical_summary.json` and update [CANONICAL_BIDLESS_RUNS.md](CANONICAL_BIDLESS_RUNS.md):
+
+| Field | Source |
+|-------|--------|
+| run_id | `canonical_summary.json → run_id` |
+| git_sha | `canonical_summary.json → git_sha` |
+| seed | `canonical_summary.json → seed` |
+| n_per | `canonical_summary.json → n_per` |
+| total_hands | `canonical_summary.json → total_hands` |
+| PASS/WARN/FAIL/SKIP | `canonical_summary.json → sanity.*_count` |
+| verdict | PASS if `fail_count == 0`, else FAIL |
+
+### What to Do if Shallow FAILs
+
+If `--fail-on-sanity-failures` exits non-zero on the shallow run:
+
+1. **Do not proceed to zoom.** The gate prevents wasting compute on a broken baseline.
+
+2. **Investigate the failure:**
+   - Read `reports/sanity_tests/strategy_sanity.md` for details
+   - Check which specific test(s) are marked FAIL
+
+3. **Common causes and fixes:**
+
+| Failure | Likely Cause | Action |
+|---------|--------------|--------|
+| Self-play bias | Simulation bug or RNG issue | Check `core/` changes, verify determinism |
+| Random dominance | Strategy regression | Review strategy logic, check for bugs |
+| Rank instability | Insufficient sample size | Increase `n_per`, rerun |
+
+For any FAIL, check `strategy_sanity.md` for the specific test message and recommended action.
+
+4. **Rerun with higher N (if sample-size related):**
+
+```bash
+PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --n_per 5000
+```
+
+5. **Only after investigation and fix:** Re-execute from Step 2.
+
+### Gate Logic Summary
+
+| Sanity Result | Exit Code | Action |
+|---------------|-----------|--------|
+| All PASS | 0 | Proceed to next step |
+| Any WARN | 0 | Proceed (review warnings) |
+| Any FAIL | 1 | **STOP** — investigate before proceeding |
+| All SKIP | 0 | Proceed (no outcomes data for tests) |
+
+**Key:** WARN does not block; only FAIL blocks.
+
+---
+
+### Blessed Run Registry
+
+See [CANONICAL_BIDLESS_RUNS.md](CANONICAL_BIDLESS_RUNS.md) for the current blessed runs and promotion history.
