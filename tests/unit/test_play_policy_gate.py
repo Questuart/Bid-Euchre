@@ -316,12 +316,6 @@ class TestLoadAndEvaluate:
             assert result.status == "PASS"
             assert len(result.directions) == 2
 
-    def test_skip_run_requires_run_ids(self):
-        """--skip-run without --run-ids should fail at arg parsing level."""
-        # This is tested at the CLI level, not in load_and_evaluate_run
-        # The function itself assumes valid inputs
-        pass
-
 
 class TestCLIArguments:
     """Tests for CLI argument validation."""
