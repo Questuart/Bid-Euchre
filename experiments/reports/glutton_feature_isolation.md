@@ -384,9 +384,7 @@ when actual bidding selects contracts.
 ### 10.5 Reproduction
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/glutton_feature_combo_followup.yaml \
-  --seed 42
+PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/glutton_feature_combo_followup.yaml --seed 42
 ```
 
 ---
