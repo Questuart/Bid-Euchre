@@ -383,7 +383,10 @@ class ModeloEspecifico(BiddingPolicy):
     """
     Feature-weighted bidder using hand-coded weights.
 
-    BidScore = 1.0 × bowers + 0.5 × trump_count + 0.5 × offsuit_aces
+    Formulas (locked):
+      suit: 1.0 * bowers + 0.5 * trump_count + 0.5 * offsuit_aces
+      HIGH: 1.0 * offsuit_aces
+      LOW:  1.0 * offsuit_tens_count
 
     The score maps directly to bid amount (floored).
     Named after the blog post's "specific model" baseline.
@@ -409,15 +412,19 @@ class ModeloEspecifico(BiddingPolicy):
             if 3 <= bid_n <= 6 and bid_n > obs.current_high_bid:
                 candidates.append((score, bid_n, suit))
 
-        # Evaluate HIGH/LOW contracts
-        # For HIGH/LOW, no bowers exist, so score is based on aces only
-        for contract in ["HIGH", "LOW"]:
-            features = get_hand_features(obs.hand, contract.lower(), None)
-            # No bowers in HIGH/LOW, trump_count = 0
-            score = 0.5 * features["offsuit_aces"]
-            bid_n = int(score)
-            if 3 <= bid_n <= 6 and bid_n > obs.current_high_bid:
-                candidates.append((score, bid_n, contract))
+        # Evaluate HIGH contract: score = 1.0 * offsuit_aces
+        features_high = get_hand_features(obs.hand, "high", None)
+        score_high = 1.0 * features_high["offsuit_aces"]
+        bid_n_high = int(score_high)
+        if 3 <= bid_n_high <= 6 and bid_n_high > obs.current_high_bid:
+            candidates.append((score_high, bid_n_high, "HIGH"))
+
+        # Evaluate LOW contract: score = 1.0 * offsuit_tens_count
+        features_low = get_hand_features(obs.hand, "low", None)
+        score_low = 1.0 * features_low["offsuit_tens_count"]
+        bid_n_low = int(score_low)
+        if 3 <= bid_n_low <= 6 and bid_n_low > obs.current_high_bid:
+            candidates.append((score_low, bid_n_low, "LOW"))
 
         if not candidates:
             return BidAction.pass_bid()

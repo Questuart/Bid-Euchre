@@ -735,3 +735,107 @@ class TestModeloEspecifico:
         assert not action.is_pass()
         assert action.n == 3
         assert action.contract == "H"
+
+    def test_high_contract_bids_with_3_offsuit_aces(self):
+        """HIGH with 3+ offsuit aces → bids 3 (score = 1.0 * 3 = 3)."""
+        bidder = ModeloEspecifico()
+
+        # In HIGH mode, all cards are offsuit. 3 aces → score 3.0 → bid 3
+        hand = [
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("D", "A"),
+            Card("C", "K"),
+            Card("C", "Q"),
+            Card("S", "K"),
+            Card("H", "K"),
+            Card("D", "K"),
+            Card("S", "Q"),
+            Card("H", "Q"),
+        ]
+
+        obs = BiddingObservation(
+            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+        )
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.contract == "HIGH"
+        assert action.n == 3
+
+    def test_high_contract_passes_with_2_offsuit_aces(self):
+        """HIGH with 2 offsuit aces → passes (score = 2 < 3)."""
+        bidder = ModeloEspecifico()
+
+        # 2 aces → score 2.0 → floor(2.0) = 2 < 3, no suit should score 3 either
+        hand = [
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "K"),
+            Card("C", "Q"),
+            Card("S", "Q"),
+            Card("H", "Q"),
+            Card("D", "Q"),
+            Card("S", "T"),
+            Card("H", "T"),
+        ]
+
+        obs = BiddingObservation(
+            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+        )
+        action = bidder.choose_bid(obs)
+        # Suit contracts: no bowers, max 2 trump per suit, 1-2 offsuit aces
+        # Score for any suit: 0 + 0.5*2 + 0.5*1 = 1.5 at best → pass
+        # HIGH: 1.0 * 2 = 2 → pass
+        assert action.is_pass()
+
+    def test_low_contract_bids_with_3_offsuit_tens(self):
+        """LOW with 3+ offsuit tens → bids 3 (score = 1.0 * 3 = 3)."""
+        bidder = ModeloEspecifico()
+
+        # In LOW mode, all cards are offsuit. 3 tens → score 3.0 → bid 3
+        hand = [
+            Card("S", "T"),
+            Card("H", "T"),
+            Card("D", "T"),
+            Card("C", "Q"),
+            Card("C", "K"),
+            Card("S", "Q"),
+            Card("H", "Q"),
+            Card("D", "Q"),
+            Card("S", "K"),
+            Card("H", "K"),
+        ]
+
+        obs = BiddingObservation(
+            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+        )
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.contract == "LOW"
+        assert action.n == 3
+
+    def test_low_contract_passes_with_2_offsuit_tens(self):
+        """LOW with 2 offsuit tens → passes (score = 2 < 3)."""
+        bidder = ModeloEspecifico()
+
+        # 2 tens → score 2.0 → floor(2.0) = 2 < 3
+        hand = [
+            Card("S", "T"),
+            Card("H", "T"),
+            Card("D", "Q"),
+            Card("C", "Q"),
+            Card("C", "K"),
+            Card("S", "Q"),
+            Card("H", "Q"),
+            Card("D", "K"),
+            Card("S", "K"),
+            Card("H", "K"),
+        ]
+
+        obs = BiddingObservation(
+            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+        )
+        action = bidder.choose_bid(obs)
+        # No suit should score 3 either (no bowers, max 2 trump, limited aces)
+        assert action.is_pass()
