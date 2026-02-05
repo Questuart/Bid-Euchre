@@ -2,7 +2,7 @@ experiment_name: bid_eval_strict
 
 bidding_policies:
   - name: strict_bidder
-    class_name: StrictRaiserBidder
+    class_name: StrictHellRaiser
     params: {}
 
 scenarios:

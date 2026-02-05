@@ -23,7 +23,7 @@ from ..strategy import (
     RandomLegalStrategy,
     RanktheTank,
     Strategy,
-    StrictRaiserBidder,
+    StrictHellRaiser,
 )
 from ..strategy.artifact_strategy import ArtifactGreedyStrategy
 from .teacher_roster import load_teacher_roster
@@ -94,8 +94,8 @@ class BiddingPolicyConfig:
             return ArtifactBidder(artifact_path=artifact_path, name=self.name)
         elif self.class_name == "RanktheTank":
             return RanktheTank(name=self.name)
-        elif self.class_name == "StrictRaiserBidder":
-            return StrictRaiserBidder(name=self.name)
+        elif self.class_name in ("StrictHellRaiser", "StrictRaiserBidder"):
+            return StrictHellRaiser(name=self.name)
         else:
             raise ValueError(f"Unknown bidding policy class: {self.class_name}")
 

@@ -29,7 +29,7 @@ Quick reference for finding the right experiment configuration.
 | Config | Purpose |
 |--------|---------|
 | `bid_eval_tiny.yaml` | Tiny bidder evaluation suite |
-| `bid_eval_strict.yaml` | StrictRaiserBidder evaluation |
+| `bid_eval_strict.yaml` | StrictHellRaiser evaluation |
 | `bid_eval_heuristics.yaml` | RanktheTank evaluation |
 | `bid_eval_artifact.yaml` | Artifact-based bidder evaluation |
 | `artifact_bidder_test.yaml` | Artifact bidder integration test |

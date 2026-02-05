@@ -141,7 +141,7 @@ class AlwaysPassBidder(BiddingPolicy):
         return BidAction.pass_bid()
 
 
-class StrictRaiserBidder(BiddingPolicy):
+class StrictHellRaiser(BiddingPolicy):
     """
     Baseline bidder that follows strict raising rules.
 
@@ -164,6 +164,10 @@ class StrictRaiserBidder(BiddingPolicy):
         else:
             # current >= 10, cannot raise further
             return BidAction.pass_bid()
+
+
+# Backward-compatibility alias
+StrictRaiserBidder = StrictHellRaiser
 
 
 class FixedBidder(BiddingPolicy):
