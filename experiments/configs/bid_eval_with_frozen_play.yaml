@@ -1,0 +1,44 @@
+# Bidder Evaluation with Frozen Play Strategy
+#
+# Purpose: Evaluate bidding policies from the teacher roster using a frozen
+# play strategy determined by the auction_play_strategy_sensitivity experiment.
+#
+# Key design:
+# - Uses roster-based baseline bidding policies via include_baselines
+# - Adds explicit strategies section for the frozen play strategy
+# - Sets parameters.play_strategy to use the frozen strategy for trick play
+#
+# The frozen play strategy should be set based on Phase 3 results:
+# - If F1+F4+F5 is statistically better (p < 0.05), use f1_f4_f5
+# - Otherwise, use the simpler f1_f4
+#
+# Run with:
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#     --config experiments/configs/bid_eval_with_frozen_play.yaml \
+#     --seed 42
+
+experiment_name: bid_eval_with_frozen_play
+
+# Load bidding policies from teacher roster
+strategy_roster_path: experiments/baselines/teacher_roster_v1.yaml
+include_baselines:
+  - strict_raiser
+  - rankthetank
+
+# Frozen play strategy for trick play (update based on Phase 3 results)
+strategies:
+  - name: f1_f4
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+      partner_awareness: true
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  n_per: 50000
+  seed: 42
+  log_level: hand
+  # Use the frozen play strategy for all bidder evaluations
+  play_strategy: f1_f4
