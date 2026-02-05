@@ -1,0 +1,115 @@
+# Canonical Bidless Outcomes: Shallow Matrix Configuration
+#
+# Purpose: Cheap broad coverage across all 25 matchups for sanity checking.
+# This config runs a full 5x5 matrix of strategy matchups with modest sample size
+# to validate strategy interactions before committing to expensive zoom runs.
+#
+# Strategies:
+#   - greedy: Conservative play-to-win strategy
+#   - glutton: Aggressive trick-taking strategy
+#   - random_legal: Random baseline
+#   - always_highest: Always plays highest legal card
+#   - always_lowest: Always plays lowest legal card
+#
+# Total hands: 2,000 x 6 scenarios x 25 matchups = 300,000 hands
+#
+# Usage:
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#       --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml \
+#       --seed 42
+
+experiment_name: canonical_bidless_outcomes_matrix_shallow
+
+parameters:
+  seed: 42
+  n_per: 2000
+  log_level: none
+  mode: head_to_head_matrix
+  pair_deals: true
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+  - name: glutton
+    class_name: GluttonStrategy
+
+  - name: random_legal
+    class_name: RandomLegalStrategy
+    params:
+      seed: 42
+
+  - name: always_highest
+    class_name: AlwaysHighestLegalStrategy
+
+  - name: always_lowest
+    class_name: AlwaysLowestLegalStrategy
+
+# Full 5x5 matrix (25 matchups) in deterministic order
+# Includes all ordered pairs and self-play controls
+matchups:
+  # greedy vs all (5 matchups)
+  - team0: greedy
+    team1: greedy
+  - team0: greedy
+    team1: glutton
+  - team0: greedy
+    team1: random_legal
+  - team0: greedy
+    team1: always_highest
+  - team0: greedy
+    team1: always_lowest
+
+  # glutton vs all (5 matchups)
+  - team0: glutton
+    team1: greedy
+  - team0: glutton
+    team1: glutton
+  - team0: glutton
+    team1: random_legal
+  - team0: glutton
+    team1: always_highest
+  - team0: glutton
+    team1: always_lowest
+
+  # random_legal vs all (5 matchups)
+  - team0: random_legal
+    team1: greedy
+  - team0: random_legal
+    team1: glutton
+  - team0: random_legal
+    team1: random_legal
+  - team0: random_legal
+    team1: always_highest
+  - team0: random_legal
+    team1: always_lowest
+
+  # always_highest vs all (5 matchups)
+  - team0: always_highest
+    team1: greedy
+  - team0: always_highest
+    team1: glutton
+  - team0: always_highest
+    team1: random_legal
+  - team0: always_highest
+    team1: always_highest
+  - team0: always_highest
+    team1: always_lowest
+
+  # always_lowest vs all (5 matchups)
+  - team0: always_lowest
+    team1: greedy
+  - team0: always_lowest
+    team1: glutton
+  - team0: always_lowest
+    team1: random_legal
+  - team0: always_lowest
+    team1: always_highest
+  - team0: always_lowest
+    team1: always_lowest
+
+scenarios:
+  - contract_type: suit
+    trump_suit: C,D,H,S
+  - contract_type: high
+  - contract_type: low

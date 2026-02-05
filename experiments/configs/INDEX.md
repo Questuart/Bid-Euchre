@@ -48,6 +48,14 @@ Quick reference for finding the right experiment configuration.
 |--------|---------|
 | `bidless_dataset_collection.yaml` | Collect bidless training data |
 
+## Canonical Bidless Experiments
+
+| Config | Purpose |
+|--------|---------|
+| `canonical_bidless_dataset.yaml` | Features + outcomes dataset (900k hands, 3 strategies) |
+| `canonical_bidless_outcomes_matrix_shallow.yaml` | Broad coverage 5x5 matrix (300k hands, 25 matchups) |
+| `canonical_bidless_outcomes_zoom.yaml` | High-precision zoom (3.3M hands, 11 matchups) |
+
 ---
 
 **See also:** [experiments/suites/](../suites/) for batched experiment definitions
