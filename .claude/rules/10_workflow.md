@@ -20,7 +20,7 @@ make test           # Pytest fast suite only
 
 Validate changes with a seeded run:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/quick_test.yaml \
   --seed 42
 ```
