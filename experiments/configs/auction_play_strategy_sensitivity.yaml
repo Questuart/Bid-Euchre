@@ -1,0 +1,56 @@
+# Auction Play-Strategy Sensitivity Test
+#
+# Purpose: Determine which play strategy to freeze for bidder evaluation work.
+# Uses a single baseline bidder (StrictRaiserBidder) to compare play strategies
+# in auction mode.
+#
+# Analysis approach:
+# - Use ANOVA across play strategies on expected_points_per_deal
+# - If significant (p < 0.05): post-hoc pairwise comparisons to select winner
+# - If not significant: default to simpler strategy
+#
+# Run once per play strategy (3 runs total):
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#     --config experiments/configs/auction_play_strategy_sensitivity.yaml \
+#     --seed 42 --play-strategy greedy --run-id play_sensitivity_greedy
+#
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#     --config experiments/configs/auction_play_strategy_sensitivity.yaml \
+#     --seed 42 --play-strategy f1_f4 --run-id play_sensitivity_f1_f4
+#
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#     --config experiments/configs/auction_play_strategy_sensitivity.yaml \
+#     --seed 42 --play-strategy f1_f4_f5 --run-id play_sensitivity_f1_f4_f5
+
+experiment_name: auction_play_strategy_sensitivity
+
+# Play strategies to compare - each will be run separately with the same bidder
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+  - name: f1_f4
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+      partner_awareness: true
+
+  - name: f1_f4_f5
+    class_name: GluttonIsolatedStrategy
+    params:
+      smart_leads: true
+      partner_awareness: true
+      sure_winner_cover: true
+
+# Use StrictRaiserBidder for all auction bidding
+bidding_policies:
+  - name: strict_raiser
+    class_name: StrictRaiserBidder
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  n_per: 50000
+  seed: 42
+  log_level: hand
