@@ -19,10 +19,11 @@ This file is the **single source of truth** for blessed canonical run IDs and th
 
 | experiment_name | run_id | date | git_sha | seed | n_per | total_hands | PASS | WARN | FAIL | SKIP | canonical_summary_json_path | notes |
 |-----------------|--------|------|---------|------|-------|-------------|------|------|------|------|------------------------------|-------|
-| canonical_bidless_dataset_greedy | TBD | - | - | 42 | 50000 | 300K | - | - | - | - | artifacts/canonical_summary.json | - |
-| canonical_bidless_dataset_glutton | TBD | - | - | 42 | 50000 | 300K | - | - | - | - | artifacts/canonical_summary.json | Only if gate PASS |
-| canonical_bidless_outcomes_matrix_shallow | TBD | - | - | 42 | 2000 | 300K | - | - | - | - | artifacts/canonical_summary.json | - |
-| canonical_bidless_outcomes_zoom | TBD | - | - | 42 | 50000 | 3.3M | - | - | - | - | artifacts/canonical_summary.json | - |
+| canonical_bidless_dataset_greedy | canonical_bidless_dataset_greedy_42_20260204_221121 | 2026-02-04 | ea55269 | 42 | 50000 | 300K | 1 | 0 | 0 | 3 | artifacts/canonical_summary.json | - |
+| canonical_bidless_dataset_glutton | canonical_bidless_dataset_glutton_42_20260204_222713 | 2026-02-04 | ea55269 | 42 | 50000 | 300K | 1 | 0 | 0 | 3 | artifacts/canonical_summary.json | Gate PASS |
+| canonical_bidless_dataset_mixed_play | canonical_bidless_dataset_mixed_play_42_20260204_221115 | 2026-02-04 | ea55269 | 42 | 50000 | 900K | 3 | 0 | 0 | 1 | artifacts/canonical_summary.json | - |
+| canonical_bidless_outcomes_matrix_shallow | canonical_bidless_outcomes_matrix_shallow_42_20260204_220920 | 2026-02-04 | ea55269 | 42 | 2000 | 300K | 4 | 0 | 0 | 0 | artifacts/canonical_summary.json | - |
+| canonical_bidless_outcomes_zoom | canonical_bidless_outcomes_zoom_42_20260204_222712 | 2026-02-04 | ea55269 | 42 | 50000 | 3.3M | 4 | 0 | 0 | 0 | artifacts/canonical_summary.json | - |
 
 ## Policy Freeze Record
 
@@ -30,12 +31,12 @@ Documents the frozen play policy decision for bidding model training.
 
 | Field | Value |
 |-------|-------|
-| **Chosen policy** | TBD (greedy or glutton) |
-| **Decision date** | TBD |
-| **Gate run_id(s)** | TBD |
-| **Gate output path** | `data/runs/<run_id>/artifacts/play_policy_gate.json` |
-| **Gate result** | TBD (PASS/WARN/FAIL) |
-| **Rationale** | TBD (1-2 sentences) |
+| **Chosen policy** | glutton |
+| **Decision date** | 2026-02-04 |
+| **Gate run_id(s)** | glutton_vs_greedy_head_to_head_42_20260204_221117, glutton_vs_greedy_head_to_head_43_20260204_221311, glutton_vs_greedy_head_to_head_44_20260204_221504 |
+| **Gate output path** | `data/runs/play_policy_gate_aggregate_20260204_221656.json` |
+| **Gate result** | PASS |
+| **Rationale** | Glutton consistently beats greedy with +0.19 to +0.21 mean trick advantage across all 3 seeds; 95% CI excludes 0 in all 6 direction/seed combinations. |
 
 ### Update Process
 
