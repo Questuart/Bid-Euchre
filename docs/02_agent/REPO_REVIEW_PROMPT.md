@@ -1,7 +1,7 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Last Updated:** February 1, 2026 (post PR #190)
-**Version:** 3.0 (Agent-Optimized, Rigor-Focused)
+**Last Updated:** February 4, 2026 (post PR #249)
+**Version:** 3.1 (Agent-Optimized, Rigor-Focused)
 
 ---
 
@@ -136,6 +136,18 @@ PYTHONPATH=src python -c "from bid_euchre.validation.schemas import validate_met
 
 # Verify diagnostics module enhancements (PR #185)
 PYTHONPATH=src python -c "from bid_euchre.diagnostics.notebook_data import load_or_generate_outcomes; print('diagnostics OK')"
+
+# Verify analysis module (PR #221)
+PYTHONPATH=src python -c "from bid_euchre.analysis.paired import compute_paired_deltas; print('analysis OK')"
+
+# Verify GluttonStrategy (PRs #226-230)
+PYTHONPATH=src python -c "from bid_euchre.strategy import GluttonStrategy, GluttonIsolatedStrategy; print('glutton OK')"
+
+# Verify bidless outcomes dataset (PR #237)
+PYTHONPATH=src python -c "from bid_euchre.datasets.bidless_outcomes import BidlessOutcomesCollector; print('bidless_outcomes OK')"
+
+# Verify diagnostics sanity tests (PR #216)
+PYTHONPATH=src python -c "from bid_euchre.diagnostics.sanity_tests import run_sanity_tests; print('sanity_tests OK')"
 ```
 
 **Deliverable:** Quantitative structure table with actual vs expected counts.
@@ -490,13 +502,14 @@ grep -rn "\.mean()\|\.median()" notebooks/ | head -20
 | Boundary Compliance | 100/100 | ✅ | No violations |
 | Test Coverage | 85/100 | ✅ | 3 empty stubs, otherwise good |
 
-**Key Achievements Since Last Review (PR #155 → #186):**
-- ✅ Added `validation/` module with schema validation (PR #156)
-- ✅ Added `diagnostics/notebook_data.py` for on-the-fly data generation (PR #185)
-- ✅ Added `scripts/compare_runs.py` for run comparison
-- ✅ Added `scripts/validate_configs.py` for config validation
-- ✅ Established `.claude/rules/05_rigor.md` rigor philosophy
-- ✅ Created `.claude/CLAUDE.md` entrypoint for sessions
+**Key Achievements Since Last Review (PR #190 → #249):**
+- ✅ Added `GluttonStrategy` with partner awareness, trump conservation (PRs #226-230)
+- ✅ Added `GluttonIsolatedStrategy` for A/B testing individual features (PR #230)
+- ✅ Added `analysis/` module with paired comparison statistics (PR #221)
+- ✅ Added `bidless_outcomes.py` per-hand outcome dataset collector (PR #237)
+- ✅ Added `play_policy_gate.py` for validating glutton stability (PR #245)
+- ✅ Added `diagnostics/sanity_tests.py` for strategy sanity validation (PR #216)
+- ✅ Added 8 new canonical bidless experiment configs (PRs #233-246)
 
 **Blockers:**
 - None (CI passing, no critical issues)
@@ -729,24 +742,27 @@ make test       # Pytest fast suite
 
 ```bash
 # Seeded experiment (production)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/strategy_comparison.yaml --seed 42 --n_per 2000
+uv run python experiments/run_experiment.py --seed 42 \
+  --config experiments/configs/strategy_comparison.yaml --n_per 2000
 
 # Quick smoke test (exploratory only, not for inference)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42 --n_per 200
+uv run python experiments/run_experiment.py --seed 42 \
+  --config experiments/configs/quick_test.yaml --n_per 200
 
 # Dry-run validation (no simulation)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/strategy_comparison.yaml --seed 42 --dry-run
+uv run python experiments/run_experiment.py --seed 42 --dry-run \
+  --config experiments/configs/strategy_comparison.yaml
 ```
 
 ### Report Generation
 
 ```bash
 # Generate report for a run
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 
 # Regenerate existing report
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id> \
   --overwrite
 ```
@@ -755,18 +771,27 @@ PYTHONPATH=src python scripts/generate_report.py \
 
 ```bash
 # Compare two runs
-PYTHONPATH=src python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --run1 data/runs/<run_id_1> \
   --run2 data/runs/<run_id_2>
 
 # Validate config files
-PYTHONPATH=src python scripts/validate_configs.py \
+uv run python scripts/validate_configs.py \
   experiments/configs/*.yaml
+```
+
+### Play Policy Gate (PR #245+)
+
+```bash
+# Validate glutton stability for play policy freeze
+uv run python scripts/play_policy_gate.py \
+  --seeds 42,43,44 \
+  --n-per 20000
 ```
 
 ---
 
-## CURRENT STRUCTURE (Verified PR #186)
+## CURRENT STRUCTURE (Verified PR #249)
 
 **Authoritative sources:**
 - `.claude/CLAUDE.md` — Session entrypoint
@@ -786,31 +811,32 @@ bid-euchre/
 ├── src/bid_euchre/              # Core library (13 modules)
 │   ├── core/                    # Cards, deck, rules, trick logic
 │   ├── sim/                     # Simulation engine
-│   ├── strategy/                # AI strategies
+│   ├── strategy/                # AI strategies (Greedy, Glutton, GluttonIsolated)
 │   ├── features/                # Hand evaluation + bidless features
-│   ├── datasets/                # Dataset collectors (bidding, bidless)
+│   ├── datasets/                # Dataset collectors (bidding, bidless, bidless_outcomes)
 │   ├── models/                  # Model training/inference
-│   ├── diagnostics/             # Visualization, analysis, health checks ⭐
+│   ├── diagnostics/             # Visualization, analysis, health checks, sanity tests ⭐
 │   ├── reporting/               # Metrics, evaluation
 │   ├── logging/                 # Structured game logging
 │   ├── validation/              # Schema validation ⭐ NEW (PR #156)
-│   ├── analysis/                # Statistical analysis
+│   ├── analysis/                # Statistical analysis, paired comparisons ⭐ NEW (PR #221)
 │   ├── experiments/             # Config system
 │   └── utils/                   # Generic helpers
 ├── experiments/                 # Experiment configs + runner
 │   ├── run_experiment.py        # THE canonical runner
-│   ├── configs/                 # YAML experiment definitions (16)
+│   ├── configs/                 # YAML experiment definitions (24)
 │   ├── suites/                  # Suite definitions (4)
 │   ├── comparisons/             # Frozen (head-to-head scripts)
 │   ├── training/                # Frozen (training scripts)
 │   └── _deprecated/             # Frozen (legacy, do not modify)
-├── scripts/                     # Blessed tooling entrypoints (10)
+├── scripts/                     # Blessed tooling entrypoints (12)
 │   ├── generate_report.py       # Report generator
 │   ├── lint_repo.py             # Repository linter (9+ rules)
 │   ├── run_suite.py             # Suite runner
 │   ├── compare_rollup.py        # Drift detection
-│   ├── compare_runs.py          # Run comparison ⭐ NEW
-│   ├── validate_configs.py      # Config validation ⭐ NEW
+│   ├── compare_runs.py          # Run comparison
+│   ├── validate_configs.py      # Config validation
+│   ├── play_policy_gate.py      # Glutton stability validation ⭐ NEW (PR #245)
 │   └── ...                      # (other blessed scripts)
 ├── tests/                       # Test suite
 │   ├── unit/                    # Fast, isolated tests
@@ -864,9 +890,9 @@ bid-euchre/
 ```bash
 # Verify structure
 find src/bid_euchre -type d -maxdepth 1 | grep -v __pycache__ | sort
-ls experiments/configs/*.yaml | wc -l  # Expected: 16
+ls experiments/configs/*.yaml | wc -l  # Expected: 24
 ls experiments/suites/*.yaml | wc -l   # Expected: 4
-ls scripts/*.py | wc -l                # Expected: 10
+ls scripts/*.py | wc -l                # Expected: 12
 ```
 
 ---
@@ -881,12 +907,13 @@ ls scripts/*.py | wc -l                # Expected: 10
 | **Baseline** | #30-81 | Drift detection, scoring | Automated regression detection, metric rollup |
 | **Bidding** | #82-143 | Policies, datasets, training | Full bidding system, auction mode, B1 models |
 | **Bidless** | #144-155 | Hand value features | Arc B foundation, bidless dataset, feature engineering |
-| **Validation & Rigor** | #156-186 | Schema validation, rigor enforcement ⭐ | Quality gates hardened, statistical rigor, notebook standards |
+| **Validation & Rigor** | #156-190 | Schema validation, rigor enforcement ⭐ | Quality gates hardened, statistical rigor, notebook standards |
+| **Bidless Production** | #191-249 | Canonical bidless dataset, GluttonStrategy ⭐ | Paired analysis, play policy gates, outcomes dataset |
 
-**Current State (PR #190):**
-- **Total PRs:** 190
-- **Current Era:** Validation & Rigor (ongoing)
-- **Next Milestone:** B0 model training (Arc B continuation)
+**Current State (PR #249):**
+- **Total PRs:** 249
+- **Current Era:** Bidless Production (ongoing)
+- **Next Milestone:** Play policy freeze + bidder training
 - **Long-term Goal:** Full bidding system integration (Arc C)
 
 **To get current PR count:**
@@ -897,7 +924,7 @@ gh pr list --state merged --limit 1 --json number --jq '.[0].number'
 
 ---
 
-## REPO-LINTER RULES (PR #186)
+## REPO-LINTER RULES (PR #186+)
 
 **Source:** `scripts/lint_repo.py`
 
@@ -1030,6 +1057,6 @@ summary and do not proceed to later phases unless explicitly asked.
 
 ---
 
-*Template version: 3.0 (Agent-Optimized, Rigor-Focused)*
-*Last major revision: February 1, 2026 (post PR #190)*
-*Previous version: 2.0 (January 27, 2026, post PR #155)*
+*Template version: 3.1 (Agent-Optimized, Rigor-Focused)*
+*Last major revision: February 4, 2026 (post PR #249)*
+*Previous version: 3.0 (February 1, 2026, post PR #190)*
