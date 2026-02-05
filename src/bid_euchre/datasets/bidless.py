@@ -356,7 +356,7 @@ class BidlessDatasetWriter:
 
     def append_rows(self, rows: List[Dict[str, Any]]) -> None:
         """
-        Add rows to buffer. Flushes to parquet if buffer exceeds threshold.
+        Add rows to buffer. Flushes to disk if buffer exceeds threshold.
 
         Args:
             rows: List of row dicts to append
@@ -366,8 +366,8 @@ class BidlessDatasetWriter:
 
         self._buffer.extend(rows)
 
-        # Flush to parquet if buffer is large enough and format is parquet
-        if self.format == "parquet" and len(self._buffer) >= self.flush_rows:
+        # Flush to disk if buffer is large enough
+        if len(self._buffer) >= self.flush_rows:
             self._flush_buffer()
 
     def _flush_buffer(self) -> None:
@@ -386,12 +386,14 @@ class BidlessDatasetWriter:
                     row_with_run_id = {"run_id": self.run_id, **row}
                     json.dump(row_with_run_id, self._debug_jsonl_file, sort_keys=True)
                     self._debug_jsonl_file.write("\n")
+                self._debug_jsonl_file.flush()
         else:
             # Write to primary JSONL without run_id
             if self._jsonl_file is not None:
                 for row in sorted_rows:
                     json.dump(row, self._jsonl_file, sort_keys=True)
                     self._jsonl_file.write("\n")
+                self._jsonl_file.flush()
 
         self._total_rows += len(sorted_rows)
         self._buffer = []
