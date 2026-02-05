@@ -3,8 +3,14 @@
 Generate reports for a single experiment run.
 
 Strict I/O Contract:
-- READS: <run_dir>/results/**, <run_dir>/meta.json, <run_dir>/config_effective.yaml
+- READS: <run_dir>/results/**, <run_dir>/meta.json, <run_dir>/config_effective.yaml,
+         <run_dir>/datasets/** (bidless_outcomes.parquet if present)
 - WRITES: <run_dir>/reports/** ONLY
+
+Report Types:
+- ANALYSIS_SUMMARY.md: Overview of run with links to results
+- bidding_strategy/: Auction-mode bidder evaluation (if logs present)
+- sanity_tests/: Strategy sanity tests (for bidless experiments)
 
 Usage:
     PYTHONPATH=src python scripts/generate_report.py --run-dir data/runs/<run_id>
@@ -21,6 +27,7 @@ from typing import Dict, List
 
 import yaml
 
+from bid_euchre.diagnostics.sanity_tests import run_sanity_tests, write_sanity_report
 from bid_euchre.reporting.evaluator import generate_bidder_evaluation
 
 
@@ -288,7 +295,43 @@ def main() -> int:
             print(f"🧮 Generated bidder evaluation: {rel_path}")
         else:
             print(f"🧮 Bidder evaluation: {rel_path}")
-    
+
+    # Run sanity tests for bidless experiments
+    if args.verbose:
+        print("🔬 Running strategy sanity tests...")
+    try:
+        sanity_results = run_sanity_tests(str(run_dir))
+        if sanity_results and "error" not in sanity_results:
+            json_path, md_path = write_sanity_report(str(run_dir), sanity_results)
+
+            # Count results by status
+            statuses = [r.status for r in sanity_results.values()]
+            pass_count = statuses.count("PASS")
+            warn_count = statuses.count("WARN")
+            fail_count = statuses.count("FAIL")
+            skip_count = statuses.count("SKIP")
+
+            status_summary = []
+            if pass_count:
+                status_summary.append(f"{pass_count} PASS")
+            if warn_count:
+                status_summary.append(f"{warn_count} WARN")
+            if fail_count:
+                status_summary.append(f"{fail_count} FAIL")
+            if skip_count:
+                status_summary.append(f"{skip_count} SKIP")
+
+            if args.verbose:
+                print(f"🔬 Sanity tests: {', '.join(status_summary)}")
+                print(f"   Results: {md_path.relative_to(run_dir)}")
+            else:
+                print(f"🔬 Sanity tests: {', '.join(status_summary)}")
+        elif args.verbose:
+            print("🔬 Sanity tests: skipped (no outcomes data)")
+    except Exception as e:
+        if args.verbose:
+            print(f"⚠️  Sanity tests failed: {e}")
+
     if args.verbose:
         print("✅ Report generation complete!")
     else:
