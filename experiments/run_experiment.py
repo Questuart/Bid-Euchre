@@ -39,14 +39,14 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional
 
 import yaml
 
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from bid_euchre.datasets.bidding import emit_bidding_dataset
+from bid_euchre.datasets.bidding import BiddingDatasetWriter
 from bid_euchre.datasets.bidless import BidlessDatasetCollector, BidlessDatasetWriter
 from bid_euchre.datasets.bidless_outcomes import (
     BidlessOutcomesCollector,
@@ -402,7 +402,6 @@ def main():
     # Track performance metrics
     start_time = time.time()
     scenario_metrics = []
-    all_bidding_collectors: List[Any] = []
 
     # Create streaming writer for bidless dataset if requested
     bidless_writer: BidlessDatasetWriter | None = None
@@ -412,6 +411,11 @@ def main():
             run_id=run_id,
             format=args.bidless_dataset_format,
         )
+
+    # Streaming writer for bidding dataset (replaces accumulation pattern)
+    bidding_writer: Optional[BiddingDatasetWriter] = None
+    if args.emit_bidding_dataset:
+        bidding_writer = BiddingDatasetWriter(run_dir, run_id, format=args.bidding_dataset_format)
 
     # Track plan/scenario indices for globally unique hand_id computation
     # Use a dict to make values mutable from within closures
@@ -623,6 +627,9 @@ def main():
 
                     scenario_start = time.time()
 
+                    # Compute hand_id offset: (matchup_idx * num_scenarios + scenario_idx) * n_per
+                    bidding_hand_id_offset = (matchup_idx * num_scenarios + (i - 1)) * n_per
+
                     results = simulation.simulate_many_hands(
                         n=n_per,
                         contract_type=scenario.contract_type,
@@ -635,10 +642,14 @@ def main():
                         bidding_policies=seat_bidding_policies,
                         logger=logger,
                         bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                        bidding_hand_id_offset=bidding_hand_id_offset if args.emit_bidding_dataset else 0,
                         hooks=bidless_hooks,
                     )
                     bidding_collectors = results.pop("bidding_collectors", [])
-                    all_bidding_collectors.extend(bidding_collectors)
+                    # Stream write to avoid memory accumulation
+                    if bidding_writer and bidding_collectors:
+                        for collector in bidding_collectors:
+                            bidding_writer.append_rows(collector.get_rows_sorted())
 
                     scenario_duration = time.time() - scenario_start
                     hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
@@ -743,6 +754,9 @@ def main():
 
                     scenario_start = time.time()
 
+                    # Compute hand_id offset: (policy_idx * num_scenarios + scenario_idx) * n_per
+                    bidding_hand_id_offset = (policy_idx * num_scenarios + (i - 1)) * n_per
+
                     if policy_type == "bidding_policy":
                         # For bidding policies, use the policy directly in auction mode
                         results = simulation.simulate_many_hands(
@@ -756,6 +770,7 @@ def main():
                             bidding_policy=policy,
                             logger=logger,
                             bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                            bidding_hand_id_offset=bidding_hand_id_offset if args.emit_bidding_dataset else 0,
                             hooks=bidless_hooks,
                         )
                     else:
@@ -773,10 +788,14 @@ def main():
                             bidding_policy=None,
                             logger=logger,
                             bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
+                            bidding_hand_id_offset=bidding_hand_id_offset if args.emit_bidding_dataset else 0,
                             hooks=bidless_hooks,
                         )
                     bidding_collectors = results.pop("bidding_collectors", [])
-                    all_bidding_collectors.extend(bidding_collectors)
+                    # Stream write to avoid memory accumulation
+                    if bidding_writer and bidding_collectors:
+                        for collector in bidding_collectors:
+                            bidding_writer.append_rows(collector.get_rows_sorted())
 
                     scenario_duration = time.time() - scenario_start
                     hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
@@ -863,8 +882,8 @@ def main():
     with open(os.path.join(run_dir, "perf.json"), "w") as f:
         json.dump(perf, f, indent=2)
     
-    if args.emit_bidding_dataset and all_bidding_collectors:
-        dataset_path = emit_bidding_dataset(all_bidding_collectors, run_dir, format=args.bidding_dataset_format)
+    if bidding_writer:
+        dataset_path = bidding_writer.finalize()
         print(f"\n📊 Emitted bidding dataset: {dataset_path}")
 
     if args.emit_bidless_dataset and bidless_writer is not None:

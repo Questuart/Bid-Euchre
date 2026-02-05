@@ -430,6 +430,7 @@ def simulate_many_hands(
     logger: Optional["GameLogger"] = None,
     deal_seed: Optional[int] = None,
     bidding_dataset_run_id: Optional[str] = None,
+    bidding_hand_id_offset: int = 0,
     hooks: Optional[SimulationHooks] = None,
     deal_method: str = "round_robin",
 ) -> Dict:
@@ -446,6 +447,8 @@ def simulate_many_hands(
         bidding_policy: Optional bidding policy (single policy used for all seats)
         bidding_policies: Optional per-seat bidding policies (length 4)
         logger: Optional GameLogger for structured JSONL logging
+        bidding_dataset_run_id: Run ID for bidding dataset collection (auction mode only)
+        bidding_hand_id_offset: Offset to add to hand_id for globally unique IDs
         hooks: Optional SimulationHooks for event-based instrumentation
 
     Returns a summary dict:
@@ -512,7 +515,7 @@ def simulate_many_hands(
     collectors: List[BiddingDatasetCollector] = []
     if bidding_dataset_run_id is not None and contract_type is None:
         collectors = [
-            BiddingDatasetCollector(bidding_dataset_run_id, hand_id)
+            BiddingDatasetCollector(bidding_dataset_run_id, bidding_hand_id_offset + hand_id)
             for hand_id in range(n)
         ]
 

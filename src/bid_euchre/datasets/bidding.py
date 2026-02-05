@@ -7,11 +7,39 @@ and emitting them as structured datasets for training ML models.
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import IO, Any, Dict, List, Optional
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
 from ..strategy.bidding import BidAction, BiddingObservation
+
+# Explicit schema for nullable string columns to avoid null-type inference
+# when first flush contains all-pass rows (all None values)
+BIDDING_DATASET_SCHEMA = pa.schema([
+    ("hand_id", pa.int64()),
+    ("seat", pa.int64()),
+    ("dealer_seat", pa.int64()),
+    ("deal_id", pa.int64()),
+    ("current_high_bid", pa.int64()),
+    ("hand_cards", pa.list_(pa.string())),
+    ("hand_features", pa.map_(pa.string(), pa.float64())),
+    ("hand_feature_schema_version", pa.int64()),
+    # Nullable string columns - MUST be string, not null
+    ("attempted_bid_n", pa.int64()),
+    ("attempted_bid_contract", pa.string()),      # nullable: None for pass
+    ("attempted_bid_trump_suit", pa.string()),    # nullable: None for pass/HIGH/LOW
+    ("effective_bid_n", pa.int64()),
+    ("effective_bid_contract", pa.string()),      # nullable: None for pass
+    ("effective_bid_trump_suit", pa.string()),    # nullable: None for pass/HIGH/LOW
+    ("is_legal_raise", pa.bool_()),
+    ("auction_outcome", pa.string()),             # nullable: "won" | "all_pass_redeal" | None
+    ("winning_seat", pa.int64()),                 # nullable: None for redeals
+    ("winning_bid_n", pa.int64()),                # nullable: None for redeals
+    ("winning_bid_contract", pa.string()),        # nullable: None for redeals
+])
 
 
 class BiddingDatasetCollector:
@@ -322,3 +350,117 @@ def emit_bidding_dataset(
         json.dump(meta_data, f, indent=2)
 
     return primary_path
+
+
+class BiddingDatasetWriter:
+    """Streaming writer for bidding datasets - writes incrementally to avoid memory accumulation."""
+
+    def __init__(self, run_dir: str, run_id: str, format: str = "parquet", flush_rows: int = 50_000):
+        """
+        Initialize streaming writer.
+
+        Args:
+            run_dir: Base run directory (e.g., data/runs/<run_id>)
+            run_id: Unique run identifier
+            format: Output format ("parquet" or "jsonl", default: "parquet")
+            flush_rows: Number of rows to buffer before flushing to disk
+        """
+        self.run_id = run_id
+        self.format = format
+        self.flush_rows = flush_rows
+        self.datasets_dir = os.path.join(run_dir, "datasets")
+        os.makedirs(self.datasets_dir, exist_ok=True)
+
+        # Buffer and state
+        self._buffer: List[Dict[str, Any]] = []
+        self._row_count = 0
+        self._parquet_writer: Optional[pq.ParquetWriter] = None
+        self._jsonl_file: Optional[IO[str]] = None
+
+    def append_rows(self, rows: List[Dict[str, Any]]) -> None:
+        """Append rows to buffer, flush if threshold reached."""
+        self._buffer.extend(rows)
+        if len(self._buffer) >= self.flush_rows:
+            self._flush()
+
+    def _flush(self) -> None:
+        """Sort buffer by (hand_id, seat), write to files, clear buffer."""
+        if not self._buffer:
+            return
+
+        # Sort deterministically
+        sorted_rows = sorted(self._buffer, key=lambda r: (r["hand_id"], r["seat"]))
+
+        if self.format == "parquet":
+            self._write_parquet_chunk(sorted_rows)
+            self._write_jsonl_debug_chunk(sorted_rows)  # Debug JSONL with run_id
+        else:
+            self._write_jsonl_primary_chunk(sorted_rows)  # Primary JSONL without run_id
+
+        self._row_count += len(sorted_rows)
+        self._buffer.clear()
+
+    def _write_parquet_chunk(self, rows: List[Dict[str, Any]]) -> None:
+        """Write rows as parquet row group using explicit schema."""
+        if self._parquet_writer is None:
+            # Add run_id and schema versions to parquet metadata
+            metadata = {
+                b"run_id": self.run_id.encode("utf-8"),
+                b"bidding_dataset_schema_version": b"1",
+                b"hand_feature_schema_version": b"1",
+            }
+            schema_with_meta = BIDDING_DATASET_SCHEMA.with_metadata(metadata)
+            parquet_path = os.path.join(self.datasets_dir, "bidding.parquet")
+            self._parquet_writer = pq.ParquetWriter(parquet_path, schema_with_meta)
+
+        table = pa.Table.from_pylist(rows, schema=BIDDING_DATASET_SCHEMA)
+        self._parquet_writer.write_table(table)
+
+    def _write_jsonl_debug_chunk(self, rows: List[Dict[str, Any]]) -> None:
+        """Append rows to debug JSONL file WITH run_id (parquet mode)."""
+        if self._jsonl_file is None:
+            jsonl_path = os.path.join(self.datasets_dir, "bidding.jsonl")
+            self._jsonl_file = open(jsonl_path, "w")
+
+        for row in rows:
+            row_with_run_id = {"run_id": self.run_id, **row}
+            json.dump(row_with_run_id, self._jsonl_file, sort_keys=True)
+            self._jsonl_file.write("\n")
+
+    def _write_jsonl_primary_chunk(self, rows: List[Dict[str, Any]]) -> None:
+        """Append rows to primary JSONL file WITHOUT run_id (jsonl mode)."""
+        if self._jsonl_file is None:
+            jsonl_path = os.path.join(self.datasets_dir, "bidding.jsonl")
+            self._jsonl_file = open(jsonl_path, "w")
+
+        for row in rows:
+            json.dump(row, self._jsonl_file, sort_keys=True)
+            self._jsonl_file.write("\n")
+
+    def finalize(self) -> str:
+        """Flush remaining rows, close files, write metadata."""
+        self._flush()
+
+        if self._parquet_writer:
+            self._parquet_writer.close()
+        if self._jsonl_file:
+            self._jsonl_file.close()
+
+        # Write metadata - always include both paths (matches existing behavior)
+        meta_path = os.path.join(self.datasets_dir, "bidding_meta.json")
+        meta_data = {
+            "run_id": self.run_id,
+            "bidding_dataset_schema_version": 1,
+            "hand_feature_schema_version": 1,
+            "row_count": self._row_count,
+            "parquet_path": "bidding.parquet",
+            "jsonl_path": "bidding.jsonl",
+        }
+        with open(meta_path, "w") as f:
+            json.dump(meta_data, f, indent=2)
+
+        primary_path = os.path.join(
+            self.datasets_dir,
+            "bidding.parquet" if self.format == "parquet" else "bidding.jsonl",
+        )
+        return primary_path
