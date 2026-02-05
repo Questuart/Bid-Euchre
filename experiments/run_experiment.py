@@ -188,6 +188,16 @@ def parse_args():
         help="For head_to_head: name of strategy to use for Team 1 (players 1 & 3). Must be one of the strategies in the config."
     )
     parser.add_argument(
+        "--play-strategy",
+        type=str,
+        help=(
+            "For auction-mode bidder evaluation (contract_type: null with bidding_policies): "
+            "name of the play strategy to use for trick play. "
+            "Can also be set via parameters.play_strategy in YAML. "
+            "Default is GreedyStrategy (current behavior) when omitted."
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Override work budget limits (use with caution)"
@@ -247,6 +257,7 @@ def main():
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
     mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
+    play_strategy_name = args.play_strategy if args.play_strategy else config.parameters.get("play_strategy")
     pair_deals = config.parameters.get("pair_deals", False)
     
     # Get strategies and bidding policies
@@ -313,7 +324,28 @@ def main():
             _clone(team0_cfg, 2),
             _clone(team1_cfg, 3),
         ]
-    
+
+    def _make_self_play_strategies(cfg):
+        """Create distinct instances of a single strategy config for all 4 seats."""
+        cfg_params = dict(cfg.params or {})
+
+        # RandomLegal gets per-seat seed offsets to avoid identical RNG streams.
+        if cfg.class_name == "RandomLegalStrategy":
+            base_seed = cfg_params.get("seed", seed)
+            seat_strategies = []
+            for seat_idx in range(4):
+                seat_params = dict(cfg_params)
+                seat_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
+                seat_strategies.append(
+                    cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=seat_params).create_strategy()
+                )
+            return seat_strategies
+
+        return [
+            cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
+            for _ in range(4)
+        ]
+
     # Determine what we're running
     has_auction_scenarios = any(s.contract_type is None for s in scenarios)
 
@@ -345,6 +377,8 @@ def main():
     print(f"Mode: {mode}")
     if mode == "head_to_head":
         print(f"Team1 strategy: {team1_strategy_name}")
+    if mode != "head_to_head_matrix" and has_auction_scenarios and bidding_policies:
+        print(f"Auction play strategy: {play_strategy_name or 'greedy (default)'}")
     print("=" * 70)
 
     # Enforce work budget before starting simulation
@@ -379,6 +413,7 @@ def main():
             "seed": seed,
             "log_level": log_level_str,
             "pair_deals": pair_deals,
+            "play_strategy": play_strategy_name,
         },
         "mode": mode,
         "strategies": [{"name": s.name, "class_name": getattr(s, "class_name", s.__class__.__name__)} for s in strategy_cfgs],
@@ -689,6 +724,20 @@ def main():
             policies_to_run = strategies
             policy_type = "strategy"
 
+        auction_seat_strategies = None
+        if policy_type == "bidding_policy" and play_strategy_name:
+            if not strategy_cfgs:
+                raise ValueError(
+                    f"play_strategy='{play_strategy_name}' requires a 'strategies' section in {args.config}."
+                )
+            play_cfg = next((sc for sc in strategy_cfgs if sc.name == play_strategy_name), None)
+            if play_cfg is None:
+                raise ValueError(
+                    f"Unknown play_strategy '{play_strategy_name}'. Must be one of: "
+                    f"{', '.join(sc.name for sc in strategy_cfgs)}"
+                )
+            auction_seat_strategies = _make_self_play_strategies(play_cfg)
+
         for policy_idx, policy in enumerate(policies_to_run):
             print("-" * 70)
             print(f"{policy_type.title()}: {policy.name}")
@@ -752,7 +801,7 @@ def main():
                             seed=None,
                             deal_seed=scenario_seed,
                             strategy=None,
-                            strategies=None,  # No strategies for auction mode
+                            strategies=auction_seat_strategies,
                             bidding_policy=policy,
                             logger=logger,
                             bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
@@ -835,6 +884,7 @@ def main():
         "log_level": log_level_str,
         "mode": mode,
         "team1_strategy": team1_strategy_name if mode == "head_to_head" else None,
+        "play_strategy": play_strategy_name if has_auction_scenarios else None,
         "scenarios": [
             {"contract_type": s.contract_type, "trump_suit": s.trump_suit}
             for s in scenarios

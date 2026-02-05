@@ -308,15 +308,39 @@ PYTHONPATH=src python experiments/run_experiment.py \
   --n_per 20
 ```
 
+### Choosing a Play Strategy (Auction Mode)
+
+In auction mode, the contract is chosen by the bidding policy, and the hand is then played out by a
+**play strategy** (card-play policy).
+
+By default, auction runs that iterate `bidding_policies` use `GreedyStrategy` for trick play.
+
+To override trick play for bidder evaluation, define the play strategy under `strategies:` and set it via:
+- `parameters.play_strategy: <strategy_name>` in YAML, or
+- `--play-strategy <strategy_name>` on the CLI.
+
+Example:
+
+```yaml
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+parameters:
+  play_strategy: glutton
+```
+
 ### Output Structure
 
 Auction mode results include bidding-specific metrics:
 
-- **`bidding_points.enabled`**: Always `true` for auction scenarios
-- **`bidding_points.hands_with_bids`**: Count of hands where bidding occurred
+- **`bidding_points.enabled`**: `true` iff at least one hand had an auction winner (non-all-pass)
+- **`bidding_points.hands_with_bids`**: Count of hands with an auction winner
 - Standard team scoring and trick distribution metrics
 
-Results are written to `results/<strategy>/auction.json` (filenames use "auction" for `contract_type: null`).
+Results are written to `results/<id>/auction.json` (filenames use "auction" for `contract_type: null`), where `<id>` is:
+- the strategy name (strategy evaluations), or
+- the bidding policy name (bidder evaluations that iterate `bidding_policies`).
 
 ---
 
