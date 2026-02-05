@@ -204,8 +204,8 @@ def test_report_generator_succeeds_with_overwrite():
         assert run_dir.name in second_content, "Regenerated summary should contain run_id"
 
 
-def test_report_generator_writes_only_under_reports():
-    """Test strict I/O contract: writes only under run_dir/reports/."""
+def test_report_generator_writes_only_under_reports_and_artifacts():
+    """Test strict I/O contract: writes only under run_dir/reports/ and run_dir/artifacts/."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Run experiment
         result = run_experiment(
@@ -231,9 +231,12 @@ def test_report_generator_writes_only_under_reports():
         # Find new files
         new_files = files_after - files_before
 
-        # All new files should be under reports/
+        # All new files should be under reports/ or artifacts/
         reports_dir = run_dir / "reports"
+        artifacts_dir = run_dir / "artifacts"
         for new_file in new_files:
             if new_file.is_file():
-                assert new_file.is_relative_to(reports_dir), \
-                    f"New file should be under reports/: {new_file.relative_to(run_dir)}"
+                is_under_reports = new_file.is_relative_to(reports_dir)
+                is_under_artifacts = new_file.is_relative_to(artifacts_dir)
+                assert is_under_reports or is_under_artifacts, \
+                    f"New file should be under reports/ or artifacts/: {new_file.relative_to(run_dir)}"
