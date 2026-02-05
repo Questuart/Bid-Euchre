@@ -736,8 +736,49 @@ def load_features_and_outcomes_from_run_dir(
         if col in outcome_df.columns:
             outcome_cols.append(col)
 
-    # Join on deal_id + seat + contract_type + trump
-    merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
+    # Determine merge keys based on data source
+    # When hand_id is available (parquet path), use it for globally unique joins
+    # This prevents many-to-many joins in multi-strategy runs where same deal_id
+    # appears multiple times with different strategies
+    has_hand_id = 'hand_id' in features_df.columns and 'hand_id' in outcome_df.columns
+
+    if has_hand_id:
+        # Preferred: globally unique key
+        merge_keys = ['hand_id', 'seat']
+
+        # Columns that exist in both DataFrames - keep from features, drop from outcomes
+        # to prevent _x/_y suffixes in merged result
+        redundant_cols = ['deal_id', 'contract_type', 'trump']
+        cols_to_drop = [
+            c for c in redundant_cols
+            if c in outcome_df.columns and c in features_df.columns
+        ]
+
+        # Verify consistency before dropping
+        if cols_to_drop:
+            check_df = features_df[['hand_id', 'seat'] + cols_to_drop].merge(
+                outcome_df[['hand_id', 'seat'] + cols_to_drop],
+                on=['hand_id', 'seat'],
+                suffixes=('_feat', '_out'),
+                how='inner'
+            )
+            for col in cols_to_drop:
+                mismatches = check_df[check_df[f'{col}_feat'] != check_df[f'{col}_out']]
+                if len(mismatches) > 0:
+                    raise ValueError(
+                        f"Inconsistent {col} values between features and outcomes for "
+                        f"hand_id/seat. Found {len(mismatches)} mismatches."
+                    )
+
+        # Remove redundant columns from outcome_cols (keep from features side)
+        outcome_cols_present = [
+            c for c in outcome_cols
+            if c in outcome_df.columns and (c not in cols_to_drop or c in merge_keys)
+        ]
+    else:
+        # Fallback for log-based outcomes (no hand_id)
+        merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
+        outcome_cols_present = [c for c in outcome_cols if c in outcome_df.columns]
 
     # Check that merge keys exist in both dataframes
     for key in merge_keys:
@@ -746,18 +787,17 @@ def load_features_and_outcomes_from_run_dir(
         if key not in outcome_df.columns:
             raise ValueError(f"Missing merge key '{key}' in outcomes DataFrame")
 
-    # Select outcome columns that exist
-    outcome_cols_present = [c for c in outcome_cols if c in outcome_df.columns]
     merged_df = features_df.merge(
         outcome_df[outcome_cols_present],
         on=merge_keys,
-        how='inner'
+        how='inner',
+        validate='one_to_one'  # Fail loudly on duplicates
     )
 
     if len(merged_df) == 0:
         raise ValueError(
-            "Join produced empty DataFrame. Check that features and outcomes "
-            "have matching deal_id + seat + contract_type + trump values."
+            f"Join produced empty DataFrame. Check that features and outcomes "
+            f"have matching {' + '.join(merge_keys)} values."
         )
 
     return merged_df
