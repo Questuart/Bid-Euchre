@@ -52,7 +52,8 @@ Quick reference for finding the right experiment configuration.
 
 | Config | Purpose |
 |--------|---------|
-| `canonical_bidless_dataset.yaml` | Features + outcomes dataset (900k hands, 3 strategies) |
+| `canonical_bidless_dataset_greedy.yaml` | Training dataset (300k hands, greedy-only) |
+| `canonical_bidless_dataset_mixed_play.yaml` | Analysis dataset (900k hands, 3 strategies) |
 | `canonical_bidless_outcomes_matrix_shallow.yaml` | Broad coverage 5x5 matrix (300k hands, 25 matchups) |
 | `canonical_bidless_outcomes_zoom.yaml` | High-precision zoom (3.3M hands, 11 matchups) |
 

@@ -1,8 +1,13 @@
-# Canonical Bidless Dataset Configuration
+# Canonical Bidless Dataset Configuration (Mixed-Play: Analysis)
 #
-# Purpose: Collect hand features AND outcome labels for ML training with strategy diversity.
-# This config runs multiple strategies in self-play mode to create a diverse training
-# dataset for bidding model development.
+# Purpose: Collect diverse outcomes across multiple play policies for diagnostics
+# and analysis. Uses multiple strategies in self-play mode for strategy diversity.
+#
+# WARNING: Do NOT train bidding models on this dataset without conditioning on
+# play policy. Outcome labels mix greedy, glutton, and random play quality,
+# making them inconsistent for supervised learning.
+#
+# For ML training with consistent labels, use canonical_bidless_dataset_greedy.yaml.
 #
 # Strategies:
 #   - greedy: Conservative play-to-win strategy
@@ -13,7 +18,7 @@
 #
 # Usage:
 #   PYTHONPATH=src python experiments/run_experiment.py \
-#       --config experiments/configs/canonical_bidless_dataset.yaml \
+#       --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml \
 #       --seed 42 \
 #       --emit-bidless-dataset \
 #       --emit-bidless-outcomes-dataset
@@ -22,7 +27,7 @@
 #   - bidless.parquet + bidless.jsonl + bidless_meta.json (features)
 #   - bidless_outcomes.parquet + bidless_outcomes.jsonl + bidless_outcomes_meta.json (outcomes)
 
-experiment_name: canonical_bidless_dataset
+experiment_name: canonical_bidless_dataset_mixed_play
 
 parameters:
   seed: 42

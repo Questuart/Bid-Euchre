@@ -16,20 +16,22 @@ All canonical runs use:
 
 ## Configurations
 
-### A) Dataset Run (Features + Outcomes)
+### A) Training Dataset (Features + Outcomes, Single-Policy)
 
-**Config**: `experiments/configs/canonical_bidless_dataset.yaml`
+**Config**: `experiments/configs/canonical_bidless_dataset_greedy.yaml`
 
-**Purpose**: Collect hand features AND outcome labels for ML training with strategy diversity.
+**Purpose**: Collect hand features AND outcome labels for ML training using a **single play policy** (greedy).
 
-**Strategies**: greedy, glutton, random_legal (3 strategies in self-play)
+**Why single-policy?** Training labels reflect "tricks won under greedy play". Mixed-policy datasets conflate different play quality levels, making labels inconsistent unless the model conditions on play policy.
 
-**Total hands**: 50,000 × 6 scenarios × 3 strategies = **900,000 hands**
+**Strategies**: greedy only (1 strategy in self-play)
+
+**Total hands**: 50,000 × 6 scenarios × 1 strategy = **300,000 hands**
 
 **Command**:
 ```bash
 PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_dataset.yaml \
+  --config experiments/configs/canonical_bidless_dataset_greedy.yaml \
   --seed 42 \
   --emit-bidless-dataset \
   --emit-bidless-outcomes-dataset
@@ -38,6 +40,27 @@ PYTHONPATH=src python experiments/run_experiment.py \
 **Outputs** (in `<run_dir>/datasets/`):
 - `bidless.parquet` + `bidless.jsonl` + `bidless_meta.json` (features)
 - `bidless_outcomes.parquet` + `bidless_outcomes.jsonl` + `bidless_outcomes_meta.json` (outcomes)
+
+### A.1) Mixed-Play Dataset (Analysis Only)
+
+**Config**: `experiments/configs/canonical_bidless_dataset_mixed_play.yaml`
+
+**Purpose**: Collect diverse outcomes across multiple play policies for diagnostics and analysis.
+
+> **Warning**: Do NOT train bidding models on this dataset without conditioning on play policy. Outcome labels mix greedy, glutton, and random play quality, making them inconsistent for supervised learning.
+
+**Strategies**: greedy, glutton, random_legal (3 strategies in self-play)
+
+**Total hands**: 50,000 × 6 scenarios × 3 strategies = **900,000 hands**
+
+**Command**:
+```bash
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml \
+  --seed 42 \
+  --emit-bidless-dataset \
+  --emit-bidless-outcomes-dataset
+```
 
 ### B) Shallow Matrix (Broad Coverage)
 
@@ -186,7 +209,7 @@ df = load_outcomes_from_run_dir(run_dir)
 
 The loader will:
 1. Try `datasets/bidless_outcomes.parquet` first
-2. Fall back to reconstructing from `results/*.json` if parquet not present
+2. Fall back to parsing JSONL logs from `logs/` if parquet not present
 
 ## Design Decisions
 
@@ -196,24 +219,33 @@ The loader will:
 | No hand logs by default | Logs are huge and unnecessary with outcomes parquet |
 | Single report script | One blessed path via `generate_report.py` |
 | Results-driven reporting | JSON results already contain aggregates; no log parsing |
-| Multiple strategies in dataset | ML training diversity (greedy, glutton, random) |
+| Single-policy training dataset | Consistent labels (greedy-only for training) |
+| Multi-policy analysis dataset | Strategy diversity (greedy, glutton, random for analysis) |
 | `pair_deals: true` | Enables paired statistical tests across scenarios |
 
 ## Total Budget Summary
 
 | Config | Hands | Purpose |
 |--------|-------|---------|
-| canonical_bidless_dataset | 900K | ML training data |
+| canonical_bidless_dataset_greedy | 300K | ML training data (single-policy) |
+| canonical_bidless_dataset_mixed_play | 900K | Analysis/diagnostics (multi-policy) |
 | canonical_bidless_outcomes_matrix_shallow | 300K | Broad sanity coverage |
 | canonical_bidless_outcomes_zoom | 3.3M | High-precision comparisons |
-| **Total** | **4.5M hands** | Full canonical baseline |
+| **Total** | **4.8M hands** | Full canonical baseline |
 
 ## Quick Reference
 
 ```bash
-# Dataset run (features + outcomes for ML)
+# Training dataset (single-policy greedy, for ML)
 PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/canonical_bidless_dataset.yaml \
+  --config experiments/configs/canonical_bidless_dataset_greedy.yaml \
+  --seed 42 \
+  --emit-bidless-dataset \
+  --emit-bidless-outcomes-dataset
+
+# Analysis dataset (multi-policy, for diagnostics)
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml \
   --seed 42 \
   --emit-bidless-dataset \
   --emit-bidless-outcomes-dataset
