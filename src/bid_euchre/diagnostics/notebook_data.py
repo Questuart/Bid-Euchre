@@ -25,7 +25,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -100,8 +100,8 @@ def load_or_generate_outcomes(
     print(f"Generating new outcome dataset (mode={mode}, seed={seed})...")
     run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats, strategies, matchups)
 
-    # Extract outcomes from logs
-    outcome_df = _load_outcomes_from_run(run_dir)
+    # Extract outcomes from logs (for on-the-fly generation, logs are always present)
+    outcome_df = _load_outcomes_from_logs(run_dir)
 
     # Cache for reuse
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -185,8 +185,8 @@ def load_or_generate_features(
     if 'trump_suit' in features_df.columns:
         features_df = features_df.rename(columns={'trump_suit': 'trump'})
 
-    # Extract outcomes from logs and join
-    outcome_df = _load_outcomes_from_run(run_dir)
+    # Extract outcomes from logs and join (for on-the-fly generation, logs are always present)
+    outcome_df = _load_outcomes_from_logs(run_dir)
 
     # Join on deal_id + seat + contract_type + trump
     # This ensures proper alignment even when features and outcomes have different data
@@ -457,22 +457,151 @@ def _generate_temp_config(
     return config
 
 
-def _load_outcomes_from_run(run_dir: Union[str, Path]) -> pd.DataFrame:
-    """Load outcome data from experiment logs.
+# ============================================================================
+# Public RUN_DIR API (for loading from existing experiment runs)
+# ============================================================================
 
-    Parses hand_end events from JSONL logs to extract tricks_won per seat.
+
+def validate_run_dir(run_dir: str, require_logs: bool = False) -> Path:
+    """Verify run directory exists and has required structure.
 
     Args:
-        run_dir: Path to run directory containing logs/*.jsonl
+        run_dir: Path to run directory (as string)
+        require_logs: If True, require logs/ directory to exist.
+                     If False (default), logs are optional if outcomes parquet exists.
 
     Returns:
-        DataFrame with columns: deal_id, seat, contract_type, trump, tricks_won, strategy_id
+        Validated Path object to the run directory
+
+    Raises:
+        FileNotFoundError: If run_dir doesn't exist
+        ValueError: If run_dir is not a directory
     """
-    run_dir = Path(run_dir)
-    logs_dir = run_dir / "logs"
+    run_path = Path(run_dir)
+
+    if not run_path.exists():
+        raise FileNotFoundError(f"Run directory not found: {run_dir}")
+
+    if not run_path.is_dir():
+        raise ValueError(f"Path is not a directory: {run_dir}")
+
+    if require_logs:
+        logs_dir = run_path / "logs"
+        if not logs_dir.exists():
+            raise FileNotFoundError(
+                f"Logs directory not found: {logs_dir}. "
+                "Expected run_dir/logs/ to contain JSONL log files."
+            )
+
+    return run_path
+
+
+def load_outcomes_from_run_dir(run_dir: str, prefer_parquet: bool = True) -> pd.DataFrame:
+    """Load outcome data from an existing experiment run directory.
+
+    Prefers outcomes parquet when present (from --emit-bidless-outcomes-dataset),
+    falls back to parsing JSONL logs when parquet is not available.
+
+    Args:
+        run_dir: Path to run directory
+        prefer_parquet: If True (default), prefer bidless_outcomes.parquet when present.
+                       Set to False to force log parsing even when parquet exists.
+
+    Returns:
+        DataFrame with columns:
+            - deal_id: int
+            - seat: int (0-3)
+            - contract_type: str ("suit", "high", "low")
+            - trump: str or None
+            - tricks_won: int (0-10)
+            - strategy_id: str
+            Additional columns when loaded from parquet:
+            - hand_id: int (globally unique)
+            - matchup_id: str
+            - team0_strategy, team1_strategy: str
+            - team0_win: float (1.0=win, 0.5=tie, 0.0=loss)
+
+    Raises:
+        FileNotFoundError: If run_dir doesn't exist or no data source found
+        ValueError: If no outcome data found
+    """
+    run_path = Path(run_dir)
+
+    if not run_path.exists():
+        raise FileNotFoundError(f"Run directory not found: {run_dir}")
+
+    if not run_path.is_dir():
+        raise ValueError(f"Path is not a directory: {run_dir}")
+
+    # Try outcomes parquet first (preferred source when available)
+    outcomes_parquet = run_path / "datasets" / "bidless_outcomes.parquet"
+    if prefer_parquet and outcomes_parquet.exists():
+        return _load_outcomes_from_parquet(outcomes_parquet)
+
+    # Fall back to log parsing
+    return _load_outcomes_from_logs(run_path)
+
+
+def _load_outcomes_from_parquet(parquet_path: Path) -> pd.DataFrame:
+    """Load outcomes from bidless_outcomes.parquet.
+
+    The parquet file has per-hand granularity. This function expands
+    to per-seat granularity for compatibility with existing code.
+
+    Args:
+        parquet_path: Path to bidless_outcomes.parquet
+
+    Returns:
+        DataFrame with per-seat outcomes
+    """
+    df = pd.read_parquet(parquet_path)
+
+    # bidless_outcomes.parquet is per-hand; expand to per-seat for compatibility
+    # Each hand has one row; we need 4 rows (one per seat)
+    seat_records = []
+    for _, row in df.iterrows():
+        for seat in range(4):
+            # Team 0 = seats 0, 2; Team 1 = seats 1, 3
+            tricks_won = row["tricks_team0"] if seat in [0, 2] else row["tricks_team1"]
+            seat_records.append({
+                "hand_id": row["hand_id"],
+                "deal_id": row["deal_id"],
+                "seat": seat,
+                "contract_type": row["contract_type"],
+                "trump": row["trump_suit"],  # Normalize to 'trump' for consistency
+                "tricks_won": tricks_won,
+                "strategy_id": row["strategy_id"],
+                "matchup_id": row["matchup_id"],
+                "team0_strategy": row["team0_strategy"],
+                "team1_strategy": row["team1_strategy"],
+                "team0_win": row["team0_win"],
+            })
+
+    outcome_df = pd.DataFrame(seat_records)
+    outcome_df = outcome_df.sort_values(["hand_id", "seat"]).reset_index(drop=True)
+    return outcome_df
+
+
+def _load_outcomes_from_logs(run_path: Path) -> pd.DataFrame:
+    """Load outcomes from JSONL logs (legacy fallback).
+
+    Args:
+        run_path: Path to run directory containing logs/*.jsonl
+
+    Returns:
+        DataFrame with per-seat outcomes
+
+    Raises:
+        FileNotFoundError: If logs directory not found
+        ValueError: If no hand_end events found
+    """
+    logs_dir = run_path / "logs"
 
     if not logs_dir.exists():
-        raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
+        raise FileNotFoundError(
+            f"Logs directory not found: {logs_dir}. "
+            "Run experiment with log_level != 'none' or use --emit-bidless-outcomes-dataset."
+        )
 
     # Find all JSONL log files
     log_files = list(logs_dir.glob("*.jsonl"))
@@ -526,79 +655,25 @@ def _load_outcomes_from_run(run_dir: Union[str, Path]) -> pd.DataFrame:
     return outcome_df
 
 
-# ============================================================================
-# Public RUN_DIR API (for loading from existing experiment runs)
-# ============================================================================
+def load_features_and_outcomes_from_run_dir(
+    run_dir: str,
+    prefer_parquet: bool = True,
+) -> pd.DataFrame:
+    """Load features from datasets/ and outcomes, joined by deal_id + seat.
 
-
-def validate_run_dir(run_dir: str) -> Path:
-    """Verify run directory exists and has required structure.
-
-    Args:
-        run_dir: Path to run directory (as string)
-
-    Returns:
-        Validated Path object to the run directory
-
-    Raises:
-        FileNotFoundError: If run_dir doesn't exist or logs/ directory is missing
-        ValueError: If run_dir is not a directory
-    """
-    run_path = Path(run_dir)
-
-    if not run_path.exists():
-        raise FileNotFoundError(f"Run directory not found: {run_dir}")
-
-    if not run_path.is_dir():
-        raise ValueError(f"Path is not a directory: {run_dir}")
-
-    logs_dir = run_path / "logs"
-    if not logs_dir.exists():
-        raise FileNotFoundError(
-            f"Logs directory not found: {logs_dir}. "
-            "Expected run_dir/logs/ to contain JSONL log files."
-        )
-
-    return run_path
-
-
-def load_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
-    """Load outcome data from an existing experiment run directory.
-
-    Centralized parser: globs *.jsonl in logs/, extracts hand_end events,
-    and expands to seat-level outcome records.
-
-    Args:
-        run_dir: Path to run directory containing logs/*.jsonl
-
-    Returns:
-        DataFrame with columns:
-            - deal_id: int
-            - seat: int (0-3)
-            - contract_type: str ("suit", "high", "low")
-            - trump: str or None
-            - tricks_won: int (0-10)
-            - strategy_id: str
-
-    Raises:
-        FileNotFoundError: If run_dir or logs/ doesn't exist
-        ValueError: If no hand_end events found in logs
-    """
-    run_path = validate_run_dir(run_dir)
-    return _load_outcomes_from_run(run_path)
-
-
-def load_features_and_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
-    """Load features from datasets/ and outcomes from logs/, joined by deal_id + seat.
+    Prefers outcomes parquet when present (from --emit-bidless-outcomes-dataset),
+    falls back to parsing JSONL logs when parquet is not available.
 
     This function:
     1. Validates the run directory structure
-    2. Loads feature data from run_dir/datasets/ (Parquet files)
-    3. Loads outcome data from run_dir/logs/ (JSONL files)
+    2. Loads feature data from run_dir/datasets/bidless.parquet
+    3. Loads outcome data (prefers parquet, falls back to logs)
     4. Joins on deal_id + seat + contract_type + trump
 
     Args:
-        run_dir: Path to run directory containing datasets/ and logs/
+        run_dir: Path to run directory containing datasets/ (and optionally logs/)
+        prefer_parquet: If True (default), prefer bidless_outcomes.parquet when present.
+                       Set to False to force log parsing even when parquet exists.
 
     Returns:
         DataFrame with columns:
@@ -610,18 +685,29 @@ def load_features_and_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
             - strategy_id: str
             - feat_*: feature columns (trump_count, offsuit_aces, etc.)
             - hand_cards: list of str (if available)
+            Additional columns when outcomes loaded from parquet:
+            - hand_id: int (globally unique)
+            - matchup_id: str
+            - team0_strategy, team1_strategy: str
+            - team0_win: float (1.0=win, 0.5=tie, 0.0=loss)
 
     Raises:
-        FileNotFoundError: If run_dir, datasets/, or logs/ doesn't exist
+        FileNotFoundError: If run_dir or datasets/ doesn't exist
         ValueError: If no data found or join fails
 
     Note:
         The join is on [deal_id, seat, contract_type, trump] to ensure proper
         alignment even when features and outcomes have different data coverage.
     """
-    run_path = validate_run_dir(run_dir)
+    run_path = Path(run_dir)
 
-    # Also verify datasets/ exists
+    if not run_path.exists():
+        raise FileNotFoundError(f"Run directory not found: {run_dir}")
+
+    if not run_path.is_dir():
+        raise ValueError(f"Path is not a directory: {run_dir}")
+
+    # Verify datasets/ exists
     dataset_dir = run_path / "datasets"
     if not dataset_dir.exists():
         raise FileNotFoundError(
@@ -636,11 +722,21 @@ def load_features_and_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
     if 'trump_suit' in features_df.columns:
         features_df = features_df.rename(columns={'trump_suit': 'trump'})
 
-    # Load outcomes from logs
-    outcome_df = _load_outcomes_from_run(run_path)
+    # Load outcomes (prefers parquet, falls back to logs)
+    outcomes_parquet = run_path / "datasets" / "bidless_outcomes.parquet"
+    if prefer_parquet and outcomes_parquet.exists():
+        outcome_df = _load_outcomes_from_parquet(outcomes_parquet)
+    else:
+        outcome_df = _load_outcomes_from_logs(run_path)
+
+    # Determine columns to include from outcomes (depends on source)
+    outcome_cols = ['deal_id', 'seat', 'contract_type', 'trump', 'tricks_won', 'strategy_id']
+    # Add extra columns from parquet if available
+    for col in ['hand_id', 'matchup_id', 'team0_strategy', 'team1_strategy', 'team0_win']:
+        if col in outcome_df.columns:
+            outcome_cols.append(col)
 
     # Join on deal_id + seat + contract_type + trump
-    # This ensures proper alignment even when features and outcomes have different data
     merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
 
     # Check that merge keys exist in both dataframes
@@ -650,8 +746,10 @@ def load_features_and_outcomes_from_run_dir(run_dir: str) -> pd.DataFrame:
         if key not in outcome_df.columns:
             raise ValueError(f"Missing merge key '{key}' in outcomes DataFrame")
 
+    # Select outcome columns that exist
+    outcome_cols_present = [c for c in outcome_cols if c in outcome_df.columns]
     merged_df = features_df.merge(
-        outcome_df[merge_keys + ['tricks_won', 'strategy_id']],
+        outcome_df[outcome_cols_present],
         on=merge_keys,
         how='inner'
     )
