@@ -70,6 +70,23 @@ PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs
 PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
+### A.2) Training Dataset (Features + Outcomes, Single-Policy: Glutton)
+
+**Config**: `experiments/configs/canonical_bidless_dataset_glutton.yaml`
+
+**Purpose**: Collect hand features AND outcome labels for ML training using **glutton play policy**.
+
+**Prerequisite**: Only run after play policy gate PASS (see [PLAY_POLICY_FREEZE.md](PLAY_POLICY_FREEZE.md)). Training labels must be single-policy and stable; switching policies mid-training invalidates prior labels.
+
+**Strategies**: glutton only (1 strategy in self-play)
+
+**Total hands**: 50,000 × 6 scenarios × 1 strategy = **300,000 hands**
+
+**Command**:
+```bash
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+```
+
 ### B) Shallow Matrix (Broad Coverage)
 
 **Config**: `experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml`
@@ -232,28 +249,32 @@ The loader will:
 | Config | Hands | Purpose |
 |--------|-------|---------|
 | canonical_bidless_dataset_greedy | 300K | ML training data (single-policy) |
+| canonical_bidless_dataset_glutton | 300K | ML training data (single-policy, if gate PASS) |
 | canonical_bidless_dataset_mixed_play | 900K | Analysis/diagnostics (multi-policy) |
 | canonical_bidless_outcomes_matrix_shallow | 300K | Broad sanity coverage |
 | canonical_bidless_outcomes_zoom | 3.3M | High-precision comparisons |
-| **Total** | **4.8M hands** | Full canonical baseline |
+| **Total** | **5.1M hands** | Full canonical baseline (if glutton gate PASS) |
 
 ## Quick Reference
 
 ```bash
 # Training dataset (single-policy greedy, for ML)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+
+# Training dataset (single-policy glutton, for ML — requires gate PASS)
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Analysis dataset (multi-policy, for diagnostics)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Shallow matrix (broad sanity checking)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
 
 # Zoom run (high-precision decision cells)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
+PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
 
 # Generate report (after any run)
-PYTHONPATH=src python scripts/generate_report.py \
+PYTHONPATH=src uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 

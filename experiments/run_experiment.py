@@ -71,6 +71,7 @@ TOTAL_HANDS_BUDGETS = {
     # Canonical bidless experiment configs
     "canonical_bidless_dataset": 1_000_000,  # DEPRECATED alias → use _greedy or _mixed_play
     "canonical_bidless_dataset_greedy": 400_000,  # 50k × 6 scenarios × 1 strategy = 300k
+    "canonical_bidless_dataset_glutton": 400_000,  # 50k × 6 scenarios × 1 strategy = 300k
     "canonical_bidless_dataset_mixed_play": 1_000_000,  # 50k × 6 scenarios × 3 strategies = 900k
     "canonical_bidless_outcomes_matrix_shallow": 500_000,  # 2k × 6 scenarios × 25 matchups = 300k
     "canonical_bidless_outcomes_zoom": 4_000_000,  # 50k × 6 scenarios × 11 matchups = 3.3M

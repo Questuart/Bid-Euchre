@@ -20,8 +20,29 @@ This file is the **single source of truth** for blessed canonical run IDs and th
 | experiment_name | run_id | date | git_sha | seed | n_per | total_hands | PASS | WARN | FAIL | SKIP | canonical_summary_json_path | notes |
 |-----------------|--------|------|---------|------|-------|-------------|------|------|------|------|------------------------------|-------|
 | canonical_bidless_dataset_greedy | TBD | - | - | 42 | 50000 | 300K | - | - | - | - | artifacts/canonical_summary.json | - |
+| canonical_bidless_dataset_glutton | TBD | - | - | 42 | 50000 | 300K | - | - | - | - | artifacts/canonical_summary.json | Only if gate PASS |
 | canonical_bidless_outcomes_matrix_shallow | TBD | - | - | 42 | 2000 | 300K | - | - | - | - | artifacts/canonical_summary.json | - |
 | canonical_bidless_outcomes_zoom | TBD | - | - | 42 | 50000 | 3.3M | - | - | - | - | artifacts/canonical_summary.json | - |
+
+## Policy Freeze Record
+
+Documents the frozen play policy decision for bidding model training.
+
+| Field | Value |
+|-------|-------|
+| **Chosen policy** | TBD (greedy or glutton) |
+| **Decision date** | TBD |
+| **Gate run_id(s)** | TBD |
+| **Gate output path** | `data/runs/<run_id>/artifacts/play_policy_gate.json` |
+| **Gate result** | TBD (PASS/WARN/FAIL) |
+| **Rationale** | TBD (1-2 sentences) |
+
+### Update Process
+
+1. Run gate: `PYTHONPATH=src uv run python scripts/play_policy_gate.py --seeds 42,43,44 --n-per 20000`
+2. Record result in table above
+3. If PASS: Run and promote glutton dataset
+4. If WARN/FAIL: Keep greedy as frozen policy and document rationale
 
 ## How to Regenerate
 

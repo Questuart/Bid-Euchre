@@ -1,0 +1,47 @@
+# Canonical Bidless Training Dataset (Single-Policy: Glutton)
+#
+# Purpose: Collect hand features AND outcome labels for ML training.
+# Uses a SINGLE play policy (glutton) to ensure consistent outcome labels.
+# For multi-policy analysis, use canonical_bidless_dataset_mixed_play.yaml instead.
+#
+# Why single-policy? Training labels reflect "tricks won under glutton play".
+# Mixed-policy datasets conflate different play quality levels, making labels
+# inconsistent unless the model conditions on play policy.
+#
+# PREREQUISITE: Only run after play policy gate PASS.
+# See docs/02_agent/PLAY_POLICY_FREEZE.md for the decision procedure.
+#
+# Strategies:
+#   - glutton: Aggressive trick-taking strategy (single policy)
+#
+# Total hands: 50,000 x 6 scenarios x 1 strategy = 300,000 hands
+#
+# Usage:
+#   PYTHONPATH=src python experiments/run_experiment.py \
+#       --config experiments/configs/canonical_bidless_dataset_glutton.yaml \
+#       --seed 42 \
+#       --emit-bidless-dataset \
+#       --emit-bidless-outcomes-dataset
+#
+# Outputs (in <run_dir>/datasets/):
+#   - bidless.parquet + bidless.jsonl + bidless_meta.json (features)
+#   - bidless_outcomes.parquet + bidless_outcomes.jsonl + bidless_outcomes_meta.json (outcomes)
+
+experiment_name: canonical_bidless_dataset_glutton
+
+parameters:
+  seed: 42
+  n_per: 50000
+  log_level: none
+  mode: self_play
+  pair_deals: true
+
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+scenarios:
+  - contract_type: suit
+    trump_suit: C,D,H,S
+  - contract_type: high
+  - contract_type: low
