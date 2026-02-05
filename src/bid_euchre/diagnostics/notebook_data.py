@@ -659,7 +659,7 @@ def load_features_and_outcomes_from_run_dir(
     run_dir: str,
     prefer_parquet: bool = True,
 ) -> pd.DataFrame:
-    """Load features from datasets/ and outcomes, joined by deal_id + seat.
+    """Load features from datasets/ and outcomes, joined appropriately by source.
 
     Prefers outcomes parquet when present (from --emit-bidless-outcomes-dataset),
     falls back to parsing JSONL logs when parquet is not available.
@@ -668,7 +668,7 @@ def load_features_and_outcomes_from_run_dir(
     1. Validates the run directory structure
     2. Loads feature data from run_dir/datasets/bidless.parquet
     3. Loads outcome data (prefers parquet, falls back to logs)
-    4. Joins on deal_id + seat + contract_type + trump
+    4. Joins on ['hand_id', 'seat'] (parquet) or ['deal_id', 'seat', 'contract_type', 'trump'] (logs)
 
     Args:
         run_dir: Path to run directory containing datasets/ (and optionally logs/)
@@ -696,8 +696,10 @@ def load_features_and_outcomes_from_run_dir(
         ValueError: If no data found or join fails
 
     Note:
-        The join is on [deal_id, seat, contract_type, trump] to ensure proper
-        alignment even when features and outcomes have different data coverage.
+        Join strategy depends on data source:
+        - Parquet path (hand_id present): merge on ['hand_id', 'seat'] for globally
+          unique joins that handle multi-strategy runs correctly.
+        - Log fallback (no hand_id): merge on ['deal_id', 'seat', 'contract_type', 'trump'].
     """
     run_path = Path(run_dir)
 
@@ -755,6 +757,9 @@ def load_features_and_outcomes_from_run_dir(
         ]
 
         # Verify consistency before dropping
+        # Note: This consistency check adds an extra merge pass. We accept this cost
+        # for correctness validation. For very large runs, consider gating behind
+        # a debug_validate parameter if performance becomes an issue.
         if cols_to_drop:
             check_df = features_df[['hand_id', 'seat'] + cols_to_drop].merge(
                 outcome_df[['hand_id', 'seat'] + cols_to_drop],
@@ -763,7 +768,11 @@ def load_features_and_outcomes_from_run_dir(
                 how='inner'
             )
             for col in cols_to_drop:
-                mismatches = check_df[check_df[f'{col}_feat'] != check_df[f'{col}_out']]
+                feat_vals = check_df[f'{col}_feat']
+                out_vals = check_df[f'{col}_out']
+                # Null-safe: treat (both null) as equal; covers None, NaN, pd.NA
+                both_null = feat_vals.isna() & out_vals.isna()
+                mismatches = check_df[feat_vals.ne(out_vals) & ~both_null]
                 if len(mismatches) > 0:
                     raise ValueError(
                         f"Inconsistent {col} values between features and outcomes for "

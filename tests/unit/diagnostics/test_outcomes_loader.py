@@ -507,3 +507,60 @@ class TestFeaturesAndOutcomesLoaderPreference:
         # Should fail with MergeError due to validate='one_to_one'
         with pytest.raises(pd.errors.MergeError):
             load_features_and_outcomes_from_run_dir(temp_run_dir)
+
+    def test_parquet_join_allows_null_trump_high_low(self, temp_run_dir):
+        """Parquet join succeeds when trump is null (high/low contracts).
+
+        Regression test: the consistency check for redundant columns must handle
+        None/NaN values correctly. Previously, None != None evaluated to True,
+        causing false 'Inconsistent trump' errors.
+        """
+        from bid_euchre.diagnostics.notebook_data import (
+            load_features_and_outcomes_from_run_dir,
+        )
+
+        # Features: 1 hand × 4 seats, contract_type="high", trump=None
+        features_rows = [
+            {
+                "hand_id": 0,
+                "deal_id": 0,
+                "seat": seat,
+                "contract_type": "high",
+                "trump_suit": None,  # high contract has no trump
+                "hand_cards": ["AH", "KH"],
+                "hand_features": {"offsuit_aces": 2},
+                "hand_feature_schema_version": 1,
+                "dealer_seat": 0,
+            }
+            for seat in range(4)
+        ]
+        self._create_features_parquet(temp_run_dir, features_rows)
+
+        # Outcomes: 1 hand, contract_type="high", trump=None
+        outcomes_rows = [
+            {
+                "hand_id": 0,
+                "deal_id": 0,
+                "dealer_seat": 0,
+                "contract_type": "high",
+                "trump_suit": None,  # must match features
+                "strategy_id": "greedy",
+                "matchup_id": "greedy_vs_greedy",
+                "team0_strategy": "greedy",
+                "team1_strategy": "greedy",
+                "tricks_team0": 6,
+                "tricks_team1": 4,
+                "team0_win": 1.0,
+            },
+        ]
+        self._create_outcomes_parquet(temp_run_dir, outcomes_rows)
+
+        # Should succeed without ValueError
+        df = load_features_and_outcomes_from_run_dir(temp_run_dir)
+
+        # Verify join produced correct results
+        assert len(df) == 4, f"Expected 4 rows (1 hand × 4 seats), got {len(df)}"
+        assert df["contract_type"].eq("high").all()
+        assert df["trump"].isna().all(), "trump should be None for high contracts"
+        assert "tricks_won" in df.columns, "Join should include outcome columns"
+        assert df["tricks_won"].notna().all(), "tricks_won should be populated"
