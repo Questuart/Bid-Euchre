@@ -48,6 +48,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.datasets.bidding import emit_bidding_dataset
 from bid_euchre.datasets.bidless import BidlessDatasetCollector, emit_bidless_dataset
+from bid_euchre.datasets.bidless_outcomes import (
+    BidlessOutcomesCollector,
+    emit_bidless_outcomes_dataset,
+)
 from bid_euchre.experiments import load_config
 from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
@@ -164,6 +168,17 @@ def parse_args():
         choices=["parquet", "jsonl"],
         default="parquet",
         help="Format for bidless dataset emission (default: parquet)"
+    )
+    parser.add_argument(
+        "--emit-bidless-outcomes-dataset",
+        action="store_true",
+        help="Emit bidless outcomes dataset to data/runs/<run_id>/datasets/ (declared contract mode only)"
+    )
+    parser.add_argument(
+        "--bidless-outcomes-dataset-format",
+        choices=["parquet", "jsonl"],
+        default="parquet",
+        help="Format for bidless outcomes dataset emission (default: parquet)"
     )
     parser.add_argument(
         "--team1-strategy",
@@ -391,56 +406,82 @@ def main():
     # Track plan/scenario indices for globally unique hand_id computation
     # Use a dict to make values mutable from within closures
     num_scenarios = len(scenarios)
-    bidless_context: Dict[str, int] = {
+    bidless_context: Dict[str, Any] = {
         "plan_id": 0,
         "scenario_id": 0,
+        # Strategy context for outcomes dataset
+        "strategy_id": "",  # For self_play mode
+        "matchup_id": "",  # For matrix mode (e.g., "greedy_vs_random_legal")
+        "team0_strategy": "",  # Strategy name for team 0
+        "team1_strategy": "",  # Strategy name for team 1
     }
 
-    # Create hooks for bidless dataset collection if requested
+    # Outcomes collector (single collector for the entire run)
+    outcomes_collector: BidlessOutcomesCollector | None = None
+    if args.emit_bidless_outcomes_dataset:
+        outcomes_collector = BidlessOutcomesCollector(run_id)
+
+    # Create hooks for bidless dataset and/or outcomes collection
     def create_bidless_hooks() -> SimulationHooks | None:
-        """Create hooks for bidless dataset collection."""
-        if not args.emit_bidless_dataset:
+        """Create hooks for bidless dataset and outcomes collection."""
+        if not args.emit_bidless_dataset and not args.emit_bidless_outcomes_dataset:
             return None
 
         # Collector indexed by globally unique hand_id to ensure uniqueness
         hand_collectors: Dict[int, BidlessDatasetCollector] = {}
 
         def on_hand_end(event: HandEndEvent) -> None:
-            """Record hand data when each hand completes."""
+            """Record hand data and outcomes when each hand completes."""
             # Skip auction mode hands (contract_type is None during auction)
-            # Bidless dataset is only for pre-declared contracts
+            # Bidless datasets are only for pre-declared contracts
             if event.contract_type is None:
                 return
 
             # Compute globally unique hand_id:
             # hand_id = ((plan_id * num_scenarios + scenario_id) * n_per) + deal_id
-            # This ensures (hand_id, seat) is unique across the entire run
+            # This ensures hand_id is unique across the entire run
             plan_id = bidless_context["plan_id"]
             scenario_id = bidless_context["scenario_id"]
             hand_id = ((plan_id * num_scenarios + scenario_id) * n_per) + event.deal_id
 
-            # Create collector for this hand if needed
-            if hand_id not in hand_collectors:
-                hand_collectors[hand_id] = BidlessDatasetCollector(run_id, hand_id)
+            # Record features dataset (per-seat) if requested
+            if args.emit_bidless_dataset:
+                if hand_id not in hand_collectors:
+                    hand_collectors[hand_id] = BidlessDatasetCollector(run_id, hand_id)
 
-            collector = hand_collectors[hand_id]
+                collector = hand_collectors[hand_id]
 
-            # Record all 4 seats
-            for seat in range(4):
-                # Use dealer_seat=0 as default for bidless (not meaningful)
+                # Record all 4 seats
+                for seat in range(4):
+                    dealer_seat = event.dealer_seat if event.dealer_seat is not None else 0
+                    collector.record_hand_value(
+                        hand=event.hands[seat],
+                        seat=seat,
+                        dealer_seat=dealer_seat,
+                        contract_type=event.contract_type,
+                        trump_suit=event.trump_suit,
+                        deal_id=event.deal_id,
+                    )
+
+                if collector not in all_bidless_collectors:
+                    all_bidless_collectors.append(collector)
+
+            # Record outcomes dataset (per-hand) if requested
+            if args.emit_bidless_outcomes_dataset and outcomes_collector is not None:
                 dealer_seat = event.dealer_seat if event.dealer_seat is not None else 0
-                collector.record_hand_value(
-                    hand=event.hands[seat],
-                    seat=seat,
+                outcomes_collector.record_outcome(
+                    hand_id=hand_id,
+                    deal_id=event.deal_id,
                     dealer_seat=dealer_seat,
                     contract_type=event.contract_type,
                     trump_suit=event.trump_suit,
-                    deal_id=event.deal_id,
+                    strategy_id=bidless_context["strategy_id"],
+                    matchup_id=bidless_context["matchup_id"],
+                    team0_strategy=bidless_context["team0_strategy"],
+                    team1_strategy=bidless_context["team1_strategy"],
+                    tricks_team0=event.tricks_team0,
+                    tricks_team1=event.tricks_team1,
                 )
-
-            # Add to list for later emission
-            if collector not in all_bidless_collectors:
-                all_bidless_collectors.append(collector)
 
         return SimulationHooks(on_hand_end=on_hand_end)
 
@@ -550,6 +591,11 @@ def main():
                     # Update bidless context for unique hand_id computation
                     bidless_context["plan_id"] = matchup_idx
                     bidless_context["scenario_id"] = i - 1  # 0-indexed
+                    # Update strategy context for outcomes dataset
+                    bidless_context["strategy_id"] = ""  # Not used in matrix mode
+                    bidless_context["matchup_id"] = matchup_id
+                    bidless_context["team0_strategy"] = team0_name if team0_name else seat_strategy_names[0]
+                    bidless_context["team1_strategy"] = team1_name if team1_name else seat_strategy_names[1]
 
                     # When pair_deals=True, use the same seed for all scenarios
                     # so the same physical deals are played under different contracts
@@ -659,6 +705,17 @@ def main():
                     # Update bidless context for unique hand_id computation
                     bidless_context["plan_id"] = policy_idx
                     bidless_context["scenario_id"] = i - 1  # 0-indexed
+                    # Update strategy context for outcomes dataset
+                    # In self_play mode, both teams use the same strategy
+                    bidless_context["strategy_id"] = policy.name
+                    bidless_context["matchup_id"] = f"{policy.name}_vs_{policy.name}"
+                    if mode == "head_to_head" and team1_strategy_name:
+                        bidless_context["matchup_id"] = f"{policy.name}_vs_{team1_strategy_name}"
+                        bidless_context["team0_strategy"] = policy.name
+                        bidless_context["team1_strategy"] = team1_strategy_name
+                    else:
+                        bidless_context["team0_strategy"] = policy.name
+                        bidless_context["team1_strategy"] = policy.name
 
                     # When pair_deals=True, use the same seed for all scenarios
                     # so the same physical deals are played under different contracts
@@ -806,6 +863,12 @@ def main():
     if args.emit_bidless_dataset and all_bidless_collectors:
         dataset_path = emit_bidless_dataset(all_bidless_collectors, run_dir, format=args.bidless_dataset_format)
         print(f"\n📊 Emitted bidless dataset: {dataset_path}")
+
+    if args.emit_bidless_outcomes_dataset and outcomes_collector is not None and outcomes_collector.rows:
+        outcomes_path = emit_bidless_outcomes_dataset(
+            outcomes_collector, run_dir, format=args.bidless_outcomes_dataset_format
+        )
+        print(f"\n📊 Emitted bidless outcomes dataset: {outcomes_path}")
 
     # Final summary
     print("\n" + "=" * 70)
