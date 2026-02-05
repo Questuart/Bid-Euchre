@@ -192,6 +192,16 @@ def load_config(config_path: str) -> ExperimentConfig:
     strategy_roster_path = config_dict.get("strategy_roster_path")
     include_baselines = config_dict.get("include_baselines", [])
 
+    # Always load explicit strategies and bidding_policies from config
+    strategies = []
+    for strategy_dict in config_dict.get("strategies", []):
+        strategies.append(StrategyConfig(**strategy_dict))
+
+    bidding_policies = []
+    for policy_dict in config_dict.get("bidding_policies", []):
+        bidding_policies.append(BiddingPolicyConfig(**policy_dict))
+
+    # Merge roster-based bidding policies if specified
     if strategy_roster_path and include_baselines:
         # Load roster and create configs from baselines
         roster = load_teacher_roster(strategy_roster_path)
@@ -204,10 +214,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         if missing_baselines:
             raise ValueError(f"Requested baselines not found in roster: {missing_baselines}")
 
-        # Convert baselines to appropriate configs
-        strategies = []
-        bidding_policies = []
-
+        # Convert baselines to bidding policies and append to existing list
         for baseline_id in include_baselines:
             baseline = baseline_map[baseline_id]
 
@@ -226,17 +233,6 @@ def load_config(config_path: str) -> ExperimentConfig:
                 ))
             else:
                 raise ValueError(f"Unsupported baseline kind: {baseline['kind']}")
-
-    else:
-        # Convert strategy configs (legacy path)
-        strategies = []
-        for strategy_dict in config_dict.get("strategies", []):
-            strategies.append(StrategyConfig(**strategy_dict))
-
-        # Convert bidding policy configs
-        bidding_policies = []
-        for policy_dict in config_dict.get("bidding_policies", []):
-            bidding_policies.append(BiddingPolicyConfig(**policy_dict))
 
     return ExperimentConfig(
         experiment_name=config_dict["experiment_name"],
