@@ -824,7 +824,7 @@ bid-euchre/
 │   └── utils/                   # Generic helpers
 ├── experiments/                 # Experiment configs + runner
 │   ├── run_experiment.py        # THE canonical runner
-│   ├── configs/                 # YAML experiment definitions (24)
+│   ├── configs/                 # YAML experiment definitions (25)
 │   ├── suites/                  # Suite definitions (4)
 │   ├── comparisons/             # Frozen (head-to-head scripts)
 │   ├── training/                # Frozen (training scripts)
@@ -890,7 +890,7 @@ bid-euchre/
 ```bash
 # Verify structure
 find src/bid_euchre -type d -maxdepth 1 | grep -v __pycache__ | sort
-ls experiments/configs/*.yaml | wc -l  # Expected: 24
+ls experiments/configs/*.yaml | wc -l  # Expected: 25
 ls experiments/suites/*.yaml | wc -l   # Expected: 4
 ls scripts/*.py | wc -l                # Expected: 12
 ```
