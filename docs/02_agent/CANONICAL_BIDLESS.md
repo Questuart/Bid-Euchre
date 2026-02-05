@@ -5,6 +5,22 @@ This document describes the canonical bidless experiment workflow for producing 
 ## Overview
 
 Canonical bidless experiments provide deterministic, paired-deals runs for:
+
+## Blessed Runs Registry
+
+See [CANONICAL_BIDLESS_RUNS.md](CANONICAL_BIDLESS_RUNS.md) for the authoritative registry of promoted canonical runs.
+
+**Promotion artifacts** (in each blessed run):
+- `artifacts/canonical_summary.json` — Machine-readable promotion record with PASS/WARN/FAIL/SKIP counts
+- `artifacts/canonical_summary.md` — Human-readable summary
+
+**Supporting evidence** (for troubleshooting):
+- `reports/ANALYSIS_SUMMARY.md` — Detailed run analysis
+- `reports/sanity_tests/strategy_sanity.json` — Full sanity test results
+
+---
+
+Canonical bidless experiments provide deterministic, paired-deals runs for:
 - **ML Training Data**: Features and outcome labels for bidding model development
 - **Strategy Comparison**: Head-to-head matchups with statistical validation
 - **Sanity Checking**: Automated tests to validate strategy behavior
