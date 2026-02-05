@@ -107,29 +107,38 @@ def _generate_comparison_report(run_dir: Path, strategy_metrics: List[Dict]) -> 
         f.write("**Run ID:** `{}`\n\n".format(Path(run_dir).name))
         f.write("**Primary Series:** `bidder_team_points` (team points from successful bids)\n\n")
         f.write("**Metric Definitions:**\n")
-        f.write("- **EV (Expected Value)**: Average points across all bidding hands\n")
+        f.write("- **EV (Expected Value)**: Average points across hands where an auction winner exists\n")
+        f.write("- **EV/Deal**: EV with `0` assigned to all-pass redeals (no auction winner)\n")
+        f.write("- **Bid Rate**: Fraction of deals with an auction winner\n")
         f.write("- **CVaR-5%**: Average of worst 5% of outcomes (tail risk)\n")
         f.write("- **Downside Variance**: Variance of outcomes below zero\n\n")
 
         f.write("## Comparative Analysis\n\n")
-        f.write("| Strategy | Hands | EV | CVaR-5% | Downside Var | Make Rate |\n")
-        f.write("|----------|------:|---:|--------:|-------------:|-----------:|\n")
+        f.write("| Strategy | Deals | Bid Hands | Bid Rate | EV | EV/Deal | CVaR-5% | Downside Var | Make Rate |\n")
+        f.write("|----------|------:|----------:|---------:|---:|--------:|--------:|-------------:|----------:|\n")
 
         for strategy in sorted_strategies:
             strategy_id = strategy["strategy_id"]
+            deals = strategy.get("deals_total", 0)
             hands = strategy["hands_with_bids"]
+            bid_rate = strategy.get("bid_rate")
             ev = strategy.get("expected_points")
+            ev_per_deal = strategy.get("expected_points_per_deal")
             cvar = strategy.get("cvar_5")
             downside_var = strategy.get("downside_variance")
             make_rate = strategy.get("make_rate")
 
             # Format values
+            bid_rate_str = f"{bid_rate:.1%}" if bid_rate is not None else "N/A"
             ev_str = f"{ev:.3f}" if ev is not None else "N/A"
+            ev_deal_str = f"{ev_per_deal:.3f}" if ev_per_deal is not None else "N/A"
             cvar_str = f"{cvar:.3f}" if cvar is not None else "N/A"
             downside_str = f"{downside_var:.3f}" if downside_var is not None else "N/A"
             make_rate_str = f"{make_rate:.1%}" if make_rate is not None else "N/A"
 
-            f.write(f"| {strategy_id} | {hands} | {ev_str} | {cvar_str} | {downside_str} | {make_rate_str} |\n")
+            f.write(
+                f"| {strategy_id} | {deals} | {hands} | {bid_rate_str} | {ev_str} | {ev_deal_str} | {cvar_str} | {downside_str} | {make_rate_str} |\n"
+            )
 
         f.write("\n")
         f.write("**Note:** Higher EV and Make Rate are better. Lower CVaR-5% and Downside Variance indicate lower risk.\n\n")
@@ -156,10 +165,14 @@ def _generate_baseline_matrix_report(run_dir: Path, strategy_metrics: List[Dict]
         entry = {
             "strategy_id": strategy["strategy_id"],
             "expected_points": strategy.get("expected_points"),
+            "expected_points_per_deal": strategy.get("expected_points_per_deal"),
             "make_rate": strategy.get("make_rate"),
+            "bid_rate": strategy.get("bid_rate"),
+            "pass_rate": strategy.get("pass_rate"),
             "cvar_5": strategy.get("cvar_5"),
             "downside_variance": strategy.get("downside_variance"),
-            "n_hands": strategy.get("hands_with_bids", 0)
+            "n_hands": strategy.get("hands_with_bids", 0),
+            "n_deals": strategy.get("deals_total", 0),
         }
         matrix.append(entry)
 
@@ -206,6 +219,7 @@ def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
             records_by_strategy[strategy_id],
             key=lambda r: (int(r.get("deal_id", 0)), r.get("timestamp", "")),
         )
+        deals_total = len(records)
         bidder_points: List[int] = []
         made_count = 0
         for record in records:
@@ -218,14 +232,21 @@ def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
 
         hands_with_bids = len(bidder_points)
         expected = sum(bidder_points) / hands_with_bids if hands_with_bids else None
+        expected_per_deal = sum(bidder_points) / deals_total if deals_total else None
         make_rate = made_count / hands_with_bids if hands_with_bids else None
+        bid_rate = hands_with_bids / deals_total if deals_total else None
+        pass_rate = (1.0 - bid_rate) if bid_rate is not None else None
 
         entry = {
             "strategy_id": strategy_id,
+            "deals_total": deals_total,
             "hands_with_bids": hands_with_bids,
             "bidder_team_points": bidder_points,
             "expected_points": _round(expected),
+            "expected_points_per_deal": _round(expected_per_deal),
             "make_rate": _round(make_rate),
+            "bid_rate": _round(bid_rate),
+            "pass_rate": _round(pass_rate),
             "cvar_5": _round(compute_cvar(bidder_points)),
             "downside_variance": _round(compute_downside_variance(bidder_points)),
         }
@@ -244,6 +265,10 @@ def generate_bidder_evaluation(run_dir: Path) -> Optional[Path]:
         "metric_definitions": {
             "cvar_5": "avg of worst 5% bidder_team_points",
             "downside_variance": "variance of bidder_team_points below 0",
+            "expected_points": "EV over hands with an auction winner (no-bid hands excluded)",
+            "expected_points_per_deal": "EV per deal with 0 for all-pass redeals",
+            "bid_rate": "fraction of deals with an auction winner",
+            "pass_rate": "fraction of deals that are all-pass redeals",
         },
     }
 
