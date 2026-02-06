@@ -1,0 +1,263 @@
+#!/usr/bin/env python
+"""
+Auction Comparator: run all bidders in auction mode and compare metrics.
+
+Orchestrates the experiment runner per bidder, then applies gate checks
+and generates a comparison report.
+
+Usage:
+    uv run python scripts/run_auction_comparator.py \
+        --config experiments/configs/auction_comparator.yaml \
+        --seed 42 \
+        --olsa-artifact /tmp/olsa_artifacts/olsa_v1.json
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
+
+
+def run_experiment(config_path, seed, run_id, extra_args=None):
+    """Run a single experiment via the canonical runner."""
+    cmd = [
+        sys.executable, "experiments/run_experiment.py",
+        "--config", config_path,
+        "--seed", str(seed),
+        "--run-id", run_id,
+    ]
+    if extra_args:
+        cmd.extend(extra_args)
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"FAILED: {run_id}")
+        print(result.stderr)
+        return False
+    return True
+
+
+def generate_evaluation(run_dir):
+    """Generate evaluator report for a run."""
+    cmd = [
+        sys.executable, "scripts/generate_report.py",
+        "--run-dir", run_dir,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0
+
+
+def load_evaluation(run_dir):
+    """Load the evaluator JSON output."""
+    eval_path = Path(run_dir) / "reports" / "bidding_strategy" / "evaluation.json"
+    if not eval_path.exists():
+        return None
+    with open(eval_path) as f:
+        return json.load(f)
+
+
+def load_auction_results(run_dir, policy_name):
+    """Load the per-policy auction results."""
+    results_path = Path(run_dir) / "results" / policy_name / "auction.json"
+    if not results_path.exists():
+        return None
+    with open(results_path) as f:
+        return json.load(f)
+
+
+def gate_check(metrics_by_bidder):
+    """
+    Apply gate checks:
+    1. No bidder has bid_rate == 0 (degenerate)
+    2. Report overall coverage
+    """
+    failures = []
+
+    for name, metrics in metrics_by_bidder.items():
+        bid_rate = metrics.get("bid_rate", 0)
+        if bid_rate == 0:
+            failures.append(f"GATE FAIL: {name} has bid_rate=0 (never bids)")
+
+    return failures
+
+
+def format_report(metrics_by_bidder, gate_failures, seed):
+    """Generate markdown comparison report."""
+    lines = [
+        "# Auction Comparator Gate Report",
+        "",
+        f"- **Seed:** {seed}",
+        f"- **Generated:** {datetime.now(timezone.utc).isoformat()}",
+        f"- **Bidders:** {len(metrics_by_bidder)}",
+        "",
+    ]
+
+    # Gate results
+    if gate_failures:
+        lines.extend([
+            "## Gate Status: FAIL",
+            "",
+        ])
+        for f in gate_failures:
+            lines.append(f"- {f}")
+        lines.append("")
+    else:
+        lines.extend([
+            "## Gate Status: PASS",
+            "",
+        ])
+
+    # Comparison table
+    lines.extend([
+        "## Bidder Comparison",
+        "",
+        "| Bidder | Expected Points | Make Rate | Bid Rate | CVaR-5% | N (bid hands) |",
+        "|--------|----------------|-----------|----------|---------|---------------|",
+    ])
+
+    # Sort by expected_points descending
+    sorted_bidders = sorted(
+        metrics_by_bidder.items(),
+        key=lambda x: x[1].get("expected_points", 0),
+        reverse=True,
+    )
+
+    for name, m in sorted_bidders:
+        ep = m.get("expected_points", 0)
+        mr = m.get("make_rate", 0)
+        br = m.get("bid_rate", 0)
+        cvar = m.get("cvar_5")
+        n_bids = m.get("hands_with_bids", 0)
+        cvar_str = f"{cvar:.2f}" if cvar is not None else "N/A"
+        lines.append(
+            f"| {name} | {ep:.4f} | {mr:.4f} | {br:.4f} | {cvar_str} | {n_bids:,} |"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Auction Comparator")
+    parser.add_argument("--config", required=True, help="YAML config path")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--olsa-artifact", default=None, help="Path to OLSa artifact")
+    parser.add_argument("--output", default=None, help="Output report path")
+    parser.add_argument("--skip-run", action="store_true", help="Skip experiment run, just analyze")
+    args = parser.parse_args()
+
+    # Load config
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+
+    policies = config.get("bidding_policies", [])
+    n_per = config.get("parameters", {}).get("n_per", 10000)
+
+    # Add OLSa if artifact provided
+    if args.olsa_artifact:
+        if not os.path.exists(args.olsa_artifact):
+            print(f"ERROR: OLSa artifact not found: {args.olsa_artifact}")
+            sys.exit(1)
+        policies.append({
+            "name": "olsa",
+            "class_name": "OLSaBidder",
+            "params": {"artifact_path": args.olsa_artifact},
+        })
+
+    experiment_name = config.get("experiment_name", "auction_comparator")
+
+    if not args.skip_run:
+        # Run experiment for each bidder individually
+        print(f"Running auction comparator with {len(policies)} bidders, n_per={n_per}...")
+        for policy in policies:
+            policy_name = policy["name"]
+            run_id = f"{experiment_name}_{policy_name}_{args.seed}"
+
+            # Create a per-policy config
+            per_policy_config = {
+                "experiment_name": f"{experiment_name}_{policy_name}",
+                "bidding_policies": [policy],
+                "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                "parameters": config.get("parameters", {}),
+            }
+
+            config_path = f"/tmp/auction_comparator_{policy_name}.yaml"
+            with open(config_path, "w") as f:
+                yaml.dump(per_policy_config, f)
+
+            print(f"  Running {policy_name}...")
+            if not run_experiment(config_path, args.seed, run_id):
+                print(f"  FAILED: {policy_name}")
+                continue
+
+            # Generate evaluation
+            run_dir = f"data/runs/{run_id}"
+            generate_evaluation(run_dir)
+
+    # Collect metrics
+    metrics_by_bidder = {}
+    for policy in policies:
+        policy_name = policy["name"]
+        run_id = f"{experiment_name}_{policy_name}_{args.seed}"
+        run_dir = f"data/runs/{run_id}"
+
+        evaluation = load_evaluation(run_dir)
+        if evaluation and evaluation.get("strategies"):
+            strat = evaluation["strategies"][0]
+            metrics_by_bidder[policy_name] = {
+                "expected_points": strat.get("expected_points", 0),
+                "expected_points_per_deal": strat.get("expected_points_per_deal", 0),
+                "make_rate": strat.get("make_rate", 0),
+                "bid_rate": strat.get("bid_rate", 0),
+                "cvar_5": strat.get("cvar_5"),
+                "hands_with_bids": strat.get("hands_with_bids", 0),
+                "deals_total": strat.get("deals_total", 0),
+            }
+        else:
+            # Try loading from auction results
+            auction = load_auction_results(run_dir, policy_name)
+            if auction:
+                bp = auction.get("bidding_points", {})
+                metrics_by_bidder[policy_name] = {
+                    "expected_points": auction.get("avg_points_team0", 0),
+                    "make_rate": bp.get("make_rate", 0),
+                    "bid_rate": bp.get("hands_with_bids", 0) / max(auction.get("hands", 1), 1),
+                    "cvar_5": None,
+                    "hands_with_bids": bp.get("hands_with_bids", 0),
+                    "deals_total": auction.get("hands", 0),
+                }
+
+    if not metrics_by_bidder:
+        print("ERROR: No metrics collected. Check experiment runs.")
+        sys.exit(1)
+
+    # Gate check
+    gate_failures = gate_check(metrics_by_bidder)
+
+    # Generate report
+    report = format_report(metrics_by_bidder, gate_failures, args.seed)
+
+    if args.output:
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+        with open(args.output, "w") as f:
+            f.write(report)
+        print(f"\nReport written to {args.output}")
+    else:
+        print(report)
+
+    if gate_failures:
+        print("\nGATE STATUS: FAIL")
+        for f in gate_failures:
+            print(f"  {f}")
+        sys.exit(1)
+    else:
+        print("\nGATE STATUS: PASS")
+
+
+if __name__ == "__main__":
+    main()

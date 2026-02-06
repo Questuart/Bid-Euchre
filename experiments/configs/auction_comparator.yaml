@@ -1,0 +1,37 @@
+# Auction Comparator: compare bidders in auction mode
+#
+# Primary metric: expected_points over bid-hands only
+# Gate: bid_rate > 0 for every comparator
+#
+# Usage:
+#   uv run python scripts/run_auction_comparator.py \
+#     --config experiments/configs/auction_comparator.yaml \
+#     --seed 42 \
+#     --olsa-artifact /path/to/olsa_v1.json
+
+experiment_name: auction_comparator
+
+bidding_policies:
+  - name: fiveheadfred
+    class_name: FixedBidder
+    params: {n: 5, contract: "S"}
+
+  - name: stricthellraiser
+    class_name: StrictRaiserBidder
+
+  - name: rankthetank
+    class_name: RanktheTank
+
+  - name: modeloespecifico
+    class_name: ModeloEspecifico
+
+  # OLSa is added dynamically by run_auction_comparator.py
+  # if --olsa-artifact is provided
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  n_per: 10000
+  seed: 42
+  log_level: hand
