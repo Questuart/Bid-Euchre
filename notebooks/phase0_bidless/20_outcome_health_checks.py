@@ -65,10 +65,8 @@ SEED = 42
 
 # --- Data Source Mode ---
 # NOTE: This notebook requires N×N strategy matchups that aren't available
-# in canonical runs. Set CANONICAL_MODE=False to generate on-the-fly,
-# or provide an explicit RUN_DIR with pre-computed matchup data.
+# in canonical runs. CANONICAL_MODE must be False (CI injects this via papermill).
 CANONICAL_MODE = True
-RUN_DIR = ""  # Path to a run with pre-computed matchup data (if available)
 
 # Contract space
 CONTRACT_TYPES = ['suit', 'high', 'low']
@@ -98,7 +96,6 @@ print("Configuration:")
 print(f"  Mode: {MODE}")
 print(f"  Seed: {SEED}")
 print(f"  Canonical mode: {CANONICAL_MODE}")
-print(f"  Run dir: {RUN_DIR or '(none — will generate on-the-fly)'}")
 print(f"  Contract types: {CONTRACT_TYPES}")
 print(f"  Trumps (suit contracts): {TRUMPS_FOR_SUIT_CONTRACTS}")
 print(f"  Seats: {SEATS}")
@@ -107,14 +104,11 @@ print(f"  Plot downsampling: {DOWNSAMPLE_PLOTS} (max {PLOT_MAX_ROWS} rows)")
 
 # --- Hard-fail guard for CANONICAL_MODE ---
 # N×N strategy matchups are NOT part of canonical run data.
-# Users must either set CANONICAL_MODE=False or provide an explicit RUN_DIR.
-if CANONICAL_MODE and not RUN_DIR:
+if CANONICAL_MODE:
     raise ValueError(
         "Notebook 20 requires N×N strategy matchups that are not available "
         "in canonical run data.\n\n"
-        "Options:\n"
-        "  1. Set CANONICAL_MODE = False  (generates data on-the-fly)\n"
-        "  2. Provide RUN_DIR = '/path/to/run'  (with pre-computed matchup data)\n\n"
+        "Set CANONICAL_MODE = False to generate data on-the-fly.\n"
         "CI runners inject CANONICAL_MODE=False automatically via papermill."
     )
 
