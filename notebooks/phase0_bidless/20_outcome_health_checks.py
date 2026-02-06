@@ -102,7 +102,10 @@ print(f"  Seats: {SEATS}")
 print(f"  Strategies: {[s['name'] for s in STRATEGIES]}")
 print(f"  Plot downsampling: {DOWNSAMPLE_PLOTS} (max {PLOT_MAX_ROWS} rows)")
 
+# %%
 # --- Hard-fail guard for CANONICAL_MODE ---
+# This MUST be in its own cell (not the parameters cell) so that papermill's
+# injected parameter overrides take effect before this guard runs.
 # N×N strategy matchups are NOT part of canonical run data.
 if CANONICAL_MODE:
     raise ValueError(
