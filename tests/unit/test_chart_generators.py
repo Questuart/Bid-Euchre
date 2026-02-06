@@ -13,6 +13,7 @@ from bid_euchre.reporting.charts import (
     generate_distribution_charts,
     generate_feature_health_charts,
     generate_feature_outcome_charts,
+    generate_strategy_matchup_charts,
 )
 
 
@@ -95,6 +96,65 @@ class TestDistributionCharts:
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = generate_distribution_charts(df, tmpdir)
             assert len(paths) == 0
+
+
+@pytest.fixture
+def matchup_results():
+    """Minimal matchup results dict for strategy charts."""
+    rng = np.random.RandomState(42)
+    strategies = ["greedy", "random"]
+    results = {}
+    for t0 in strategies:
+        for t1 in strategies:
+            tricks = rng.randint(0, 11, 50).tolist()
+            results[(t0, t1)] = {
+                "win_rate": rng.uniform(0.3, 0.7),
+                "mean_tricks_team0": np.mean(tricks),
+                "mean_tricks_team1": 10 - np.mean(tricks),
+                "mean_tricks": np.mean(tricks),
+                "tricks_team0": tricks,
+                "deals": 50,
+            }
+    return results
+
+
+class TestStrategyMatchupCharts:
+    """Test strategy matchup chart generation."""
+
+    def test_generates_pngs(self, matchup_results):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_strategy_matchup_charts(matchup_results, tmpdir)
+            assert len(paths) >= 3  # heatmap + tricks_distribution + matchup_summary
+            for p in paths:
+                assert Path(p).exists()
+                assert p.endswith(".png")
+
+    def test_includes_delta_bars_and_self_play(self, matchup_results):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_strategy_matchup_charts(
+                matchup_results, tmpdir, baseline_name="random",
+            )
+            names = [Path(p).stem for p in paths]
+            assert "win_rate_heatmap" in names
+            assert "matchup_summary" in names
+            assert "self_play_control" in names
+            assert "strategy_delta_bars" in names
+
+    def test_no_self_play_skips_gracefully(self):
+        """Handles matchup results with no self-play entries."""
+        results = {
+            ("greedy", "random"): {
+                "win_rate": 0.6,
+                "mean_tricks_team0": 5.5,
+                "mean_tricks_team1": 4.5,
+                "mean_tricks": 5.5,
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_strategy_matchup_charts(results, tmpdir)
+            assert len(paths) >= 2  # heatmap + tricks_distribution at minimum
+            names = [Path(p).stem for p in paths]
+            assert "self_play_control" not in names
 
 
 class TestChartRunnerCLI:

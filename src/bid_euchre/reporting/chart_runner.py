@@ -18,9 +18,10 @@ from .charts import (
     generate_distribution_charts,
     generate_feature_health_charts,
     generate_feature_outcome_charts,
+    generate_strategy_matchup_charts,
 )
 
-AVAILABLE_SUITES = ["feature_health", "feature_outcome", "distribution", "all"]
+AVAILABLE_SUITES = ["feature_health", "feature_outcome", "distribution", "strategy_matchup", "all"]
 
 
 def _load_bidless_features(run_dir: Path) -> pd.DataFrame:
@@ -44,6 +45,73 @@ def _load_features_with_outcomes(run_dir: Path) -> pd.DataFrame:
         raise FileNotFoundError(f"Missing: {outcomes_path}")
 
     return join_features_outcomes(bidless_path, outcomes_path)
+
+
+def _load_matchup_results(run_dir: Path) -> dict:
+    """Load strategy matchup results from a matrix run directory.
+
+    Reads results/<team0>_vs_<team1>/*.json and aggregates into
+    Dict[(team0, team1), Dict] suitable for generate_strategy_matchup_charts.
+
+    Returns empty dict if the run is not a matrix run.
+    """
+    results_dir = run_dir / "results"
+    if not results_dir.exists():
+        return {}
+
+    matchup_results = {}
+    for matchup_dir in sorted(results_dir.iterdir()):
+        if not matchup_dir.is_dir():
+            continue
+        name = matchup_dir.name
+        if "_vs_" not in name:
+            continue
+
+        team0, team1 = name.split("_vs_", maxsplit=1)
+
+        # Aggregate scenario JSONs in this matchup directory
+        scenario_files = sorted(matchup_dir.glob("*.json"))
+        if not scenario_files:
+            continue
+
+        total_deals = 0
+        weighted_win_rate = 0.0
+        weighted_mean_t0 = 0.0
+        weighted_mean_t1 = 0.0
+        all_tricks_t0 = []
+
+        for sf in scenario_files:
+            with open(sf) as f:
+                data = json.load(f)
+            n = data.get("deals", data.get("hands", 0))
+            if n == 0:
+                continue
+            total_deals += n
+            weighted_win_rate += data.get("win_rate_team0", 0) * n
+            weighted_mean_t0 += data.get("avg_team0", data.get("mean_tricks_team0", 0)) * n
+            weighted_mean_t1 += data.get("avg_team1", data.get("mean_tricks_team1", 0)) * n
+
+            # Reconstruct trick list from distribution histogram if available
+            dist = data.get("distribution_team0", {})
+            for k_str, count in dist.items():
+                all_tricks_t0.extend([int(k_str)] * count)
+
+        if total_deals == 0:
+            continue
+
+        result = {
+            "win_rate": weighted_win_rate / total_deals,
+            "mean_tricks_team0": weighted_mean_t0 / total_deals,
+            "mean_tricks_team1": weighted_mean_t1 / total_deals,
+            "mean_tricks": weighted_mean_t0 / total_deals,
+            "deals": total_deals,
+        }
+        if all_tricks_t0:
+            result["tricks_team0"] = all_tricks_t0
+
+        matchup_results[(team0, team1)] = result
+
+    return matchup_results
 
 
 def main():
@@ -91,6 +159,14 @@ def main():
             df = _load_features_with_outcomes(run_dir)
             suite_dir = str(output_dir / suite)
             paths = generate_distribution_charts(df, suite_dir, dpi=args.dpi)
+
+        elif suite == "strategy_matchup":
+            matchup_results = _load_matchup_results(run_dir)
+            if not matchup_results:
+                print("  Skipping strategy_matchup: no matchup data found in results/")
+                continue
+            suite_dir = str(output_dir / suite)
+            paths = generate_strategy_matchup_charts(matchup_results, suite_dir, dpi=args.dpi)
 
         else:
             print(f"  Unknown suite: {suite}")

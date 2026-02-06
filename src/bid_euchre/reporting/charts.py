@@ -94,6 +94,7 @@ def generate_feature_health_charts(
 def generate_strategy_matchup_charts(
     matchup_results: Dict[Tuple[str, str], Dict[str, Any]],
     output_dir: str,
+    baseline_name: Optional[str] = None,
     dpi: int = 150,
 ) -> List[str]:
     """Generate strategy comparison charts.
@@ -102,13 +103,15 @@ def generate_strategy_matchup_charts(
     - win_rate_heatmap.png
     - tricks_distribution.png
     - matchup_summary.png
-    - strategy_delta_bars.png
-    - self_play_control.png
+    - strategy_delta_bars.png (if baseline available)
+    - self_play_control.png (if self-play data available)
 
     Args:
         matchup_results: Dict mapping (team0, team1) to result dicts.
             Each result dict should have 'win_rate', 'mean_tricks_team0', etc.
         output_dir: Directory to save PNGs.
+        baseline_name: Strategy name to use as baseline for delta bars.
+            If None, auto-detects first strategy with self-play entry.
         dpi: Output resolution.
 
     Returns:
@@ -127,11 +130,35 @@ def generate_strategy_matchup_charts(
     fig = plot_matchup_summary(matchup_results)
     paths.append(_save_figure(fig, out, "matchup_summary", dpi))
 
-    fig = plot_strategy_delta_bars(matchup_results)
-    paths.append(_save_figure(fig, out, "strategy_delta_bars", dpi))
+    # Extract self-play entries: {strategy_name: result}
+    self_play = {
+        team0: result
+        for (team0, team1), result in matchup_results.items()
+        if team0 == team1
+    }
 
-    fig = plot_self_play_control(matchup_results)
-    paths.append(_save_figure(fig, out, "self_play_control", dpi))
+    # Delta bars: need a baseline strategy and cross-play comparison results
+    if baseline_name is None:
+        # Auto-detect: use first strategy that has a self-play entry
+        baseline_name = next(iter(self_play), None)
+
+    if baseline_name and baseline_name in self_play:
+        baseline_results = self_play[baseline_name]
+        comparison_results = {
+            team0: result
+            for (team0, team1), result in matchup_results.items()
+            if team1 == baseline_name and team0 != baseline_name
+        }
+        if comparison_results:
+            fig = plot_strategy_delta_bars(
+                baseline_results, comparison_results, baseline_name=baseline_name,
+            )
+            paths.append(_save_figure(fig, out, "strategy_delta_bars", dpi))
+
+    # Self-play control chart
+    if self_play:
+        fig = plot_self_play_control(self_play)
+        paths.append(_save_figure(fig, out, "self_play_control", dpi))
 
     return paths
 
