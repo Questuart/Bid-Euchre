@@ -68,6 +68,8 @@ __all__ = [
     "OutcomeStats",
     "compute_outcome_stats",
     "outcome_rates_with_ci",
+    # Charts — import directly: from bid_euchre.reporting.charts import ...
+    # (not re-exported here to avoid circular import with diagnostics.charts)
     # Validation
     "generate_validation_plots",
     "plot_feature_distributions",
