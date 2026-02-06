@@ -64,12 +64,12 @@
 MODE = "QUICK"
 
 # --- Data Source Mode ---
-DEMO_MODE = True  # If True, generates synthetic data; if False, loads from RUN_DIR
+CANONICAL_MODE = True  # If True, loads from canonical run; if False, generates on-the-fly
 
-# If DEMO_MODE=False, set this path:
-RUN_DIR = "../../data/runs/YOUR_RUN_ID"  # Will load from RUN_DIR/datasets/
+# Override canonical run path (default: auto-resolved from canonical_runs.py registry)
+RUN_DIR = ""  # Set to override canonical path; empty = use registry
 
-# --- Demo Mode Parameters (computed from MODE when DEMO_MODE=True) ---
+# --- Generation Parameters (used when CANONICAL_MODE=False) ---
 DEMO_SEED = 42
 _MODE_N_DEALS = {"SMOKE": 100, "QUICK": 2000, "FULL": 50000}
 DEMO_N_DEALS = _MODE_N_DEALS.get(MODE, 2000)  # Fallback to QUICK
@@ -236,51 +236,49 @@ print("✅ Demo data factory loaded")
 # %% [markdown]
 # **Data Source Options:**
 #
-# 1. **Production mode** (`DEMO_MODE=False`):
-#    - Point `RUN_DIR` to an existing experiment run
-#    - Generate production dataset with:
-#      ```bash
-#      PYTHONPATH=src python experiments/run_experiment.py \
-#        --config experiments/configs/bidless_dataset_collection.yaml \
-#        --seed 42 \
-#        --n_per 2000
-#      ```
-#    - Then set `RUN_DIR = "../../data/runs/<your_run_id>"`
+# 1. **Canonical mode** (`CANONICAL_MODE=True`, default):
+#    - Loads from canonical run data (300K hands, seed=42)
+#    - Canonical run auto-resolved from `canonical_runs.py` registry
+#    - Set `RUN_DIR` to override with a custom run path
 #
-# 2. **Demo mode** (`DEMO_MODE=True`):
+# 2. **Generation mode** (`CANONICAL_MODE=False`):
 #    - Generates synthetic data in-memory
 #    - Uses `DEMO_N_DEALS=2000` (meets rigor standards for bias detection)
-#    - Useful for testing, development, or when no pre-existing dataset available
+#    - Used by CI (injected by papermill) and when no canonical data available
 
 # %%
 # ============================================================================
 # Data Loading / Generation
 # ============================================================================
 
-if not DEMO_MODE:
-    print("📂 Loading existing dataset from RUN_DIR...")
-    from pathlib import Path
+if CANONICAL_MODE:
+    # Resolve canonical run directory
+    if RUN_DIR:
+        dataset_path = Path(RUN_DIR) / "datasets"
+    else:
+        from canonical_runs import resolve_run_dir
+        dataset_path = resolve_run_dir("greedy_dataset") / "datasets"
 
-    dataset_path = Path(RUN_DIR) / "datasets"
     if not dataset_path.exists():
         raise FileNotFoundError(
             f"Dataset not found: {dataset_path}\n"
-            f"Set RUN_DIR to your run directory, or use DEMO_MODE=True"
+            f"Set RUN_DIR or generate canonical data first."
         )
 
+    print(f"📂 Loading canonical dataset from {dataset_path}...")
     df = load_bidless_dataset(dataset_path)
-    print(f"✅ Loaded {len(df):,} rows from {dataset_path}")
+    print(f"✅ Loaded {len(df):,} rows from canonical data")
 
 else:
-    print("🎭 DEMO_MODE=True: Generating synthetic data...")
+    print("Generating synthetic data (CANONICAL_MODE=False)...")
     print(f"   Seed: {DEMO_SEED}")
     print(f"   Deals per scenario: {DEMO_N_DEALS}")
     print("   Scenarios: 6 (4 suit + high + low)")
 
     df = build_demo_dataset(seed=DEMO_SEED, n_deals=DEMO_N_DEALS)
-    dataset_path = None  # No disk path for demo data
+    dataset_path = None  # No disk path for generated data
 
-    print(f"\n✅ Generated {len(df):,} rows (synthetic demo data)")
+    print(f"\n✅ Generated {len(df):,} rows (synthetic data)")
     print(f"   Expected: {DEMO_N_DEALS * 6 * 4:,} rows (n_deals × scenarios × seats)")
 
 # %% [markdown]

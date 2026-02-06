@@ -64,10 +64,11 @@ MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deal
 SEED = 42
 
 # --- Data Source Mode ---
-DEMO_MODE = True  # If True, generates synthetic data; if False, loads from RUN_DIR
-
-# If DEMO_MODE=False, set this path:
-RUN_DIR = "../../data/runs/YOUR_RUN_ID"  # Will load outcomes from RUN_DIR/logs/
+# NOTE: This notebook always generates data on-the-fly because it requires
+# N×N strategy matchups that aren't available in canonical runs.
+# CANONICAL_MODE is accepted for consistency but has no effect here.
+CANONICAL_MODE = True
+RUN_DIR = ""  # Reserved for future canonical outcome data
 
 # Contract space
 CONTRACT_TYPES = ['suit', 'high', 'low']
@@ -96,7 +97,7 @@ warnings.filterwarnings('ignore')
 print("Configuration:")
 print(f"  Mode: {MODE}")
 print(f"  Seed: {SEED}")
-print(f"  Demo mode: {DEMO_MODE}")
+print(f"  Canonical mode: {CANONICAL_MODE} (always generates for N×N matchups)")
 print(f"  Contract types: {CONTRACT_TYPES}")
 print(f"  Trumps (suit contracts): {TRUMPS_FOR_SUIT_CONTRACTS}")
 print(f"  Seats: {SEATS}")
@@ -131,7 +132,6 @@ sys.path.insert(0, str(repo_root / 'src'))
 
 from bid_euchre.diagnostics.notebook_data import (
     load_or_generate_outcomes,
-    load_outcomes_from_run_dir,
 )
 
 print("\n✓ Imports complete")
@@ -288,49 +288,36 @@ print("\n" + "=" * 70)
 print("LOADING DATASETS")
 print("=" * 70)
 
-if DEMO_MODE:
-    # Self-play dataset (each strategy plays against itself)
-    print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
-    df_self = load_or_generate_outcomes(
-        mode=MODE,
-        seed=SEED,
-        contracts=CONTRACT_TYPES,
-        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-        seats=SEATS,
-        strategies=STRATEGIES,
-        matchups=None,  # None = self-play for each strategy
-    )
+# Always generate on-the-fly (N×N matchups not in canonical data)
+# Self-play dataset (each strategy plays against itself)
+print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
+df_self = load_or_generate_outcomes(
+    mode=MODE,
+    seed=SEED,
+    contracts=CONTRACT_TYPES,
+    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+    seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=None,  # None = self-play for each strategy
+)
 
-    print(f"   Self-play shape: {df_self.shape}")
-    print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
+print(f"   Self-play shape: {df_self.shape}")
+print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
 
-    # Head-to-head dataset (full N×N matchup matrix)
-    print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
-    df_h2h = load_or_generate_outcomes(
-        mode=MODE,
-        seed=SEED,
-        contracts=CONTRACT_TYPES,
-        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-        seats=SEATS,
-        strategies=STRATEGIES,
-        matchups=MATCHUPS_MATRIX,
-    )
+# Head-to-head dataset (full N×N matchup matrix)
+print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
+df_h2h = load_or_generate_outcomes(
+    mode=MODE,
+    seed=SEED,
+    contracts=CONTRACT_TYPES,
+    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+    seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=MATCHUPS_MATRIX,
+)
 
-    print(f"   Head-to-head shape: {df_h2h.shape}")
-    print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
-
-else:
-    # Production mode: load from RUN_DIR
-    print(f"\n📂 Loading data from RUN_DIR: {RUN_DIR}")
-    df_all = load_outcomes_from_run_dir(RUN_DIR)
-
-    # Split into self-play (strategy_id doesn't contain "_vs_") and h2h
-    is_self_play = ~df_all['strategy_id'].str.contains('_vs_')
-    df_self = df_all[is_self_play].copy()
-    df_h2h = df_all[~is_self_play].copy()
-
-    print(f"   Self-play shape: {df_self.shape}")
-    print(f"   Head-to-head shape: {df_h2h.shape}")
+print(f"   Head-to-head shape: {df_h2h.shape}")
+print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
 
 print("\n" + "=" * 70)
 print("✓ Both datasets loaded")
@@ -501,7 +488,7 @@ print("\n" + "=" * 70)
 print("TEST 1.3: Reproducibility Check")
 print("=" * 70)
 
-if DEMO_MODE:
+if True:  # Always generate (reproducibility check needs on-the-fly generation)
     # Re-generate self-play dataset with same seed
     print(f"\nRe-generating self-play dataset with seed={SEED}...")
     df_self_check = load_or_generate_outcomes(
@@ -549,7 +536,7 @@ if DEMO_MODE:
     print("✅ Reproducibility check PASSED")
     print("=" * 70)
 else:
-    print("\n⚠️  Reproducibility check skipped (DEMO_MODE=False)")
+    print("\n⚠️  Reproducibility check skipped (generation disabled)")
     print("    To verify reproducibility, re-run the experiment with the same seed.")
     print("=" * 70)
 
@@ -1887,10 +1874,10 @@ summary['passes'].append("✅ 1.1 Outcome validity: All tricks_won in [0, 10], v
 summary['passes'].append("✅ 1.2 Deal invariant: team0_tricks + team1_tricks == 10")
 
 # Test 1.3: Reproducibility (already passed if we got here)
-if DEMO_MODE:
+if True:  # Always generate (reproducibility check needs on-the-fly generation)
     summary['passes'].append("✅ 1.3 Reproducibility: Outcomes deterministic with same seed")
 else:
-    summary['warnings'].append("⚠️  1.3 Reproducibility: Skipped (DEMO_MODE=False)")
+    summary['warnings'].append("⚠️  1.3 Reproducibility: Skipped (generation disabled)")
 
 # Contract-specific mean checks (using deal-level data)
 for contract_type in CONTRACT_TYPES:
