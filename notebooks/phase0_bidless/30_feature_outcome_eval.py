@@ -62,10 +62,10 @@ MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deal
 SEED = 42
 
 # --- Data Source Mode ---
-DEMO_MODE = True  # If True, generates synthetic data; if False, loads from RUN_DIR
+CANONICAL_MODE = True  # If True, loads from canonical run; if False, generates on-the-fly
 
-# If DEMO_MODE=False, set this path:
-RUN_DIR = "../../data/runs/YOUR_RUN_ID"  # Will load outcomes from RUN_DIR/logs/
+# Override canonical run path (default: auto-resolved from canonical_runs.py registry)
+RUN_DIR = ""  # Set to override canonical path; empty = use registry
 
 # Game parameters
 CONTRACT_TYPES = ['suit', 'high', 'low']
@@ -98,7 +98,7 @@ print(f"Sample size: {N_DEALS} deals")
 print(f"Total observations: {N_DEALS * len(SEATS) * (len(CONTRACT_TYPES) - 1 + len(TRUMPS_FOR_SUIT_CONTRACTS))}")
 print(f"Strategies: {[s['name'] for s in STRATEGIES]}")
 print(f"Matchup mode: {MATCHUP_MODE}")
-print(f"Demo mode: {DEMO_MODE}")
+print(f"Canonical mode: {CANONICAL_MODE}")
 
 # %% [markdown]
 # ### Imports
@@ -106,6 +106,7 @@ print(f"Demo mode: {DEMO_MODE}")
 # %%
 import itertools
 import warnings
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -251,8 +252,18 @@ print(f"Matchups: {len(MATCHUPS)}")
 
 # %%
 # Load feature + outcome data
-if DEMO_MODE:
-    print(f"DEMO_MODE: Generating synthetic data (mode={MODE}, seed={SEED})...")
+if CANONICAL_MODE:
+    # Load from canonical run (glutton dataset has features + outcomes)
+    if RUN_DIR:
+        canonical_dir = Path(RUN_DIR)
+    else:
+        from canonical_runs import resolve_run_dir
+        canonical_dir = resolve_run_dir("glutton_dataset")
+
+    print(f"Loading canonical data from {canonical_dir}...")
+    data_df = load_features_and_outcomes_from_run_dir(str(canonical_dir))
+else:
+    print(f"Generating synthetic data (mode={MODE}, seed={SEED})...")
     data_df = load_or_generate_features(
         mode=MODE,
         seed=SEED,
@@ -262,9 +273,6 @@ if DEMO_MODE:
         strategies=STRATEGIES,
         matchups=MATCHUPS,
     )
-else:
-    print(f"Loading data from RUN_DIR: {RUN_DIR}")
-    data_df = load_features_and_outcomes_from_run_dir(RUN_DIR)
 
 print(f"Loaded {len(data_df)} observations")
 print(f"\nColumns: {list(data_df.columns)}")

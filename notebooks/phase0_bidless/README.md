@@ -48,16 +48,18 @@ MODE = "QUICK"  # Fast iteration (~2k deals, <1 min)
 SEED = 42       # For reproducibility
 
 # --- Data Source Mode ---
-DEMO_MODE = True  # Default: generates synthetic data on-the-fly
-# DEMO_MODE = False  # Production: loads from RUN_DIR (see below)
+CANONICAL_MODE = True   # Default: loads from canonical run data (300K hands)
+# CANONICAL_MODE = False  # CI/dev: generates synthetic data on-the-fly
 
-# If DEMO_MODE=False, set path to existing experiment run:
-RUN_DIR = "../../data/runs/YOUR_RUN_ID"
+# Override canonical path (empty = auto-resolve from registry):
+RUN_DIR = ""
 ```
 
 **Data Source Modes:**
-- **`DEMO_MODE=True`** (default): Generates synthetic data using `load_or_generate_*()` functions. Does NOT read from `RUN_DIR`. Data is cached after first generation.
-- **`DEMO_MODE=False`**: Loads existing data from `RUN_DIR/logs/` (outcomes) and `RUN_DIR/datasets/` (features). Requires a prior experiment run.
+- **`CANONICAL_MODE=True`** (default): Loads from canonical run data (300K hands, seed=42). Paths auto-resolved from `canonical_runs.py` registry. Set `RUN_DIR` to override.
+- **`CANONICAL_MODE=False`**: Generates synthetic data on-the-fly using `load_or_generate_*()` functions. Used by CI (injected by papermill). Data is cached after first generation.
+
+**Note:** Notebook 20 (outcome health checks) always generates data on-the-fly regardless of `CANONICAL_MODE`, because its N×N strategy matchup analysis requires multi-strategy simulation.
 
 **Step 3:** Run all cells. Data will be generated automatically on first run and cached for subsequent runs.
 
