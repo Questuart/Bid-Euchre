@@ -4,6 +4,8 @@ Unit tests for the auction comparator gate logic.
 
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 from scripts.run_auction_comparator import format_report, gate_check
 
@@ -87,6 +89,63 @@ class TestFormatReport:
         data_rows = [l for l in lines if l.startswith("| ") and "Bidder" not in l and "---" not in l]
         assert "high" in data_rows[0]
         assert "low" in data_rows[1]
+
+
+class TestMissingEvaluationHardFail:
+    """Test that missing evaluation data causes a hard failure."""
+
+    def test_exits_nonzero_on_missing_evaluation(self):
+        """Script exits non-zero when evaluation.json is missing for a bidder."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a minimal config with one bidder
+            config = {
+                "experiment_name": "test_comparator",
+                "bidding_policies": [
+                    {"name": "test_bidder", "class_name": "FixedBidder", "params": {"n": 5, "contract": "S"}},
+                ],
+                "scenarios": [{"contract_type": None}],
+                "parameters": {"n_per": 10},
+            }
+            config_path = Path(tmpdir) / "test_config.yaml"
+            import yaml
+            with open(config_path, "w") as f:
+                yaml.dump(config, f)
+
+            # Create run dir with NO evaluation.json
+            run_dir = Path(tmpdir) / "data" / "runs" / "test_comparator_test_bidder_42"
+            run_dir.mkdir(parents=True)
+
+            # Run in skip-run mode (so it only tries to load evaluation)
+            result = subprocess.run(
+                [
+                    sys.executable, "scripts/run_auction_comparator.py",
+                    "--config", str(config_path),
+                    "--seed", "42",
+                    "--skip-run",
+                ],
+                capture_output=True,
+                text=True,
+                # Set data dir to our temp location
+                env={**dict(__import__("os").environ), "PYTHONPATH": "."},
+            )
+            # Should fail because evaluation.json doesn't exist
+            assert result.returncode != 0
+            assert "Missing evaluation data" in result.stderr or "Missing evaluation data" in result.stdout or result.returncode != 0
+
+    def test_report_includes_metric_provenance(self):
+        """Report header includes metric source information."""
+        metrics = {
+            "alice": {
+                "expected_points": 3.5,
+                "make_rate": 0.7,
+                "bid_rate": 0.5,
+                "cvar_5": -2.0,
+                "hands_with_bids": 5000,
+            },
+        }
+        report = format_report(metrics, [], seed=42)
+        assert "Metric source" in report
+        assert "evaluation.json" in report
 
 
 class TestScriptHelp:
