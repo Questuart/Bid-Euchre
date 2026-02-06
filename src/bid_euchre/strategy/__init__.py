@@ -31,6 +31,7 @@ from .bidding import (
     HeuristicSuitBidder,
     HighLowHeuristicBidder,
     ModeloEspecifico,
+    OLSaBidder,
     RanktheTank,
     StrictHellRaiser,
     StrictRaiserBidder,  # backward-compat alias
@@ -62,6 +63,7 @@ __all__ = [
     "HeuristicSuitBidder",
     "HighLowHeuristicBidder",
     "ModeloEspecifico",
+    "OLSaBidder",
     "RanktheTank",
     "StrictHellRaiser",
     "StrictRaiserBidder",

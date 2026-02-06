@@ -5,9 +5,13 @@ This module provides the canonical interface for bidding in auction games,
 where players bid simultaneously for the right to choose contract and trump.
 """
 
+import json
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+
+import numpy as np
 
 from ..core.cards import Card
 from ..models.bidding_artifact import load_artifact
@@ -638,3 +642,79 @@ class ArtifactBidder(BiddingPolicy):
         _, bid_n, contract = best
 
         return BidAction.bid(bid_n, contract)
+
+
+class OLSaBidder(BiddingPolicy):
+    """
+    OLSa bidder: per-contract sparse OLS predicting tricks_won.
+
+    Evaluates all 6 contracts (4 suits + HIGH + LOW), predicts tricks for
+    each using the corresponding sparse OLS model, floors to get bid amount,
+    and picks the best candidate.
+
+    Artifact format: olsa_v1.json with models for "suit", "high", "low".
+    """
+
+    def __init__(self, artifact_path: str, name: str = "olsa"):
+        super().__init__(name)
+
+        with open(artifact_path) as f:
+            artifact = json.load(f)
+
+        if artifact.get("artifact_type") != "olsa_v1":
+            raise ValueError(
+                f"Expected artifact_type 'olsa_v1', got '{artifact.get('artifact_type')}'"
+            )
+
+        self.models = {}
+        for contract_family, model_data in artifact["models"].items():
+            self.models[contract_family] = {
+                "weights": np.array(model_data["weights"], dtype=np.float64),
+                "bias": float(model_data["bias"]),
+                "feature_names": model_data["feature_names"],
+            }
+
+    def _predict(self, contract_family: str, features: dict) -> float:
+        """Predict tricks_won for a contract family using its OLS model."""
+        model = self.models[contract_family]
+        x = np.array(
+            [features[f] for f in model["feature_names"]], dtype=np.float64
+        )
+        return float(x @ model["weights"] + model["bias"])
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        from ..features.hand_eval import get_hand_features
+
+        candidates = []
+
+        # Evaluate suit contracts (4 suits, one model)
+        if "suit" in self.models:
+            for suit in ["C", "D", "H", "S"]:
+                features = get_hand_features(obs.hand, "suit", suit)
+                predicted_tricks = self._predict("suit", features)
+                bid_n = math.floor(predicted_tricks)
+                if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+                    candidates.append((predicted_tricks, bid_n, suit))
+
+        # Evaluate HIGH
+        if "high" in self.models:
+            features = get_hand_features(obs.hand, "high", None)
+            predicted_tricks = self._predict("high", features)
+            bid_n = math.floor(predicted_tricks)
+            if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+                candidates.append((predicted_tricks, bid_n, "HIGH"))
+
+        # Evaluate LOW
+        if "low" in self.models:
+            features = get_hand_features(obs.hand, "low", None)
+            predicted_tricks = self._predict("low", features)
+            bid_n = math.floor(predicted_tricks)
+            if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+                candidates.append((predicted_tricks, bid_n, "LOW"))
+
+        if not candidates:
+            return BidAction.pass_bid()
+
+        # Pick best: highest predicted tricks, break ties by bid amount, then alphabetically
+        best = max(candidates, key=lambda x: (x[0], x[1], x[2]))
+        return BidAction.bid(best[1], best[2])
