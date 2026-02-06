@@ -59,7 +59,7 @@ RUN_DIR = ""
 - **`CANONICAL_MODE=True`** (default): Loads from canonical run data (300K hands, seed=42). Paths auto-resolved from `canonical_runs.py` registry. Set `RUN_DIR` to override.
 - **`CANONICAL_MODE=False`**: Generates synthetic data on-the-fly using `load_or_generate_*()` functions. Used by CI (injected by papermill). Data is cached after first generation.
 
-**Note:** Notebook 20 (outcome health checks) always generates data on-the-fly regardless of `CANONICAL_MODE`, because its N×N strategy matchup analysis requires multi-strategy simulation.
+**Note:** Notebook 20 (outcome health checks) requires `CANONICAL_MODE=False` (or an explicit `RUN_DIR`), because its N×N strategy matchup analysis is not available in canonical runs. It will raise `ValueError` if `CANONICAL_MODE=True` with no `RUN_DIR`. CI runners inject `CANONICAL_MODE=False` automatically via papermill.
 
 **Step 3:** Run all cells. Data will be generated automatically on first run and cached for subsequent runs.
 
