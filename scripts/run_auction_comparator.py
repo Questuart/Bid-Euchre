@@ -61,15 +61,6 @@ def load_evaluation(run_dir):
         return json.load(f)
 
 
-def load_auction_results(run_dir, policy_name):
-    """Load the per-policy auction results."""
-    results_path = Path(run_dir) / "results" / policy_name / "auction.json"
-    if not results_path.exists():
-        return None
-    with open(results_path) as f:
-        return json.load(f)
-
-
 def gate_check(metrics_by_bidder):
     """
     Apply gate checks:
@@ -94,6 +85,7 @@ def format_report(metrics_by_bidder, gate_failures, seed):
         f"- **Seed:** {seed}",
         f"- **Generated:** {datetime.now(timezone.utc).isoformat()}",
         f"- **Bidders:** {len(metrics_by_bidder)}",
+        "- **Metric source:** evaluation.json (expected_points from evaluator)",
         "",
     ]
 
@@ -199,8 +191,9 @@ def main():
             run_dir = f"data/runs/{run_id}"
             generate_evaluation(run_dir)
 
-    # Collect metrics
+    # Collect metrics (require evaluation.json — no silent fallback)
     metrics_by_bidder = {}
+    missing_evaluations = []
     for policy in policies:
         policy_name = policy["name"]
         run_id = f"{experiment_name}_{policy_name}_{args.seed}"
@@ -219,18 +212,16 @@ def main():
                 "deals_total": strat.get("deals_total", 0),
             }
         else:
-            # Try loading from auction results
-            auction = load_auction_results(run_dir, policy_name)
-            if auction:
-                bp = auction.get("bidding_points", {})
-                metrics_by_bidder[policy_name] = {
-                    "expected_points": auction.get("avg_points_team0", 0),
-                    "make_rate": bp.get("make_rate", 0),
-                    "bid_rate": bp.get("hands_with_bids", 0) / max(auction.get("hands", 1), 1),
-                    "cvar_5": None,
-                    "hands_with_bids": bp.get("hands_with_bids", 0),
-                    "deals_total": auction.get("hands", 0),
-                }
+            missing_evaluations.append(policy_name)
+
+    if missing_evaluations:
+        print("ERROR: Missing evaluation data for the following bidders:")
+        for name in missing_evaluations:
+            run_id = f"{experiment_name}_{name}_{args.seed}"
+            print(f"  - {name}  (expected at data/runs/{run_id}/reports/bidding_strategy/evaluation.json)")
+        print("\nTo generate evaluation data, re-run without --skip-run:")
+        print(f"  uv run python scripts/run_auction_comparator.py --config {args.config} --seed {args.seed}")
+        sys.exit(1)
 
     if not metrics_by_bidder:
         print("ERROR: No metrics collected. Check experiment runs.")

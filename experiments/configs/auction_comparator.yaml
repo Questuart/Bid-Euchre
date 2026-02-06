@@ -17,7 +17,7 @@ bidding_policies:
     params: {n: 5, contract: "S"}
 
   - name: stricthellraiser
-    class_name: StrictRaiserBidder
+    class_name: StrictHellRaiser
 
   - name: rankthetank
     class_name: RanktheTank
