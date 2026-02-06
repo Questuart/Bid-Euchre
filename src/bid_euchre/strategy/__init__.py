@@ -32,7 +32,8 @@ from .bidding import (
     HighLowHeuristicBidder,
     ModeloEspecifico,
     RanktheTank,
-    StrictRaiserBidder,
+    StrictHellRaiser,
+    StrictRaiserBidder,  # backward-compat alias
 )
 
 # Greedy strategies
@@ -62,6 +63,7 @@ __all__ = [
     "HighLowHeuristicBidder",
     "ModeloEspecifico",
     "RanktheTank",
+    "StrictHellRaiser",
     "StrictRaiserBidder",
     # Baselines
     "BasicStrategy",

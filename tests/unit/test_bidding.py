@@ -12,6 +12,7 @@ from bid_euchre.strategy.bidding import (
     BidAction,
     BiddingObservation,
     ModeloEspecifico,
+    StrictHellRaiser,
     StrictRaiserBidder,
 )
 
@@ -151,12 +152,16 @@ class TestAlwaysPassBidder:
         assert action.is_pass()
 
 
-class TestStrictRaiserBidder:
-    """Test StrictRaiserBidder."""
+class TestStrictHellRaiser:
+    """Test StrictHellRaiser (formerly StrictRaiserBidder)."""
+
+    def test_backward_compat_alias(self):
+        """Test that StrictRaiserBidder is an alias for StrictHellRaiser."""
+        assert StrictRaiserBidder is StrictHellRaiser
 
     def test_initial_bid(self):
         """Test bidding 3 when no high bid exists."""
-        bidder = StrictRaiserBidder()
+        bidder = StrictHellRaiser()
         hand = [Card("S", "A"), Card("H", "K")]
 
         obs = BiddingObservation(
@@ -173,7 +178,7 @@ class TestStrictRaiserBidder:
 
     def test_raise_bid(self):
         """Test raising existing bids."""
-        bidder = StrictRaiserBidder()
+        bidder = StrictHellRaiser()
 
         # Raise from 3 to 4
         obs = BiddingObservation(
@@ -201,7 +206,7 @@ class TestStrictRaiserBidder:
 
     def test_max_bid_pass(self):
         """Test passing when at maximum bid."""
-        bidder = StrictRaiserBidder()
+        bidder = StrictHellRaiser()
 
         # Bid 10 when current is 9
         obs = BiddingObservation(
@@ -229,7 +234,7 @@ class TestStrictRaiserBidder:
 
     def test_contract_tuple_conversion(self):
         """Test that bids convert to correct contract tuples."""
-        bidder = StrictRaiserBidder()
+        bidder = StrictHellRaiser()
 
         obs = BiddingObservation(
             hand=[],
@@ -403,10 +408,10 @@ class TestArtifactBidder:
             ArtifactBidder(str(artifact_path))
 
     def test_strict_raiser_bidding_behavior(self, tmp_path):
-        """Test that strict raiser imitation behaves like StrictRaiserBidder."""
+        """Test that strict raiser imitation behaves like StrictHellRaiser."""
         from bid_euchre.models.bidding_artifact import dump_artifact
 
-        # Create artifact that replicates StrictRaiserBidder
+        # Create artifact that replicates StrictHellRaiser
         artifact = {
             "schema_version": "1",
             "model_type": "strict_raiser_imitation_v1",
@@ -423,7 +428,7 @@ class TestArtifactBidder:
         dump_artifact(artifact, str(artifact_path))
 
         artifact_bidder = ArtifactBidder(str(artifact_path))
-        reference_bidder = StrictRaiserBidder()
+        reference_bidder = StrictHellRaiser()
 
         # Test various scenarios
         test_cases = [

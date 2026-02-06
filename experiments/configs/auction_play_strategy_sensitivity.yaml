@@ -1,7 +1,7 @@
 # Auction Play-Strategy Sensitivity Test
 #
 # Purpose: Determine which play strategy to freeze for bidder evaluation work.
-# Uses a single baseline bidder (StrictRaiserBidder) to compare play strategies
+# Uses a single baseline bidder (StrictHellRaiser) to compare play strategies
 # in auction mode.
 #
 # Analysis approach:
@@ -42,10 +42,10 @@ strategies:
       partner_awareness: true
       sure_winner_cover: true
 
-# Use StrictRaiserBidder for all auction bidding
+# Use StrictHellRaiser for all auction bidding
 bidding_policies:
   - name: strict_raiser
-    class_name: StrictRaiserBidder
+    class_name: StrictHellRaiser
 
 scenarios:
   - contract_type: null  # Auction mode
