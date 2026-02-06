@@ -1,146 +1,124 @@
 # Bidding Development Plan: Blog Alignment
 
-**Last Updated:** 2026-01-27
-**Status:** Phase 0 (Pre-req complete)
+**Last Updated:** 2026-02-05
+**Status:** Phase 0 COMPLETE, Phase 1 IN PROGRESS
 
 This document outlines the implementation plan to align the codebase with the blog post "Bid Euchre, Part 4: How Do You Teach a Computer to Bid?"
 
 ---
 
-## Completed Steps
+## Phase 0: COMPLETE
 
-### Pre-requisite: Rename HeuristicsBidder → RanktheTank ✅ DONE
+### Pre-requisite: Rename HeuristicsBidder → RanktheTank
 
-The pre-requisite rename has been completed:
-- Renamed `HeuristicsBidder` class to `RanktheTank` in `src/bid_euchre/strategy/bidding.py`
-- Updated all imports, exports, tests, YAML configs, and documentation
-- All tests pass (`make check`)
+- Renamed `HeuristicsBidder` class to `RanktheTank`
+- Renamed `StrictRaiserBidder` → `StrictHellRaiser` (with backward-compat alias)
+
+### Play Strategy Validation
+
+- Glutton confirmed as superior play strategy via canonical gate
+- Evidence: `data/runs/play_policy_gate_aggregate_20260204_221656.json`
+- See `docs/02_agent/GLUTTON_VS_GREEDY_EVALUATION.md` for full analysis
+
+### Canonical Bidless Data Collection
+
+- 300K hands per play policy (greedy, glutton), seed=42
+- `bidless.parquet`: 1.2M seat-rows × 41 features
+- `bidless_outcomes.parquet`: 300K hand-rows with tricks per team
+- Canonical run IDs:
+  - `canonical_bidless_dataset_greedy_42_20260204_221121`
+  - `canonical_bidless_dataset_glutton_42_20260204_222713`
+
+### Diagnostic Tricks-Model Evaluation
+
+- Full-feature Ridge regression on `tricks_won` (standardized coefficients)
+- Results: `docs/02_agent/DIAGNOSTIC_TRICKS_EVALUATION.md`
+- OLSa feature validation: bowers, offsuit_aces, offsuit_tens_count confirmed in top 10
+
+### ModeloEspecifico Contract Spec Lock
+
+- Fixed HIGH/LOW formulas (were degenerate — could never bid)
+- HIGH: `1.0 * offsuit_aces`
+- LOW: `1.0 * offsuit_tens_count`
+
+### Infrastructure
+
+- Feature-outcome join utility: `src/bid_euchre/datasets/join.py`
+- OLSa training pipeline: `src/bid_euchre/models/train_olsa.py`
+- OLSaBidder runtime: `src/bid_euchre/strategy/bidding.py`
+- Auction comparator: `scripts/run_auction_comparator.py`
+- Config registrations: OLSaBidder, ModeloEspecifico, FixedBidder
 
 ---
 
-## Implementation Phases
+## Phase 1: OLSa Bidder Evaluation (IN PROGRESS)
 
-### Phase 0: Validate Play Strategies (NEXT)
+**Goal:** Validate OLSa bidder against hand-coded baselines in auction mode.
 
-**Goal:** Confirm that Glutton is meaningfully better than simpler strategies.
+### OLSa Architecture
 
-**Command:**
+3 separate OLS models with sparse features:
+- **suit:** `tricks_won ~ intercept + bowers + trump_count + offsuit_aces`
+- **high:** `tricks_won ~ intercept + offsuit_aces`
+- **low:** `tricks_won ~ intercept + offsuit_tens_count`
+
+### Evaluation Framework
+
+Run all 5 comparators via `scripts/run_auction_comparator.py`:
+
+| Bidder | Class | Description |
+|--------|-------|-------------|
+| FiveHeadFred | `FixedBidder(n=5, contract="S")` | Always bids 5S |
+| StrictHellRaiser | `StrictHellRaiser` | Always raises |
+| RanktheTank | `RanktheTank` | Heuristic rank-sum |
+| ModeloEspecifico | `ModeloEspecifico` | Hand-coded weights |
+| OLSa | `OLSaBidder` | Trained sparse OLS |
+
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
-  --config experiments/configs/strategy_comparison.yaml \
-  --n_per 10000 \
-  --seed 42
+# Train OLSa
+uv run python -m bid_euchre.models.train_olsa \
+    --run-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
+    --seed 42 --output /tmp/olsa_artifacts/
+
+# Run comparator
+uv run python scripts/run_auction_comparator.py \
+    --config experiments/configs/auction_comparator.yaml \
+    --seed 42 --olsa-artifact /tmp/olsa_artifacts/olsa_v1.json
 ```
 
-**Expected results:**
-| Strategy | Expected Avg Tricks |
-|----------|---------------------|
-| Random | ~5.0 (baseline) |
-| AlwaysLowest | ~4.5 (passive) |
-| AlwaysHighest | ~4.8 (wasteful) |
-| Greedy | ~5.5-6.0 |
-| **Glutton** | **~6.0-6.5** |
-
-**Success criteria:** Glutton > Greedy > Random with statistical significance.
-
 ---
 
-### Phase 1: B0 on Tricks
-
-**Goal:** Get a working tricks-prediction model.
-
-**Steps:**
-1. Wire dataset collection (`scripts/collect_bidless_dataset.py`)
-2. Train B0 on `tricks_won` using `get_hand_features()`
-3. Create `B0TricksBidder` class
-4. Register in config system
-
-**Verification:**
-```bash
-# Collect bidless data
-PYTHONPATH=src python scripts/collect_bidless_dataset.py --n_hands 50000 --seed 42
-
-# Train B0
-PYTHONPATH=src python scripts/train_b0.py --data data/bidless/... --output data/models/b0_tricks.json
-```
-
----
+## Phase 2-4: Future Work
 
 ### Phase 2: Generate Bid Data
 
-**Goal:** Generate hands with actual bids and points.
+Train on actual bid outcomes (hands with bids and points).
 
-**Steps:**
-1. Create `experiments/configs/bid_dataset_collection.yaml`
-2. Run simulation with B0TricksBidder + Glutton play
-3. Log: `hand_features, bid, contract, tricks_won, points`
+### Phase 3: Train on Points
 
----
-
-### Phase 3: Train on Actual Points
-
-**Goal:** Train model predicting expected points given a bid.
-
-**Steps:**
-1. Create `scripts/train_b0_points.py`
-2. Train on `hand_features + [bid_level]` → `points_earned`
-3. Create `B0PointsBidder` class
-
----
+Model predicting expected points given a bid. Creates risk-aware bidder.
 
 ### Phase 4: Comparison Tournament
 
-**Goal:** Validate improvement chain.
-
-**Metrics:**
-- `make_rate` - % of bids made
-- `avg_points` - average points per hand
-- `cvar_5` - worst 5% outcomes (risk metric)
-
-**Expected ordering:**
+Validate improvement chain:
 ```
-FiveHeadFred < RanktheTank ≤ B0TricksBidder < B0PointsBidder
+FiveHeadFred < RanktheTank ≤ OLSa < PointsBidder
 ```
+
+Metrics: `expected_points`, `make_rate`, `bid_rate`, `cvar_5`
 
 ---
 
-## Files to Create/Modify
+## Key Files
 
-| Phase | File | Action |
-|-------|------|--------|
-| Pre | `src/bid_euchre/strategy/bidding.py` | ✅ Renamed to `RanktheTank` |
-| Pre | All imports/tests/configs | ✅ Updated |
-| 0 | `experiments/configs/strategy_comparison.yaml` | Verify exists, run |
-| 1 | `scripts/collect_bidless_dataset.py` | Wire collector |
-| 1 | `src/bid_euchre/strategy/bidding.py` | Add `B0TricksBidder` |
-| 2 | `experiments/configs/bid_dataset_collection.yaml` | Create |
-| 3 | `scripts/train_b0_points.py` | Create |
-| 3 | `src/bid_euchre/strategy/bidding.py` | Add `B0PointsBidder` |
-| 4 | `experiments/configs/bidder_comparison.yaml` | Create |
-
----
-
-## Background: Why Points Sooner?
-
-The blog's progression starts with tricks, but Bid Euchre scoring creates asymmetry:
-- **Make bid:** Score = `tricks_won`
-- **Get set:** Score = `-bid_tricks` (NEGATIVE!)
-
-Example: Bid 6, win 5 tricks → **-6 points** (11-point swing vs defending!)
-
-**Solution:** Use post-hoc scoring during training:
-```python
-# For each hand with tricks_won, compute points for each possible bid:
-if tricks_won >= bid:
-    points = tricks_won  # Made
-else:
-    points = -bid  # Set
-```
-
-This creates bid-conditional targets, letting B0 predict "expected points if I bid X."
-
----
-
-## Reference
-
-Full analysis in: `/Users/Quentin/.claude/plans/imperative-twirling-swing.md`
+| File | Purpose |
+|------|---------|
+| `src/bid_euchre/datasets/join.py` | Feature-outcome join utility |
+| `src/bid_euchre/models/train_olsa.py` | OLSa training pipeline |
+| `src/bid_euchre/strategy/bidding.py` | All bidding policies (OLSaBidder, ModeloEspecifico, etc.) |
+| `src/bid_euchre/experiments/config.py` | Policy registration |
+| `scripts/run_auction_comparator.py` | Comparator orchestrator |
+| `scripts/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
+| `experiments/configs/auction_comparator.yaml` | Comparator config |
+| `docs/02_agent/DIAGNOSTIC_TRICKS_EVALUATION.md` | Full-feature Ridge results |
+| `docs/02_agent/GLUTTON_VS_GREEDY_EVALUATION.md` | Play policy gate evidence |
