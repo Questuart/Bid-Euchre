@@ -283,10 +283,8 @@ def _check_hands_differ(df: pd.DataFrame) -> CheckResult:
         if len(hand_rows) < 2:
             continue
 
-        # Convert hand_cards to comparable format
-        cards = hand_rows["hand_cards"].apply(
-            lambda x: tuple(sorted(x)) if isinstance(x, list) else x
-        )
+        # Convert hand_cards to comparable format (handles both lists and numpy arrays)
+        cards = hand_rows["hand_cards"].apply(lambda x: tuple(sorted(x)))
         unique_cards = cards.nunique()
 
         # All 4 seats should have different cards

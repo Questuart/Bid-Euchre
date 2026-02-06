@@ -449,22 +449,25 @@ matchup_groups = [
     group['delta_tricks'].values
     for _, group in deal_summary.groupby(['team0_strategy', 'team1_strategy'])
 ]
-f_stat, p_value = f_oneway(*matchup_groups)
-n_matchups = len(matchup_groups)
-n_obs = sum(len(g) for g in matchup_groups)
-# Eta-squared effect size
-ss_between = sum(len(g) * (np.mean(g) - deal_summary['delta_tricks'].mean())**2 for g in matchup_groups)
-ss_total = ((deal_summary['delta_tricks'] - deal_summary['delta_tricks'].mean())**2).sum()
-eta_sq = ss_between / ss_total if ss_total > 0 else 0
+if len(matchup_groups) >= 2:
+    f_stat, p_value = f_oneway(*matchup_groups)
+    n_matchups = len(matchup_groups)
+    n_obs = sum(len(g) for g in matchup_groups)
+    # Eta-squared effect size
+    ss_between = sum(len(g) * (np.mean(g) - deal_summary['delta_tricks'].mean())**2 for g in matchup_groups)
+    ss_total = ((deal_summary['delta_tricks'] - deal_summary['delta_tricks'].mean())**2).sum()
+    eta_sq = ss_between / ss_total if ss_total > 0 else 0
 
-print(f"  Matchups: {n_matchups}, Total observations: {n_obs}")
-print(f"  F-statistic: {f_stat:.4f}")
-print(f"  p-value: {p_value:.4f}")
-print(f"  η² (effect size): {eta_sq:.4f}")
-if p_value < 0.05:
-    print("  ⚠️  Significant matchup effect detected (p < 0.05)")
+    print(f"  Matchups: {n_matchups}, Total observations: {n_obs}")
+    print(f"  F-statistic: {f_stat:.4f}")
+    print(f"  p-value: {p_value:.4f}")
+    print(f"  η² (effect size): {eta_sq:.4f}")
+    if p_value < 0.05:
+        print("  ⚠️  Significant matchup effect detected (p < 0.05)")
+    else:
+        print("  ✓ No significant matchup effect (p >= 0.05)")
 else:
-    print("  ✓ No significant matchup effect (p >= 0.05)")
+    print(f"  Skipped: only {len(matchup_groups)} matchup group(s) (need ≥2 for ANOVA)")
 
 # %% [markdown]
 # ### 2.2 Trick Distribution by Strategy (B pattern)
@@ -2142,24 +2145,28 @@ if total_obs < 1000:
 # Seat balance check
 for contract_type in CONTRACT_TYPES:
     contract_df = data_df[data_df['contract_type'] == contract_type]
-    seat_groups = [contract_df[contract_df['seat'] == s]['tricks_won'] for s in SEATS]
-    f_stat, p_value = f_oneway(*seat_groups)
-
-    if p_value >= 0.05:
-        summary['passes'].append(f"✅ Seat balance ({contract_type}): p={p_value:.3f} (no bias)")
+    seat_groups = [contract_df[contract_df['seat'] == s]['tricks_won'] for s in SEATS if len(contract_df[contract_df['seat'] == s]) > 0]
+    if len(seat_groups) >= 2:
+        f_stat, p_value = f_oneway(*seat_groups)
+        if p_value >= 0.05:
+            summary['passes'].append(f"✅ Seat balance ({contract_type}): p={p_value:.3f} (no bias)")
+        else:
+            summary['warnings'].append(f"⚠️  Seat bias ({contract_type}): p={p_value:.3f} < 0.05")
     else:
-        summary['warnings'].append(f"⚠️  Seat bias ({contract_type}): p={p_value:.3f} < 0.05")
+        summary['warnings'].append(f"⚠️  Seat balance ({contract_type}): skipped (need ≥2 non-empty groups)")
 
 # Trump balance check (suit contracts only)
 suit_df = data_df[data_df['contract_type'] == 'suit']
 if len(suit_df) > 0:
-    trump_groups = [suit_df[suit_df['trump'] == t]['tricks_won'] for t in TRUMPS_FOR_SUIT_CONTRACTS]
-    f_stat, p_value = f_oneway(*trump_groups)
-
-    if p_value >= 0.05:
-        summary['passes'].append(f"✅ Trump balance: p={p_value:.3f} (no bias)")
+    trump_groups = [suit_df[suit_df['trump'] == t]['tricks_won'] for t in TRUMPS_FOR_SUIT_CONTRACTS if len(suit_df[suit_df['trump'] == t]) > 0]
+    if len(trump_groups) >= 2:
+        f_stat, p_value = f_oneway(*trump_groups)
+        if p_value >= 0.05:
+            summary['passes'].append(f"✅ Trump balance: p={p_value:.3f} (no bias)")
+        else:
+            summary['warnings'].append(f"⚠️  Trump bias: p={p_value:.3f} < 0.05")
     else:
-        summary['warnings'].append(f"⚠️  Trump bias: p={p_value:.3f} < 0.05")
+        summary['warnings'].append("⚠️  Trump balance: skipped (need ≥2 non-empty groups)")
 
 # Feature correlation summary
 n_features = len(feat_cols)
