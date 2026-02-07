@@ -206,17 +206,27 @@ Checks for transitivity violations (A>B, B>C implies A>C).
 
 ## Notebook Usage
 
-For analyzing canonical runs in notebooks:
-
-1. Set `DEMO_MODE = False` to use real data
-2. Set `RUN_DIR` to point to your run directory:
+Notebooks are controlled by the `MODE` parameter, injected by `scripts/run_notebooks.py`:
 
 ```python
-DEMO_MODE = False
-RUN_DIR = "../../data/runs/<canonical_run_id>"
+# MODE controls notebook execution scale:
+#   SMOKE (~30 deals) — CI smoke tests
+#   QUICK (~2,000 deals) — development iteration
+#   FULL  (~50,000 deals) — production analysis
+MODE = "QUICK"
 ```
 
-Diagnostics loaders prefer `bidless_outcomes.parquet` when present, so notebooks work without hand-level logs.
+Run notebooks via the canonical runner:
+
+```bash
+# SMOKE mode (CI, ~10s)
+uv run python scripts/run_notebooks.py --mode SMOKE
+
+# QUICK mode (development, ~2-5min)
+uv run python scripts/run_notebooks.py --mode QUICK
+```
+
+Notebooks generate data on-the-fly via `load_or_generate_*()` helpers — no pre-existing run directory needed.
 
 ### Loading Outcomes Data
 
