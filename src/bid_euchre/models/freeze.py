@@ -6,6 +6,7 @@ Provides:
 - verify_frozen(): Check that artifact is frozen and unmodified
 - require_frozen(): Gate that raises (strict=True) or warns (strict=False)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -32,13 +33,30 @@ def _sha256_file(path: str | Path) -> str:
     return h.hexdigest()
 
 
+def _content_hash(metadata: dict) -> str:
+    """Compute SHA-256 of artifact content, excluding freeze-specific fields.
+
+    Strips ``frozen_at`` and ``artifact_sha256`` from a copy of *metadata*,
+    serializes with deterministic key ordering (``sort_keys=True``,
+    compact separators), and returns the hex digest of the UTF-8 bytes.
+
+    Both ``freeze_artifact`` and ``verify_frozen`` use this function so that
+    the stored hash is always reproducible from the artifact's logical content.
+    """
+    content = {
+        k: v for k, v in metadata.items() if k not in ("frozen_at", "artifact_sha256")
+    }
+    canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def freeze_artifact(artifact_path: str | Path) -> dict:
     """Freeze an artifact by recording frozen_at and artifact_sha256 in its JSON metadata.
 
     The artifact must be a JSON file with a top-level dict. This function:
-    1. Computes the SHA-256 of the artifact in its current state
+    1. Computes the content-based SHA-256 (excluding freeze fields)
     2. Sets frozen_at timestamp and artifact_sha256
-    3. Writes the updated metadata back
+    3. Writes the updated metadata back with deterministic key ordering
     4. Returns the updated metadata dict
 
     Args:
@@ -61,28 +79,31 @@ def freeze_artifact(artifact_path: str | Path) -> dict:
     if metadata.get("frozen_at") is not None:
         raise ValueError(f"Artifact already frozen at {metadata['frozen_at']}: {path}")
 
-    # Compute hash of the current file content
-    content_hash = _sha256_file(path)
+    content_hash = _content_hash(metadata)
 
     metadata["frozen_at"] = _utc_now_iso()
     metadata["artifact_sha256"] = content_hash
 
     with open(path, "w") as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(metadata, f, indent=2, sort_keys=True)
 
     logger.info("Froze artifact: %s (sha256=%s)", path, content_hash[:12])
     return metadata
 
 
 def verify_frozen(artifact_path: str | Path) -> bool:
-    """Check that an artifact is frozen and has not been modified since freezing.
+    """Check that an artifact is frozen and its content hash is valid.
 
     Verification checks:
     1. frozen_at is set (not None)
     2. artifact_sha256 is set
+    3. Recomputed content hash matches stored artifact_sha256
+
+    Artifacts frozen before content-based hashing will fail verification
+    and must be re-frozen.
 
     Returns:
-        True if artifact is frozen and valid, False otherwise.
+        True if artifact is frozen and content hash matches, False otherwise.
     """
     path = Path(artifact_path)
     if not path.exists():
@@ -97,10 +118,11 @@ def verify_frozen(artifact_path: str | Path) -> bool:
     if metadata.get("frozen_at") is None:
         return False
 
-    if metadata.get("artifact_sha256") is None:
+    stored_hash = metadata.get("artifact_sha256")
+    if stored_hash is None:
         return False
 
-    return True
+    return _content_hash(metadata) == stored_hash
 
 
 def require_frozen(artifact_path: str | Path, strict: bool = True) -> None:
@@ -128,7 +150,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Freeze a model artifact")
     parser.add_argument("--artifact", required=True, help="Path to artifact JSON file")
-    parser.add_argument("--verify", action="store_true", help="Verify instead of freeze")
+    parser.add_argument(
+        "--verify", action="store_true", help="Verify instead of freeze"
+    )
     args = parser.parse_args()
 
     if args.verify:

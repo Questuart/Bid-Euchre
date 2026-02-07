@@ -29,6 +29,8 @@ Split manifests ensure reproducible and leakage-free train/test partitions.
 - Partition hashes (SHA256 of sorted hand_ids) recorded for verification
 - Two-way splits (`train`/`test`) for exploration; three-way (`train`/`val`/`test`) for promotion-track
 
+**Default behavior:** Training defaults to `two_way` (exploration is the common workflow). Promotion-track training must explicitly pass `--split-type three_way`. The eligibility engine enforces this at gate time.
+
 **Key files:**
 - `src/bid_euchre/models/splits.py` — `SplitManifest`, `create_grouped_split()`, `verify_split_manifest()`
 
@@ -45,10 +47,12 @@ Artifact freeze prevents accidental modification between training and evaluation
 
 **Requirements:**
 - Artifact must be frozen before any promotion evaluation
-- Frozen artifacts contain `frozen_at` (ISO timestamp) and `artifact_sha256` (integrity hash)
-- `verify_frozen()` checks that both `frozen_at` and `artifact_sha256` are present (not None)
+- Frozen artifacts contain `frozen_at` (ISO timestamp) and `artifact_sha256` (content-based integrity hash)
+- `artifact_sha256` is computed from a canonical JSON serialization of the artifact content (excluding `frozen_at` and `artifact_sha256` fields themselves), using `sort_keys=True` and compact separators
+- `verify_frozen()` recomputes the content hash and compares it to the stored `artifact_sha256` — detecting any post-freeze tampering
 - The eligibility engine uses `verify_frozen()` for integrity verification (not raw field checks)
 - Re-freezing an already-frozen artifact raises `ValueError`
+- Artifacts frozen before content-based hashing must be re-frozen to pass verification
 
 **Key files:**
 - `src/bid_euchre/models/freeze.py` — `freeze_artifact()`, `verify_frozen()`, `require_frozen()`
@@ -96,15 +100,20 @@ The CI workflow enforces promotion checks on PRs labeled `promotion`.
 1. `make repo-lint` — repository boundary linter (includes promotion registry lint rules)
 2. `make notebook-run` (SMOKE mode with `--gate-output-dir`) — notebook preflight
 3. Notebook gate assertion — verifies `gate_status == PASS`
-4. Artifact freeze check — verifies all model artifacts in ARTIFACT_DIR pass `verify_frozen()` (required, not opt-in)
+4. Artifact freeze check — verifies all model artifacts in ARTIFACT_DIR pass `verify_frozen()` with content-based hash validation (required, not opt-in)
+5. Rollup validation — verifies ROLLUP_JSON is readable and warns if `batch_purpose != "promotion"`
+6. Split manifest validation (optional) — if SPLIT_MANIFEST_DIR is provided, verifies manifests have `three_way` split_type
 
 **Makefile target:**
 ```bash
-# ARTIFACT_DIR is required for promotion gate
-make promotion-gate ARTIFACT_DIR=/path/to/artifacts
+# ARTIFACT_DIR and ROLLUP_JSON are required for promotion gate
+make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json
+
+# Optionally include split manifest validation
+make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json SPLIT_MANIFEST_DIR=/path/to/splits
 ```
 
-**CI behavior:** The promotion gate step runs only on PRs with the `promotion` label. It is a hard-fail gate — a failing promotion gate blocks the PR from merging. `ARTIFACT_DIR` must be set as a repository variable for promotion PRs to pass CI.
+**CI behavior:** The promotion gate step runs only on PRs with the `promotion` label. It is a hard-fail gate — a failing promotion gate blocks the PR from merging. Both `ARTIFACT_DIR` and `ROLLUP_JSON` must be set as repository variables for promotion PRs to pass CI. `SPLIT_MANIFEST_DIR` is optional.
 
 ## Lint Rules
 

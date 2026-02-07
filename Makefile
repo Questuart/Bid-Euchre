@@ -27,7 +27,7 @@ help:
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
 	@echo "  make docs-check         - docs freshness gate (path refs + script list)"
-	@echo "  make promotion-gate     - promotion CI gate (repo-lint + notebook gate)"
+	@echo "  make promotion-gate     - promotion CI gate (requires ARTIFACT_DIR + ROLLUP_JSON)"
 	@echo ""
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
@@ -80,6 +80,8 @@ docs-check:
 
 GATE_OUTPUT_DIR ?= /tmp/promotion-gate-artifacts
 ARTIFACT_DIR ?=
+ROLLUP_JSON ?=
+SPLIT_MANIFEST_DIR ?=
 
 promotion-gate: repo-lint
 	@echo ">>> Promotion gate"
@@ -87,8 +89,31 @@ promotion-gate: repo-lint
 	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --gate-output-dir $(GATE_OUTPUT_DIR)
 	@echo "Step 2: Assert notebook gate PASS"
 	$(PYTHON) -c "import json, sys; g=json.load(open('$(GATE_OUTPUT_DIR)/notebook_gate.json')); sys.exit(0 if g['gate_status']=='PASS' else 1)"
-	@echo "Step 3: Verify artifact freeze"
-	@if [ -z "$(ARTIFACT_DIR)" ]; then 		echo "ERROR: ARTIFACT_DIR is required for promotion gate."; 		echo "Usage: make promotion-gate ARTIFACT_DIR=/path/to/artifacts"; 		exit 1; 	elif [ ! -d "$(ARTIFACT_DIR)" ]; then 		echo "ERROR: ARTIFACT_DIR not found: $(ARTIFACT_DIR)"; 		exit 1; 	else 		echo "  Checking frozen status in $(ARTIFACT_DIR)..."; 		PYTHONPATH=src $(PYTHON) -c "from bid_euchre.models.freeze import verify_frozen; import pathlib, sys; exempt={'meta.json','rollup.json','canonical_summary.json','training_metrics.json'}; artifacts=[p for p in pathlib.Path('$(ARTIFACT_DIR)').glob('*.json') if p.name not in exempt and not p.name.startswith('split_manifest')]; failed=[p.name for p in artifacts if not verify_frozen(p)]; print(f'  Checked {len(artifacts)} artifacts, {len(failed)} not verified'); sys.exit(1) if failed else sys.exit(0)"; 	fi
+	@echo "Step 3: Verify artifact freeze and rollup binding"
+	@if [ -z "$(ARTIFACT_DIR)" ] || [ -z "$(ROLLUP_JSON)" ]; then \
+		echo "ERROR: ARTIFACT_DIR and ROLLUP_JSON are required for promotion gate."; \
+		echo "Usage: make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json"; \
+		exit 1; \
+	elif [ ! -d "$(ARTIFACT_DIR)" ]; then \
+		echo "ERROR: ARTIFACT_DIR not found: $(ARTIFACT_DIR)"; \
+		exit 1; \
+	elif [ ! -f "$(ROLLUP_JSON)" ]; then \
+		echo "ERROR: ROLLUP_JSON not found: $(ROLLUP_JSON)"; \
+		exit 1; \
+	else \
+		echo "  Validating rollup: $(ROLLUP_JSON)..."; \
+		PYTHONPATH=src $(PYTHON) -c "import json, sys; r=json.load(open('$(ROLLUP_JSON)')); bp=r.get('batch',{}).get('batch_purpose',''); print(f'  Rollup batch_purpose={bp}'); sys.exit(0) if bp=='promotion' else (print('  WARNING: batch_purpose is not promotion'), sys.exit(0))[1]"; \
+		echo "  Checking frozen status in $(ARTIFACT_DIR)..."; \
+		PYTHONPATH=src $(PYTHON) -c "from bid_euchre.models.freeze import verify_frozen; import pathlib, sys; exempt={'meta.json','rollup.json','canonical_summary.json','training_metrics.json'}; artifacts=[p for p in pathlib.Path('$(ARTIFACT_DIR)').glob('*.json') if p.name not in exempt and not p.name.startswith('split_manifest')]; failed=[p.name for p in artifacts if not verify_frozen(p)]; print(f'  Checked {len(artifacts)} artifacts, {len(failed)} not verified'); sys.exit(1) if failed else sys.exit(0)"; \
+	fi
+	@if [ -n "$(SPLIT_MANIFEST_DIR)" ]; then \
+		echo "Step 4: Validate split manifests in $(SPLIT_MANIFEST_DIR)"; \
+		if [ ! -d "$(SPLIT_MANIFEST_DIR)" ]; then \
+			echo "ERROR: SPLIT_MANIFEST_DIR not found: $(SPLIT_MANIFEST_DIR)"; \
+			exit 1; \
+		fi; \
+		PYTHONPATH=src $(PYTHON) -c "import json, pathlib, sys; manifests=list(pathlib.Path('$(SPLIT_MANIFEST_DIR)').glob('split_manifest*.json')); bad=[m.name for m in manifests if json.load(open(m)).get('split_type')!='three_way']; print(f'  Checked {len(manifests)} manifests, {len(bad)} not three_way'); sys.exit(1) if bad else sys.exit(0)"; \
+	fi
 	@echo "Promotion gate passed"
 
 # Generate unique run ID for teacher training
