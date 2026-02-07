@@ -31,6 +31,40 @@ from ..strategy import (
 from ..strategy.artifact_strategy import ArtifactGreedyStrategy
 from .teacher_roster import load_teacher_roster
 
+# Strategy registries for discoverability
+# Maps class_name → class for play strategies and bidding policies
+PLAY_STRATEGY_REGISTRY: dict[str, type] = {
+    "BasicStrategy": BasicStrategy,
+    "GreedyStrategy": GreedyStrategy,
+    "GluttonStrategy": GluttonStrategy,
+    "GluttonIsolatedStrategy": GluttonIsolatedStrategy,
+    "RandomLegalStrategy": RandomLegalStrategy,
+    "AlwaysLowestLegalStrategy": AlwaysLowestLegalStrategy,
+    "AlwaysHighestLegalStrategy": AlwaysHighestLegalStrategy,
+    "ArtifactGreedyStrategy": ArtifactGreedyStrategy,
+}
+
+BIDDING_POLICY_REGISTRY: dict[str, type] = {
+    "AlwaysPassBidder": AlwaysPassBidder,
+    "ArtifactBidder": ArtifactBidder,
+    "RanktheTank": RanktheTank,
+    "StrictHellRaiser": StrictHellRaiser,
+    "StrictRaiserBidder": StrictHellRaiser,  # backward-compat alias
+    "ModeloEspecifico": ModeloEspecifico,
+    "FixedBidder": FixedBidder,
+    "OLSaBidder": OLSaBidder,
+}
+
+STRATEGY_REQUIRED_PARAMS: dict[str, list[str]] = {
+    "ArtifactGreedyStrategy": ["artifact_path"],
+}
+
+BIDDING_REQUIRED_PARAMS: dict[str, list[str]] = {
+    "ArtifactBidder": ["artifact_path"],
+    "FixedBidder": ["n", "contract"],
+    "OLSaBidder": ["artifact_path"],
+}
+
 
 @dataclass
 class StrategyConfig:
@@ -41,42 +75,16 @@ class StrategyConfig:
 
     def create_strategy(self) -> Strategy:
         """Create a strategy instance from this configuration."""
-        if self.class_name == "BasicStrategy":
-            return BasicStrategy(name=self.name)
-        elif self.class_name == "GreedyStrategy":
-            return GreedyStrategy(name=self.name)
-        elif self.class_name == "GluttonStrategy":
-            debug = self.params.get("debug", False)
-            return GluttonStrategy(name=self.name, debug=debug)
-        elif self.class_name == "GluttonIsolatedStrategy":
-            return GluttonIsolatedStrategy(
-                name=self.name,
-                debug=self.params.get("debug", False),
-                smart_leads=self.params.get("smart_leads", False),
-                smart_discards=self.params.get("smart_discards", False),
-                third_seat_aggression=self.params.get("third_seat_aggression", False),
-                partner_awareness=self.params.get("partner_awareness", False),
-                sure_winner_cover=self.params.get("sure_winner_cover", False),
-                partner_check=self.params.get("partner_check", False),
-                trump_gating=self.params.get("trump_gating", False),
-                probabilistic_trump_in=self.params.get("probabilistic_trump_in", False),
+        cls = PLAY_STRATEGY_REGISTRY.get(self.class_name)
+        if cls is None:
+            raise ValueError(
+                f"Unknown strategy class: {self.class_name}. "
+                f"Available: {sorted(PLAY_STRATEGY_REGISTRY)}"
             )
-        elif self.class_name == "RandomLegalStrategy":
-            seed = self.params.get("seed", None)
-            return RandomLegalStrategy(name=self.name, seed=seed)
-        elif self.class_name == "AlwaysLowestLegalStrategy":
-            return AlwaysLowestLegalStrategy(name=self.name)
-        elif self.class_name == "AlwaysHighestLegalStrategy":
-            return AlwaysHighestLegalStrategy(name=self.name)
-        elif self.class_name == "ArtifactGreedyStrategy":
-            artifact_path = self.params.get("artifact_path")
-            if not artifact_path:
-                raise ValueError(
-                    "ArtifactGreedyStrategy requires 'artifact_path' parameter"
-                )
-            return ArtifactGreedyStrategy(name=self.name, artifact_path=artifact_path)
-        else:
-            raise ValueError(f"Unknown strategy class: {self.class_name}")
+        for param in STRATEGY_REQUIRED_PARAMS.get(self.class_name, []):
+            if not self.params.get(param):
+                raise ValueError(f"{self.class_name} requires '{param}' parameter")
+        return cls(name=self.name, **self.params)
 
 
 @dataclass
@@ -88,32 +96,16 @@ class BiddingPolicyConfig:
 
     def create_bidding_policy(self) -> BiddingPolicy:
         """Create a bidding policy instance from this configuration."""
-        if self.class_name == "AlwaysPassBidder":
-            return AlwaysPassBidder(name=self.name)
-        elif self.class_name == "ArtifactBidder":
-            artifact_path = self.params.get("artifact_path")
-            if not artifact_path:
-                raise ValueError("ArtifactBidder requires 'artifact_path' parameter")
-            return ArtifactBidder(artifact_path=artifact_path, name=self.name)
-        elif self.class_name == "RanktheTank":
-            return RanktheTank(name=self.name)
-        elif self.class_name in ("StrictHellRaiser", "StrictRaiserBidder"):
-            return StrictHellRaiser(name=self.name)
-        elif self.class_name == "ModeloEspecifico":
-            return ModeloEspecifico(name=self.name)
-        elif self.class_name == "FixedBidder":
-            n = self.params.get("n")
-            contract = self.params.get("contract")
-            if n is None or contract is None:
-                raise ValueError("FixedBidder requires 'n' and 'contract' parameters")
-            return FixedBidder(n=n, contract=contract, name=self.name)
-        elif self.class_name == "OLSaBidder":
-            artifact_path = self.params.get("artifact_path")
-            if not artifact_path:
-                raise ValueError("OLSaBidder requires 'artifact_path' parameter")
-            return OLSaBidder(artifact_path=artifact_path, name=self.name)
-        else:
-            raise ValueError(f"Unknown bidding policy class: {self.class_name}")
+        cls = BIDDING_POLICY_REGISTRY.get(self.class_name)
+        if cls is None:
+            raise ValueError(
+                f"Unknown bidding policy class: {self.class_name}. "
+                f"Available: {sorted(BIDDING_POLICY_REGISTRY)}"
+            )
+        for param in BIDDING_REQUIRED_PARAMS.get(self.class_name, []):
+            if not self.params.get(param):
+                raise ValueError(f"{self.class_name} requires '{param}' parameter")
+        return cls(name=self.name, **self.params)
 
 
 @dataclass
