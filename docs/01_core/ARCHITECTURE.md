@@ -211,6 +211,22 @@ These constraints are enforced by `tests/unit/test_import_contract.py`.
 
 ---
 
+## Promotion Workflow
+
+Promotion-track PRs (labeled `promotion`) must pass the promotion CI gate:
+`make promotion-gate` (repo-lint + notebook smoke + gate assertion).
+
+See `docs/02_agent/PROMOTION_WORKFLOW.md` for the full end-to-end workflow including
+split manifests, artifact freeze, notebook gates, and reviewer checklist.
+
+---
+
+## Promotion Workflow
+
+Model artifacts follow a promotion pipeline from exploration to production. See `docs/02_agent/PROMOTION_WORKFLOW.md` for the full workflow including split manifests, artifact freeze, notebook gate, and CI enforcement.
+
+---
+
 ## Design Principles
 
 1. **Single source of truth**: One canonical runner (`run_experiment.py`), one report generator (`generate_report.py`)
@@ -218,3 +234,4 @@ These constraints are enforced by `tests/unit/test_import_contract.py`.
 3. **Output hygiene**: All outputs written inside run directories (`data/runs/<run_id>/`)
 4. **Library separation**: `src/` is import-only; no CLI logic in library code
 5. **Gated changes**: All PRs must pass `make check`
+6. **Promotion gates**: Promotion-track PRs must additionally pass `make promotion-gate`
