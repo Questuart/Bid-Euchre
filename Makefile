@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -27,6 +27,7 @@ help:
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
 	@echo "  make docs-check         - docs freshness gate (path refs + script list)"
+	@echo "  make promotion-gate     - promotion CI gate (repo-lint + notebook gate)"
 	@echo ""
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
@@ -76,6 +77,16 @@ notebook-run-full:
 docs-check:
 	@echo ">>> Docs freshness check"
 	$(PYTHON) scripts/check_docs_freshness.py
+
+GATE_OUTPUT_DIR ?= /tmp/promotion-gate-artifacts
+
+promotion-gate: repo-lint
+	@echo ">>> Promotion gate"
+	@echo "Step 1: Notebook smoke with gate artifacts"
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --gate-output-dir $(GATE_OUTPUT_DIR)
+	@echo "Step 2: Assert notebook gate PASS"
+	$(PYTHON) -c "import json, sys; g=json.load(open('$(GATE_OUTPUT_DIR)/notebook_gate.json')); sys.exit(0 if g['gate_status']=='PASS' else 1)"
+	@echo "Promotion gate passed"
 
 # Generate unique run ID for teacher training
 TEACHER_RUN_ID = teacher_baseline_$(shell date -u +%Y%m%d_%H%M%S)_$(shell printf "%04x" $$RANDOM)
