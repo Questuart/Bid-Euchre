@@ -58,6 +58,7 @@ Canonical scripts:
 **Research and internal tooling.** Not part of the canonical workflow.
 
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
+- `generate_batch_report.py` — Batch report + eligibility gate
 - `play_policy_gate.py` — Play policy stability gate
 - `run_auction_comparator.py` — Auction comparator orchestrator
 
@@ -170,9 +171,10 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 
 | Command | Purpose |
 |---------|---------|
-| `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
+| `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
+| `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
 
 ### Research tooling (canonical path)
 
