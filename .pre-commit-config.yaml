@@ -15,6 +15,8 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
         exclude: ^(data/.*|experiments/_deprecated/.*)
+      - id: ruff-format
+        exclude: ^(data/.*|experiments/_deprecated/.*)
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.7.1

@@ -6,6 +6,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Bid Euchre AI Research Framework — a Python framework for deterministic simulation and strategy evaluation of the card game Bid Euchre (double-deck, 10-A variant with bowers).
 
+## Git Workflow
+
+- Always use worktrees for PR work: `git worktree add ../worktree-<branch> -b <branch>`
+- When merging stacked PRs, expect GitHub to auto-close downstream PRs when base branches are deleted. Plan to recreate affected PRs.
+- After merging, always update local main: `git checkout main && git pull origin main`
+- Clean up worktrees after merge: `git worktree remove ../worktree-<branch>`
+
+### Stacked PRs
+
+- When creating stacked/dependent PRs, document the dependency chain in each PR description.
+- If a base branch PR is merged and GitHub auto-closes downstream PRs, recreate them targeting the new base (usually `main`).
+- Expect rebase conflicts when working with stacked PRs — resolve them methodically, don't panic.
+
+## Planning vs Implementation
+
+- When the user asks for a 'plan', produce ONLY a written plan document — do NOT start implementing.
+- When creating plans, read the actual source code and API signatures first. Do not guess at function signatures.
+- Always ask clarifying questions about scope before starting multi-PR plans.
+- Save plans as markdown files in a `plans/` directory.
+
+## Python Defaults
+
+- Use `uv run` as the default Python runner (not raw `python` or `pip`).
+- Always run `make check` (or equivalent full test/lint suite) before committing.
+- Watch for common lint issues: unused imports, f-strings without placeholders, import sorting. Run ruff before committing.
+
+## Memory & Context
+
+- After completing major work (PR merges, plan completion), update MEMORY.md with PR numbers, status, and next steps.
+- When resuming from a previous session, read MEMORY.md first to recover context.
+
 ## Essential Commands
 
 ### Install Dependencies
