@@ -3,7 +3,7 @@
 > **Snapshot date:** 2026-02-07
 > **Canonical git SHA:** `ea55269db4db1771a8ee7cf31ea2fce82ceeb355`
 > **Seed:** 42
-> **Total budget:** 5.1M hands across 6 artifacts
+> **Total budget:** 5.1M hands across 5 canonical runs + 720K policy gate evidence (5.82M total)
 > **Provenance:** [`phase0_bidless_20260207_provenance.json`](phase0_bidless_20260207_provenance.json)
 
 ---
@@ -12,7 +12,7 @@
 
 Phase 0 established the bidless data foundation for Bid Euchre AI research:
 
-- **5.1M hands** collected across 6 canonical artifacts (3 datasets + 2 outcome matrices + 1 policy gate)
+- **5.82M hands** collected across 6 artifacts: 5.1M in 5 canonical runs (3 datasets + 2 outcome matrices) plus 720K in the policy gate
 - **Glutton frozen** as canonical play policy — PASS gate with +0.19 to +0.21 mean trick advantage; all 95% bootstrap CIs exclude zero across 3 seeds and both seat directions
 - **All sanity gates pass** — zero FAIL counts across all canonical runs (self-play fairness, random dominance, rank stability, transitivity)
 - **Diagnostic Ridge R² ~ 0.19–0.21** on tricks_won (exploratory, not production) — confirms hand features carry predictive signal for downstream bidding model development
@@ -21,7 +21,7 @@ Phase 0 established the bidless data foundation for Bid Euchre AI research:
 
 ## 2. Data Inventory
 
-Six canonical artifacts were produced on 2026-02-04 at git SHA `ea55269`:
+Six artifacts (5 canonical runs + 1 policy gate) were produced on 2026-02-04 at git SHA `ea55269`:
 
 | Artifact | Run ID | Purpose | Hands | PASS | WARN | FAIL | SKIP |
 |----------|--------|---------|-------|------|------|------|------|
@@ -275,7 +275,7 @@ PYTHONPATH=src uv run python scripts/play_policy_gate.py \
 uv run python scripts/evaluate_diagnostic_tricks.py \
   --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 \
   --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
-  --seed 42
+  --seed 42 --output /tmp/diagnostic_tricks_evaluation.md
 ```
 
 ### Notebook Execution (Smoke)
