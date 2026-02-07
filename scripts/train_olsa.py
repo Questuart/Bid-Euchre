@@ -31,7 +31,7 @@ def main() -> None:
         "--split-type",
         choices=["two_way", "three_way"],
         default="two_way",
-        help="Split type (three_way required for promotion)",
+        help="Split type: two_way for exploration (default), three_way required for promotion-track batches",
     )
     parser.add_argument(
         "--freeze",

@@ -4,6 +4,8 @@ import json
 import subprocess
 import sys
 
+from bid_euchre.models.freeze import freeze_artifact
+
 
 def _make_rollup(batch_purpose="promotion"):
     return {
@@ -87,11 +89,9 @@ class TestBatchReportCLI:
         # Provide artifact-dir but not split-manifest-dir
         artifact_dir = tmp_path / "artifacts"
         artifact_dir.mkdir()
-        (artifact_dir / "olsa_v1.json").write_text(
-            json.dumps(
-                {"frozen_at": "2026-02-07T12:00:00Z", "artifact_sha256": "abc123"}
-            )
-        )
+        artifact_path = artifact_dir / "olsa_v1.json"
+        artifact_path.write_text(json.dumps({"frozen_at": None}))
+        freeze_artifact(artifact_path)
 
         exit_code, stdout, _ = _run_batch_report(
             tmp_path, ["--artifact-dir", str(artifact_dir)]
@@ -108,11 +108,9 @@ class TestBatchReportCLI:
         # Create frozen artifact
         artifact_dir = tmp_path / "artifacts"
         artifact_dir.mkdir()
-        (artifact_dir / "olsa_v1.json").write_text(
-            json.dumps(
-                {"frozen_at": "2026-02-07T12:00:00Z", "artifact_sha256": "abc123"}
-            )
-        )
+        artifact_path = artifact_dir / "olsa_v1.json"
+        artifact_path.write_text(json.dumps({"frozen_at": None}))
+        freeze_artifact(artifact_path)
 
         # Create three_way split manifest
         split_dir = tmp_path / "splits"

@@ -5,6 +5,7 @@ All tests are fixture-based — no real experiment runs required.
 
 import json
 
+from bid_euchre.models.freeze import freeze_artifact
 from bid_euchre.reporting.eligibility import (
     check_artifacts_frozen,
     check_canonical_summaries,
@@ -269,15 +270,8 @@ class TestCheckArtifactsFrozen:
 
     def test_promotion_frozen_passes(self, tmp_path):
         artifact = tmp_path / "olsa_v1.json"
-        artifact.write_text(
-            json.dumps(
-                {
-                    "frozen_at": "2026-02-07T12:00:00Z",
-                    "artifact_sha256": "abc123",
-                    "artifact_type": "olsa_v1",
-                }
-            )
-        )
+        artifact.write_text(json.dumps({"frozen_at": None, "artifact_type": "olsa_v1"}))
+        freeze_artifact(artifact)
         result = check_artifacts_frozen(str(tmp_path), "promotion")
         assert result.status == "PASS"
 
@@ -313,14 +307,9 @@ class TestCheckArtifactsFrozen:
         (tmp_path / "split_manifest_suit.json").write_text(
             json.dumps({"schema_version": 1, "split_type": "three_way"})
         )
-        (tmp_path / "olsa_v1.json").write_text(
-            json.dumps(
-                {
-                    "frozen_at": "2026-02-07T12:00:00Z",
-                    "artifact_sha256": "abc123",
-                }
-            )
-        )
+        artifact = tmp_path / "olsa_v1.json"
+        artifact.write_text(json.dumps({"frozen_at": None}))
+        freeze_artifact(artifact)
         result = check_artifacts_frozen(str(tmp_path), "promotion")
         assert result.status == "PASS"
         assert "1 model artifacts frozen" in result.detail
@@ -437,14 +426,9 @@ class TestComputeEligibility:
         # Create frozen artifact
         artifact_dir = tmp_path / "model_artifacts"
         artifact_dir.mkdir()
-        (artifact_dir / "olsa_v1.json").write_text(
-            json.dumps(
-                {
-                    "frozen_at": "2026-02-07T12:00:00Z",
-                    "artifact_sha256": "abc123",
-                }
-            )
-        )
+        artifact_path = artifact_dir / "olsa_v1.json"
+        artifact_path.write_text(json.dumps({"frozen_at": None}))
+        freeze_artifact(artifact_path)
 
         # Create three_way split manifest
         split_dir = tmp_path / "splits"

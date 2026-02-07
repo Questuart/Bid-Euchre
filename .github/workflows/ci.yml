@@ -49,9 +49,11 @@ jobs:
         if: contains(github.event.pull_request.labels.*.name, 'promotion')
         env:
           ARTIFACT_DIR: ${{ vars.ARTIFACT_DIR || '' }}
+          ROLLUP_JSON: ${{ vars.ROLLUP_JSON || '' }}
+          SPLIT_MANIFEST_DIR: ${{ vars.SPLIT_MANIFEST_DIR || '' }}
         run: |
-          if [ -z "$ARTIFACT_DIR" ]; then
-            echo "::error::Promotion gate requires ARTIFACT_DIR. Set the ARTIFACT_DIR repository variable or remove the 'promotion' label."
+          if [ -z "$ARTIFACT_DIR" ] || [ -z "$ROLLUP_JSON" ]; then
+            echo "::error::Promotion gate requires ARTIFACT_DIR and ROLLUP_JSON. Set these repository variables or remove the 'promotion' label."
             exit 1
           fi
-          make promotion-gate ARTIFACT_DIR="$ARTIFACT_DIR"
+          make promotion-gate ARTIFACT_DIR="$ARTIFACT_DIR" ROLLUP_JSON="$ROLLUP_JSON" SPLIT_MANIFEST_DIR="${SPLIT_MANIFEST_DIR:-}"
