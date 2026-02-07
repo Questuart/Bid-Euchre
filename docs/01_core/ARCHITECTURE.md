@@ -200,6 +200,15 @@ These constraints are enforced by `tests/unit/test_import_contract.py`.
 
 ---
 
+## Integration Policy
+
+1. **Fresh branch from `origin/main`** per PR — never merge stale heads directly
+2. **Cherry-pick or re-implement** intended commits only when rebasing across PRs
+3. **One concept per PR** — mixed refactor + feature PRs are rejected
+4. **Worktree-only workflow** — all code changes happen in dedicated worktrees, never on `main`
+
+---
+
 ## Design Principles
 
 1. **Single source of truth**: One canonical runner (`run_experiment.py`), one report generator (`generate_report.py`)
