@@ -21,10 +21,17 @@ load_or_generate_features() will pick up the injected MODE automatically.
 
 import argparse
 import glob
+import json
+import os
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+# Ensure src is importable for meta helpers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from bid_euchre.experiments.meta import get_git_sha, utc_now_iso
 
 
 def discover_notebooks(pattern: str = "notebooks/phase0_bidless/*.ipynb") -> list[Path]:
@@ -93,6 +100,96 @@ def execute_notebook(
         return False, str(e)[:200], duration
 
 
+def build_gate_json(
+    results: list[tuple[str, bool, str, float]],
+    mode: str,
+) -> dict:
+    """Build the notebook_gate.json structure from execution results.
+
+    Args:
+        results: List of (notebook_name, success, message, duration) tuples.
+        mode: Execution mode ("smoke" or "quick").
+
+    Returns:
+        Dict suitable for JSON serialization.
+    """
+    notebooks = []
+    for name, success, message, duration in results:
+        notebooks.append({
+            "name": name,
+            "status": "PASS" if success else "FAIL",
+            "duration_sec": round(duration, 2),
+            "error": None if success else message,
+        })
+
+    pass_count = sum(1 for _, s, _, _ in results if s)
+    fail_count = sum(1 for _, s, _, _ in results if not s)
+
+    return {
+        "gate_type": "notebook_execution",
+        "gate_version": 1,
+        "mode": mode,
+        "timestamp_utc": utc_now_iso(),
+        "git_sha": get_git_sha(),
+        "notebooks": notebooks,
+        "overall_status": "PASS" if fail_count == 0 else "FAIL",
+        "pass_count": pass_count,
+        "fail_count": fail_count,
+    }
+
+
+def build_gate_markdown(gate: dict) -> str:
+    """Build NOTEBOOK_GATE.md content from the gate JSON structure."""
+    lines = [
+        f"# Notebook Gate — {gate['mode'].upper()} mode",
+        "",
+        f"**Status**: {gate['overall_status']}",
+        f"**Timestamp**: {gate['timestamp_utc']}",
+        f"**Git SHA**: `{gate['git_sha']}`",
+        f"**Pass**: {gate['pass_count']}  |  **Fail**: {gate['fail_count']}",
+        "",
+        "## Results",
+        "",
+        "| Notebook | Status | Duration |",
+        "|----------|--------|----------|",
+    ]
+
+    for nb in gate["notebooks"]:
+        status_icon = "PASS" if nb["status"] == "PASS" else "FAIL"
+        lines.append(f"| {nb['name']} | {status_icon} | {nb['duration_sec']:.1f}s |")
+
+    # Show errors if any
+    failures = [nb for nb in gate["notebooks"] if nb["status"] == "FAIL"]
+    if failures:
+        lines.extend(["", "## Errors", ""])
+        for nb in failures:
+            lines.append(f"- **{nb['name']}**: {nb['error']}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_gate_artifacts(
+    results: list[tuple[str, bool, str, float]],
+    mode: str,
+    gate_output_dir: str,
+) -> None:
+    """Write notebook_gate.json and NOTEBOOK_GATE.md to the gate output dir."""
+    gate_dir = Path(gate_output_dir)
+    gate_dir.mkdir(parents=True, exist_ok=True)
+
+    gate = build_gate_json(results, mode)
+
+    gate_json_path = gate_dir / "notebook_gate.json"
+    with gate_json_path.open("w") as f:
+        json.dump(gate, f, indent=2)
+    print(f"\nGate JSON: {gate_json_path}")
+
+    gate_md_path = gate_dir / "NOTEBOOK_GATE.md"
+    gate_md_path.write_text(build_gate_markdown(gate))
+    print(f"Gate MD:   {gate_md_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Execute notebooks for validation",
@@ -114,6 +211,12 @@ def main():
         "--keep-outputs",
         action="store_true",
         help="Keep executed notebook outputs (default: use temp dir)",
+    )
+    parser.add_argument(
+        "--gate-output-dir",
+        type=str,
+        default=None,
+        help="Directory to write notebook_gate.json and NOTEBOOK_GATE.md (e.g. <run_dir>/reports/notebook_review/)",
     )
     args = parser.parse_args()
 
@@ -172,6 +275,10 @@ def main():
         print(f"Output notebooks: {output_dir} (temp)")
     else:
         print(f"Output notebooks: {output_dir}")
+
+    # Write gate artifacts if --gate-output-dir given
+    if args.gate_output_dir:
+        write_gate_artifacts(results, args.mode, args.gate_output_dir)
 
     # Exit with error if any failed
     sys.exit(0 if failed == 0 else 1)
