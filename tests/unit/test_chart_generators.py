@@ -5,6 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
@@ -81,6 +82,28 @@ class TestFeatureOutcomeCharts:
             paths = generate_feature_outcome_charts(df, tmpdir)
             # Should still generate outcome_distributions at minimum
             assert len(paths) >= 1
+
+    def test_feature_outcome_includes_by_contract_scatter(self, feature_outcome_df):
+        """Generates contract-faceted scatter when contract_type present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_feature_outcome_charts(feature_outcome_df, tmpdir)
+            names = [Path(p).stem for p in paths]
+            assert "feature_vs_outcome_by_contract" in names
+
+    def test_plot_feature_vs_outcome_by_contract_returns_figure(
+        self, feature_outcome_df
+    ):
+        """Diagnostic function returns Figure with correct subplot count."""
+        from bid_euchre.diagnostics.charts import plot_feature_vs_outcome_by_contract
+
+        fig = plot_feature_vs_outcome_by_contract(
+            feature_outcome_df, "hand_value", "tricks_won"
+        )
+        assert isinstance(fig, plt.Figure)
+        # feature_outcome_df has contract_type with "suit" and "high" only
+        axes = fig.get_axes()
+        assert len(axes) == 2  # suit + high (no "low" in fixture)
+        plt.close(fig)
 
 
 class TestDistributionCharts:

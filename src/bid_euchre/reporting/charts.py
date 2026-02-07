@@ -23,6 +23,7 @@ from ..diagnostics.charts import (
     plot_feature_heatmap_by_suit,
     plot_feature_outcome_correlation,
     plot_feature_vs_outcome,
+    plot_feature_vs_outcome_by_contract,
     plot_hand_value_by_contract,
     plot_hand_value_by_seat,
     plot_hand_value_by_trump_suit,
@@ -264,6 +265,11 @@ def generate_feature_outcome_charts(
         )
         fig = plot_feature_vs_outcome(df, feature=top_feature, outcome=outcome_col)
         paths.append(_save_figure(fig, out, "feature_vs_outcome", dpi))
+
+        # Contract-faceted scatter (only if contract_type column exists)
+        if "contract_type" in df.columns:
+            fig = plot_feature_vs_outcome_by_contract(df, top_feature, outcome_col)
+            paths.append(_save_figure(fig, out, "feature_vs_outcome_by_contract", dpi))
 
     if outcome_col in df.columns and "contract_type" in df.columns:
         fig = plot_outcome_distributions(

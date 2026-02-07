@@ -20,11 +20,13 @@ from ..reporting.style import (
     apply_report_style,
     apply_seaborn_style,
     get_contract_color,
+    get_contract_label,
 )
 
 # Try to import seaborn, fall back gracefully
 try:
     import seaborn as sns
+
     HAS_SEABORN = True
 except ImportError:
     HAS_SEABORN = False
@@ -64,8 +66,14 @@ def plot_hand_value_by_seat(
     fig, ax = plt.subplots(figsize=figsize)
 
     if "feat_hand_value" not in df.columns:
-        ax.text(0.5, 0.5, "feat_hand_value column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "feat_hand_value column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     # Prepare data by seat
@@ -88,7 +96,15 @@ def plot_hand_value_by_seat(
 
     # Add mean markers
     means = [np.mean(d) for d in data]
-    ax.scatter(range(len(means)), means, color="black", marker="D", s=50, zorder=5, label="Mean")
+    ax.scatter(
+        range(len(means)),
+        means,
+        color="black",
+        marker="D",
+        s=50,
+        zorder=5,
+        label="Mean",
+    )
     ax.legend()
 
     plt.tight_layout()
@@ -116,8 +132,14 @@ def plot_hand_value_by_contract(
     fig, ax = plt.subplots(figsize=figsize)
 
     if "feat_hand_value" not in df.columns or "contract_type" not in df.columns:
-        ax.text(0.5, 0.5, "Required columns not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "Required columns not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     contracts = sorted(df["contract_type"].unique())
@@ -125,11 +147,17 @@ def plot_hand_value_by_contract(
 
     if HAS_SEABORN:
         sns.boxplot(
-            data=df, x="contract_type", y="feat_hand_value", ax=ax,
-            order=contracts, palette=colors
+            data=df,
+            x="contract_type",
+            y="feat_hand_value",
+            ax=ax,
+            order=contracts,
+            palette=colors,
         )
     else:
-        data = [df[df["contract_type"] == c]["feat_hand_value"].values for c in contracts]
+        data = [
+            df[df["contract_type"] == c]["feat_hand_value"].values for c in contracts
+        ]
         bp = ax.boxplot(data, labels=contracts, patch_artist=True)
         for patch, color in zip(bp["boxes"], colors):
             patch.set_facecolor(color)
@@ -175,7 +203,9 @@ def plot_feature_distributions(
         plot_cols = [f"feat_{f}" for f in features if f"feat_{f}" in df.columns]
     else:
         # Top 9 by variance
-        variances = {c: df[c].var() for c in feat_cols if df[c].dtype in [np.float64, np.int64]}
+        variances = {
+            c: df[c].var() for c in feat_cols if df[c].dtype in [np.float64, np.int64]
+        }
         sorted_cols = sorted(variances, key=variances.get, reverse=True)
         plot_cols = sorted_cols[:9]
 
@@ -196,7 +226,12 @@ def plot_feature_distributions(
         ax.hist(values, bins=30, color=BASE_COLORS[0], alpha=0.7, edgecolor="black")
         ax.set_xlabel(col.replace("feat_", ""))
         ax.set_ylabel("Count")
-        ax.axvline(values.mean(), color="red", linestyle="--", label=f"Mean: {values.mean():.2f}")
+        ax.axvline(
+            values.mean(),
+            color="red",
+            linestyle="--",
+            label=f"Mean: {values.mean():.2f}",
+        )
         ax.legend(fontsize=8)
 
     # Hide empty subplots
@@ -228,7 +263,11 @@ def plot_feature_correlation(
     _apply_style()
     # Get feature columns
     feat_cols = [c for c in df.columns if c.startswith("feat_")]
-    numeric_cols = [c for c in feat_cols if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+    numeric_cols = [
+        c
+        for c in feat_cols
+        if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]
+    ]
 
     if not numeric_cols:
         fig, ax = plt.subplots(figsize=(8, 4))
@@ -245,7 +284,13 @@ def plot_feature_correlation(
 
     if len(plot_cols) < 2:
         fig, ax = plt.subplots(figsize=(8, 4))
-        ax.text(0.5, 0.5, "Need at least 2 features for correlation", ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            "Need at least 2 features for correlation",
+            ha="center",
+            va="center",
+        )
         return fig
 
     # Compute correlation matrix
@@ -255,8 +300,14 @@ def plot_feature_correlation(
 
     if HAS_SEABORN:
         sns.heatmap(
-            corr, annot=True, fmt=".2f", cmap="coolwarm",
-            center=0, ax=ax, vmin=-1, vmax=1,
+            corr,
+            annot=True,
+            fmt=".2f",
+            cmap="coolwarm",
+            center=0,
+            ax=ax,
+            vmin=-1,
+            vmax=1,
             xticklabels=[c.replace("feat_", "") for c in plot_cols],
             yticklabels=[c.replace("feat_", "") for c in plot_cols],
         )
@@ -276,7 +327,15 @@ def plot_feature_correlation(
             for j in range(len(plot_cols)):
                 val = corr.iloc[i, j]
                 color = "white" if abs(val) > 0.5 else "black"
-                ax.text(j, i, f"{val:.2f}", ha="center", va="center", color=color, fontsize=8)
+                ax.text(
+                    j,
+                    i,
+                    f"{val:.2f}",
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=8,
+                )
 
     ax.set_title("Feature Correlation Matrix")
     plt.tight_layout()
@@ -317,8 +376,18 @@ def plot_rolling_mean(
     values = df_sorted[column].values
     rolling = pd.Series(values).rolling(window=window, min_periods=1).mean()
 
-    ax.plot(rolling, color=BASE_COLORS[0], linewidth=1.5, label=f"Rolling mean (window={window})")
-    ax.axhline(values.mean(), color="red", linestyle="--", label=f"Global mean: {values.mean():.3f}")
+    ax.plot(
+        rolling,
+        color=BASE_COLORS[0],
+        linewidth=1.5,
+        label=f"Rolling mean (window={window})",
+    )
+    ax.axhline(
+        values.mean(),
+        color="red",
+        linestyle="--",
+        label=f"Global mean: {values.mean():.3f}",
+    )
 
     ax.set_xlabel("Row Index")
     ax.set_ylabel(column.replace("feat_", ""))
@@ -386,14 +455,20 @@ def plot_feature_vs_label(
         df.drop("_bin", axis=1, inplace=True)
     except ValueError:
         # Not enough unique values for binning
-        ax.text(0.5, 0.5, "Not enough unique values for binning", ha="center", va="center")
+        ax.text(
+            0.5, 0.5, "Not enough unique values for binning", ha="center", va="center"
+        )
 
     ax.set_xlabel(feat_col.replace("feat_", "") + " (binned)")
     ax.set_ylabel(label_col.replace("feat_", ""))
     ax.set_title("Binned Box Plot")
     ax.tick_params(axis="x", rotation=45)
 
-    fig.suptitle(f"{feat_col.replace('feat_', '')} vs {label_col.replace('feat_', '')}", fontsize=12, y=1.02)
+    fig.suptitle(
+        f"{feat_col.replace('feat_', '')} vs {label_col.replace('feat_', '')}",
+        fontsize=12,
+        y=1.02,
+    )
     plt.tight_layout()
     return fig
 
@@ -425,8 +500,13 @@ def plot_feature_vs_outcome(
     fig, axes = plt.subplots(1, 2, figsize=figsize)
 
     if feat_col not in df.columns or outcome not in df.columns:
-        axes[0].text(0.5, 0.5, f"Required columns not found\n({feat_col}, {outcome})",
-                     ha="center", va="center")
+        axes[0].text(
+            0.5,
+            0.5,
+            f"Required columns not found\n({feat_col}, {outcome})",
+            ha="center",
+            va="center",
+        )
         return fig
 
     # Compute correlation
@@ -448,7 +528,9 @@ def plot_feature_vs_outcome(
         z = np.polyfit(df.loc[valid_mask, feat_col], df.loc[valid_mask, outcome], 1)
         p = np.poly1d(z)
         x_range = np.linspace(df[feat_col].min(), df[feat_col].max(), 100)
-        ax.plot(x_range, p(x_range), color="red", linestyle="--", linewidth=2, label="Trend")
+        ax.plot(
+            x_range, p(x_range), color="red", linestyle="--", linewidth=2, label="Trend"
+        )
         ax.legend()
 
     ax.grid(True, alpha=0.3)
@@ -464,7 +546,9 @@ def plot_feature_vs_outcome(
             bins = df_copy.groupby("_bin")[outcome].apply(list).tolist()
             ax.boxplot(bins)
     except ValueError:
-        ax.text(0.5, 0.5, "Not enough unique values for binning", ha="center", va="center")
+        ax.text(
+            0.5, 0.5, "Not enough unique values for binning", ha="center", va="center"
+        )
 
     ax.set_xlabel(feat_col.replace("feat_", "") + " (binned)")
     ax.set_ylabel(outcome.replace("_", " ").title())
@@ -473,7 +557,11 @@ def plot_feature_vs_outcome(
     ax.grid(True, axis="y", alpha=0.3)
 
     corr_str = f"r = {corr:.3f}" if not np.isnan(corr) else "r = N/A"
-    fig.suptitle(f"{feat_col.replace('feat_', '')} vs {outcome} ({corr_str})", fontsize=12, y=1.02)
+    fig.suptitle(
+        f"{feat_col.replace('feat_', '')} vs {outcome} ({corr_str})",
+        fontsize=12,
+        y=1.02,
+    )
     plt.tight_layout()
     return fig
 
@@ -501,8 +589,13 @@ def plot_outcome_distributions(
     fig, ax = plt.subplots(figsize=figsize)
 
     if outcome not in df.columns or group_by not in df.columns:
-        ax.text(0.5, 0.5, f"Required columns not found\n({outcome}, {group_by})",
-                ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            f"Required columns not found\n({outcome}, {group_by})",
+            ha="center",
+            va="center",
+        )
         return fig
 
     groups = sorted(df[group_by].unique())
@@ -519,12 +612,17 @@ def plot_outcome_distributions(
 
     ax.set_xlabel(group_by.replace("_", " ").title())
     ax.set_ylabel(outcome.replace("_", " ").title())
-    ax.set_title(title or f"{outcome.replace('_', ' ').title()} Distribution by {group_by.replace('_', ' ').title()}")
+    ax.set_title(
+        title
+        or f"{outcome.replace('_', ' ').title()} Distribution by {group_by.replace('_', ' ').title()}"
+    )
     ax.grid(True, axis="y", alpha=0.3)
 
     # Add mean markers
     means = [df[df[group_by] == g][outcome].mean() for g in groups]
-    ax.scatter(range(len(means)), means, color="red", marker="D", s=50, zorder=5, label="Mean")
+    ax.scatter(
+        range(len(means)), means, color="red", marker="D", s=50, zorder=5, label="Mean"
+    )
     ax.legend()
 
     plt.tight_layout()
@@ -560,12 +658,18 @@ def plot_feature_outcome_correlation(
     fig, ax = plt.subplots(figsize=figsize)
 
     if outcome not in df.columns:
-        ax.text(0.5, 0.5, f"Outcome column '{outcome}' not found", ha="center", va="center")
+        ax.text(
+            0.5, 0.5, f"Outcome column '{outcome}' not found", ha="center", va="center"
+        )
         return fig
 
     # Get feature columns
     feat_cols = [c for c in df.columns if c.startswith("feat_")]
-    numeric_cols = [c for c in feat_cols if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+    numeric_cols = [
+        c
+        for c in feat_cols
+        if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]
+    ]
 
     if features:
         numeric_cols = [f"feat_{f}" for f in features if f"feat_{f}" in numeric_cols]
@@ -588,12 +692,16 @@ def plot_feature_outcome_correlation(
         return fig
 
     # Sort by absolute correlation and take top N
-    sorted_items = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)[:top_n]
+    sorted_items = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)[
+        :top_n
+    ]
     sorted_items = list(reversed(sorted_items))  # Reverse for horizontal bar
 
     labels = [c.replace("feat_", "") for c, _ in sorted_items]
     values = [v for _, v in sorted_items]
-    colors = [OUTCOME_COLORS["win"] if v > 0 else OUTCOME_COLORS["loss"] for v in values]
+    colors = [
+        OUTCOME_COLORS["win"] if v > 0 else OUTCOME_COLORS["loss"] for v in values
+    ]
 
     y_pos = np.arange(len(labels))
     bars = ax.barh(y_pos, values, color=colors, alpha=0.8)
@@ -603,7 +711,9 @@ def plot_feature_outcome_correlation(
     ax.set_yticklabels(labels)
     ax.set_xlabel(f"Correlation with {outcome}")
     ax.set_ylabel("Feature")
-    ax.set_title(title or f"Feature Correlation with {outcome.replace('_', ' ').title()}")
+    ax.set_title(
+        title or f"Feature Correlation with {outcome.replace('_', ' ').title()}"
+    )
     ax.grid(True, axis="x", alpha=0.3)
     ax.set_xlim(-1.1, 1.1)
 
@@ -611,8 +721,14 @@ def plot_feature_outcome_correlation(
     for bar, val in zip(bars, values):
         x_pos = val + 0.02 if val >= 0 else val - 0.02
         ha = "left" if val >= 0 else "right"
-        ax.text(x_pos, bar.get_y() + bar.get_height() / 2, f"{val:.3f}",
-                va="center", ha=ha, fontsize=8)
+        ax.text(
+            x_pos,
+            bar.get_y() + bar.get_height() / 2,
+            f"{val:.3f}",
+            va="center",
+            ha=ha,
+            fontsize=8,
+        )
 
     plt.tight_layout()
     return fig
@@ -644,8 +760,14 @@ def plot_cdf(
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
-        ax.text(0.5, 0.5, f"Column '{column}' not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            f"Column '{column}' not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     if group_by is not None and group_by in df.columns:
@@ -665,7 +787,14 @@ def plot_cdf(
         # Single CDF
         values = df[column].dropna().sort_values()
         if len(values) == 0:
-            ax.text(0.5, 0.5, "No data to plot", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No data to plot",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             return fig
 
         y = np.arange(1, len(values) + 1) / len(values)
@@ -720,8 +849,14 @@ def plot_ccdf(
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
-        ax.text(0.5, 0.5, f"Column '{column}' not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            f"Column '{column}' not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     if group_by is not None and group_by in df.columns:
@@ -737,14 +872,23 @@ def plot_ccdf(
             ccdf = 1 - np.arange(1, len(values) + 1) / len(values)
             # Filter out zeros for log scale
             mask = ccdf > 0
-            ax.plot(values[mask], ccdf[mask], label=str(group), color=color, linewidth=1.5)
+            ax.plot(
+                values[mask], ccdf[mask], label=str(group), color=color, linewidth=1.5
+            )
 
         ax.legend(title=group_by)
     else:
         # Single CCDF
         values = df[column].dropna().sort_values()
         if len(values) == 0:
-            ax.text(0.5, 0.5, "No data to plot", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "No data to plot",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             return fig
 
         ccdf = 1 - np.arange(1, len(values) + 1) / len(values)
@@ -792,20 +936,38 @@ def plot_hand_value_by_trump_suit(
     fig, ax = plt.subplots(figsize=figsize)
 
     if "feat_hand_value" not in df.columns:
-        ax.text(0.5, 0.5, "feat_hand_value column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "feat_hand_value column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     if "trump" not in df.columns:
-        ax.text(0.5, 0.5, "trump column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "trump column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     # Filter to non-null trump values (suit contracts only)
     suit_df = df[df["trump"].notna()].copy()
     if len(suit_df) == 0:
-        ax.text(0.5, 0.5, "No suit contract data found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No suit contract data found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     suits = ["C", "D", "H", "S"]
@@ -814,11 +976,18 @@ def plot_hand_value_by_trump_suit(
 
     if HAS_SEABORN:
         sns.boxplot(
-            data=suit_df, x="trump", y="feat_hand_value", ax=ax,
-            order=available_suits, palette=colors
+            data=suit_df,
+            x="trump",
+            y="feat_hand_value",
+            ax=ax,
+            order=available_suits,
+            palette=colors,
         )
     else:
-        data = [suit_df[suit_df["trump"] == s]["feat_hand_value"].values for s in available_suits]
+        data = [
+            suit_df[suit_df["trump"] == s]["feat_hand_value"].values
+            for s in available_suits
+        ]
         bp = ax.boxplot(data, labels=available_suits, patch_artist=True)
         for patch, color in zip(bp["boxes"], colors):
             patch.set_facecolor(color)
@@ -830,15 +999,34 @@ def plot_hand_value_by_trump_suit(
     ax.grid(True, alpha=0.3, axis="y")
 
     # Add mean markers
-    means = [suit_df[suit_df["trump"] == s]["feat_hand_value"].mean() for s in available_suits]
-    ax.scatter(range(len(means)), means, color="black", marker="D", s=50, zorder=5, label="Mean")
+    means = [
+        suit_df[suit_df["trump"] == s]["feat_hand_value"].mean()
+        for s in available_suits
+    ]
+    ax.scatter(
+        range(len(means)),
+        means,
+        color="black",
+        marker="D",
+        s=50,
+        zorder=5,
+        label="Mean",
+    )
 
     # Annotate with variance if requested
     if show_variance:
-        variances = [suit_df[suit_df["trump"] == s]["feat_hand_value"].var() for s in available_suits]
+        variances = [
+            suit_df[suit_df["trump"] == s]["feat_hand_value"].var()
+            for s in available_suits
+        ]
         for i, (s, var) in enumerate(zip(available_suits, variances)):
-            ax.annotate(f"σ²={var:.1f}", xy=(i, ax.get_ylim()[1]),
-                       ha="center", va="bottom", fontsize=8)
+            ax.annotate(
+                f"σ²={var:.1f}",
+                xy=(i, ax.get_ylim()[1]),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
 
     ax.legend()
     plt.tight_layout()
@@ -869,20 +1057,38 @@ def plot_outcome_by_trump_suit(
     fig, ax = plt.subplots(figsize=figsize)
 
     if outcome not in df.columns:
-        ax.text(0.5, 0.5, f"'{outcome}' column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            f"'{outcome}' column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     if "trump" not in df.columns:
-        ax.text(0.5, 0.5, "trump column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "trump column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     # Filter to non-null trump values
     suit_df = df[df["trump"].notna()].copy()
     if len(suit_df) == 0:
-        ax.text(0.5, 0.5, "No suit contract data found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No suit contract data found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     suits = ["C", "D", "H", "S"]
@@ -891,8 +1097,13 @@ def plot_outcome_by_trump_suit(
 
     if HAS_SEABORN:
         sns.violinplot(
-            data=suit_df, x="trump", y=outcome, ax=ax,
-            order=available_suits, palette=colors, inner="box"
+            data=suit_df,
+            x="trump",
+            y=outcome,
+            ax=ax,
+            order=available_suits,
+            palette=colors,
+            inner="box",
         )
     else:
         data = [suit_df[suit_df["trump"] == s][outcome].values for s in available_suits]
@@ -908,7 +1119,9 @@ def plot_outcome_by_trump_suit(
 
     # Add mean markers
     means = [suit_df[suit_df["trump"] == s][outcome].mean() for s in available_suits]
-    ax.scatter(range(len(means)), means, color="red", marker="D", s=50, zorder=5, label="Mean")
+    ax.scatter(
+        range(len(means)), means, color="red", marker="D", s=50, zorder=5, label="Mean"
+    )
     ax.legend()
 
     plt.tight_layout()
@@ -942,20 +1155,36 @@ def plot_feature_heatmap_by_suit(
     fig, ax = plt.subplots(figsize=figsize)
 
     if "trump" not in df.columns:
-        ax.text(0.5, 0.5, "trump column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "trump column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     # Filter to suit contracts
     suit_df = df[df["trump"].notna()].copy()
     if len(suit_df) == 0:
-        ax.text(0.5, 0.5, "No suit contract data found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No suit contract data found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     # Get feature columns
     feat_cols = [c for c in df.columns if c.startswith("feat_")]
-    numeric_cols = [c for c in feat_cols if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]]
+    numeric_cols = [
+        c
+        for c in feat_cols
+        if df[c].dtype in [np.float64, np.int64, np.float32, np.int32]
+    ]
 
     if features:
         plot_cols = [f"feat_{f}" for f in features if f"feat_{f}" in numeric_cols]
@@ -966,8 +1195,14 @@ def plot_feature_heatmap_by_suit(
         plot_cols = sorted_cols[:10]
 
     if not plot_cols:
-        ax.text(0.5, 0.5, "No numeric features found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No numeric features found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     suits = ["C", "D", "H", "S"]
@@ -995,10 +1230,15 @@ def plot_feature_heatmap_by_suit(
 
     if HAS_SEABORN:
         sns.heatmap(
-            data, annot=True, fmt=".2f", cmap="coolwarm" if normalize else "YlOrRd",
+            data,
+            annot=True,
+            fmt=".2f",
+            cmap="coolwarm" if normalize else "YlOrRd",
             center=0 if normalize else None,
-            ax=ax, xticklabels=labels, yticklabels=available_suits,
-            cbar_kws={"label": "Z-score" if normalize else "Mean Value"}
+            ax=ax,
+            xticklabels=labels,
+            yticklabels=available_suits,
+            cbar_kws={"label": "Z-score" if normalize else "Mean Value"},
         )
     else:
         im = ax.imshow(data, cmap="coolwarm" if normalize else "YlOrRd", aspect="auto")
@@ -1045,20 +1285,38 @@ def plot_suit_variance_summary(
     fig, ax = plt.subplots(figsize=figsize)
 
     if column not in df.columns:
-        ax.text(0.5, 0.5, f"'{column}' column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            f"'{column}' column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     if "trump" not in df.columns:
-        ax.text(0.5, 0.5, "trump column not found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "trump column not found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     # Filter to suit contracts
     suit_df = df[df["trump"].notna()].copy()
     if len(suit_df) == 0:
-        ax.text(0.5, 0.5, "No suit contract data found",
-                ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No suit contract data found",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         return fig
 
     suits = ["C", "D", "H", "S"]
@@ -1073,8 +1331,13 @@ def plot_suit_variance_summary(
     bars = ax.bar(range(len(available_suits)), variances, color=colors, alpha=0.8)
 
     # Add overall variance reference line
-    ax.axhline(overall_var, color="red", linestyle="--", linewidth=2,
-               label=f"Overall: {overall_var:.1f}")
+    ax.axhline(
+        overall_var,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Overall: {overall_var:.1f}",
+    )
 
     ax.set_xticks(range(len(available_suits)))
     ax.set_xticklabels(available_suits)
@@ -1086,8 +1349,118 @@ def plot_suit_variance_summary(
 
     # Annotate bars with values
     for bar, var in zip(bars, variances):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                f"{var:.1f}", ha="center", va="bottom", fontsize=10)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.5,
+            f"{var:.1f}",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
 
+    plt.tight_layout()
+    return fig
+
+
+def plot_feature_vs_outcome_by_contract(
+    df: pd.DataFrame,
+    feature: str,
+    outcome: str = "tricks_won",
+    figsize: Tuple[int, int] = (16, 5),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Plot feature vs outcome scatter faceted by contract type.
+
+    Creates subplots for each contract family (suit, high, low), each with
+    scatter plot + binned mean line showing the feature-outcome relationship.
+
+    Args:
+        df: DataFrame with feature column, outcome column, and contract_type
+        feature: Feature column name
+        outcome: Outcome column name (default "tricks_won")
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure with 1-3 subplots depending on contract types present
+    """
+    _apply_style()
+
+    if feature not in df.columns or outcome not in df.columns:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.text(
+            0.5,
+            0.5,
+            f"Required columns not found\n({feature}, {outcome})",
+            ha="center",
+            va="center",
+        )
+        return fig
+
+    if "contract_type" not in df.columns:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.text(0.5, 0.5, "contract_type column not found", ha="center", va="center")
+        return fig
+
+    # Fixed order, only include present types
+    contract_order = ["suit", "high", "low"]
+    present = [ct for ct in contract_order if ct in df["contract_type"].values]
+
+    if not present:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.text(
+            0.5, 0.5, "No recognized contract types found", ha="center", va="center"
+        )
+        return fig
+
+    ncols = len(present)
+    fig, axes = plt.subplots(1, ncols, figsize=figsize, squeeze=False)
+    axes = axes[0]  # flatten from 2D
+
+    for idx, ct in enumerate(present):
+        ax = axes[idx]
+        subset = df[df["contract_type"] == ct]
+
+        color = get_contract_color(ct)
+        ax.scatter(subset[feature], subset[outcome], alpha=0.3, s=10, c=color)
+
+        # Binned mean line
+        try:
+            subset_copy = subset[[feature, outcome]].copy()
+            subset_copy["_bin"] = pd.qcut(subset_copy[feature], q=10, duplicates="drop")
+            bin_means = subset_copy.groupby("_bin", observed=True)[outcome].mean()
+            bin_centers = subset_copy.groupby("_bin", observed=True)[feature].mean()
+            ax.plot(
+                bin_centers.values,
+                bin_means.values,
+                color="black",
+                linewidth=2,
+                marker="o",
+                markersize=4,
+                label="Binned mean",
+            )
+        except (ValueError, KeyError):
+            pass  # Not enough unique values for binning
+
+        # Correlation
+        valid = subset[feature].notna() & subset[outcome].notna()
+        if valid.sum() > 2:
+            corr = subset.loc[valid, feature].corr(subset.loc[valid, outcome])
+            corr_str = f"r={corr:.3f}" if not np.isnan(corr) else ""
+        else:
+            corr_str = ""
+
+        label = get_contract_label(ct)
+        ax.set_title(f"{label} {corr_str}")
+        ax.set_xlabel(feature.replace("feat_", "").replace("_", " "))
+        ax.set_ylabel(outcome.replace("_", " ").title())
+        ax.grid(True, alpha=0.3)
+        if idx == 0:
+            ax.legend(fontsize=8)
+
+    feat_name = feature.replace("feat_", "").replace("_", " ")
+    fig.suptitle(
+        title or f"{feat_name} vs {outcome} by Contract Type", fontsize=12, y=1.02
+    )
     plt.tight_layout()
     return fig
