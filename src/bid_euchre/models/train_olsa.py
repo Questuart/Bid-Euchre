@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 from ..datasets.join import join_features_outcomes
+from .splits import create_grouped_split
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,15 @@ def _compute_metrics(y_true, y_pred):
     return {"r2": float(r2), "mae": float(mae)}
 
 
-def train_olsa(run_dir, seed):
+def train_olsa(run_dir, seed, split_manifest_dir=None, split_type="two_way"):
     """
     Train OLSa models from a canonical bidless run directory.
+
+    Args:
+        run_dir: Path to canonical bidless run.
+        seed: Random seed for splitting and reproducibility.
+        split_manifest_dir: If given, write split_manifest.json per contract here.
+        split_type: "two_way" or "three_way" (three_way required for promotion).
 
     Returns the artifact dict and per-contract metrics.
     """
@@ -93,6 +100,8 @@ def train_olsa(run_dir, seed):
     df = join_features_outcomes(bidless_path, outcomes_path)
     logger.info("Joined: %d rows", len(df))
 
+    source_run_id = os.path.basename(run_dir)
+
     models = {}
     training_metrics = {}
 
@@ -103,7 +112,20 @@ def train_olsa(run_dir, seed):
             logger.warning("No data for contract_type=%s, skipping", contract_family)
             continue
 
-        train_df, test_df = _grouped_train_test_split(sub, seed)
+        train_df, val_df, test_df, manifest = create_grouped_split(
+            sub, seed,
+            source_run_id=source_run_id,
+            source_parquet_path=bidless_path,
+            split_type=split_type,
+        )
+
+        # Persist manifest if requested
+        if split_manifest_dir:
+            manifest_path = os.path.join(
+                split_manifest_dir, f"split_manifest_{contract_family}.json"
+            )
+            manifest.save(manifest_path)
+            logger.info("  Split manifest: %s", manifest_path)
 
         X_train = train_df[feature_names].values.astype(np.float64)
         y_train = train_df["tricks_won"].values.astype(np.float64)
@@ -232,10 +254,21 @@ if __name__ == "__main__":
     parser.add_argument("--run-dir", required=True, help="Canonical bidless run directory")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", required=True, help="Output directory for artifacts")
+    parser.add_argument(
+        "--split-type",
+        choices=["two_way", "three_way"],
+        default="two_way",
+        help="Split type (three_way required for promotion)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    artifact, metrics = train_olsa(args.run_dir, args.seed)
+    # Emit split manifests into output dir
+    artifact, metrics = train_olsa(
+        args.run_dir, args.seed,
+        split_manifest_dir=args.output,
+        split_type=args.split_type,
+    )
     artifact_path = save_artifacts(artifact, metrics, args.output)
     print(f"\nOLSa artifact: {artifact_path}")
