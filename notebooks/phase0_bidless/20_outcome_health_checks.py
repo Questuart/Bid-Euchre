@@ -114,7 +114,6 @@ if CANONICAL_MODE:
 # Imports
 # ============================================================================
 
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -131,9 +130,8 @@ except ImportError:
     print("seaborn not available, using matplotlib defaults")
     HAS_SEABORN = False
 
-# Add src to path
+# PYTHONPATH=src is set by papermill/uv run — no sys.path manipulation needed
 repo_root = Path.cwd().parent.parent
-sys.path.insert(0, str(repo_root / 'src'))
 
 from bid_euchre.diagnostics.notebook_data import (
     load_or_generate_outcomes,

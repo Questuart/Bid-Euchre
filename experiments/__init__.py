@@ -1,23 +1,3 @@
-"""Experiments package initialization.
-
-This module ensures all experiment scripts can import from src/
-without manual sys.path manipulation.
-
-Usage:
-    Simply place your experiment script in the experiments/ directory
-    and imports will work automatically:
-    
-    # No need for sys.path.insert(0, 'src')!
-    from bid_euchre.sim import simulation
-    from bid_euchre.strategy import GreedyStrategy
-"""
-import os
-import sys
-
-_experiments_dir = os.path.dirname(__file__)
-_project_root = os.path.dirname(_experiments_dir)
-_src_path = os.path.join(_project_root, 'src')
-
-if _src_path not in sys.path:
-    sys.path.insert(0, _src_path)
-
+# experiments/ is a filesystem directory (configs + runner), NOT a Python package.
+# Do not import from this package. Use bid_euchre.experiments for config classes.
+# This file will be removed in a future PR.
