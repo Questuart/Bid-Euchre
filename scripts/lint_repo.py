@@ -724,8 +724,15 @@ def check_canonical_runs_registry_consistency(
 
 
 # --- Artifact discovery lint rules ---
+#
+# This is a supplemental commit-time check. The canonical promotion-path
+# enforcement lives in reporting.eligibility.check_artifacts_frozen() which
+# uses models.freeze.verify_frozen() at runtime. The lint rule mirrors that
+# logic (checks both frozen_at and artifact_sha256) for early feedback.
 
 # Filename substrings that indicate model artifacts (case-insensitive match).
+# Used as a path-based pre-filter; schema confirmation via
+# _has_model_artifact_schema() prevents false positives on unrelated JSON.
 ARTIFACT_NAME_PATTERNS = ["olsa", "b0", "teacher"]
 
 # Infrastructure JSON files that live under data/ but are NOT model artifacts.
@@ -733,7 +740,12 @@ FREEZE_EXEMPT_NAMES = {"meta.json", "rollup.json", "canonical_summary.json"}
 
 
 def _is_model_artifact(path: str) -> bool:
-    """Return True if *path* looks like a model artifact JSON under data/."""
+    """Path-based pre-filter: True if *path* is a candidate model artifact.
+
+    Checks: under data/, .json extension, not exempt, filename matches a
+    known pattern. Callers should confirm with _has_model_artifact_schema()
+    after reading the file content.
+    """
     if not is_under(path, "data/"):
         return False
     name = Path(path).name
@@ -745,11 +757,36 @@ def _is_model_artifact(path: str) -> bool:
     return any(pattern in name_lower for pattern in ARTIFACT_NAME_PATTERNS)
 
 
+def _has_model_artifact_schema(data: dict) -> bool:
+    """Schema-based confirmation: True if *data* looks like a model artifact.
+
+    Checks for known model artifact keys produced by the training pipeline:
+    - ``artifact_type``: explicitly tags the file as a model artifact
+    - ``frozen_at``: freeze field (present even when null in training output)
+    - ``models`` + ``metadata``: OLSa artifact structure
+    """
+    if "artifact_type" in data:
+        return True
+    if "frozen_at" in data:
+        return True
+    if "models" in data and "metadata" in data:
+        return True
+    return False
+
+
 def check_artifacts_require_freeze(
     changed: list[str],
     repo_root: Path,
 ) -> list[Violation]:
-    """Model artifact JSON files must have a non-null ``frozen_at`` field."""
+    """Model artifact JSON must be properly frozen (frozen_at + artifact_sha256).
+
+    Detection uses two-phase filtering: path pre-filter (_is_model_artifact)
+    then schema confirmation (_has_model_artifact_schema). This prevents
+    false positives on unrelated JSON that happens to match filename patterns.
+
+    Freeze check mirrors models.freeze.verify_frozen(): requires both
+    frozen_at and artifact_sha256 to be non-null.
+    """
     violations: list[Violation] = []
     for p in changed:
         if not _is_model_artifact(p):
@@ -771,6 +808,23 @@ def check_artifacts_require_freeze(
             )
             continue
 
+        if not isinstance(metadata, dict):
+            violations.append(
+                Violation(
+                    rule="artifact-requires-freeze",
+                    path=p,
+                    message=(
+                        "Model artifact JSON must be an object (got "
+                        f"{type(metadata).__name__})."
+                    ),
+                )
+            )
+            continue
+
+        # Schema confirmation: skip files that don't look like model artifacts
+        if not _has_model_artifact_schema(metadata):
+            continue
+
         if metadata.get("frozen_at") is None:
             violations.append(
                 Violation(
@@ -779,6 +833,17 @@ def check_artifacts_require_freeze(
                     message=(
                         "Model artifact must be frozen before commit "
                         "(frozen_at is null). Run freeze_artifact() first."
+                    ),
+                )
+            )
+        elif metadata.get("artifact_sha256") is None:
+            violations.append(
+                Violation(
+                    rule="artifact-requires-freeze",
+                    path=p,
+                    message=(
+                        "Model artifact has frozen_at but missing artifact_sha256. "
+                        "Run freeze_artifact() to set both fields."
                     ),
                 )
             )
@@ -839,6 +904,19 @@ def check_gate_artifacts_schema(
             )
             continue
 
+        if not isinstance(data, dict):
+            violations.append(
+                Violation(
+                    rule="gate-artifact-schema",
+                    path=p,
+                    message=(
+                        "Gate artifact JSON must be an object (got "
+                        f"{type(data).__name__})."
+                    ),
+                )
+            )
+            continue
+
         missing = GATE_REQUIRED_FIELDS - set(data.keys())
         if missing:
             violations.append(
@@ -886,6 +964,19 @@ def check_split_manifest_schema(
                     rule="split-manifest-schema",
                     path=p,
                     message="Split manifest is not valid JSON.",
+                )
+            )
+            continue
+
+        if not isinstance(data, dict):
+            violations.append(
+                Violation(
+                    rule="split-manifest-schema",
+                    path=p,
+                    message=(
+                        "Split manifest JSON must be an object (got "
+                        f"{type(data).__name__})."
+                    ),
                 )
             )
             continue
