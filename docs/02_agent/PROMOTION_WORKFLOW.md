@@ -53,17 +53,23 @@ Artifact freeze prevents accidental modification between training and evaluation
 - `src/bid_euchre/models/freeze.py` — `freeze_artifact()`, `verify_frozen()`, `require_frozen()`
 
 **Usage:**
+```bash
+# Auto-freeze via CLI (recommended for promotion-track training)
+PYTHONPATH=src python scripts/train_olsa.py \
+    --run-dir data/runs/... --seed 42 --output /tmp/artifacts/ --freeze
+```
+
 ```python
 from bid_euchre.models.freeze import freeze_artifact, verify_frozen, require_frozen
 
-# After training
+# After training (manual freeze)
 freeze_artifact("path/to/olsa_v1.json")
 
 # Before evaluation
-verify_frozen("path/to/olsa_v1.json")  # Raises on tamper
+verify_frozen("path/to/olsa_v1.json")  # Returns True/False
 
-# In promotion-track code
-artifact = require_frozen("path/to/olsa_v1.json", strict=True)
+# In promotion-track code (strict gate)
+require_frozen("path/to/olsa_v1.json", strict=True)  # Raises on not frozen
 ```
 
 ## Notebook Gate
@@ -89,6 +95,7 @@ The CI workflow enforces promotion checks on PRs labeled `promotion`.
 1. `make repo-lint` — repository boundary linter (includes promotion registry lint rules)
 2. `make notebook-run` (SMOKE mode with `--gate-output-dir`) — notebook preflight
 3. Notebook gate assertion — verifies `gate_status == PASS`
+4. Artifact freeze check — verifies all model artifacts in ARTIFACT_DIR are frozen (if set)
 
 **Makefile target:**
 ```bash
