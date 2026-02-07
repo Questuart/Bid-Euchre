@@ -61,12 +61,6 @@
 MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
 SEED = 42
 
-# --- Data Source Mode ---
-CANONICAL_MODE = True  # If True, loads from canonical run; if False, generates on-the-fly
-
-# Override canonical run path (default: auto-resolved from canonical_runs.py registry)
-RUN_DIR = ""  # Set to override canonical path; empty = use registry
-
 # Game parameters
 CONTRACT_TYPES = ['suit', 'high', 'low']
 TRUMPS_FOR_SUIT_CONTRACTS = ['C', 'D', 'H', 'S']
@@ -98,7 +92,6 @@ print(f"Sample size: {N_DEALS} deals")
 print(f"Total observations: {N_DEALS * len(SEATS) * (len(CONTRACT_TYPES) - 1 + len(TRUMPS_FOR_SUIT_CONTRACTS))}")
 print(f"Strategies: {[s['name'] for s in STRATEGIES]}")
 print(f"Matchup mode: {MATCHUP_MODE}")
-print(f"Canonical mode: {CANONICAL_MODE}")
 
 # %% [markdown]
 # ### Imports
@@ -106,7 +99,6 @@ print(f"Canonical mode: {CANONICAL_MODE}")
 # %%
 import itertools
 import warnings
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -133,7 +125,6 @@ warnings.filterwarnings('ignore')
 
 # Project imports
 from bid_euchre.diagnostics.notebook_data import (
-    load_features_and_outcomes_from_run_dir,
     load_or_generate_features,
 )
 from bid_euchre.diagnostics.strategy_charts import (
@@ -246,33 +237,17 @@ print(f"Matchups: {len(MATCHUPS)}")
 
 
 # %%
-# ============================================================================
-# Data Loading Helper for Production Mode
-# ============================================================================
-
-# %%
 # Load feature + outcome data
-if CANONICAL_MODE:
-    # Load from canonical run (glutton dataset has features + outcomes)
-    if RUN_DIR:
-        canonical_dir = Path(RUN_DIR)
-    else:
-        from canonical_runs import resolve_run_dir
-        canonical_dir = resolve_run_dir("glutton_dataset")
-
-    print(f"Loading canonical data from {canonical_dir}...")
-    data_df = load_features_and_outcomes_from_run_dir(str(canonical_dir))
-else:
-    print(f"Generating synthetic data (mode={MODE}, seed={SEED})...")
-    data_df = load_or_generate_features(
-        mode=MODE,
-        seed=SEED,
-        contracts=CONTRACT_TYPES,
-        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-        seats=SEATS,
-        strategies=STRATEGIES,
-        matchups=MATCHUPS,
-    )
+print(f"Generating data (mode={MODE}, seed={SEED})...")
+data_df = load_or_generate_features(
+    mode=MODE,
+    seed=SEED,
+    contracts=CONTRACT_TYPES,
+    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+    seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=MATCHUPS,
+)
 
 print(f"Loaded {len(data_df)} observations")
 print(f"\nColumns: {list(data_df.columns)}")

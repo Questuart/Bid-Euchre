@@ -46,17 +46,9 @@ MODE = "QUICK"  # Fast iteration (~2k deals, <1 min)
 # MODE = "FULL"   # Statistical rigor (~50k deals, ~5-10 min)
 
 SEED = 42       # For reproducibility
-
-# --- Data Source Mode ---
-CANONICAL_MODE = True   # Default: loads from canonical run data (300K hands)
-# CANONICAL_MODE = False  # CI/dev: generates synthetic data on-the-fly
 ```
 
-**Data Source Modes:**
-- **`CANONICAL_MODE=True`** (default): Loads from canonical run data (300K hands, seed=42). Paths auto-resolved from `canonical_runs.py` registry.
-- **`CANONICAL_MODE=False`**: Generates synthetic data on-the-fly using `load_or_generate_*()` functions. Used by CI (injected by papermill). Data is cached after first generation.
-
-**Note:** Notebook 20 (outcome health checks) requires `CANONICAL_MODE=False`, because its N×N strategy matchup analysis is not available in canonical runs. It will raise `ValueError` if `CANONICAL_MODE=True`. CI runners inject `CANONICAL_MODE=False` automatically via papermill.
+Notebooks generate data on-the-fly using `load_or_generate_*()` functions, controlled by `MODE` (SMOKE/QUICK/FULL). Data is cached after first generation.
 
 **Step 3:** Run all cells. Data will be generated automatically on first run and cached for subsequent runs.
 
