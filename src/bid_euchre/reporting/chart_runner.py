@@ -13,13 +13,21 @@ from pathlib import Path
 import pandas as pd
 
 from .charts import (
+    generate_contract_faceted_charts,
     generate_distribution_charts,
     generate_feature_health_charts,
     generate_feature_outcome_charts,
     generate_strategy_matchup_charts,
 )
 
-AVAILABLE_SUITES = ["feature_health", "feature_outcome", "distribution", "strategy_matchup", "all"]
+AVAILABLE_SUITES = [
+    "feature_health",
+    "feature_outcome",
+    "distribution",
+    "strategy_matchup",
+    "contract_faceted",
+    "all",
+]
 
 
 def _load_bidless_features(run_dir: Path) -> pd.DataFrame:
@@ -86,8 +94,12 @@ def _load_matchup_results(run_dir: Path) -> dict:
                 continue
             total_deals += n
             weighted_win_rate += data.get("win_rate_team0", 0) * n
-            weighted_mean_t0 += data.get("avg_team0", data.get("mean_tricks_team0", 0)) * n
-            weighted_mean_t1 += data.get("avg_team1", data.get("mean_tricks_team1", 0)) * n
+            weighted_mean_t0 += (
+                data.get("avg_team0", data.get("mean_tricks_team0", 0)) * n
+            )
+            weighted_mean_t1 += (
+                data.get("avg_team1", data.get("mean_tricks_team1", 0)) * n
+            )
 
             # Reconstruct trick list from distribution histogram if available
             dist = data.get("distribution_team0", {})
@@ -124,8 +136,12 @@ if __name__ == "__main__":
         stacklevel=1,
     )
 
-    parser = argparse.ArgumentParser(description="Generate production charts from run data")
-    parser.add_argument("--run-dir", required=True, help="Path to experiment run directory")
+    parser = argparse.ArgumentParser(
+        description="Generate production charts from run data"
+    )
+    parser.add_argument(
+        "--run-dir", required=True, help="Path to experiment run directory"
+    )
     parser.add_argument("--output-dir", required=True, help="Output directory for PNGs")
     parser.add_argument(
         "--suite",
@@ -133,7 +149,9 @@ if __name__ == "__main__":
         default="all",
         help="Which chart suite to generate (default: all)",
     )
-    parser.add_argument("--dpi", type=int, default=150, help="Output resolution (default: 150)")
+    parser.add_argument(
+        "--dpi", type=int, default=150, help="Output resolution (default: 150)"
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -174,7 +192,14 @@ if __name__ == "__main__":
                 print("  Skipping strategy_matchup: no matchup data found in results/")
                 continue
             suite_dir = str(output_dir / suite)
-            paths = generate_strategy_matchup_charts(matchup_results, suite_dir, dpi=args.dpi)
+            paths = generate_strategy_matchup_charts(
+                matchup_results, suite_dir, dpi=args.dpi
+            )
+
+        elif suite == "contract_faceted":
+            df = _load_features_with_outcomes(run_dir)
+            suite_dir = str(output_dir / suite)
+            paths = generate_contract_faceted_charts(df, suite_dir, dpi=args.dpi)
 
         else:
             print(f"  Unknown suite: {suite}")

@@ -26,6 +26,7 @@ from bid_euchre.reporting.chart_runner import (
     _load_matchup_results,
 )
 from bid_euchre.reporting.charts import (
+    generate_contract_faceted_charts,
     generate_distribution_charts,
     generate_feature_health_charts,
     generate_feature_outcome_charts,
@@ -122,6 +123,11 @@ def main() -> None:
             paths = generate_strategy_matchup_charts(
                 matchup_results, suite_dir, dpi=args.dpi
             )
+
+        elif suite == "contract_faceted":
+            df = _load_features_with_outcomes(run_dir)
+            suite_dir = str(output_dir / suite)
+            paths = generate_contract_faceted_charts(df, suite_dir, dpi=args.dpi)
 
         else:
             print(f"  Unknown suite: {suite}")
