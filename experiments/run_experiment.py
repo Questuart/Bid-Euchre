@@ -43,9 +43,6 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-# Ensure src is in path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 from bid_euchre.datasets.bidding import BiddingDatasetWriter
 from bid_euchre.datasets.bidless import BidlessDatasetCollector, BidlessDatasetWriter
 from bid_euchre.datasets.bidless_outcomes import (

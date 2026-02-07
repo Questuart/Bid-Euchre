@@ -5,10 +5,7 @@ Tests that artifact-based strategies can be loaded and used in actual gameplay w
 and that they produce reasonable results.
 """
 
-import os
 import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from bid_euchre.sim.simulation import play_single_hand
 from bid_euchre.strategy.artifact_strategy import ArtifactGreedyStrategy

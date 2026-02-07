@@ -12,11 +12,7 @@ Exits with code 0 on success, non-zero on failure.
 import importlib
 import os
 import sys
-from pathlib import Path
 from typing import Any, Dict
-
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import yaml
 

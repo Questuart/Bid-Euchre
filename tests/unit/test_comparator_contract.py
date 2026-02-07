@@ -5,11 +5,8 @@ Validates that run_auction_comparator.py:
 2. Can detect new run directories via before/after snapshot diffing
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 from run_auction_comparator import (
     _detect_new_run_dir,
     _snapshot_runs_dir,

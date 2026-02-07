@@ -13,10 +13,6 @@ Supported teachers:
 
 import argparse
 import sys
-from pathlib import Path
-
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from bid_euchre.models.train_bidder import train_and_save_model
 
