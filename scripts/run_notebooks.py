@@ -195,6 +195,11 @@ def main():
         default=None,
         help="Directory for gate artifacts (notebook_gate.json + NOTEBOOK_GATE.md)",
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate executed notebooks (check structure, MODE injection, cell errors)",
+    )
     args = parser.parse_args()
 
     # Discover notebooks
@@ -252,6 +257,44 @@ def main():
         print(f"Output notebooks: {output_dir} (temp)")
     else:
         print(f"Output notebooks: {output_dir}")
+
+    # Validate executed notebooks if requested
+    if args.validate:
+        from bid_euchre.diagnostics.notebook_validation import validate_notebook
+
+        mode_map = {"smoke": "SMOKE", "quick": "QUICK"}
+        expected_mode = mode_map[args.mode]
+
+        print()
+        print("=" * 60)
+        print("VALIDATION")
+        print("=" * 60)
+
+        validation_failures = 0
+        for name, success, _, _ in results:
+            if not success:
+                print(f"  [SKIP] {name} (execution failed)")
+                continue
+
+            output_path = output_dir / name
+            result = validate_notebook(output_path, expected_mode=expected_mode)
+
+            if result.ok:
+                print(f"  [PASS] {name}")
+            else:
+                validation_failures += 1
+                print(f"  [FAIL] {name}")
+                for err in result.errors:
+                    print(f"    - {err}")
+                for cell_err in result.cell_errors:
+                    print(
+                        f"    - Cell {cell_err.cell_index}: "
+                        f"{cell_err.ename}: {cell_err.evalue}"
+                    )
+
+        if validation_failures > 0:
+            failed += validation_failures
+            print(f"\nValidation: {validation_failures} notebook(s) failed validation")
 
     # Emit gate artifacts if requested
     if args.gate_output_dir:
