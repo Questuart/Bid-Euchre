@@ -96,7 +96,7 @@ make check    # repo-lint + ruff + pytest + notebook-check
 
 ### Canonical Run Data
 
-Registered in `notebooks/phase0_bidless/canonical_runs.py`. Override root via `CANONICAL_DATA_ROOT` env var (default: `data/runs/`).
+Canonical run registry was removed in PR #305. Notebooks now generate data on-the-fly via `load_or_generate_*()`. Run data lives in `data/runs/` (gitignored).
 
 | Key | Run ID | Contents |
 |-----|--------|----------|
@@ -173,5 +173,5 @@ All items below are non-blocking and relate to documentation or API ergonomics o
 | Chart CLI | `src/bid_euchre/reporting/chart_runner.py` | Batch chart generation |
 | Comparator | `scripts/run_auction_comparator.py` | Orchestrate auction runs + gate checks |
 | Diagnostic eval | `scripts/evaluate_diagnostic_tricks.py` | Full-feature Ridge analysis |
-| Canonical registry | `notebooks/phase0_bidless/canonical_runs.py` | Run ID lookup for notebooks |
+| Canonical registry | _(removed in PR #305)_ | Was run ID lookup; notebooks now generate on-the-fly |
 | Policy registration | `src/bid_euchre/experiments/config.py` | Strategy/policy factory |
