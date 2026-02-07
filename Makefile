@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
+.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -26,6 +26,7 @@ help:
 	@echo "  make notebook-check     - verify sync + outputs cleared"
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
+	@echo "  make docs-check         - docs freshness gate (path refs + script list)"
 	@echo ""
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
@@ -52,7 +53,7 @@ test:
 	@echo ">>> Pytest (fast suite)"
 	PYTHONPATH=.:src $(PYTHON) -m pytest -m "not slow" tests/
 
-check: repo-lint lint test notebook-check
+check: repo-lint lint test notebook-check docs-check
 	@echo "✓ All checks passed"
 
 notebook-sync:
@@ -71,6 +72,10 @@ notebook-run:
 notebook-run-full:
 	@echo ">>> Executing notebooks (QUICK mode)"
 	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode quick
+
+docs-check:
+	@echo ">>> Docs freshness check"
+	$(PYTHON) scripts/check_docs_freshness.py
 
 # Generate unique run ID for teacher training
 TEACHER_RUN_ID = teacher_baseline_$(shell date -u +%Y%m%d_%H%M%S)_$(shell printf "%04x" $$RANDOM)
