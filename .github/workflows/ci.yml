@@ -44,3 +44,8 @@ jobs:
 
       - name: Tests (fast)
         run: make test
+
+      - name: Promotion contract validation (warn-only)
+        if: contains(github.event.pull_request.labels.*.name, 'promotion')
+        continue-on-error: true
+        run: make promotion-gate

@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full docs-check promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -27,6 +27,7 @@ help:
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
 	@echo "  make docs-check         - docs freshness gate (path refs + script list)"
+	@echo "  make promotion-gate     - repo-lint + notebook gate (for promotion PRs)"
 	@echo ""
 	@echo "Teacher baseline targets:"
 	@echo "  make bid-train-teachers - train teacher artifacts (all contracts)"
@@ -76,6 +77,12 @@ notebook-run-full:
 docs-check:
 	@echo ">>> Docs freshness check"
 	$(PYTHON) scripts/check_docs_freshness.py
+
+promotion-gate: repo-lint
+	@echo ">>> Promotion gate (notebook execution + gate artifact)"
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --gate-output-dir /tmp/notebook_review/
+	$(PYTHON) -c "import json; g=json.load(open('/tmp/notebook_review/notebook_gate.json')); assert g['overall_status']=='PASS', f'Notebook gate: {g[\"overall_status\"]}'"
+	@echo "✓ Promotion gate passed"
 
 # Generate unique run ID for teacher training
 TEACHER_RUN_ID = teacher_baseline_$(shell date -u +%Y%m%d_%H%M%S)_$(shell printf "%04x" $$RANDOM)
