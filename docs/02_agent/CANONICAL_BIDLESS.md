@@ -420,3 +420,7 @@ PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config ex
 ### Blessed Run Registry
 
 See [CANONICAL_BIDLESS_RUNS.md](CANONICAL_BIDLESS_RUNS.md) for the current blessed runs and promotion history.
+
+## Related Reports
+
+- [Phase 0 Bidless Report](../04_reports/phase0_bidless_20260207.md) — Consolidated findings with embedded charts and provenance

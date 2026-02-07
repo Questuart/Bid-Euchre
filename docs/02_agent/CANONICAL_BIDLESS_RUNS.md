@@ -77,3 +77,7 @@ A run is eligible for promotion when:
 - **FAIL = 0** — No failing sanity tests
 - **WARN ≤ 2** — At most minor warnings (e.g., marginal thresholds)
 - **Determinism verified** — Same seed + config reproduces identical results
+
+## Related Reports
+
+- [Phase 0 Bidless Report](../04_reports/phase0_bidless_20260207.md) — Consolidated findings with embedded charts and provenance
