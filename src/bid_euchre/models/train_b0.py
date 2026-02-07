@@ -5,12 +5,12 @@ Trains a regression model to predict expected hand value from hand features.
 This is the first stage of the Arc B curriculum: learning to evaluate hands
 without auction awareness.
 
-B0 Model: (hand_features, contract_type) → expected_value
+B0 Model: (hand_features, contract_type) -> expected_value
 
-Usage:
-    PYTHONPATH=src python -m bid_euchre.models.train_b0 \\
-        --dataset data/bidless_dataset.jsonl \\
-        --output data/models/b0_v1.json \\
+CLI usage (preferred):
+    PYTHONPATH=src python scripts/train_b0.py \
+        --dataset data/bidless_dataset.jsonl \
+        --output data/models/b0_v1.json \
         --seed 42
 """
 
@@ -258,8 +258,8 @@ def train_b0_model(config: B0TrainingConfig) -> Tuple[B0Model, Dict[str, Any]]:
     Returns:
         (model, metrics) tuple
     """
-    # Set random seed
-    np.random.seed(config.seed)
+    # Local RNG for reproducibility (avoids global np.random state)
+    rng = np.random.default_rng(config.seed)
 
     # Load dataset
     rows = load_bidless_dataset(config.dataset_path)
@@ -271,7 +271,7 @@ def train_b0_model(config: B0TrainingConfig) -> Tuple[B0Model, Dict[str, Any]]:
 
     # Shuffle and split
     n_samples = len(rows)
-    indices = np.random.permutation(n_samples)
+    indices = rng.permutation(n_samples)
     n_test = int(n_samples * config.test_split)
     test_indices = indices[:n_test]
     train_indices = indices[n_test:]
@@ -349,9 +349,16 @@ def load_b0_model(path: str) -> B0Model:
     )
 
 
-def main() -> None:
-    """Command-line entry point."""
+if __name__ == "__main__":
     import argparse
+    import warnings
+
+    warnings.warn(
+        "Direct execution of this module is deprecated. "
+        "Use: PYTHONPATH=src python scripts/train_b0.py",
+        DeprecationWarning,
+        stacklevel=1,
+    )
 
     parser = argparse.ArgumentParser(
         description="Train B0 hand value regression model",
@@ -412,7 +419,3 @@ def main() -> None:
 
     save_b0_model(model, config.output_path, config.seed)
     print(f"Model saved to {config.output_path}")
-
-
-if __name__ == "__main__":
-    main()

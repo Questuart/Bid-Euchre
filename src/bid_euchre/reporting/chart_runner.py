@@ -1,15 +1,13 @@
-"""CLI for generating production charts from run data.
+"""Library functions for generating production charts from run data.
 
-Usage:
-    uv run python -m bid_euchre.reporting.chart_runner \
+CLI usage (preferred):
+    PYTHONPATH=src python scripts/run_charts.py \
         --run-dir data/runs/<run_id> \
         --output-dir /tmp/charts/ \
         --suite feature_health
 """
 
-import argparse
 import json
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -114,7 +112,18 @@ def _load_matchup_results(run_dir: Path) -> dict:
     return matchup_results
 
 
-def main():
+if __name__ == "__main__":
+    import argparse
+    import sys
+    import warnings
+
+    warnings.warn(
+        "Direct execution of this module is deprecated. "
+        "Use: PYTHONPATH=src python scripts/run_charts.py",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+
     parser = argparse.ArgumentParser(description="Generate production charts from run data")
     parser.add_argument("--run-dir", required=True, help="Path to experiment run directory")
     parser.add_argument("--output-dir", required=True, help="Output directory for PNGs")
@@ -143,7 +152,6 @@ def main():
 
         if suite == "feature_health":
             df = _load_bidless_features(run_dir)
-            # Flatten struct columns if present
             if "hand_features" in df.columns:
                 features = pd.json_normalize(df["hand_features"].tolist())
                 df = pd.concat([df.drop(columns=["hand_features"]), features], axis=1)
@@ -175,14 +183,9 @@ def main():
         all_paths.extend(paths)
         print(f"  Generated {len(paths)} chart(s)")
 
-    # Write manifest
     manifest_path = output_dir / "manifest.json"
     with open(manifest_path, "w") as f:
         json.dump({"charts": all_paths, "run_dir": str(run_dir)}, f, indent=2)
 
     print(f"\nTotal: {len(all_paths)} chart(s) generated")
     print(f"Manifest: {manifest_path}")
-
-
-if __name__ == "__main__":
-    main()

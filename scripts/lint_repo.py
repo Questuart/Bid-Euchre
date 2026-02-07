@@ -24,6 +24,14 @@ RANDOM_ALLOWED_MODULES = {
     "src/bid_euchre/sim/deals.py",  # Designated RNG module
 }
 
+# src/ files with deprecation shims that contain `import argparse` inside
+# `if __name__ == "__main__":` blocks — excluded from the no-cli-in-src check.
+CLI_SHIM_ALLOWLIST = {
+    "src/bid_euchre/reporting/chart_runner.py",
+    "src/bid_euchre/models/train_olsa.py",
+    "src/bid_euchre/models/train_b0.py",
+}
+
 
 @dataclass(frozen=True)
 class Violation:
@@ -486,6 +494,65 @@ def check_no_sys_path_insert(changed: list[str], repo_root: Path) -> list[Violat
     return violations
 
 
+def check_no_cli_in_src(changed: list[str], repo_root: Path) -> list[Violation]:
+    """Block module-level ``import argparse`` in src/ Python files.
+
+    CLI entrypoints belong in scripts/, not in library code.  Files in
+    CLI_SHIM_ALLOWLIST are expected to contain ``import argparse`` only
+    inside their ``if __name__ == "__main__":`` deprecation shim and are
+    therefore excluded from this check.
+
+    Uses ast.parse to inspect only *module-level* statements so that
+    argparse imports inside ``if __name__`` guards are not flagged.
+    """
+    violations: list[Violation] = []
+    for p in changed:
+        if not (p.startswith("src/") and p.endswith(".py")):
+            continue
+        if p in CLI_SHIM_ALLOWLIST:
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        text = abs_path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text, filename=p)
+        except SyntaxError:
+            continue
+
+        # Only inspect top-level statements (not nested in if/def/class)
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "argparse":
+                        violations.append(
+                            Violation(
+                                rule="no-cli-in-src",
+                                path=f"{p}:{node.lineno}",
+                                message=(
+                                    "Module-level `import argparse` in src/ is forbidden. "
+                                    "Move CLI logic to scripts/."
+                                ),
+                            )
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "argparse":
+                    violations.append(
+                        Violation(
+                            rule="no-cli-in-src",
+                            path=f"{p}:{node.lineno}",
+                            message=(
+                                "Module-level `from argparse import ...` in src/ is forbidden. "
+                                "Move CLI logic to scripts/."
+                            ),
+                        )
+                    )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -510,6 +577,7 @@ def main() -> int:
     violations += check_empty_test_functions(changed, repo_root)
     violations += check_experiments_without_seed(changed, repo_root)
     violations += check_no_sys_path_insert(changed, repo_root)
+    violations += check_no_cli_in_src(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")

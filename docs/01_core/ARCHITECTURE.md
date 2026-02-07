@@ -44,10 +44,13 @@ Current scripts:
 - `play_policy_gate.py` — Play policy stability gate
 - `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_bidless_diagnostics.py` — Bidless feature dataset diagnostics
+- `run_charts.py` — Production chart generation (extracted from `reporting.chart_runner`)
 - `run_notebooks.py` — Notebook execution via papermill (CI tooling)
 - `run_suite.py` — Suite runner (batches experiments with rollup generation)
 - `run_tests.py` — Test runner utility
+- `train_b0.py` — B0 hand value model training (extracted from `models.train_b0`)
 - `train_bidder.py` — Bidder model training
+- `train_olsa.py` — OLSa model training (extracted from `models.train_olsa`)
 - `validate_configs.py` — Config validation utility
 - `validate_teacher_roster.py` — Teacher roster validation
 
@@ -158,10 +161,13 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | Command | Purpose |
 |---------|---------|
 | `scripts/run_auction_comparator.py` | Auction comparator orchestrator |
+| `scripts/run_charts.py` | Production chart generation |
 | `scripts/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/play_policy_gate.py` | Play policy stability gate |
 | `scripts/run_bidless_diagnostics.py` | Bidless diagnostics |
+| `scripts/train_b0.py` | B0 hand value model training |
 | `scripts/train_bidder.py` | Bidder model training |
+| `scripts/train_olsa.py` | OLSa model training |
 
 ---
 
