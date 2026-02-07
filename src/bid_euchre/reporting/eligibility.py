@@ -2,15 +2,18 @@
 
 Evaluates whether a batch of experiment runs meets promotion criteria
 based on config membership, canonical summary health, notebook gate
-status, and git SHA consistency.
+status, git SHA consistency, artifact freeze status, and split manifest type.
 """
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
 from bid_euchre.experiments.meta import utc_now_iso
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -55,9 +58,7 @@ def check_config_membership(
 
     if expected_configs is not None:
         completed = {
-            Path(c["config_path"]).name
-            for c in configs
-            if c.get("status") == "ok"
+            Path(c["config_path"]).name for c in configs if c.get("status") == "ok"
         }
         missing = expected_configs - completed
         if missing:
@@ -73,11 +74,7 @@ def check_config_membership(
         )
 
     # No expected set: verify all configs in rollup have status=ok
-    failed = [
-        Path(c["config_path"]).name
-        for c in configs
-        if c.get("status") != "ok"
-    ]
+    failed = [Path(c["config_path"]).name for c in configs if c.get("status") != "ok"]
     if failed:
         return EligibilityResult(
             rule="config_membership",
@@ -183,9 +180,7 @@ def check_notebook_gate(
     gate_status = gate.get("gate_status", "FAIL")
     if gate_status != "PASS":
         failed_nbs = [
-            nb["name"]
-            for nb in gate.get("notebooks", [])
-            if nb.get("status") != "PASS"
+            nb["name"] for nb in gate.get("notebooks", []) if nb.get("status") != "PASS"
         ]
         return EligibilityResult(
             rule="notebook_gate",
@@ -204,11 +199,7 @@ def check_git_sha_consistency(
 ) -> EligibilityResult:
     """Verify all member runs have matching git_sha."""
     configs = rollup.get("configs", [])
-    shas = {
-        c.get("git_sha", "unknown")
-        for c in configs
-        if c.get("status") == "ok"
-    }
+    shas = {c.get("git_sha", "unknown") for c in configs if c.get("status") == "ok"}
     shas.discard("unknown")
 
     if len(shas) == 0:
@@ -230,12 +221,177 @@ def check_git_sha_consistency(
     )
 
 
+def check_artifacts_frozen(
+    artifact_dir: Optional[str],
+    batch_purpose: str,
+) -> EligibilityResult:
+    """Check that model artifacts in artifact_dir are frozen.
+
+    - batch_purpose='promotion' + unfrozen artifacts -> FAIL
+    - batch_purpose!='promotion' + unfrozen artifacts -> PASS with warning
+    - No artifact_dir or no artifacts -> PASS (nothing to check)
+    """
+    if artifact_dir is None:
+        if batch_purpose == "promotion":
+            return EligibilityResult(
+                rule="artifacts_frozen",
+                status="FAIL",
+                detail="No artifact directory provided (required for promotion)",
+            )
+        return EligibilityResult(
+            rule="artifacts_frozen",
+            status="PASS",
+            detail="No artifact directory (optional for non-promotion)",
+        )
+
+    artifact_path = Path(artifact_dir)
+    if not artifact_path.exists():
+        if batch_purpose == "promotion":
+            return EligibilityResult(
+                rule="artifacts_frozen",
+                status="FAIL",
+                detail=f"Artifact directory not found: {artifact_dir}",
+            )
+        return EligibilityResult(
+            rule="artifacts_frozen",
+            status="PASS",
+            detail="Artifact directory not found (optional for non-promotion)",
+        )
+
+    # Find model artifact JSON files (exclude meta.json, rollup.json, etc.)
+    exempt = {
+        "meta.json",
+        "rollup.json",
+        "canonical_summary.json",
+        "training_metrics.json",
+        "config_effective.yaml",
+    }
+    model_artifacts = [p for p in artifact_path.glob("*.json") if p.name not in exempt]
+
+    if not model_artifacts:
+        return EligibilityResult(
+            rule="artifacts_frozen",
+            status="PASS",
+            detail="No model artifacts found to check",
+        )
+
+    unfrozen = []
+    for path in model_artifacts:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            if data.get("frozen_at") is None:
+                unfrozen.append(path.name)
+        except (json.JSONDecodeError, OSError):
+            unfrozen.append(f"{path.name} (unreadable)")
+
+    if unfrozen:
+        detail = f"Unfrozen artifacts: {sorted(unfrozen)}"
+        if batch_purpose == "promotion":
+            return EligibilityResult(
+                rule="artifacts_frozen",
+                status="FAIL",
+                detail=detail,
+            )
+        logger.warning("Unfrozen artifacts (non-promotion): %s", unfrozen)
+        return EligibilityResult(
+            rule="artifacts_frozen",
+            status="PASS",
+            detail=f"{detail} (non-promotion, warning only)",
+        )
+
+    return EligibilityResult(
+        rule="artifacts_frozen",
+        status="PASS",
+        detail=f"All {len(model_artifacts)} model artifacts frozen",
+    )
+
+
+def check_split_manifests(
+    split_manifest_dir: Optional[str],
+    batch_purpose: str,
+) -> EligibilityResult:
+    """Check split manifests exist and have correct split type.
+
+    - batch_purpose='promotion' -> require three_way splits
+    - batch_purpose!='promotion' -> two_way or three_way both OK
+    - No manifest dir -> PASS for non-promotion, FAIL for promotion
+    """
+    if split_manifest_dir is None:
+        if batch_purpose == "promotion":
+            return EligibilityResult(
+                rule="split_manifests",
+                status="FAIL",
+                detail="No split manifest directory provided (required for promotion)",
+            )
+        return EligibilityResult(
+            rule="split_manifests",
+            status="PASS",
+            detail="No split manifest directory (optional for non-promotion)",
+        )
+
+    manifest_path = Path(split_manifest_dir)
+    if not manifest_path.exists():
+        if batch_purpose == "promotion":
+            return EligibilityResult(
+                rule="split_manifests",
+                status="FAIL",
+                detail=f"Split manifest directory not found: {split_manifest_dir}",
+            )
+        return EligibilityResult(
+            rule="split_manifests",
+            status="PASS",
+            detail="Split manifest directory not found (optional for non-promotion)",
+        )
+
+    manifests = list(manifest_path.glob("split_manifest*.json"))
+
+    if not manifests:
+        if batch_purpose == "promotion":
+            return EligibilityResult(
+                rule="split_manifests",
+                status="FAIL",
+                detail="No split manifests found (required for promotion)",
+            )
+        return EligibilityResult(
+            rule="split_manifests",
+            status="PASS",
+            detail="No split manifests found (optional for non-promotion)",
+        )
+
+    issues = []
+    for path in manifests:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            split_type = data.get("split_type", "unknown")
+            if batch_purpose == "promotion" and split_type != "three_way":
+                issues.append(f"{path.name}: split_type={split_type} (need three_way)")
+        except (json.JSONDecodeError, OSError):
+            issues.append(f"{path.name} (unreadable)")
+
+    if issues:
+        return EligibilityResult(
+            rule="split_manifests",
+            status="FAIL",
+            detail="; ".join(issues[:3]),
+        )
+
+    return EligibilityResult(
+        rule="split_manifests",
+        status="PASS",
+        detail=f"All {len(manifests)} split manifests valid",
+    )
+
+
 def compute_eligibility(
     rollup: dict,
     run_base_dir: str,
     batch_purpose: str,
     notebook_gate_path: Optional[str] = None,
     expected_configs: Optional[set[str]] = None,
+    artifact_dir: Optional[str] = None,
+    split_manifest_dir: Optional[str] = None,
 ) -> BatchGate:
     """Run all eligibility checks. eligible=True only if ALL checks PASS."""
     batch_id = rollup.get("batch", {}).get("batch_id", "unknown")
@@ -245,6 +401,8 @@ def compute_eligibility(
         check_canonical_summaries(rollup, run_base_dir),
         check_notebook_gate(notebook_gate_path, batch_purpose),
         check_git_sha_consistency(rollup),
+        check_artifacts_frozen(artifact_dir, batch_purpose),
+        check_split_manifests(split_manifest_dir, batch_purpose),
     ]
 
     eligible = all(r.status == "PASS" for r in results)

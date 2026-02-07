@@ -79,6 +79,7 @@ docs-check:
 	$(PYTHON) scripts/check_docs_freshness.py
 
 GATE_OUTPUT_DIR ?= /tmp/promotion-gate-artifacts
+ARTIFACT_DIR ?=
 
 promotion-gate: repo-lint
 	@echo ">>> Promotion gate"
@@ -86,6 +87,8 @@ promotion-gate: repo-lint
 	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --gate-output-dir $(GATE_OUTPUT_DIR)
 	@echo "Step 2: Assert notebook gate PASS"
 	$(PYTHON) -c "import json, sys; g=json.load(open('$(GATE_OUTPUT_DIR)/notebook_gate.json')); sys.exit(0 if g['gate_status']=='PASS' else 1)"
+	@echo "Step 3: Verify artifact freeze (if ARTIFACT_DIR set)"
+	@if [ -n "$(ARTIFACT_DIR)" ] && [ -d "$(ARTIFACT_DIR)" ]; then 		echo "  Checking frozen status in $(ARTIFACT_DIR)..."; 		PYTHONPATH=src $(PYTHON) -c "import json, sys, pathlib; exempt = {'meta.json', 'rollup.json', 'canonical_summary.json', 'training_metrics.json'}; artifacts = [p for p in pathlib.Path('$(ARTIFACT_DIR)').glob('*.json') if p.name not in exempt]; unfrozen = [p.name for p in artifacts if json.load(open(p)).get('frozen_at') is None]; print(f'  Checked {len(artifacts)} artifacts, {len(unfrozen)} unfrozen'); sys.exit(1) if unfrozen else sys.exit(0)"; 	else 		echo "  ARTIFACT_DIR not set or not found, skipping freeze check"; 	fi
 	@echo "Promotion gate passed"
 
 # Generate unique run ID for teacher training

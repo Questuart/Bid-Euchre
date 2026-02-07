@@ -6,10 +6,12 @@ All tests are fixture-based — no real experiment runs required.
 import json
 
 from bid_euchre.reporting.eligibility import (
+    check_artifacts_frozen,
     check_canonical_summaries,
     check_config_membership,
     check_git_sha_consistency,
     check_notebook_gate,
+    check_split_manifests,
     compute_eligibility,
 )
 
@@ -57,7 +59,7 @@ def _make_canonical_summary(fail_count=0):
             "warn_count": 0,
             "skip_count": 0,
             "failing_tests": [],
-            "all_passed": fail_count == 0
+            "all_passed": fail_count == 0,
         }
     }
 
@@ -72,15 +74,18 @@ def _make_notebook_gate(gate_status="PASS", total=3, passed=3, failed=0):
         "passed": passed,
         "failed": failed,
         "notebooks": [
-            {"name": f"nb_{i}.ipynb", "status": "PASS" if i < passed else "FAIL",
-             "duration_seconds": 1.0, "message": "OK" if i < passed else "Error"}
+            {
+                "name": f"nb_{i}.ipynb",
+                "status": "PASS" if i < passed else "FAIL",
+                "duration_seconds": 1.0,
+                "message": "OK" if i < passed else "Error",
+            }
             for i in range(total)
         ],
     }
 
 
 class TestCheckConfigMembership:
-
     def test_all_configs_ok(self):
         rollup = _make_rollup()
         result = check_config_membership(rollup)
@@ -110,7 +115,6 @@ class TestCheckConfigMembership:
 
 
 class TestCheckCanonicalSummaries:
-
     def test_all_clean(self, tmp_path):
         rollup = _make_rollup()
         for config in rollup["configs"]:
@@ -170,16 +174,20 @@ class TestCheckCanonicalSummaries:
         run_dir = tmp_path / rollup["configs"][0]["run_dir"] / "reports"
         run_dir.mkdir(parents=True)
         summary_path = run_dir / "canonical_summary.json"
-        summary_path.write_text(json.dumps({
-            "sanity": {
-                "fail_count": 0,
-                "pass_count": 5,
-                "warn_count": 0,
-                "skip_count": 0,
-                "failing_tests": [],
-                "all_passed": True
-            }
-        }))
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "sanity": {
+                        "fail_count": 0,
+                        "pass_count": 5,
+                        "warn_count": 0,
+                        "skip_count": 0,
+                        "failing_tests": [],
+                        "all_passed": True,
+                    }
+                }
+            )
+        )
 
         # Should find file in legacy reports/ location
         result = check_canonical_summaries(rollup, str(tmp_path))
@@ -187,7 +195,6 @@ class TestCheckCanonicalSummaries:
 
 
 class TestCheckNotebookGate:
-
     def test_promotion_gate_required_missing(self):
         result = check_notebook_gate(None, "promotion")
         assert result.status == "FAIL"
@@ -225,7 +232,6 @@ class TestCheckNotebookGate:
 
 
 class TestCheckGitShaConsistency:
-
     def test_all_same_sha(self):
         rollup = _make_rollup()
         result = check_git_sha_consistency(rollup)
@@ -245,8 +251,117 @@ class TestCheckGitShaConsistency:
         assert result.status == "PASS"
 
 
-class TestComputeEligibility:
+class TestCheckArtifactsFrozen:
+    def test_promotion_no_dir_fails(self):
+        result = check_artifacts_frozen(None, "promotion")
+        assert result.status == "FAIL"
 
+    def test_exploration_no_dir_passes(self):
+        result = check_artifacts_frozen(None, "exploration")
+        assert result.status == "PASS"
+
+    def test_promotion_unfrozen_fails(self, tmp_path):
+        artifact = tmp_path / "olsa_v1.json"
+        artifact.write_text(json.dumps({"frozen_at": None, "artifact_type": "olsa_v1"}))
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "FAIL"
+        assert "olsa_v1.json" in result.detail
+
+    def test_promotion_frozen_passes(self, tmp_path):
+        artifact = tmp_path / "olsa_v1.json"
+        artifact.write_text(
+            json.dumps(
+                {
+                    "frozen_at": "2026-02-07T12:00:00Z",
+                    "artifact_sha256": "abc123",
+                    "artifact_type": "olsa_v1",
+                }
+            )
+        )
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "PASS"
+
+    def test_exploration_unfrozen_passes_with_warning(self, tmp_path):
+        artifact = tmp_path / "olsa_v1.json"
+        artifact.write_text(json.dumps({"frozen_at": None, "artifact_type": "olsa_v1"}))
+        result = check_artifacts_frozen(str(tmp_path), "exploration")
+        assert result.status == "PASS"
+        assert "warning" in result.detail.lower()
+
+    def test_exempt_files_ignored(self, tmp_path):
+        """meta.json and rollup.json are exempt from freeze check."""
+        (tmp_path / "meta.json").write_text(json.dumps({"frozen_at": None}))
+        (tmp_path / "rollup.json").write_text(json.dumps({"frozen_at": None}))
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "PASS"
+
+    def test_empty_dir_passes(self, tmp_path):
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "PASS"
+
+
+class TestCheckSplitManifests:
+    def test_promotion_no_dir_fails(self):
+        result = check_split_manifests(None, "promotion")
+        assert result.status == "FAIL"
+
+    def test_exploration_no_dir_passes(self):
+        result = check_split_manifests(None, "exploration")
+        assert result.status == "PASS"
+
+    def test_promotion_two_way_fails(self, tmp_path):
+        manifest = tmp_path / "split_manifest_suit.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "split_type": "two_way",
+                    "split_seed": 42,
+                }
+            )
+        )
+        result = check_split_manifests(str(tmp_path), "promotion")
+        assert result.status == "FAIL"
+        assert "two_way" in result.detail
+
+    def test_promotion_three_way_passes(self, tmp_path):
+        manifest = tmp_path / "split_manifest_suit.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "split_type": "three_way",
+                    "split_seed": 42,
+                }
+            )
+        )
+        result = check_split_manifests(str(tmp_path), "promotion")
+        assert result.status == "PASS"
+
+    def test_exploration_two_way_passes(self, tmp_path):
+        manifest = tmp_path / "split_manifest_suit.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "split_type": "two_way",
+                    "split_seed": 42,
+                }
+            )
+        )
+        result = check_split_manifests(str(tmp_path), "exploration")
+        assert result.status == "PASS"
+
+    def test_no_manifests_promotion_fails(self, tmp_path):
+        result = check_split_manifests(str(tmp_path), "promotion")
+        assert result.status == "FAIL"
+
+    def test_no_manifests_exploration_passes(self, tmp_path):
+        result = check_split_manifests(str(tmp_path), "exploration")
+        assert result.status == "PASS"
+
+
+class TestComputeEligibility:
     def test_eligible_all_pass(self, tmp_path):
         rollup = _make_rollup()
         # Create canonical summaries
@@ -262,8 +377,57 @@ class TestComputeEligibility:
             json.dump(_make_notebook_gate(gate_status="PASS"), f)
 
         gate = compute_eligibility(
-            rollup, str(tmp_path), "promotion",
+            rollup,
+            str(tmp_path),
+            "promotion",
             notebook_gate_path=str(gate_path),
+        )
+        # Will fail because no artifact_dir and split_manifest_dir for promotion
+        assert gate.eligible is False
+
+    def test_eligible_all_pass_with_artifacts(self, tmp_path):
+        rollup = _make_rollup()
+        for config in rollup["configs"]:
+            run_dir = tmp_path / config["run_dir"] / "artifacts"
+            run_dir.mkdir(parents=True)
+            with (run_dir / "canonical_summary.json").open("w") as f:
+                json.dump(_make_canonical_summary(fail_count=0), f)
+
+        gate_path = tmp_path / "notebook_gate.json"
+        with gate_path.open("w") as f:
+            json.dump(_make_notebook_gate(gate_status="PASS"), f)
+
+        # Create frozen artifact
+        artifact_dir = tmp_path / "model_artifacts"
+        artifact_dir.mkdir()
+        (artifact_dir / "olsa_v1.json").write_text(
+            json.dumps(
+                {
+                    "frozen_at": "2026-02-07T12:00:00Z",
+                    "artifact_sha256": "abc123",
+                }
+            )
+        )
+
+        # Create three_way split manifest
+        split_dir = tmp_path / "splits"
+        split_dir.mkdir()
+        (split_dir / "split_manifest_suit.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "split_type": "three_way",
+                }
+            )
+        )
+
+        gate = compute_eligibility(
+            rollup,
+            str(tmp_path),
+            "promotion",
+            notebook_gate_path=str(gate_path),
+            artifact_dir=str(artifact_dir),
+            split_manifest_dir=str(split_dir),
         )
         assert gate.eligible is True
         assert all(r.status == "PASS" for r in gate.reasons)
@@ -276,7 +440,9 @@ class TestComputeEligibility:
             run_dir.mkdir(parents=True)
 
         gate = compute_eligibility(
-            rollup, str(tmp_path), "promotion",
+            rollup,
+            str(tmp_path),
+            "promotion",
         )
         assert gate.eligible is False
 
@@ -293,7 +459,9 @@ class TestComputeEligibility:
             json.dump(_make_notebook_gate(gate_status="PASS"), f)
 
         gate = compute_eligibility(
-            rollup, str(tmp_path), "promotion",
+            rollup,
+            str(tmp_path),
+            "promotion",
             notebook_gate_path=str(gate_path),
         )
         d = gate.to_dict()
@@ -301,7 +469,9 @@ class TestComputeEligibility:
         assert "eligible" in d
         assert "reasons" in d
         assert isinstance(d["reasons"], list)
-        assert all("rule" in r and "status" in r and "detail" in r for r in d["reasons"])
+        assert all(
+            "rule" in r and "status" in r and "detail" in r for r in d["reasons"]
+        )
 
 
 def test_eligibility_with_realistic_artifacts(tmp_path):
@@ -327,15 +497,15 @@ def test_eligibility_with_realistic_artifacts(tmp_path):
             "fail_count": 0,
             "skip_count": 0,
             "failing_tests": [],
-            "all_passed": True
+            "all_passed": True,
         },
         "discovered": {
             "results_files": ["results_high_2_pairs.jsonl"],
             "datasets_present": False,
             "bidless_parquet": False,
-            "bidless_outcomes_parquet": False
+            "bidless_outcomes_parquet": False,
         },
-        "generated_at_utc": "2026-02-06T12:00:00Z"
+        "generated_at_utc": "2026-02-06T12:00:00Z",
     }
     summary_path.write_text(json.dumps(summary_data, indent=2))
 
