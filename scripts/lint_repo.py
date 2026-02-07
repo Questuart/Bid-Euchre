@@ -588,6 +588,118 @@ def check_no_import_experiments_package(changed: list[str], repo_root: Path) -> 
     return violations
 
 
+# --- Promotion contract lint rules ---
+
+# Promotion registry: files that constitute the canonical results registry.
+PROMOTION_REGISTRY_PREFIXES = [
+    "docs/04_reports/",
+]
+
+# Explicit allowlist for additional registry files outside the prefix dirs.
+PROMOTION_REGISTRY_ALLOWLIST: set[str] = set()
+
+GATE_EVIDENCE_PATTERNS = [
+    "batch_gate.json",
+    "notebook_gate.json",
+    "canonical_summary.json",
+    "gate_status",
+]
+
+CODE_REGISTRY_PATH = "src/bid_euchre/datasets/canonical_runs.py"
+
+
+def check_registry_requires_gate_reference(
+    changed: list[str], repo_root: Path,
+) -> list[Violation]:
+    """If a promotion registry doc changes, require gate evidence reference in content."""
+    violations: list[Violation] = []
+    for p in changed:
+        # Only check .md files
+        if not p.endswith(".md"):
+            continue
+        # Skip README.md (index/navigation only)
+        if Path(p).name == "README.md":
+            continue
+        # Check if under registry prefixes or in allowlist
+        in_registry = any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES)
+        if not in_registry and p not in PROMOTION_REGISTRY_ALLOWLIST:
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        text = abs_path.read_text(encoding="utf-8")
+
+        # Check if any gate evidence pattern appears in content
+        has_gate_ref = any(pattern in text for pattern in GATE_EVIDENCE_PATTERNS)
+        if not has_gate_ref:
+            violations.append(
+                Violation(
+                    rule="registry-requires-gate-reference",
+                    path=p,
+                    message=(
+                        "Promotion registry doc must reference gate evidence "
+                        f"(one of: {', '.join(GATE_EVIDENCE_PATTERNS)})"
+                    ),
+                )
+            )
+    return violations
+
+
+def check_canonical_runs_registry_consistency(
+    changed: list[str], repo_root: Path,
+) -> list[Violation]:
+    """If code registry exists AND doc registry changes, require synchronized update."""
+    violations: list[Violation] = []
+
+    # Check if code registry exists on disk
+    code_registry = repo_root / CODE_REGISTRY_PATH
+    if not code_registry.exists():
+        # Post-#305 reality: code registry deleted, no-op
+        return violations
+
+    # Identify doc registry files in changed set
+    doc_registry_changed = [
+        p for p in changed
+        if (
+            any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES)
+            or p in PROMOTION_REGISTRY_ALLOWLIST
+        )
+    ]
+
+    code_registry_changed = CODE_REGISTRY_PATH in changed
+
+    # If doc changed but code not changed → violation
+    if doc_registry_changed and not code_registry_changed:
+        for p in doc_registry_changed:
+            violations.append(
+                Violation(
+                    rule="canonical-runs-registry-consistency",
+                    path=p,
+                    message=(
+                        f"Doc registry changed but {CODE_REGISTRY_PATH} was not updated. "
+                        "Keep code and doc registries in sync."
+                    ),
+                )
+            )
+
+    # If code changed but no doc changed → violation
+    if code_registry_changed and not doc_registry_changed:
+        violations.append(
+            Violation(
+                rule="canonical-runs-registry-consistency",
+                path=CODE_REGISTRY_PATH,
+                message=(
+                    "Code registry changed but no doc registry files were updated. "
+                    "Keep code and doc registries in sync."
+                ),
+            )
+        )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -614,6 +726,8 @@ def main() -> int:
     violations += check_no_sys_path_insert(changed, repo_root)
     violations += check_no_cli_in_src(changed, repo_root)
     violations += check_no_import_experiments_package(changed, repo_root)
+    violations += check_registry_requires_gate_reference(changed, repo_root)
+    violations += check_canonical_runs_registry_consistency(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
