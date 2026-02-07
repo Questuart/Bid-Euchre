@@ -9,13 +9,12 @@ Trains 3 separate OLS models with sparse features:
 
 Uses normal equation with lstsq fallback for robustness.
 
-Usage:
-    uv run python -m bid_euchre.models.train_olsa \
+CLI usage (preferred):
+    PYTHONPATH=src python scripts/train_olsa.py \
         --run-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
         --seed 42 --output /tmp/olsa_artifacts/
 """
 
-import argparse
 import json
 import logging
 import os
@@ -218,7 +217,17 @@ def save_artifacts(artifact, training_metrics, output_dir):
     return artifact_path
 
 
-def main():
+if __name__ == "__main__":
+    import argparse
+    import warnings
+
+    warnings.warn(
+        "Direct execution of this module is deprecated. "
+        "Use: PYTHONPATH=src python scripts/train_olsa.py",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+
     parser = argparse.ArgumentParser(description="Train OLSa models")
     parser.add_argument("--run-dir", required=True, help="Canonical bidless run directory")
     parser.add_argument("--seed", type=int, default=42)
@@ -230,7 +239,3 @@ def main():
     artifact, metrics = train_olsa(args.run_dir, args.seed)
     artifact_path = save_artifacts(artifact, metrics, args.output)
     print(f"\nOLSa artifact: {artifact_path}")
-
-
-if __name__ == "__main__":
-    main()
