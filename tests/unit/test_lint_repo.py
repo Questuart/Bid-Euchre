@@ -1,4 +1,4 @@
-"""Tests for artifact discovery lint rules in scripts/lint_repo.py."""
+"""Tests for artifact discovery and schema lint rules in scripts/lint_repo.py."""
 
 from __future__ import annotations
 
@@ -6,8 +6,12 @@ import json
 from pathlib import Path
 
 from scripts.lint_repo import (
+    _is_gate_artifact,
     _is_model_artifact,
+    _is_split_manifest,
     check_artifacts_require_freeze,
+    check_gate_artifacts_schema,
+    check_split_manifest_schema,
 )
 
 
@@ -184,6 +188,255 @@ class TestCheckArtifactsRequireFreeze:
         _write_json(tmp_path, "data/models/settings.json", {"frozen_at": None})
         violations = check_artifacts_require_freeze(
             ["data/models/settings.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+
+# -- _is_gate_artifact tests --------------------------------------------------
+
+
+class TestIsGateArtifact:
+    """Tests for the _is_gate_artifact helper."""
+
+    def test_notebook_gate_matches(self):
+        assert _is_gate_artifact("data/runs/abc/notebook_gate.json") is True
+
+    def test_batch_gate_matches(self):
+        assert _is_gate_artifact("data/runs/abc/batch_gate.json") is True
+
+    def test_gate_substring_matches(self):
+        assert (
+            _is_gate_artifact("data/runs/abc/play_policy_gate_aggregate.json") is True
+        )
+
+    def test_non_gate_json_ignored(self):
+        assert _is_gate_artifact("data/runs/abc/meta.json") is False
+        assert _is_gate_artifact("data/runs/abc/rollup.json") is False
+
+    def test_non_data_path_ignored(self):
+        assert _is_gate_artifact("src/configs/notebook_gate.json") is False
+
+    def test_non_json_ignored(self):
+        assert _is_gate_artifact("data/runs/abc/gate_results.txt") is False
+
+
+# -- check_gate_artifacts_schema tests ----------------------------------------
+
+
+class TestCheckGateArtifactsSchema:
+    """Tests for the check_gate_artifacts_schema lint rule."""
+
+    def test_valid_pass_gate_passes(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/notebook_gate.json",
+            {
+                "schema_version": 1,
+                "gate_status": "PASS",
+                "created_at_utc": "2026-01-15T00:00:00Z",
+            },
+        )
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/notebook_gate.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_fail_gate_flagged(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/notebook_gate.json",
+            {
+                "schema_version": 1,
+                "gate_status": "FAIL",
+                "created_at_utc": "2026-01-15T00:00:00Z",
+            },
+        )
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/notebook_gate.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "gate-artifact-schema"
+        assert "FAIL" in violations[0].message
+
+    def test_missing_fields_flagged(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/batch_gate.json",
+            {"schema_version": 1},
+        )
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/batch_gate.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "gate-artifact-schema"
+        assert "missing required fields" in violations[0].message
+
+    def test_invalid_json_flagged(self, tmp_path: Path):
+        _write_file(tmp_path, "data/runs/abc/notebook_gate.json", "not json {{{")
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/notebook_gate.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "gate-artifact-schema"
+        assert "not valid JSON" in violations[0].message
+
+    def test_non_gate_files_ignored(self, tmp_path: Path):
+        _write_json(tmp_path, "data/runs/abc/meta.json", {"some": "data"})
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/meta.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_nonexistent_file_skipped(self, tmp_path: Path):
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/notebook_gate.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_non_data_path_ignored(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "src/notebook_gate.json",
+            {"gate_status": "FAIL"},
+        )
+        violations = check_gate_artifacts_schema(
+            ["src/notebook_gate.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+
+# -- _is_split_manifest tests -------------------------------------------------
+
+
+class TestIsSplitManifest:
+    """Tests for the _is_split_manifest helper."""
+
+    def test_split_manifest_json_matches(self):
+        assert _is_split_manifest("data/runs/abc/split_manifest.json") is True
+
+    def test_split_manifest_v2_matches(self):
+        assert _is_split_manifest("data/runs/abc/split_manifest_v2.json") is True
+
+    def test_split_manifest_with_suffix_matches(self):
+        assert _is_split_manifest("some/path/split_manifest_train_test.json") is True
+
+    def test_other_json_ignored(self):
+        assert _is_split_manifest("data/runs/abc/meta.json") is False
+        assert _is_split_manifest("data/runs/abc/manifest.json") is False
+
+    def test_non_json_ignored(self):
+        assert _is_split_manifest("data/runs/abc/split_manifest.txt") is False
+
+
+# -- check_split_manifest_schema tests ----------------------------------------
+
+
+class TestCheckSplitManifestSchema:
+    """Tests for the check_split_manifest_schema lint rule."""
+
+    def test_valid_two_way_passes(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/split_manifest.json",
+            {
+                "schema_version": 1,
+                "split_type": "two_way",
+                "split_seed": 42,
+                "total_hand_ids": 1000,
+                "partition_hashes": {"train": "abc123", "test": "def456"},
+            },
+        )
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_valid_three_way_passes(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/split_manifest.json",
+            {
+                "schema_version": 1,
+                "split_type": "three_way",
+                "split_seed": 42,
+                "total_hand_ids": 1000,
+                "partition_hashes": {
+                    "train": "abc",
+                    "val": "def",
+                    "test": "ghi",
+                },
+            },
+        )
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_invalid_split_type_flagged(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/split_manifest.json",
+            {
+                "schema_version": 1,
+                "split_type": "four_way",
+                "split_seed": 42,
+                "total_hand_ids": 1000,
+                "partition_hashes": {},
+            },
+        )
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "split-manifest-schema"
+        assert "four_way" in violations[0].message
+
+    def test_missing_fields_flagged(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/split_manifest.json",
+            {"schema_version": 1, "split_type": "two_way"},
+        )
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "split-manifest-schema"
+        assert "missing required fields" in violations[0].message
+
+    def test_invalid_json_flagged(self, tmp_path: Path):
+        _write_file(tmp_path, "data/runs/abc/split_manifest.json", "not json")
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "split-manifest-schema"
+        assert "not valid JSON" in violations[0].message
+
+    def test_non_manifest_files_ignored(self, tmp_path: Path):
+        _write_json(tmp_path, "data/runs/abc/meta.json", {"some": "data"})
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/meta.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_nonexistent_file_skipped(self, tmp_path: Path):
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"],
             tmp_path,
         )
         assert violations == []
