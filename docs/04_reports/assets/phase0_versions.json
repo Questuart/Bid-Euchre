@@ -1,0 +1,43 @@
+{
+  "snapshots": [
+    {
+      "snapshot_id": "phase0_20260207",
+      "created_at_utc": "2026-02-07T00:00:00+00:00",
+      "chart_files": [
+        "cdf.png",
+        "feature_outcome_correlation.png",
+        "hand_value_by_contract.png",
+        "hand_value_by_seat.png",
+        "matchup_summary.png",
+        "outcome_distributions.png",
+        "self_play_control.png",
+        "win_rate_heatmap.png"
+      ],
+      "source_run_ids": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_outcomes_zoom_42_20260204_222712"
+      ],
+      "notes": "Original Phase 0 report charts. Pre-dates versioning system."
+    },
+    {
+      "snapshot_id": "phase0_20260207_r2",
+      "created_at_utc": "2026-02-07T21:37:58.083675+00:00",
+      "chart_files": [
+        "cdf.png",
+        "feature_outcome_correlation.png",
+        "hand_value_by_contract.png",
+        "hand_value_by_seat.png",
+        "matchup_summary.png",
+        "outcome_distributions.png",
+        "self_play_control.png",
+        "win_rate_heatmap.png"
+      ],
+      "source_run_ids": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_outcomes_zoom_42_20260204_222712"
+      ],
+      "notes": "Report refactor (r2). Same charts, new versioning infrastructure."
+    }
+  ],
+  "latest": "phase0_20260207_r2"
+}

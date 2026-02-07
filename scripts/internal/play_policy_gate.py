@@ -35,17 +35,42 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Tuple
 
 import numpy as np
+from scipy import stats
+
+
+def compute_onesample_ttest(
+    samples: np.ndarray,
+) -> Tuple[float, float]:
+    """One-sample t-test: is the mean advantage != 0?
+
+    Args:
+        samples: Array of advantage samples.
+
+    Returns:
+        (t_stat, p_value). Returns (0.0, 1.0) for empty or n=1 input.
+    """
+    if len(samples) < 2:
+        return (0.0, 1.0)
+    t_stat, p_value = stats.ttest_1samp(samples, 0.0)
+    return (float(t_stat), float(p_value))
 
 
 @dataclass
 class DirectionResult:
-    """Results for a single direction (glutton_vs_greedy or greedy_vs_glutton)."""
+    """Results for a single direction.
+
+    Sign convention: adv_mean > 0 means glutton outperforms greedy.
+    For glutton_vs_greedy: team0 delta (2*tricks_team0 - 10) used directly.
+    For greedy_vs_glutton: sign flipped so positive still = glutton better.
+    """
 
     direction: str
     adv_mean: float
     adv_ci: Tuple[float, float]
     n_samples: int
     status: Literal["PASS", "WARN", "FAIL"]
+    t_stat: float = 0.0
+    p_value: float = 1.0
 
 
 @dataclass
@@ -132,7 +157,9 @@ def pool_adv_samples(results: Dict[str, Dict], direction: str) -> np.ndarray:
     return np.concatenate(all_samples)
 
 
-def bootstrap_ci(samples: np.ndarray, n_bootstrap: int, seed: int) -> Tuple[float, float]:
+def bootstrap_ci(
+    samples: np.ndarray, n_bootstrap: int, seed: int
+) -> Tuple[float, float]:
     """Compute 95% CI via seeded bootstrap.
 
     Args:
@@ -229,9 +256,7 @@ def load_results_from_run(run_dir: Path) -> Dict[str, Dict[str, Dict]]:
     return results
 
 
-def run_experiment_for_seed(
-    config: Path, seed: int, n_per: int, run_dir: Path
-) -> str:
+def run_experiment_for_seed(config: Path, seed: int, n_per: int, run_dir: Path) -> str:
     """Run experiment and return run_id.
 
     Args:
@@ -324,10 +349,11 @@ def load_and_evaluate_run(
         if len(pooled_samples) == 0:
             continue
 
-        # Compute pooled CI
+        # Compute pooled CI and one-sample t-test
         adv_mean = float(pooled_samples.mean())
         adv_ci = bootstrap_ci(pooled_samples, n_bootstrap, bootstrap_seed)
         status = compute_gate_status(adv_ci)
+        t_stat, p_value = compute_onesample_ttest(pooled_samples)
 
         direction_results.append(
             DirectionResult(
@@ -336,6 +362,8 @@ def load_and_evaluate_run(
                 adv_ci=adv_ci,
                 n_samples=len(pooled_samples),
                 status=status,
+                t_stat=t_stat,
+                p_value=p_value,
             )
         )
 
@@ -343,7 +371,9 @@ def load_and_evaluate_run(
         for scenario, result in scenario_results.items():
             if "distribution_team0" not in result:
                 continue
-            samples = expand_distribution_to_adv(result["distribution_team0"], direction)
+            samples = expand_distribution_to_adv(
+                result["distribution_team0"], direction
+            )
             if len(samples) == 0:
                 continue
             scenario_mean = float(samples.mean())
@@ -403,22 +433,36 @@ def format_stdout_table(result: GateResult) -> str:
     lines.append("=== Play Policy Gate ===")
     lines.append("")
     lines.append(
-        f"{'Seed':<5} | {'Direction':<21} | {'Adv Mean':<8} | {'95% CI':<17} | {'Status':<6}"
+        f"{'Seed':<5} | {'Direction':<21} | {'Adv Mean':<8} | "
+        f"{'95% CI':<17} | {'t-stat':<8} | {'p-value':<8} | {'Status':<6}"
     )
-    lines.append("-" * 5 + "-|-" + "-" * 21 + "-|-" + "-" * 8 + "-|-" + "-" * 17 + "-|-" + "-" * 6)
+    lines.append(
+        "-" * 5
+        + "-|-"
+        + "-" * 21
+        + "-|-"
+        + "-" * 8
+        + "-|-"
+        + "-" * 17
+        + "-|-"
+        + "-" * 8
+        + "-|-"
+        + "-" * 8
+        + "-|-"
+        + "-" * 6
+    )
 
     for seed_result in result.seeds:
         for d in seed_result.directions:
             lines.append(
                 f"{seed_result.seed:<5} | {d.direction:<21} | "
-                f"{format_mean(d.adv_mean):<8} | {format_ci(d.adv_ci):<17} | {d.status:<6}"
+                f"{format_mean(d.adv_mean):<8} | {format_ci(d.adv_ci):<17} | "
+                f"{d.t_stat:<8.2f} | {d.p_value:<8.4f} | {d.status:<6}"
             )
 
     lines.append("")
     lines.append("Per-Scenario Breakdown (informational):")
-    lines.append(
-        f"{'Scenario':<35} | {'Adv Mean':<8} | {'95% CI':<17} | {'Note':<12}"
-    )
+    lines.append(f"{'Scenario':<35} | {'Adv Mean':<8} | {'95% CI':<17} | {'Note':<12}")
     lines.append("-" * 35 + "-|-" + "-" * 8 + "-|-" + "-" * 17 + "-|-" + "-" * 12)
 
     # Deduplicate scenarios (show unique ones)
@@ -625,7 +669,10 @@ def main():
 
     # Save aggregate if multiple seeds
     if len(seeds) > 1:
-        aggregate_path = args.run_dir / f"play_policy_gate_aggregate_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        aggregate_path = (
+            args.run_dir
+            / f"play_policy_gate_aggregate_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
         with open(aggregate_path, "w") as f:
             # Convert to serializable
             def to_serializable(obj: Any) -> Any:

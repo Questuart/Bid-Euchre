@@ -34,8 +34,12 @@ from bid_euchre.reporting.charts import (
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate production charts from run data")
-    parser.add_argument("--run-dir", required=True, help="Path to experiment run directory")
+    parser = argparse.ArgumentParser(
+        description="Generate production charts from run data"
+    )
+    parser.add_argument(
+        "--run-dir", required=True, help="Path to experiment run directory"
+    )
     parser.add_argument("--output-dir", required=True, help="Output directory for PNGs")
     parser.add_argument(
         "--suite",
@@ -43,7 +47,37 @@ def main() -> None:
         default="all",
         help="Which chart suite to generate (default: all)",
     )
-    parser.add_argument("--dpi", type=int, default=150, help="Output resolution (default: 150)")
+    parser.add_argument(
+        "--dpi", type=int, default=150, help="Output resolution (default: 150)"
+    )
+
+    # Publish flags
+    parser.add_argument(
+        "--publish-report-assets",
+        action="store_true",
+        help="Publish charts as a versioned snapshot to assets root",
+    )
+    parser.add_argument(
+        "--assets-root",
+        default="docs/04_reports/assets",
+        help="Assets root for publishing (default: docs/04_reports/assets)",
+    )
+    parser.add_argument(
+        "--asset-prefix",
+        default="phase0",
+        help="Snapshot prefix (default: phase0)",
+    )
+    parser.add_argument(
+        "--snapshot-id",
+        default=None,
+        help="Explicit snapshot ID (auto-generated if omitted)",
+    )
+    parser.add_argument(
+        "--no-update-latest",
+        dest="update_latest",
+        action="store_false",
+        help="Skip updating the latest alias",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -85,7 +119,9 @@ def main() -> None:
                 print("  Skipping strategy_matchup: no matchup data found in results/")
                 continue
             suite_dir = str(output_dir / suite)
-            paths = generate_strategy_matchup_charts(matchup_results, suite_dir, dpi=args.dpi)
+            paths = generate_strategy_matchup_charts(
+                matchup_results, suite_dir, dpi=args.dpi
+            )
 
         else:
             print(f"  Unknown suite: {suite}")
@@ -101,6 +137,32 @@ def main() -> None:
 
     print(f"\nTotal: {len(all_paths)} chart(s) generated")
     print(f"Manifest: {manifest_path}")
+
+    # Publish if requested
+    if args.publish_report_assets:
+        from bid_euchre.reporting.publish import (
+            publish_chart_snapshot,
+            update_versions_manifest,
+        )
+
+        assets_root = Path(args.assets_root)
+        sid = publish_chart_snapshot(
+            output_dir,
+            assets_root,
+            args.asset_prefix,
+            snapshot_id=args.snapshot_id,
+            update_latest=args.update_latest,
+        )
+        chart_files = [p.name for p in sorted((assets_root / sid).glob("*.png"))]
+        mf = update_versions_manifest(
+            assets_root,
+            args.asset_prefix,
+            sid,
+            chart_files,
+            source_run_ids=[str(run_dir.name)],
+        )
+        print(f"\nPublished snapshot: {sid}")
+        print(f"Versions manifest: {mf}")
 
 
 if __name__ == "__main__":
