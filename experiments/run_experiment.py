@@ -50,6 +50,7 @@ from bid_euchre.datasets.bidless_outcomes import (
     emit_bidless_outcomes_dataset,
 )
 from bid_euchre.experiments import load_config
+from bid_euchre.experiments.batch import BatchMetadata
 from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.sim import simulation
@@ -200,6 +201,23 @@ def parse_args():
         action="store_true",
         help="Override work budget limits (use with caution)"
     )
+    parser.add_argument(
+        "--batch-id",
+        default=None,
+        help="Batch identifier (requires --batch-role and --batch-purpose)"
+    )
+    parser.add_argument(
+        "--batch-role",
+        default=None,
+        choices=["dataset", "baseline", "challenger", "gate"],
+        help="Role within batch (requires --batch-id and --batch-purpose)"
+    )
+    parser.add_argument(
+        "--batch-purpose",
+        default=None,
+        choices=["promotion", "exploration", "regression"],
+        help="Batch intent (requires --batch-id and --batch-role)"
+    )
     return parser.parse_args()
 
 
@@ -236,7 +254,10 @@ def format_duration(seconds: float) -> str:
 
 def main():
     args = parse_args()
-    
+
+    # Validate batch metadata (all-or-nothing)
+    batch = BatchMetadata.from_cli_args(args.batch_id, args.batch_role, args.batch_purpose)
+
     # Load configuration
     print(f"📄 Loading configuration: {args.config}")
     config = load_config(args.config)
@@ -913,7 +934,11 @@ def main():
         "pair_deals": pair_deals,  # True = same physical deals across all scenarios
         "total_hands": total_hands,
     }
-    
+
+    # Add batch metadata only when provided (backward compatible)
+    if batch is not None:
+        meta["batch"] = batch.to_dict()
+
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
     
