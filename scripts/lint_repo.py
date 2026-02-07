@@ -785,6 +785,136 @@ def check_artifacts_require_freeze(
     return violations
 
 
+# --- Gate artifact and split manifest schema lint rules ---
+
+GATE_REQUIRED_FIELDS = {"schema_version", "gate_status", "created_at_utc"}
+
+SPLIT_MANIFEST_REQUIRED_FIELDS = {
+    "schema_version",
+    "split_type",
+    "split_seed",
+    "total_hand_ids",
+    "partition_hashes",
+}
+VALID_SPLIT_TYPES = {"two_way", "three_way"}
+
+
+def _is_gate_artifact(path: str) -> bool:
+    """Return True if *path* looks like a gate artifact JSON under data/."""
+    if not is_under(path, "data/"):
+        return False
+    name = Path(path).name
+    return name.endswith(".json") and "gate" in name.lower()
+
+
+def _is_split_manifest(path: str) -> bool:
+    """Return True if *path* looks like a split manifest JSON."""
+    name = Path(path).name
+    return name.startswith("split_manifest") and name.endswith(".json")
+
+
+def check_gate_artifacts_schema(
+    changed: list[str],
+    repo_root: Path,
+) -> list[Violation]:
+    """Gate artifact JSON files must have required fields and gate_status == PASS."""
+    violations: list[Violation] = []
+    for p in changed:
+        if not _is_gate_artifact(p):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        try:
+            data = json.loads(abs_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            violations.append(
+                Violation(
+                    rule="gate-artifact-schema",
+                    path=p,
+                    message="Gate artifact is not valid JSON.",
+                )
+            )
+            continue
+
+        missing = GATE_REQUIRED_FIELDS - set(data.keys())
+        if missing:
+            violations.append(
+                Violation(
+                    rule="gate-artifact-schema",
+                    path=p,
+                    message=f"Gate artifact missing required fields: {sorted(missing)}",
+                )
+            )
+            continue
+
+        if data["gate_status"] != "PASS":
+            violations.append(
+                Violation(
+                    rule="gate-artifact-schema",
+                    path=p,
+                    message=(
+                        f"Gate artifact has gate_status={data['gate_status']!r} "
+                        "(must be 'PASS' to commit)."
+                    ),
+                )
+            )
+    return violations
+
+
+def check_split_manifest_schema(
+    changed: list[str],
+    repo_root: Path,
+) -> list[Violation]:
+    """Split manifest JSON files must have required fields and valid split_type."""
+    violations: list[Violation] = []
+    for p in changed:
+        if not _is_split_manifest(p):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        try:
+            data = json.loads(abs_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            violations.append(
+                Violation(
+                    rule="split-manifest-schema",
+                    path=p,
+                    message="Split manifest is not valid JSON.",
+                )
+            )
+            continue
+
+        missing = SPLIT_MANIFEST_REQUIRED_FIELDS - set(data.keys())
+        if missing:
+            violations.append(
+                Violation(
+                    rule="split-manifest-schema",
+                    path=p,
+                    message=f"Split manifest missing required fields: {sorted(missing)}",
+                )
+            )
+            continue
+
+        if data["split_type"] not in VALID_SPLIT_TYPES:
+            violations.append(
+                Violation(
+                    rule="split-manifest-schema",
+                    path=p,
+                    message=(
+                        f"Split manifest has split_type={data['split_type']!r} "
+                        f"(must be one of: {sorted(VALID_SPLIT_TYPES)})."
+                    ),
+                )
+            )
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -814,6 +944,8 @@ def main() -> int:
     violations += check_registry_requires_gate_reference(changed, repo_root)
     violations += check_canonical_runs_registry_consistency(changed, repo_root)
     violations += check_artifacts_require_freeze(changed, repo_root)
+    violations += check_gate_artifacts_schema(changed, repo_root)
+    violations += check_split_manifest_schema(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")

@@ -114,6 +114,15 @@ Reports under `docs/04_reports/` (excluding `README.md`) must reference gate evi
 ### `canonical-runs-registry-consistency`
 If a code registry file exists and a doc registry file changes, both must be updated together (and vice versa). Currently no-op since the code registry was removed in #305.
 
+### `artifact-requires-freeze`
+Model artifact JSON files (matching `olsa`, `b0`, `teacher` patterns) under `data/` must have a non-null `frozen_at` field.
+
+### `gate-artifact-schema`
+Gate artifact JSON files (`*gate*.json`) under `data/` must have valid schema (required fields: `schema_version`, `gate_status`, `created_at_utc`) and `gate_status` must be `PASS`.
+
+### `split-manifest-schema`
+Split manifest JSON files (`split_manifest*.json`) must have valid schema (required fields: `schema_version`, `split_type`, `split_seed`, `total_hand_ids`, `partition_hashes`) and `split_type` must be `two_way` or `three_way`.
+
 ## Reviewer Checklist
 
 When reviewing a promotion-track PR, verify:
