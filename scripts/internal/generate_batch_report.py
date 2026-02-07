@@ -9,9 +9,12 @@ Usage:
         --rollup data/runs/suite_<id>/rollup.json \
         --output /tmp/batch_report
 
+    # Promotion-track (artifact + split dirs required):
     PYTHONPATH=src python scripts/internal/generate_batch_report.py \
         --rollup data/runs/suite_<id>/rollup.json \
         --notebook-gate data/runs/suite_<id>/notebook_gate.json \
+        --artifact-dir data/runs/suite_<id>/artifacts \
+        --split-manifest-dir data/runs/suite_<id>/splits \
         --output /tmp/batch_report \
         --expected-configs config_a.yaml,config_b.yaml
 """
@@ -55,6 +58,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Comma-separated config filenames for membership check (optional)",
     )
+    parser.add_argument(
+        "--artifact-dir",
+        default=None,
+        help="Directory containing model artifacts for freeze verification "
+        "(required for promotion, optional otherwise)",
+    )
+    parser.add_argument(
+        "--split-manifest-dir",
+        default=None,
+        help="Directory containing split manifests for split type verification "
+        "(required for promotion, optional otherwise)",
+    )
     return parser.parse_args()
 
 
@@ -65,7 +80,9 @@ def build_batch_report_markdown(rollup: dict, gate_dict: dict) -> str:
     # Header
     batch = rollup.get("batch", {})
     batch_id = batch.get("batch_id", gate_dict.get("batch_id", "unknown"))
-    batch_purpose = batch.get("batch_purpose", gate_dict.get("batch_purpose", "unknown"))
+    batch_purpose = batch.get(
+        "batch_purpose", gate_dict.get("batch_purpose", "unknown")
+    )
     eligible = gate_dict.get("eligible", False)
     status_str = "ELIGIBLE" if eligible else "NOT ELIGIBLE"
 
@@ -98,9 +115,7 @@ def build_batch_report_markdown(rollup: dict, gate_dict: dict) -> str:
     lines.append("| Rule | Status | Detail |")
     lines.append("|------|--------|--------|")
     for reason in gate_dict.get("reasons", []):
-        lines.append(
-            f"| {reason['rule']} | {reason['status']} | {reason['detail']} |"
-        )
+        lines.append(f"| {reason['rule']} | {reason['status']} | {reason['detail']} |")
     lines.append("")
 
     # Repro
@@ -108,10 +123,9 @@ def build_batch_report_markdown(rollup: dict, gate_dict: dict) -> str:
     lines.append("")
     lines.append("```bash")
     lines.append("# Re-run eligibility check:")
-    lines.append(
-        "PYTHONPATH=src python scripts/internal/generate_batch_report.py \\"
-    )
-    lines.append("    --rollup <rollup_path> --output <output_dir>")
+    lines.append("PYTHONPATH=src python scripts/internal/generate_batch_report.py \\")
+    lines.append("    --rollup <rollup_path> --output <output_dir> \\")
+    lines.append("    --artifact-dir <artifact_dir> --split-manifest-dir <split_dir>")
     lines.append("```")
     lines.append("")
 
@@ -146,6 +160,8 @@ def main():
         batch_purpose=batch_purpose,
         notebook_gate_path=args.notebook_gate,
         expected_configs=expected_configs,
+        artifact_dir=args.artifact_dir,
+        split_manifest_dir=args.split_manifest_dir,
     )
 
     gate_dict = gate.to_dict()

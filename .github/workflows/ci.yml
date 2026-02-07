@@ -47,4 +47,11 @@ jobs:
 
       - name: Promotion gate
         if: contains(github.event.pull_request.labels.*.name, 'promotion')
-        run: make promotion-gate
+        env:
+          ARTIFACT_DIR: ${{ vars.ARTIFACT_DIR || '' }}
+        run: |
+          if [ -z "$ARTIFACT_DIR" ]; then
+            echo "::error::Promotion gate requires ARTIFACT_DIR. Set the ARTIFACT_DIR repository variable or remove the 'promotion' label."
+            exit 1
+          fi
+          make promotion-gate ARTIFACT_DIR="$ARTIFACT_DIR"

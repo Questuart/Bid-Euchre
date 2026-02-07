@@ -34,9 +34,9 @@ Split manifests ensure reproducible and leakage-free train/test partitions.
 
 **Verification:**
 ```python
-from bid_euchre.models.splits import load_split_manifest, verify_split_manifest
-manifest = load_split_manifest("path/to/split_manifest.json")
-verify_split_manifest(manifest, train_df, test_df)  # Raises on mismatch
+from bid_euchre.models.splits import SplitManifest, verify_split_manifest
+manifest = SplitManifest.load("path/to/split_manifest.json")
+verify_split_manifest(manifest, df, seed=42)  # Returns True if partition hashes match
 ```
 
 ## Freeze-Before-Test
@@ -46,7 +46,8 @@ Artifact freeze prevents accidental modification between training and evaluation
 **Requirements:**
 - Artifact must be frozen before any promotion evaluation
 - Frozen artifacts contain `frozen_at` (ISO timestamp) and `artifact_sha256` (integrity hash)
-- Verification recomputes hash excluding `artifact_sha256` field, compares to stored value
+- `verify_frozen()` checks that both `frozen_at` and `artifact_sha256` are present (not None)
+- The eligibility engine uses `verify_frozen()` for integrity verification (not raw field checks)
 - Re-freezing an already-frozen artifact raises `ValueError`
 
 **Key files:**
@@ -95,14 +96,15 @@ The CI workflow enforces promotion checks on PRs labeled `promotion`.
 1. `make repo-lint` — repository boundary linter (includes promotion registry lint rules)
 2. `make notebook-run` (SMOKE mode with `--gate-output-dir`) — notebook preflight
 3. Notebook gate assertion — verifies `gate_status == PASS`
-4. Artifact freeze check — verifies all model artifacts in ARTIFACT_DIR are frozen (if set)
+4. Artifact freeze check — verifies all model artifacts in ARTIFACT_DIR pass `verify_frozen()` (required, not opt-in)
 
 **Makefile target:**
 ```bash
-make promotion-gate   # Run the full promotion gate locally
+# ARTIFACT_DIR is required for promotion gate
+make promotion-gate ARTIFACT_DIR=/path/to/artifacts
 ```
 
-**CI behavior:** The promotion gate step runs only on PRs with the `promotion` label. It is a hard-fail gate — a failing promotion gate blocks the PR from merging.
+**CI behavior:** The promotion gate step runs only on PRs with the `promotion` label. It is a hard-fail gate — a failing promotion gate blocks the PR from merging. `ARTIFACT_DIR` must be set as a repository variable for promotion PRs to pass CI.
 
 ## Lint Rules
 
