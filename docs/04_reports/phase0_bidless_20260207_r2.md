@@ -241,6 +241,8 @@ CDF curves show distinct shapes by contract type. Suit contracts have heavier ri
 | outcomes_zoom | `canonical_bidless_outcomes_zoom_42_20260204_222712` | High-precision (11 matchups) | 3.3M | 4 | 0 | 0 | 0 |
 | policy_gate | `play_policy_gate_aggregate_20260204_221656.json` | Glutton vs greedy freeze gate | 720K | — | — | — | — |
 
+Gate evidence: each run's `canonical_summary.json` records PASS/WARN/FAIL/SKIP counts; the policy gate aggregates `gate_status` across seeds.
+
 **SKIP counts** in dataset runs are expected: single-policy self-play runs skip outcome-based sanity tests because they contain only one strategy.
 
 ### Schema Notes
