@@ -23,6 +23,8 @@ This file is the entrypoint for Claude Code sessions. It imports the authoritati
 ### Agent Workflow
 @docs/02_agent/AGENTS.md
 @docs/02_agent/AI_BOUNDARIES.md
+@docs/02_agent/PROMOTION_WORKFLOW.md
+@docs/02_agent/PROMOTION_WORKFLOW.md
 
 ### PR Requirements
 @.github/pull_request_template.md
