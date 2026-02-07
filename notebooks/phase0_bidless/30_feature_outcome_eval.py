@@ -346,10 +346,21 @@ def parse_matchup_id(strategy_id: str) -> dict:
                 'seat2_strategy': parts[2],
                 'seat3_strategy': parts[3],
             }
-    return {}
+    # Fallback: simple name = self-play (all seats same strategy)
+    return {
+        'team0_strategy': strategy_id,
+        'team1_strategy': strategy_id,
+        'seat0_strategy': strategy_id,
+        'seat1_strategy': strategy_id,
+        'seat2_strategy': strategy_id,
+        'seat3_strategy': strategy_id,
+    }
 
 
 matchup_meta = matchup_df['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
+# Drop columns already present (e.g. from parquet join) to avoid duplicates
+existing_cols = set(matchup_df.columns) & set(matchup_meta.columns)
+matchup_meta = matchup_meta.drop(columns=existing_cols, errors='ignore')
 matchup_df = pd.concat([matchup_df, matchup_meta], axis=1)
 matchup_df = matchup_df[matchup_df['team0_strategy'].notna()]
 
@@ -580,96 +591,99 @@ plt.show()
 # **Head-to-head matchups only** (excludes self-play).
 
 # %%
-strategies = sorted(analysis_df_h2h['seat_strategy'].unique())
-n_strategies = len(strategies)
-n_cols = min(4, n_strategies)
-n_rows = (n_strategies + n_cols - 1) // n_cols
+if len(analysis_df_h2h) > 0:
+    strategies = sorted(analysis_df_h2h['seat_strategy'].unique())
+    n_strategies = len(strategies)
+    n_cols = min(4, n_strategies)
+    n_rows = (n_strategies + n_cols - 1) // n_cols
 
-fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
-if n_strategies == 1:
-    axes = np.array([[axes]])
-axes = np.atleast_2d(axes)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+    if n_strategies == 1:
+        axes = np.array([[axes]])
+    axes = np.atleast_2d(axes)
 
-anova_results_contract = []
+    anova_results_contract = []
 
-for idx, strategy in enumerate(strategies):
-    row_idx, col_idx = divmod(idx, n_cols)
-    ax = axes[row_idx, col_idx]
+    for idx, strategy in enumerate(strategies):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
 
-    strat_df = analysis_df_h2h[analysis_df_h2h['seat_strategy'] == strategy]
+        strat_df = analysis_df_h2h[analysis_df_h2h['seat_strategy'] == strategy]
 
-    # Statistical test across contract types (paired or independent)
-    contract_groups = [
-        strat_df[strat_df['contract_type'] == ct]['tricks_won'].values
-        for ct in CONTRACT_TYPES
-        if len(strat_df[strat_df['contract_type'] == ct]) > 0
-    ]
+        # Statistical test across contract types (paired or independent)
+        contract_groups = [
+            strat_df[strat_df['contract_type'] == ct]['tricks_won'].values
+            for ct in CONTRACT_TYPES
+            if len(strat_df[strat_df['contract_type'] == ct]) > 0
+        ]
 
-    test_name = "ANOVA"
-    if len(contract_groups) >= 2 and all(len(g) > 0 for g in contract_groups):
-        # Check if paired (same deal_ids across contract types)
-        paired = is_paired_data(strat_df, 'contract_type')
-        if paired and len(contract_groups) >= 3:
-            min_len = min(len(g) for g in contract_groups)
-            aligned = [g[:min_len] for g in contract_groups]
-            stat, p_value = friedmanchisquare(*aligned)
-            test_name = "Friedman"
+        test_name = "ANOVA"
+        if len(contract_groups) >= 2 and all(len(g) > 0 for g in contract_groups):
+            # Check if paired (same deal_ids across contract types)
+            paired = is_paired_data(strat_df, 'contract_type')
+            if paired and len(contract_groups) >= 3:
+                min_len = min(len(g) for g in contract_groups)
+                aligned = [g[:min_len] for g in contract_groups]
+                stat, p_value = friedmanchisquare(*aligned)
+                test_name = "Friedman"
+            else:
+                stat, p_value = f_oneway(*contract_groups)
+            # Eta-squared (approximation for both tests)
+            overall_mean = strat_df['tricks_won'].mean()
+            ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in contract_groups)
+            ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
+            eta_sq = ss_between / ss_total if ss_total > 0 else 0
         else:
-            stat, p_value = f_oneway(*contract_groups)
-        # Eta-squared (approximation for both tests)
-        overall_mean = strat_df['tricks_won'].mean()
-        ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in contract_groups)
-        ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
-        eta_sq = ss_between / ss_total if ss_total > 0 else 0
-    else:
-        stat, p_value, eta_sq = np.nan, np.nan, np.nan
+            stat, p_value, eta_sq = np.nan, np.nan, np.nan
 
-    anova_results_contract.append({
-        'strategy': strategy,
-        'test': test_name,
-        'stat': stat if 'stat' in dir() else np.nan,
-        'p_value': p_value,
-        'eta_sq': eta_sq,
-        'n': len(strat_df),
-    })
+        anova_results_contract.append({
+            'strategy': strategy,
+            'test': test_name,
+            'stat': stat if 'stat' in dir() else np.nan,
+            'p_value': p_value,
+            'eta_sq': eta_sq,
+            'n': len(strat_df),
+        })
 
-    # Violin plot by contract type
-    contract_data = [strat_df[strat_df['contract_type'] == ct]['tricks_won'].values for ct in CONTRACT_TYPES]
-    positions = range(len(CONTRACT_TYPES))
+        # Violin plot by contract type
+        contract_data = [strat_df[strat_df['contract_type'] == ct]['tricks_won'].values for ct in CONTRACT_TYPES]
+        positions = range(len(CONTRACT_TYPES))
 
-    parts = ax.violinplot(contract_data, positions=positions, showmeans=False, showmedians=False)
-    for pc in parts['bodies']:
-        pc.set_facecolor('steelblue')
-        pc.set_alpha(0.6)
-    ax.boxplot(contract_data, positions=positions, widths=0.2)
+        parts = ax.violinplot(contract_data, positions=positions, showmeans=False, showmedians=False)
+        for pc in parts['bodies']:
+            pc.set_facecolor('steelblue')
+            pc.set_alpha(0.6)
+        ax.boxplot(contract_data, positions=positions, widths=0.2)
 
-    ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
-    ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
-    ax.set_xticks(positions)
-    ax.set_xticklabels(CONTRACT_TYPES, fontsize=8)
-    ax.set_ylabel("Tricks Won")
-    ax.set_ylim(-0.5, 10.5)
-    ax.grid(axis='y', alpha=0.3)
+        ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+        ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(CONTRACT_TYPES, fontsize=8)
+        ax.set_ylabel("Tricks Won")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
 
-# Hide unused axes
-for idx in range(n_strategies, n_rows * n_cols):
-    row_idx, col_idx = divmod(idx, n_cols)
-    axes[row_idx, col_idx].axis('off')
+    # Hide unused axes
+    for idx in range(n_strategies, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Contract Type (Head-to-Head Matchups)", fontsize=12)
-plt.tight_layout()
-plt.show()
+    fig.suptitle("Strategy Performance by Contract Type (Head-to-Head Matchups)", fontsize=12)
+    plt.tight_layout()
+    plt.show()
 
-# FDR correction
-anova_contract_df = pd.DataFrame(anova_results_contract)
-valid_p = anova_contract_df['p_value'].dropna()
-if len(valid_p) > 0:
-    _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
-    anova_contract_df.loc[valid_p.index, 'p_adj'] = p_adj
+    # FDR correction
+    anova_contract_df = pd.DataFrame(anova_results_contract)
+    valid_p = anova_contract_df['p_value'].dropna()
+    if len(valid_p) > 0:
+        _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+        anova_contract_df.loc[valid_p.index, 'p_adj'] = p_adj
 
-print("\nANOVA Results by Strategy (Contract Type Effect):")
-print("Note: Tricks are discrete (0-10); ANOVA is robust but Kruskal-Wallis is an alternative.")
-display(anova_contract_df.round(4))
+    print("\nANOVA Results by Strategy (Contract Type Effect):")
+    print("Note: Tricks are discrete (0-10); ANOVA is robust but Kruskal-Wallis is an alternative.")
+    display(anova_contract_df.round(4))
+else:
+    print("Skipped: no head-to-head matchup data (self-play only)")
 
 # %% [markdown]
 # ### 2.5 Strategy Performance by Suit (B pattern)
@@ -779,106 +793,109 @@ else:
 # **Head-to-head matchups only** (excludes self-play).
 
 # %%
-# Convert deal_summary_h2h to long form with team perspective per strategy
-# Head-to-head only: both perspectives are valid (no self-play double-counting issue)
-team_performance_rows = []
-for _, row in deal_summary_h2h.iterrows():
-    team0, team1 = row['team0_strategy'], row['team1_strategy']
-    deal_id = row['deal_id']
+if len(deal_summary_h2h) > 0:
+    # Convert deal_summary_h2h to long form with team perspective per strategy
+    # Head-to-head only: both perspectives are valid (no self-play double-counting issue)
+    team_performance_rows = []
+    for _, row in deal_summary_h2h.iterrows():
+        team0, team1 = row['team0_strategy'], row['team1_strategy']
+        deal_id = row['deal_id']
 
-    # Team 0 strategy's perspective
-    team_performance_rows.append({
-        'strategy': team0,
-        'team_assignment': 'team0',
-        'team_tricks': row['team0_tricks'],
-        'deal_id': deal_id,
-    })
-    # Team 1 strategy's perspective (always included in h2h since team0 != team1)
-    team_performance_rows.append({
-        'strategy': team1,
-        'team_assignment': 'team1',
-        'team_tricks': row['team1_tricks'],
-        'deal_id': deal_id,
-    })
+        # Team 0 strategy's perspective
+        team_performance_rows.append({
+            'strategy': team0,
+            'team_assignment': 'team0',
+            'team_tricks': row['team0_tricks'],
+            'deal_id': deal_id,
+        })
+        # Team 1 strategy's perspective (always included in h2h since team0 != team1)
+        team_performance_rows.append({
+            'strategy': team1,
+            'team_assignment': 'team1',
+            'team_tricks': row['team1_tricks'],
+            'deal_id': deal_id,
+        })
 
-team_perf_df = pd.DataFrame(team_performance_rows)
+    team_perf_df = pd.DataFrame(team_performance_rows)
 
-strategies = sorted(team_perf_df['strategy'].unique())
-n_strategies = len(strategies)
-n_cols = min(4, n_strategies)
-n_rows = (n_strategies + n_cols - 1) // n_cols
+    strategies = sorted(team_perf_df['strategy'].unique())
+    n_strategies = len(strategies)
+    n_cols = min(4, n_strategies)
+    n_rows = (n_strategies + n_cols - 1) // n_cols
 
-fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
-if n_strategies == 1:
-    axes = np.array([[axes]])
-axes = np.atleast_2d(axes)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+    if n_strategies == 1:
+        axes = np.array([[axes]])
+    axes = np.atleast_2d(axes)
 
-ttest_results_team = []
+    ttest_results_team = []
 
-for idx, strategy in enumerate(strategies):
-    row_idx, col_idx = divmod(idx, n_cols)
-    ax = axes[row_idx, col_idx]
+    for idx, strategy in enumerate(strategies):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
 
-    strat_df = team_perf_df[team_perf_df['strategy'] == strategy]
-    team0_data = strat_df[strat_df['team_assignment'] == 'team0']['team_tricks'].values
-    team1_data = strat_df[strat_df['team_assignment'] == 'team1']['team_tricks'].values
+        strat_df = team_perf_df[team_perf_df['strategy'] == strategy]
+        team0_data = strat_df[strat_df['team_assignment'] == 'team0']['team_tricks'].values
+        team1_data = strat_df[strat_df['team_assignment'] == 'team1']['team_tricks'].values
 
-    # T-test for team0 vs team1
-    if len(team0_data) > 0 and len(team1_data) > 0:
-        t_stat, p_value = ttest_ind(team0_data, team1_data)
-        # Cohen's d
-        pooled_std = np.sqrt(((len(team0_data) - 1) * np.var(team0_data, ddof=1) +
-                              (len(team1_data) - 1) * np.var(team1_data, ddof=1)) /
-                             (len(team0_data) + len(team1_data) - 2))
-        cohens_d = (np.mean(team0_data) - np.mean(team1_data)) / pooled_std if pooled_std > 0 else 0
-    else:
-        t_stat, p_value, cohens_d = np.nan, np.nan, np.nan
+        # T-test for team0 vs team1
+        if len(team0_data) > 0 and len(team1_data) > 0:
+            t_stat, p_value = ttest_ind(team0_data, team1_data)
+            # Cohen's d
+            pooled_std = np.sqrt(((len(team0_data) - 1) * np.var(team0_data, ddof=1) +
+                                  (len(team1_data) - 1) * np.var(team1_data, ddof=1)) /
+                                 (len(team0_data) + len(team1_data) - 2))
+            cohens_d = (np.mean(team0_data) - np.mean(team1_data)) / pooled_std if pooled_std > 0 else 0
+        else:
+            t_stat, p_value, cohens_d = np.nan, np.nan, np.nan
 
-    ttest_results_team.append({
-        'strategy': strategy,
-        't_stat': t_stat,
-        'p_value': p_value,
-        'cohens_d': cohens_d,
-        'n_team0': len(team0_data),
-        'n_team1': len(team1_data),
-    })
+        ttest_results_team.append({
+            'strategy': strategy,
+            't_stat': t_stat,
+            'p_value': p_value,
+            'cohens_d': cohens_d,
+            'n_team0': len(team0_data),
+            'n_team1': len(team1_data),
+        })
 
-    # Violin plot by team assignment
-    team_data = [team0_data, team1_data]
-    positions = [0, 1]
+        # Violin plot by team assignment
+        team_data = [team0_data, team1_data]
+        positions = [0, 1]
 
-    parts = ax.violinplot(team_data, positions=positions, showmeans=False, showmedians=False)
-    for pc in parts['bodies']:
-        pc.set_facecolor('darkorange')
-        pc.set_alpha(0.6)
-    ax.boxplot(team_data, positions=positions, widths=0.2)
+        parts = ax.violinplot(team_data, positions=positions, showmeans=False, showmedians=False)
+        for pc in parts['bodies']:
+            pc.set_facecolor('darkorange')
+            pc.set_alpha(0.6)
+        ax.boxplot(team_data, positions=positions, widths=0.2)
 
-    ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
-    ax.set_title(f"{strategy}\n(d={cohens_d:.3f})")
-    ax.set_xticks(positions)
-    ax.set_xticklabels(['Team 0', 'Team 1'], fontsize=8)
-    ax.set_ylabel("Team Tricks")
-    ax.set_ylim(-0.5, 10.5)
-    ax.grid(axis='y', alpha=0.3)
+        ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+        ax.set_title(f"{strategy}\n(d={cohens_d:.3f})")
+        ax.set_xticks(positions)
+        ax.set_xticklabels(['Team 0', 'Team 1'], fontsize=8)
+        ax.set_ylabel("Team Tricks")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
 
-# Hide unused axes
-for idx in range(n_strategies, n_rows * n_cols):
-    row_idx, col_idx = divmod(idx, n_cols)
-    axes[row_idx, col_idx].axis('off')
+    # Hide unused axes
+    for idx in range(n_strategies, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Team Assignment (Head-to-Head Matchups)", fontsize=12)
-plt.tight_layout()
-plt.show()
+    fig.suptitle("Strategy Performance by Team Assignment (Head-to-Head Matchups)", fontsize=12)
+    plt.tight_layout()
+    plt.show()
 
-# FDR correction
-ttest_team_df = pd.DataFrame(ttest_results_team)
-valid_p = ttest_team_df['p_value'].dropna()
-if len(valid_p) > 0:
-    _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
-    ttest_team_df.loc[valid_p.index, 'p_adj'] = p_adj
+    # FDR correction
+    ttest_team_df = pd.DataFrame(ttest_results_team)
+    valid_p = ttest_team_df['p_value'].dropna()
+    if len(valid_p) > 0:
+        _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+        ttest_team_df.loc[valid_p.index, 'p_adj'] = p_adj
 
-print("\nT-Test Results by Strategy (Team Assignment Effect):")
-display(ttest_team_df.round(4))
+    print("\nT-Test Results by Strategy (Team Assignment Effect):")
+    display(ttest_team_df.round(4))
+else:
+    print("Skipped: no head-to-head matchup data (self-play only)")
 
 # %% [markdown]
 # ### 2.7 Strategy Performance by Seat (B pattern)
@@ -887,92 +904,95 @@ display(ttest_team_df.round(4))
 # **Head-to-head matchups only** (excludes self-play).
 
 # %%
-strategies = sorted(analysis_df_h2h['seat_strategy'].unique())
-n_strategies = len(strategies)
-n_cols = min(4, n_strategies)
-n_rows = (n_strategies + n_cols - 1) // n_cols
+if len(analysis_df_h2h) > 0:
+    strategies = sorted(analysis_df_h2h['seat_strategy'].unique())
+    n_strategies = len(strategies)
+    n_cols = min(4, n_strategies)
+    n_rows = (n_strategies + n_cols - 1) // n_cols
 
-fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
-if n_strategies == 1:
-    axes = np.array([[axes]])
-axes = np.atleast_2d(axes)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+    if n_strategies == 1:
+        axes = np.array([[axes]])
+    axes = np.atleast_2d(axes)
 
-anova_results_seat = []
+    anova_results_seat = []
 
-for idx, strategy in enumerate(strategies):
-    row_idx, col_idx = divmod(idx, n_cols)
-    ax = axes[row_idx, col_idx]
+    for idx, strategy in enumerate(strategies):
+        row_idx, col_idx = divmod(idx, n_cols)
+        ax = axes[row_idx, col_idx]
 
-    strat_df = analysis_df_h2h[analysis_df_h2h['seat_strategy'] == strategy]
+        strat_df = analysis_df_h2h[analysis_df_h2h['seat_strategy'] == strategy]
 
-    # ANOVA across seats
-    seat_groups = [
-        strat_df[strat_df['seat'] == s]['tricks_won'].values
-        for s in SEATS
-        if len(strat_df[strat_df['seat'] == s]) > 0
-    ]
+        # ANOVA across seats
+        seat_groups = [
+            strat_df[strat_df['seat'] == s]['tricks_won'].values
+            for s in SEATS
+            if len(strat_df[strat_df['seat'] == s]) > 0
+        ]
 
-    if len(seat_groups) >= 2 and all(len(g) > 0 for g in seat_groups):
-        f_stat, p_value = f_oneway(*seat_groups)
-        overall_mean = strat_df['tricks_won'].mean()
-        ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in seat_groups)
-        ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
-        eta_sq = ss_between / ss_total if ss_total > 0 else 0
-    else:
-        f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
+        if len(seat_groups) >= 2 and all(len(g) > 0 for g in seat_groups):
+            f_stat, p_value = f_oneway(*seat_groups)
+            overall_mean = strat_df['tricks_won'].mean()
+            ss_between = sum(len(g) * (np.mean(g) - overall_mean)**2 for g in seat_groups)
+            ss_total = ((strat_df['tricks_won'] - overall_mean)**2).sum()
+            eta_sq = ss_between / ss_total if ss_total > 0 else 0
+        else:
+            f_stat, p_value, eta_sq = np.nan, np.nan, np.nan
 
-    anova_results_seat.append({
-        'strategy': strategy,
-        'f_stat': f_stat,
-        'p_value': p_value,
-        'eta_sq': eta_sq,
-        'n': len(strat_df),
-    })
+        anova_results_seat.append({
+            'strategy': strategy,
+            'f_stat': f_stat,
+            'p_value': p_value,
+            'eta_sq': eta_sq,
+            'n': len(strat_df),
+        })
 
-    # Violin plot by seat
-    seat_data = [strat_df[strat_df['seat'] == s]['tricks_won'].values for s in SEATS]
-    positions = range(len(SEATS))
+        # Violin plot by seat
+        seat_data = [strat_df[strat_df['seat'] == s]['tricks_won'].values for s in SEATS]
+        positions = range(len(SEATS))
 
-    parts = ax.violinplot(seat_data, positions=positions, showmeans=False, showmedians=False)
-    for pc in parts['bodies']:
-        pc.set_facecolor('purple')
-        pc.set_alpha(0.6)
-    ax.boxplot(seat_data, positions=positions, widths=0.2)
+        parts = ax.violinplot(seat_data, positions=positions, showmeans=False, showmedians=False)
+        for pc in parts['bodies']:
+            pc.set_facecolor('purple')
+            pc.set_alpha(0.6)
+        ax.boxplot(seat_data, positions=positions, widths=0.2)
 
-    ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
-    ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
-    ax.set_xticks(positions)
-    ax.set_xticklabels([f"Seat {s}" for s in SEATS], fontsize=8)
-    ax.set_ylabel("Tricks Won")
-    ax.set_ylim(-0.5, 10.5)
-    ax.grid(axis='y', alpha=0.3)
+        ax.axhline(5.0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+        ax.set_title(f"{strategy}\n(n={len(strat_df)}, η²={eta_sq:.3f})")
+        ax.set_xticks(positions)
+        ax.set_xticklabels([f"Seat {s}" for s in SEATS], fontsize=8)
+        ax.set_ylabel("Tricks Won")
+        ax.set_ylim(-0.5, 10.5)
+        ax.grid(axis='y', alpha=0.3)
 
-# Hide unused axes
-for idx in range(n_strategies, n_rows * n_cols):
-    row_idx, col_idx = divmod(idx, n_cols)
-    axes[row_idx, col_idx].axis('off')
+    # Hide unused axes
+    for idx in range(n_strategies, n_rows * n_cols):
+        row_idx, col_idx = divmod(idx, n_cols)
+        axes[row_idx, col_idx].axis('off')
 
-fig.suptitle("Strategy Performance by Seat Position (Head-to-Head Matchups)", fontsize=12)
-plt.tight_layout()
-plt.show()
+    fig.suptitle("Strategy Performance by Seat Position (Head-to-Head Matchups)", fontsize=12)
+    plt.tight_layout()
+    plt.show()
 
-# FDR correction
-anova_seat_df = pd.DataFrame(anova_results_seat)
-valid_p = anova_seat_df['p_value'].dropna()
-if len(valid_p) > 0:
-    _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
-    anova_seat_df.loc[valid_p.index, 'p_adj'] = p_adj
+    # FDR correction
+    anova_seat_df = pd.DataFrame(anova_results_seat)
+    valid_p = anova_seat_df['p_value'].dropna()
+    if len(valid_p) > 0:
+        _, p_adj, _, _ = multipletests(valid_p.values, method='fdr_bh')
+        anova_seat_df.loc[valid_p.index, 'p_adj'] = p_adj
 
-print("\nANOVA Results by Strategy (Seat Position Effect):")
-print("\n" + "=" * 70)
-print("WARNING: SEAT-LEVEL ANALYSIS CAVEAT")
-print("=" * 70)
-print("Due to team-level logging, seats within the same team share identical tricks_won.")
-print("  - Seats 0 & 2 (Team 0): show identical team0_tricks")
-print("  - Seats 1 & 3 (Team 1): show identical team1_tricks")
-print("Apparent seat effects reflect team assignment, not individual seat performance.")
-print("=" * 70 + "\n")
-display(anova_seat_df.round(4))
+    print("\nANOVA Results by Strategy (Seat Position Effect):")
+    print("\n" + "=" * 70)
+    print("WARNING: SEAT-LEVEL ANALYSIS CAVEAT")
+    print("=" * 70)
+    print("Due to team-level logging, seats within the same team share identical tricks_won.")
+    print("  - Seats 0 & 2 (Team 0): show identical team0_tricks")
+    print("  - Seats 1 & 3 (Team 1): show identical team1_tricks")
+    print("Apparent seat effects reflect team assignment, not individual seat performance.")
+    print("=" * 70 + "\n")
+    display(anova_seat_df.round(4))
+else:
+    print("Skipped: no head-to-head matchup data (self-play only)")
 
 # %% [markdown]
 # ### 2.8 Rolling Mean Delta
@@ -1139,57 +1159,56 @@ display(summary_stats_df.round(3))
 
 # %%
 # Panel 2: Win rate bar chart by matchup type
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+if len(summary_stats_df) > 0:
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-# Win rate comparison
-ax1 = axes[0]
-colors = ['steelblue', 'darkorange', 'green']
-bars = ax1.bar(summary_stats_df['matchup_type'], summary_stats_df['win_rate'], color=colors, alpha=0.7)
-ax1.axhline(0.5, color='red', linestyle='--', linewidth=1, label='Fair (0.5)')
-ax1.set_ylabel("Win Rate")
-ax1.set_title("Win Rate by Matchup Type\n(greedy_vs_glutton: from greedy's perspective)")
-ax1.set_ylim(0, 1)
-ax1.tick_params(axis='x', rotation=45)
-for bar, rate in zip(bars, summary_stats_df['win_rate']):
-    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-             f'{rate:.3f}', ha='center', fontsize=9)
-ax1.legend()
-ax1.grid(axis='y', alpha=0.3)
+    # Win rate comparison
+    ax1 = axes[0]
+    colors = ['steelblue', 'darkorange', 'green']
+    bars = ax1.bar(summary_stats_df['matchup_type'], summary_stats_df['win_rate'], color=colors, alpha=0.7)
+    ax1.axhline(0.5, color='red', linestyle='--', linewidth=1, label='Fair (0.5)')
+    ax1.set_ylabel("Win Rate")
+    ax1.set_title("Win Rate by Matchup Type\n(greedy_vs_glutton: from greedy's perspective)")
+    ax1.set_ylim(0, 1)
+    ax1.tick_params(axis='x', rotation=45)
+    for bar, rate in zip(bars, summary_stats_df['win_rate']):
+        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
+                 f'{rate:.3f}', ha='center', fontsize=9)
+    ax1.legend()
+    ax1.grid(axis='y', alpha=0.3)
 
-# Mean delta comparison
-ax2 = axes[1]
-bars = ax2.bar(summary_stats_df['matchup_type'], summary_stats_df['mean_delta'], color=colors, alpha=0.7)
-ax2.errorbar(range(len(summary_stats_df)), summary_stats_df['mean_delta'],
-             yerr=[(summary_stats_df['mean_delta'] - summary_stats_df['ci_lower']).values,
-                   (summary_stats_df['ci_upper'] - summary_stats_df['mean_delta']).values],
-             fmt='none', color='black', capsize=5)
-ax2.axhline(0, color='red', linestyle='--', linewidth=1)
-ax2.set_ylabel("Mean Delta (tricks)")
-ax2.set_title("Mean Delta with 95% CI\n(greedy_vs_glutton: from greedy's perspective)")
-ax2.tick_params(axis='x', rotation=45)
-ax2.grid(axis='y', alpha=0.3)
+    # Mean delta comparison
+    ax2 = axes[1]
+    bars = ax2.bar(summary_stats_df['matchup_type'], summary_stats_df['mean_delta'], color=colors, alpha=0.7)
+    ax2.errorbar(range(len(summary_stats_df)), summary_stats_df['mean_delta'],
+                 yerr=[(summary_stats_df['mean_delta'] - summary_stats_df['ci_lower']).values,
+                       (summary_stats_df['ci_upper'] - summary_stats_df['mean_delta']).values],
+                 fmt='none', color='black', capsize=5)
+    ax2.axhline(0, color='red', linestyle='--', linewidth=1)
+    ax2.set_ylabel("Mean Delta (tricks)")
+    ax2.set_title("Mean Delta with 95% CI\n(greedy_vs_glutton: from greedy's perspective)")
+    ax2.tick_params(axis='x', rotation=45)
+    ax2.grid(axis='y', alpha=0.3)
 
-# Sample size
-ax3 = axes[2]
-bars = ax3.bar(summary_stats_df['matchup_type'], summary_stats_df['n_deals'], color=colors, alpha=0.7)
-ax3.set_ylabel("Number of Deals")
-ax3.set_title("Sample Size by Matchup Type")
-ax3.tick_params(axis='x', rotation=45)
-for bar, n in zip(bars, summary_stats_df['n_deals']):
-    ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5,
-             f'{n}', ha='center', fontsize=9)
-ax3.grid(axis='y', alpha=0.3)
+    # Sample size
+    ax3 = axes[2]
+    bars = ax3.bar(summary_stats_df['matchup_type'], summary_stats_df['n_deals'], color=colors, alpha=0.7)
+    ax3.set_ylabel("Number of Deals")
+    ax3.set_title("Sample Size by Matchup Type")
+    ax3.tick_params(axis='x', rotation=45)
+    for bar, n in zip(bars, summary_stats_df['n_deals']):
+        ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5,
+                 f'{n}', ha='center', fontsize=9)
+    ax3.grid(axis='y', alpha=0.3)
 
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Skipped: no smart matchup data for win rate panel")
 
 # %%
 # Panel 3: Delta distribution (violin + box) for each matchup - DUAL PERSPECTIVE
 # Row 1: Greedy perspective, Row 2: Glutton perspective
-fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-
-matchup_types = ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']
-perspective_labels = ['Greedy Perspective', 'Glutton Perspective']
 
 # Helper function to compute deltas from a given perspective
 def compute_perspective_deltas(subset, mtype, perspective):
@@ -1209,60 +1228,68 @@ def compute_perspective_deltas(subset, mtype, perspective):
         # Self-play: symmetric, same for both perspectives
         return subset['delta_tricks'].values
 
-# Collect all deltas for dynamic y-limit
-all_panel3_deltas = []
-for mtype in matchup_types:
-    subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
-    for perspective in ['greedy', 'glutton']:
-        data = compute_perspective_deltas(subset, mtype, perspective)
-        if len(data) > 0:
-            all_panel3_deltas.extend(data)
+matchup_types = ['greedy_self_play', 'glutton_self_play', 'greedy_vs_glutton']
+perspective_labels = ['Greedy Perspective', 'Glutton Perspective']
 
-# Compute dynamic y-limit
-if len(all_panel3_deltas) == 0 or np.std(all_panel3_deltas) == 0:
-    y_limit_p3 = 10.0
-else:
-    p1, p99 = np.percentile(all_panel3_deltas, [1, 99])
-    y_limit_p3 = max(abs(p1), abs(p99)) * 1.1
+if len(smart_matchups) > 0:
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 
-for row_idx, perspective in enumerate(['greedy', 'glutton']):
-    for col_idx, mtype in enumerate(matchup_types):
-        ax = axes[row_idx, col_idx]
+    # Collect all deltas for dynamic y-limit
+    all_panel3_deltas = []
+    for mtype in matchup_types:
         subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
-        data = compute_perspective_deltas(subset, mtype, perspective)
+        for perspective in ['greedy', 'glutton']:
+            data = compute_perspective_deltas(subset, mtype, perspective)
+            if len(data) > 0:
+                all_panel3_deltas.extend(data)
 
-        if len(data) > 0:
-            color = 'steelblue' if perspective == 'greedy' else 'darkorange'
-            parts = ax.violinplot([data], positions=[0], showmeans=False, showmedians=False)
-            for pc in parts['bodies']:
-                pc.set_facecolor(color)
-                pc.set_alpha(0.6)
-            ax.boxplot([data], positions=[0], widths=0.2)
-            ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
+    # Compute dynamic y-limit
+    if len(all_panel3_deltas) == 0 or np.std(all_panel3_deltas) == 0:
+        y_limit_p3 = 10.0
+    else:
+        p1, p99 = np.percentile(all_panel3_deltas, [1, 99])
+        y_limit_p3 = max(abs(p1), abs(p99)) * 1.1
 
-            mean_val = np.mean(data)
-            ax.axhline(mean_val, color='green', linestyle='-', linewidth=1, alpha=0.7)
-            ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
+    for row_idx, perspective in enumerate(['greedy', 'glutton']):
+        for col_idx, mtype in enumerate(matchup_types):
+            ax = axes[row_idx, col_idx]
+            subset = smart_matchups[smart_matchups['matchup_type'] == mtype]
+            data = compute_perspective_deltas(subset, mtype, perspective)
 
-        # Titles: top row only shows matchup type, left column shows perspective
-        if row_idx == 0:
-            mtype_title = mtype.replace('_', ' ').title()
-            ax.set_title(f"{mtype_title}\n(n={len(data)})")
-        else:
-            ax.set_title(f"(n={len(data)})")
+            if len(data) > 0:
+                color = 'steelblue' if perspective == 'greedy' else 'darkorange'
+                parts = ax.violinplot([data], positions=[0], showmeans=False, showmedians=False)
+                for pc in parts['bodies']:
+                    pc.set_facecolor(color)
+                    pc.set_alpha(0.6)
+                ax.boxplot([data], positions=[0], widths=0.2)
+                ax.axhline(0, color='red', linestyle='--', linewidth=1, alpha=0.7)
 
-        if col_idx == 0:
-            ax.set_ylabel(f"{perspective_labels[row_idx]}\nDelta (tricks)")
-        else:
-            ax.set_ylabel("")
+                mean_val = np.mean(data)
+                ax.axhline(mean_val, color='green', linestyle='-', linewidth=1, alpha=0.7)
+                ax.text(0.4, mean_val, f'μ={mean_val:.2f}', fontsize=9, va='center')
 
-        ax.set_xticks([])
-        ax.set_ylim(-y_limit_p3, y_limit_p3)
-        ax.grid(axis='y', alpha=0.3)
+            # Titles: top row only shows matchup type, left column shows perspective
+            if row_idx == 0:
+                mtype_title = mtype.replace('_', ' ').title()
+                ax.set_title(f"{mtype_title}\n(n={len(data)})")
+            else:
+                ax.set_title(f"(n={len(data)})")
 
-plt.suptitle("Delta Distribution by Matchup Type (Dual Perspective)", fontsize=12, y=1.02)
-plt.tight_layout()
-plt.show()
+            if col_idx == 0:
+                ax.set_ylabel(f"{perspective_labels[row_idx]}\nDelta (tricks)")
+            else:
+                ax.set_ylabel("")
+
+            ax.set_xticks([])
+            ax.set_ylim(-y_limit_p3, y_limit_p3)
+            ax.grid(axis='y', alpha=0.3)
+
+    plt.suptitle("Delta Distribution by Matchup Type (Dual Perspective)", fontsize=12, y=1.02)
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Skipped: no smart matchup data for dual-perspective panel")
 
 # %%
 # Panel 4: Performance by contract type for greedy vs glutton - DUAL PERSPECTIVE
@@ -1422,6 +1449,11 @@ def get_matchup_type(strategy_id):
             return 'glutton_self_play'
         elif {t0, t1} == {'greedy', 'glutton'}:
             return 'greedy_vs_glutton'
+    # Fallback: simple name = self-play (canonical data uses bare strategy names)
+    if strategy_id == 'greedy':
+        return 'greedy_self_play'
+    elif strategy_id == 'glutton':
+        return 'glutton_self_play'
     return 'other'
 
 data_df_with_matchup['matchup_type'] = data_df_with_matchup['strategy_id'].apply(get_matchup_type)
@@ -2170,23 +2202,28 @@ if len(suit_df) > 0:
 
 # Feature correlation summary
 n_features = len(feat_cols)
-n_significant = len(corr_df[corr_df['significant_adj']])
-summary['info'].append(f"ℹ️  Features analyzed: {n_features}")
-summary['info'].append(
-    f"ℹ️  Significant correlations (FDR): {n_significant}/{len(corr_df)} "
-    f"({100*n_significant/len(corr_df):.1f}%)"
-)
-
-# Top features by contract type
-for contract_type in CONTRACT_TYPES:
-    top_feat = corr_df[corr_df['contract_type'] == contract_type].sort_values(
-        'correlation', key=abs, ascending=False
-    ).iloc[0]
-    feat_name = top_feat['feature'].replace('feat_', '')
+if len(corr_df) > 0:
+    n_significant = len(corr_df[corr_df['significant_adj']])
+    summary['info'].append(f"ℹ️  Features analyzed: {n_features}")
     summary['info'].append(
-        f"ℹ️  Top feature ({contract_type}): {feat_name} "
-        f"(r={top_feat['correlation']:+.3f}, n={top_feat['n_samples']})"
+        f"ℹ️  Significant correlations (FDR): {n_significant}/{len(corr_df)} "
+        f"({100*n_significant/len(corr_df):.1f}%)"
     )
+
+    # Top features by contract type
+    for contract_type in CONTRACT_TYPES:
+        ct_corrs = corr_df[corr_df['contract_type'] == contract_type].sort_values(
+            'correlation', key=abs, ascending=False
+        )
+        if len(ct_corrs) > 0:
+            top_feat = ct_corrs.iloc[0]
+            feat_name = top_feat['feature'].replace('feat_', '')
+            summary['info'].append(
+                f"ℹ️  Top feature ({contract_type}): {feat_name} "
+                f"(r={top_feat['correlation']:+.3f}, n={top_feat['n_samples']})"
+            )
+else:
+    summary['info'].append(f"ℹ️  Features analyzed: {n_features} (no correlation data available)")
 
 # Print summary
 print("\nPASSES:")
