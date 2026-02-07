@@ -1,11 +1,14 @@
 """Unit tests for play_policy_gate.py."""
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "internal"))
 from play_policy_gate import (
     DirectionResult,
     ScenarioInfo,

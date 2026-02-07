@@ -7,7 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.run_auction_comparator import format_report, gate_check
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "internal"))
+from run_auction_comparator import format_report, gate_check
 
 
 class TestGateCheck:
