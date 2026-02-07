@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from bid_euchre.experiments.batch import VALID_BATCH_PURPOSES, VALID_BATCH_ROLES
 from bid_euchre.experiments.config import ExperimentConfig
 
 
@@ -106,6 +107,49 @@ def validate_suite_file(path: Path) -> list[str]:
         if "parameters" in data:
             if not isinstance(data["parameters"], dict):
                 errors.append(f"{path}: 'parameters' must be a dict")
+
+        # Validate optional batch section
+        if "batch" in data:
+            batch = data["batch"]
+            if not isinstance(batch, dict):
+                errors.append(f"{path}: 'batch' must be a dict")
+            else:
+                bp = batch.get("batch_purpose")
+                if bp is None:
+                    errors.append(
+                        f"{path}: batch.batch_purpose is required when batch section is present"
+                    )
+                elif bp not in VALID_BATCH_PURPOSES:
+                    errors.append(
+                        f"{path}: batch.batch_purpose must be one of {sorted(VALID_BATCH_PURPOSES)}, got '{bp}'"
+                    )
+                bi = batch.get("batch_id")
+                if bi is not None and not isinstance(bi, str):
+                    errors.append(f"{path}: batch.batch_id must be a string or null")
+
+        # Validate optional config_overrides section
+        if "config_overrides" in data:
+            co = data["config_overrides"]
+            if not isinstance(co, dict):
+                errors.append(f"{path}: 'config_overrides' must be a dict")
+            else:
+                for config_key, overrides in co.items():
+                    if not isinstance(overrides, dict):
+                        errors.append(
+                            f"{path}: config_overrides.{config_key} must be a dict"
+                        )
+                        continue
+                    role = overrides.get("batch_role")
+                    if role is not None and role not in VALID_BATCH_ROLES:
+                        errors.append(
+                            f"{path}: config_overrides.{config_key}.batch_role "
+                            f"must be one of {sorted(VALID_BATCH_ROLES)}, got '{role}'"
+                        )
+                    ea = overrides.get("extra_args")
+                    if ea is not None and not isinstance(ea, list):
+                        errors.append(
+                            f"{path}: config_overrides.{config_key}.extra_args must be a list"
+                        )
 
     except FileNotFoundError as e:
         errors.append(f"{path}: {e}")
