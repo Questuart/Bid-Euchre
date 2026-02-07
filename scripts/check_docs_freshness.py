@@ -1,8 +1,19 @@
 #!/usr/bin/env python
-"""Docs freshness gate: validate path references and script list completeness."""
+"""Docs freshness gate: validate path references, image references, and script list completeness."""
+
 import re
 import sys
 from pathlib import Path
+
+try:
+    from PIL import Image
+
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+# 8-byte PNG file signature
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
@@ -17,7 +28,7 @@ def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
     - Wildcard patterns, Python module refs, URLs
     """
     errors = []
-    backtick_re = re.compile(r'`([a-zA-Z0-9_./\-]+/[a-zA-Z0-9_.*\-]+)`')
+    backtick_re = re.compile(r"`([a-zA-Z0-9_./\-]+/[a-zA-Z0-9_.*\-]+)`")
 
     # Directories to skip entirely (historical docs with many stale refs)
     skip_dirs = {"archive", "legacy"}
@@ -80,8 +91,70 @@ def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
                 if not (repo_root / ref).exists() and not (repo_root / ref).is_dir():
                     continue  # Probably not a file path
             if not (repo_root / ref).exists():
-                lineno = text[:match.start()].count('\n') + 1
+                lineno = text[: match.start()].count("\n") + 1
                 errors.append(f"{rel}:{lineno}: path not found: `{ref}`")
+    return errors
+
+
+def check_image_references(docs_dir: Path, repo_root: Path) -> list[str]:
+    """Find markdown image references that don't resolve or are corrupt.
+
+    Checks ``![alt](path)`` patterns in markdown files.
+
+    For .png files: validates full PNG structure using PIL (if available),
+    falling back to 8-byte signature check otherwise.
+
+    Skips:
+    - URLs (http:// / https://)
+    - Archive/legacy directories
+    """
+    errors = []
+    image_re = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+    skip_dirs = {"archive", "legacy"}
+
+    for md_file in sorted(docs_dir.rglob("*.md")):
+        if any(part in skip_dirs for part in md_file.relative_to(docs_dir).parts):
+            continue
+
+        text = md_file.read_text(encoding="utf-8")
+        rel = md_file.relative_to(repo_root)
+
+        for match in image_re.finditer(text):
+            img_path = match.group(2).strip()
+
+            # Skip URLs
+            if img_path.startswith(("http://", "https://")):
+                continue
+
+            # Resolve relative to the markdown file's parent directory
+            resolved = (md_file.parent / img_path).resolve()
+
+            lineno = text[: match.start()].count("\n") + 1
+
+            if not resolved.exists():
+                errors.append(f"{rel}:{lineno}: image not found: `{img_path}`")
+                continue
+
+            # For .png files, validate structure
+            if resolved.suffix.lower() == ".png":
+                if HAS_PIL:
+                    try:
+                        with Image.open(resolved) as img:
+                            img.verify()
+                    except Exception as exc:
+                        errors.append(
+                            f"{rel}:{lineno}: invalid PNG: `{img_path}` ({exc})"
+                        )
+                else:
+                    # Fallback: check 8-byte PNG signature
+                    with open(resolved, "rb") as f:
+                        sig = f.read(8)
+                    if sig != _PNG_SIGNATURE:
+                        errors.append(
+                            f"{rel}:{lineno}: invalid PNG signature: `{img_path}`"
+                        )
+
     return errors
 
 
@@ -110,6 +183,10 @@ def main() -> int:
     print("Checking path references in docs/...")
     path_errors = check_path_references(docs_dir, repo_root)
     all_errors.extend(path_errors)
+
+    print("Checking image references in docs/...")
+    image_errors = check_image_references(docs_dir, repo_root)
+    all_errors.extend(image_errors)
 
     print("Checking script list completeness...")
     script_errors = check_scripts_list_complete(arch_doc, scripts_dir)
