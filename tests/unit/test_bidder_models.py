@@ -11,8 +11,6 @@ import sys
 import numpy as np
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 from bid_euchre.analysis.models import SimpleOLS
 
 # Check if model files exist

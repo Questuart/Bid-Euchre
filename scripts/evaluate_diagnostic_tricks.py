@@ -19,17 +19,12 @@ Usage:
 
 import argparse
 import os
-import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# Allow running from repo root
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from bid_euchre.analysis.models import SimpleRidge  # noqa: E402
-from bid_euchre.datasets.join import join_features_outcomes  # noqa: E402
+from bid_euchre.analysis.models import SimpleRidge
+from bid_euchre.datasets.join import join_features_outcomes
 
 # Features to exclude from the feature matrix (metadata, not predictive)
 EXCLUDE_COLS = {

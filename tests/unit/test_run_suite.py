@@ -8,12 +8,8 @@ Tests aggregate_run_metrics function behavior including:
 """
 
 import json
-
-# Import the function we want to test
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 from run_suite import aggregate_run_metrics
 
 

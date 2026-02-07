@@ -7,10 +7,6 @@ Tests the summarize_sanity_results helper function that powers:
 3. --fail-on-sanity-failures gate logic
 """
 
-import sys
-
-# Import from scripts directory
-sys.path.insert(0, "scripts")
 from generate_report import summarize_sanity_results
 
 # We need to import SanityTestResult from the actual module

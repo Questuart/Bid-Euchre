@@ -96,16 +96,13 @@ TOP_FEATURES = 9      # Number of features to show in distribution grid
 
 # %%
 # Standard imports
-import sys
 from pathlib import Path
 
 import pandas as pd
 from IPython.display import display
 
-# Add src to path for local development
+# PYTHONPATH=src is set by papermill/uv run — no sys.path manipulation needed
 project_root = Path.cwd().parent.parent
-if str(project_root / "src") not in sys.path:
-    sys.path.insert(0, str(project_root / "src"))
 
 # Diagnostic utilities
 import matplotlib.pyplot as plt

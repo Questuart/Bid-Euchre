@@ -454,6 +454,38 @@ def check_experiments_without_seed(changed: list[str], repo_root: Path) -> list[
     return violations
 
 
+def check_no_sys_path_insert(changed: list[str], repo_root: Path) -> list[Violation]:
+    """Block sys.path.insert/append in active Python files.
+
+    Deprecated files under experiments/_deprecated/ are grandfathered.
+    """
+    violations: list[Violation] = []
+    for p in changed:
+        if not p.endswith(".py"):
+            continue
+        if is_under(p, "experiments/_deprecated/"):
+            continue
+        if is_under(p, "tests/"):
+            continue
+        if p == "scripts/lint_repo.py":
+            continue
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+        text = abs_path.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if "sys.path.insert" in line or "sys.path.append" in line:
+                violations.append(Violation(
+                    rule="no-sys-path-mutation",
+                    path=f"{p}:{i}",
+                    message="sys.path.insert/append is forbidden. Use PYTHONPATH=src or uv run.",
+                ))
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -477,6 +509,7 @@ def main() -> int:
     violations += check_no_global_random(changed, repo_root)
     violations += check_empty_test_functions(changed, repo_root)
     violations += check_experiments_without_seed(changed, repo_root)
+    violations += check_no_sys_path_insert(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")

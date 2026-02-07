@@ -21,9 +21,6 @@ from pathlib import Path
 
 import yaml
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from bid_euchre.experiments.config import ExperimentConfig
 
 
