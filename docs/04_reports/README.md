@@ -11,4 +11,5 @@ Each report is a point-in-time snapshot with:
 
 | Report | Date | Phase | Summary |
 |--------|------|-------|---------|
-| [phase0_bidless_20260207.md](phase0_bidless_20260207.md) | 2026-02-07 | Phase 0 (Bidless) | Data collection, policy freeze, sanity gates |
+| [phase0_bidless_20260207_r2.md](phase0_bidless_20260207_r2.md) | 2026-02-07 | Phase 0 (Bidless) | **Current** — Refactored report with chart versioning, t-test gate |
+| [phase0_bidless_20260207.md](phase0_bidless_20260207.md) | 2026-02-07 | Phase 0 (Bidless) | Original report (immutable) |

@@ -1,0 +1,83 @@
+{
+  "report": "phase0_bidless_20260207_r2.md",
+  "snapshot_id": "phase0_20260207_r2",
+  "generated": "2026-02-07T00:00:00Z",
+  "canonical_git_sha": "ea55269db4db1771a8ee7cf31ea2fce82ceeb355",
+  "seed": 42,
+  "charts": {
+    "self_play_control.png": {
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "suite": "strategy_matchup",
+      "purpose": "Run health — self-play fairness proof",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+    },
+    "hand_value_by_seat.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_health",
+      "purpose": "Run health — seat balance proof",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+    },
+    "win_rate_heatmap.png": {
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "suite": "strategy_matchup",
+      "purpose": "Strategy competitive landscape",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+    },
+    "matchup_summary.png": {
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "suite": "strategy_matchup",
+      "purpose": "Quantitative head-to-head deltas",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+    },
+    "feature_outcome_correlation.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_outcome",
+      "purpose": "Diagnostic feature signal",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+    },
+    "outcome_distributions.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_outcome",
+      "purpose": "Tricks distribution by contract",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+    },
+    "cdf.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "distribution",
+      "purpose": "Cumulative probability / tail behavior",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+    },
+    "hand_value_by_contract.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_health",
+      "purpose": "Hand evaluator calibration",
+      "command": "uv run python scripts/run_charts.py --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+    }
+  },
+  "tables": {
+    "data_inventory": {
+      "sources": [
+        "data/runs/canonical_bidless_dataset_greedy_42_20260204_221121/artifacts/canonical_summary.json",
+        "data/runs/canonical_bidless_dataset_glutton_42_20260204_222713/artifacts/canonical_summary.json",
+        "data/runs/canonical_bidless_dataset_mixed_play_42_20260204_221115/artifacts/canonical_summary.json",
+        "data/runs/canonical_bidless_outcomes_matrix_shallow_42_20260204_220920/artifacts/canonical_summary.json",
+        "data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712/artifacts/canonical_summary.json",
+        "data/runs/play_policy_gate_aggregate_20260204_221656.json"
+      ]
+    },
+    "policy_gate_aggregate": {
+      "source": "data/runs/play_policy_gate_aggregate_20260204_221656.json"
+    },
+    "policy_gate_per_scenario": {
+      "source": "data/runs/play_policy_gate_aggregate_20260204_221656.json",
+      "filter": "seed=42"
+    },
+    "sanity_tests": {
+      "source": "data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712/reports/sanity_tests/strategy_sanity.json"
+    },
+    "diagnostic_evaluation": {
+      "source": "docs/02_agent/DIAGNOSTIC_TRICKS_EVALUATION.md",
+      "repro_command": "uv run python scripts/evaluate_diagnostic_tricks.py --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 --seed 42 --output <out>"
+    }
+  }
+}
