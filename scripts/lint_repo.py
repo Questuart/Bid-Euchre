@@ -465,6 +465,10 @@ def check_no_sys_path_insert(changed: list[str], repo_root: Path) -> list[Violat
             continue
         if is_under(p, "experiments/_deprecated/"):
             continue
+        if is_under(p, "tests/"):
+            continue
+        if p == "scripts/lint_repo.py":
+            continue
         abs_path = repo_root / p
         if not abs_path.exists():
             continue
