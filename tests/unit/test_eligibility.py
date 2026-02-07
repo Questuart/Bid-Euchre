@@ -49,7 +49,17 @@ def _make_rollup(**overrides):
 
 
 def _make_canonical_summary(fail_count=0):
-    return {"fail_count": fail_count, "pass_count": 5}
+    """Create canonical summary with production nested schema."""
+    return {
+        "sanity": {
+            "fail_count": fail_count,
+            "pass_count": 5,
+            "warn_count": 0,
+            "skip_count": 0,
+            "failing_tests": [],
+            "all_passed": fail_count == 0
+        }
+    }
 
 
 def _make_notebook_gate(gate_status="PASS", total=3, passed=3, failed=0):
@@ -104,7 +114,7 @@ class TestCheckCanonicalSummaries:
     def test_all_clean(self, tmp_path):
         rollup = _make_rollup()
         for config in rollup["configs"]:
-            run_dir = tmp_path / config["run_dir"] / "reports"
+            run_dir = tmp_path / config["run_dir"] / "artifacts"
             run_dir.mkdir(parents=True)
             with (run_dir / "canonical_summary.json").open("w") as f:
                 json.dump(_make_canonical_summary(fail_count=0), f)
@@ -115,7 +125,7 @@ class TestCheckCanonicalSummaries:
     def test_fail_count_nonzero(self, tmp_path):
         rollup = _make_rollup()
         for i, config in enumerate(rollup["configs"]):
-            run_dir = tmp_path / config["run_dir"] / "reports"
+            run_dir = tmp_path / config["run_dir"] / "artifacts"
             run_dir.mkdir(parents=True)
             fc = 1 if i == 0 else 0
             with (run_dir / "canonical_summary.json").open("w") as f:
@@ -127,14 +137,53 @@ class TestCheckCanonicalSummaries:
 
     def test_missing_canonical_summary(self, tmp_path):
         rollup = _make_rollup()
-        # Don't create any summary files
+        # Don't create any summary files (neither artifacts/ nor reports/)
         for config in rollup["configs"]:
-            run_dir = tmp_path / config["run_dir"] / "reports"
+            run_dir = tmp_path / config["run_dir"]
             run_dir.mkdir(parents=True)
 
         result = check_canonical_summaries(rollup, str(tmp_path))
         assert result.status == "FAIL"
         assert "missing" in result.detail
+
+    def test_legacy_flat_schema(self, tmp_path):
+        """Test backward compatibility with old flat fail_count schema."""
+        rollup = _make_rollup()
+        # Use only first config for simplicity
+        rollup["configs"] = rollup["configs"][:1]
+
+        run_dir = tmp_path / rollup["configs"][0]["run_dir"] / "artifacts"
+        run_dir.mkdir(parents=True)
+        summary_path = run_dir / "canonical_summary.json"
+        # Legacy flat schema (no nested sanity object)
+        summary_path.write_text(json.dumps({"fail_count": 0, "pass_count": 5}))
+
+        result = check_canonical_summaries(rollup, str(tmp_path))
+        assert result.status == "PASS"
+
+    def test_legacy_path_fallback(self, tmp_path):
+        """Test backward compatibility with old reports/ path."""
+        rollup = _make_rollup()
+        rollup["configs"] = rollup["configs"][:1]
+
+        # Create file in old reports/ location (not artifacts/)
+        run_dir = tmp_path / rollup["configs"][0]["run_dir"] / "reports"
+        run_dir.mkdir(parents=True)
+        summary_path = run_dir / "canonical_summary.json"
+        summary_path.write_text(json.dumps({
+            "sanity": {
+                "fail_count": 0,
+                "pass_count": 5,
+                "warn_count": 0,
+                "skip_count": 0,
+                "failing_tests": [],
+                "all_passed": True
+            }
+        }))
+
+        # Should find file in legacy reports/ location
+        result = check_canonical_summaries(rollup, str(tmp_path))
+        assert result.status == "PASS"
 
 
 class TestCheckNotebookGate:
@@ -202,7 +251,7 @@ class TestComputeEligibility:
         rollup = _make_rollup()
         # Create canonical summaries
         for config in rollup["configs"]:
-            run_dir = tmp_path / config["run_dir"] / "reports"
+            run_dir = tmp_path / config["run_dir"] / "artifacts"
             run_dir.mkdir(parents=True)
             with (run_dir / "canonical_summary.json").open("w") as f:
                 json.dump(_make_canonical_summary(fail_count=0), f)
@@ -221,9 +270,9 @@ class TestComputeEligibility:
 
     def test_any_fail_ineligible(self, tmp_path):
         rollup = _make_rollup()
-        # Missing canonical summaries will cause FAIL
+        # Missing canonical summaries will cause FAIL (neither artifacts/ nor reports/)
         for config in rollup["configs"]:
-            run_dir = tmp_path / config["run_dir"] / "reports"
+            run_dir = tmp_path / config["run_dir"]
             run_dir.mkdir(parents=True)
 
         gate = compute_eligibility(
@@ -234,7 +283,7 @@ class TestComputeEligibility:
     def test_gate_to_dict(self, tmp_path):
         rollup = _make_rollup()
         for config in rollup["configs"]:
-            run_dir = tmp_path / config["run_dir"] / "reports"
+            run_dir = tmp_path / config["run_dir"] / "artifacts"
             run_dir.mkdir(parents=True)
             with (run_dir / "canonical_summary.json").open("w") as f:
                 json.dump(_make_canonical_summary(fail_count=0), f)
@@ -253,3 +302,77 @@ class TestComputeEligibility:
         assert "reasons" in d
         assert isinstance(d["reasons"], list)
         assert all("rule" in r and "status" in r and "detail" in r for r in d["reasons"])
+
+
+def test_eligibility_with_realistic_artifacts(tmp_path):
+    """Integration-like test with realistic run directory structure using new schema."""
+    # Setup: Create realistic run directory matching production
+    run_id = "test_run_42_20260206_120000"
+    run_dir_path = tmp_path / run_id
+    artifacts_dir = run_dir_path / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    # Create canonical_summary.json with production schema (nested sanity object)
+    summary_path = artifacts_dir / "canonical_summary.json"
+    summary_data = {
+        "run_id": run_id,
+        "experiment_name": "test_run",
+        "seed": 42,
+        "n_per": 100,
+        "git_sha": "abc123",
+        "total_hands": 600,
+        "sanity": {
+            "pass_count": 5,
+            "warn_count": 0,
+            "fail_count": 0,
+            "skip_count": 0,
+            "failing_tests": [],
+            "all_passed": True
+        },
+        "discovered": {
+            "results_files": ["results_high_2_pairs.jsonl"],
+            "datasets_present": False,
+            "bidless_parquet": False,
+            "bidless_outcomes_parquet": False
+        },
+        "generated_at_utc": "2026-02-06T12:00:00Z"
+    }
+    summary_path.write_text(json.dumps(summary_data, indent=2))
+
+    # Create rollup dict (not meta.json - use rollup directly)
+    rollup = {
+        "schema_version": 1,
+        "suite_name": "test_suite",
+        "suite_seed": 42,
+        "suite_n_per": 100,
+        "created_at_utc": "2026-02-06T12:00:00Z",
+        "configs": [
+            {
+                "config_path": "experiments/configs/test.yaml",
+                "run_id": run_id,
+                "run_dir": run_id,
+                "status": "ok",
+                "git_sha": "abc123",
+            }
+        ],
+        "summary": [],
+        "batch": {
+            "batch_id": "test_batch_001",
+            "batch_purpose": "promotion",
+        },
+    }
+
+    # Test: Compute eligibility (no notebook gate for simplicity)
+    gate = compute_eligibility(
+        rollup=rollup,
+        run_base_dir=str(tmp_path),
+        batch_purpose="promotion",
+        notebook_gate_path=None,  # Omit gate, should FAIL for promotion
+    )
+
+    # Assert: Should fail (promotion requires notebook gate)
+    assert gate.eligible is False
+    gate_reasons = {r.rule: r for r in gate.reasons}
+    assert gate_reasons["notebook_gate"].status == "FAIL"
+    # But canonical summary check should PASS with new artifacts/ path
+    assert gate_reasons["canonical_summary_clean"].status == "PASS"

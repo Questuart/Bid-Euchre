@@ -274,3 +274,70 @@ class TestValidateSuiteWithBatch:
         )
         errors = validate_suite_file(suite_yaml)
         assert errors == []
+
+    def test_config_override_invalid_key(self, tmp_path):
+        """Test validation fails when override key doesn't match any config."""
+        suite_path = tmp_path / "suite.yaml"
+        config_path = tmp_path / "quick_test.yaml"
+        config_path.write_text("strategies: []\nparameters: {}")
+
+        suite_path.write_text(
+            "suite_name: test\n"
+            "configs:\n"
+            "  - quick_test.yaml\n"
+            "parameters: {}\n"
+            "batch:\n"
+            "  batch_purpose: promotion\n"
+            "config_overrides:\n"
+            "  nonexistent.yaml:\n"  # Does not match quick_test.yaml
+            "    batch_role: dataset\n"
+        )
+
+        # validate_suite_file returns list[str] of errors, does NOT raise
+        errors = validate_suite_file(suite_path)
+        assert len(errors) > 0
+        assert any("does not match any config" in err for err in errors)
+
+    def test_extra_args_non_string_element(self, tmp_path):
+        """Test validation fails when extra_args contains non-string."""
+        suite_path = tmp_path / "suite.yaml"
+        config_path = tmp_path / "quick_test.yaml"
+        config_path.write_text("strategies: []\nparameters: {}")
+
+        suite_path.write_text(
+            "suite_name: test\n"
+            "configs:\n"
+            "  - quick_test.yaml\n"
+            "parameters: {}\n"
+            "batch:\n"
+            "  batch_purpose: promotion\n"
+            "config_overrides:\n"
+            "  quick_test.yaml:\n"
+            "    extra_args: [42, '--flag']\n"  # 42 is not a string
+        )
+
+        errors = validate_suite_file(suite_path)
+        assert len(errors) > 0
+        assert any("must be a string" in err for err in errors)
+
+    def test_config_override_valid(self, tmp_path):
+        """Test validation passes with valid override."""
+        suite_path = tmp_path / "suite.yaml"
+        config_path = tmp_path / "quick_test.yaml"
+        config_path.write_text("strategies: []\nparameters: {}")
+
+        suite_path.write_text(
+            "suite_name: test\n"
+            "configs:\n"
+            "  - quick_test.yaml\n"
+            "parameters: {}\n"
+            "batch:\n"
+            "  batch_purpose: exploration\n"
+            "config_overrides:\n"
+            "  quick_test.yaml:\n"
+            "    batch_role: dataset\n"
+            "    extra_args: ['--some-flag', '--another-flag']\n"
+        )
+
+        errors = validate_suite_file(suite_path)
+        assert len(errors) == 0  # Should return empty error list

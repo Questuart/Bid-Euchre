@@ -104,14 +104,30 @@ def check_canonical_summaries(
         if config.get("status") != "ok":
             continue
         run_dir = config.get("run_dir", "")
-        summary_path = base / run_dir / "reports" / "canonical_summary.json"
+
+        # Try artifacts/ first (canonical path), then reports/ (legacy fallback)
+        summary_path = base / run_dir / "artifacts" / "canonical_summary.json"
         if not summary_path.exists():
-            failures.append(f"{run_dir}: missing canonical_summary.json")
-            continue
+            legacy_path = base / run_dir / "reports" / "canonical_summary.json"
+            if legacy_path.exists():
+                summary_path = legacy_path
+            else:
+                failures.append(
+                    f"{run_dir}: missing canonical_summary.json "
+                    f"(tried artifacts/ and reports/)"
+                )
+                continue
+
         try:
             with summary_path.open() as f:
                 summary = json.load(f)
-            fail_count = summary.get("fail_count", -1)
+
+            # Try nested schema first (production), then flat schema (legacy)
+            fail_count = summary.get("sanity", {}).get("fail_count")
+            if fail_count is None:
+                # Legacy flat schema
+                fail_count = summary.get("fail_count", -1)
+
             if fail_count != 0:
                 failures.append(f"{run_dir}: fail_count={fail_count}")
         except (json.JSONDecodeError, KeyError) as e:
