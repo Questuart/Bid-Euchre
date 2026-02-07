@@ -161,6 +161,7 @@ def train_olsa(run_dir, seed):
             "git_sha": git_sha,
             "training_timestamp": datetime.now(timezone.utc).isoformat(),
             "training_metrics": training_metrics,
+            "frozen_at": None,  # Set by freeze workflow
         },
     }
 

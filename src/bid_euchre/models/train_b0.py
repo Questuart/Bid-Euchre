@@ -100,6 +100,7 @@ class B0Model:
                 "description": "B0 hand value regression model (Arc B Stage 0)",
                 "training_seed": seed,
                 "n_features": len(self.feature_names),
+                "frozen_at": None,  # Set by freeze workflow
             },
         }
 
