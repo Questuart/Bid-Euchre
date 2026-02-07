@@ -119,6 +119,15 @@ def _load_matchup_results(run_dir: Path) -> dict:
         if all_tricks_t0:
             result["tricks_team0"] = all_tricks_t0
 
+        # Per-scenario breakdown (backward-compatible extension)
+        scenario_data = {}
+        for sf in scenario_files:
+            scenario_name = sf.stem  # e.g., "suit_C", "high", "low"
+            with open(sf) as f:
+                sdata = json.load(f)
+            scenario_data[scenario_name] = sdata
+        result["scenarios"] = scenario_data
+
         matchup_results[(team0, team1)] = result
 
     return matchup_results
