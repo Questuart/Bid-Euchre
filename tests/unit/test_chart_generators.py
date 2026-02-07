@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from bid_euchre.reporting.charts import (
+    generate_contract_faceted_charts,
     generate_distribution_charts,
     generate_feature_health_charts,
     generate_feature_outcome_charts,
@@ -22,15 +23,17 @@ def feature_df():
     """Minimal DataFrame with hand features."""
     rng = np.random.RandomState(42)
     n = 200
-    return pd.DataFrame({
-        "hand_value": rng.uniform(0, 10, n),
-        "seat": np.tile([0, 1, 2, 3], n // 4),
-        "contract_type": np.tile(["suit", "high"], n // 2),
-        "trump_count": rng.randint(0, 6, n),
-        "bowers": rng.randint(0, 3, n),
-        "offsuit_aces": rng.randint(0, 5, n),
-        "offsuit_tens_count": rng.randint(0, 5, n),
-    })
+    return pd.DataFrame(
+        {
+            "hand_value": rng.uniform(0, 10, n),
+            "seat": np.tile([0, 1, 2, 3], n // 4),
+            "contract_type": np.tile(["suit", "high"], n // 2),
+            "trump_count": rng.randint(0, 6, n),
+            "bowers": rng.randint(0, 3, n),
+            "offsuit_aces": rng.randint(0, 5, n),
+            "offsuit_tens_count": rng.randint(0, 5, n),
+        }
+    )
 
 
 @pytest.fixture
@@ -132,7 +135,9 @@ class TestStrategyMatchupCharts:
     def test_includes_delta_bars_and_self_play(self, matchup_results):
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = generate_strategy_matchup_charts(
-                matchup_results, tmpdir, baseline_name="random",
+                matchup_results,
+                tmpdir,
+                baseline_name="random",
             )
             names = [Path(p).stem for p in paths]
             assert "win_rate_heatmap" in names
@@ -157,13 +162,69 @@ class TestStrategyMatchupCharts:
             assert "self_play_control" not in names
 
 
+@pytest.fixture
+def feature_outcome_with_trump_df(feature_outcome_df):
+    """DataFrame with features, outcomes, and trump_suit column."""
+    df = feature_outcome_df.copy()
+    rng = np.random.RandomState(42)
+    suits = ["C", "D", "H", "S", None]  # None for no-trump contracts
+    df["trump_suit"] = rng.choice(suits, len(df))
+    return df
+
+
+class TestContractFacetedCharts:
+    """Test contract-faceted chart generation."""
+
+    def test_generates_pngs_with_full_data(self, feature_outcome_with_trump_df):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_contract_faceted_charts(
+                feature_outcome_with_trump_df, tmpdir
+            )
+            assert len(paths) >= 2
+            for p in paths:
+                assert Path(p).exists()
+                assert p.endswith(".png")
+
+    def test_skips_when_no_trump_data(self):
+        """Handles DataFrames with no trump suit info."""
+        df = pd.DataFrame(
+            {
+                "hand_value": [5.0, 6.0, 7.0],
+                "contract_type": ["high", "high", "low"],
+                "tricks_won": [5, 6, 4],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Should not crash; trump-dependent charts may be skipped or show placeholder
+            paths = generate_contract_faceted_charts(df, tmpdir)
+            # Some charts may still be generated (outcome_by_trump shows placeholder)
+            # Key assertion: no crash
+            assert isinstance(paths, list)
+
+    def test_file_sizes_reasonable(self, feature_outcome_with_trump_df):
+        """Generated PNGs should not be tiny placeholders."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_contract_faceted_charts(
+                feature_outcome_with_trump_df, tmpdir
+            )
+            for p in paths:
+                size = Path(p).stat().st_size
+                assert size > 1024, f"{p} is suspiciously small ({size} bytes)"
+
+    def test_contract_faceted_in_available_suites(self):
+        from bid_euchre.reporting.chart_runner import AVAILABLE_SUITES
+
+        assert "contract_faceted" in AVAILABLE_SUITES
+
+
 class TestChartRunnerCLI:
     """Smoke tests for the chart_runner CLI."""
 
     def test_help_flag(self):
         result = subprocess.run(
             [sys.executable, "-m", "bid_euchre.reporting.chart_runner", "--help"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "--run-dir" in result.stdout
@@ -172,10 +233,15 @@ class TestChartRunnerCLI:
     def test_missing_run_dir(self):
         result = subprocess.run(
             [
-                sys.executable, "-m", "bid_euchre.reporting.chart_runner",
-                "--run-dir", "/nonexistent/path",
-                "--output-dir", "/tmp/test_charts",
+                sys.executable,
+                "-m",
+                "bid_euchre.reporting.chart_runner",
+                "--run-dir",
+                "/nonexistent/path",
+                "--output-dir",
+                "/tmp/test_charts",
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 1
