@@ -21,10 +21,33 @@ load_or_generate_features() will pick up the injected MODE automatically.
 
 import argparse
 import glob
+import json
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+# Frozen schema contract for notebook_gate.json v1
+NOTEBOOK_GATE_SCHEMA_VERSION = 1
+
+NOTEBOOK_GATE_REQUIRED_FIELDS = {
+    "schema_version",
+    "gate_status",
+    "created_at_utc",
+    "mode",
+    "total",
+    "passed",
+    "failed",
+    "notebooks",
+}
+
+NOTEBOOK_RESULT_REQUIRED_FIELDS = {
+    "name",
+    "status",
+    "duration_seconds",
+    "message",
+}
 
 
 def discover_notebooks(pattern: str = "notebooks/phase0_bidless/*.ipynb") -> list[Path]:
@@ -91,6 +114,60 @@ def execute_notebook(
         return False, str(e)[:200], duration
 
 
+def build_gate_artifact(results: list[tuple], mode: str) -> dict:
+    """Build notebook gate JSON from execution results.
+
+    Args:
+        results: List of (name, success, message, duration) tuples
+        mode: Execution mode ("smoke" or "quick")
+
+    Returns:
+        Gate artifact dict conforming to NOTEBOOK_GATE_SCHEMA_VERSION 1
+    """
+    passed = sum(1 for _, success, _, _ in results if success)
+    failed = len(results) - passed
+    return {
+        "schema_version": NOTEBOOK_GATE_SCHEMA_VERSION,
+        "gate_status": "PASS" if failed == 0 else "FAIL",
+        "created_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "mode": mode,
+        "total": len(results),
+        "passed": passed,
+        "failed": failed,
+        "notebooks": [
+            {
+                "name": name,
+                "status": "PASS" if success else "FAIL",
+                "duration_seconds": round(duration, 2),
+                "message": message,
+            }
+            for name, success, message, duration in results
+        ],
+    }
+
+
+def build_gate_markdown(gate: dict) -> str:
+    """Build NOTEBOOK_GATE.md from gate artifact dict."""
+    lines = [
+        f"# Notebook Gate: {gate['gate_status']}",
+        "",
+        f"**Mode**: {gate['mode']}",
+        f"**Total**: {gate['total']} | **Passed**: {gate['passed']} | **Failed**: {gate['failed']}",
+        f"**Created**: {gate['created_at_utc']}",
+        "",
+        "## Results",
+        "",
+        "| Notebook | Status | Duration (s) | Message |",
+        "|----------|--------|-------------:|---------|",
+    ]
+    for nb in gate["notebooks"]:
+        lines.append(
+            f"| {nb['name']} | {nb['status']} | {nb['duration_seconds']:.2f} | {nb['message']} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Execute notebooks for validation",
@@ -112,6 +189,11 @@ def main():
         "--keep-outputs",
         action="store_true",
         help="Keep executed notebook outputs (default: use temp dir)",
+    )
+    parser.add_argument(
+        "--gate-output-dir",
+        default=None,
+        help="Directory for gate artifacts (notebook_gate.json + NOTEBOOK_GATE.md)",
     )
     args = parser.parse_args()
 
@@ -170,6 +252,17 @@ def main():
         print(f"Output notebooks: {output_dir} (temp)")
     else:
         print(f"Output notebooks: {output_dir}")
+
+    # Emit gate artifacts if requested
+    if args.gate_output_dir:
+        gate_dir = Path(args.gate_output_dir)
+        gate_dir.mkdir(parents=True, exist_ok=True)
+        gate = build_gate_artifact(results, args.mode)
+        with open(gate_dir / "notebook_gate.json", "w") as f:
+            json.dump(gate, f, indent=2, sort_keys=True)
+        with open(gate_dir / "NOTEBOOK_GATE.md", "w") as f:
+            f.write(build_gate_markdown(gate))
+        print(f"Gate artifacts: {gate_dir}/")
 
     # Exit with error if any failed
     sys.exit(0 if failed == 0 else 1)
