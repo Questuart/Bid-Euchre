@@ -35,14 +35,11 @@ Structure:
 ### `scripts/`
 **Blessed tooling entrypoints.**
 
-Current scripts:
+Canonical scripts:
 - `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
 - `compare_runs.py` — Run comparison utility with bootstrap statistics
-- `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `generate_report.py` — Per-run report generator
 - `lint_repo.py` — Repository linter (enforces boundaries and data policy)
-- `play_policy_gate.py` — Play policy stability gate
-- `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_bidless_diagnostics.py` — Bidless feature dataset diagnostics
 - `run_notebooks.py` — Notebook execution via papermill (CI tooling)
 - `run_suite.py` — Suite runner (batches experiments with rollup generation)
@@ -50,6 +47,15 @@ Current scripts:
 - `train_bidder.py` — Bidder model training
 - `validate_configs.py` — Config validation utility
 - `validate_teacher_roster.py` — Teacher roster validation
+
+### `scripts/internal/`
+**Research and internal tooling.** Not part of the canonical workflow.
+
+- `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
+- `play_policy_gate.py` — Play policy stability gate
+- `run_auction_comparator.py` — Auction comparator orchestrator
+
+Deprecation wrappers at old paths (`scripts/*.py`) forward to `scripts/internal/` with a warning.
 
 ### `tests/`
 **Test suite only.**
@@ -153,13 +159,18 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/validate_configs.py` | Config validation |
 | `scripts/validate_teacher_roster.py` | Teacher roster validation |
 
-### Research/internal tooling
+### Internal tooling (`scripts/internal/`)
 
 | Command | Purpose |
 |---------|---------|
-| `scripts/run_auction_comparator.py` | Auction comparator orchestrator |
-| `scripts/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
-| `scripts/play_policy_gate.py` | Play policy stability gate |
+| `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
+| `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
+| `scripts/internal/play_policy_gate.py` | Play policy stability gate |
+
+### Research tooling (canonical path)
+
+| Command | Purpose |
+|---------|---------|
 | `scripts/run_bidless_diagnostics.py` | Bidless diagnostics |
 | `scripts/train_bidder.py` | Bidder model training |
 
