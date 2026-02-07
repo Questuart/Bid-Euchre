@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from scripts.lint_repo import (
+    _has_model_artifact_schema,
     _is_gate_artifact,
     _is_model_artifact,
     _is_split_manifest,
@@ -85,7 +86,8 @@ class TestCheckArtifactsRequireFreeze:
             "data/models/olsa_v1.json",
             {
                 "frozen_at": "2026-01-15T00:00:00Z",
-                "version": "1.0",
+                "artifact_sha256": "abc123def456",
+                "artifact_type": "olsa_v1",
             },
         )
         violations = check_artifacts_require_freeze(
@@ -100,7 +102,7 @@ class TestCheckArtifactsRequireFreeze:
             "data/models/olsa_v1.json",
             {
                 "frozen_at": None,
-                "version": "1.0",
+                "artifact_type": "olsa_v1",
             },
         )
         violations = check_artifacts_require_freeze(
@@ -116,7 +118,8 @@ class TestCheckArtifactsRequireFreeze:
             tmp_path,
             "data/models/b0_weights.json",
             {
-                "version": "1.0",
+                "artifact_type": "b0_v1",
+                "models": {},
             },
         )
         violations = check_artifacts_require_freeze(
@@ -125,6 +128,7 @@ class TestCheckArtifactsRequireFreeze:
         )
         assert len(violations) == 1
         assert violations[0].rule == "artifact-requires-freeze"
+        assert "frozen_at is null" in violations[0].message
 
     def test_exempt_files_pass(self, tmp_path: Path):
         _write_json(tmp_path, "data/runs/abc/meta.json", {"some": "data"})
@@ -167,13 +171,16 @@ class TestCheckArtifactsRequireFreeze:
             "data/models/olsa_frozen.json",
             {
                 "frozen_at": "2026-01-15T00:00:00Z",
+                "artifact_sha256": "abc123",
+                "artifact_type": "olsa_v1",
             },
         )
         _write_json(
             tmp_path,
             "data/models/b0_unfrozen.json",
             {
-                "version": "1.0",
+                "artifact_type": "b0_v1",
+                "frozen_at": None,
             },
         )
         violations = check_artifacts_require_freeze(
@@ -440,3 +447,221 @@ class TestCheckSplitManifestSchema:
             tmp_path,
         )
         assert violations == []
+
+
+# -- _has_model_artifact_schema tests -----------------------------------------
+
+
+class TestHasModelArtifactSchema:
+    """Tests for the _has_model_artifact_schema helper."""
+
+    def test_artifact_type_key(self):
+        assert _has_model_artifact_schema({"artifact_type": "olsa_v1"}) is True
+
+    def test_frozen_at_key_null(self):
+        assert _has_model_artifact_schema({"frozen_at": None}) is True
+
+    def test_frozen_at_key_set(self):
+        assert _has_model_artifact_schema({"frozen_at": "2026-01-15T00:00:00Z"}) is True
+
+    def test_models_and_metadata_keys(self):
+        assert _has_model_artifact_schema({"models": {}, "metadata": {}}) is True
+
+    def test_unrelated_config_json(self):
+        assert (
+            _has_model_artifact_schema({"learning_rate": 0.01, "epochs": 10}) is False
+        )
+
+    def test_empty_dict(self):
+        assert _has_model_artifact_schema({}) is False
+
+    def test_version_only(self):
+        assert _has_model_artifact_schema({"version": "1.0"}) is False
+
+
+# -- Non-dict JSON root tests (Fix 1) ----------------------------------------
+
+
+class TestNonDictJsonRoots:
+    """Verify all three lint rules handle non-dict JSON roots without crashing."""
+
+    def test_artifact_json_array_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/models/olsa_v1.json", [1, 2, 3])
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "artifact-requires-freeze"
+        assert "must be an object" in violations[0].message
+        assert "list" in violations[0].message
+
+    def test_artifact_json_string_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/models/olsa_v1.json", "just a string")
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert "must be an object" in violations[0].message
+        assert "str" in violations[0].message
+
+    def test_artifact_json_number_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/models/olsa_v1.json", 42)
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert "must be an object" in violations[0].message
+        assert "int" in violations[0].message
+
+    def test_gate_json_array_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/runs/abc/notebook_gate.json", [1, 2])
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/notebook_gate.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "gate-artifact-schema"
+        assert "must be an object" in violations[0].message
+
+    def test_gate_json_string_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/runs/abc/notebook_gate.json", "hello")
+        violations = check_gate_artifacts_schema(
+            ["data/runs/abc/notebook_gate.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert "must be an object" in violations[0].message
+
+    def test_split_json_array_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/runs/abc/split_manifest.json", [1, 2])
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "split-manifest-schema"
+        assert "must be an object" in violations[0].message
+
+    def test_split_json_number_root(self, tmp_path: Path):
+        _write_json(tmp_path, "data/runs/abc/split_manifest.json", 3.14)
+        violations = check_split_manifest_schema(
+            ["data/runs/abc/split_manifest.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert "must be an object" in violations[0].message
+
+
+# -- Schema confirmation tests (Fix 2) ----------------------------------------
+
+
+class TestSchemaConfirmation:
+    """Verify that schema confirmation prevents false positives."""
+
+    def test_config_with_olsa_in_name_not_flagged(self, tmp_path: Path):
+        """JSON with 'olsa' in filename but no artifact schema is skipped."""
+        _write_json(
+            tmp_path,
+            "data/configs/olsa_config.json",
+            {"learning_rate": 0.01, "batch_size": 32},
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/configs/olsa_config.json"], tmp_path
+        )
+        assert violations == []
+
+    def test_real_olsa_artifact_detected(self, tmp_path: Path):
+        """Realistic OLSa artifact (with artifact_type) is detected and flagged."""
+        _write_json(
+            tmp_path,
+            "data/models/olsa_v1.json",
+            {
+                "schema_version": "1",
+                "artifact_type": "olsa_v1",
+                "frozen_at": None,
+                "models": {"suit": {"weights": [1.0], "bias": 0.5}},
+                "metadata": {"training_seed": 42},
+            },
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "artifact-requires-freeze"
+
+    def test_b0_name_no_schema_skipped(self, tmp_path: Path):
+        """File named b0_*.json but without artifact schema is not flagged."""
+        _write_json(
+            tmp_path,
+            "data/logs/b0_experiment_log.json",
+            {"timestamp": "2026-01-15", "events": []},
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/logs/b0_experiment_log.json"], tmp_path
+        )
+        assert violations == []
+
+    def test_teacher_name_no_schema_skipped(self, tmp_path: Path):
+        """File named teacher_*.json but without artifact schema is not flagged."""
+        _write_json(
+            tmp_path,
+            "data/reports/teacher_eval_report.json",
+            {"accuracy": 0.95, "loss": 0.1},
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/reports/teacher_eval_report.json"], tmp_path
+        )
+        assert violations == []
+
+
+# -- artifact_sha256 alignment tests (Fix 3) -----------------------------------
+
+
+class TestArtifactSha256Check:
+    """Verify freeze check requires both frozen_at and artifact_sha256."""
+
+    def test_frozen_at_set_but_no_sha256_flagged(self, tmp_path: Path):
+        """Artifact with frozen_at but missing artifact_sha256 is flagged."""
+        _write_json(
+            tmp_path,
+            "data/models/olsa_v1.json",
+            {
+                "artifact_type": "olsa_v1",
+                "frozen_at": "2026-01-15T00:00:00Z",
+            },
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "artifact-requires-freeze"
+        assert "artifact_sha256" in violations[0].message
+
+    def test_both_fields_set_passes(self, tmp_path: Path):
+        """Artifact with both frozen_at and artifact_sha256 passes."""
+        _write_json(
+            tmp_path,
+            "data/models/olsa_v1.json",
+            {
+                "artifact_type": "olsa_v1",
+                "frozen_at": "2026-01-15T00:00:00Z",
+                "artifact_sha256": "abc123def456",
+            },
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert violations == []
+
+    def test_sha256_null_flagged(self, tmp_path: Path):
+        """Artifact with artifact_sha256=null is flagged."""
+        _write_json(
+            tmp_path,
+            "data/models/olsa_v1.json",
+            {
+                "artifact_type": "olsa_v1",
+                "frozen_at": "2026-01-15T00:00:00Z",
+                "artifact_sha256": None,
+            },
+        )
+        violations = check_artifacts_require_freeze(
+            ["data/models/olsa_v1.json"], tmp_path
+        )
+        assert len(violations) == 1
+        assert "artifact_sha256" in violations[0].message
