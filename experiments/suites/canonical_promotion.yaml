@@ -1,0 +1,29 @@
+# Canonical Promotion Suite
+# Batch template for promoting experiment runs to canonical status.
+# Used by: scripts/run_suite.py --batch-purpose promotion
+
+suite_name: canonical_promotion
+batch_purpose: promotion
+
+parameters:
+  seed: 42
+  n_per: 50000
+  log_level: none
+
+configs:
+  - experiments/configs/canonical_bidless_dataset_greedy.yaml
+  - experiments/configs/canonical_bidless_dataset_glutton.yaml
+  - experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml
+  - experiments/configs/canonical_bidless_outcomes_zoom.yaml
+
+batch_roles:
+  canonical_bidless_dataset_greedy.yaml: dataset_greedy
+  canonical_bidless_dataset_glutton.yaml: dataset_glutton
+  canonical_bidless_outcomes_matrix_shallow.yaml: outcomes_shallow
+  canonical_bidless_outcomes_zoom.yaml: outcomes_zoom
+
+run_flags:
+  canonical_bidless_dataset_greedy.yaml:
+    extra_args: ["--emit-bidless-dataset", "--emit-bidless-outcomes-dataset"]
+  canonical_bidless_dataset_glutton.yaml:
+    extra_args: ["--emit-bidless-dataset", "--emit-bidless-outcomes-dataset"]

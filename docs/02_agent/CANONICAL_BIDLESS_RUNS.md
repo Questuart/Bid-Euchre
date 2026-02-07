@@ -81,3 +81,7 @@ A run is eligible for promotion when:
 ## Related Reports
 
 - [Phase 0 Bidless Report](../04_reports/phase0_bidless_20260207.md) — Consolidated findings with embedded charts and provenance
+
+## Batch Promotion Workflow
+
+For the automated batch promotion workflow, see [PROMOTION_WORKFLOW.md](PROMOTION_WORKFLOW.md).

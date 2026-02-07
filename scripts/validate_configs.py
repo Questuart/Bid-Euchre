@@ -107,6 +107,45 @@ def validate_suite_file(path: Path) -> list[str]:
             if not isinstance(data["parameters"], dict):
                 errors.append(f"{path}: 'parameters' must be a dict")
 
+        # Validate batch-specific fields (optional, backward compat)
+        if "batch_purpose" in data:
+            valid_purposes = {"promotion", "regression", "exploration"}
+            if data["batch_purpose"] not in valid_purposes:
+                errors.append(
+                    f"{path}: batch_purpose must be one of {valid_purposes}, "
+                    f"got '{data['batch_purpose']}'"
+                )
+
+        if "batch_roles" in data:
+            if not isinstance(data["batch_roles"], dict):
+                errors.append(f"{path}: 'batch_roles' must be a dict")
+            elif isinstance(data.get("configs"), list):
+                config_filenames = {Path(c).name for c in data["configs"]}
+                for key in data["batch_roles"]:
+                    if key not in config_filenames:
+                        errors.append(
+                            f"{path}: batch_roles key '{key}' "
+                            f"not found in configs list"
+                        )
+
+        if "run_flags" in data:
+            if not isinstance(data["run_flags"], dict):
+                errors.append(f"{path}: 'run_flags' must be a dict")
+            elif isinstance(data.get("configs"), list):
+                config_filenames = {Path(c).name for c in data["configs"]}
+                for key, flags in data["run_flags"].items():
+                    if key not in config_filenames:
+                        errors.append(
+                            f"{path}: run_flags key '{key}' "
+                            f"not found in configs list"
+                        )
+                    if isinstance(flags, dict) and "extra_args" in flags:
+                        if not isinstance(flags["extra_args"], list):
+                            errors.append(
+                                f"{path}: run_flags['{key}'].extra_args "
+                                f"must be a list"
+                            )
+
     except FileNotFoundError as e:
         errors.append(f"{path}: {e}")
     except yaml.YAMLError as e:
