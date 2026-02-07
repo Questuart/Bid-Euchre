@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import os
 import subprocess
 from dataclasses import dataclass
@@ -46,7 +47,9 @@ def run_git(*args: str) -> str:
 
 def ensure_ref_exists(ref: str) -> None:
     try:
-        subprocess.check_output(["git", "rev-parse", "--verify", ref], stderr=subprocess.DEVNULL)
+        subprocess.check_output(
+            ["git", "rev-parse", "--verify", ref], stderr=subprocess.DEVNULL
+        )
     except Exception:
         raise SystemExit(
             f"ERROR: git ref '{ref}' not found. "
@@ -108,7 +111,9 @@ def _imports_from_tree(tree: ast.AST) -> set[str]:
     return mods
 
 
-def check_src_no_experiments_or_tests_imports(changed: list[str], repo_root: Path) -> list[Violation]:
+def check_src_no_experiments_or_tests_imports(
+    changed: list[str], repo_root: Path
+) -> list[Violation]:
     violations: list[Violation] = []
     for p in changed:
         if not (p.startswith("src/") and p.endswith(".py")):
@@ -157,19 +162,19 @@ def check_no_deprecated_changes(changed: list[str]) -> list[Violation]:
             # Allow README updates (documenting deprecations)
             if p.endswith("README.md"):
                 continue
-            
+
             # Check if this is a new file (added, not modified)
             # Git shows renames as additions, which is what we want
             status = subprocess.run(
                 ["git", "diff", "--name-status", "origin/main...HEAD", "--", p],
                 capture_output=True,
-                text=True
+                text=True,
             ).stdout.strip()
-            
+
             # Allow additions (A) and renames (R) into _deprecated
             if status.startswith(("A", "R")):
                 continue
-            
+
             # Block modifications (M) to existing deprecated files
             violations.append(
                 Violation(
@@ -181,7 +186,9 @@ def check_no_deprecated_changes(changed: list[str]) -> list[Violation]:
     return violations
 
 
-def check_data_fixtures_allowlist(changed: list[str], repo_root: Path) -> list[Violation]:
+def check_data_fixtures_allowlist(
+    changed: list[str], repo_root: Path
+) -> list[Violation]:
     """
     Enforce that only data/fixtures/** and data/.gitkeep may be committed under data/.
     Also enforce 100KB size limit on fixtures.
@@ -228,7 +235,7 @@ def check_no_new_scripts_in_frozen_folders(changed: list[str]) -> list[Violation
     """
     Block new Python scripts in experiments/comparisons/ and experiments/training/.
     These folders are frozen to prevent workflow sprawl.
-    
+
     Allowlist:
     - experiments/comparisons/run_head_to_head.py (existing wrapper)
     - experiments/training/train_bidder_aware_models.py (existing training script)
@@ -239,42 +246,42 @@ def check_no_new_scripts_in_frozen_folders(changed: list[str]) -> list[Violation
         "experiments/comparisons/",
         "experiments/training/",
     ]
-    
+
     ALLOWLIST = {
         "experiments/comparisons/run_head_to_head.py",
         "experiments/training/train_bidder_aware_models.py",
     }
-    
+
     violations: list[Violation] = []
     for p in changed:
         # Check if under frozen folders
         in_frozen_folder = any(is_under(p, folder) for folder in FROZEN_FOLDERS)
         if not in_frozen_folder:
             continue
-        
+
         # Allow README.md files
         if p.endswith("README.md"):
             continue
-        
+
         # Allow __init__.py files
         if p.endswith("__init__.py"):
             continue
-        
+
         # Allow allowlisted scripts
         if p in ALLOWLIST:
             continue
-        
+
         # Check if this is a new Python file (added or renamed into folder)
         if not p.endswith(".py"):
             continue
-        
+
         # Check git status to see if this is a new file
         status = subprocess.run(
             ["git", "diff", "--name-status", "origin/main...HEAD", "--", p],
             capture_output=True,
-            text=True
+            text=True,
         ).stdout.strip()
-        
+
         # Block additions (A) and renames (R) into frozen folders
         if status.startswith(("A", "R")):
             folder_name = "comparisons" if "comparisons" in p else "training"
@@ -285,7 +292,7 @@ def check_no_new_scripts_in_frozen_folders(changed: list[str]) -> list[Violation
                     message=f"Do not add new scripts to experiments/{folder_name}/. Use configs + experiments/run_experiment.py (or suites) instead.",
                 )
             )
-    
+
     return violations
 
 
@@ -390,15 +397,17 @@ def check_empty_test_functions(changed: list[str], repo_root: Path) -> list[Viol
             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
                 # Check if function body is empty (only pass or docstring)
                 body_without_docstring = [
-                    n for n in node.body
-                    if not isinstance(n, ast.Expr) or
-                       not isinstance(n.value, ast.Constant) or
-                       not isinstance(n.value.value, str)
+                    n
+                    for n in node.body
+                    if not isinstance(n, ast.Expr)
+                    or not isinstance(n.value, ast.Constant)
+                    or not isinstance(n.value.value, str)
                 ]
 
                 # If only 'pass' statement remains, it's empty
-                if (len(body_without_docstring) == 1 and
-                    isinstance(body_without_docstring[0], ast.Pass)):
+                if len(body_without_docstring) == 1 and isinstance(
+                    body_without_docstring[0], ast.Pass
+                ):
                     violations.append(
                         Violation(
                             rule="empty-test-function",
@@ -418,7 +427,9 @@ def check_empty_test_functions(changed: list[str], repo_root: Path) -> list[Viol
     return violations
 
 
-def check_experiments_without_seed(changed: list[str], repo_root: Path) -> list[Violation]:
+def check_experiments_without_seed(
+    changed: list[str], repo_root: Path
+) -> list[Violation]:
     """
     Flag experiment invocations in docs/scripts missing --seed.
 
@@ -431,7 +442,9 @@ def check_experiments_without_seed(changed: list[str], repo_root: Path) -> list[
     violations: list[Violation] = []
 
     # Pattern matches experiment invocations (including multi-line with backslash continuations)
-    experiment_pattern = re.compile(r'python experiments/run_experiment\.py(?:[^\n]*\\\n)*[^\n]*')
+    experiment_pattern = re.compile(
+        r"python experiments/run_experiment\.py(?:[^\n]*\\\n)*[^\n]*"
+    )
 
     # Files to check
     paths_to_check: list[Path] = []
@@ -449,8 +462,11 @@ def check_experiments_without_seed(changed: list[str], repo_root: Path) -> list[
             invocation = match.group(0)
 
             # Check for --seed or --allow-nondeterministic
-            if "--seed" not in invocation and "--allow-nondeterministic" not in invocation:
-                lineno = text[:match.start()].count('\n') + 1
+            if (
+                "--seed" not in invocation
+                and "--allow-nondeterministic" not in invocation
+            ):
+                lineno = text[: match.start()].count("\n") + 1
                 violations.append(
                     Violation(
                         rule="experiments-require-seed",
@@ -486,11 +502,13 @@ def check_no_sys_path_insert(changed: list[str], repo_root: Path) -> list[Violat
             if stripped.startswith("#"):
                 continue
             if "sys.path.insert" in line or "sys.path.append" in line:
-                violations.append(Violation(
-                    rule="no-sys-path-mutation",
-                    path=f"{p}:{i}",
-                    message="sys.path.insert/append is forbidden. Use PYTHONPATH=src or uv run.",
-                ))
+                violations.append(
+                    Violation(
+                        rule="no-sys-path-mutation",
+                        path=f"{p}:{i}",
+                        message="sys.path.insert/append is forbidden. Use PYTHONPATH=src or uv run.",
+                    )
+                )
     return violations
 
 
@@ -553,7 +571,9 @@ def check_no_cli_in_src(changed: list[str], repo_root: Path) -> list[Violation]:
     return violations
 
 
-def check_no_import_experiments_package(changed: list[str], repo_root: Path) -> list[Violation]:
+def check_no_import_experiments_package(
+    changed: list[str], repo_root: Path
+) -> list[Violation]:
     """Block 'import experiments' or 'from experiments import' outside experiments/.
 
     The top-level experiments/ directory is a filesystem directory (YAML configs + runner),
@@ -609,7 +629,8 @@ CODE_REGISTRY_PATH = "src/bid_euchre/datasets/canonical_runs.py"
 
 
 def check_registry_requires_gate_reference(
-    changed: list[str], repo_root: Path,
+    changed: list[str],
+    repo_root: Path,
 ) -> list[Violation]:
     """If a promotion registry doc changes, require gate evidence reference in content."""
     violations: list[Violation] = []
@@ -648,7 +669,8 @@ def check_registry_requires_gate_reference(
 
 
 def check_canonical_runs_registry_consistency(
-    changed: list[str], repo_root: Path,
+    changed: list[str],
+    repo_root: Path,
 ) -> list[Violation]:
     """If code registry exists AND doc registry changes, require synchronized update."""
     violations: list[Violation] = []
@@ -661,7 +683,8 @@ def check_canonical_runs_registry_consistency(
 
     # Identify doc registry files in changed set
     doc_registry_changed = [
-        p for p in changed
+        p
+        for p in changed
         if (
             any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES)
             or p in PROMOTION_REGISTRY_ALLOWLIST
@@ -700,6 +723,68 @@ def check_canonical_runs_registry_consistency(
     return violations
 
 
+# --- Artifact discovery lint rules ---
+
+# Filename substrings that indicate model artifacts (case-insensitive match).
+ARTIFACT_NAME_PATTERNS = ["olsa", "b0", "teacher"]
+
+# Infrastructure JSON files that live under data/ but are NOT model artifacts.
+FREEZE_EXEMPT_NAMES = {"meta.json", "rollup.json", "canonical_summary.json"}
+
+
+def _is_model_artifact(path: str) -> bool:
+    """Return True if *path* looks like a model artifact JSON under data/."""
+    if not is_under(path, "data/"):
+        return False
+    name = Path(path).name
+    if not name.endswith(".json"):
+        return False
+    if name in FREEZE_EXEMPT_NAMES:
+        return False
+    name_lower = name.lower()
+    return any(pattern in name_lower for pattern in ARTIFACT_NAME_PATTERNS)
+
+
+def check_artifacts_require_freeze(
+    changed: list[str],
+    repo_root: Path,
+) -> list[Violation]:
+    """Model artifact JSON files must have a non-null ``frozen_at`` field."""
+    violations: list[Violation] = []
+    for p in changed:
+        if not _is_model_artifact(p):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        try:
+            metadata = json.loads(abs_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            violations.append(
+                Violation(
+                    rule="artifact-requires-freeze",
+                    path=p,
+                    message="Model artifact is not valid JSON.",
+                )
+            )
+            continue
+
+        if metadata.get("frozen_at") is None:
+            violations.append(
+                Violation(
+                    rule="artifact-requires-freeze",
+                    path=p,
+                    message=(
+                        "Model artifact must be frozen before commit "
+                        "(frozen_at is null). Run freeze_artifact() first."
+                    ),
+                )
+            )
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -728,6 +813,7 @@ def main() -> int:
     violations += check_no_import_experiments_package(changed, repo_root)
     violations += check_registry_requires_gate_reference(changed, repo_root)
     violations += check_canonical_runs_registry_consistency(changed, repo_root)
+    violations += check_artifacts_require_freeze(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
