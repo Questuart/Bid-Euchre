@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from lint_repo import check_no_sys_path_insert
+from lint_repo import check_no_import_experiments_package, check_no_sys_path_insert
 
 
 def _write_file(tmp_path: Path, rel_path: str, content: str) -> None:
@@ -65,4 +65,26 @@ def test_non_python_files_skipped(tmp_path):
     """Non-.py files are skipped."""
     _write_file(tmp_path, "README.md", "sys.path.insert(0, 'src')\n")
     violations = check_no_sys_path_insert(["README.md"], tmp_path)
+    assert len(violations) == 0
+
+
+def test_import_experiments_package_violation(tmp_path):
+    """Importing top-level experiments package is flagged."""
+    _write_file(tmp_path, "scripts/foo.py", "from experiments import run_experiment\n")
+    violations = check_no_import_experiments_package(["scripts/foo.py"], tmp_path)
+    assert len(violations) == 1
+    assert violations[0].rule == "no-experiments-package-import"
+
+
+def test_import_experiments_from_within_is_ok(tmp_path):
+    """Files inside experiments/ can import from experiments."""
+    _write_file(tmp_path, "experiments/helper.py", "from experiments import run_experiment\n")
+    violations = check_no_import_experiments_package(["experiments/helper.py"], tmp_path)
+    assert len(violations) == 0
+
+
+def test_import_bid_euchre_experiments_is_ok(tmp_path):
+    """Importing bid_euchre.experiments is fine (that's the library module)."""
+    _write_file(tmp_path, "scripts/foo.py", "from bid_euchre.experiments import config\n")
+    violations = check_no_import_experiments_package(["scripts/foo.py"], tmp_path)
     assert len(violations) == 0
