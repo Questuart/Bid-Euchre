@@ -50,6 +50,7 @@ from bid_euchre.datasets.bidless_outcomes import (
     emit_bidless_outcomes_dataset,
 )
 from bid_euchre.experiments import load_config
+from bid_euchre.experiments.batch import BatchIntent
 from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.sim import simulation
@@ -200,6 +201,22 @@ def parse_args():
         action="store_true",
         help="Override work budget limits (use with caution)"
     )
+    parser.add_argument(
+        "--batch-id",
+        type=str,
+        help="Batch identifier (requires --batch-role)",
+    )
+    parser.add_argument(
+        "--batch-role",
+        type=str,
+        help="Role of this run within the batch (required if --batch-id given)",
+    )
+    parser.add_argument(
+        "--batch-purpose",
+        type=str,
+        choices=["promotion", "regression", "exploration"],
+        help="Batch purpose category (default: exploration if --batch-id given)",
+    )
     return parser.parse_args()
 
 
@@ -251,7 +268,15 @@ def main():
             "Error: --seed is required for deterministic runs. "
             "Use --seed <int> or --allow-nondeterministic for exploration."
         )
-    
+
+    # Validate batch flags
+    if args.batch_id and not args.batch_role:
+        print("Error: --batch-role is required when --batch-id is given", file=sys.stderr)
+        sys.exit(2)
+    if args.batch_role and not args.batch_id:
+        print("Error: --batch-id is required when --batch-role is given", file=sys.stderr)
+        sys.exit(2)
+
     log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
     mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
     team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
@@ -913,7 +938,17 @@ def main():
         "pair_deals": pair_deals,  # True = same physical deals across all scenarios
         "total_hands": total_hands,
     }
-    
+
+    # Add batch metadata if present
+    if args.batch_id:
+        batch_intent = BatchIntent(
+            batch_id=args.batch_id,
+            batch_role=args.batch_role,
+            batch_purpose=args.batch_purpose or "exploration",
+        )
+        meta["batch"] = batch_intent.to_dict()
+        meta["intent"] = batch_intent.batch_purpose
+
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
     

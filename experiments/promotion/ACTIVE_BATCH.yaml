@@ -1,0 +1,13 @@
+# Active promotion batch pointer.
+# Only one batch should be active at a time.
+# Set batch_id to null when no batch is active.
+#
+# Usage:
+#   1. Set batch_id, suite_path, and created_at before starting a batch.
+#   2. Run the suite with --batch-id and --batch-purpose flags.
+#   3. After promotion decision, reset batch_id to null.
+
+batch_id: null
+# batch_id: "promotion_20260210"
+# suite_path: experiments/suites/canonical_promotion.yaml
+# created_at: "2026-02-10T12:00:00Z"

@@ -63,6 +63,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print commands without executing"
     )
+    parser.add_argument(
+        "--batch-id",
+        type=str,
+        help="Batch identifier for all member runs",
+    )
+    parser.add_argument(
+        "--batch-purpose",
+        type=str,
+        choices=["promotion", "regression", "exploration"],
+        help="Batch purpose category (default: exploration if --batch-id given)",
+    )
     return parser.parse_args()
 
 
@@ -231,7 +242,10 @@ def run_experiment(
     seed: int,
     n_per: int,
     log_level: str,
-    run_base: Path
+    run_base: Path,
+    batch_id: str | None = None,
+    batch_role: str | None = None,
+    batch_purpose: str | None = None,
 ) -> Path:
     """
     Run a single experiment config and return the created run directory.
@@ -251,7 +265,14 @@ def run_experiment(
         "--log-level", log_level,
         "--run-dir", str(run_base)
     ]
-    
+
+    if batch_id:
+        cmd.extend(["--batch-id", batch_id])
+    if batch_role:
+        cmd.extend(["--batch-role", batch_role])
+    if batch_purpose:
+        cmd.extend(["--batch-purpose", batch_purpose])
+
     env = {**os.environ, "PYTHONPATH": "src"}
     
     print(f"  Running: {config_path}")
@@ -404,6 +425,14 @@ def create_suite_rollup(
         "summary": summary
     }
 
+    # Add batch metadata if present (from suite YAML or CLI)
+    batch_purpose = suite.get("batch_purpose")
+    if batch_purpose:
+        rollup["batch"] = {
+            "batch_id": rollup_id,  # Use rollup_id as default batch_id
+            "batch_purpose": batch_purpose,
+        }
+
     with (rollup_dir / "rollup.json").open("w") as f:
         json.dump(rollup, f, indent=2, sort_keys=True)
 
@@ -462,12 +491,12 @@ def main():
     if args.dry_run:
         print("🔍 Dry run - commands that would be executed:\n")
         for config_path in suite["configs"]:
-            print("  python experiments/run_experiment.py \\")
-            print(f"    --config {config_path} \\")
-            print(f"    --seed {effective_params['seed']} \\")
-            print(f"    --n-per {effective_params['n_per']} \\")
-            print(f"    --log-level {effective_params['log_level']} \\")
-            print(f"    --run-dir {args.run_dir}\n")
+            seed = effective_params["seed"]
+            print(f"  python experiments/run_experiment.py --seed {seed} \\\n"
+                  f"    --config {config_path} \\\n"
+                  f"    --n-per {effective_params['n_per']} \\\n"
+                  f"    --log-level {effective_params['log_level']} \\\n"
+                  f"    --run-dir {args.run_dir}\n")
         print("Rollup would be created after all runs complete.")
         return 0
     
@@ -477,17 +506,28 @@ def main():
     
     # Run each config
     member_runs = []
-    
+    batch_roles = suite.get("batch_roles", {})
+
     for i, config_path in enumerate(suite["configs"], 1):
         print(f"[{i}/{len(suite['configs'])}] {config_path}")
-        
+
+        # Derive batch_role from suite batch_roles or config filename
+        config_filename = Path(config_path).name
+        batch_role = batch_roles.get(config_filename)
+        if args.batch_id and not batch_role:
+            # Fallback: derive from config filename (strip .yaml)
+            batch_role = config_filename.replace(".yaml", "")
+
         try:
             run_dir = run_experiment(
                 config_path,
                 effective_params["seed"],
                 effective_params["n_per"],
                 effective_params["log_level"],
-                run_base
+                run_base,
+                batch_id=args.batch_id,
+                batch_role=batch_role if args.batch_id else None,
+                batch_purpose=args.batch_purpose,
             )
             
             # Load meta.json to get git_sha
