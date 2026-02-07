@@ -154,6 +154,7 @@ def train_olsa(run_dir, seed):
     artifact = {
         "schema_version": "1",
         "artifact_type": "olsa_v1",
+        "frozen_at": None,
         "models": models,
         "metadata": {
             "training_seed": seed,
