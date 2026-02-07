@@ -588,6 +588,90 @@ def check_no_import_experiments_package(changed: list[str], repo_root: Path) -> 
     return violations
 
 
+CANONICAL_RUNS_REGISTRY = "notebooks/phase0_bidless/canonical_runs.py"
+CANONICAL_RUNS_DOC = "docs/02_agent/CANONICAL_BIDLESS_RUNS.md"
+
+
+def check_canonical_runs_consistency(changed: list[str], repo_root: Path) -> list[Violation]:
+    """Require canonical_runs.py and CANONICAL_BIDLESS_RUNS.md to change together.
+
+    If one changes without the other, the code registry and documentation
+    can silently diverge.  Only enforced when the code registry file exists
+    (it was removed in PR #305; the rule remains for future registries).
+    """
+    violations: list[Violation] = []
+
+    # Skip if code registry file doesn't exist in the repo
+    if not (repo_root / CANONICAL_RUNS_REGISTRY).exists():
+        return violations
+
+    has_code = CANONICAL_RUNS_REGISTRY in changed
+    has_doc = CANONICAL_RUNS_DOC in changed
+
+    if has_code and not has_doc:
+        violations.append(
+            Violation(
+                rule="canonical-runs-registry-consistency",
+                path=CANONICAL_RUNS_REGISTRY,
+                message=(
+                    f"{CANONICAL_RUNS_REGISTRY} changed but {CANONICAL_RUNS_DOC} did not. "
+                    "Both must be updated together to keep registry and docs in sync."
+                ),
+            )
+        )
+    elif has_doc and not has_code:
+        violations.append(
+            Violation(
+                rule="canonical-runs-registry-consistency",
+                path=CANONICAL_RUNS_DOC,
+                message=(
+                    f"{CANONICAL_RUNS_DOC} changed but {CANONICAL_RUNS_REGISTRY} did not. "
+                    "Both must be updated together to keep registry and docs in sync."
+                ),
+            )
+        )
+
+    return violations
+
+
+def check_registry_requires_gate_reference(
+    changed: list[str], repo_root: Path
+) -> list[Violation]:
+    """If CANONICAL_BIDLESS_RUNS.md changes, the diff must reference a gate artifact.
+
+    Prevents registry updates without backing evidence from batch_gate.json,
+    notebook_gate.json, or canonical_summary.json.
+    """
+    violations: list[Violation] = []
+    if CANONICAL_RUNS_DOC not in changed:
+        return violations
+
+    abs_path = repo_root / CANONICAL_RUNS_DOC
+    if not abs_path.exists():
+        return violations
+
+    text = abs_path.read_text(encoding="utf-8")
+
+    # Check for any gate/summary artifact reference in the file content
+    gate_patterns = ["_gate.json", "canonical_summary.json", "batch_gate.json", "notebook_gate.json"]
+    has_gate_ref = any(pat in text for pat in gate_patterns)
+
+    if not has_gate_ref:
+        violations.append(
+            Violation(
+                rule="registry-requires-gate-reference",
+                path=CANONICAL_RUNS_DOC,
+                message=(
+                    "Registry update must reference a gate artifact "
+                    "(*_gate.json or canonical_summary.json). "
+                    "Add a reference to the evidence backing this promotion."
+                ),
+            )
+        )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -614,6 +698,8 @@ def main() -> int:
     violations += check_no_sys_path_insert(changed, repo_root)
     violations += check_no_cli_in_src(changed, repo_root)
     violations += check_no_import_experiments_package(changed, repo_root)
+    violations += check_canonical_runs_consistency(changed, repo_root)
+    violations += check_registry_requires_gate_reference(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
