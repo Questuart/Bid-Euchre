@@ -133,23 +133,47 @@ def validate_suite_file(path: Path) -> list[str]:
             if not isinstance(co, dict):
                 errors.append(f"{path}: 'config_overrides' must be a dict")
             else:
+                # Get list of config basenames for override key validation
+                if isinstance(data.get("configs"), list):
+                    config_basenames = {Path(cfg).name for cfg in data["configs"] if isinstance(cfg, str)}
+                else:
+                    config_basenames = set()
+
                 for config_key, overrides in co.items():
+                    # Validate override key references an actual config
+                    if config_basenames and config_key not in config_basenames:
+                        errors.append(
+                            f"{path}: config_overrides.{config_key} does not match "
+                            f"any config in suite. Valid configs: {sorted(config_basenames)}"
+                        )
+
                     if not isinstance(overrides, dict):
                         errors.append(
                             f"{path}: config_overrides.{config_key} must be a dict"
                         )
                         continue
+
                     role = overrides.get("batch_role")
                     if role is not None and role not in VALID_BATCH_ROLES:
                         errors.append(
                             f"{path}: config_overrides.{config_key}.batch_role "
                             f"must be one of {sorted(VALID_BATCH_ROLES)}, got '{role}'"
                         )
+
                     ea = overrides.get("extra_args")
-                    if ea is not None and not isinstance(ea, list):
-                        errors.append(
-                            f"{path}: config_overrides.{config_key}.extra_args must be a list"
-                        )
+                    if ea is not None:
+                        if not isinstance(ea, list):
+                            errors.append(
+                                f"{path}: config_overrides.{config_key}.extra_args must be a list"
+                            )
+                        else:
+                            # Validate each element is a string
+                            for i, arg in enumerate(ea):
+                                if not isinstance(arg, str):
+                                    errors.append(
+                                        f"{path}: config_overrides.{config_key}.extra_args[{i}] "
+                                        f"must be a string, got {type(arg).__name__}: {arg!r}"
+                                    )
 
     except FileNotFoundError as e:
         errors.append(f"{path}: {e}")
