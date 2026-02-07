@@ -14,6 +14,7 @@ from play_policy_gate import (
     ScenarioInfo,
     bootstrap_ci,
     compute_gate_status,
+    compute_onesample_ttest,
     compute_scenario_note,
     expand_distribution_to_adv,
     load_and_evaluate_run,
@@ -308,13 +309,76 @@ class TestLoadAndEvaluate:
             self.create_mock_run(tmpdir, "test_run", seed=42, results=results)
 
             result = load_and_evaluate_run(
-                tmpdir, "test_run", n_bootstrap=100, bootstrap_seed=42, strict_scenarios=False
+                tmpdir,
+                "test_run",
+                n_bootstrap=100,
+                bootstrap_seed=42,
+                strict_scenarios=False,
             )
 
             assert result.seed == 42
             assert result.run_id == "test_run"
             assert result.status == "PASS"
             assert len(result.directions) == 2
+
+
+class TestOneSampleTTest:
+    """Tests for compute_onesample_ttest function."""
+
+    def test_positive_mean_positive_tstat(self):
+        """Positive mean advantage -> positive t-stat, p < 0.05."""
+        rng = np.random.default_rng(42)
+        samples = rng.normal(0.5, 0.1, 1000)
+        t_stat, p_value = compute_onesample_ttest(samples)
+
+        assert t_stat > 0
+        assert p_value < 0.05
+
+    def test_symmetric_around_zero(self):
+        """Symmetric samples around zero -> p > 0.05."""
+        rng = np.random.default_rng(42)
+        samples = rng.normal(0.0, 1.0, 1000)
+        _, p_value = compute_onesample_ttest(samples)
+
+        assert p_value > 0.05
+
+    def test_empty_samples(self):
+        """Empty samples return (0.0, 1.0)."""
+        t_stat, p_value = compute_onesample_ttest(np.array([]))
+        assert t_stat == 0.0
+        assert p_value == 1.0
+
+    def test_single_sample(self):
+        """Single sample returns (0.0, 1.0)."""
+        t_stat, p_value = compute_onesample_ttest(np.array([5.0]))
+        assert t_stat == 0.0
+        assert p_value == 1.0
+
+    def test_consistency_with_bootstrap(self):
+        """Bootstrap CI lower > 0 should correspond to positive t-stat."""
+        rng = np.random.default_rng(42)
+        samples = rng.normal(0.5, 0.1, 1000)
+
+        ci = bootstrap_ci(samples, 1000, seed=42)
+        t_stat, _ = compute_onesample_ttest(samples)
+
+        # Both should agree on direction
+        assert ci[0] > 0
+        assert t_stat > 0
+
+    def test_direction_result_default_fields(self):
+        """DirectionResult defaults t_stat=0.0 and p_value=1.0."""
+        d = DirectionResult("d1", 0.1, (0.05, 0.15), 100, "PASS")
+        assert d.t_stat == 0.0
+        assert d.p_value == 1.0
+
+    def test_direction_result_explicit_ttest(self):
+        """DirectionResult with explicit t-test values."""
+        d = DirectionResult(
+            "d1", 0.1, (0.05, 0.15), 100, "PASS", t_stat=5.23, p_value=0.0001
+        )
+        assert d.t_stat == 5.23
+        assert d.p_value == 0.0001
 
 
 class TestCLIArguments:

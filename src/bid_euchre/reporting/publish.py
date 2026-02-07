@@ -8,11 +8,9 @@ Do NOT re-export from ``reporting/__init__.py`` (circular import risk).
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import shutil
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -145,6 +143,9 @@ def update_versions_manifest(
 
 
 if __name__ == "__main__":
+    import argparse
+    import sys
+
     parser = argparse.ArgumentParser(description="Publish chart snapshot")
     parser.add_argument("--source-dir", required=True, help="Dir with chart PNGs")
     parser.add_argument(
