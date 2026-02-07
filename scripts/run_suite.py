@@ -63,6 +63,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print commands without executing"
     )
+    parser.add_argument(
+        "--batch-id",
+        type=str,
+        help="Batch identifier to pass to each member run"
+    )
+    parser.add_argument(
+        "--batch-purpose",
+        type=str,
+        choices=["exploration", "promotion", "regression"],
+        help="Batch purpose to pass to each member run"
+    )
     return parser.parse_args()
 
 
@@ -231,17 +242,21 @@ def run_experiment(
     seed: int,
     n_per: int,
     log_level: str,
-    run_base: Path
+    run_base: Path,
+    batch_id: str | None = None,
+    batch_role: str | None = None,
+    batch_purpose: str | None = None,
+    extra_args: list[str] | None = None,
 ) -> Path:
     """
     Run a single experiment config and return the created run directory.
-    
+
     Returns:
         Path to the created run directory
     """
     # Snapshot existing directories
     dirs_before = set(d.name for d in run_base.iterdir() if d.is_dir())
-    
+
     cmd = [
         "python",
         "experiments/run_experiment.py",
@@ -251,6 +266,16 @@ def run_experiment(
         "--log-level", log_level,
         "--run-dir", str(run_base)
     ]
+
+    # Pass batch metadata through to run_experiment
+    if batch_id:
+        cmd.extend(["--batch-id", batch_id])
+    if batch_role:
+        cmd.extend(["--batch-role", batch_role])
+    if batch_purpose:
+        cmd.extend(["--batch-purpose", batch_purpose])
+    if extra_args:
+        cmd.extend(extra_args)
     
     env = {**os.environ, "PYTHONPATH": "src"}
     
@@ -315,7 +340,9 @@ def create_suite_rollup(
     suite_path: str,
     effective_params: Dict,
     member_runs: List[Dict],
-    run_base: Path
+    run_base: Path,
+    batch_id: str | None = None,
+    batch_purpose: str | None = None,
 ) -> Path:
     """
     Create suite rollup run directory with metadata.
@@ -401,8 +428,15 @@ def create_suite_rollup(
         "suite_n_per": effective_params["n_per"],
         "created_at_utc": created_at_utc,
         "configs": member_runs,
-        "summary": summary
+        "summary": summary,
     }
+
+    # Add batch metadata to rollup when present
+    if batch_id:
+        rollup["batch"] = {
+            "batch_id": batch_id,
+            "batch_purpose": batch_purpose,
+        }
 
     with (rollup_dir / "rollup.json").open("w") as f:
         json.dump(rollup, f, indent=2, sort_keys=True)
@@ -475,19 +509,37 @@ def main():
     run_base = Path(args.run_dir)
     run_base.mkdir(parents=True, exist_ok=True)
     
+    # Resolve batch metadata
+    batch_id = args.batch_id or suite.get("batch_id")
+    batch_purpose = args.batch_purpose or suite.get("batch_purpose")
+    batch_roles = suite.get("batch_roles", {})
+    run_flags = suite.get("run_flags", {})
+
     # Run each config
     member_runs = []
-    
+
     for i, config_path in enumerate(suite["configs"], 1):
         print(f"[{i}/{len(suite['configs'])}] {config_path}")
-        
+
+        # Derive batch_role from suite's batch_roles mapping, or config filename
+        config_filename = Path(config_path).name
+        batch_role = batch_roles.get(config_filename) if batch_id else None
+
+        # Get per-config extra_args from run_flags
+        per_config_flags = run_flags.get(config_filename, {})
+        extra_args = per_config_flags.get("extra_args")
+
         try:
             run_dir = run_experiment(
                 config_path,
                 effective_params["seed"],
                 effective_params["n_per"],
                 effective_params["log_level"],
-                run_base
+                run_base,
+                batch_id=batch_id,
+                batch_role=batch_role,
+                batch_purpose=batch_purpose,
+                extra_args=extra_args,
             )
             
             # Load meta.json to get git_sha
@@ -532,7 +584,9 @@ def main():
         args.suite,
         effective_params,
         member_runs,
-        run_base
+        run_base,
+        batch_id=batch_id,
+        batch_purpose=batch_purpose,
     )
     
     print("======================================================================")

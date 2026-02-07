@@ -53,6 +53,7 @@ from bid_euchre.datasets.bidless_outcomes import (
     emit_bidless_outcomes_dataset,
 )
 from bid_euchre.experiments import load_config
+from bid_euchre.experiments.batch import VALID_BATCH_PURPOSES, BatchIntent
 from bid_euchre.experiments.meta import get_git_sha, sha256_file, utc_now_iso
 from bid_euchre.logging import GameLogger, LogLevel
 from bid_euchre.sim import simulation
@@ -203,6 +204,22 @@ def parse_args():
         action="store_true",
         help="Override work budget limits (use with caution)"
     )
+    parser.add_argument(
+        "--batch-id",
+        type=str,
+        help="Batch identifier (e.g. 'promotion_20260210'). Enables batch metadata in meta.json."
+    )
+    parser.add_argument(
+        "--batch-role",
+        type=str,
+        help="Role within the batch (e.g. 'dataset_greedy'). Required when --batch-id is given."
+    )
+    parser.add_argument(
+        "--batch-purpose",
+        type=str,
+        choices=sorted(VALID_BATCH_PURPOSES),
+        help="Batch purpose: promotion, regression, or exploration. Required when --batch-id is given."
+    )
     return parser.parse_args()
 
 
@@ -239,7 +256,22 @@ def format_duration(seconds: float) -> str:
 
 def main():
     args = parse_args()
-    
+
+    # Build BatchIntent if --batch-id is given
+    batch_intent: BatchIntent | None = None
+    if args.batch_id:
+        if not args.batch_role:
+            raise SystemExit("Error: --batch-role is required when --batch-id is given")
+        if not args.batch_purpose:
+            raise SystemExit("Error: --batch-purpose is required when --batch-id is given")
+        batch_intent = BatchIntent(
+            batch_id=args.batch_id,
+            batch_role=args.batch_role,
+            batch_purpose=args.batch_purpose,
+        )
+    elif args.batch_role or args.batch_purpose:
+        raise SystemExit("Error: --batch-id is required when --batch-role or --batch-purpose is given")
+
     # Load configuration
     print(f"📄 Loading configuration: {args.config}")
     config = load_config(args.config)
@@ -916,7 +948,12 @@ def main():
         "pair_deals": pair_deals,  # True = same physical deals across all scenarios
         "total_hands": total_hands,
     }
-    
+
+    # Add batch metadata when present (additive — schema stays v2)
+    if batch_intent is not None:
+        meta["intent"] = batch_intent.batch_purpose
+        meta["batch"] = batch_intent.to_dict()
+
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
     
