@@ -44,8 +44,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--run-dir",
-        required=True,
         help="Path to run directory (must contain results/, meta.json, etc.)"
+    )
+    parser.add_argument(
+        "--batch-dir",
+        help="Path to suite rollup directory for batch report generation"
     )
     parser.add_argument(
         "--overwrite",
@@ -62,7 +65,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit non-zero if any sanity test has status FAIL (and also fail if sanity cannot run)"
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.run_dir and not args.batch_dir:
+        parser.error("Either --run-dir or --batch-dir is required")
+    if args.run_dir and args.batch_dir:
+        parser.error("--run-dir and --batch-dir are mutually exclusive")
+    return args
 
 
 def validate_run_directory(run_dir: Path) -> None:
@@ -394,10 +402,184 @@ def write_canonical_summary(
     return json_path, md_path
 
 
+def generate_batch_report(batch_dir: Path, verbose: bool) -> int:
+    """Generate batch report from suite rollup directory.
+
+    Reads rollup.json, discovers member runs, reads their canonical summaries,
+    and produces BATCH_REPORT.md + batch_gate.json.
+
+    Returns exit code.
+    """
+    rollup_path = batch_dir / "rollup.json"
+    if not rollup_path.exists():
+        print(f"Error: No rollup.json found in {batch_dir}", file=sys.stderr)
+        return 1
+
+    with open(rollup_path) as f:
+        rollup = json.load(f)
+
+    suite_name = rollup.get("suite_name", "unknown")
+    member_configs = rollup.get("configs", [])
+
+    if verbose:
+        print(f"Batch report for suite: {suite_name}")
+        print(f"   Member runs: {len(member_configs)}")
+
+    # Discover member runs and read their canonical summaries
+    run_base = batch_dir.parent  # Member runs are siblings of rollup dir
+    member_statuses: List[Dict[str, Any]] = []
+
+    for config in member_configs:
+        run_id = config.get("run_id", "unknown")
+        run_dir_name = config.get("run_dir", run_id)
+        member_run_dir = run_base / run_dir_name
+
+        status: Dict[str, Any] = {
+            "run_id": run_id,
+            "batch_role": None,
+            "sanity_pass": 0,
+            "sanity_warn": 0,
+            "sanity_fail": 0,
+            "sanity_skip": 0,
+            "gate_status": "UNKNOWN",
+        }
+
+        # Try to read canonical_summary.json
+        summary_path = member_run_dir / "artifacts" / "canonical_summary.json"
+        if summary_path.exists():
+            try:
+                with open(summary_path) as f:
+                    summary = json.load(f)
+                sanity = summary.get("sanity", {})
+                status["sanity_pass"] = sanity.get("pass_count", 0)
+                status["sanity_warn"] = sanity.get("warn_count", 0)
+                status["sanity_fail"] = sanity.get("fail_count", 0)
+                status["sanity_skip"] = sanity.get("skip_count", 0)
+                status["gate_status"] = (
+                    "PASS" if sanity.get("all_passed", False) else "FAIL"
+                )
+            except Exception as e:
+                if verbose:
+                    print(f"   Could not read {summary_path}: {e}")
+                status["gate_status"] = "UNKNOWN"
+        else:
+            if verbose:
+                print(f"   No canonical_summary.json for {run_id}")
+
+        # Try to read batch metadata from meta.json
+        meta_path = member_run_dir / "meta.json"
+        if meta_path.exists():
+            try:
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                batch = meta.get("batch", {})
+                status["batch_role"] = batch.get("batch_role")
+            except Exception:
+                pass
+
+        # Try to read notebook gate
+        notebook_gate_path = (
+            member_run_dir / "reports" / "notebook_review" / "notebook_gate.json"
+        )
+        if notebook_gate_path.exists():
+            try:
+                with open(notebook_gate_path) as f:
+                    nb_gate = json.load(f)
+                if nb_gate.get("overall_status") == "FAIL":
+                    status["gate_status"] = "FAIL"
+            except Exception:
+                pass
+
+        member_statuses.append(status)
+
+    # Compute eligibility
+    from bid_euchre.validation.promotion import compute_eligibility
+
+    # Extract expected roles from rollup batch metadata if present
+    expected_roles = None  # Could be derived from suite YAML batch_roles
+
+    eligibility = compute_eligibility(member_statuses, expected_roles)
+
+    # Build batch_gate.json
+    rollup_batch = rollup.get("batch", {})
+    batch_id = rollup_batch.get(
+        "batch_id", rollup.get("suite_name", "unknown")
+    )
+
+    gate: Dict[str, Any] = {
+        "gate_type": "batch_promotion",
+        "gate_version": 1,
+        "batch_id": batch_id,
+        "timestamp_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "git_sha": (
+            rollup.get("configs", [{}])[0].get("git_sha", "unknown")
+            if member_configs
+            else "unknown"
+        ),
+        "member_runs": member_statuses,
+        "overall_status": "PASS" if eligibility["eligible"] else "FAIL",
+        "eligible": eligibility["eligible"],
+        "reasons": eligibility["reasons"],
+    }
+
+    # Write artifacts
+    artifacts_dir = batch_dir / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+
+    gate_path = artifacts_dir / "batch_gate.json"
+    with open(gate_path, "w") as f:
+        json.dump(gate, f, indent=2)
+
+    # Write BATCH_REPORT.md
+    reports_dir = batch_dir / "reports"
+    reports_dir.mkdir(exist_ok=True)
+
+    md_path = reports_dir / "BATCH_REPORT.md"
+    with open(md_path, "w") as f:
+        f.write(f"# Batch Report: {suite_name}\n\n")
+        f.write(f"**Batch ID:** {batch_id}\n\n")
+        f.write(f"**Overall Status:** {gate['overall_status']}\n\n")
+        f.write(f"**Eligible:** {gate['eligible']}\n\n")
+
+        if gate["reasons"]:
+            f.write("## Non-Eligibility Reasons\n\n")
+            for r in gate["reasons"]:
+                f.write(f"- {r}\n")
+            f.write("\n")
+
+        f.write("## Member Runs\n\n")
+        f.write("| Run ID | Role | PASS | WARN | FAIL | SKIP | Gate |\n")
+        f.write("|--------|------|------|------|------|------|------|\n")
+        for m in member_statuses:
+            role = m.get("batch_role") or "---"
+            f.write(
+                f"| {m['run_id'][:40]} | {role} "
+                f"| {m['sanity_pass']} | {m['sanity_warn']} "
+                f"| {m['sanity_fail']} | {m['sanity_skip']} "
+                f"| {m['gate_status']} |\n"
+            )
+        f.write(f"\n---\n*Generated: {gate['timestamp_utc']}*\n")
+
+    print(f"Batch gate: {gate_path}")
+    print(f"Batch report: {md_path}")
+    print(f"   Eligible: {gate['eligible']}")
+    if gate["reasons"]:
+        for r in gate["reasons"]:
+            print(f"   {r}")
+
+    return 0
+
+
 def main() -> int:
     """Main entrypoint."""
     args = parse_args()
-    
+
+    # Batch mode
+    if args.batch_dir:
+        batch_dir = Path(args.batch_dir).resolve()
+        return generate_batch_report(batch_dir, args.verbose)
+
+    # Single-run mode (existing logic)
     run_dir = Path(args.run_dir).resolve()
     
     if args.verbose:
