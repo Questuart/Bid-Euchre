@@ -5,6 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,15 +23,17 @@ def feature_df():
     """Minimal DataFrame with hand features."""
     rng = np.random.RandomState(42)
     n = 200
-    return pd.DataFrame({
-        "hand_value": rng.uniform(0, 10, n),
-        "seat": np.tile([0, 1, 2, 3], n // 4),
-        "contract_type": np.tile(["suit", "high"], n // 2),
-        "trump_count": rng.randint(0, 6, n),
-        "bowers": rng.randint(0, 3, n),
-        "offsuit_aces": rng.randint(0, 5, n),
-        "offsuit_tens_count": rng.randint(0, 5, n),
-    })
+    return pd.DataFrame(
+        {
+            "hand_value": rng.uniform(0, 10, n),
+            "seat": np.tile([0, 1, 2, 3], n // 4),
+            "contract_type": np.tile(["suit", "high"], n // 2),
+            "trump_count": rng.randint(0, 6, n),
+            "bowers": rng.randint(0, 3, n),
+            "offsuit_aces": rng.randint(0, 5, n),
+            "offsuit_tens_count": rng.randint(0, 5, n),
+        }
+    )
 
 
 @pytest.fixture
@@ -78,6 +81,28 @@ class TestFeatureOutcomeCharts:
             paths = generate_feature_outcome_charts(df, tmpdir)
             # Should still generate outcome_distributions at minimum
             assert len(paths) >= 1
+
+    def test_feature_outcome_includes_by_contract_scatter(self, feature_outcome_df):
+        """Generates contract-faceted scatter when contract_type present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_feature_outcome_charts(feature_outcome_df, tmpdir)
+            names = [Path(p).stem for p in paths]
+            assert "feature_vs_outcome_by_contract" in names
+
+    def test_plot_feature_vs_outcome_by_contract_returns_figure(
+        self, feature_outcome_df
+    ):
+        """Diagnostic function returns Figure with correct subplot count."""
+        from bid_euchre.diagnostics.charts import plot_feature_vs_outcome_by_contract
+
+        fig = plot_feature_vs_outcome_by_contract(
+            feature_outcome_df, "hand_value", "tricks_won"
+        )
+        assert isinstance(fig, plt.Figure)
+        # feature_outcome_df has contract_type with "suit" and "high" only
+        axes = fig.get_axes()
+        assert len(axes) == 2  # suit + high (no "low" in fixture)
+        plt.close(fig)
 
 
 class TestDistributionCharts:
@@ -132,7 +157,9 @@ class TestStrategyMatchupCharts:
     def test_includes_delta_bars_and_self_play(self, matchup_results):
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = generate_strategy_matchup_charts(
-                matchup_results, tmpdir, baseline_name="random",
+                matchup_results,
+                tmpdir,
+                baseline_name="random",
             )
             names = [Path(p).stem for p in paths]
             assert "win_rate_heatmap" in names
@@ -163,7 +190,8 @@ class TestChartRunnerCLI:
     def test_help_flag(self):
         result = subprocess.run(
             [sys.executable, "-m", "bid_euchre.reporting.chart_runner", "--help"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "--run-dir" in result.stdout
@@ -172,10 +200,15 @@ class TestChartRunnerCLI:
     def test_missing_run_dir(self):
         result = subprocess.run(
             [
-                sys.executable, "-m", "bid_euchre.reporting.chart_runner",
-                "--run-dir", "/nonexistent/path",
-                "--output-dir", "/tmp/test_charts",
+                sys.executable,
+                "-m",
+                "bid_euchre.reporting.chart_runner",
+                "--run-dir",
+                "/nonexistent/path",
+                "--output-dir",
+                "/tmp/test_charts",
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 1

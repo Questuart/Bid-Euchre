@@ -22,6 +22,7 @@ from ..diagnostics.charts import (
     plot_feature_distributions,
     plot_feature_outcome_correlation,
     plot_feature_vs_outcome,
+    plot_feature_vs_outcome_by_contract,
     plot_hand_value_by_contract,
     plot_hand_value_by_seat,
     plot_outcome_distributions,
@@ -151,7 +152,9 @@ def generate_strategy_matchup_charts(
         }
         if comparison_results:
             fig = plot_strategy_delta_bars(
-                baseline_results, comparison_results, baseline_name=baseline_name,
+                baseline_results,
+                comparison_results,
+                baseline_name=baseline_name,
             )
             paths.append(_save_figure(fig, out, "strategy_delta_bars", dpi))
 
@@ -195,24 +198,51 @@ def generate_feature_outcome_charts(
     feature_cols = [c for c in df.columns if c.startswith("feat_") or c == "hand_value"]
     if not feature_cols:
         # Try numeric columns excluding metadata
-        skip = {"seat", "deal_id", "hand_id", outcome_col, "contract_type", "trump", "trump_suit"}
-        feature_cols = [c for c in df.select_dtypes(include="number").columns if c not in skip]
+        skip = {
+            "seat",
+            "deal_id",
+            "hand_id",
+            outcome_col,
+            "contract_type",
+            "trump",
+            "trump_suit",
+        }
+        feature_cols = [
+            c for c in df.select_dtypes(include="number").columns if c not in skip
+        ]
 
     if feature_cols and outcome_col in df.columns:
         # Correlation bar chart
         fig = plot_feature_outcome_correlation(
-            df, outcome=outcome_col, features=feature_cols, top_n=top_n,
+            df,
+            outcome=outcome_col,
+            features=feature_cols,
+            top_n=top_n,
         )
         paths.append(_save_figure(fig, out, "feature_outcome_correlation", dpi))
 
         # Top feature scatter
-        correlations = df[feature_cols].corrwith(df[outcome_col]).abs().sort_values(ascending=False)
-        top_feature = correlations.index[0] if len(correlations) > 0 else feature_cols[0]
+        correlations = (
+            df[feature_cols]
+            .corrwith(df[outcome_col])
+            .abs()
+            .sort_values(ascending=False)
+        )
+        top_feature = (
+            correlations.index[0] if len(correlations) > 0 else feature_cols[0]
+        )
         fig = plot_feature_vs_outcome(df, feature=top_feature, outcome=outcome_col)
         paths.append(_save_figure(fig, out, "feature_vs_outcome", dpi))
 
+        # Contract-faceted scatter (only if contract_type column exists)
+        if "contract_type" in df.columns:
+            fig = plot_feature_vs_outcome_by_contract(df, top_feature, outcome_col)
+            paths.append(_save_figure(fig, out, "feature_vs_outcome_by_contract", dpi))
+
     if outcome_col in df.columns and "contract_type" in df.columns:
-        fig = plot_outcome_distributions(df, outcome=outcome_col, group_by="contract_type")
+        fig = plot_outcome_distributions(
+            df, outcome=outcome_col, group_by="contract_type"
+        )
         paths.append(_save_figure(fig, out, "outcome_distributions", dpi))
 
     return paths
