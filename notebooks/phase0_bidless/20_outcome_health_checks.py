@@ -64,8 +64,8 @@ MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deal
 SEED = 42
 
 # --- Data Source Mode ---
-# NOTE: This notebook requires N×N strategy matchups that aren't available
-# in canonical runs. CANONICAL_MODE must be False (CI injects this via papermill).
+# When True, loads from canonical N×N matrix run (outcomes_matrix in canonical_runs.py).
+# When False (CI via papermill), generates on-the-fly.
 CANONICAL_MODE = True
 
 # Contract space
@@ -103,17 +103,11 @@ print(f"  Strategies: {[s['name'] for s in STRATEGIES]}")
 print(f"  Plot downsampling: {DOWNSAMPLE_PLOTS} (max {PLOT_MAX_ROWS} rows)")
 
 # %%
-# --- Hard-fail guard for CANONICAL_MODE ---
+# --- CANONICAL_MODE setup ---
 # This MUST be in its own cell (not the parameters cell) so that papermill's
 # injected parameter overrides take effect before this guard runs.
-# N×N strategy matchups are NOT part of canonical run data.
 if CANONICAL_MODE:
-    raise ValueError(
-        "Notebook 20 requires N×N strategy matchups that are not available "
-        "in canonical run data.\n\n"
-        "Set CANONICAL_MODE = False to generate data on-the-fly.\n"
-        "CI runners inject CANONICAL_MODE=False automatically via papermill."
-    )
+    print("CANONICAL_MODE=True: will load from canonical N×N matrix run data")
 
 # %%
 # ============================================================================
@@ -143,6 +137,7 @@ sys.path.insert(0, str(repo_root / 'src'))
 
 from bid_euchre.diagnostics.notebook_data import (
     load_or_generate_outcomes,
+    load_outcomes_from_run_dir,
 )
 
 print("\n✓ Imports complete")
@@ -299,36 +294,70 @@ print("\n" + "=" * 70)
 print("LOADING DATASETS")
 print("=" * 70)
 
-# Generate on-the-fly (CANONICAL_MODE=False enforced above)
-# Self-play dataset (each strategy plays against itself)
-print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
-df_self = load_or_generate_outcomes(
-    mode=MODE,
-    seed=SEED,
-    contracts=CONTRACT_TYPES,
-    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-    seats=SEATS,
-    strategies=STRATEGIES,
-    matchups=None,  # None = self-play for each strategy
-)
+if CANONICAL_MODE:
+    # Load from canonical N×N matrix run
+    from canonical_runs import resolve_run_dir
 
-print(f"   Self-play shape: {df_self.shape}")
-print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
+    canonical_dir = resolve_run_dir("outcomes_matrix")
+    print(f"\nLoading canonical data from {canonical_dir}...")
+    _all_outcomes = load_outcomes_from_run_dir(str(canonical_dir))
 
-# Head-to-head dataset (full N×N matchup matrix)
-print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
-df_h2h = load_or_generate_outcomes(
-    mode=MODE,
-    seed=SEED,
-    contracts=CONTRACT_TYPES,
-    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-    seats=SEATS,
-    strategies=STRATEGIES,
-    matchups=MATCHUPS_MATRIX,
-)
+    print(f"   Total rows: {len(_all_outcomes)}")
+    print(f"   Unique strategy_ids: {sorted(_all_outcomes['strategy_id'].unique())}")
 
-print(f"   Head-to-head shape: {df_h2h.shape}")
-print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
+    # Split into self-play and h2h based on team strategies
+    # Self-play: team0_strategy == team1_strategy
+    # H2H: team0_strategy != team1_strategy
+    if 'team0_strategy' in _all_outcomes.columns:
+        _self_mask = _all_outcomes['team0_strategy'] == _all_outcomes['team1_strategy']
+    else:
+        # Fallback: parse strategy_id
+        def _is_self_play(sid):
+            if '_vs_' in sid:
+                parts = sid.split('_vs_', 1)
+                return parts[0] == parts[1]
+            return True  # bare name = self-play
+        _self_mask = _all_outcomes['strategy_id'].apply(_is_self_play)
+
+    df_self = _all_outcomes[_self_mask].copy()
+    df_h2h = _all_outcomes.copy()  # h2h includes ALL matchups (self-play + cross)
+
+    print(f"\n1. Self-play rows: {len(df_self)}")
+    print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
+    print(f"\n2. All matchup rows (h2h): {len(df_h2h)}")
+    print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
+
+else:
+    # Generate on-the-fly
+    # Self-play dataset (each strategy plays against itself)
+    print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
+    df_self = load_or_generate_outcomes(
+        mode=MODE,
+        seed=SEED,
+        contracts=CONTRACT_TYPES,
+        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+        seats=SEATS,
+        strategies=STRATEGIES,
+        matchups=None,  # None = self-play for each strategy
+    )
+
+    print(f"   Self-play shape: {df_self.shape}")
+    print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
+
+    # Head-to-head dataset (full N×N matchup matrix)
+    print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
+    df_h2h = load_or_generate_outcomes(
+        mode=MODE,
+        seed=SEED,
+        contracts=CONTRACT_TYPES,
+        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+        seats=SEATS,
+        strategies=STRATEGIES,
+        matchups=MATCHUPS_MATRIX,
+    )
+
+    print(f"   Head-to-head shape: {df_h2h.shape}")
+    print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
 
 print("\n" + "=" * 70)
 print("✓ Both datasets loaded")
@@ -358,6 +387,9 @@ def parse_matchup_id(strategy_id: str) -> dict:
 # Parse matchup metadata for head-to-head data
 if 'strategy_id' in df_h2h.columns:
     matchup_meta = df_h2h['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
+    # Drop columns already present (e.g. from parquet join) to avoid duplicates
+    existing_cols = set(df_h2h.columns) & set(matchup_meta.columns)
+    matchup_meta = matchup_meta.drop(columns=existing_cols, errors='ignore')
     df_h2h = pd.concat([df_h2h, matchup_meta], axis=1)
     print("Parsed matchup IDs for head-to-head data")
     print(f"  Unique team0_strategy: {sorted(df_h2h['team0_strategy'].unique())}")
@@ -366,6 +398,8 @@ if 'strategy_id' in df_h2h.columns:
 # Also parse for self-play data
 if 'strategy_id' in df_self.columns:
     matchup_meta_self = df_self['strategy_id'].apply(parse_matchup_id).apply(pd.Series)
+    existing_cols_self = set(df_self.columns) & set(matchup_meta_self.columns)
+    matchup_meta_self = matchup_meta_self.drop(columns=existing_cols_self, errors='ignore')
     df_self = pd.concat([df_self, matchup_meta_self], axis=1)
     print("Parsed matchup IDs for self-play data")
 

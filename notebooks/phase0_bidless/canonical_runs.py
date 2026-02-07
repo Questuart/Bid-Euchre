@@ -14,6 +14,7 @@ CANONICAL_RUNS = {
     "greedy_dataset": "canonical_bidless_dataset_greedy_42_20260204_221121",
     "glutton_dataset": "canonical_bidless_dataset_glutton_42_20260204_222713",
     "outcomes_zoom": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+    "outcomes_matrix": "canonical_bidless_outcomes_matrix_shallow_42_20260206_171634",
 }
 
 
