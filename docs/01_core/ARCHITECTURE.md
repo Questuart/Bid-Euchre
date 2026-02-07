@@ -32,6 +32,8 @@ Structure:
 
 **Note**: Only `run_experiment.py` is the blessed entrypoint. Other scripts in subfolders are for research exploration and must not define competing canonical paths.
 
+**Disambiguation**: `experiments/` is a filesystem directory (YAML configs + runner). `bid_euchre.experiments` (under `src/bid_euchre/experiments/`) is the library config module. Do not `import experiments` as a Python package.
+
 ### `scripts/`
 **Blessed tooling entrypoints.**
 

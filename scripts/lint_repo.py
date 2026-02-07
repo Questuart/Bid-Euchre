@@ -486,6 +486,41 @@ def check_no_sys_path_insert(changed: list[str], repo_root: Path) -> list[Violat
     return violations
 
 
+def check_no_import_experiments_package(changed: list[str], repo_root: Path) -> list[Violation]:
+    """Block 'import experiments' or 'from experiments import' outside experiments/.
+
+    The top-level experiments/ directory is a filesystem directory (YAML configs + runner),
+    NOT a Python package. Use bid_euchre.experiments for config classes.
+    """
+    violations: list[Violation] = []
+    for p in changed:
+        if not p.endswith(".py"):
+            continue
+        if is_under(p, "experiments/"):
+            continue
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+        text = abs_path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text, filename=p)
+        except SyntaxError:
+            continue
+        imports = _imports_from_tree(tree)
+        if "experiments" in imports:
+            violations.append(
+                Violation(
+                    rule="no-experiments-package-import",
+                    path=p,
+                    message=(
+                        "'import experiments' is forbidden outside experiments/. "
+                        "Use bid_euchre.experiments for config classes."
+                    ),
+                )
+            )
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -510,6 +545,7 @@ def main() -> int:
     violations += check_empty_test_functions(changed, repo_root)
     violations += check_experiments_without_seed(changed, repo_root)
     violations += check_no_sys_path_insert(changed, repo_root)
+    violations += check_no_import_experiments_package(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
