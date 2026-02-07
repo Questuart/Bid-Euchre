@@ -63,11 +63,6 @@
 MODE = "QUICK"  # "SMOKE" (~30 deals), "QUICK" (~2k deals), or "FULL" (~50k deals)
 SEED = 42
 
-# --- Data Source Mode ---
-# When True, loads from canonical N×N matrix run (outcomes_matrix in canonical_runs.py).
-# When False (CI via papermill), generates on-the-fly.
-CANONICAL_MODE = True
-
 # Contract space
 CONTRACT_TYPES = ['suit', 'high', 'low']
 TRUMPS_FOR_SUIT_CONTRACTS = ['C', 'D', 'H', 'S']
@@ -95,19 +90,11 @@ warnings.filterwarnings('ignore')
 print("Configuration:")
 print(f"  Mode: {MODE}")
 print(f"  Seed: {SEED}")
-print(f"  Canonical mode: {CANONICAL_MODE}")
 print(f"  Contract types: {CONTRACT_TYPES}")
 print(f"  Trumps (suit contracts): {TRUMPS_FOR_SUIT_CONTRACTS}")
 print(f"  Seats: {SEATS}")
 print(f"  Strategies: {[s['name'] for s in STRATEGIES]}")
 print(f"  Plot downsampling: {DOWNSAMPLE_PLOTS} (max {PLOT_MAX_ROWS} rows)")
-
-# %%
-# --- CANONICAL_MODE setup ---
-# This MUST be in its own cell (not the parameters cell) so that papermill's
-# injected parameter overrides take effect before this guard runs.
-if CANONICAL_MODE:
-    print("CANONICAL_MODE=True: will load from canonical N×N matrix run data")
 
 # %%
 # ============================================================================
@@ -135,7 +122,6 @@ repo_root = Path.cwd().parent.parent
 
 from bid_euchre.diagnostics.notebook_data import (
     load_or_generate_outcomes,
-    load_outcomes_from_run_dir,
 )
 
 print("\n✓ Imports complete")
@@ -190,8 +176,11 @@ def make_deal_frame(df: pd.DataFrame) -> pd.DataFrame:
         .rename(columns={'tricks_won': 'team1_tricks'})
     )
 
-    # Merge on stable keys
+    # Fill NaN trump with sentinel before merge (pandas doesn't match NaN == NaN)
+    for _df in [df_team0, df_team1]:
+        _df['trump'] = _df['trump'].fillna('__NONE__')
     df_deal = df_team0.merge(df_team1, on=keys)
+    df_deal['trump'] = df_deal['trump'].replace('__NONE__', None)
     df_deal['delta_tricks'] = df_deal['team0_tricks'] - df_deal['team1_tricks']
     # Weighted win: 1.0 for win (>=6), 0.5 for tie (=5), 0.0 for loss (<=4)
     df_deal['team0_win'] = np.where(
@@ -292,70 +281,35 @@ print("\n" + "=" * 70)
 print("LOADING DATASETS")
 print("=" * 70)
 
-if CANONICAL_MODE:
-    # Load from canonical N×N matrix run
-    from canonical_runs import resolve_run_dir
+# Self-play dataset (each strategy plays against itself)
+print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
+df_self = load_or_generate_outcomes(
+    mode=MODE,
+    seed=SEED,
+    contracts=CONTRACT_TYPES,
+    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+    seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=None,  # None = self-play for each strategy
+)
 
-    canonical_dir = resolve_run_dir("outcomes_matrix")
-    print(f"\nLoading canonical data from {canonical_dir}...")
-    _all_outcomes = load_outcomes_from_run_dir(str(canonical_dir))
+print(f"   Self-play shape: {df_self.shape}")
+print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
 
-    print(f"   Total rows: {len(_all_outcomes)}")
-    print(f"   Unique strategy_ids: {sorted(_all_outcomes['strategy_id'].unique())}")
+# Head-to-head dataset (full N×N matchup matrix)
+print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
+df_h2h = load_or_generate_outcomes(
+    mode=MODE,
+    seed=SEED,
+    contracts=CONTRACT_TYPES,
+    trumps=TRUMPS_FOR_SUIT_CONTRACTS,
+    seats=SEATS,
+    strategies=STRATEGIES,
+    matchups=MATCHUPS_MATRIX,
+)
 
-    # Split into self-play and h2h based on team strategies
-    # Self-play: team0_strategy == team1_strategy
-    # H2H: team0_strategy != team1_strategy
-    if 'team0_strategy' in _all_outcomes.columns:
-        _self_mask = _all_outcomes['team0_strategy'] == _all_outcomes['team1_strategy']
-    else:
-        # Fallback: parse strategy_id
-        def _is_self_play(sid):
-            if '_vs_' in sid:
-                parts = sid.split('_vs_', 1)
-                return parts[0] == parts[1]
-            return True  # bare name = self-play
-        _self_mask = _all_outcomes['strategy_id'].apply(_is_self_play)
-
-    df_self = _all_outcomes[_self_mask].copy()
-    df_h2h = _all_outcomes.copy()  # h2h includes ALL matchups (self-play + cross)
-
-    print(f"\n1. Self-play rows: {len(df_self)}")
-    print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
-    print(f"\n2. All matchup rows (h2h): {len(df_h2h)}")
-    print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
-
-else:
-    # Generate on-the-fly
-    # Self-play dataset (each strategy plays against itself)
-    print(f"\n1. Loading SELF-PLAY dataset (mode={MODE}, seed={SEED})...")
-    df_self = load_or_generate_outcomes(
-        mode=MODE,
-        seed=SEED,
-        contracts=CONTRACT_TYPES,
-        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-        seats=SEATS,
-        strategies=STRATEGIES,
-        matchups=None,  # None = self-play for each strategy
-    )
-
-    print(f"   Self-play shape: {df_self.shape}")
-    print(f"   Unique strategy_ids: {sorted(df_self['strategy_id'].unique())}")
-
-    # Head-to-head dataset (full N×N matchup matrix)
-    print(f"\n2. Loading HEAD-TO-HEAD dataset (mode={MODE}, seed={SEED})...")
-    df_h2h = load_or_generate_outcomes(
-        mode=MODE,
-        seed=SEED,
-        contracts=CONTRACT_TYPES,
-        trumps=TRUMPS_FOR_SUIT_CONTRACTS,
-        seats=SEATS,
-        strategies=STRATEGIES,
-        matchups=MATCHUPS_MATRIX,
-    )
-
-    print(f"   Head-to-head shape: {df_h2h.shape}")
-    print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
+print(f"   Head-to-head shape: {df_h2h.shape}")
+print(f"   Unique strategy_ids: {sorted(df_h2h['strategy_id'].unique())}")
 
 print("\n" + "=" * 70)
 print("✓ Both datasets loaded")

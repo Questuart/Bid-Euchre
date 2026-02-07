@@ -64,10 +64,8 @@ def execute_notebook(
     notebook_mode = mode_map[mode]
 
     # Inject parameters (overrides notebook defaults)
-    # CANONICAL_MODE=False forces on-the-fly generation in CI
     parameters = {
         "MODE": notebook_mode,
-        "CANONICAL_MODE": False,
     }
 
     output_path = output_dir / notebook_path.name
