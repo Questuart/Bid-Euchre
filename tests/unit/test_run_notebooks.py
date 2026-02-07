@@ -282,3 +282,147 @@ class TestMain:
 
         call_args = mock_execute.call_args
         assert call_args[0][1] == "quick"  # mode argument
+
+
+# ---------------------------------------------------------------------------
+# --validate flag
+# ---------------------------------------------------------------------------
+
+
+def _write_valid_notebook(path, mode="SMOKE"):
+    """Write a minimal valid executed notebook to path."""
+    nb = {
+        "cells": [
+            {
+                "cell_type": "code",
+                "source": [f'MODE = "{mode}"\n'],
+                "metadata": {"tags": ["parameters"]},
+                "outputs": [],
+            },
+            {
+                "cell_type": "code",
+                "source": [f'MODE = "{mode}"\n'],
+                "metadata": {"tags": ["injected-parameters"]},
+                "outputs": [],
+            },
+            {
+                "cell_type": "code",
+                "source": ["x = 1\n"],
+                "metadata": {"tags": []},
+                "outputs": [{"output_type": "execute_result"}],
+            },
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    path.write_text(json.dumps(nb))
+
+
+def _write_error_notebook(path, mode="SMOKE"):
+    """Write a notebook with a cell error."""
+    nb = {
+        "cells": [
+            {
+                "cell_type": "code",
+                "source": [f'MODE = "{mode}"\n'],
+                "metadata": {"tags": ["parameters"]},
+                "outputs": [],
+            },
+            {
+                "cell_type": "code",
+                "source": [f'MODE = "{mode}"\n'],
+                "metadata": {"tags": ["injected-parameters"]},
+                "outputs": [],
+            },
+            {
+                "cell_type": "code",
+                "source": ["1/0\n"],
+                "metadata": {"tags": []},
+                "outputs": [
+                    {
+                        "output_type": "error",
+                        "ename": "ZeroDivisionError",
+                        "evalue": "division by zero",
+                        "traceback": [],
+                    }
+                ],
+            },
+        ],
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    path.write_text(json.dumps(nb))
+
+
+class TestValidateFlag:
+    """Tests for --validate flag behavior."""
+
+    @patch("scripts.run_notebooks.execute_notebook")
+    @patch("scripts.run_notebooks.discover_notebooks")
+    def test_validate_pass_on_valid_notebook(
+        self, mock_discover, mock_execute, tmp_path
+    ):
+        """--validate should pass for a valid executed notebook."""
+        nb_name = "10_test.ipynb"
+        mock_discover.return_value = [Path(f"notebooks/{nb_name}")]
+
+        def fake_execute(nb_path, mode, output_dir):
+            _write_valid_notebook(output_dir / nb_path.name)
+            return True, "OK", 1.0
+
+        mock_execute.side_effect = fake_execute
+
+        with patch(
+            "sys.argv",
+            ["run_notebooks.py", "--mode", "smoke", "--validate"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                from scripts.run_notebooks import main
+
+                main()
+            assert exc_info.value.code == 0
+
+    @patch("scripts.run_notebooks.execute_notebook")
+    @patch("scripts.run_notebooks.discover_notebooks")
+    def test_validate_fail_on_cell_error(self, mock_discover, mock_execute, tmp_path):
+        """--validate should fail when notebook has cell errors."""
+        nb_name = "10_test.ipynb"
+        mock_discover.return_value = [Path(f"notebooks/{nb_name}")]
+
+        def fake_execute(nb_path, mode, output_dir):
+            _write_error_notebook(output_dir / nb_path.name)
+            return True, "OK", 1.0
+
+        mock_execute.side_effect = fake_execute
+
+        with patch(
+            "sys.argv",
+            ["run_notebooks.py", "--mode", "smoke", "--validate"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                from scripts.run_notebooks import main
+
+                main()
+            assert exc_info.value.code == 1
+
+    @patch("scripts.run_notebooks.execute_notebook")
+    @patch("scripts.run_notebooks.discover_notebooks")
+    def test_validate_skips_failed_execution(
+        self, mock_discover, mock_execute, tmp_path
+    ):
+        """--validate should skip notebooks that failed execution."""
+        mock_discover.return_value = [Path("notebooks/10_test.ipynb")]
+        mock_execute.return_value = (False, "Execution error", 1.0)
+
+        with patch(
+            "sys.argv",
+            ["run_notebooks.py", "--mode", "smoke", "--validate"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                from scripts.run_notebooks import main
+
+                main()
+            # Exit 1 because execution failed, not validation
+            assert exc_info.value.code == 1
