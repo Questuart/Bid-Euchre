@@ -70,7 +70,7 @@ This ensures reproducible comparisons across runs and environments.
 - Test import paths manually before adding
 - Include meaningful `notes` for future maintainers
 - Use `params` dict for configuration instead of hardcoding
-- Validate with `scripts/validate_teacher_roster_manifest.py` before committing
+- Validate with `scripts/validate_teacher_roster.py` before committing
 
 ### Don'ts
 - Don't change existing IDs (breaks experiment reproducibility)
