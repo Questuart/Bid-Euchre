@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from bid_euchre.experiments.meta import utc_now_iso
+from bid_euchre.models.freeze import verify_frozen
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +226,10 @@ def check_artifacts_frozen(
     artifact_dir: Optional[str],
     batch_purpose: str,
 ) -> EligibilityResult:
-    """Check that model artifacts in artifact_dir are frozen.
+    """Check that model artifacts in artifact_dir are frozen via verify_frozen().
+
+    Uses verify_frozen() from models.freeze to check both frozen_at and
+    artifact_sha256 fields. Split manifest files are excluded from this check.
 
     - batch_purpose='promotion' + unfrozen artifacts -> FAIL
     - batch_purpose!='promotion' + unfrozen artifacts -> PASS with warning
@@ -258,15 +262,18 @@ def check_artifacts_frozen(
             detail="Artifact directory not found (optional for non-promotion)",
         )
 
-    # Find model artifact JSON files (exclude meta.json, rollup.json, etc.)
+    # Find model artifact JSON files (exclude infrastructure and split manifests)
     exempt = {
         "meta.json",
         "rollup.json",
         "canonical_summary.json",
         "training_metrics.json",
-        "config_effective.yaml",
     }
-    model_artifacts = [p for p in artifact_path.glob("*.json") if p.name not in exempt]
+    model_artifacts = [
+        p
+        for p in artifact_path.glob("*.json")
+        if p.name not in exempt and not p.name.startswith("split_manifest")
+    ]
 
     if not model_artifacts:
         return EligibilityResult(
@@ -277,13 +284,8 @@ def check_artifacts_frozen(
 
     unfrozen = []
     for path in model_artifacts:
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            if data.get("frozen_at") is None:
-                unfrozen.append(path.name)
-        except (json.JSONDecodeError, OSError):
-            unfrozen.append(f"{path.name} (unreadable)")
+        if not verify_frozen(path):
+            unfrozen.append(path.name)
 
     if unfrozen:
         detail = f"Unfrozen artifacts: {sorted(unfrozen)}"

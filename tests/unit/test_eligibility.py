@@ -299,6 +299,43 @@ class TestCheckArtifactsFrozen:
         result = check_artifacts_frozen(str(tmp_path), "promotion")
         assert result.status == "PASS"
 
+    def test_split_manifest_excluded(self, tmp_path):
+        """Split manifest JSON files must not be treated as model artifacts."""
+        (tmp_path / "split_manifest_suit.json").write_text(
+            json.dumps({"schema_version": 1, "split_type": "three_way"})
+        )
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "PASS"
+        assert "No model artifacts" in result.detail
+
+    def test_split_manifest_with_model_artifact(self, tmp_path):
+        """Split manifest alongside a frozen model artifact should pass."""
+        (tmp_path / "split_manifest_suit.json").write_text(
+            json.dumps({"schema_version": 1, "split_type": "three_way"})
+        )
+        (tmp_path / "olsa_v1.json").write_text(
+            json.dumps(
+                {
+                    "frozen_at": "2026-02-07T12:00:00Z",
+                    "artifact_sha256": "abc123",
+                }
+            )
+        )
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "PASS"
+        assert "1 model artifacts frozen" in result.detail
+
+    def test_missing_artifact_sha256_fails_promotion(self, tmp_path):
+        """Artifact with frozen_at but missing artifact_sha256 must fail via verify_frozen."""
+        (tmp_path / "olsa_v1.json").write_text(
+            json.dumps(
+                {"frozen_at": "2026-02-07T12:00:00Z", "artifact_type": "olsa_v1"}
+            )
+        )
+        result = check_artifacts_frozen(str(tmp_path), "promotion")
+        assert result.status == "FAIL"
+        assert "olsa_v1.json" in result.detail
+
 
 class TestCheckSplitManifests:
     def test_promotion_no_dir_fails(self):
