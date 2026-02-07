@@ -38,9 +38,13 @@ Structure:
 Current scripts:
 - `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
 - `compare_runs.py` — Run comparison utility with bootstrap statistics
+- `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `generate_report.py` — Per-run report generator
 - `lint_repo.py` — Repository linter (enforces boundaries and data policy)
+- `play_policy_gate.py` — Play policy stability gate
+- `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_bidless_diagnostics.py` — Bidless feature dataset diagnostics
+- `run_notebooks.py` — Notebook execution via papermill (CI tooling)
 - `run_suite.py` — Suite runner (batches experiments with rollup generation)
 - `run_tests.py` — Test runner utility
 - `train_bidder.py` — Bidder model training
@@ -125,6 +129,39 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 - `artifacts/` — Model binaries and intermediates (if generated)
 
 **Full details**: See `EXPERIMENTS.md` for complete run output structure and reproduction instructions.
+
+---
+
+## Canonical CLI Contract
+
+### Primary commands (production workflows)
+
+| Command | Purpose |
+|---------|---------|
+| `experiments/run_experiment.py` | Run experiments (seed required) |
+| `scripts/generate_report.py` | Generate per-run reports |
+| `scripts/run_suite.py` | Batch experiment runner |
+
+### Supporting tooling
+
+| Command | Purpose |
+|---------|---------|
+| `scripts/compare_runs.py` | Compare two runs with bootstrap statistics |
+| `scripts/compare_rollup.py` | Drift detection against baseline fixture |
+| `scripts/lint_repo.py` | Repository linter |
+| `scripts/run_notebooks.py` | Notebook execution via papermill (CI) |
+| `scripts/validate_configs.py` | Config validation |
+| `scripts/validate_teacher_roster.py` | Teacher roster validation |
+
+### Research/internal tooling
+
+| Command | Purpose |
+|---------|---------|
+| `scripts/run_auction_comparator.py` | Auction comparator orchestrator |
+| `scripts/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
+| `scripts/play_policy_gate.py` | Play policy stability gate |
+| `scripts/run_bidless_diagnostics.py` | Bidless diagnostics |
+| `scripts/train_bidder.py` | Bidder model training |
 
 ---
 

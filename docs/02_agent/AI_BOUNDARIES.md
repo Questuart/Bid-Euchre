@@ -84,6 +84,31 @@ make check  # Runs: repo-lint + ruff + pytest (fast suite)
 
 ---
 
+## Canonical Commands for AI Agents
+
+When running experiments and generating reports, use these exact invocation patterns:
+
+```bash
+# Run an experiment (always include --seed)
+PYTHONPATH=src python experiments/run_experiment.py \
+  --config experiments/configs/<config>.yaml --seed 42
+
+# Generate a report for a completed run
+PYTHONPATH=src python scripts/generate_report.py --run-dir data/runs/<run_id>
+
+# Run a suite of experiments
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/<suite>.yaml --seed 42
+
+# Compare two runs
+PYTHONPATH=src python scripts/compare_runs.py \
+  --baseline data/runs/<baseline> --candidate data/runs/<candidate> --seed 42
+```
+
+**Do not** invoke `run_experiment.py` with flags it does not support (e.g., `--run-id`). The runner auto-generates run IDs with timestamps.
+
+---
+
 ## References
 
 - **Workflow guidance**: [docs/02_agent/AGENTS.md](AGENTS.md)

@@ -23,23 +23,67 @@ from pathlib import Path
 import yaml
 
 
-def run_experiment(config_path, seed, run_id, extra_args=None):
-    """Run a single experiment via the canonical runner."""
+def _detect_new_run_dir(runs_base, before_snapshot):
+    """Detect the new run directory by diffing data/runs/ before/after.
+
+    Returns the new directory path, or None if no new directory was created.
+    """
+    runs_path = Path(runs_base)
+    if not runs_path.is_dir():
+        return None
+    after_snapshot = {p.name for p in runs_path.iterdir() if p.is_dir()}
+    new_dirs = after_snapshot - before_snapshot
+    if len(new_dirs) == 1:
+        return str(runs_path / new_dirs.pop())
+    return None
+
+
+def _snapshot_runs_dir(runs_base="data/runs"):
+    """Snapshot current run directory names for before/after diffing."""
+    runs_path = Path(runs_base)
+    if not runs_path.is_dir():
+        return set()
+    return {p.name for p in runs_path.iterdir() if p.is_dir()}
+
+
+def run_experiment(config_path, seed, runs_base="data/runs", extra_args=None):
+    """Run a single experiment via the canonical runner.
+
+    Returns the detected run directory path, or None on failure.
+    The runner auto-generates run IDs with timestamps, so we detect the
+    new directory by snapshotting data/runs/ before/after.
+    """
+    before = _snapshot_runs_dir(runs_base)
+
     cmd = [
         sys.executable, "experiments/run_experiment.py",
         "--config", config_path,
         "--seed", str(seed),
-        "--run-id", run_id,
     ]
     if extra_args:
         cmd.extend(extra_args)
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"FAILED: {run_id}")
+        print(f"FAILED: experiment with config {config_path}")
         print(result.stderr)
-        return False
-    return True
+        return None
+
+    # Primary: parse stdout for "Run directory: <path>"
+    for line in result.stdout.splitlines():
+        if "Run directory:" in line:
+            # Line format: "📁 Run directory: data/runs/<run_id>"
+            run_dir = line.split("Run directory:")[-1].strip()
+            if run_dir and Path(run_dir).is_dir():
+                return run_dir
+
+    # Fallback: diff data/runs/ before/after
+    detected = _detect_new_run_dir(runs_base, before)
+    if detected:
+        return detected
+
+    print("WARNING: Could not detect run directory from stdout or filesystem diff")
+    return None
 
 
 def generate_evaluation(run_dir):
@@ -163,12 +207,14 @@ def main():
 
     experiment_name = config.get("experiment_name", "auction_comparator")
 
+    # Track run directories per policy (populated during run or from --skip-run lookup)
+    run_dirs_by_policy = {}
+
     if not args.skip_run:
         # Run experiment for each bidder individually
         print(f"Running auction comparator with {len(policies)} bidders, n_per={n_per}...")
         for policy in policies:
             policy_name = policy["name"]
-            run_id = f"{experiment_name}_{policy_name}_{args.seed}"
 
             # Create a per-policy config
             per_policy_config = {
@@ -183,21 +229,38 @@ def main():
                 yaml.dump(per_policy_config, f)
 
             print(f"  Running {policy_name}...")
-            if not run_experiment(config_path, args.seed, run_id):
+            run_dir = run_experiment(config_path, args.seed)
+            if run_dir is None:
                 print(f"  FAILED: {policy_name}")
                 continue
 
-            # Generate evaluation
-            run_dir = f"data/runs/{run_id}"
+            run_dirs_by_policy[policy_name] = run_dir
             generate_evaluation(run_dir)
+    else:
+        # In --skip-run mode, scan data/runs/ for matching directories
+        runs_path = Path("data/runs")
+        if runs_path.is_dir():
+            for policy in policies:
+                policy_name = policy["name"]
+                prefix = f"{experiment_name}_{policy_name}_"
+                matches = sorted(
+                    (p for p in runs_path.iterdir() if p.is_dir() and p.name.startswith(prefix)),
+                    key=lambda p: p.name,
+                    reverse=True,
+                )
+                if matches:
+                    run_dirs_by_policy[policy_name] = str(matches[0])
 
     # Collect metrics (require evaluation.json — no silent fallback)
     metrics_by_bidder = {}
     missing_evaluations = []
     for policy in policies:
         policy_name = policy["name"]
-        run_id = f"{experiment_name}_{policy_name}_{args.seed}"
-        run_dir = f"data/runs/{run_id}"
+        run_dir = run_dirs_by_policy.get(policy_name)
+
+        if not run_dir:
+            missing_evaluations.append(policy_name)
+            continue
 
         evaluation = load_evaluation(run_dir)
         if evaluation and evaluation.get("strategies"):
@@ -217,8 +280,8 @@ def main():
     if missing_evaluations:
         print("ERROR: Missing evaluation data for the following bidders:")
         for name in missing_evaluations:
-            run_id = f"{experiment_name}_{name}_{args.seed}"
-            print(f"  - {name}  (expected at data/runs/{run_id}/reports/bidding_strategy/evaluation.json)")
+            run_dir = run_dirs_by_policy.get(name, "<no run directory found>")
+            print(f"  - {name}  (run_dir: {run_dir})")
         print("\nTo generate evaluation data, re-run without --skip-run:")
         print(f"  uv run python scripts/run_auction_comparator.py --config {args.config} --seed {args.seed}")
         sys.exit(1)
