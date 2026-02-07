@@ -165,6 +165,21 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 
 ---
 
+## Module Dependency Contract
+
+The following import edges are explicitly allowed between `reporting/` and `diagnostics/`:
+
+| Edge | Status | Reason |
+|------|--------|--------|
+| `diagnostics/*.py` → `reporting.style` | Allowed | Shared styling constants |
+| `reporting.charts` → `diagnostics.charts` | Allowed | Direct import for chart composition |
+| `reporting.__init__` → `reporting.charts` | **Forbidden** | Would trigger circular import |
+| `reporting.style` → `diagnostics.*` | **Forbidden** | Back-edge would create cycle |
+
+These constraints are enforced by `tests/unit/test_import_contract.py`.
+
+---
+
 ## Design Principles
 
 1. **Single source of truth**: One canonical runner (`run_experiment.py`), one report generator (`generate_report.py`)
