@@ -184,6 +184,33 @@ class TestStrategyMatchupCharts:
             names = [Path(p).stem for p in paths]
             assert "self_play_control" not in names
 
+    def test_self_play_by_contract_with_scenarios(self, matchup_results):
+        """Generates per-contract self-play chart when scenarios present."""
+        # Add scenarios to self-play entries
+        for key in list(matchup_results.keys()):
+            team0, team1 = key
+            if team0 == team1:
+                matchup_results[key]["scenarios"] = {
+                    "suit_C": {"avg_team0": 5.1, "deals": 50},
+                    "suit_D": {"avg_team0": 4.9, "deals": 50},
+                    "suit_H": {"avg_team0": 5.0, "deals": 50},
+                    "suit_S": {"avg_team0": 5.2, "deals": 50},
+                    "high": {"avg_team0": 4.8, "deals": 50},
+                    "low": {"avg_team0": 5.3, "deals": 50},
+                }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_strategy_matchup_charts(matchup_results, tmpdir)
+            names = [Path(p).stem for p in paths]
+            assert "self_play_by_contract" in names
+
+    def test_self_play_by_contract_skips_without_scenarios(self, matchup_results):
+        """No error when matchup results lack scenarios key."""
+        # matchup_results fixture doesn't have scenarios by default
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_strategy_matchup_charts(matchup_results, tmpdir)
+            names = [Path(p).stem for p in paths]
+            assert "self_play_by_contract" not in names
+
 
 @pytest.fixture
 def feature_outcome_with_trump_df(feature_outcome_df):

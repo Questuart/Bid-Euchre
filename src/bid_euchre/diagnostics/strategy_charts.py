@@ -138,10 +138,12 @@ def plot_win_rate_heatmap(
             for j in range(n):
                 val = matrix[i, j]
                 if not np.isnan(val):
-                    color = "white" if (vmax and (val < 0.3 * vmax or val > 0.7 * vmax)) else "black"
-                    ax.text(
-                        j, i, f"{val:{fmt}}", ha="center", va="center", color=color
+                    color = (
+                        "white"
+                        if (vmax and (val < 0.3 * vmax or val > 0.7 * vmax))
+                        else "black"
                     )
+                    ax.text(j, i, f"{val:{fmt}}", ha="center", va="center", color=color)
 
     ax.set_xlabel("Team 1 Strategy")
     ax.set_ylabel("Team 0 Strategy")
@@ -187,7 +189,13 @@ def plot_tricks_distribution_comparison(
 
     if not trick_data:
         fig, ax = plt.subplots(figsize=figsize)
-        ax.text(0.5, 0.5, f"No trick data found (key: {tricks_key})", ha="center", va="center")
+        ax.text(
+            0.5,
+            0.5,
+            f"No trick data found (key: {tricks_key})",
+            ha="center",
+            va="center",
+        )
         return fig
 
     fig, ax = plt.subplots(figsize=figsize)
@@ -533,5 +541,96 @@ def plot_matchup_summary(
         )
 
     fig.suptitle("Strategy Matchup Summary", fontsize=14, y=1.02)
+    plt.tight_layout()
+    return fig
+
+
+def plot_self_play_by_contract(
+    matchup_results: Dict[Tuple[str, str], Dict[str, Any]],
+    expected_mean: float = 5.0,
+    figsize: Tuple[int, int] = (14, 8),
+    title: Optional[str] = None,
+) -> Optional[plt.Figure]:
+    """Plot self-play mean tricks broken down by contract/scenario.
+
+    Creates a grouped bar chart showing mean tricks per scenario for each
+    self-play strategy, with a control band around expected_mean.
+
+    Args:
+        matchup_results: Dict mapping (team0, team1) to result dicts.
+            Self-play entries (team0 == team1) with 'scenarios' key are used.
+        expected_mean: Expected mean tricks for fair self-play (default 5.0)
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure, or None if no self-play entries have scenario data
+    """
+    _apply_style()
+
+    # Extract self-play entries with scenarios
+    self_play = {}
+    for (team0, team1), result in matchup_results.items():
+        if team0 == team1 and "scenarios" in result:
+            self_play[team0] = result["scenarios"]
+
+    if not self_play:
+        return None
+
+    # Collect all scenario names across all strategies
+    all_scenarios = sorted(
+        set(s for scenarios in self_play.values() for s in scenarios.keys())
+    )
+
+    if not all_scenarios:
+        return None
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Grouped bar chart
+    strategies = sorted(self_play.keys())
+    n_strategies = len(strategies)
+    n_scenarios = len(all_scenarios)
+
+    bar_width = 0.8 / n_strategies
+    x = np.arange(n_scenarios)
+
+    for i, strategy in enumerate(strategies):
+        scenarios = self_play[strategy]
+        means = []
+        for scenario in all_scenarios:
+            data = scenarios.get(scenario, {})
+            # Use avg_team0 or mean_tricks_team0
+            mean = data.get("avg_team0", data.get("mean_tricks_team0", np.nan))
+            means.append(mean)
+
+        offset = (i - n_strategies / 2 + 0.5) * bar_width
+        color = get_strategy_color(strategy)
+        label = get_strategy_name(strategy)
+        ax.bar(x + offset, means, bar_width, color=color, alpha=0.8, label=label)
+
+    # Control band
+    ax.axhline(expected_mean, color="green", linestyle="-", linewidth=2)
+    ax.axhspan(expected_mean - 0.25, expected_mean + 0.25, color="green", alpha=0.1)
+
+    # Labels
+    from ..reporting.style import get_contract_label
+
+    scenario_labels = []
+    for s in all_scenarios:
+        # Parse scenario name: "suit_C" -> get_contract_label("suit", "C")
+        if s.startswith("suit_") and len(s) == 6:
+            scenario_labels.append(get_contract_label("suit", s[-1]))
+        else:
+            scenario_labels.append(get_contract_label(s))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(scenario_labels, rotation=45, ha="right")
+    ax.set_xlabel("Contract / Scenario")
+    ax.set_ylabel("Mean Tricks (Team 0)")
+    ax.set_title(title or "Self-Play Mean Tricks by Contract")
+    ax.legend(loc="upper right")
+    ax.grid(True, axis="y", alpha=0.3)
+
     plt.tight_layout()
     return fig

@@ -33,6 +33,7 @@ from ..diagnostics.charts import (
 )
 from ..diagnostics.strategy_charts import (
     plot_matchup_summary,
+    plot_self_play_by_contract,
     plot_self_play_control,
     plot_strategy_delta_bars,
     plot_tricks_distribution_comparison,
@@ -194,6 +195,11 @@ def generate_strategy_matchup_charts(
     if self_play:
         fig = plot_self_play_control(self_play)
         paths.append(_save_figure(fig, out, "self_play_control", dpi))
+
+    # Per-contract self-play breakdown (skip if no scenario data)
+    fig = plot_self_play_by_contract(matchup_results)
+    if fig is not None:
+        paths.append(_save_figure(fig, out, "self_play_by_contract", dpi))
 
     return paths
 
