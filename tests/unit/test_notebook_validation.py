@@ -125,6 +125,38 @@ class TestCheckModeParameter:
         errors = check_mode_parameter(nb, expected_mode="SMOKE")
         assert any("injected-parameters" in e for e in errors)
 
+    def test_injected_cell_no_mode_assignment(self):
+        """injected-parameters cell with no MODE line should fail when expected_mode set."""
+        cells = [
+            _make_code_cell('MODE = "QUICK"', tags=["parameters"]),
+            _make_code_cell("SEED = 42", tags=["injected-parameters"]),
+        ]
+        nb = _make_notebook(cells=cells)
+        errors = check_mode_parameter(nb, expected_mode="SMOKE")
+        assert any("not found or unparseable" in e for e in errors)
+
+    def test_injected_cell_malformed_mode(self):
+        """injected-parameters cell with malformed MODE should fail when expected_mode set."""
+        cells = [
+            _make_code_cell('MODE = "QUICK"', tags=["parameters"]),
+            # MODE without = is not parseable
+            _make_code_cell("SOMETHING_ELSE = 1", tags=["injected-parameters"]),
+        ]
+        nb = _make_notebook(cells=cells)
+        errors = check_mode_parameter(nb, expected_mode="SMOKE")
+        assert any("not found or unparseable" in e for e in errors)
+
+    def test_injected_cell_no_mode_no_expected(self):
+        """injected-parameters cell with no MODE should pass when no expected_mode."""
+        cells = [
+            _make_code_cell('MODE = "QUICK"', tags=["parameters"]),
+            _make_code_cell("SEED = 42", tags=["injected-parameters"]),
+        ]
+        nb = _make_notebook(cells=cells)
+        # No expected_mode → no strict check on injected cell content
+        errors = check_mode_parameter(nb)
+        assert errors == []
+
 
 # ---------------------------------------------------------------------------
 # extract_cell_errors

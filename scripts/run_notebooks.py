@@ -58,7 +58,7 @@ def discover_notebooks(pattern: str = "notebooks/phase0_bidless/*.ipynb") -> lis
     repo_root = Path(__file__).parent.parent
     all_notebooks = sorted(glob.glob(str(repo_root / pattern)))
     # Exclude archived notebooks
-    notebooks = [Path(nb) for nb in all_notebooks if "/archive/" not in nb]
+    notebooks = [Path(nb) for nb in all_notebooks if "archive" not in Path(nb).parts]
     return notebooks
 
 
@@ -114,18 +114,40 @@ def execute_notebook(
         return False, str(e)[:200], duration
 
 
-def build_gate_artifact(results: list[tuple], mode: str) -> dict:
-    """Build notebook gate JSON from execution results.
+def build_gate_artifact(
+    results: list[tuple],
+    mode: str,
+    validation_results: dict[str, dict] | None = None,
+) -> dict:
+    """Build notebook gate JSON from execution and validation results.
 
     Args:
         results: List of (name, success, message, duration) tuples
         mode: Execution mode ("smoke" or "quick")
+        validation_results: Optional dict mapping notebook name to
+            {"ok": bool, "errors": list[str]} from post-execution validation
 
     Returns:
         Gate artifact dict conforming to NOTEBOOK_GATE_SCHEMA_VERSION 1
     """
-    passed = sum(1 for _, success, _, _ in results if success)
-    failed = len(results) - passed
+    notebooks = []
+    for name, success, message, duration in results:
+        entry = {
+            "name": name,
+            "status": "PASS" if success else "FAIL",
+            "duration_seconds": round(duration, 2),
+            "message": message,
+        }
+        if validation_results and name in validation_results:
+            vr = validation_results[name]
+            entry["validation_status"] = "PASS" if vr["ok"] else "FAIL"
+            if not vr["ok"]:
+                entry["validation_message"] = "; ".join(vr["errors"])
+                entry["status"] = "FAIL"
+        notebooks.append(entry)
+
+    passed = sum(1 for nb in notebooks if nb["status"] == "PASS")
+    failed = len(notebooks) - passed
     return {
         "schema_version": NOTEBOOK_GATE_SCHEMA_VERSION,
         "gate_status": "PASS" if failed == 0 else "FAIL",
@@ -134,15 +156,7 @@ def build_gate_artifact(results: list[tuple], mode: str) -> dict:
         "total": len(results),
         "passed": passed,
         "failed": failed,
-        "notebooks": [
-            {
-                "name": name,
-                "status": "PASS" if success else "FAIL",
-                "duration_seconds": round(duration, 2),
-                "message": message,
-            }
-            for name, success, message, duration in results
-        ],
+        "notebooks": notebooks,
     }
 
 
@@ -259,6 +273,7 @@ def main():
         print(f"Output notebooks: {output_dir}")
 
     # Validate executed notebooks if requested
+    validation_map: dict[str, dict] | None = None
     if args.validate:
         from bid_euchre.diagnostics.notebook_validation import validate_notebook
 
@@ -270,6 +285,7 @@ def main():
         print("VALIDATION")
         print("=" * 60)
 
+        validation_map = {}
         validation_failures = 0
         for name, success, _, _ in results:
             if not success:
@@ -280,17 +296,20 @@ def main():
             result = validate_notebook(output_path, expected_mode=expected_mode)
 
             if result.ok:
+                validation_map[name] = {"ok": True, "errors": []}
                 print(f"  [PASS] {name}")
             else:
                 validation_failures += 1
-                print(f"  [FAIL] {name}")
-                for err in result.errors:
-                    print(f"    - {err}")
+                errors = list(result.errors)
                 for cell_err in result.cell_errors:
-                    print(
-                        f"    - Cell {cell_err.cell_index}: "
+                    errors.append(
+                        f"Cell {cell_err.cell_index}: "
                         f"{cell_err.ename}: {cell_err.evalue}"
                     )
+                validation_map[name] = {"ok": False, "errors": errors}
+                print(f"  [FAIL] {name}")
+                for err in errors:
+                    print(f"    - {err}")
 
         if validation_failures > 0:
             failed += validation_failures
@@ -300,7 +319,9 @@ def main():
     if args.gate_output_dir:
         gate_dir = Path(args.gate_output_dir)
         gate_dir.mkdir(parents=True, exist_ok=True)
-        gate = build_gate_artifact(results, args.mode)
+        gate = build_gate_artifact(
+            results, args.mode, validation_results=validation_map
+        )
         with open(gate_dir / "notebook_gate.json", "w") as f:
             json.dump(gate, f, indent=2, sort_keys=True)
         with open(gate_dir / "NOTEBOOK_GATE.md", "w") as f:

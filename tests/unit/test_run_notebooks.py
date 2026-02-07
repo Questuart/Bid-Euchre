@@ -42,6 +42,21 @@ class TestDiscoverNotebooks:
         assert "20_test.ipynb" in names
         assert "old_test.ipynb" not in names
 
+    def test_archive_exclusion_uses_path_parts(self):
+        """Archive exclusion should use Path.parts, not substring matching."""
+        fake_glob_results = [
+            "/repo/notebooks/phase0_bidless/10_archive_notes.ipynb",  # not in archive dir
+            "/repo/notebooks/phase0_bidless/archive/old_test.ipynb",  # in archive dir
+        ]
+        with patch("scripts.run_notebooks.glob.glob", return_value=fake_glob_results):
+            notebooks = discover_notebooks("notebooks/phase0_bidless/*.ipynb")
+
+        names = [nb.name for nb in notebooks]
+        # File with "archive" in name but not in archive/ dir should be included
+        assert "10_archive_notes.ipynb" in names
+        # File actually in archive/ dir should be excluded
+        assert "old_test.ipynb" not in names
+
     def test_returns_sorted_paths(self):
         """Discovered notebooks should be sorted by path."""
         notebooks = discover_notebooks("notebooks/phase0_bidless/*.ipynb")
@@ -426,3 +441,42 @@ class TestValidateFlag:
                 main()
             # Exit 1 because execution failed, not validation
             assert exc_info.value.code == 1
+
+    @patch("scripts.run_notebooks.execute_notebook")
+    @patch("scripts.run_notebooks.discover_notebooks")
+    def test_validate_failure_reflected_in_gate_artifact(
+        self, mock_discover, mock_execute, tmp_path
+    ):
+        """Gate artifact should be FAIL when execution passes but validation fails."""
+        nb_name = "10_test.ipynb"
+        mock_discover.return_value = [Path(f"notebooks/{nb_name}")]
+
+        def fake_execute(nb_path, mode, output_dir):
+            _write_error_notebook(output_dir / nb_path.name)
+            return True, "OK", 1.0
+
+        mock_execute.side_effect = fake_execute
+
+        gate_dir = tmp_path / "gate"
+        with patch(
+            "sys.argv",
+            [
+                "run_notebooks.py",
+                "--mode",
+                "smoke",
+                "--validate",
+                "--gate-output-dir",
+                str(gate_dir),
+            ],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                from scripts.run_notebooks import main
+
+                main()
+            assert exc_info.value.code == 1
+
+        gate = json.loads((gate_dir / "notebook_gate.json").read_text())
+        assert gate["gate_status"] == "FAIL"
+        nb_entry = gate["notebooks"][0]
+        assert nb_entry["status"] == "FAIL"
+        assert nb_entry["validation_status"] == "FAIL"

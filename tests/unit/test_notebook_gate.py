@@ -64,9 +64,9 @@ class TestBuildGateArtifact:
         )
         gate = build_gate_artifact(results, "quick")
         for nb in gate["notebooks"]:
-            assert NOTEBOOK_RESULT_REQUIRED_FIELDS <= set(nb.keys()), (
-                f"Missing: {NOTEBOOK_RESULT_REQUIRED_FIELDS - set(nb.keys())}"
-            )
+            assert NOTEBOOK_RESULT_REQUIRED_FIELDS <= set(
+                nb.keys()
+            ), f"Missing: {NOTEBOOK_RESULT_REQUIRED_FIELDS - set(nb.keys())}"
 
     def test_gate_mode_propagated(self):
         gate = build_gate_artifact([], "quick")
@@ -80,6 +80,67 @@ class TestBuildGateArtifact:
         results = [("test.ipynb", True, "OK", 1.23456)]
         gate = build_gate_artifact(results, "smoke")
         assert gate["notebooks"][0]["duration_seconds"] == 1.23
+
+    def test_gate_fail_on_validation_failure(self):
+        """Gate should be FAIL when execution passes but validation fails."""
+        results = _make_results(("10_test.ipynb", True))
+        validation_results = {
+            "10_test.ipynb": {
+                "ok": False,
+                "errors": ["Cell 2: ZeroDivisionError: division by zero"],
+            }
+        }
+        gate = build_gate_artifact(
+            results, "smoke", validation_results=validation_results
+        )
+        assert gate["gate_status"] == "FAIL"
+        assert gate["failed"] == 1
+        assert gate["passed"] == 0
+        nb_entry = gate["notebooks"][0]
+        assert nb_entry["status"] == "FAIL"
+        assert nb_entry["validation_status"] == "FAIL"
+        assert "ZeroDivisionError" in nb_entry["validation_message"]
+
+    def test_gate_pass_with_validation_pass(self):
+        """Gate should be PASS when both execution and validation pass."""
+        results = _make_results(("10_test.ipynb", True))
+        validation_results = {
+            "10_test.ipynb": {"ok": True, "errors": []},
+        }
+        gate = build_gate_artifact(
+            results, "smoke", validation_results=validation_results
+        )
+        assert gate["gate_status"] == "PASS"
+        assert gate["passed"] == 1
+        nb_entry = gate["notebooks"][0]
+        assert nb_entry["status"] == "PASS"
+        assert nb_entry["validation_status"] == "PASS"
+
+    def test_gate_no_validation_results_backward_compat(self):
+        """Gate without validation_results should work as before (no validation_status key)."""
+        results = _make_results(("10_test.ipynb", True))
+        gate = build_gate_artifact(results, "smoke")
+        nb_entry = gate["notebooks"][0]
+        assert nb_entry["status"] == "PASS"
+        assert "validation_status" not in nb_entry
+
+    def test_gate_mixed_execution_and_validation_failures(self):
+        """Gate counts both execution and validation failures correctly."""
+        results = _make_results(
+            ("10_test.ipynb", False),  # execution fail
+            ("20_test.ipynb", True),  # execution pass, validation fail
+            ("30_test.ipynb", True),  # all pass
+        )
+        validation_results = {
+            "20_test.ipynb": {"ok": False, "errors": ["MODE mismatch"]},
+            "30_test.ipynb": {"ok": True, "errors": []},
+        }
+        gate = build_gate_artifact(
+            results, "smoke", validation_results=validation_results
+        )
+        assert gate["gate_status"] == "FAIL"
+        assert gate["failed"] == 2
+        assert gate["passed"] == 1
 
 
 class TestBuildGateMarkdown:

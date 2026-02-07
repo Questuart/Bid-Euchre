@@ -104,6 +104,11 @@ def check_mode_parameter(nb: dict, expected_mode: str | None = None) -> list[str
             f"No 'injected-parameters' cell found (expected MODE={expected_mode})"
         )
 
+    if expected_mode and has_injected_cell and injected_mode is None:
+        errors.append(
+            "injected-parameters cell exists but MODE assignment not found or unparseable"
+        )
+
     if expected_mode and injected_mode and injected_mode != expected_mode:
         errors.append(f"Injected MODE={injected_mode!r}, expected {expected_mode!r}")
 
