@@ -267,6 +267,88 @@ class TestContractFacetedCharts:
         assert "contract_faceted" in AVAILABLE_SUITES
 
 
+class TestChartContentValidity:
+    """Assert production charts render actual data, not placeholder text."""
+
+    def test_feature_health_all_charts_have_content(
+        self, feature_outcome_with_trump_df
+    ):
+        """All feature_health charts should be non-trivial after normalization fix."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_feature_health_charts(
+                feature_outcome_with_trump_df, tmpdir
+            )
+            assert len(paths) >= 4  # seat, contract, distributions, correlation
+            for p in paths:
+                assert (
+                    Path(p).stat().st_size > 2048
+                ), f"{Path(p).name} suspiciously small"
+
+    def test_feature_outcome_all_charts_have_content(
+        self, feature_outcome_with_trump_df
+    ):
+        """All feature_outcome charts should render with normalized data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_feature_outcome_charts(
+                feature_outcome_with_trump_df, tmpdir
+            )
+            assert len(paths) >= 3  # correlation, scatter, outcome_distributions
+            for p in paths:
+                assert (
+                    Path(p).stat().st_size > 2048
+                ), f"{Path(p).name} suspiciously small"
+
+    def test_normalized_features_found(self):
+        """After normalization, diagnostic functions should find feat_ columns."""
+        from bid_euchre.reporting.charts import _normalize_for_diagnostics
+
+        df = pd.DataFrame(
+            {
+                "hand_value": [100, 200],
+                "trump_count": [3, 4],
+                "trump_suit": ["H", "S"],
+                "tricks_won": [5, 6],
+            }
+        )
+        norm = _normalize_for_diagnostics(df)
+        feat_cols = [c for c in norm.columns if c.startswith("feat_")]
+        assert len(feat_cols) >= 2
+        assert "feat_hand_value" in norm.columns
+        assert "trump" in norm.columns
+
+    def test_feature_health_includes_seat_and_contract_chart(self, feature_df):
+        """Feature health suite includes hand_value_by_seat_and_contract chart."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = generate_feature_health_charts(feature_df, tmpdir)
+            names = [Path(p).stem for p in paths]
+            assert "hand_value_by_seat_and_contract" in names
+
+    def test_hand_value_by_seat_and_contract_returns_figure(self, feature_df):
+        """Diagnostic function returns Figure with correct subplot count."""
+        from bid_euchre.diagnostics.charts import plot_hand_value_by_seat_and_contract
+        from bid_euchre.reporting.charts import _normalize_for_diagnostics
+
+        df = _normalize_for_diagnostics(feature_df)
+        fig = plot_hand_value_by_seat_and_contract(df)
+        assert isinstance(fig, plt.Figure)
+        axes = fig.get_axes()
+        assert len(axes) == 2  # suit + high (no "low" in fixture)
+        plt.close(fig)
+
+    def test_coefficient_heatmap_returns_figure(self):
+        """Coefficient heatmap renders with sample data."""
+        from bid_euchre.diagnostics.charts import plot_coefficient_heatmap
+
+        coefs = {
+            "suit": pd.Series({"bowers": 0.5, "trump_count": 0.3, "rank_sum": -0.2}),
+            "high": pd.Series({"bowers": 0.1, "trump_count": 0.0, "rank_sum": 0.4}),
+            "low": pd.Series({"bowers": -0.1, "trump_count": 0.2, "rank_sum": 0.5}),
+        }
+        fig = plot_coefficient_heatmap(coefs, top_n=3)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+
 class TestChartRunnerCLI:
     """Smoke tests for the chart_runner CLI."""
 

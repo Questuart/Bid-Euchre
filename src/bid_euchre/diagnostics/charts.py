@@ -1464,3 +1464,171 @@ def plot_feature_vs_outcome_by_contract(
     )
     plt.tight_layout()
     return fig
+
+
+def plot_hand_value_by_seat_and_contract(
+    df: pd.DataFrame,
+    figsize: Tuple[int, int] = (14, 5),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Faceted boxplot: hand value by seat, one panel per contract type.
+
+    Creates 1-3 subplots (suit, high, low) each showing hand_value
+    distribution by seat (0-3). Useful for detecting seat-level bias
+    that may be masked when contract types are pooled.
+
+    Args:
+        df: DataFrame with 'feat_hand_value', 'seat', 'contract_type' columns
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    _apply_style()
+
+    if "feat_hand_value" not in df.columns or "contract_type" not in df.columns:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.text(
+            0.5,
+            0.5,
+            "Required columns not found\n(feat_hand_value, contract_type)",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        return fig
+
+    contract_order = ["suit", "high", "low"]
+    present = [ct for ct in contract_order if ct in df["contract_type"].values]
+
+    if not present:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.text(
+            0.5, 0.5, "No recognized contract types found", ha="center", va="center"
+        )
+        return fig
+
+    ncols = len(present)
+    fig, axes = plt.subplots(1, ncols, figsize=figsize, squeeze=False)
+    axes = axes[0]
+
+    seats = sorted(df["seat"].unique())
+    seat_colors = _cycle_base_colors(len(seats))
+
+    for idx, ct in enumerate(present):
+        ax = axes[idx]
+        subset = df[df["contract_type"] == ct]
+
+        if HAS_SEABORN:
+            sns.boxplot(
+                data=subset,
+                x="seat",
+                y="feat_hand_value",
+                ax=ax,
+                order=seats,
+                palette=seat_colors,
+            )
+        else:
+            data = [
+                subset[subset["seat"] == s]["feat_hand_value"].values for s in seats
+            ]
+            bp = ax.boxplot(data, labels=[str(s) for s in seats], patch_artist=True)
+            for patch, color in zip(bp["boxes"], seat_colors):
+                patch.set_facecolor(color)
+                patch.set_alpha(0.7)
+
+        # Mean markers
+        means = [subset[subset["seat"] == s]["feat_hand_value"].mean() for s in seats]
+        ax.scatter(
+            range(len(means)),
+            means,
+            color="black",
+            marker="D",
+            s=40,
+            zorder=5,
+            label="Mean",
+        )
+
+        label = get_contract_label(ct)
+        ax.set_title(f"{label} (N={len(subset):,})")
+        ax.set_xlabel("Seat")
+        ax.set_ylabel("Hand Value" if idx == 0 else "")
+        ax.grid(True, alpha=0.3, axis="y")
+        if idx == 0:
+            ax.legend(fontsize=8)
+
+    fig.suptitle(title or "Hand Value by Seat and Contract Type", fontsize=12, y=1.02)
+    plt.tight_layout()
+    return fig
+
+
+def plot_coefficient_heatmap(
+    coefs_by_contract: dict,
+    top_n: int = 15,
+    figsize: Tuple[int, int] = (10, 8),
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Heatmap of standardized Ridge coefficients by contract type.
+
+    Displays a features (y-axis) x contract types (x-axis) heatmap where
+    color encodes coefficient magnitude and sign.
+
+    Args:
+        coefs_by_contract: Dict mapping contract type to pd.Series of
+            feature_name -> standardized coefficient. E.g.
+            {"suit": Series, "high": Series, "low": Series}
+        top_n: Number of top features to show (by max abs coefficient)
+        figsize: Figure size tuple
+        title: Optional title override
+
+    Returns:
+        matplotlib Figure
+    """
+    _apply_style()
+
+    if not coefs_by_contract:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.text(0.5, 0.5, "No coefficient data", ha="center", va="center")
+        return fig
+
+    # Build DataFrame: features x contract_types
+    coef_df = pd.DataFrame(coefs_by_contract)
+
+    # Select top_n features by max absolute coefficient across any contract
+    max_abs = coef_df.abs().max(axis=1).sort_values(ascending=False)
+    top_features = max_abs.head(top_n).index.tolist()
+    coef_df = coef_df.loc[top_features]
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if HAS_SEABORN:
+        sns.heatmap(
+            coef_df,
+            annot=True,
+            fmt=".3f",
+            cmap="RdBu_r",
+            center=0,
+            ax=ax,
+            linewidths=0.5,
+            cbar_kws={"label": "Standardized Coefficient"},
+        )
+    else:
+        im = ax.imshow(coef_df.values, cmap="RdBu_r", aspect="auto")
+        ax.set_xticks(range(len(coef_df.columns)))
+        ax.set_xticklabels(coef_df.columns)
+        ax.set_yticks(range(len(coef_df.index)))
+        ax.set_yticklabels(coef_df.index)
+        # Annotate cells
+        for i in range(len(coef_df.index)):
+            for j in range(len(coef_df.columns)):
+                val = coef_df.iloc[i, j]
+                ax.text(j, i, f"{val:.3f}", ha="center", va="center", fontsize=8)
+        fig.colorbar(im, ax=ax, label="Standardized Coefficient")
+
+    ax.set_title(title or "Standardized Coefficients by Contract Type")
+    ax.set_ylabel("Feature")
+    ax.set_xlabel("Contract Type")
+
+    plt.tight_layout()
+    return fig

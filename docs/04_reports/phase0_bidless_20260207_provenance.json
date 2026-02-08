@@ -2,7 +2,8 @@
   "report": "phase0_bidless_20260207.md",
   "generated": "2026-02-07T00:00:00Z",
   "regenerated": "2026-02-07T00:00:00Z",
-  "canonical_git_sha": "57268db5c6bdaa3e1f0fd353033976107b672dab",
+  "revision": "r4",
+  "canonical_git_sha": "941cdf6cd0485c7b9cb87512b6f944f41122b6d2",
   "original_data_sha": "ea55269db4db1771a8ee7cf31ea2fce82ceeb355",
   "seed": 42,
   "chart_suites": [
@@ -11,6 +12,14 @@
     "distribution",
     "strategy_matchup",
     "contract_faceted"
+  ],
+  "changes_in_r4": [
+    "Fixed normalization bug: _normalize_for_diagnostics() now called in generate_feature_health_charts() and generate_feature_outcome_charts()",
+    "New chart: hand_value_by_seat_and_contract.png (seat balance faceted by contract type)",
+    "New diagnostic functions: plot_hand_value_by_seat_and_contract(), plot_coefficient_heatmap()",
+    "New CLI flag: --per-contract-json on evaluate_diagnostic_tricks.py",
+    "Report rewrite: section reorder (health→sanity→gate→features→diagnostics), narrative improvements, direction explanations",
+    "6 new tests in TestChartContentValidity"
   ],
   "charts": {
     "self_play_control.png": {
@@ -38,6 +47,27 @@
       "purpose": "Hand evaluator calibration by contract type",
       "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_health --dpi 150"
     },
+    "hand_value_by_seat_and_contract.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_health",
+      "purpose": "Run health — seat balance faceted by contract type",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_health --dpi 150",
+      "added_in_r4": true
+    },
+    "feature_distributions.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_health",
+      "purpose": "Feature distribution grid (top 9 by variance)",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_health --dpi 150",
+      "fixed_in_r4": "Now uses _normalize_for_diagnostics() — charts render actual data instead of empty plots"
+    },
+    "feature_correlation.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_health",
+      "purpose": "Feature correlation heatmap (top 9 by variance)",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_health --dpi 150",
+      "fixed_in_r4": "Now uses _normalize_for_diagnostics() — charts render actual data instead of empty plots"
+    },
     "win_rate_heatmap.png": {
       "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
       "suite": "strategy_matchup",
@@ -60,6 +90,13 @@
       "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
       "suite": "feature_outcome",
       "purpose": "Diagnostic feature signal — correlation bar chart",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_outcome --dpi 150",
+      "fixed_in_r4": "Now uses _normalize_for_diagnostics() — charts render actual data instead of empty plots"
+    },
+    "feature_vs_outcome.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_outcome",
+      "purpose": "Top feature scatter plot (hand_value vs tricks_won)",
       "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_outcome --dpi 150"
     },
     "outcome_distributions.png": {
@@ -139,7 +176,7 @@
     },
     "diagnostic_evaluation": {
       "source": "docs/02_agent/DIAGNOSTIC_TRICKS_EVALUATION.md",
-      "repro_command": "uv run python scripts/evaluate_diagnostic_tricks.py --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 --seed 42 --output <out>"
+      "repro_command": "uv run python scripts/internal/evaluate_diagnostic_tricks.py --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 --seed 42 --output <out>"
     }
   }
 }
