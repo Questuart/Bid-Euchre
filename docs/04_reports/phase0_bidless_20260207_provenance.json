@@ -1,56 +1,119 @@
 {
   "report": "phase0_bidless_20260207.md",
   "generated": "2026-02-07T00:00:00Z",
-  "canonical_git_sha": "ea55269db4db1771a8ee7cf31ea2fce82ceeb355",
+  "regenerated": "2026-02-07T00:00:00Z",
+  "canonical_git_sha": "57268db5c6bdaa3e1f0fd353033976107b672dab",
+  "original_data_sha": "ea55269db4db1771a8ee7cf31ea2fce82ceeb355",
   "seed": 42,
+  "chart_suites": [
+    "feature_health",
+    "feature_outcome",
+    "distribution",
+    "strategy_matchup",
+    "contract_faceted"
+  ],
   "charts": {
     "self_play_control.png": {
       "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
       "suite": "strategy_matchup",
-      "purpose": "Run health — self-play fairness proof",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+      "purpose": "Run health — self-play fairness proof (aggregate)",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+    },
+    "self_play_by_contract.png": {
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "suite": "strategy_matchup",
+      "purpose": "Run health — per-contract self-play fairness proof",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150",
+      "added_in_pr": "#336"
     },
     "hand_value_by_seat.png": {
       "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
       "suite": "feature_health",
       "purpose": "Run health — seat balance proof",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_health --dpi 150"
+    },
+    "hand_value_by_contract.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_health",
+      "purpose": "Hand evaluator calibration by contract type",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_health --dpi 150"
     },
     "win_rate_heatmap.png": {
       "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
       "suite": "strategy_matchup",
       "purpose": "Strategy competitive landscape",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
     },
     "matchup_summary.png": {
       "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
       "suite": "strategy_matchup",
       "purpose": "Quantitative head-to-head deltas",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
+    },
+    "tricks_distribution.png": {
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "suite": "strategy_matchup",
+      "purpose": "Tricks distribution violin plots by matchup",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --output-dir <out> --suite strategy_matchup --dpi 150"
     },
     "feature_outcome_correlation.png": {
       "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
       "suite": "feature_outcome",
-      "purpose": "Diagnostic feature signal",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+      "purpose": "Diagnostic feature signal — correlation bar chart",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_outcome --dpi 150"
     },
     "outcome_distributions.png": {
       "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
       "suite": "feature_outcome",
-      "purpose": "Tricks distribution by contract",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+      "purpose": "Tricks distribution by contract type",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_outcome --dpi 150"
+    },
+    "feature_vs_outcome_by_contract.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "feature_outcome",
+      "purpose": "Feature-outcome scatter faceted by contract type",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite feature_outcome --dpi 150",
+      "added_in_pr": "#337"
     },
     "cdf.png": {
       "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
       "suite": "distribution",
-      "purpose": "Cumulative probability / tail behavior",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+      "purpose": "Cumulative probability by contract type",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite distribution --dpi 150"
     },
-    "hand_value_by_contract.png": {
+    "ccdf.png": {
       "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
-      "suite": "feature_health",
-      "purpose": "Hand evaluator calibration",
-      "command": "uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite all --dpi 150"
+      "suite": "distribution",
+      "purpose": "Tail distribution (complementary CDF) by contract type",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite distribution --dpi 150"
+    },
+    "hand_value_by_trump.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "contract_faceted",
+      "purpose": "Hand value distribution by trump suit — suit invariance check",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite contract_faceted --dpi 150",
+      "added_in_pr": "#335"
+    },
+    "outcome_by_trump.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "contract_faceted",
+      "purpose": "Tricks won distribution by trump suit — outcome invariance check",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite contract_faceted --dpi 150",
+      "added_in_pr": "#335"
+    },
+    "feature_heatmap_by_suit.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "contract_faceted",
+      "purpose": "Z-score normalized feature means by trump suit",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite contract_faceted --dpi 150",
+      "added_in_pr": "#335"
+    },
+    "suit_variance_summary.png": {
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "suite": "contract_faceted",
+      "purpose": "Hand value variance stability across trump suits",
+      "command": "PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --output-dir <out> --suite contract_faceted --dpi 150",
+      "added_in_pr": "#335"
     }
   },
   "tables": {

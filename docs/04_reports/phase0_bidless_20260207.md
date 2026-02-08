@@ -1,9 +1,10 @@
 # Phase 0 Bidless Report — 2026-02-07
 
 > **Snapshot date:** 2026-02-07
-> **Canonical git SHA:** `ea55269db4db1771a8ee7cf31ea2fce82ceeb355`
+> **Canonical git SHA:** `57268db5c6bdaa3e1f0fd353033976107b672dab`
 > **Seed:** 42
 > **Total budget:** 5.1M hands across 5 canonical runs + 720K policy gate evidence (5.82M total)
+> **Charts:** 16 production charts across 5 suites (feature_health, feature_outcome, distribution, strategy_matchup, contract_faceted)
 > **Provenance:** [`phase0_bidless_20260207_provenance.json`](phase0_bidless_20260207_provenance.json)
 
 ---
@@ -14,8 +15,9 @@ Phase 0 established the bidless data foundation for Bid Euchre AI research:
 
 - **5.82M hands** collected across 6 artifacts: 5.1M in 5 canonical runs (3 datasets + 2 outcome matrices) plus 720K in the policy gate
 - **Glutton frozen** as canonical play policy — PASS gate with +0.19 to +0.21 mean trick advantage; all 95% bootstrap CIs exclude zero across 3 seeds and both seat directions
-- **All sanity gates pass** — zero FAIL counts across all canonical runs (self-play fairness, random dominance, rank stability, transitivity)
+- **All sanity gates pass** — zero FAIL counts across all canonical runs (self-play fairness, random dominance, rank stability, transitivity); per-contract self-play confirms fairness holds within every contract type
 - **Diagnostic Ridge R² ~ 0.19–0.21** on tricks_won (exploratory, not production) — confirms hand features carry predictive signal for downstream bidding model development
+- **Contract-faceted analysis** confirms suit-invariant hand evaluation: hand value variance is stable across trump suits (σ² range: 8321.9–8369.7), and feature-outcome correlations are consistent across contract types (r = 0.34–0.40)
 
 ---
 
@@ -34,6 +36,8 @@ Six artifacts (5 canonical runs + 1 policy gate) were produced on 2026-02-04 at 
 
 **SKIP counts** in dataset runs are expected: single-policy self-play runs skip outcome-based sanity tests (random dominance, rank stability, transitivity) because they contain only one strategy.
 
+**Gate evidence:** Each run directory contains a `canonical_summary.json` artifact with gate_status, PASS/WARN/FAIL/SKIP counts, and metadata. The policy gate artifact aggregates per-seed, per-direction bootstrap results.
+
 ### Schema Notes
 
 - **`bidless.parquet`** — Per-seat rows: `hand_id`, `seat`, `hand_features` (struct with 41 fields)
@@ -45,9 +49,9 @@ Six artifacts (5 canonical runs + 1 policy gate) were produced on 2026-02-04 at 
 
 ## 3. Run Health Summary
 
-Before examining results, these two charts confirm the simulation infrastructure is sound.
+Before examining results, these charts confirm the simulation infrastructure is sound.
 
-### Self-Play Fairness
+### Self-Play Fairness (Aggregate)
 
 ![Self-play control chart](assets/phase0_20260207/self_play_control.png)
 
@@ -60,6 +64,12 @@ All 5 strategies in self-play show |mean delta| < 0.025 tricks (threshold: 0.25)
 | glutton | -0.0108 | 3.550 | 300,000 |
 | greedy | -0.0202 | 3.878 | 300,000 |
 | random_legal | -0.0151 | 3.967 | 300,000 |
+
+### Self-Play Fairness (Per-Contract)
+
+![Self-play by contract](assets/phase0_20260207/self_play_by_contract.png)
+
+Self-play fairness holds within every contract type (NT:High, NT:Low, Trump-C, Trump-D, Trump-H, Trump-S). All bars cluster tightly around the 5.0 expected mean, with the green fairness band showing the ±0.25 threshold. No strategy shows contract-specific team bias.
 
 ### Seat Balance
 
@@ -153,11 +163,17 @@ Strategy rankings are perfectly consistent across all contract families.
 
 Zero violations detected across all 5 strategies. The competitive ordering is fully transitive.
 
-### Strategy Landscape
+### 5.6 Strategy Landscape
 
 ![Win rate heatmap](assets/phase0_20260207/win_rate_heatmap.png)
 
 ![Matchup summary](assets/phase0_20260207/matchup_summary.png)
+
+### 5.7 Tricks Distribution by Matchup
+
+![Tricks distribution by matchup](assets/phase0_20260207/tricks_distribution.png)
+
+Violin plots show trick distributions for Team 0 across all 11 matchups. Self-play matchups (diagonal entries) center on 5.0 as expected. Cross-play matchups show clear distributional shifts — glutton vs weaker opponents shows a rightward shift (more high-trick outcomes), consistent with the win rate heatmap above.
 
 ---
 
@@ -224,17 +240,25 @@ Zero violations detected across all 5 strategies. The competitive ordering is fu
 
 Notable differences: `trump_power_avg` is much more dominant under glutton (-0.61 vs -0.36), while `highest_trump_rank` and `second_highest_trump_rank` drop out of glutton's top 10 entirely.
 
-### 6.4 Caveats
+### 6.4 Feature-Outcome Visualizations
+
+![Feature-outcome correlation](assets/phase0_20260207/feature_outcome_correlation.png)
+
+![Outcome distributions](assets/phase0_20260207/outcome_distributions.png)
+
+### 6.5 Feature Signal by Contract Type
+
+![Feature vs outcome by contract](assets/phase0_20260207/feature_vs_outcome_by_contract.png)
+
+The top-correlated feature (hand_value) shows a positive relationship with tricks_won across all three contract types. Pearson correlations are strongest for suit contracts (r = 0.400), with HIGH (r = 0.344) and LOW (r = 0.345) showing similar but slightly weaker signal. The binned-mean trend lines confirm a monotonic positive relationship in all cases — hand_value is a reliable predictor regardless of contract type.
+
+### 6.6 Caveats
 
 - Coefficients are standardized (z-scored features) and **exploratory only**
 - Correlated features share variance; coefficients do not imply causal importance
 - Grouped train/test split by `hand_id` prevents leakage across 4 seat rows per hand
 - No bootstrap CIs on R² or MAE (acceptable for exploratory diagnostics)
 - This diagnostic is separate from the B0 hand-value regression in `train_b0.py`
-
-![Feature-outcome correlation](assets/phase0_20260207/feature_outcome_correlation.png)
-
-![Outcome distributions](assets/phase0_20260207/outcome_distributions.png)
 
 ---
 
@@ -248,21 +272,64 @@ Hand value distributions vary appropriately by contract type. Suit contracts sho
 
 CDF curves show distinct shapes by contract type. Suit contracts have heavier right tails (more high-trick outcomes due to trump advantage). HIGH and LOW contracts are more symmetric around 5 tricks. The smooth, monotonic CDFs confirm adequate sample sizes with no discretization artifacts.
 
----
+![CCDF (tail distribution) by contract](assets/phase0_20260207/ccdf.png)
 
-## 8. Known Limitations
-
-1. **DEMO_MODE reference in CANONICAL_BIDLESS.md** — The notebook usage section still references `DEMO_MODE` which was renamed to `CANONICAL_MODE` in PR #268. The canonical notebooks use `CANONICAL_MODE` correctly.
-
-2. **No bootstrap CIs on diagnostic R²/MAE** — The diagnostic evaluation reports point estimates only. Acceptable for exploratory analysis; production models will require bootstrapped confidence intervals.
-
-3. **SKIP counts in dataset runs** — Single-policy self-play runs skip outcome-based sanity tests (random dominance, rank stability, transitivity) because they contain only one strategy. This is expected behavior, not a deficiency.
-
-4. **LOW contract marginal significance** — The glutton advantage in LOW contracts is statistically significant but marginal (CI barely excludes zero in seed 42). Pooled gate is robust.
+The complementary CDF (log-scale) reveals tail behavior more clearly. Suit contracts maintain higher P(X > x) through the upper range — roughly 10% probability of winning 7+ tricks, compared to ~8% for NT contracts. All three contract types converge near 10 tricks (~1% probability), confirming the discrete distribution has no anomalous tail spikes.
 
 ---
 
-## 9. Reproduction Commands
+## 8. Contract-Faceted Analysis
+
+This section examines whether the hand evaluator and outcome distributions are invariant across trump suits, a key assumption for pooled modeling.
+
+**Source:** Greedy dataset (300K hands), joined features + outcomes.
+
+### 8.1 Hand Value by Trump Suit
+
+![Hand value by trump suit](assets/phase0_20260207/hand_value_by_trump.png)
+
+Hand value distributions are nearly identical across all four trump suits (C, D, H, S). Means cluster tightly around ~497, and per-suit variances range from σ² = 8321.9 (C) to σ² = 8369.7 (H) — a spread of less than 0.6% relative to the overall variance (σ² = 8349.2). This confirms the hand evaluator is trump-suit-invariant.
+
+### 8.2 Tricks Won by Trump Suit
+
+![Tricks won by trump suit](assets/phase0_20260207/outcome_by_trump.png)
+
+Tricks-won distributions (violin plots) are symmetric around the mean of 5.0 for all four trump suits, with identical multimodal structure. No suit shows a systematic advantage or disadvantage in trick production. This validates that simulation outcomes are trump-suit-neutral.
+
+### 8.3 Feature Means by Trump Suit
+
+![Feature heatmap by trump suit](assets/phase0_20260207/feature_heatmap_by_suit.png)
+
+The Z-score normalized heatmap reveals that while aggregate features (hand_value, trump_power_sum, rank_sum) show zero variation across suits (z = 0.00), trump-specific interaction features show natural suit-level variation. For example:
+
+- **Clubs (C):** High trump_count_x_void_count (+1.64) and second_highest_trump_rank (+1.58) — club trump hands tend to have more voids alongside trump strength
+- **Diamonds (D):** High offsuit_secondbest_rank_sum (+1.42) but low offsuit_best_rank_sum (-1.16) — diamond trump hands concentrate offsuit strength in secondary cards
+- **Hearts (H):** Uniformly below-average on most interaction features — suggests hearts hands have less extreme feature combinations
+- **Spades (S):** High third_highest_trump_rank (+1.57) and offsuit_best_rank_sum (+1.39) — spade trump hands tend to have deeper trump holdings
+
+These variations reflect natural combinatorial differences in how trump suit choice interacts with the deal, not bias in the simulation engine. The zero-variation on aggregate features confirms the evaluator is suit-neutral at the summary level.
+
+### 8.4 Hand Value Variance by Trump Suit
+
+![Suit variance summary](assets/phase0_20260207/suit_variance_summary.png)
+
+All four suits track the overall variance (σ² = 8349.2, dashed red line) to within 0.6%. This confirms that modeling variance assumptions hold uniformly across trump suits — no suit requires variance-specific treatment in downstream models.
+
+---
+
+## 9. Known Limitations
+
+1. **No bootstrap CIs on diagnostic R²/MAE** — The diagnostic evaluation reports point estimates only. Acceptable for exploratory analysis; production models will require bootstrapped confidence intervals.
+
+2. **SKIP counts in dataset runs** — Single-policy self-play runs skip outcome-based sanity tests (random dominance, rank stability, transitivity) because they contain only one strategy. This is expected behavior, not a deficiency.
+
+3. **LOW contract marginal significance** — The glutton advantage in LOW contracts is statistically significant but marginal (CI barely excludes zero in seed 42). Pooled gate is robust.
+
+4. **Chart normalization gap** — The `feature_health` and `feature_outcome` chart suites do not apply `_normalize_for_diagnostics()`, causing 3 charts (feature_distributions, feature_correlation, feature_vs_outcome) to render as placeholders when run via chart_runner. The underlying data is sound; only the column-prefix convention is mismatched. The `contract_faceted` suite handles this correctly.
+
+---
+
+## 10. Reproduction Commands
 
 ### Play Policy Gate
 ```bash
@@ -290,13 +357,13 @@ make notebook-run-full
 
 ### Chart Generation
 ```bash
-# Greedy run charts (feature_health, feature_outcome, distribution)
-uv run python -m bid_euchre.reporting.chart_runner \
+# Greedy run charts (feature_health, feature_outcome, distribution, contract_faceted)
+PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner \
   --run-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 \
   --output-dir <out> --suite all --dpi 150
 
-# Zoom run charts (strategy_matchup)
-uv run python -m bid_euchre.reporting.chart_runner \
+# Zoom run charts (strategy_matchup incl. self_play_by_contract)
+PYTHONPATH=src uv run python -m bid_euchre.reporting.chart_runner \
   --run-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 \
   --output-dir <out> --suite strategy_matchup --dpi 150
 ```
@@ -308,7 +375,7 @@ make check
 
 ---
 
-## 10. References
+## 11. References
 
 - [GLUTTON_VS_GREEDY_EVALUATION.md](../02_agent/GLUTTON_VS_GREEDY_EVALUATION.md) — Detailed glutton vs greedy head-to-head analysis
 - [DIAGNOSTIC_TRICKS_EVALUATION.md](../02_agent/DIAGNOSTIC_TRICKS_EVALUATION.md) — Full diagnostic Ridge regression results
