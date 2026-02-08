@@ -1,5 +1,6 @@
 """Unit tests for production chart generators."""
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -347,6 +348,119 @@ class TestChartContentValidity:
         fig = plot_coefficient_heatmap(coefs, top_n=3)
         assert isinstance(fig, plt.Figure)
         plt.close(fig)
+
+
+class TestLoadMatchupResults:
+    """Tests for _load_matchup_results loader with scenario extension."""
+
+    def test_legacy_aggregate_keys(self, tmp_path):
+        """Legacy aggregate keys (win_rate, mean_tricks_*, deals) are populated."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        matchup_dir = tmp_path / "results" / "greedy_vs_random"
+        matchup_dir.mkdir(parents=True)
+        scenario = {
+            "win_rate_team0": 0.65,
+            "avg_team0": 5.5,
+            "avg_team1": 4.5,
+            "deals": 100,
+            "distribution_team0": {"3": 10, "5": 60, "7": 30},
+        }
+        (matchup_dir / "suit_C.json").write_text(json.dumps(scenario))
+
+        results = _load_matchup_results(tmp_path)
+        assert ("greedy", "random") in results
+        r = results[("greedy", "random")]
+        assert r["win_rate"] == pytest.approx(0.65)
+        assert r["mean_tricks_team0"] == pytest.approx(5.5)
+        assert r["mean_tricks_team1"] == pytest.approx(4.5)
+        assert r["mean_tricks"] == pytest.approx(5.5)
+        assert r["deals"] == 100
+        assert len(r["tricks_team0"]) == 100  # 10+60+30
+
+    def test_multi_scenario_aggregation(self, tmp_path):
+        """Multiple scenario files are weighted-averaged correctly."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        matchup_dir = tmp_path / "results" / "glutton_vs_greedy"
+        matchup_dir.mkdir(parents=True)
+
+        s1 = {
+            "win_rate_team0": 0.80,
+            "avg_team0": 6.0,
+            "avg_team1": 4.0,
+            "deals": 200,
+        }
+        s2 = {
+            "win_rate_team0": 0.60,
+            "avg_team0": 5.0,
+            "avg_team1": 5.0,
+            "deals": 100,
+        }
+        (matchup_dir / "suit_H.json").write_text(json.dumps(s1))
+        (matchup_dir / "high.json").write_text(json.dumps(s2))
+
+        results = _load_matchup_results(tmp_path)
+        r = results[("glutton", "greedy")]
+        assert r["deals"] == 300
+        # Weighted average: (0.80*200 + 0.60*100) / 300 = 220/300
+        assert r["win_rate"] == pytest.approx(220.0 / 300)
+        assert r["mean_tricks_team0"] == pytest.approx((6.0 * 200 + 5.0 * 100) / 300)
+        assert r["mean_tricks_team1"] == pytest.approx((4.0 * 200 + 5.0 * 100) / 300)
+
+    def test_scenarios_key_populated(self, tmp_path):
+        """Per-scenario breakdown is available under result['scenarios']."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        matchup_dir = tmp_path / "results" / "greedy_vs_random"
+        matchup_dir.mkdir(parents=True)
+
+        for name in ["suit_C", "suit_D", "high", "low"]:
+            data = {
+                "win_rate_team0": 0.5,
+                "avg_team0": 5.0,
+                "avg_team1": 5.0,
+                "deals": 50,
+            }
+            (matchup_dir / f"{name}.json").write_text(json.dumps(data))
+
+        results = _load_matchup_results(tmp_path)
+        r = results[("greedy", "random")]
+        assert "scenarios" in r
+        assert set(r["scenarios"].keys()) == {"suit_C", "suit_D", "high", "low"}
+        # Each scenario preserves raw data
+        assert r["scenarios"]["suit_C"]["deals"] == 50
+        assert r["scenarios"]["high"]["avg_team0"] == 5.0
+
+    def test_empty_results_dir(self, tmp_path):
+        """Returns empty dict when results/ has no matchup subdirectories."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        (tmp_path / "results").mkdir()
+        assert _load_matchup_results(tmp_path) == {}
+
+    def test_no_results_dir(self, tmp_path):
+        """Returns empty dict when results/ does not exist."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        assert _load_matchup_results(tmp_path) == {}
+
+    def test_tricks_team0_absent_without_distribution(self, tmp_path):
+        """tricks_team0 key absent when scenario lacks distribution_team0."""
+        from bid_euchre.reporting.chart_runner import _load_matchup_results
+
+        matchup_dir = tmp_path / "results" / "a_vs_b"
+        matchup_dir.mkdir(parents=True)
+        data = {
+            "win_rate_team0": 0.5,
+            "avg_team0": 5.0,
+            "avg_team1": 5.0,
+            "deals": 10,
+        }
+        (matchup_dir / "high.json").write_text(json.dumps(data))
+
+        results = _load_matchup_results(tmp_path)
+        assert "tricks_team0" not in results[("a", "b")]
 
 
 class TestChartRunnerCLI:
