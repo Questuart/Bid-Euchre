@@ -18,18 +18,14 @@ Usage:
 """
 
 import argparse
+import json
 import os
-import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# Allow running from repo root
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-
-from bid_euchre.analysis.models import SimpleRidge  # noqa: E402
-from bid_euchre.datasets.join import join_features_outcomes  # noqa: E402
+from bid_euchre.analysis.models import SimpleRidge
+from bid_euchre.datasets.join import join_features_outcomes
 
 # Features to exclude from the feature matrix (metadata, not predictive)
 EXCLUDE_COLS = {
@@ -203,34 +199,38 @@ def format_report(
     ]
 
     for result in overall_results:
-        lines.extend([
-            f"## {result['label']}",
-            "",
-            f"- **Training:** {result['n_train_hands']:,} hands ({result['n_train_rows']:,} seat-rows)",
-            f"- **Test:** {result['n_test_hands']:,} hands ({result['n_test_rows']:,} seat-rows)",
-            f"- **R² (train):** {result['r2_train']:.4f}",
-            f"- **R² (test):** {result['r2_test']:.4f}",
-            f"- **MAE (train):** {result['mae_train']:.4f}",
-            f"- **MAE (test):** {result['mae_test']:.4f}",
-            f"- **Intercept:** {result['intercept']:.4f}",
-            "",
-            "### Top 10 Standardized Coefficients",
-            "",
-            "| Rank | Feature | Coefficient |",
-            "|------|---------|-------------|",
-        ])
+        lines.extend(
+            [
+                f"## {result['label']}",
+                "",
+                f"- **Training:** {result['n_train_hands']:,} hands ({result['n_train_rows']:,} seat-rows)",
+                f"- **Test:** {result['n_test_hands']:,} hands ({result['n_test_rows']:,} seat-rows)",
+                f"- **R² (train):** {result['r2_train']:.4f}",
+                f"- **R² (test):** {result['r2_test']:.4f}",
+                f"- **MAE (train):** {result['mae_train']:.4f}",
+                f"- **MAE (test):** {result['mae_test']:.4f}",
+                f"- **Intercept:** {result['intercept']:.4f}",
+                "",
+                "### Top 10 Standardized Coefficients",
+                "",
+                "| Rank | Feature | Coefficient |",
+                "|------|---------|-------------|",
+            ]
+        )
         for rank, (feat, coef) in enumerate(result["coef_ranking"][:10], 1):
             lines.append(f"| {rank} | `{feat}` | {coef:+.4f} |")
         lines.append("")
 
     # Per-contract results
     for dataset_label, contract_results in per_contract_results.items():
-        lines.extend([
-            f"## Per-Contract Breakdown: {dataset_label}",
-            "",
-            "| Contract | R² (test) | MAE (test) | N (test rows) | OLSa Feature Validation |",
-            "|----------|-----------|------------|---------------|------------------------|",
-        ])
+        lines.extend(
+            [
+                f"## Per-Contract Breakdown: {dataset_label}",
+                "",
+                "| Contract | R² (test) | MAE (test) | N (test rows) | OLSa Feature Validation |",
+                "|----------|-----------|------------|---------------|------------------------|",
+            ]
+        )
         for cr in contract_results:
             olsa_status = validate_olsa_features(
                 cr["coef_ranking"], cr["contract_type"]
@@ -243,25 +243,29 @@ def format_report(
 
         # Show top 5 coefficients per contract
         for cr in contract_results:
-            lines.extend([
-                f"### {dataset_label} — contract={cr['contract_type']} top 5",
-                "",
-                "| Rank | Feature | Coefficient |",
-                "|------|---------|-------------|",
-            ])
+            lines.extend(
+                [
+                    f"### {dataset_label} — contract={cr['contract_type']} top 5",
+                    "",
+                    "| Rank | Feature | Coefficient |",
+                    "|------|---------|-------------|",
+                ]
+            )
             for rank, (feat, coef) in enumerate(cr["coef_ranking"][:5], 1):
                 lines.append(f"| {rank} | `{feat}` | {coef:+.4f} |")
             lines.append("")
 
-    lines.extend([
-        "## Caveats",
-        "",
-        "- Coefficients are standardized (z-scored features) and exploratory only",
-        "- Correlated features share variance; coefficients do not imply causal importance",
-        "- This diagnostic is separate from the B0 hand-value regression pipeline",
-        "- Use Ridge (not raw OLS) for 40+ correlated features to avoid numerical instability",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Caveats",
+            "",
+            "- Coefficients are standardized (z-scored features) and exploratory only",
+            "- Correlated features share variance; coefficients do not imply causal importance",
+            "- This diagnostic is separate from the B0 hand-value regression pipeline",
+            "- Use Ridge (not raw OLS) for 40+ correlated features to avoid numerical instability",
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -294,25 +298,36 @@ def process_dataset(run_dir: str, seed: int, label: str) -> tuple[dict, list[dic
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Diagnostic tricks-model evaluation"
+    parser = argparse.ArgumentParser(description="Diagnostic tricks-model evaluation")
+    parser.add_argument(
+        "--greedy-dir", required=True, help="Path to greedy canonical run"
     )
-    parser.add_argument("--greedy-dir", required=True, help="Path to greedy canonical run")
-    parser.add_argument("--glutton-dir", required=True, help="Path to glutton canonical run")
+    parser.add_argument(
+        "--glutton-dir", required=True, help="Path to glutton canonical run"
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output", required=True, help="Output markdown path")
+    parser.add_argument(
+        "--per-contract-json",
+        default=None,
+        help="Output per-contract coefficients as JSON for heatmap generation",
+    )
     args = parser.parse_args()
 
     overall_results = []
     per_contract_results = {}
 
     # Process greedy dataset
-    overall, per_contract = process_dataset(args.greedy_dir, args.seed, "Greedy Play Policy")
+    overall, per_contract = process_dataset(
+        args.greedy_dir, args.seed, "Greedy Play Policy"
+    )
     overall_results.append(overall)
     per_contract_results["Greedy"] = per_contract
 
     # Process glutton dataset
-    overall, per_contract = process_dataset(args.glutton_dir, args.seed, "Glutton Play Policy")
+    overall, per_contract = process_dataset(
+        args.glutton_dir, args.seed, "Glutton Play Policy"
+    )
     overall_results.append(overall)
     per_contract_results["Glutton"] = per_contract
 
@@ -324,7 +339,26 @@ def main():
         f.write(report)
 
     print(f"\nReport written to {args.output}")
-    print(f"Overall R² — Greedy: {overall_results[0]['r2_test']:.4f}, Glutton: {overall_results[1]['r2_test']:.4f}")
+    print(
+        f"Overall R² — Greedy: {overall_results[0]['r2_test']:.4f}, Glutton: {overall_results[1]['r2_test']:.4f}"
+    )
+
+    # Write per-contract coefficients JSON for heatmap generation
+    if args.per_contract_json:
+        coef_json = {}
+        for dataset_label, contract_results in per_contract_results.items():
+            coef_json[dataset_label.lower()] = {}
+            for cr in contract_results:
+                ct = cr["contract_type"]
+                coef_json[dataset_label.lower()][ct] = {
+                    feat: float(coef) for feat, coef in cr["coef_ranking"]
+                }
+        os.makedirs(
+            os.path.dirname(os.path.abspath(args.per_contract_json)), exist_ok=True
+        )
+        with open(args.per_contract_json, "w") as f:
+            json.dump(coef_json, f, indent=2)
+        print(f"Per-contract coefficients written to {args.per_contract_json}")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ from ..diagnostics.charts import (
     plot_feature_vs_outcome_by_contract,
     plot_hand_value_by_contract,
     plot_hand_value_by_seat,
+    plot_hand_value_by_seat_and_contract,
     plot_hand_value_by_trump_suit,
     plot_outcome_by_trump_suit,
     plot_outcome_distributions,
@@ -88,6 +89,7 @@ def generate_feature_health_charts(
     Produces:
     - hand_value_by_seat.png
     - hand_value_by_contract.png
+    - hand_value_by_seat_and_contract.png (if contract_type present)
     - feature_distributions.png
     - feature_correlation.png
 
@@ -102,6 +104,7 @@ def generate_feature_health_charts(
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    df = _normalize_for_diagnostics(df)
     paths = []
 
     fig = plot_hand_value_by_seat(df)
@@ -110,11 +113,15 @@ def generate_feature_health_charts(
     fig = plot_hand_value_by_contract(df)
     paths.append(_save_figure(fig, out, "hand_value_by_contract", dpi))
 
+    # Seat × contract faceted chart
+    if "contract_type" in df.columns and "feat_hand_value" in df.columns:
+        fig = plot_hand_value_by_seat_and_contract(df)
+        paths.append(_save_figure(fig, out, "hand_value_by_seat_and_contract", dpi))
+
     # Select top features by variance for distributions
-    numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    feature_cols = [c for c in numeric_cols if c not in ("seat", "deal_id", "hand_id")]
-    if feature_cols:
-        variances = df[feature_cols].var().sort_values(ascending=False)
+    feat_cols = [c for c in df.columns if c.startswith("feat_")]
+    if feat_cols:
+        variances = df[feat_cols].var().sort_values(ascending=False)
         top = variances.head(top_features).index.tolist()
         fig = plot_feature_distributions(df, features=top)
         paths.append(_save_figure(fig, out, "feature_distributions", dpi))
@@ -230,12 +237,13 @@ def generate_feature_outcome_charts(
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    df = _normalize_for_diagnostics(df)
     paths = []
 
-    # Identify feature columns
-    feature_cols = [c for c in df.columns if c.startswith("feat_") or c == "hand_value"]
+    # Identify feature columns (prefer feat_ prefix after normalization)
+    feature_cols = [c for c in df.columns if c.startswith("feat_")]
     if not feature_cols:
-        # Try numeric columns excluding metadata
+        # Fallback: numeric columns excluding metadata
         skip = {
             "seat",
             "deal_id",
