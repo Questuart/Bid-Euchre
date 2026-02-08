@@ -206,29 +206,37 @@ Checks for transitivity violations (A>B, B>C implies A>C).
 
 ## Notebook Usage
 
-Notebooks are controlled by the `MODE` parameter, injected by `scripts/run_notebooks.py`:
+Notebooks are controlled by the `MODE` parameter:
 
 ```python
 # MODE controls notebook execution scale:
 #   SMOKE (~30 deals) — CI smoke tests
 #   QUICK (~2,000 deals) — development iteration
-#   FULL  (~50,000 deals) — production analysis
+#   FULL  (~50,000 deals) — production analysis (manual execution only)
 MODE = "QUICK"
 ```
 
-Run notebooks via the canonical runner:
+### Via the runner CLI (SMOKE / QUICK only)
+
+`scripts/run_notebooks.py` supports `--mode smoke` and `--mode quick`. It injects the `MODE` parameter automatically:
 
 ```bash
 # SMOKE mode (CI, ~10s)
-uv run python scripts/run_notebooks.py --mode SMOKE
+uv run python scripts/run_notebooks.py --mode smoke
 
 # QUICK mode (development, ~2-5min)
-uv run python scripts/run_notebooks.py --mode QUICK
+uv run python scripts/run_notebooks.py --mode quick
 ```
 
 Notebooks generate data on-the-fly via `load_or_generate_*()` helpers — no pre-existing run directory needed.
 
-### Loading Outcomes Data
+### Direct execution (FULL mode)
+
+For production-scale analysis (`MODE = "FULL"`), execute notebooks directly (e.g., via Jupyter or `papermill`). The runner CLI does not support FULL mode.
+
+### Loading from an existing run directory (optional)
+
+If you have a pre-existing experiment run, notebooks can load data via `RUN_DIR` instead of generating on-the-fly:
 
 ```python
 from bid_euchre.diagnostics.notebook_data import load_outcomes_from_run_dir

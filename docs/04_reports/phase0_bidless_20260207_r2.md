@@ -256,7 +256,7 @@ Gate evidence: each run's `canonical_summary.json` records PASS/WARN/FAIL/SKIP c
 
 ## 7. Known Limitations
 
-1. **DEMO_MODE stale reference** — `docs/02_agent/CANONICAL_BIDLESS.md` (lines 211, 215) still references `DEMO_MODE` which was renamed to `CANONICAL_MODE` in PR #268. The canonical notebooks use `CANONICAL_MODE` correctly. Cleaning up CANONICAL_BIDLESS.md is out of scope for this report.
+1. **~~DEMO_MODE stale reference~~** — Resolved in PR #334; `CANONICAL_BIDLESS.md` now uses `MODE` parameter correctly.
 
 2. **No bootstrap CIs on diagnostic R²/MAE** — The diagnostic evaluation reports point estimates only. Acceptable for exploratory analysis; production models will require bootstrapped confidence intervals.
 
