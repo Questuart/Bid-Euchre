@@ -36,6 +36,8 @@ Six artifacts (5 canonical runs + 1 policy gate) were produced on 2026-02-04 at 
 
 **SKIP counts** in dataset runs are expected: single-policy self-play runs skip outcome-based sanity tests (random dominance, rank stability, transitivity) because they contain only one strategy.
 
+**Gate evidence:** Each run directory contains a `canonical_summary.json` artifact with gate_status, PASS/WARN/FAIL/SKIP counts, and metadata. The policy gate artifact aggregates per-seed, per-direction bootstrap results.
+
 ### Schema Notes
 
 - **`bidless.parquet`** — Per-seat rows: `hand_id`, `seat`, `hand_features` (struct with 41 fields)
