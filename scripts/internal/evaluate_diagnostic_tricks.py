@@ -19,7 +19,9 @@ Usage:
 
 import argparse
 import json
+import math
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -333,6 +335,116 @@ def process_dataset(
     return overall, per_contract, correlations_by_contract
 
 
+def generate_cross_contract_table(
+    json_path: str,
+    strategy: str = "greedy",
+    top_n: int = 15,
+) -> str:
+    """Generate a cross-contract feature ranking table from per-contract JSON.
+
+    Ranks features by average |Pearson r| across suit, high, low contract types.
+    Shows Ridge coefficients for each contract type alongside the correlation.
+
+    Args:
+        json_path: Path to per-contract JSON (from --per-contract-json)
+        strategy: Which strategy's Ridge coefficients to show
+        top_n: Number of top features to include
+
+    Returns:
+        Markdown table string
+    """
+    with open(json_path) as f:
+        data = json.load(f)
+
+    correlations = data.get("correlations", {})
+
+    # Map contract types to groups: collapse suit_* into "suit"
+    contract_groups = {"suit": [], "high": [], "low": []}
+    for ct, corr_list in correlations.items():
+        if ct == "suit" or ct.startswith("suit_"):
+            group = "suit"
+        elif ct in ("high", "low"):
+            group = ct
+        else:
+            continue
+        contract_groups[group].append((ct, corr_list))
+
+    # Build per-feature data: collect Pearson r and Ridge coeff per group
+    feature_data: dict[str, dict] = {}
+
+    for group, ct_entries in contract_groups.items():
+        for _ct, corr_list in ct_entries:
+            for entry in corr_list:
+                feat = entry["feature"]
+                if feat not in feature_data:
+                    feature_data[feat] = {
+                        "pearson_rs": {"suit": [], "high": [], "low": []},
+                        "coeffs": {"suit": [], "high": [], "low": []},
+                    }
+                r_val = entry["pearson_r"]
+                # Skip NaN correlations (constant features in some contracts)
+                if r_val is not None and not math.isnan(r_val):
+                    feature_data[feat]["pearson_rs"][group].append(abs(r_val))
+                coeff_key = f"{strategy}_ridge_coeff"
+                coeff = entry.get(coeff_key)
+                if coeff is not None:
+                    feature_data[feat]["coeffs"][group].append(coeff)
+
+    # Compute avg |Pearson r| across the 3 groups
+    ranked_features = []
+    for feat, data_dict in feature_data.items():
+        group_means = []
+        for group in ("suit", "high", "low"):
+            rs = data_dict["pearson_rs"][group]
+            if rs:
+                group_means.append(sum(rs) / len(rs))
+        if not group_means:
+            continue
+        avg_abs_r = sum(group_means) / len(group_means)
+
+        # Average coefficient per group
+        group_coeffs = {}
+        for group in ("suit", "high", "low"):
+            cs = data_dict["coeffs"][group]
+            if cs:
+                group_coeffs[group] = sum(cs) / len(cs)
+            else:
+                group_coeffs[group] = None
+
+        ranked_features.append(
+            {
+                "feature": feat,
+                "avg_abs_r": avg_abs_r,
+                "suit_coeff": group_coeffs["suit"],
+                "high_coeff": group_coeffs["high"],
+                "low_coeff": group_coeffs["low"],
+            }
+        )
+
+    ranked_features.sort(key=lambda x: x["avg_abs_r"], reverse=True)
+    top = ranked_features[:top_n]
+
+    # Format as markdown
+    lines = [
+        "| Rank | Feature | Avg |r| | Suit Coeff | High Coeff | Low Coeff |",
+        "|------|---------|---------|------------|------------|-----------|",
+    ]
+    for rank, entry in enumerate(top, 1):
+        suit_s = (
+            f"{entry['suit_coeff']:+.4f}" if entry["suit_coeff"] is not None else "—"
+        )
+        high_s = (
+            f"{entry['high_coeff']:+.4f}" if entry["high_coeff"] is not None else "—"
+        )
+        low_s = f"{entry['low_coeff']:+.4f}" if entry["low_coeff"] is not None else "—"
+        lines.append(
+            f"| {rank} | `{entry['feature']}` | {entry['avg_abs_r']:.3f} "
+            f"| {suit_s} | {high_s} | {low_s} |"
+        )
+
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Diagnostic tricks-model evaluation")
     parser.add_argument(
@@ -347,6 +459,11 @@ def main():
         "--per-contract-json",
         default=None,
         help="Output per-contract coefficients as JSON for heatmap generation",
+    )
+    parser.add_argument(
+        "--cross-contract-table",
+        default=None,
+        help="Output cross-contract feature ranking table as markdown",
     )
     args = parser.parse_args()
 
@@ -476,6 +593,23 @@ def main():
         with open(args.per_contract_json, "w") as f:
             json.dump(full_json, f, indent=2)
         print(f"Per-contract JSON written to {args.per_contract_json}")
+
+    # Generate cross-contract table if requested
+    if args.cross_contract_table:
+        if not args.per_contract_json:
+            print(
+                "ERROR: --cross-contract-table requires --per-contract-json",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        table_md = generate_cross_contract_table(args.per_contract_json)
+        os.makedirs(
+            os.path.dirname(os.path.abspath(args.cross_contract_table)),
+            exist_ok=True,
+        )
+        with open(args.cross_contract_table, "w") as f:
+            f.write(table_md)
+        print(f"Cross-contract table written to {args.cross_contract_table}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate all NEW charts for the Phase 0 report r4.
+"""Generate all NEW charts for the Phase 0 report r4/r5.
 
-Produces 8 chart PNGs for sections 3, 4, 5a, 5b, 5c, 9c of the r4 report.
+Produces 8–9 chart PNGs for sections 3, 4, 5a, 5b, 5c, 9c of the report.
 Assumes PYTHONPATH=src is set externally.
 
 Usage:
@@ -9,8 +9,9 @@ Usage:
       --zoom-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 \
       --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 \
       --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
+      --mixed-play-dir data/runs/canonical_bidless_dataset_mixed_play_42_20260204_221115 \
       --gate-json data/runs/play_policy_gate_aggregate_20260204_221656.json \
-      --output-dir docs/04_reports/assets/phase0_20260207_r4 \
+      --output-dir docs/04_reports/assets/phase0_20260207_r5 \
       --dpi 150
 """
 
@@ -41,6 +42,14 @@ CONTRACT_GROUP_COLORS = {
     "suit": "#3498db",  # blue
     "high": "#27ae60",  # green
     "low": "#e74c3c",  # red
+}
+
+# Colors for seats in the seat balance chart
+SEAT_COLORS = {
+    0: "#3498db",  # blue
+    1: "#e67e22",  # orange
+    2: "#27ae60",  # green
+    3: "#9b59b6",  # purple
 }
 
 # Strategies expected in self-play zoom runs
@@ -281,8 +290,8 @@ def generate_seat_balance_grouped_boxplot(
 ) -> str:
     """Generate seat balance grouped boxplot chart.
 
-    X-axis: seat (0, 1, 2, 3)
-    Within each seat: 4 grouped boxplots (aggregate, suit, high, low)
+    X-axis: contract group (aggregate, suit, high, low)
+    Within each contract group: 4 grouped boxplots (seats 0–3)
     Y-axis: hand_value
     """
     apply_report_style()
@@ -300,7 +309,7 @@ def generate_seat_balance_grouped_boxplot(
 
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    n_groups = len(group_order)
+    n_seats = len(seat_order)
     box_width = 0.18
     positions = []
     box_data = []
@@ -308,18 +317,18 @@ def generate_seat_balance_grouped_boxplot(
     tick_positions = []
     tick_labels = []
 
-    for i, seat in enumerate(seat_order):
-        center = i * (n_groups + 1) * box_width + i * 0.3
-        tick_positions.append(center + (n_groups - 1) * box_width / 2)
-        tick_labels.append(f"Seat {seat}")
+    for i, group in enumerate(group_order):
+        center = i * (n_seats + 1) * box_width + i * 0.3
+        tick_positions.append(center + (n_seats - 1) * box_width / 2)
+        tick_labels.append(group.capitalize())
 
-        for j, group in enumerate(group_order):
+        for j, seat in enumerate(seat_order):
             mask = (plot_df["seat"] == seat) & (plot_df["contract_group"] == group)
             subset = plot_df.loc[mask, "hand_value"].values
             pos = center + j * box_width
             positions.append(pos)
             box_data.append(subset if len(subset) > 0 else [np.nan])
-            box_colors.append(CONTRACT_GROUP_COLORS[group])
+            box_colors.append(SEAT_COLORS[seat])
 
     bp = ax.boxplot(
         box_data,
@@ -337,16 +346,16 @@ def generate_seat_balance_grouped_boxplot(
     ax.set_xticks(tick_positions)
     ax.set_xticklabels(tick_labels)
     ax.set_ylabel("Hand Value")
-    ax.set_title("Seat Balance: Hand Value by Seat and Contract Group")
+    ax.set_title("Seat Balance: Hand Value by Contract Group and Seat")
     ax.grid(True, axis="y", alpha=0.3)
 
     # Legend
     legend_handles = [
-        plt.Rectangle((0, 0), 1, 1, facecolor=CONTRACT_GROUP_COLORS[g], alpha=0.75)
-        for g in group_order
+        plt.Rectangle((0, 0), 1, 1, facecolor=SEAT_COLORS[s], alpha=0.75)
+        for s in seat_order
     ]
-    legend_labels = [g.capitalize() for g in group_order]
-    ax.legend(legend_handles, legend_labels, loc="upper right", title="Contract Group")
+    legend_labels = [f"Seat {s}" for s in seat_order]
+    ax.legend(legend_handles, legend_labels, loc="upper right", title="Seat")
 
     plt.tight_layout()
     return _save_figure(fig, output_dir, "seat_balance_grouped_boxplot", dpi)
@@ -926,6 +935,131 @@ def generate_advantage_by_contract(
 
 
 # ---------------------------------------------------------------------------
+# Chart 9: Hand Value All Strategies (section 5a, r5)
+# ---------------------------------------------------------------------------
+
+
+def _load_joined_data_with_strategy(run_dir: Path) -> pd.DataFrame:
+    """Load features joined with outcomes, preserving strategy columns.
+
+    The mixed_play dataset has team0_strategy and team1_strategy columns in
+    the outcomes parquet. This helper merges the strategy onto each seat row
+    (seats 0,2 -> team0_strategy, seats 1,3 -> team1_strategy).
+    """
+    bidless_path = str(run_dir / "datasets" / "bidless.parquet")
+    outcomes_path = str(run_dir / "datasets" / "bidless_outcomes.parquet")
+
+    if not Path(bidless_path).exists():
+        raise FileNotFoundError(f"Missing: {bidless_path}")
+    if not Path(outcomes_path).exists():
+        raise FileNotFoundError(f"Missing: {outcomes_path}")
+
+    # Get the joined features + outcomes
+    joined = join_features_outcomes(bidless_path, outcomes_path)
+
+    # Read outcomes again to get strategy columns
+    outcomes_df = pd.read_parquet(outcomes_path)
+    if "team0_strategy" not in outcomes_df.columns:
+        raise ValueError(f"No team0_strategy column in {outcomes_path}")
+
+    strategy_cols = outcomes_df[
+        ["hand_id", "contract_type", "trump_suit", "team0_strategy", "team1_strategy"]
+    ].drop_duplicates(subset=["hand_id", "contract_type", "trump_suit"], keep="first")
+
+    # Merge strategy onto joined data
+    merged = joined.merge(
+        strategy_cols,
+        on=["hand_id", "contract_type", "trump_suit"],
+        how="left",
+    )
+
+    # Assign per-seat strategy
+    merged["strategy"] = np.where(
+        merged["seat"].isin([0, 2]),
+        merged["team0_strategy"],
+        merged["team1_strategy"],
+    )
+    merged = merged.drop(columns=["team0_strategy", "team1_strategy"])
+
+    return merged
+
+
+def generate_hand_value_all_strategies(
+    mixed_play_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> str:
+    """Generate hand value calibration chart for all 3 strategies.
+
+    X-axis: contract type (suit, high, low)
+    Within each contract: 3 grouped boxplots (greedy, glutton, random_legal)
+    Y-axis: hand_value
+    Colors: from get_strategy_color()
+    """
+    apply_report_style()
+
+    df = _load_joined_data_with_strategy(mixed_play_dir)
+    df = _derive_contract_group(df)
+
+    # Only self-play rows (strategy same for both teams on this hand)
+    contract_order = ["suit", "high", "low"]
+    strategy_order = ["greedy", "glutton", "random_legal"]
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    n_strategies = len(strategy_order)
+    box_width = 0.25
+    positions = []
+    box_data = []
+    box_colors = []
+    tick_positions = []
+    tick_labels = []
+
+    for i, contract in enumerate(contract_order):
+        center = i * (n_strategies + 0.5) * box_width + i * 0.3
+        tick_positions.append(center + (n_strategies - 1) * box_width / 2)
+        tick_labels.append(contract.capitalize())
+
+        for j, strategy in enumerate(strategy_order):
+            mask = (df["strategy"] == strategy) & (df["contract_group"] == contract)
+            subset = df.loc[mask, "hand_value"].values
+            pos = center + j * box_width
+            positions.append(pos)
+            box_data.append(subset if len(subset) > 0 else [np.nan])
+            box_colors.append(get_strategy_color(strategy))
+
+    bp = ax.boxplot(
+        box_data,
+        positions=positions,
+        widths=box_width * 0.85,
+        patch_artist=True,
+        showfliers=False,
+        medianprops={"color": "black", "linewidth": 1.5},
+    )
+
+    for patch, color in zip(bp["boxes"], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.75)
+
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels)
+    ax.set_ylabel("Hand Value")
+    ax.set_title("Hand Value Calibration: All Strategies by Contract Type")
+    ax.grid(True, axis="y", alpha=0.3)
+
+    # Legend
+    legend_handles = [
+        plt.Rectangle((0, 0), 1, 1, facecolor=get_strategy_color(s), alpha=0.75)
+        for s in strategy_order
+    ]
+    legend_labels = [get_strategy_name(s) for s in strategy_order]
+    ax.legend(legend_handles, legend_labels, loc="upper right", title="Strategy")
+
+    plt.tight_layout()
+    return _save_figure(fig, output_dir, "hand_value_all_strategies", dpi)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -966,6 +1100,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         required=True,
         help="Output directory for PNG charts",
+    )
+    parser.add_argument(
+        "--mixed-play-dir",
+        type=Path,
+        default=None,
+        help="Path to mixed-play dataset run directory (for all-strategy chart)",
     )
     parser.add_argument(
         "--dpi",
@@ -1056,24 +1196,38 @@ def main() -> None:
     charts_generated.append(path)
     print(f"  -> {path}")
 
+    # Chart 9: Hand value all strategies (section 5a, r5)
+    if args.mixed_play_dir is not None:
+        if not args.mixed_play_dir.exists():
+            print(
+                f"WARNING: --mixed-play-dir not found: {args.mixed_play_dir}",
+                file=sys.stderr,
+            )
+        else:
+            print("Generating hand_value_all_strategies.png (section 5a)...")
+            path = generate_hand_value_all_strategies(
+                args.mixed_play_dir, args.output_dir, args.dpi
+            )
+            charts_generated.append(path)
+            print(f"  -> {path}")
+
     # Summary
     print(f"\nGenerated {len(charts_generated)} chart(s) in {args.output_dir}")
 
     # Write manifest
-    manifest_path = args.output_dir / "r4_chart_manifest.json"
+    manifest_path = args.output_dir / "chart_manifest.json"
+    manifest_data = {
+        "charts": charts_generated,
+        "zoom_dir": str(args.zoom_dir),
+        "greedy_dir": str(args.greedy_dir),
+        "glutton_dir": str(args.glutton_dir),
+        "gate_json": str(args.gate_json),
+        "dpi": args.dpi,
+    }
+    if args.mixed_play_dir is not None:
+        manifest_data["mixed_play_dir"] = str(args.mixed_play_dir)
     with open(manifest_path, "w") as f:
-        json.dump(
-            {
-                "charts": charts_generated,
-                "zoom_dir": str(args.zoom_dir),
-                "greedy_dir": str(args.greedy_dir),
-                "glutton_dir": str(args.glutton_dir),
-                "gate_json": str(args.gate_json),
-                "dpi": args.dpi,
-            },
-            f,
-            indent=2,
-        )
+        json.dump(manifest_data, f, indent=2)
     print(f"Manifest: {manifest_path}")
 
 

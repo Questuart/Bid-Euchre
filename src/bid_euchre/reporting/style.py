@@ -4,7 +4,6 @@ Shared visual styling for all Bid Euchre reports.
 Ensures consistency across dashboards, paired comparisons, and head-to-head reports.
 """
 
-
 from typing import Dict
 
 import matplotlib.pyplot as plt
@@ -27,8 +26,8 @@ CONTRACT_COLORS = {
     "suit_D": "#e67e22",  # Orange (Diamonds)
     "suit_H": "#9b59b6",  # Purple (Hearts)
     "suit_S": "#34495e",  # Dark gray (Spades)
-    "high": "#27ae60",    # Green (High)
-    "low": "#e74c3c",     # Red (Low)
+    "high": "#27ae60",  # Green (High)
+    "low": "#e74c3c",  # Red (Low)
 }
 
 
@@ -47,7 +46,7 @@ STRATEGY_NAMES = {
 }
 
 STRATEGY_COLORS = {
-    "greedy": "#2ecc71",
+    "greedy": "#e67e22",
     "glutton": "#27ae60",
     "random": "#7f8c8d",
     "random_legal": "#95a5a6",
@@ -70,19 +69,16 @@ REPORT_STYLE = {
     "ytick.labelsize": 9,
     "legend.fontsize": 8,
     "figure.titlesize": 14,
-
     # Line widths
     "lines.linewidth": 1.5,
     "axes.linewidth": 1.0,
     "grid.linewidth": 0.5,
-
     # Colors
     "axes.facecolor": "white",
     "figure.facecolor": "white",
     "axes.edgecolor": "#333",
     "grid.color": "#ccc",
     "grid.alpha": 0.3,
-
     # Grid
     "axes.grid": False,  # Enable per-plot
     "grid.linestyle": "--",
@@ -108,7 +104,7 @@ BASE_COLORS = [
 # ================================
 
 OUTCOME_COLORS = {
-    "win": "#27ae60",   # Green
+    "win": "#27ae60",  # Green
     "push": "#f39c12",  # Orange/Yellow
     "loss": "#e74c3c",  # Red
 }
@@ -127,12 +123,13 @@ OUTCOME_LABELS = {
 FIGSIZE_DASHBOARD = (14, 12)  # Main 3×3 dashboard
 FIGSIZE_SINGLE_PLOT = (8, 6)  # Individual analysis plot
 FIGSIZE_COMPARISON = (18, 12)  # Multi-strategy comparison
-FIGSIZE_MATRIX = (10, 8)      # Heatmap/matrix
+FIGSIZE_MATRIX = (10, 8)  # Heatmap/matrix
 
 
 # ================================
 # Helper Functions
 # ================================
+
 
 def apply_report_style():
     """Apply standard report styling to matplotlib."""
@@ -188,12 +185,15 @@ def apply_plotly_template(template_name: str = "bid_euchre") -> str:
     pio.templates.default = template_name
     return template_name
 
+
 def format_pct(value: float, decimals: int = 1) -> str:
     """Format a proportion as percentage string."""
     return f"{value * 100:.{decimals}f}%"
 
 
-def format_ci(lower: float, upper: float, decimals: int = 1, as_pct: bool = True) -> str:
+def format_ci(
+    lower: float, upper: float, decimals: int = 1, as_pct: bool = True
+) -> str:
     """Format a confidence interval as a string."""
     if as_pct:
         return f"[{lower * 100:.{decimals}f}%, {upper * 100:.{decimals}f}%]"
