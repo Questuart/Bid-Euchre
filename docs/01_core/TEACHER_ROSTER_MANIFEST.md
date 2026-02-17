@@ -116,7 +116,7 @@ Validate roster integrity:
 
 ```bash
 # Check schema, imports, and artifact paths
-PYTHONPATH=src python scripts/validate_teacher_roster_manifest.py experiments/baselines/teacher_roster_v1.yaml
+PYTHONPATH=src python scripts/validate_teacher_roster.py experiments/baselines/teacher_roster_v1.yaml
 ```
 
 View available baselines:
