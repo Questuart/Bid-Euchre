@@ -172,6 +172,158 @@ def check_scripts_list_complete(arch_doc: Path, scripts_dir: Path) -> list[str]:
     return errors
 
 
+def check_internal_scripts_listed(
+    arch_doc: Path, internal_scripts_dir: Path
+) -> list[str]:
+    """Verify ARCHITECTURE.md lists all non-private scripts in scripts/internal/.
+
+    Checks by full path (``scripts/internal/{name}``) to avoid false positives
+    from deprecation wrappers at ``scripts/`` that share the same basename.
+    """
+    errors = []
+    if not arch_doc.exists():
+        return [f"ARCHITECTURE.md not found at {arch_doc}"]
+    if not internal_scripts_dir.is_dir():
+        return []
+    text = arch_doc.read_text(encoding="utf-8")
+    for py_file in sorted(internal_scripts_dir.glob("*.py")):
+        if py_file.name.startswith("_"):
+            continue
+        expected_token = f"scripts/internal/{py_file.name}"
+        if expected_token not in text:
+            errors.append(f"ARCHITECTURE.md missing internal script: {expected_token}")
+    return errors
+
+
+def check_no_duplicate_headings(doc_path: Path) -> list[str]:
+    """Flag duplicate ``## `` (H2) headings within a single markdown doc.
+
+    Only checks H2 — duplicate H3 under different H2 parents is valid.
+    Reports both line numbers for each duplicate.
+    """
+    errors = []
+    if not doc_path.exists():
+        return []
+    text = doc_path.read_text(encoding="utf-8")
+    heading_re = re.compile(r"^## (.+)$", re.MULTILINE)
+    seen: dict[str, int] = {}
+    for match in heading_re.finditer(text):
+        heading = match.group(1).strip()
+        lineno = text[: match.start()].count("\n") + 1
+        if heading in seen:
+            errors.append(
+                f"{doc_path.name}:{lineno}: duplicate H2 '## {heading}' "
+                f"(first at line {seen[heading]})"
+            )
+        else:
+            seen[heading] = lineno
+    return errors
+
+
+def check_command_contracts(docs_dir: Path, repo_root: Path) -> list[str]:
+    """Scan bash/sh/untagged fenced code blocks for command contract violations.
+
+    Checks:
+    1. ``run_experiment.py`` without ``--seed`` or ``--allow-nondeterministic``
+    2. ``pip install -r requirements.txt`` (stale install method)
+
+    Only scans ``bash``, ``sh``, or untagged (no language) fenced blocks.
+    Skips mermaid, yaml, python, json, etc. to prevent false positives.
+    Skips template commands containing ``<placeholder>`` angle brackets.
+    Follows backslash continuations for multi-line commands.
+    Skips archive/legacy directories.
+    """
+    errors = []
+    skip_dirs = {"archive", "legacy"}
+    # Languages we consider "shell-like" (check commands in these blocks)
+    shell_langs = {"bash", "sh", ""}
+    fence_open_re = re.compile(r"^```(\w*)\s*$")
+    # Match run_experiment.py only when used as a command (preceded by python
+    # or at the start of a command line with PYTHONPATH=), not file tree listings
+    run_exp_re = re.compile(r"python\s+\S*run_experiment\.py")
+    seed_re = re.compile(r"--seed\b|--allow-nondeterministic\b")
+    template_re = re.compile(r"<\w+")
+    requirements_re = re.compile(r"pip install\s+-r\s+requirements\.txt")
+
+    for md_file in sorted(docs_dir.rglob("*.md")):
+        if any(part in skip_dirs for part in md_file.relative_to(docs_dir).parts):
+            continue
+        text = md_file.read_text(encoding="utf-8")
+        rel = md_file.relative_to(repo_root)
+        lines = text.splitlines()
+
+        # Parse fenced blocks with a simple state machine
+        in_block = False
+        block_lang = ""
+        block_lines: list[tuple[int, str]] = []  # (lineno, text)
+
+        for lineno_0, line in enumerate(lines):
+            lineno = lineno_0 + 1
+            stripped = line.strip()
+
+            if not in_block:
+                m = fence_open_re.match(stripped)
+                if m:
+                    in_block = True
+                    block_lang = m.group(1)
+                    block_lines = []
+                continue
+
+            # Inside a block — check for closing fence
+            if stripped == "```":
+                # Block closed — check if it was a shell-like block
+                if block_lang in shell_langs:
+                    _check_block_commands(
+                        block_lines,
+                        rel,
+                        errors,
+                        run_exp_re,
+                        seed_re,
+                        template_re,
+                        requirements_re,
+                    )
+                in_block = False
+                continue
+
+            block_lines.append((lineno, line))
+
+    return errors
+
+
+def _check_block_commands(
+    block_lines: list[tuple[int, str]],
+    rel: Path,
+    errors: list[str],
+    run_exp_re: re.Pattern,
+    seed_re: re.Pattern,
+    template_re: re.Pattern,
+    requirements_re: re.Pattern,
+) -> None:
+    """Check a single shell code block for command contract violations."""
+    for idx, (lineno, line) in enumerate(block_lines):
+        if run_exp_re.search(line):
+            if template_re.search(line):
+                continue
+            # Collect continuation lines
+            cmd_parts = [line]
+            j = idx + 1
+            while j < len(block_lines) and cmd_parts[-1].rstrip().endswith("\\"):
+                cmd_parts.append(block_lines[j][1])
+                j += 1
+            full_cmd = " ".join(cmd_parts)
+            if not seed_re.search(full_cmd):
+                errors.append(
+                    f"{rel}:{lineno}: run_experiment.py without "
+                    f"--seed or --allow-nondeterministic"
+                )
+
+        if requirements_re.search(line):
+            errors.append(
+                f"{rel}:{lineno}: stale 'pip install -r requirements.txt' "
+                f"(use 'uv sync' or 'pip install -e \".[dev]\"')"
+            )
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     docs_dir = repo_root / "docs"
@@ -191,6 +343,18 @@ def main() -> int:
     print("Checking script list completeness...")
     script_errors = check_scripts_list_complete(arch_doc, scripts_dir)
     all_errors.extend(script_errors)
+
+    print("Checking internal script list completeness...")
+    internal_errors = check_internal_scripts_listed(arch_doc, scripts_dir / "internal")
+    all_errors.extend(internal_errors)
+
+    print("Checking for duplicate headings...")
+    heading_errors = check_no_duplicate_headings(arch_doc)
+    all_errors.extend(heading_errors)
+
+    print("Checking command contracts in docs/...")
+    contract_errors = check_command_contracts(docs_dir, repo_root)
+    all_errors.extend(contract_errors)
 
     if all_errors:
         print(f"\nDocs freshness check FAILED ({len(all_errors)} issues):\n")
