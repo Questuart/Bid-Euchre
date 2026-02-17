@@ -1,0 +1,166 @@
+{
+  "report": "phase0_bidless_20260207_r4.md",
+  "base_revision": "phase0_bidless_20260207_r3.md",
+  "generated": "2026-02-16T00:00:00Z",
+  "seed": 42,
+  "assets_dir": "assets/phase0_20260207_r4/",
+  "chart_generation_script": "scripts/internal/generate_r4_charts.py",
+  "chart_generation_command": "uv run python scripts/internal/generate_r4_charts.py --zoom-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 --gate-json data/runs/play_policy_gate_aggregate_20260204_221656.json --output-dir docs/04_reports/assets/phase0_20260207_r4 --dpi 150",
+  "data_sources": {
+    "zoom_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+    "greedy_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+    "glutton_run": "canonical_bidless_dataset_glutton_42_20260204_222713",
+    "gate_json": "play_policy_gate_aggregate_20260204_221656.json"
+  },
+  "charts": {
+    "self_play_grouped_boxplot.png": {
+      "section": "3",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "purpose": "Self-play fairness — grouped boxplot (5 strategies x 4 contract groups)",
+      "generator": "generate_self_play_grouped_boxplot",
+      "new_in_r4": true
+    },
+    "seat_balance_grouped_boxplot.png": {
+      "section": "4",
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "purpose": "Seat balance — grouped boxplot (4 seats x 4 contract groups)",
+      "generator": "generate_seat_balance_grouped_boxplot",
+      "new_in_r4": true
+    },
+    "hand_value_by_contract_comparison.png": {
+      "section": "5a",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "purpose": "Hand value calibration — greedy vs glutton by contract type",
+      "generator": "generate_hand_value_by_contract_comparison",
+      "new_in_r4": true
+    },
+    "tricks_by_contract_comparison.png": {
+      "section": "5b",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "purpose": "Tricks distribution — greedy vs glutton by contract type",
+      "generator": "generate_tricks_by_contract_comparison",
+      "new_in_r4": true
+    },
+    "cdf_comparison.png": {
+      "section": "5b",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "purpose": "Side-by-side CDF — discrete tricks_won by contract type for each strategy",
+      "generator": "generate_cdf_comparison",
+      "new_in_r4": true
+    },
+    "hand_value_by_trump_comparison.png": {
+      "section": "5c",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "purpose": "Trump suit invariance — hand value by trump suit (suit contracts), greedy vs glutton",
+      "generator": "generate_hand_value_by_trump_comparison",
+      "new_in_r4": true
+    },
+    "outcome_by_trump_comparison.png": {
+      "section": "5c",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "purpose": "Trump suit invariance — tricks_won by trump suit (suit contracts), greedy vs glutton",
+      "generator": "generate_outcome_by_trump_comparison",
+      "new_in_r4": true
+    },
+    "win_rate_heatmap.png": {
+      "section": "8a",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "purpose": "Strategy competitive landscape — win rate heatmap",
+      "copied_from": "assets/phase0_20260207/win_rate_heatmap.png",
+      "new_in_r4": false
+    },
+    "matchup_summary.png": {
+      "section": "8a",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "purpose": "Quantitative head-to-head deltas",
+      "copied_from": "assets/phase0_20260207/matchup_summary.png",
+      "new_in_r4": false
+    },
+    "tricks_distribution.png": {
+      "section": "8b",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "purpose": "Tricks distribution violin plots by matchup",
+      "copied_from": "assets/phase0_20260207/tricks_distribution.png",
+      "new_in_r4": false
+    },
+    "advantage_by_contract.png": {
+      "section": "9c",
+      "source": "play_policy_gate_aggregate_20260204_221656.json",
+      "purpose": "Glutton advantage by contract type — horizontal bar chart with 95% CI",
+      "generator": "generate_advantage_by_contract",
+      "filter": "seed=42, glutton_vs_greedy direction",
+      "new_in_r4": true
+    }
+  },
+  "tables": {
+    "data_inventory": {
+      "section": "2",
+      "sources": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713",
+        "canonical_bidless_dataset_mixed_play_42_20260204_221115",
+        "canonical_bidless_outcomes_zoom_42_20260204_222712",
+        "canonical_bidless_outcomes_matrix_shallow_42_20260206_171634",
+        "play_policy_gate_aggregate_20260204_221656.json"
+      ]
+    },
+    "self_play_fairness": {
+      "section": "3",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712",
+      "computed_from": "distribution_team0 histograms per self-play scenario"
+    },
+    "seat_balance": {
+      "section": "4",
+      "source_run": "canonical_bidless_dataset_greedy_42_20260204_221121",
+      "computed_from": "join_features_outcomes (bidless.parquet + bidless_outcomes.parquet)"
+    },
+    "diagnostic_performance": {
+      "section": "6b",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "repro_command": "uv run python scripts/internal/evaluate_diagnostic_tricks.py --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 --seed 42 --per-contract-json diagnostic_per_contract.json"
+    },
+    "diagnostic_coefficients": {
+      "section": "6c",
+      "source_runs": [
+        "canonical_bidless_dataset_greedy_42_20260204_221121",
+        "canonical_bidless_dataset_glutton_42_20260204_222713"
+      ],
+      "computed_from": "Ridge alpha=1.0, z-scored features, grouped train/test by hand_id"
+    },
+    "strategy_vs_random": {
+      "section": "7a",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712"
+    },
+    "rank_stability": {
+      "section": "7b",
+      "source_run": "canonical_bidless_outcomes_zoom_42_20260204_222712"
+    },
+    "policy_gate_aggregate": {
+      "section": "9b",
+      "source": "play_policy_gate_aggregate_20260204_221656.json"
+    },
+    "policy_gate_per_contract": {
+      "section": "9c",
+      "source": "play_policy_gate_aggregate_20260204_221656.json",
+      "filter": "seed=42"
+    }
+  }
+}
