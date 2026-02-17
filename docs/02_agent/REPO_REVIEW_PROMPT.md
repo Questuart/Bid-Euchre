@@ -1,7 +1,7 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Last Updated:** February 4, 2026 (post PR #249)
-**Version:** 3.1 (Agent-Optimized, Rigor-Focused)
+**Version:** 3.2 (Drift-Resilient, Discovery-Driven)
+**Last Updated:** February 2026
 
 ---
 
@@ -81,9 +81,10 @@ ls -d src/bid_euchre/*/ | grep -v __pycache__
 ls experiments/configs/*.yaml | wc -l
 ls experiments/suites/*.yaml | wc -l
 
-# Script count
+# Script count (top-level + internal)
 ls scripts/*.py | wc -l
 ls scripts/*.py
+ls scripts/internal/*.py 2>/dev/null | wc -l
 
 # Test structure
 ls -d tests/*/
@@ -95,8 +96,8 @@ ls docs/01_core/*.md
 ls docs/02_agent/*.md
 ls docs/03_TODO/*.md
 
-# Notebook count
-find notebooks -name "*.ipynb" | wc -l
+# Notebook count (active only, exclude archives)
+find notebooks -name "*.ipynb" -not -path "*/archive/*" -not -path "*/.archive/*" | wc -l
 ```
 
 ### 1.2 Version Context
@@ -123,34 +124,47 @@ git log --reverse --format=%ai | head -1
 
 ```bash
 # Verify core imports work
-PYTHONPATH=src python -c "from bid_euchre.core import Card, create_deck; print('core OK')"
-PYTHONPATH=src python -c "from bid_euchre.sim.simulation import play_single_hand; print('sim OK')"
-PYTHONPATH=src python -c "from bid_euchre.strategy import GreedyStrategy; print('strategy OK')"
+uv run python -c "from bid_euchre.core import Card, create_deck; print('core OK')"
+uv run python -c "from bid_euchre.sim.simulation import play_single_hand; print('sim OK')"
+uv run python -c "from bid_euchre.strategy import GreedyStrategy; print('strategy OK')"
 
-# Verify newer modules (Arc B+)
-PYTHONPATH=src python -c "from bid_euchre.datasets.bidless import BidlessDatasetCollector; print('datasets OK')"
-PYTHONPATH=src python -c "from bid_euchre.features.bidless_hand_features import extract_bidless_hand_features; print('features OK')"
+# Verify datasets
+uv run python -c "from bid_euchre.datasets.bidless import BidlessDatasetCollector; print('datasets OK')"
+uv run python -c "from bid_euchre.datasets.bidless_outcomes import BidlessOutcomesCollector; print('bidless_outcomes OK')"
 
-# Verify validation module (PR #156+)
-PYTHONPATH=src python -c "from bid_euchre.validation.schemas import validate_meta_v2; print('validation OK')"
+# Verify features
+uv run python -c "from bid_euchre.features.bidless_hand_features import extract_bidless_hand_features; print('features OK')"
 
-# Verify diagnostics module enhancements (PR #185)
-PYTHONPATH=src python -c "from bid_euchre.diagnostics.notebook_data import load_or_generate_outcomes; print('diagnostics OK')"
+# Verify validation
+uv run python -c "from bid_euchre.validation.schemas import validate_meta_v2; print('validation OK')"
 
-# Verify analysis module (PR #221)
-PYTHONPATH=src python -c "from bid_euchre.analysis.paired import compute_paired_deltas; print('analysis OK')"
+# Verify diagnostics
+uv run python -c "from bid_euchre.diagnostics.notebook_data import load_or_generate_outcomes; print('diagnostics OK')"
+uv run python -c "from bid_euchre.diagnostics.sanity_tests import run_sanity_tests; print('sanity_tests OK')"
+uv run python -c "from bid_euchre.diagnostics.notebook_validation import ValidationResult; print('notebook_validation OK')"
 
-# Verify GluttonStrategy (PRs #226-230)
-PYTHONPATH=src python -c "from bid_euchre.strategy import GluttonStrategy, GluttonIsolatedStrategy; print('glutton OK')"
+# Verify analysis
+uv run python -c "from bid_euchre.analysis.paired import compute_paired_deltas; print('analysis OK')"
 
-# Verify bidless outcomes dataset (PR #237)
-PYTHONPATH=src python -c "from bid_euchre.datasets.bidless_outcomes import BidlessOutcomesCollector; print('bidless_outcomes OK')"
+# Verify strategies
+uv run python -c "from bid_euchre.strategy import GluttonStrategy, GluttonIsolatedStrategy; print('glutton OK')"
 
-# Verify diagnostics sanity tests (PR #216)
-PYTHONPATH=src python -c "from bid_euchre.diagnostics.sanity_tests import run_sanity_tests; print('sanity_tests OK')"
+# Verify Arc C+ modules (batch, eligibility, splits, freeze, promotion)
+uv run python -c "from bid_euchre.experiments.batch import BatchMetadata; print('batch OK')"
+uv run python -c "from bid_euchre.reporting.eligibility import compute_eligibility; print('eligibility OK')"
+uv run python -c "from bid_euchre.models.splits import SplitManifest; print('splits OK')"
+uv run python -c "from bid_euchre.models.freeze import freeze_artifact, verify_frozen; print('freeze OK')"
+uv run python -c "from bid_euchre.validation.promotion import check_artifacts_frozen; print('promotion OK')"
+
+# Verify reporting (chart generators)
+uv run python -c "from bid_euchre.reporting.charts import generate_contract_faceted_charts; print('charts OK')"
+
+# Dynamic: also verify any modules not listed above
+# ls -d src/bid_euchre/*/ | grep -v __pycache__
+# (check if any module directories exist that aren't covered by the imports above)
 ```
 
-**Deliverable:** Quantitative structure table with actual vs expected counts.
+**Deliverable:** Quantitative structure table with actual counts (do not compare to hardcoded expected values — record what you find).
 
 ---
 
@@ -168,7 +182,7 @@ with file-based evidence, clearly marking gaps.
 **Run full CI check (always required):**
 
 ```bash
-# Full validation suite
+# Full validation suite (includes: repo-lint, lint, test, notebook-check, docs-check)
 make check
 ```
 
@@ -180,25 +194,37 @@ request a CLI-capable agent to execute `make check` before continuing.
 **Breakdown individual checks (if make check fails):**
 
 ```bash
-make repo-lint  # Repository linter (9+ rules)
-make lint       # Ruff format + lint
-make test       # Pytest fast suite
+make repo-lint      # Repository linter
+make lint           # Ruff format + lint
+make test           # Pytest fast suite
+make notebook-check # Jupytext sync + outputs cleared
+make docs-check     # Documentation freshness
 ```
 
-**Verify repo-linter rules:** Read `scripts/lint_repo.py` and document all rules (should be 9+).
+**Verify repo-linter rules:** Read `scripts/lint_repo.py` and count all `check_*` functions.
 
-**Expected Rules (PR #186):**
-1. `check_no_generated_artifacts` — Blocks commits to `data/runs/`, `data/reports/`
-2. `check_src_no_experiments_or_tests_imports` — Enforces layer boundary
-3. `check_no_deprecated_changes` — Freezes `experiments/_deprecated/`
-4. `check_data_fixtures_allowlist` — 100KB size limit on `data/fixtures/`
-5. `check_no_new_scripts_in_frozen_folders` — Freezes `experiments/comparisons/`, `experiments/training/`
-6. `check_no_ds_store_files` — Blocks `.DS_Store`
-7. `check_no_global_random` — Enforces determinism (no bare `random.` calls)
-8. `check_empty_test_functions` — Flags test stubs
-9. `check_experiments_without_seed` — Requires `--seed` or `--allow-nondeterministic`
+```bash
+# Count rules (do NOT rely on a hardcoded number — derive from source)
+grep -c "^def check_" scripts/lint_repo.py
 
-### 2.2 Rigor Validation ⭐ NEW
+# List all rule names
+grep "^def check_" scripts/lint_repo.py | sed 's/def //; s/(.*//;'
+```
+
+**Rule Categories** (stable summary — derive exact rules from source):
+
+| Category | Purpose | Examples |
+|----------|---------|----------|
+| **Data policy** | Prevent artifact leakage | No generated artifacts in `data/runs/`, fixture allowlist |
+| **Import boundaries** | Enforce layer separation | `src/` cannot import `experiments/` or `tests/`; no `sys.path.insert`; no `import experiments` |
+| **Determinism** | Enforce reproducibility | No global `random.*` in `src/`; experiments require `--seed` |
+| **Code quality** | Prevent stubs and misplacement | No empty test functions; no `argparse` in `src/` |
+| **Workflow** | Protect frozen folders | No changes to `_deprecated/`; no new scripts in frozen dirs; no `.DS_Store` |
+| **Promotion** | Artifact integrity gates | Artifacts require freeze (`frozen_at` + `artifact_sha256`); gate schema validation; split manifest schema |
+
+Run `make repo-lint` to verify all rules pass. Read `scripts/lint_repo.py` for the authoritative rule list.
+
+### 2.2 Rigor Validation
 
 **Goal:** Verify statistical rigor standards for production or decision-making artifacts.
 Exploratory notebooks should be flagged but are not required to have full tests/CIs.
@@ -210,17 +236,17 @@ Exploratory notebooks should be flagged but are not required to have full tests/
 grep -h "n_per" experiments/configs/*.yaml | awk '{print $NF}' | sort -n
 
 # Identify configs with inadequate sample sizes (<2000 for inference)
-grep -h "n_per" experiments/configs/*.yaml | awk -F: '$2 < 2000 {print FILENAME ":" $0}' experiments/configs/*.yaml
+grep -H "n_per:" experiments/configs/*.yaml | awk -F: '{if ($3 < 2000) print $1 " has inadequate sample size: " $3}'
 ```
 
 **Statistical Test Presence:**
 
 ```bash
 # Find notebooks with statistical tests
-find notebooks -name "*.ipynb" -exec grep -l "f_oneway\|ttest\|bootstrap\|mannwhitneyu\|chi2_contingency" {} \;
+find notebooks -name "*.ipynb" -not -path "*/archive/*" -exec grep -l "f_oneway\|ttest\|bootstrap\|mannwhitneyu\|chi2_contingency" {} \;
 
 # Find notebooks with plots but potentially missing tests
-find notebooks -name "*.ipynb" -exec grep -l "plt\." {} \; | while read nb; do
+find notebooks -name "*.ipynb" -not -path "*/archive/*" -exec grep -l "plt\." {} \; | while read nb; do
   if ! grep -q "f_oneway\|ttest\|bootstrap" "$nb"; then
     echo "POTENTIAL RIGOR GAP: $nb (has plots, no obvious statistical tests)"
   fi
@@ -275,7 +301,7 @@ grep -r "from experiments\|from tests" src/ --include="*.py"
 git log --oneline --since="2025-11-01" -- experiments/_deprecated/ | grep -v "README\|quarantine"
 
 # Verify no new scripts in frozen folders
-ls experiments/comparisons/*.py experiments/training/*.py | grep -v "run_head_to_head\|train_bidder_aware_models"
+ls experiments/comparisons/*.py experiments/training/*.py 2>/dev/null
 ```
 
 **Artifact Leakage:**
@@ -305,13 +331,36 @@ For each contract doc, verify claims against reality:
 
 ```bash
 # Extract commands from docs and test them (if CLI available)
-grep -h "^python\|^make\|^PYTHONPATH" docs/01_core/*.md docs/02_agent/*.md | head -10
+grep -h "^python\|^make\|^PYTHONPATH\|^uv run" docs/01_core/*.md docs/02_agent/*.md | head -10
 
 # Test sample commands (dry-run safe)
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42 --dry-run
+uv run python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42 --dry-run
 ```
 
 **Deliverable:** Documentation accuracy table with drift details.
+
+### 2.5 Promotion Workflow Verification
+
+**Goal:** Verify the promotion workflow infrastructure is functional.
+
+```bash
+# Check if promotion-gate target exists
+make -n promotion-gate 2>&1 | head -5
+
+# Verify freeze/splits/eligibility modules import
+uv run python -c "
+from bid_euchre.models.freeze import freeze_artifact, verify_frozen, require_frozen
+from bid_euchre.models.splits import SplitManifest, create_grouped_split
+from bid_euchre.reporting.eligibility import compute_eligibility
+from bid_euchre.validation.promotion import check_artifacts_frozen
+print('promotion imports OK')
+"
+
+# Verify promotion lint rules exist in repo-linter
+grep "def check_.*artifact\|def check_.*gate\|def check_.*split\|def check_.*registry" scripts/lint_repo.py
+```
+
+**Deliverable:** Promotion workflow status (functional/broken/partial).
 
 ---
 
@@ -368,11 +417,19 @@ grep -rn "python experiments/run_experiment.py" docs/ | grep -v -- "--seed\|--al
 **Stale Reference Detection:**
 
 ```bash
-# Find references to old config names
-grep -r "strategy_comparison\|quick_test" docs/ | head -10
+# Find references to config names and verify they still exist
+grep -roh "experiments/configs/[a-z_]*.yaml" docs/ | sort -u | while read cfg; do
+  if [ ! -f "$cfg" ]; then
+    echo "STALE REF: $cfg referenced in docs but does not exist"
+  fi
+done
 
-# Verify those configs still exist
-ls experiments/configs/strategy_comparison.yaml experiments/configs/quick_test.yaml
+# Find references to scripts and verify they still exist
+grep -roh "scripts/[a-z_]*.py" docs/ | sort -u | while read scr; do
+  if [ ! -f "$scr" ]; then
+    echo "STALE REF: $scr referenced in docs but does not exist"
+  fi
+done
 ```
 
 ### 3.3 Drift Detection
@@ -393,7 +450,7 @@ ls experiments/configs/strategy_comparison.yaml experiments/configs/quick_test.y
 # Reality: ls scripts/*.py
 ```
 
-### 3.4 Rigor Gaps ⭐ NEW
+### 3.4 Rigor Gaps
 
 **Visual-Only Validation Detection:**
 
@@ -405,10 +462,11 @@ grep -rn "looks balanced\|looks good\|appears balanced\|seems reasonable" notebo
 **Missing Statistical Tests:**
 
 ```bash
-# Find analysis notebooks (01-05) and check for statistical tests
-for nb in notebooks/phase0_bidless/0[1-5]*.ipynb; do
-  if [ -f "$nb" ]; then
-    if ! grep -q "f_oneway\|ttest\|bootstrap\|mannwhitneyu" "$nb"; then
+# Find analysis notebooks and check for statistical tests
+# Discover active notebooks dynamically (do NOT hardcode paths)
+find notebooks -name "*.ipynb" -not -path "*/archive/*" -not -path "*/.archive/*" | while read nb; do
+  if grep -q "plt\.\|plot\|chart\|figure" "$nb" 2>/dev/null; then
+    if ! grep -q "f_oneway\|ttest\|bootstrap\|mannwhitneyu\|chi2" "$nb" 2>/dev/null; then
       echo "MISSING TESTS: $nb"
     fi
   fi
@@ -462,9 +520,9 @@ grep -rn "\.mean()\|\.median()" notebooks/ | head -20
 | Severity | Example Issues |
 |----------|---------------|
 | CRITICAL | Global `random.` usage in src/, unseeded experiments in production configs |
-| HIGH | ARCHITECTURE.md module count wrong (13 actual vs 14 claimed), missing statistical tests in analysis notebooks |
-| MEDIUM | 15 TODOs in src/, 3 empty test stubs, hardcoded `seat=0` in demo notebooks |
-| LOW | Typos in docs, missing docstrings, outdated PR count in REPO_REVIEW_PROMPT |
+| HIGH | ARCHITECTURE.md module list doesn't match `ls src/bid_euchre/`, missing statistical tests in analysis notebooks |
+| MEDIUM | TODOs in src/, empty test stubs, hardcoded `seat=0` in demo notebooks |
+| LOW | Typos in docs, missing docstrings, cosmetic doc drift |
 
 ### 4.2 Impact Assessment
 
@@ -495,29 +553,21 @@ grep -rn "\.mean()\|\.median()" notebooks/ | head -20
 
 | Component | Score | Status | Notes |
 |-----------|-------|--------|-------|
-| CI Gates | 100/100 | ✅ | All checks passing |
-| Module Health | 95/100 | ✅ | 13/13 modules import correctly |
-| Documentation Accuracy | 75/100 | ⚠️ | 3 docs with drift |
-| Rigor Compliance | 80/100 | ⚠️ | 4/12 analysis notebooks missing tests |
-| Boundary Compliance | 100/100 | ✅ | No violations |
-| Test Coverage | 85/100 | ✅ | 3 empty stubs, otherwise good |
+| CI Gates | <score>/100 | ✅/⚠️/❌ | <actual make check result> |
+| Module Health | <score>/100 | ✅/⚠️/❌ | <actual>/<total> modules import correctly |
+| Documentation Accuracy | <score>/100 | ✅/⚠️/❌ | <count> docs with drift |
+| Rigor Compliance | <score>/100 | ✅/⚠️/❌ | <count>/<total> analysis notebooks have tests |
+| Boundary Compliance | <score>/100 | ✅/⚠️/❌ | <violations found or "No violations"> |
+| Test Coverage | <score>/100 | ✅/⚠️/❌ | <empty stubs count>, <total test files> |
 
-**Key Achievements Since Last Review (PR #190 → #249):**
-- ✅ Added `GluttonStrategy` with partner awareness, trump conservation (PRs #226-230)
-- ✅ Added `GluttonIsolatedStrategy` for A/B testing individual features (PR #230)
-- ✅ Added `analysis/` module with paired comparison statistics (PR #221)
-- ✅ Added `bidless_outcomes.py` per-hand outcome dataset collector (PR #237)
-- ✅ Added `play_policy_gate.py` for validating glutton stability (PR #245)
-- ✅ Added `diagnostics/sanity_tests.py` for strategy sanity validation (PR #216)
-- ✅ Added 8 new canonical bidless experiment configs (PRs #233-246)
+**Key Achievements Since Last Review:**
+<populate from `git log` between last review and HEAD — do not copy examples from this template>
 
 **Blockers:**
-- None (CI passing, no critical issues)
+<list any CRITICAL issues, or "None">
 
 **High-Priority Issues (Immediate Attention Required):**
-1. Update ARCHITECTURE.md module count (claims 14, actual 13)
-2. Add statistical tests to 4 analysis notebooks missing rigor validation
-3. Update REPO_REVIEW_PROMPT.md (outdated since PR #155)
+<top 3-5 issues from Phase 4, with evidence>
 ```
 
 ### 5.2 Verification Evidence
@@ -526,15 +576,17 @@ grep -rn "\.mean()\|\.median()" notebooks/ | head -20
 
 If any command could not be run (no CLI), record it with "NOT RUN" and explain why.
 
-| Verification | Command | Output | Expected | Status |
-|--------------|---------|--------|----------|--------|
-| Module count | `ls -d src/bid_euchre/*/ \| grep -v __pycache__ \| wc -l` | 13 | 13 | ✅ |
-| Config count | `ls experiments/configs/*.yaml \| wc -l` | 16 | 16-18 | ✅ |
-| Suite count | `ls experiments/suites/*.yaml \| wc -l` | 4 | 4 | ✅ |
-| Latest PR | `gh pr list --state merged --limit 1` | #186 | #186 | ✅ |
-| CI gates | `make check` | PASSED | PASSED | ✅ |
-| Core imports | `PYTHONPATH=src python -c "from bid_euchre.core import Card; print('OK')"` | OK | OK | ✅ |
-| Validation module | `PYTHONPATH=src python -c "from bid_euchre.validation.schemas import validate_meta_v2; print('OK')"` | OK | OK | ✅ |
+| Verification | Command | Output | Status |
+|--------------|---------|--------|--------|
+| Module count | `ls -d src/bid_euchre/*/ \| grep -v __pycache__ \| wc -l` | `<actual>` | ✅/⚠️/❌ |
+| Config count | `ls experiments/configs/*.yaml \| wc -l` | `<actual>` | ✅/⚠️/❌ |
+| Suite count | `ls experiments/suites/*.yaml \| wc -l` | `<actual>` | ✅/⚠️/❌ |
+| Script count | `ls scripts/*.py \| wc -l` | `<actual>` | ✅/⚠️/❌ |
+| Test count | `find tests -name "test_*.py" \| wc -l` | `<actual>` | ✅/⚠️/❌ |
+| Latest PR | `gh pr list --state merged --limit 1` | `<actual>` | ✅/⚠️/❌ |
+| CI gates | `make check` | `<PASSED/FAILED>` | ✅/⚠️/❌ |
+| Core imports | (see Phase 1.3) | `<OK/FAIL>` | ✅/⚠️/❌ |
+| Repo-linter rules | `grep -c "^def check_" scripts/lint_repo.py` | `<actual>` | ✅/⚠️/❌ |
 
 ### 5.3 Issue Registry
 
@@ -542,11 +594,7 @@ If any command could not be run (no CLI), record it with "NOT RUN" and explain w
 
 | ID | Severity | Location | Issue | Evidence | Recommendation |
 |----|----------|----------|-------|----------|----------------|
-| I001 | HIGH | `docs/01_core/ARCHITECTURE.md:22` | Module count drift (claims 14, actual 13) | `grep "14" ARCHITECTURE.md` finds module claim; `ls -d src/bid_euchre/*/` shows 13 | Update line 22 to "13 modules" |
-| I002 | HIGH | `notebooks/phase0_bidless/02_*.ipynb` | Missing statistical tests (visual-only validation) | `grep -L "f_oneway\|ttest" 02_*.ipynb` | Add ANOVA/t-tests to validate claims |
-| I003 | MEDIUM | `src/bid_euchre/strategy/greedy.py:45` | TODO comment unresolved | `grep -n TODO greedy.py` shows line 45 | Resolve or convert to issue |
-| I004 | MEDIUM | `experiments/configs/quick_test.yaml:5` | Inadequate sample size (n_per: 200) | `grep n_per quick_test.yaml` shows 200 | Document as smoke test only OR increase to 2000+ |
-| I005 | LOW | `docs/02_agent/REPO_REVIEW_PROMPT.md:3` | Outdated last-update date | Header shows "January 27, 2026 (post PR #155)" | Update to current date + PR #186 |
+| I001 | `<severity>` | `<file:line>` | `<description>` | `<command or quote>` | `<specific fix>` |
 
 ### 5.4 Cleanup Plan
 
@@ -556,7 +604,7 @@ Only include if requested or if ≥1 critical issue requires sequencing.
 ```markdown
 ## Cleanup Plan — PR Sequence (Template)
 
-**PR #N — <title>**
+**PR — <title>**
 - **Files:** <list files>
 - **Goal:** <outcome tied to model training/evaluation/reproducibility>
 - **Acceptance:** `make check` passes + <specific criteria>
@@ -564,7 +612,7 @@ Only include if requested or if ≥1 critical issue requires sequencing.
 - **Dependencies:** <if any>
 ```
 
-### 5.5 Rigor Assessment ⭐ NEW
+### 5.5 Rigor Assessment
 
 **Format:** Quantitative rigor metrics (template; populate only if relevant)
 
@@ -627,7 +675,7 @@ Only include if requested or if ≥1 critical issue requires sequencing.
 ## Development Roadmap (Template)
 
 **Next 3-5 PRs (Optional):**
-- PR #N — <title> (scope, files, acceptance, effort, risk)
+- PR — <title> (scope, files, acceptance, effort, risk)
 
 **Medium-Term Milestones (Optional):**
 - <milestone> — <goal> — <target>
@@ -639,6 +687,17 @@ Only include if requested or if ≥1 critical issue requires sequencing.
 ---
 
 ## CONSTRAINTS
+
+**No Hardcoded Repo Facts:**
+- ❌ Do not embed fixed counts, PR numbers, or file lists as ground truth in review output
+- ✅ Use tool-driven discovery to determine current state at review time
+- ✅ Every claim about repo structure must be verified by the reviewing agent at runtime
+
+**Prompt Freshness Checks:**
+- ✅ Verify every referenced script and CLI flag exists before using it
+- ✅ Do not include fixed counts in output unless generated during this review run
+- ✅ Mark unverifiable commands as `NOT RUN` with reason
+- ✅ If a command in this prompt fails, note it as a prompt staleness issue in the Issue Registry
 
 **Discovery Over Assumptions:**
 - ✅ Use tools to verify current state
@@ -689,7 +748,7 @@ Only include if requested or if ≥1 critical issue requires sequencing.
 - **No global randomness:** Local RNG instances for determinism
 - **Drift detection:** Regression protection for baselines
 
-### 2. Rigor Enforcement (New in v3.0)
+### 2. Rigor Enforcement
 
 - **Sample size adequacy:** Flag n_per < 2000 as critical for inference claims
 - **Statistical test coverage:** No "looks balanced" without ANOVA/chi-square
@@ -724,18 +783,23 @@ Exploratory notebooks may be flagged but are not required to meet full rigor gat
 
 ## GOLD PATH COMMANDS
 
-These are the **blessed canonical commands** for this repo (from `docs/02_agent/AGENTS.md` and `.claude/CLAUDE.md`):
+These are the **blessed canonical commands** for this repo. Run `make help` for the complete, up-to-date target list.
+
+**Authoritative sources:** `Makefile`, `docs/02_agent/AGENTS.md`, `.claude/CLAUDE.md`
 
 ### CI Validation
 
 ```bash
 # Run all CI checks (required before PR)
+# Composition: repo-lint + lint + test + notebook-check + docs-check
 make check
 
 # Individual checks
-make repo-lint  # Repository linter (9+ rules)
-make lint       # Ruff format + lint
-make test       # Pytest fast suite
+make repo-lint      # Repository linter (derive rule count from source)
+make lint           # Ruff format + lint
+make test           # Pytest fast suite
+make notebook-check # Jupytext sync + outputs cleared
+make docs-check     # Documentation freshness gate
 ```
 
 ### Experiment Execution
@@ -743,7 +807,7 @@ make test       # Pytest fast suite
 ```bash
 # Seeded experiment (production)
 uv run python experiments/run_experiment.py --seed 42 \
-  --config experiments/configs/strategy_comparison.yaml --n_per 2000
+  --config experiments/configs/<config>.yaml --n_per 2000
 
 # Quick smoke test (exploratory only, not for inference)
 uv run python experiments/run_experiment.py --seed 42 \
@@ -751,7 +815,7 @@ uv run python experiments/run_experiment.py --seed 42 \
 
 # Dry-run validation (no simulation)
 uv run python experiments/run_experiment.py --seed 42 --dry-run \
-  --config experiments/configs/strategy_comparison.yaml
+  --config experiments/configs/<config>.yaml
 ```
 
 ### Report Generation
@@ -767,190 +831,167 @@ uv run python scripts/generate_report.py \
   --overwrite
 ```
 
-### New Scripts (PR #185+)
+### Run Comparison
 
 ```bash
-# Compare two runs
+# Compare two runs with bootstrap statistics
 uv run python scripts/compare_runs.py \
-  --run1 data/runs/<run_id_1> \
-  --run2 data/runs/<run_id_2>
+  --baseline data/runs/<baseline_run_id> \
+  --candidate data/runs/<candidate_run_id> \
+  --seed 42 --n-bootstrap 10000 --format markdown
+```
 
+### Notebook Execution
+
+```bash
+# Execute notebooks in SMOKE mode (~10s, quick validation)
+make notebook-run
+
+# Execute notebooks in QUICK mode (~2-5min, more thorough)
+make notebook-run-full
+```
+
+### Promotion Gate
+
+```bash
+# Run promotion gate (requires env vars — check Makefile for current interface)
+make promotion-gate
+```
+
+### Bidding Teacher Loop
+
+```bash
+# Discover available teacher/training targets
+make help | grep -i "bid\|train\|teacher\|loop"
+```
+
+### Config Validation
+
+```bash
 # Validate config files
 uv run python scripts/validate_configs.py \
   experiments/configs/*.yaml
 ```
 
-### Play Policy Gate (PR #245+)
-
-```bash
-# Validate glutton stability for play policy freeze
-uv run python scripts/play_policy_gate.py \
-  --seeds 42,43,44 \
-  --n-per 20000
-```
-
 ---
 
-## CURRENT STRUCTURE (Verified PR #249)
+## CURRENT STRUCTURE (Orientation Only)
+
+**Do not treat this as ground truth.** Use the discovery commands in Phase 1.1 to determine actual counts and contents.
 
 **Authoritative sources:**
 - `.claude/CLAUDE.md` — Session entrypoint
 - `docs/01_core/ARCHITECTURE.md` — Module structure
-- `docs/FLOW_DIAGRAM.md` — Architecture diagrams
 
 ```
 bid-euchre/
 ├── .claude/                     # Claude Code session configuration
 │   ├── CLAUDE.md                # Entrypoint (imports authoritative docs)
-│   └── rules/                   # Session rules
-│       ├── 05_rigor.md          # Rigor & correctness philosophy ⭐
-│       ├── 10_workflow.md       # Gold path commands
-│       ├── 20_determinism.md    # Seed requirements
-│       ├── 30_data_contract.md  # Output policy
-│       └── 40_prs.md            # PR requirements
-├── src/bid_euchre/              # Core library (13 modules)
+│   └── rules/                   # Session rules (rigor, workflow, determinism, data, PRs)
+├── src/bid_euchre/              # Core library
 │   ├── core/                    # Cards, deck, rules, trick logic
 │   ├── sim/                     # Simulation engine
-│   ├── strategy/                # AI strategies (Greedy, Glutton, GluttonIsolated)
+│   ├── strategy/                # AI strategies
 │   ├── features/                # Hand evaluation + bidless features
-│   ├── datasets/                # Dataset collectors (bidding, bidless, bidless_outcomes)
-│   ├── models/                  # Model training/inference
-│   ├── diagnostics/             # Visualization, analysis, health checks, sanity tests ⭐
-│   ├── reporting/               # Metrics, evaluation
+│   ├── datasets/                # Dataset collectors
+│   ├── models/                  # Model training/inference, splits, freeze
+│   ├── diagnostics/             # Visualization, analysis, health checks, notebook validation
+│   ├── reporting/               # Metrics, evaluation, charts, eligibility
 │   ├── logging/                 # Structured game logging
-│   ├── validation/              # Schema validation ⭐ NEW (PR #156)
-│   ├── analysis/                # Statistical analysis, paired comparisons ⭐ NEW (PR #221)
-│   ├── experiments/             # Config system
+│   ├── validation/              # Schema validation, promotion gates
+│   ├── analysis/                # Statistical analysis, paired comparisons
+│   ├── experiments/             # Config system, batch metadata
 │   └── utils/                   # Generic helpers
+│   # (verify via: ls -d src/bid_euchre/*/ | grep -v __pycache__)
 ├── experiments/                 # Experiment configs + runner
 │   ├── run_experiment.py        # THE canonical runner
-│   ├── configs/                 # YAML experiment definitions (25)
-│   ├── suites/                  # Suite definitions (4)
-│   ├── comparisons/             # Frozen (head-to-head scripts)
-│   ├── training/                # Frozen (training scripts)
+│   ├── configs/                 # YAML experiment definitions
+│   ├── suites/                  # Suite definitions
 │   └── _deprecated/             # Frozen (legacy, do not modify)
-├── scripts/                     # Blessed tooling entrypoints (12)
-│   ├── generate_report.py       # Report generator
-│   ├── lint_repo.py             # Repository linter (9+ rules)
-│   ├── run_suite.py             # Suite runner
-│   ├── compare_rollup.py        # Drift detection
-│   ├── compare_runs.py          # Run comparison
-│   ├── validate_configs.py      # Config validation
-│   ├── play_policy_gate.py      # Glutton stability validation ⭐ NEW (PR #245)
-│   └── ...                      # (other blessed scripts)
+│   # (verify via: ls experiments/configs/*.yaml | wc -l)
+├── scripts/                     # Blessed tooling entrypoints
+│   ├── internal/                # Internal-only scripts
+│   └── *.py                     # Top-level blessed scripts
+│   # (verify via: ls scripts/*.py | wc -l)
 ├── tests/                       # Test suite
 │   ├── unit/                    # Fast, isolated tests
 │   ├── integration/             # Multi-component tests
 │   └── performance/             # Benchmarks
+│   # (verify via: find tests -name "test_*.py" | wc -l)
 ├── notebooks/                   # Interactive analysis
-│   └── phase0_bidless/          # Arc B notebooks (12+)
-│       ├── 00_health_checks.ipynb
-│       ├── 01-04_feature_analysis.ipynb
-│       └── 05+_model_dev.ipynb
+│   └── phase0_bidless/          # Bidless analysis notebooks
+│   # (verify via: find notebooks -name "*.ipynb" -not -path "*/archive/*" | wc -l)
 ├── docs/                        # Documentation
 │   ├── 01_core/                 # Architecture, contracts, specs
-│   │   ├── ARCHITECTURE.md
-│   │   ├── EXPERIMENTS.md
-│   │   ├── DATA_CONTRACT.md
-│   │   ├── REPRODUCIBILITY.md
-│   │   ├── METRICS.md
-│   │   ├── SCORING.md
-│   │   ├── RULES.md
-│   │   └── DRIFT.md
-│   ├── 02_agent/                # AI agent guidelines
-│   │   ├── AGENTS.md
-│   │   ├── QUALITY_BAR.md
-│   │   ├── REVIEW_CHECKLIST.md
-│   │   ├── AI_BOUNDARIES.md
-│   │   └── REPO_REVIEW_PROMPT.md (this file)
+│   ├── 02_agent/                # AI agent guidelines (incl. this file)
 │   ├── 03_TODO/                 # Task tracking + reviews
-│   │   └── CODEBASE_CONSISTENCY.md
-│   └── FLOW_DIAGRAM.md          # Visual architecture ⭐
+│   └── 04_reports/              # Consolidated reports
 ├── data/
 │   ├── fixtures/                # Committed test fixtures (≤100KB each)
 │   └── runs/                    # Generated outputs (gitignored)
-│       └── <run_id>/
-│           ├── meta.json        # Run metadata (schema v2)
-│           ├── config_effective.yaml
-│           ├── perf.json
-│           ├── results/         # Metric rollups
-│           ├── logs/            # JSONL event stream (conditional)
-│           ├── datasets/        # ML datasets (conditional)
-│           ├── reports/         # Generated charts
-│           ├── splits/          # Train/test/val (conditional)
-│           └── artifacts/       # Model binaries (conditional)
-├── Makefile                     # Gold path commands
+├── Makefile                     # Gold path commands (run `make help`)
 ├── pyproject.toml               # Project config
 └── .github/
+    ├── workflows/ci.yml         # CI pipeline
     └── pull_request_template.md # PR template (required)
 ```
 
-**Verification Commands:**
-
-```bash
-# Verify structure
-find src/bid_euchre -type d -maxdepth 1 | grep -v __pycache__ | sort
-ls experiments/configs/*.yaml | wc -l  # Expected: 25
-ls experiments/suites/*.yaml | wc -l   # Expected: 4
-ls scripts/*.py | wc -l                # Expected: 12
-```
-
 ---
 
-## DEVELOPMENT MILESTONES (Historical Context)
+## DEVELOPMENT MILESTONES (Historical Context, Non-Normative)
 
-**Use git log for detailed history.** This table provides architectural epochs only.
+**These milestones document architectural epochs. They are historical context only — verify current state via `git log` and `gh pr list`.**
 
 | Era | PRs | Theme | Key Outcomes |
 |-----|-----|-------|-------------|
-| **Foundation** | #1-29 | CI, determinism, contracts | Stable infrastructure, repo-linter, gold paths |
-| **Baseline** | #30-81 | Drift detection, scoring | Automated regression detection, metric rollup |
-| **Bidding** | #82-143 | Policies, datasets, training | Full bidding system, auction mode, B1 models |
-| **Bidless** | #144-155 | Hand value features | Arc B foundation, bidless dataset, feature engineering |
-| **Validation & Rigor** | #156-190 | Schema validation, rigor enforcement ⭐ | Quality gates hardened, statistical rigor, notebook standards |
-| **Bidless Production** | #191-249 | Canonical bidless dataset, GluttonStrategy ⭐ | Paired analysis, play policy gates, outcomes dataset |
+| **Foundation** | #1–29 | CI, determinism, contracts | Stable infrastructure, repo-linter, gold paths |
+| **Baseline** | #30–81 | Drift detection, scoring | Automated regression detection, metric rollup |
+| **Bidding** | #82–143 | Policies, datasets, training | Full bidding system, auction mode, B1 models |
+| **Bidless** | #144–155 | Hand value features | Arc B foundation, bidless dataset, feature engineering |
+| **Validation & Rigor** | #156–190 | Schema validation, rigor enforcement | Quality gates hardened, statistical rigor, notebook standards |
+| **Bidless Production** | #191–249 | Canonical bidless dataset, GluttonStrategy | Paired analysis, play policy gates, outcomes dataset |
+| **Arc B Bidding** | #250–290 | OLSa bidders, teacher policies | 16 bidding PRs, model training, strategy registration |
+| **Arc C Infrastructure** | #310–323 | Batch metadata, promotion workflow | Eligibility engine, split manifests, artifact freeze, CI gates |
+| **Promotion Hardening** | #324–332 | Freeze enforcement, registry lint | Content-based hash validation, workflow automation, 7 skills |
+| **Phase 0 Report** | #333–345 | Report charts, diagnostics, skill audit | 5 chart suites, contract-faceted analysis, Phase 0 report r4 |
 
-**Current State (PR #249):**
-- **Total PRs:** 249
-- **Current Era:** Bidless Production (ongoing)
-- **Next Milestone:** Play policy freeze + bidder training
-- **Long-term Goal:** Full bidding system integration (Arc C)
-
-**To get current PR count:**
+**Current state:** Derive via:
 
 ```bash
 gh pr list --state merged --limit 1 --json number --jq '.[0].number'
+git rev-list --count HEAD
+git log --oneline -5
 ```
 
 ---
 
-## REPO-LINTER RULES (PR #186+)
+## REPO-LINTER RULES
 
-**Source:** `scripts/lint_repo.py`
+**Source of truth:** `scripts/lint_repo.py`
 
-The repository linter enforces 9+ project-specific rules:
-
-| Rule ID | Check | Purpose | Enforcement |
-|---------|-------|---------|-------------|
-| `no-generated-artifacts` | Blocks commits to `data/runs/`, `data/reports/` | Prevent artifact leakage | Hard gate (CI fails) |
-| `src-import-boundary` | Blocks `src/` imports from `experiments/`, `tests/` | Enforce layer separation | Hard gate (CI fails) |
-| `no-deprecated-changes` | Freezes `experiments/_deprecated/` (except README, new additions) | Prevent rework of deprecated code | Hard gate (CI fails) |
-| `data-fixtures-allowlist` | Restricts commits to `data/fixtures/` only; 100KB size limit | Control committed data | Hard gate (CI fails) |
-| `no-frozen-folder-sprawl` | Freezes `experiments/comparisons/`, `experiments/training/` | Prevent workflow sprawl | Hard gate (CI fails) |
-| `no-ds-store` | Blocks `.DS_Store` files | Prevent macOS cruft | Hard gate (CI fails) |
-| `no-global-random` | Detects bare `random.` calls in `src/` (except `sim/deals.py`) | Enforce determinism | Hard gate (CI fails) |
-| `empty-test-function` | Flags test stubs (only `pass` or docstring) | Ensure real tests | Hard gate (CI fails) |
-| `experiments-require-seed` | Requires `--seed` or `--allow-nondeterministic` in docs/scripts | Enforce reproducibility | Hard gate (CI fails) |
-
-**Verification:**
+Do not rely on a hardcoded rule list. Derive the current rules from source:
 
 ```bash
-# Test repo-linter
-make repo-lint
-
 # Count rules
 grep -c "^def check_" scripts/lint_repo.py
+
+# List all rule names
+grep "^def check_" scripts/lint_repo.py | sed 's/def //; s/(.*//;'
+
+# Run the linter
+make repo-lint
 ```
+
+**Rule categories** (stable, unlikely to drift):
+
+| Category | Purpose |
+|----------|---------|
+| **Data policy** | Prevent artifact leakage; fixture allowlist and size limits |
+| **Import boundaries** | `src/` isolation from `experiments/` and `tests/`; no `sys.path.insert`; no `import experiments` package |
+| **Determinism** | No global `random.*` in `src/`; experiments require `--seed` |
+| **Code quality** | No empty test stubs; no `argparse` in `src/` |
+| **Workflow** | Frozen folders (`_deprecated/`, `comparisons/`, `training/`); no `.DS_Store` |
+| **Promotion** | Artifact freeze checks (`frozen_at` + `artifact_sha256`); gate artifact schema; split manifest schema; registry consistency |
 
 ---
 
@@ -960,13 +1001,14 @@ Your review output **MUST** include all sections below in this order:
 
 ### 1. Executive Summary
 - Repo Health Score (X/100 with component breakdown)
-- Key achievements since last review
+- Key achievements since last review (derive from git log)
 - Blockers (if any)
 - High-priority issues (top 3-5; keep to top 5 by impact)
 
 ### 2. Verification Evidence
-- Table: Command → Output → Expected → Status
+- Table: Command → Output → Status
 - Include all verification commands run in Phase 2
+- All counts and values must be from this review run (not copied from templates)
 
 ### 3. Issue Registry
 - Table: ID | Severity | Location | Issue | Evidence | Recommendation
@@ -979,7 +1021,7 @@ Your review output **MUST** include all sections below in this order:
 - Dependencies diagram (if applicable)
 - Effort estimates (Trivial/Small/Medium/Large)
 
-### 5. Rigor Assessment ⭐ NEW
+### 5. Rigor Assessment
 - Sample size coverage table (production/decision artifacts vs exploratory)
 - Statistical test coverage table (production/decision artifacts vs exploratory)
 - Fail-fast gate coverage
@@ -1026,6 +1068,12 @@ summary and do not proceed to later phases unless explicitly asked.
 2. **Use filesystem as ground truth** (not the stale doc)
 3. **Add doc update to cleanup plan**
 
+**If a command from this prompt fails:**
+
+1. **Note it as a prompt staleness issue** in the issue registry
+2. **Record the actual working command** if you can determine one
+3. **Continue with alternative verification**
+
 ---
 
 ## AGENT EXECUTION TIPS
@@ -1057,6 +1105,5 @@ summary and do not proceed to later phases unless explicitly asked.
 
 ---
 
-*Template version: 3.1 (Agent-Optimized, Rigor-Focused)*
-*Last major revision: February 4, 2026 (post PR #249)*
-*Previous version: 3.0 (February 1, 2026, post PR #190)*
+*Template version: 3.2 (Drift-Resilient, Discovery-Driven)*
+*Previous versions: 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
