@@ -25,6 +25,7 @@ class BidAction:
     Either a pass (n=0) or a bid for n tricks with a specific contract.
     For suit contracts, trump_suit must be specified.
     """
+
     n: int  # 0 = pass, 1-10 = bid amount
     contract: Optional[str] = None  # contract type or None for passes
     trump_suit: Optional[str] = None  # trump suit for "suit" contracts
@@ -37,20 +38,28 @@ class BidAction:
         if self.n == 0:
             # Pass: contract and trump must be None
             if self.contract is not None:
-                raise ValueError(f"Pass (n=0) must have contract=None, got {self.contract}")
+                raise ValueError(
+                    f"Pass (n=0) must have contract=None, got {self.contract}"
+                )
             if self.trump_suit is not None:
-                raise ValueError(f"Pass (n=0) must have trump_suit=None, got {self.trump_suit}")
+                raise ValueError(
+                    f"Pass (n=0) must have trump_suit=None, got {self.trump_suit}"
+                )
         else:
             # Bid: contract must be specified and valid
             if self.contract is None:
                 raise ValueError(f"Bid (n={self.n}) must specify contract")
             if self.contract not in {"C", "D", "H", "S", "HIGH", "LOW"}:
-                raise ValueError(f"Contract must be one of 'C', 'D', 'H', 'S', 'HIGH', 'LOW', got '{self.contract}'")
+                raise ValueError(
+                    f"Contract must be one of 'C', 'D', 'H', 'S', 'HIGH', 'LOW', got '{self.contract}'"
+                )
 
             # For suit contracts (C, D, H, S), trump_suit should be None (contract IS the suit)
             # For HIGH/LOW, trump_suit must be None
             if self.trump_suit is not None:
-                raise ValueError(f"trump_suit must be None for v1 contracts, got {self.trump_suit}")
+                raise ValueError(
+                    f"trump_suit must be None for v1 contracts, got {self.trump_suit}"
+                )
 
     @classmethod
     def pass_bid(cls) -> "BidAction":
@@ -96,11 +105,19 @@ class BiddingObservation:
 
     Contains minimal information needed for bidding decisions.
     """
+
     hand: List[Card]  # Player's current hand
     seat: int  # Player's seat index (0-3)
     dealer_seat: int  # Dealer's seat index (0-3)
     current_high_bid: int  # Current highest bid (0-10, 0 means no bids yet)
-    allowed_contracts: Tuple[str, ...] = ("C", "D", "H", "S", "HIGH", "LOW")  # Allowed contract types
+    allowed_contracts: Tuple[str, ...] = (
+        "C",
+        "D",
+        "H",
+        "S",
+        "HIGH",
+        "LOW",
+    )  # Allowed contract types
 
 
 class BiddingPolicy(ABC):
@@ -492,14 +509,18 @@ class ArtifactBidder(BiddingPolicy):
         elif self.model_type == "heuristics_imitation_v1":
             self._init_heuristics_imitation()
         else:
-            raise ValueError(f"Unsupported model_type '{self.model_type}' in artifact {artifact_path}")
+            raise ValueError(
+                f"Unsupported model_type '{self.model_type}' in artifact {artifact_path}"
+            )
 
     def _init_linear_regression(self):
         """Initialize linear regression model parameters."""
         params = self.artifact["model_params"]
         required_keys = {"coefficients", "intercept"}
         if not required_keys.issubset(params.keys()):
-            raise ValueError(f"Linear regression model missing required parameters: {required_keys - set(params.keys())}")
+            raise ValueError(
+                f"Linear regression model missing required parameters: {required_keys - set(params.keys())}"
+            )
 
         self.coefficients = params["coefficients"]
         self.intercept = params["intercept"]
@@ -516,16 +537,25 @@ class ArtifactBidder(BiddingPolicy):
         params = self.artifact["model_params"]
         required_keys = {"initial_bid", "raise_increment", "max_bid", "contract"}
         if not required_keys.issubset(params.keys()):
-            raise ValueError(f"Strict raiser imitation model missing required parameters: {required_keys - set(params.keys())}")
+            raise ValueError(
+                f"Strict raiser imitation model missing required parameters: {required_keys - set(params.keys())}"
+            )
 
         self.rules = params
 
     def _init_heuristics_imitation(self):
         """Initialize heuristics imitation model parameters."""
         params = self.artifact["model_params"]
-        required_keys = {"suit_thresholds", "high_low_thresholds", "high_card_ranks", "low_card_ranks"}
+        required_keys = {
+            "suit_thresholds",
+            "high_low_thresholds",
+            "high_card_ranks",
+            "low_card_ranks",
+        }
         if not required_keys.issubset(params.keys()):
-            raise ValueError(f"Heuristics imitation model missing required parameters: {required_keys - set(params.keys())}")
+            raise ValueError(
+                f"Heuristics imitation model missing required parameters: {required_keys - set(params.keys())}"
+            )
 
         self.rules = params
 
@@ -550,25 +580,24 @@ class ArtifactBidder(BiddingPolicy):
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
     def _choose_bid_linear(self, obs: BiddingObservation) -> BidAction:
-        """
-        Choose bid using linear regression model.
-
-        For now, this is a placeholder implementation that always passes.
-        Real implementation would extract features from the hand and compute
-        predicted bid value, then map to discrete bid actions.
-        """
-        # TODO: Implement feature extraction and prediction
-        # For now, always pass as this is a placeholder
-        return BidAction.pass_bid()
+        """Choose bid using linear regression model (not yet implemented)."""
+        raise NotImplementedError(
+            "linear_regression bidding is not yet implemented. "
+            "Use strict_raiser_imitation_v1 or heuristics_imitation_v1."
+        )
 
     def _choose_bid_strict_raiser(self, obs: BiddingObservation) -> BidAction:
         """Choose bid using strict raiser imitation model."""
         current = obs.current_high_bid
 
         if current == 0:
-            return BidAction.bid(self.rules["initial_bid"]["n"], self.rules["initial_bid"]["contract"])
+            return BidAction.bid(
+                self.rules["initial_bid"]["n"], self.rules["initial_bid"]["contract"]
+            )
         elif current < self.rules["max_bid"]:
-            return BidAction.bid(current + self.rules["raise_increment"], self.rules["contract"])
+            return BidAction.bid(
+                current + self.rules["raise_increment"], self.rules["contract"]
+            )
         else:
             # current >= max_bid, cannot raise further
             return BidAction.pass_bid()
@@ -600,8 +629,12 @@ class ArtifactBidder(BiddingPolicy):
                 candidates.append((strength, bid_n, suit))
 
         # Evaluate HIGH/LOW contracts
-        high_cards = sum(1 for card in obs.hand if card.rank in self.rules["high_card_ranks"])
-        low_cards = sum(1 for card in obs.hand if card.rank in self.rules["low_card_ranks"])
+        high_cards = sum(
+            1 for card in obs.hand if card.rank in self.rules["high_card_ranks"]
+        )
+        low_cards = sum(
+            1 for card in obs.hand if card.rank in self.rules["low_card_ranks"]
+        )
 
         # HIGH contract
         if high_cards >= low_cards:
@@ -677,9 +710,7 @@ class OLSaBidder(BiddingPolicy):
     def _predict(self, contract_family: str, features: dict) -> float:
         """Predict tricks_won for a contract family using its OLS model."""
         model = self.models[contract_family]
-        x = np.array(
-            [features[f] for f in model["feature_names"]], dtype=np.float64
-        )
+        x = np.array([features[f] for f in model["feature_names"]], dtype=np.float64)
         return float(x @ model["weights"] + model["bias"])
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
