@@ -17,11 +17,11 @@ Comprehensive repo health check following the protocol in `docs/02_agent/REPO_RE
 2. **Warn if not on main**: If on a feature branch, warn the user that the review will cover that branch's state, not the canonical repo.
 3. **Read the protocol**: Read `docs/02_agent/REPO_REVIEW_PROMPT.md` to confirm it exists and note its version.
 
-## Wave 1 — Parallel Data Gathering (Phases 1-3)
+## Wave 1 — Parallel Data Gathering (Phases 1-3 + Prompt Audit)
 
-Spawn **3 sub-agents in parallel** using the Task tool (`subagent_type: general-purpose`). Each agent works from the repo root and is **read-only** (no file edits).
+Spawn **4 sub-agents in parallel** using the Task tool (`subagent_type: general-purpose`). Each agent works from the repo root and is **read-only** (no file edits).
 
-**Important:** Launch all 3 in a single message so they run concurrently.
+**Important:** Launch all 4 in a single message so they run concurrently.
 
 ### Agent 1: Discovery (Phase 1)
 
@@ -40,6 +40,12 @@ Set `max_turns` to 40.
 Use the prompt template from [ISSUES_TEMPLATE.md](ISSUES_TEMPLATE.md).
 
 Set `max_turns` to 35.
+
+### Agent 4: Prompt Audit
+
+Use the prompt template from [PROMPT_AUDIT_TEMPLATE.md](PROMPT_AUDIT_TEMPLATE.md).
+
+Set `max_turns` to 25. This agent audits `docs/02_agent/REPO_REVIEW_PROMPT.md` itself for staleness — stale imports, dead commands, structure drift, missing module coverage. Its output feeds Phase 6.
 
 ## Gate Check
 
@@ -100,14 +106,72 @@ Ask the user:
 1. **Commit as PR** — commit the report and open a PR
 2. **Dive deeper** — investigate specific issues in more detail
 3. **Generate cleanup plan** — create a prioritized PR sequence for fixes
-4. **Done** — end the review
+4. **Update review prompt** — apply prompt maintenance fixes (if staleness found)
+5. **Done** — end the review
+
+## Phase 6 — Prompt Maintenance (Conditional)
+
+**Trigger:** Run this phase if the Prompt Audit agent (Agent 4) found any staleness, OR if the user selects "Update review prompt" in the follow-up.
+
+**Skip:** If the audit returned "No staleness detected", skip this phase entirely.
+
+### 6.1 Present Staleness Summary
+
+Show the user a concise table of what's stale:
+
+```markdown
+### Review Prompt Staleness Found
+
+| Category | Count | Example |
+|----------|-------|---------|
+| Stale imports | <N> | `from bid_euchre.X import Y` → module moved |
+| Missing module coverage | <N> | `utils/` has no import check in §1.3 |
+| Dead commands | <N> | `make <target>` no longer exists |
+| Structure drift | <N> | prompt tree missing `analysis/` directory |
+| Stale file references | <N> | `scripts/foo.py` referenced but deleted |
+```
+
+### 6.2 Ask for Approval
+
+Ask the user whether to apply fixes to `docs/02_agent/REPO_REVIEW_PROMPT.md`. This is a code change, so a worktree is required.
+
+### 6.3 Apply Fixes
+
+If approved:
+
+1. **Create a worktree** (or reuse the review worktree if one was already created for the report):
+   ```bash
+   git worktree add ../Bid-Euchre-prompt-maint -b codex/review-prompt-maint-<date>
+   ```
+
+2. **Apply each fix** from the audit report using targeted edits:
+   - **Stale imports**: Update `uv run python -c "from ..."` lines with correct paths
+   - **Missing modules**: Add new import check lines to §1.3
+   - **Dead commands**: Update or remove commands in Gold Path Commands
+   - **Structure drift**: Update the CURRENT STRUCTURE tree
+   - **Stale file refs**: Update or remove file path references
+
+3. **Bump version**: Update the version string at the top of the protocol (e.g., `3.2` → `3.3`)
+
+4. **Run `make check`** in the worktree to confirm no breakage
+
+5. **Commit and offer to PR**: Stage changes, commit with message like `docs: update REPO_REVIEW_PROMPT.md — fix N stale items`, push, and create PR
+
+### 6.4 Constraints
+
+- Only edit `docs/02_agent/REPO_REVIEW_PROMPT.md` — no other files
+- Preserve the protocol's structure and section numbering
+- Do not add hardcoded counts or PR numbers (the protocol is discovery-driven by design)
+- Every edit must be backed by evidence from the audit (no speculative changes)
+- If an audit finding is ambiguous (e.g., unclear whether a command should be updated or removed), ask the user
 
 ## Error Handling
 
 - **Sub-agent failure**: Mark the phase as "NOT COMPLETED — agent failed to return". Continue with available data. Note the gap in the executive summary.
 - **`make check` failure**: Abort review. Output failure summary with error details. Do not proceed to synthesis.
 - **Unrunnable commands**: Mark as "NOT RUN" with reason in verification evidence table.
-- **Stale protocol references**: If a command from the protocol fails, note it as a prompt staleness issue in the issue registry.
+- **Stale protocol references**: If a command from the protocol fails, note it as a prompt staleness issue in the issue registry. Phase 6 will collect these and offer to fix them.
+- **Prompt audit agent failure**: If Agent 4 fails, skip Phase 6. Note in the executive summary that prompt maintenance was not performed.
 
 ## Anti-Patterns to Avoid
 
@@ -120,7 +184,8 @@ Ask the user:
 
 ## Notes
 
-- Total estimated tool calls across all agents: 60-90
-- The review is read-only — only the final report file is written
+- Total estimated tool calls across all agents: 70-110 (including prompt audit)
+- The review is read-only — only the final report file is written (Phase 6 edits require separate approval)
 - Sub-agents use `general-purpose` type because they need Bash for `make check`, `uv run`, and `gh`
 - The protocol version is in `docs/02_agent/REPO_REVIEW_PROMPT.md` — check it at runtime
+- Phase 6 creates a self-healing loop: each review fixes the prompt for the next review
