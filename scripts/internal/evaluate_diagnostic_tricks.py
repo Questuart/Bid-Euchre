@@ -337,21 +337,20 @@ def process_dataset(
 
 def generate_cross_contract_table(
     json_path: str,
-    strategy: str = "greedy",
-    top_n: int = 15,
+    top_n: int = 10,
 ) -> str:
-    """Generate a cross-contract feature ranking table from per-contract JSON.
+    """Generate per-contract feature correlation tables from per-contract JSON.
 
-    Ranks features by average |Pearson r| across suit, high, low contract types.
-    Shows Ridge coefficients for each contract type alongside the correlation.
+    Produces 3 separate tables (suit, high, low), each ranking features by
+    |Pearson r| with tricks_won. Shows both greedy and glutton Ridge
+    coefficients alongside the signed Pearson r.
 
     Args:
         json_path: Path to per-contract JSON (from --per-contract-json)
-        strategy: Which strategy's Ridge coefficients to show
-        top_n: Number of top features to include
+        top_n: Number of top features per contract type
 
     Returns:
-        Markdown table string
+        Markdown string with 3 tables separated by blank lines
     """
     with open(json_path) as f:
         data = json.load(f)
@@ -359,7 +358,11 @@ def generate_cross_contract_table(
     correlations = data.get("correlations", {})
 
     # Map contract types to groups: collapse suit_* into "suit"
-    contract_groups = {"suit": [], "high": [], "low": []}
+    contract_groups: dict[str, list[tuple[str, list[dict]]]] = {
+        "suit": [],
+        "high": [],
+        "low": [],
+    }
     for ct, corr_list in correlations.items():
         if ct == "suit" or ct.startswith("suit_"):
             group = "suit"
@@ -369,80 +372,85 @@ def generate_cross_contract_table(
             continue
         contract_groups[group].append((ct, corr_list))
 
-    # Build per-feature data: collect Pearson r and Ridge coeff per group
-    feature_data: dict[str, dict] = {}
+    group_labels = {
+        "suit": "Suit Contracts",
+        "high": "High Contracts",
+        "low": "Low Contracts",
+    }
 
-    for group, ct_entries in contract_groups.items():
+    sections = []
+    for group in ("suit", "high", "low"):
+        ct_entries = contract_groups[group]
+
+        # Collect per-feature data for this group
+        feature_data: dict[str, dict] = {}
         for _ct, corr_list in ct_entries:
             for entry in corr_list:
                 feat = entry["feature"]
                 if feat not in feature_data:
                     feature_data[feat] = {
-                        "pearson_rs": {"suit": [], "high": [], "low": []},
-                        "coeffs": {"suit": [], "high": [], "low": []},
+                        "pearson_rs": [],
+                        "greedy_coeffs": [],
+                        "glutton_coeffs": [],
                     }
                 r_val = entry["pearson_r"]
-                # Skip NaN correlations (constant features in some contracts)
                 if r_val is not None and not math.isnan(r_val):
-                    feature_data[feat]["pearson_rs"][group].append(abs(r_val))
-                coeff_key = f"{strategy}_ridge_coeff"
-                coeff = entry.get(coeff_key)
-                if coeff is not None:
-                    feature_data[feat]["coeffs"][group].append(coeff)
+                    feature_data[feat]["pearson_rs"].append(r_val)
+                for strategy in ("greedy", "glutton"):
+                    coeff = entry.get(f"{strategy}_ridge_coeff")
+                    if coeff is not None:
+                        feature_data[feat][f"{strategy}_coeffs"].append(coeff)
 
-    # Compute avg |Pearson r| across the 3 groups
-    ranked_features = []
-    for feat, data_dict in feature_data.items():
-        group_means = []
-        for group in ("suit", "high", "low"):
-            rs = data_dict["pearson_rs"][group]
-            if rs:
-                group_means.append(sum(rs) / len(rs))
-        if not group_means:
-            continue
-        avg_abs_r = sum(group_means) / len(group_means)
+        # Rank by average |Pearson r| within this group
+        ranked = []
+        for feat, fd in feature_data.items():
+            rs = fd["pearson_rs"]
+            if not rs:
+                continue
+            avg_r = sum(rs) / len(rs)
+            avg_abs_r = sum(abs(r) for r in rs) / len(rs)
+            greedy_cs = fd["greedy_coeffs"]
+            glutton_cs = fd["glutton_coeffs"]
+            ranked.append(
+                {
+                    "feature": feat,
+                    "pearson_r": avg_r,
+                    "abs_r": avg_abs_r,
+                    "greedy_coeff": (
+                        sum(greedy_cs) / len(greedy_cs) if greedy_cs else None
+                    ),
+                    "glutton_coeff": (
+                        sum(glutton_cs) / len(glutton_cs) if glutton_cs else None
+                    ),
+                }
+            )
 
-        # Average coefficient per group
-        group_coeffs = {}
-        for group in ("suit", "high", "low"):
-            cs = data_dict["coeffs"][group]
-            if cs:
-                group_coeffs[group] = sum(cs) / len(cs)
-            else:
-                group_coeffs[group] = None
+        ranked.sort(key=lambda x: x["abs_r"], reverse=True)
+        top = ranked[:top_n]
 
-        ranked_features.append(
-            {
-                "feature": feat,
-                "avg_abs_r": avg_abs_r,
-                "suit_coeff": group_coeffs["suit"],
-                "high_coeff": group_coeffs["high"],
-                "low_coeff": group_coeffs["low"],
-            }
-        )
+        lines = [
+            f"**{group_labels[group]} — Top {top_n} by Pearson Correlation:**",
+            "",
+            "| Feature | Pearson r | Greedy Coeff | Glutton Coeff |",
+            "|---------|-----------|--------------|---------------|",
+        ]
+        for entry in top:
+            r_s = f"{entry['pearson_r']:+.4f}"
+            g_s = (
+                f"{entry['greedy_coeff']:+.4f}"
+                if entry["greedy_coeff"] is not None
+                else "—"
+            )
+            gl_s = (
+                f"{entry['glutton_coeff']:+.4f}"
+                if entry["glutton_coeff"] is not None
+                else "—"
+            )
+            lines.append(f"| `{entry['feature']}` | {r_s} | {g_s} | {gl_s} |")
 
-    ranked_features.sort(key=lambda x: x["avg_abs_r"], reverse=True)
-    top = ranked_features[:top_n]
+        sections.append("\n".join(lines))
 
-    # Format as markdown
-    lines = [
-        "| Rank | Feature | Avg |r| | Suit Coeff | High Coeff | Low Coeff |",
-        "|------|---------|---------|------------|------------|-----------|",
-    ]
-    for rank, entry in enumerate(top, 1):
-        suit_s = (
-            f"{entry['suit_coeff']:+.4f}" if entry["suit_coeff"] is not None else "—"
-        )
-        high_s = (
-            f"{entry['high_coeff']:+.4f}" if entry["high_coeff"] is not None else "—"
-        )
-        low_s = f"{entry['low_coeff']:+.4f}" if entry["low_coeff"] is not None else "—"
-        lines.append(
-            f"| {rank} | `{entry['feature']}` | {entry['avg_abs_r']:.3f} "
-            f"| {suit_s} | {high_s} | {low_s} |"
-        )
-
-    return "\n".join(lines)
+    return "\n\n".join(sections)
 
 
 def main():

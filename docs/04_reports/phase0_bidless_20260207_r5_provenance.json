@@ -17,7 +17,7 @@
     "change_1": "Seat balance chart: swapped axes (contract group → x-axis, seat → legend)",
     "change_2": "Greedy strategy color changed from #2ecc71 (green) to #e67e22 (orange) for contrast with glutton",
     "change_3": "New all-strategy hand value calibration chart (greedy, glutton, random_legal from mixed_play)",
-    "change_4": "Cross-contract feature ranking table (§6d) — features ranked by avg |Pearson r|",
+    "change_4": "Per-contract correlation ranking tables (§6d) — 3 tables (suit/high/low), each top 10 by |Pearson r| with greedy + glutton coefficients",
     "change_5": "Strategy descriptions added to §8 intro"
   },
   "charts": {
@@ -180,14 +180,15 @@
       "changed_in_r5": true,
       "change_note": "Rank columns renamed from 'Greedy Rank'/'Glutton Rank' to 'Greedy Coeff Rank'/'Glutton Coeff Rank'"
     },
-    "cross_contract_ranking": {
+    "per_contract_correlation_ranking": {
       "section": "6d",
       "source_runs": [
         "canonical_bidless_dataset_greedy_42_20260204_221121",
         "canonical_bidless_dataset_glutton_42_20260204_222713"
       ],
-      "computed_from": "generate_cross_contract_table() from per-contract JSON",
-      "new_in_r5": true
+      "computed_from": "generate_cross_contract_table() — 3 per-contract tables (suit/high/low), each top 10 by |Pearson r|, with greedy + glutton Ridge coefficients",
+      "new_in_r5": true,
+      "changed_note": "Replaced single cross-contract table (broken Avg |r| header) with 3 separate per-contract tables"
     },
     "strategy_vs_random": {
       "section": "7a",
