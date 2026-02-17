@@ -1,0 +1,17 @@
+{
+  "charts": [
+    "docs/04_reports/assets/phase0_20260207_r4/self_play_grouped_boxplot.png",
+    "docs/04_reports/assets/phase0_20260207_r4/seat_balance_grouped_boxplot.png",
+    "docs/04_reports/assets/phase0_20260207_r4/hand_value_by_contract_comparison.png",
+    "docs/04_reports/assets/phase0_20260207_r4/tricks_by_contract_comparison.png",
+    "docs/04_reports/assets/phase0_20260207_r4/cdf_comparison.png",
+    "docs/04_reports/assets/phase0_20260207_r4/hand_value_by_trump_comparison.png",
+    "docs/04_reports/assets/phase0_20260207_r4/outcome_by_trump_comparison.png",
+    "docs/04_reports/assets/phase0_20260207_r4/advantage_by_contract.png"
+  ],
+  "zoom_dir": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712",
+  "greedy_dir": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/canonical_bidless_dataset_greedy_42_20260204_221121",
+  "glutton_dir": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/canonical_bidless_dataset_glutton_42_20260204_222713",
+  "gate_json": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/play_policy_gate_aggregate_20260204_221656.json",
+  "dpi": 150
+}

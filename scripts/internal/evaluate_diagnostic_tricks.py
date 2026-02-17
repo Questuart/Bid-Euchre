@@ -140,13 +140,40 @@ def train_and_evaluate(
     }
 
 
+def compute_correlations(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+) -> list[dict]:
+    """Compute Pearson r between each feature and tricks_won.
+
+    Uses the FULL dataset (not train/test split) since Pearson r is
+    descriptive, not a model metric.
+
+    Returns list of dicts sorted by absolute correlation descending.
+    """
+    correlations = []
+    tricks = df["tricks_won"].values.astype(np.float64)
+    for col in feature_cols:
+        vals = df[col].values.astype(np.float64)
+        r = float(np.corrcoef(vals, tricks)[0, 1])
+        correlations.append({"feature": col, "pearson_r": r})
+    correlations.sort(key=lambda x: abs(x["pearson_r"]), reverse=True)
+    return correlations
+
+
 def per_contract_metrics(
     df: pd.DataFrame,
     feature_cols: list[str],
     seed: int,
-) -> list[dict]:
-    """Train and evaluate per contract_type."""
+) -> tuple[list[dict], dict[str, list[dict]]]:
+    """Train and evaluate per contract_type.
+
+    Returns:
+        (results, correlations_by_contract) where correlations_by_contract
+        maps contract_type to a list of feature correlation dicts.
+    """
     results = []
+    correlations_by_contract: dict[str, list[dict]] = {}
     for ct in sorted(df["contract_type"].unique()):
         sub = df[df["contract_type"] == ct]
         if len(sub) < 100:
@@ -154,7 +181,8 @@ def per_contract_metrics(
         result = train_and_evaluate(sub, feature_cols, seed, f"contract={ct}")
         result["contract_type"] = ct
         results.append(result)
-    return results
+        correlations_by_contract[ct] = compute_correlations(sub, feature_cols)
+    return results, correlations_by_contract
 
 
 def validate_olsa_features(coef_ranking: list, contract_type: str) -> str:
@@ -270,8 +298,14 @@ def format_report(
     return "\n".join(lines)
 
 
-def process_dataset(run_dir: str, seed: int, label: str) -> tuple[dict, list[dict]]:
-    """Load one dataset, train overall + per-contract, return results."""
+def process_dataset(
+    run_dir: str, seed: int, label: str
+) -> tuple[dict, list[dict], dict[str, list[dict]]]:
+    """Load one dataset, train overall + per-contract, return results.
+
+    Returns:
+        (overall_result, per_contract_results, correlations_by_contract)
+    """
     bidless_path = os.path.join(run_dir, "datasets", "bidless.parquet")
     outcomes_path = os.path.join(run_dir, "datasets", "bidless_outcomes.parquet")
 
@@ -289,12 +323,14 @@ def process_dataset(run_dir: str, seed: int, label: str) -> tuple[dict, list[dic
     overall = train_and_evaluate(df, feature_cols, seed, label)
 
     print("  Training per-contract models...")
-    per_contract = per_contract_metrics(df, feature_cols, seed)
+    per_contract, correlations_by_contract = per_contract_metrics(
+        df, feature_cols, seed
+    )
 
     # Free memory before returning
     del df
 
-    return overall, per_contract
+    return overall, per_contract, correlations_by_contract
 
 
 def main():
@@ -316,20 +352,23 @@ def main():
 
     overall_results = []
     per_contract_results = {}
+    correlations_by_dataset: dict[str, dict[str, list[dict]]] = {}
 
     # Process greedy dataset
-    overall, per_contract = process_dataset(
+    overall, per_contract, correlations = process_dataset(
         args.greedy_dir, args.seed, "Greedy Play Policy"
     )
     overall_results.append(overall)
     per_contract_results["Greedy"] = per_contract
+    correlations_by_dataset["greedy"] = correlations
 
     # Process glutton dataset
-    overall, per_contract = process_dataset(
+    overall, per_contract, correlations = process_dataset(
         args.glutton_dir, args.seed, "Glutton Play Policy"
     )
     overall_results.append(overall)
     per_contract_results["Glutton"] = per_contract
+    correlations_by_dataset["glutton"] = correlations
 
     # Generate report
     report = format_report(overall_results, per_contract_results)
@@ -343,22 +382,100 @@ def main():
         f"Overall R² — Greedy: {overall_results[0]['r2_test']:.4f}, Glutton: {overall_results[1]['r2_test']:.4f}"
     )
 
-    # Write per-contract coefficients JSON for heatmap generation
+    # Write comprehensive per-contract JSON for report tables and heatmaps
     if args.per_contract_json:
-        coef_json = {}
+        # --- Build performance section ---
+        # Collect all contract types across both datasets
+        all_contract_types = sorted(
+            {cr["contract_type"] for crs in per_contract_results.values() for cr in crs}
+        )
+        # Index per-contract results by (dataset_label, contract_type) for lookup
+        pc_index: dict[tuple[str, str], dict] = {}
         for dataset_label, contract_results in per_contract_results.items():
-            coef_json[dataset_label.lower()] = {}
             for cr in contract_results:
-                ct = cr["contract_type"]
-                coef_json[dataset_label.lower()][ct] = {
-                    feat: float(coef) for feat, coef in cr["coef_ranking"]
+                pc_index[(dataset_label.lower(), cr["contract_type"])] = cr
+
+        performance_per_contract = []
+        for ct in all_contract_types:
+            entry: dict = {"contract_type": ct}
+            for strategy in ("greedy", "glutton"):
+                cr = pc_index.get((strategy, ct))
+                if cr is not None:
+                    entry[strategy] = {
+                        "r2_test": float(cr["r2_test"]),
+                        "mae_test": float(cr["mae_test"]),
+                        "n_test_rows": int(cr["n_test_rows"]),
+                        "n_train_hands": int(cr["n_train_hands"]),
+                    }
+            performance_per_contract.append(entry)
+
+        # --- Build coefficients section ---
+        coefficients: dict[str, dict[str, list[dict]]] = {}
+        for ct in all_contract_types:
+            coefficients[ct] = {}
+            for strategy in ("greedy", "glutton"):
+                cr = pc_index.get((strategy, ct))
+                if cr is not None:
+                    coefficients[ct][strategy] = [
+                        {
+                            "feature": feat,
+                            "coefficient": float(coef),
+                            "rank": rank,
+                        }
+                        for rank, (feat, coef) in enumerate(cr["coef_ranking"], 1)
+                    ]
+
+        # --- Build correlations section ---
+        # For each contract type, merge Pearson r with Ridge coefficients
+        # from both strategies.
+        correlations_section: dict[str, list[dict]] = {}
+        for ct in all_contract_types:
+            # Use greedy correlations as the base (Pearson r is computed on
+            # the same underlying data regardless of model, but each dataset
+            # may differ). Include correlations from greedy; they should be
+            # nearly identical to glutton since Pearson r is data-descriptive.
+            base_corrs = correlations_by_dataset.get("greedy", {}).get(ct, [])
+            if not base_corrs:
+                base_corrs = correlations_by_dataset.get("glutton", {}).get(ct, [])
+
+            # Build coefficient lookup for each strategy
+            coef_lookup: dict[str, dict[str, float]] = {}
+            for strategy in ("greedy", "glutton"):
+                cr = pc_index.get((strategy, ct))
+                if cr is not None:
+                    coef_lookup[strategy] = {
+                        feat: float(coef) for feat, coef in cr["coef_ranking"]
+                    }
+                else:
+                    coef_lookup[strategy] = {}
+
+            merged_corrs = []
+            for corr_entry in base_corrs:
+                feat = corr_entry["feature"]
+                row: dict = {
+                    "feature": feat,
+                    "pearson_r": corr_entry["pearson_r"],
                 }
+                for strategy in ("greedy", "glutton"):
+                    key = f"{strategy}_ridge_coeff"
+                    row[key] = coef_lookup[strategy].get(feat)
+                merged_corrs.append(row)
+            correlations_section[ct] = merged_corrs
+
+        # --- Assemble full JSON ---
+        full_json = {
+            "performance": {"per_contract": performance_per_contract},
+            "coefficients": coefficients,
+            "correlations": correlations_section,
+        }
+
         os.makedirs(
-            os.path.dirname(os.path.abspath(args.per_contract_json)), exist_ok=True
+            os.path.dirname(os.path.abspath(args.per_contract_json)),
+            exist_ok=True,
         )
         with open(args.per_contract_json, "w") as f:
-            json.dump(coef_json, f, indent=2)
-        print(f"Per-contract coefficients written to {args.per_contract_json}")
+            json.dump(full_json, f, indent=2)
+        print(f"Per-contract JSON written to {args.per_contract_json}")
 
 
 if __name__ == "__main__":
