@@ -30,12 +30,12 @@ This framework provides a complete research platform for developing and testing 
 
 ### Installation
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd bid-euchre
+uv sync
 
-# Install dependencies
-pip install -r requirements.txt
+# or (pip alternative)
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
 ### Basic Usage
@@ -55,6 +55,7 @@ print(f"Team 0 average tricks: {result['avg_team0']:.2f}")
 ```bash
 PYTHONPATH=src python experiments/run_experiment.py \
   --config experiments/configs/head_to_head_vs_random.yaml \
+  --seed 42 \
   --mode head_to_head_matrix
 
 PYTHONPATH=src python scripts/generate_report.py \
@@ -64,27 +65,31 @@ PYTHONPATH=src python scripts/generate_report.py \
 **Unified Runner** (recommended):
 ```bash
 # Run experiment from YAML config
-PYTHONPATH=src python experiments/run_experiment.py \\
-    --config experiments/configs/strategy_comparison.yaml
+PYTHONPATH=src python experiments/run_experiment.py \
+    --config experiments/configs/strategy_comparison.yaml \
+    --seed 42
 
 # Quick test (1k hands, 2 strategies, 2 scenarios, ~1 second)
-PYTHONPATH=src python experiments/run_experiment.py \\
-    --config experiments/configs/quick_test.yaml
+PYTHONPATH=src python experiments/run_experiment.py \
+    --config experiments/configs/quick_test.yaml \
+    --seed 42
 
 # Override config parameters
-PYTHONPATH=src python experiments/run_experiment.py \\
-    --config experiments/configs/baseline_greedy.yaml \\
+PYTHONPATH=src python experiments/run_experiment.py \
+    --config experiments/configs/baseline_greedy.yaml \
     --n_per 10000 --seed 99 --log-level none
 
 # Generate report for a run
-PYTHONPATH=src python scripts/generate_report.py \\
+PYTHONPATH=src python scripts/generate_report.py \
     --run-dir data/runs/<run_id>
 ```
 
 **Suite Runner** (recommended for production):
 ```bash
 # Run full experiment suite
-PYTHONPATH=src python scripts/run_suite.py --suite experiments/suites/baseline_tiny.yaml
+PYTHONPATH=src python scripts/run_suite.py \
+  --suite experiments/suites/baseline_tiny.yaml \
+  --seed 42
 
 # Generate comprehensive report
 PYTHONPATH=src python scripts/generate_report.py --run-dir data/runs/<run_id>
@@ -102,7 +107,7 @@ bid-euchre/
 │   └── experiments/           # Configuration system
 ├── experiments/               # Research scripts & configs
 ├── tests/                     # Comprehensive test suite
-└── data/                      # Simulation results & reports
+└── data/                      # Fixtures + generated runs (do not commit runs)
 ```
 
 ## 🤖 Available Strategies
@@ -141,11 +146,11 @@ parameters:
 ## 🧪 Testing
 
 ```bash
-# Run the full test suite
-PYTHONPATH=src pytest -q
+# Fast local test suite
+make test
 
-# Verbose
-PYTHONPATH=src pytest -v
+# Full pre-PR gate
+make check
 
 # Coverage (optional)
 PYTHONPATH=src pytest --cov=src/bid_euchre --cov-report=term-missing
@@ -179,10 +184,6 @@ PYTHONPATH=src pytest --cov=src/bid_euchre --cov-report=term-missing
 3. Add tests for new functionality
 4. Run the full test suite
 5. Submit a pull request
-
-## 📄 License
-
-[Add license information here]
 
 ## 🙏 Acknowledgments
 

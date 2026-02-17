@@ -59,6 +59,7 @@ Canonical scripts:
 
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `generate_batch_report.py` — Batch report + eligibility gate
+- `generate_r4_charts.py` — One-off report chart regeneration utility
 - `play_policy_gate.py` — Play policy stability gate
 - `run_auction_comparator.py` — Auction comparator orchestrator
 
@@ -173,6 +174,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 |---------|---------|
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
+| `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
 
@@ -218,12 +220,6 @@ Promotion-track PRs (labeled `promotion`) must pass the promotion CI gate:
 
 See `docs/02_agent/PROMOTION_WORKFLOW.md` for the full end-to-end workflow including
 split manifests, artifact freeze, notebook gates, and reviewer checklist.
-
----
-
-## Promotion Workflow
-
-Model artifacts follow a promotion pipeline from exploration to production. See `docs/02_agent/PROMOTION_WORKFLOW.md` for the full workflow including split manifests, artifact freeze, notebook gate, and CI enforcement.
 
 ---
 
