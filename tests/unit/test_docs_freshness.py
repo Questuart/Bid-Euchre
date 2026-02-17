@@ -6,7 +6,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 from check_docs_freshness import (
+    check_command_contracts,
     check_image_references,
+    check_internal_scripts_listed,
+    check_no_duplicate_headings,
     check_path_references,
     check_scripts_list_complete,
 )
@@ -152,4 +155,179 @@ def test_non_png_image_not_decoded(tmp_path):
     (docs_dir / "report.md").write_text("![Photo](photo.jpg)\n![Icon](icon.svg)\n")
 
     errors = check_image_references(docs_dir, tmp_path)
+    assert len(errors) == 0
+
+
+# --- Internal scripts tests ---
+
+
+def test_internal_scripts_all_listed(tmp_path):
+    """All internal scripts listed in ARCHITECTURE.md pass."""
+    arch_doc = tmp_path / "ARCHITECTURE.md"
+    internal_dir = tmp_path / "scripts" / "internal"
+    internal_dir.mkdir(parents=True)
+    (internal_dir / "foo.py").touch()
+    (internal_dir / "bar.py").touch()
+    arch_doc.write_text("scripts/internal/foo.py and scripts/internal/bar.py\n")
+
+    errors = check_internal_scripts_listed(arch_doc, internal_dir)
+    assert len(errors) == 0
+
+
+def test_internal_script_missing_flagged(tmp_path):
+    """Missing internal script flagged with full path."""
+    arch_doc = tmp_path / "ARCHITECTURE.md"
+    internal_dir = tmp_path / "scripts" / "internal"
+    internal_dir.mkdir(parents=True)
+    (internal_dir / "foo.py").touch()
+    (internal_dir / "missing.py").touch()
+    arch_doc.write_text("scripts/internal/foo.py only\n")
+
+    errors = check_internal_scripts_listed(arch_doc, internal_dir)
+    assert len(errors) == 1
+    assert "scripts/internal/missing.py" in errors[0]
+
+
+def test_internal_scripts_private_ignored(tmp_path):
+    """Private (_-prefixed) internal scripts are skipped."""
+    arch_doc = tmp_path / "ARCHITECTURE.md"
+    internal_dir = tmp_path / "scripts" / "internal"
+    internal_dir.mkdir(parents=True)
+    (internal_dir / "_helper.py").touch()
+    arch_doc.write_text("No scripts listed\n")
+
+    errors = check_internal_scripts_listed(arch_doc, internal_dir)
+    assert len(errors) == 0
+
+
+def test_internal_scripts_dir_missing_ok(tmp_path):
+    """Missing internal dir returns no errors (not all repos have it)."""
+    arch_doc = tmp_path / "ARCHITECTURE.md"
+    arch_doc.write_text("No scripts\n")
+
+    errors = check_internal_scripts_listed(arch_doc, tmp_path / "scripts" / "internal")
+    assert len(errors) == 0
+
+
+# --- Duplicate headings tests ---
+
+
+def test_no_duplicate_headings_clean(tmp_path):
+    """Unique H2 headings pass."""
+    doc = tmp_path / "test.md"
+    doc.write_text("## Alpha\ntext\n## Beta\ntext\n## Gamma\ntext\n")
+
+    errors = check_no_duplicate_headings(doc)
+    assert len(errors) == 0
+
+
+def test_duplicate_heading_flagged(tmp_path):
+    """Duplicate H2 heading is flagged with both line numbers."""
+    doc = tmp_path / "test.md"
+    doc.write_text("## Foo\ntext\n## Bar\ntext\n## Foo\nmore text\n")
+
+    errors = check_no_duplicate_headings(doc)
+    assert len(errors) == 1
+    assert "Foo" in errors[0]
+    assert "line 1" in errors[0]
+    assert "5" in errors[0]  # duplicate at line 5
+
+
+def test_duplicate_heading_h3_ignored(tmp_path):
+    """Duplicate H3 headings are not flagged (only H2 checked)."""
+    doc = tmp_path / "test.md"
+    doc.write_text("## A\n### Sub\ntext\n## B\n### Sub\ntext\n")
+
+    errors = check_no_duplicate_headings(doc)
+    assert len(errors) == 0
+
+
+# --- Command contracts tests ---
+
+
+def test_command_with_seed_passes(tmp_path):
+    """run_experiment.py with --seed passes."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text(
+        "```bash\npython experiments/run_experiment.py --seed 42\n```\n"
+    )
+
+    errors = check_command_contracts(docs_dir, tmp_path)
+    assert len(errors) == 0
+
+
+def test_command_without_seed_flagged(tmp_path):
+    """run_experiment.py without --seed is flagged."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text(
+        "```bash\npython experiments/run_experiment.py --config foo.yaml\n```\n"
+    )
+
+    errors = check_command_contracts(docs_dir, tmp_path)
+    assert len(errors) == 1
+    assert "run_experiment.py" in errors[0]
+    assert "--seed" in errors[0]
+
+
+def test_command_with_allow_nondeterministic_passes(tmp_path):
+    """run_experiment.py with --allow-nondeterministic passes."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text(
+        "```bash\npython experiments/run_experiment.py "
+        "--allow-nondeterministic\n```\n"
+    )
+
+    errors = check_command_contracts(docs_dir, tmp_path)
+    assert len(errors) == 0
+
+
+def test_template_command_skipped(tmp_path):
+    """Commands with <placeholder> angle brackets are skipped."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text(
+        "```bash\npython experiments/run_experiment.py --config <config>\n```\n"
+    )
+
+    errors = check_command_contracts(docs_dir, tmp_path)
+    assert len(errors) == 0
+
+
+def test_requirements_txt_flagged(tmp_path):
+    """pip install -r requirements.txt is flagged."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text("```bash\npip install -r requirements.txt\n```\n")
+
+    errors = check_command_contracts(docs_dir, tmp_path)
+    assert len(errors) == 1
+    assert "requirements.txt" in errors[0]
+
+
+def test_multiline_command_with_seed_passes(tmp_path):
+    """Backslash-continued command with --seed on continuation line passes."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text(
+        "```bash\npython experiments/run_experiment.py \\\n"
+        "  --config foo.yaml \\\n"
+        "  --seed 42\n```\n"
+    )
+
+    errors = check_command_contracts(docs_dir, tmp_path)
+    assert len(errors) == 0
+
+
+def test_mermaid_block_not_checked(tmp_path):
+    """run_experiment.py inside mermaid blocks is not flagged."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "test.md").write_text(
+        "```mermaid\nStart([python experiments/run_experiment.py])\n```\n"
+    )
+
+    errors = check_command_contracts(docs_dir, tmp_path)
     assert len(errors) == 0
