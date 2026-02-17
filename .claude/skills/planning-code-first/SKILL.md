@@ -1,4 +1,9 @@
-# Plan Init - Code-First Planning
+---
+name: planning-code-first
+description: Creates implementation plans grounded in actual source code by reading real API signatures, function names, and import paths before planning. Use when starting any multi-file or architectural planning task.
+---
+
+# Code-First Planning
 
 Create implementation plans grounded in actual source code, not assumptions.
 
@@ -26,17 +31,6 @@ Create implementation plans grounded in actual source code, not assumptions.
    - Note any gaps or unknowns explicitly
    - Ask clarifying questions about scope before proceeding
 
-## Anti-Patterns to Avoid
-
-❌ Guessing function signatures based on naming conventions
-❌ Assuming parameter names without checking
-❌ Planning changes to code you haven't read
-❌ Referencing utilities that may not exist
-
-## Usage
-
-Invoke with `/plan_init` when starting any multi-file or architectural planning task. This skill ensures your plan is grounded in reality, reducing revision cycles.
-
 ## Example Output Format
 
 ```markdown
@@ -55,8 +49,14 @@ Invoke with `/plan_init` when starting any multi-file or architectural planning 
 [Detailed steps using exact names and paths verified above]
 ```
 
+## Anti-Patterns to Avoid
+
+- Guessing function signatures based on naming conventions
+- Assuming parameter names without checking
+- Planning changes to code you haven't read
+- Referencing utilities that may not exist
+
 ## Notes
 
-- This skill is especially important for multi-PR architecture plans
-- Always pair with asking clarifying scope questions
 - Save plans to `plans/` directory as specified in CLAUDE.md
+- Always pair with asking clarifying scope questions
