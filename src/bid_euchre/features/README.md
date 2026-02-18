@@ -7,7 +7,6 @@ Extract features from hands for ML training and analysis.
 | File | Purpose |
 |------|---------|
 | `hand_eval.py` | Hand evaluation features — strength scoring |
-| `bidless_hand_features.py` | Features for bidless dataset (v1 deterministic extractor) |
 
 ## Dependencies
 - Imports from: `core/` (cards)
