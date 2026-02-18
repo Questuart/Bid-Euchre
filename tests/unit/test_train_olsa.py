@@ -64,7 +64,7 @@ def _make_training_data(tmp_path, n_hands=200, seed=42):
                         "offsuit_tens_count": rng.randint(0, 5),
                         "rank_sum": rng.randint(10, 50),
                         "hand_value": rng.randint(100, 400),
-                        "high_offsuit": rng.randint(0, 8),
+                        "offsuit_non_ace_count": rng.randint(0, 8),
                         "trump_rb_count": rng.randint(0, 2),
                         "trump_lb_count": rng.randint(0, 2),
                         "trump_ace_count": rng.randint(0, 2),

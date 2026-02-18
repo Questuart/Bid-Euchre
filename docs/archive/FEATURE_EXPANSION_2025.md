@@ -16,7 +16,7 @@ Expanded hand feature extraction from 5 legacy features to **40 comprehensive fe
 ### Features Added: 35 New Features
 
 **Before**: 5 features
-- `bowers`, `trump_count`, `offsuit_aces`, `high_offsuit`, `rank_sum`
+- `bowers`, `trump_count`, `offsuit_aces`, `offsuit_non_ace_count`, `rank_sum`
 
 **After**: 40 features
 - All legacy features (backward compatible)

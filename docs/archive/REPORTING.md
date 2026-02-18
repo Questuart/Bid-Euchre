@@ -299,7 +299,7 @@ PYTHONPATH=src python experiments/generate_hand_eval_dashboard.py \
 - `bowers` - Number of bowers (right + left)
 - `trump_count` - Total trump cards
 - `offsuit_aces` - Number of offsuit aces
-- `high_offsuit` - High offsuit cards (K, Q, J, T)
+- `offsuit_non_ace_count` - High offsuit cards (K, Q, J, T)
 - `rank_sum` - Sum of card ranks
 
 **Note**: The dashboard is designed to handle 40+ features from `hand_eval.py`. Currently, only 5 legacy features are logged in JSONL files. When logging is updated to include all features, the dashboard will automatically display them.

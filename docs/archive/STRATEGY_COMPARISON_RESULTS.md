@@ -118,7 +118,7 @@ data/runs/strategy_comparison_42_20251215_215239/dashboard/
 Each dashboard includes:
 - Trick count distribution (PMF)
 - Hand score by trick count (violin)
-- Feature vs tricks (bowers, trump_count, offsuit_aces, high_offsuit)
+- Feature vs tricks (bowers, trump_count, offsuit_aces, offsuit_non_ace_count)
 - Score vs tricks (No-Trump and Suit contracts)
 - Suit symmetry analysis
 - Win rate by contract

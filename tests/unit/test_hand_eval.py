@@ -23,6 +23,7 @@ from bid_euchre.features.hand_eval import (
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def empty_hand():
     """Empty hand for boundary testing."""
@@ -110,6 +111,7 @@ def weak_hand():
 # Test: Basic Feature Extraction
 # ============================================================================
 
+
 class TestBasicFeatures:
     """Test basic feature extraction for all contract types."""
 
@@ -166,7 +168,7 @@ class TestBasicFeatures:
             Card("D", "J"),
             Card("C", "T"),
             Card("S", "A"),  # Weak in low
-            Card("H", "K"),   # Weak in low
+            Card("H", "K"),  # Weak in low
         ]
 
         features = get_hand_features(hand, contract_type="low", trump_suit=None)
@@ -182,6 +184,7 @@ class TestBasicFeatures:
 # ============================================================================
 # Test: Trump Strength Features (Suit Contracts Only)
 # ============================================================================
+
 
 class TestTrumpFeatures:
     """Test trump-specific features for suit contracts."""
@@ -264,7 +267,9 @@ class TestTrumpFeatures:
 
     def test_no_trump_cards(self, no_trump_hand):
         """Test hand with no trump cards."""
-        features = get_hand_features(no_trump_hand, contract_type="suit", trump_suit="H")
+        features = get_hand_features(
+            no_trump_hand, contract_type="suit", trump_suit="H"
+        )
 
         assert features["trump_count"] == 0
         assert features["trump_power_sum"] == 0
@@ -275,6 +280,7 @@ class TestTrumpFeatures:
 # ============================================================================
 # Test: Offsuit Control Features
 # ============================================================================
+
 
 class TestOffsuitControl:
     """Test offsuit control and high card features."""
@@ -306,7 +312,7 @@ class TestOffsuitControl:
 
         assert features["offsuit_king_count_total"] == 2
         assert features["offsuit_queen_count_total"] == 1
-        assert features["high_offsuit"] == 3  # 2 kings + 1 queen
+        assert features["offsuit_non_ace_count"] == 3  # 2 kings + 1 queen
 
     def test_double_ace_suit(self):
         """Test detection of suits with double aces."""
@@ -346,12 +352,15 @@ class TestOffsuitControl:
 
         features = get_hand_features(hand, contract_type="high", trump_suit=None)
 
-        assert features["offsuit_best_rank_sum"] > features["offsuit_secondbest_rank_sum"]
+        assert (
+            features["offsuit_best_rank_sum"] > features["offsuit_secondbest_rank_sum"]
+        )
 
 
 # ============================================================================
 # Test: Distribution Features
 # ============================================================================
+
 
 class TestDistribution:
     """Test hand distribution features."""
@@ -382,7 +391,9 @@ class TestDistribution:
 
     def test_suit_length_ordering(self, balanced_hand):
         """Test suit length ordering (longest to shortest)."""
-        features = get_hand_features(balanced_hand, contract_type="high", trump_suit=None)
+        features = get_hand_features(
+            balanced_hand, contract_type="high", trump_suit=None
+        )
 
         # Should be ordered longest to shortest
         assert features["max_suit_len"] >= features["second_suit_len"]
@@ -406,6 +417,7 @@ class TestDistribution:
 # ============================================================================
 # Test: High/Low Specific Features
 # ============================================================================
+
 
 class TestHighLowFeatures:
     """Test features specific to high and low contracts."""
@@ -457,6 +469,7 @@ class TestHighLowFeatures:
 # Test: Interaction Terms
 # ============================================================================
 
+
 class TestInteractionTerms:
     """Test feature interaction terms."""
 
@@ -499,6 +512,7 @@ class TestInteractionTerms:
 # Test: Edge Cases and Boundary Conditions
 # ============================================================================
 
+
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
@@ -515,7 +529,9 @@ class TestEdgeCases:
 
     def test_all_trump_hand_suit_contract(self, all_trump_hand):
         """Test hand with all trump cards."""
-        features = get_hand_features(all_trump_hand[:6], contract_type="suit", trump_suit="H")
+        features = get_hand_features(
+            all_trump_hand[:6], contract_type="suit", trump_suit="H"
+        )
 
         # Should have high trump count, no offsuit
         assert features["trump_count"] >= 5
@@ -547,6 +563,7 @@ class TestEdgeCases:
 # ============================================================================
 # Test: Scoring Functions
 # ============================================================================
+
 
 class TestScoringFunctions:
     """Test hand scoring functions."""
@@ -618,6 +635,7 @@ class TestScoringFunctions:
 # Test: Hand Value Feature
 # ============================================================================
 
+
 class TestHandValueFeature:
     """Test the hand_value feature added for OLSa HV."""
 
@@ -682,6 +700,7 @@ class TestHandValueFeature:
 # Test: Feature Completeness
 # ============================================================================
 
+
 class TestFeatureCompleteness:
     """Test that all expected features are present."""
 
@@ -697,30 +716,51 @@ class TestFeatureCompleteness:
 
         expected_features = {
             # Legacy
-            "bowers", "trump_count", "offsuit_aces", "high_offsuit", "rank_sum",
-
+            "bowers",
+            "trump_count",
+            "offsuit_aces",
+            "offsuit_non_ace_count",
+            "rank_sum",
             # Trump features
-            "trump_rb_count", "trump_lb_count", "trump_ace_count", "trump_king_count",
-            "trump_queen_count", "trump_ten_count", "top_trump_count",
-            "highest_trump_rank", "second_highest_trump_rank", "third_highest_trump_rank",
-            "trump_power_sum", "trump_power_avg", "trump_duplicate_pairs", "top_trump_sum",
-
+            "trump_rb_count",
+            "trump_lb_count",
+            "trump_ace_count",
+            "trump_king_count",
+            "trump_queen_count",
+            "trump_ten_count",
+            "top_trump_count",
+            "highest_trump_rank",
+            "second_highest_trump_rank",
+            "third_highest_trump_rank",
+            "trump_power_sum",
+            "trump_power_avg",
+            "trump_duplicate_pairs",
+            "top_trump_sum",
             # Offsuit control
-            "offsuit_king_count_total", "offsuit_queen_count_total",
-            "offsuit_suits_with_ace", "offsuit_suits_with_double_ace",
+            "offsuit_king_count_total",
+            "offsuit_queen_count_total",
+            "offsuit_suits_with_ace",
+            "offsuit_suits_with_double_ace",
             "offsuit_suits_with_ace_and_king",
-
             # Distribution
-            "void_count", "max_suit_len", "second_suit_len", "third_suit_len",
-            "fourth_suit_len", "num_singletons", "num_doubletons",
-            "offsuit_tens_count", "offsuit_length_3plus_count",
-            "offsuit_best_rank_sum", "offsuit_secondbest_rank_sum",
-
+            "void_count",
+            "max_suit_len",
+            "second_suit_len",
+            "third_suit_len",
+            "fourth_suit_len",
+            "num_singletons",
+            "num_doubletons",
+            "offsuit_tens_count",
+            "offsuit_length_3plus_count",
+            "offsuit_best_rank_sum",
+            "offsuit_secondbest_rank_sum",
             # High/Low specific
-            "double_ten_jack_count", "high_card_count", "low_card_count",
-
+            "double_ten_jack_count",
+            "high_card_count",
+            "low_card_count",
             # Interactions
-            "trump_count_x_void_count", "trump_count_x_offsuit_ace",
+            "trump_count_x_void_count",
+            "trump_count_x_offsuit_ace",
         }
 
         actual_features = set(features.keys())
@@ -739,8 +779,12 @@ class TestFeatureCompleteness:
         features = get_hand_features(hand, contract_type="suit", trump_suit="H")
 
         for fname, fval in features.items():
-            assert isinstance(fval, (int, float)), f"Feature {fname} has non-numeric value: {fval}"
-            assert not (isinstance(fval, float) and (fval != fval)), f"Feature {fname} is NaN"
+            assert isinstance(
+                fval, (int, float)
+            ), f"Feature {fname} has non-numeric value: {fval}"
+            assert not (
+                isinstance(fval, float) and (fval != fval)
+            ), f"Feature {fname} is NaN"
 
 
 # ============================================================================

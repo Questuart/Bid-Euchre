@@ -1,4 +1,3 @@
-
 import pytest
 
 pytestmark = pytest.mark.statistical
@@ -15,19 +14,28 @@ class TestSimulationStatistics:
         return simulation.simulate_many_hands(
             n=1000,  # Small sample for faster tests
             contract_type="suit",
-            trump_suit="H"
+            trump_suit="H",
         )
 
     def test_simulation_returns_expected_keys(self, small_simulation_results):
         """Test that simulation results contain all expected keys."""
         results = small_simulation_results
         expected_keys = {
-            "hands", "contract_type", "trump_suit",
-            "avg_team0", "avg_team1", "distribution_team0",
+            "hands",
+            "contract_type",
+            "trump_suit",
+            "avg_team0",
+            "avg_team1",
+            "distribution_team0",
             # New: aggregated across all 4 players
-            "avg_score", "score_buckets", "feature_buckets", "player_samples",
+            "avg_score",
+            "score_buckets",
+            "feature_buckets",
+            "player_samples",
             # Backward compatibility aliases
-            "avg_score_player0", "score_buckets_player0", "feature_buckets_player0"
+            "avg_score_player0",
+            "score_buckets_player0",
+            "feature_buckets_player0",
         }
         # Results schema is additive; tests should not fail on new keys.
         missing = expected_keys - set(results.keys())
@@ -104,9 +112,16 @@ class TestSimulationStatistics:
         feature_buckets = small_simulation_results["feature_buckets_player0"]
 
         # Should have at least the core features (may have more from hand_eval evolution)
-        core_features = {"bowers", "trump_count", "offsuit_aces", "high_offsuit", "rank_sum"}
-        assert core_features.issubset(set(feature_buckets.keys())), \
-            f"Missing core features. Expected {core_features}, got {set(feature_buckets.keys())}"
+        core_features = {
+            "bowers",
+            "trump_count",
+            "offsuit_aces",
+            "offsuit_non_ace_count",
+            "rank_sum",
+        }
+        assert core_features.issubset(
+            set(feature_buckets.keys())
+        ), f"Missing core features. Expected {core_features}, got {set(feature_buckets.keys())}"
 
         # Each feature should have some buckets
         for feature_name, buckets in feature_buckets.items():
@@ -132,7 +147,9 @@ class TestSimulationStatistics:
         difference = abs(suit_result["avg_team0"] - high_result["avg_team0"])
         # With 500 hands, we expect some variation. Use a very lenient threshold
         # since natural statistical variance can produce similar results
-        assert difference >= 0, f"Contract types gave unexpected negative difference: {difference:.3f}"
+        assert (
+            difference >= 0
+        ), f"Contract types gave unexpected negative difference: {difference:.3f}"
 
 
 class TestSimulationEdgeCases:
@@ -160,7 +177,9 @@ class TestSimulationEdgeCases:
         with pytest.raises(ValueError):
             simulation.simulate_many_hands(10, "suit", None)
 
-    @pytest.mark.xfail(reason="Trump suit validation for high/low contracts not yet implemented")
+    @pytest.mark.xfail(
+        reason="Trump suit validation for high/low contracts not yet implemented"
+    )
     def test_simulation_no_trump_contracts_with_trump(self):
         """Test that high/low contracts reject trump suit."""
         with pytest.raises(ValueError):
@@ -176,6 +195,7 @@ class TestDataValidation:
     def test_json_serializable(self):
         """Test that results can be JSON serialized."""
         import json
+
         result = simulation.simulate_many_hands(100, "suit", "H")
 
         # Should be able to serialize without errors
@@ -228,20 +248,21 @@ class TestRollupSummarySchema:
             "total_hands": 100,
             "avg_tricks": 4.23,
             "reason": None,
-            "bad_files": None
+            "bad_files": None,
         }
 
         # Drift detection requires these fields to be present and correct types
         required_fields = {
             "config": str,
             "status": str,
-            "avg_tricks": (float, type(None))
+            "avg_tricks": (float, type(None)),
         }
 
         for field, expected_type in required_fields.items():
             assert field in mock_summary_entry, f"Missing required field: {field}"
-            assert isinstance(mock_summary_entry[field], expected_type), \
-                f"Field {field} has wrong type: {type(mock_summary_entry[field])}, expected {expected_type}"
+            assert isinstance(
+                mock_summary_entry[field], expected_type
+            ), f"Field {field} has wrong type: {type(mock_summary_entry[field])}, expected {expected_type}"
 
     def test_rollup_summary_entry_success_case(self):
         """Test successful rollup summary entry structure."""
@@ -252,7 +273,7 @@ class TestRollupSummarySchema:
             "total_hands": 500,
             "avg_tricks": 5.12,
             "reason": None,
-            "bad_files": None
+            "bad_files": None,
         }
 
         # Validate required drift fields
@@ -270,7 +291,7 @@ class TestRollupSummarySchema:
             "total_hands": None,
             "avg_tricks": None,
             "reason": "Simulation crashed",
-            "bad_files": ["meta.json"]
+            "bad_files": ["meta.json"],
         }
 
         # Even failed entries should have the required drift fields
@@ -283,13 +304,19 @@ class TestRollupSummarySchema:
         test_cases = [
             "baseline_matchups.yaml",
             "auction_smoke.yaml",
-            "custom_strategy.yaml"
+            "custom_strategy.yaml",
         ]
 
         for config_name in test_cases:
-            assert "/" not in config_name, f"Config name contains path separator: {config_name}"
-            assert "\\" not in config_name, f"Config name contains path separator: {config_name}"
-            assert config_name.endswith(".yaml"), f"Config name should end with .yaml: {config_name}"
+            assert (
+                "/" not in config_name
+            ), f"Config name contains path separator: {config_name}"
+            assert (
+                "\\" not in config_name
+            ), f"Config name contains path separator: {config_name}"
+            assert config_name.endswith(
+                ".yaml"
+            ), f"Config name should end with .yaml: {config_name}"
 
     def test_rollup_summary_avg_tricks_is_numeric_when_present(self):
         """Test that avg_tricks is numeric when not None."""
@@ -302,6 +329,8 @@ class TestRollupSummarySchema:
                 "total_hands": 100,
                 "avg_tricks": value,
                 "reason": None,
-                "bad_files": None
+                "bad_files": None,
             }
-            assert isinstance(entry["avg_tricks"], (int, float)), f"avg_tricks should be numeric: {value}"
+            assert isinstance(
+                entry["avg_tricks"], (int, float)
+            ), f"avg_tricks should be numeric: {value}"
