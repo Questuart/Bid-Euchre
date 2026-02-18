@@ -18,7 +18,7 @@ Glutton is frozen as the canonical play policy for Phase 1 bidding model develop
 - **Deal fairness** — PASS. Hand value distributions are identical across seats 0–3 within each contract type. No seat or contract-type bias in deal generation.
 - **Feature health** — PASS. 41-feature hand evaluation is well-calibrated, trump-suit-invariant (variance spread < 0.6%), and produces healthy distributions with no anomalies.
 - **Feature signal** — R² ~0.19–0.24 per contract type (Ridge on tricks_won). Sufficient predictive signal for Phase 1 bidding models. Strategy-stable: greedy and glutton agree on top features.
-- **Policy decision** — Glutton advantage +0.19–0.21 mean tricks_won over greedy. All 6 bootstrap 95% CIs exclude zero across 3 seeds and both seat directions. Welch's t-test p < 0.001.
+- **Policy decision** — Glutton advantage +0.19–0.21 mean tricks_won over greedy. All 6 bootstrap 95% CIs exclude zero across 3 seeds and both seat directions. One-sample t-test p < 0.001.
 
 ---
 
@@ -375,12 +375,12 @@ Zero violations detected across all 5 strategies. The competitive ordering is fu
 
 **Strategy descriptions** (from source docstrings):
 - **glutton** — Partner-aware play with trump conservation, double-deck card tracking, position-aware aggression, and smart leads/discards.
-- **greedy** — 1-trick lookahead that leads the highest card and always tries to win the current trick.
+- **greedy** — Leads the highest-value card and plays the cheapest winning card when following; dumps the cheapest card when no winning play exists.
 - **always_highest** — Always plays the highest-ranked legal card (extreme aggression: cash everything immediately).
 - **always_lowest** — Always plays the lowest-ranked legal card (extreme conservatism: never spend power unless forced).
 - **random_legal** — Chooses uniformly at random among legal moves (no-intelligence baseline).
 
-**Win rate** = proportion of hands where team 0 won more tricks than team 1. A 55% win rate means team 0's strategy won 55 out of every 100 hands.
+**Win rate** = weighted proportion: (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / total_hands. Ties (exactly 5 tricks each) contribute 0.5 to each team's win rate, ensuring win_rate_team0 + win_rate_team1 = 1.0. A 55% win rate means team 0's weighted wins (full wins + half-credit ties) total 55% of all hands.
 
 ### 8a. Strategy Landscape
 
@@ -406,7 +406,7 @@ Violin plots show trick distributions for Team 0 across all 11 matchups. Self-pl
 
 - **Purpose:** Make the freeze decision: should glutton replace greedy as the canonical play policy?
 - **Data source:** Policy gate aggregate — 720K hands across 3 seeds × 2 directions × 6 contract scenarios.
-- **Methodology:** Bootstrap 95% CI on mean glutton advantage (tricks_won difference). Gate passes if ALL CIs exclude zero.
+- **Methodology:** Bootstrap 95% CI on mean glutton advantage (trick delta). Gate passes if ALL CIs exclude zero.
 - **Verdict:** PASS. Glutton frozen as canonical play policy.
 
 ### 9a. Methodology
@@ -414,12 +414,12 @@ Violin plots show trick distributions for Team 0 across all 11 matchups. Self-pl
 - **Seeds:** 42, 43, 44
 - **Hands per scenario:** 20,000 (120,000 per seed-direction)
 - **Directions:** Both `glutton_vs_greedy` and `greedy_vs_glutton` (confirms direction-invariant advantage)
-- **Statistic:** Bootstrap 95% CI on mean glutton advantage, measured in mean tricks_won difference (positive = glutton wins more tricks)
+- **Statistic:** Bootstrap 95% CI on mean glutton advantage, measured as mean trick delta (tricks_team0 − tricks_team1, positive = glutton wins more tricks)
 - **Gate criterion:** PASS if all CIs exclude zero
 
 ### 9b. Aggregate Results
 
-| Seed | Team 0 | Team 1 | Glutton Advantage (tricks_won) | CI Lower | CI Upper | N | Status |
+| Seed | Team 0 | Team 1 | Glutton Advantage (trick delta) | CI Lower | CI Upper | N | Status |
 |------|--------|--------|-------------------------------|----------|----------|---|--------|
 | 42 | glutton | greedy | +0.2110 | +0.1879 | +0.2324 | 120,000 | PASS |
 | 42 | greedy | glutton | +0.1862 | +0.1639 | +0.2082 | 120,000 | PASS |
@@ -430,13 +430,13 @@ Violin plots show trick distributions for Team 0 across all 11 matchups. Self-pl
 
 **All 6 CIs exclude zero.** Lowest CI lower bound: +0.1639 (seed 42, greedy_vs_glutton).
 
-Pooling all 720K hands, Welch's t-test yields p < 0.001, confirming the bootstrap CI result.
+Pooling all 720K hands, a one-sample t-test (H₀: mean advantage = 0) yields p < 0.001, confirming the bootstrap CI result.
 
 ### 9c. Advantage by Contract Type (Seed 42)
 
 This breakdown shows whether glutton's superiority is uniform across contract types or concentrated in specific contracts. Seed 42 is shown; all 3 seeds exhibit the same per-contract pattern.
 
-| Contract Type | Glutton Advantage (tricks_won) | CI Lower | CI Upper |
+| Contract Type | Glutton Advantage (trick delta) | CI Lower | CI Upper |
 |---------------|-------------------------------|----------|----------|
 | suit_S | +0.2731 | +0.2204 | +0.3276 |
 | suit_C | +0.3103 | +0.2580 | +0.3642 |
@@ -453,7 +453,7 @@ The bar chart makes the hierarchy clear: suit contracts show the strongest glutt
 
 **Finding:** Glutton consistently outperforms greedy across all seeds, directions, and contract types.
 
-**Evidence:** 6/6 aggregate bootstrap CIs exclude zero; 6/6 per-scenario CIs exclude zero at seed 42; pooled Welch's t-test p < 0.001.
+**Evidence:** 6/6 aggregate bootstrap CIs exclude zero; 6/6 per-scenario CIs exclude zero at seed 42; pooled one-sample t-test p < 0.001.
 
 **Caveat:** LOW contract advantage is marginal (CI lower bound +0.003). This is documented but does not affect the pooled gate decision.
 
@@ -475,7 +475,7 @@ The bar chart makes the hierarchy clear: suit contracts show the strongest glutt
 
 ### Play Policy Gate
 ```bash
-PYTHONPATH=src uv run python scripts/play_policy_gate.py \
+PYTHONPATH=src uv run python scripts/internal/play_policy_gate.py \
   --seeds 42,43,44 --n-per 20000
 ```
 

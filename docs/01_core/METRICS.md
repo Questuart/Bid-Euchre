@@ -7,7 +7,7 @@ This document defines the authoritative metrics contract for bid euchre experime
 ### Hand
 A single deal of cards played to completion between two teams of 2 players each. A hand consists of:
 - Card dealing and bidding (if applicable)
-- Trick play until all 5 tricks are taken
+- Trick play until all 10 tricks are taken
 - Scoring based on final trick counts
 
 ### Match
