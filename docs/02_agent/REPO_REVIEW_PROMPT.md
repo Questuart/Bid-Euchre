@@ -1,6 +1,6 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Version:** 3.2 (Drift-Resilient, Discovery-Driven)
+**Version:** 3.3 (Drift-Resilient, Discovery-Driven)
 **Last Updated:** February 2026
 
 ---
@@ -158,6 +158,10 @@ uv run python -c "from bid_euchre.validation.promotion import check_artifacts_fr
 
 # Verify reporting (chart generators)
 uv run python -c "from bid_euchre.reporting.charts import generate_contract_faceted_charts; print('charts OK')"
+
+# Verify logging and utils
+uv run python -c "from bid_euchre.logging.game_logger import GameLogger; print('logging OK')"
+uv run python -c "import bid_euchre.utils; print('utils OK')"
 
 # Dynamic: also verify any modules not listed above
 # ls -d src/bid_euchre/*/ | grep -v __pycache__
@@ -858,10 +862,10 @@ make notebook-run-full
 make promotion-gate
 ```
 
-### Bidding Teacher Loop
+### Bidding / Training Target Discovery
 
 ```bash
-# Discover available teacher/training targets
+# Discover available bidding and training targets
 make help | grep -i "bid\|train\|teacher\|loop"
 ```
 
@@ -919,13 +923,17 @@ bid-euchre/
 │   └── performance/             # Benchmarks
 │   # (verify via: find tests -name "test_*.py" | wc -l)
 ├── notebooks/                   # Interactive analysis
-│   └── phase0_bidless/          # Bidless analysis notebooks
+│   ├── phase0_bidless/          # Bidless analysis notebooks
+│   ├── sandbox/                 # Exploratory notebooks and blog charts
+│   └── _templates/              # Notebook templates
 │   # (verify via: find notebooks -name "*.ipynb" -not -path "*/archive/*" | wc -l)
 ├── docs/                        # Documentation
 │   ├── 01_core/                 # Architecture, contracts, specs
 │   ├── 02_agent/                # AI agent guidelines (incl. this file)
 │   ├── 03_TODO/                 # Task tracking + reviews
-│   └── 04_reports/              # Consolidated reports
+│   ├── 03_experiments/          # Experiment operational docs
+│   ├── 04_reports/              # Consolidated reports
+│   └── FLOW_DIAGRAM.md          # Top-level flow diagram (not in 01_core/)
 ├── data/
 │   ├── fixtures/                # Committed test fixtures (≤100KB each)
 │   └── runs/                    # Generated outputs (gitignored)
@@ -954,6 +962,7 @@ bid-euchre/
 | **Arc C Infrastructure** | #310–323 | Batch metadata, promotion workflow | Eligibility engine, split manifests, artifact freeze, CI gates |
 | **Promotion Hardening** | #324–332 | Freeze enforcement, registry lint | Content-based hash validation, workflow automation, 7 skills |
 | **Phase 0 Report** | #333–345 | Report charts, diagnostics, skill audit | 5 chart suites, contract-faceted analysis, Phase 0 report r4 |
+| **Phase 0 Hardening** | #346–357 | Docs freshness CI, /review skill, feature rename, report corrections | docs-check gate, self-healing review prompt, offsuit_non_ace_count, stale metric fixes |
 
 **Current state:** Derive via:
 
