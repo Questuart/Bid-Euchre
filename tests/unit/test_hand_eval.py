@@ -1,7 +1,7 @@
 """
 Comprehensive unit tests for hand evaluation features.
 
-Tests all 40+ features from get_hand_features() including:
+Tests all 37 features from get_hand_features() including:
 - Trump strength (bowers, trump count, power metrics)
 - Offsuit control (aces, kings, suit coverage)
 - Distribution (voids, singletons, suit lengths)
@@ -131,13 +131,11 @@ class TestBasicFeatures:
         assert features["bowers"] == 2
         assert features["trump_count"] == 3  # RB, LB, HA
         assert features["offsuit_aces"] == 1  # CA
-        assert features["rank_sum"] > 0
 
         # Trump features
         assert features["trump_rb_count"] == 1
         assert features["trump_lb_count"] == 1
         assert features["trump_ace_count"] == 1
-        assert features["top_trump_count"] == 3  # RB + LB + HA
         assert features["highest_trump_rank"] == 6  # RB = 6
 
     def test_high_contract_basic(self):
@@ -233,8 +231,6 @@ class TestTrumpFeatures:
         features = get_hand_features(hand, contract_type="suit", trump_suit="H")
 
         assert features["trump_power_sum"] == 15  # 6 + 5 + 4
-        assert features["trump_power_avg"] == 5.0  # 15 / 3
-        assert features["top_trump_count"] == 3  # RB + LB + A
 
     def test_highest_trump_ranks(self):
         """Test top 3 trump rank tracking."""
@@ -273,7 +269,6 @@ class TestTrumpFeatures:
 
         assert features["trump_count"] == 0
         assert features["trump_power_sum"] == 0
-        assert features["trump_power_avg"] == 0
         assert features["highest_trump_rank"] == 0
 
 
@@ -705,7 +700,7 @@ class TestFeatureCompleteness:
     """Test that all expected features are present."""
 
     def test_all_features_present(self):
-        """Test that get_hand_features returns all 40+ expected features."""
+        """Test that get_hand_features returns all 37 expected features."""
         hand = [
             Card("H", "J"),
             Card("D", "J"),
@@ -715,12 +710,10 @@ class TestFeatureCompleteness:
         features = get_hand_features(hand, contract_type="suit", trump_suit="H")
 
         expected_features = {
-            # Legacy
             "bowers",
             "trump_count",
             "offsuit_aces",
             "offsuit_non_ace_count",
-            "rank_sum",
             # Trump features
             "trump_rb_count",
             "trump_lb_count",
@@ -728,14 +721,11 @@ class TestFeatureCompleteness:
             "trump_king_count",
             "trump_queen_count",
             "trump_ten_count",
-            "top_trump_count",
             "highest_trump_rank",
             "second_highest_trump_rank",
             "third_highest_trump_rank",
             "trump_power_sum",
-            "trump_power_avg",
             "trump_duplicate_pairs",
-            "top_trump_sum",
             # Offsuit control
             "offsuit_king_count_total",
             "offsuit_queen_count_total",
@@ -770,7 +760,7 @@ class TestFeatureCompleteness:
         assert not missing, f"Missing features: {missing}"
 
         # Check count
-        assert len(features) >= 40, f"Expected 40+ features, got {len(features)}"
+        assert len(features) >= 37, f"Expected 37+ features, got {len(features)}"
 
     def test_all_features_have_values(self):
         """Test that all features return valid numeric values."""

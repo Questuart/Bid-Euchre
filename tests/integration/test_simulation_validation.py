@@ -117,7 +117,6 @@ class TestSimulationStatistics:
             "trump_count",
             "offsuit_aces",
             "offsuit_non_ace_count",
-            "rank_sum",
         }
         assert core_features.issubset(
             set(feature_buckets.keys())

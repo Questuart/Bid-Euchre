@@ -26,7 +26,7 @@ def get_hand_features(
         "high" : high no-trump (A high, no bowers).
         "low"  : low no-trump (T high, A low, no bowers).
 
-    Returns a dict with 40+ features covering:
+    Returns a dict with 37 features covering:
         - Trump strength (suit contracts only)
         - Offsuit control
         - Distribution (voids, suit lengths)
@@ -41,12 +41,10 @@ def get_hand_features(
     # Initialize Counters
     # ===========================
 
-    # Legacy features (keep for backward compatibility)
     bowers = 0
     trump_count = 0
     offsuit_aces = 0
     offsuit_non_ace_count = 0
-    rank_sum = 0
 
     # Trump features (suit contracts only)
     trump_rb_count = 0
@@ -72,10 +70,6 @@ def get_hand_features(
     # ===========================
 
     for card in hand:
-        # Legacy rank_sum (keep for compatibility)
-        rv = rank_strength(card, contract_type) + 1
-        rank_sum += rv
-
         # High/Low card counts
         if card.rank in ("A", "K"):
             high_card_count += 1
@@ -156,8 +150,6 @@ def get_hand_features(
     # Trump Features (Suit Contracts)
     # ===========================
 
-    top_trump_count = trump_rb_count + trump_lb_count + trump_ace_count
-
     # Top 3 trump ranks (sorted descending, pad with 0s)
     trump_ranks_sorted = sorted(trump_ranks, reverse=True)
     highest_trump_rank = trump_ranks_sorted[0] if len(trump_ranks_sorted) > 0 else 0
@@ -170,13 +162,9 @@ def get_hand_features(
 
     # Trump power
     trump_power_sum = sum(trump_ranks)
-    trump_power_avg = trump_power_sum / max(trump_count, 1)
 
     # Trump duplicate pairs (count of ranks with exactly 2 cards)
     trump_duplicate_pairs = sum(1 for count in trump_rank_counts.values() if count == 2)
-
-    # Top trump sum
-    top_trump_sum = bowers + trump_ace_count
 
     # ===========================
     # Offsuit Control Features
@@ -267,12 +255,10 @@ def get_hand_features(
     # ===========================
 
     return {
-        # Legacy features (backward compatibility)
         "bowers": bowers,
         "trump_count": trump_count,
         "offsuit_aces": offsuit_aces,
         "offsuit_non_ace_count": offsuit_non_ace_count,
-        "rank_sum": rank_sum,
         "hand_value": hand_value,
         # Trump features (suit contracts)
         "trump_rb_count": trump_rb_count,
@@ -281,14 +267,11 @@ def get_hand_features(
         "trump_king_count": trump_king_count,
         "trump_queen_count": trump_queen_count,
         "trump_ten_count": trump_ten_count,
-        "top_trump_count": top_trump_count,
         "highest_trump_rank": highest_trump_rank,
         "second_highest_trump_rank": second_highest_trump_rank,
         "third_highest_trump_rank": third_highest_trump_rank,
         "trump_power_sum": trump_power_sum,
-        "trump_power_avg": trump_power_avg,
         "trump_duplicate_pairs": trump_duplicate_pairs,
-        "top_trump_sum": top_trump_sum,
         # Offsuit control
         "offsuit_king_count_total": offsuit_king_count_total,
         "offsuit_queen_count_total": offsuit_queen_count_total,
@@ -406,12 +389,13 @@ def score_hand_tuple(
         (bowers, trump_count, offsuit_aces, offsuit_non_ace_count, rank_sum)
     """
     f = get_hand_features(hand, contract_type, trump_suit)
+    rank_sum = sum(rank_strength(c, contract_type) + 1 for c in hand)
     return (
         f["bowers"],
         f["trump_count"],
         f["offsuit_aces"],
         f["offsuit_non_ace_count"],
-        f["rank_sum"],
+        rank_sum,
     )
 
 

@@ -60,7 +60,6 @@ class TestEndToEndSimulation:
             "trump_count",
             "offsuit_aces",
             "offsuit_non_ace_count",
-            "rank_sum",
         }
         for features in all_features:
             assert isinstance(features, dict)
