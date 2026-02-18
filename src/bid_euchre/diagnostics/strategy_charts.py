@@ -41,6 +41,10 @@ def plot_win_rate_heatmap(
     figsize: Tuple[int, int] = FIGSIZE_MATRIX,
     title: Optional[str] = None,
     fmt: Optional[str] = None,
+    center_override: Optional[float] = None,
+    vmin_override: Optional[float] = None,
+    vmax_override: Optional[float] = None,
+    cbar_label_override: Optional[str] = None,
 ) -> plt.Figure:
     """Plot heatmap of win rates for all strategy matchups.
 
@@ -54,6 +58,10 @@ def plot_win_rate_heatmap(
         figsize: Figure size tuple
         title: Optional title override
         fmt: Format string for annotations. Default: ".1%" for win_rate, ".1f" otherwise
+        center_override: Override colormap center (e.g. 0 for trick advantage)
+        vmin_override: Override colormap minimum
+        vmax_override: Override colormap maximum
+        cbar_label_override: Override colorbar label text
 
     Returns:
         matplotlib Figure
@@ -102,6 +110,16 @@ def plot_win_rate_heatmap(
     vmax = 1 if is_win_rate else None
     center = 0.5 if is_win_rate else None
     cbar_label = "Win Rate (Team 0)" if is_win_rate else metric
+
+    # Apply overrides when provided
+    if center_override is not None:
+        center = center_override
+    if vmin_override is not None:
+        vmin = vmin_override
+    if vmax_override is not None:
+        vmax = vmax_override
+    if cbar_label_override is not None:
+        cbar_label = cbar_label_override
 
     # Plot heatmap
     if HAS_SEABORN:
