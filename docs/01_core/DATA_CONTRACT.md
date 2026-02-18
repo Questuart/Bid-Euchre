@@ -7,7 +7,7 @@ If you change a schema, update the relevant doc and bump schema versions where a
 
 - **meta.json (schema v2):** see `docs/01_core/schemas/meta_json.md`
 - **results JSON**: Strategy performance metrics including scoring/points aggregates; see `docs/01_core/SCORING.md`
-- **JSONL game log (schema v6):** see below
+- **JSONL game log (schema v7):** see below
 
 ## JSONL Game Log Schema
 
@@ -17,7 +17,7 @@ Each `hand_end` record contains:
 
 | Field | Type | Since | Notes |
 |-------|------|-------|-------|
-| `schema_version` | int | v1 | Always present; current = 6 |
+| `schema_version` | int | v1 | Always present; current = 7 |
 | `event` | str | v1 | Always `"hand_end"` |
 | `run_id` | str | v1 | Run identifier |
 | `strategy_id` | str | v1 | Strategy name |
@@ -36,11 +36,14 @@ Each `hand_end` record contains:
 | `bidder_position` | int\|null | v5 | Auction winner seat; null on pre-v5 logs |
 | `redeal_flag` | bool\|null | v6 | True if all players passed (all-pass redeal); null on pre-v6 logs |
 | `made_bid` | bool\|null | v6 | True if declaring team made their bid; null on pre-v6 logs |
+| `auction_transcript` | list\|null | v7 | 4-entry list `[{seat, action, tricks_bid, contract_type, trump}]`; null if no auction or pre-v7 |
 | `timestamp` | str | v1 | ISO-8601 timestamp |
 
 **Backward compatibility:** All versioned fields have `null` defaults. Old logs can be read safely using `.get(field)`.
 
 **Filtering note:** `redeal_flag=true` records have `t0=0, t1=0` (no play occurred). Exclude them when computing comparative metrics.
+
+**auction_transcript entry format:** Each entry is `{"seat": int, "action": "PASS"|"BID", "tricks_bid": int, "contract_type": str|null, "trump": str|null}`. PASS entries have `tricks_bid=0`, `contract_type=null`, `trump=null`. The list is always exactly 4 entries (one per seat in bid order) when bidding occurred; `null` when no auction ran (fixed-contract mode).
 
 ## Directory Layout and Commit Policy
 

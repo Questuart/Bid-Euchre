@@ -7,7 +7,7 @@ This module is library code (no CLI). It supports:
 """
 
 import random
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from ..core.cards import Card, create_deck, deal_hands, shuffle_deck
 from ..core.rules import get_legal_indices, trick_winner
@@ -38,7 +38,20 @@ def play_single_hand(
     rng: Optional[random.Random] = None,
     bidding_collector: Optional[BiddingDatasetCollector] = None,
     on_bidding_decision: Optional[Callable[[BiddingDecisionEvent], None]] = None,
-) -> Tuple[int, int, List[int], List[Dict[str, int]], int, List[List[Card]], Optional[int], Optional[int], Optional[int], str, Optional[str]]:
+) -> Tuple[
+    int,
+    int,
+    List[int],
+    List[Dict[str, int]],
+    int,
+    List[List[Card]],
+    Optional[int],
+    Optional[int],
+    Optional[int],
+    str,
+    Optional[str],
+    Optional[List[Dict[str, Any]]],
+]:
     """
     Play one full 10-trick hand.
 
@@ -46,7 +59,7 @@ def play_single_hand(
     The winner of the bid chooses the contract and leads the first trick.
 
     Returns:
-        (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump)
+        (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump, auction_transcript)
     """
     # Resolve strategy-per-seat.
     if strategies is not None:
@@ -81,6 +94,7 @@ def play_single_hand(
     bidding_data = None
     dealer_index = None  # Track dealer position (0-3 or None if no bidding)
     bidder_position = None  # Track auction winner (0-3 or None)
+    _transcript: Optional[List[Dict[str, Any]]] = None  # Auction transcript (schema v7)
 
     if contract_type is None:
         # Determine dealer
@@ -102,6 +116,7 @@ def play_single_hand(
         winning_bidder = None
         final_contract = None
         final_trump = None
+        _transcript = []  # Accumulate per-seat bid actions (schema v7)
 
         # Use new bidding policy interface if provided, otherwise fall back to old interface
         if seat_bidding_policies is not None:
@@ -114,7 +129,7 @@ def play_single_hand(
                     hand=starting_hands[player_idx],
                     seat=player_idx,
                     dealer_seat=dealer_index,
-                    current_high_bid=current_high_bid
+                    current_high_bid=current_high_bid,
                 )
 
                 # Get bid from policy
@@ -126,25 +141,51 @@ def play_single_hand(
                 # Fire bidding decision event if handler registered
                 if on_bidding_decision is not None:
                     is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
-                    on_bidding_decision(BiddingDecisionEvent(
-                        deal_id=deal_id,
-                        seat=player_idx,
-                        hand=list(starting_hands[player_idx]),  # Copy to avoid aliasing
-                        dealer_seat=dealer_index,
-                        current_high_bid=current_high_bid,
-                        bid_amount=bid_action.n,
-                        bid_contract=bid_action.contract,
-                        is_legal=is_legal,
-                    ))
+                    on_bidding_decision(
+                        BiddingDecisionEvent(
+                            deal_id=deal_id,
+                            seat=player_idx,
+                            hand=list(
+                                starting_hands[player_idx]
+                            ),  # Copy to avoid aliasing
+                            dealer_seat=dealer_index,
+                            current_high_bid=current_high_bid,
+                            bid_amount=bid_action.n,
+                            bid_contract=bid_action.contract,
+                            is_legal=is_legal,
+                        )
+                    )
 
                 # If bid is pass or <= current high bid, treat as pass
-                if bid_action.is_pass() or bid_action.n <= current_high_bid:
+                is_effective_pass = (
+                    bid_action.is_pass() or bid_action.n <= current_high_bid
+                )
+                if is_effective_pass:
+                    _transcript.append(
+                        {
+                            "seat": player_idx,
+                            "action": "PASS",
+                            "tricks_bid": 0,
+                            "contract_type": None,
+                            "trump": None,
+                        }
+                    )
                     continue
 
                 # Valid higher bid - accept it
+                _ctype, _trump = bid_action.to_contract_tuple()
+                _transcript.append(
+                    {
+                        "seat": player_idx,
+                        "action": "BID",
+                        "tricks_bid": bid_action.n,
+                        "contract_type": _ctype,
+                        "trump": _trump,
+                    }
+                )
                 current_high_bid = bid_action.n
                 winning_bidder = player_idx
-                final_contract, final_trump = bid_action.to_contract_tuple()
+                final_contract, final_trump = _ctype, _trump
         elif bidding_policy is not None:
             # New interface: sequential bidding (LOD order) using BiddingPolicy
             for offset in range(1, 5):
@@ -155,7 +196,7 @@ def play_single_hand(
                     hand=starting_hands[player_idx],
                     seat=player_idx,
                     dealer_seat=dealer_index,
-                    current_high_bid=current_high_bid
+                    current_high_bid=current_high_bid,
                 )
 
                 # Get bid from policy
@@ -167,25 +208,51 @@ def play_single_hand(
                 # Fire bidding decision event if handler registered
                 if on_bidding_decision is not None:
                     is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
-                    on_bidding_decision(BiddingDecisionEvent(
-                        deal_id=deal_id,
-                        seat=player_idx,
-                        hand=list(starting_hands[player_idx]),  # Copy to avoid aliasing
-                        dealer_seat=dealer_index,
-                        current_high_bid=current_high_bid,
-                        bid_amount=bid_action.n,
-                        bid_contract=bid_action.contract,
-                        is_legal=is_legal,
-                    ))
+                    on_bidding_decision(
+                        BiddingDecisionEvent(
+                            deal_id=deal_id,
+                            seat=player_idx,
+                            hand=list(
+                                starting_hands[player_idx]
+                            ),  # Copy to avoid aliasing
+                            dealer_seat=dealer_index,
+                            current_high_bid=current_high_bid,
+                            bid_amount=bid_action.n,
+                            bid_contract=bid_action.contract,
+                            is_legal=is_legal,
+                        )
+                    )
 
                 # If bid is pass or <= current high bid, treat as pass
-                if bid_action.is_pass() or bid_action.n <= current_high_bid:
+                is_effective_pass = (
+                    bid_action.is_pass() or bid_action.n <= current_high_bid
+                )
+                if is_effective_pass:
+                    _transcript.append(
+                        {
+                            "seat": player_idx,
+                            "action": "PASS",
+                            "tricks_bid": 0,
+                            "contract_type": None,
+                            "trump": None,
+                        }
+                    )
                     continue
 
                 # Valid higher bid - accept it
+                _ctype, _trump = bid_action.to_contract_tuple()
+                _transcript.append(
+                    {
+                        "seat": player_idx,
+                        "action": "BID",
+                        "tricks_bid": bid_action.n,
+                        "contract_type": _ctype,
+                        "trump": _trump,
+                    }
+                )
                 current_high_bid = bid_action.n
                 winning_bidder = player_idx
-                final_contract, final_trump = bid_action.to_contract_tuple()
+                final_contract, final_trump = _ctype, _trump
         else:
             # Old interface: sequential bidding using Strategy.decide_bid
             # Bidding order: LOD, Partner of LOD, ROD, Dealer
@@ -199,7 +266,7 @@ def play_single_hand(
                     current_high_bid=current_high_bid,
                     current_winner_index=winning_bidder,
                     partner_index=partner_idx,
-                    player_index=player_idx
+                    player_index=player_idx,
                 )
 
                 obs = BiddingObservation(
@@ -215,7 +282,9 @@ def play_single_hand(
                     if ctype == "suit":
                         contract_for_action = trump
                     else:
-                        contract_for_action = ctype.upper() if isinstance(ctype, str) else ctype
+                        contract_for_action = (
+                            ctype.upper() if isinstance(ctype, str) else ctype
+                        )
                     bid_action = BidAction.bid(bid, contract_for_action)
                 if bidding_collector is not None and bid_action is not None:
                     bidding_collector.record_decision(obs, bid_action, deal_id)
@@ -223,22 +292,55 @@ def play_single_hand(
                 # Fire bidding decision event if handler registered
                 if on_bidding_decision is not None and bid_action is not None:
                     is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
-                    on_bidding_decision(BiddingDecisionEvent(
-                        deal_id=deal_id,
-                        seat=player_idx,
-                        hand=list(starting_hands[player_idx]),  # Copy to avoid aliasing
-                        dealer_seat=dealer_index,
-                        current_high_bid=current_high_bid,
-                        bid_amount=bid_action.n,
-                        bid_contract=bid_action.contract,
-                        is_legal=is_legal,
-                    ))
+                    on_bidding_decision(
+                        BiddingDecisionEvent(
+                            deal_id=deal_id,
+                            seat=player_idx,
+                            hand=list(
+                                starting_hands[player_idx]
+                            ),  # Copy to avoid aliasing
+                            dealer_seat=dealer_index,
+                            current_high_bid=current_high_bid,
+                            bid_amount=bid_action.n,
+                            bid_contract=bid_action.contract,
+                            is_legal=is_legal,
+                        )
+                    )
 
                 # Dealer-partner pass rule: dealer passes if partner has the high bid
                 if player_idx == dealer_index and winning_bidder == partner_idx:
+                    _transcript.append(
+                        {
+                            "seat": player_idx,
+                            "action": "PASS",
+                            "tricks_bid": 0,
+                            "contract_type": None,
+                            "trump": None,
+                        }
+                    )
                     continue
 
-                if bid > current_high_bid:
+                is_effective_pass = bid == 0 or bid <= current_high_bid
+                if is_effective_pass:
+                    _transcript.append(
+                        {
+                            "seat": player_idx,
+                            "action": "PASS",
+                            "tricks_bid": 0,
+                            "contract_type": None,
+                            "trump": None,
+                        }
+                    )
+                else:
+                    _transcript.append(
+                        {
+                            "seat": player_idx,
+                            "action": "BID",
+                            "tricks_bid": bid,
+                            "contract_type": ctype,
+                            "trump": trump,
+                        }
+                    )
                     current_high_bid = bid
                     winning_bidder = player_idx
                     final_contract = ctype
@@ -248,12 +350,29 @@ def play_single_hand(
             # Misdeal: everyone passed or no valid bids
             # Return zeros but still need scores/features (use dummy contract for logging)
             dummy_ctype = "high"
-            all_player_scores = [score_hand(h, dummy_ctype, None) for h in starting_hands]
-            all_player_features = [get_hand_features(h, dummy_ctype, None) for h in starting_hands]
+            all_player_scores = [
+                score_hand(h, dummy_ctype, None) for h in starting_hands
+            ]
+            all_player_features = [
+                get_hand_features(h, dummy_ctype, None) for h in starting_hands
+            ]
             # dealer_index is known, bidder_position is None (misdeal)
             if bidding_collector is not None:
                 bidding_collector.set_final_contract(dummy_ctype, None)
-            return 0, 0, all_player_scores, all_player_features, -1, starting_hands, 0, dealer_index, None, dummy_ctype, None
+            return (
+                0,
+                0,
+                all_player_scores,
+                all_player_features,
+                -1,
+                starting_hands,
+                0,
+                dealer_index,
+                None,
+                dummy_ctype,
+                None,
+                _transcript,
+            )
 
         contract_type = final_contract
         trump_suit = final_trump
@@ -265,7 +384,7 @@ def play_single_hand(
             "winner": winning_bidder,
             "bid": current_high_bid,
             "contract": contract_type,
-            "trump": trump_suit
+            "trump": trump_suit,
         }
     else:
         # Contract was fixed, no bid was made
@@ -273,6 +392,7 @@ def play_single_hand(
         # No bidding phase: dealer and bidder are unknown
         dealer_index = None
         bidder_position = None
+        _transcript = None  # null distinguishes "no bidding mode" from "all passed"
 
     # Validation (now that contract is decided)
     if contract_type == "suit" and trump_suit is None:
@@ -327,7 +447,8 @@ def play_single_hand(
 
     # Filter to strategies that override on_hand_start (not default no-op)
     hand_start_targets = [
-        s for s in unique_strategies
+        s
+        for s in unique_strategies
         if type(s).on_hand_start is not Strategy.on_hand_start
     ]
     for s in hand_start_targets:
@@ -335,7 +456,9 @@ def play_single_hand(
         for seat_idx, seat_strat in enumerate(seat_strategies):
             if seat_strat is s:
                 s.on_hand_start(
-                    starting_hand=list(starting_hands[seat_idx]),  # Copy to avoid aliasing
+                    starting_hand=list(
+                        starting_hands[seat_idx]
+                    ),  # Copy to avoid aliasing
                     contract_type=contract_type,
                     trump_suit=trump_suit,
                     player_index=seat_idx,
@@ -344,7 +467,8 @@ def play_single_hand(
 
     # Filter to strategies that override observe_play (not default no-op)
     observe_play_targets = [
-        s for s in unique_strategies
+        s
+        for s in unique_strategies
         if type(s).observe_play is not Strategy.observe_play
     ]
 
@@ -373,7 +497,7 @@ def play_single_hand(
                     f"Illegal play from strategy={getattr(strat, 'name', type(strat).__name__)} "
                     f"player={player} contract={contract_type} trump={trump_suit} "
                     f"chosen_index={card_index} legal_indices={legal_indices} hand_size={len(hand)}"
-            )
+                )
 
             # Index integrity check: verify strategy returns valid index into actual hand
             # (catches bugs where strategy sorts/filters hand and returns wrong index)
@@ -415,7 +539,20 @@ def play_single_hand(
 
         leader = winner  # winner leads next trick
 
-    return team_tricks[0], team_tricks[1], all_player_scores, all_player_features, initial_leader, starting_hands, current_high_bid, dealer_index, bidder_position, contract_type, trump_suit
+    return (
+        team_tricks[0],
+        team_tricks[1],
+        all_player_scores,
+        all_player_features,
+        initial_leader,
+        starting_hands,
+        current_high_bid,
+        dealer_index,
+        bidder_position,
+        contract_type,
+        trump_suit,
+        _transcript,
+    )
 
 
 def simulate_many_hands(
@@ -515,7 +652,9 @@ def simulate_many_hands(
     collectors: List[BiddingDatasetCollector] = []
     if bidding_dataset_run_id is not None and contract_type is None:
         collectors = [
-            BiddingDatasetCollector(bidding_dataset_run_id, bidding_hand_id_offset + hand_id)
+            BiddingDatasetCollector(
+                bidding_dataset_run_id, bidding_hand_id_offset + hand_id
+            )
             for hand_id in range(n)
         ]
 
@@ -526,7 +665,20 @@ def simulate_many_hands(
 
         if deal_seed is not None:
             deal_hands_ = generate_deal(deal_seed, deal_id, deal_method=deal_method)
-            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
+            (
+                t0,
+                t1,
+                all_scores,
+                all_feats,
+                initial_leader,
+                starting_hands,
+                winning_bid,
+                dealer_pos,
+                bidder_pos,
+                actual_contract,
+                actual_trump,
+                auction_transcript,
+            ) = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -541,7 +693,20 @@ def simulate_many_hands(
                 on_bidding_decision=on_bidding_decision,
             )
         else:
-            t0, t1, all_scores, all_feats, initial_leader, starting_hands, winning_bid, dealer_pos, bidder_pos, actual_contract, actual_trump = play_single_hand(
+            (
+                t0,
+                t1,
+                all_scores,
+                all_feats,
+                initial_leader,
+                starting_hands,
+                winning_bid,
+                dealer_pos,
+                bidder_pos,
+                actual_contract,
+                actual_trump,
+                auction_transcript,
+            ) = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
                 strategy=strategy,
@@ -557,6 +722,18 @@ def simulate_many_hands(
 
         # Log hand completion (if logger enabled)
         if logger and logger.is_enabled:
+            # Compute v6 fields: redeal when all passed (winning_bid==0, no bidder)
+            redeal_flag = (
+                (winning_bid == 0 and bidder_pos is None)
+                if winning_bid is not None
+                else None
+            )
+            if bidder_pos is None or winning_bid == 0 or winning_bid is None:
+                made_bid = None
+            elif bidder_pos in (0, 2):
+                made_bid = t0 >= winning_bid
+            else:
+                made_bid = t1 >= winning_bid
             logger.log_hand_end(
                 deal_id=deal_id,
                 seed=seed,
@@ -571,25 +748,34 @@ def simulate_many_hands(
                 winning_bid=winning_bid,
                 dealer_position=dealer_pos,
                 bidder_position=bidder_pos,
+                redeal_flag=redeal_flag,
+                made_bid=made_bid,
+                auction_transcript=auction_transcript,
             )
 
         # Fire HandEndEvent if hooks registered
         if hooks is not None:
-            hooks.fire_hand_end(HandEndEvent(
-                deal_id=deal_id,
-                seed=seed,
-                hands=[list(h) for h in starting_hands],  # Deep copy to avoid aliasing
-                dealer_seat=dealer_pos,
-                contract_type=actual_contract,
-                trump_suit=actual_trump,
-                initial_leader=initial_leader,
-                tricks_team0=t0,
-                tricks_team1=t1,
-                scores=list(all_scores),
-                features=[dict(f) for f in all_feats],  # Copy dicts to avoid aliasing
-                winning_bid=winning_bid,
-                bidder_seat=bidder_pos,
-            ))
+            hooks.fire_hand_end(
+                HandEndEvent(
+                    deal_id=deal_id,
+                    seed=seed,
+                    hands=[
+                        list(h) for h in starting_hands
+                    ],  # Deep copy to avoid aliasing
+                    dealer_seat=dealer_pos,
+                    contract_type=actual_contract,
+                    trump_suit=actual_trump,
+                    initial_leader=initial_leader,
+                    tricks_team0=t0,
+                    tricks_team1=t1,
+                    scores=list(all_scores),
+                    features=[
+                        dict(f) for f in all_feats
+                    ],  # Copy dicts to avoid aliasing
+                    winning_bid=winning_bid,
+                    bidder_seat=bidder_pos,
+                )
+            )
 
         total0 += t0
         total1 += t1
@@ -679,12 +865,16 @@ def simulate_many_hands(
         "hands_with_bids": hands_with_bids,
     }
     if hands_with_bids > 0:
-        bidding_points.update({
-            "avg_bid": sum(bid_values) / len(bid_values),
-            "bid_distribution": {bid: bid_values.count(bid) for bid in set(bid_values)},
-            "make_rate": made_count / hands_with_bids,
-            "set_rate": set_count / hands_with_bids,
-        })
+        bidding_points.update(
+            {
+                "avg_bid": sum(bid_values) / len(bid_values),
+                "bid_distribution": {
+                    bid: bid_values.count(bid) for bid in set(bid_values)
+                },
+                "make_rate": made_count / hands_with_bids,
+                "set_rate": set_count / hands_with_bids,
+            }
+        )
 
     bidding_collectors = [c for c in collectors if c.rows] if collectors else []
 
@@ -709,7 +899,9 @@ def simulate_many_hands(
         "distribution_points_team1": dist_points_team1,
         "bidding_points": bidding_points,
         # Backward compatibility aliases
-        "avg_score_player0": total_score_all / player_samples if player_samples > 0 else 0,
+        "avg_score_player0": total_score_all / player_samples
+        if player_samples > 0
+        else 0,
         "score_buckets_player0": score_buckets,
         "feature_buckets_player0": feature_buckets,
         "bidding_collectors": bidding_collectors,
@@ -767,8 +959,9 @@ def run_all_scenarios(
         print("Avg score:        ", f"{results['avg_score']:.2f}")
         print("Avg tricks Team 0:", f"{results['avg_team0']:.3f}")
         print("Avg tricks Team 1:", f"{results['avg_team1']:.3f}")
-        print("Sum of avgs (≈10):",
-              f"{results['avg_team0'] + results['avg_team1']:.3f}")
+        print(
+            "Sum of avgs (≈10):", f"{results['avg_team0'] + results['avg_team1']:.3f}"
+        )
 
         print("\nDistribution of Team 0 tricks:")
         dist = results["distribution_team0"]
@@ -784,5 +977,7 @@ def run_all_scenarios(
             print("\nSample of score buckets (hand score → avg tricks for team):")
             for score in sorted(buckets.keys())[:8]:
                 b = buckets[score]
-                print(f"  Score {score:3d}: "
-                      f"n={b['count']:4d}, avg_tricks={b['avg_tricks']:.3f}")
+                print(
+                    f"  Score {score:3d}: "
+                    f"n={b['count']:4d}, avg_tricks={b['avg_tricks']:.3f}"
+                )

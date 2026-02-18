@@ -15,9 +15,9 @@ from bid_euchre.strategy.baselines import RandomLegalStrategy
 def test_artifact_strategies_load_successfully():
     """Test that artifact-based strategies can be loaded."""
     artifact_paths = {
-        'suit': 'data/fixtures/bidding_artifact_v1_dummy_suit.json',
-        'high': 'data/fixtures/bidding_artifact_v1_dummy_high.json',
-        'low': 'data/fixtures/bidding_artifact_v1_dummy_low.json',
+        "suit": "data/fixtures/bidding_artifact_v1_dummy_suit.json",
+        "high": "data/fixtures/bidding_artifact_v1_dummy_high.json",
+        "low": "data/fixtures/bidding_artifact_v1_dummy_low.json",
     }
 
     for contract, path in artifact_paths.items():
@@ -32,17 +32,19 @@ def test_artifact_strategy_plays_single_hand():
     """Test that artifact strategy can complete a single hand without crashing."""
     strategy = ArtifactGreedyStrategy(
         name="test_strategy",
-        artifact_path='data/fixtures/bidding_artifact_v1_dummy_suit.json'
+        artifact_path="data/fixtures/bidding_artifact_v1_dummy_suit.json",
     )
 
     # Play a single hand with bidding
     strategies = [strategy, strategy, strategy, strategy]
 
     try:
-        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump = play_single_hand(
-            contract_type=None,  # Trigger bidding
-            strategies=strategies,
-            deal_seed=42
+        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, _ = (
+            play_single_hand(
+                contract_type=None,  # Trigger bidding
+                strategies=strategies,
+                deal_seed=42,
+            )
         )
 
         # Check results are valid
@@ -52,7 +54,9 @@ def test_artifact_strategy_plays_single_hand():
         assert bid is not None, "Bid should not be None"
         assert isinstance(bid, int), f"Bid should be int: {bid}"
 
-        print(f"✅ Artifact strategy played single hand: {t0}-{t1}, bid={bid}, contract={contract}")
+        print(
+            f"✅ Artifact strategy played single hand: {t0}-{t1}, bid={bid}, contract={contract}"
+        )
 
     except Exception as e:
         print(f"❌ Artifact strategy failed to play hand: {e}")
@@ -63,7 +67,7 @@ def test_artifact_strategy_plays_multiple_hands():
     """Test that artifact strategy can play multiple hands consistently."""
     strategy = ArtifactGreedyStrategy(
         name="test_strategy",
-        artifact_path='data/fixtures/bidding_artifact_v1_dummy_suit.json'
+        artifact_path="data/fixtures/bidding_artifact_v1_dummy_suit.json",
     )
 
     # Play 10 hands
@@ -72,10 +76,10 @@ def test_artifact_strategy_plays_multiple_hands():
 
     for i in range(n_hands):
         try:
-            t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump = play_single_hand(
-                contract_type=None,
-                strategies=strategies,
-                deal_seed=42 + i
+            t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, _ = (
+                play_single_hand(
+                    contract_type=None, strategies=strategies, deal_seed=42 + i
+                )
             )
 
             assert 0 <= t0 <= 10, f"Hand {i}: Team 0 tricks out of range"
@@ -92,17 +96,23 @@ def test_artifact_strategy_plays_multiple_hands():
 def test_artifact_strategy_different_contracts():
     """Test artifact strategies for different contract types."""
     strategies = [
-        ArtifactGreedyStrategy("suit", 'data/fixtures/bidding_artifact_v1_dummy_suit.json'),
-        ArtifactGreedyStrategy("high", 'data/fixtures/bidding_artifact_v1_dummy_high.json'),
-        ArtifactGreedyStrategy("low", 'data/fixtures/bidding_artifact_v1_dummy_low.json'),
-        ArtifactGreedyStrategy("suit", 'data/fixtures/bidding_artifact_v1_dummy_suit.json'),
+        ArtifactGreedyStrategy(
+            "suit", "data/fixtures/bidding_artifact_v1_dummy_suit.json"
+        ),
+        ArtifactGreedyStrategy(
+            "high", "data/fixtures/bidding_artifact_v1_dummy_high.json"
+        ),
+        ArtifactGreedyStrategy(
+            "low", "data/fixtures/bidding_artifact_v1_dummy_low.json"
+        ),
+        ArtifactGreedyStrategy(
+            "suit", "data/fixtures/bidding_artifact_v1_dummy_suit.json"
+        ),
     ]
 
     try:
-        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump = play_single_hand(
-            contract_type=None,
-            strategies=strategies,
-            deal_seed=42
+        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, _ = (
+            play_single_hand(contract_type=None, strategies=strategies, deal_seed=42)
         )
 
         assert 0 <= t0 <= 10, f"Team 0 tricks out of range: {t0}"
@@ -120,7 +130,7 @@ def test_artifact_strategy_vs_random():
     """Test artifact strategy vs random baseline (sanity check)."""
     artifact_strat = ArtifactGreedyStrategy(
         name="artifact",
-        artifact_path='data/fixtures/bidding_artifact_v1_dummy_suit.json'
+        artifact_path="data/fixtures/bidding_artifact_v1_dummy_suit.json",
     )
     random_strat = RandomLegalStrategy(seed=42)
 
@@ -132,10 +142,8 @@ def test_artifact_strategy_vs_random():
     team1_wins = 0
 
     for i in range(50):
-        t0, t1, _, _, _, _, _, _, _, _, _ = play_single_hand(
-            contract_type=None,
-            strategies=strategies,
-            deal_seed=100 + i
+        t0, t1, _, _, _, _, _, _, _, _, _, _ = play_single_hand(
+            contract_type=None, strategies=strategies, deal_seed=100 + i
         )
 
         if t0 > t1:
@@ -146,7 +154,9 @@ def test_artifact_strategy_vs_random():
     # Artifact should perform reasonably vs random
     win_rate = team0_wins / 50
 
-    print(f"✅ Artifact vs Random: {team0_wins}-{team1_wins} (win rate: {win_rate:.2%})")
+    print(
+        f"✅ Artifact vs Random: {team0_wins}-{team1_wins} (win rate: {win_rate:.2%})"
+    )
     print("   (Note: with bidding, win rates are complex due to points scoring)")
 
 
@@ -154,17 +164,15 @@ def test_artifact_strategy_bidding_behavior():
     """Test that artifact strategy makes reasonable bids."""
     strategy = ArtifactGreedyStrategy(
         name="artifact",
-        artifact_path='data/fixtures/bidding_artifact_v1_dummy_suit.json'
+        artifact_path="data/fixtures/bidding_artifact_v1_dummy_suit.json",
     )
 
     strategies = [strategy, strategy, strategy, strategy]
 
     bids = []
     for i in range(100):
-        t0, t1, _, _, _, _, bid, _, _, _, _ = play_single_hand(
-            contract_type=None,
-            strategies=strategies,
-            deal_seed=200 + i
+        t0, t1, _, _, _, _, bid, _, _, _, _, _ = play_single_hand(
+            contract_type=None, strategies=strategies, deal_seed=200 + i
         )
         if bid is not None and bid > 0:  # Valid bid
             bids.append(bid)
@@ -178,7 +186,9 @@ def test_artifact_strategy_bidding_behavior():
     assert min_bid >= 0, f"Min bid out of range: {min_bid}"
     assert max_bid <= 10, f"Max bid out of range: {max_bid}"
 
-    print(f"✅ Artifact bidding behavior: avg={avg_bid:.2f}, range=[{min_bid}, {max_bid}]")
+    print(
+        f"✅ Artifact bidding behavior: avg={avg_bid:.2f}, range=[{min_bid}, {max_bid}]"
+    )
     print(f"   Bid distribution: {sorted(set(bids))} (unique bids)")
 
 
@@ -186,7 +196,7 @@ def test_artifact_strategy_make_bid_rate():
     """Test that artifact strategy makes its bid at a reasonable rate."""
     strategy = ArtifactGreedyStrategy(
         name="artifact",
-        artifact_path='data/fixtures/bidding_artifact_v1_dummy_suit.json'
+        artifact_path="data/fixtures/bidding_artifact_v1_dummy_suit.json",
     )
 
     strategies = [strategy, strategy, strategy, strategy]
@@ -195,10 +205,8 @@ def test_artifact_strategy_make_bid_rate():
     total_count = 0
 
     for i in range(100):
-        t0, t1, _, _, _, _, bid, dealer, bidder, _, _ = play_single_hand(
-            contract_type=None,
-            strategies=strategies,
-            deal_seed=300 + i
+        t0, t1, _, _, _, _, bid, dealer, bidder, _, _, _ = play_single_hand(
+            contract_type=None, strategies=strategies, deal_seed=300 + i
         )
 
         if bid is None or bidder is None or bid == 0:
@@ -224,7 +232,7 @@ def test_no_crashes_with_edge_cases():
     """Test that artifact strategies don't crash on edge case hands."""
     strategy = ArtifactGreedyStrategy(
         name="artifact",
-        artifact_path='data/fixtures/bidding_artifact_v1_dummy_suit.json'
+        artifact_path="data/fixtures/bidding_artifact_v1_dummy_suit.json",
     )
 
     strategies = [strategy, strategy, strategy, strategy]
@@ -232,10 +240,8 @@ def test_no_crashes_with_edge_cases():
     # Test many random seeds to hit edge cases
     for i in range(50):
         try:
-            t0, t1, _, _, _, _, _, _, _, _, _ = play_single_hand(
-                contract_type=None,
-                strategies=strategies,
-                deal_seed=1000 + i
+            t0, t1, _, _, _, _, _, _, _, _, _, _ = play_single_hand(
+                contract_type=None, strategies=strategies, deal_seed=1000 + i
             )
         except Exception as e:
             print(f"❌ Crashed on seed {1000+i}: {e}")
@@ -257,9 +263,9 @@ def run_all_tests():
         test_no_crashes_with_edge_cases,
     ]
 
-    print("="*80)
+    print("=" * 80)
     print("Running Model Integration Tests")
-    print("="*80)
+    print("=" * 80)
 
     passed = 0
     failed = 0
@@ -276,9 +282,9 @@ def run_all_tests():
             print(f"⚠️  {test.__name__} ERROR: {e}")
             skipped += 1
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(f"Test Summary: {passed} passed, {failed} failed, {skipped} skipped/errors")
-    print("="*80)
+    print("=" * 80)
 
     if failed > 0:
         sys.exit(1)
