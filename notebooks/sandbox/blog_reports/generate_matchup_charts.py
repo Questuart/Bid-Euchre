@@ -16,11 +16,6 @@ Usage:
 import sys
 from pathlib import Path
 
-# Ensure src/ is on the import path when run standalone
-_src = Path(__file__).resolve().parents[3] / "src"
-if str(_src) not in sys.path:
-    sys.path.insert(0, str(_src))
-
 import matplotlib
 
 matplotlib.use("Agg")
