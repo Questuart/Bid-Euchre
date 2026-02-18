@@ -11,16 +11,15 @@ Generate small, deterministic JSONL datasets containing hand features for:
 
 ## Usage
 
-Run the complete dataset collection using the gold path:
+Run a small bidless dataset experiment using the canonical runner:
 
 ```bash
-PYTHONPATH=src python scripts/collect_bidless_dataset.py \
-    --suite experiments/suites/bidless_dataset_tiny.yaml \
-    --seed 42 \
-    --out /tmp/bidless_dataset.jsonl
+uv run python experiments/run_experiment.py \
+    --config experiments/configs/bidless_dataset_tiny.yaml \
+    --seed 42
 ```
 
-This generates a JSONL file containing hand-level data records.
+This generates a JSONL file containing hand-level data records under `data/runs/`.
 
 ## Output Structure
 
