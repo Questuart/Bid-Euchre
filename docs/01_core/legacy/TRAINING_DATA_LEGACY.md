@@ -1,5 +1,11 @@
 # Training Data Documentation
 
+> **STALE — Archived reference only.** The configs and scripts referenced below
+> (`bidder_training_data.yaml`, `generate_bidder_training_data.py`, etc.) no longer
+> exist on disk. This document describes a superseded pipeline from 2026-01-03.
+> For current dataset collection, use the canonical runner:
+> `uv run python experiments/run_experiment.py --config <config> --seed 42`
+
 ## Bidder-Aware Training Data (Current)
 
 **Generated:** 2026-01-03

@@ -34,7 +34,7 @@
 | ID | Severity | Issue | Impact |
 |----|----------|-------|--------|
 | I001 | HIGH | 3 missing logging fields (`auction_transcript`, `redeal_flag`, `made_bid`) — schema at v5 | Blocks bidding data collection (Arc D); consumers at `notebook_data.py:634` and `paired.py:44` must be explicitly updated |
-| I002 | HIGH | `docs/03_experiments/BIDLESS_DATASET_TINY.md:17` references deleted `scripts/collect_bidless_dataset.py` | Active doc causes hard failure for anyone following it |
+| I002 | HIGH | `docs/03_experiments/BIDLESS_DATASET_TINY.md:17` references deleted script (collect_bidless_dataset.py) | Active doc causes hard failure for anyone following it |
 | I004 | MEDIUM | 5+ schema/logging gaps tracked but not scheduled (CODEBASE_CONSISTENCY.md "Later" section) | Technical debt accumulating |
 | I007 | MEDIUM | Old `PYTHONPATH=src python` invocation style in 3 active docs (`AI_BOUNDARIES.md:93`, `ARCHITECTURE.md:115`, `BIDLESS_DATASET_TINY.md:17`) | Style drift persists after partial fix |
 | I006 | LOW | `STYLEGUIDE.md` and `TESTING_STRATEGY.md` absent with no target date | Nice-to-have; not blocking |
@@ -69,7 +69,7 @@
 | ID | Severity | Location | Issue | Evidence | Recommendation |
 |----|----------|----------|-------|----------|----------------|
 | I001 | **HIGH** | `game_logger.py:31`, `diagnostics/notebook_data.py:634-635`, `analysis/paired.py:44` | 3 missing logging fields: `auction_transcript`, `redeal_flag`, `made_bid` — schema at v5, open since 2026-01-04. Consumers hard-read `t0`/`t1` and dispatch on `event == "hand_end"` directly. | Tracker: "Open"; required by `RULES.md §8.2`; no schema guard on new fields | Before implementing: (1) choose strategy — nullable fields on `hand_end` (→ v6, backward-compat) vs. new event types; (2) update consumers; (3) add schema version tests; (4) update `DATA_CONTRACT.md`. Arc D unblocking work. |
-| I002 | **HIGH** | `docs/03_experiments/BIDLESS_DATASET_TINY.md:17` | Stale script ref: `scripts/collect_bidless_dataset.py` referenced but deleted | `ls scripts/collect_bidless_dataset.py` → not found | Update to `uv run python experiments/run_experiment.py --config <config> --seed <N>` |
+| I002 | **HIGH** | `docs/03_experiments/BIDLESS_DATASET_TINY.md:17` | Stale script ref: collect_bidless_dataset.py referenced but deleted | ls → not found | Update to `uv run python experiments/run_experiment.py --config <config> --seed <N>` |
 | I004 | **MEDIUM** | `docs/03_TODO/CODEBASE_CONSISTENCY.md` "Later §" | 5+ schema/logging gaps with no scheduled PRs: dual outcome tracking, card instance IDs, strategy IDs, TEAM_RANDOMIZED protocol | All "Open", no target PR | Group into Arc D planning; I001 fields are first priority |
 | I005 | **MEDIUM** | `docs/01_core/legacy/TRAINING_DATA_LEGACY.md` | References `experiments/configs/bidder_training_data.yaml` which no longer exists | Config not found on disk | Move to `docs/archive/` or add stale notice |
 | I007 | **MEDIUM** | `AI_BOUNDARIES.md:93`, `ARCHITECTURE.md:115`, `BIDLESS_DATASET_TINY.md:17` | Old `PYTHONPATH=src python` invocation style in 3 active docs | CLAUDE.md §Python Defaults: "Use `uv run` as the default Python runner" | Fix all 3 in one PR |
