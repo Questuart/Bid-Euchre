@@ -1,7 +1,7 @@
 # CODEBASE_CONSISTENCY — doc/code gap tracker (RULES.md + METRICS.md)
 
 **Created:** 2026-01-04
-**Last verified on main:** 2026-02-16 (commit `d515ed2`)
+**Last verified on main:** 2026-02-18 (commit `c5a346e`)
 **Status:** Active
 
 ## How to read this file
@@ -14,30 +14,7 @@
 
 ## Now (top 3)
 
-### 1) Add auction transcript logging (RULES.md §8.2)
-
-**Status:** Resolved in PR B-2 (schema v7, 2026-02-18)
-**Why it matters:** We can't audit/replay bidding decisions without per-seat bid actions.
-
-**Resolution:** `auction_transcript` field added to `hand_end` records (schema v7). 4-entry list `[{seat, action, tricks_bid, contract_type, trump}]` accumulated across all 3 auction code paths in `play_single_hand()`. `null` when no auction ran (fixed-contract mode).
-
----
-
-### 2) Add `redeal_flag` to hand-level logs (RULES.md §8.2)
-
-**Status:** Resolved in PR B-1 (schema v6) + PR B-2 callsite wiring (2026-02-18)
-**Why it matters:** RULES.md requires an explicit redeal signal; today it's implicit/derivable at best.
-
-**Resolution:** `redeal_flag` added to `HandEndRecord` in schema v6 (PR #361). Callsite wired in PR B-2: computed as `(winning_bid == 0 and bidder_pos is None)` in `simulate_many_hands()`.
-
----
-
-### 3) Add `made_bid` to hand-level logs (RULES.md §8.2 / METRICS.md required field)
-
-**Status:** Resolved in PR B-1 (schema v6) + PR B-2 callsite wiring (2026-02-18)
-**Why it matters:** `made_bid` is a required analysis field; deriving it downstream is easy but brittle and obscures intent.
-
-**Resolution:** `made_bid` added to `HandEndRecord` in schema v6 (PR #361). Callsite wired in PR B-2: computed from `t0/t1 >= winning_bid` by team in `simulate_many_hands()`.
+_All previous top-3 items resolved (see Done/Archived). Next priorities should be drawn from the "Later" section below._
 
 ---
 
@@ -121,6 +98,9 @@
 
 ## Done/Archived (verified in repo)
 
+- **Auction transcript logging (RULES.md §8.2):** Resolved in PR #362 (schema v7). `auction_transcript` field on `hand_end` records captures per-seat bid actions as a 4-entry list.
+- **`redeal_flag` on hand-level logs (RULES.md §8.2):** Resolved in PRs #361 (schema v6, field) + #362 (callsite wiring). Computed as `(winning_bid == 0 and bidder_pos is None)`.
+- **`made_bid` on hand-level logs (RULES.md §8.2):** Resolved in PRs #361 (schema v6, field) + #362 (callsite wiring). Computed from team tricks vs winning bid.
 - **Arc B bidding infrastructure complete:** `datasets/`, `models/`, and `diagnostics/` modules implemented; `train_bidder.py` and `collect_bidless_dataset.py` scripts operational; ModeloEspecifico and ArtifactBidder policies working.
 - **Scoring system implemented:** `src/bid_euchre/scoring.py::compute_points()` exists, simulation calls it, and unit tests cover exact scoring cases.
 - **`hand_id` vs `deal_id` clarification no longer needed:** `docs/01_core/METRICS.md` no longer references `hand_id`.

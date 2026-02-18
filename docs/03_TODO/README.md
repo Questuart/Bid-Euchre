@@ -9,10 +9,10 @@ This directory contains documents tracking work that needs to be done but isn't 
 ## 📋 Current TODOs
 
 ### Active
-- **CODEBASE_CONSISTENCY.md** - Code changes needed to align with RULES.md specifications (8-12 hours estimated)
+- **CODEBASE_CONSISTENCY.md** - Remaining "Later" items: dual outcome tracking, card instance IDs, separate strategy IDs, team-randomized comparator, strategy-centric metrics, terminology standardization
 
 ### Completed
-_(None yet - move completed items here with completion date)_
+- **CODEBASE_CONSISTENCY items 1-3** (2026-02-18): auction_transcript (schema v7), redeal_flag (schema v6), made_bid (schema v6) — all wired in PRs #361/#362
 
 ---
 
@@ -43,18 +43,13 @@ _(None yet - move completed items here with completion date)_
 
 ## 🎯 Current Focus
 
-The primary TODO is **CODEBASE_CONSISTENCY.md** which tracks alignment between RULES.md and implementation:
-
-**Quick wins (< 1 hour):**
-- Add `redeal_flag` to logger (15 min)
-- Rename `contract` → `contract_type` (15 min)
-
-**High value (2-3 hours each):**
-- Auction transcript logging
-- Scoring system implementation
+The quick-wins and high-value items from CODEBASE_CONSISTENCY.md are resolved (auction transcript, redeal_flag, made_bid, scoring system). Remaining open items are in the "Later" section of CODEBASE_CONSISTENCY.md:
 
 **Can defer:**
 - Card instance IDs (complex, needed for perfect replay)
+- Dual outcome tracking (trick_win vs points_win)
+- Separate strategy IDs in logs
+- Team-randomized comparator protocol
 - Terminology standardization (polish)
 
 ---

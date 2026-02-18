@@ -46,7 +46,7 @@ flowchart TB
         Scoring["scoring.py<br/>(standalone module)"]
 
         subgraph Logging["logging/"]
-            GameLogger["game_logger.py<br/>(JSONL schema v5)"]
+            GameLogger["game_logger.py<br/>(JSONL schema v7)"]
         end
 
         subgraph Reporting["reporting/"]
@@ -130,7 +130,7 @@ flowchart TD
     CreateRunDir --> SaveEffectiveConfig["Save config_effective.yaml<br/>(resolved configuration)"]
     SaveEffectiveConfig --> SaveMeta["Save meta.json<br/>(schema v2: seed, timestamp, git_hash)"]
 
-    SaveMeta --> InitLogger["Initialize GameLogger<br/>(JSONL schema v5)"]
+    SaveMeta --> InitLogger["Initialize GameLogger<br/>(JSONL schema v7)"]
     InitLogger --> InitStrategies["Instantiate strategies<br/>(GreedyStrategy, etc.)"]
 
     InitStrategies --> GenerateDeals["Generate deals<br/>(deals.derive_deal_from_index)"]
@@ -457,7 +457,7 @@ These files are only created when specific flags are provided:
 
 | Artifact | CLI Flag | When Generated | Notes |
 |----------|----------|----------------|-------|
-| `logs/*.jsonl` | `--log-level hand` or `--log-level trick` | During simulation | JSONL schema v5 event stream |
+| `logs/*.jsonl` | `--log-level hand` or `--log-level trick` | During simulation | JSONL schema v7 event stream |
 | `datasets/bidding.*` | `--emit-bidding-dataset` | After simulation | Only in auction mode (contract_type: null) |
 | `datasets/bidless.*` | `--emit-bidless-dataset` | After simulation | Only in declared contract mode |
 
@@ -636,7 +636,7 @@ flowchart TD
 
     OtherEvents --> Custom
 
-    GameLogger --> JSONL["logs/game_events.jsonl<br/>(schema v5)"]
+    GameLogger --> JSONL["logs/game_events.jsonl<br/>(schema v7)"]
     Collectors --> Parquet["datasets/*.parquet"]
 
     style Simulation fill:#e1f5ff
