@@ -78,9 +78,9 @@ def load_or_generate_outcomes(
     """
     # Defaults
     if contracts is None:
-        contracts = ['suit', 'high', 'low']
+        contracts = ["suit", "high", "low"]
     if trumps is None:
-        trumps = ['C', 'D', 'H', 'S']
+        trumps = ["C", "D", "H", "S"]
     if seats is None:
         seats = [0, 1, 2, 3]
 
@@ -89,7 +89,9 @@ def load_or_generate_outcomes(
         raise ValueError(f"mode must be 'SMOKE', 'QUICK', or 'FULL', got '{mode}'")
 
     # Check cache
-    cache_key = _compute_cache_key("outcomes", mode, seed, contracts, trumps, seats, strategies, matchups)
+    cache_key = _compute_cache_key(
+        "outcomes", mode, seed, contracts, trumps, seats, strategies, matchups
+    )
     cache_path = _get_cache_path(cache_key)
 
     if cache_path.exists():
@@ -98,7 +100,9 @@ def load_or_generate_outcomes(
 
     # Generate new data
     print(f"Generating new outcome dataset (mode={mode}, seed={seed})...")
-    run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats, strategies, matchups)
+    run_dir = _generate_experiment_data(
+        mode, seed, contracts, trumps, seats, strategies, matchups
+    )
 
     # Extract outcomes from logs (for on-the-fly generation, logs are always present)
     outcome_df = _load_outcomes_from_logs(run_dir)
@@ -155,9 +159,9 @@ def load_or_generate_features(
     """
     # Defaults
     if contracts is None:
-        contracts = ['suit', 'high', 'low']
+        contracts = ["suit", "high", "low"]
     if trumps is None:
-        trumps = ['C', 'D', 'H', 'S']
+        trumps = ["C", "D", "H", "S"]
     if seats is None:
         seats = [0, 1, 2, 3]
 
@@ -166,7 +170,9 @@ def load_or_generate_features(
         raise ValueError(f"mode must be 'SMOKE', 'QUICK', or 'FULL', got '{mode}'")
 
     # Check cache
-    cache_key = _compute_cache_key("features", mode, seed, contracts, trumps, seats, strategies, matchups)
+    cache_key = _compute_cache_key(
+        "features", mode, seed, contracts, trumps, seats, strategies, matchups
+    )
     cache_path = _get_cache_path(cache_key)
 
     if cache_path.exists():
@@ -175,26 +181,28 @@ def load_or_generate_features(
 
     # Generate new data
     print(f"Generating new feature dataset (mode={mode}, seed={seed})...")
-    run_dir = _generate_experiment_data(mode, seed, contracts, trumps, seats, strategies, matchups)
+    run_dir = _generate_experiment_data(
+        mode, seed, contracts, trumps, seats, strategies, matchups
+    )
 
     # Load features from bidless dataset
     dataset_dir = run_dir / "datasets"
     features_df = load_bidless_dataset(dataset_dir)
 
     # Normalize column names: rename trump_suit -> trump for consistency
-    if 'trump_suit' in features_df.columns:
-        features_df = features_df.rename(columns={'trump_suit': 'trump'})
+    if "trump_suit" in features_df.columns:
+        features_df = features_df.rename(columns={"trump_suit": "trump"})
 
     # Extract outcomes from logs and join (for on-the-fly generation, logs are always present)
     outcome_df = _load_outcomes_from_logs(run_dir)
 
     # Join on deal_id + seat + contract_type + trump
     # This ensures proper alignment even when features and outcomes have different data
-    merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
+    merge_keys = ["deal_id", "seat", "contract_type", "trump"]
     merged_df = features_df.merge(
-        outcome_df[merge_keys + ['tricks_won', 'strategy_id']],
+        outcome_df[merge_keys + ["tricks_won", "strategy_id"]],
         on=merge_keys,
-        how='inner'
+        how="inner",
     )
 
     # Cache for reuse
@@ -208,6 +216,7 @@ def load_or_generate_features(
 # ============================================================================
 # Internal Helpers
 # ============================================================================
+
 
 def _compute_cache_key(
     data_type: str,
@@ -272,16 +281,16 @@ def _generate_experiment_data(
         Path to run directory containing logs/ and datasets/
     """
     # Create temporary config
-    config = _generate_temp_config(mode, seed, contracts, trumps, seats, strategies, matchups)
+    config = _generate_temp_config(
+        mode, seed, contracts, trumps, seats, strategies, matchups
+    )
 
     # Write config to temp file
     with tempfile.NamedTemporaryFile(
-        mode='w',
-        suffix='.yaml',
-        delete=False,
-        dir=tempfile.gettempdir()
+        mode="w", suffix=".yaml", delete=False, dir=tempfile.gettempdir()
     ) as f:
         import yaml
+
         yaml.dump(config, f)
         config_path = f.name
 
@@ -291,8 +300,10 @@ def _generate_experiment_data(
         cmd = [
             sys.executable,
             str(repo_root / "experiments" / "run_experiment.py"),
-            "--config", config_path,
-            "--seed", str(seed),
+            "--config",
+            config_path,
+            "--seed",
+            str(seed),
             "--emit-bidless-dataset",  # Required for features
         ]
 
@@ -315,10 +326,10 @@ def _generate_experiment_data(
 
         # Parse output to find run_dir
         run_dir = None
-        for line in result.stdout.split('\n'):
-            if 'Run directory:' in line:
+        for line in result.stdout.split("\n"):
+            if "Run directory:" in line:
                 # Extract path after "Run directory:"
-                dir_path = line.split('Run directory:')[1].strip()
+                dir_path = line.split("Run directory:")[1].strip()
                 run_dir = repo_root / dir_path
                 break
 
@@ -413,7 +424,9 @@ def _generate_temp_config(
                     raise ValueError(
                         f"seat_strategies must have length 4 (got {len(seat_strategies)}): {matchup}"
                     )
-                unknown = [name for name in seat_strategies if name not in strategy_names]
+                unknown = [
+                    name for name in seat_strategies if name not in strategy_names
+                ]
                 if unknown:
                     raise ValueError(
                         f"Matchup references unknown strategies: {unknown}. "
@@ -427,32 +440,34 @@ def _generate_temp_config(
     # Build scenarios (same as before)
     scenarios = []
     for contract in contracts:
-        if contract == 'suit':
+        if contract == "suit":
             for trump in trumps:
-                scenarios.append({
-                    'contract_type': 'suit',
-                    'trump_suit': trump,
-                })
-        elif contract in ['high', 'low']:
-            scenarios.append({'contract_type': contract})
+                scenarios.append(
+                    {
+                        "contract_type": "suit",
+                        "trump_suit": trump,
+                    }
+                )
+        elif contract in ["high", "low"]:
+            scenarios.append({"contract_type": contract})
         else:
             raise ValueError(f"Unknown contract type: {contract}")
 
     # Build config based on mode
     config = {
-        'experiment_name': f'notebook_temp_{mode}_{seed}',
-        'strategies': strategies,
-        'scenarios': scenarios,
-        'parameters': {
-            'n_per': n_per,
-            'log_level': 'hand',
+        "experiment_name": f"notebook_temp_{mode}_{seed}",
+        "strategies": strategies,
+        "scenarios": scenarios,
+        "parameters": {
+            "n_per": n_per,
+            "log_level": "hand",
         },
     }
 
     # Add matchups if specified (head-to-head mode)
     if matchups is not None:
-        config['parameters']['mode'] = 'head_to_head_matrix'
-        config['matchups'] = matchups
+        config["parameters"]["mode"] = "head_to_head_matrix"
+        config["matchups"] = matchups
 
     return config
 
@@ -496,7 +511,9 @@ def validate_run_dir(run_dir: str, require_logs: bool = False) -> Path:
     return run_path
 
 
-def load_outcomes_from_run_dir(run_dir: str, prefer_parquet: bool = True) -> pd.DataFrame:
+def load_outcomes_from_run_dir(
+    run_dir: str, prefer_parquet: bool = True
+) -> pd.DataFrame:
     """Load outcome data from an existing experiment run directory.
 
     Prefers outcomes parquet when present (from --emit-bidless-outcomes-dataset),
@@ -563,19 +580,21 @@ def _load_outcomes_from_parquet(parquet_path: Path) -> pd.DataFrame:
         for seat in range(4):
             # Team 0 = seats 0, 2; Team 1 = seats 1, 3
             tricks_won = row["tricks_team0"] if seat in [0, 2] else row["tricks_team1"]
-            seat_records.append({
-                "hand_id": row["hand_id"],
-                "deal_id": row["deal_id"],
-                "seat": seat,
-                "contract_type": row["contract_type"],
-                "trump": row["trump_suit"],  # Normalize to 'trump' for consistency
-                "tricks_won": tricks_won,
-                "strategy_id": row["strategy_id"],
-                "matchup_id": row["matchup_id"],
-                "team0_strategy": row["team0_strategy"],
-                "team1_strategy": row["team1_strategy"],
-                "team0_win": row["team0_win"],
-            })
+            seat_records.append(
+                {
+                    "hand_id": row["hand_id"],
+                    "deal_id": row["deal_id"],
+                    "seat": seat,
+                    "contract_type": row["contract_type"],
+                    "trump": row["trump_suit"],  # Normalize to 'trump' for consistency
+                    "tricks_won": tricks_won,
+                    "strategy_id": row["strategy_id"],
+                    "matchup_id": row["matchup_id"],
+                    "team0_strategy": row["team0_strategy"],
+                    "team1_strategy": row["team1_strategy"],
+                    "team0_win": row["team0_win"],
+                }
+            )
 
     outcome_df = pd.DataFrame(seat_records)
     outcome_df = outcome_df.sort_values(["hand_id", "seat"]).reset_index(drop=True)
@@ -611,14 +630,14 @@ def _load_outcomes_from_logs(run_path: Path) -> pd.DataFrame:
     # Parse all hand_end events
     hand_records = []
     for log_file in log_files:
-        with open(log_file, 'r') as f:
+        with open(log_file, "r") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
 
                 record = json.loads(line)
-                if record.get('event') == 'hand_end':
+                if record.get("event") == "hand_end":
                     hand_records.append(record)
 
     if not hand_records:
@@ -627,30 +646,36 @@ def _load_outcomes_from_logs(run_path: Path) -> pd.DataFrame:
     # Convert to per-seat outcome records
     outcome_records = []
     for hand in hand_records:
-        deal_id = hand['deal_id']
-        contract_type = hand['contract']
-        trump = hand.get('trump')  # None for high/low
-        strategy_id = hand['strategy_id']
-        t0 = hand['t0']  # Team 0 tricks (seats 0 & 2)
-        t1 = hand['t1']  # Team 1 tricks (seats 1 & 3)
+        deal_id = hand["deal_id"]
+        contract_type = hand["contract"]
+        trump = hand.get("trump")  # None for high/low
+        strategy_id = hand["strategy_id"]
+        t0 = hand["t0"]  # Team 0 tricks (seats 0 & 2)
+        t1 = hand["t1"]  # Team 1 tricks (seats 1 & 3)
+        redeal_flag = hand.get("redeal_flag")  # None on pre-v6 logs
+        made_bid = hand.get("made_bid")  # None on pre-v6 logs
 
         # Create one record per seat
         for seat in range(4):
             tricks_won = t0 if seat in [0, 2] else t1
-            outcome_records.append({
-                'deal_id': deal_id,
-                'seat': seat,
-                'contract_type': contract_type,
-                'trump': trump,
-                'tricks_won': tricks_won,
-                'strategy_id': strategy_id,
-            })
+            outcome_records.append(
+                {
+                    "deal_id": deal_id,
+                    "seat": seat,
+                    "contract_type": contract_type,
+                    "trump": trump,
+                    "tricks_won": tricks_won,
+                    "strategy_id": strategy_id,
+                    "redeal_flag": redeal_flag,
+                    "made_bid": made_bid,
+                }
+            )
 
     # Convert to DataFrame
     outcome_df = pd.DataFrame(outcome_records)
 
     # Sort for consistency
-    outcome_df = outcome_df.sort_values(['deal_id', 'seat']).reset_index(drop=True)
+    outcome_df = outcome_df.sort_values(["deal_id", "seat"]).reset_index(drop=True)
 
     return outcome_df
 
@@ -721,8 +746,8 @@ def load_features_and_outcomes_from_run_dir(
     features_df = load_bidless_dataset(dataset_dir)
 
     # Normalize column names: rename trump_suit -> trump for consistency
-    if 'trump_suit' in features_df.columns:
-        features_df = features_df.rename(columns={'trump_suit': 'trump'})
+    if "trump_suit" in features_df.columns:
+        features_df = features_df.rename(columns={"trump_suit": "trump"})
 
     # Load outcomes (prefers parquet, falls back to logs)
     outcomes_parquet = run_path / "datasets" / "bidless_outcomes.parquet"
@@ -732,9 +757,22 @@ def load_features_and_outcomes_from_run_dir(
         outcome_df = _load_outcomes_from_logs(run_path)
 
     # Determine columns to include from outcomes (depends on source)
-    outcome_cols = ['deal_id', 'seat', 'contract_type', 'trump', 'tricks_won', 'strategy_id']
+    outcome_cols = [
+        "deal_id",
+        "seat",
+        "contract_type",
+        "trump",
+        "tricks_won",
+        "strategy_id",
+    ]
     # Add extra columns from parquet if available
-    for col in ['hand_id', 'matchup_id', 'team0_strategy', 'team1_strategy', 'team0_win']:
+    for col in [
+        "hand_id",
+        "matchup_id",
+        "team0_strategy",
+        "team1_strategy",
+        "team0_win",
+    ]:
         if col in outcome_df.columns:
             outcome_cols.append(col)
 
@@ -742,17 +780,18 @@ def load_features_and_outcomes_from_run_dir(
     # When hand_id is available (parquet path), use it for globally unique joins
     # This prevents many-to-many joins in multi-strategy runs where same deal_id
     # appears multiple times with different strategies
-    has_hand_id = 'hand_id' in features_df.columns and 'hand_id' in outcome_df.columns
+    has_hand_id = "hand_id" in features_df.columns and "hand_id" in outcome_df.columns
 
     if has_hand_id:
         # Preferred: globally unique key
-        merge_keys = ['hand_id', 'seat']
+        merge_keys = ["hand_id", "seat"]
 
         # Columns that exist in both DataFrames - keep from features, drop from outcomes
         # to prevent _x/_y suffixes in merged result
-        redundant_cols = ['deal_id', 'contract_type', 'trump']
+        redundant_cols = ["deal_id", "contract_type", "trump"]
         cols_to_drop = [
-            c for c in redundant_cols
+            c
+            for c in redundant_cols
             if c in outcome_df.columns and c in features_df.columns
         ]
 
@@ -761,15 +800,15 @@ def load_features_and_outcomes_from_run_dir(
         # for correctness validation. For very large runs, consider gating behind
         # a debug_validate parameter if performance becomes an issue.
         if cols_to_drop:
-            check_df = features_df[['hand_id', 'seat'] + cols_to_drop].merge(
-                outcome_df[['hand_id', 'seat'] + cols_to_drop],
-                on=['hand_id', 'seat'],
-                suffixes=('_feat', '_out'),
-                how='inner'
+            check_df = features_df[["hand_id", "seat"] + cols_to_drop].merge(
+                outcome_df[["hand_id", "seat"] + cols_to_drop],
+                on=["hand_id", "seat"],
+                suffixes=("_feat", "_out"),
+                how="inner",
             )
             for col in cols_to_drop:
-                feat_vals = check_df[f'{col}_feat']
-                out_vals = check_df[f'{col}_out']
+                feat_vals = check_df[f"{col}_feat"]
+                out_vals = check_df[f"{col}_out"]
                 # Null-safe: treat (both null) as equal; covers None, NaN, pd.NA
                 both_null = feat_vals.isna() & out_vals.isna()
                 mismatches = check_df[feat_vals.ne(out_vals) & ~both_null]
@@ -781,12 +820,13 @@ def load_features_and_outcomes_from_run_dir(
 
         # Remove redundant columns from outcome_cols (keep from features side)
         outcome_cols_present = [
-            c for c in outcome_cols
+            c
+            for c in outcome_cols
             if c in outcome_df.columns and (c not in cols_to_drop or c in merge_keys)
         ]
     else:
         # Fallback for log-based outcomes (no hand_id)
-        merge_keys = ['deal_id', 'seat', 'contract_type', 'trump']
+        merge_keys = ["deal_id", "seat", "contract_type", "trump"]
         outcome_cols_present = [c for c in outcome_cols if c in outcome_df.columns]
 
     # Check that merge keys exist in both dataframes
@@ -799,8 +839,8 @@ def load_features_and_outcomes_from_run_dir(
     merged_df = features_df.merge(
         outcome_df[outcome_cols_present],
         on=merge_keys,
-        how='inner',
-        validate='one_to_one'  # Fail loudly on duplicates
+        how="inner",
+        validate="one_to_one",  # Fail loudly on duplicates
     )
 
     if len(merged_df) == 0:

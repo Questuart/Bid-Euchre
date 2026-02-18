@@ -13,7 +13,9 @@ import numpy as np
 from .stats import paired_t_ci
 
 
-def load_paired_data(run_dir: str, strategies: List[str]) -> Dict[str, Dict[str, List[Dict]]]:
+def load_paired_data(
+    run_dir: str, strategies: List[str]
+) -> Dict[str, Dict[str, List[Dict]]]:
     """
     Load paired hand-level data from JSONL logs for multiple strategies.
 
@@ -40,6 +42,9 @@ def load_paired_data(run_dir: str, strategies: List[str]) -> Dict[str, Dict[str,
                     try:
                         record = json.loads(line.strip())
                         if record.get("event") == "hand_end":
+                            # Skip all-pass redeals — no bid or play occurred
+                            if record.get("redeal_flag"):
+                                continue
                             # Create scenario key
                             contract = record["contract"]
                             trump = record.get("trump")
@@ -61,7 +66,7 @@ def compute_paired_deltas(
     strategy_data: Dict[str, Dict[str, List[Dict]]],
     baseline_strategy: str,
     comparison_strategy: str,
-    scenario: Optional[str] = None
+    scenario: Optional[str] = None,
 ) -> Dict[str, List[float]]:
     """
     Compute paired differences (comparison - baseline) for deals that both strategies played.
@@ -82,14 +87,20 @@ def compute_paired_deltas(
     if baseline_strategy not in strategy_data:
         raise ValueError(f"Baseline strategy '{baseline_strategy}' not found in data")
     if comparison_strategy not in strategy_data:
-        raise ValueError(f"Comparison strategy '{comparison_strategy}' not found in data")
+        raise ValueError(
+            f"Comparison strategy '{comparison_strategy}' not found in data"
+        )
 
     baseline_records = strategy_data[baseline_strategy]
     comparison_records = strategy_data[comparison_strategy]
 
     # Get scenarios to analyze
     if scenario:
-        scenarios = [scenario] if scenario in baseline_records and scenario in comparison_records else []
+        scenarios = (
+            [scenario]
+            if scenario in baseline_records and scenario in comparison_records
+            else []
+        )
     else:
         scenarios = set(baseline_records.keys()) & set(comparison_records.keys())
 
@@ -142,8 +153,7 @@ def compute_paired_deltas(
 
 
 def paired_comparison_summary(
-    deltas: List[float],
-    confidence: float = 0.95
+    deltas: List[float], confidence: float = 0.95
 ) -> Dict[str, float]:
     """
     Compute summary statistics for paired differences.

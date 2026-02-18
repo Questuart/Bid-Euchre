@@ -28,19 +28,22 @@ from typing import Any, Dict, List, Optional, Tuple
 # v3 adds `hands` to hand_end records (full hand contents for each player).
 # v4 adds `winning_bid` to hand_end records.
 # v5 adds `dealer_position` and `bidder_position` to hand_end records.
-SCHEMA_VERSION = 5
+# v6 adds `redeal_flag` and `made_bid` to hand_end records.
+SCHEMA_VERSION = 6
 
 
 class LogLevel(Enum):
     """Logging verbosity level."""
-    NONE = "none"      # No JSONL output
-    HAND = "hand"      # hand_end records only
-    TRICK = "trick"    # hand_end + trick_end records
+
+    NONE = "none"  # No JSONL output
+    HAND = "hand"  # hand_end records only
+    TRICK = "trick"  # hand_end + trick_end records
 
 
 @dataclass
 class HandEndRecord:
     """Record emitted at the end of each hand."""
+
     schema_version: int
     event: str
     run_id: str
@@ -53,17 +56,24 @@ class HandEndRecord:
     t0: int
     t1: int
     features: List[Dict[str, Any]]  # 4 feature dicts, one per player
-    scores: Optional[List[int]]     # 4 scalar scores, one per player (schema v2)
-    hands: Optional[List[List[List[str]]]]  # 4 hands, each card as [suit, rank] (schema v3)
-    winning_bid: Optional[int] = None      # The high bid for this hand (schema v4)
+    scores: Optional[List[int]]  # 4 scalar scores, one per player (schema v2)
+    hands: Optional[
+        List[List[List[str]]]
+    ]  # 4 hands, each card as [suit, rank] (schema v3)
+    winning_bid: Optional[int] = None  # The high bid for this hand (schema v4)
     dealer_position: Optional[int] = None  # Dealer seat (0-3) (schema v5)
     bidder_position: Optional[int] = None  # Auction winner seat (0-3) (schema v5)
+    redeal_flag: Optional[bool] = (
+        None  # True if all players passed (all-pass redeal) (schema v6)
+    )
+    made_bid: Optional[bool] = None  # True if declaring team made their bid (schema v6)
     timestamp: str = ""
 
 
 @dataclass
 class TrickEndRecord:
     """Record emitted at the end of each trick (optional, verbose)."""
+
     schema_version: int
     event: str
     run_id: str
@@ -192,6 +202,8 @@ class GameLogger:
         winning_bid: Optional[int] = None,
         dealer_position: Optional[int] = None,
         bidder_position: Optional[int] = None,
+        redeal_flag: Optional[bool] = None,
+        made_bid: Optional[bool] = None,
     ) -> None:
         """
         Log the completion of a hand.
@@ -210,6 +222,8 @@ class GameLogger:
             winning_bid: The high bid for this hand (schema v4+)
             dealer_position: Dealer seat (0-3) (schema v5+)
             bidder_position: Auction winner seat (0-3) (schema v5+)
+            redeal_flag: True if all players passed (all-pass redeal) (schema v6+)
+            made_bid: True if declaring team made their bid (schema v6+)
         """
         if not self.is_enabled:
             return
@@ -217,10 +231,7 @@ class GameLogger:
         # Convert Card objects to [suit, rank] lists for JSON serialization
         hands_json: Optional[List[List[List[str]]]] = None
         if hands is not None:
-            hands_json = [
-                [[card.suit, card.rank] for card in hand]
-                for hand in hands
-            ]
+            hands_json = [[[card.suit, card.rank] for card in hand] for hand in hands]
 
         record = HandEndRecord(
             schema_version=SCHEMA_VERSION,
@@ -240,6 +251,8 @@ class GameLogger:
             winning_bid=winning_bid,
             dealer_position=dealer_position,
             bidder_position=bidder_position,
+            redeal_flag=redeal_flag,
+            made_bid=made_bid,
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))
