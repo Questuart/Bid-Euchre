@@ -220,7 +220,7 @@ All contract types exceed the 0.10 R² threshold. Suit contracts show the strong
 | `void_count` | — | +0.2022 | — | 1 |
 | `trump_power_sum` | +0.1642 | +0.1019 | 6 | 6 |
 | `hand_value` | +0.1555 | +0.0991 | 8 | 7 |
-| `high_offsuit` | -0.1539 | -0.0985 | 9 | 8 |
+| `offsuit_non_ace_count` | -0.1539 | -0.0985 | 9 | 8 |
 | `max_suit_len` | -0.1454 | — | 10 | — |
 | `offsuit_length_3plus_count` | — | -0.1130 | — | 4 |
 | `num_singletons` | — | +0.1129 | — | 5 |
@@ -231,7 +231,7 @@ Notable: Greedy is driven by individual trump card ranks (`highest_trump_rank`, 
 
 | Feature | Greedy Coeff | Glutton Coeff | Greedy Coeff Rank | Glutton Coeff Rank |
 |---------|-------------|--------------|-------------------|-------------------|
-| `high_offsuit` | -0.1764 | -0.1642 | 1 | 2 |
+| `offsuit_non_ace_count` | -0.1764 | -0.1642 | 1 | 2 |
 | `offsuit_aces` | +0.1764 | +0.1642 | 2 | 1 |
 | `offsuit_suits_with_ace` | +0.1610 | +0.1394 | 3 | 4 |
 | `offsuit_king_count_total` | -0.1092 | -0.0964 | 4 | 7 |
@@ -242,7 +242,7 @@ Notable: Greedy is driven by individual trump card ranks (`highest_trump_rank`, 
 | `offsuit_suits_with_ace_and_king` | +0.0583 | +0.0608 | 9 | 9 |
 | `offsuit_tens_count` | +0.0564 | +0.0605 | 10 | 10 |
 
-HIGH contracts show strong strategy stability — the top features are ace/offsuit-dominated in both strategies. `offsuit_aces` and `high_offsuit` (inversely related by construction) dominate. Without trump, high cards in multiple suits are the primary determinant of trick-winning. Rankings are nearly identical between greedy and glutton, with minor ordering swaps.
+HIGH contracts show strong strategy stability — the top features are ace/offsuit-dominated in both strategies. `offsuit_aces` and `offsuit_non_ace_count` (inversely related by construction) dominate. Without trump, high cards in multiple suits are the primary determinant of trick-winning. Rankings are nearly identical between greedy and glutton, with minor ordering swaps.
 
 **Low Contracts — Top 10 Features:**
 
@@ -271,7 +271,7 @@ The §6c tables rank features by Ridge coefficient magnitude. This complementary
 
 | Feature | Pearson r | Greedy Coeff | Glutton Coeff |
 |---------|-----------|--------------|---------------|
-| `high_offsuit` | -0.4212 | -0.1539 | -0.0985 |
+| `offsuit_non_ace_count` | -0.4212 | -0.1539 | -0.0985 |
 | `hand_value` | +0.3996 | +0.1555 | +0.0991 |
 | `trump_power_sum` | +0.3544 | +0.1642 | +0.1019 |
 | `trump_count_x_offsuit_ace` | +0.3312 | +0.0800 | +0.0773 |
@@ -282,13 +282,13 @@ The §6c tables rank features by Ridge coefficient magnitude. This complementary
 | `bowers` | +0.2980 | +0.2082 | +0.1296 |
 | `trump_count_x_void_count` | +0.2823 | +0.2792 | +0.0474 |
 
-`high_offsuit` has the strongest correlation (r = -0.42) — more offsuit high cards means fewer trump, reducing trick-taking in suit contracts. Trump features dominate the list, consistent with §6c. Note `third_highest_trump_rank` has a positive correlation but a negative Ridge coefficient — it correlates with having many trump cards (positive for tricks) but conditional on trump count, a higher third-trump rank means the trump holding is top-heavy, which the Ridge model penalizes.
+`offsuit_non_ace_count` has the strongest correlation (r = -0.42) — more offsuit high cards means fewer trump, reducing trick-taking in suit contracts. Trump features dominate the list, consistent with §6c. Note `third_highest_trump_rank` has a positive correlation but a negative Ridge coefficient — it correlates with having many trump cards (positive for tricks) but conditional on trump count, a higher third-trump rank means the trump holding is top-heavy, which the Ridge model penalizes.
 
 **High Contracts — Top 10 by Pearson Correlation:**
 
 | Feature | Pearson r | Greedy Coeff | Glutton Coeff |
 |---------|-----------|--------------|---------------|
-| `high_offsuit` | -0.4459 | -0.1764 | -0.1642 |
+| `offsuit_non_ace_count` | -0.4459 | -0.1764 | -0.1642 |
 | `offsuit_aces` | +0.4459 | +0.1764 | +0.1642 |
 | `offsuit_suits_with_ace` | +0.4029 | +0.1610 | +0.1394 |
 | `hand_value` | +0.3443 | +0.0548 | +0.0535 |
@@ -299,7 +299,7 @@ The §6c tables rank features by Ridge coefficient magnitude. This complementary
 | `offsuit_suits_with_ace_and_king` | +0.2246 | +0.0583 | +0.0608 |
 | `low_card_count` | -0.2116 | -0.0057 | -0.0146 |
 
-Correlation and Ridge rankings align closely here — ace-related features dominate both. `offsuit_aces` and `high_offsuit` are mirror images (r = +0.45 and -0.45), reflecting that in no-trump HIGH contracts, aces are the primary trick-winning mechanism. Strategy agreement is strong: greedy and glutton coefficients track each other closely.
+Correlation and Ridge rankings align closely here — ace-related features dominate both. `offsuit_aces` and `offsuit_non_ace_count` are mirror images (r = +0.45 and -0.45), reflecting that in no-trump HIGH contracts, aces are the primary trick-winning mechanism. Strategy agreement is strong: greedy and glutton coefficients track each other closely.
 
 **Low Contracts — Top 10 by Pearson Correlation:**
 
@@ -314,9 +314,9 @@ Correlation and Ridge rankings align closely here — ace-related features domin
 | `offsuit_best_rank_sum` | +0.1952 | +0.0949 | +0.1726 |
 | `double_ten_jack_count` | +0.1915 | +0.0695 | +0.0475 |
 | `offsuit_suits_with_ace_and_king` | -0.1411 | -0.0188 | -0.0207 |
-| `high_offsuit` | +0.1311 | -0.0410 | -0.0407 |
+| `offsuit_non_ace_count` | +0.1311 | -0.0410 | -0.0407 |
 
-`offsuit_tens_count` dominates both by correlation (r = +0.45) and by Ridge coefficient (+0.63/+0.58), confirming it as the single most important feature for LOW contracts. `low_card_count` shows an interesting divergence: high positive correlation (r = +0.31) but a small *negative* Ridge coefficient — its signal is absorbed by `offsuit_tens_count` and `rank_sum` in the multivariate model. `high_offsuit` flips sign from §6c's suit contracts (negative there, positive here), reflecting that in LOW contracts, having more high-ranked offsuit cards paradoxically helps because the hand evaluator's `high_offsuit` feature captures suit distribution properties that matter differently when 10s beat aces.
+`offsuit_tens_count` dominates both by correlation (r = +0.45) and by Ridge coefficient (+0.63/+0.58), confirming it as the single most important feature for LOW contracts. `low_card_count` shows an interesting divergence: high positive correlation (r = +0.31) but a small *negative* Ridge coefficient — its signal is absorbed by `offsuit_tens_count` and `rank_sum` in the multivariate model. `offsuit_non_ace_count` flips sign from §6c's suit contracts (negative there, positive here), reflecting that in LOW contracts, having more high-ranked offsuit cards paradoxically helps because the hand evaluator's `offsuit_non_ace_count` feature captures suit distribution properties that matter differently when 10s beat aces.
 
 ### 6e. Caveats
 

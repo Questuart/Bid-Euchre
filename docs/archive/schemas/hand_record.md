@@ -63,10 +63,10 @@ Emitted at the end of each hand.
   "t1": 4,
   "scores": [520, 410, 600, 390],
   "features": [
-    {"bowers": 1, "trump_count": 4, "offsuit_aces": 2, "high_offsuit": 1, "rank_sum": 32},
-    {"bowers": 0, "trump_count": 3, "offsuit_aces": 1, "high_offsuit": 2, "rank_sum": 28},
-    {"bowers": 1, "trump_count": 2, "offsuit_aces": 3, "high_offsuit": 0, "rank_sum": 35},
-    {"bowers": 0, "trump_count": 1, "offsuit_aces": 0, "high_offsuit": 3, "rank_sum": 25}
+    {"bowers": 1, "trump_count": 4, "offsuit_aces": 2, "offsuit_non_ace_count": 1, "rank_sum": 32},
+    {"bowers": 0, "trump_count": 3, "offsuit_aces": 1, "offsuit_non_ace_count": 2, "rank_sum": 28},
+    {"bowers": 1, "trump_count": 2, "offsuit_aces": 3, "offsuit_non_ace_count": 0, "rank_sum": 35},
+    {"bowers": 0, "trump_count": 1, "offsuit_aces": 0, "offsuit_non_ace_count": 3, "rank_sum": 25}
   ],
   "hands": [
     [["H","J"], ["H","K"], ["H","Q"], ["H","A"], ["C","A"], ["D","A"], ["S","T"], ["S","Q"], ["C","T"], ["D","Q"]],
@@ -109,7 +109,7 @@ Emitted at the end of each hand.
 | `bowers` | int | Number of bowers (0-4 in double deck) |
 | `trump_count` | int | Number of trump cards (0-10) |
 | `offsuit_aces` | int | Number of non-trump aces (0-6) |
-| `high_offsuit` | int | Count of high non-trump cards |
+| `offsuit_non_ace_count` | int | Count of high non-trump cards |
 | `rank_sum` | int | Sum of card ranks |
 
 #### Hands Format (Schema v3+)

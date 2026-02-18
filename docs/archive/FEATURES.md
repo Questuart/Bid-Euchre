@@ -20,7 +20,7 @@ The `get_hand_features()` function extracts 40 comprehensive features from each 
 | `bowers` | int | 0-4 | Total bowers (RB + LB) |
 | `trump_count` | int | 0-10 | Total trump cards (suit contracts only) |
 | `offsuit_aces` | int | 0-6 | Aces in non-trump suits |
-| `high_offsuit` | int | 0-10 | High offsuit cards (K, Q, J, T) |
+| `offsuit_non_ace_count` | int | 0-10 | High offsuit cards (K, Q, J, T) |
 | `rank_sum` | int | 10-50 | Sum of rank strengths (+1 each) |
 
 ---
@@ -210,7 +210,7 @@ The 5 legacy features remain unchanged:
 - `bowers`
 - `trump_count`
 - `offsuit_aces`
-- `high_offsuit`
+- `offsuit_non_ace_count`
 - `rank_sum`
 
 All existing code continues to work. New features are additive.

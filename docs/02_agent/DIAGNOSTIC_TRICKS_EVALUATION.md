@@ -73,7 +73,7 @@
 
 | Rank | Feature | Coefficient |
 |------|---------|-------------|
-| 1 | `high_offsuit` | -0.1764 |
+| 1 | `offsuit_non_ace_count` | -0.1764 |
 | 2 | `offsuit_aces` | +0.1764 |
 | 3 | `offsuit_suits_with_ace` | +0.1610 |
 | 4 | `offsuit_king_count_total` | -0.1092 |
@@ -112,7 +112,7 @@
 | Rank | Feature | Coefficient |
 |------|---------|-------------|
 | 1 | `offsuit_aces` | +0.1642 |
-| 2 | `high_offsuit` | -0.1642 |
+| 2 | `offsuit_non_ace_count` | -0.1642 |
 | 3 | `offsuit_best_rank_sum` | +0.1436 |
 | 4 | `offsuit_suits_with_ace` | +0.1394 |
 | 5 | `offsuit_secondbest_rank_sum` | +0.1186 |

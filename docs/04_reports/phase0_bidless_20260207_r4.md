@@ -216,7 +216,7 @@ All contract types exceed the 0.10 R² threshold. Suit contracts show the strong
 | `void_count` | — | +0.2022 | — | 1 |
 | `trump_power_sum` | +0.1642 | +0.1019 | 6 | 6 |
 | `hand_value` | +0.1555 | +0.0991 | 8 | 7 |
-| `high_offsuit` | -0.1539 | -0.0985 | 9 | 8 |
+| `offsuit_non_ace_count` | -0.1539 | -0.0985 | 9 | 8 |
 | `max_suit_len` | -0.1454 | — | 10 | — |
 | `offsuit_length_3plus_count` | — | -0.1130 | — | 4 |
 | `num_singletons` | — | +0.1129 | — | 5 |
@@ -227,7 +227,7 @@ Notable: Greedy is driven by individual trump card ranks (`highest_trump_rank`, 
 
 | Feature | Greedy Coeff | Glutton Coeff | Greedy Rank | Glutton Rank |
 |---------|-------------|--------------|-------------|--------------|
-| `high_offsuit` | -0.1764 | -0.1642 | 1 | 2 |
+| `offsuit_non_ace_count` | -0.1764 | -0.1642 | 1 | 2 |
 | `offsuit_aces` | +0.1764 | +0.1642 | 2 | 1 |
 | `offsuit_suits_with_ace` | +0.1610 | +0.1394 | 3 | 4 |
 | `offsuit_king_count_total` | -0.1092 | -0.0964 | 4 | 7 |
@@ -238,7 +238,7 @@ Notable: Greedy is driven by individual trump card ranks (`highest_trump_rank`, 
 | `offsuit_suits_with_ace_and_king` | +0.0583 | +0.0608 | 9 | 9 |
 | `offsuit_tens_count` | +0.0564 | +0.0605 | 10 | 10 |
 
-HIGH contracts show strong strategy stability — the top features are ace/offsuit-dominated in both strategies. `offsuit_aces` and `high_offsuit` (inversely related by construction) dominate. Without trump, high cards in multiple suits are the primary determinant of trick-winning. Rankings are nearly identical between greedy and glutton, with minor ordering swaps.
+HIGH contracts show strong strategy stability — the top features are ace/offsuit-dominated in both strategies. `offsuit_aces` and `offsuit_non_ace_count` (inversely related by construction) dominate. Without trump, high cards in multiple suits are the primary determinant of trick-winning. Rankings are nearly identical between greedy and glutton, with minor ordering swaps.
 
 **Low Contracts — Top 10 Features:**
 
