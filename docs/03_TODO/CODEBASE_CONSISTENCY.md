@@ -16,40 +16,28 @@
 
 ### 1) Add auction transcript logging (RULES.md §8.2)
 
-**Status:** Open
-**Why it matters:** We can’t audit/replay bidding decisions without per-seat bid actions.
+**Status:** Resolved in PR B-2 (schema v7, 2026-02-18)
+**Why it matters:** We can't audit/replay bidding decisions without per-seat bid actions.
 
-**Next action:**
-- Add a per-action auction log record (one event per seat action; always 4 actions).
-- Emit these records from the auction loop (including “all-pass redeal” hands).
-- Update/extend tests to lock the log contract.
-
-**Notes (from RULES.md):**
-- Must log all 4 bids/passes (“single-round auction transcript”).
-- A redeal should be explicit (see item 2).
+**Resolution:** `auction_transcript` field added to `hand_end` records (schema v7). 4-entry list `[{seat, action, tricks_bid, contract_type, trump}]` accumulated across all 3 auction code paths in `play_single_hand()`. `null` when no auction ran (fixed-contract mode).
 
 ---
 
 ### 2) Add `redeal_flag` to hand-level logs (RULES.md §8.2)
 
-**Status:** Open
-**Why it matters:** RULES.md requires an explicit redeal signal; today it’s implicit/derivable at best.
+**Status:** Resolved in PR B-1 (schema v6) + PR B-2 callsite wiring (2026-02-18)
+**Why it matters:** RULES.md requires an explicit redeal signal; today it's implicit/derivable at best.
 
-**Next action:**
-- Add `redeal_flag: bool` to the hand-end record/schema and set it `True` for all-pass redeals.
-- Update any record-writing paths and contract tests accordingly.
+**Resolution:** `redeal_flag` added to `HandEndRecord` in schema v6 (PR #361). Callsite wired in PR B-2: computed as `(winning_bid == 0 and bidder_pos is None)` in `simulate_many_hands()`.
 
 ---
 
 ### 3) Add `made_bid` to hand-level logs (RULES.md §8.2 / METRICS.md required field)
 
-**Status:** Open
+**Status:** Resolved in PR B-1 (schema v6) + PR B-2 callsite wiring (2026-02-18)
 **Why it matters:** `made_bid` is a required analysis field; deriving it downstream is easy but brittle and obscures intent.
 
-**Next action:**
-- Add `made_bid: bool` to the hand-end record/schema.
-- Compute it in simulation once tricks are known: `decl_tricks >= contract_tricks`.
-- Update tests that validate log/metrics fields.
+**Resolution:** `made_bid` added to `HandEndRecord` in schema v6 (PR #361). Callsite wired in PR B-2: computed from `t0/t1 >= winning_bid` by team in `simulate_many_hands()`.
 
 ---
 

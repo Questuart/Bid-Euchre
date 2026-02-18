@@ -29,7 +29,8 @@ from typing import Any, Dict, List, Optional, Tuple
 # v4 adds `winning_bid` to hand_end records.
 # v5 adds `dealer_position` and `bidder_position` to hand_end records.
 # v6 adds `redeal_flag` and `made_bid` to hand_end records.
-SCHEMA_VERSION = 6
+# v7 adds `auction_transcript` to hand_end records.
+SCHEMA_VERSION = 7
 
 
 class LogLevel(Enum):
@@ -67,6 +68,9 @@ class HandEndRecord:
         None  # True if all players passed (all-pass redeal) (schema v6)
     )
     made_bid: Optional[bool] = None  # True if declaring team made their bid (schema v6)
+    auction_transcript: Optional[List[Dict[str, Any]]] = (
+        None  # 4-entry list or null (schema v7)
+    )
     timestamp: str = ""
 
 
@@ -204,6 +208,7 @@ class GameLogger:
         bidder_position: Optional[int] = None,
         redeal_flag: Optional[bool] = None,
         made_bid: Optional[bool] = None,
+        auction_transcript: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """
         Log the completion of a hand.
@@ -224,6 +229,7 @@ class GameLogger:
             bidder_position: Auction winner seat (0-3) (schema v5+)
             redeal_flag: True if all players passed (all-pass redeal) (schema v6+)
             made_bid: True if declaring team made their bid (schema v6+)
+            auction_transcript: 4-entry list of per-seat bid actions (schema v7+)
         """
         if not self.is_enabled:
             return
@@ -253,6 +259,7 @@ class GameLogger:
             bidder_position=bidder_position,
             redeal_flag=redeal_flag,
             made_bid=made_bid,
+            auction_transcript=auction_transcript,
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))

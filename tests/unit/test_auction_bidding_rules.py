@@ -28,7 +28,20 @@ class TestAuctionBiddingRules:
         bidding_policy = AlwaysPassBidder()
 
         # Play hand with auction mode (contract_type=None)
-        t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+        (
+            t0,
+            t1,
+            scores,
+            features,
+            leader,
+            hands,
+            bid,
+            dealer_pos,
+            bidder_pos,
+            final_contract,
+            final_trump,
+            _,
+        ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
         )
@@ -45,6 +58,7 @@ class TestAuctionBiddingRules:
 
         class SeatBasedBidder(BiddingPolicy):
             """Bids differently based on seat."""
+
             def choose_bid(self, obs: BiddingObservation) -> BidAction:
                 if obs.seat == 0:
                     return BidAction.bid(8, "S")  # High bid first
@@ -56,13 +70,37 @@ class TestAuctionBiddingRules:
         bidding_policy = SeatBasedBidder()
 
         # Use a fixed hand and dealer to ensure determinism
-        fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
-                      Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
-                      Card("S", "J"), Card("H", "T")]
+        fixed_hand = [
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "J"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "J"),
+            Card("H", "T"),
+        ]
 
-        hands = [fixed_hand.copy() for _ in range(4)]  # Same hand for all for simplicity
+        hands = [
+            fixed_hand.copy() for _ in range(4)
+        ]  # Same hand for all for simplicity
 
-        t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+        (
+            t0,
+            t1,
+            scores,
+            features,
+            leader,
+            hands,
+            bid,
+            dealer_pos,
+            bidder_pos,
+            final_contract,
+            final_trump,
+            _,
+        ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
             hands=hands,
@@ -72,7 +110,9 @@ class TestAuctionBiddingRules:
         # Seat 0 should win with bid 8 (seat 1's bid 3 was ignored as <= 8)
         assert leader == 0, f"Expected leader to be 0 (high bidder), got {leader}"
         assert bid == 8, f"Expected bid to be 8, got {bid}"
-        assert final_contract == "suit", f"Expected contract 'suit', got {final_contract}"
+        assert (
+            final_contract == "suit"
+        ), f"Expected contract 'suit', got {final_contract}"
         assert final_trump == "S", f"Expected trump 'S', got {final_trump}"
 
     def test_highest_valid_bid_wins(self):
@@ -80,6 +120,7 @@ class TestAuctionBiddingRules:
 
         class SeatBasedBidder(BiddingPolicy):
             """Bids differently based on seat."""
+
             def choose_bid(self, obs: BiddingObservation) -> BidAction:
                 if obs.seat == 0:
                     return BidAction.bid(5, "HIGH")
@@ -93,13 +134,35 @@ class TestAuctionBiddingRules:
 
         bidding_policy = SeatBasedBidder()
 
-        fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
-                      Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
-                      Card("S", "J"), Card("H", "T")]
+        fixed_hand = [
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "J"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "J"),
+            Card("H", "T"),
+        ]
 
         hands = [fixed_hand.copy() for _ in range(4)]
 
-        t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+        (
+            t0,
+            t1,
+            scores,
+            features,
+            leader,
+            hands,
+            bid,
+            dealer_pos,
+            bidder_pos,
+            final_contract,
+            final_trump,
+            _,
+        ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
             hands=hands,
@@ -107,16 +170,21 @@ class TestAuctionBiddingRules:
         )
 
         # Seat 1 should win with the highest bid (7 LOW)
-        assert leader == 1, f"Expected leader to be 1 (highest bidder with 7), got {leader}"
+        assert (
+            leader == 1
+        ), f"Expected leader to be 1 (highest bidder with 7), got {leader}"
         assert bid == 7, f"Expected bid to be 7, got {bid}"
         assert final_contract == "low", f"Expected contract 'low', got {final_contract}"
-        assert final_trump is None, f"Expected trump None for LOW contract, got {final_trump}"
+        assert (
+            final_trump is None
+        ), f"Expected trump None for LOW contract, got {final_trump}"
 
     def test_sequential_bidding_lod_order(self):
         """Bidding proceeds sequentially in LOD order: left of dealer first, then clockwise, dealer last."""
 
         class CallOrderTracker(BiddingPolicy):
             """Tracks the order in which seats are called."""
+
             call_order = []  # Class variable to track order of calls
 
             def choose_bid(self, obs: BiddingObservation) -> BidAction:
@@ -128,9 +196,18 @@ class TestAuctionBiddingRules:
 
         bidding_policy = CallOrderTracker()
 
-        fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
-                      Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
-                      Card("S", "J"), Card("H", "T")]
+        fixed_hand = [
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "J"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "J"),
+            Card("H", "T"),
+        ]
 
         hands = [fixed_hand.copy() for _ in range(4)]
 
@@ -145,18 +222,21 @@ class TestAuctionBiddingRules:
 
         # Verify sequential LOD order: [3, 0, 1, 2]
         expected_order = [3, 0, 1, 2]
-        assert CallOrderTracker.call_order == expected_order, \
-            f"Expected LOD order {expected_order}, got {CallOrderTracker.call_order}"
+        assert (
+            CallOrderTracker.call_order == expected_order
+        ), f"Expected LOD order {expected_order}, got {CallOrderTracker.call_order}"
 
         # Verify each seat called exactly once
-        assert len(CallOrderTracker.call_order) == 4, \
-            f"Expected 4 calls (one round), got {len(CallOrderTracker.call_order)}"
+        assert (
+            len(CallOrderTracker.call_order) == 4
+        ), f"Expected 4 calls (one round), got {len(CallOrderTracker.call_order)}"
 
     def test_current_high_bid_progresses_sequentially(self):
         """Verify that current_high_bid visible to each bidder reflects the sequential progression."""
 
         class ObservationTracker(BiddingPolicy):
             """Tracks the current_high_bid each seat observes and bids according to seat."""
+
             observed_high_bids = {}  # seat -> current_high_bid at time of bidding
 
             def choose_bid(self, obs: BiddingObservation) -> BidAction:
@@ -177,14 +257,36 @@ class TestAuctionBiddingRules:
 
         bidding_policy = ObservationTracker()
 
-        fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
-                      Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
-                      Card("S", "J"), Card("H", "T")]
+        fixed_hand = [
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "J"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "J"),
+            Card("H", "T"),
+        ]
 
         hands = [fixed_hand.copy() for _ in range(4)]
 
         # Dealer is seat 2, LOD order: [3, 0, 1, 2]
-        t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+        (
+            t0,
+            t1,
+            scores,
+            features,
+            leader,
+            hands,
+            bid,
+            dealer_pos,
+            bidder_pos,
+            final_contract,
+            final_trump,
+            _,
+        ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
             hands=hands,
@@ -192,9 +294,13 @@ class TestAuctionBiddingRules:
         )
 
         # Verify the winner is seat 1 (who bid 6)
-        assert bidder_pos == 1, f"Expected winner to be seat 1 (bid 6), got {bidder_pos}"
+        assert (
+            bidder_pos == 1
+        ), f"Expected winner to be seat 1 (bid 6), got {bidder_pos}"
         assert bid == 6, f"Expected winning bid to be 6, got {bid}"
-        assert final_contract == "suit", f"Expected contract 'suit', got {final_contract}"
+        assert (
+            final_contract == "suit"
+        ), f"Expected contract 'suit', got {final_contract}"
         assert final_trump == "H", f"Expected trump 'H', got {final_trump}"
 
         # Verify current_high_bid progression:
@@ -202,14 +308,18 @@ class TestAuctionBiddingRules:
         # - Seat 0 should see current_high_bid = 5 (seat 3's bid)
         # - Seat 1 should see current_high_bid = 5 (seat 0's bid was ignored)
         # - Seat 2 should see current_high_bid = 6 (seat 1's bid)
-        assert ObservationTracker.observed_high_bids[3] == 0, \
-            f"Seat 3 (LOD) should see current_high_bid=0, got {ObservationTracker.observed_high_bids[3]}"
-        assert ObservationTracker.observed_high_bids[0] == 5, \
-            f"Seat 0 should see current_high_bid=5 (from seat 3), got {ObservationTracker.observed_high_bids[0]}"
-        assert ObservationTracker.observed_high_bids[1] == 5, \
-            f"Seat 1 should see current_high_bid=5 (seat 0's bid ignored), got {ObservationTracker.observed_high_bids[1]}"
-        assert ObservationTracker.observed_high_bids[2] == 6, \
-            f"Seat 2 (dealer) should see current_high_bid=6 (from seat 1), got {ObservationTracker.observed_high_bids[2]}"
+        assert (
+            ObservationTracker.observed_high_bids[3] == 0
+        ), f"Seat 3 (LOD) should see current_high_bid=0, got {ObservationTracker.observed_high_bids[3]}"
+        assert (
+            ObservationTracker.observed_high_bids[0] == 5
+        ), f"Seat 0 should see current_high_bid=5 (from seat 3), got {ObservationTracker.observed_high_bids[0]}"
+        assert (
+            ObservationTracker.observed_high_bids[1] == 5
+        ), f"Seat 1 should see current_high_bid=5 (seat 0's bid ignored), got {ObservationTracker.observed_high_bids[1]}"
+        assert (
+            ObservationTracker.observed_high_bids[2] == 6
+        ), f"Seat 2 (dealer) should see current_high_bid=6 (from seat 1), got {ObservationTracker.observed_high_bids[2]}"
 
     def test_contract_types_supported(self):
         """Auction supports suit contracts (S,H,D,C) and HIGH/LOW contracts."""
@@ -228,6 +338,7 @@ class TestAuctionBiddingRules:
 
             class ContractBidder(BiddingPolicy):
                 """Bids with a specific contract type."""
+
                 def choose_bid(self, obs: BiddingObservation) -> BidAction:
                     if obs.seat == 0:  # Only seat 0 bids
                         return BidAction.bid(5, contract_input)
@@ -235,43 +346,94 @@ class TestAuctionBiddingRules:
 
             bidding_policy = ContractBidder()
 
-            fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
-                          Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
-                          Card("S", "J"), Card("H", "T")]
+            fixed_hand = [
+                Card("S", "A"),
+                Card("H", "K"),
+                Card("D", "Q"),
+                Card("C", "J"),
+                Card("S", "T"),
+                Card("H", "A"),
+                Card("D", "K"),
+                Card("C", "Q"),
+                Card("S", "J"),
+                Card("H", "T"),
+            ]
 
             hands = [fixed_hand.copy() for _ in range(4)]
 
-            t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+            (
+                t0,
+                t1,
+                scores,
+                features,
+                leader,
+                hands,
+                bid,
+                dealer_pos,
+                bidder_pos,
+                final_contract,
+                final_trump,
+                _,
+            ) = play_single_hand(
                 contract_type=None,
                 bidding_policy=bidding_policy,
                 hands=hands,
                 initial_leader=3,  # Seat 0 is left of dealer
             )
 
-            assert leader == 0, f"Expected leader 0 for contract {contract_input}, got {leader}"
+            assert (
+                leader == 0
+            ), f"Expected leader 0 for contract {contract_input}, got {leader}"
             assert bid == 5, f"Expected bid 5 for contract {contract_input}, got {bid}"
-            assert final_contract == expected_contract, f"Expected contract '{expected_contract}' for {contract_input}, got '{final_contract}'"
-            assert final_trump == expected_trump, f"Expected trump '{expected_trump}' for {contract_input}, got '{final_trump}'"
+            assert (
+                final_contract == expected_contract
+            ), f"Expected contract '{expected_contract}' for {contract_input}, got '{final_contract}'"
+            assert (
+                final_trump == expected_trump
+            ), f"Expected trump '{expected_trump}' for {contract_input}, got '{final_trump}'"
 
     def test_bidder_wins_and_leads(self):
         """The auction winner must lead the first trick."""
 
         class SeatBasedBidder(BiddingPolicy):
             """Only seat 1 bids."""
+
             def choose_bid(self, obs: BiddingObservation) -> BidAction:
                 if obs.seat == 1:
                     return BidAction.bid(6, "S")  # Seat 1 bids 6
-                return BidAction.pass_bid()       # Others pass
+                return BidAction.pass_bid()  # Others pass
 
         bidding_policy = SeatBasedBidder()
 
-        fixed_hand = [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "J"),
-                      Card("S", "T"), Card("H", "A"), Card("D", "K"), Card("C", "Q"),
-                      Card("S", "J"), Card("H", "T")]
+        fixed_hand = [
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "J"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "J"),
+            Card("H", "T"),
+        ]
 
         hands = [fixed_hand.copy() for _ in range(4)]
 
-        t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump = play_single_hand(
+        (
+            t0,
+            t1,
+            scores,
+            features,
+            leader,
+            hands,
+            bid,
+            dealer_pos,
+            bidder_pos,
+            final_contract,
+            final_trump,
+            _,
+        ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
             hands=hands,
