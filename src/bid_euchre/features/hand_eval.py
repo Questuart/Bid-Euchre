@@ -9,6 +9,168 @@ from ..core.cards import (
 )
 
 # ===========================
+#  BRIDGE-INSPIRED HELPERS
+# ===========================
+
+
+def _chain_quick_tricks(rank_counts):
+    """Apply double-deck chain rule for quick tricks.
+
+    Walk ranks top-to-bottom. At each rank:
+    - Hold 2 copies -> +2.0, continue to next rank
+    - Hold 1 copy  -> +1.0, STOP (opponent has the other copy)
+    - Hold 0       -> STOP
+    """
+    qt = 0.0
+    for count in rank_counts:
+        if count >= 2:
+            qt += 2.0
+        elif count == 1:
+            qt += 1.0
+            break
+        else:
+            break
+    return qt
+
+
+def _compute_losing_tricks(
+    contract_type,
+    trump_suit,
+    offsuit_by_suit,
+    trump_count,
+    trump_rb_count,
+    trump_lb_count,
+    trump_ace_count,
+):
+    """Compute Losing Tricks Count (LTC) adapted for Bid Euchre.
+
+    Per-suit rule:
+    - Length 0 (void): 0 losers
+    - Length 1: 0 if top honor held, else 1
+    - Length 2: count of top-2 honors missing
+    - Length 3+: count of top-3 honors missing
+
+    Honor definitions vary by contract type:
+    - suit trump: RB, LB, A
+    - suit offsuit / high: A, K, Q
+    - low: T, J, Q (inverted)
+    """
+    losers = 0
+
+    if contract_type == "suit":
+        # Trump losers
+        if trump_count > 0:
+            top_honors = [
+                trump_rb_count >= 1,
+                trump_lb_count >= 1,
+                trump_ace_count >= 1,
+            ]
+            check = min(trump_count, 3)
+            losers += check - sum(top_honors[:check])
+
+        # Offsuit losers (skip phantom void at trump_suit)
+        for suit, cards in offsuit_by_suit.items():
+            if suit == trump_suit:
+                continue
+            n = len(cards)
+            if n == 0:
+                continue  # void = 0 losers (can ruff)
+            ace_count = sum(1 for c in cards if c.rank == "A")
+            king_count = sum(1 for c in cards if c.rank == "K")
+            queen_count = sum(1 for c in cards if c.rank == "Q")
+            top_honors = [ace_count >= 1, king_count >= 1, queen_count >= 1]
+            check = min(n, 3)
+            losers += check - sum(top_honors[:check])
+    else:
+        # HIGH or LOW
+        if contract_type == "high":
+            honor_ranks = ("A", "K", "Q")
+        else:  # low
+            honor_ranks = ("T", "J", "Q")
+
+        for _suit, cards in offsuit_by_suit.items():
+            n = len(cards)
+            if n == 0:
+                continue
+            counts = [sum(1 for c in cards if c.rank == r) for r in honor_ranks]
+            top_honors = [c >= 1 for c in counts]
+            check = min(n, 3)
+            losers += check - sum(top_honors[:check])
+
+    return losers
+
+
+def _compute_quick_tricks(
+    contract_type,
+    trump_suit,
+    offsuit_by_suit,
+    trump_rb_count,
+    trump_lb_count,
+    trump_ace_count,
+    trump_king_count,
+    trump_queen_count,
+    trump_ten_count,
+):
+    """Compute Quick Tricks (QT) adapted for double-deck Bid Euchre.
+
+    Uses a chain rule that walks ranks top-to-bottom:
+    - 2 copies -> +2.0, continue
+    - 1 copy   -> +1.0, stop
+    - 0 copies -> stop
+
+    In suit contracts, voids in offsuit contribute +1.0 (ruff potential).
+    In no-trump contracts, voids contribute 0.
+    """
+    from collections import Counter
+
+    qt = 0.0
+
+    if contract_type == "suit":
+        # Trump QT
+        trump_rank_counts = [
+            trump_rb_count,
+            trump_lb_count,
+            trump_ace_count,
+            trump_king_count,
+            trump_queen_count,
+            trump_ten_count,
+        ]
+        qt += _chain_quick_tricks(trump_rank_counts)
+
+        # Offsuit QT (skip phantom void at trump_suit)
+        for suit, cards in offsuit_by_suit.items():
+            if suit == trump_suit:
+                continue
+            if len(cards) == 0:
+                qt += 1.0  # void = can ruff
+                continue
+            rank_counter = Counter(c.rank for c in cards)
+            rank_counts = [
+                rank_counter.get("A", 0),
+                rank_counter.get("K", 0),
+                rank_counter.get("Q", 0),
+                rank_counter.get("J", 0),
+                rank_counter.get("T", 0),
+            ]
+            qt += _chain_quick_tricks(rank_counts)
+    else:
+        # HIGH or LOW
+        if contract_type == "high":
+            rank_order = ["A", "K", "Q", "J", "T"]
+        else:  # low
+            rank_order = ["T", "J", "Q", "K", "A"]
+
+        for _suit, cards in offsuit_by_suit.items():
+            if len(cards) == 0:
+                continue  # void = 0 QT (no ruff in no-trump)
+            rank_counter = Counter(c.rank for c in cards)
+            rank_counts = [rank_counter.get(r, 0) for r in rank_order]
+            qt += _chain_quick_tricks(rank_counts)
+
+    return qt
+
+
+# ===========================
 #  FEATURE EXTRACTION
 # ===========================
 
@@ -26,7 +188,7 @@ def get_hand_features(
         "high" : high no-trump (A high, no bowers).
         "low"  : low no-trump (T high, A low, no bowers).
 
-    Returns a dict with 37 features covering:
+    Returns a dict with 39 features covering:
         - Trump strength (suit contracts only)
         - Offsuit control
         - Distribution (voids, suit lengths)
@@ -251,6 +413,31 @@ def get_hand_features(
     hand_value = score_hand_scalar(hand, contract_type, trump_suit)
 
     # ===========================
+    # Bridge-Inspired Features
+    # ===========================
+
+    losing_tricks_count = _compute_losing_tricks(
+        contract_type,
+        trump_suit,
+        offsuit_by_suit,
+        trump_count,
+        trump_rb_count,
+        trump_lb_count,
+        trump_ace_count,
+    )
+    quick_tricks = _compute_quick_tricks(
+        contract_type,
+        trump_suit,
+        offsuit_by_suit,
+        trump_rb_count,
+        trump_lb_count,
+        trump_ace_count,
+        trump_king_count,
+        trump_queen_count,
+        trump_ten_count,
+    )
+
+    # ===========================
     # Return Feature Dictionary
     # ===========================
 
@@ -296,6 +483,9 @@ def get_hand_features(
         "low_card_count": low_card_count,
         "trump_count_x_void_count": trump_count_x_void_count,
         "trump_count_x_offsuit_ace": trump_count_x_offsuit_ace,
+        # Bridge-inspired features
+        "losing_tricks_count": losing_tricks_count,
+        "quick_tricks": quick_tricks,
     }
 
 

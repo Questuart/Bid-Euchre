@@ -1,11 +1,12 @@
 """
 Comprehensive unit tests for hand evaluation features.
 
-Tests all 37 features from get_hand_features() including:
+Tests all 39 features from get_hand_features() including:
 - Trump strength (bowers, trump count, power metrics)
 - Offsuit control (aces, kings, suit coverage)
 - Distribution (voids, singletons, suit lengths)
 - High/Low specific features
+- Bridge-inspired features (LTC, quick tricks)
 - Edge cases and boundary conditions
 """
 
@@ -700,7 +701,7 @@ class TestFeatureCompleteness:
     """Test that all expected features are present."""
 
     def test_all_features_present(self):
-        """Test that get_hand_features returns all 37 expected features."""
+        """Test that get_hand_features returns all 39 expected features."""
         hand = [
             Card("H", "J"),
             Card("D", "J"),
@@ -751,6 +752,9 @@ class TestFeatureCompleteness:
             # Interactions
             "trump_count_x_void_count",
             "trump_count_x_offsuit_ace",
+            # Bridge-inspired
+            "losing_tricks_count",
+            "quick_tricks",
         }
 
         actual_features = set(features.keys())
@@ -760,7 +764,7 @@ class TestFeatureCompleteness:
         assert not missing, f"Missing features: {missing}"
 
         # Check count
-        assert len(features) >= 37, f"Expected 37+ features, got {len(features)}"
+        assert len(features) >= 39, f"Expected 39+ features, got {len(features)}"
 
     def test_all_features_have_values(self):
         """Test that all features return valid numeric values."""
@@ -775,6 +779,247 @@ class TestFeatureCompleteness:
             assert not (
                 isinstance(fval, float) and (fval != fval)
             ), f"Feature {fname} is NaN"
+
+
+# ============================================================================
+# Test: Bridge-Inspired Features (LTC + Quick Tricks)
+# ============================================================================
+
+
+class TestBridgeInspiredFeatures:
+    """Test bridge-inspired LTC and Quick Tricks features."""
+
+    # --- LTC Tests ---
+
+    def test_ltc_perfect_trump_hand(self):
+        """Perfect trump hand: RB+LB+A = 0 trump losers."""
+        hand = [
+            Card("H", "J"),  # RB
+            Card("D", "J"),  # LB
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "Q"),
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # 5 trump: top 3 (RB,LB,A) all held -> 0 trump losers
+        # All offsuit void -> 0 offsuit losers (can ruff)
+        assert f["losing_tricks_count"] == 0
+
+    def test_ltc_weak_trump(self):
+        """Weak trump: K,Q,T = missing RB,LB,A -> 3 losers from trump."""
+        hand = [
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("H", "T"),
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # 3 trump, check top 3: RB(no), LB(no), A(no) -> 3 trump losers
+        # Offsuit: all void (skip H) -> 0
+        assert f["losing_tricks_count"] == 3
+
+    def test_ltc_singleton_ace_offsuit(self):
+        """Singleton ace in offsuit: check=1, ace held -> 0 losers in that suit."""
+        hand = [
+            Card("H", "J"),  # RB
+            Card("C", "A"),  # singleton ace
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: 1 card (RB), check=1, RB held -> 0
+        # C: 1 card (A), check=1, A held -> 0
+        # D, S: void -> 0
+        assert f["losing_tricks_count"] == 0
+
+    def test_ltc_singleton_king_offsuit(self):
+        """Singleton king: check=1, A missing -> 1 loser."""
+        hand = [
+            Card("H", "J"),  # RB
+            Card("C", "K"),  # singleton king (A missing)
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: 1 card (RB) -> 0
+        # C: 1 card (K), check=1, A(no) -> 1
+        # D, S: void -> 0
+        assert f["losing_tricks_count"] == 1
+
+    def test_ltc_high_contract(self):
+        """HIGH contract: all suits treated uniformly with A,K,Q honors."""
+        hand = [
+            Card("C", "A"),
+            Card("C", "K"),
+            Card("C", "Q"),  # 3 cards, all 3 honors -> 0 losers
+            Card("D", "T"),  # 1 card, A missing -> 1 loser
+        ]
+        f = get_hand_features(hand, "high", None)
+        # C: check=3, A(yes) K(yes) Q(yes) -> 0
+        # D: check=1, A(no) -> 1
+        # H,S: void -> 0
+        assert f["losing_tricks_count"] == 1
+
+    def test_ltc_low_contract(self):
+        """LOW contract: honors are T,J,Q (inverted)."""
+        hand = [
+            Card("C", "T"),
+            Card("C", "J"),
+            Card("C", "Q"),  # 3 cards, T+J+Q -> 0 losers
+            Card("D", "A"),  # 1 card, T missing -> 1 loser
+        ]
+        f = get_hand_features(hand, "low", None)
+        # C: check=3, T(yes) J(yes) Q(yes) -> 0
+        # D: check=1, T(no) -> 1
+        assert f["losing_tricks_count"] == 1
+
+    def test_ltc_doubleton_missing_both(self):
+        """Doubleton Q-T: missing both A and K -> 2 losers."""
+        hand = [
+            Card("C", "Q"),
+            Card("C", "T"),
+        ]
+        f = get_hand_features(hand, "high", None)
+        # C: check=2, A(no) K(no) -> 2
+        assert f["losing_tricks_count"] == 2
+
+    def test_ltc_empty_hand(self):
+        """Empty hand has 0 losers (all void)."""
+        f = get_hand_features([], "high", None)
+        assert f["losing_tricks_count"] == 0
+
+    def test_ltc_trump_singleton_rb(self):
+        """Single RB: check=1, RB held -> 0 losers."""
+        hand = [Card("H", "J")]  # RB only
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: 1 card (RB), check=1, RB(yes) -> 0
+        assert f["losing_tricks_count"] == 0
+
+    def test_ltc_trump_singleton_ten(self):
+        """Single trump ten: check=1, RB(no) -> 1 loser."""
+        hand = [Card("H", "T")]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: 1 card (T), check=1, RB(no) -> 1
+        assert f["losing_tricks_count"] == 1
+
+    # --- Quick Tricks Tests ---
+
+    def test_qt_double_rb_double_lb(self):
+        """2 RB + 2 LB: chain continues -> 4.0 trump QT."""
+        hand = [
+            Card("H", "J"),
+            Card("H", "J"),  # 2x RB
+            Card("D", "J"),
+            Card("D", "J"),  # 2x LB
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: RB(2)->+2 continue, LB(2)->+2 continue, A(0)->stop = 4.0
+        # All offsuit void (skip H) -> 3 suits x 1.0 = 3.0
+        assert f["quick_tricks"] == 7.0
+
+    def test_qt_single_rb_single_lb(self):
+        """1 RB + 1 LB: chain stops at RB -> 1.0 trump QT."""
+        hand = [
+            Card("H", "J"),  # 1x RB
+            Card("D", "J"),  # 1x LB
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: RB(1)->+1 stop = 1.0
+        # 3 void offsuit -> 3 x 1.0 = 3.0
+        assert f["quick_tricks"] == 4.0
+
+    def test_qt_double_ace_offsuit(self):
+        """2 aces in one offsuit suit: +2.0 QT, chain continues."""
+        hand = [
+            Card("C", "A"),
+            Card("C", "A"),  # 2x ace
+            Card("C", "K"),  # 1x king
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: 0 cards -> 0 trump QT
+        # C: A(2)->+2, K(1)->+1 stop = 3.0
+        # D: void -> +1.0 (ruff)
+        # S: void -> +1.0 (ruff)
+        # Skip H (phantom void)
+        assert f["quick_tricks"] == 5.0
+
+    def test_qt_king_alone(self):
+        """King alone (no ace): 0 QT (chain stops at missing A)."""
+        hand = [
+            Card("C", "K"),
+        ]
+        f = get_hand_features(hand, "high", None)
+        # C: A(0)->stop = 0
+        # D,H,S: void -> 0 each (HIGH, no ruff)
+        assert f["quick_tricks"] == 0.0
+
+    def test_qt_high_contract(self):
+        """HIGH contract: rank order A>K>Q>J>T, void=0."""
+        hand = [
+            Card("C", "A"),
+            Card("D", "A"),
+            Card("D", "K"),
+        ]
+        f = get_hand_features(hand, "high", None)
+        # C: A(1)->+1 stop = 1.0
+        # D: A(1)->+1 stop = 1.0
+        # H,S: void -> 0 each
+        assert f["quick_tricks"] == 2.0
+
+    def test_qt_low_contract(self):
+        """LOW contract: rank order T>J>Q>K>A, void=0."""
+        hand = [
+            Card("C", "T"),
+            Card("D", "T"),
+            Card("D", "J"),
+        ]
+        f = get_hand_features(hand, "low", None)
+        # C: T(1)->+1 stop = 1.0
+        # D: T(1)->+1 stop = 1.0
+        # H,S: void -> 0 each
+        assert f["quick_tricks"] == 2.0
+
+    def test_qt_void_offsuit_ruff(self):
+        """Void in suit contract: +1.0 QT per void (ruff)."""
+        hand = [
+            Card("H", "J"),  # Only trump, all offsuit void
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: RB(1)->+1 stop = 1.0
+        # C,D,S void -> 3 x 1.0 = 3.0
+        assert f["quick_tricks"] == 4.0
+
+    def test_qt_phantom_void_not_counted(self):
+        """Phantom void at trump_suit in offsuit_by_suit should NOT give +1.0."""
+        hand = [
+            Card("H", "A"),  # trump (routed to trump counters)
+            Card("C", "A"),
+        ]
+        f = get_hand_features(hand, "suit", "H")
+        # Trump: RB(0)->stop. Trump QT = 0.
+        # C: A(1)->+1 stop = 1.0
+        # D: void -> +1.0
+        # S: void -> +1.0
+        # H: SKIP (phantom void, not counted)
+        assert f["quick_tricks"] == 3.0
+
+    def test_qt_empty_hand(self):
+        """Empty hand has 0.0 quick tricks."""
+        f = get_hand_features([], "high", None)
+        assert f["quick_tricks"] == 0.0
+
+    def test_qt_chain_stops_at_gap(self):
+        """Chain stops at missing rank even if lower ranks present."""
+        hand = [
+            Card("C", "A"),  # A present
+            # K missing
+            Card("C", "Q"),  # Q present but doesn't count (chain stopped)
+        ]
+        f = get_hand_features(hand, "high", None)
+        # C: A(1)->+1 stop (K missing) = 1.0
+        assert f["quick_tricks"] == 1.0
+
+    def test_features_types(self):
+        """LTC is int, QT is float."""
+        hand = [Card("H", "J"), Card("C", "A")]
+        f = get_hand_features(hand, "suit", "H")
+        assert isinstance(f["losing_tricks_count"], int)
+        assert isinstance(f["quick_tricks"], float)
 
 
 # ============================================================================
