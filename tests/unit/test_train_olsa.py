@@ -95,6 +95,8 @@ def _make_training_data(tmp_path, n_hands=200, seed=42):
                         "high_card_count": rng.randint(0, 8),
                         "low_card_count": rng.randint(0, 8),
                         "double_ten_jack_count": rng.randint(0, 3),
+                        "losing_tricks_count": rng.randint(0, 10),
+                        "quick_tricks": float(rng.uniform(0, 10)),
                     },
                     "hand_feature_schema_version": 1,
                     "contract_type": ct,
