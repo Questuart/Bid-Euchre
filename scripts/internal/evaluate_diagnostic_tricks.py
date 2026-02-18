@@ -555,13 +555,13 @@ def main():
         # from both strategies.
         correlations_section: dict[str, list[dict]] = {}
         for ct in all_contract_types:
-            # Use greedy correlations as the base (Pearson r is computed on
-            # the same underlying data regardless of model, but each dataset
-            # may differ). Include correlations from greedy; they should be
-            # nearly identical to glutton since Pearson r is data-descriptive.
-            base_corrs = correlations_by_dataset.get("greedy", {}).get(ct, [])
+            # Use glutton correlations as the base — glutton is the frozen
+            # canonical play policy (§9d). Pearson r is data-descriptive so
+            # values are nearly identical across strategies; greedy is the
+            # fallback if glutton data is absent.
+            base_corrs = correlations_by_dataset.get("glutton", {}).get(ct, [])
             if not base_corrs:
-                base_corrs = correlations_by_dataset.get("glutton", {}).get(ct, [])
+                base_corrs = correlations_by_dataset.get("greedy", {}).get(ct, [])
 
             # Build coefficient lookup for each strategy
             coef_lookup: dict[str, dict[str, float]] = {}
