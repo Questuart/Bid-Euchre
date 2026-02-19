@@ -193,17 +193,18 @@ all infrastructure PRs can begin immediately.
 
 All 16 Arc D PRs have no external blockers — all HITL dependencies are merged.
 The only constraints are inter-PR dependencies within Arc D itself (see §6 Wave Structure).
-The table below lists PRs with no Arc D prerequisites that can start immediately.
+The table below lists Wave 1–2 PRs that have no Arc D prerequisites (see §6 for full wave graph):
 
-| Arc D PR | Can start now? | Rationale |
-|----------|---------------|-----------|
-| PR-I1 (HybridOLSaBidder + schema) | **YES** | Code-only infrastructure |
-| PR-I2 (Gate runner adapter) | **YES** | `compute_eligibility()` exists on main (#376 merged) |
-| PR-I3 (Doc sync) | **YES** | Documentation-only |
-| PR-R0a (Hybrid training pipeline) | **YES** | Code-only pipeline + feature selection |
-| PR-R0b (R0 baseline) | **YES** | R0 auto-promotes — no gate infra needed |
-| PR-R1a (Partner context infra + auction dataset) | **YES** | Code-only feature extraction + canonical auction dataset production |
-| PR-R5a (Off/def architecture) | **YES** | Code-only architecture change |
+| Arc D PR | Wave | Rationale |
+|----------|------|-----------|
+| PR-I1 (HybridOLSaBidder + schema) | 1 | Code-only infrastructure, foundational for all other PRs |
+| PR-I2 (Gate runner adapter) | 2 (after I1) | `compute_eligibility()` exists on main (#376 merged) |
+| PR-I3 (Doc sync) | 2 (after I1) | Documentation-only |
+| PR-R0a (Hybrid training pipeline) | 2 (after I1) | Code-only pipeline + feature selection |
+| PR-R1a (Partner context infra + auction dataset) | 2 (after I1) | Code-only feature extraction + canonical auction dataset production |
+| PR-R5a (Off/def architecture) | 2 (after I1) | Code-only architecture change |
+
+PRs beyond Wave 2 (R0b, R1b, R2a, etc.) have inter-PR dependencies — see §6.
 
 ---
 
@@ -282,8 +283,9 @@ and train expanded model.
 **Required inputs:**
 - R0 incumbent artifact (promoted)
 - Canonical auction-context dataset produced by PR-R1a. This dataset comes from
-  simulations WITH auction (using R0 HybridOLSaBidder or existing OLSaBidder),
-  capturing per-decision auction state including full bid sequence.
+  simulations WITH auction using the existing `OLSaBidder` (the only promoted
+  bidder available when R1a runs in Wave 2), capturing per-decision auction
+  state including full bid sequence.
   Not compatible with bidless dataset — R1+ uses a different data source.
 - Split: `three_way`, seed=42, fractions 80/10/10, grouped by `hand_id`
 - Feature pool: 39 hand features + new partner context features from PR-R1a
@@ -1099,9 +1101,9 @@ subsequent rungs (R2–R5).
        """
 
 4. Run canonical auction simulation (seed=42, n_per=50000) to produce training
-   dataset. Use R0 HybridOLSaBidder (or existing OLSaBidder) as the bidding
-   policy so the auction is realistic.
-   Output: canonical_auction_dataset_<bidder>_42_<timestamp>/ with
+   dataset. Use the existing `OLSaBidder` as the bidding policy (the only
+   promoted bidder available when R1a runs in Wave 2).
+   Output: canonical_auction_dataset_olsa_42_<timestamp>/ with
    bidding.parquet containing per-decision rows with auction context columns.
    This dataset is the HARD PREREQUISITE for R1b.
 
