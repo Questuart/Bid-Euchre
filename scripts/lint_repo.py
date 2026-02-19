@@ -854,6 +854,29 @@ def check_artifacts_require_freeze(
 
 GATE_REQUIRED_FIELDS = {"schema_version", "gate_status", "created_at_utc"}
 
+SEMANTIC_GATE_REQUIRED_FIELDS = {
+    "schema_version",
+    "gate_status",
+    "created_at_utc",
+    "active_split",
+    "mode",
+    "seed",
+    "total_hands",
+    "total_checks",
+    "passed_checks",
+    "failed_checks",
+    "checks",
+}
+
+SEMANTIC_GATE_CHECK_REQUIRED_FIELDS = {
+    "check_id",
+    "category",
+    "status",
+    "threshold",
+    "observed",
+    "detail",
+}
+
 SPLIT_MANIFEST_REQUIRED_FIELDS = {
     "schema_version",
     "split_type",
@@ -939,6 +962,71 @@ def check_gate_artifacts_schema(
                     ),
                 )
             )
+    return violations
+
+
+def _is_semantic_gate(path: str) -> bool:
+    """Return True if path looks like a semantic gate JSON."""
+    name = Path(path).name
+    return name.startswith("semantic_gate") and name.endswith(".json")
+
+
+def check_semantic_gate_schema(
+    changed: list[str],
+    repo_root: Path,
+) -> list[Violation]:
+    """Semantic gate JSON files must have full required schema fields."""
+    violations: list[Violation] = []
+    for p in changed:
+        if not _is_semantic_gate(p):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        try:
+            data = json.loads(abs_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            continue  # Already caught by generic gate rule
+
+        if not isinstance(data, dict):
+            continue  # Already caught by generic gate rule
+
+        # Validate top-level fields
+        missing = SEMANTIC_GATE_REQUIRED_FIELDS - set(data.keys())
+        if missing:
+            violations.append(
+                Violation(
+                    rule="semantic-gate-schema",
+                    path=p,
+                    message=f"Semantic gate missing required fields: {sorted(missing)}",
+                )
+            )
+            continue
+
+        # Validate each check entry
+        checks = data.get("checks", [])
+        for i, check in enumerate(checks):
+            if not isinstance(check, dict):
+                violations.append(
+                    Violation(
+                        rule="semantic-gate-schema",
+                        path=p,
+                        message=f"checks[{i}] is not a dict",
+                    )
+                )
+                continue
+            cmissing = SEMANTIC_GATE_CHECK_REQUIRED_FIELDS - set(check.keys())
+            if cmissing:
+                violations.append(
+                    Violation(
+                        rule="semantic-gate-schema",
+                        path=p,
+                        message=f"checks[{i}] (check_id={check.get('check_id', '?')}) "
+                        f"missing fields: {sorted(cmissing)}",
+                    )
+                )
     return violations
 
 
@@ -1036,6 +1124,7 @@ def main() -> int:
     violations += check_canonical_runs_registry_consistency(changed, repo_root)
     violations += check_artifacts_require_freeze(changed, repo_root)
     violations += check_gate_artifacts_schema(changed, repo_root)
+    violations += check_semantic_gate_schema(changed, repo_root)
     violations += check_split_manifest_schema(changed, repo_root)
 
     if violations:

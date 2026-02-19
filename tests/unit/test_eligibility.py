@@ -12,6 +12,7 @@ from bid_euchre.reporting.eligibility import (
     check_config_membership,
     check_git_sha_consistency,
     check_notebook_gate,
+    check_semantic_gate,
     check_split_manifests,
     compute_eligibility,
 )
@@ -83,6 +84,23 @@ def _make_notebook_gate(gate_status="PASS", total=3, passed=3, failed=0):
             }
             for i in range(total)
         ],
+    }
+
+
+def _make_semantic_gate(gate_status="PASS"):
+    """Minimal valid semantic gate dict."""
+    return {
+        "schema_version": 1,
+        "gate_status": gate_status,
+        "created_at_utc": "2026-02-18T12:00:00Z",
+        "active_split": "val",
+        "mode": "QUICK",
+        "seed": 42,
+        "total_hands": 2000,
+        "total_checks": 12,
+        "passed_checks": 12 if gate_status == "PASS" else 10,
+        "failed_checks": 0 if gate_status == "PASS" else 2,
+        "checks": [],
     }
 
 
@@ -387,6 +405,72 @@ class TestCheckSplitManifests:
         assert result.status == "PASS"
 
 
+class TestCheckSemanticGate:
+    def test_check_semantic_gate_val_pass(self, tmp_path):
+        gate_dir = tmp_path / "gates"
+        gate_dir.mkdir()
+        (gate_dir / "semantic_gate_val.json").write_text(
+            json.dumps(_make_semantic_gate("PASS"))
+        )
+        results = check_semantic_gate(str(gate_dir), "promotion")
+        val_results = [r for r in results if r.rule == "semantic_gate_val"]
+        assert len(val_results) == 1
+        assert val_results[0].status == "PASS"
+
+    def test_check_semantic_gate_val_fail(self, tmp_path):
+        gate_dir = tmp_path / "gates"
+        gate_dir.mkdir()
+        (gate_dir / "semantic_gate_val.json").write_text(
+            json.dumps(_make_semantic_gate("FAIL"))
+        )
+        results = check_semantic_gate(str(gate_dir), "promotion")
+        val_results = [r for r in results if r.rule == "semantic_gate_val"]
+        assert len(val_results) == 1
+        assert val_results[0].status == "FAIL"
+
+    def test_check_semantic_gate_test_pass(self, tmp_path):
+        gate_dir = tmp_path / "gates"
+        gate_dir.mkdir()
+        (gate_dir / "semantic_gate_val.json").write_text(
+            json.dumps(_make_semantic_gate("PASS"))
+        )
+        (gate_dir / "semantic_gate_test.json").write_text(
+            json.dumps(_make_semantic_gate("PASS"))
+        )
+        results = check_semantic_gate(str(gate_dir), "promotion")
+        test_results = [r for r in results if r.rule == "semantic_gate_test"]
+        assert len(test_results) == 1
+        assert test_results[0].status == "PASS"
+
+    def test_check_semantic_gate_missing_promotion(self):
+        results = check_semantic_gate(None, "promotion")
+        assert len(results) == 1
+        assert results[0].rule == "semantic_gate_val"
+        assert results[0].status == "FAIL"
+        assert "required for promotion" in results[0].detail
+
+    def test_check_semantic_gate_missing_exploration(self):
+        results = check_semantic_gate(None, "exploration")
+        assert len(results) == 1
+        assert results[0].rule == "semantic_gate_val"
+        assert results[0].status == "PASS"
+        assert "optional" in results[0].detail
+
+    def test_promotion_requires_both_gates(self, tmp_path):
+        """Val only + promotion → FAIL for missing test gate."""
+        gate_dir = tmp_path / "gates"
+        gate_dir.mkdir()
+        (gate_dir / "semantic_gate_val.json").write_text(
+            json.dumps(_make_semantic_gate("PASS"))
+        )
+        # No test gate
+        results = check_semantic_gate(str(gate_dir), "promotion")
+        test_results = [r for r in results if r.rule == "semantic_gate_test"]
+        assert len(test_results) == 1
+        assert test_results[0].status == "FAIL"
+        assert "required for promotion" in test_results[0].detail
+
+
 class TestComputeEligibility:
     def test_eligible_all_pass(self, tmp_path):
         rollup = _make_rollup()
@@ -442,6 +526,16 @@ class TestComputeEligibility:
             )
         )
 
+        # Create semantic gate artifacts (both val and test)
+        semantic_dir = tmp_path / "semantic_gates"
+        semantic_dir.mkdir()
+        (semantic_dir / "semantic_gate_val.json").write_text(
+            json.dumps(_make_semantic_gate("PASS"))
+        )
+        (semantic_dir / "semantic_gate_test.json").write_text(
+            json.dumps(_make_semantic_gate("PASS"))
+        )
+
         gate = compute_eligibility(
             rollup,
             str(tmp_path),
@@ -449,6 +543,7 @@ class TestComputeEligibility:
             notebook_gate_path=str(gate_path),
             artifact_dir=str(artifact_dir),
             split_manifest_dir=str(split_dir),
+            semantic_gate_dir=str(semantic_dir),
         )
         assert gate.eligible is True
         assert all(r.status == "PASS" for r in gate.reasons)

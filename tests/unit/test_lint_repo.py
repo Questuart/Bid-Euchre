@@ -12,6 +12,7 @@ from scripts.lint_repo import (
     _is_split_manifest,
     check_artifacts_require_freeze,
     check_gate_artifacts_schema,
+    check_semantic_gate_schema,
     check_split_manifest_schema,
 )
 
@@ -444,6 +445,101 @@ class TestCheckSplitManifestSchema:
     def test_nonexistent_file_skipped(self, tmp_path: Path):
         violations = check_split_manifest_schema(
             ["data/runs/abc/split_manifest.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+
+# -- check_semantic_gate_schema tests ----------------------------------------
+
+
+def _make_valid_semantic_gate():
+    """Return a dict with all required top-level + 1 valid check entry."""
+    return {
+        "schema_version": 1,
+        "gate_status": "PASS",
+        "created_at_utc": "2026-02-18T12:00:00Z",
+        "active_split": "val",
+        "mode": "QUICK",
+        "seed": 42,
+        "total_hands": 2000,
+        "total_checks": 1,
+        "passed_checks": 1,
+        "failed_checks": 0,
+        "checks": [
+            {
+                "check_id": "feature_count",
+                "category": "health",
+                "status": "PASS",
+                "threshold": 39,
+                "observed": 39,
+                "detail": "Feature count matches expected",
+            }
+        ],
+    }
+
+
+class TestCheckSemanticGateSchema:
+    """Tests for the check_semantic_gate_schema lint rule."""
+
+    def test_valid_semantic_gate_passes(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/semantic_gate_val.json",
+            _make_valid_semantic_gate(),
+        )
+        violations = check_semantic_gate_schema(
+            ["data/runs/abc/semantic_gate_val.json"],
+            tmp_path,
+        )
+        assert violations == []
+
+    def test_missing_top_level_fields(self, tmp_path: Path):
+        gate = _make_valid_semantic_gate()
+        del gate["active_split"]
+        del gate["checks"]
+        _write_json(
+            tmp_path,
+            "data/runs/abc/semantic_gate_val.json",
+            gate,
+        )
+        violations = check_semantic_gate_schema(
+            ["data/runs/abc/semantic_gate_val.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "semantic-gate-schema"
+        assert "active_split" in violations[0].message
+        assert "checks" in violations[0].message
+
+    def test_check_entry_missing_fields(self, tmp_path: Path):
+        gate = _make_valid_semantic_gate()
+        gate["checks"] = [{"check_id": "feature_count", "category": "health"}]
+        _write_json(
+            tmp_path,
+            "data/runs/abc/semantic_gate_test.json",
+            gate,
+        )
+        violations = check_semantic_gate_schema(
+            ["data/runs/abc/semantic_gate_test.json"],
+            tmp_path,
+        )
+        assert len(violations) == 1
+        assert violations[0].rule == "semantic-gate-schema"
+        assert "threshold" in violations[0].message
+
+    def test_non_semantic_gate_ignored(self, tmp_path: Path):
+        _write_json(
+            tmp_path,
+            "data/runs/abc/notebook_gate.json",
+            {
+                "schema_version": 1,
+                "gate_status": "PASS",
+                "created_at_utc": "2026-01-01T00:00:00Z",
+            },
+        )
+        violations = check_semantic_gate_schema(
+            ["data/runs/abc/notebook_gate.json"],
             tmp_path,
         )
         assert violations == []

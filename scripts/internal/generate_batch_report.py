@@ -70,6 +70,12 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing split manifests for split type verification "
         "(required for promotion, optional otherwise)",
     )
+    parser.add_argument(
+        "--semantic-gate-dir",
+        default=None,
+        help="Directory containing semantic gate JSONs for semantic gate verification "
+        "(required for promotion, optional otherwise)",
+    )
     return parser.parse_args()
 
 
@@ -162,6 +168,7 @@ def main():
         expected_configs=expected_configs,
         artifact_dir=args.artifact_dir,
         split_manifest_dir=args.split_manifest_dir,
+        semantic_gate_dir=args.semantic_gate_dir,
     )
 
     gate_dict = gate.to_dict()

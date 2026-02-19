@@ -2,7 +2,8 @@
 
 Evaluates whether a batch of experiment runs meets promotion criteria
 based on config membership, canonical summary health, notebook gate
-status, git SHA consistency, artifact freeze status, and split manifest type.
+status, semantic gate status, git SHA consistency, artifact freeze
+status, and split manifest type.
 """
 
 import json
@@ -386,6 +387,134 @@ def check_split_manifests(
     )
 
 
+def check_semantic_gate(
+    semantic_gate_dir: Optional[str],
+    batch_purpose: str,
+) -> list[EligibilityResult]:
+    """Check semantic gate artifacts for val and test splits.
+
+    Returns a list of EligibilityResult with distinct rule names:
+    - ``rule="semantic_gate_val"`` for the val gate
+    - ``rule="semantic_gate_test"`` for the test gate
+
+    File naming convention:
+    - ``semantic_gate_val.json`` for val split
+    - ``semantic_gate_test.json`` for test split
+    """
+    results: list[EligibilityResult] = []
+
+    # --- Val gate ---
+    if semantic_gate_dir is None:
+        if batch_purpose == "promotion":
+            results.append(
+                EligibilityResult(
+                    rule="semantic_gate_val",
+                    status="FAIL",
+                    detail="No semantic gate directory provided (required for promotion)",
+                )
+            )
+        else:
+            results.append(
+                EligibilityResult(
+                    rule="semantic_gate_val",
+                    status="PASS",
+                    detail="No semantic gate directory (optional for non-promotion)",
+                )
+            )
+        return results
+
+    gate_dir = Path(semantic_gate_dir)
+
+    # Check val gate
+    val_path = gate_dir / "semantic_gate_val.json"
+    if not val_path.exists():
+        results.append(
+            EligibilityResult(
+                rule="semantic_gate_val",
+                status="FAIL",
+                detail=f"Val semantic gate not found: {val_path}",
+            )
+        )
+    else:
+        try:
+            with open(val_path) as f:
+                val_gate = json.load(f)
+            val_status = val_gate.get("gate_status", "FAIL")
+            if val_status == "PASS":
+                results.append(
+                    EligibilityResult(
+                        rule="semantic_gate_val",
+                        status="PASS",
+                        detail=f"Val semantic gate PASS "
+                        f"({val_gate.get('passed_checks', 0)}/{val_gate.get('total_checks', 0)})",
+                    )
+                )
+            else:
+                results.append(
+                    EligibilityResult(
+                        rule="semantic_gate_val",
+                        status="FAIL",
+                        detail=f"Val semantic gate {val_status} "
+                        f"({val_gate.get('failed_checks', 0)} failed checks)",
+                    )
+                )
+        except (json.JSONDecodeError, OSError) as e:
+            results.append(
+                EligibilityResult(
+                    rule="semantic_gate_val",
+                    status="FAIL",
+                    detail=f"Failed to read val semantic gate: {e}",
+                )
+            )
+
+    # --- Test gate ---
+    test_path = gate_dir / "semantic_gate_test.json"
+    if not test_path.exists():
+        if batch_purpose == "promotion":
+            results.append(
+                EligibilityResult(
+                    rule="semantic_gate_test",
+                    status="FAIL",
+                    detail=f"Test semantic gate not found: {test_path} "
+                    "(required for promotion)",
+                )
+            )
+        # For non-promotion, test gate is not emitted (list has only val result)
+    else:
+        try:
+            with open(test_path) as f:
+                test_gate = json.load(f)
+            test_status = test_gate.get("gate_status", "FAIL")
+            if test_status == "PASS":
+                results.append(
+                    EligibilityResult(
+                        rule="semantic_gate_test",
+                        status="PASS",
+                        detail=f"Test semantic gate PASS "
+                        f"({test_gate.get('passed_checks', 0)}/{test_gate.get('total_checks', 0)})",
+                    )
+                )
+            else:
+                results.append(
+                    EligibilityResult(
+                        rule="semantic_gate_test",
+                        status="FAIL",
+                        detail=f"Test semantic gate {test_status} "
+                        f"({test_gate.get('failed_checks', 0)} failed checks)",
+                    )
+                )
+        except (json.JSONDecodeError, OSError) as e:
+            results.append(
+                EligibilityResult(
+                    rule="semantic_gate_test",
+                    status="FAIL",
+                    detail=f"Failed to read test semantic gate: {e}",
+                )
+            )
+
+    return results
+
+
 def compute_eligibility(
     rollup: dict,
     run_base_dir: str,
@@ -394,6 +523,7 @@ def compute_eligibility(
     expected_configs: Optional[set[str]] = None,
     artifact_dir: Optional[str] = None,
     split_manifest_dir: Optional[str] = None,
+    semantic_gate_dir: Optional[str] = None,
 ) -> BatchGate:
     """Run all eligibility checks. eligible=True only if ALL checks PASS."""
     batch_id = rollup.get("batch", {}).get("batch_id", "unknown")
@@ -402,10 +532,15 @@ def compute_eligibility(
         check_config_membership(rollup, expected_configs),
         check_canonical_summaries(rollup, run_base_dir),
         check_notebook_gate(notebook_gate_path, batch_purpose),
-        check_git_sha_consistency(rollup),
-        check_artifacts_frozen(artifact_dir, batch_purpose),
-        check_split_manifests(split_manifest_dir, batch_purpose),
     ]
+    results.extend(check_semantic_gate(semantic_gate_dir, batch_purpose))
+    results.extend(
+        [
+            check_git_sha_consistency(rollup),
+            check_artifacts_frozen(artifact_dir, batch_purpose),
+            check_split_manifests(split_manifest_dir, batch_purpose),
+        ]
+    )
 
     eligible = all(r.status == "PASS" for r in results)
 
