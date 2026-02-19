@@ -548,14 +548,22 @@ def should_promote(challenger, control, rung_id):
 
     # --- Pre-Gates: delegate to compute_eligibility() ---
     # The gate runner calls compute_eligibility() which checks:
-    #   - artifact freeze (via check_artifacts_frozen)
-    #   - split manifest integrity
-    #   - semantic gate on val partition (semantic_gate_val.json)
-    #   - semantic gate on test partition (semantic_gate_test.json)
-    # compute_eligibility() must return ELIGIBLE for promotion to proceed.
-    eligibility = compute_eligibility(challenger.artifact_path, challenger.gates)
-    if eligibility.decision != "ELIGIBLE":
-        return ("REJECT", [f"Eligibility FAIL: {eligibility.reasons}"])
+    #   - config membership, canonical summaries, notebook gate
+    #   - semantic gate on val + test partitions (via check_semantic_gate)
+    #   - git SHA consistency, artifact freeze, split manifests
+    # Signature: compute_eligibility(rollup, run_base_dir, batch_purpose, ...)
+    # Returns BatchGate with .eligible (bool) and .reasons (list of CheckResult)
+    eligibility = compute_eligibility(
+        rollup=challenger.rollup,
+        run_base_dir=challenger.run_base_dir,
+        batch_purpose=challenger.batch_purpose,
+        artifact_dir=challenger.artifact_dir,
+        split_manifest_dir=challenger.split_manifest_dir,
+        semantic_gate_dir=challenger.semantic_gate_dir,
+    )
+    if not eligibility.eligible:
+        failed = [r for r in eligibility.reasons if r.status != "PASS"]
+        return ("REJECT", [f"Eligibility FAIL: {[r.detail for r in failed]}"])
 
     # --- Tier 2: Model Quality ---
     c = challenger.metrics_seed42
