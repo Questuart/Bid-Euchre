@@ -133,7 +133,7 @@ uv run python -c "from bid_euchre.datasets.bidless import BidlessDatasetCollecto
 uv run python -c "from bid_euchre.datasets.bidless_outcomes import BidlessOutcomesCollector; print('bidless_outcomes OK')"
 
 # Verify features
-uv run python -c "from bid_euchre.features.bidless_hand_features import extract_bidless_hand_features; print('features OK')"
+uv run python -c "from bid_euchre.features.hand_eval import get_hand_features; print('features OK')"
 
 # Verify validation
 uv run python -c "from bid_euchre.validation.schemas import validate_meta_v2; print('validation OK')"

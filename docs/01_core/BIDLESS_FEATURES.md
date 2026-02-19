@@ -1,10 +1,12 @@
 # Bidless Hand Features (v1)
 
+> **DEPRECATED:** The `bidless_hand_features.py` module was deleted in PR #362. All hand features are now consolidated in `hand_eval.py`. This document is retained for historical reference only.
+
 ## Overview
 
 The **Bidless Hand Feature Extractor** transforms a 10-card hand (after bidding has concluded) into a fixed-order numeric feature vector for value model training. This extractor is deterministic and designed for predicting trick outcomes based on hand composition, trump strength, and positional context.
 
-**Module**: `src/bid_euchre/features/bidless_hand_features.py`
+**Module**: src/bid_euchre/features/bidless_hand_features.py (deleted)
 
 **Schema Version**: v1
 
@@ -321,7 +323,7 @@ print(names[:5])   # ["schema_version_marker", "count_aces", "count_kings", ...]
 
 ## Testing
 
-Comprehensive unit tests are provided in `tests/unit/test_bidless_hand_features.py`.
+Comprehensive unit tests were provided in tests/unit/test_bidless_hand_features.py (deleted).
 
 **Test coverage includes:**
 - Feature name stability and ordering

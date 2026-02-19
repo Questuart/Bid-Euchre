@@ -79,7 +79,6 @@ flowchart TB
 
         subgraph Features["features/"]
             HandEval["hand_eval.py"]
-            BidlessFeatures["bidless_hand_features.py"]
         end
     end
 
