@@ -90,6 +90,31 @@ Notebooks emit gate artifacts during execution that certify data pipeline health
 - `scripts/run_notebooks.py` — `--gate-output-dir` flag
 - Gate output: `notebook_gate.json` in specified directory
 
+## Semantic Gate
+
+The semantic gate provides deep health and quality checks for model evaluation data. It runs inside the model-rung evaluation notebook and emits machine-readable gate artifacts.
+
+**Dual-gate flow:**
+1. **Val gate** — run on validation split during HITL development
+2. **Freeze** — freeze model artifact after val gate passes
+3. **Test gate** — run on test split after freeze (final verification)
+4. **Promotion** — both val and test gates must PASS
+
+**File naming convention:**
+- `semantic_gate_val.json` — val split gate artifact
+- `semantic_gate_test.json` — test split gate artifact
+
+**Requirements for promotion:**
+- Both `semantic_gate_val.json` and `semantic_gate_test.json` must exist
+- Both must have `gate_status: "PASS"`
+- The eligibility engine checks both with distinct rule names (`semantic_gate_val`, `semantic_gate_test`)
+
+**Key files:**
+- `src/bid_euchre/diagnostics/semantic_gate.py` — `compute_semantic_gate()`, `emit_semantic_gate()`
+- `src/bid_euchre/diagnostics/split_guard.py` — `require_split()` access control
+- `src/bid_euchre/reporting/eligibility.py` — `check_semantic_gate()` eligibility check
+- notebooks/_templates/01_model_rung_template.py — evaluation notebook template
+
 ## CI Gate
 
 The CI workflow enforces promotion checks on PRs labeled `promotion`.
@@ -103,17 +128,18 @@ The CI workflow enforces promotion checks on PRs labeled `promotion`.
 4. Artifact freeze check — verifies all model artifacts in ARTIFACT_DIR pass `verify_frozen()` with content-based hash validation (required, not opt-in)
 5. Rollup validation — verifies ROLLUP_JSON is readable and warns if `batch_purpose != "promotion"`
 6. Split manifest validation (optional) — if SPLIT_MANIFEST_DIR is provided, verifies manifests have `three_way` split_type
+7. Semantic gate validation (required) — verifies both `semantic_gate_val.json` and `semantic_gate_test.json` exist and have `gate_status == PASS`
 
 **Makefile target:**
 ```bash
-# ARTIFACT_DIR and ROLLUP_JSON are required for promotion gate
-make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json
+# ARTIFACT_DIR, ROLLUP_JSON, and SEMANTIC_GATE_DIR are required for promotion gate
+make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json SEMANTIC_GATE_DIR=/path/to/gates
 
 # Optionally include split manifest validation
-make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json SPLIT_MANIFEST_DIR=/path/to/splits
+make promotion-gate ARTIFACT_DIR=/path/to/artifacts ROLLUP_JSON=/path/to/rollup.json SPLIT_MANIFEST_DIR=/path/to/splits SEMANTIC_GATE_DIR=/path/to/gates
 ```
 
-**CI behavior:** The promotion gate step runs only on PRs with the `promotion` label. It is a hard-fail gate — a failing promotion gate blocks the PR from merging. Both `ARTIFACT_DIR` and `ROLLUP_JSON` must be set as repository variables for promotion PRs to pass CI. `SPLIT_MANIFEST_DIR` is optional.
+**CI behavior:** The promotion gate step runs only on PRs with the `promotion` label. It is a hard-fail gate — a failing promotion gate blocks the PR from merging. `ARTIFACT_DIR`, `ROLLUP_JSON`, and `SEMANTIC_GATE_DIR` must be set as repository variables for promotion PRs to pass CI. `SPLIT_MANIFEST_DIR` is optional.
 
 ## Lint Rules
 
@@ -131,6 +157,9 @@ Model artifact JSON files (matching `olsa`, `b0`, `teacher` patterns) under `dat
 ### `gate-artifact-schema`
 Gate artifact JSON files (`*gate*.json`) under `data/` must have valid schema (required fields: `schema_version`, `gate_status`, `created_at_utc`) and `gate_status` must be `PASS`.
 
+### `semantic-gate-schema`
+Semantic gate JSON files (`semantic_gate*.json`) must have full schema: 11 top-level required fields (`schema_version`, `gate_status`, `created_at_utc`, `active_split`, `mode`, `seed`, `total_hands`, `total_checks`, `passed_checks`, `failed_checks`, `checks`) and each check entry must have 6 required fields (`check_id`, `category`, `status`, `threshold`, `observed`, `detail`).
+
 ### `split-manifest-schema`
 Split manifest JSON files (`split_manifest*.json`) must have valid schema (required fields: `schema_version`, `split_type`, `split_seed`, `total_hand_ids`, `partition_hashes`) and `split_type` must be `two_way` or `three_way`.
 
@@ -141,6 +170,7 @@ When reviewing a promotion-track PR, verify:
 - [ ] Split manifest emitted (`split_manifest.json`) with correct split type
 - [ ] Artifact frozen (`frozen_at` and `artifact_sha256` present)
 - [ ] Notebook gate passing (`notebook_gate.json` with `gate_status: PASS`)
+- [ ] Semantic gates passing (both `semantic_gate_val.json` and `semantic_gate_test.json` with `gate_status: PASS`)
 - [ ] PR has `promotion` label and CI gate passed
 - [ ] Report references gate evidence (lint rule enforced)
 - [ ] Repro command with `--seed` included in PR description

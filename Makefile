@@ -82,6 +82,7 @@ GATE_OUTPUT_DIR ?= /tmp/promotion-gate-artifacts
 ARTIFACT_DIR ?=
 ROLLUP_JSON ?=
 SPLIT_MANIFEST_DIR ?=
+SEMANTIC_GATE_DIR ?=
 
 promotion-gate: repo-lint
 	@echo ">>> Promotion gate"
@@ -114,6 +115,16 @@ promotion-gate: repo-lint
 		fi; \
 		PYTHONPATH=src $(PYTHON) -c "import json, pathlib, sys; manifests=list(pathlib.Path('$(SPLIT_MANIFEST_DIR)').glob('split_manifest*.json')); bad=[m.name for m in manifests if json.load(open(m)).get('split_type')!='three_way']; print(f'  Checked {len(manifests)} manifests, {len(bad)} not three_way'); sys.exit(1) if bad else sys.exit(0)"; \
 	fi
+	@echo "Step 5: Validate semantic gate"
+	@test -n "$(SEMANTIC_GATE_DIR)" || { echo "ERROR: SEMANTIC_GATE_DIR is required for promotion"; exit 1; }
+	@test -f "$(SEMANTIC_GATE_DIR)/semantic_gate_val.json" || { echo "ERROR: semantic_gate_val.json not found"; exit 1; }
+	@test -f "$(SEMANTIC_GATE_DIR)/semantic_gate_test.json" || { echo "ERROR: semantic_gate_test.json not found"; exit 1; }
+	@PYTHONPATH=src $(PYTHON) -c "import json, sys; \
+		v=json.load(open('$(SEMANTIC_GATE_DIR)/semantic_gate_val.json')); \
+		t=json.load(open('$(SEMANTIC_GATE_DIR)/semantic_gate_test.json')); \
+		ok = v['gate_status']=='PASS' and t['gate_status']=='PASS'; \
+		print(f'  val={v[\"gate_status\"]}  test={t[\"gate_status\"]}'); \
+		sys.exit(0 if ok else 1)"
 	@echo "Promotion gate passed"
 
 # Generate unique run ID for teacher training

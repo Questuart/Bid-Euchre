@@ -66,6 +66,7 @@ def execute_notebook(
     notebook_path: Path,
     mode: str,
     output_dir: Path,
+    extra_parameters: dict | None = None,
 ) -> tuple[bool, str, float]:
     """Execute a single notebook with papermill.
 
@@ -73,6 +74,7 @@ def execute_notebook(
         notebook_path: Path to the notebook
         mode: "smoke" or "quick"
         output_dir: Directory for output notebooks
+        extra_parameters: Additional papermill parameters to inject
 
     Returns:
         Tuple of (success, message, duration_seconds)
@@ -90,6 +92,8 @@ def execute_notebook(
     parameters = {
         "MODE": notebook_mode,
     }
+    if extra_parameters:
+        parameters.update(extra_parameters)
 
     output_path = output_dir / notebook_path.name
 
@@ -210,6 +214,16 @@ def main():
         help="Directory for gate artifacts (notebook_gate.json + NOTEBOOK_GATE.md)",
     )
     parser.add_argument(
+        "--semantic-gate-output-dir",
+        default=None,
+        help="Directory for semantic gate JSON artifacts (passed as SEMANTIC_GATE_OUTPUT_DIR parameter)",
+    )
+    parser.add_argument(
+        "--chart-output-dir",
+        default=None,
+        help="Directory for chart PNG artifacts (passed as CHART_OUTPUT_DIR parameter)",
+    )
+    parser.add_argument(
         "--validate",
         action="store_true",
         help="Validate executed notebooks (check structure, MODE injection, cell errors)",
@@ -235,13 +249,22 @@ def main():
         temp_dir = tempfile.mkdtemp(prefix="notebook_run_")
         output_dir = Path(temp_dir)
 
+    # Build extra papermill parameters from CLI args
+    extra_parameters: dict = {}
+    if args.semantic_gate_output_dir:
+        extra_parameters["SEMANTIC_GATE_OUTPUT_DIR"] = args.semantic_gate_output_dir
+    if args.chart_output_dir:
+        extra_parameters["CHART_OUTPUT_DIR"] = args.chart_output_dir
+
     # Execute notebooks
     results = []
     total_start = time.time()
 
     for nb_path in notebooks:
         print(f"Running: {nb_path.name}...", end=" ", flush=True)
-        success, message, duration = execute_notebook(nb_path, args.mode, output_dir)
+        success, message, duration = execute_notebook(
+            nb_path, args.mode, output_dir, extra_parameters or None
+        )
         results.append((nb_path.name, success, message, duration))
 
         status = "PASS" if success else "FAIL"

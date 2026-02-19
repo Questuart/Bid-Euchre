@@ -383,7 +383,7 @@ class TestValidateFlag:
         nb_name = "10_test.ipynb"
         mock_discover.return_value = [Path(f"notebooks/{nb_name}")]
 
-        def fake_execute(nb_path, mode, output_dir):
+        def fake_execute(nb_path, mode, output_dir, extra_parameters=None):
             _write_valid_notebook(output_dir / nb_path.name)
             return True, "OK", 1.0
 
@@ -406,7 +406,7 @@ class TestValidateFlag:
         nb_name = "10_test.ipynb"
         mock_discover.return_value = [Path(f"notebooks/{nb_name}")]
 
-        def fake_execute(nb_path, mode, output_dir):
+        def fake_execute(nb_path, mode, output_dir, extra_parameters=None):
             _write_error_notebook(output_dir / nb_path.name)
             return True, "OK", 1.0
 
@@ -451,7 +451,7 @@ class TestValidateFlag:
         nb_name = "10_test.ipynb"
         mock_discover.return_value = [Path(f"notebooks/{nb_name}")]
 
-        def fake_execute(nb_path, mode, output_dir):
+        def fake_execute(nb_path, mode, output_dir, extra_parameters=None):
             _write_error_notebook(output_dir / nb_path.name)
             return True, "OK", 1.0
 
