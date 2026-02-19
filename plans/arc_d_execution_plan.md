@@ -161,47 +161,42 @@ grows cumulatively. R5 adds an `offensive`/`defensive` sub-structure to
 ## §3) Dependency Gate
 
 Arc D depends on infrastructure from the HITL Notebook Gates plan.
-Current status as of 2026-02-19:
+All HITL dependencies are now resolved:
 
 | Dependency | HITL PR | GitHub | Status | Blocker for Arc D? |
 |------------|---------|--------|--------|-------------------|
 | `require_split()` runtime enforcement | HITL PR-1 | #370 | **MERGED** | Resolved |
 | `compute_semantic_gate()` engine | HITL PR-2 | #372 | **MERGED** | Resolved |
-| Model-rung notebook template | HITL PR-3 | #374 | **OPEN** (mergeable) | NO — nice-to-have |
-| Report template generator | HITL PR-4 | #375 | **OPEN** (mergeable) | NO — nice-to-have |
-| `check_semantic_gate()` eligibility wiring | HITL PR-5 | #376 | **OPEN** (mergeable) | **YES** — blocks R1b+ promotions |
+| Model-rung notebook template | HITL PR-3 | #374 | **MERGED** | Resolved (nice-to-have) |
+| Report template generator | HITL PR-4 | #375 | **MERGED** | Resolved (nice-to-have) |
+| `check_semantic_gate()` eligibility wiring | HITL PR-5 | #376 | **MERGED** | Resolved |
 
 ### Current Pipeline Reality
 
-`compute_eligibility()` does **not yet exist** in
-`/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/validation/promotion.py`.
-That file currently contains only `check_artifacts_frozen()` (a single
-freeze-verification wrapper). The full eligibility function with semantic gate
-integration will be added by PR #376 (`feat/eligibility-semantic`).
+`compute_eligibility()` exists in
+`/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/eligibility.py`
+(added by PR #376). It runs 7 checks including `check_semantic_gate()`,
+`check_artifacts_frozen()`, `check_split_manifests()`, `check_canonical_summaries()`,
+`check_config_membership()`, `check_notebook_gate()`, and `check_git_sha_consistency()`.
 
-**Consequence:** Arc D promotion decisions (R1b and later) are explicitly blocked
-until PR #376 merges. The Arc D gate runner (PR-I2) wraps `compute_eligibility()`
-as an adapter — it cannot function until that function exists with semantic gate
-rules wired in.
+The Arc D gate runner (PR-I2) wraps `compute_eligibility()` as an adapter,
+adding Arc D-specific Tier 2 gates on top. **No external blockers remain** —
+all infrastructure PRs can begin immediately.
 
-### What Can Start Before PR #376 Merges
+### What Can Start Now
+
+All 16 Arc D PRs can begin. The only constraints are inter-PR dependencies
+within Arc D itself (see §6 Wave Structure).
 
 | Arc D PR | Can start now? | Rationale |
 |----------|---------------|-----------|
-| PR-I1 (HybridOLSaBidder + schema) | **YES** | Code-only infrastructure. No gate dependency. |
-| PR-I3 (Doc sync) | **YES** | Documentation-only. |
-| PR-R0a (Hybrid training pipeline) | **YES** | Code-only pipeline + feature selection. |
-| PR-R0b (R0 baseline) | **YES** | R0 auto-promotes — no gate infra needed. |
-| PR-R1a (Partner context infra) | **YES** | Code-only feature extraction. |
-| PR-R2a (Opponent context features) | **YES** | Code-only feature extraction. |
-| PR-R5a (Off/def architecture) | **YES** | Code-only architecture change. |
-
-### What Is Blocked Until PR #376 Merges
-
-| Arc D PR | Blocked by | Reason |
-|----------|-----------|--------|
-| PR-I2 (Gate runner adapter) | PR #376 | Wraps `compute_eligibility()` which doesn't exist yet |
-| PR-R1b through PR-R5b (all training+eval PRs) | PR-I2 | All formal promotions require gate runner |
+| PR-I1 (HybridOLSaBidder + schema) | **YES** | Code-only infrastructure |
+| PR-I2 (Gate runner adapter) | **YES** | `compute_eligibility()` exists on main (#376 merged) |
+| PR-I3 (Doc sync) | **YES** | Documentation-only |
+| PR-R0a (Hybrid training pipeline) | **YES** | Code-only pipeline + feature selection |
+| PR-R0b (R0 baseline) | **YES** | R0 auto-promotes — no gate infra needed |
+| PR-R1a (Partner context infra) | **YES** | Code-only feature extraction |
+| PR-R5a (Off/def architecture) | **YES** | Code-only architecture change |
 
 ---
 
@@ -438,7 +433,7 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 | PR-R0a | R0 | Hybrid training pipeline + feature selection utility | New: training script, feature selection module + tests |
 | PR-R0b | R0 | R0 baseline: train, freeze, 3-seed eval, auto-promote | New: eval configs, registry doc. Artifacts: frozen model + evals |
 | PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction | Modified: observation, data collector. New: context feature extractor + tests |
-| PR-R1b | R1 | R1 training + eval + promotion | Feature selection + train + eval + gate. Blocked by PR-I2 + PR #376 |
+| PR-R1b | R1 | R1 training + eval + promotion | Feature selection + train + eval + gate. Depends on PR-I2 + PR-R0b + PR-R1a |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
 | PR-R2b | R2 | R2 training + eval + promotion | Same pattern as R1b |
 | PR-R3a | R3 | Full transcript context feature extraction | New: transcript context features + tests |
@@ -460,7 +455,7 @@ Wave 1 (no deps):
   [I1] HybridOLSaBidder + schema + schema doc + linter rule
 
 Wave 2 (after I1, parallel):
-  [I2] Gate runner adapter (BLOCKED by PR #376 until compute_eligibility exists)
+  [I2] Gate runner adapter (wraps compute_eligibility from #376)
   [I3] Doc sync
   [R0a] Hybrid training pipeline + feature selection
   [R1a] Partner context infra + features
@@ -471,7 +466,7 @@ Wave 3 (after R0a, parallel):
   [R2a] Opponent context features (after R1a merged)
 
 Wave 4 (after R0b promoted + R1a + I2):
-  [R1b] R1 training + eval + promotion  <- BLOCKED by PR #376
+  [R1b] R1 training + eval + promotion
   [R3a] Full transcript features (after R2a merged)
 
 Wave 5 (after R1b + R2a):
@@ -497,9 +492,8 @@ Wave 9 (after all rungs):
 I1 -> R0a -> R0b -> R1b -> R2b -> R3b -> R4b -> R5b -> F
 ```
 
-**External blocker on critical path:** PR #376 (`feat/eligibility-semantic`)
-blocks PR-I2, which blocks R1b. All subsequent training+eval PRs are
-transitively blocked.
+**No external blockers remain.** All HITL dependencies (#370, #372, #374, #375,
+#376) are merged. The only constraints are inter-PR dependencies within Arc D.
 
 **Off critical path (can develop in parallel):**
 PR-I3, PR-R1a, PR-R2a, PR-R3a, PR-R4a, PR-R5a — all code-only PRs that
@@ -508,12 +502,12 @@ add features or architecture without running promotions.
 ### Parallel-Safe Summary
 
 ```
-Prerequisites:  #370(done)  #372(done)  #376(OPEN, blocks I2/R1b+)
+Prerequisites:  #370(done)  #372(done)  #374(done)  #375(done)  #376(done)
 
 Wave 1:  [I1]                                          <- single, foundational
-Wave 2:  [I2*] [I3] [R0a] [R1a] [R5a]                 <- parallel (* = blocked by #376)
+Wave 2:  [I2] [I3] [R0a] [R1a] [R5a]                  <- parallel, no external blockers
 Wave 3:  [R0b] [R2a]                                   <- after R0a / R1a
-Wave 4:  [R1b*] [R3a]                                  <- R1b blocked until I2 ready
+Wave 4:  [R1b] [R3a]                                   <- after R0b + R1a + I2
 Wave 5:  [R2b] [R4a]                                   <- after R1b / R3a
 Wave 6:  [R3b]                                         <- after R2b + R3a
 Wave 7:  [R4b]                                         <- after R3b + R4a
@@ -532,7 +526,7 @@ def should_promote(challenger, control, rung_id):
     """Fully deterministic from inputs. Returns (decision: str, reasons: list[str]).
 
     The gate runner is an ADAPTER wrapping compute_eligibility() from
-    /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/validation/promotion.py.
+    /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/eligibility.py.
     It adds Arc D-specific Tier 2 gates on top of the central eligibility engine.
     """
     delta_floor = 0.01  # fixed floor, not configurable
@@ -866,10 +860,10 @@ Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/tes
 **Execution prompt:**
 ```
 Implement the Arc D gate runner as an ADAPTER wrapping compute_eligibility()
-from /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/validation/promotion.py.
+from /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/eligibility.py.
 
-PREREQUISITE: PR #376 must be merged first (adds compute_eligibility() with
-semantic gate rules to promotion.py).
+compute_eligibility() is available on main (merged in PR #376). It runs 7 checks
+including check_semantic_gate(), check_artifacts_frozen(), check_split_manifests().
 
 Create /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/run_arc_d_gate.py:
   def should_promote(challenger, control, rung_id) -> tuple[str, list[str]]:
@@ -889,7 +883,7 @@ All thresholds from section 7 Promotion Decision Contract:
   R5: strict cvar_5 improvement
 
 Imports:
-  bid_euchre.validation.promotion.compute_eligibility
+  bid_euchre.reporting.eligibility.compute_eligibility
   bid_euchre.models.splits.verify_split_manifest
   bid_euchre.models.freeze.verify_frozen
   bid_euchre.diagnostics.semantic_gate.compute_semantic_gate
@@ -1230,7 +1224,9 @@ Verify: make repo-lint passes.
 |---|--------|--------|
 | P1 | Merge HITL PR-1 (#370): `require_split()` | **DONE** (merged 2026-02-19) |
 | P2 | Merge HITL PR-2 (#372): `compute_semantic_gate()` | **DONE** (merged 2026-02-19) |
-| P3 | Merge HITL PR-5 (#376): `check_semantic_gate()` eligibility | **OPEN** — blocks I2 and all R{N}b PRs |
+| P3 | Merge HITL PR-3 (#374): model-rung notebook template | **DONE** (merged) |
+| P4 | Merge HITL PR-4 (#375): report template generator | **DONE** (merged) |
+| P5 | Merge HITL PR-5 (#376): `check_semantic_gate()` eligibility | **DONE** (merged) |
 
 ### Data Policy
 
@@ -1269,7 +1265,7 @@ Test metrics exist only in evaluator output.
   - [x] §7/§9: Gate runner as adapter wrapping `compute_eligibility()`
 - [ ] All 7 additional findings reflected:
   - [x] P1-1: One concept per PR (16 PRs, R2-R4 split into a/b) — §5
-  - [x] P1-2: Dependency gate reflects pipeline reality (no compute_eligibility yet) — §3
+  - [x] P1-2: Dependency gate reflects pipeline reality (compute_eligibility exists in reporting/eligibility.py) — §3
   - [x] P1-3: Absolute paths everywhere — all sections
   - [x] P2-4: Schema doc + validator (hybrid_olsa_v1.md + linter rule) — §2, §9 H-I1
   - [x] P2-5: Promotion delta with confidence (max(0.01, 1.5*SE)) — §7
