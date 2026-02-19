@@ -256,9 +256,6 @@ class TestErrorHandling:
         with pytest.raises(ValueError):
             simulation.simulate_many_hands(10, "suit", None)
 
-    @pytest.mark.xfail(
-        reason="Trump suit validation for high/low contracts not yet implemented"
-    )
     def test_trump_provided_for_no_trump_contract(self):
         """Test error when trump suit provided for no-trump contracts."""
         with pytest.raises(ValueError):

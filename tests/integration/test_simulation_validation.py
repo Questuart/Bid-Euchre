@@ -177,9 +177,6 @@ class TestSimulationEdgeCases:
         with pytest.raises(ValueError):
             simulation.simulate_many_hands(10, "suit", None)
 
-    @pytest.mark.xfail(
-        reason="Trump suit validation for high/low contracts not yet implemented"
-    )
     def test_simulation_no_trump_contracts_with_trump(self):
         """Test that high/low contracts reject trump suit."""
         with pytest.raises(ValueError):

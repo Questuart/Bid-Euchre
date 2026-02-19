@@ -397,6 +397,10 @@ def play_single_hand(
     # Validation (now that contract is decided)
     if contract_type == "suit" and trump_suit is None:
         raise ValueError("trump_suit must be provided or decided for 'suit' contracts")
+    if contract_type in ("high", "low") and trump_suit is not None:
+        raise ValueError(
+            "trump_suit must be None for 'high'/'low' (no-trump) contracts"
+        )
 
     # Extract features for ALL 4 players
     all_player_scores: List[int] = []
