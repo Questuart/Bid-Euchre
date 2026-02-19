@@ -175,6 +175,17 @@ def check_no_nan_features(
     feature_cols: list[str],
 ) -> dict[str, Any]:
     """Verify zero NaN values in feature columns."""
+    missing_cols = [c for c in feature_cols if c not in df.columns]
+    if missing_cols:
+        return _make_check(
+            "no_nan_features",
+            "health",
+            "FAIL",
+            threshold="0 NaN",
+            observed=f"{len(missing_cols)} missing columns",
+            detail=f"Feature columns missing from DataFrame: {missing_cols[:5]}"
+            + (f" (+{len(missing_cols) - 5} more)" if len(missing_cols) > 5 else ""),
+        )
     nan_count = df[feature_cols].isna().sum().sum()
     if nan_count == 0:
         return _make_check(
@@ -268,7 +279,7 @@ def check_val_split_integrity(
         return _make_check(
             "val_split_integrity",
             "health",
-            "PASS",
+            "SKIP",
             threshold="hash match",
             observed="no manifest provided",
             detail="No manifest provided; integrity check skipped",
@@ -307,6 +318,19 @@ def check_seat_balance(
 ) -> list[dict[str, Any]]:
     """ANOVA F-test on hand_value by seat, per contract_type."""
     results = []
+
+    if mode == "SMOKE":
+        results.append(
+            _make_check(
+                "seat_balance",
+                "fairness",
+                "SKIP",
+                threshold=f"ANOVA p > {alpha}",
+                observed="SMOKE mode",
+                detail="Skipped in SMOKE mode",
+            )
+        )
+        return results
 
     if "contract_type" not in df.columns or "seat" not in df.columns:
         results.append(
@@ -420,13 +444,26 @@ def check_contract_type_balance(
     if expected_ratios is None:
         expected_ratios = {"suit": 4.0, "high": 1.0, "low": 1.0}
 
-    # Build expected frequencies from ratios
+    # Check for expected contract types that are entirely missing
+    missing_types = [ct for ct in expected_ratios if ct not in counts.index]
+    if missing_types:
+        return _make_check(
+            "contract_type_balance",
+            "fairness",
+            "FAIL",
+            threshold=f"chi2 p > {alpha}",
+            observed=f"missing types: {missing_types}",
+            detail=f"Expected contract types missing from data: {missing_types}",
+        )
+
+    # Build expected frequencies from ratios — iterate over all expected types
     total = counts.sum()
-    ratio_sum = sum(expected_ratios.get(ct, 1.0) for ct in counts.index)
+    all_types = sorted(expected_ratios.keys())
+    ratio_sum = sum(expected_ratios[ct] for ct in all_types)
     expected_freq = np.array(
-        [total * expected_ratios.get(ct, 1.0) / ratio_sum for ct in counts.index]
+        [total * expected_ratios[ct] / ratio_sum for ct in all_types]
     )
-    observed_freq = counts.values.astype(float)
+    observed_freq = np.array([float(counts.get(ct, 0)) for ct in all_types])
 
     if mode == "SMOKE" or total < _MIN_STAT_N:
         return _make_check(

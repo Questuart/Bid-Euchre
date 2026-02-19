@@ -167,6 +167,15 @@ class TestNoNanFeatures:
         assert result["status"] == "FAIL"
         assert "2" in result["observed"]
 
+    def test_fail_missing_columns(self):
+        """Missing feature columns → FAIL (not KeyError)."""
+        df = _make_df()
+        bogus_cols = FEATURE_COLS + ["nonexistent_feature", "another_missing"]
+        result = check_no_nan_features(df, bogus_cols)
+        assert result["status"] == "FAIL"
+        assert "missing" in result["observed"].lower()
+        assert "nonexistent_feature" in result["detail"]
+
 
 class TestTricksRange:
     def test_pass(self):
@@ -220,10 +229,11 @@ class TestMinSampleSize:
 
 
 class TestValSplitIntegrity:
-    def test_pass_no_manifest(self):
+    def test_skip_no_manifest(self):
+        """No manifest provided → SKIP (not PASS) to avoid silent bypass."""
         df = _make_df()
         result = check_val_split_integrity(df, manifest=None, seed=42)
-        assert result["status"] == "PASS"
+        assert result["status"] == "SKIP"
 
     def test_pass_with_manifest(self, tmp_path):
         from bid_euchre.models.splits import create_grouped_split
@@ -300,6 +310,13 @@ class TestSeatBalance:
         results = check_seat_balance(df, "FULL")
         assert results[0]["status"] == "SKIP"
 
+    def test_skip_smoke_large_n(self):
+        """SMOKE mode skips statistical tests even with large datasets."""
+        df = _make_df(n_hands=1000)
+        results = check_seat_balance(df, "SMOKE")
+        assert all(r["status"] == "SKIP" for r in results)
+        assert len(results) == 1  # Single SKIP entry, no per-contract breakdown
+
 
 class TestContractTypeBalance:
     def test_pass(self):
@@ -349,6 +366,28 @@ class TestContractTypeBalance:
         df = _make_df(n_hands=30)
         result = check_contract_type_balance(df, "FULL")
         assert result["status"] == "SKIP"
+
+    def test_fail_missing_contract_type(self):
+        """Data with only suit+high but expected 4:1:1 (low missing) → FAIL."""
+        rng = np.random.RandomState(42)
+        rows = []
+        for i in range(500):
+            ct = "suit" if i % 2 == 0 else "high"
+            for seat in range(4):
+                rows.append(
+                    {
+                        "hand_id": i,
+                        "seat": seat,
+                        "contract_type": ct,
+                        "tricks_won": 5.0,
+                        "hand_value": rng.uniform(200, 600),
+                    }
+                )
+        df = pd.DataFrame(rows)
+        result = check_contract_type_balance(df, "FULL")
+        assert result["status"] == "FAIL"
+        assert "missing" in result["observed"].lower()
+        assert "low" in result["detail"]
 
 
 class TestTrumpSuitInvariance:
@@ -582,6 +621,17 @@ class TestSmokeMode:
         # Should have health checks that aren't all SKIP
         non_skip = [c for c in health if c["status"] != "SKIP"]
         assert len(non_skip) > 0
+
+    def test_smoke_large_n_still_skips_statistical(self):
+        """SMOKE mode must skip statistical checks even with large datasets."""
+        df = _make_df(n_hands=1000)
+        gate = compute_semantic_gate(df, "SMOKE", "val", 42)
+        for check in gate["checks"]:
+            if check["category"] in ("fairness", "directional_sanity"):
+                assert check["status"] == "SKIP", (
+                    f"Expected SKIP for {check['check_id']} in SMOKE mode "
+                    f"with large N, got {check['status']}"
+                )
 
 
 class TestFullMode:

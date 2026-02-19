@@ -69,9 +69,9 @@ promotion readiness.
 
 | check_id | Category | Threshold | Mode behavior |
 |----------|----------|-----------|---------------|
-| `val_split_integrity` | health | Exact partition hash match | Always checked |
+| `val_split_integrity` | health | Exact partition hash match | SKIP if no manifest provided |
 | `feature_count` | health | Exact match vs `get_hand_features()` | Always checked |
-| `no_nan_features` | health | Zero NaN in feature columns | Always checked |
+| `no_nan_features` | health | Zero NaN in feature columns | FAIL if columns missing |
 | `tricks_range` | health | All tricks_won in [0, 10] | Always checked |
 | `min_sample_size` | health | SMOKE>=10, QUICK>=100, FULL>=2000 | Always checked |
 
@@ -80,7 +80,7 @@ promotion readiness.
 | check_id | Category | Default threshold | Override key |
 |----------|----------|-------------------|-------------|
 | `seat_balance` | fairness | ANOVA p > 0.01 | `seat_balance_alpha` |
-| `contract_type_balance` | fairness | Chi-square p > 0.01 | `contract_balance_alpha` |
+| `contract_type_balance` | fairness | Chi-square p > 0.01; all expected types present | `contract_balance_alpha` |
 | `trump_suit_invariance` | fairness | Relative spread < 2.0% | `trump_invariance_spread` |
 | `team_balance` | fairness | abs(delta) < 0.25 | `team_balance_delta` |
 | `prediction_correlation` | directional_sanity | r > 0.10 | `min_correlation` |
