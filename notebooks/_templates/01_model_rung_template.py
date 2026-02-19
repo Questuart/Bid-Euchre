@@ -84,6 +84,14 @@ if SPLIT_MANIFEST_PATH:
         df_features, manifest, ACTIVE_SPLIT, SEED, active_split=ACTIVE_SPLIT
     )
     print(f"After split filter ({ACTIVE_SPLIT}): {len(df_features)} rows")
+elif run_path is not None:
+    # Safety: warn that split enforcement is bypassed.
+    # For promotion, SPLIT_MANIFEST_PATH must be provided.
+    print(
+        "WARNING: SPLIT_MANIFEST_PATH not provided — split guard bypassed. "
+        "Full dataset loaded without access control. "
+        "Set SPLIT_MANIFEST_PATH for promotion-track evaluation."
+    )
 
 print(f"MODE={MODE}, max deals={MODE_DEAL_COUNTS.get(MODE, '?')}")
 
@@ -92,6 +100,9 @@ print(f"MODE={MODE}, max deals={MODE_DEAL_COUNTS.get(MODE, '?')}")
 
 # %%
 if not df_features.empty and "seat" in df_features.columns:
+    # Use hand_value for seat-balance chart (matches semantic gate check_seat_balance).
+    # Fall back to tricks_won if hand_value is not available.
+    balance_col = "hand_value" if "hand_value" in df_features.columns else "tricks_won"
     contract_col = "contract_type" if "contract_type" in df_features.columns else None
     if contract_col:
         fig, axes = plt.subplots(
@@ -104,15 +115,14 @@ if not df_features.empty and "seat" in df_features.columns:
             axes = [axes]
         for ax, (ctype, grp) in zip(axes, df_features.groupby(contract_col)):
             seat_data = [
-                grp.loc[grp["seat"] == s, "tricks_won"].dropna()
+                grp.loc[grp["seat"] == s, balance_col].dropna()
                 for s in sorted(grp["seat"].unique())
-                if "tricks_won" in grp.columns
             ]
             if seat_data:
                 ax.boxplot(seat_data, labels=sorted(grp["seat"].unique()))
             ax.set_title(f"Seat balance: {ctype}")
             ax.set_xlabel("Seat")
-            ax.set_ylabel("Tricks won")
+            ax.set_ylabel(balance_col)
         plt.tight_layout()
         if CHART_OUTPUT_DIR:
             out = Path(CHART_OUTPUT_DIR)
