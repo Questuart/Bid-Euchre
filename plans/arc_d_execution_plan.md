@@ -36,6 +36,14 @@ context from auction transcripts.
 - **Strict split discipline:** Train-only fit, val-only tune, test-only blind eval.
   No exceptions. No mixed wording.
 
+**Proxy target contract (R0–R4):**
+- `tricks_won` is the supervised proxy target for bidding value. All OLS models
+  predict expected tricks, not bid outcomes directly.
+- Bidding quality is judged by downstream simulation metrics (`expected_points_per_deal`,
+  `bid_rate`, `make_rate`, `cvar_5`, `downside_variance`), not by a direct bid-outcome label.
+- If proxy validity degrades (e.g., weak alignment between predicted tricks and realized
+  points), promotion is blocked pending proxy reassessment.
+
 **Rung progression (bidding context ladder):**
 ```
 R0  Baseline Lock         freeze HybridOLSaBidder with sparse hand features, establish baseline
@@ -47,12 +55,17 @@ R5  Off/Def Split         split payoff model into offensive (declaring) and defe
 ```
 
 The rungs represent progressive **information gain from bidding context**, not model
-complexity. The two-stage EV architecture (win model + payoff model) with risk
-adjustment is infrastructure (PR-I1), available from R0 onward.
+complexity. The EV architecture (payoff model + analytical P(make) via Gaussian CDF)
+with risk adjustment is infrastructure (PR-I1), available from R0 onward.
 
 **End state:** `HybridOLSaBidder` selecting `(contract, bid_n)` to maximize
-`utility = E[points] - risk_penalty`, using two-stage OLS regression with
+`utility = E[points] - risk_penalty`, using per-contract OLS regression with
 progressive bidding context features and risk adjustment.
+
+**Data-source transition:**
+R0 uses the canonical bidless dataset (hand features only, no auction context).
+R1+ requires a canonical auction-context dataset with full auction history per
+decision point. PR-R1a produces this dataset as part of its scope.
 
 **Primary metric:** `expected_points_per_deal` (eppd)
 **Guardrails:** `bid_rate`, `make_rate`, `cvar_5`, `downside_variance`
@@ -63,8 +76,8 @@ progressive bidding context features and risk adjustment.
 
 ### Schema Specification
 
-The `hybrid_olsa_v1` artifact schema provides a unified two-stage architecture
-from R0 onward, replacing the single-stage `olsa_v1` / `olsa_v2` progression.
+The `hybrid_olsa_v1` artifact schema provides a single-model architecture
+from R0 onward, replacing the `olsa_v1` / `olsa_v2` progression.
 
 **Schema document:** `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md`
 (created by PR-I1, committed to repo)
@@ -77,12 +90,7 @@ artifacts against this schema. Added in PR-I1.
   "artifact_type": "hybrid_olsa_v1",
   "schema_version": 1,
   "rung_id": "r0",
-  "stage1_win_model": {
-    "suit": {"weights": [0.1, 0.2], "bias": 0.0, "feature_names": ["bowers", "trump_count"]},
-    "high": {"weights": [0.3], "bias": 0.0, "feature_names": ["offsuit_aces"]},
-    "low": {"weights": [0.15], "bias": 0.0, "feature_names": ["offsuit_tens_count"]}
-  },
-  "stage2_payoff_model": {
+  "payoff_model": {
     "suit": {"weights": [0.5, 0.8, 0.3], "bias": 3.0, "feature_names": ["bowers", "trump_count", "offsuit_aces"]},
     "high": {"weights": [0.6], "bias": 4.0, "feature_names": ["offsuit_aces"]},
     "low": {"weights": [0.4], "bias": 4.5, "feature_names": ["offsuit_tens_count"]}
@@ -98,22 +106,20 @@ artifacts against this schema. Added in PR-I1.
 }
 ```
 
-### Stage Roles
+### Model Role
 
-| Stage | Model | Predicts | Input | Output |
-|-------|-------|----------|-------|--------|
-| Stage 1 | `stage1_win_model` | P(tricks >= bid_n) per contract | hand features + context_features | win probability proxy |
-| Stage 2 | `stage2_payoff_model` | E[tricks] per contract | hand features + context_features | expected tricks (mu) |
-
-Stage 1 feeds into bid/pass filtering; Stage 2 feeds into the EV computation.
-Both stages use OLS regression. Residual variance is computed from Stage 2
-train-set residuals.
+The `payoff_model` predicts E[tricks] per contract family using OLS regression
+on hand features + context_features. Win probability P(make) is derived
+analytically from mu and sigma via the Gaussian CDF (see utility formula below).
+No separate win-probability model is needed — P(make) = 1 - Phi(z) where
+z = (bid_n - 0.5 - mu) / sigma. Residual variance is computed from
+train-set residuals of the payoff model.
 
 ### Risk Utility Computation
 
 ```
 For each contract c in {C, D, H, S, HIGH, LOW}:
-  mu_c    = stage2_payoff_model[family] @ features + bias
+  mu_c    = payoff_model[family] @ features + bias
   sigma_c = sqrt(residual_variance[family])
   bid_n_c = clamp(floor(mu_c), 3, 10)
 
@@ -145,7 +151,7 @@ quantity. `max(0, -CVaR_5)` ensures the penalty is non-negative. Therefore
 
 | Rung | Schema | `context_features` | `risk_lambda` | Notes |
 |------|--------|--------------------|---------------|-------|
-| R0 | `hybrid_olsa_v1` | `[]` (hand features only) | `0.0` | Baseline — equivalent to current OLSa |
+| R0 | `hybrid_olsa_v1` | `[]` (hand features only) | `0.0` | Baseline — establishes HybridOLSaBidder metrics with sparse features (not numerically equivalent to OLSaBidder due to different decision formula) |
 | R1 | `hybrid_olsa_v1` | partner context features | `0.0` | First bidding context |
 | R2 | `hybrid_olsa_v1` | + opponent context features | `0.0` | Cumulative context |
 | R3 | `hybrid_olsa_v1` | + full transcript features | `0.0` | Complete auction info |
@@ -154,7 +160,7 @@ quantity. `max(0, -CVaR_5)` ensures the penalty is non-negative. Therefore
 
 All rungs use the same `hybrid_olsa_v1` schema. The `context_features` list
 grows cumulatively. R5 adds an `offensive`/`defensive` sub-structure to
-`stage2_payoff_model` (backward-compatible within the schema).
+`payoff_model` (backward-compatible within the schema).
 
 ---
 
@@ -185,18 +191,20 @@ all infrastructure PRs can begin immediately.
 
 ### What Can Start Now
 
-All 16 Arc D PRs can begin. The only constraints are inter-PR dependencies
-within Arc D itself (see §6 Wave Structure).
+All 16 Arc D PRs have no external blockers — all HITL dependencies are merged.
+The only constraints are inter-PR dependencies within Arc D itself (see §6 Wave Structure).
+The table below lists Wave 1–2 PRs that have no Arc D prerequisites (see §6 for full wave graph):
 
-| Arc D PR | Can start now? | Rationale |
-|----------|---------------|-----------|
-| PR-I1 (HybridOLSaBidder + schema) | **YES** | Code-only infrastructure |
-| PR-I2 (Gate runner adapter) | **YES** | `compute_eligibility()` exists on main (#376 merged) |
-| PR-I3 (Doc sync) | **YES** | Documentation-only |
-| PR-R0a (Hybrid training pipeline) | **YES** | Code-only pipeline + feature selection |
-| PR-R0b (R0 baseline) | **YES** | R0 auto-promotes — no gate infra needed |
-| PR-R1a (Partner context infra) | **YES** | Code-only feature extraction |
-| PR-R5a (Off/def architecture) | **YES** | Code-only architecture change |
+| Arc D PR | Wave | Rationale |
+|----------|------|-----------|
+| PR-I1 (HybridOLSaBidder + schema) | 1 | Code-only infrastructure, foundational for all other PRs |
+| PR-I2 (Gate runner adapter) | 2 (after I1) | `compute_eligibility()` exists on main (#376 merged) |
+| PR-I3 (Doc sync) | 2 (after I1) | Documentation-only |
+| PR-R0a (Hybrid training pipeline) | 2 (after I1) | Code-only pipeline + feature selection |
+| PR-R1a (Partner context infra + auction dataset) | 2 (after I1) | Code-only feature extraction + canonical auction dataset production |
+| PR-R5a (Off/def architecture) | 2 (after I1) | Code-only architecture change |
+
+PRs beyond Wave 2 (R0b, R1b, R2a, etc.) have inter-PR dependencies — see §6.
 
 ---
 
@@ -225,7 +233,7 @@ rung comparisons.
 `risk_lambda = 0.0`.
 
 **Required inputs:**
-- Canonical run: `canonical_bidless_dataset_glutton_42_20260204_222713`
+- Dataset: `canonical_bidless_dataset_glutton_42_20260204_222713` (bidless — no auction context needed at this rung)
 - Split: `three_way`, seed=42, fractions 80/10/10, grouped by `hand_id`
 - Infrastructure from PR-I1: `HybridOLSaBidder` class + `hybrid_olsa_v1` schema
 
@@ -248,9 +256,19 @@ context_features: []
 **Additional committed outputs:**
 - `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` — registry with R0 baseline row
 
-**Promotion:** Auto-promote. All 6 metrics must be finite and recorded.
-No comparison target exists. Establishes calibration baseline for subsequent
-rung thresholds.
+**Acceptance criterion:** All 6 metrics must be finite. No comparison target exists
+(R0 is the first hybrid artifact). R0 metrics are recorded as the calibration baseline;
+subsequent rungs improve against R0.
+
+**Behavioral note:** R0 will NOT produce identical decisions to the current
+`OLSaBidder` despite using the same features, because the decision formula differs
+(Gaussian EV vs simple floor). This is expected and intentional — R0 establishes
+the HybridOLSaBidder's own baseline, not an equivalence claim.
+
+**Optional diagnostic:** Run OLSaBidder and HybridOLSaBidder R0 side-by-side
+on seed 42 and record the eppd difference for characterization (not gating).
+
+**Promotion:** Auto-promote. All 6 metrics finite and recorded.
 
 ---
 
@@ -264,7 +282,12 @@ and train expanded model.
 
 **Required inputs:**
 - R0 incumbent artifact (promoted)
-- Same canonical run and split manifest as R0
+- Canonical auction-context dataset produced by PR-R1a. This dataset comes from
+  simulations WITH auction using the existing `OLSaBidder` (the only promoted
+  bidder available when R1a runs in Wave 2), capturing per-decision auction
+  state including full bid sequence.
+  Not compatible with bidless dataset — R1+ uses a different data source.
+- Split: `three_way`, seed=42, fractions 80/10/10, grouped by `hand_id`
 - Feature pool: 39 hand features + new partner context features from PR-R1a
 
 **Partner context features (candidates — selected via forward selection on val):**
@@ -302,7 +325,8 @@ partner + opponent context cumulated.
 
 **Required inputs:**
 - R1 incumbent artifact (promoted)
-- Same canonical run and split
+- Canonical auction-context dataset from PR-R1a (same dataset as R1)
+- Split: `three_way`, seed=42
 
 **Opponent context features (candidates):**
 - `opponent_max_bid`: highest bid from either opponent
@@ -326,7 +350,8 @@ has complete bidding information available at decision time.
 
 **Required inputs:**
 - R2 incumbent artifact (promoted)
-- Same canonical run and split
+- Canonical auction-context dataset from PR-R1a (same dataset as R1)
+- Split: `three_way`, seed=42
 
 **Full transcript features (candidates):**
 - `auction_length`: total rounds of bidding
@@ -348,7 +373,8 @@ has complete bidding information available at decision time.
 
 **Required inputs:**
 - R3 incumbent artifact (promoted)
-- Same canonical run and split
+- Canonical auction-context dataset from PR-R1a (same dataset as R1)
+- Split: `three_way`, seed=42
 
 **Seat features (candidates):**
 - `seat_position`: relative to dealer (0-3)
@@ -364,7 +390,7 @@ has complete bidding information available at decision time.
 
 ### Phase R5 — Offensive/Defensive Payoff Split
 
-**Objective:** Split `stage2_payoff_model` into offensive (declaring team)
+**Objective:** Split `payoff_model` into offensive (declaring team)
 and defensive (defending team) sub-models. Tune `risk_lambda` on val-set.
 
 **Non-goals:** No new context features beyond R4.
@@ -375,10 +401,10 @@ and defensive (defending team) sub-models. Tune `risk_lambda` on val-set.
 - Val-set simulation: seed=42, n_per=10,000
 
 **Architecture change:**
-The `stage2_payoff_model` gains offensive/defensive sub-models:
+The `payoff_model` gains offensive/defensive sub-models:
 ```json
 {
-  "stage2_payoff_model": {
+  "payoff_model": {
     "suit": {
       "offensive": {"weights": [], "bias": 0.0, "feature_names": []},
       "defensive": {"weights": [], "bias": 0.0, "feature_names": []}
@@ -427,12 +453,12 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 
 | PR ID | Phase | Concept | Key Files |
 |-------|-------|---------|-----------|
-| PR-I1 | Infra | `HybridOLSaBidder` class + `hybrid_olsa_v1` schema doc + repo linter rule | New: bidder class, schema doc, linter rule. Tests: 8+ |
+| PR-I1 | Infra | `HybridOLSaBidder` class + `hybrid_olsa_v1` schema doc + repo linter rule | New: bidder class (single payoff_model + analytical P(make)), schema doc, linter rule. Tests: 8+ |
 | PR-I2 | Infra | Arc D gate runner adapter wrapping `compute_eligibility()` | New: gate runner script + tests. 20+ tests |
 | PR-I3 | Infra | Doc sync: update PROMOTION_WORKFLOW.md + DATA_CONTRACT.md with hybrid schema | Modified: 2 doc files. Verify: `make repo-lint` |
 | PR-R0a | R0 | Hybrid training pipeline + feature selection utility | New: training script, feature selection module + tests |
 | PR-R0b | R0 | R0 baseline: train, freeze, 3-seed eval, auto-promote | New: eval configs, registry doc. Artifacts: frozen model + evals |
-| PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction | Modified: observation, data collector. New: context feature extractor + tests |
+| PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
 | PR-R1b | R1 | R1 training + eval + promotion | Feature selection + train + eval + gate. Depends on PR-I2 + PR-R0b + PR-R1a |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
 | PR-R2b | R2 | R2 training + eval + promotion | Same pattern as R1b |
@@ -440,8 +466,8 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 | PR-R3b | R3 | R3 training + eval + promotion | Same pattern as R1b |
 | PR-R4a | R4 | Seat awareness feature extraction | New: seat features + tests |
 | PR-R4b | R4 | R4 training + eval + promotion | Same pattern as R1b |
-| PR-R5a | R5 | Offensive/defensive payoff model split (architecture change) + lambda tuning script | Modified: bidder, training pipeline. New: tuning script + tests |
-| PR-R5b | R5 | R5 training + eval + promotion (with risk_lambda) | Lambda tuning + train + eval + gate. Strict cvar_5 gate |
+| PR-R5a | R5 | Offensive/defensive payoff model split (architecture change) | Modified: bidder, training pipeline. New: off/def tests |
+| PR-R5b | R5 | Lambda tuning script + R5 training + eval + promotion | New: tune_lambda.py. Lambda grid + train + eval + strict cvar_5 gate |
 | PR-F | Final | Consolidation report + arc summary + final registry update | New report in docs/04_reports/ |
 
 ---
@@ -458,7 +484,7 @@ Wave 2 (after I1, parallel):
   [I2] Gate runner adapter (wraps compute_eligibility from #376)
   [I3] Doc sync
   [R0a] Hybrid training pipeline + feature selection
-  [R1a] Partner context infra + features
+  [R1a] Partner context infra + features + canonical auction-context dataset
   [R5a] Off/def architecture (code-only, starts early)
 
 Wave 3 (after R0a, parallel):
@@ -466,7 +492,7 @@ Wave 3 (after R0a, parallel):
   [R2a] Opponent context features (after R1a merged)
 
 Wave 4 (after R0b promoted + R1a + I2):
-  [R1b] R1 training + eval + promotion
+  [R1b] R1 training + eval + promotion (requires R1a's auction-context dataset)
   [R3a] Full transcript features (after R2a merged)
 
 Wave 5 (after R1b + R2a):
@@ -552,7 +578,7 @@ def should_promote(challenger, control, rung_id):
     #   - semantic gate on val + test partitions (via check_semantic_gate)
     #   - git SHA consistency, artifact freeze, split manifests
     # Signature: compute_eligibility(rollup, run_base_dir, batch_purpose, ...)
-    # Returns BatchGate with .eligible (bool) and .reasons (list of CheckResult)
+    # Returns BatchGate with .eligible (bool) and .reasons (list of EligibilityResult)
     eligibility = compute_eligibility(
         rollup=challenger.rollup,
         run_base_dir=challenger.run_base_dir,
@@ -818,10 +844,10 @@ data/artifacts/arc_d/
 Implement HybridOLSaBidder(BiddingPolicy) in
 /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/strategy/bidding.py.
 
-The class implements the two-stage EV decision from section 2:
-- Loads hybrid_olsa_v1 artifacts (stage1_win_model, stage2_payoff_model,
+The class implements the EV decision from section 2:
+- Loads hybrid_olsa_v1 artifacts (payoff_model,
   residual_variance, risk_lambda, context_features)
-- _predict(family, features) -> mu via stage2_payoff_model
+- _predict(family, features) -> mu via payoff_model
 - _compute_ev(mu, sigma, bid_n) -> EV via Gaussian integration
 - _compute_risk_penalty(mu, sigma, bid_n, risk_lambda) -> max(0, -CVaR_5) * lambda
 - choose_bid(obs) -> selects argmax(utility) or PASS
@@ -838,8 +864,8 @@ Create schema doc:
 
 Add repo linter rule: hybrid-artifact-schema
   Validates that any JSON file with "artifact_type": "hybrid_olsa_v1"
-  has required fields (stage1_win_model, stage2_payoff_model,
-  residual_variance, risk_lambda, context_features).
+  has required fields (payoff_model, residual_variance, risk_lambda,
+  context_features).
 
 Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/test_hybrid_bidder.py:
   1. Manual EV calculation matches _compute_ev to 6dp
@@ -849,13 +875,14 @@ Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/tes
   5. All negative utility -> PASS action
   6. risk_lambda=0 -> utility = EV exactly
   7. risk_penalty always >= 0 (sign convention verified)
-  8. Loads hybrid_olsa_v1 artifact successfully
-  9. Rejects non-hybrid_olsa_v1 artifacts (ValueError)
-  10. Config registration works (round-trip)
+  8. Derives P(make) analytically (no separate win model)
+  9. Loads hybrid_olsa_v1 artifact successfully
+  10. Rejects non-hybrid_olsa_v1 artifacts (ValueError)
+  11. Config registration works (round-trip)
 ```
 
 **Definition of done:**
-- [ ] `HybridOLSaBidder` class in bidding.py implements full two-stage EV + risk
+- [ ] `HybridOLSaBidder` class in bidding.py implements EV + analytical P(make) + risk
 - [ ] Schema doc at `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md`
 - [ ] Repo linter rule `hybrid-artifact-schema` validates artifacts
 - [ ] 8+ unit tests in test_hybrid_bidder.py
@@ -957,17 +984,18 @@ New file: /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchr
       feature_config: dict | None = None,
       freeze: bool = True,
   ) -> dict:
-      """Train two-stage hybrid OLSa model.
+      """Train hybrid OLSa model.
 
-      Stage 1 (win model): OLS regression of binary make indicator per contract.
-      Stage 2 (payoff model): OLS regression of tricks_won per contract.
-      Residual variance: MSE of Stage 2 residuals on TRAIN set only.
+      Fit one OLS per contract family on TRAIN partition predicting tricks_won.
+      Compute residual_variance from TRAIN-set residuals.
+      Output payoff_model weights/bias per family.
+      (No separate win model trained — P(make) is derived analytically at inference.)
 
       Outputs hybrid_olsa_v1 artifact.
       """
   - Load data, create split manifest (three_way, grouped by hand_id)
-  - Fit Stage 1 and Stage 2 per contract family (suit/high/low) on TRAIN only
-  - Compute residual_variance from Stage 2 TRAIN-set residuals
+  - Fit payoff_model per contract family (suit/high/low) on TRAIN only
+  - Compute residual_variance from payoff model TRAIN-set residuals
   - Assert 0 < residual_variance < 25 per contract
   - Write hybrid_olsa_v1 artifact JSON
   - If freeze=True: call freeze_artifact()
@@ -1051,13 +1079,20 @@ CONTRACT_FEATURES (must match current defaults):
 
 **Execution prompt:**
 ```
-Add partner bidding context feature extraction infrastructure.
+Add partner bidding context feature extraction infrastructure AND produce the
+canonical auction-context dataset that is the HARD PREREQUISITE for R1b and all
+subsequent rungs (R2–R5).
 
-1. Ensure BiddingObservation in
+1. Extend BiddingObservation in
    /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/strategy/bidding.py
-   exposes auction_history (list of prior bids in this auction).
+   with auction_history: list[dict] (full sequence of prior bids in this auction).
 
-2. Create context feature extractor:
+2. Extend BiddingDatasetCollector in
+   /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/datasets/bidding.py
+   to capture full auction sequence per decision row, including auction_history
+   from BiddingObservation.
+
+3. Create context feature extractor:
    /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/features/bidding_context.py
    def extract_partner_context(auction_history, seat) -> dict[str, float]:
        """Extract partner bidding context features.
@@ -1065,20 +1100,28 @@ Add partner bidding context feature extraction infrastructure.
                 partner_bid_confidence.
        """
 
-3. Update auction data collector to record auction_history in dataset.
+4. Run canonical auction simulation (seed=42, n_per=50000) to produce training
+   dataset. Use the existing `OLSaBidder` as the bidding policy (the only
+   promoted bidder available when R1a runs in Wave 2).
+   Output: canonical_auction_dataset_olsa_42_<timestamp>/ with
+   bidding.parquet containing per-decision rows with auction context columns.
+   This dataset is the HARD PREREQUISITE for R1b.
 
-4. Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/test_bidding_context.py:
+5. Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/test_bidding_context.py:
    - Partner with no bids -> partner_bid_level=0, partner_passed=1
    - Partner bid 5H -> partner_bid_level=5, partner_passed=0
    - Partner suit matches -> partner_suit_match=1
    - Deterministic from inputs
+   - BiddingObservation.auction_history is populated in simulation
 ```
 
 **Definition of done:**
 - [ ] `BiddingObservation.auction_history` accessible
+- [ ] `BiddingDatasetCollector` captures full auction sequence per decision row
 - [ ] `extract_partner_context()` returns 4 features
-- [ ] Auction data collector records history
-- [ ] 4+ tests
+- [ ] Canonical auction-context dataset produced and validated
+- [ ] R1b can load the dataset and find auction context columns
+- [ ] 5+ tests
 - [ ] `make check` passes
 
 ---
@@ -1117,7 +1160,14 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this template:
 ```
 
 **R5b additions:**
+- Create `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/tune_lambda.py`:
+  Lambda grid `[0.0, 0.05, 0.1, 0.2, 0.5, 1.0]`, val-set simulation per lambda
+  (seed=42, n_per=10,000), select `lambda* = argmax(eppd)`,
+  sensitivity check (±20% lambda → <5% EV change),
+  output `lambda_tuning_report_r5.json`
 - Lambda tuning step (val-only): run tune_lambda.py before eval
+- Risk sign convention: `risk_penalty = risk_lambda * max(0, -CVaR_5)`,
+  always >= 0, so utility <= EV always holds
 - Strict cvar_5 gate: `cvar_5_challenger > cvar_5_control`
 - Lambda stored in frozen artifact `risk_lambda` field
 
@@ -1157,14 +1207,14 @@ make check must pass.
 
 **Execution prompt:**
 ```
-Split stage2_payoff_model into offensive/defensive sub-models.
+Split payoff_model into offensive/defensive sub-models.
 
 Modify HybridOLSaBidder in
 /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/strategy/bidding.py:
-  - Detect offensive/defensive sub-structure in stage2_payoff_model
+  - Detect offensive/defensive sub-structure in payoff_model
   - Use offensive model for contracts where this team declares
   - Use defensive model for estimating defense value
-  - Backward-compatible: flat stage2_payoff_model still works (no off/def keys)
+  - Backward-compatible: flat payoff_model still works (no off/def keys)
 
 Modify train_hybrid_olsa.py:
   - Add --offensive-defensive flag
@@ -1172,31 +1222,20 @@ Modify train_hybrid_olsa.py:
     (both fits on TRAIN partition only)
   - Output sub-model structure per contract family
 
-Add lambda tuning:
-  New: /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/tune_lambda.py
-  - Lambda grid: [0.0, 0.05, 0.1, 0.2, 0.5, 1.0]
-  - Val-set simulation per lambda (seed=42, n_per=10,000)
-  - Select lambda* = argmax(eppd)
-  - Sensitivity: +/-20% lambda -> < 5% EV change
-  - Output: lambda_tuning_report_r5.json
-
-Risk sign convention:
-  risk_penalty = risk_lambda * max(0, -CVaR_5)
-  Always >= 0, so utility <= EV always holds.
+(Lambda tuning is deferred to PR-R5b scope — not part of this PR.)
 
 Tests:
   - Flat model (no off/def) still works (backward compat)
   - Off/def model loads and produces valid bids
-  - risk_lambda=0 -> utility = EV exactly
-  - risk_penalty always >= 0 (fuzz test with random inputs)
-  - lambda=large -> more frequent PASS (lower bid_rate)
+  - Off/def detection logic correct (key presence check)
+  - Declaring-team vs defending-team row split is correct
+  - Training with --offensive-defensive produces sub-model structure
 ```
 
 **Definition of done:**
 - [ ] Off/def sub-model detection in HybridOLSaBidder (backward-compatible)
 - [ ] Training pipeline supports --offensive-defensive
-- [ ] Lambda tuning script with sensitivity check
-- [ ] risk_penalty sign: always >= 0 (utility <= EV)
+- [ ] No lambda tuning in this PR (deferred to R5b)
 - [ ] 5+ tests
 - [ ] `make check` passes
 
@@ -1247,7 +1286,7 @@ Verify: make repo-lint passes.
 ### Blind-Test Flow (applies to every rung)
 
 ```
-TRAIN  -> fit OLS (Stage 1 + Stage 2) on TRAIN partition only
+TRAIN  -> fit OLS (payoff_model per contract family) on TRAIN partition only
 TUNE   -> feature selection / lambda tuning on VAL partition only
 FREEZE -> freeze_artifact() -> frozen_at + artifact_sha256
 EVALUATE -> evaluator pipeline on frozen artifact:
@@ -1264,7 +1303,7 @@ Test metrics exist only in evaluator output.
 - [ ] `make repo-lint` passes after document update
 - [ ] All 8 original non-negotiable fixes reflected:
   - [x] §1: R0-R5 rung structure (bidding context ladder, not model complexity)
-  - [x] §2: `hybrid_olsa_v1` artifact schema with `stage1_win_model`, `stage2_payoff_model`
+  - [x] §2: `hybrid_olsa_v1` artifact schema with `payoff_model` (single-model, analytical P(make))
   - [x] §7: Tighter thresholds (delta 0.01, bid_rate [0.05,0.95], make_rate>=0.45, cvar_5 0.10, dv 1.10x)
   - [x] §8: Output paths (`docs/02_agent/MODEL_ARC_RUNS.md`, `docs/04_reports/model_arc_*`)
   - [x] §8: Semantic gate naming (`semantic_gate_val.json`, `semantic_gate_test.json`)
@@ -1279,6 +1318,13 @@ Test metrics exist only in evaluator output.
   - [x] P2-5: Promotion delta with confidence (max(0.01, 1.5*SE)) — §7
   - [x] P2-6: Doc-sync PR (PR-I3) — §5, §9 H-I3
   - [x] P3-7: `make repo-lint` for doc-only PRs — §1, §9 H-I3
+- [ ] Post-merge review findings (6 fixes):
+  - [x] P0: Data-source transition — R0 bidless, R1+ auction-context from PR-R1a
+  - [x] P1: Stage 1 dropped — single `payoff_model`, analytical P(make), no `stage1_win_model`
+  - [x] P1: PR-R5a scope split — architecture only, lambda tuning moved to R5b
+  - [x] P2: R0 equivalence claim removed — behavioral note + acceptance criterion added
+  - [x] P3: "All 16 PRs can begin" qualified, `CheckResult` → `EligibilityResult`
+  - [x] Proxy target contract added to §1
 - [ ] No TBD/TBC/open-question markers remain
 - [ ] All file paths absolute (`/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/...`)
 - [ ] All thresholds are concrete numbers (no "roughly", "likely", "cursory")
