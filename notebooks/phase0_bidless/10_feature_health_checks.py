@@ -1003,10 +1003,8 @@ if len(suit_df) > 0:
         "bowers",
         "trump_ace_count",
         "trump_king_count",
-        "top_trump_count",
         "highest_trump_rank",
         "trump_power_sum",
-        "trump_power_avg",
         "trump_duplicate_pairs",
     ]
 
@@ -1067,10 +1065,7 @@ if len(suit_df) > 0:
         ax.set_title(feat_name.replace("_", " ").title())
 
         # Fix x-axis readability for features with many unique values
-        if (
-            feat_name in ["trump_power_avg", "trump_power_sum"]
-            and len(feat_values) > 10
-        ):
+        if feat_name in ["trump_power_sum"] and len(feat_values) > 10:
             # Select ~10 evenly spaced ticks
             tick_indices = np.linspace(0, len(feat_values) - 1, 10, dtype=int)
             ax.set_xticks([x[i] for i in tick_indices])
@@ -1117,14 +1112,11 @@ if len(suit_df) > 0:
         "trump_king_count",
         "trump_queen_count",
         "trump_ten_count",
-        "top_trump_count",
         "highest_trump_rank",
         "second_highest_trump_rank",
         "third_highest_trump_rank",
         "trump_power_sum",
-        "trump_power_avg",
         "trump_duplicate_pairs",
-        "top_trump_sum",
         "bowers",
         "trump_count_x_void_count",
         "trump_count_x_offsuit_ace",
@@ -1191,7 +1183,6 @@ if len(highlow_df) > 0:
         "offsuit_king_count_total",
         "offsuit_queen_count_total",
         "double_ten_jack_count",
-        "rank_sum",
         "hand_value",
     ]
 
@@ -1366,13 +1357,10 @@ if len(suit_df) > 0:
         "feat_trump_king_count",
         "feat_trump_queen_count",
         "feat_trump_ten_count",
-        "feat_top_trump_count",
         "feat_highest_trump_rank",
         "feat_trump_power_sum",
-        "feat_trump_power_avg",
         "feat_trump_rb_count",
         "feat_trump_lb_count",
-        "feat_top_trump_sum",
         "feat_second_highest_trump_rank",
         "feat_third_highest_trump_rank",
         "feat_trump_duplicate_pairs",
@@ -1411,7 +1399,6 @@ if len(highlow_df) > 0:
         "feat_void_count",
         "feat_max_suit_len",
         "feat_num_singletons",
-        "feat_rank_sum",
         "feat_hand_value",
     ]
 
@@ -1459,7 +1446,6 @@ general_feature_cols = [
     "feat_max_suit_len",
     "feat_num_singletons",
     "feat_num_doubletons",
-    "feat_rank_sum",
     "feat_hand_value",
     "feat_offsuit_aces",
     "feat_offsuit_king_count_total",
