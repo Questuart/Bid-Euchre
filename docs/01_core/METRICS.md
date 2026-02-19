@@ -54,14 +54,21 @@ These are computed by aggregation scripts from emitted keys:
 ### Drift v1 Contract (Tricks-Only)
 Drift v1 compares the `avg_tricks_team0` field from rollup summary against expected values in `data/fixtures/baseline_full_expected.json`. This is the primary regression signal for tricks-based strategies.
 
-## Auction Metrics (Optional)
+## Auction Metrics
 
-Auction/bidding metrics are optional and clearly labeled as such until a bidding policy is implemented.
+When bidding is enabled (`contract_type: null` in scenario config), the evaluator emits the following metrics. The primary series is `bidder_team_points` from `compute_points()`.
 
-When bidding is enabled, additional metrics will include:
-- Make rate: Proportion of hands where bidding team meets or exceeds their bid
-- Set rate: Proportion of hands where bidding team falls short of their bid
-- Average bid values
+| Metric | Definition |
+|--------|-----------|
+| `expected_points` | Mean of `bidder_team_points` across hands where an auction winner exists |
+| `expected_points_per_deal` | Mean of `bidder_team_points` across all deals (0 for all-pass redeals) |
+| `make_rate` | Fraction of auction-won hands where `bidder_team_points >= 0` |
+| `bid_rate` | Fraction of deals with an auction winner (i.e., not all-pass) |
+| `pass_rate` | Fraction of deals that resulted in all-pass redeals |
+| `cvar_5` | Mean of the worst 5% of `bidder_team_points` values (conditional value at risk) |
+| `downside_variance` | Variance of negative `bidder_team_points` values (downside risk) |
+
+**Source:** `src/bid_euchre/reporting/evaluator.py`
 
 ## Where to Find These Fields
 

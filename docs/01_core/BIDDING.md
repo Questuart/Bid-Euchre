@@ -23,12 +23,13 @@ Bid Euchre bidding mechanics define how players select contracts for each hand. 
 
 Bidding observations provide minimal context for decision-making:
 
-- **Hand**: Player's 5 cards
+- **Hand**: Player's 10 cards
 - **Seat**: Player's position (0-3)
 - **Dealer seat**: Dealer's position (0-3)
 - **Current high bid**: Highest `n` bid so far in this round
+- **Allowed contracts**: Tuple of contract types the player may bid (`C`, `D`, `H`, `S`, `HIGH`, `LOW` by default)
 
-**Note**: Bidding history not included (planned for v2)
+**Note**: Full bidding history is now captured in game logs via the `auction_transcript` field (schema v7). The observation contract itself still provides only the current high bid, not the full history.
 
 ## Default Behavior
 
