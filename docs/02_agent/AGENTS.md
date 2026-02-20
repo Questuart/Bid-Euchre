@@ -106,34 +106,34 @@ pip install -e ".[dev]"
 ~~~
 
 **Notes**
-- Repo examples often use `PYTHONPATH=src`. If you did `uv sync` or `pip install -e .`, you typically do **not** need `PYTHONPATH=src`.
+- All examples use `uv run python` which handles the virtualenv automatically. You do **not** need `PYTHONPATH=src`.
 - Dependencies live in `pyproject.toml`; use `uv sync --frozen` for reproducible installs from `uv.lock`.
 
 ### Run tests (default)
 Fast-ish suite:
 
 ~~~bash
-PYTHONPATH=src python -m pytest -m "not slow" tests/
+uv run python -m pytest -m "not slow" tests/
 ~~~
 
 Full suite:
 
 ~~~bash
-PYTHONPATH=src python -m pytest tests/
+uv run python -m pytest tests/
 ~~~
 
 Run unit / integration only:
 
 ~~~bash
-PYTHONPATH=src python -m pytest tests/unit/
-PYTHONPATH=src python -m pytest tests/integration/
+uv run python -m pytest tests/unit/
+uv run python -m pytest tests/integration/
 ~~~
 
 ### Run a deterministic smoke experiment (recommended)
 Pick a small config and pass a seed:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
+uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
   --n_per 200
 ~~~
@@ -141,7 +141,7 @@ PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
 Dry-run config validation:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
+uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
   --dry-run
 ~~~
@@ -152,7 +152,7 @@ PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
 The experiment runner supports JSONL logging:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
+uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
   --n_per 50 \
   --log-level trick
@@ -166,7 +166,7 @@ By default, the runner writes under:
 You may override base output directory:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
+uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/strategy_comparison.yaml \
   --run-dir data/runs
 ~~~
@@ -176,7 +176,7 @@ PYTHONPATH=src python experiments/run_experiment.py --seed 42 \
 To rigorously compare two runs (e.g., baseline vs candidate strategy):
 
 ~~~bash
-python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --baseline data/runs/<baseline_run_id> \
   --candidate data/runs/<candidate_run_id>
 ~~~
@@ -190,18 +190,18 @@ This computes:
 
 ~~~bash
 # Human-readable (default)
-python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --baseline data/runs/run1 \
   --candidate data/runs/run2
 
 # Markdown for PR bodies
-python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --baseline data/runs/run1 \
   --candidate data/runs/run2 \
   --format markdown
 
 # JSON for automation
-python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --baseline data/runs/run1 \
   --candidate data/runs/run2 \
   --format json > comparison.json
@@ -211,7 +211,7 @@ python scripts/compare_runs.py \
 
 ~~~bash
 # Use more bootstrap samples for publication-quality
-python scripts/compare_runs.py \
+uv run python scripts/compare_runs.py \
   --baseline data/runs/run1 \
   --candidate data/runs/run2 \
   --n-bootstrap 10000 \
@@ -414,13 +414,13 @@ When something fails:
 2) Validate via:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --config <file.yaml> --dry-run --seed 42
+uv run python experiments/run_experiment.py --config <file.yaml> --dry-run --seed 42
 ~~~
 
 3) Run a small seeded smoke:
 
 ~~~bash
-PYTHONPATH=src python experiments/run_experiment.py --config <file.yaml> --n_per 200 --seed 42
+uv run python experiments/run_experiment.py --config <file.yaml> --n_per 200 --seed 42
 ~~~
 
 ### Add a dashboard/report script

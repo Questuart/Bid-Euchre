@@ -5,7 +5,7 @@
 Run an experiment with a configuration file:
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/quick_test.yaml \
   --seed 42 \
   --n_per 10
@@ -143,7 +143,7 @@ To reproduce a run from its metadata:
 3. Run with the same parameters:
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config <config_path from meta.json> \
   --seed <seed from meta.json> \
   --n_per <n_per from meta.json>
@@ -152,7 +152,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 Or use the effective config directly:
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config data/runs/<run_id>/config_effective.yaml \
   --seed <seed>
 ```
@@ -163,13 +163,13 @@ After running an experiment, generate reports and visualizations for analysis:
 
 ```bash
 # Run an experiment first
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/quick_test.yaml \
   --seed 42 \
   --n_per 10
 
 # Generate report for that run
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 
@@ -200,16 +200,16 @@ Every report generation creates:
 
 ```bash
 # Generate report (first time or empty reports/)
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/quick_test_42_20260105_123456
 
 # Regenerate report (overwrite existing)
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/quick_test_42_20260105_123456 \
   --overwrite
 
 # Verbose mode (see discovered files and progress)
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/quick_test_42_20260105_123456 \
   --verbose
 ```
@@ -241,21 +241,21 @@ Run these commands in order (copy/paste):
 
 ```bash
 # 1. Quick random sanity (2 scenarios)
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/quick_test_random.yaml \
   --seed 42 \
   --n_per 20 \
   --log-level none
 
 # 2. Greedy anchor (full scenario set)
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/baseline_greedy.yaml \
   --seed 42 \
   --n_per 20 \
   --log-level none
 
 # 3. Multi-strategy comparison (full scenario set, common deals)
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/strategy_comparison.yaml \
   --seed 42 \
   --n_per 20 \
@@ -265,7 +265,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 **Suite runner** (now available):
 
 ```bash
-PYTHONPATH=src python scripts/run_suite.py \
+uv run python scripts/run_suite.py \
   --suite experiments/suites/baseline_tiny.yaml \
   --seed 42 \
   --n-per 20
@@ -302,7 +302,7 @@ parameters:
 ### Running Auction Experiments
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/auction_smoke.yaml \
   --seed 42 \
   --n_per 20
@@ -349,7 +349,7 @@ Results are written to `results/<id>/auction.json` (filenames use "auction" for 
 By default, runs are written to `data/runs/`. You can customize the output directory:
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/quick_test.yaml \
   --seed 42 \
   --run-dir /path/to/custom/location
