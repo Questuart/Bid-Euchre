@@ -45,12 +45,13 @@ make sync               # Install dependencies (uses uv sync)
 ```
 
 ```bash
-make check              # Full validation: repo-lint + ruff + pytest (run before PRs)
+make check              # Full validation: repo-lint + ruff + pytest + notebook-check + docs-check (run before PRs)
 make test               # Pytest fast suite only
 make lint               # Ruff check only
 make repo-lint          # Repo boundary linter only
 make notebook-sync      # Sync paired .py ↔ .ipynb (Jupytext)
 make notebook-check     # Verify sync + outputs cleared
+make docs-check         # Verify docs freshness
 make help               # Show all available targets
 ```
 
@@ -117,6 +118,10 @@ uv run python -m pytest tests/unit/core/test_rules.py::test_specific  # Single t
 | `diagnostics/` | Visualization and analysis tools |
 | `reporting/` | Report generation utilities |
 | `logging/` | JSONL game logging |
+| `analysis/` | Statistical analysis (stats, paired comparisons, models) |
+| `utils/` | Shared utility functions |
+| `validation/` | Promotion validation and schemas |
+| `scoring.py` | Top-level scoring module |
 
 **Import boundary:** `src/` must NOT import from `experiments/` or `tests/`.
 
