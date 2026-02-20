@@ -1,6 +1,7 @@
 ---
 name: shipping-changes
 description: Ships a change from development through PR creation, CI verification, merge, and cleanup. Use when changes are ready to be committed, pushed, and merged into main.
+disable-model-invocation: true
 ---
 
 # Ship Workflow

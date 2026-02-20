@@ -1,6 +1,7 @@
 ---
 name: merging-pr-stacks
 description: Merges stacked/dependent PRs in dependency order with automatic conflict resolution, PR recreation, and cleanup. Use when multiple PRs form a dependency chain and need to be merged sequentially.
+disable-model-invocation: true
 ---
 
 # Autonomous Stacked PR Merge Pipeline

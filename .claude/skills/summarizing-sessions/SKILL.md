@@ -1,6 +1,7 @@
 ---
 name: summarizing-sessions
 description: Generates a structured summary of PRs completed in a session, commits lessons learned to auto memory, and launches a reviewer agent to verify the work. Use at the end of a session after PRs have been created or merged.
+disable-model-invocation: true
 ---
 
 # PR Session Summary, Lessons Learned & Review
