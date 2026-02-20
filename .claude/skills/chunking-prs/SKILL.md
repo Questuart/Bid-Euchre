@@ -1,6 +1,7 @@
 ---
 name: chunking-prs
 description: Executes multi-PR plans in manageable chunks of 3-4 PRs per session with mandatory MEMORY.md checkpoints. Use when a plan has 5+ PRs that risk context limit degradation if attempted in one session.
+disable-model-invocation: true
 ---
 
 # Batched Multi-PR Implementation

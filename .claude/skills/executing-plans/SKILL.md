@@ -1,6 +1,7 @@
 ---
 name: executing-plans
 description: Reads a finalized plan file, decomposes it into work units, spawns autonomous agents for each unit, coordinates dependencies, and delivers complete PRs. Use when a plan document exists and needs end-to-end implementation.
+disable-model-invocation: true
 ---
 
 # Autonomous Plan-to-Implementation Pipeline

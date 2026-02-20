@@ -1,6 +1,7 @@
 ---
 name: fixing-bugs
 description: Parallelizes independent bug fixes across worktree agents for cascading test failures. Use when multiple test failures need resolution or when sequential debugging is too slow.
+disable-model-invocation: true
 ---
 
 # Parallel Test-Driven Bug Resolution
