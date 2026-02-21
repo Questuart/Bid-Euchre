@@ -50,6 +50,7 @@ _NON_FEATURE_COLS = frozenset(
         "team0_win",
         "strategy_id",
         "play_strategy_id",
+        "declaring",
     }
 )
 
@@ -201,8 +202,13 @@ def _train_arm(
             n_val = len(val_df)
 
         if offensive_defensive:
-            # Split into declaring (seats 0,2) and defending (seats 1,3)
-            off_mask = train_df["seat"].isin([0, 2])
+            if "declaring" not in train_df.columns:
+                raise ValueError(
+                    "offensive_defensive=True requires a 'declaring' column "
+                    "in the training data. Bidless datasets lack declaring-team "
+                    "labels — use auction data (PR-R1a) for off/def training."
+                )
+            off_mask = train_df["declaring"].astype(bool)
             def_mask = ~off_mask
 
             X_off = train_df.loc[off_mask, feature_names].values.astype(np.float64)
@@ -215,6 +221,14 @@ def _train_arm(
 
             resid_off = float(np.var(y_off - (X_off @ w_off + b_off)))
             resid_def = float(np.var(y_def - (X_def @ w_def + b_def)))
+
+            for role, rv in [("offensive", resid_off), ("defensive", resid_def)]:
+                if not (0 < rv < 25):
+                    raise ValueError(
+                        f"Residual variance out of bounds for "
+                        f"{contract_family}/{role}: {rv:.4f} "
+                        f"(expected 0 < σ² < 25)"
+                    )
 
             models[contract_family] = {
                 "offensive": {
@@ -232,6 +246,43 @@ def _train_arm(
                 "offensive": resid_off,
                 "defensive": resid_def,
             }
+
+            y_pred_off = X_off @ w_off + b_off
+            y_pred_def = X_def @ w_def + b_def
+            metrics_off = _compute_metrics(y_off, y_pred_off)
+            metrics_def = _compute_metrics(y_def, y_pred_def)
+
+            training_metrics[contract_family] = {
+                "r2_train_offensive": metrics_off["r2"],
+                "r2_train_defensive": metrics_def["r2"],
+                "mae_train_offensive": metrics_off["mae"],
+                "mae_train_defensive": metrics_def["mae"],
+                "r2_train_flat": metrics_train["r2"],
+                "r2_test": metrics_test["r2"],
+                "mae_test": metrics_test["mae"],
+                "n_train": len(train_df),
+                "n_train_offensive": int(off_mask.sum()),
+                "n_train_defensive": int(def_mask.sum()),
+                "n_test": len(test_df),
+                "residual_variance_offensive": resid_off,
+                "residual_variance_defensive": resid_def,
+                "selected_features": feature_names,
+            }
+            if metrics_val is not None:
+                training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
+                training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
+                training_metrics[contract_family]["n_val"] = n_val
+
+            logger.info(
+                "  %s [%s] off/def: R²_off=%.4f, R²_def=%.4f, R²_test=%.4f, σ²_off=%.4f, σ²_def=%.4f",
+                contract_family,
+                arm_name,
+                metrics_off["r2"],
+                metrics_def["r2"],
+                metrics_test["r2"],
+                resid_off,
+                resid_def,
+            )
         else:
             models[contract_family] = {
                 "weights": [float(w) for w in weights],
@@ -240,30 +291,30 @@ def _train_arm(
             }
             residual_variances[contract_family] = resid_var
 
-        training_metrics[contract_family] = {
-            "r2_train": metrics_train["r2"],
-            "r2_test": metrics_test["r2"],
-            "mae_train": metrics_train["mae"],
-            "mae_test": metrics_test["mae"],
-            "n_train": len(train_df),
-            "n_test": len(test_df),
-            "residual_variance": resid_var,
-            "selected_features": feature_names,
-        }
-        if metrics_val is not None:
-            training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
-            training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
-            training_metrics[contract_family]["n_val"] = n_val
+            training_metrics[contract_family] = {
+                "r2_train": metrics_train["r2"],
+                "r2_test": metrics_test["r2"],
+                "mae_train": metrics_train["mae"],
+                "mae_test": metrics_test["mae"],
+                "n_train": len(train_df),
+                "n_test": len(test_df),
+                "residual_variance": resid_var,
+                "selected_features": feature_names,
+            }
+            if metrics_val is not None:
+                training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
+                training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
+                training_metrics[contract_family]["n_val"] = n_val
 
-        logger.info(
-            "  %s [%s]: R²=%.4f (test), MAE=%.4f, σ²=%.4f, features=%s",
-            contract_family,
-            arm_name,
-            metrics_test["r2"],
-            metrics_test["mae"],
-            resid_var,
-            feature_names,
-        )
+            logger.info(
+                "  %s [%s]: R²=%.4f (test), MAE=%.4f, σ²=%.4f, features=%s",
+                contract_family,
+                arm_name,
+                metrics_test["r2"],
+                metrics_test["mae"],
+                resid_var,
+                feature_names,
+            )
 
     artifact = _build_artifact(
         rung_id=rung_id,

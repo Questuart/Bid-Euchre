@@ -254,6 +254,7 @@ def test_training_offdef_produces_submodels(tmp_path):
                     "hand_id": i,
                     "seat": seat,
                     "contract_type": "suit",
+                    "declaring": bool(rng.choice([True, False])),
                     "tricks_won": 5.0 + rng.normal(0, 1.5),
                     "bowers": rng.randint(0, 3),
                     "trump_count": rng.randint(2, 8),
@@ -293,3 +294,99 @@ def test_training_offdef_produces_submodels(tmp_path):
         assert isinstance(suit_var, dict)
         assert "offensive" in suit_var
         assert "defensive" in suit_var
+
+    # Training metrics must reflect sub-model fit
+    if "suit" in metrics:
+        suit_metrics = metrics["suit"]
+        assert "r2_train_offensive" in suit_metrics
+        assert "r2_train_defensive" in suit_metrics
+        assert isinstance(suit_metrics["r2_train_offensive"], float)
+        assert isinstance(suit_metrics["r2_train_defensive"], float)
+        assert 0 <= suit_metrics["r2_train_offensive"] <= 1
+        assert 0 <= suit_metrics["r2_train_defensive"] <= 1
+
+
+def test_training_offdef_rejects_missing_declaring(tmp_path):
+    """Training with offensive_defensive=True raises ValueError without declaring column."""
+    import pandas as pd
+
+    from bid_euchre.models.train_hybrid_olsa import _train_arm
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    rng = np.random.RandomState(99)
+    rows = []
+    for i in range(200):
+        for seat in range(4):
+            rows.append(
+                {
+                    "hand_id": i,
+                    "seat": seat,
+                    "contract_type": "suit",
+                    "tricks_won": 5.0 + rng.normal(0, 1.5),
+                    "bowers": rng.randint(0, 3),
+                    "trump_count": rng.randint(2, 8),
+                    "offsuit_aces": rng.randint(0, 5),
+                }
+            )
+    df = pd.DataFrame(rows)
+
+    parquet_path = str(tmp_path / "bidless.parquet")
+    df.to_parquet(parquet_path)
+
+    with pytest.raises(ValueError, match="declaring"):
+        _train_arm(
+            df,
+            CONTRACT_FEATURES,
+            seed=99,
+            source_run_id="test",
+            source_parquet_path=parquet_path,
+            split_type="two_way",
+            output_dir=str(tmp_path),
+            arm_name="test",
+            offensive_defensive=True,
+        )
+
+
+def test_training_offdef_rejects_bad_variance(tmp_path):
+    """Training with zero-variance sub-group raises ValueError."""
+    import pandas as pd
+
+    from bid_euchre.models.train_hybrid_olsa import _train_arm
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    rng = np.random.RandomState(77)
+    rows = []
+    for i in range(200):
+        for seat in range(4):
+            declaring = seat in (0, 2)
+            rows.append(
+                {
+                    "hand_id": i,
+                    "seat": seat,
+                    "contract_type": "suit",
+                    "declaring": declaring,
+                    # Declaring rows: constant tricks AND constant features
+                    # → OLS produces exact zero residuals → variance = 0.0
+                    "tricks_won": 5.0 if declaring else 5.0 + rng.normal(0, 1.5),
+                    "bowers": 1 if declaring else rng.randint(0, 3),
+                    "trump_count": 4 if declaring else rng.randint(2, 8),
+                    "offsuit_aces": 2 if declaring else rng.randint(0, 5),
+                }
+            )
+    df = pd.DataFrame(rows)
+
+    parquet_path = str(tmp_path / "bidless.parquet")
+    df.to_parquet(parquet_path)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        _train_arm(
+            df,
+            CONTRACT_FEATURES,
+            seed=77,
+            source_run_id="test",
+            source_parquet_path=parquet_path,
+            split_type="two_way",
+            output_dir=str(tmp_path),
+            arm_name="test",
+            offensive_defensive=True,
+        )
