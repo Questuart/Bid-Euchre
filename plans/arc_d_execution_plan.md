@@ -1,9 +1,24 @@
-# Arc D: OLSa-Hybrid Bidder — Execution Plan (v2)
+# Arc D: OLSa-Hybrid Bidder — Execution Plan (v3)
 
 **Type:** Execution-orchestration document for implementation agents
 **Arc:** D — OLSa-Hybrid: From Sparse Bidder to Context-Aware Risk-Adjusted EV Bidder
-**Date:** 2026-02-19 (v2 rewrite)
+**Date:** 2026-02-20 (v3 update)
 **Target path:** `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_execution_plan.md`
+
+## v3 Changes (2026-02-20)
+
+Applies 31 review decisions from `plans/arc_d_gap_analysis.md`. Key changes:
+
+- **18 PRs** (was 16): added PR-P0 (net_eppd metric switch), PR-I4 (reporting extensions)
+- **Primary metric:** `net_eppd` (was `eppd`) — net point differential per deal
+- **Dual-arm design:** OLSa_Full (promotional) + OLSa (attribution) at every rung
+- **Always-advance gate:** PROMOTED / ADVANCED / HALT (was blocking PROMOTE/REJECT)
+- **PR-R1a delayed** to Wave 3+ (E2 decision: generate auction dataset after R0b promotes)
+- **R5 residual_variance** splits into offensive/defensive (Decision 30)
+- **Both arms at R0** (Decision 31): OLSa_Full does forward selection from 39 hand features
+- **Utility formula** rewritten with net-differential scoring branches
+- **Bundle schema** (`arc_d_rung_bundle_v1`) added to §8
+- **Pre-flight execution checklist** added to §10
 
 ---
 
@@ -16,7 +31,7 @@ context-aware risk-adjusted EV bidder, progressively incorporating bidding
 context from auction transcripts.
 
 **What this document is:**
-- A complete, decision-final execution plan decomposed into 16 PRs
+- A complete, decision-final execution plan decomposed into 18 PRs
 - Every PR is implementable without further product decisions
 - All governance rules are embedded as requirements for execution agents
 
@@ -36,11 +51,32 @@ context from auction transcripts.
 - **Strict split discipline:** Train-only fit, val-only tune, test-only blind eval.
   No exceptions. No mixed wording.
 
-**Proxy target contract (R0–R4):**
+**Standard rung loop (applies to every rung R0-R5):**
+```
+1. TRAIN  -- Fit OLS (payoff_model per contract family) on TRAIN partition only
+2. TUNE   -- Feature selection (5-fold CV within train, scored on val) / lambda tuning on VAL only
+3. FREEZE -- freeze_artifact() -> frozen_at + artifact_sha256
+4. EVALUATE -- Regression metrics on TEST partition + simulation seeds 42/43/44
+5. GATE   -- compute_eligibility() + Tier 1 + Tier 2 -> promotion decision
+6. RECORD -- Write promotion_decision_r{N}.json, update registry + rung report
+```
+
+**Hand-ID grouping:** All splits group by `hand_id` (4 rows per hand) to prevent
+data leakage. Cross-validation within TRAIN also groups by `hand_id`.
+
+**Dual-arm design:**
+Each rung trains two models in parallel -- OLSa_Full (promotional arm) and OLSa
+(attribution arm). OLSa_Full selects from the full feature pool and determines
+promotion. OLSa uses the locked 3/1/1 sparse base plus context features to
+measure incremental context value. The gap between arms (`attribution_gap`) is
+a key analytical output. See §4 for per-rung specifications.
+
+**Proxy target contract (R0-R4):**
 - `tricks_won` is the supervised proxy target for bidding value. All OLS models
   predict expected tricks, not bid outcomes directly.
-- Bidding quality is judged by downstream simulation metrics (`expected_points_per_deal`,
-  `bid_rate`, `make_rate`, `cvar_5`, `downside_variance`), not by a direct bid-outcome label.
+- Bidding quality is judged by downstream simulation metrics (`net_eppd`,
+  `eppd`, `bid_rate`, `make_rate`, `cvar_5`, `downside_variance`), not by a
+  direct bid-outcome label.
 - If proxy validity degrades (e.g., weak alignment between predicted tricks and realized
   points), promotion is blocked pending proxy reassessment.
 
@@ -65,9 +101,11 @@ progressive bidding context features and risk adjustment.
 **Data-source transition:**
 R0 uses the canonical bidless dataset (hand features only, no auction context).
 R1+ requires a canonical auction-context dataset with full auction history per
-decision point. PR-R1a produces this dataset as part of its scope.
+decision point. PR-R1a produces this dataset as part of its scope, generated
+AFTER R0b promotes using HybridOLSaBidder R0 (E2 decision).
 
-**Primary metric:** `expected_points_per_deal` (eppd)
+**Primary metric:** `net_eppd` (net expected points per deal = bidder points minus opponent points)
+**Secondary diagnostic:** `eppd` (expected points per deal, bidder team only)
 **Guardrails:** `bid_rate`, `make_rate`, `cvar_5`, `downside_variance`
 
 ---
@@ -80,7 +118,7 @@ The `hybrid_olsa_v1` artifact schema provides a single-model architecture
 from R0 onward, replacing the `olsa_v1` / `olsa_v2` progression.
 
 **Schema document:** `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md`
-(created by PR-I1, committed to repo)
+(to be created by PR-I1, committed to repo)
 
 **Repo linter rule:** `hybrid-artifact-schema` validates all `hybrid_olsa_v1`
 artifacts against this schema. Added in PR-I1.
@@ -106,12 +144,16 @@ artifacts against this schema. Added in PR-I1.
 }
 ```
 
+**Dual-arm note:** The schema applies to both OLSa and OLSa_Full arms. OLSa_Full
+artifacts use the `_full` suffix (e.g., `hybrid_r0_full.json`). Both arms produce
+identical schema structures -- only the selected features differ.
+
 ### Model Role
 
 The `payoff_model` predicts E[tricks] per contract family using OLS regression
 on hand features + context_features. Win probability P(make) is derived
 analytically from mu and sigma via the Gaussian CDF (see utility formula below).
-No separate win-probability model is needed — P(make) = 1 - Phi(z) where
+No separate win-probability model is needed -- P(make) = 1 - Phi(z) where
 z = (bid_n - 0.5 - mu) / sigma. Residual variance is computed from
 train-set residuals of the payoff model.
 
@@ -126,12 +168,19 @@ For each contract c in {C, D, H, S, HIGH, LOW}:
   if bid_n_c <= current_high_bid: skip
 
   if sigma_c < 1e-10:
-    EV_c = mu_c if mu_c >= bid_n_c else -bid_n_c
+    # Deterministic case: net differential
+    if mu_c >= bid_n_c:
+      EV_c = 2 * mu_c - 10          # make: bidder gets tricks, opponent gets remainder
+    else:
+      EV_c = mu_c - bid_n_c - 10    # set: bidder gets -bid_n, opponent gets their tricks
   else:
     z = min((bid_n_c - 0.5 - mu_c) / sigma_c, 6.0)
     P_make = 1 - Phi(z)
     E_tricks_if_make = mu_c + sigma_c * phi(z) / max(P_make, 1e-15)
-    EV_c = P_make * E_tricks_if_make + (1 - P_make) * (-bid_n_c)
+    E_tricks_if_set  = mu_c - sigma_c * phi(z) / max(1 - P_make, 1e-15)  # left-truncated conditional
+
+    # Net-differential EV branches
+    EV_c = P_make * (2 * E_tricks_if_make - 10) + (1 - P_make) * (E_tricks_if_set - bid_n_c - 10)
 
   # Risk penalty (always >= 0, so utility <= EV)
   CVaR_5_c = 5th percentile expected value (from MC or analytic)
@@ -142,25 +191,54 @@ Decision: if no candidates or max(utility) <= 0: PASS
           else: argmax(utility_c), tiebreak bid_n_c desc, then alphabetical
 ```
 
+**Net-differential scoring rules:**
+```
+If make (tricks >= bid_n):
+  bidder_points = tricks_won
+  opponent_points = 10 - tricks_won
+  net = tricks_won - (10 - tricks_won) = 2 * tricks_won - 10
+
+If set (tricks < bid_n):
+  bidder_points = -bid_n
+  opponent_points = 10 - tricks_won  (opponent gets their tricks)
+  net = -bid_n - (10 - tricks_won) = tricks_won - bid_n - 10
+```
+
+**CVaR specification:** `CVaR seed = training_seed` (i.e., seed=42 for all CVaR
+computations). The 1000 MC draws use `np.random.default_rng(seed)`. This makes
+CVaR deterministic across runs.
+
 **Sign convention:** `CVaR_5` is the mean of the worst 5th percentile of the
-points distribution — typically negative. `-CVaR_5` converts to a positive
-quantity. `max(0, -CVaR_5)` ensures the penalty is non-negative. Therefore
-`utility <= EV` always holds. When `risk_lambda = 0`, `utility = EV` exactly.
+net point differential distribution -- typically negative. `-CVaR_5` converts to
+a positive quantity. `max(0, -CVaR_5)` ensures the penalty is non-negative.
+Therefore `utility <= EV` always holds. When `risk_lambda = 0`, `utility = EV` exactly.
+
+**Objective series:** All EV, CVaR, and utility computations use **net point
+differential** (`net_eppd` = bidder points minus opponent points) as the primary
+series. Bidder-only points (`eppd`) are tracked as a secondary diagnostic.
+Promotion gates, lambda tuning, and sensitivity checks all use `net_eppd`.
 
 ### Schema Evolution
 
 | Rung | Schema | `context_features` | `risk_lambda` | Notes |
 |------|--------|--------------------|---------------|-------|
-| R0 | `hybrid_olsa_v1` | `[]` (hand features only) | `0.0` | Baseline — establishes HybridOLSaBidder metrics with sparse features (not numerically equivalent to OLSaBidder due to different decision formula) |
-| R1 | `hybrid_olsa_v1` | partner context features | `0.0` | First bidding context |
-| R2 | `hybrid_olsa_v1` | + opponent context features | `0.0` | Cumulative context |
-| R3 | `hybrid_olsa_v1` | + full transcript features | `0.0` | Complete auction info |
-| R4 | `hybrid_olsa_v1` | + seat awareness features | `0.0` | Position-relative |
-| R5 | `hybrid_olsa_v1` | all features + off/def split | tuned on val | Architecture refinement |
+| R0 | `hybrid_olsa_v1` | `[]` (hand features only) | `0.0` | Baseline -- establishes HybridOLSaBidder metrics with sparse features (not numerically equivalent to OLSaBidder due to different decision formula). Both arms trained. |
+| R1 | `hybrid_olsa_v1` | partner context features | `0.0` | First bidding context. Both arms: OLSa_Full selects from full pool, OLSa adds context to locked base. |
+| R2 | `hybrid_olsa_v1` | + opponent context features | `0.0` | Cumulative context. Both arms. |
+| R3 | `hybrid_olsa_v1` | + full transcript features | `0.0` | Complete auction info. Both arms. |
+| R4 | `hybrid_olsa_v1` | + seat awareness features | `0.0` | Position-relative. Both arms. |
+| R5 | `hybrid_olsa_v1` | all features + off/def split | tuned on val | Architecture refinement. Both arms get independent lambda. `residual_variance` splits into offensive/defensive per family. |
 
 All rungs use the same `hybrid_olsa_v1` schema. The `context_features` list
-grows cumulatively. R5 adds an `offensive`/`defensive` sub-structure to
-`payoff_model` (backward-compatible within the schema).
+grows cumulatively. R5 adds an `offensive`/`defensive` sub-structure to both
+`payoff_model` and `residual_variance` (backward-compatible within the schema).
+
+**Dual-arm artifact naming:**
+
+| Arm | Model Artifact | Eval Artifact | Semantic Gate |
+|-----|---------------|---------------|---------------|
+| OLSa (attribution) | `hybrid_r{N}.json` | `eval_r{N}.json` | `semantic_gate_val.json` |
+| OLSa_Full (promotional) | `hybrid_r{N}_full.json` | `eval_r{N}_full.json` | `semantic_gate_val_full.json` |
 
 ---
 
@@ -186,25 +264,29 @@ All HITL dependencies are now resolved:
 `check_config_membership()`, `check_notebook_gate()`, and `check_git_sha_consistency()`.
 
 The Arc D gate runner (PR-I2) wraps `compute_eligibility()` as an adapter,
-adding Arc D-specific Tier 2 gates on top. **No external blockers remain** —
+adding Arc D-specific Tier 2 gates on top. **No external blockers remain** --
 all infrastructure PRs can begin immediately.
 
 ### What Can Start Now
 
-All 16 Arc D PRs have no external blockers — all HITL dependencies are merged.
+All 18 Arc D PRs have no external blockers -- all HITL dependencies are merged.
 The only constraints are inter-PR dependencies within Arc D itself (see §6 Wave Structure).
-The table below lists Wave 1–2 PRs that have no Arc D prerequisites (see §6 for full wave graph):
+The table below lists Wave 0-2 PRs that have no Arc D prerequisites (see §6 for full wave graph):
 
 | Arc D PR | Wave | Rationale |
 |----------|------|-----------|
+| PR-P0 (Switch primary metric to net_eppd) | 0 | Pre-flight metric switch, no Arc D deps |
 | PR-I1 (HybridOLSaBidder + schema) | 1 | Code-only infrastructure, foundational for all other PRs |
 | PR-I2 (Gate runner adapter) | 2 (after I1) | `compute_eligibility()` exists on main (#376 merged) |
 | PR-I3 (Doc sync) | 2 (after I1) | Documentation-only |
+| PR-I4 (Reporting extensions) | 2 (after I1) | Reporting + semantic gate additions |
 | PR-R0a (Hybrid training pipeline) | 2 (after I1) | Code-only pipeline + feature selection |
-| PR-R1a (Partner context infra + auction dataset) | 2 (after I1) | Code-only feature extraction + canonical auction dataset production |
 | PR-R5a (Off/def architecture) | 2 (after I1) | Code-only architecture change |
 
-PRs beyond Wave 2 (R0b, R1b, R2a, etc.) have inter-PR dependencies — see §6.
+PR-R1a is delayed to Wave 3+ (after R0b promotes) per E2 decision -- generates
+auction dataset using HybridOLSaBidder R0 for distribution consistency.
+
+PRs beyond Wave 2 (R0b, R1b, R2a, etc.) have inter-PR dependencies -- see §6.
 
 ---
 
@@ -221,58 +303,104 @@ PRs beyond Wave 2 (R0b, R1b, R2a, etc.) have inter-PR dependencies — see §6.
 Split specification: `three_way`, seed=42, fractions 80/10/10, grouped by
 `hand_id`. Same split across all rungs for consistent comparison.
 
+### Dual-Arm Training Design
+
+Each rung trains two models side-by-side:
+
+| Aspect | OLSa (Attribution Arm) | OLSa_Full (Promotional Arm) |
+|--------|------------------------|---------------------------|
+| Model type | OLS regression (per family) | OLS regression (per family) |
+| Schema | `hybrid_olsa_v1` | `hybrid_olsa_v1` |
+| Decision formula | Gaussian EV + risk penalty | Gaussian EV + risk penalty |
+| Selection method | Forward stepwise, 5-fold CV | Forward stepwise, 5-fold CV |
+| Starting features | R0's 3/1/1 base (locked) | **Empty** (selected from scratch) |
+| Candidate pool | Context features ONLY | All 39 hand + all context features |
+| Feature budget | suit:10, high:5, low:5 | **None** (threshold-only stopping) |
+| Stopping criterion | < 0.005 per-family R-squared improvement | < 0.005 per-family R-squared improvement |
+| Artifact suffix | `hybrid_r{N}.json` | `hybrid_r{N}_full.json` |
+| Role | Attribution/control arm | **Promotional arm** |
+
+**Feature selection runs independently per contract family** (suit/high/low).
+A feature useful for one family need not be selected for others. The stopping
+criterion (improvement < 0.005) applies per-family R-squared.
+
+**Promotion authority rests with OLSa_Full only.** The OLSa arm's metrics are
+recorded in the rung bundle but do not influence the promotion decision.
+
+**attribution_gap:** At each rung, `attribution_gap = OLSa_Full.net_eppd - OLSa.net_eppd`.
+This measures the value of unconstrained feature selection beyond the sparse baseline.
+
 ---
 
-### Phase R0 — Baseline Lock
+### Phase R0 -- Baseline Lock
 
 **Objective:** Freeze the `HybridOLSaBidder` with sparse hand features (3/1/1)
 using `hybrid_olsa_v1` schema. Establish baseline metrics for all subsequent
-rung comparisons.
+rung comparisons. **Both arms are trained at R0** (Decision 31).
 
-**Non-goals:** No model improvement. No feature changes. No context features.
-`risk_lambda = 0.0`.
+**Non-goals:** No model improvement. No context features. `risk_lambda = 0.0`.
 
 **Required inputs:**
-- Dataset: `canonical_bidless_dataset_glutton_42_20260204_222713` (bidless — no auction context needed at this rung)
+- Dataset: `canonical_bidless_dataset_glutton_42_20260204_222713` (bidless -- no auction context needed at this rung)
 - Split: `three_way`, seed=42, fractions 80/10/10, grouped by `hand_id`
 - Infrastructure from PR-I1: `HybridOLSaBidder` class + `hybrid_olsa_v1` schema
 
-**Base features (no bidding context):**
+**OLSa arm (attribution baseline):**
 ```
 suit:  ["bowers", "trump_count", "offsuit_aces"]
 high:  ["offsuit_aces"]
 low:   ["offsuit_tens_count"]
 context_features: []
 ```
+Uses the locked 3/1/1 sparse base. No feature selection at R0.
+
+**OLSa_Full arm (promotional baseline):**
+Forward selection from all 39 hand features (no context features at R0, no
+budget cap). This tests whether the 3/1/1 base is already optimal among hand
+features and establishes the R0 attribution_gap baseline. OLSa_Full at R0 may
+discover that different features (e.g., `losing_tricks_count`) outperform the
+hand-picked 3/1/1 base.
 
 **Expected outputs (all under `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/`):**
-- `hybrid_r0.json` — frozen, `artifact_type=hybrid_olsa_v1`, content-hash verified
-- `split_manifest_r0.json` — three_way, partition hashes recorded
-- `training_report_r0.json` — per-contract R², MAE on train/val/test
-- `eval_r0.json` — seed 42: eppd, bid_rate, make_rate, cvar_5, downside_variance, std_bidder_team_points
-- `eval_r0_s43.json`, `eval_r0_s44.json` — sensitivity seeds
-- `promotion_decision_r0.json` — auto-promote record
+
+*OLSa arm:*
+- `hybrid_r0.json` -- frozen, `artifact_type=hybrid_olsa_v1`, content-hash verified
+- `eval_r0.json` -- seed 42: net_eppd, eppd, bid_rate, make_rate, cvar_5, downside_variance, std_bidder_team_points
+- `eval_r0_s43.json`, `eval_r0_s44.json` -- sensitivity seeds
+
+*OLSa_Full arm:*
+- `hybrid_r0_full.json` -- frozen, forward-selected features
+- `eval_r0_full.json` -- seed 42: net_eppd, eppd, bid_rate, make_rate, cvar_5, downside_variance, std_bidder_team_points
+- `eval_r0_full_s43.json`, `eval_r0_full_s44.json` -- sensitivity seeds
+- `feature_selection_log_r0_full.json` -- forward selection log
+
+*Shared:*
+- `split_manifest_r0.json` -- three_way, partition hashes recorded
+- `training_report_r0.json` -- per-contract R-squared, MAE on train/val/test for both arms
+- `promotion_decision_r0.json` -- auto-promote record (both arms)
+- `rung_bundle_r0.json` -- dual-arm bundle (see §8 for schema)
 
 **Additional committed outputs:**
-- `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` — registry with R0 baseline row
+- `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` -- registry with R0 baseline rows (both arms)
 
-**Acceptance criterion:** All 6 metrics must be finite. No comparison target exists
-(R0 is the first hybrid artifact). R0 metrics are recorded as the calibration baseline;
-subsequent rungs improve against R0.
+**Acceptance criterion:** All 7 metrics (including net_eppd) must be finite for
+both arms. No comparison target exists (R0 is the first hybrid artifact). R0
+metrics are recorded as the calibration baseline; subsequent rungs improve
+against R0. R0 auto-promote applies to both arms (all metrics finite + attribution_gap recorded).
 
 **Behavioral note:** R0 will NOT produce identical decisions to the current
 `OLSaBidder` despite using the same features, because the decision formula differs
-(Gaussian EV vs simple floor). This is expected and intentional — R0 establishes
+(Gaussian EV vs simple floor). This is expected and intentional -- R0 establishes
 the HybridOLSaBidder's own baseline, not an equivalence claim.
 
 **Optional diagnostic:** Run OLSaBidder and HybridOLSaBidder R0 side-by-side
 on seed 42 and record the eppd difference for characterization (not gating).
 
-**Promotion:** Auto-promote. All 6 metrics finite and recorded.
+**Promotion:** Auto-promote. All 7 metrics finite and recorded for both arms.
 
 ---
 
-### Phase R1 — Partner Bidding Context
+### Phase R1 -- Partner Bidding Context
 
 **Objective:** Add partner's bidding history features via
 `BiddingObservation.auction_history`. Extract partner context features
@@ -282,41 +410,60 @@ and train expanded model.
 
 **Required inputs:**
 - R0 incumbent artifact (promoted)
-- Canonical auction-context dataset produced by PR-R1a. This dataset comes from
-  simulations WITH auction using the existing `OLSaBidder` (the only promoted
-  bidder available when R1a runs in Wave 2), capturing per-decision auction
-  state including full bid sequence.
-  Not compatible with bidless dataset — R1+ uses a different data source.
+- Canonical auction-context dataset produced by PR-R1a. This dataset is
+  generated AFTER R0b promotes, using HybridOLSaBidder R0 as the bidding policy
+  (E2 decision). Not compatible with bidless dataset -- R1+ uses a different data source.
 - Split: `three_way`, seed=42, fractions 80/10/10, grouped by `hand_id`
-- Feature pool: 39 hand features + new partner context features from PR-R1a
 
-**Partner context features (candidates — selected via forward selection on val):**
+**Partner context features (candidates):**
 - `partner_bid_level`: highest bid level partner made (0 if passed)
 - `partner_passed`: 1 if partner has passed, 0 otherwise
 - `partner_suit_match`: 1 if partner bid same suit family
 - `partner_bid_confidence`: partner_bid_level / 10 (normalized)
 
+**OLSa arm:**
+- Starting features: R0's 3/1/1 locked base
+- Candidate pool: 4 partner context features only
+- Feature budget: suit:10, high:5, low:5
+
+**OLSa_Full arm:**
+- Starting features: empty (selected from scratch)
+- Candidate pool: all 39 hand features + 4 partner context features = 43 candidates
+- Feature budget: none (threshold-only stopping at 0.005 per-family R-squared improvement)
+
 **Expected outputs (all under `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/`):**
+
+*OLSa arm:*
 - `hybrid_r1.json` (challenger), `hybrid_r1_control.json` (R0 arch retrained same split)
-- `split_manifest_r1.json`, `training_report_r1.json`, `feature_selection_log_r1.json`
 - `eval_r1.json`, `eval_r1_control.json`, `eval_r1_s43.json`, `eval_r1_s44.json`
+
+*OLSa_Full arm:*
+- `hybrid_r1_full.json` (challenger)
+- `eval_r1_full.json`, `eval_r1_full_s43.json`, `eval_r1_full_s44.json`
+- `feature_selection_log_r1_full.json`
+
+*Shared:*
+- `split_manifest_r1.json`, `training_report_r1.json`, `feature_selection_log_r1.json`
 - `semantic_gate_val.json`, `semantic_gate_test.json`
+- `semantic_gate_val_full.json`, `semantic_gate_test_full.json`
 - `promotion_decision_r1.json`
+- `rung_bundle_r1.json`
 
 **Feature selection process (val-only):**
-1. Start with R0 feature set as baseline
-2. Forward selection: add candidate that most improves train-set R² (5-fold CV within train)
+1. Start with locked base (OLSa) or empty (OLSa_Full)
+2. Forward selection: add candidate that most improves train-set R-squared (5-fold CV within train)
 3. Stop when marginal improvement < 0.005
-4. Maximum budget: 10 (suit), 5 (high), 5 (low)
+4. OLSa: maximum budget suit:10, high:5, low:5. OLSa_Full: no budget.
 
-**Promotion:** Improvement gate.
-`eppd > control.eppd + max(0.01, 1.5 * SE)` where `SE = std_bidder_team_points / sqrt(n_deals)`.
+**Promotion (OLSa_Full determines):**
+`net_eppd > control.net_eppd + max(0.01, 1.5 * SE)` where `SE = std_bidder_team_points / sqrt(n_deals)`.
 The 0.01 is the floor, not the fixed threshold.
 Plus guardrails, sensitivity seeds.
+**Promotion authority rests with OLSa_Full only.**
 
 ---
 
-### Phase R2 — Opponent Bidding Context
+### Phase R2 -- Opponent Bidding Context
 
 **Objective:** Add opponent bid context features. Train model with
 partner + opponent context cumulated.
@@ -324,7 +471,7 @@ partner + opponent context cumulated.
 **Non-goals:** No full transcript analysis. `risk_lambda = 0`.
 
 **Required inputs:**
-- R1 incumbent artifact (promoted)
+- R1 incumbent artifact (promoted or advanced)
 - Canonical auction-context dataset from PR-R1a (same dataset as R1)
 - Split: `three_way`, seed=42
 
@@ -334,14 +481,17 @@ partner + opponent context cumulated.
 - `opponent_suit_signal`: suit family bid by opponents (encoded)
 - `opponent_aggression`: opponent_max_bid / 10 (normalized)
 
-**Expected outputs:** Same pattern as R1. Artifacts prefixed `hybrid_r2`.
-Semantic gate files: `semantic_gate_val.json`, `semantic_gate_test.json`.
+**Dual-arm:** Same pattern as R1. OLSa adds opponent context to locked 3/1/1 base
+(cumulative with partner context). OLSa_Full selects from 39 hand + 8 context (partner + opponent).
 
-**Promotion:** Improvement gate. Same thresholds as R1.
+**Expected outputs:** Same dual-arm pattern as R1. Artifacts prefixed `hybrid_r2` / `hybrid_r2_full`.
+Semantic gate files for both arms.
+
+**Promotion (OLSa_Full determines):** Improvement gate. Same thresholds as R1 using `net_eppd`.
 
 ---
 
-### Phase R3 — Full Auction Transcript
+### Phase R3 -- Full Auction Transcript
 
 **Objective:** Add full auction transcript context features. The model now
 has complete bidding information available at decision time.
@@ -349,7 +499,7 @@ has complete bidding information available at decision time.
 **Non-goals:** No seat-relative features. `risk_lambda = 0`.
 
 **Required inputs:**
-- R2 incumbent artifact (promoted)
+- R2 incumbent artifact (promoted or advanced)
 - Canonical auction-context dataset from PR-R1a (same dataset as R1)
 - Split: `three_way`, seed=42
 
@@ -359,20 +509,23 @@ has complete bidding information available at decision time.
 - `final_bid_to_max_ratio`: winning bid / 10 (normalized against max possible)
 - `pass_count_total`: total passes in auction
 
-**Expected outputs:** Same pattern as R1. Artifacts prefixed `hybrid_r3`.
+**Dual-arm:** Same pattern as R1. OLSa adds transcript context cumulated.
+OLSa_Full selects from 39 hand + 12 context (partner + opponent + transcript).
 
-**Promotion:** Improvement gate. Same thresholds as R1.
+**Expected outputs:** Same dual-arm pattern as R1. Artifacts prefixed `hybrid_r3` / `hybrid_r3_full`.
+
+**Promotion (OLSa_Full determines):** Improvement gate. Same thresholds as R1 using `net_eppd`.
 
 ---
 
-### Phase R4 — Seat Awareness
+### Phase R4 -- Seat Awareness
 
 **Objective:** Add seat-relative positional features.
 
 **Non-goals:** No architecture change. `risk_lambda = 0`.
 
 **Required inputs:**
-- R3 incumbent artifact (promoted)
+- R3 incumbent artifact (promoted or advanced)
 - Canonical auction-context dataset from PR-R1a (same dataset as R1)
 - Split: `three_way`, seed=42
 
@@ -382,13 +535,16 @@ has complete bidding information available at decision time.
 - `is_dealer`: 1 if seat is dealer position
 - `partner_bid_before_me`: 1 if partner bid before this seat
 
-**Expected outputs:** Same pattern as R1. Artifacts prefixed `hybrid_r4`.
+**Dual-arm:** Same pattern as R1. OLSa adds seat context cumulated.
+OLSa_Full selects from 39 hand + 16 context (all context features).
 
-**Promotion:** Improvement gate. Same thresholds as R1.
+**Expected outputs:** Same dual-arm pattern as R1. Artifacts prefixed `hybrid_r4` / `hybrid_r4_full`.
+
+**Promotion (OLSa_Full determines):** Improvement gate. Same thresholds as R1 using `net_eppd`.
 
 ---
 
-### Phase R5 — Offensive/Defensive Payoff Split
+### Phase R5 -- Offensive/Defensive Payoff Split
 
 **Objective:** Split `payoff_model` into offensive (declaring team)
 and defensive (defending team) sub-models. Tune `risk_lambda` on val-set.
@@ -396,7 +552,7 @@ and defensive (defending team) sub-models. Tune `risk_lambda` on val-set.
 **Non-goals:** No new context features beyond R4.
 
 **Required inputs:**
-- R4 incumbent artifact (promoted)
+- R4 incumbent artifact (promoted or advanced)
 - Lambda grid: `[0.0, 0.05, 0.1, 0.2, 0.5, 1.0]`
 - Val-set simulation: seed=42, n_per=10,000
 
@@ -415,60 +571,100 @@ The `payoff_model` gains offensive/defensive sub-models:
 }
 ```
 
+**R5 residual_variance split (Decision 30):**
+At R5, `residual_variance` also splits into offensive/defensive per family,
+matching the payoff model split. This removes sigma ambiguity in EV/CVaR/lambda:
+
+```json
+{
+  "residual_variance": {
+    "suit": {"offensive": 2.5, "defensive": 2.1},
+    "high": {"offensive": 1.8, "defensive": 1.5},
+    "low":  {"offensive": 1.2, "defensive": 1.0}
+  }
+}
+```
+
+Loaders detect sub-structure via key presence (same backward-compat pattern as
+payoff model). Pre-R5 artifacts use flat `{"suit": 2.5, ...}` -- R5 uses nested
+`{"suit": {"offensive": X, "defensive": Y}, ...}`.
+
 At bid time: use offensive model for contracts where this team would declare,
 defensive model for estimating defense value against opponent declarations.
 Backward-compatible within `hybrid_olsa_v1` schema (loaders detect sub-model
 structure via key presence).
 
-**Lambda tuning protocol (val-only):**
+**Lambda tuning protocol (val-only, independent per arm):**
 1. For each lambda in grid: run val-set simulation (seed=42, n_per=10,000)
-2. Select `lambda* = argmax(eppd)`
-3. Sensitivity: ±20% change in `lambda*` must cause < 5% change in EV
+2. Select `lambda* = argmax(net_eppd)`
+3. Sensitivity: +/-20% change in `lambda*` must cause < 5% change in EV
 4. Lambda stored in artifact `risk_lambda` field (not a runtime parameter)
+5. Each arm (OLSa + OLSa_Full) gets its own independent lambda grid search
 
 **Risk-adjusted decision:**
 ```
-CVaR_5_c = mean of worst 5% of 1000 MC samples
-  (sample tricks from N(mu_c, sigma_c^2), compute points per scoring rules)
+CVaR_5_c = mean of worst 5% of 1000 MC samples (seed = training_seed)
+  (sample tricks from N(mu_c, sigma_c^2), compute net differential per scoring rules)
 risk_penalty_c = risk_lambda * max(0, -CVaR_5_c)
 utility_c = EV_c - risk_penalty_c
 ```
 
 **Expected outputs (all under `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r5/`):**
-- `hybrid_r5.json` — frozen with embedded `risk_lambda`
+
+*OLSa arm:*
+- `hybrid_r5.json` -- frozen with embedded `risk_lambda`
 - `hybrid_r5_control.json` (R4 artifact retrained, `risk_lambda = 0`)
-- `lambda_tuning_report_r5.json` — full grid results + sensitivity
-- `semantic_gate_val.json`, `semantic_gate_test.json`
+- `lambda_tuning_report_r5.json` -- full grid results + sensitivity
 - All standard eval artifacts
 
-**Promotion:** Improvement gate + **strict cvar_5 improvement**
-(`cvar_5_challenger > cvar_5_control`). Standard guardrails + sensitivity.
+*OLSa_Full arm:*
+- `hybrid_r5_full.json` -- frozen with embedded `risk_lambda`
+- `lambda_tuning_report_r5_full.json` -- independent grid results
+- All standard eval artifacts with `_full` suffix
+
+*Shared:*
+- `semantic_gate_val.json`, `semantic_gate_test.json` (both arms)
+- `rung_bundle_r5.json`
+
+**Promotion (OLSa_Full determines):** Improvement gate + **strict cvar_5 improvement**
+(`cvar_5_challenger > cvar_5_control`). Standard guardrails + sensitivity. Uses `net_eppd`.
+
+**R5 interaction scan (mandatory diagnostic):**
+After R5 feature selection completes, run a one-time pairwise interaction scan
+across all features rejected at earlier rungs:
+```
+For each pair (rejected_A, rejected_B) across all rungs:
+  Test: does adding both to the current model improve R-squared by > 0.005?
+  Log significant pairs in training_report_r5.json.
+```
 
 ---
 
-## §5) PR Decomposition (16 PRs)
+## §5) PR Decomposition (18 PRs)
 
 Every PR has exactly one concept. R1-R4 are each split into a feature/infra
 PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 
 | PR ID | Phase | Concept | Key Files |
 |-------|-------|---------|-----------|
+| PR-P0 | Pre-flight | Switch primary metric to `net_eppd` in evaluator and eval output | Modified: evaluator.py. New: net-differential scoring. Tests: 5+ |
 | PR-I1 | Infra | `HybridOLSaBidder` class + `hybrid_olsa_v1` schema doc + repo linter rule | New: bidder class (single payoff_model + analytical P(make)), schema doc, linter rule. Tests: 8+ |
-| PR-I2 | Infra | Arc D gate runner adapter wrapping `compute_eligibility()` | New: gate runner script + tests. 20+ tests |
+| PR-I2 | Infra | Arc D gate runner adapter wrapping `compute_eligibility()` + bundle validator + registry updater | New: gate runner script, bundle validator, registry updater + tests. 20+ tests |
 | PR-I3 | Infra | Doc sync: update PROMOTION_WORKFLOW.md + DATA_CONTRACT.md with hybrid schema | Modified: 2 doc files. Verify: `make repo-lint` |
-| PR-R0a | R0 | Hybrid training pipeline + feature selection utility | New: training script, feature selection module + tests |
-| PR-R0b | R0 | R0 baseline: train, freeze, 3-seed eval, auto-promote | New: eval configs, registry doc. Artifacts: frozen model + evals |
-| PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
-| PR-R1b | R1 | R1 training + eval + promotion | Feature selection + train + eval + gate. Depends on PR-I2 + PR-R0b + PR-R1a |
+| PR-I4 | Infra | Reporting extensions: rung report generator + 3 semantic gate additions (team_balance faceting, bid_distribution_sanity, both-arm gating) | New: report extensions + gate additions + tests |
+| PR-R0a | R0 | Hybrid training pipeline + feature selection utility + `--arm-mode` CLI flag + bundle writing | New: training script, feature selection module + tests |
+| PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle | New: eval configs, registry doc. Artifacts: frozen models + evals for both arms |
+| PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset (generated with HybridOLSaBidder R0) | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
+| PR-R1b | R1 | R1 dual-arm training + eval + promotion | Feature selection + train + eval + gate for both arms. Depends on PR-I2 + PR-R0b + PR-R1a |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
-| PR-R2b | R2 | R2 training + eval + promotion | Same pattern as R1b |
+| PR-R2b | R2 | R2 dual-arm training + eval + promotion | Same pattern as R1b |
 | PR-R3a | R3 | Full transcript context feature extraction | New: transcript context features + tests |
-| PR-R3b | R3 | R3 training + eval + promotion | Same pattern as R1b |
+| PR-R3b | R3 | R3 dual-arm training + eval + promotion | Same pattern as R1b |
 | PR-R4a | R4 | Seat awareness feature extraction | New: seat features + tests |
-| PR-R4b | R4 | R4 training + eval + promotion | Same pattern as R1b |
+| PR-R4b | R4 | R4 dual-arm training + eval + promotion | Same pattern as R1b |
 | PR-R5a | R5 | Offensive/defensive payoff model split (architecture change) | Modified: bidder, training pipeline. New: off/def tests |
-| PR-R5b | R5 | Lambda tuning script + R5 training + eval + promotion | New: tune_lambda.py. Lambda grid + train + eval + strict cvar_5 gate |
-| PR-F | Final | Consolidation report + arc summary + final registry update | New report in docs/04_reports/ |
+| PR-R5b | R5 | Lambda tuning script (independent per arm) + R5 dual-arm training + eval + promotion | New: tune_lambda.py. Lambda grid + train + eval + strict cvar_5 gate |
+| PR-F | Final | Consolidation report + arc summary + final registry update + arc dashboard | New report in docs/04_reports/ |
 
 ---
 
@@ -477,52 +673,58 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 ### Wave Dependency Graph
 
 ```
-Wave 1 (no deps):
+Wave 0 (no deps):
+  [P0] Switch primary metric to net_eppd
+
+Wave 1 (after P0):
   [I1] HybridOLSaBidder + schema + schema doc + linter rule
 
 Wave 2 (after I1, parallel):
   [I2] Gate runner adapter (wraps compute_eligibility from #376)
   [I3] Doc sync
-  [R0a] Hybrid training pipeline + feature selection
-  [R1a] Partner context infra + features + canonical auction-context dataset
+  [I4] Reporting extensions + semantic gate additions
+  [R0a] Hybrid training pipeline + feature selection + bundle writing
   [R5a] Off/def architecture (code-only, starts early)
 
 Wave 3 (after R0a, parallel):
-  [R0b] R0 baseline: train, freeze, eval, auto-promote
-  [R2a] Opponent context features (after R1a merged)
+  [R0b] R0 baseline: train both arms, freeze, eval, auto-promote
+  [R2a] Opponent context features (code-only, no R1a dependency)
+
+Wave 3+ (after R0b promotes):
+  [R1a] Partner context infra + canonical auction dataset (uses HybridOLSaBidder R0)
 
 Wave 4 (after R0b promoted + R1a + I2):
-  [R1b] R1 training + eval + promotion (requires R1a's auction-context dataset)
+  [R1b] R1 dual-arm training + eval + promotion (requires R1a's auction-context dataset)
   [R3a] Full transcript features (after R2a merged)
 
 Wave 5 (after R1b + R2a):
-  [R2b] R2 training + eval + promotion
+  [R2b] R2 dual-arm training + eval + promotion
   [R4a] Seat awareness features (after R3a merged)
 
 Wave 6 (after R2b + R3a):
-  [R3b] R3 training + eval + promotion
+  [R3b] R3 dual-arm training + eval + promotion
 
 Wave 7 (after R3b + R4a):
-  [R4b] R4 training + eval + promotion
+  [R4b] R4 dual-arm training + eval + promotion
 
 Wave 8 (after R4b + R5a):
-  [R5b] R5 training + eval + promotion
+  [R5b] R5 dual-arm training + eval + promotion (independent lambda per arm)
 
 Wave 9 (after all rungs):
-  [F] Consolidation report
+  [F] Consolidation report + arc dashboard
 ```
 
 ### Critical Path
 
 ```
-I1 -> R0a -> R0b -> R1b -> R2b -> R3b -> R4b -> R5b -> F
+P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R2b -> R3b -> R4b -> R5b -> F
 ```
 
 **No external blockers remain.** All HITL dependencies (#370, #372, #374, #375,
 #376) are merged. The only constraints are inter-PR dependencies within Arc D.
 
 **Off critical path (can develop in parallel):**
-PR-I3, PR-R1a, PR-R2a, PR-R3a, PR-R4a, PR-R5a — all code-only PRs that
+PR-I2, PR-I3, PR-I4, PR-R2a, PR-R3a, PR-R4a, PR-R5a -- all code-only PRs that
 add features or architecture without running promotions.
 
 ### Parallel-Safe Summary
@@ -530,9 +732,11 @@ add features or architecture without running promotions.
 ```
 Prerequisites:  #370(done)  #372(done)  #374(done)  #375(done)  #376(done)
 
+Wave 0:  [P0]                                          <- pre-flight metric switch
 Wave 1:  [I1]                                          <- single, foundational
-Wave 2:  [I2] [I3] [R0a] [R1a] [R5a]                  <- parallel, no external blockers
-Wave 3:  [R0b] [R2a]                                   <- after R0a / R1a
+Wave 2:  [I2] [I3] [I4] [R0a] [R5a]                   <- parallel, no external blockers
+Wave 3:  [R0b] [R2a]                                   <- after R0a
+Wave 3+: [R1a]                                         <- after R0b promotes (E2)
 Wave 4:  [R1b] [R3a]                                   <- after R0b + R1a + I2
 Wave 5:  [R2b] [R4a]                                   <- after R1b / R3a
 Wave 6:  [R3b]                                         <- after R2b + R3a
@@ -548,14 +752,26 @@ Wave 9:  [F]                                           <- after all
 ### Canonical Decision Function
 
 ```python
-def should_promote(challenger, control, rung_id):
+def promotion_gate(bundle_path, rung_id):
     """Fully deterministic from inputs. Returns (decision: str, reasons: list[str]).
+
+    decision is one of: "PROMOTED", "ADVANCED", "HALT"
 
     The gate runner is an ADAPTER wrapping compute_eligibility() from
     /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/eligibility.py.
     It adds Arc D-specific Tier 2 gates on top of the central eligibility engine.
     """
     delta_floor = 0.01  # fixed floor, not configurable
+
+    # --- Pre-Gate: Bundle validation ---
+    bundle = load_and_validate_bundle(bundle_path)
+    # validate_arc_d_rung_contract checks: both arms present, all required
+    # files exist, artifact hashes match, schema version correct
+    if not bundle.valid:
+        return ("HALT", [f"Bundle validation FAIL: {bundle.errors}"])
+
+    challenger = bundle.olsa_full  # OLSa_Full is the promotional arm
+    control = bundle.incumbent
 
     # --- Tier 1: Framework Health (all rungs, non-negotiable) ---
     tier_1_checks = [
@@ -570,7 +786,7 @@ def should_promote(challenger, control, rung_id):
     ]
     for name, passed in tier_1_checks:
         if not passed:
-            return ("REJECT", [f"Tier 1 FAIL: {name}"])
+            return ("HALT", [f"Tier 1 FAIL: {name}"])
 
     # --- Pre-Gates: delegate to compute_eligibility() ---
     # The gate runner calls compute_eligibility() which checks:
@@ -589,22 +805,22 @@ def should_promote(challenger, control, rung_id):
     )
     if not eligibility.eligible:
         failed = [r for r in eligibility.reasons if r.status != "PASS"]
-        return ("REJECT", [f"Eligibility FAIL: {[r.detail for r in failed]}"])
+        return ("HALT", [f"Eligibility FAIL: {[r.detail for r in failed]}"])
 
-    # --- Tier 2: Model Quality ---
+    # --- Tier 2: Model Quality (uses net_eppd) ---
     c = challenger.metrics_seed42
     i = control.metrics_seed42
 
     # Guardrails (all non-R0 rungs)
     if rung_id != "r0":
         if not (0.05 <= c.bid_rate <= 0.95):
-            return ("REJECT", ["bid_rate out of range [0.05, 0.95]"])
+            return ("HALT", ["bid_rate out of range [0.05, 0.95]"])
         if c.make_rate < 0.45:
-            return ("REJECT", ["make_rate below 0.45"])
+            return ("HALT", ["make_rate below 0.45"])
         if c.cvar_5 < i.cvar_5 - 0.10:
-            return ("REJECT", ["cvar_5 regression beyond 0.10 tolerance"])
+            return ("HALT", ["cvar_5 regression beyond 0.10 tolerance"])
         if c.downside_variance > i.downside_variance * 1.10:
-            return ("REJECT", ["downside_variance exceeds 1.10x incumbent"])
+            return ("HALT", ["downside_variance exceeds 1.10x incumbent"])
 
     # Rung-specific primary gate
     if rung_id == "r0":
@@ -613,35 +829,50 @@ def should_promote(challenger, control, rung_id):
     else:  # r1-r5: improvement gate
         SE = challenger.std_points_seed42 / (challenger.n_deals_seed42 ** 0.5)
         effective_delta = max(delta_floor, 1.5 * SE)
-        if c.eppd <= i.eppd + effective_delta:
-            return ("REJECT", [f"insufficient: delta={c.eppd - i.eppd:.4f}, "
-                               f"threshold={effective_delta:.4f} "
-                               f"(floor={delta_floor}, 1.5*SE={1.5*SE:.4f})"])
 
-    # R5: strict tail improvement
-    if rung_id == "r5" and c.cvar_5 <= i.cvar_5:
-        return ("REJECT", ["R5 requires strict cvar_5 improvement"])
+        # Check for regression FIRST (material degradation → HALT)
+        if c.net_eppd < i.net_eppd - 0.05:
+            return ("HALT", [f"regression detected: net_eppd={c.net_eppd:.4f} "
+                             f"< incumbent={i.net_eppd:.4f} - 0.05"])
 
-    # Seed sensitivity (r1-r5 only)
-    if rung_id != "r0":
-        d43 = challenger.metrics_seed43.eppd - control.metrics_seed43.eppd
-        d44 = challenger.metrics_seed44.eppd - control.metrics_seed44.eppd
+        # Seed sensitivity (both alternative seeds reversed → HALT)
+        d43 = challenger.metrics_seed43.net_eppd - control.metrics_seed43.net_eppd
+        d44 = challenger.metrics_seed44.net_eppd - control.metrics_seed44.net_eppd
         if d43 < 0 and d44 < 0:
-            return ("REJECT", ["sensitivity: both seeds 43 and 44 reversed"])
+            return ("HALT", ["sensitivity: both seeds 43 and 44 reversed"])
 
-    return ("PROMOTE", [])
+        # R5: strict tail improvement required
+        if rung_id == "r5" and c.cvar_5 <= i.cvar_5:
+            return ("ADVANCED", ["R5 cvar_5 not improved -- advancing without promotion"])
+
+        # Insufficient improvement -- ADVANCE (not failure, arc continues)
+        if c.net_eppd <= i.net_eppd + effective_delta:
+            return ("ADVANCED", [f"insufficient improvement: delta={c.net_eppd - i.net_eppd:.4f}, "
+                                 f"threshold={effective_delta:.4f} "
+                                 f"(floor={delta_floor}, 1.5*SE={1.5*SE:.4f})"])
+
+    # Record attribution_gap
+    attribution_gap = challenger.metrics_seed42.net_eppd - bundle.olsa.metrics_seed42.net_eppd
+
+    return ("PROMOTED", [f"attribution_gap={attribution_gap:.4f}"])
 ```
 
 ### Threshold Summary
 
 | Rung | Gate Type | Primary Condition | Additional | Sensitivity |
 |------|-----------|-------------------|------------|-------------|
-| R0 | Auto-promote | All 6 metrics finite | None | None |
-| R1 | Improvement | eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 → REJECT |
-| R2 | Improvement | eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 → REJECT |
-| R3 | Improvement | eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 → REJECT |
-| R4 | Improvement | eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 → REJECT |
-| R5 | Improvement | eppd > control + max(0.01, 1.5\*SE) | **Strict cvar_5 improvement** | Both 43+44 < 0 → REJECT |
+| R0 | Auto-promote | All 7 metrics finite (both arms) | None | None |
+| R1 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R2 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R3 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R4 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R5 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | **Strict cvar_5 improvement** | Both 43+44 < 0 -> HALT |
+
+**Note on provisional thresholds:** The thresholds above (delta_floor=0.01,
+cvar_5 tolerance=0.10, etc.) were originally calibrated for `eppd`. Since `net_eppd`
+values are systematically lower (net differential is harsher), these thresholds are
+**provisional**. R0 establishes the net_eppd baseline; thresholds are recalibrated
+from R0 actuals before R1 promotion.
 
 **Note on promotion delta with confidence:** The primary gate uses
 `max(delta_floor, 1.5 * SE)` where `SE = std_bidder_team_points / sqrt(n_deals)`.
@@ -657,14 +888,33 @@ fixed threshold. At typical N=50,000, `1.5 * SE` will dominate.
 | `cvar_5` | regression tolerance | incumbent - 0.10 |
 | `downside_variance` | ratio cap | <= incumbent * 1.10 |
 
-### Do-Not-Promote Path
+### Always-Advance Gate Model
 
-Pre-promotion gate fail = **"do not advance"**:
-1. Record REJECT in `promotion_decision_r{N}.json` with all reasons
-2. Current incumbent remains unchanged
-3. Diagnose: which gate? which tier? which metric?
-4. Options: (a) re-attempt with adjusted hyperparameters (new PR), (b) reduce scope, (c) skip rung
-5. Maximum 2 re-attempts per rung before escalating to plan revision
+The promotion gate is **informational** -- it determines whether the incumbent
+model updates, not whether the arc continues. The arc always advances through
+all 6 rungs.
+
+Three possible rung outcomes:
+
+| Outcome | Meaning | Incumbent updates? | Arc continues? |
+|---------|---------|-------------------|----------------|
+| **PROMOTED** | OLSa_Full improved over incumbent | Yes -- new model | Yes |
+| **ADVANCED** | No improvement / no features selected | No -- keep previous | Yes |
+| **HALT** | Model regression or framework failure | No -- revert | Investigate first |
+
+**Key behaviors:**
+- **ADVANCED** means the rung's context features were non-contributory. This is a
+  valid scientific finding, not a failure. The arc continues with the previous incumbent.
+- **HALT** is reserved for genuine failures: model regression, NaN/Inf, split
+  leakage, sensitivity reversal, or framework errors. Requires investigation
+  before continuing but is expected to be rare -- forward selection inherently
+  protects against regression since it only adds features that improve CV R-squared.
+- The incumbent is always the best OLSa_Full model seen so far across all rungs.
+
+**Attribution_gap recording:** At each rung, the promotion decision record
+includes `attribution_gap = OLSa_Full.net_eppd - OLSa.net_eppd`. This measures
+the value of unconstrained feature selection beyond the sparse baseline and is
+tracked across rungs in the arc registry.
 
 ### One-Rung Revert
 
@@ -680,14 +930,14 @@ Maximum rollback depth = 1 rung.
 
 | # | Condition | Response |
 |---|-----------|----------|
-| STL-1 | Any Tier 1 check fails | Halt. Fix framework issue. Re-run from scratch. |
-| STL-2 | Split hash mismatch | Halt. Possible data corruption. Regenerate split. |
-| STL-3 | Frozen artifact mismatch | Halt. Re-train and re-freeze. |
-| STL-4 | Test leakage (test partition used in tuning) | Halt. Invalidate results. Re-split with new seed. |
-| STL-5 | Missing evidence paths in promotion_decision | Halt. Locate artifacts. Do not fabricate. |
-| STL-6 | NaN/Inf in any metric field | Halt. Diagnose numerical issue. |
-| STL-7 | Seed non-determinism | Halt. Identify source. |
-| STL-8 | Schema version mismatch | Halt. Fix artifact loader or pipeline. |
+| STL-1 | Any Tier 1 check fails | HALT. Fix framework issue. Re-run from scratch. |
+| STL-2 | Split hash mismatch | HALT. Possible data corruption. Regenerate split. |
+| STL-3 | Frozen artifact mismatch | HALT. Re-train and re-freeze. |
+| STL-4 | Test leakage (test partition used in tuning) | HALT. Invalidate results. Re-split with new seed. |
+| STL-5 | Missing evidence paths in promotion_decision | HALT. Locate artifacts. Do not fabricate. |
+| STL-6 | NaN/Inf in any metric field | HALT. Diagnose numerical issue. |
+| STL-7 | Seed non-determinism | HALT. Identify source. |
+| STL-8 | Schema version mismatch | HALT. Fix artifact loader or pipeline. |
 
 On halt: file GitHub issue with `stop-the-line` label. Resolve before continuing.
 
@@ -699,26 +949,85 @@ On halt: file GitHub issue with `stop-the-line` label. Resolve before continuing
 
 | Document | Path |
 |----------|------|
-| Arc run registry | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` |
+| Arc run registry | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` (to be created by PR-R0b) |
 | Per-rung report | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/model_arc_<rung_id>_<date>_r1.md` |
-| Schema doc | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md` |
+| Arc dashboard | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/model_arc_d_dashboard.md` |
+| Schema doc | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md` (to be created by PR-I1) |
 
 ### MODEL_ARC_RUNS.md Update Protocol
 
-After each promoted rung, update the registry:
+After each rung completes, update the registry (idempotent -- re-running for
+the same rung overwrites the existing row):
 
 | Column | Content |
 |--------|---------|
 | Rung | r0, r1, r2, r3, r4, r5 |
-| Status | PROMOTED, REJECTED, INVALIDATED |
-| Artifact | `hybrid_r{N}.json` |
-| Artifact SHA256 | from `artifact_sha256` field in frozen artifact |
-| eppd (seed 42) | `expected_points_per_deal` from eval |
-| bid_rate | from eval |
-| make_rate | from eval |
-| cvar_5 | from eval |
+| Status | PROMOTED, ADVANCED, HALT, INVALIDATED |
+| OLSa Artifact | `hybrid_r{N}.json` |
+| OLSa_Full Artifact | `hybrid_r{N}_full.json` |
+| Artifact SHA256 | from `artifact_sha256` field in OLSa_Full frozen artifact |
+| net_eppd (seed 42) | `net_expected_points_per_deal` from OLSa_Full eval |
+| eppd (seed 42) | `expected_points_per_deal` from OLSa_Full eval (secondary) |
+| attribution_gap | OLSa_Full.net_eppd - OLSa.net_eppd |
+| bid_rate | from OLSa_Full eval |
+| make_rate | from OLSa_Full eval |
+| cvar_5 | from OLSa_Full eval |
 | PR | GitHub PR number |
 | Decision Record | `data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json` |
+
+**Idempotent registry update contract:** The registry updater script reads the
+existing `MODEL_ARC_RUNS.md`, finds the row matching the rung_id (if any),
+and replaces it with the new data. If no row exists, it appends. This makes
+re-running safe -- no duplicate rows.
+
+### Rung Bundle Schema: `arc_d_rung_bundle_v1`
+
+Each rung produces a bundle JSON that packages both arms' evidence for the
+promotion gate:
+
+```json
+{
+  "bundle_schema": "arc_d_rung_bundle_v1",
+  "rung_id": "r1",
+  "arc": "arc_d",
+  "timestamp": "2026-02-20T12:00:00Z",
+  "olsa": {
+    "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1.json",
+    "artifact_sha256": "...",
+    "eval_seed42": "data/artifacts/arc_d/r1/eval_r1.json",
+    "eval_seed43": "data/artifacts/arc_d/r1/eval_r1_s43.json",
+    "eval_seed44": "data/artifacts/arc_d/r1/eval_r1_s44.json",
+    "semantic_gate_val": "data/artifacts/arc_d/r1/semantic_gate_val.json",
+    "semantic_gate_test": "data/artifacts/arc_d/r1/semantic_gate_test.json",
+    "feature_selection_log": "data/artifacts/arc_d/r1/feature_selection_log_r1.json",
+    "selected_features": {"suit": ["..."], "high": ["..."], "low": ["..."]}
+  },
+  "olsa_full": {
+    "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+    "artifact_sha256": "...",
+    "eval_seed42": "data/artifacts/arc_d/r1/eval_r1_full.json",
+    "eval_seed43": "data/artifacts/arc_d/r1/eval_r1_full_s43.json",
+    "eval_seed44": "data/artifacts/arc_d/r1/eval_r1_full_s44.json",
+    "semantic_gate_val": "data/artifacts/arc_d/r1/semantic_gate_val_full.json",
+    "semantic_gate_test": "data/artifacts/arc_d/r1/semantic_gate_test_full.json",
+    "feature_selection_log": "data/artifacts/arc_d/r1/feature_selection_log_r1_full.json",
+    "selected_features": {"suit": ["..."], "high": ["..."], "low": ["..."]}
+  },
+  "incumbent": {
+    "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+    "rung_id": "r0"
+  },
+  "split_manifest": "data/artifacts/arc_d/r1/split_manifest_r1.json",
+  "training_report": "data/artifacts/arc_d/r1/training_report_r1.json",
+  "control": {
+    "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_control.json"
+  }
+}
+```
+
+The bundle validator (`validate_arc_d_rung_contract`) checks: both arms present,
+all referenced files exist, artifact hashes match, schema version correct.
+Bundle validation runs BEFORE Tier 1 checks in the promotion gate.
 
 ### Artifact Naming Contract
 
@@ -726,18 +1035,26 @@ All artifacts follow these patterns. No deviations.
 
 | Artifact Type | File Name Pattern | Example |
 |---------------|-------------------|---------|
-| Challenger model | `hybrid_r{N}.json` | `hybrid_r0.json` |
+| OLSa challenger model | `hybrid_r{N}.json` | `hybrid_r0.json` |
+| OLSa_Full challenger model | `hybrid_r{N}_full.json` | `hybrid_r0_full.json` |
 | Control model | `hybrid_r{N}_control.json` | `hybrid_r1_control.json` |
 | Split manifest | `split_manifest_r{N}.json` | `split_manifest_r0.json` |
 | Training report | `training_report_r{N}.json` | `training_report_r1.json` |
-| Feature selection log | `feature_selection_log_r{N}.json` | `feature_selection_log_r1.json` |
-| Lambda tuning report | `lambda_tuning_report_r{N}.json` | `lambda_tuning_report_r5.json` |
-| Semantic gate (val) | `semantic_gate_val.json` | `semantic_gate_val.json` |
-| Semantic gate (test) | `semantic_gate_test.json` | `semantic_gate_test.json` |
+| Feature selection log (OLSa) | `feature_selection_log_r{N}.json` | `feature_selection_log_r1.json` |
+| Feature selection log (OLSa_Full) | `feature_selection_log_r{N}_full.json` | `feature_selection_log_r1_full.json` |
+| Lambda tuning report (OLSa) | `lambda_tuning_report_r{N}.json` | `lambda_tuning_report_r5.json` |
+| Lambda tuning report (OLSa_Full) | `lambda_tuning_report_r{N}_full.json` | `lambda_tuning_report_r5_full.json` |
+| Semantic gate (val, OLSa) | `semantic_gate_val.json` | `semantic_gate_val.json` |
+| Semantic gate (val, OLSa_Full) | `semantic_gate_val_full.json` | `semantic_gate_val_full.json` |
+| Semantic gate (test, OLSa) | `semantic_gate_test.json` | `semantic_gate_test.json` |
+| Semantic gate (test, OLSa_Full) | `semantic_gate_test_full.json` | `semantic_gate_test_full.json` |
 | Promotion decision | `promotion_decision_r{N}.json` | `promotion_decision_r1.json` |
-| Eval (challenger) | `eval_r{N}.json` | `eval_r0.json` |
+| Rung bundle | `rung_bundle_r{N}.json` | `rung_bundle_r1.json` |
+| Eval (OLSa challenger) | `eval_r{N}.json` | `eval_r0.json` |
+| Eval (OLSa_Full challenger) | `eval_r{N}_full.json` | `eval_r0_full.json` |
 | Eval (control) | `eval_r{N}_control.json` | `eval_r1_control.json` |
-| Eval (sensitivity) | `eval_r{N}_s{seed}.json` | `eval_r1_s43.json` |
+| Eval (OLSa sensitivity) | `eval_r{N}_s{seed}.json` | `eval_r1_s43.json` |
+| Eval (OLSa_Full sensitivity) | `eval_r{N}_full_s{seed}.json` | `eval_r1_full_s43.json` |
 
 `{N}` = rung number 0-5.
 
@@ -745,35 +1062,47 @@ All artifacts follow these patterns. No deviations.
 
 ```
 data/artifacts/arc_d/
-+-- r0/  hybrid_r0.json, split_manifest_r0.json, training_report_r0.json,
-|        eval_r0.json, eval_r0_s43.json, eval_r0_s44.json,
-|        promotion_decision_r0.json
-+-- r1/  hybrid_r1.json, hybrid_r1_control.json, split_manifest_r1.json,
-|        training_report_r1.json, feature_selection_log_r1.json,
++-- r0/  hybrid_r0.json, hybrid_r0_full.json, split_manifest_r0.json,
+|        training_report_r0.json, feature_selection_log_r0_full.json,
+|        eval_r0.json, eval_r0_full.json,
+|        eval_r0_s43.json, eval_r0_s44.json,
+|        eval_r0_full_s43.json, eval_r0_full_s44.json,
+|        rung_bundle_r0.json, promotion_decision_r0.json
++-- r1/  hybrid_r1.json, hybrid_r1_full.json, hybrid_r1_control.json,
+|        split_manifest_r1.json, training_report_r1.json,
+|        feature_selection_log_r1.json, feature_selection_log_r1_full.json,
 |        semantic_gate_val.json, semantic_gate_test.json,
-|        eval_r1.json, eval_r1_control.json, eval_r1_s43.json, eval_r1_s44.json,
-|        promotion_decision_r1.json
-+-- r2/  (same pattern as r1)
-+-- r3/  (same pattern as r1)
-+-- r4/  (same pattern as r1)
-+-- r5/  hybrid_r5.json, hybrid_r5_control.json, split_manifest_r5.json,
-         training_report_r5.json, feature_selection_log_r5.json,
-         lambda_tuning_report_r5.json,
+|        semantic_gate_val_full.json, semantic_gate_test_full.json,
+|        eval_r1.json, eval_r1_full.json, eval_r1_control.json,
+|        eval_r1_s43.json, eval_r1_s44.json,
+|        eval_r1_full_s43.json, eval_r1_full_s44.json,
+|        rung_bundle_r1.json, promotion_decision_r1.json
++-- r2/  (same dual-arm pattern as r1)
++-- r3/  (same dual-arm pattern as r1)
++-- r4/  (same dual-arm pattern as r1)
++-- r5/  hybrid_r5.json, hybrid_r5_full.json, hybrid_r5_control.json,
+         split_manifest_r5.json, training_report_r5.json,
+         feature_selection_log_r5.json, feature_selection_log_r5_full.json,
+         lambda_tuning_report_r5.json, lambda_tuning_report_r5_full.json,
          semantic_gate_val.json, semantic_gate_test.json,
-         eval_r5.json, eval_r5_control.json, eval_r5_s43.json, eval_r5_s44.json,
-         promotion_decision_r5.json
+         semantic_gate_val_full.json, semantic_gate_test_full.json,
+         eval_r5.json, eval_r5_full.json, eval_r5_control.json,
+         eval_r5_s43.json, eval_r5_s44.json,
+         eval_r5_full_s43.json, eval_r5_full_s44.json,
+         rung_bundle_r5.json, promotion_decision_r5.json
 ```
 
 ### Promotion Decision Record Schema
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "rung_id": "r1",
   "arc": "arc_d",
-  "decision": "PROMOTE",
+  "decision": "PROMOTED",
   "timestamp": "2026-02-20T12:00:00Z",
   "evaluator_git_sha": "abc1234",
+  "attribution_gap": 0.05,
   "eligibility": {
     "decision": "ELIGIBLE",
     "rules_checked": ["artifact_freeze", "split_manifest", "semantic_gate_val", "semantic_gate_test"]
@@ -789,9 +1118,11 @@ data/artifacts/arc_d/
     "artifact_integrity": "PASS"
   },
   "challenger": {
-    "artifact_path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/hybrid_r1.json",
+    "arm": "OLSa_Full",
+    "artifact_path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/hybrid_r1_full.json",
     "artifact_sha256": "...",
     "metrics_seed42": {
+      "net_expected_points_per_deal": 0.42,
       "expected_points_per_deal": 1.85,
       "bid_rate": 0.52,
       "make_rate": 0.61,
@@ -800,8 +1131,15 @@ data/artifacts/arc_d/
       "std_bidder_team_points": 4.9,
       "n_deals": 50000
     },
-    "metrics_seed43": { "expected_points_per_deal": 1.82 },
-    "metrics_seed44": { "expected_points_per_deal": 1.87 }
+    "metrics_seed43": { "net_expected_points_per_deal": 0.39 },
+    "metrics_seed44": { "net_expected_points_per_deal": 0.44 }
+  },
+  "olsa_arm": {
+    "artifact_path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/hybrid_r1.json",
+    "artifact_sha256": "...",
+    "metrics_seed42": {
+      "net_expected_points_per_deal": 0.37
+    }
   },
   "control": {
     "artifact_path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/hybrid_r1_control.json",
@@ -809,9 +1147,9 @@ data/artifacts/arc_d/
   },
   "gate_results": {
     "primary": {
-      "metric": "expected_points_per_deal",
-      "challenger_value": 1.85,
-      "control_value": 1.73,
+      "metric": "net_expected_points_per_deal",
+      "challenger_value": 0.42,
+      "control_value": 0.30,
       "raw_delta": 0.12,
       "SE": 0.031,
       "effective_delta": 0.047,
@@ -837,6 +1175,37 @@ data/artifacts/arc_d/
 
 ## §9) Execution-Agent Handoff Blocks
 
+### H-P0: Switch Primary Metric to net_eppd
+
+**Execution prompt:**
+```
+Switch the primary evaluation metric from eppd (bidder team points only) to
+net_eppd (bidder points minus opponent points).
+
+Modified file: /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/evaluator.py
+  - Add _net_differential_points() scoring function (~15 lines)
+  - Add net_expected_points_per_deal to eval output dict
+  - net_eppd becomes primary series; eppd remains as secondary diagnostic
+
+Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/test_evaluator.py:
+  - net_eppd computed correctly for make scenario
+  - net_eppd computed correctly for set scenario
+  - net_eppd = 2*tricks - 10 when made, tricks - bid_n - 10 when set
+  - net_eppd in eval output dict
+  - eppd still present as secondary
+
+make check must pass.
+```
+
+**Definition of done:**
+- [ ] `net_expected_points_per_deal` in eval output
+- [ ] Net-differential scoring formula matches §2 rules
+- [ ] `eppd` still computed (secondary diagnostic)
+- [ ] 5+ tests
+- [ ] `make check` passes
+
+---
+
 ### H-I1: HybridOLSaBidder + Schema + Validator
 
 **Execution prompt:**
@@ -848,9 +1217,13 @@ The class implements the EV decision from section 2:
 - Loads hybrid_olsa_v1 artifacts (payoff_model,
   residual_variance, risk_lambda, context_features)
 - _predict(family, features) -> mu via payoff_model
-- _compute_ev(mu, sigma, bid_n) -> EV via Gaussian integration
+- _compute_ev(mu, sigma, bid_n) -> EV via net-differential Gaussian integration
 - _compute_risk_penalty(mu, sigma, bid_n, risk_lambda) -> max(0, -CVaR_5) * lambda
 - choose_bid(obs) -> selects argmax(utility) or PASS
+
+EV uses net-differential branches (section 2 utility formula):
+  make: 2 * E_tricks_if_make - 10
+  set:  E_tricks_if_set - bid_n - 10
 
 Use scipy.stats.norm.cdf and norm.pdf (scipy is already a dependency).
 
@@ -861,6 +1234,7 @@ Register in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euc
 Create schema doc:
   /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md
   Document all fields from section 2 with types, constraints, examples.
+  Include dual-arm note and rung bundle reference.
 
 Add repo linter rule: hybrid-artifact-schema
   Validates that any JSON file with "artifact_type": "hybrid_olsa_v1"
@@ -868,9 +1242,9 @@ Add repo linter rule: hybrid-artifact-schema
   context_features).
 
 Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/test_hybrid_bidder.py:
-  1. Manual EV calculation matches _compute_ev to 6dp
-  2. sigma=0 above bid -> returns mu (deterministic fallback)
-  3. sigma=0 below bid -> returns -bid_n
+  1. Manual EV calculation matches _compute_ev to 6dp (net-differential)
+  2. sigma=0 above bid -> returns 2*mu - 10 (make, net-differential)
+  3. sigma=0 below bid -> returns mu - bid_n - 10 (set, net-differential)
   4. z-cap at 6.0 prevents overflow
   5. All negative utility -> PASS action
   6. risk_lambda=0 -> utility = EV exactly
@@ -882,7 +1256,7 @@ Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/tes
 ```
 
 **Definition of done:**
-- [ ] `HybridOLSaBidder` class in bidding.py implements EV + analytical P(make) + risk
+- [ ] `HybridOLSaBidder` class in bidding.py implements net-differential EV + analytical P(make) + risk
 - [ ] Schema doc at `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md`
 - [ ] Repo linter rule `hybrid-artifact-schema` validates artifacts
 - [ ] 8+ unit tests in test_hybrid_bidder.py
@@ -890,7 +1264,7 @@ Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/tes
 
 ---
 
-### H-I2: Arc D Gate Runner Adapter
+### H-I2: Arc D Gate Runner Adapter + Bundle Validator + Registry Updater
 
 **Execution prompt:**
 ```
@@ -901,13 +1275,24 @@ compute_eligibility() is available on main (merged in PR #376). It runs 7 checks
 including check_semantic_gate(), check_artifacts_frozen(), check_split_manifests().
 
 Create /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/run_arc_d_gate.py:
-  def should_promote(challenger, control, rung_id) -> tuple[str, list[str]]:
+  def promotion_gate(bundle_path, rung_id) -> tuple[str, list[str]]:
+      # Step 0: validate bundle (validate_arc_d_rung_contract)
       # Step 1: call compute_eligibility() for pre-gate checks
       # Step 2: run Tier 1 framework health checks (8 checks from section 7)
       # Step 3: run Tier 2 model quality gates (rung-specific from section 7)
       # Step 4: run guardrails (thresholds from section 7)
       # Step 5: run sensitivity gate (seeds 43/44)
-      # Returns ("PROMOTE", []) or ("REJECT", [reasons])
+      # Step 6: check for regression
+      # Step 7: record attribution_gap
+      # Returns ("PROMOTED", [...]) or ("ADVANCED", [...]) or ("HALT", [...])
+
+Create /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/validate_arc_d_rung_contract.py:
+  (~120 lines + 15 tests) Validates bundle JSON: both arms present, files
+  exist, hashes match, schema version correct.
+
+Create /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/update_arc_registry.py:
+  (~80 lines) Idempotent upsert into MODEL_ARC_RUNS.md. Reads existing rows,
+  replaces matching rung_id, or appends. Generates row from bundle JSON.
 
 All thresholds from section 7 Promotion Decision Contract:
   delta_floor = 0.01
@@ -917,6 +1302,11 @@ All thresholds from section 7 Promotion Decision Contract:
   downside_variance ratio = 1.10
   R5: strict cvar_5 improvement
 
+3 semantic gate extensions for PR-I4 coordination:
+  - team_balance faceting (by contract_type)
+  - bid_distribution_sanity check
+  - both-arm gating (gate runs on both arms' semantic gate results)
+
 Imports:
   bid_euchre.reporting.eligibility.compute_eligibility
   bid_euchre.models.splits.verify_split_manifest
@@ -924,18 +1314,24 @@ Imports:
   bid_euchre.diagnostics.semantic_gate.compute_semantic_gate
 
 Tests in /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/tests/unit/test_arc_d_gate.py:
-  20+ tests covering: NaN->REJECT, schema mismatch->REJECT, both seeds
-  reversed->REJECT, R0 auto->PROMOTE, insufficient delta->REJECT,
-  guardrail violations, eligibility failure, R5 cvar_5 gate.
+  20+ tests covering: NaN->HALT, schema mismatch->HALT, both seeds
+  reversed->HALT, R0 auto->PROMOTED, insufficient delta->ADVANCED,
+  guardrail violations, eligibility failure, R5 cvar_5 gate,
+  bundle validation failure->HALT, regression->HALT,
+  attribution_gap recorded in PROMOTED result.
 ```
 
 **Definition of done:**
-- [ ] `should_promote()` is deterministic from inputs
+- [ ] `promotion_gate()` returns PROMOTED/ADVANCED/HALT (not PROMOTE/REJECT)
+- [ ] Bundle validation runs before Tier 1
 - [ ] Delegates to `compute_eligibility()` for pre-gate checks (adapter pattern)
 - [ ] All 8 Tier 1 checks implemented and tested
 - [ ] Rung-specific Tier 2 gates: R0 auto, R1-R5 improvement, R5 strict cvar_5
+- [ ] All gates use `net_eppd` (not `eppd`)
 - [ ] Guardrail thresholds match section 7 exactly
-- [ ] Sensitivity gate implemented (both-reversed = REJECT)
+- [ ] Sensitivity gate implemented (both-reversed = HALT)
+- [ ] Bundle validator script (~120 lines + 15 tests)
+- [ ] Registry updater script (idempotent upsert, ~80 lines)
 - [ ] 20+ unit tests
 - [ ] `make check` passes
 
@@ -952,20 +1348,57 @@ Modified files:
    - Add section on hybrid_olsa_v1 artifact validation
    - Reference semantic gate integration (compute_eligibility -> check_semantic_gate)
    - Add Arc D gate runner as promotion pathway
+   - Document always-advance gate model (PROMOTED/ADVANCED/HALT)
 
 2. /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/DATA_CONTRACT.md
    - Add hybrid_olsa_v1 schema reference (cross-link to schema doc)
    - Document artifact directory structure for data/artifacts/arc_d/
+   - Reference rung bundle schema (arc_d_rung_bundle_v1)
 
 Verification: make repo-lint must pass (docs freshness, backtick path validation).
-No "make check not needed" exception — all PRs run at least make repo-lint.
+No "make check not needed" exception -- all PRs run at least make repo-lint.
 ```
 
 **Definition of done:**
-- [ ] PROMOTION_WORKFLOW.md references hybrid schema + semantic gate
-- [ ] DATA_CONTRACT.md references hybrid_olsa_v1 schema doc
+- [ ] PROMOTION_WORKFLOW.md references hybrid schema + semantic gate + always-advance model
+- [ ] DATA_CONTRACT.md references hybrid_olsa_v1 schema doc + bundle schema
 - [ ] `make repo-lint` passes
 - [ ] No stale cross-references
+
+---
+
+### H-I4: Reporting Extensions + Semantic Gate Additions
+
+**Execution prompt:**
+```
+Add reporting infrastructure and semantic gate extensions for Arc D.
+
+1. Rung report generator extension:
+   Add arc_d_rung_report() to reporting pipeline that generates per-rung
+   narrative reports with dual-arm comparison tables, feature selection
+   summaries, and attribution_gap tracking.
+
+2. Semantic gate additions (3 new checks):
+   a. team_balance_by_contract: faceted team balance check (per contract_type)
+   b. bid_distribution_sanity: validates bid distribution is reasonable
+   c. dual_arm_gate: runs semantic gate on both arms' results, flags
+      divergences between arms
+
+3. Arc dashboard generator:
+   Script to regenerate docs/04_reports/model_arc_d_dashboard.md from
+   all completed rung bundles. Shows cross-rung progression, attribution_gap
+   trend, and feature selection evolution.
+
+Tests: 10+ covering new semantic gate checks and report generation.
+make check must pass.
+```
+
+**Definition of done:**
+- [ ] Rung report generator produces dual-arm comparison
+- [ ] 3 semantic gate additions implemented and tested
+- [ ] Arc dashboard generator script
+- [ ] 10+ tests
+- [ ] `make check` passes
 
 ---
 
@@ -983,27 +1416,35 @@ New file: /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchr
       split_type: str = "three_way",
       feature_config: dict | None = None,
       freeze: bool = True,
+      arm_mode: str = "both",
   ) -> dict:
       """Train hybrid OLSa model.
+
+      arm_mode: "both" (train OLSa + OLSa_Full), "constrained" (OLSa only),
+                "full" (OLSa_Full only)
 
       Fit one OLS per contract family on TRAIN partition predicting tricks_won.
       Compute residual_variance from TRAIN-set residuals.
       Output payoff_model weights/bias per family.
-      (No separate win model trained — P(make) is derived analytically at inference.)
+      (No separate win model trained -- P(make) is derived analytically at inference.)
 
-      Outputs hybrid_olsa_v1 artifact.
+      Outputs hybrid_olsa_v1 artifact(s).
       """
   - Load data, create split manifest (three_way, grouped by hand_id)
-  - Fit payoff_model per contract family (suit/high/low) on TRAIN only
+  - For OLSa: fit payoff_model per contract family (suit/high/low) on TRAIN only
+    with locked base features
+  - For OLSa_Full: run forward selection from full candidate pool, then fit on TRAIN
   - Compute residual_variance from payoff model TRAIN-set residuals
   - Assert 0 < residual_variance < 25 per contract
-  - Write hybrid_olsa_v1 artifact JSON
+  - Write hybrid_olsa_v1 artifact JSON (one per arm)
   - If freeze=True: call freeze_artifact()
   - Write training_report with per-contract R-squared, MAE on train/val/test
+  - Write rung bundle JSON (arc_d_rung_bundle_v1) packaging both arms
 
 New CLI wrapper: /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/train_hybrid_olsa.py
   --run-dir, --seed, --output, --split-type, --freeze,
-  --feature-config (JSON path), --feature-budget (e.g., "suit:10,high:5,low:5")
+  --feature-config (JSON path), --feature-budget (e.g., "suit:10,high:5,low:5"),
+  --arm-mode {both,constrained,full}
 
 Feature selection utility:
   /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/models/feature_selection.py
@@ -1017,45 +1458,58 @@ Backward compatibility: existing train_olsa.py and OLSaBidder are unchanged.
 ```
 
 **Definition of done:**
-- [ ] train_hybrid_olsa.py produces valid `hybrid_olsa_v1` artifacts
+- [ ] train_hybrid_olsa.py produces valid `hybrid_olsa_v1` artifacts for both arms
+- [ ] `--arm-mode {both,constrained,full}` CLI flag
 - [ ] Feature selection utility with CV R-squared
-- [ ] CLI wrapper with --feature-config and --feature-budget
+- [ ] CLI wrapper with --feature-config, --feature-budget, --arm-mode
+- [ ] Rung bundle JSON written when arm_mode="both"
 - [ ] Residual variance computed on TRAIN partition only
 - [ ] 5+ tests
 - [ ] `make check` passes
 
 ---
 
-### H-R0b: R0 Baseline Lock
+### H-R0b: R0 Baseline Lock (Both Arms)
 
 **Execution prompt:**
 ```
-Train HybridOLSaBidder on canonical glutton run with sparse features,
-freeze, run 3-seed evaluation, create auto-promote record.
+Train HybridOLSaBidder on canonical glutton run with both arms,
+freeze, run 3-seed evaluation for each arm, create auto-promote record.
 
 Worktree: git worktree add ../Bid-Euchre-arc-d-r0b -b feat/arc-d-r0b
 
 Steps:
 1. Ensure data/runs/ symlink exists (ln -s from main checkout if missing)
 2. Create data/artifacts/arc_d/r0/ directory
-3. Train with train_hybrid_olsa.py:
+3. Train with train_hybrid_olsa.py (--arm-mode both):
    PYTHONPATH=src uv run python scripts/train_hybrid_olsa.py \
      --run-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
-     --seed 42 --output data/artifacts/arc_d/r0/ --split-type three_way --freeze
+     --seed 42 --output data/artifacts/arc_d/r0/ --split-type three_way \
+     --freeze --arm-mode both
 
-4. Verify: hybrid_r0.json has artifact_type="hybrid_olsa_v1", frozen_at set,
-   artifact_sha256 set, verify_frozen() returns True, context_features=[]
+4. Verify: both artifacts exist (hybrid_r0.json, hybrid_r0_full.json),
+   artifact_type="hybrid_olsa_v1", frozen_at set, artifact_sha256 set,
+   verify_frozen() returns True, context_features=[]
 
-5. Create eval configs and run evaluations for seeds 42, 43, 44 (n_per=50,000):
+5. Create eval configs and run evaluations for seeds 42, 43, 44 (n_per=50,000)
+   for BOTH arms:
    uv run python experiments/run_experiment.py --seed 42 \
      --config experiments/configs/arc_d_eval_r0.yaml
+   uv run python experiments/run_experiment.py --seed 42 \
+     --config experiments/configs/arc_d_eval_r0_full.yaml
    (repeat for --seed 43, --seed 44)
 
-6. Extract metrics via generate_bidder_evaluation()
+   Eval config matchup template:
+   - Self-play: HybridOLSaBidder R0 vs HybridOLSaBidder R0
+   - Head-to-head diagnostic: HybridOLSaBidder R0 vs OLSaBidder (characterization)
+
+6. Extract metrics including net_eppd via generate_bidder_evaluation()
 7. Create /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md
-   with R0 baseline row
-8. Create promotion_decision_r0.json (auto-promote):
-   All 6 metrics finite, decision="PROMOTE", rung_id="r0"
+   with R0 baseline rows (both arms)
+8. Create rung_bundle_r0.json (arc_d_rung_bundle_v1)
+9. Create promotion_decision_r0.json (auto-promote):
+   All 7 metrics finite for both arms, decision="PROMOTED", rung_id="r0",
+   attribution_gap recorded
 
 CONTRACT_FEATURES (must match current defaults):
   suit: ["bowers", "trump_count", "offsuit_aces"]
@@ -1064,13 +1518,14 @@ CONTRACT_FEATURES (must match current defaults):
 ```
 
 **Definition of done:**
-- [ ] `hybrid_r0.json` frozen, `verify_frozen()` returns True
+- [ ] `hybrid_r0.json` and `hybrid_r0_full.json` frozen, `verify_frozen()` returns True
 - [ ] `split_manifest_r0.json` has three_way, partition hashes
-- [ ] `training_report_r0.json` has per-contract R-squared, MAE on train/val/test
-- [ ] `eval_r0.json` has all 6 metrics finite
-- [ ] `eval_r0_s43.json`, `eval_r0_s44.json` have finite eppd
-- [ ] `MODEL_ARC_RUNS.md` exists with R0 row
-- [ ] `promotion_decision_r0.json` records auto-promote
+- [ ] `training_report_r0.json` has per-contract R-squared, MAE for both arms
+- [ ] `eval_r0.json` and `eval_r0_full.json` have all 7 metrics finite (including net_eppd)
+- [ ] Sensitivity evals for both arms (s43, s44) have finite net_eppd
+- [ ] `MODEL_ARC_RUNS.md` exists with R0 rows (both arms)
+- [ ] `rung_bundle_r0.json` packages both arms
+- [ ] `promotion_decision_r0.json` records auto-promote with attribution_gap
 - [ ] `make check` passes
 
 ---
@@ -1081,7 +1536,11 @@ CONTRACT_FEATURES (must match current defaults):
 ```
 Add partner bidding context feature extraction infrastructure AND produce the
 canonical auction-context dataset that is the HARD PREREQUISITE for R1b and all
-subsequent rungs (R2–R5).
+subsequent rungs (R2-R5).
+
+**TIMING:** This PR runs AFTER R0b promotes (E2 decision). The auction dataset
+is generated using HybridOLSaBidder R0 as the bidding policy for distribution
+consistency.
 
 1. Extend BiddingObservation in
    /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/strategy/bidding.py
@@ -1101,9 +1560,8 @@ subsequent rungs (R2–R5).
        """
 
 4. Run canonical auction simulation (seed=42, n_per=50000) to produce training
-   dataset. Use the existing `OLSaBidder` as the bidding policy (the only
-   promoted bidder available when R1a runs in Wave 2).
-   Output: canonical_auction_dataset_olsa_42_<timestamp>/ with
+   dataset. Use the HybridOLSaBidder R0 as the bidding policy (generated by R0b).
+   Output: canonical_auction_dataset_hybrid_r0_42_<timestamp>/ with
    bidding.parquet containing per-decision rows with auction context columns.
    This dataset is the HARD PREREQUISITE for R1b.
 
@@ -1119,57 +1577,71 @@ subsequent rungs (R2–R5).
 - [ ] `BiddingObservation.auction_history` accessible
 - [ ] `BiddingDatasetCollector` captures full auction sequence per decision row
 - [ ] `extract_partner_context()` returns 4 features
-- [ ] Canonical auction-context dataset produced and validated
+- [ ] Canonical auction-context dataset produced using HybridOLSaBidder R0
 - [ ] R1b can load the dataset and find auction context columns
 - [ ] 5+ tests
 - [ ] `make check` passes
 
 ---
 
-### H-R{N}b: Training + Eval PRs (Templated Pattern for R1b-R5b)
+### H-R{N}b: Dual-Arm Training + Eval PRs (Templated Pattern for R1b-R5b)
 
-All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this template:
+All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
 
 ```
-1. Run feature selection on val partition (forward_select, 5-fold CV within train)
+1. Feature selection (OLSa_Full): empty start, all candidates (39 hand + context),
+   threshold-only stopping (no budget cap)
+   Record in feature_selection_log_r{N}_full.json
+
+2. Feature selection (OLSa): locked 3/1/1 base, context candidates only,
+   budgeted (suit:10, high:5, low:5)
    Record in feature_selection_log_r{N}.json
 
-2. Train challenger (hybrid_r{N}.json) with selected features on TRAIN only. Freeze.
-   Train control (hybrid_r{N}_control.json) with previous rung features. Freeze.
+3. Train OLSa_Full with selected features on TRAIN only. Freeze.
+   Output: hybrid_r{N}_full.json
 
-3. Run challenger evaluations: seeds 42, 43, 44 (n_per=50,000)
-   Run control evaluation: seed 42 (n_per=50,000)
+4. Train OLSa with selected features on TRAIN only. Freeze.
+   Output: hybrid_r{N}.json
+   Train control: hybrid_r{N}_control.json (previous rung features)
 
-4. Run semantic gate on val and test partitions:
-   Output: semantic_gate_val.json, semantic_gate_test.json
+5. Run semantic gate on val+test for BOTH arms:
+   Output: semantic_gate_val.json, semantic_gate_test.json,
+           semantic_gate_val_full.json, semantic_gate_test_full.json
 
-5. Run promotion gate:
-   python scripts/internal/run_arc_d_gate.py --rung r{N} \
-     --challenger data/artifacts/arc_d/r{N}/hybrid_r{N}.json \
-     --control data/artifacts/arc_d/r{N}/hybrid_r{N}_control.json \
-     --eval-dir data/artifacts/arc_d/r{N}/
+6. Run evaluations:
+   OLSa_Full: seeds 42, 43, 44 (n_per=50,000)
+   OLSa: seed 42 (n_per=50,000)
+   Control: seed 42 (n_per=50,000)
+   Head-to-head diagnostic: OLSa_Full vs incumbent (seed 42)
 
-6. Promotion thresholds (from section 7):
-   primary: eppd > control.eppd + max(0.01, 1.5 * SE)
-   guardrails: bid_rate in [0.05, 0.95], make_rate >= 0.45,
-               cvar_5 >= control - 0.10, downside_variance <= control * 1.10
-   sensitivity: NOT (delta_43 < 0 AND delta_44 < 0)
+7. Write rung bundle (rung_bundle_r{N}.json), validate with
+   validate_arc_d_rung_contract
 
-7. If PROMOTE: update MODEL_ARC_RUNS.md with R{N} row.
-   If REJECT: record reasons. Max 2 re-attempts per rung.
+8. Run promotion gate (reads OLSa_Full net_eppd):
+   python scripts/internal/run_arc_d_gate.py --bundle data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json
+   Output: promotion_decision_r{N}.json
+
+9. Update registry (idempotent):
+   python scripts/internal/update_arc_registry.py --bundle data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json
+
+10. Run notebook, generate rung report, regenerate arc dashboard:
+    python scripts/internal/generate_arc_dashboard.py
 ```
 
 **R5b additions:**
+- Independent lambda tuning per arm (OLSa and OLSa_Full each get their own grid search)
 - Create `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/tune_lambda.py`:
   Lambda grid `[0.0, 0.05, 0.1, 0.2, 0.5, 1.0]`, val-set simulation per lambda
-  (seed=42, n_per=10,000), select `lambda* = argmax(eppd)`,
-  sensitivity check (±20% lambda → <5% EV change),
-  output `lambda_tuning_report_r5.json`
-- Lambda tuning step (val-only): run tune_lambda.py before eval
+  (seed=42, n_per=10,000), select `lambda* = argmax(net_eppd)`,
+  sensitivity check (+/-20% lambda -> <5% EV change),
+  output `lambda_tuning_report_r5.json` and `lambda_tuning_report_r5_full.json`
+- Lambda tuning step (val-only): run tune_lambda.py before eval for each arm
 - Risk sign convention: `risk_penalty = risk_lambda * max(0, -CVaR_5)`,
   always >= 0, so utility <= EV always holds
 - Strict cvar_5 gate: `cvar_5_challenger > cvar_5_control`
 - Lambda stored in frozen artifact `risk_lambda` field
+- **R5 residual_variance** splits into offensive/defensive per family (Decision 30)
+- Each arm's lambda tuning report is independent
 
 ---
 
@@ -1215,14 +1687,17 @@ Modify HybridOLSaBidder in
   - Use offensive model for contracts where this team declares
   - Use defensive model for estimating defense value
   - Backward-compatible: flat payoff_model still works (no off/def keys)
+  - Also detect off/def sub-structure in residual_variance (Decision 30):
+    flat {"suit": 2.5} -> R5 {"suit": {"offensive": 2.5, "defensive": 2.1}}
 
 Modify train_hybrid_olsa.py:
   - Add --offensive-defensive flag
   - When set: fit separate OLS on declaring-team rows vs defending-team rows
     (both fits on TRAIN partition only)
   - Output sub-model structure per contract family
+  - Also split residual_variance into offensive/defensive
 
-(Lambda tuning is deferred to PR-R5b scope — not part of this PR.)
+(Lambda tuning is deferred to PR-R5b scope -- not part of this PR.)
 
 Tests:
   - Flat model (no off/def) still works (backward compat)
@@ -1230,10 +1705,13 @@ Tests:
   - Off/def detection logic correct (key presence check)
   - Declaring-team vs defending-team row split is correct
   - Training with --offensive-defensive produces sub-model structure
+  - Off/def residual_variance loads correctly
+  - Mixed (flat payoff + off/def residual) raises clear error
 ```
 
 **Definition of done:**
 - [ ] Off/def sub-model detection in HybridOLSaBidder (backward-compatible)
+- [ ] Off/def residual_variance detection (backward-compatible, Decision 30)
 - [ ] Training pipeline supports --offensive-defensive
 - [ ] No lambda tuning in this PR (deferred to R5b)
 - [ ] 5+ tests
@@ -1241,7 +1719,7 @@ Tests:
 
 ---
 
-### H-F: Consolidation Report
+### H-F: Consolidation Report + Arc Dashboard
 
 **Execution prompt:**
 ```
@@ -1250,14 +1728,18 @@ Create final consolidation report after all rungs complete.
 Output: /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/model_arc_final_<date>_r1.md
 
 Contents:
-1. Executive summary: starting point (R0) vs final rung metrics
+1. Executive summary: starting point (R0) vs final rung metrics (net_eppd primary)
 2. Per-rung progression table (from MODEL_ARC_RUNS.md)
-3. Feature importance evolution across rungs
-4. Context feature impact analysis (which bidding context helped most)
-5. Risk adjustment impact (R5 lambda tuning results)
-6. Recommendations for future arcs
+3. Dual-arm comparison: OLSa_Full vs OLSa across all rungs
+4. Attribution_gap evolution across rungs
+5. Feature importance evolution across rungs (both arms)
+6. Context feature impact analysis (which bidding context helped most)
+7. Risk adjustment impact (R5 lambda tuning results, both arms)
+8. Recommendations for future arcs
 
 Update MODEL_ARC_RUNS.md with arc-level summary row.
+Regenerate arc dashboard: docs/04_reports/model_arc_d_dashboard.md
+
 Verify: make repo-lint passes.
 ```
 
@@ -1269,6 +1751,7 @@ Verify: make repo-lint passes.
 
 | # | Action | Status |
 |---|--------|--------|
+| P0 | Merge PR-P0: switch primary metric to `net_eppd` | **Pending** |
 | P1 | Merge HITL PR-1 (#370): `require_split()` | **DONE** (merged 2026-02-19) |
 | P2 | Merge HITL PR-2 (#372): `compute_semantic_gate()` | **DONE** (merged 2026-02-19) |
 | P3 | Merge HITL PR-3 (#374): model-rung notebook template | **DONE** (merged) |
@@ -1278,25 +1761,45 @@ Verify: make repo-lint passes.
 ### Data Policy
 
 - All artifacts in `data/artifacts/arc_d/` are gitignored (not committed)
-- `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` is committed (provenance record)
+- `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` is committed (provenance record, to be created by PR-R0b)
 - Evaluation YAML configs in `experiments/configs/` are committed
-- Gate runner and tuning scripts in `scripts/internal/` are committed
+- Gate runner, bundle validator, and registry updater scripts in `scripts/internal/` are committed
 - Canonical run data lives in `data/runs/` of main checkout (gitignored, symlinked to worktrees)
 
-### Blind-Test Flow (applies to every rung)
+### Blind-Test Flow (applies to every rung, both arms)
 
 ```
-TRAIN  -> fit OLS (payoff_model per contract family) on TRAIN partition only
-TUNE   -> feature selection / lambda tuning on VAL partition only
-FREEZE -> freeze_artifact() -> frozen_at + artifact_sha256
-EVALUATE -> evaluator pipeline on frozen artifact:
-           +-- regression: TEST-partition R-squared, MAE -> semantic_gate_test.json
-           +-- simulation: seeds 42, 43, 44 -> eval_r{N}*.json
-GATE   -> compute_eligibility() + Tier 1 + Tier 2 -> promotion_decision_r{N}.json
+TRAIN  -> fit OLS (payoff_model per contract family) on TRAIN partition only (both arms)
+TUNE   -> feature selection (OLSa: budgeted, OLSa_Full: threshold-only) / lambda tuning on VAL only
+FREEZE -> freeze_artifact() -> frozen_at + artifact_sha256 (both arms)
+EVALUATE -> evaluator pipeline on frozen artifacts:
+           +-- regression: TEST-partition R-squared, MAE -> semantic_gate_test.json (both arms)
+           +-- simulation: OLSa_Full seeds 42, 43, 44; OLSa seed 42 -> eval_r{N}*.json
+           +-- head-to-head diagnostic: OLSa_Full vs incumbent (seed 42)
+GATE   -> validate_bundle -> compute_eligibility() + Tier 1 + Tier 2 -> promotion_decision_r{N}.json
+REPORT -> write rung report, update registry (idempotent), regenerate arc dashboard
 ```
 
 No ad-hoc test inspection during tuning. Notebooks may load val partition only.
 Test metrics exist only in evaluator output.
+
+### Pre-Flight Execution Checklist
+
+A compact quick-reference block any agent can scan before starting PR-P0/PR-I1:
+
+```
+Pre-Flight Checklist (verify before opening any Arc D PR):
+- [ ] Terminology: OLSa_Full (promotional), OLSa (attribution) -- no aliases
+- [ ] Metric: net_eppd primary, eppd secondary diagnostic only
+- [ ] Outcomes: PROMOTED / ADVANCED / HALT -- no other status values
+- [ ] Gap metric: attribution_gap (= OLSa_Full.net_eppd - OLSa.net_eppd)
+- [ ] Bundle: rung_bundle_r{N}.json required; validate before gate
+- [ ] Gate order: validate_bundle -> Tier 1 -> eligibility -> Tier 2 -> decision
+- [ ] R5 sigma: residual_variance splits into offensive/defensive
+- [ ] Dataset: R1+ uses auction dataset generated AFTER R0b (E2)
+- [ ] Artifacts: _full suffix for OLSa_Full (hybrid_r{N}_full.json)
+- [ ] Net-differential EV: make = 2*tricks - 10, set = tricks - bid_n - 10
+```
 
 ### Verification Checklist (for this plan document)
 
@@ -1311,23 +1814,38 @@ Test metrics exist only in evaluator output.
   - [x] §4: Strict split discipline (train-only fit, val-only tune, test-only blind eval)
   - [x] §7/§9: Gate runner as adapter wrapping `compute_eligibility()`
 - [ ] All 7 additional findings reflected:
-  - [x] P1-1: One concept per PR (16 PRs, R2-R4 split into a/b) — §5
-  - [x] P1-2: Dependency gate reflects pipeline reality (compute_eligibility exists in reporting/eligibility.py) — §3
-  - [x] P1-3: Absolute paths everywhere — all sections
-  - [x] P2-4: Schema doc + validator (hybrid_olsa_v1.md + linter rule) — §2, §9 H-I1
-  - [x] P2-5: Promotion delta with confidence (max(0.01, 1.5*SE)) — §7
-  - [x] P2-6: Doc-sync PR (PR-I3) — §5, §9 H-I3
-  - [x] P3-7: `make repo-lint` for doc-only PRs — §1, §9 H-I3
+  - [x] P1-1: One concept per PR (18 PRs, R2-R4 split into a/b) -- §5
+  - [x] P1-2: Dependency gate reflects pipeline reality (compute_eligibility exists in reporting/eligibility.py) -- §3
+  - [x] P1-3: Absolute paths everywhere -- all sections
+  - [x] P2-4: Schema doc + validator (hybrid_olsa_v1.md + linter rule) -- §2, §9 H-I1
+  - [x] P2-5: Promotion delta with confidence (max(0.01, 1.5*SE)) -- §7
+  - [x] P2-6: Doc-sync PR (PR-I3) -- §5, §9 H-I3
+  - [x] P3-7: `make repo-lint` for doc-only PRs -- §1, §9 H-I3
 - [ ] Post-merge review findings (6 fixes):
-  - [x] P0: Data-source transition — R0 bidless, R1+ auction-context from PR-R1a
-  - [x] P1: Stage 1 dropped — single `payoff_model`, analytical P(make), no `stage1_win_model`
-  - [x] P1: PR-R5a scope split — architecture only, lambda tuning moved to R5b
-  - [x] P2: R0 equivalence claim removed — behavioral note + acceptance criterion added
-  - [x] P3: "All 16 PRs can begin" qualified, `CheckResult` → `EligibilityResult`
+  - [x] P0: Data-source transition -- R0 bidless, R1+ auction-context from PR-R1a (using HybridOLSa R0, E2)
+  - [x] P1: Stage 1 dropped -- single `payoff_model`, analytical P(make), no `stage1_win_model`
+  - [x] P1: PR-R5a scope split -- architecture only, lambda tuning moved to R5b
+  - [x] P2: R0 equivalence claim removed -- behavioral note + acceptance criterion added
+  - [x] P3: "All 18 PRs" qualified, `CheckResult` -> `EligibilityResult`
   - [x] Proxy target contract added to §1
+- [ ] v3 review decisions (31 total):
+  - [x] Dual-arm design: OLSa_Full (promotional) + OLSa (attribution) -- §4
+  - [x] Always-advance gate: PROMOTED / ADVANCED / HALT -- §7
+  - [x] Primary metric: net_eppd (was eppd) -- §1, §2, §7
+  - [x] PR-P0 added (net_eppd switch) -- §5, §6
+  - [x] PR-I4 added (reporting extensions) -- §5, §6
+  - [x] E2 decision: R1a delayed to after R0b -- §6
+  - [x] CVaR seed = training_seed -- §2
+  - [x] R5 residual_variance offensive/defensive split -- §4 R5, §9 H-R5a
+  - [x] Both arms at R0 (Decision 31) -- §4 R0
+  - [x] attribution_gap canonical name -- §4, §7, §8
+  - [x] OLSa_Full / OLSa consistent naming -- throughout
+  - [x] Bundle schema (arc_d_rung_bundle_v1) -- §8
+  - [x] Pre-flight execution checklist -- §10
 - [ ] No TBD/TBC/open-question markers remain
 - [ ] All file paths absolute (`/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/...`)
 - [ ] All thresholds are concrete numbers (no "roughly", "likely", "cursory")
 - [ ] Schema doc path explicitly referenced with validation contract
 - [ ] Promotion delta uses `max(0.01, 1.5*SE)` form
 - [ ] Required 10-section document structure present (§1-§10)
+- [ ] 18 PRs in §5, 18 PRs in wave graph, 18 PRs in critical path
