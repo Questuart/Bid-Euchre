@@ -83,8 +83,12 @@ def _make_synthetic_run(tmp_path: Path, n_hands=100, seed=42):
     features_data = {
         "hand_id": hand_ids,
         "seat": seats,
+        "dealer_seat": np.tile([3, 3, 3, 3], n_hands)[:n_rows],
+        "deal_id": np.repeat(np.arange(n_hands), 4),
         "contract_type": contract_type,
         "trump_suit": trump_suit,
+        "hand_cards": [["SA", "SK"] * 5] * n_rows,
+        "hand_feature_schema_version": np.ones(n_rows, dtype=int),
     }
 
     for fname in feature_names:
@@ -276,7 +280,7 @@ def test_freeze_artifacts(tmp_path: Path):
 
 
 def test_rung_bundle_written(tmp_path: Path):
-    """Rung bundle should be written when arm_mode='both'."""
+    """Rung bundle should match arc_d_rung_bundle_v1 schema."""
     run_dir = _make_synthetic_run(tmp_path)
     output_dir = str(tmp_path / "output")
 
@@ -292,7 +296,85 @@ def test_rung_bundle_written(tmp_path: Path):
     with open(result["rung_bundle"]) as f:
         bundle = json.load(f)
 
-    assert bundle["bundle_type"] == "arc_d_rung_bundle_v1"
+    # Top-level schema fields
+    assert bundle["bundle_schema"] == "arc_d_rung_bundle_v1"
     assert bundle["rung_id"] == "r0"
-    assert "constrained_artifact" in bundle
-    assert "full_artifact" in bundle
+    assert bundle["arc"] == "arc_d"
+    assert bundle["timestamp"] is not None
+
+    # Arm blocks
+    assert "olsa" in bundle
+    assert "olsa_full" in bundle
+    assert "artifact_path" in bundle["olsa"]
+    assert "artifact_path" in bundle["olsa_full"]
+    assert "selected_features" in bundle["olsa"]
+    assert "selected_features" in bundle["olsa_full"]
+
+    # Eval placeholders (populated by PR-I2)
+    assert bundle["olsa"]["eval_seed42"] is None
+    assert bundle["olsa_full"]["eval_seed42"] is None
+
+    # Split manifest and training report
+    assert bundle["split_manifest"] is not None
+    assert bundle["training_report"] is not None
+
+    # Incumbent and control (null at R0)
+    assert bundle["incumbent"] is None
+    assert bundle["control"] is None
+
+
+def test_val_metrics_in_report(tmp_path: Path):
+    """Training report should include validation metrics for three_way split."""
+    run_dir = _make_synthetic_run(tmp_path)
+    output_dir = str(tmp_path / "output")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="constrained",
+        freeze=False,
+        split_type="three_way",
+    )
+
+    with open(result["training_report"]) as f:
+        report = json.load(f)
+
+    # At least one contract family should have val metrics
+    for cf in ["suit", "high", "low"]:
+        if cf in report.get("constrained", {}):
+            metrics = report["constrained"][cf]
+            assert "r2_val" in metrics, f"Missing r2_val for {cf}"
+            assert "mae_val" in metrics, f"Missing mae_val for {cf}"
+            assert "n_val" in metrics, f"Missing n_val for {cf}"
+            assert metrics["n_val"] > 0
+
+
+def test_non_numeric_columns_excluded(tmp_path: Path):
+    """Non-numeric columns (hand_cards, deal_id, etc.) should not be treated as features."""
+    run_dir = _make_synthetic_run(tmp_path)
+    output_dir = str(tmp_path / "output")
+
+    # Full arm uses forward selection — would crash on non-numeric columns
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="full",
+        freeze=False,
+    )
+
+    with open(result["artifacts"]["full"]) as f:
+        artifact = json.load(f)
+
+    # Verify no non-feature columns leaked into selected features
+    non_features = {
+        "hand_cards",
+        "deal_id",
+        "dealer_seat",
+        "hand_feature_schema_version",
+    }
+    for cf, model in artifact["payoff_model"].items():
+        selected = set(model["feature_names"])
+        leaked = selected & non_features
+        assert not leaked, f"Non-feature columns in {cf}: {leaked}"

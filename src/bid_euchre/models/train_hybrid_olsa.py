@@ -31,22 +31,19 @@ from .train_olsa import CONTRACT_FEATURES, _compute_metrics, _fit_ols
 
 logger = logging.getLogger(__name__)
 
-# All 39 hand features available for forward selection
-_ALL_FEATURE_NAMES: list[str] | None = None
-
-
-def _get_all_feature_names(df) -> list[str]:
-    """Extract the 39 hand feature column names from the joined DataFrame."""
-    global _ALL_FEATURE_NAMES
-    if _ALL_FEATURE_NAMES is not None:
-        return _ALL_FEATURE_NAMES
-
-    # Columns that are not features
-    non_feature_cols = {
+# Columns that are NOT features — known non-feature columns from
+# bidless.parquet schema and join outputs.
+_NON_FEATURE_COLS = frozenset(
+    {
         "hand_id",
         "seat",
+        "dealer_seat",
+        "deal_id",
         "contract_type",
         "trump_suit",
+        "hand_cards",
+        "hand_features",
+        "hand_feature_schema_version",
         "tricks_won",
         "tricks_team0",
         "tricks_team1",
@@ -54,8 +51,17 @@ def _get_all_feature_names(df) -> list[str]:
         "strategy_id",
         "play_strategy_id",
     }
-    _ALL_FEATURE_NAMES = [c for c in df.columns if c not in non_feature_cols]
-    return _ALL_FEATURE_NAMES
+)
+
+
+def _get_all_feature_names(df) -> list[str]:
+    """Extract hand feature column names from the joined DataFrame.
+
+    Uses both an explicit exclusion list and a numeric-dtype filter
+    as defense-in-depth against non-numeric columns leaking through.
+    """
+    numeric_cols = set(df.select_dtypes(include="number").columns)
+    return [c for c in df.columns if c not in _NON_FEATURE_COLS and c in numeric_cols]
 
 
 def _git_sha() -> str:
@@ -139,17 +145,6 @@ def _train_arm(
             all_features = _get_all_feature_names(df)
             budget = (feature_budget or {}).get(contract_family)
 
-            # Locked base for constrained arm
-            locked_base = None
-            if not do_forward_select:
-                # This branch shouldn't be reached, but defensive
-                locked_base_names = feature_spec.get(contract_family, [])
-                locked_base = [
-                    all_features.index(f)
-                    for f in locked_base_names
-                    if f in all_features
-                ]
-
             X_train_all = train_df[all_features].values.astype(np.float64)
             y_train = train_df["tricks_won"].values.astype(np.float64)
             groups = train_df["hand_id"].values
@@ -161,7 +156,6 @@ def _train_arm(
                 groups=groups,
                 max_features=budget,
                 seed=seed,
-                locked_base=locked_base,
             )
             feature_names = selected_names
             if feature_selection_log is not None:
@@ -182,10 +176,28 @@ def _train_arm(
         residuals = y_train - y_pred_train
         resid_var = float(np.var(residuals))
 
-        # Evaluation metrics
+        # Runtime guard: residual variance must be physically plausible
+        # (tricks_won is 0-10, so variance > 25 = std > 5 is implausible)
+        if not (0 < resid_var < 25):
+            raise ValueError(
+                f"Residual variance out of bounds for {contract_family}: "
+                f"{resid_var:.4f} (expected 0 < σ² < 25)"
+            )
+
+        # Evaluation metrics on train and test
         y_pred_test = X_test @ weights + bias
         metrics_train = _compute_metrics(y_train, y_pred_train)
         metrics_test = _compute_metrics(y_test, y_pred_test)
+
+        # Validation metrics (three_way split only)
+        metrics_val = None
+        n_val = 0
+        if val_df is not None and len(val_df) > 0:
+            X_val = val_df[feature_names].values.astype(np.float64)
+            y_val = val_df["tricks_won"].values.astype(np.float64)
+            y_pred_val = X_val @ weights + bias
+            metrics_val = _compute_metrics(y_val, y_pred_val)
+            n_val = len(val_df)
 
         models[contract_family] = {
             "weights": [float(w) for w in weights],
@@ -204,6 +216,10 @@ def _train_arm(
             "residual_variance": resid_var,
             "selected_features": feature_names,
         }
+        if metrics_val is not None:
+            training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
+            training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
+            training_metrics[contract_family]["n_val"] = n_val
 
         logger.info(
             "  %s [%s]: R²=%.4f (test), MAE=%.4f, σ²=%.4f, features=%s",
@@ -358,20 +374,49 @@ def train_hybrid_olsa(
 
     # --- Rung bundle (when both arms are trained) ---
     if arm_mode == "both":
+        # Extract per-arm metadata for bundle
+        def _arm_block(artifact_path: str, fs_log_path: str | None = None) -> dict:
+            with open(artifact_path) as af:
+                art = json.load(af)
+            selected = {
+                cf: art["payoff_model"][cf]["feature_names"]
+                for cf in art["payoff_model"]
+            }
+            block = {
+                "artifact_path": artifact_path,
+                "artifact_sha256": art.get("artifact_sha256"),
+                "selected_features": selected,
+                # Populated by evaluation PRs (PR-I2+)
+                "eval_seed42": None,
+                "eval_seed43": None,
+                "eval_seed44": None,
+                "semantic_gate_val": None,
+                "semantic_gate_test": None,
+            }
+            if fs_log_path is not None:
+                block["feature_selection_log"] = fs_log_path
+            return block
+
+        olsa_block = _arm_block(result["artifacts"]["constrained"])
+        olsa_full_block = _arm_block(
+            result["artifacts"]["full"],
+            fs_log_path=result.get("feature_selection_log"),
+        )
+
         bundle = {
-            "bundle_type": "arc_d_rung_bundle_v1",
+            "bundle_schema": "arc_d_rung_bundle_v1",
             "rung_id": rung_id,
-            "constrained_artifact": os.path.basename(
-                result["artifacts"]["constrained"]
+            "arc": "arc_d",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "olsa": olsa_block,
+            "olsa_full": olsa_full_block,
+            "split_manifest": os.path.join(
+                output_dir, f"split_manifest_{rung_id}_suit.json"
             ),
-            "full_artifact": os.path.basename(result["artifacts"]["full"]),
-            "split_manifest_prefix": f"split_manifest_{rung_id}_",
-            "training_report": os.path.basename(report_path),
+            "training_report": report_path,
+            "incumbent": None,
+            "control": None,
         }
-        if "feature_selection_log" in result:
-            bundle["feature_selection_log"] = os.path.basename(
-                result["feature_selection_log"]
-            )
 
         bundle_path = os.path.join(output_dir, f"rung_bundle_{rung_id}.json")
         with open(bundle_path, "w") as f:
