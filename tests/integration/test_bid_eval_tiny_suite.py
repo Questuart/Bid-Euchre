@@ -38,7 +38,9 @@ def test_bid_eval_tiny_emits_evaluator(tmp_path: Path) -> None:
 
     dirs_after = set(run_base.iterdir())
     new_dirs = dirs_after - dirs_before
-    assert len(new_dirs) == 2, f"Expected 2 directories (1 run + 1 rollup), found {len(new_dirs)}"
+    assert (
+        len(new_dirs) == 2
+    ), f"Expected 2 directories (1 run + 1 rollup), found {len(new_dirs)}"
 
     rollup_dir = next(d for d in new_dirs if (d / "rollup.json").exists())
     assert (rollup_dir / "rollup.json").exists()
@@ -59,18 +61,27 @@ def test_bid_eval_tiny_emits_evaluator(tmp_path: Path) -> None:
         with eval_path.open() as ef:
             data = json.load(ef)
 
-        assert data["primary_series"] == "bidder_team_points"
+        assert data["primary_series"] == "net_bidder_team_points"
         assert isinstance(data["strategies"], list)
         for strategy in data["strategies"]:
             assert "strategy_id" in strategy
             assert isinstance(strategy["bidder_team_points"], list)
+            assert isinstance(strategy["net_bidder_team_points"], list)
+            # Original metrics (backward compat)
             assert "expected_points" in strategy
             assert "make_rate" in strategy
             assert "cvar_5" in strategy
             assert "downside_variance" in strategy
+            # Net-differential metrics
+            assert "net_expected_points" in strategy
+            assert "net_expected_points_per_deal" in strategy
+            assert "net_cvar_5" in strategy
+            assert "net_downside_variance" in strategy
 
         # Check that baseline matrix report exists
-        matrix_path = member_run / "reports" / "bidding_strategy" / "baseline_matrix.json"
+        matrix_path = (
+            member_run / "reports" / "bidding_strategy" / "baseline_matrix.json"
+        )
         assert matrix_path.exists(), f"Missing baseline matrix report: {matrix_path}"
 
         with matrix_path.open() as mf:
@@ -83,7 +94,9 @@ def test_bid_eval_tiny_emits_evaluator(tmp_path: Path) -> None:
         # Verify deterministic ordering (sorted by strategy_id)
         matrix_ids = [s["strategy_id"] for s in matrix_data["strategies"]]
         sorted_ids = sorted(matrix_ids)
-        assert matrix_ids == sorted_ids, f"Matrix not deterministically ordered: {matrix_ids} != {sorted_ids}"
+        assert (
+            matrix_ids == sorted_ids
+        ), f"Matrix not deterministically ordered: {matrix_ids} != {sorted_ids}"
 
         # Verify required fields are present in each strategy
         for strategy in matrix_data["strategies"]:
@@ -92,4 +105,8 @@ def test_bid_eval_tiny_emits_evaluator(tmp_path: Path) -> None:
             assert "make_rate" in strategy
             assert "cvar_5" in strategy
             assert "downside_variance" in strategy
+            assert "net_expected_points" in strategy
+            assert "net_expected_points_per_deal" in strategy
+            assert "net_cvar_5" in strategy
+            assert "net_downside_variance" in strategy
             assert "n_hands" in strategy
