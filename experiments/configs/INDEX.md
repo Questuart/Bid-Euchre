@@ -57,6 +57,14 @@ Quick reference for finding the right experiment configuration.
 | `canonical_bidless_outcomes_matrix_shallow.yaml` | Broad coverage 5x5 matrix (300k hands, 25 matchups) |
 | `canonical_bidless_outcomes_zoom.yaml` | High-precision zoom (3.3M hands, 11 matchups) |
 
+## Arc D: OLSa-Hybrid Bidder Evaluation
+
+| Config | Purpose |
+|--------|---------|
+| `arc_d_eval_r0.yaml` | R0 OLSa constrained arm self-play (50k hands) |
+| `arc_d_eval_r0_full.yaml` | R0 OLSa_Full arm self-play (50k hands) |
+| `arc_d_eval_r0_diagnostic.yaml` | R0 HybridOLSaBidder vs OLSaBidder head-to-head |
+
 ---
 
 **See also:** [experiments/suites/](../suites/) for batched experiment definitions

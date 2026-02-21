@@ -182,6 +182,9 @@ logs/
 # =============================================================================
 # Project specific
 # =============================================================================
+# Model artifacts (generated, not source)
+data/artifacts/
+
 # Generated plots (these are output, not source)
 plots/
 !plots/.gitkeep

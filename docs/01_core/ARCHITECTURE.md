@@ -188,6 +188,8 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/train_bidder.py` | Bidder model training |
 | `scripts/train_hybrid_olsa.py` | Hybrid OLSa training (Arc D) |
 | `scripts/train_olsa.py` | OLSa model training |
+| `scripts/update_r0_bundle.py` | Update R0 rung bundle with eval paths (Arc D) |
+| `scripts/write_r0_promotion.py` | Write R0 auto-promotion decision (Arc D) |
 
 ---
 
