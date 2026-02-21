@@ -97,6 +97,7 @@ def _make_bundle(tmp_path, rung_id="r0"):
         "olsa": {
             "artifact_path": "hybrid_r0.json",
             "artifact_sha256": "abc12345deadbeef",
+            "net_eppd": 0.15,
             "selected_features": {
                 "suit": ["bowers", "trump_count", "offsuit_aces"],
                 "high": ["offsuit_aces"],
@@ -106,6 +107,7 @@ def _make_bundle(tmp_path, rung_id="r0"):
         "olsa_full": {
             "artifact_path": "hybrid_r0_full.json",
             "artifact_sha256": "def67890cafebabe",
+            "net_eppd": 0.22,
             "selected_features": {
                 "suit": [
                     "bowers",
@@ -196,12 +198,19 @@ def test_bid_distribution_extreme_rate_fails():
 
 
 def test_bid_distribution_single_contract_dominates():
-    """Single contract > 80% of bids -> FAIL."""
+    """Single contract > 80% of bids -> FAIL via dominance check."""
     df = _make_balanced_df()
-    # Make all bidders be suit contracts
+    # First, reduce bid rate to ~50% so the rate check passes
+    rng = np.random.RandomState(99)
+    no_bid_hands = set(rng.choice(df["hand_id"].unique(), size=250, replace=False))
+    df.loc[df["hand_id"].isin(no_bid_hands), "bid_won"] = False
+    # Force ALL remaining bids to suit — 100% single-contract dominance
     df.loc[df["bid_won"], "contract_type"] = "suit"
     result = check_bid_distribution_sanity(df, "FULL")
     assert result["status"] == "FAIL"
+    assert (
+        "dominat" in result["detail"].lower()
+    ), f"Expected dominance failure, got: {result['detail']}"
 
 
 # ──────────────────────────────────────────────
@@ -244,19 +253,57 @@ def test_dual_arm_coherence_high_divergence():
     assert result["status"] == "WARN"
 
 
+def test_dual_arm_coherence_faceted_checks():
+    """Faceted checks (same check_id, different contract_type) are keyed separately."""
+    # Arm 1: all three contract_type facets PASS
+    checks1 = [
+        {"check_id": "seat_balance", "contract_type": "suit", "status": "PASS"},
+        {"check_id": "seat_balance", "contract_type": "high", "status": "PASS"},
+        {"check_id": "seat_balance", "contract_type": "low", "status": "PASS"},
+    ]
+    # Arm 2: suit FAIL, high PASS, low PASS -> 1 mismatch (within threshold)
+    checks2_one_diverge = [
+        {"check_id": "seat_balance", "contract_type": "suit", "status": "FAIL"},
+        {"check_id": "seat_balance", "contract_type": "high", "status": "PASS"},
+        {"check_id": "seat_balance", "contract_type": "low", "status": "PASS"},
+    ]
+    g1 = _make_gate_artifact(checks1)
+    g2 = _make_gate_artifact(checks2_one_diverge)
+    result = check_dual_arm_coherence(g1, g2, max_divergence=1)
+    assert result["status"] == "PASS"
+    assert "1 mismatches" in result["observed"]
+
+    # Arm 2b: suit FAIL and high FAIL -> 2 mismatches (exceeds max_divergence=1)
+    checks2_two_diverge = [
+        {"check_id": "seat_balance", "contract_type": "suit", "status": "FAIL"},
+        {"check_id": "seat_balance", "contract_type": "high", "status": "FAIL"},
+        {"check_id": "seat_balance", "contract_type": "low", "status": "PASS"},
+    ]
+    g1b = _make_gate_artifact(checks1)
+    g2b = _make_gate_artifact(checks2_two_diverge)
+    result2 = check_dual_arm_coherence(g1b, g2b, max_divergence=1)
+    assert result2["status"] == "WARN"
+    assert "2 mismatches" in result2["observed"]
+
+
 # ──────────────────────────────────────────────
 #  Report generation tests
 # ──────────────────────────────────────────────
 
 
 def test_rung_report_sections(tmp_path):
-    """Report contains expected section headers."""
+    """Report contains expected section headers and computed attribution gap."""
     bundle_path = _make_bundle(tmp_path)
     report = generate_arc_d_rung_report(bundle_path)
     assert "# ARC_D Rung R0 Report" in report
     assert "## Dual-Arm Comparison" in report
     assert "## Feature Selection" in report
     assert "## Attribution Gap" in report
+    # Check computed gap table is present with net_eppd values
+    assert "0.1500" in report  # olsa net_eppd
+    assert "0.2200" in report  # olsa_full net_eppd
+    assert "+0.0700" in report  # gap = 0.22 - 0.15
+    assert "Positive gap" in report
 
 
 def test_rung_report_dual_arm_table(tmp_path):
@@ -269,21 +316,49 @@ def test_rung_report_dual_arm_table(tmp_path):
     assert "suit:" in report
 
 
+def test_rung_report_attribution_gap_pending(tmp_path):
+    """Report shows pending message when net_eppd is absent."""
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    path = tmp_path / "rung_bundle_r0.json"
+    path.write_text(json.dumps(bundle, indent=2))
+    report = generate_arc_d_rung_report(path)
+    assert "pending" in report.lower()
+    assert "## Attribution Gap" in report
+
+
 # ──────────────────────────────────────────────
 #  Dashboard tests
 # ──────────────────────────────────────────────
 
 
 def test_dashboard_reads_bundles(tmp_path):
-    """Dashboard reads bundles and produces a table."""
+    """Dashboard reads bundles and produces a table with net_eppd and Gap."""
     # Create a rung bundle
     rung_dir = tmp_path / "r0"
     rung_dir.mkdir()
     bundle = {
         "bundle_schema": "arc_d_rung_bundle_v1",
         "rung_id": "r0",
-        "olsa": {"selected_features": {"suit": ["a", "b", "c"]}},
-        "olsa_full": {"selected_features": {"suit": ["a", "b", "c", "d", "e"]}},
+        "olsa": {
+            "selected_features": {"suit": ["a", "b", "c"]},
+            "net_eppd": 0.15,
+        },
+        "olsa_full": {
+            "selected_features": {"suit": ["a", "b", "c", "d", "e"]},
+            "net_eppd": 0.22,
+        },
     }
     (rung_dir / "rung_bundle_r0.json").write_text(json.dumps(bundle))
 
@@ -293,6 +368,12 @@ def test_dashboard_reads_bundles(tmp_path):
     assert "r0" in result
     assert "Arc D Progression Dashboard" in result
     assert output.exists()
+    # Verify net_eppd and Gap columns
+    assert "net_eppd" in result
+    assert "Gap" in result
+    assert "0.1500" in result
+    assert "0.2200" in result
+    assert "+0.0700" in result
 
 
 def test_dashboard_empty_artifacts(tmp_path):

@@ -110,11 +110,24 @@ def generate_arc_d_rung_report(
     # --- Attribution gap ---
     sections.append("## Attribution Gap")
     sections.append("")
-    sections.append("The attribution gap measures the net_eppd difference between the ")
-    sections.append("full-feature promotional arm and the constrained attribution arm.")
-    sections.append(
-        "A positive gap indicates feature selection improves bidding quality."
-    )
+    olsa_eppd = olsa.get("net_eppd")
+    full_eppd = olsa_full.get("net_eppd")
+    if olsa_eppd is not None and full_eppd is not None:
+        gap = full_eppd - olsa_eppd
+        sections.append("| Arm | net_eppd |")
+        sections.append("|-----|----------|")
+        sections.append(f"| OLSa (constrained) | {olsa_eppd:.4f} |")
+        sections.append(f"| OLSa_Full (promotional) | {full_eppd:.4f} |")
+        sections.append(f"| **Attribution Gap** | **{gap:+.4f}** |")
+        sections.append("")
+        if gap > 0:
+            sections.append("Positive gap: feature selection improves bidding quality.")
+        elif gap < 0:
+            sections.append("Negative gap: constrained arm outperforms — investigate.")
+        else:
+            sections.append("Zero gap: arms perform identically.")
+    else:
+        sections.append("*Attribution gap not yet available — eval results pending.*")
     sections.append("")
 
     report = "\n".join(sections)

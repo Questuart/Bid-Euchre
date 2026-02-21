@@ -59,12 +59,12 @@ def generate_dashboard(
         sections.append(f"Searched: `{artifacts_base}`")
     else:
         sections.append(
-            "| Rung | OLSa Features | OLSa_Full Features"
-            " | OLSa SHA | OLSa_Full SHA | Bundle Path |"
+            "| Rung | OLSa net_eppd | Full net_eppd | Gap"
+            " | OLSa Features | Full Features | Bundle Path |"
         )
         sections.append(
-            "|------|--------------|-------------------"
-            "|----------|--------------|-------------|"
+            "|------|--------------|--------------|-----"
+            "|--------------|--------------|-------------|"
         )
 
         for b in bundles:
@@ -74,13 +74,19 @@ def generate_dashboard(
 
             olsa_feats = _feature_summary(olsa)
             full_feats = _feature_summary(olsa_full)
-            olsa_sha = (olsa.get("artifact_sha256") or "\u2014")[:8]
-            full_sha = (olsa_full.get("artifact_sha256") or "\u2014")[:8]
+
+            olsa_eppd = olsa.get("net_eppd")
+            full_eppd = olsa_full.get("net_eppd")
+            gap_str = "\u2014"
+            olsa_eppd_str = f"{olsa_eppd:.4f}" if olsa_eppd is not None else "\u2014"
+            full_eppd_str = f"{full_eppd:.4f}" if full_eppd is not None else "\u2014"
+            if olsa_eppd is not None and full_eppd is not None:
+                gap_str = f"{full_eppd - olsa_eppd:+.4f}"
             src = b.get("_source_path", "\u2014")
 
             sections.append(
-                f"| {rung} | {olsa_feats} | {full_feats}"
-                f" | {olsa_sha} | {full_sha} | {src} |"
+                f"| {rung} | {olsa_eppd_str} | {full_eppd_str} | {gap_str}"
+                f" | {olsa_feats} | {full_feats} | {src} |"
             )
 
         sections.append("")

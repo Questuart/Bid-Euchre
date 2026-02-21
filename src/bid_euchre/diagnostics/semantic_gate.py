@@ -1036,12 +1036,12 @@ def check_dual_arm_coherence(
     Returns:
         Single check entry dict.
     """
-    primary_checks = {
-        c["check_id"]: c["status"] for c in gate_primary.get("checks", [])
-    }
-    secondary_checks = {
-        c["check_id"]: c["status"] for c in gate_secondary.get("checks", [])
-    }
+
+    def _ckey(c: dict) -> tuple:
+        return (c["check_id"], c.get("contract_type"))
+
+    primary_checks = {_ckey(c): c["status"] for c in gate_primary.get("checks", [])}
+    secondary_checks = {_ckey(c): c["status"] for c in gate_secondary.get("checks", [])}
 
     # Count mismatches on shared check_ids
     shared_ids = set(primary_checks.keys()) & set(secondary_checks.keys())
