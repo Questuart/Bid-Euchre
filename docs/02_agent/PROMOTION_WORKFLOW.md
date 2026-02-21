@@ -163,6 +163,44 @@ Semantic gate JSON files (`semantic_gate*.json`) must have full schema: 11 top-l
 ### `split-manifest-schema`
 Split manifest JSON files (`split_manifest*.json`) must have valid schema (required fields: `schema_version`, `split_type`, `split_seed`, `total_hand_ids`, `partition_hashes`) and `split_type` must be `two_way` or `three_way`.
 
+## Arc D Gate Model
+
+Arc D uses an **always-advance** gate model for iterative model improvement.
+The gate runner evaluates a candidate model against the current incumbent and
+returns one of three outcomes:
+
+| Outcome | Meaning |
+|---------|---------|
+| **PROMOTED** | Model advances to the next rung AND becomes the new incumbent (replaces current best) |
+| **ADVANCED** | Model advances to the next rung but does NOT become incumbent (insufficient improvement over current best) |
+| **HALT** | Model fails health or quality checks; advancement is blocked |
+
+### Dual-Arm Convention
+
+Arc D trains two model arms per rung:
+
+- **OLSa** (constrained) — locked 3/1/1 feature set per contract type; used for attribution and interpretability
+- **OLSa_Full** (promotional) — forward-selected from all 39 features; used for promotional gate evaluation
+
+The promotional arm (OLSa_Full) determines whether the candidate advances or halts.
+The constrained arm (OLSa) provides stable attribution baselines across rungs.
+
+### Artifact Validation
+
+- **Hybrid OLSa schema:** `docs/01_core/schemas/hybrid_olsa_v1.md`
+- **Bundle validation:** `src/bid_euchre/validation/arc_d_bundle.py` validates rung bundle structure (both arms, split manifest, training report)
+- **Gate runner:** `src/bid_euchre/validation/arc_d_gate.py` implements the promotion gate logic (metric normalization, threshold comparison, decision emission)
+- **CLI entry point:** `scripts/internal/run_arc_d_gate.py`
+- **Artifact integrity:** Both arms must pass `verify_frozen()` from `src/bid_euchre/models/freeze.py` before gate evaluation
+
+### Gate Flow
+
+1. Train both arms (OLSa + OLSa_Full) with shared split manifest
+2. Freeze both artifacts
+3. Evaluate both arms on held-out test split
+4. Run gate: compare OLSa_Full metrics against incumbent thresholds
+5. Emit promotion decision (PROMOTED / ADVANCED / HALT) with reasons
+
 ## Reviewer Checklist
 
 When reviewing a promotion-track PR, verify:

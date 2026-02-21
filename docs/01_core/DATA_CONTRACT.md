@@ -89,6 +89,52 @@ If you have local files in legacy paths (`data/models/`, `data/training/`, etc.)
 
 Going forward, runner outputs must land under `data/runs/<run_id>/`.
 
+## Model Artifacts
+
+Model artifacts follow the same commit policy as run data: never committed, gitignored under `data/`.
+
+### Hybrid OLSa Artifact Schema
+
+The hybrid OLSa training pipeline produces per-arm artifacts conforming to the
+`hybrid_olsa_v1` schema documented in `docs/01_core/schemas/hybrid_olsa_v1.md`.
+
+**Artifact directory structure:**
+```
+data/artifacts/arc_d/r{N}/
+  olsa_constrained.json      # OLSa arm (locked 3/1/1 features)
+  olsa_full.json              # OLSa_Full arm (forward-selected features)
+  split_manifest.json         # Shared train/val/test split
+  training_report.json        # Training metrics and metadata
+```
+
+### Rung Bundle Schema
+
+Each rung is tracked by an `arc_d_rung_bundle_v1` bundle with these key fields:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `bundle_schema` | str | Always `"arc_d_rung_bundle_v1"` |
+| `rung_id` | str | e.g., `"r0"`, `"r1"` |
+| `arc` | str | Always `"arc_d"` |
+| `olsa` | dict | Constrained arm block (artifact path, eval path, feature set) |
+| `olsa_full` | dict | Promotional arm block (artifact path, eval path, feature set) |
+| `split_manifest` | str | Path to shared split manifest |
+| `training_report` | str | Path to training report |
+
+### Promotion Decision Schema (v3)
+
+Gate decisions are emitted as JSON with:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `decision` | str | `"PROMOTED"`, `"ADVANCED"`, or `"HALT"` |
+| `reasons` | list[str] | Human-readable explanation of the decision |
+| `rung_id` | str | Rung that was evaluated |
+| `timestamp` | str | ISO-8601 decision timestamp |
+
+See `src/bid_euchre/validation/arc_d_gate.py` for the gate runner implementation
+and `src/bid_euchre/validation/arc_d_bundle.py` for bundle schema validation.
+
 ## Notes
 - Keep schemas small and versioned.
 - Prefer adding new fields over deleting/renaming existing ones (backward compatibility).
