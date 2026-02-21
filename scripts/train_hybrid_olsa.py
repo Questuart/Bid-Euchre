@@ -74,6 +74,11 @@ def main() -> None:
         default=0.0,
         help="Risk penalty coefficient (default: 0.0)",
     )
+    parser.add_argument(
+        "--offensive-defensive",
+        action="store_true",
+        help="Train separate offensive/defensive sub-models per contract",
+    )
 
     args = parser.parse_args()
 
@@ -93,6 +98,7 @@ def main() -> None:
         freeze=not args.no_freeze,
         rung_id=args.rung_id,
         risk_lambda=args.risk_lambda,
+        offensive_defensive=args.offensive_defensive,
     )
 
     print(f"\nTraining complete for rung {result['rung_id']}")

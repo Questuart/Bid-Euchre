@@ -84,6 +84,49 @@ When both arms are trained, a `rung_bundle_r{N}.json` packages them:
 }
 ```
 
+## R5 Extension: Offensive/Defensive Sub-Models
+
+Starting at R5, artifacts may use offensive/defensive sub-structures for
+payoff_model and residual_variance. Pre-R5 flat artifacts remain valid.
+
+### Nested payoff_model (R5+)
+
+When offensive_defensive training is enabled, each contract family entry
+contains offensive and defensive sub-models instead of a flat model:
+
+```json
+{
+  "suit": {
+    "offensive": {
+      "weights": [0.5, 0.3, 0.2],
+      "bias": 3.1,
+      "feature_names": ["bowers", "trump_count", "offsuit_aces"]
+    },
+    "defensive": {
+      "weights": [0.4, 0.2, 0.3],
+      "bias": 2.8,
+      "feature_names": ["bowers", "trump_count", "offsuit_aces"]
+    }
+  }
+}
+```
+
+### Nested residual_variance (R5+)
+
+```json
+{
+  "suit": {"offensive": 2.1, "defensive": 2.9},
+  "high": {"offensive": 1.6, "defensive": 2.0},
+  "low": {"offensive": 1.7, "defensive": 2.1}
+}
+```
+
+### Backward Compatibility
+
+- Pre-R5 flat artifacts (single weights/bias/feature_names per contract) continue to work
+- Detection is automatic: HybridOLSaBidder checks for "offensive" key in any contract family
+- Both payoff_model and residual_variance must be consistently flat or consistently nested (ValueError on mismatch)
+
 ## Example
 
 ```json

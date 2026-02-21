@@ -50,6 +50,7 @@ _NON_FEATURE_COLS = frozenset(
         "team0_win",
         "strategy_id",
         "play_strategy_id",
+        "declaring",
     }
 )
 
@@ -112,6 +113,7 @@ def _train_arm(
     risk_lambda: float = 0.0,
     feature_budget: dict[str, int] | None = None,
     do_forward_select: bool = False,
+    offensive_defensive: bool = False,
 ) -> tuple[dict, dict, dict | None]:
     """Train one arm (constrained or full) and return (artifact, metrics, fs_log)."""
     models = {}
@@ -199,37 +201,120 @@ def _train_arm(
             metrics_val = _compute_metrics(y_val, y_pred_val)
             n_val = len(val_df)
 
-        models[contract_family] = {
-            "weights": [float(w) for w in weights],
-            "bias": float(bias),
-            "feature_names": feature_names,
-        }
-        residual_variances[contract_family] = resid_var
+        if offensive_defensive:
+            if "declaring" not in train_df.columns:
+                raise ValueError(
+                    "offensive_defensive=True requires a 'declaring' column "
+                    "in the training data. Bidless datasets lack declaring-team "
+                    "labels — use auction data (PR-R1a) for off/def training."
+                )
+            off_mask = train_df["declaring"].astype(bool)
+            def_mask = ~off_mask
 
-        training_metrics[contract_family] = {
-            "r2_train": metrics_train["r2"],
-            "r2_test": metrics_test["r2"],
-            "mae_train": metrics_train["mae"],
-            "mae_test": metrics_test["mae"],
-            "n_train": len(train_df),
-            "n_test": len(test_df),
-            "residual_variance": resid_var,
-            "selected_features": feature_names,
-        }
-        if metrics_val is not None:
-            training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
-            training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
-            training_metrics[contract_family]["n_val"] = n_val
+            X_off = train_df.loc[off_mask, feature_names].values.astype(np.float64)
+            y_off = train_df.loc[off_mask, "tricks_won"].values.astype(np.float64)
+            X_def = train_df.loc[def_mask, feature_names].values.astype(np.float64)
+            y_def = train_df.loc[def_mask, "tricks_won"].values.astype(np.float64)
 
-        logger.info(
-            "  %s [%s]: R²=%.4f (test), MAE=%.4f, σ²=%.4f, features=%s",
-            contract_family,
-            arm_name,
-            metrics_test["r2"],
-            metrics_test["mae"],
-            resid_var,
-            feature_names,
-        )
+            w_off, b_off = _fit_ols(X_off, y_off)
+            w_def, b_def = _fit_ols(X_def, y_def)
+
+            resid_off = float(np.var(y_off - (X_off @ w_off + b_off)))
+            resid_def = float(np.var(y_def - (X_def @ w_def + b_def)))
+
+            for role, rv in [("offensive", resid_off), ("defensive", resid_def)]:
+                if not (0 < rv < 25):
+                    raise ValueError(
+                        f"Residual variance out of bounds for "
+                        f"{contract_family}/{role}: {rv:.4f} "
+                        f"(expected 0 < σ² < 25)"
+                    )
+
+            models[contract_family] = {
+                "offensive": {
+                    "weights": [float(w) for w in w_off],
+                    "bias": float(b_off),
+                    "feature_names": feature_names,
+                },
+                "defensive": {
+                    "weights": [float(w) for w in w_def],
+                    "bias": float(b_def),
+                    "feature_names": feature_names,
+                },
+            }
+            residual_variances[contract_family] = {
+                "offensive": resid_off,
+                "defensive": resid_def,
+            }
+
+            y_pred_off = X_off @ w_off + b_off
+            y_pred_def = X_def @ w_def + b_def
+            metrics_off = _compute_metrics(y_off, y_pred_off)
+            metrics_def = _compute_metrics(y_def, y_pred_def)
+
+            training_metrics[contract_family] = {
+                "r2_train_offensive": metrics_off["r2"],
+                "r2_train_defensive": metrics_def["r2"],
+                "mae_train_offensive": metrics_off["mae"],
+                "mae_train_defensive": metrics_def["mae"],
+                "r2_train_flat": metrics_train["r2"],
+                "r2_test": metrics_test["r2"],
+                "mae_test": metrics_test["mae"],
+                "n_train": len(train_df),
+                "n_train_offensive": int(off_mask.sum()),
+                "n_train_defensive": int(def_mask.sum()),
+                "n_test": len(test_df),
+                "residual_variance_offensive": resid_off,
+                "residual_variance_defensive": resid_def,
+                "selected_features": feature_names,
+            }
+            if metrics_val is not None:
+                training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
+                training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
+                training_metrics[contract_family]["n_val"] = n_val
+
+            logger.info(
+                "  %s [%s] off/def: R²_off=%.4f, R²_def=%.4f, R²_test=%.4f, σ²_off=%.4f, σ²_def=%.4f",
+                contract_family,
+                arm_name,
+                metrics_off["r2"],
+                metrics_def["r2"],
+                metrics_test["r2"],
+                resid_off,
+                resid_def,
+            )
+        else:
+            models[contract_family] = {
+                "weights": [float(w) for w in weights],
+                "bias": float(bias),
+                "feature_names": feature_names,
+            }
+            residual_variances[contract_family] = resid_var
+
+            training_metrics[contract_family] = {
+                "r2_train": metrics_train["r2"],
+                "r2_test": metrics_test["r2"],
+                "mae_train": metrics_train["mae"],
+                "mae_test": metrics_test["mae"],
+                "n_train": len(train_df),
+                "n_test": len(test_df),
+                "residual_variance": resid_var,
+                "selected_features": feature_names,
+            }
+            if metrics_val is not None:
+                training_metrics[contract_family]["r2_val"] = metrics_val["r2"]
+                training_metrics[contract_family]["mae_val"] = metrics_val["mae"]
+                training_metrics[contract_family]["n_val"] = n_val
+
+            logger.info(
+                "  %s [%s]: R²=%.4f (test), MAE=%.4f, σ²=%.4f, features=%s",
+                contract_family,
+                arm_name,
+                metrics_test["r2"],
+                metrics_test["mae"],
+                resid_var,
+                feature_names,
+            )
 
     artifact = _build_artifact(
         rung_id=rung_id,
@@ -255,6 +340,7 @@ def train_hybrid_olsa(
     freeze: bool = True,
     rung_id: str = "r0",
     risk_lambda: float = 0.0,
+    offensive_defensive: bool = False,
 ) -> dict:
     """Train hybrid OLSa models from a canonical bidless run directory.
 
@@ -268,6 +354,7 @@ def train_hybrid_olsa(
         freeze: Whether to freeze artifacts after writing.
         rung_id: Rung identifier (e.g., "r0").
         risk_lambda: Risk penalty coefficient (default 0.0 for R0).
+        offensive_defensive: If True, train separate offensive/defensive sub-models.
 
     Returns:
         Dict with artifact paths and training summary.
@@ -303,6 +390,7 @@ def train_hybrid_olsa(
             rung_id=rung_id,
             risk_lambda=risk_lambda,
             do_forward_select=False,
+            offensive_defensive=offensive_defensive,
         )
 
         artifact_path = os.path.join(output_dir, f"hybrid_{rung_id}.json")
@@ -331,6 +419,7 @@ def train_hybrid_olsa(
             risk_lambda=risk_lambda,
             feature_budget=feature_budget,
             do_forward_select=True,
+            offensive_defensive=offensive_defensive,
         )
 
         artifact_full_path = os.path.join(output_dir, f"hybrid_{rung_id}_full.json")
@@ -378,10 +467,14 @@ def train_hybrid_olsa(
         def _arm_block(artifact_path: str, fs_log_path: str | None = None) -> dict:
             with open(artifact_path) as af:
                 art = json.load(af)
-            selected = {
-                cf: art["payoff_model"][cf]["feature_names"]
-                for cf in art["payoff_model"]
-            }
+            selected = {}
+            for cf in art["payoff_model"]:
+                entry = art["payoff_model"][cf]
+                if "offensive" in entry:
+                    # Off/def: use offensive arm's features (same for both)
+                    selected[cf] = entry["offensive"]["feature_names"]
+                else:
+                    selected[cf] = entry["feature_names"]
             block = {
                 "artifact_path": artifact_path,
                 "artifact_sha256": art.get("artifact_sha256"),
