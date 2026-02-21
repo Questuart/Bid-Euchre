@@ -1,5 +1,13 @@
 # Bid Euchre Repo Review — 2026-02-18
 
+> **Status Update (2026-02-20):**
+> - **I001 RESOLVED** — Schema v7 includes `auction_transcript`, `redeal_flag`,
+>   `made_bid` (PRs #361, #362). Logging/Data Contract score: 65 → 95/100.
+> - **I002 RESOLVED** — Stale script ref fixed in PR #368.
+> - **I005 RESOLVED** — Legacy doc stale config ref addressed in PR #368.
+> - **Remaining:** I007 (command drift — PR-C2), I006 (nice-to-haves — deferred).
+> - **Overall score revised:** 85 → 92/100.
+
 **Protocol version used:** 3.2 (Drift-Resilient, Discovery-Driven)
 **Branch reviewed:** `main` @ `d74ec8f`
 **Reviewed via:** 4 parallel agents (Discovery, Verification, Issues, Prompt Audit)
@@ -81,27 +89,11 @@
 
 ## 4. Cleanup Plan
 
-**PR A (docs): Fix stale references + normalize invocation style** (trivial, ~10 min)
-- `docs/03_experiments/BIDLESS_DATASET_TINY.md:17` — replace `PYTHONPATH=src python scripts/collect_bidless_dataset.py` with `uv run python experiments/run_experiment.py --config <config> --seed <N>` (closes I002 + I007)
-- `docs/01_core/ARCHITECTURE.md:115` — replace `PYTHONPATH=src python` with `uv run python` (closes I007)
-- `docs/02_agent/AI_BOUNDARIES.md:93` — replace `PYTHONPATH=src python` with `uv run python` (closes I007)
-- `docs/01_core/legacy/TRAINING_DATA_LEGACY.md` — move to `docs/archive/` or add stale notice (closes I005)
+~~**PR A (docs): Fix stale references + normalize invocation style**~~ — **DONE** (PR #368, merged 2026-02-18)
 
-**PR B-1 (schema): `redeal_flag` + `made_bid`** (medium, Arc D unblocking)
+~~**PR B-1 (schema): `redeal_flag` + `made_bid`**~~ — **DONE** (PR #361, schema v6, merged 2026-02-17)
 
-Acceptance criteria:
-1. **Implementation**: Nullable fields on `hand_end` records → schema v6 (backward-compatible: read-side `.get()` guards)
-2. **Consumer updates**:
-   - `src/bid_euchre/logging/game_logger.py` — bump `SCHEMA_VERSION` to 6, add fields to `HandEndRecord` dataclass
-   - `src/bid_euchre/diagnostics/notebook_data.py:634-635` — add `.get('redeal_flag')` and `.get('made_bid')` handling
-   - `src/bid_euchre/analysis/paired.py:44` — assess whether `redeal_flag` needs filtering (incomplete hands should likely be excluded from comparisons)
-   - `docs/01_core/DATA_CONTRACT.md` — schema version bump + field documentation
-3. **Tests**: Assert v6 fields present in logged `hand_end` records
-
-**PR B-2 (schema): `auction_transcript`** (larger, own sub-task)
-- Define per-bid record structure before implementing
-- May introduce a new `bid_end` event type rather than a field on `hand_end`
-- Target schema v7
+~~**PR B-2 (schema): `auction_transcript`**~~ — **DONE** (PR #362, schema v7, merged 2026-02-17)
 
 ---
 
