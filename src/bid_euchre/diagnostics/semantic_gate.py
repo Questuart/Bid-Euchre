@@ -852,6 +852,226 @@ def check_mae_ceiling(
 
 
 # ──────────────────────────────────────────────
+#  Arc D opt-in checks (not included in compute_semantic_gate)
+# ──────────────────────────────────────────────
+
+
+def check_team_balance_by_contract(
+    df: pd.DataFrame,
+    mode: str,
+    *,
+    max_delta: float = 0.25,
+) -> list[dict[str, Any]]:
+    """Faceted team balance: one check entry per contract_type.
+
+    Unlike check_team_balance() which pools all contracts, this returns
+    separate results per contract family to enforce the contract-type
+    faceting rule.
+
+    Returns list[dict] (one per contract family).
+    """
+    results = []
+
+    if mode == "SMOKE":
+        results.append(
+            _make_check(
+                "team_balance_by_contract",
+                "fairness",
+                "SKIP",
+                threshold=f"|delta| < {max_delta}",
+                observed="SMOKE mode",
+                detail="Skipped in SMOKE mode",
+            )
+        )
+        return results
+
+    if "tricks_won" not in df.columns or "contract_type" not in df.columns:
+        results.append(
+            _make_check(
+                "team_balance_by_contract",
+                "fairness",
+                "SKIP",
+                threshold=f"|delta| < {max_delta}",
+                observed="missing columns",
+                detail="Required columns (tricks_won, contract_type) not found",
+            )
+        )
+        return results
+
+    for ct in sorted(df["contract_type"].unique()):
+        ct_df = df[df["contract_type"] == ct]
+        mean_tricks = ct_df["tricks_won"].mean()
+        delta = abs(mean_tricks - 5.0)
+        status = "PASS" if delta < max_delta else "FAIL"
+        results.append(
+            _make_check(
+                "team_balance_by_contract",
+                "fairness",
+                status,
+                threshold=f"|delta| < {max_delta}",
+                observed=f"mean={mean_tricks:.3f}, delta={delta:.3f}",
+                detail=f"Team balance for {ct}: mean={mean_tricks:.3f}, |delta|={delta:.3f}",
+                contract_type=ct,
+                n_samples=len(ct_df),
+            )
+        )
+
+    if not results:
+        results.append(
+            _make_check(
+                "team_balance_by_contract",
+                "fairness",
+                "SKIP",
+                threshold=f"|delta| < {max_delta}",
+                observed="no contract types",
+                detail="No contract types found in data",
+            )
+        )
+
+    return results
+
+
+def check_bid_distribution_sanity(
+    df: pd.DataFrame,
+    mode: str,
+    *,
+    min_rate: float = 0.05,
+    max_rate: float = 0.95,
+    max_single_contract: float = 0.80,
+) -> dict[str, Any]:
+    """Validate bid rate and contract distribution sanity.
+
+    Checks:
+    1. Overall bid rate (fraction of hands where a bid was placed) is
+       within [min_rate, max_rate]
+    2. No single contract_type dominates more than max_single_contract
+       fraction of bids
+
+    Requires 'bid_won' column (True when the row's seat won the auction).
+    Returns dict (single check entry).
+    """
+    if mode == "SMOKE":
+        return _make_check(
+            "bid_distribution_sanity",
+            "fairness",
+            "SKIP",
+            threshold=f"rate in [{min_rate}, {max_rate}]",
+            observed="SMOKE mode",
+            detail="Skipped in SMOKE mode",
+        )
+
+    if "bid_won" not in df.columns:
+        return _make_check(
+            "bid_distribution_sanity",
+            "fairness",
+            "SKIP",
+            threshold=f"rate in [{min_rate}, {max_rate}]",
+            observed="missing bid_won",
+            detail="bid_won column not found — skipping bid distribution check",
+        )
+
+    # Compute bid rate: fraction of hands with a winning bid
+    if "hand_id" in df.columns:
+        hand_bids = df.groupby("hand_id")["bid_won"].any()
+        bid_rate = hand_bids.mean()
+    else:
+        bid_rate = df["bid_won"].mean()
+
+    if not (min_rate <= bid_rate <= max_rate):
+        return _make_check(
+            "bid_distribution_sanity",
+            "fairness",
+            "FAIL",
+            threshold=f"rate in [{min_rate}, {max_rate}]",
+            observed=f"bid_rate={bid_rate:.4f}",
+            detail=f"Bid rate {bid_rate:.4f} outside [{min_rate}, {max_rate}]",
+        )
+
+    # Check single-contract dominance among bids
+    if "contract_type" in df.columns:
+        bid_rows = df[df["bid_won"]]
+        if len(bid_rows) > 0:
+            ct_fracs = bid_rows["contract_type"].value_counts(normalize=True)
+            max_frac = ct_fracs.max()
+            dominant_ct = ct_fracs.idxmax()
+            if max_frac > max_single_contract:
+                return _make_check(
+                    "bid_distribution_sanity",
+                    "fairness",
+                    "FAIL",
+                    threshold=f"no contract > {max_single_contract:.0%}",
+                    observed=f"{dominant_ct}={max_frac:.2%}",
+                    detail=f"Contract {dominant_ct} dominates {max_frac:.2%} of bids"
+                    f" (max {max_single_contract:.0%})",
+                )
+
+    return _make_check(
+        "bid_distribution_sanity",
+        "fairness",
+        "PASS",
+        threshold=f"rate in [{min_rate}, {max_rate}],"
+        f" no contract > {max_single_contract:.0%}",
+        observed=f"bid_rate={bid_rate:.4f}",
+        detail=f"Bid distribution healthy: rate={bid_rate:.4f}",
+    )
+
+
+def check_dual_arm_coherence(
+    gate_primary: dict[str, Any],
+    gate_secondary: dict[str, Any],
+    *,
+    max_divergence: int = 3,
+) -> dict[str, Any]:
+    """Compare two gate results and WARN if checks diverge too much.
+
+    This is informational only — arm divergence is expected since the
+    constrained and full arms use different features. Returns WARN
+    (not FAIL) when divergence exceeds threshold.
+
+    Args:
+        gate_primary: Gate artifact dict from primary arm (typically OLSa_Full).
+        gate_secondary: Gate artifact dict from secondary arm (typically OLSa).
+        max_divergence: Maximum allowed check status mismatches before WARN.
+
+    Returns:
+        Single check entry dict.
+    """
+    primary_checks = {
+        c["check_id"]: c["status"] for c in gate_primary.get("checks", [])
+    }
+    secondary_checks = {
+        c["check_id"]: c["status"] for c in gate_secondary.get("checks", [])
+    }
+
+    # Count mismatches on shared check_ids
+    shared_ids = set(primary_checks.keys()) & set(secondary_checks.keys())
+    mismatches = sum(
+        1 for cid in shared_ids if primary_checks[cid] != secondary_checks[cid]
+    )
+
+    if mismatches > max_divergence:
+        return _make_check(
+            "dual_arm_coherence",
+            "informational",
+            "WARN",
+            threshold=f"divergence <= {max_divergence}",
+            observed=f"{mismatches} mismatches across {len(shared_ids)} shared checks",
+            detail=f"Arm divergence: {mismatches}/{len(shared_ids)} checks differ"
+            " (expected: arms use different features)",
+        )
+
+    return _make_check(
+        "dual_arm_coherence",
+        "informational",
+        "PASS",
+        threshold=f"divergence <= {max_divergence}",
+        observed=f"{mismatches} mismatches across {len(shared_ids)} shared checks",
+        detail=f"Arm coherence within threshold:"
+        f" {mismatches}/{len(shared_ids)} checks differ",
+    )
+
+
+# ──────────────────────────────────────────────
 #  Main entry point
 # ──────────────────────────────────────────────
 
