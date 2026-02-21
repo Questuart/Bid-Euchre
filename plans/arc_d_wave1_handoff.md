@@ -1,18 +1,63 @@
 # Arc D Wave 1 — Implementation Handoff
 
 **Created:** 2026-02-19
-**Status:** Partially implemented, paused for later pickup. **Superseded by v3 plan** -- see reconciliation table below.
+**Status:** Partially implemented, paused for later pickup. **Superseded by v3 plan.**
 **Plan source:** `plans/arc_d_execution_plan.md` (v3, 2026-02-20)
+
+> **WARNING — v1 content below is historical only.**
+> This handoff was written against the v1 plan (9 PRs, 5 waves, `eppd` metric,
+> PROMOTE/REJECT gate). The v3 plan changes nearly everything: 18 PRs, 10 waves,
+> `net_eppd` primary metric, dual-arm design, PROMOTED/ADVANCED/HALT gate.
+> **Use the v1→v3 reconciliation table and v3 pickup instructions below.**
+> Legacy v1 sections are preserved for worktree archaeology only.
 
 ---
 
-## Overview
+## v1 -> v3 PR ID Reconciliation
+
+The v1 plan (this handoff) used different PR IDs than the v3 execution plan.
+This table maps between them for context recovery:
+
+| v1 ID | v1 Concept | v3 ID | v3 Concept | Worktree | Status |
+|-------|-----------|-------|-----------|----------|--------|
+| PR-D1a | Training pipeline + feature selection | PR-R0a | Hybrid training pipeline + feature selection + arm-mode + bundle | `../Bid-Euchre-d1a` | ~90% (needs v3 alignment: arm-mode, bundle writing) |
+| PR-D3a | TwoStageHybridBidder | PR-I1 | HybridOLSaBidder + schema + linter | `../Bid-Euchre-d3a` | ~50% (class name changed, EV formula changed to net-differential) |
+| PR-I2 | Gate runner (PROMOTE/REJECT) | PR-I2 | Gate runner (PROMOTED/ADVANCED/HALT) + bundle validator + registry updater | `../Bid-Euchre-i2` | 0% (scope significantly expanded in v3) |
+| PR-D0 | R0 baseline lock | PR-R0b | R0 baseline lock (both arms) | none | Not started (expanded: dual-arm, net_eppd, bundles) |
+| -- | -- | PR-P0 | Switch metric to net_eppd | -- | NEW in v3 |
+| -- | -- | PR-I4 | Reporting extensions + semantic gate additions | -- | NEW in v3 |
+
+### Worktree Recommendations
+
+- **`../Bid-Euchre-d1a`**: Significant v3 delta (arm-mode, bundle writing). Consider starting fresh on a new branch `feat/arc-d-r0a` rather than adapting partial work. Reuse `feature_selection.py` if tests still pass.
+- **`../Bid-Euchre-d3a`**: Class renamed from `TwoStageHybridBidder` to `HybridOLSaBidder`, EV formula changed to net-differential. Start fresh on `feat/arc-d-i1`.
+- **`../Bid-Euchre-i2`**: No code written. Start fresh on `feat/arc-d-i2` with expanded scope.
+- Clean up old worktrees after confirming no reusable code.
+
+## Pickup Instructions (v3)
+
+To resume:
+1. Read this file AND `plans/arc_d_execution_plan.md` (v3)
+2. Start with PR-P0 (new in v3 -- switch metric to net_eppd)
+3. Then PR-I1 (was PR-D3a -- HybridOLSaBidder, start fresh)
+4. Then PR-R0a (was PR-D1a -- training pipeline, start fresh with arm-mode)
+5. Wave 2: PR-I2, PR-I3, PR-I4, PR-R5a in parallel
+6. After Wave 2: update MEMORY.md with PR numbers
+
+---
+
+## Legacy v1 Content (historical — do NOT execute)
+
+### Overview (v1)
 
 Arc D advances the OLSa bidder from sparse floor-based decisions to a
 risk-adjusted EV bidder across 9 PRs in 5 waves. Wave 1 has 3 parallel
 code-only PRs + 1 operational PR.
 
-## Dependency Note
+> **Note:** v3 plan has 18 PRs across 10 waves with dual-arm design,
+> net_eppd metric, and PROMOTED/ADVANCED/HALT gate model.
+
+### Dependency Note (v1 — resolved)
 
 The plan's dependency table (section 2) lists HITL PR-2 (#371) as blocked.
 This is **stale** — PR #372 (`feat/semantic-gate`) merged the same work and
@@ -20,7 +65,7 @@ is on main. The semantic gate dependency is resolved.
 
 ---
 
-## Worktree Status
+### Worktree Status (v1)
 
 All 3 worktrees exist and have uncommitted partial work:
 
@@ -115,52 +160,22 @@ See plan section 5, handoff H-D0 for full steps.
 
 ---
 
-## Key Codebase Findings (from exploration)
+### Key Codebase Findings (v1 — may be stale)
 
-These findings save the next agent from re-exploring:
+> **Note:** Line numbers below were accurate at v1 writing (2026-02-19).
+> Some may have shifted since. Verify against current main before relying on them.
 
-1. **`scripts/train_olsa.py`** is a thin CLI wrapper; core logic is `src/bid_euchre/models/train_olsa.py`
-2. **`CONTRACT_FEATURES`** hardcoded at line 32-36 of `train_olsa.py`: suit=[bowers,trump_count,offsuit_aces], high=[offsuit_aces], low=[offsuit_tens_count]
-3. **`OLSaBidder`** at lines 680-751 of `bidding.py` — last class in file. Checks `artifact_type == "olsa_v1"`
-4. **`BIDDING_POLICY_REGISTRY`** in `config.py` lines 47-56 maps string → class
-5. **`BIDDING_REQUIRED_PARAMS`** in `config.py` lines 62-66
-6. **`strategy/__init__.py`** exports all bidding classes + `__all__` list
-7. **`verify_frozen()`** in `freeze.py` returns bool (True if frozen + hash matches)
-8. **`verify_split_manifest()`** in `splits.py` returns bool (re-runs split, checks hashes)
-9. **`compute_semantic_gate()`** in `semantic_gate.py` returns dict with checks list
-10. **`data/artifacts/` does NOT exist** — needs `mkdir -p` when creating
-11. **`scripts/internal/`** exists with 5 existing scripts
-12. **`docs/03_TODO/`** exists with 5 existing docs
-13. **sklearn is available** (used for KFold in feature_selection.py)
-14. **scipy is available** (used for norm.cdf/pdf in TwoStageHybridBidder)
-
-## v1 -> v3 PR ID Reconciliation
-
-The v1 plan (this handoff) used different PR IDs than the v3 execution plan.
-This table maps between them for context recovery:
-
-| v1 ID | v1 Concept | v3 ID | v3 Concept | Worktree | Status |
-|-------|-----------|-------|-----------|----------|--------|
-| PR-D1a | Training pipeline + feature selection | PR-R0a | Hybrid training pipeline + feature selection + arm-mode + bundle | `../Bid-Euchre-d1a` | ~90% (needs v3 alignment: arm-mode, bundle writing) |
-| PR-D3a | TwoStageHybridBidder | PR-I1 | HybridOLSaBidder + schema + linter | `../Bid-Euchre-d3a` | ~50% (class name changed, EV formula changed to net-differential) |
-| PR-I2 | Gate runner (PROMOTE/REJECT) | PR-I2 | Gate runner (PROMOTED/ADVANCED/HALT) + bundle validator + registry updater | `../Bid-Euchre-i2` | 0% (scope significantly expanded in v3) |
-| PR-D0 | R0 baseline lock | PR-R0b | R0 baseline lock (both arms) | none | Not started (expanded: dual-arm, net_eppd, bundles) |
-| -- | -- | PR-P0 | Switch metric to net_eppd | -- | NEW in v3 |
-| -- | -- | PR-I4 | Reporting extensions + semantic gate additions | -- | NEW in v3 |
-
-### Worktree Recommendations
-
-- **`../Bid-Euchre-d1a`**: Significant v3 delta (arm-mode, bundle writing). Consider starting fresh on a new branch `feat/arc-d-r0a` rather than adapting partial work. Reuse `feature_selection.py` if tests still pass.
-- **`../Bid-Euchre-d3a`**: Class renamed from `TwoStageHybridBidder` to `HybridOLSaBidder`, EV formula changed to net-differential. Start fresh on `feat/arc-d-i1`.
-- **`../Bid-Euchre-i2`**: No code written. Start fresh on `feat/arc-d-i2` with expanded scope.
-- Clean up old worktrees after confirming no reusable code.
-
-## Pickup Instructions (updated for v3)
-
-To resume:
-1. Read this file AND `plans/arc_d_execution_plan.md` (v3)
-2. Start with PR-P0 (new in v3 -- switch metric to net_eppd)
-3. Then PR-I1 (was PR-D3a -- HybridOLSaBidder, start fresh)
-4. Then PR-R0a (was PR-D1a -- training pipeline, start fresh with arm-mode)
-5. Wave 2: PR-I2, PR-I3, PR-I4, PR-R5a in parallel
-6. After Wave 2: update MEMORY.md with PR numbers
+1. `scripts/train_olsa.py` is a thin CLI wrapper; core logic is `src/bid_euchre/models/train_olsa.py`
+2. `CONTRACT_FEATURES` hardcoded at line 32-36 of train_olsa.py: suit=[bowers,trump_count,offsuit_aces], high=[offsuit_aces], low=[offsuit_tens_count]
+3. `OLSaBidder` at lines 680-751 of bidding.py — last class in file. Checks `artifact_type == "olsa_v1"`
+4. `BIDDING_POLICY_REGISTRY` in config.py lines 47-56 maps string → class
+5. `BIDDING_REQUIRED_PARAMS` in config.py lines 62-66
+6. `strategy/__init__.py` exports all bidding classes + `__all__` list
+7. `verify_frozen()` in freeze.py returns bool (True if frozen + hash matches)
+8. `verify_split_manifest()` in splits.py returns bool (re-runs split, checks hashes)
+9. `compute_semantic_gate()` in semantic_gate.py returns dict with checks list
+10. `data/artifacts/` does NOT exist — needs `mkdir -p` when creating
+11. `scripts/internal/` exists with 5 existing scripts
+12. `docs/03_TODO/` exists with 5 existing docs
+13. sklearn is available (used for KFold in feature_selection.py)
+14. scipy is available (used for norm.cdf/pdf in TwoStageHybridBidder)

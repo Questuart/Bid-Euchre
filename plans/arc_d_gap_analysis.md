@@ -26,7 +26,7 @@ Captures all identified gaps, decisions, and open items before the v3 in-place e
 | Q8 | Q010, Q011 | Unconstrained arm | Resolved (Option A at every rung) |
 | Q9–Q12 | Q012, Q013, Q016 | Enforcement stack | Resolved (5-layer hardened) |
 | Q13 | Q014, Q015 | Lambda tuning details | Resolved |
-| Q14 | Q017, Q018, Q019 | Net-differential | Resolved (diagnostic PR-P0) |
+| Q14 | Q017, Q018, Q019 | Net-differential | Resolved (primary metric switch PR-P0) |
 | Q15 | Q020 | Pre-flight scope | Resolved |
 | Q16 | Q022 | Reporting infrastructure | Resolved (PR-I4) |
 | Q17 | Q023 | Health checks + Phase 0 | Resolved |
@@ -35,17 +35,17 @@ Captures all identified gaps, decisions, and open items before the v3 in-place e
 | Q11 | — | Bundle manifest pattern | Resolved (our log only) |
 | — | **Q021** | §2 tightening | **Partially addressed** — see §4 below |
 
-### Sync Needed
+### Sync Status
 
-Items their log marks "open" or "revise-plan" that our log resolved:
+Items their log originally marked "open" or "revise-plan" — all now resolved in v3:
 
-- Q009 (open) → resolved as Interpretation A revised (see Gap A)
-- Q010 (open) → resolved as Option A (unconstrained arm at every rung)
-- Q017 (open) → resolved as diagnostic net_eppd (PR-P0)
-- Q018 (open) → deferred to post-Arc-D arc
-- Q012 (revise-plan) → 5-layer hardened enforcement (Q10)
-- Q024 (revise-plan) → 3 semantic gate additions (Q18)
-- Q025 (revise-plan) → self-play + head-to-head diagnostic (Q19)
+- Q009 → resolved as Interpretation A revised (see Gap A)
+- Q010 → resolved as Option A (unconstrained arm at every rung)
+- Q017 → resolved: net_eppd is primary metric (PR-P0 switches objective)
+- Q018 → resolved: net_eppd adopted as primary; eppd is secondary diagnostic
+- Q012 → resolved: 5-layer hardened enforcement (Q10)
+- Q024 → resolved: 3 semantic gate additions (Q18)
+- Q025 → resolved: self-play + head-to-head diagnostic (Q19)
 
 ---
 
@@ -454,14 +454,14 @@ trying to fully specify in-line.
 
 | PR | Wave | Concept | Status |
 |----|------|---------|--------|
-| PR-P0 | 0 (before Wave 1) | Net-differential diagnostic metric | **NEW** |
+| PR-P0 | 0 (before Wave 1) | Switch primary metric to net_eppd | **NEW** |
 | PR-I1 | 1 | HybridOLSaBidder + schema + linter | unchanged |
 | PR-I2 | 2 | Gate infra + bundle validator + registry updater | **EXPANDED** |
 | PR-I3 | 2 | Doc sync + MODEL_ARC_RUNS.md lint rule | unchanged |
 | PR-I4 | 2 | Reporting extensions + semantic gate additions | **NEW** |
 | PR-R0a | 2 | Training pipeline + feature selection + bundle writing | **EXPANDED** |
 | PR-R0b | 3 | R0 baseline: train, freeze, eval, auto-promote | unchanged |
-| PR-R1a | 2 or 3 | Partner context + canonical auction dataset | **OPEN** (timing) |
+| PR-R1a | 3+ (after R0b) | Partner context + canonical auction dataset | **DECIDED** (E2 — delay to after R0b) |
 | PR-R1b | 4 | R1 training + eval + promotion | unchanged |
 | PR-R2a | 3 | Opponent context features | unchanged |
 | PR-R2b | 5 | R2 training + eval + promotion | unchanged |

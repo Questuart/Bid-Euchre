@@ -829,26 +829,27 @@ def promotion_gate(bundle_path, rung_id):
     else:  # r1-r5: improvement gate
         SE = challenger.std_points_seed42 / (challenger.n_deals_seed42 ** 0.5)
         effective_delta = max(delta_floor, 1.5 * SE)
-        if c.net_eppd <= i.net_eppd + effective_delta:
-            # Insufficient improvement -- ADVANCE (not failure)
-            return ("ADVANCED", [f"insufficient improvement: delta={c.net_eppd - i.net_eppd:.4f}, "
-                                 f"threshold={effective_delta:.4f} "
-                                 f"(floor={delta_floor}, 1.5*SE={1.5*SE:.4f})"])
 
-    # R5: strict tail improvement
-    if rung_id == "r5" and c.cvar_5 <= i.cvar_5:
-        return ("ADVANCED", ["R5 cvar_5 not improved -- advancing without promotion"])
+        # Check for regression FIRST (material degradation → HALT)
+        if c.net_eppd < i.net_eppd - 0.05:
+            return ("HALT", [f"regression detected: net_eppd={c.net_eppd:.4f} "
+                             f"< incumbent={i.net_eppd:.4f} - 0.05"])
 
-    # Seed sensitivity (r1-r5 only)
-    if rung_id != "r0":
+        # Seed sensitivity (both alternative seeds reversed → HALT)
         d43 = challenger.metrics_seed43.net_eppd - control.metrics_seed43.net_eppd
         d44 = challenger.metrics_seed44.net_eppd - control.metrics_seed44.net_eppd
         if d43 < 0 and d44 < 0:
             return ("HALT", ["sensitivity: both seeds 43 and 44 reversed"])
 
-    # Check for regression (model got worse)
-    if rung_id != "r0" and c.net_eppd < i.net_eppd - 0.05:
-        return ("HALT", ["regression detected: net_eppd significantly worse than incumbent"])
+        # R5: strict tail improvement required
+        if rung_id == "r5" and c.cvar_5 <= i.cvar_5:
+            return ("ADVANCED", ["R5 cvar_5 not improved -- advancing without promotion"])
+
+        # Insufficient improvement -- ADVANCE (not failure, arc continues)
+        if c.net_eppd <= i.net_eppd + effective_delta:
+            return ("ADVANCED", [f"insufficient improvement: delta={c.net_eppd - i.net_eppd:.4f}, "
+                                 f"threshold={effective_delta:.4f} "
+                                 f"(floor={delta_floor}, 1.5*SE={1.5*SE:.4f})"])
 
     # Record attribution_gap
     attribution_gap = challenger.metrics_seed42.net_eppd - bundle.olsa.metrics_seed42.net_eppd
