@@ -1,0 +1,27 @@
+# Arc D R0 Diagnostic — HybridOLSaBidder R0 vs OLSaBidder
+# Head-to-head characterization matchup for cross-architecture comparison
+#
+# Run with:
+#   uv run python experiments/run_experiment.py \
+#     --config experiments/configs/arc_d_eval_r0_diagnostic.yaml --seed 42
+
+experiment_name: arc_d_eval_r0_diagnostic
+
+bidding_policies:
+  - name: hybrid_olsa_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+  - name: olsa_baseline
+    class_name: OLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  n_per: 50000
+  seed: 42
+  log_level: hand
+  mode: head_to_head
