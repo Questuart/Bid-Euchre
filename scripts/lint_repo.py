@@ -733,7 +733,7 @@ def check_canonical_runs_registry_consistency(
 # Filename substrings that indicate model artifacts (case-insensitive match).
 # Used as a path-based pre-filter; schema confirmation via
 # _has_model_artifact_schema() prevents false positives on unrelated JSON.
-ARTIFACT_NAME_PATTERNS = ["olsa", "b0", "teacher"]
+ARTIFACT_NAME_PATTERNS = ["olsa", "b0", "teacher", "hybrid"]
 
 # Infrastructure JSON files that live under data/ but are NOT model artifacts.
 FREEZE_EXEMPT_NAMES = {"meta.json", "rollup.json", "canonical_summary.json"}
@@ -1094,6 +1094,104 @@ def check_split_manifest_schema(
     return violations
 
 
+# --- Hybrid artifact schema lint rule ---
+
+HYBRID_OLSA_REQUIRED_FIELDS = {
+    "artifact_type",
+    "payoff_model",
+    "residual_variance",
+    "risk_lambda",
+    "context_features",
+}
+
+HYBRID_OLSA_MODEL_REQUIRED_FIELDS = {"weights", "bias", "feature_names"}
+
+
+def _is_hybrid_artifact(path: str) -> bool:
+    """Return True if path looks like a hybrid_olsa_v1 JSON."""
+    name = Path(path).name
+    return name.endswith(".json") and "hybrid" in name.lower()
+
+
+def check_hybrid_artifact_schema(
+    changed: list[str],
+    repo_root: Path,
+) -> list[Violation]:
+    """Hybrid OLSa artifact JSON files must have required schema fields."""
+    violations: list[Violation] = []
+    for p in changed:
+        if not _is_hybrid_artifact(p):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        try:
+            data = json.loads(abs_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            violations.append(
+                Violation(
+                    rule="hybrid-artifact-schema",
+                    path=p,
+                    message="Hybrid artifact is not valid JSON.",
+                )
+            )
+            continue
+
+        if not isinstance(data, dict):
+            continue
+
+        # Only validate files with artifact_type == hybrid_olsa_v1
+        if data.get("artifact_type") != "hybrid_olsa_v1":
+            continue
+
+        missing = HYBRID_OLSA_REQUIRED_FIELDS - set(data.keys())
+        if missing:
+            violations.append(
+                Violation(
+                    rule="hybrid-artifact-schema",
+                    path=p,
+                    message=f"Hybrid artifact missing required fields: {sorted(missing)}",
+                )
+            )
+            continue
+
+        # Validate payoff_model entries
+        payoff_model = data.get("payoff_model", {})
+        if not isinstance(payoff_model, dict) or not payoff_model:
+            violations.append(
+                Violation(
+                    rule="hybrid-artifact-schema",
+                    path=p,
+                    message="payoff_model must be a non-empty object",
+                )
+            )
+            continue
+
+        for cf, model in payoff_model.items():
+            if not isinstance(model, dict):
+                violations.append(
+                    Violation(
+                        rule="hybrid-artifact-schema",
+                        path=p,
+                        message=f"payoff_model[{cf!r}] must be an object",
+                    )
+                )
+                continue
+            mmissing = HYBRID_OLSA_MODEL_REQUIRED_FIELDS - set(model.keys())
+            if mmissing:
+                violations.append(
+                    Violation(
+                        rule="hybrid-artifact-schema",
+                        path=p,
+                        message=f"payoff_model[{cf!r}] missing fields: {sorted(mmissing)}",
+                    )
+                )
+
+    return violations
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="origin/main")
@@ -1126,6 +1224,7 @@ def main() -> int:
     violations += check_gate_artifacts_schema(changed, repo_root)
     violations += check_semantic_gate_schema(changed, repo_root)
     violations += check_split_manifest_schema(changed, repo_root)
+    violations += check_hybrid_artifact_schema(changed, repo_root)
 
     if violations:
         print("Repo linter failed:\n")
