@@ -46,12 +46,12 @@ For system structure, see [docs/01_core/ARCHITECTURE.md](../01_core/ARCHITECTURE
 
 **Example (correct)**:
 ```bash
-python experiments/run_experiment.py --config <config> --seed 42 --n_per 100
+uv run python experiments/run_experiment.py --config <config> --seed 42 --n_per 100
 ```
 
 **Example (exploration only)**:
 ```bash
-python experiments/run_experiment.py --config <config> --allow-nondeterministic --n_per 100
+uv run python experiments/run_experiment.py --config <config> --allow-nondeterministic --n_per 100
 ```
 
 **Rationale**: Deterministic runs enable reproducibility and regression testing.

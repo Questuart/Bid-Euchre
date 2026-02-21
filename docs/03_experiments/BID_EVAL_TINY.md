@@ -31,7 +31,7 @@ make bid-eval-tiny
 Or run manually:
 
 ```bash
-PYTHONPATH=src python scripts/run_suite.py --suite experiments/suites/bid_eval_tiny.yaml
+uv run python scripts/run_suite.py --suite experiments/suites/bid_eval_tiny.yaml
 ```
 
 This generates individual run directories for each baseline in the roster, plus a suite rollup with summary metrics.

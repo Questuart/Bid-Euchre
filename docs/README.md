@@ -53,46 +53,46 @@ print(f"Team 0 average tricks: {result['avg_team0']:.2f}")
 ### Head-to-Head Evaluation
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/head_to_head_vs_random.yaml \
   --seed 42 \
   --mode head_to_head_matrix
 
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 
 **Unified Runner** (recommended):
 ```bash
 # Run experiment from YAML config
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
     --config experiments/configs/strategy_comparison.yaml \
     --seed 42
 
 # Quick test (1k hands, 2 strategies, 2 scenarios, ~1 second)
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
     --config experiments/configs/quick_test.yaml \
     --seed 42
 
 # Override config parameters
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
     --config experiments/configs/baseline_greedy.yaml \
     --n_per 10000 --seed 99 --log-level none
 
 # Generate report for a run
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
     --run-dir data/runs/<run_id>
 ```
 
 **Suite Runner** (recommended for production):
 ```bash
 # Run full experiment suite
-PYTHONPATH=src python scripts/run_suite.py \
+uv run python scripts/run_suite.py \
   --suite experiments/suites/baseline_tiny.yaml \
   --seed 42
 
 # Generate comprehensive report
-PYTHONPATH=src python scripts/generate_report.py --run-dir data/runs/<run_id>
+uv run python scripts/generate_report.py --run-dir data/runs/<run_id>
 ```
 
 ## 🏗️ Architecture
@@ -153,7 +153,7 @@ make test
 make check
 
 # Coverage (optional)
-PYTHONPATH=src pytest --cov=src/bid_euchre --cov-report=term-missing
+uv run pytest --cov=src/bid_euchre --cov-report=term-missing
 ```
 
 

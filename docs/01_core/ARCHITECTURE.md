@@ -123,7 +123,7 @@ uv run python experiments/run_experiment.py --config experiments/configs/quick_t
 Use the blessed report entrypoint:
 
 ```bash
-PYTHONPATH=src python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 
