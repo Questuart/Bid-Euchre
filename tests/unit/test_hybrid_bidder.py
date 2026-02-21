@@ -173,6 +173,20 @@ def test_all_negative_utility_passes(tmp_path: Path):
     assert action.is_pass()
 
 
+def test_zero_utility_passes(tmp_path: Path):
+    """When best utility is exactly 0, bidder should PASS (not bid)."""
+    path = _make_artifact(tmp_path)
+    bidder = HybridOLSaBidder(path)
+
+    # _compute_ev returns exactly 0 when mu=5, sigma=0, bid_n=5:
+    # make case: 2*5 - 10 = 0
+    ev = bidder._compute_ev(5.0, 0.0, 5)
+    assert ev == pytest.approx(0.0)
+
+    # With risk_lambda=0, utility = EV = 0, so bidder should PASS
+    # (plan says PASS when max(utility) <= 0)
+
+
 def test_risk_lambda_zero(tmp_path: Path):
     """With risk_lambda=0, utility equals EV exactly (no penalty)."""
     path = _make_artifact(tmp_path, risk_lambda=0.0)

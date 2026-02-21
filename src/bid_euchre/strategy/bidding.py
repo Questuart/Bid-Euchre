@@ -947,7 +947,7 @@ class HybridOLSaBidder(BiddingPolicy):
                     best_bid_n = bid_n
                     best_contract = contract
 
-        if best_utility is None or best_utility < 0:
+        if best_utility is None or best_utility <= 0:
             return BidAction.pass_bid()
 
         return BidAction.bid(best_bid_n, best_contract)
