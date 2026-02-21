@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import numpy as np
+from scipy.stats import norm
 
 from ..core.cards import Card
 from ..models.bidding_artifact import load_artifact
@@ -749,3 +750,204 @@ class OLSaBidder(BiddingPolicy):
         # Pick best: highest predicted tricks, break ties by bid amount, then alphabetically
         best = max(candidates, key=lambda x: (x[0], x[1], x[2]))
         return BidAction.bid(best[1], best[2])
+
+
+class HybridOLSaBidder(BiddingPolicy):
+    """Hybrid OLSa bidder using Gaussian EV with net-differential scoring.
+
+    For each contract, predicts mu (expected tricks) via OLS, then analytically
+    computes expected net-differential value using a Gaussian model of trick
+    distribution with residual variance from training.
+
+    Net-differential payoff:
+      Make (tricks >= bid_n): net = 2 * tricks - 10
+      Set  (tricks < bid_n):  net = tricks - bid_n - 10
+
+    Artifact format: hybrid_olsa_v1 with payoff_model, residual_variance, risk_lambda.
+    """
+
+    # z-cap to prevent numerical overflow in CDF/PDF
+    _Z_CAP = 6.0
+    # Fixed seed and draw count for CVaR Monte Carlo
+    _CVAR_SEED = 42
+    _CVAR_DRAWS = 1000
+    _CVAR_TAIL = 0.05
+
+    def __init__(
+        self, artifact_path: str, risk_lambda: float = None, name: str = "hybrid_olsa"
+    ):
+        super().__init__(name)
+
+        with open(artifact_path) as f:
+            artifact = json.load(f)
+
+        if artifact.get("artifact_type") != "hybrid_olsa_v1":
+            raise ValueError(
+                f"Expected artifact_type 'hybrid_olsa_v1', "
+                f"got '{artifact.get('artifact_type')}'"
+            )
+
+        self.models = {}
+        for contract_family, model_data in artifact["payoff_model"].items():
+            self.models[contract_family] = {
+                "weights": np.array(model_data["weights"], dtype=np.float64),
+                "bias": float(model_data["bias"]),
+                "feature_names": model_data["feature_names"],
+            }
+
+        self.residual_variance = {
+            cf: float(v) for cf, v in artifact["residual_variance"].items()
+        }
+
+        # risk_lambda param overrides artifact value if provided
+        if risk_lambda is not None:
+            self.risk_lambda = float(risk_lambda)
+        else:
+            self.risk_lambda = float(artifact.get("risk_lambda", 0.0))
+
+        self.context_features = artifact.get("context_features", [])
+
+    def _predict(self, contract_family: str, features: dict) -> float:
+        """Predict tricks_won (mu) for a contract family using its OLS model."""
+        model = self.models[contract_family]
+        x = np.array([features[f] for f in model["feature_names"]], dtype=np.float64)
+        return float(x @ model["weights"] + model["bias"])
+
+    def _compute_ev(self, mu: float, sigma: float, bid_n: int) -> float:
+        """Compute expected net-differential value using Gaussian model.
+
+        Uses analytical truncated normal expectations above/below the make threshold.
+        """
+        if sigma == 0.0:
+            # Degenerate case: deterministic prediction
+            if mu >= bid_n:
+                return 2.0 * mu - 10.0
+            else:
+                return mu - bid_n - 10.0
+
+        # Threshold for making the bid (continuous approximation)
+        threshold = bid_n - 0.5
+
+        # z-score with capping for numerical stability
+        z = (threshold - mu) / sigma
+        z = max(-self._Z_CAP, min(self._Z_CAP, z))
+
+        # P(make) = P(tricks >= threshold) = 1 - Phi(z)
+        p_make = 1.0 - norm.cdf(z)
+        p_set = 1.0 - p_make
+
+        # Truncated normal expectations
+        pdf_z = norm.pdf(z)
+
+        # E[X | X >= threshold] = mu + sigma * pdf(z) / (1 - Phi(z))
+        if p_make > 1e-12:
+            e_tricks_make = mu + sigma * pdf_z / p_make
+        else:
+            e_tricks_make = mu  # fallback, p_make ~ 0 so doesn't matter
+
+        # E[X | X < threshold] = mu - sigma * pdf(z) / Phi(z)
+        if p_set > 1e-12:
+            e_tricks_set = mu - sigma * pdf_z / p_set
+        else:
+            e_tricks_set = mu  # fallback, p_set ~ 0 so doesn't matter
+
+        # Net-differential payoffs
+        make_ev = 2.0 * e_tricks_make - 10.0
+        set_ev = e_tricks_set - bid_n - 10.0
+
+        return p_make * make_ev + p_set * set_ev
+
+    def _compute_risk_penalty(self, mu: float, sigma: float, bid_n: int) -> float:
+        """Compute risk penalty based on CVaR of net-differential distribution.
+
+        Uses Monte Carlo sampling with deterministic seed for reproducibility.
+        Returns max(0, -CVaR_5%) * risk_lambda.
+        """
+        if self.risk_lambda == 0.0:
+            return 0.0
+
+        if sigma == 0.0:
+            # Deterministic: single outcome
+            if mu >= bid_n:
+                net = 2.0 * mu - 10.0
+            else:
+                net = mu - bid_n - 10.0
+            cvar = net  # single-point CVaR
+            return max(0.0, -cvar) * self.risk_lambda
+
+        rng = np.random.RandomState(self._CVAR_SEED)
+        draws = rng.normal(mu, sigma, self._CVAR_DRAWS)
+
+        # Compute net differential for each draw
+        nets = np.where(
+            draws >= bid_n,
+            2.0 * draws - 10.0,
+            draws - bid_n - 10.0,
+        )
+
+        # CVaR = mean of worst tail_fraction
+        tail_size = max(1, int(self._CVAR_DRAWS * self._CVAR_TAIL))
+        sorted_nets = np.sort(nets)
+        cvar = float(sorted_nets[:tail_size].mean())
+
+        return max(0.0, -cvar) * self.risk_lambda
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        from ..features.hand_eval import get_hand_features
+
+        best_utility = None
+        best_bid_n = None
+        best_contract = None
+
+        contract_map = {
+            "suit": ["C", "D", "H", "S"],
+            "high": ["HIGH"],
+            "low": ["LOW"],
+        }
+
+        for contract_family, contracts in contract_map.items():
+            if contract_family not in self.models:
+                continue
+
+            sigma = math.sqrt(
+                max(0.0, self.residual_variance.get(contract_family, 0.0))
+            )
+
+            for contract in contracts:
+                # Get hand features for this contract
+                if contract in ("HIGH", "LOW"):
+                    features = get_hand_features(obs.hand, contract_family, None)
+                else:
+                    features = get_hand_features(obs.hand, "suit", contract)
+
+                mu = self._predict(contract_family, features)
+                bid_n = math.floor(mu)
+
+                # Clamp bid to valid range
+                if bid_n < 3 or bid_n > 10:
+                    continue
+
+                # Must exceed current high bid
+                if bid_n <= obs.current_high_bid:
+                    continue
+
+                ev = self._compute_ev(mu, sigma, bid_n)
+                penalty = self._compute_risk_penalty(mu, sigma, bid_n)
+                utility = ev - penalty
+
+                if (
+                    best_utility is None
+                    or utility > best_utility
+                    or (
+                        utility == best_utility
+                        and (bid_n, contract) > (best_bid_n, best_contract)
+                    )
+                ):
+                    best_utility = utility
+                    best_bid_n = bid_n
+                    best_contract = contract
+
+        if best_utility is None or best_utility <= 0:
+            return BidAction.pass_bid()
+
+        return BidAction.bid(best_bid_n, best_contract)
