@@ -38,11 +38,10 @@ class TestPerformanceRegression:
         # If we get here without crashing, basic memory usage is OK
         # More sophisticated memory testing would require additional tools
 
-    @pytest.mark.xfail(
-        reason="Timing-based threshold is flaky in CI (variable CPU/load). "
-               "Scaling factor varies between 5x-26x depending on system state. "
-               "Needs refactor to deterministic invariant (memory/iterations). "
-               "TODO: Redesign as non-timing test - check O(1) memory, no quadratic behavior."
+    @pytest.mark.skip(
+        reason="Timing-based threshold is flaky (5x-26x scaling factor depending on "
+        "system state). Retired from gating until replaced with deterministic "
+        "complexity invariant (memory/iterations). See CODEBASE_CONSISTENCY.md."
     )
     def test_large_simulation_scalability(self):
         """Test that large simulations scale reasonably."""
@@ -80,7 +79,7 @@ class TestStatisticalStability:
         # Calculate coefficient of variation
         mean_result = sum(results) / len(results)
         variance = sum((x - mean_result) ** 2 for x in results) / len(results)
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
         cv = std_dev / mean_result if mean_result > 0 else 0
 
         # Coefficient of variation should be reasonable (< 10%)
