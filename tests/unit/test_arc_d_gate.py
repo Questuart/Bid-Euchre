@@ -4,8 +4,9 @@ All tests are fixture-based -- no real experiment runs or files required.
 Tests use tmp_path and mock file I/O where needed.
 """
 
+import hashlib
+import importlib.util
 import json
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,11 +20,22 @@ from bid_euchre.validation.arc_d_gate import (
     _all_metrics_finite,
     _check_guardrails,
     _get_metric,
+    normalize_eval_metrics,
     promotion_gate,
 )
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "internal"))
-from update_arc_registry import upsert_registry
+# Import registry updater via importlib.util to avoid sys.path manipulation.
+# scripts/internal/ has no __init__.py so we load from file location directly.
+_REGISTRY_SCRIPT = (
+    Path(__file__).parent.parent.parent
+    / "scripts"
+    / "internal"
+    / "update_arc_registry.py"
+)
+_spec = importlib.util.spec_from_file_location("update_arc_registry", _REGISTRY_SCRIPT)
+_registry_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_registry_mod)
+upsert_registry = _registry_mod.upsert_registry
 
 # =============================================================================
 # Fixtures
@@ -65,8 +77,15 @@ def _make_bundle(**overrides) -> dict:
 
 
 def _make_eval_metrics(**overrides) -> dict:
-    """Create eval metrics fixture with reasonable defaults."""
+    """Create eval metrics fixture with reasonable defaults.
+
+    Uses canonical evaluator field names (net_expected_points_per_deal, etc.)
+    plus short aliases (net_eppd, etc.) for backward compat with gate logic.
+    Also includes std_points and n_deals needed for SE calculation.
+    """
     base = {
+        "net_expected_points_per_deal": 0.50,
+        "expected_points_per_deal": 0.60,
         "net_eppd": 0.50,
         "eppd": 0.60,
         "bid_rate": 0.30,
@@ -77,6 +96,15 @@ def _make_eval_metrics(**overrides) -> dict:
         "n_deals": 50000,
     }
     base.update(overrides)
+    # Keep net_eppd and net_expected_points_per_deal in sync when only one is overridden
+    if "net_eppd" in overrides and "net_expected_points_per_deal" not in overrides:
+        base["net_expected_points_per_deal"] = overrides["net_eppd"]
+    if "net_expected_points_per_deal" in overrides and "net_eppd" not in overrides:
+        base["net_eppd"] = overrides["net_expected_points_per_deal"]
+    if "eppd" in overrides and "expected_points_per_deal" not in overrides:
+        base["expected_points_per_deal"] = overrides["eppd"]
+    if "expected_points_per_deal" in overrides and "eppd" not in overrides:
+        base["eppd"] = overrides["expected_points_per_deal"]
     return base
 
 
@@ -96,6 +124,15 @@ def _write_json(path: Path, data: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f)
+
+
+def _content_hash_inline(metadata: dict) -> str:
+    """Compute content hash matching freeze.py logic (no private import)."""
+    content = {
+        k: v for k, v in metadata.items() if k not in ("frozen_at", "artifact_sha256")
+    }
+    canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _setup_gate_files(
@@ -162,18 +199,69 @@ def _setup_gate_files(
     artifact_path = olsa_full.get("artifact_path")
     if artifact_path:
         artifact = _make_artifact(artifact_type)
-        # Compute proper content hash for freeze verification
-        from bid_euchre.models.freeze import _content_hash
-
         content = {
             k: v
             for k, v in artifact.items()
             if k not in ("frozen_at", "artifact_sha256")
         }
-        artifact["artifact_sha256"] = _content_hash(content)
+        artifact["artifact_sha256"] = _content_hash_inline(content)
         _write_json(tmp_path / artifact_path, artifact)
 
     return str(bundle_path)
+
+
+# =============================================================================
+# TestNormalizeEvalMetrics
+# =============================================================================
+
+
+class TestNormalizeEvalMetrics:
+    """Tests for normalize_eval_metrics()."""
+
+    def test_adds_short_aliases(self):
+        """Adds net_eppd alias from net_expected_points_per_deal."""
+        raw = {"net_expected_points_per_deal": 0.5, "expected_points_per_deal": 0.6}
+        out = normalize_eval_metrics(raw)
+        assert out["net_eppd"] == 0.5
+        assert out["eppd"] == 0.6
+
+    def test_adds_canonical_from_aliases(self):
+        """Adds canonical names from short aliases."""
+        raw = {"net_eppd": 0.5, "eppd": 0.6}
+        out = normalize_eval_metrics(raw)
+        assert out["net_expected_points_per_deal"] == 0.5
+        assert out["expected_points_per_deal"] == 0.6
+
+    def test_derives_std_from_list(self):
+        """Derives std_points from net_bidder_team_points list."""
+        raw = {"net_bidder_team_points": [1.0, 2.0, 3.0, 4.0, 5.0]}
+        out = normalize_eval_metrics(raw)
+        assert "std_points" in out
+        assert abs(out["std_points"] - 1.5811) < 0.01
+
+    def test_derives_std_from_scalar(self):
+        """Falls back to std_bidder_team_points scalar."""
+        raw = {"std_bidder_team_points": 2.5}
+        out = normalize_eval_metrics(raw)
+        assert out["std_points"] == 2.5
+
+    def test_std_not_derived_when_present(self):
+        """Does not override existing std_points."""
+        raw = {"std_points": 3.0, "net_bidder_team_points": [1.0, 2.0]}
+        out = normalize_eval_metrics(raw)
+        assert out["std_points"] == 3.0
+
+    def test_derives_n_deals_from_deals_total(self):
+        """Derives n_deals from deals_total."""
+        raw = {"deals_total": 50000}
+        out = normalize_eval_metrics(raw)
+        assert out["n_deals"] == 50000
+
+    def test_passthrough_unknown_keys(self):
+        """Unknown keys pass through unchanged."""
+        raw = {"custom_metric": 42}
+        out = normalize_eval_metrics(raw)
+        assert out["custom_metric"] == 42
 
 
 # =============================================================================
@@ -728,7 +816,7 @@ class TestPromotionGate:
                 )
             ],
             batch_id="test",
-            batch_purpose="promotion",
+            batch_purpose="arc_d_gate",
             created_at_utc="2026-02-20T12:00:00Z",
         )
 
@@ -742,6 +830,49 @@ class TestPromotionGate:
         assert decision == "HALT"
         assert any("Eligibility FAIL" in r for r in reasons)
 
+    def test_eligibility_success_continues(self, tmp_path):
+        """compute_eligibility returns eligible -> gate continues to Tier 2."""
+        bundle = _make_bundle()
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            challenger_metrics=_make_eval_metrics(net_eppd=0.60),
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+        )
+
+        from bid_euchre.reporting.eligibility import BatchGate, EligibilityResult
+
+        mock_gate = BatchGate(
+            eligible=True,
+            reasons=[
+                EligibilityResult(rule="config_membership", status="PASS", detail="OK"),
+                EligibilityResult(
+                    rule="canonical_summaries", status="PASS", detail="OK"
+                ),
+                EligibilityResult(
+                    rule="notebook_gate", status="PASS", detail="Optional"
+                ),
+                EligibilityResult(
+                    rule="git_sha_consistency", status="PASS", detail="OK"
+                ),
+                EligibilityResult(rule="artifacts_frozen", status="PASS", detail="OK"),
+                EligibilityResult(rule="split_manifests", status="PASS", detail="OK"),
+            ],
+            batch_id="test",
+            batch_purpose="arc_d_gate",
+            created_at_utc="2026-02-20T12:00:00Z",
+        )
+
+        with patch(
+            "bid_euchre.reporting.eligibility.compute_eligibility",
+            return_value=mock_gate,
+        ):
+            decision, reasons = promotion_gate(
+                bundle_path, "r1", str(tmp_path), skip_eligibility=False
+            )
+        # Should reach PROMOTED since challenger (0.60) > incumbent (0.40) + delta
+        assert decision == "PROMOTED"
+
     def test_wrong_artifact_type_halt(self, tmp_path):
         """Artifact type != hybrid_olsa_v1 -> HALT."""
         bundle = _make_bundle()
@@ -754,6 +885,59 @@ class TestPromotionGate:
         assert decision == "HALT"
         assert any("schema_version" in r for r in reasons)
 
+    def test_missing_std_points_halts_r1(self, tmp_path):
+        """R1+ with no std_points and no raw list -> HALT with explicit reason."""
+        bundle = _make_bundle()
+        # Create metrics without std_points or net_bidder_team_points
+        metrics_no_std = {
+            "net_eppd": 0.60,
+            "net_expected_points_per_deal": 0.60,
+            "eppd": 0.70,
+            "expected_points_per_deal": 0.70,
+            "bid_rate": 0.30,
+            "make_rate": 0.65,
+            "cvar_5": -0.50,
+            "downside_variance": 1.0,
+            "n_deals": 50000,
+        }
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            challenger_metrics=metrics_no_std,
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+        )
+        decision, reasons = promotion_gate(
+            bundle_path, "r1", str(tmp_path), skip_eligibility=True
+        )
+        assert decision == "HALT"
+        assert any("std_points unavailable" in r for r in reasons)
+
+    def test_evaluator_canonical_names_work(self, tmp_path):
+        """Metrics using only canonical evaluator names (no aliases) work."""
+        bundle = _make_bundle()
+        # Use only canonical evaluator field names -- no short aliases
+        canonical_metrics = {
+            "net_expected_points_per_deal": 0.60,
+            "expected_points_per_deal": 0.70,
+            "bid_rate": 0.30,
+            "make_rate": 0.65,
+            "cvar_5": -0.50,
+            "downside_variance": 1.0,
+            "deals_total": 50000,
+            "net_bidder_team_points": [float(i) for i in range(100)],
+        }
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            challenger_metrics=canonical_metrics,
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+        )
+        decision, reasons = promotion_gate(
+            bundle_path, "r1", str(tmp_path), skip_eligibility=True
+        )
+        # Should reach improvement gate (not HALT on missing fields)
+        assert decision in ("PROMOTED", "ADVANCED")
+
 
 # =============================================================================
 # TestRegistryUpdater
@@ -765,11 +949,14 @@ class TestRegistryUpdater:
 
     def _make_decision(self, rung_id: str = "r0", decision: str = "PROMOTED") -> dict:
         return {
-            "schema_version": 1,
+            "schema_version": 3,
             "rung_id": rung_id,
+            "arc": "arc_d",
             "decision": decision,
             "reasons": ["attribution_gap=0.0500"],
-            "bundle_path": f"data/artifacts/arc_d/{rung_id}/rung_bundle_{rung_id}.json",
+            "bundle_path": (
+                f"data/artifacts/arc_d/{rung_id}/rung_bundle_{rung_id}.json"
+            ),
             "timestamp": "2026-02-20T12:00:00Z",
         }
 
@@ -782,7 +969,6 @@ class TestRegistryUpdater:
         result = upsert_registry(registry_path, bundle, decision, "400")
         assert "| r0 |" in result
         assert "PROMOTED" in result
-        assert "#400" in result
 
     def test_upsert_replaces_existing(self, tmp_path):
         """Replaces existing rung row."""
@@ -802,7 +988,6 @@ class TestRegistryUpdater:
         r0_rows = [line for line in result.split("\n") if line.startswith("| r0 |")]
         assert len(r0_rows) == 1
         assert "HALT" in r0_rows[0]
-        assert "#401" in r0_rows[0]
 
     def test_idempotent(self, tmp_path):
         """Running twice with same data produces same result."""
@@ -816,3 +1001,32 @@ class TestRegistryUpdater:
         result2 = upsert_registry(str(registry_path), bundle, decision, "400")
 
         assert result1 == result2
+
+    def test_upsert_into_seeded_registry(self, tmp_path):
+        """Upsert cleanly replaces *(pending)* row from PR #392 template."""
+        registry_path = tmp_path / "MODEL_ARC_RUNS.md"
+        # Seed with template-style content (matching PR #392)
+        seeded = (
+            "# Model Arc Runs\n\n"
+            "Provenance registry for Arc D model promotion decisions.\n"
+            "Updated by promotion scripts (`scripts/write_r0_promotion.py` for R0,\n"
+            "gate runner for R1+).\n\n"
+            "## Arc D: OLSa-Hybrid Bidder\n\n"
+            "| Rung | Decision | OLSa_Full net_eppd | OLSa net_eppd "
+            "| Attribution Gap | Date | Bundle |\n"
+            "|------|----------|--------------------|---------------|"
+            "-----------------|------|--------|\n"
+            "| r0 | PROMOTED | *(pending)* | *(pending)* "
+            "| *(pending)* | -- | `rung_bundle_r0.json` |\n"
+        )
+        registry_path.write_text(seeded)
+
+        bundle = _make_bundle(rung_id="r0")
+        decision = self._make_decision("r0")
+        result = upsert_registry(str(registry_path), bundle, decision, "392")
+
+        # Should have replaced the pending row
+        r0_rows = [line for line in result.split("\n") if "| r0 |" in line]
+        assert len(r0_rows) == 1
+        assert "*(pending)*" not in r0_rows[0]
+        assert "PROMOTED" in r0_rows[0]

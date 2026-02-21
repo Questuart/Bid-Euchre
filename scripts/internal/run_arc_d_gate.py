@@ -67,10 +67,11 @@ def main():
     for reason in reasons:
         print(f"  - {reason}")
 
-    # Write promotion decision JSON
+    # Write promotion decision JSON (schema_version 3, matches R0 writer)
     decision_record = {
-        "schema_version": 1,
+        "schema_version": 3,
         "rung_id": rung_id,
+        "arc": "arc_d",
         "decision": decision,
         "reasons": reasons,
         "bundle_path": bundle_path,

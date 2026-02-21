@@ -6,11 +6,10 @@ Bundle validation runs BEFORE Tier 1 checks in the promotion gate.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
-
-from bid_euchre.models.freeze import _content_hash
 
 BUNDLE_SCHEMA = "arc_d_rung_bundle_v1"
 
@@ -187,7 +186,16 @@ def validate_bundle_hashes(bundle: dict, base_dir: str) -> tuple[bool, list[str]
         try:
             with open(full_path) as f:
                 metadata = json.load(f)
-            actual_sha = _content_hash(metadata)
+            # Compute content hash the same way freeze.py does:
+            # exclude frozen_at and artifact_sha256, then SHA256 the
+            # deterministic JSON serialization.
+            content = {
+                k: v
+                for k, v in metadata.items()
+                if k not in ("frozen_at", "artifact_sha256")
+            }
+            canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
+            actual_sha = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
             if actual_sha != expected_sha:
                 errors.append(
                     f"{arm_name} artifact_sha256 mismatch: "

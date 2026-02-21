@@ -20,20 +20,32 @@ from pathlib import Path
 REGISTRY_HEADER = """\
 # Model Arc Runs
 
-| Rung | Status | OLSa Artifact | OLSa_Full Artifact | Artifact SHA256 | net_eppd | eppd | attribution_gap | bid_rate | make_rate | cvar_5 | PR | Decision Record |
-|------|--------|---------------|--------------------|-----------------|---------:|-----:|----------------:|---------:|----------:|-------:|---:|-----------------|
+Provenance registry for Arc D model promotion decisions.
+Updated by promotion scripts (`scripts/write_r0_promotion.py` for R0,
+gate runner for R1+).
+
+## Arc D: OLSa-Hybrid Bidder
+
+| Rung | Decision | OLSa_Full net_eppd | OLSa net_eppd | Attribution Gap | Date | Bundle |
+|------|----------|--------------------|---------------|-----------------|------|--------|
 """
 
-TABLE_SEPARATOR = "|------|--------|---------------|--------------------|-----------------|---------:|-----:|----------------:|---------:|----------:|-------:|---:|-----------------|"
+TABLE_SEPARATOR = "|------|----------|--------------------|---------------|-----------------|------|--------|"
 
 
 def _build_row(bundle: dict, decision: dict, pr_number: str) -> str:
     """Build a markdown table row from bundle and decision data.
 
+    Uses the unified registry schema: Rung, Decision, OLSa_Full net_eppd,
+    OLSa net_eppd, Attribution Gap, Date, Bundle.
+
+    Metrics are read from the decision record's embedded metrics (schema v3)
+    or loaded from eval files (best effort).
+
     Args:
         bundle: Loaded rung bundle dict.
         decision: Loaded promotion decision dict.
-        pr_number: PR number string.
+        pr_number: PR number string (currently unused but retained for API compat).
 
     Returns:
         Markdown table row string (with leading/trailing |).
@@ -41,54 +53,77 @@ def _build_row(bundle: dict, decision: dict, pr_number: str) -> str:
     rung_id = bundle.get("rung_id", "?")
     status = decision.get("decision", "?")
 
-    olsa = bundle.get("olsa", {})
-    olsa_full = bundle.get("olsa_full", {})
+    # Extract date from decision timestamp (ISO-8601 -> YYYY-MM-DD)
+    timestamp = decision.get("timestamp", "")
+    date_str = timestamp[:10] if len(timestamp) >= 10 else "--"
 
-    olsa_artifact = Path(olsa.get("artifact_path", "?")).name
-    olsa_full_artifact = Path(olsa_full.get("artifact_path", "?")).name
-    artifact_sha = olsa_full.get("artifact_sha256", "?")[:12] + "..."
-
-    # Extract metrics from decision reasons
-    reasons = decision.get("reasons", [])
+    # Extract attribution gap from decision record or reasons
     attribution_gap = ""
-    for reason in reasons:
-        if "attribution_gap=" in reason:
-            attribution_gap = reason.split("attribution_gap=")[-1]
+    ag_val = decision.get("attribution_gap")
+    if ag_val is not None:
+        attribution_gap = f"{ag_val:.4f}"
+    else:
+        for reason in decision.get("reasons", []):
+            if "attribution_gap=" in str(reason):
+                attribution_gap = str(reason).split("attribution_gap=")[-1]
 
-    # Try to load eval metrics for the table (best effort)
-    net_eppd = ""
-    eppd = ""
-    bid_rate = ""
-    make_rate = ""
-    cvar_5 = ""
+    # Best-effort metric extraction: try decision record first (schema v3),
+    # then fall back to loading eval files.
+    olsa_full_net_eppd = ""
+    olsa_net_eppd = ""
 
-    eval_path = olsa_full.get("eval_seed42")
-    if eval_path:
-        try:
-            with open(eval_path) as f:
-                metrics = json.load(f)
-            net_eppd = f"{metrics.get('net_eppd', 0):.4f}"
-            eppd = (
-                f"{metrics.get('eppd', metrics.get('expected_points_per_deal', 0)):.4f}"
-            )
-            bid_rate = f"{metrics.get('bid_rate', 0):.4f}"
-            make_rate = f"{metrics.get('make_rate', 0):.4f}"
-            cvar_5 = f"{metrics.get('cvar_5', 0):.4f}"
-        except (FileNotFoundError, json.JSONDecodeError, TypeError):
-            pass
+    # Schema v3 decision records embed metrics
+    challenger = decision.get("challenger", {})
+    if challenger and challenger.get("metrics_seed42"):
+        m = challenger["metrics_seed42"]
+        val = m.get("net_expected_points_per_deal", m.get("net_eppd"))
+        if val is not None:
+            olsa_full_net_eppd = f"{val:.4f}"
 
-    decision_record = decision.get("bundle_path", "").replace(
-        "rung_bundle_", "promotion_decision_"
-    )
-    if not decision_record:
-        decision_record = (
-            f"data/artifacts/arc_d/{rung_id}/promotion_decision_{rung_id}.json"
-        )
+    olsa_arm = decision.get("olsa_arm", {})
+    if olsa_arm and olsa_arm.get("metrics_seed42"):
+        m = olsa_arm["metrics_seed42"]
+        val = m.get("net_expected_points_per_deal", m.get("net_eppd"))
+        if val is not None:
+            olsa_net_eppd = f"{val:.4f}"
+
+    # Fallback: load from eval files if decision doesn't embed metrics
+    olsa_full = bundle.get("olsa_full", {})
+    olsa = bundle.get("olsa", {})
+
+    if not olsa_full_net_eppd:
+        eval_path = olsa_full.get("eval_seed42")
+        if eval_path:
+            try:
+                with open(eval_path) as f:
+                    metrics = json.load(f)
+                val = metrics.get(
+                    "net_expected_points_per_deal", metrics.get("net_eppd")
+                )
+                if val is not None:
+                    olsa_full_net_eppd = f"{val:.4f}"
+            except (FileNotFoundError, json.JSONDecodeError, TypeError):
+                pass
+
+    if not olsa_net_eppd:
+        eval_path = olsa.get("eval_seed42")
+        if eval_path:
+            try:
+                with open(eval_path) as f:
+                    metrics = json.load(f)
+                val = metrics.get(
+                    "net_expected_points_per_deal", metrics.get("net_eppd")
+                )
+                if val is not None:
+                    olsa_net_eppd = f"{val:.4f}"
+            except (FileNotFoundError, json.JSONDecodeError, TypeError):
+                pass
+
+    bundle_name = f"`rung_bundle_{rung_id}.json`"
 
     return (
-        f"| {rung_id} | {status} | `{olsa_artifact}` | `{olsa_full_artifact}` "
-        f"| `{artifact_sha}` | {net_eppd} | {eppd} | {attribution_gap} "
-        f"| {bid_rate} | {make_rate} | {cvar_5} | #{pr_number} | `{Path(decision_record).name}` |"
+        f"| {rung_id} | {status} | {olsa_full_net_eppd} | {olsa_net_eppd} "
+        f"| {attribution_gap} | {date_str} | {bundle_name} |"
     )
 
 

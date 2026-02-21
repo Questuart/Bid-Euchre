@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 from pathlib import Path
 
 from bid_euchre.models.freeze import verify_frozen
@@ -25,16 +26,68 @@ CVAR5_TOLERANCE = 0.10
 DOWNSIDE_VARIANCE_RATIO = 1.10
 REGRESSION_THRESHOLD = 0.05
 
+# Metric alias map: evaluator canonical name -> short alias used by gate logic.
+# The gate uses short aliases internally (net_eppd, eppd, std_points, n_deals).
+# normalize_eval_metrics() maps evaluator output to these.
+_METRIC_ALIASES = {
+    "net_expected_points_per_deal": "net_eppd",
+    "expected_points_per_deal": "eppd",
+}
+
+
+def normalize_eval_metrics(raw: dict) -> dict:
+    """Normalize evaluator output metrics to gate-internal short aliases.
+
+    Canonical evaluator keys (net_expected_points_per_deal, etc.) are mapped
+    to short aliases (net_eppd, eppd). The std_points field is derived from
+    the raw net_bidder_team_points list if present, or from
+    std_bidder_team_points if the evaluator provides it.
+
+    Args:
+        raw: Dict from evaluator JSON (may be top-level or nested).
+
+    Returns:
+        New dict with both canonical and aliased keys, plus derived std_points.
+    """
+    out = dict(raw)
+
+    # Add short aliases for canonical metric names
+    for canonical, alias in _METRIC_ALIASES.items():
+        if canonical in out and alias not in out:
+            out[alias] = out[canonical]
+        elif alias in out and canonical not in out:
+            out[canonical] = out[alias]
+
+    # Derive n_deals from deals_total if needed
+    if "n_deals" not in out and "deals_total" in out:
+        out["n_deals"] = out["deals_total"]
+
+    # Derive std_points from raw point lists or std_bidder_team_points
+    if "std_points" not in out:
+        net_points = out.get("net_bidder_team_points")
+        if isinstance(net_points, list) and len(net_points) >= 2:
+            out["std_points"] = statistics.stdev(net_points)
+        elif "std_bidder_team_points" in out:
+            out["std_points"] = out["std_bidder_team_points"]
+        # else: std_points remains absent -- callers must handle
+
+    return out
+
 
 def _load_eval_metrics(eval_path: str, base_dir: str) -> dict:
-    """Load eval JSON and return the metrics dict.
+    """Load eval JSON, normalize, and return the metrics dict.
+
+    If the JSON has a top-level 'strategies' list (full evaluator output),
+    returns the first strategy's metrics. If it has a 'metrics' key, returns
+    that. Otherwise returns the top-level dict. All results are normalized
+    via normalize_eval_metrics().
 
     Args:
         eval_path: Relative path to eval JSON file.
         base_dir: Base directory to resolve relative paths.
 
     Returns:
-        Dict of metric name -> value.
+        Dict of metric name -> value (normalized).
 
     Raises:
         FileNotFoundError: If eval file doesn't exist.
@@ -42,11 +95,23 @@ def _load_eval_metrics(eval_path: str, base_dir: str) -> dict:
     """
     full_path = Path(base_dir) / eval_path
     with open(full_path) as f:
-        return json.load(f)
+        data = json.load(f)
+
+    # Handle wrapped evaluator output formats
+    if "strategies" in data and isinstance(data["strategies"], list):
+        metrics = data["strategies"][0] if data["strategies"] else {}
+    elif "metrics" in data:
+        metrics = data["metrics"]
+    else:
+        metrics = data
+
+    return normalize_eval_metrics(metrics)
 
 
 def _all_metrics_finite(metrics: dict) -> bool:
     """Check that all numeric metric values are finite (no NaN/Inf).
+
+    Skips list-valued fields (e.g. bidder_team_points raw lists).
 
     Args:
         metrics: Dict of metric name -> value.
@@ -178,6 +243,18 @@ def promotion_gate(
                 )
 
         # --- Improvement gate ---
+        # SE requires std_points.  normalize_eval_metrics() derives it from
+        # the raw net_bidder_team_points list when possible.  If still absent,
+        # HALT with an explicit reason rather than silently using a wrong value.
+        if "std_points" not in challenger_metrics:
+            return (
+                "HALT",
+                [
+                    "std_points unavailable for SE calculation "
+                    "(evaluator output missing net_bidder_team_points list "
+                    "and std_bidder_team_points scalar)"
+                ],
+            )
         c_std = _get_metric(challenger_metrics, "std_points", 1.0)
         c_n = _get_metric(challenger_metrics, "n_deals", 1.0)
         se = c_std / (c_n**0.5) if c_n > 0 else 1.0
@@ -303,6 +380,13 @@ def _check_tier1(bundle: dict, base_dir: str) -> str | None:
 def _check_eligibility(bundle: dict, base_dir: str) -> str | None:
     """Delegate to compute_eligibility() for pre-gate checks.
 
+    Uses batch_purpose="arc_d_gate" (not "promotion") so that the central
+    eligibility engine treats missing notebook-gate and missing artifact-dir
+    as non-fatal.  Arc D bundles have their own Tier 1 artifact integrity
+    checks, so we only delegate the subset of checks that are meaningful:
+    artifact freeze verification, split manifest validation, and semantic
+    gate checks.
+
     Returns None if eligible, or an error string if not.
     """
     # Import here to avoid circular imports and allow testing without
@@ -311,19 +395,25 @@ def _check_eligibility(bundle: dict, base_dir: str) -> str | None:
 
     olsa_full = bundle.get("olsa_full", {})
 
-    # Build a minimal rollup for compute_eligibility
+    # Build a minimal rollup for compute_eligibility.
+    # Empty configs list means config_membership and canonical_summaries
+    # pass trivially (nothing to check).
     rollup = {
         "configs": [],
         "batch": {
             "batch_id": f"arc_d_{bundle.get('rung_id', 'unknown')}",
-            "batch_purpose": "promotion",
+            "batch_purpose": "arc_d_gate",
         },
     }
 
+    # Use batch_purpose="arc_d_gate" so that:
+    #   - check_notebook_gate(None, "arc_d_gate") -> PASS (optional)
+    #   - check_artifacts_frozen(None, "arc_d_gate") -> PASS (optional)
+    # Arc D's own Tier 1 already verifies artifact integrity directly.
     eligibility = compute_eligibility(
         rollup=rollup,
         run_base_dir=base_dir,
-        batch_purpose="promotion",
+        batch_purpose="arc_d_gate",
         artifact_dir=str(
             Path(base_dir) / Path(olsa_full.get("artifact_path", "")).parent
         )
