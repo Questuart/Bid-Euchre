@@ -787,17 +787,57 @@ class HybridOLSaBidder(BiddingPolicy):
                 f"got '{artifact.get('artifact_type')}'"
             )
 
-        self.models = {}
-        for contract_family, model_data in artifact["payoff_model"].items():
-            self.models[contract_family] = {
-                "weights": np.array(model_data["weights"], dtype=np.float64),
-                "bias": float(model_data["bias"]),
-                "feature_names": model_data["feature_names"],
-            }
+        # Detect offensive/defensive sub-structure
+        self._has_offdef = any(
+            "offensive" in model_data
+            for model_data in artifact["payoff_model"].values()
+        )
 
-        self.residual_variance = {
-            cf: float(v) for cf, v in artifact["residual_variance"].items()
-        }
+        # Validate consistency: if payoff_model has off/def, residual_variance must too
+        variance_has_offdef = any(
+            isinstance(v, dict) and "offensive" in v
+            for v in artifact["residual_variance"].values()
+        )
+        if self._has_offdef != variance_has_offdef:
+            raise ValueError(
+                "Inconsistent off/def structure: payoff_model "
+                f"{'has' if self._has_offdef else 'lacks'} offensive/defensive keys "
+                f"but residual_variance {'has' if variance_has_offdef else 'lacks'} them"
+            )
+
+        self.models = {}
+        if self._has_offdef:
+            # Off/def: nested sub-models per contract family
+            for contract_family, model_data in artifact["payoff_model"].items():
+                self.models[contract_family] = {}
+                for role in ("offensive", "defensive"):
+                    sub = model_data[role]
+                    self.models[contract_family][role] = {
+                        "weights": np.array(sub["weights"], dtype=np.float64),
+                        "bias": float(sub["bias"]),
+                        "feature_names": sub["feature_names"],
+                    }
+        else:
+            # Flat: original single model per contract family
+            for contract_family, model_data in artifact["payoff_model"].items():
+                self.models[contract_family] = {
+                    "weights": np.array(model_data["weights"], dtype=np.float64),
+                    "bias": float(model_data["bias"]),
+                    "feature_names": model_data["feature_names"],
+                }
+
+        # Residual variance: either flat floats or nested off/def dicts
+        if self._has_offdef:
+            self.residual_variance = {}
+            for cf, v in artifact["residual_variance"].items():
+                self.residual_variance[cf] = {
+                    "offensive": float(v["offensive"]),
+                    "defensive": float(v["defensive"]),
+                }
+        else:
+            self.residual_variance = {
+                cf: float(v) for cf, v in artifact["residual_variance"].items()
+            }
 
         # risk_lambda param overrides artifact value if provided
         if risk_lambda is not None:
@@ -807,11 +847,42 @@ class HybridOLSaBidder(BiddingPolicy):
 
         self.context_features = artifact.get("context_features", [])
 
-    def _predict(self, contract_family: str, features: dict) -> float:
-        """Predict tricks_won (mu) for a contract family using its OLS model."""
-        model = self.models[contract_family]
+    def _predict(
+        self, contract_family: str, features: dict, *, declaring: bool = True
+    ) -> float:
+        """Predict tricks_won (mu) for a contract family using its OLS model.
+
+        Args:
+            contract_family: One of "suit", "high", "low".
+            features: Feature dict from get_hand_features().
+            declaring: If True, use offensive model; if False, use defensive.
+                Only relevant for off/def artifacts; flat artifacts ignore this.
+        """
+        if self._has_offdef:
+            role = "offensive" if declaring else "defensive"
+            model = self.models[contract_family][role]
+        else:
+            model = self.models[contract_family]
         x = np.array([features[f] for f in model["feature_names"]], dtype=np.float64)
         return float(x @ model["weights"] + model["bias"])
+
+    def _get_sigma(self, contract_family: str, *, declaring: bool = True) -> float:
+        """Get residual standard deviation for a contract family.
+
+        Args:
+            contract_family: One of "suit", "high", "low".
+            declaring: If True, use offensive variance; if False, defensive.
+                Only relevant for off/def artifacts; flat artifacts ignore this.
+
+        Returns:
+            Standard deviation (sqrt of residual variance).
+        """
+        if self._has_offdef:
+            role = "offensive" if declaring else "defensive"
+            var = self.residual_variance[contract_family][role]
+        else:
+            var = self.residual_variance.get(contract_family, 0.0)
+        return math.sqrt(max(0.0, var))
 
     def _compute_ev(self, mu: float, sigma: float, bid_n: int) -> float:
         """Compute expected net-differential value using Gaussian model.
@@ -909,9 +980,7 @@ class HybridOLSaBidder(BiddingPolicy):
             if contract_family not in self.models:
                 continue
 
-            sigma = math.sqrt(
-                max(0.0, self.residual_variance.get(contract_family, 0.0))
-            )
+            sigma = self._get_sigma(contract_family, declaring=True)
 
             for contract in contracts:
                 # Get hand features for this contract
@@ -920,7 +989,7 @@ class HybridOLSaBidder(BiddingPolicy):
                 else:
                     features = get_hand_features(obs.hand, "suit", contract)
 
-                mu = self._predict(contract_family, features)
+                mu = self._predict(contract_family, features, declaring=True)
                 bid_n = math.floor(mu)
 
                 # Clamp bid to valid range

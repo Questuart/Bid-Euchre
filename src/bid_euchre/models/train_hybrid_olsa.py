@@ -112,6 +112,7 @@ def _train_arm(
     risk_lambda: float = 0.0,
     feature_budget: dict[str, int] | None = None,
     do_forward_select: bool = False,
+    offensive_defensive: bool = False,
 ) -> tuple[dict, dict, dict | None]:
     """Train one arm (constrained or full) and return (artifact, metrics, fs_log)."""
     models = {}
@@ -199,12 +200,45 @@ def _train_arm(
             metrics_val = _compute_metrics(y_val, y_pred_val)
             n_val = len(val_df)
 
-        models[contract_family] = {
-            "weights": [float(w) for w in weights],
-            "bias": float(bias),
-            "feature_names": feature_names,
-        }
-        residual_variances[contract_family] = resid_var
+        if offensive_defensive:
+            # Split into declaring (seats 0,2) and defending (seats 1,3)
+            off_mask = train_df["seat"].isin([0, 2])
+            def_mask = ~off_mask
+
+            X_off = train_df.loc[off_mask, feature_names].values.astype(np.float64)
+            y_off = train_df.loc[off_mask, "tricks_won"].values.astype(np.float64)
+            X_def = train_df.loc[def_mask, feature_names].values.astype(np.float64)
+            y_def = train_df.loc[def_mask, "tricks_won"].values.astype(np.float64)
+
+            w_off, b_off = _fit_ols(X_off, y_off)
+            w_def, b_def = _fit_ols(X_def, y_def)
+
+            resid_off = float(np.var(y_off - (X_off @ w_off + b_off)))
+            resid_def = float(np.var(y_def - (X_def @ w_def + b_def)))
+
+            models[contract_family] = {
+                "offensive": {
+                    "weights": [float(w) for w in w_off],
+                    "bias": float(b_off),
+                    "feature_names": feature_names,
+                },
+                "defensive": {
+                    "weights": [float(w) for w in w_def],
+                    "bias": float(b_def),
+                    "feature_names": feature_names,
+                },
+            }
+            residual_variances[contract_family] = {
+                "offensive": resid_off,
+                "defensive": resid_def,
+            }
+        else:
+            models[contract_family] = {
+                "weights": [float(w) for w in weights],
+                "bias": float(bias),
+                "feature_names": feature_names,
+            }
+            residual_variances[contract_family] = resid_var
 
         training_metrics[contract_family] = {
             "r2_train": metrics_train["r2"],
@@ -255,6 +289,7 @@ def train_hybrid_olsa(
     freeze: bool = True,
     rung_id: str = "r0",
     risk_lambda: float = 0.0,
+    offensive_defensive: bool = False,
 ) -> dict:
     """Train hybrid OLSa models from a canonical bidless run directory.
 
@@ -268,6 +303,7 @@ def train_hybrid_olsa(
         freeze: Whether to freeze artifacts after writing.
         rung_id: Rung identifier (e.g., "r0").
         risk_lambda: Risk penalty coefficient (default 0.0 for R0).
+        offensive_defensive: If True, train separate offensive/defensive sub-models.
 
     Returns:
         Dict with artifact paths and training summary.
@@ -303,6 +339,7 @@ def train_hybrid_olsa(
             rung_id=rung_id,
             risk_lambda=risk_lambda,
             do_forward_select=False,
+            offensive_defensive=offensive_defensive,
         )
 
         artifact_path = os.path.join(output_dir, f"hybrid_{rung_id}.json")
@@ -331,6 +368,7 @@ def train_hybrid_olsa(
             risk_lambda=risk_lambda,
             feature_budget=feature_budget,
             do_forward_select=True,
+            offensive_defensive=offensive_defensive,
         )
 
         artifact_full_path = os.path.join(output_dir, f"hybrid_{rung_id}_full.json")
@@ -378,10 +416,14 @@ def train_hybrid_olsa(
         def _arm_block(artifact_path: str, fs_log_path: str | None = None) -> dict:
             with open(artifact_path) as af:
                 art = json.load(af)
-            selected = {
-                cf: art["payoff_model"][cf]["feature_names"]
-                for cf in art["payoff_model"]
-            }
+            selected = {}
+            for cf in art["payoff_model"]:
+                entry = art["payoff_model"][cf]
+                if "offensive" in entry:
+                    # Off/def: use offensive arm's features (same for both)
+                    selected[cf] = entry["offensive"]["feature_names"]
+                else:
+                    selected[cf] = entry["feature_names"]
             block = {
                 "artifact_path": artifact_path,
                 "artifact_sha256": art.get("artifact_sha256"),
