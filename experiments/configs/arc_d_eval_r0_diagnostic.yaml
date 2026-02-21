@@ -1,5 +1,8 @@
-# Arc D R0 Diagnostic — HybridOLSaBidder R0 vs OLSaBidder
-# Head-to-head characterization matchup for cross-architecture comparison
+# Arc D R0 Diagnostic — OLSa (constrained) vs OLSa_Full head-to-head
+# Characterization matchup for attribution gap measurement.
+#
+# Both arms use HybridOLSaBidder (hybrid_olsa_v1 artifacts).
+# OLSaBidder requires olsa_v1 artifacts which are not produced at R0.
 #
 # Run with:
 #   uv run python experiments/run_experiment.py \
@@ -8,12 +11,12 @@
 experiment_name: arc_d_eval_r0_diagnostic
 
 bidding_policies:
-  - name: hybrid_olsa_r0
+  - name: hybrid_olsa_r0_full
     class_name: HybridOLSaBidder
     params:
-      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
-  - name: olsa_baseline
-    class_name: OLSaBidder
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+  - name: hybrid_olsa_r0
+    class_name: HybridOLSaBidder
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
 

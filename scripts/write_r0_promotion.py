@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """Write R0 auto-promotion decision record.
 
-R0 is auto-promoted when all 7 metrics are finite for both arms.
+R0 is auto-promoted when all 6 required metrics are finite for both arms.
 No improvement gate, no incumbent comparison (R0 establishes the baseline).
 
 Reads the rung bundle, verifies both artifacts are frozen, loads eval
-metrics from seed-42 eval files, checks all 7 metrics are finite,
+metrics from seed-42 eval files, checks all 6 metrics are finite,
 and writes promotion_decision_r0.json.
 
 Usage:
@@ -23,7 +23,9 @@ from datetime import datetime, timezone
 
 from bid_euchre.models.freeze import verify_frozen
 
-# The 7 required metrics for R0 auto-promotion
+# The 6 required metrics for R0 auto-promotion.
+# std_bidder_team_points is NOT required at R0 because the evaluator does not
+# reliably produce it as a scalar.  SE-based gates only apply at R1+.
 REQUIRED_METRICS = [
     "net_expected_points_per_deal",
     "expected_points_per_deal",
@@ -31,7 +33,6 @@ REQUIRED_METRICS = [
     "make_rate",
     "cvar_5",
     "downside_variance",
-    "std_bidder_team_points",
 ]
 
 
@@ -188,7 +189,7 @@ def write_r0_promotion(
         "gate_results": {
             "primary": {
                 "metric": "auto_promote",
-                "note": "R0 is auto-promoted when all 7 metrics are finite",
+                "note": "R0 is auto-promoted when all 6 required metrics are finite",
                 "pass": decision == "PROMOTED",
             },
         },
