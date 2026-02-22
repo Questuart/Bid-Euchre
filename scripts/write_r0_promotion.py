@@ -127,8 +127,8 @@ def write_r0_promotion(
     olsa_eval_path = bundle["olsa"].get("eval_seed42")
     olsa_full_eval_path = bundle["olsa_full"].get("eval_seed42")
 
-    olsa_metrics = {}
-    olsa_full_metrics = {}
+    olsa_metrics: dict | None = None
+    olsa_full_metrics: dict | None = None
 
     if olsa_eval_path:
         olsa_metrics = _load_eval_metrics(olsa_eval_path)
@@ -140,14 +140,16 @@ def write_r0_promotion(
     else:
         halt_reasons.append("OLSa_Full eval_seed42 path is null")
 
-    # Check all 7 metrics finite for both arms
-    if olsa_metrics:
+    # Check all 6 metrics finite for both arms.
+    # Guard on `is not None` (not truthiness) so empty dicts from
+    # malformed eval files are caught by _all_metrics_finite as "missing".
+    if olsa_metrics is not None:
         ok, failures = _all_metrics_finite(olsa_metrics)
         tier_1_checks["no_nan_inf_olsa"] = "PASS" if ok else "FAIL"
         if not ok:
             halt_reasons.extend([f"OLSa {f}" for f in failures])
 
-    if olsa_full_metrics:
+    if olsa_full_metrics is not None:
         ok, failures = _all_metrics_finite(olsa_full_metrics)
         tier_1_checks["no_nan_inf_olsa_full"] = "PASS" if ok else "FAIL"
         if not ok:
@@ -155,7 +157,7 @@ def write_r0_promotion(
 
     # Compute attribution gap (OLSa_Full - OLSa on net_eppd)
     attribution_gap = None
-    if olsa_metrics and olsa_full_metrics:
+    if olsa_metrics is not None and olsa_full_metrics is not None:
         full_net = olsa_full_metrics.get("net_expected_points_per_deal")
         base_net = olsa_metrics.get("net_expected_points_per_deal")
         if full_net is not None and base_net is not None:
@@ -182,12 +184,12 @@ def write_r0_promotion(
             "arm": "OLSa_Full",
             "artifact_path": olsa_full_path,
             "artifact_sha256": olsa_full_sha,
-            "metrics_seed42": olsa_full_metrics if olsa_full_metrics else None,
+            "metrics_seed42": olsa_full_metrics,
         },
         "olsa_arm": {
             "artifact_path": olsa_path,
             "artifact_sha256": olsa_sha,
-            "metrics_seed42": olsa_metrics if olsa_metrics else None,
+            "metrics_seed42": olsa_metrics,
         },
         "control": None,  # No control at R0
         "gate_results": {

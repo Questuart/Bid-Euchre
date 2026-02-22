@@ -32,9 +32,13 @@ uv run python experiments/run_experiment.py \
   --emit-bidless-dataset \
   --emit-bidless-outcomes-dataset
 
+# Capture the most recent training run directory dynamically
+TRAIN_RUN=$(ls -dt data/runs/canonical_bidless_dataset_glutton_42_* | head -1)
+echo "Training run: $TRAIN_RUN"
+
 echo "=== Step 2: Train both arms ==="
 PYTHONPATH=src uv run python scripts/train_hybrid_olsa.py \
-  --run-dir data/runs/canonical_bidless_dataset_glutton_42_20260221_175752 \
+  --run-dir "$TRAIN_RUN" \
   --seed 42 \
   --output data/artifacts/arc_d/r0/ \
   --split-type three_way \

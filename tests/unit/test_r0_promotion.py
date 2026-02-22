@@ -456,6 +456,34 @@ def test_load_eval_metrics_empty_strategies(tmp_path):
     assert result == {}
 
 
+def test_write_r0_promotion_halts_on_empty_strategies(tmp_path):
+    """Empty strategies payload must HALT, not silently promote."""
+    olsa = _make_frozen_artifact(tmp_path, "hybrid_r0.json")
+    olsa_full = _make_frozen_artifact(tmp_path, "hybrid_r0_full.json")
+
+    # Write eval files with empty strategies lists
+    for filename in ["eval_r0.json", "eval_r0_full.json"]:
+        eval_path = tmp_path / filename
+        with open(eval_path, "w") as f:
+            json.dump({"strategies": []}, f)
+
+    bundle_path = _make_bundle(
+        tmp_path,
+        olsa,
+        olsa_full,
+        olsa_eval=str(tmp_path / "eval_r0.json"),
+        olsa_full_eval=str(tmp_path / "eval_r0_full.json"),
+    )
+    output = str(tmp_path / "promotion_decision_r0.json")
+
+    record = write_r0_promotion(bundle_path, output)
+
+    assert record["decision"] == "HALT"
+    assert "halt_reasons" in record
+    # All 6 required metrics should be reported as missing
+    assert any("missing" in r for r in record["halt_reasons"])
+
+
 # ─── Test: _all_metrics_finite helper ─────────────────────────────────────
 
 
