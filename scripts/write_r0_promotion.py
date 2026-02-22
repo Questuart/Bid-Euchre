@@ -65,11 +65,15 @@ def _all_metrics_finite(metrics: dict) -> tuple[bool, list[str]]:
 def _load_eval_metrics(eval_path: str) -> dict:
     """Load eval metrics from an eval result file.
 
-    Eval files are expected to have metrics at the top level or under
-    a 'metrics' key.
+    Handles three formats:
+    1. ``{"strategies": [{...metrics...}]}`` — full evaluator output
+    2. ``{"metrics": {...}}`` — nested metrics
+    3. Top-level metrics dict
     """
     with open(eval_path) as f:
         data = json.load(f)
+    if "strategies" in data and isinstance(data["strategies"], list):
+        return data["strategies"][0] if data["strategies"] else {}
     if "metrics" in data:
         return data["metrics"]
     return data

@@ -8,7 +8,7 @@ gate runner for R1+).
 
 | Rung | Decision | OLSa_Full net_eppd | OLSa net_eppd | Attribution Gap | Date | Bundle |
 |------|----------|--------------------|---------------|-----------------|------|--------|
-| r0   | PROMOTED | *(pending)*        | *(pending)*   | *(pending)*     | --   | `rung_bundle_r0.json` |
+| r0 | PROMOTED | 1.4837 | 1.6274 | -0.1437 | 2026-02-22 | `rung_bundle_r0.json` |
 
 ## Columns
 
