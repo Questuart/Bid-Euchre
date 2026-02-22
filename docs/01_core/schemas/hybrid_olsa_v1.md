@@ -75,11 +75,20 @@ When both arms are trained, a `rung_bundle_r{N}.json` packages them:
 
 ```json
 {
-  "bundle_type": "arc_d_rung_bundle_v1",
+  "bundle_schema": "arc_d_rung_bundle_v1",
   "rung_id": "r0",
-  "constrained_artifact": "hybrid_r0.json",
-  "full_artifact": "hybrid_r0_full.json",
-  "split_manifest": "split_manifest_r0.json",
+  "arc": "arc_d",
+  "olsa": {
+    "artifact_path": "hybrid_r0.json",
+    "artifact_sha256": "...",
+    "selected_features": {"suit": [...], "high": [...], "low": [...]}
+  },
+  "olsa_full": {
+    "artifact_path": "hybrid_r0_full.json",
+    "artifact_sha256": "...",
+    "selected_features": {"suit": [...], "high": [...], "low": [...]}
+  },
+  "split_manifest": "split_manifest_r0_suit.json",
   "training_report": "training_report_r0.json"
 }
 ```

@@ -101,10 +101,11 @@ The hybrid OLSa training pipeline produces per-arm artifacts conforming to the
 **Artifact directory structure:**
 ```
 data/artifacts/arc_d/r{N}/
-  olsa_constrained.json      # OLSa arm (locked 3/1/1 features)
-  olsa_full.json              # OLSa_Full arm (forward-selected features)
-  split_manifest.json         # Shared train/val/test split
-  training_report.json        # Training metrics and metadata
+  hybrid_r{N}.json                  # OLSa arm (locked 3/1/1 features)
+  hybrid_r{N}_full.json             # OLSa_Full arm (forward-selected features)
+  split_manifest_r{N}_{ct}.json     # Per-contract split manifests (ct = suit/high/low)
+  training_report_r{N}.json         # Training metrics and metadata
+  rung_bundle_r{N}.json             # Rung bundle packaging both arms
 ```
 
 ### Rung Bundle Schema
