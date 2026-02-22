@@ -1,6 +1,6 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Version:** 3.3 (Drift-Resilient, Discovery-Driven)
+**Version:** 3.4 (Drift-Resilient, Discovery-Driven)
 **Last Updated:** February 2026
 
 ---
@@ -163,6 +163,24 @@ uv run python -c "from bid_euchre.reporting.charts import generate_contract_face
 uv run python -c "from bid_euchre.logging.game_logger import GameLogger; print('logging OK')"
 uv run python -c "import bid_euchre.utils; print('utils OK')"
 
+# Verify scoring (top-level module)
+uv run python -c "from bid_euchre.scoring import compute_points; print('scoring OK')"
+
+# Verify Arc D modules (diagnostics extensions)
+uv run python -c "import bid_euchre.diagnostics.semantic_gate; print('semantic_gate OK')"
+uv run python -c "from bid_euchre.diagnostics.split_guard import require_split; print('split_guard OK')"
+
+# Verify Arc D modules (models extensions)
+uv run python -c "import bid_euchre.models.train_hybrid_olsa; print('train_hybrid_olsa OK')"
+uv run python -c "import bid_euchre.models.feature_selection; print('feature_selection OK')"
+
+# Verify Arc D modules (reporting extensions)
+uv run python -c "import bid_euchre.reporting.arc_d_report; print('arc_d_report OK')"
+
+# Verify Arc D modules (validation extensions)
+uv run python -c "import bid_euchre.validation.arc_d_bundle; print('arc_d_bundle OK')"
+uv run python -c "from bid_euchre.validation.arc_d_gate import normalize_eval_metrics; print('arc_d_gate OK')"
+
 # Dynamic: also verify any modules not listed above
 # ls -d src/bid_euchre/*/ | grep -v __pycache__
 # (check if any module directories exist that aren't covered by the imports above)
@@ -199,7 +217,7 @@ request a CLI-capable agent to execute `make check` before continuing.
 
 ```bash
 make repo-lint      # Repository linter
-make lint           # Ruff format + lint
+make lint           # Ruff check (lint only)
 make test           # Pytest fast suite
 make notebook-check # Jupytext sync + outputs cleared
 make docs-check     # Documentation freshness
@@ -800,7 +818,7 @@ make check
 
 # Individual checks
 make repo-lint      # Repository linter (derive rule count from source)
-make lint           # Ruff format + lint
+make lint           # Ruff check (lint only)
 make test           # Pytest fast suite
 make notebook-check # Jupytext sync + outputs cleared
 make docs-check     # Documentation freshness gate
@@ -872,9 +890,8 @@ make help | grep -i "bid\|train\|teacher\|loop"
 ### Config Validation
 
 ```bash
-# Validate config files
-uv run python scripts/validate_configs.py \
-  experiments/configs/*.yaml
+# Validate config files (auto-discovers configs; no positional args needed)
+uv run python scripts/validate_configs.py
 ```
 
 ---
@@ -920,6 +937,7 @@ bid-euchre/
 ├── tests/                       # Test suite
 │   ├── unit/                    # Fast, isolated tests
 │   ├── integration/             # Multi-component tests
+│   ├── property/                # Property-based tests (Hypothesis)
 │   └── performance/             # Benchmarks
 │   # (verify via: find tests -name "test_*.py" | wc -l)
 ├── notebooks/                   # Interactive analysis
@@ -933,6 +951,8 @@ bid-euchre/
 │   ├── 03_TODO/                 # Task tracking + reviews
 │   ├── 03_experiments/          # Experiment operational docs
 │   ├── 04_reports/              # Consolidated reports
+│   ├── archive/                 # Historical/frozen docs (do not modify)
+│   ├── images/                  # Documentation images (SVG, etc.)
 │   └── FLOW_DIAGRAM.md          # Top-level flow diagram (not in 01_core/)
 ├── data/
 │   ├── fixtures/                # Committed test fixtures (≤100KB each)
@@ -963,6 +983,10 @@ bid-euchre/
 | **Promotion Hardening** | #324–332 | Freeze enforcement, registry lint | Content-based hash validation, workflow automation, 7 skills |
 | **Phase 0 Report** | #333–345 | Report charts, diagnostics, skill audit | 5 chart suites, contract-faceted analysis, Phase 0 report r4 |
 | **Phase 0 Hardening** | #346–357 | Docs freshness CI, /review skill, feature rename, report corrections | docs-check gate, self-healing review prompt, offsuit_non_ace_count, stale metric fixes |
+| **Feature Review** | #358–369 | Feature trimming, pre-Phase-1 cleanup | 41→39 features, LTC/quick_tricks added, 4 redundant removed |
+| **HITL Notebook Gates** | #370–376 | Notebook evaluation template, semantic gate engine | 12-check gate (2 tiers), model rung report template, eligibility engine |
+| **Arc D Planning** | #377–388 | OLSa-Hybrid bidder plan, execution plan v3 | 18-PR plan across 10 waves, 31 review decisions |
+| **Arc D Implementation** | #389–396 | Hybrid OLSa bidder, off/def sub-models, gate runner, reporting | HybridOLSaBidder, off/def R5a architecture, Arc D gate runner, 3 opt-in gate checks |
 
 **Current state:** Derive via:
 
@@ -1114,5 +1138,5 @@ summary and do not proceed to later phases unless explicitly asked.
 
 ---
 
-*Template version: 3.2 (Drift-Resilient, Discovery-Driven)*
-*Previous versions: 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
+*Template version: 3.4 (Drift-Resilient, Discovery-Driven)*
+*Previous versions: 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
