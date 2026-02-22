@@ -16,6 +16,7 @@ import pytest
 from scripts.update_r0_bundle import update_bundle
 from scripts.write_r0_promotion import (
     _all_metrics_finite,
+    _load_eval_metrics,
     write_r0_promotion,
 )
 
@@ -170,6 +171,48 @@ def test_write_r0_promotion_auto_promote(tmp_path):
     with open(output) as f:
         written = json.load(f)
     assert written["decision"] == "PROMOTED"
+
+
+# ─── Test: write_r0_promotion with strategies wrapper format ──────────
+
+
+def test_write_r0_promotion_with_strategies_format(tmp_path):
+    """Promotion succeeds when eval files use the evaluator's strategies wrapper."""
+    olsa = _make_frozen_artifact(tmp_path, "hybrid_r0.json")
+    olsa_full = _make_frozen_artifact(tmp_path, "hybrid_r0_full.json")
+
+    # Write eval files in the real evaluator output format
+    for filename, net_eppd in [("eval_r0.json", 0.35), ("eval_r0_full.json", 0.40)]:
+        eval_path = tmp_path / filename
+        payload = {
+            "strategies": [
+                {
+                    "net_expected_points_per_deal": net_eppd,
+                    "expected_points_per_deal": 1.80,
+                    "bid_rate": 0.55,
+                    "make_rate": 0.60,
+                    "cvar_5": -4.0,
+                    "downside_variance": 10.5,
+                }
+            ],
+            "metric_definitions": {},
+        }
+        with open(eval_path, "w") as f:
+            json.dump(payload, f)
+
+    bundle_path = _make_bundle(
+        tmp_path,
+        olsa,
+        olsa_full,
+        olsa_eval=str(tmp_path / "eval_r0.json"),
+        olsa_full_eval=str(tmp_path / "eval_r0_full.json"),
+    )
+    output = str(tmp_path / "promotion_decision_r0.json")
+
+    record = write_r0_promotion(bundle_path, output)
+
+    assert record["decision"] == "PROMOTED"
+    assert record["attribution_gap"] == 0.05  # 0.40 - 0.35
 
 
 # ─── Test: NaN/Inf metrics rejection ─────────────────────────────────────
@@ -351,6 +394,94 @@ def test_eval_config_loads():
         for policy in config.bidding_policies:
             assert policy.class_name in ("HybridOLSaBidder", "OLSaBidder")
             assert "artifact_path" in policy.params
+
+
+# ─── Test: _load_eval_metrics strategies format ────────────────────────
+
+
+def test_load_eval_metrics_strategies_format(tmp_path):
+    """_load_eval_metrics extracts metrics from evaluator's strategies wrapper."""
+    eval_path = tmp_path / "eval_strategies.json"
+    payload = {
+        "strategies": [
+            {
+                "net_expected_points_per_deal": 0.42,
+                "expected_points_per_deal": 1.90,
+                "bid_rate": 0.55,
+                "make_rate": 0.62,
+                "cvar_5": -3.5,
+                "downside_variance": 9.8,
+            }
+        ],
+        "metric_definitions": {"net_expected_points_per_deal": "..."},
+    }
+    with open(eval_path, "w") as f:
+        json.dump(payload, f)
+
+    result = _load_eval_metrics(str(eval_path))
+
+    assert result["net_expected_points_per_deal"] == 0.42
+    assert result["bid_rate"] == 0.55
+    # Should NOT contain top-level keys like metric_definitions
+    assert "metric_definitions" not in result
+
+
+def test_load_eval_metrics_nested_metrics_format(tmp_path):
+    """_load_eval_metrics handles {"metrics": {...}} format."""
+    eval_path = tmp_path / "eval_nested.json"
+    with open(eval_path, "w") as f:
+        json.dump({"metrics": {"net_expected_points_per_deal": 0.30}}, f)
+
+    result = _load_eval_metrics(str(eval_path))
+    assert result["net_expected_points_per_deal"] == 0.30
+
+
+def test_load_eval_metrics_flat_format(tmp_path):
+    """_load_eval_metrics handles flat top-level metrics dict."""
+    eval_path = tmp_path / "eval_flat.json"
+    with open(eval_path, "w") as f:
+        json.dump({"net_expected_points_per_deal": 0.25, "bid_rate": 0.50}, f)
+
+    result = _load_eval_metrics(str(eval_path))
+    assert result["net_expected_points_per_deal"] == 0.25
+
+
+def test_load_eval_metrics_empty_strategies(tmp_path):
+    """_load_eval_metrics returns empty dict for empty strategies list."""
+    eval_path = tmp_path / "eval_empty.json"
+    with open(eval_path, "w") as f:
+        json.dump({"strategies": []}, f)
+
+    result = _load_eval_metrics(str(eval_path))
+    assert result == {}
+
+
+def test_write_r0_promotion_halts_on_empty_strategies(tmp_path):
+    """Empty strategies payload must HALT, not silently promote."""
+    olsa = _make_frozen_artifact(tmp_path, "hybrid_r0.json")
+    olsa_full = _make_frozen_artifact(tmp_path, "hybrid_r0_full.json")
+
+    # Write eval files with empty strategies lists
+    for filename in ["eval_r0.json", "eval_r0_full.json"]:
+        eval_path = tmp_path / filename
+        with open(eval_path, "w") as f:
+            json.dump({"strategies": []}, f)
+
+    bundle_path = _make_bundle(
+        tmp_path,
+        olsa,
+        olsa_full,
+        olsa_eval=str(tmp_path / "eval_r0.json"),
+        olsa_full_eval=str(tmp_path / "eval_r0_full.json"),
+    )
+    output = str(tmp_path / "promotion_decision_r0.json")
+
+    record = write_r0_promotion(bundle_path, output)
+
+    assert record["decision"] == "HALT"
+    assert "halt_reasons" in record
+    # All 6 required metrics should be reported as missing
+    assert any("missing" in r for r in record["halt_reasons"])
 
 
 # ─── Test: _all_metrics_finite helper ─────────────────────────────────────
