@@ -19,6 +19,8 @@ Applies 31 review decisions from `plans/arc_d_gap_analysis.md`. Key changes:
 - **Utility formula** rewritten with net-differential scoring branches
 - **Bundle schema** (`arc_d_rung_bundle_v1`) added to §8
 - **Pre-flight execution checklist** added to §10
+- **Comparator battery** added (v3.1): R0 one-time heuristic battery +
+  R1–R5 running ModeloEspecifico diagnostic; logged in rung bundles; never gating
 
 ---
 
@@ -379,6 +381,7 @@ hand-picked 3/1/1 base.
 - `training_report_r0.json` -- per-contract R-squared, MAE on train/val/test for both arms
 - `promotion_decision_r0.json` -- auto-promote record (both arms)
 - `rung_bundle_r0.json` -- dual-arm bundle (see §8 for schema)
+- `comparator_battery_r0.json` -- heuristic battery (5 bidders, seed 42, n_per=10,000)
 
 **Additional committed outputs:**
 - `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` -- registry with R0 baseline rows (both arms)
@@ -393,8 +396,27 @@ against R0. R0 auto-promote applies to both arms (all metrics finite + attributi
 (Gaussian EV vs simple floor). This is expected and intentional -- R0 establishes
 the HybridOLSaBidder's own baseline, not an equivalence claim.
 
-**Optional diagnostic:** Run OLSaBidder and HybridOLSaBidder R0 side-by-side
-on seed 42 and record the eppd difference for characterization (not gating).
+**R0 comparator battery (required, not gating):** Run all 4 heuristic bidders
+(FiveHeadFred, StrictHellRaiser, RanktheTank, ModeloEspecifico) plus
+HybridOLSaBidder R0 through run_auction_comparator.py (seed=42, n_per=10,000).
+
+   PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
+     --config experiments/configs/auction_comparator.yaml \
+     --seed 42 \
+     --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
+     --bidder-class HybridOLSaBidder \
+     --format json \
+     --output data/artifacts/arc_d/r0/comparator_battery_r0.json \
+     || true
+
+Output logged in rung_bundle_r0.json under `comparator_battery` key.
+One-time characterization — cannot affect auto-promote decision.
+If the script fails, record `comparator_battery: null` in the bundle.
+
+PREREQUISITE: run_auction_comparator.py must be updated (PR-R0b scope):
+  - Accept --bidder-class flag (default: OLSaBidder, also accept HybridOLSaBidder)
+  - Accept --format json flag (emit machine-readable JSON, not Markdown)
+  - Capture net_expected_points_per_deal in metrics dict
 
 **Promotion:** Auto-promote. All 7 metrics finite and recorded for both arms.
 
@@ -653,7 +675,7 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 | PR-I3 | Infra | Doc sync: update PROMOTION_WORKFLOW.md + DATA_CONTRACT.md with hybrid schema | Modified: 2 doc files. Verify: `make repo-lint` |
 | PR-I4 | Infra | Reporting extensions: rung report generator + 3 semantic gate additions (team_balance faceting, bid_distribution_sanity, both-arm gating) | New: report extensions + gate additions + tests |
 | PR-R0a | R0 | Hybrid training pipeline + feature selection utility + `--arm-mode` CLI flag + bundle writing | New: training script, feature selection module + tests |
-| PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle | New: eval configs, registry doc. Artifacts: frozen models + evals for both arms |
+| PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle + R0 comparator battery + comparator script updates | New: eval configs, registry doc. Modified: run_auction_comparator.py (--bidder-class, --format json, net_eppd). Artifacts: frozen models + evals + comparator_battery_r0.json |
 | PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset (generated with HybridOLSaBidder R0) | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
 | PR-R1b | R1 | R1 dual-arm training + eval + promotion | Feature selection + train + eval + gate for both arms. Depends on PR-I2 + PR-R0b + PR-R1a |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
@@ -1526,6 +1548,9 @@ CONTRACT_FEATURES (must match current defaults):
 - [ ] `MODEL_ARC_RUNS.md` exists with R0 rows (both arms)
 - [ ] `rung_bundle_r0.json` packages both arms
 - [ ] `promotion_decision_r0.json` records auto-promote with attribution_gap
+- [ ] `run_auction_comparator.py` updated: --bidder-class, --format json, net_eppd capture
+- [ ] `comparator_battery_r0.json` exists with 5 bidder entries, each with `net_eppd` finite
+- [ ] `rung_bundle_r0.json` includes `comparator_battery` key (null if battery failed)
 - [ ] `make check` passes
 
 **Reporting requirement:** R0 reporting (notebook + rung report + dashboard)
@@ -1667,8 +1692,24 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
    Control: seed 42 (n_per=50,000)
    Head-to-head diagnostic: OLSa_Full vs incumbent (seed 42)
 
+6b. Run ModeloEspecifico running comparator (diagnostic, never gating):
+    PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
+      --config experiments/configs/auction_comparator.yaml \
+      --seed 42 \
+      --olsa-artifact data/artifacts/arc_d/r{N}/hybrid_r{N}_full.json \
+      --bidder-class HybridOLSaBidder \
+      --format json \
+      --output data/artifacts/arc_d/r{N}/comparator_r{N}.json \
+      || true
+    Logs all 4 heuristic bidders but only ModeloEspecifico delta (me_delta)
+    is surfaced in the dashboard. Non-gating — cannot affect promotion.
+    The || true prevents a non-zero exit from aborting the PR workflow.
+    If comparator fails, record comparator_eval: null in the bundle.
+
 7. Write rung bundle (rung_bundle_r{N}.json), validate with
    validate_arc_d_rung_contract
+   Include `comparator_eval` key pointing to comparator_r{N}.json (from 6b).
+   Optional — validator accepts null if comparator step failed.
 
 8. Run promotion gate (reads OLSa_Full net_eppd):
    python scripts/internal/run_arc_d_gate.py --bundle data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json
@@ -1721,6 +1762,32 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
 - Lambda stored in frozen artifact `risk_lambda` field
 - **R5 residual_variance** splits into offensive/defensive per family (Decision 30)
 - Each arm's lambda tuning report is independent
+
+**Comparator convention (all rungs):**
+- R0: `comparator_battery` key in bundle → `comparator_battery_r0.json`
+  (5 bidders: FiveHeadFred, StrictHellRaiser, RanktheTank, ModeloEspecifico,
+  HybridOLSaBidder R0)
+- R1–R5: `comparator_eval` key in bundle → `comparator_r{N}.json`
+  (ModeloEspecifico vs OLSa_Full, `me_delta` = Full.net_eppd − ME.net_eppd)
+- Dashboard shows `ME delta` column for R1–R5 (R0 shows `—`)
+- All comparator runs: seed=42, n_per=10,000, --format json
+- All command snippets include `|| true` (non-fatal on gate fail / errors)
+- Never gating — cannot block or influence promotion decisions
+- If comparator step fails: log error, record null in bundle, proceed
+
+**Comparator script prerequisites (PR-R0b scope):**
+  - `--bidder-class` flag: accept HybridOLSaBidder (not just OLSaBidder)
+  - `--format json` flag: emit machine-readable JSON with per-bidder metrics
+  - Metrics dict must include: net_expected_points_per_deal, net_cvar_5
+  - JSON output schema:
+    {"schema": "arc_d_comparator_v1", "seed": 42, "n_per": 10000,
+     "bidders": {"name": {"net_eppd": X, "eppd": X, "bid_rate": X,
+                          "make_rate": X, "cvar_5": X, "net_cvar_5": X}}}
+
+**Dashboard ME delta column (PR-I4 scope):**
+  - generate_arc_dashboard.py gains 8th column: `ME delta`
+  - Reads from `comparator_eval` bundle key → extract me_delta
+  - Falls back to `—` if key absent or null (R0, or failed comparator)
 
 **Context feature formula reference (R1a–R4a):**
 - `partner_suit_match`: 1 if partner bid same contract family
@@ -1891,6 +1958,8 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
 - [ ] R5 sigma: residual_variance splits into offensive/defensive
 - [ ] Dataset: R1+ uses auction dataset generated AFTER R0b (E2)
 - [ ] Artifacts: _full suffix for OLSa_Full (hybrid_r{N}_full.json)
+- [ ] Comparator: R0 battery (4 heuristics); R1–R5 ME only (step 6b). Never gates.
+- [ ] Comparator commands include || true (non-fatal exit handling)
 - [ ] Net-differential EV: make = 2*tricks - 10, set = tricks - bid_n - 10
 ```
 
@@ -1935,6 +2004,7 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
   - [x] OLSa_Full / OLSa consistent naming -- throughout
   - [x] Bundle schema (arc_d_rung_bundle_v1) -- §8
   - [x] Pre-flight execution checklist -- §10
+  - [x] Comparator battery amendment (v3.1): R0 battery + R1–R5 ME comparator
 - [ ] No TBD/TBC/open-question markers remain
 - [ ] All file paths absolute (`/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/...`)
 - [ ] All thresholds are concrete numbers (no "roughly", "likely", "cursory")

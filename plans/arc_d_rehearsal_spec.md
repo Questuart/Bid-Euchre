@@ -48,6 +48,7 @@ full pipeline end-to-end.
 | Registry file | `docs/02_agent/MODEL_ARC_RUNS.md` | `data/artifacts/arc_d_rehearsal/REGISTRY.md` |
 | Branch | One per PR | Single rehearsal worktree, commit per phase |
 | PRs | One per concept | None — all work in rehearsal branch |
+| Comparator n_per | 10,000 | 500 |
 
 ### Script Command Templates (MUST use these — defaults write to production paths)
 
@@ -165,6 +166,8 @@ and §9 H-R{N}b template (lines 1587–1646)
    Train control → `data/artifacts/arc_d_rehearsal/r1/hybrid_r1_control.json`
 5. Semantic gate on val+test (both arms)
 6. Evaluation: seeds 42+43, n_per=500 (R1b exercises sensitivity path)
+6b. ModeloEspecifico comparator (n_per=500) → comparator_r1.json || true.
+    If run_auction_comparator.py fails, log and continue.
 7. Write rung bundle → validate
 8. Run promotion gate (see command templates below) → log result, advance regardless
 9. Write to rehearsal registry (see command templates below)
