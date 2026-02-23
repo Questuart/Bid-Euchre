@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Bid Euchre AI Research Framework — a Python framework for deterministic simulation and strategy evaluation of the card game Bid Euchre (double-deck, 10-A variant with bowers).
 
-## Git Workflow
+## Git & PR Workflow
 
-- Always use worktrees for PR work: `git worktree add ../worktree-<branch> -b <branch>`
-- When merging stacked PRs, expect GitHub to auto-close downstream PRs when base branches are deleted. Plan to recreate affected PRs.
-- After merging, always update local main: `git checkout main && git pull origin main`
-- Clean up worktrees after merge: `git worktree remove ../worktree-<branch>`
+- Always use `git worktree` for PR branches — never work directly on main.
+- Pattern: `git worktree add ../worktree-<branch> -b <branch>`
+- After merging a PR: update local main (`git pull`), clean up the worktree, and update MEMORY.md.
+- When merging stacked PRs, merge bottom-up and immediately recreate any auto-closed downstream PRs before proceeding.
 
 ### Stacked PRs
 
@@ -19,22 +19,35 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 - If a base branch PR is merged and GitHub auto-closes downstream PRs, recreate them targeting the new base (usually `main`).
 - Expect rebase conflicts when working with stacked PRs — resolve them methodically, don't panic.
 
-## Planning vs Implementation
+## Workflow
 
-- When the user asks for a 'plan', produce ONLY a written plan document — do NOT start implementing.
-- When creating plans, read the actual source code and API signatures first. Do not guess at function signatures.
+- Always create a **plan** before implementing. Never start coding without an explicit written plan unless the user says otherwise.
+- When the user asks for a "plan", produce ONLY a written plan document — do NOT begin implementation.
 - Always ask clarifying questions about scope before starting multi-PR plans.
 - Save plans as markdown files in a `plans/` directory.
 
-## Python Defaults
+### Planning Rules
 
-- Use `uv run` as the default Python runner (not raw `python` or `pip`).
-- Always run `make check` (or equivalent full test/lint suite) before committing.
-- Watch for common lint issues: unused imports, f-strings without placeholders, import sorting. Run ruff before committing.
+- When creating plans, read the actual source code and API signatures first — never guess.
+- Plans must reference real file paths, real function names, and real parameter signatures from the codebase.
+- If the user provides their own plan structure, adopt it rather than proposing an alternative.
 
-## Memory & Context
+## Python
 
-- After completing major work (PR merges, plan completion), update MEMORY.md with PR numbers, status, and next steps.
+- Default to `uv run` for all Python commands (pytest, notebooks, scripts) — not raw `python` or `pip`.
+- Always run `ruff check` and `ruff format` before committing.
+- Watch for: unused imports after refactors, f-strings without placeholders, circular imports when modifying `__init__.py`.
+
+### Pre-Commit Checklist
+
+- Run full `make check` (or equivalent test suite) before creating any PR.
+- Verify no uncommitted notebook changes that would trigger git diff checks.
+- Run linter (`ruff check --fix`) and formatter (`ruff format`) on all changed files.
+
+## Memory Management
+
+- Update MEMORY.md after **every** PR merge with: PR number, branch name, one-line summary.
+- After completing major work (plan completion, experiment runs), also update with status and next steps.
 - When resuming from a previous session, read MEMORY.md first to recover context.
 
 ## Essential Commands
