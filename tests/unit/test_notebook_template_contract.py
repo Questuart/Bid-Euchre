@@ -154,6 +154,29 @@ class TestR0NotebookEnrichment:
         assert "§11 Comparator Battery" in source
         assert "comparator_battery" in source
 
+    def test_r0_notebook_drift_detection_attributes(self):
+        """R0 notebook must use mannwhitney_stat/mannwhitney_pvalue (not .statistic/.p_value)."""
+        source = R0_PATH.read_text()
+        assert (
+            "mannwhitney_stat" in source
+        ), "R0 notebook must use batch_result.mannwhitney_stat"
+        assert (
+            "mannwhitney_pvalue" in source
+        ), "R0 notebook must use batch_result.mannwhitney_pvalue"
+        # Ensure the wrong attribute names are not used (outside comments)
+        code_lines = [
+            line for line in source.split("\n") if not line.strip().startswith("#")
+        ]
+        code_text = "\n".join(code_lines)
+        assert "batch_result.statistic" not in code_text, (
+            "R0 notebook must NOT use .statistic — "
+            "BatchComparisonResult uses .mannwhitney_stat"
+        )
+        assert "batch_result.p_value" not in code_text, (
+            "R0 notebook must NOT use .p_value — "
+            "BatchComparisonResult uses .mannwhitney_pvalue"
+        )
+
     def test_r0_matchup_notebook_exists(self):
         """03_r0_matchups.py must exist with required section markers."""
         matchup_path = (
