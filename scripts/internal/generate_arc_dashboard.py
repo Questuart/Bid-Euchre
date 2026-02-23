@@ -59,11 +59,11 @@ def generate_dashboard(
         sections.append(f"Searched: `{artifacts_base}`")
     else:
         sections.append(
-            "| Rung | OLSa net_eppd | Full net_eppd | Gap"
+            "| Rung | OLSa net_eppd | Full net_eppd | Gap | ME delta"
             " | OLSa Features | Full Features | Bundle Path |"
         )
         sections.append(
-            "|------|--------------|--------------|-----"
+            "|------|--------------|--------------|-----|----------"
             "|--------------|--------------|-------------|"
         )
 
@@ -85,8 +85,9 @@ def generate_dashboard(
             if olsa_eppd is not None and full_eppd is not None:
                 gap_str = f"{full_eppd - olsa_eppd:+.4f}"
 
+            me_delta_str = _resolve_me_delta(b, src)
             sections.append(
-                f"| {rung} | {olsa_eppd_str} | {full_eppd_str} | {gap_str}"
+                f"| {rung} | {olsa_eppd_str} | {full_eppd_str} | {gap_str} | {me_delta_str}"
                 f" | {olsa_feats} | {full_feats} | {src} |"
             )
 
@@ -183,6 +184,46 @@ def _resolve_eppd(
                 pass
 
     return olsa_eppd, full_eppd, decision
+
+
+def _resolve_me_delta(bundle: dict, bundle_source: Path) -> str:
+    """Resolve ME delta from comparator JSON.
+
+    ME delta = hybrid_olsa.net_eppd - modeloespecifico.net_eppd.
+    Uses comparator_eval only (R1-R5). R0 has comparator_battery which
+    is a one-time characterization -- the plan requires R0 to show
+    em-dash in the ME delta column.
+
+    Returns formatted string or em-dash if unavailable.
+    """
+    comp_path_str = bundle.get("comparator_eval")
+    if not comp_path_str:
+        return "\u2014"
+
+    # Ancestor-walking: try CWD-relative, then walk up bundle's ancestors
+    ref = Path(comp_path_str)
+    resolved = ref  # fallback
+    if not ref.exists():
+        for ancestor in bundle_source.resolve().parents:
+            candidate = ancestor / comp_path_str
+            if candidate.exists():
+                resolved = candidate
+                break
+
+    try:
+        with open(resolved) as f:
+            comp_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return "\u2014"
+
+    bidders = comp_data.get("bidders", {})
+    hybrid_net = bidders.get("hybrid_olsa", {}).get("net_eppd")
+    me_net = bidders.get("modeloespecifico", {}).get("net_eppd")
+
+    if hybrid_net is not None and me_net is not None:
+        return f"{hybrid_net - me_net:+.4f}"
+
+    return "\u2014"
 
 
 def _feature_summary(arm_data: dict) -> str:
