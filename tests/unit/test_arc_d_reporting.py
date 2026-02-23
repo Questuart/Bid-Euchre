@@ -613,6 +613,108 @@ def test_rung_report_model_performance_with_artifact(tmp_path):
     assert "R²" in report or "MAE" in report
 
 
+def test_rung_report_model_performance_non_repo_cwd(tmp_path, monkeypatch):
+    """Report resolves artifact_path when CWD is NOT the repo root.
+
+    Simulates: bundle at <root>/data/artifacts/arc_d/r0/rung_bundle_r0.json
+    with artifact_path="data/artifacts/arc_d/r0/model.json" (repo-root-relative).
+    CWD is set to /tmp so the path doesn't resolve directly.
+    """
+    # Build a fake repo root under tmp_path
+    repo_root = tmp_path / "fake_repo"
+    artifact_dir = repo_root / "data" / "artifacts" / "arc_d" / "r0"
+    artifact_dir.mkdir(parents=True)
+
+    model = {
+        "artifact_type": "hybrid_olsa",
+        "payoff_model": {
+            "suit": {
+                "feature_names": ["hand_value", "trump_count"],
+                "weights": [0.5, 1.2],
+                "bias": 3.0,
+            }
+        },
+    }
+    (artifact_dir / "model.json").write_text(json.dumps(model))
+
+    # Bundle uses repo-root-relative path (same format as real bundles)
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "data/artifacts/arc_d/r0/other.json",
+            "net_eppd": 0.15,
+            "selected_features": {"suit": ["hand_value"]},
+        },
+        "olsa_full": {
+            "artifact_path": "data/artifacts/arc_d/r0/model.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["hand_value", "trump_count"]},
+        },
+    }
+    bundle_path = artifact_dir / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle))
+
+    # Change CWD to something that is NOT the repo root
+    monkeypatch.chdir(tmp_path)
+
+    eval_df = _make_eval_df()
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+    assert "## Model Performance" in report, (
+        "Model Performance missing when CWD != repo root — "
+        "_resolve_bundle_ref should infer repo root from bundle_path"
+    )
+
+
+def test_rung_report_attribution_gap_non_repo_cwd(tmp_path, monkeypatch):
+    """Report resolves eval_seed42 paths when CWD is NOT the repo root."""
+    repo_root = tmp_path / "fake_repo"
+    artifact_dir = repo_root / "data" / "artifacts" / "arc_d" / "r0"
+    artifact_dir.mkdir(parents=True)
+
+    # Create eval JSON files with metrics
+    eval_data = {
+        "net_expected_points_per_deal": 1.5,
+        "expected_points_per_deal": 2.0,
+    }
+    (artifact_dir / "eval_r0.json").write_text(json.dumps(eval_data))
+    eval_full = {
+        "net_expected_points_per_deal": 1.3,
+        "expected_points_per_deal": 1.8,
+    }
+    (artifact_dir / "eval_r0_full.json").write_text(json.dumps(eval_full))
+
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "data/artifacts/arc_d/r0/model.json",
+            "eval_seed42": "data/artifacts/arc_d/r0/eval_r0.json",
+            "selected_features": {"suit": ["hand_value"]},
+        },
+        "olsa_full": {
+            "artifact_path": "data/artifacts/arc_d/r0/model_full.json",
+            "eval_seed42": "data/artifacts/arc_d/r0/eval_r0_full.json",
+            "selected_features": {"suit": ["hand_value", "trump_count"]},
+        },
+    }
+    bundle_path = artifact_dir / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle))
+
+    # Change CWD away from repo root
+    monkeypatch.chdir(tmp_path)
+
+    report = generate_arc_d_rung_report(bundle_path)
+    assert "pending" not in report.lower(), (
+        "Attribution gap shows 'pending' when CWD != repo root — "
+        "_resolve_bundle_ref should resolve eval paths from bundle location"
+    )
+    assert "1.5000" in report  # OLSa net_eppd
+    assert "1.3000" in report  # Full net_eppd
+
+
 def test_rung_report_no_model_artifact_key(tmp_path):
     """Report must NOT use 'model_artifact' key (old schema)."""
     # Read the source and verify it doesn't use the wrong key
