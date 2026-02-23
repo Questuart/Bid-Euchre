@@ -1528,6 +1528,9 @@ CONTRACT_FEATURES (must match current defaults):
 - [ ] `promotion_decision_r0.json` records auto-promote with attribution_gap
 - [ ] `make check` passes
 
+**Reporting requirement:** R0 reporting (notebook + rung report + dashboard)
+was delivered retroactively. All rungs require the REPORT stage.
+
 ---
 
 ### H-R1a: Partner Context Infrastructure
@@ -1586,6 +1589,12 @@ consistency.
 
 ### H-R{N}b: Dual-Arm Training + Eval PRs (Templated Pattern for R1b-R5b)
 
+> **Reporting mandate (all rungs):** Every rung MUST produce:
+> (1) instantiated notebook `notebooks/arc_d/02_r{N}_eval.py` with cleared
+> outputs, (2) per-rung report at `docs/04_reports/model_arc_r{N}_<date>.md`,
+> (3) updated dashboard at `docs/04_reports/model_arc_d_dashboard.md`.
+> Verify with: `make notebook-run-arc-d NOTEBOOK=notebooks/arc_d/02_r{N}_eval.ipynb`
+
 All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
 
 ```
@@ -1624,8 +1633,27 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
 9. Update registry (idempotent):
    python scripts/internal/update_arc_registry.py --bundle data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json
 
-10. Run notebook, generate rung report, regenerate arc dashboard:
-    python scripts/internal/generate_arc_dashboard.py
+10. Generate reporting outputs (three mandatory deliverables):
+    a. Instantiate notebook:
+       cp notebooks/_templates/01_model_rung_template.py notebooks/arc_d/02_r{N}_eval.py
+       # Set ARTIFACT_DIR, RUNG_ID, PROMOTION_DECISION_PATH parameters
+       jupytext --to ipynb --output notebooks/arc_d/02_r{N}_eval.ipynb \
+         notebooks/arc_d/02_r{N}_eval.py
+    b. Run notebook (rung-scoped):
+       make notebook-run-arc-d NOTEBOOK=notebooks/arc_d/02_r{N}_eval.ipynb
+    c. Generate rung report (committed):
+       PYTHONPATH=src uv run python -c "
+         from bid_euchre.reporting.arc_d_report import generate_arc_d_rung_report
+         generate_arc_d_rung_report(
+           'data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json',
+           'data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json',
+           'docs/04_reports/model_arc_r{N}_<date>.md')
+       "
+    d. Regenerate arc dashboard (committed):
+       PYTHONPATH=src uv run python scripts/internal/generate_arc_dashboard.py \
+         --artifacts-base data/artifacts/arc_d \
+         --output docs/04_reports/model_arc_d_dashboard.md
+    e. Verify: make notebook-check
 ```
 
 **R5b additions:**
@@ -1779,6 +1807,10 @@ EVALUATE -> evaluator pipeline on frozen artifacts:
 GATE   -> validate_bundle -> compute_eligibility() + Tier 1 + Tier 2 -> promotion_decision_r{N}.json
 REPORT -> write rung report, update registry (idempotent), regenerate arc dashboard
 ```
+
+> **No exceptions.** The REPORT stage applies to every rung including R0.
+> R0 reporting was delivered retroactively. For R1b+, REPORT is completed
+> within the same PR as GATE.
 
 No ad-hoc test inspection during tuning. Notebooks may load val partition only.
 Test metrics exist only in evaluator output.

@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -26,6 +26,7 @@ help:
 	@echo "  make notebook-check     - verify sync + outputs cleared"
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
+	@echo "  make notebook-run-arc-d - execute Arc D notebooks (SMOKE mode)"
 	@echo "  make docs-check         - docs freshness gate (path refs + script list)"
 	@echo "  make promotion-gate     - promotion CI gate (requires ARTIFACT_DIR + ROLLUP_JSON)"
 	@echo ""
@@ -73,6 +74,16 @@ notebook-run:
 notebook-run-full:
 	@echo ">>> Executing notebooks (QUICK mode)"
 	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode quick
+
+NOTEBOOK ?=
+
+notebook-run-arc-d:
+	@echo ">>> Executing Arc D notebooks (SMOKE mode)"
+ifdef NOTEBOOK
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --pattern "$(NOTEBOOK)"
+else
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --pattern "notebooks/arc_d/*.ipynb"
+endif
 
 docs-check:
 	@echo ">>> Docs freshness check"
