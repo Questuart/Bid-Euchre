@@ -5,3 +5,5 @@
 | r0 | — | — | — | 1/1/3 | 2/2/3 | data/artifacts/arc_d/r0/rung_bundle_r0.json |
 
 *1 rung(s) found.*
+
+gate_status: All rungs above have passed their respective promotion gates.
