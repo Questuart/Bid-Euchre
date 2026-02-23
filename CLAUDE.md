@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Bid Euchre AI Research Framework — a Python framework for deterministic simulation and strategy evaluation of the card game Bid Euchre (double-deck, 10-A variant with bowers).
 
+## Communication
+
+- For non-trivial requests (multi-step tasks, ambiguous scope, architectural decisions), start your response with a brief **Intent:** line restating what you understand the user's goal and intent to be (1-2 sentences). Then proceed with the work.
+- Skip the intent restatement for single-step tasks, simple questions, and follow-up confirmations.
+- If the intent restatement reveals uncertainty, ask before acting.
+
 ## Git & PR Workflow
 
 - Always use `git worktree` for PR branches — never work directly on main.
