@@ -31,6 +31,16 @@ This doc is the **operational guide**. Before working in this repo, also review:
 
 ---
 
+## Intent Restatement Rule
+
+- For non-trivial requests (multi-step tasks, ambiguous scope, or architectural decisions), start the first response with:
+  - `Intent: <1-2 sentence restatement of the user's goal, intent, and implied non-goals>`
+- Then proceed with execution in the same response.
+- Skip intent restatement for single-step tasks, simple factual questions, and follow-up confirmations.
+- If intent is uncertain after restating, ask a clarification question before acting.
+
+---
+
 ## 1) Gold Path Commands (Blessed Workflow)
 
 ### Run before opening a PR
