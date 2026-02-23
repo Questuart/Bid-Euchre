@@ -202,13 +202,24 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="docs/04_reports/model_arc_d_dashboard.md",
-        help="Output dashboard path",
+        default="data/reports/arc_d/model_arc_d_dashboard.md",
+        help="Output dashboard path (default: gitignored working copy)",
+    )
+    parser.add_argument(
+        "--snapshot",
+        action="store_true",
+        help="Also write a snapshot to docs/04_reports/ for git-committed history",
     )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     generate_dashboard(args.artifacts_base, args.output)
+
+    if args.snapshot:
+        snapshot_path = "docs/04_reports/model_arc_d_dashboard.md"
+        Path(snapshot_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(snapshot_path).write_text(Path(args.output).read_text())
+        logger.info("Snapshot written to %s", snapshot_path)
 
 
 if __name__ == "__main__":

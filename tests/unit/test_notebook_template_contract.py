@@ -16,32 +16,25 @@ TEMPLATE_PATH = (
 REQUIRED_PARAMETERS = [
     "MODE",
     "SEED",
-    "SPLIT_TYPE",
-    "ACTIVE_SPLIT",
-    "MODEL_ARTIFACT_PATH",
-    "SEMANTIC_GATE_OUTPUT_DIR",
-    "CHART_OUTPUT_DIR",
-    "RUN_DIR",
-    "SPLIT_MANIFEST_PATH",
+    "EVAL_RUN_DIR",
     "ARTIFACT_DIR",
     "RUNG_ID",
+    "CHART_OUTPUT_DIR",
     "PROMOTION_DECISION_PATH",
 ]
 
 REQUIRED_SECTIONS = [
-    "§0 Imports",
-    "§1 Data Loading",
-    "§2 Fairness",
-    "§3 Directional Sanity",
-    "§4 Performance",
-    "§5 Feature",
-    "§6 Semantic Gate",
-    "§7 Summary",
-    "§8 Eval Metrics",
-    "§9 Dual-Arm",
-    "§10 Seed Sensitivity",
-    "§11 Attribution Gap",
-    "§12 Promotion Gate",
+    "§0 Setup",
+    "§1 Deal Health",
+    "§2 Auction Health",
+    "§3 Gameplay Health",
+    "§4 Auction Outcomes",
+    "§5 Gameplay Outcomes",
+    "§6 Model Specs",
+    "§7 Model Performance",
+    "§8 Dual-Arm",
+    "§9 Seed Sensitivity",
+    "§10 Promotion",
 ]
 
 REQUIRED_CHART_FILENAMES = [
@@ -73,3 +66,29 @@ class TestNotebookTemplateContract:
         source = TEMPLATE_PATH.read_text()
         for filename in REQUIRED_CHART_FILENAMES:
             assert filename in source, f"Missing chart filename reference: {filename}"
+
+    def test_eval_dataset_import_present(self):
+        """Template must import from the JSONL eval dataset parser."""
+        source = TEMPLATE_PATH.read_text()
+        assert (
+            "build_eval_dataset" in source
+        ), "Template must import build_eval_dataset from eval_dataset module"
+
+    def test_removed_parameters_absent(self):
+        """Old parameters that were removed should not appear in the template."""
+        source = TEMPLATE_PATH.read_text()
+        removed = [
+            "SPLIT_TYPE",
+            "ACTIVE_SPLIT",
+            "MODEL_ARTIFACT_PATH",
+            "SEMANTIC_GATE_OUTPUT_DIR",
+            "SPLIT_MANIFEST_PATH",
+        ]
+        # Check parameter declarations (not just any mention in comments)
+        lines = source.split("\n")
+        param_lines = [l for l in lines if "=" in l and not l.strip().startswith("#")]
+        param_text = "\n".join(param_lines)
+        for param in removed:
+            assert (
+                f"{param} =" not in param_text
+            ), f"Removed parameter {param} should not be declared"
