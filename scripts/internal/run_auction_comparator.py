@@ -22,6 +22,13 @@ from pathlib import Path
 
 import yaml
 
+# Map known bidder classes to short policy names.
+# Fallback: lowercase the class name for unknown classes.
+_CLASS_TO_NAME = {
+    "OLSaBidder": "olsa",
+    "HybridOLSaBidder": "hybrid_olsa",
+}
+
 
 def _detect_new_run_dir(runs_base, before_snapshot):
     """Detect the new run directory by diffing data/runs/ before/after.
@@ -56,9 +63,12 @@ def run_experiment(config_path, seed, runs_base="data/runs", extra_args=None):
     before = _snapshot_runs_dir(runs_base)
 
     cmd = [
-        sys.executable, "experiments/run_experiment.py",
-        "--config", config_path,
-        "--seed", str(seed),
+        sys.executable,
+        "experiments/run_experiment.py",
+        "--config",
+        config_path,
+        "--seed",
+        str(seed),
     ]
     if extra_args:
         cmd.extend(extra_args)
@@ -89,8 +99,10 @@ def run_experiment(config_path, seed, runs_base="data/runs", extra_args=None):
 def generate_evaluation(run_dir):
     """Generate evaluator report for a run."""
     cmd = [
-        sys.executable, "scripts/generate_report.py",
-        "--run-dir", run_dir,
+        sys.executable,
+        "scripts/generate_report.py",
+        "--run-dir",
+        run_dir,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.returncode == 0
@@ -121,6 +133,27 @@ def gate_check(metrics_by_bidder):
     return failures
 
 
+def format_json(metrics_by_bidder, gate_failures, seed, n_per):
+    """Generate JSON comparison output with arc_d_comparator_v1 schema."""
+    bidders = {}
+    for name, m in metrics_by_bidder.items():
+        bidders[name] = {
+            "net_eppd": m.get("net_expected_points_per_deal"),
+            "eppd": m.get("expected_points_per_deal", 0),
+            "bid_rate": m.get("bid_rate", 0),
+            "make_rate": m.get("make_rate", 0),
+            "cvar_5": m.get("cvar_5"),
+            "net_cvar_5": m.get("net_cvar_5"),
+        }
+    return {
+        "schema": "arc_d_comparator_v1",
+        "seed": seed,
+        "n_per": n_per,
+        "gate_status": "FAIL" if gate_failures else "PASS",
+        "bidders": bidders,
+    }
+
+
 def format_report(metrics_by_bidder, gate_failures, seed):
     """Generate markdown comparison report."""
     lines = [
@@ -135,26 +168,32 @@ def format_report(metrics_by_bidder, gate_failures, seed):
 
     # Gate results
     if gate_failures:
-        lines.extend([
-            "## Gate Status: FAIL",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Gate Status: FAIL",
+                "",
+            ]
+        )
         for f in gate_failures:
             lines.append(f"- {f}")
         lines.append("")
     else:
-        lines.extend([
-            "## Gate Status: PASS",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Gate Status: PASS",
+                "",
+            ]
+        )
 
     # Comparison table
-    lines.extend([
-        "## Bidder Comparison",
-        "",
-        "| Bidder | Expected Points | Make Rate | Bid Rate | CVaR-5% | N (bid hands) |",
-        "|--------|----------------|-----------|----------|---------|---------------|",
-    ])
+    lines.extend(
+        [
+            "## Bidder Comparison",
+            "",
+            "| Bidder | Expected Points | Make Rate | Bid Rate | CVaR-5% | N (bid hands) |",
+            "|--------|----------------|-----------|----------|---------|---------------|",
+        ]
+    )
 
     # Sort by expected_points descending
     sorted_bidders = sorted(
@@ -183,8 +222,26 @@ def main():
     parser.add_argument("--config", required=True, help="YAML config path")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--olsa-artifact", default=None, help="Path to OLSa artifact")
+    parser.add_argument(
+        "--bidder-class",
+        default="OLSaBidder",
+        help="Bidder class for --olsa-artifact (default: OLSaBidder)",
+    )
+    parser.add_argument(
+        "--bidder-name",
+        default=None,
+        help="Policy name for the artifact bidder in output (default: derived from class)",
+    )
+    parser.add_argument(
+        "--output-format",
+        default="markdown",
+        choices=["markdown", "json"],
+        help="Output format (default: markdown)",
+    )
     parser.add_argument("--output", default=None, help="Output report path")
-    parser.add_argument("--skip-run", action="store_true", help="Skip experiment run, just analyze")
+    parser.add_argument(
+        "--skip-run", action="store_true", help="Skip experiment run, just analyze"
+    )
     args = parser.parse_args()
 
     # Load config
@@ -194,16 +251,21 @@ def main():
     policies = config.get("bidding_policies", [])
     n_per = config.get("parameters", {}).get("n_per", 10000)
 
-    # Add OLSa if artifact provided
+    # Add artifact bidder if provided
     if args.olsa_artifact:
         if not os.path.exists(args.olsa_artifact):
             print(f"ERROR: OLSa artifact not found: {args.olsa_artifact}")
             sys.exit(1)
-        policies.append({
-            "name": "olsa",
-            "class_name": "OLSaBidder",
-            "params": {"artifact_path": args.olsa_artifact},
-        })
+        bidder_name = args.bidder_name or _CLASS_TO_NAME.get(
+            args.bidder_class, args.bidder_class.lower()
+        )
+        policies.append(
+            {
+                "name": bidder_name,
+                "class_name": args.bidder_class,
+                "params": {"artifact_path": args.olsa_artifact},
+            }
+        )
 
     experiment_name = config.get("experiment_name", "auction_comparator")
 
@@ -212,7 +274,9 @@ def main():
 
     if not args.skip_run:
         # Run experiment for each bidder individually
-        print(f"Running auction comparator with {len(policies)} bidders, n_per={n_per}...")
+        print(
+            f"Running auction comparator with {len(policies)} bidders, n_per={n_per}..."
+        )
         for policy in policies:
             policy_name = policy["name"]
 
@@ -244,7 +308,11 @@ def main():
                 policy_name = policy["name"]
                 prefix = f"{experiment_name}_{policy_name}_"
                 matches = sorted(
-                    (p for p in runs_path.iterdir() if p.is_dir() and p.name.startswith(prefix)),
+                    (
+                        p
+                        for p in runs_path.iterdir()
+                        if p.is_dir() and p.name.startswith(prefix)
+                    ),
                     key=lambda p: p.name,
                     reverse=True,
                 )
@@ -268,9 +336,13 @@ def main():
             metrics_by_bidder[policy_name] = {
                 "expected_points": strat.get("expected_points", 0),
                 "expected_points_per_deal": strat.get("expected_points_per_deal", 0),
+                "net_expected_points_per_deal": strat.get(
+                    "net_expected_points_per_deal"
+                ),
                 "make_rate": strat.get("make_rate", 0),
                 "bid_rate": strat.get("bid_rate", 0),
                 "cvar_5": strat.get("cvar_5"),
+                "net_cvar_5": strat.get("net_cvar_5"),
                 "hands_with_bids": strat.get("hands_with_bids", 0),
                 "deals_total": strat.get("deals_total", 0),
             }
@@ -283,7 +355,9 @@ def main():
             run_dir = run_dirs_by_policy.get(name, "<no run directory found>")
             print(f"  - {name}  (run_dir: {run_dir})")
         print("\nTo generate evaluation data, re-run without --skip-run:")
-        print(f"  uv run python scripts/run_auction_comparator.py --config {args.config} --seed {args.seed}")
+        print(
+            f"  uv run python scripts/run_auction_comparator.py --config {args.config} --seed {args.seed}"
+        )
         sys.exit(1)
 
     if not metrics_by_bidder:
@@ -293,24 +367,36 @@ def main():
     # Gate check
     gate_failures = gate_check(metrics_by_bidder)
 
-    # Generate report
-    report = format_report(metrics_by_bidder, gate_failures, args.seed)
+    # Generate report in requested format
+    if args.output_format == "json":
+        output_data = format_json(metrics_by_bidder, gate_failures, args.seed, n_per)
+        output_str = json.dumps(output_data, indent=2)
+    else:
+        output_str = format_report(metrics_by_bidder, gate_failures, args.seed)
 
     if args.output:
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
         with open(args.output, "w") as f:
-            f.write(report)
-        print(f"\nReport written to {args.output}")
+            f.write(output_str)
+        # File path confirmation always to stderr in JSON mode
+        if args.output_format == "json":
+            print(f"Report written to {args.output}", file=sys.stderr)
+        else:
+            print(f"\nReport written to {args.output}")
     else:
-        print(report)
+        print(output_str)
 
+    # Gate status: stderr in JSON mode, stdout in markdown mode
     if gate_failures:
-        print("\nGATE STATUS: FAIL")
-        for f in gate_failures:
-            print(f"  {f}")
+        gate_msg = "\nGATE STATUS: FAIL\n" + "\n".join(f"  {f}" for f in gate_failures)
+        if args.output_format == "json":
+            print(gate_msg, file=sys.stderr)
+        else:
+            print(gate_msg)
         sys.exit(1)
     else:
-        print("\nGATE STATUS: PASS")
+        if args.output_format != "json":
+            print("\nGATE STATUS: PASS")
 
 
 if __name__ == "__main__":

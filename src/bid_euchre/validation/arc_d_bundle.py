@@ -100,6 +100,14 @@ def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
             if missing_inc:
                 errors.append(f"incumbent missing required keys: {sorted(missing_inc)}")
 
+    # Check optional comparator keys (type validation only — presence is optional)
+    for comp_key in ("comparator_battery", "comparator_eval"):
+        comp_val = bundle.get(comp_key)
+        if comp_val is not None and not isinstance(comp_val, str):
+            errors.append(
+                f"{comp_key} must be a string path or null, got {type(comp_val).__name__}"
+            )
+
     return (len(errors) == 0, errors)
 
 
@@ -147,6 +155,11 @@ def validate_bundle_files_exist(bundle: dict, base_dir: str) -> tuple[bool, list
     control_path = control.get("artifact_path") if isinstance(control, dict) else None
     if control_path:
         file_paths.append(control_path)
+
+    for comp_key in ("comparator_battery", "comparator_eval"):
+        comp_path = bundle.get(comp_key)
+        if comp_path:
+            file_paths.append(comp_path)
 
     for fp in file_paths:
         full_path = base / fp

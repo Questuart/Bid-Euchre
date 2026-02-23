@@ -352,6 +352,31 @@ class TestBundleValidation:
         assert not valid
         assert any("artifact_sha256" in e for e in errors)
 
+    def test_bundle_comparator_keys_valid(self):
+        """Bundle with comparator_battery string and comparator_eval null passes."""
+        bundle = _make_bundle(
+            comparator_battery="data/artifacts/arc_d/r0/comparator_battery_r0.json",
+            comparator_eval=None,
+        )
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
+
+    def test_bundle_without_comparator_keys_passes(self):
+        """Bundle without comparator keys passes (backward compat)."""
+        bundle = _make_bundle()
+        # Ensure no comparator keys are present
+        assert "comparator_battery" not in bundle
+        assert "comparator_eval" not in bundle
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
+
+    def test_bundle_comparator_wrong_type_fails(self):
+        """Bundle with non-string comparator_battery produces error."""
+        bundle = _make_bundle(comparator_battery=42)
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("comparator_battery" in e and "int" in e for e in errors)
+
 
 class TestBundleFilesExist:
     """Tests for validate_bundle_files_exist()."""
