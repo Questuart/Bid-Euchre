@@ -32,6 +32,7 @@ def generate_arc_d_rung_report(
     *,
     eval_df: pd.DataFrame | None = None,
     chart_dir: str | Path | None = None,
+    matchup_run_dir: str | Path | None = None,
 ) -> str:
     """Generate a per-rung Markdown report for Arc D evaluation.
 
@@ -40,7 +41,11 @@ def generate_arc_d_rung_report(
     attribution gap, and gate outcomes.
 
     When *eval_df* is provided, adds data-driven sections for deal health,
-    auction analysis, gameplay analysis, and model performance.
+    auction analysis, gameplay analysis, model performance, feature
+    correlations, and health scorecard summary.
+
+    When *matchup_run_dir* is provided, adds a head-to-head summary
+    section with win rates and competitive ranking from JSONL logs.
 
     Args:
         bundle_path: Path to rung_bundle_r{N}.json.
@@ -49,6 +54,8 @@ def generate_arc_d_rung_report(
         eval_df: Optional per-seat evaluation DataFrame from
             ``build_eval_dataset()``.
         chart_dir: Optional directory containing chart PNGs to embed.
+        matchup_run_dir: Optional path to head-to-head run directory
+            containing JSONL logs for matchup analysis.
 
     Returns:
         The report as a Markdown string.
@@ -85,6 +92,20 @@ def generate_arc_d_rung_report(
         sections.append(f"- **Per-seat rows:** {n_rows:,}")
         if ctypes:
             sections.append(f"- **Contract types:** {', '.join(ctypes)}")
+
+        # Health scorecard summary
+        try:
+            from bid_euchre.diagnostics.health_checks import compute_health_scorecard
+
+            scorecard = compute_health_scorecard(eval_df)
+            summary = scorecard.summary()
+            sections.append(
+                f"- **Health Scorecard:** {summary.get('PASS', 0)} PASS,"
+                f" {summary.get('WARN', 0)} WARN,"
+                f" {summary.get('FAIL', 0)} FAIL"
+            )
+        except Exception:
+            pass  # graceful degradation if diagnostics unavailable
         sections.append("")
 
     # --- Data Provenance ---
@@ -290,6 +311,123 @@ def generate_arc_d_rung_report(
                     f"- **{contract}**: R²={r2:.4f}, MAE={mae:.4f} (n={len(subset)})"
                 )
             sections.append("")
+
+    # --- Feature Correlations (when eval_df available) ---
+    if eval_df is not None and not eval_df.empty and "tricks_won" in eval_df.columns:
+        feat_cols = [c for c in eval_df.columns if c.startswith("feat_")]
+        numeric_feats = [
+            c for c in feat_cols if pd.api.types.is_numeric_dtype(eval_df[c])
+        ]
+        if numeric_feats and "contract_type" in eval_df.columns:
+            sections.append("## Feature Correlations")
+            sections.append("")
+            sections.append(
+                "Top features by absolute Pearson correlation with `tricks_won`,"
+                " per contract type."
+            )
+            sections.append("")
+            for ctype in sorted(eval_df["contract_type"].unique()):
+                grp = eval_df[eval_df["contract_type"] == ctype]
+                if len(grp) < 10:
+                    continue
+                corrs = {}
+                for fc in numeric_feats:
+                    try:
+                        corrs[fc] = grp[fc].corr(grp["tricks_won"])
+                    except Exception:
+                        pass
+                if not corrs:
+                    continue
+                # Top 5 by absolute correlation
+                top = sorted(corrs.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+                sections.append(f"### {ctype}")
+                sections.append("")
+                sections.append("| Feature | r |")
+                sections.append("|---------|---|")
+                for fname, r in top:
+                    sections.append(f"| {fname.replace('feat_', '')} | {r:+.4f} |")
+                sections.append("")
+
+    # --- Comparator Battery (when bundle has comparator_battery key) ---
+    comparator_battery = bundle.get("comparator_battery")
+    if comparator_battery and isinstance(comparator_battery, dict):
+        sections.append("## Comparator Battery")
+        sections.append("")
+        # Extract and rank by net_eppd
+        ranked = []
+        for bidder_name, metrics in comparator_battery.items():
+            net_eppd = metrics.get("net_eppd") if isinstance(metrics, dict) else None
+            if net_eppd is not None:
+                ranked.append((bidder_name, net_eppd))
+        if ranked:
+            ranked.sort(key=lambda x: x[1], reverse=True)
+            sections.append("| Bidder | net_eppd |")
+            sections.append("|--------|----------|")
+            for name, val in ranked:
+                sections.append(f"| {name} | {val:.4f} |")
+            sections.append("")
+
+    # --- Head-to-Head Summary (when matchup_run_dir provided) ---
+    if matchup_run_dir is not None:
+        matchup_run_dir = Path(matchup_run_dir)
+        logs_dir = matchup_run_dir / "logs"
+        if logs_dir.is_dir():
+            import glob as glob_mod
+
+            log_files = sorted(glob_mod.glob(str(logs_dir / "*.jsonl")))
+            if log_files:
+                sections.append("## Head-to-Head Summary")
+                sections.append("")
+                try:
+                    from bid_euchre.datasets.eval_dataset import build_eval_dataset
+
+                    matchup_rows = []
+                    for lf in log_files:
+                        lf_path = Path(lf)
+                        # Extract matchup_id from filename: <run_id>_<matchup_id>.jsonl
+                        stem = lf_path.stem
+                        # matchup_id is everything after the run_id prefix
+                        parts = stem.split("_", 1)
+                        mid = parts[1] if len(parts) > 1 else stem
+                        try:
+                            mdf = build_eval_dataset(lf, max_deals=5000)
+                            if not mdf.empty:
+                                deal_df = mdf[mdf["seat"] == 0]
+                                n_deals = deal_df["deal_id"].nunique()
+                                t0_mean = mdf[mdf["team"] == 0]["tricks_won"].mean()
+                                t1_mean = mdf[mdf["team"] == 1]["tricks_won"].mean()
+                                matchup_rows.append(
+                                    {
+                                        "matchup": mid,
+                                        "deals": n_deals,
+                                        "team0_tricks": t0_mean,
+                                        "team1_tricks": t1_mean,
+                                    }
+                                )
+                        except Exception:
+                            pass
+
+                    if matchup_rows:
+                        sections.append(
+                            "| Matchup | Deals | Team0 Tricks | Team1 Tricks |"
+                        )
+                        sections.append(
+                            "|---------|-------|-------------|-------------|"
+                        )
+                        for row in matchup_rows:
+                            sections.append(
+                                f"| {row['matchup']}"
+                                f" | {row['deals']}"
+                                f" | {row['team0_tricks']:.2f}"
+                                f" | {row['team1_tricks']:.2f} |"
+                            )
+                        sections.append("")
+                    else:
+                        sections.append("*No matchup data could be parsed from logs.*")
+                        sections.append("")
+                except ImportError:
+                    sections.append("*build_eval_dataset unavailable.*")
+                    sections.append("")
 
     # --- Chart references ---
     if chart_dir is not None:
