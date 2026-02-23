@@ -119,3 +119,60 @@ class TestNotebookTemplateContract:
             assert (
                 f"{param} =" not in param_text
             ), f"Removed parameter {param} should not be declared"
+
+
+# ──────────────────────────────────────────────
+#  R0 notebook enrichment contract tests
+# ──────────────────────────────────────────────
+
+R0_PATH = (
+    Path(__file__).resolve().parents[2] / "notebooks" / "arc_d" / "02_r0_baseline.py"
+)
+
+
+class TestR0NotebookEnrichment:
+    def test_r0_notebook_imports_diagnostics(self):
+        """R0 notebook must import from bid_euchre.diagnostics for enriched analysis."""
+        source = R0_PATH.read_text()
+        assert (
+            "from bid_euchre.diagnostics" in source
+        ), "R0 notebook must import diagnostics functions"
+        assert "compute_health_scorecard" in source
+        assert "plot_hand_value_by_seat" in source
+
+    def test_r0_notebook_has_health_scorecard(self):
+        """§0 must call compute_health_scorecard for data quality summary."""
+        source = R0_PATH.read_text()
+        assert (
+            "compute_health_scorecard" in source
+        ), "R0 notebook must call compute_health_scorecard in setup"
+        assert "display_scorecard" in source
+
+    def test_r0_notebook_has_comparator_section(self):
+        """§11 must reference comparator_battery for cross-bidder comparison."""
+        source = R0_PATH.read_text()
+        assert "§11 Comparator Battery" in source
+        assert "comparator_battery" in source
+
+    def test_r0_matchup_notebook_exists(self):
+        """03_r0_matchups.py must exist with required section markers."""
+        matchup_path = (
+            Path(__file__).resolve().parents[2]
+            / "notebooks"
+            / "arc_d"
+            / "03_r0_matchups.py"
+        )
+        assert matchup_path.exists(), "03_r0_matchups.py must exist"
+        source = matchup_path.read_text()
+        required_sections = [
+            "§0 Setup",
+            "§1 Matchup Overview",
+            "§2 Tricks Distribution",
+            "§3 Self-Play Fairness",
+            "§4 Seat Rotation",
+            "§5 Per-Opponent",
+            "§6 Performance by Contract",
+            "§7 Summary Table",
+        ]
+        for section in required_sections:
+            assert section in source, f"Matchup notebook missing section: {section}"

@@ -1,0 +1,91 @@
+# Head-to-head matchup config for R0 rung evaluation.
+#
+# Runs HybridOLSaBidder R0 against 4 heuristic opponents with seat rotation
+# plus self-play control. All trick play uses GluttonStrategy; only bidding
+# policies vary. Auction mode (contract_type: null) ensures bidders actually
+# bid; contract_type is determined by auction winner and faceted post-hoc
+# via JSONL log parsing with build_eval_dataset().
+#
+# 9 matchups × 1 scenario × 10,000 hands = 90,000 hands.
+
+experiment_name: arc_d_r0_head_to_head
+
+parameters:
+  seed: 42
+  n_per: 10000
+  log_level: hand
+  mode: head_to_head_matrix
+  pair_deals: true
+
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+bidding_policies:
+  - name: hybrid_olsa_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+
+  - name: modeloespecifico
+    class_name: ModeloEspecifico
+
+  - name: fiveheadfred
+    class_name: FixedBidder
+    params: {n: 5, contract: "S"}
+
+  - name: stricthellraiser
+    class_name: StrictHellRaiser
+
+  - name: rankthetank
+    class_name: RanktheTank
+
+matchups:
+  # R0 vs ModeloEspecifico (both seat rotations)
+  - matchup_id: hybrid_olsa_r0_vs_modeloespecifico
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_r0, modeloespecifico, hybrid_olsa_r0, modeloespecifico]
+  - matchup_id: modeloespecifico_vs_hybrid_olsa_r0
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [modeloespecifico, hybrid_olsa_r0, modeloespecifico, hybrid_olsa_r0]
+
+  # R0 vs FixedBidder(5, S) (both seat rotations)
+  - matchup_id: hybrid_olsa_r0_vs_fiveheadfred
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_r0, fiveheadfred, hybrid_olsa_r0, fiveheadfred]
+  - matchup_id: fiveheadfred_vs_hybrid_olsa_r0
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [fiveheadfred, hybrid_olsa_r0, fiveheadfred, hybrid_olsa_r0]
+
+  # R0 vs StrictHellRaiser (both seat rotations)
+  - matchup_id: hybrid_olsa_r0_vs_stricthellraiser
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_r0, stricthellraiser, hybrid_olsa_r0, stricthellraiser]
+  - matchup_id: stricthellraiser_vs_hybrid_olsa_r0
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [stricthellraiser, hybrid_olsa_r0, stricthellraiser, hybrid_olsa_r0]
+
+  # R0 vs RanktheTank (both seat rotations)
+  - matchup_id: hybrid_olsa_r0_vs_rankthetank
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_r0, rankthetank, hybrid_olsa_r0, rankthetank]
+  - matchup_id: rankthetank_vs_hybrid_olsa_r0
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [rankthetank, hybrid_olsa_r0, rankthetank, hybrid_olsa_r0]
+
+  # Self-play control
+  - matchup_id: hybrid_olsa_r0_self_play
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_r0, hybrid_olsa_r0, hybrid_olsa_r0, hybrid_olsa_r0]
+
+scenarios:
+  - contract_type: null   # Auction mode — bidders actually bid

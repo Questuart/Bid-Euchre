@@ -57,7 +57,9 @@ from bid_euchre.sim import simulation
 from bid_euchre.sim.hooks import HandEndEvent, SimulationHooks
 
 # Metadata schema version
-META_JSON_SCHEMA_VERSION = 2  # v2: add created_at_utc, git_sha, config_path, config_sha256
+META_JSON_SCHEMA_VERSION = (
+    2  # v2: add created_at_utc, git_sha, config_path, config_sha256
+)
 
 # Maximum total hands by config
 # Note: total_hands = plan_count * len(scenarios) * n_per
@@ -104,87 +106,87 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run Bid Euchre experiments from YAML config",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
         required=True,
-        help="Path to YAML configuration file"
+        help="Path to YAML configuration file",
     )
     parser.add_argument(
-        "--n_per", "-n",
-        type=int,
-        help="Override: number of hands per scenario"
+        "--n_per", "-n", type=int, help="Override: number of hands per scenario"
     )
     parser.add_argument(
-        "--seed", "-s",
+        "--seed",
+        "-s",
         type=int,
-        help="Random seed for reproducible results (required unless --allow-nondeterministic)"
+        help="Random seed for reproducible results (required unless --allow-nondeterministic)",
     )
     parser.add_argument(
         "--allow-nondeterministic",
         action="store_true",
-        help="Allow nondeterministic runs without a seed (for exploration only)"
+        help="Allow nondeterministic runs without a seed (for exploration only)",
     )
     parser.add_argument(
         "--log-level",
         choices=["none", "hand", "trick"],
-        help="Override: JSONL logging level"
+        help="Override: JSONL logging level",
     )
     parser.add_argument(
         "--run-dir",
         type=str,
         default="data/runs",
-        help="Base directory for run outputs (default: data/runs)"
+        help="Base directory for run outputs (default: data/runs)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print configuration and exit without running"
+        help="Print configuration and exit without running",
     )
     parser.add_argument(
         "--mode",
         choices=["self_play", "head_to_head", "head_to_head_matrix"],
-        help="Override: evaluation mode. self_play = same strategy all seats; head_to_head = team0 strategy vs fixed team1 strategy."
+        help="Override: evaluation mode. self_play = same strategy all seats; head_to_head = team0 strategy vs fixed team1 strategy.",
     )
     parser.add_argument(
         "--emit-bidding-dataset",
         action="store_true",
-        help="Emit bidding dataset to data/runs/<run_id>/datasets/ (auction mode only)"
+        help="Emit bidding dataset to data/runs/<run_id>/datasets/ (auction mode only)",
     )
     parser.add_argument(
         "--bidding-dataset-format",
         choices=["parquet", "jsonl"],
         default="parquet",
-        help="Format for bidding dataset emission (default: parquet)"
+        help="Format for bidding dataset emission (default: parquet)",
     )
     parser.add_argument(
         "--emit-bidless-dataset",
         action="store_true",
-        help="Emit bidless dataset to data/runs/<run_id>/datasets/ (declared contract mode only)"
+        help="Emit bidless dataset to data/runs/<run_id>/datasets/ (declared contract mode only)",
     )
     parser.add_argument(
         "--bidless-dataset-format",
         choices=["parquet", "jsonl"],
         default="parquet",
-        help="Format for bidless dataset emission (default: parquet)"
+        help="Format for bidless dataset emission (default: parquet)",
     )
     parser.add_argument(
         "--emit-bidless-outcomes-dataset",
         action="store_true",
-        help="Emit bidless outcomes dataset to data/runs/<run_id>/datasets/ (declared contract mode only)"
+        help="Emit bidless outcomes dataset to data/runs/<run_id>/datasets/ (declared contract mode only)",
     )
     parser.add_argument(
         "--bidless-outcomes-dataset-format",
         choices=["parquet", "jsonl"],
         default="parquet",
-        help="Format for bidless outcomes dataset emission (default: parquet)"
+        help="Format for bidless outcomes dataset emission (default: parquet)",
     )
     parser.add_argument(
         "--team1-strategy",
         type=str,
-        help="For head_to_head: name of strategy to use for Team 1 (players 1 & 3). Must be one of the strategies in the config."
+        help="For head_to_head: name of strategy to use for Team 1 (players 1 & 3). Must be one of the strategies in the config.",
     )
     parser.add_argument(
         "--play-strategy",
@@ -199,24 +201,24 @@ def parse_args():
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Override work budget limits (use with caution)"
+        help="Override work budget limits (use with caution)",
     )
     parser.add_argument(
         "--batch-id",
         default=None,
-        help="Batch identifier (requires --batch-role and --batch-purpose)"
+        help="Batch identifier (requires --batch-role and --batch-purpose)",
     )
     parser.add_argument(
         "--batch-role",
         default=None,
         choices=["dataset", "baseline", "challenger", "gate"],
-        help="Role within batch (requires --batch-id and --batch-purpose)"
+        help="Role within batch (requires --batch-id and --batch-purpose)",
     )
     parser.add_argument(
         "--batch-purpose",
         default=None,
         choices=["promotion", "exploration", "regression"],
-        help="Batch intent (requires --batch-id and --batch-role)"
+        help="Batch intent (requires --batch-id and --batch-role)",
     )
     return parser.parse_args()
 
@@ -256,34 +258,56 @@ def main():
     args = parse_args()
 
     # Validate batch metadata (all-or-nothing)
-    batch = BatchMetadata.from_cli_args(args.batch_id, args.batch_role, args.batch_purpose)
+    batch = BatchMetadata.from_cli_args(
+        args.batch_id, args.batch_role, args.batch_purpose
+    )
 
     # Load configuration
     print(f"📄 Loading configuration: {args.config}")
     config = load_config(args.config)
-    
+
     # Apply command-line overrides
-    n_per = args.n_per if args.n_per is not None else config.parameters.get("n_per", 50000)
+    n_per = (
+        args.n_per if args.n_per is not None else config.parameters.get("n_per", 50000)
+    )
     seed = args.seed if args.seed is not None else config.parameters.get("seed")
-    
+
     # Enforce determinism by default: seed required unless --allow-nondeterministic
     if seed is None and not args.allow_nondeterministic:
         raise SystemExit(
             "Error: --seed is required for deterministic runs. "
             "Use --seed <int> or --allow-nondeterministic for exploration."
         )
-    
-    log_level_str = args.log_level if args.log_level else config.parameters.get("log_level", "none")
-    mode = args.mode if args.mode else (getattr(config, "mode", None) or config.parameters.get("mode", "self_play"))
-    team1_strategy_name = args.team1_strategy if args.team1_strategy else config.parameters.get("team1_strategy")
-    play_strategy_name = args.play_strategy if args.play_strategy else config.parameters.get("play_strategy")
+
+    log_level_str = (
+        args.log_level if args.log_level else config.parameters.get("log_level", "none")
+    )
+    mode = (
+        args.mode
+        if args.mode
+        else (
+            getattr(config, "mode", None) or config.parameters.get("mode", "self_play")
+        )
+    )
+    team1_strategy_name = (
+        args.team1_strategy
+        if args.team1_strategy
+        else config.parameters.get("team1_strategy")
+    )
+    play_strategy_name = (
+        args.play_strategy
+        if args.play_strategy
+        else config.parameters.get("play_strategy")
+    )
     pair_deals = config.parameters.get("pair_deals", False)
-    
+
     # Get strategies and bidding policies
     strategy_cfgs = config.strategies
-    bidding_policy_cfgs = getattr(config, 'bidding_policies', [])
+    bidding_policy_cfgs = getattr(config, "bidding_policies", [])
     strategies = config.get_strategies()
-    bidding_policies = config.get_bidding_policies() if hasattr(config, 'get_bidding_policies') else []
+    bidding_policies = (
+        config.get_bidding_policies() if hasattr(config, "get_bidding_policies") else []
+    )
     scenarios = config.get_scenario_configs()
 
     # Must have either strategies or bidding policies
@@ -307,7 +331,9 @@ def main():
     team1_cfg = None
     if mode == "head_to_head":
         if not team1_strategy_name:
-            raise ValueError("head_to_head mode requires --team1-strategy (or parameters.team1_strategy in YAML)")
+            raise ValueError(
+                "head_to_head mode requires --team1-strategy (or parameters.team1_strategy in YAML)"
+            )
         for sc in strategy_cfgs:
             if sc.name == team1_strategy_name:
                 team1_cfg = sc
@@ -326,12 +352,17 @@ def main():
 
         Note: RandomLegal gets a per-seat seed offset to avoid identical RNG streams.
         """
+
         def _clone(cfg, seat_idx: int):
             cfg_params = dict(cfg.params or {})
             if cfg.class_name == "RandomLegalStrategy":
                 base_seed = cfg_params.get("seed", seed)
-                cfg_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
-            return cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
+                cfg_params["seed"] = (
+                    (base_seed + seat_idx) if base_seed is not None else None
+                )
+            return cfg.__class__(
+                name=cfg.name, class_name=cfg.class_name, params=cfg_params
+            ).create_strategy()
 
         if mode == "self_play":
             return [_clone(team0_cfg, i) for i in range(4)]
@@ -354,14 +385,20 @@ def main():
             seat_strategies = []
             for seat_idx in range(4):
                 seat_params = dict(cfg_params)
-                seat_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
+                seat_params["seed"] = (
+                    (base_seed + seat_idx) if base_seed is not None else None
+                )
                 seat_strategies.append(
-                    cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=seat_params).create_strategy()
+                    cfg.__class__(
+                        name=cfg.name, class_name=cfg.class_name, params=seat_params
+                    ).create_strategy()
                 )
             return seat_strategies
 
         return [
-            cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
+            cfg.__class__(
+                name=cfg.name, class_name=cfg.class_name, params=cfg_params
+            ).create_strategy()
             for _ in range(4)
         ]
 
@@ -379,20 +416,26 @@ def main():
 
     plan_count = len(policies_to_run)
     if mode == "head_to_head_matrix":
-        matchups = getattr(config, "matchups", None) or config.parameters.get("matchups") or []
+        matchups = (
+            getattr(config, "matchups", None) or config.parameters.get("matchups") or []
+        )
         plan_count = len(matchups)
 
     print("\n" + "=" * 70)
     print(f"🚀 Experiment: {config.experiment_name}")
     print("=" * 70)
     print(f"{policy_type}: {', '.join(p.name for p in policies_to_run)}")
-    print(f"Scenarios: {len(scenarios)} ({', '.join((s.contract_type or 'auction') + ('-' + s.trump_suit if s.trump_suit else '') for s in scenarios[:3])}{'...' if len(scenarios) > 3 else ''})")
+    print(
+        f"Scenarios: {len(scenarios)} ({', '.join((s.contract_type or 'auction') + ('-' + s.trump_suit if s.trump_suit else '') for s in scenarios[:3])}{'...' if len(scenarios) > 3 else ''})"
+    )
     print(f"Hands per scenario: {n_per:,}")
     print(f"Random seed: {seed if seed is not None else 'None (random)'}")
     print(f"Log level: {log_level_str}")
     print(f"Total hands to simulate: {plan_count * len(scenarios) * n_per:,}")
     print(f"Common deals: {'Yes' if seed is not None else 'No (random deals)'}")
-    print(f"Paired deals: {'Yes (same deals across scenarios)' if pair_deals else 'No'}")
+    print(
+        f"Paired deals: {'Yes (same deals across scenarios)' if pair_deals else 'No'}"
+    )
     print(f"Mode: {mode}")
     if mode == "head_to_head":
         print(f"Team1 strategy: {team1_strategy_name}")
@@ -402,28 +445,30 @@ def main():
 
     # Enforce work budget before starting simulation
     total_hands_estimate = plan_count * len(scenarios) * n_per
-    check_total_hands_budget(config.experiment_name, total_hands_estimate, force=args.force)
-    
+    check_total_hands_budget(
+        config.experiment_name, total_hands_estimate, force=args.force
+    )
+
     if args.dry_run:
         print("\n✅ Dry run complete. Configuration valid.")
         return
-    
+
     # Create run directory structure (full skeleton - always create all required dirs)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     seed_str = str(seed) if seed is not None else "random"
     run_id = f"{config.experiment_name}_{seed_str}_{timestamp}"
     run_dir = os.path.join(args.run_dir, run_id)
-    
+
     # Create required subdirectories (even if empty)
     results_dir = os.path.join(run_dir, "results")
     logs_dir = os.path.join(run_dir, "logs")
     reports_dir = os.path.join(run_dir, "reports")
     splits_dir = os.path.join(run_dir, "splits")
     artifacts_dir = os.path.join(run_dir, "artifacts")
-    
+
     for dir_path in [results_dir, logs_dir, reports_dir, splits_dir, artifacts_dir]:
         os.makedirs(dir_path, exist_ok=True)
-    
+
     # Write effective config snapshot (after all CLI overrides applied)
     effective_config = {
         "experiment_name": config.experiment_name,
@@ -435,24 +480,36 @@ def main():
             "play_strategy": play_strategy_name,
         },
         "mode": mode,
-        "strategies": [{"name": s.name, "class_name": getattr(s, "class_name", s.__class__.__name__)} for s in strategy_cfgs],
-        "bidding_policies": [{"name": p.name, "class_name": getattr(p, "class_name", p.__class__.__name__)} for p in bidding_policy_cfgs],
+        "strategies": [
+            {
+                "name": s.name,
+                "class_name": getattr(s, "class_name", s.__class__.__name__),
+            }
+            for s in strategy_cfgs
+        ],
+        "bidding_policies": [
+            {
+                "name": p.name,
+                "class_name": getattr(p, "class_name", p.__class__.__name__),
+            }
+            for p in bidding_policy_cfgs
+        ],
         "scenarios": [
             {"contract_type": s.contract_type, "trump_suit": s.trump_suit}
             for s in scenarios
         ],
     }
-    
+
     # Add mode-specific parameters
     if mode == "head_to_head":
         effective_config["parameters"]["team1_strategy"] = team1_strategy_name
-    
+
     # Write as YAML with stable sorting
     with open(os.path.join(run_dir, "config_effective.yaml"), "w") as f:
         yaml.dump(effective_config, f, default_flow_style=False, sort_keys=True)
-    
+
     print(f"\n📁 Run directory: {run_dir}\n")
-    
+
     # Track performance metrics
     start_time = time.time()
     scenario_metrics = []
@@ -469,7 +526,9 @@ def main():
     # Streaming writer for bidding dataset (replaces accumulation pattern)
     bidding_writer: Optional[BiddingDatasetWriter] = None
     if args.emit_bidding_dataset:
-        bidding_writer = BiddingDatasetWriter(run_dir, run_id, format=args.bidding_dataset_format)
+        bidding_writer = BiddingDatasetWriter(
+            run_dir, run_id, format=args.bidding_dataset_format
+        )
 
     # Track plan/scenario indices for globally unique hand_id computation
     # Use a dict to make values mutable from within closures
@@ -516,7 +575,9 @@ def main():
 
                 # Record all 4 seats
                 for seat in range(4):
-                    dealer_seat = event.dealer_seat if event.dealer_seat is not None else 0
+                    dealer_seat = (
+                        event.dealer_seat if event.dealer_seat is not None else 0
+                    )
                     collector.record_hand_value(
                         hand=event.hands[seat],
                         seat=seat,
@@ -555,9 +616,13 @@ def main():
     # Run all strategies × scenarios
     # Run experiments
     if mode == "head_to_head_matrix":
-        matchups = getattr(config, "matchups", None) or config.parameters.get("matchups")
+        matchups = getattr(config, "matchups", None) or config.parameters.get(
+            "matchups"
+        )
         if not matchups:
-            raise ValueError("head_to_head_matrix mode requires config.matchups in YAML")
+            raise ValueError(
+                "head_to_head_matrix mode requires config.matchups in YAML"
+            )
 
         # Map strategy name -> StrategyConfig
         cfg_by_name = {sc.name: sc for sc in strategy_cfgs}
@@ -580,7 +645,9 @@ def main():
                     raise ValueError(
                         f"seat_strategies must have length 4 (got {len(seat_strategy_names)}): {m}"
                     )
-                unknown = [name for name in seat_strategy_names if name not in cfg_by_name]
+                unknown = [
+                    name for name in seat_strategy_names if name not in cfg_by_name
+                ]
                 if unknown:
                     raise ValueError(
                         f"Unknown seat_strategies {unknown} in {m}. "
@@ -592,12 +659,22 @@ def main():
                     "head_to_head_matrix matchups require team0/team1 or seat_strategies."
                 )
 
+            # Allow explicit matchup_id override (e.g., when all seats share
+            # the same play strategy but differ in bidding policy)
+            custom_matchup_id = m.get("matchup_id")
+            if custom_matchup_id:
+                matchup_id = custom_matchup_id
+
             if seat_bidding_policy_names:
                 if len(seat_bidding_policy_names) != 4:
                     raise ValueError(
                         f"seat_bidding_policies must have length 4 (got {len(seat_bidding_policy_names)}): {m}"
                     )
-                unknown = [name for name in seat_bidding_policy_names if name not in policy_cfg_by_name]
+                unknown = [
+                    name
+                    for name in seat_bidding_policy_names
+                    if name not in policy_cfg_by_name
+                ]
                 if unknown:
                     raise ValueError(
                         f"Unknown seat_bidding_policies {unknown} in {m}. "
@@ -627,8 +704,12 @@ def main():
                     cfg_params = dict(cfg.params or {})
                     if cfg.class_name == "RandomLegalStrategy":
                         base_seed = cfg_params.get("seed", seed)
-                        cfg_params["seed"] = (base_seed + seat_idx) if base_seed is not None else None
-                    return cfg.__class__(name=cfg.name, class_name=cfg.class_name, params=cfg_params).create_strategy()
+                        cfg_params["seed"] = (
+                            (base_seed + seat_idx) if base_seed is not None else None
+                        )
+                    return cfg.__class__(
+                        name=cfg.name, class_name=cfg.class_name, params=cfg_params
+                    ).create_strategy()
 
                 if team0_name and team1_name:
                     team0_cfg = cfg_by_name[team0_name]
@@ -659,8 +740,12 @@ def main():
                     # Update strategy context for outcomes dataset
                     bidless_context["strategy_id"] = ""  # Not used in matrix mode
                     bidless_context["matchup_id"] = matchup_id
-                    bidless_context["team0_strategy"] = team0_name if team0_name else seat_strategy_names[0]
-                    bidless_context["team1_strategy"] = team1_name if team1_name else seat_strategy_names[1]
+                    bidless_context["team0_strategy"] = (
+                        team0_name if team0_name else seat_strategy_names[0]
+                    )
+                    bidless_context["team1_strategy"] = (
+                        team1_name if team1_name else seat_strategy_names[1]
+                    )
 
                     # When pair_deals=True, use the same seed for all scenarios
                     # so the same physical deals are played under different contracts
@@ -682,7 +767,9 @@ def main():
                     scenario_start = time.time()
 
                     # Compute hand_id offset: (matchup_idx * num_scenarios + scenario_idx) * n_per
-                    bidding_hand_id_offset = (matchup_idx * num_scenarios + (i - 1)) * n_per
+                    bidding_hand_id_offset = (
+                        matchup_idx * num_scenarios + (i - 1)
+                    ) * n_per
 
                     results = simulation.simulate_many_hands(
                         n=n_per,
@@ -695,8 +782,12 @@ def main():
                         bidding_policy=None,  # Use Strategy.decide_bid for backward compatibility
                         bidding_policies=seat_bidding_policies,
                         logger=logger,
-                        bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
-                        bidding_hand_id_offset=bidding_hand_id_offset if args.emit_bidding_dataset else 0,
+                        bidding_dataset_run_id=run_id
+                        if args.emit_bidding_dataset
+                        else None,
+                        bidding_hand_id_offset=bidding_hand_id_offset
+                        if args.emit_bidding_dataset
+                        else 0,
                         hooks=bidless_hooks,
                     )
                     bidding_collectors = results.pop("bidding_collectors", [])
@@ -706,7 +797,9 @@ def main():
                             bidding_writer.append_rows(collector.get_rows_sorted())
 
                     scenario_duration = time.time() - scenario_start
-                    hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
+                    hands_per_sec = (
+                        n_per / scenario_duration if scenario_duration > 0 else 0
+                    )
 
                     out_path = os.path.join(
                         results_dir,
@@ -726,16 +819,22 @@ def main():
                     # Weighted win rate: full wins + 0.5 × ties (ties contribute half to each team)
                     win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
-                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%")
-                    print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
+                    print(
+                        f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%"
+                    )
+                    print(
+                        f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec"
+                    )
 
-                    scenario_metrics.append({
-                        "strategy": matchup_id,
-                        "scenario": label,
-                        "duration_sec": round(scenario_duration, 2),
-                        "hands_per_sec": round(hands_per_sec, 1),
-                        "total_hands": n_per,
-                    })
+                    scenario_metrics.append(
+                        {
+                            "strategy": matchup_id,
+                            "scenario": label,
+                            "duration_sec": round(scenario_duration, 2),
+                            "hands_per_sec": round(hands_per_sec, 1),
+                            "total_hands": n_per,
+                        }
+                    )
 
             finally:
                 if logger:
@@ -760,7 +859,9 @@ def main():
                 raise ValueError(
                     f"play_strategy='{play_strategy_name}' requires a 'strategies' section in {args.config}."
                 )
-            play_cfg = next((sc for sc in strategy_cfgs if sc.name == play_strategy_name), None)
+            play_cfg = next(
+                (sc for sc in strategy_cfgs if sc.name == play_strategy_name), None
+            )
             if play_cfg is None:
                 raise ValueError(
                     f"Unknown play_strategy '{play_strategy_name}'. Must be one of: "
@@ -796,7 +897,9 @@ def main():
                     bidless_context["strategy_id"] = policy.name
                     bidless_context["matchup_id"] = f"{policy.name}_vs_{policy.name}"
                     if mode == "head_to_head" and team1_strategy_name:
-                        bidless_context["matchup_id"] = f"{policy.name}_vs_{team1_strategy_name}"
+                        bidless_context["matchup_id"] = (
+                            f"{policy.name}_vs_{team1_strategy_name}"
+                        )
                         bidless_context["team0_strategy"] = policy.name
                         bidless_context["team1_strategy"] = team1_strategy_name
                     else:
@@ -823,7 +926,9 @@ def main():
                     scenario_start = time.time()
 
                     # Compute hand_id offset: (policy_idx * num_scenarios + scenario_idx) * n_per
-                    bidding_hand_id_offset = (policy_idx * num_scenarios + (i - 1)) * n_per
+                    bidding_hand_id_offset = (
+                        policy_idx * num_scenarios + (i - 1)
+                    ) * n_per
 
                     if policy_type == "bidding_policy":
                         # For bidding policies, use the policy directly in auction mode
@@ -837,13 +942,19 @@ def main():
                             strategies=auction_seat_strategies,
                             bidding_policy=policy,
                             logger=logger,
-                            bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
-                            bidding_hand_id_offset=bidding_hand_id_offset if args.emit_bidding_dataset else 0,
+                            bidding_dataset_run_id=run_id
+                            if args.emit_bidding_dataset
+                            else None,
+                            bidding_hand_id_offset=bidding_hand_id_offset
+                            if args.emit_bidding_dataset
+                            else 0,
                             hooks=bidless_hooks,
                         )
                     else:
                         # For strategies, use the existing logic
-                        policy_cfg = next(sc for sc in strategy_cfgs if sc.name == policy.name)
+                        policy_cfg = next(
+                            sc for sc in strategy_cfgs if sc.name == policy.name
+                        )
                         seat_strategies = _make_seat_strategies(policy_cfg)
                         results = simulation.simulate_many_hands(
                             n=n_per,
@@ -855,8 +966,12 @@ def main():
                             strategies=seat_strategies,
                             bidding_policy=None,
                             logger=logger,
-                            bidding_dataset_run_id=run_id if args.emit_bidding_dataset else None,
-                            bidding_hand_id_offset=bidding_hand_id_offset if args.emit_bidding_dataset else 0,
+                            bidding_dataset_run_id=run_id
+                            if args.emit_bidding_dataset
+                            else None,
+                            bidding_hand_id_offset=bidding_hand_id_offset
+                            if args.emit_bidding_dataset
+                            else 0,
                             hooks=bidless_hooks,
                         )
                     bidding_collectors = results.pop("bidding_collectors", [])
@@ -866,12 +981,14 @@ def main():
                             bidding_writer.append_rows(collector.get_rows_sorted())
 
                     scenario_duration = time.time() - scenario_start
-                    hands_per_sec = n_per / scenario_duration if scenario_duration > 0 else 0
+                    hands_per_sec = (
+                        n_per / scenario_duration if scenario_duration > 0 else 0
+                    )
 
                     out_path = os.path.join(
                         results_dir,
                         policy.name,
-                        scenario_filename(scenario.contract_type, scenario.trump_suit)
+                        scenario_filename(scenario.contract_type, scenario.trump_suit),
                     )
                     save_results(results, out_path)
 
@@ -886,16 +1003,22 @@ def main():
                     # Weighted win rate: full wins + 0.5 × ties (ties contribute half to each team)
                     win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
-                    print(f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%")
-                    print(f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec")
+                    print(
+                        f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%"
+                    )
+                    print(
+                        f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec"
+                    )
 
-                    scenario_metrics.append({
-                        "strategy": policy.name,
-                        "scenario": label,
-                        "duration_sec": round(scenario_duration, 2),
-                        "hands_per_sec": round(hands_per_sec, 1),
-                        "total_hands": n_per,
-                    })
+                    scenario_metrics.append(
+                        {
+                            "strategy": policy.name,
+                            "scenario": label,
+                            "duration_sec": round(scenario_duration, 2),
+                            "hands_per_sec": round(hands_per_sec, 1),
+                            "total_hands": n_per,
+                        }
+                    )
 
             finally:
                 if logger:
@@ -905,7 +1028,7 @@ def main():
     total_duration = time.time() - start_time
     total_hands = plan_count * len(scenarios) * n_per
     overall_throughput = total_hands / total_duration if total_duration > 0 else 0
-    
+
     # Write metadata (experiment config + results summary)
     meta = {
         "schema_version": META_JSON_SCHEMA_VERSION,
@@ -917,7 +1040,8 @@ def main():
         "experiment_name": config.experiment_name,
         "timestamp": timestamp,  # legacy/human-readable; keep for compatibility
         "seed": seed,
-        "is_deterministic": seed is not None,  # True if seed provided (backward compatible field)
+        "is_deterministic": seed
+        is not None,  # True if seed provided (backward compatible field)
         "n_per": n_per,
         "log_level": log_level_str,
         "mode": mode,
@@ -941,7 +1065,7 @@ def main():
 
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
-    
+
     # Write performance metrics to separate file
     perf = {
         "run_id": run_id,
@@ -951,10 +1075,10 @@ def main():
         "total_hands": total_hands,
         "by_scenario": scenario_metrics,
     }
-    
+
     with open(os.path.join(run_dir, "perf.json"), "w") as f:
         json.dump(perf, f, indent=2)
-    
+
     if bidding_writer:
         dataset_path = bidding_writer.finalize()
         print(f"\n📊 Emitted bidding dataset: {dataset_path}")
@@ -963,7 +1087,11 @@ def main():
         dataset_path = bidless_writer.finalize()
         print(f"\n📊 Emitted bidless dataset: {dataset_path}")
 
-    if args.emit_bidless_outcomes_dataset and outcomes_collector is not None and outcomes_collector.rows:
+    if (
+        args.emit_bidless_outcomes_dataset
+        and outcomes_collector is not None
+        and outcomes_collector.rows
+    ):
         outcomes_path = emit_bidless_outcomes_dataset(
             outcomes_collector, run_dir, format=args.bidless_outcomes_dataset_format
         )
@@ -977,23 +1105,24 @@ def main():
     print(f"⏱️  Duration: {format_duration(total_duration)}")
     print(f"🚀 Throughput: {overall_throughput:.0f} hands/sec")
     print(f"📊 Generated {plan_count * len(scenarios)} result files")
-    
+
     print("\n🎯 Next steps:")
     print("   # Generate reports:")
     print("   PYTHONPATH=src python scripts/generate_report.py \\")
     print(f"       --run-dir {run_dir}")
     print()
-    
+
     # Auto-generate reports if logs were created
     if log_level_str != "none":
         print("📊 Auto-generating reports...")
         try:
             import subprocess
+
             result = subprocess.run(
                 ["python", "scripts/generate_report.py", "--run-dir", run_dir],
                 env={**os.environ, "PYTHONPATH": "src"},
                 capture_output=True,
-                text=True
+                text=True,
             )
             if result.returncode == 0:
                 print("✅ Reports generated automatically!")
@@ -1001,7 +1130,9 @@ def main():
                 print("⚠️  Report generation encountered issues (run manually)")
         except Exception as e:
             print(f"⚠️  Could not auto-generate reports: {e}")
-            print(f"   Run manually: PYTHONPATH=src python scripts/generate_report.py --run-dir {run_dir}")
+            print(
+                f"   Run manually: PYTHONPATH=src python scripts/generate_report.py --run-dir {run_dir}"
+            )
         print()
 
 
@@ -1011,4 +1142,3 @@ if __name__ == "__main__":
     except (ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(2)
-

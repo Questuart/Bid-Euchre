@@ -54,6 +54,30 @@ import numpy as np
 import pandas as pd
 
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
+from bid_euchre.diagnostics.charts import (
+    plot_ccdf,
+    plot_cdf,
+    plot_coefficient_heatmap,
+    plot_feature_distributions,
+    plot_feature_heatmap_by_suit,
+    plot_feature_outcome_correlation,
+    plot_hand_value_by_contract,
+    plot_hand_value_by_seat,
+    plot_hand_value_by_trump_suit,
+    plot_outcome_by_trump_suit,
+    plot_outcome_distributions,
+    plot_rolling_mean,
+)
+
+# Diagnostics library imports
+from bid_euchre.diagnostics.health_checks import (
+    compute_health_scorecard,
+    display_scorecard,
+)
+from bid_euchre.diagnostics.stats import (
+    compare_first_last_batch,
+    compute_seat_balance,
+)
 from bid_euchre.reporting.evaluator import load_eval_metrics
 
 matplotlib.use("Agg")
@@ -117,6 +141,11 @@ if df.empty:
 
 print(f"MODE={MODE}, data_source={_data_source}")
 
+# --- Health scorecard ---
+if not df.empty:
+    scorecard = compute_health_scorecard(df)
+    print(display_scorecard(scorecard))
+
 # --- Load artifact bundle if available ---
 _rung_bundle = None
 _arm_metrics = {}
@@ -172,36 +201,28 @@ METRIC_ALIASES = {
 
 # %%
 if not df.empty and "seat" in df.columns:
-    # Seat balance boxplot (hand_value, faceted by contract_type)
-    balance_col = "feat_hand_value" if "feat_hand_value" in df.columns else "tricks_won"
-    if "contract_type" in df.columns:
-        ctypes = sorted(df["contract_type"].unique())
-        fig, axes = plt.subplots(
-            1, len(ctypes), figsize=(5 * len(ctypes), 4), sharey=True
-        )
-        if not hasattr(axes, "__len__"):
-            axes = [axes]
-        for ax, ctype in zip(axes, ctypes):
-            grp = df[df["contract_type"] == ctype]
-            seat_data = [
-                grp.loc[grp["seat"] == s, balance_col].dropna() for s in range(4)
-            ]
-            ax.boxplot(seat_data, labels=[0, 1, 2, 3])
-            ax.set_title(f"Seat balance: {ctype}")
-            ax.set_xlabel("Seat")
-            ax.set_ylabel(balance_col.replace("feat_", ""))
-        plt.tight_layout()
-        if CHART_OUTPUT_DIR:
-            out = Path(CHART_OUTPUT_DIR)
-            out.mkdir(parents=True, exist_ok=True)
-            fig.savefig(out / "seat_balance_boxplot.png", dpi=150)
-        plt.show()
-    else:
-        print("No contract_type column — skipping seat balance boxplot.")
+    # Seat balance boxplot using diagnostics library
+    fig_seat = plot_hand_value_by_seat(df)
+    if CHART_OUTPUT_DIR:
+        out = Path(CHART_OUTPUT_DIR)
+        out.mkdir(parents=True, exist_ok=True)
+        fig_seat.savefig(out / "seat_balance_boxplot.png", dpi=150)
+    plt.show()
+
+    # Hand value by contract type
+    fig_contract = plot_hand_value_by_contract(df)
+    plt.show()
 
     # Feature distribution summary (top features by variance, per contract)
     feat_cols = [c for c in df.columns if c.startswith("feat_")]
     numeric_feats = [c for c in feat_cols if pd.api.types.is_numeric_dtype(df[c])]
+
+    # Top 5 features by variance for distribution plots
+    if numeric_feats:
+        top5_by_var = df[numeric_feats].var().nlargest(5).index.tolist()
+        fig_feat = plot_feature_distributions(df, features=top5_by_var)
+        plt.show()
+
     if numeric_feats and "contract_type" in df.columns:
         for ctype in sorted(df["contract_type"].unique()):
             grp = df[df["contract_type"] == ctype]
@@ -209,6 +230,14 @@ if not df.empty and "seat" in df.columns:
             top = desc.nlargest(10, "std")
             print(f"\n=== {ctype}: Top 10 features by variance (n={len(grp)}) ===")
             print(top[["mean", "std", "min", "max"]].to_string())
+
+    # Seat balance stats
+    if "feat_hand_value" in df.columns:
+        sb = compute_seat_balance(df)
+        print(
+            f"\nSeat balance: max_deviation={sb.max_deviation:.4f}, "
+            f"is_balanced={sb.is_balanced}"
+        )
 else:
     print("No data available for deal health analysis.")
 
@@ -232,6 +261,25 @@ if _data_source == "eval_logs" and not df.empty:
                 bid_dist = grp["winning_bid"].value_counts().sort_index()
                 print(f"\n{ctype} (n={len(grp)}):")
                 print(bid_dist.to_string())
+
+        # Inline bid distribution bar chart
+        fig_bid, axes_bid = plt.subplots(
+            1,
+            len(deal_df["contract_type"].unique()),
+            figsize=(5 * len(deal_df["contract_type"].unique()), 4),
+            sharey=True,
+        )
+        if not hasattr(axes_bid, "__len__"):
+            axes_bid = [axes_bid]
+        for ax, ctype in zip(axes_bid, sorted(deal_df["contract_type"].unique())):
+            grp = deal_df[deal_df["contract_type"] == ctype]
+            if "winning_bid" in grp.columns:
+                grp["winning_bid"].value_counts().sort_index().plot.bar(ax=ax)
+                ax.set_title(f"Bid Distribution: {ctype}")
+                ax.set_xlabel("Winning Bid")
+                ax.set_ylabel("Count")
+        plt.tight_layout()
+        plt.show()
 
     # Pass rate and auction length
     if "n_passes" in deal_df.columns and "auction_rounds" in deal_df.columns:
@@ -259,23 +307,17 @@ else:
 
 # %%
 if not df.empty and "tricks_won" in df.columns and "contract_type" in df.columns:
-    ctypes = sorted(df["contract_type"].unique())
-
-    # Tricks won distribution by contract type
-    fig, axes = plt.subplots(1, len(ctypes), figsize=(5 * len(ctypes), 4), sharey=True)
-    if not hasattr(axes, "__len__"):
-        axes = [axes]
-    for ax, ctype in zip(axes, ctypes):
-        grp = df[df["contract_type"] == ctype]
-        ax.hist(grp["tricks_won"], bins=11, range=(0, 10), edgecolor="black", alpha=0.7)
-        ax.set_title(f"Tricks Won: {ctype}")
-        ax.set_xlabel("Tricks Won")
-        ax.set_ylabel("Count")
-    plt.tight_layout()
+    # Outcome distribution using diagnostics library (faceted by contract_type)
+    fig_outcomes = plot_outcome_distributions(
+        df,
+        outcome="tricks_won",
+        group_by="contract_type",
+        title="Tricks Won by Contract Type",
+    )
     if CHART_OUTPUT_DIR:
         out = Path(CHART_OUTPUT_DIR)
         out.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out / "tricks_won_by_contract.png", dpi=150)
+        fig_outcomes.savefig(out / "tricks_won_by_contract.png", dpi=150)
     plt.show()
 
     # Team balance by contract type
@@ -342,6 +384,23 @@ if not df.empty and "is_declaring_team" in df.columns:
                 print(f"  Std: {grp['tricks_won'].std():.2f}")
                 print(f"  5th pctl: {grp['tricks_won'].quantile(0.05):.1f}")
                 print(f"  95th pctl: {grp['tricks_won'].quantile(0.95):.1f}")
+
+        # CDF and CCDF using diagnostics library
+        fig_cdf = plot_cdf(
+            df,
+            column="tricks_won",
+            group_by="contract_type",
+            title="CDF of Tricks Won",
+        )
+        plt.show()
+
+        fig_ccdf = plot_ccdf(
+            df,
+            column="tricks_won",
+            group_by="contract_type",
+            title="CCDF of Tricks Won",
+        )
+        plt.show()
     else:
         print("No declaring team rows — skipping gameplay outcomes.")
 else:
@@ -356,9 +415,9 @@ else:
 # %%
 if _model_artifacts:
     for arm_key, artifact in _model_artifacts.items():
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Model: {arm_key} (type={artifact.get('artifact_type', '?')})")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         payoff = artifact.get("payoff_model", {})
         for contract, model in sorted(payoff.items()):
@@ -375,7 +434,7 @@ if _model_artifacts:
                 for fname, w in pairs:
                     print(f"    {fname:40s} {w:+.6f}")
 
-    # Coefficient heatmap for the primary arm
+    # Coefficient heatmap using diagnostics library
     primary_arm = (
         "olsa_full"
         if "olsa_full" in _model_artifacts
@@ -384,35 +443,22 @@ if _model_artifacts:
     if primary_arm:
         artifact = _model_artifacts[primary_arm]
         payoff = artifact.get("payoff_model", {})
-        contracts = sorted(payoff.keys())
-        all_features = set()
-        for model in payoff.values():
-            all_features.update(model.get("feature_names", []))
-        all_features = sorted(all_features)
+        # Build coefs_by_contract dict for diagnostics function
+        coefs_by_contract = {}
+        for contract, model in payoff.items():
+            fnames = model.get("feature_names", [])
+            weights = model.get("weights", [])
+            if fnames and weights:
+                coefs_by_contract[contract] = dict(zip(fnames, weights))
 
-        if all_features and contracts:
-            coef_matrix = np.zeros((len(all_features), len(contracts)))
-            for j, contract in enumerate(contracts):
-                model = payoff[contract]
-                fnames = model.get("feature_names", [])
-                weights = model.get("weights", [])
-                for fname, w in zip(fnames, weights):
-                    if fname in all_features:
-                        coef_matrix[all_features.index(fname), j] = w
-
-            fig, ax = plt.subplots(figsize=(8, max(4, len(all_features) * 0.4)))
-            im = ax.imshow(coef_matrix, aspect="auto", cmap="RdBu_r")
-            ax.set_xticks(range(len(contracts)))
-            ax.set_xticklabels(contracts)
-            ax.set_yticks(range(len(all_features)))
-            ax.set_yticklabels(all_features, fontsize=8)
-            ax.set_title(f"Coefficient Heatmap: {primary_arm}")
-            plt.colorbar(im, ax=ax, label="Weight")
-            plt.tight_layout()
+        if coefs_by_contract:
+            fig_heatmap = plot_coefficient_heatmap(
+                coefs_by_contract, title=f"Coefficient Heatmap: {primary_arm}"
+            )
             if CHART_OUTPUT_DIR:
                 out = Path(CHART_OUTPUT_DIR)
                 out.mkdir(parents=True, exist_ok=True)
-                fig.savefig(out / "coefficient_heatmap.png", dpi=150)
+                fig_heatmap.savefig(out / "coefficient_heatmap.png", dpi=150)
             plt.show()
 else:
     print("No model artifacts loaded — skipping model specs.")
@@ -554,6 +600,116 @@ else:
             fig_resid.savefig(out / "residual_distribution.png", dpi=150)
         plt.show()
     print("No model artifacts or data — skipping model performance.")
+
+# %% [markdown]
+# # §7.5 Feature-Outcome Correlations
+#
+# Top features by absolute Pearson correlation with `tricks_won`,
+# per contract type.
+
+# %%
+feat_cols = [c for c in df.columns if c.startswith("feat_")]
+numeric_feats = [c for c in feat_cols if pd.api.types.is_numeric_dtype(df[c])]
+if not df.empty and "tricks_won" in df.columns and numeric_feats:
+    # Feature-outcome correlation chart using diagnostics library
+    fig_corr = plot_feature_outcome_correlation(
+        df,
+        outcome="tricks_won",
+        features=numeric_feats,
+        title="Feature-Outcome Correlations (tricks_won)",
+    )
+    plt.show()
+
+    # Per-contract correlation table
+    if "contract_type" in df.columns:
+        for ctype in sorted(df["contract_type"].unique()):
+            grp = df[df["contract_type"] == ctype]
+            if len(grp) < 10:
+                continue
+            corrs = {}
+            for fc in numeric_feats:
+                try:
+                    corrs[fc] = grp[fc].corr(grp["tricks_won"])
+                except Exception:
+                    pass
+            if corrs:
+                top10 = sorted(corrs.items(), key=lambda x: abs(x[1]), reverse=True)[
+                    :10
+                ]
+                print(f"\n=== {ctype}: Top 10 features by |r| with tricks_won ===")
+                for fname, r in top10:
+                    print(f"  {fname.replace('feat_', ''):30s} r={r:+.4f}")
+else:
+    print("Insufficient data for feature-outcome correlations.")
+
+# %% [markdown]
+# # §7.6 Trump Suit Invariance
+#
+# For suit contracts: hand_value and tricks_won by trump suit.
+# Feature heatmap for detecting suit-specific patterns.
+
+# %%
+if not df.empty and "trump" in df.columns and "contract_type" in df.columns:
+    suit_df = df[df["contract_type"] == "suit"].copy()
+    if not suit_df.empty and suit_df["trump"].notna().any():
+        # Hand value by trump suit
+        fig_trump_hv = plot_hand_value_by_trump_suit(
+            suit_df,
+            title="Hand Value by Trump Suit (suit contracts)",
+        )
+        plt.show()
+
+        # Outcome by trump suit
+        fig_trump_out = plot_outcome_by_trump_suit(
+            suit_df,
+            outcome="tricks_won",
+            title="Tricks Won by Trump Suit (suit contracts)",
+        )
+        plt.show()
+
+        # Feature heatmap by suit
+        feat_cols_suit = [c for c in suit_df.columns if c.startswith("feat_")]
+        if len(feat_cols_suit) > 2:
+            fig_heatmap_suit = plot_feature_heatmap_by_suit(
+                suit_df,
+                features=feat_cols_suit[:10],
+                title="Feature Means by Trump Suit",
+            )
+            plt.show()
+    else:
+        print("No suit contract data with trump info — skipping trump invariance.")
+else:
+    print("No trump suit data available — skipping trump invariance.")
+
+# %% [markdown]
+# # §7.7 Drift Detection
+#
+# Rolling mean of feat_hand_value by deal order. Mann-Whitney U test
+# comparing first 10% vs last 10% of deals to detect temporal drift.
+
+# %%
+if not df.empty and "feat_hand_value" in df.columns and len(df) >= 40:
+    # Rolling mean plot
+    fig_drift = plot_rolling_mean(
+        df,
+        column="feat_hand_value",
+        window=max(10, len(df) // 50),
+        title="Rolling Mean: feat_hand_value (drift check)",
+    )
+    plt.show()
+
+    # First vs last batch comparison
+    batch_result = compare_first_last_batch(df, column="feat_hand_value")
+    print(
+        f"Drift detection: statistic={batch_result.statistic:.4f}, "
+        f"p_value={batch_result.p_value:.4f}"
+    )
+    if batch_result.p_value < 0.05:
+        print("WARNING: Significant drift detected (p < 0.05).")
+    else:
+        print("No significant drift detected.")
+else:
+    print("Insufficient data for drift detection.")
 
 # %% [markdown]
 # # §8 Dual-Arm Comparison
@@ -763,3 +919,55 @@ elif not _eval_available:
     print("No eval metrics or promotion decision — skipping promotion summary.")
 else:
     print("PROMOTION_DECISION_PATH not set — skipping promotion gate detail.")
+
+# %% [markdown]
+# # §11 Comparator Battery
+#
+# Ranked net_eppd comparison across heuristic bidders.
+# Data source: comparator_battery key in rung bundle or
+# comparator_battery_r0.json alongside the bundle.
+
+# %%
+_comparator_data = None
+if _rung_bundle is not None:
+    _comparator_data = _rung_bundle.get("comparator_battery")
+
+# Also try loading standalone comparator battery JSON
+if _comparator_data is None and ARTIFACT_DIR:
+    cb_path = Path(ARTIFACT_DIR) / f"comparator_battery_{RUNG_ID}.json"
+    if cb_path.exists():
+        with open(cb_path) as f:
+            _comparator_data = json.load(f)
+
+if _comparator_data and isinstance(_comparator_data, dict):
+    # Build ranked table
+    ranked = []
+    for bidder_name, metrics in _comparator_data.items():
+        if isinstance(metrics, dict):
+            net_eppd = metrics.get("net_eppd")
+            if net_eppd is not None:
+                ranked.append({"bidder": bidder_name, "net_eppd": net_eppd})
+
+    if ranked:
+        df_comp = pd.DataFrame(ranked).sort_values("net_eppd", ascending=False)
+        print("=== Comparator Battery: Ranked by net_eppd ===")
+        print(df_comp.to_string(index=False))
+
+        # Horizontal bar chart
+        fig_comp, ax_comp = plt.subplots(figsize=(10, max(3, len(ranked) * 0.5)))
+        colors = [
+            "#2196F3"
+            if "hybrid" in r["bidder"].lower() or "olsa" in r["bidder"].lower()
+            else "#9E9E9E"
+            for r in df_comp.to_dict("records")
+        ]
+        ax_comp.barh(df_comp["bidder"], df_comp["net_eppd"], color=colors)
+        ax_comp.set_xlabel("net_eppd")
+        ax_comp.set_title("Comparator Battery: net_eppd Ranking")
+        ax_comp.invert_yaxis()
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("Comparator battery data found but no net_eppd values.")
+else:
+    print("No comparator battery data available — skipping.")

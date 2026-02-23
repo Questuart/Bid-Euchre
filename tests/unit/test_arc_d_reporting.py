@@ -739,3 +739,70 @@ def test_rung_report_with_chart_dir(tmp_path):
     assert "## Charts" in report
     assert "seat_balance_boxplot" in report
     assert "dual_arm_comparison" in report
+
+
+# ──────────────────────────────────────────────
+#  Feature correlations, comparator battery, and matchup tests
+# ──────────────────────────────────────────────
+
+
+def test_report_with_eval_df_has_feature_correlations(tmp_path):
+    """Report with eval_df includes Feature Correlations section."""
+    bundle_path = _make_bundle(tmp_path)
+    eval_df = _make_eval_df(n_deals=50)
+
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+
+    assert "## Feature Correlations" in report
+    assert "tricks_won" in report.lower() or "r |" in report
+
+
+def test_report_with_comparator_battery(tmp_path):
+    """Report includes Comparator Battery when bundle has that key."""
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+        "comparator_battery": {
+            "hybrid_olsa_r0": {"net_eppd": 1.6274},
+            "modeloespecifico": {"net_eppd": 0.8432},
+            "rankthetank": {"net_eppd": 0.5123},
+        },
+    }
+    path = tmp_path / "rung_bundle_r0.json"
+    path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(path)
+
+    assert "## Comparator Battery" in report
+    assert "1.6274" in report
+    assert "modeloespecifico" in report
+
+
+def test_report_with_matchup_run_dir(tmp_path):
+    """Report includes Head-to-Head Summary when matchup_run_dir provided."""
+    bundle_path = _make_bundle(tmp_path)
+
+    # Create a fake matchup run directory with JSONL logs
+    run_dir = tmp_path / "h2h_run"
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True)
+
+    # Write a minimal JSONL log that build_eval_dataset can parse
+    # We'll test that the section header appears even if parsing fails
+    # (graceful degradation)
+    (logs_dir / "run_matchup1.jsonl").write_text("")  # Empty log
+
+    report = generate_arc_d_rung_report(bundle_path, matchup_run_dir=str(run_dir))
+
+    assert "## Head-to-Head Summary" in report
