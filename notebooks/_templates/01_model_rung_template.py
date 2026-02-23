@@ -142,7 +142,7 @@ if ARTIFACT_DIR:
                     pass
 
             # Load model artifact for predictions
-            model_path = arm_block.get("model_artifact")
+            model_path = arm_block.get("artifact_path")
             if model_path and Path(model_path).exists():
                 with open(model_path) as f:
                     _model_artifacts[arm_key] = json.load(f)

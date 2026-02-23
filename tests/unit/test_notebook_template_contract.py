@@ -74,6 +74,33 @@ class TestNotebookTemplateContract:
             "build_eval_dataset" in source
         ), "Template must import build_eval_dataset from eval_dataset module"
 
+    def test_artifact_path_bundle_key(self):
+        """Template must use 'artifact_path' (not 'model_artifact') to load model."""
+        source = TEMPLATE_PATH.read_text()
+        # Must use the correct bundle key
+        assert (
+            'get("artifact_path")' in source
+        ), "Template must use arm_block.get('artifact_path') for model loading"
+        # Must NOT use the wrong key
+        assert (
+            'get("model_artifact")' not in source
+        ), "Template must not reference 'model_artifact' — bundles use 'artifact_path'"
+
+    def test_r0_baseline_has_analysis_sections(self):
+        """R0 baseline notebook must contain all analysis sections (not just params)."""
+        r0_path = (
+            Path(__file__).resolve().parents[2]
+            / "notebooks"
+            / "arc_d"
+            / "02_r0_baseline.py"
+        )
+        source = r0_path.read_text()
+        for section in REQUIRED_SECTIONS:
+            assert section in source, (
+                f"R0 baseline missing section: {section} — "
+                "notebook must be a complete standalone copy of the template"
+            )
+
     def test_removed_parameters_absent(self):
         """Old parameters that were removed should not appear in the template."""
         source = TEMPLATE_PATH.read_text()
