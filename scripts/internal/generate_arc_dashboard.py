@@ -152,8 +152,10 @@ def _resolve_eppd(
         olsa_arm = decision.get("olsa_arm", {})
         c_m = challenger.get("metrics_seed42", {})
         o_m = olsa_arm.get("metrics_seed42", {})
-        olsa_eppd = olsa_eppd or o_m.get("net_expected_points_per_deal")
-        full_eppd = full_eppd or c_m.get("net_expected_points_per_deal")
+        if olsa_eppd is None:
+            olsa_eppd = o_m.get("net_expected_points_per_deal")
+        if full_eppd is None:
+            full_eppd = c_m.get("net_expected_points_per_deal")
         if olsa_eppd is not None and full_eppd is not None:
             return olsa_eppd, full_eppd, decision
 

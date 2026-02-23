@@ -154,8 +154,10 @@ def generate_arc_d_rung_report(
 
     # Source 3: inline bundle fields (legacy/future)
     if attribution_gap is None:
-        olsa_eppd = olsa_eppd or olsa.get("net_eppd")
-        full_eppd = full_eppd or olsa_full.get("net_eppd")
+        if olsa_eppd is None:
+            olsa_eppd = olsa.get("net_eppd")
+        if full_eppd is None:
+            full_eppd = olsa_full.get("net_eppd")
         if olsa_eppd is not None and full_eppd is not None:
             attribution_gap = full_eppd - olsa_eppd
 
