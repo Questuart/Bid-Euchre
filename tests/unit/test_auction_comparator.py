@@ -156,7 +156,7 @@ class TestMissingEvaluationHardFail:
             result = subprocess.run(
                 [
                     sys.executable,
-                    "scripts/run_auction_comparator.py",
+                    "scripts/internal/run_auction_comparator.py",
                     "--config",
                     str(config_path),
                     "--seed",

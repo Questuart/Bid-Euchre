@@ -9,9 +9,15 @@ JSON files referenced in rung bundles. Covers:
 
 import importlib.util
 import json
+from pathlib import Path
 
 # Import the dashboard generator script via importlib.
-_DASHBOARD_SCRIPT = "scripts/internal/generate_arc_dashboard.py"
+_DASHBOARD_SCRIPT = (
+    Path(__file__).parent.parent.parent
+    / "scripts"
+    / "internal"
+    / "generate_arc_dashboard.py"
+)
 _spec = importlib.util.spec_from_file_location("gen_dashboard", _DASHBOARD_SCRIPT)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
