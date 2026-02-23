@@ -18,6 +18,33 @@ from ..scoring import compute_points
 from .paths import get_data_paths
 
 
+def load_eval_metrics(eval_path: str | Path) -> dict:
+    """Load eval metrics from an evaluator JSON output file.
+
+    Handles three formats:
+    1. Full evaluator output: {"strategies": [{...metrics...}]}
+    2. Nested: {"metrics": {...}}
+    3. Flat: top-level metrics dict
+
+    Args:
+        eval_path: Path to eval JSON file.
+
+    Returns:
+        Dict of metric name -> value.
+
+    Raises:
+        FileNotFoundError: If eval file doesn't exist.
+        json.JSONDecodeError: If file is invalid JSON.
+    """
+    with open(eval_path) as f:
+        data = json.load(f)
+    if "strategies" in data and isinstance(data["strategies"], list):
+        return data["strategies"][0] if data["strategies"] else {}
+    if "metrics" in data:
+        return data["metrics"]
+    return data
+
+
 def _iter_hand_end_records(log_path: Path) -> Iterable[Dict]:
     if not log_path.exists():
         return

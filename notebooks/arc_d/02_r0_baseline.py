@@ -18,29 +18,33 @@
 # ---
 
 # %% [markdown]
-# # Model Rung Evaluation Template
+# # R0 Baseline — Eval-Only Verification
 #
-# **Goal:** Structured model evaluation with semantic gate emission.
+# **Goal:** Retroactive eval-side HITL verification for R0 baseline lock.
+#
+# This notebook runs in **eval-only mode**: `RUN_DIR` is empty (§1–§7 skip
+# gracefully), and `ARTIFACT_DIR` points to the R0 artifacts (§8–§12 active).
+# If the artifacts are missing, §8 fails fast with `FileNotFoundError`.
 #
 # **Workflow rules**
 # - Edit this `.py` file (paired, reviewable).
 # - Run `make notebook-sync` before committing.
 # - Keep outputs cleared (`make notebook-check` verifies this).
-# - Parameterize via papermill — do not hardcode paths.
+# - Verify with: `make notebook-run-arc-d NOTEBOOK=notebooks/arc_d/02_r0_baseline.ipynb`
 
 # %% tags=["parameters"]
 MODE = "SMOKE"  # SMOKE | QUICK | FULL
 SEED = 42  # RNG seed
 SPLIT_TYPE = "three_way"  # split partition type
 ACTIVE_SPLIT = "val"  # val | test
-MODEL_ARTIFACT_PATH = ""  # path to trained model artifact
-SEMANTIC_GATE_OUTPUT_DIR = ""  # dir for semantic_gate_{split}.json
+MODEL_ARTIFACT_PATH = ""  # not used for eval-only
+SEMANTIC_GATE_OUTPUT_DIR = ""  # not used for eval-only
 CHART_OUTPUT_DIR = ""  # dir for chart PNGs (separate from gate JSON)
-RUN_DIR = ""  # data/runs/<run_id>
-SPLIT_MANIFEST_PATH = ""  # path to split_manifest.json
-ARTIFACT_DIR = ""  # data/artifacts/arc_d/r{N}/ for eval sections
-RUNG_ID = ""  # rung identifier, e.g. "r0"
-PROMOTION_DECISION_PATH = ""  # path to promotion_decision_r{N}.json (optional)
+RUN_DIR = ""  # empty: eval-only mode
+SPLIT_MANIFEST_PATH = ""  # not used for eval-only
+ARTIFACT_DIR = "data/artifacts/arc_d/r0"  # R0 artifact directory
+RUNG_ID = "r0"  # R0 baseline
+PROMOTION_DECISION_PATH = "data/artifacts/arc_d/r0/promotion_decision_r0.json"
 
 # %% [markdown]
 # # §0 Imports

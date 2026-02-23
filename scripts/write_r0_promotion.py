@@ -65,18 +65,12 @@ def _all_metrics_finite(metrics: dict) -> tuple[bool, list[str]]:
 def _load_eval_metrics(eval_path: str) -> dict:
     """Load eval metrics from an eval result file.
 
-    Handles three formats:
-    1. ``{"strategies": [{...metrics...}]}`` — full evaluator output
-    2. ``{"metrics": {...}}`` — nested metrics
-    3. Top-level metrics dict
+    Delegates to the shared ``load_eval_metrics`` in
+    ``bid_euchre.reporting.evaluator``.
     """
-    with open(eval_path) as f:
-        data = json.load(f)
-    if "strategies" in data and isinstance(data["strategies"], list):
-        return data["strategies"][0] if data["strategies"] else {}
-    if "metrics" in data:
-        return data["metrics"]
-    return data
+    from bid_euchre.reporting.evaluator import load_eval_metrics
+
+    return load_eval_metrics(eval_path)
 
 
 def write_r0_promotion(

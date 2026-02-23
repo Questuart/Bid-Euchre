@@ -77,10 +77,9 @@ def normalize_eval_metrics(raw: dict) -> dict:
 def _load_eval_metrics(eval_path: str, base_dir: str) -> dict:
     """Load eval JSON, normalize, and return the metrics dict.
 
-    If the JSON has a top-level 'strategies' list (full evaluator output),
-    returns the first strategy's metrics. If it has a 'metrics' key, returns
-    that. Otherwise returns the top-level dict. All results are normalized
-    via normalize_eval_metrics().
+    Delegates parsing to the shared ``load_eval_metrics`` in
+    ``bid_euchre.reporting.evaluator`` and then normalizes via
+    ``normalize_eval_metrics()``.
 
     Args:
         eval_path: Relative path to eval JSON file.
@@ -93,18 +92,10 @@ def _load_eval_metrics(eval_path: str, base_dir: str) -> dict:
         FileNotFoundError: If eval file doesn't exist.
         json.JSONDecodeError: If file is invalid JSON.
     """
+    from bid_euchre.reporting.evaluator import load_eval_metrics
+
     full_path = Path(base_dir) / eval_path
-    with open(full_path) as f:
-        data = json.load(f)
-
-    # Handle wrapped evaluator output formats
-    if "strategies" in data and isinstance(data["strategies"], list):
-        metrics = data["strategies"][0] if data["strategies"] else {}
-    elif "metrics" in data:
-        metrics = data["metrics"]
-    else:
-        metrics = data
-
+    metrics = load_eval_metrics(full_path)
     return normalize_eval_metrics(metrics)
 
 

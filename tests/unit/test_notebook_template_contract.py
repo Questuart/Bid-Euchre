@@ -23,6 +23,9 @@ REQUIRED_PARAMETERS = [
     "CHART_OUTPUT_DIR",
     "RUN_DIR",
     "SPLIT_MANIFEST_PATH",
+    "ARTIFACT_DIR",
+    "RUNG_ID",
+    "PROMOTION_DECISION_PATH",
 ]
 
 REQUIRED_SECTIONS = [
@@ -34,12 +37,18 @@ REQUIRED_SECTIONS = [
     "§5 Feature",
     "§6 Semantic Gate",
     "§7 Summary",
+    "§8 Eval Metrics",
+    "§9 Dual-Arm",
+    "§10 Seed Sensitivity",
+    "§11 Attribution Gap",
+    "§12 Promotion Gate",
 ]
 
 REQUIRED_CHART_FILENAMES = [
     "seat_balance_boxplot.png",
     "pred_vs_actual_scatter.png",
     "residual_distribution.png",
+    "dual_arm_comparison.png",
 ]
 
 
