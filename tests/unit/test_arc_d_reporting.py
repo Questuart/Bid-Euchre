@@ -5,7 +5,7 @@ Covers:
 - check_bid_distribution_sanity (3 tests)
 - check_dual_arm_coherence (2 tests)
 - generate_arc_d_rung_report (2 tests)
-- generate_dashboard (2 tests)
+- generate_dashboard (4 tests)
 """
 
 import importlib.util
@@ -382,3 +382,58 @@ def test_dashboard_empty_artifacts(tmp_path):
     output = tmp_path / "dashboard.md"
     result = mod.generate_dashboard(str(tmp_path / "nonexistent"), str(output))
     assert "No completed rung bundles found" in result
+
+
+def test_dashboard_gate_status_from_decision(tmp_path):
+    """Dashboard emits gate_status line from promotion decision file."""
+    rung_dir = tmp_path / "r0"
+    rung_dir.mkdir()
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "olsa": {"selected_features": {"suit": ["a"]}},
+        "olsa_full": {"selected_features": {"suit": ["a", "b"]}},
+    }
+    (rung_dir / "rung_bundle_r0.json").write_text(json.dumps(bundle))
+    decision = {"decision": "PROMOTED", "attribution_gap": -0.14}
+    (rung_dir / "promotion_decision_r0.json").write_text(json.dumps(decision))
+
+    output = tmp_path / "dashboard.md"
+    mod = _load_dashboard_module()
+    result = mod.generate_dashboard(str(tmp_path), str(output))
+    assert "gate_status: r0=PROMOTED" in result
+
+
+def test_dashboard_metrics_fallback_decision(tmp_path):
+    """Dashboard populates net_eppd from decision JSON when bundle lacks inline values."""
+    rung_dir = tmp_path / "r0"
+    rung_dir.mkdir()
+    # Bundle WITHOUT inline net_eppd (matches real bundle schema)
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "olsa": {"selected_features": {"suit": ["a"]}},
+        "olsa_full": {"selected_features": {"suit": ["a", "b"]}},
+    }
+    (rung_dir / "rung_bundle_r0.json").write_text(json.dumps(bundle))
+    # Decision WITH per-arm metrics
+    decision = {
+        "decision": "PROMOTED",
+        "attribution_gap": -0.1437,
+        "challenger": {
+            "arm": "OLSa_Full",
+            "metrics_seed42": {"net_expected_points_per_deal": 1.4837},
+        },
+        "olsa_arm": {
+            "arm": "OLSa",
+            "metrics_seed42": {"net_expected_points_per_deal": 1.6274},
+        },
+    }
+    (rung_dir / "promotion_decision_r0.json").write_text(json.dumps(decision))
+
+    output = tmp_path / "dashboard.md"
+    mod = _load_dashboard_module()
+    result = mod.generate_dashboard(str(tmp_path), str(output))
+    assert "1.6274" in result  # OLSa net_eppd from decision
+    assert "1.4837" in result  # Full net_eppd from decision
+    assert "-0.1437" in result  # Gap computed from decision metrics

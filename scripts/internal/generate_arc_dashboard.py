@@ -67,6 +67,8 @@ def generate_dashboard(
             "|--------------|--------------|-------------|"
         )
 
+        gate_decisions = []
+
         for b in bundles:
             rung = b.get("rung_id", "?")
             olsa = b.get("olsa", {})
@@ -75,36 +77,24 @@ def generate_dashboard(
             olsa_feats = _feature_summary(olsa)
             full_feats = _feature_summary(olsa_full)
 
-            olsa_eppd = olsa.get("net_eppd")
-            full_eppd = olsa_full.get("net_eppd")
+            src = Path(b.get("_source_path", ""))
+            olsa_eppd, full_eppd, decision = _resolve_eppd(b, src)
             gap_str = "\u2014"
             olsa_eppd_str = f"{olsa_eppd:.4f}" if olsa_eppd is not None else "\u2014"
             full_eppd_str = f"{full_eppd:.4f}" if full_eppd is not None else "\u2014"
             if olsa_eppd is not None and full_eppd is not None:
                 gap_str = f"{full_eppd - olsa_eppd:+.4f}"
-            src = b.get("_source_path", "\u2014")
 
             sections.append(
                 f"| {rung} | {olsa_eppd_str} | {full_eppd_str} | {gap_str}"
                 f" | {olsa_feats} | {full_feats} | {src} |"
             )
 
+            if decision is not None:
+                gate_decisions.append((rung, decision.get("decision", "UNKNOWN")))
+
         sections.append("")
         sections.append(f"*{len(bundles)} rung(s) found.*")
-
-        # Emit gate_status by checking promotion decision files
-        gate_decisions = []
-        for b in bundles:
-            rung = b.get("rung_id", "?")
-            src = Path(b.get("_source_path", ""))
-            decision_file = src.parent / f"promotion_decision_{rung}.json"
-            if decision_file.exists():
-                try:
-                    with open(decision_file) as f:
-                        dec = json.load(f)
-                    gate_decisions.append((rung, dec.get("decision", "UNKNOWN")))
-                except (json.JSONDecodeError, OSError):
-                    gate_decisions.append((rung, "ERROR"))
 
         if gate_decisions:
             sections.append("")
@@ -120,6 +110,77 @@ def generate_dashboard(
     logger.info("Dashboard written to %s", output)
 
     return dashboard
+
+
+def _resolve_eppd(
+    bundle: dict, bundle_source: Path
+) -> tuple[float | None, float | None, dict | None]:
+    """Resolve net_eppd for both arms with cascading fallback.
+
+    Priority:
+    1. Inline bundle fields (olsa.net_eppd, olsa_full.net_eppd)
+    2. Promotion decision JSON (metrics_seed42.net_expected_points_per_deal)
+    3. Eval files referenced in bundle (via load_eval_metrics)
+
+    Returns:
+        (olsa_eppd, full_eppd, decision_dict_or_None)
+    """
+    olsa = bundle.get("olsa", {})
+    olsa_full = bundle.get("olsa_full", {})
+
+    olsa_eppd = olsa.get("net_eppd")
+    full_eppd = olsa_full.get("net_eppd")
+
+    # Load promotion decision once (used for metrics + gate_status)
+    decision = None
+    rung = bundle.get("rung_id", "?")
+    decision_file = bundle_source.parent / f"promotion_decision_{rung}.json"
+    if decision_file.exists():
+        try:
+            with open(decision_file) as f:
+                decision = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Source 1: inline bundle fields (already read above)
+    if olsa_eppd is not None and full_eppd is not None:
+        return olsa_eppd, full_eppd, decision
+
+    # Source 2: promotion decision JSON
+    if decision is not None:
+        challenger = decision.get("challenger", {})
+        olsa_arm = decision.get("olsa_arm", {})
+        c_m = challenger.get("metrics_seed42", {})
+        o_m = olsa_arm.get("metrics_seed42", {})
+        olsa_eppd = olsa_eppd or o_m.get("net_expected_points_per_deal")
+        full_eppd = full_eppd or c_m.get("net_expected_points_per_deal")
+        if olsa_eppd is not None and full_eppd is not None:
+            return olsa_eppd, full_eppd, decision
+
+    # Source 3: eval files from bundle
+    try:
+        from bid_euchre.reporting.evaluator import load_eval_metrics
+    except ImportError:
+        return olsa_eppd, full_eppd, decision
+
+    if olsa_eppd is None:
+        eval_path = olsa.get("eval_seed42")
+        if eval_path:
+            try:
+                metrics = load_eval_metrics(eval_path)
+                olsa_eppd = metrics.get("net_expected_points_per_deal")
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+    if full_eppd is None:
+        eval_path = olsa_full.get("eval_seed42")
+        if eval_path:
+            try:
+                metrics = load_eval_metrics(eval_path)
+                full_eppd = metrics.get("net_expected_points_per_deal")
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+
+    return olsa_eppd, full_eppd, decision
 
 
 def _feature_summary(arm_data: dict) -> str:
