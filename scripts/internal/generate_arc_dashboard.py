@@ -216,6 +216,9 @@ def _resolve_me_delta(bundle: dict, bundle_source: Path) -> str:
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return "\u2014"
 
+    # Keys must match names produced by _CLASS_TO_NAME in run_auction_comparator.py
+    # and the "modeloespecifico" entry in auction_comparator.yaml.
+    # Custom --bidder-name overrides will cause a graceful em-dash fallback.
     bidders = comp_data.get("bidders", {})
     hybrid_net = bidders.get("hybrid_olsa", {}).get("net_eppd")
     me_net = bidders.get("modeloespecifico", {}).get("net_eppd")

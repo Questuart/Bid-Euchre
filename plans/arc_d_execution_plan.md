@@ -405,7 +405,7 @@ HybridOLSaBidder R0 through run_auction_comparator.py (seed=42, n_per=10,000).
      --seed 42 \
      --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
      --bidder-class HybridOLSaBidder \
-     --format json \
+     --output-format json \
      --output data/artifacts/arc_d/r0/comparator_battery_r0.json \
      || true
 
@@ -415,7 +415,7 @@ If the script fails, record `comparator_battery: null` in the bundle.
 
 PREREQUISITE: run_auction_comparator.py must be updated (PR-R0b scope):
   - Accept --bidder-class flag (default: OLSaBidder, also accept HybridOLSaBidder)
-  - Accept --format json flag (emit machine-readable JSON, not Markdown)
+  - Accept --output-format json flag (emit machine-readable JSON, not Markdown)
   - Capture net_expected_points_per_deal in metrics dict
 
 **Promotion:** Auto-promote. All 7 metrics finite and recorded for both arms.
@@ -675,7 +675,7 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 | PR-I3 | Infra | Doc sync: update PROMOTION_WORKFLOW.md + DATA_CONTRACT.md with hybrid schema | Modified: 2 doc files. Verify: `make repo-lint` |
 | PR-I4 | Infra | Reporting extensions: rung report generator + 3 semantic gate additions (team_balance faceting, bid_distribution_sanity, both-arm gating) | New: report extensions + gate additions + tests |
 | PR-R0a | R0 | Hybrid training pipeline + feature selection utility + `--arm-mode` CLI flag + bundle writing | New: training script, feature selection module + tests |
-| PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle + R0 comparator battery + comparator script updates | New: eval configs, registry doc. Modified: run_auction_comparator.py (--bidder-class, --format json, net_eppd). Artifacts: frozen models + evals + comparator_battery_r0.json |
+| PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle + R0 comparator battery + comparator script updates | New: eval configs, registry doc. Modified: run_auction_comparator.py (--bidder-class, --output-format json, net_eppd). Artifacts: frozen models + evals + comparator_battery_r0.json |
 | PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset (generated with HybridOLSaBidder R0) | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
 | PR-R1b | R1 | R1 dual-arm training + eval + promotion | Feature selection + train + eval + gate for both arms. Depends on PR-I2 + PR-R0b + PR-R1a |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
@@ -1564,8 +1564,8 @@ CONTRACT_FEATURES (must match current defaults):
 - [ ] `MODEL_ARC_RUNS.md` exists with R0 rows (both arms)
 - [ ] `rung_bundle_r0.json` packages both arms
 - [ ] `promotion_decision_r0.json` records auto-promote with attribution_gap
-- [ ] `run_auction_comparator.py` updated: --bidder-class, --format json, net_eppd capture
-- [ ] `rung_bundle_r0.json` includes `comparator_battery` key: path to `comparator_battery_r0.json` (5 bidder entries, each with `net_eppd` finite) on success, or `null` if battery script failed
+- [x] `run_auction_comparator.py` updated: --bidder-class, --output-format json, net_eppd capture (PR #408)
+- [x] `rung_bundle_r0.json` includes `comparator_battery` key: path to `comparator_battery_r0.json` (5 bidder entries, each with `net_eppd` finite) on success, or `null` if battery script failed (PR #408)
 - [ ] `make check` passes
 
 **Reporting requirement:** R0 reporting (notebook + rung report + dashboard)
@@ -1713,7 +1713,7 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
       --seed 42 \
       --olsa-artifact data/artifacts/arc_d/r{N}/hybrid_r{N}_full.json \
       --bidder-class HybridOLSaBidder \
-      --format json \
+      --output-format json \
       --output data/artifacts/arc_d/r{N}/comparator_r{N}.json \
       || true
     Runs the full heuristic battery (same auction_comparator.yaml as R0).
@@ -1788,14 +1788,14 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
   (full battery runs via same config; `me_delta` = Full.net_eppd − ME.net_eppd
   is the only metric surfaced in the dashboard)
 - Dashboard shows `ME delta` column for R1–R5 (R0 shows `—`)
-- All comparator runs: seed=42, n_per=10,000, --format json
+- All comparator runs: seed=42, n_per=10,000, --output-format json
 - All command snippets include `|| true` (non-fatal on gate fail / errors)
 - Never gating — cannot block or influence promotion decisions
 - If comparator step fails: log error, record null in bundle, proceed
 
 **Comparator script prerequisites (PR-R0b scope):**
   - `--bidder-class` flag: accept HybridOLSaBidder (not just OLSaBidder)
-  - `--format json` flag: emit machine-readable JSON with per-bidder metrics
+  - `--output-format json` flag: emit machine-readable JSON with per-bidder metrics
   - Metrics dict must include: net_expected_points_per_deal, net_cvar_5
   - JSON output schema:
     {"schema": "arc_d_comparator_v1", "seed": 42, "n_per": 10000,
