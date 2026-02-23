@@ -252,8 +252,7 @@ def generate_arc_d_rung_report(
         model_data = None
         model_path_key = olsa_full.get("artifact_path")
         if model_path_key:
-            # artifact_path is repo-root-relative (e.g. data/artifacts/arc_d/r0/...)
-            model_file = Path(model_path_key)
+            model_file = _resolve_bundle_ref(bundle_path, model_path_key)
             if model_file.exists():
                 try:
                     with open(model_file) as f:
@@ -353,13 +352,15 @@ def generate_arc_d_rung_report(
         full_eval_path = olsa_full.get("eval_seed42")
         if olsa_eval_path:
             try:
-                olsa_metrics = load_eval_metrics(olsa_eval_path)
+                resolved = _resolve_bundle_ref(bundle_path, olsa_eval_path)
+                olsa_metrics = load_eval_metrics(str(resolved))
                 olsa_eppd = olsa_metrics.get("net_expected_points_per_deal")
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
         if full_eval_path:
             try:
-                full_metrics = load_eval_metrics(full_eval_path)
+                resolved = _resolve_bundle_ref(bundle_path, full_eval_path)
+                full_metrics = load_eval_metrics(str(resolved))
                 full_eppd = full_metrics.get("net_expected_points_per_deal")
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
@@ -425,6 +426,30 @@ def generate_arc_d_rung_report(
         logger.info("Wrote rung report: %s", output_path)
 
     return report
+
+
+def _resolve_bundle_ref(bundle_path: Path, ref_path: str) -> Path:
+    """Resolve a repo-root-relative path referenced in a rung bundle.
+
+    Bundle fields like ``artifact_path`` and ``eval_seed42`` store paths
+    relative to the repo root (e.g. ``data/artifacts/arc_d/r0/foo.json``).
+    When CWD **is** the repo root, ``Path(ref_path)`` works directly.
+    When CWD is elsewhere but ``bundle_path`` is absolute, we walk up
+    the bundle's ancestors to find the repo root that makes the ref
+    resolvable.
+
+    Falls back to ``Path(ref_path)`` if no ancestor works (callers
+    handle the non-existent path gracefully).
+    """
+    direct = Path(ref_path)
+    if direct.exists():
+        return direct
+    # Walk up from the bundle's resolved directory to find repo root
+    for ancestor in bundle_path.resolve().parents:
+        candidate = ancestor / ref_path
+        if candidate.exists():
+            return candidate
+    return direct
 
 
 def _count_features(arm_data: dict) -> str:
