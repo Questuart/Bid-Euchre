@@ -249,13 +249,11 @@ def generate_arc_d_rung_report(
     # --- Model Performance (when eval_df + artifacts available) ---
     if eval_df is not None and not eval_df.empty:
         # Try to load model artifacts for predictions
-        artifact_dir = bundle_path.parent
         model_data = None
-        model_path_key = olsa_full.get("model_artifact") or olsa_full.get(
-            "artifact_path"
-        )
+        model_path_key = olsa_full.get("artifact_path")
         if model_path_key:
-            model_file = artifact_dir / model_path_key
+            # artifact_path is repo-root-relative (e.g. data/artifacts/arc_d/r0/...)
+            model_file = Path(model_path_key)
             if model_file.exists():
                 try:
                     with open(model_file) as f:
@@ -409,7 +407,7 @@ def generate_arc_d_rung_report(
         sections.append(
             "from bid_euchre.reporting.arc_d_report import generate_arc_d_rung_report"
         )
-        sections.append("df = build_eval_dataset('<EVAL_RUN_DIR>/logs/*.jsonl')")
+        sections.append("df = build_eval_dataset('<EVAL_RUN_DIR>/logs/<LOG>.jsonl')")
         sections.append(
             f"report = generate_arc_d_rung_report('{bundle_path}',"
             f" eval_df=df, output_path='report.md')"

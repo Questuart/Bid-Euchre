@@ -566,6 +566,64 @@ def test_rung_report_without_eval_df_backward_compatible(tmp_path):
     assert "## Auction Analysis" not in report
 
 
+def test_rung_report_model_performance_with_artifact(tmp_path):
+    """Report loads model via artifact_path (repo-root-relative) and emits Model Performance."""
+    # Create a model artifact JSON at a repo-root-relative path inside tmp_path
+    artifact_rel = str(tmp_path / "hybrid_r0_full.json")
+    model = {
+        "artifact_type": "hybrid_olsa",
+        "payoff_model": {
+            "suit": {
+                "feature_names": ["hand_value", "trump_count"],
+                "weights": [0.5, 1.2],
+                "bias": 3.0,
+            }
+        },
+    }
+    (tmp_path / "hybrid_r0_full.json").write_text(json.dumps(model))
+
+    # Bundle with artifact_path pointing to the absolute tmp path
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "nonexistent.json",
+            "net_eppd": 0.15,
+            "selected_features": {"suit": ["hand_value"]},
+        },
+        "olsa_full": {
+            "artifact_path": artifact_rel,
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["hand_value", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle))
+
+    eval_df = _make_eval_df()
+    # Ensure the eval_df has the feature columns the model expects
+    eval_df["feat_hand_value"] = eval_df["feat_hand_value"]
+    eval_df["feat_trump_count"] = eval_df["feat_trump_count"]
+
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+    assert (
+        "## Model Performance" in report
+    ), "Model Performance section missing — artifact_path resolution may be broken"
+    assert "R²" in report or "MAE" in report
+
+
+def test_rung_report_no_model_artifact_key(tmp_path):
+    """Report must NOT use 'model_artifact' key (old schema)."""
+    # Read the source and verify it doesn't use the wrong key
+    import inspect
+
+    source = inspect.getsource(generate_arc_d_rung_report)
+    assert (
+        'get("model_artifact")' not in source
+    ), "Report must use 'artifact_path' not 'model_artifact'"
+
+
 def test_rung_report_with_chart_dir(tmp_path):
     """Report with chart_dir embeds chart references."""
     bundle_path = _make_bundle(tmp_path)
