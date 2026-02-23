@@ -1043,8 +1043,24 @@ promotion gate:
   "training_report": "data/artifacts/arc_d/r1/training_report_r1.json",
   "control": {
     "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_control.json"
-  }
+  },
+  "comparator_battery": null,
+  "comparator_eval": "data/artifacts/arc_d/r1/comparator_r1.json"
 }
+```
+
+**Optional comparator keys (v3.1):**
+- `comparator_battery` (string | null): R0 only — path to heuristic battery JSON.
+  Null at R1–R5 (R0-only artifact) or if battery script failed at R0.
+- `comparator_eval` (string | null): R1–R5 — path to comparator JSON (full battery,
+  ME delta extracted by dashboard). Null at R0 or if comparator script failed.
+- Both keys are optional for backward compatibility. The bundle validator
+  accepts bundles with or without these keys.
+
+```text
+Example key values by rung:
+  R0: comparator_battery = "data/.../comparator_battery_r0.json", comparator_eval = null
+  R1: comparator_battery = null, comparator_eval = "data/.../comparator_r1.json"
 ```
 
 The bundle validator (`validate_arc_d_rung_contract`) checks: both arms present,
@@ -1549,8 +1565,7 @@ CONTRACT_FEATURES (must match current defaults):
 - [ ] `rung_bundle_r0.json` packages both arms
 - [ ] `promotion_decision_r0.json` records auto-promote with attribution_gap
 - [ ] `run_auction_comparator.py` updated: --bidder-class, --format json, net_eppd capture
-- [ ] `comparator_battery_r0.json` exists with 5 bidder entries, each with `net_eppd` finite
-- [ ] `rung_bundle_r0.json` includes `comparator_battery` key (null if battery failed)
+- [ ] `rung_bundle_r0.json` includes `comparator_battery` key: path to `comparator_battery_r0.json` (5 bidder entries, each with `net_eppd` finite) on success, or `null` if battery script failed
 - [ ] `make check` passes
 
 **Reporting requirement:** R0 reporting (notebook + rung report + dashboard)
@@ -1701,8 +1716,10 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
       --format json \
       --output data/artifacts/arc_d/r{N}/comparator_r{N}.json \
       || true
-    Logs all 4 heuristic bidders but only ModeloEspecifico delta (me_delta)
-    is surfaced in the dashboard. Non-gating — cannot affect promotion.
+    Runs the full heuristic battery (same auction_comparator.yaml as R0).
+    All 4 heuristic bidder results are recorded in comparator_r{N}.json,
+    but only the ModeloEspecifico delta (me_delta) is surfaced in the
+    dashboard. Non-gating — cannot affect promotion.
     The || true prevents a non-zero exit from aborting the PR workflow.
     If comparator fails, record comparator_eval: null in the bundle.
 
@@ -1768,7 +1785,8 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
   (5 bidders: FiveHeadFred, StrictHellRaiser, RanktheTank, ModeloEspecifico,
   HybridOLSaBidder R0)
 - R1–R5: `comparator_eval` key in bundle → `comparator_r{N}.json`
-  (ModeloEspecifico vs OLSa_Full, `me_delta` = Full.net_eppd − ME.net_eppd)
+  (full battery runs via same config; `me_delta` = Full.net_eppd − ME.net_eppd
+  is the only metric surfaced in the dashboard)
 - Dashboard shows `ME delta` column for R1–R5 (R0 shows `—`)
 - All comparator runs: seed=42, n_per=10,000, --format json
 - All command snippets include `|| true` (non-fatal on gate fail / errors)
@@ -1958,7 +1976,7 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
 - [ ] R5 sigma: residual_variance splits into offensive/defensive
 - [ ] Dataset: R1+ uses auction dataset generated AFTER R0b (E2)
 - [ ] Artifacts: _full suffix for OLSa_Full (hybrid_r{N}_full.json)
-- [ ] Comparator: R0 battery (4 heuristics); R1–R5 ME only (step 6b). Never gates.
+- [ ] Comparator: R0 battery (4 heuristics); R1–R5 full battery runs, ME delta only surfaced (step 6b). Never gates.
 - [ ] Comparator commands include || true (non-fatal exit handling)
 - [ ] Net-differential EV: make = 2*tricks - 10, set = tricks - bid_n - 10
 ```
