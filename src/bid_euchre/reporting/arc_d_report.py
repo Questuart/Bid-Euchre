@@ -350,6 +350,23 @@ def generate_arc_d_rung_report(
 
     # --- Comparator Battery (when bundle has comparator_battery key) ---
     comparator_battery = bundle.get("comparator_battery")
+
+    # Resolve path string → loaded dict
+    if isinstance(comparator_battery, str):
+        cb_file = _resolve_bundle_ref(bundle_path, comparator_battery)
+        if cb_file.exists():
+            try:
+                with open(cb_file) as f:
+                    comparator_battery = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                comparator_battery = None
+        else:
+            comparator_battery = None
+
+    # Drill into "bidders" key if present (comparator battery JSON schema)
+    if isinstance(comparator_battery, dict) and "bidders" in comparator_battery:
+        comparator_battery = comparator_battery["bidders"]
+
     if comparator_battery and isinstance(comparator_battery, dict):
         sections.append("## Comparator Battery")
         sections.append("")
@@ -381,14 +398,16 @@ def generate_arc_d_rung_report(
                 try:
                     from bid_euchre.datasets.eval_dataset import build_eval_dataset
 
+                    run_dir_name = matchup_run_dir.name
                     matchup_rows = []
                     for lf in log_files:
                         lf_path = Path(lf)
-                        # Extract matchup_id from filename: <run_id>_<matchup_id>.jsonl
+                        # Extract matchup_id by stripping the run directory name prefix
                         stem = lf_path.stem
-                        # matchup_id is everything after the run_id prefix
-                        parts = stem.split("_", 1)
-                        mid = parts[1] if len(parts) > 1 else stem
+                        if stem.startswith(run_dir_name + "_"):
+                            mid = stem[len(run_dir_name) + 1 :]
+                        else:
+                            mid = stem
                         try:
                             mdf = build_eval_dataset(lf, max_deals=5000)
                             if not mdf.empty:

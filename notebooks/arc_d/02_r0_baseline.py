@@ -700,14 +700,17 @@ if not df.empty and "feat_hand_value" in df.columns and len(df) >= 40:
 
     # First vs last batch comparison
     batch_result = compare_first_last_batch(df, column="feat_hand_value")
-    print(
-        f"Drift detection: statistic={batch_result.statistic:.4f}, "
-        f"p_value={batch_result.p_value:.4f}"
-    )
-    if batch_result.p_value < 0.05:
-        print("WARNING: Significant drift detected (p < 0.05).")
+    if batch_result.mannwhitney_pvalue is not None:
+        print(
+            f"Drift detection: statistic={batch_result.mannwhitney_stat:.4f}, "
+            f"p_value={batch_result.mannwhitney_pvalue:.4f}"
+        )
+        if batch_result.mannwhitney_pvalue < 0.05:
+            print("WARNING: Significant drift detected (p < 0.05).")
+        else:
+            print("No significant drift detected.")
     else:
-        print("No significant drift detected.")
+        print("Drift detection: Mann-Whitney test not computed (insufficient data).")
 else:
     print("Insufficient data for drift detection.")
 
@@ -930,7 +933,19 @@ else:
 # %%
 _comparator_data = None
 if _rung_bundle is not None:
-    _comparator_data = _rung_bundle.get("comparator_battery")
+    _cb_raw = _rung_bundle.get("comparator_battery")
+    if isinstance(_cb_raw, str):
+        # Bundle stores a path string — resolve and load
+        _cb_file = (
+            Path(ARTIFACT_DIR) / Path(_cb_raw).name if ARTIFACT_DIR else Path(_cb_raw)
+        )
+        if not _cb_file.exists():
+            _cb_file = Path(_cb_raw)
+        if _cb_file.exists():
+            with open(_cb_file) as f:
+                _comparator_data = json.load(f)
+    elif isinstance(_cb_raw, dict):
+        _comparator_data = _cb_raw
 
 # Also try loading standalone comparator battery JSON
 if _comparator_data is None and ARTIFACT_DIR:
@@ -938,6 +953,10 @@ if _comparator_data is None and ARTIFACT_DIR:
     if cb_path.exists():
         with open(cb_path) as f:
             _comparator_data = json.load(f)
+
+# Drill into "bidders" key if present (comparator battery JSON schema)
+if isinstance(_comparator_data, dict) and "bidders" in _comparator_data:
+    _comparator_data = _comparator_data["bidders"]
 
 if _comparator_data and isinstance(_comparator_data, dict):
     # Build ranked table
