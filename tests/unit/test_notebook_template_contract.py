@@ -199,3 +199,75 @@ class TestR0NotebookEnrichment:
         ]
         for section in required_sections:
             assert section in source, f"Matchup notebook missing section: {section}"
+
+    def test_r0_matchup_notebook_uses_model_name_param(self):
+        """Matchup notebook must use MODEL_NAME param and R0 team-resolution helpers."""
+        matchup_path = (
+            Path(__file__).resolve().parents[2]
+            / "notebooks"
+            / "arc_d"
+            / "03_r0_matchups.py"
+        )
+        source = matchup_path.read_text()
+
+        # MODEL_NAME parameter must exist
+        assert (
+            "MODEL_NAME" in source
+        ), "Matchup notebook must declare MODEL_NAME parameter"
+
+        # Team-resolution helpers must be defined
+        assert (
+            "def _r0_team(" in source
+        ), "Matchup notebook must define _r0_team() helper"
+        assert (
+            "def _r0_sign(" in source
+        ), "Matchup notebook must define _r0_sign() helper"
+
+        # §6 and §7 must NOT use hardcoded team == 0 filter
+        # (§3 self-play is allowed to use team == 0 since it checks symmetry)
+        section6_start = source.find("§6 Performance by Contract")
+        section7_end = len(source)
+        assert section6_start != -1
+        post_s6_source = source[section6_start:section7_end]
+        # Strip comments to avoid false positives from old comment references
+        code_lines = [
+            line
+            for line in post_s6_source.split("\n")
+            if not line.strip().startswith("#")
+        ]
+        code_text = "\n".join(code_lines)
+        assert (
+            '[team"] == 0]' not in code_text
+        ), "§6/§7 must use _r0_team() instead of hardcoded team == 0"
+
+    def test_r0_matchup_notebook_no_hardcoded_team0_in_rankings(self):
+        """§7 summary must use r0_tricks/opp_tricks, not team0_tricks/team1_tricks."""
+        matchup_path = (
+            Path(__file__).resolve().parents[2]
+            / "notebooks"
+            / "arc_d"
+            / "03_r0_matchups.py"
+        )
+        source = matchup_path.read_text()
+
+        # Find §7 section
+        section7_start = source.find("§7 Summary Table")
+        assert section7_start != -1, "§7 Summary Table section must exist"
+        s7_source = source[section7_start:]
+
+        # Must NOT use old team0/team1 column names
+        assert (
+            '"team0_tricks"' not in s7_source
+        ), "§7 must use 'r0_tricks' instead of 'team0_tricks'"
+        assert (
+            '"team1_tricks"' not in s7_source
+        ), "§7 must use 'opp_tricks' instead of 'team1_tricks'"
+
+        # Must use R0-relative column names
+        assert '"r0_tricks"' in s7_source, "§7 must include 'r0_tricks' column"
+        assert '"opp_tricks"' in s7_source, "§7 must include 'opp_tricks' column"
+
+        # Chart label must reference R0, not Team0
+        assert (
+            "R0 Advantage" in s7_source
+        ), "§7 chart must label ME delta as 'R0 Advantage'"
