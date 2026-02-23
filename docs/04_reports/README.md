@@ -9,6 +9,18 @@ Each report is a point-in-time snapshot with:
 
 ## Index
 
+### Arc D: OLSa-Hybrid Bidder
+
+| Report | Date | Phase | Summary |
+|--------|------|-------|---------|
+| [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Arc D | Cross-rung progression dashboard (snapshot) |
+| [model_arc_r0_20260222.md](model_arc_r0_20260222.md) | 2026-02-22 | Arc D | R0 baseline lock report (immutable snapshot) |
+
+Working copies of per-rung reports are generated to `data/reports/arc_d/` (gitignored).
+Use `--snapshot` flag with dashboard script to update the committed snapshot.
+
+### Phase 0: Bidless
+
 | Report | Date | Phase | Summary |
 |--------|------|-------|---------|
 | [phase0_bidless_20260207_r5.md](phase0_bidless_20260207_r5.md) | 2026-02-18 | Phase 0 (Bidless) | **Current** — Glutton correlations, per-contract §6d tables |

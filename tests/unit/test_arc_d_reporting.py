@@ -4,7 +4,7 @@ Covers:
 - check_team_balance_by_contract (3 tests)
 - check_bid_distribution_sanity (3 tests)
 - check_dual_arm_coherence (2 tests)
-- generate_arc_d_rung_report (2 tests)
+- generate_arc_d_rung_report (3 tests + 4 new eval_df tests)
 - generate_dashboard (5 tests)
 """
 
@@ -479,3 +479,103 @@ def test_dashboard_preserves_zero_inline_metrics(tmp_path):
     assert "0.0000" in result
     assert "9.9" not in result
     assert "8.8" not in result
+
+
+# ──────────────────────────────────────────────
+#  Report generation with eval_df tests
+# ──────────────────────────────────────────────
+
+
+def _make_eval_df(n_deals=50, seed=42):
+    """Create a minimal eval DataFrame for report testing."""
+    rng = np.random.RandomState(seed)
+    rows = []
+    for i in range(n_deals):
+        ct = ["suit", "high", "low"][i % 3]
+        t0 = rng.randint(2, 9)
+        t1 = 10 - t0
+        bidder = rng.randint(0, 4)
+        bidder_team = 0 if bidder in (0, 2) else 1
+        for seat in range(4):
+            team = 0 if seat in (0, 2) else 1
+            rows.append(
+                {
+                    "deal_id": i,
+                    "hand_id": i,
+                    "seat": seat,
+                    "team": team,
+                    "contract_type": ct,
+                    "trump": "H" if ct == "suit" else None,
+                    "tricks_won": t0 if seat in (0, 2) else t1,
+                    "winning_bid": rng.randint(5, 9),
+                    "bidder_seat": bidder,
+                    "bidder_team": bidder_team,
+                    "made_bid": bool(rng.random() > 0.3),
+                    "is_bidder": seat == bidder,
+                    "is_declaring_team": team == bidder_team,
+                    "feat_hand_value": float(rng.randint(200, 800)),
+                    "feat_trump_count": int(rng.randint(0, 7)),
+                    "feat_bowers": int(rng.randint(0, 3)),
+                    "n_bids": int(rng.randint(1, 3)),
+                    "n_passes": int(rng.randint(1, 4)),
+                    "auction_rounds": 4,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_rung_report_with_eval_df_has_new_sections(tmp_path):
+    """Report with eval_df includes Executive Summary, Deal Health, etc."""
+    bundle_path = _make_bundle(tmp_path)
+    eval_df = _make_eval_df()
+
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+
+    assert "## Executive Summary" in report
+    assert "## Data Provenance" in report
+    assert "## Deal Health" in report
+    assert "## Auction Analysis" in report
+    assert "## Gameplay Analysis" in report
+    assert "## Reproducibility" in report
+
+
+def test_rung_report_with_eval_df_deal_count(tmp_path):
+    """Report shows correct deal count from eval_df."""
+    bundle_path = _make_bundle(tmp_path)
+    eval_df = _make_eval_df(n_deals=100)
+
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+
+    assert "100" in report  # n_deals in Executive Summary
+
+
+def test_rung_report_without_eval_df_backward_compatible(tmp_path):
+    """Report without eval_df produces same sections as before."""
+    bundle_path = _make_bundle(tmp_path)
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    # Original sections present
+    assert "## Dual-Arm Comparison" in report
+    assert "## Feature Selection" in report
+    assert "## Attribution Gap" in report
+
+    # New sections absent
+    assert "## Executive Summary" not in report
+    assert "## Deal Health" not in report
+    assert "## Auction Analysis" not in report
+
+
+def test_rung_report_with_chart_dir(tmp_path):
+    """Report with chart_dir embeds chart references."""
+    bundle_path = _make_bundle(tmp_path)
+    chart_dir = tmp_path / "charts"
+    chart_dir.mkdir()
+    (chart_dir / "seat_balance_boxplot.png").write_bytes(b"fake")
+    (chart_dir / "dual_arm_comparison.png").write_bytes(b"fake")
+
+    report = generate_arc_d_rung_report(bundle_path, chart_dir=chart_dir)
+
+    assert "## Charts" in report
+    assert "seat_balance_boxplot" in report
+    assert "dual_arm_comparison" in report
