@@ -1570,7 +1570,11 @@ consistency.
      --emit-bidding-dataset \
      --bidding-dataset-format jsonl
 
-   Config YAML must specify bidding_policies (list):
+   Config YAML must specify bidding_policies AND auction scenarios:
+     experiment_name: canonical_auction_dataset_hybrid_r0
+     scenarios:
+       - contract_type: null   # REQUIRED — bidding policies only run
+                                # for auction scenarios (contract_type is None)
      bidding_policies:
        - name: hybrid_olsa_r0
          class_name: HybridOLSaBidder
@@ -1583,14 +1587,17 @@ consistency.
    NOTE: --bidding-dataset-format jsonl is REQUIRED — the default
    parquet format silently drops nested auction_history fields.
 
-   Output: canonical_auction_dataset_hybrid_r0_42_<timestamp>/
+   Output: <experiment_name>_<seed>_<timestamp>/
+   (e.g. canonical_auction_dataset_hybrid_r0_42_20260301_120000/)
    Contains: datasets/bidding.jsonl with per-decision rows
    including auction_history.
    This dataset is the HARD PREREQUISITE for R1b.
 
 4b. Data Integration:
-   a. The auction-context dataset must include a "declaring" boolean column
-      (which team won the auction) — required for R5 off/def training.
+   a. The transformed training DataFrame must include a "declaring" boolean
+      column (which team won the auction) — required for R5 off/def training.
+      This is computed during the join/transform step, not emitted by the
+      raw BiddingDatasetCollector.
    b. auction_history is stored in JSONL only (not Parquet) — Parquet with
       explicit schemas silently drops nested list[dict] fields.
    c. A join/transform step extracts context feature columns from
@@ -1617,7 +1624,7 @@ consistency.
 - [ ] Canonical auction-context dataset produced using HybridOLSaBidder R0
 - [ ] R1b can load the dataset and find auction context columns
 - [ ] `auction_history` persists in JSONL format (NOT Parquet)
-- [ ] `declaring` column present in auction-context dataset
+- [ ] `declaring` column present in transformed training DataFrame (step 4b output)
 - [ ] Context features extractable into flat columns for training
 - [ ] 5+ tests
 - [ ] `make check` passes

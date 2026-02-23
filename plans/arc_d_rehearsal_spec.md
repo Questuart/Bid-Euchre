@@ -54,13 +54,8 @@ full pipeline end-to-end.
 **Promotion gate** (exits non-zero on HALT — use `|| true` to prevent aborting):
 ```bash
 PYTHONPATH=src uv run python scripts/internal/run_arc_d_gate.py \
-  --bundle data/artifacts/arc_d_rehearsal/r{N}/rung_bundle_r{N}.json
-# NOTE: exits non-zero on HALT. Do not let this abort the rehearsal.
-# Record the decision from promotion_decision_r{N}.json, then continue
-# to the next phase regardless of the exit code.
-#
-# Use: PYTHONPATH=src uv run python scripts/internal/run_arc_d_gate.py \
-#   --bundle ... || true
+  --bundle data/artifacts/arc_d_rehearsal/r{N}/rung_bundle_r{N}.json \
+  || true
 # The `|| true` prevents a HALT exit code from aborting the rehearsal.
 # Always check promotion_decision_r{N}.json for the actual result.
 ```
