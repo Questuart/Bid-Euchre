@@ -92,6 +92,25 @@ def generate_dashboard(
         sections.append("")
         sections.append(f"*{len(bundles)} rung(s) found.*")
 
+        # Emit gate_status by checking promotion decision files
+        gate_decisions = []
+        for b in bundles:
+            rung = b.get("rung_id", "?")
+            src = Path(b.get("_source_path", ""))
+            decision_file = src.parent / f"promotion_decision_{rung}.json"
+            if decision_file.exists():
+                try:
+                    with open(decision_file) as f:
+                        dec = json.load(f)
+                    gate_decisions.append((rung, dec.get("decision", "UNKNOWN")))
+                except (json.JSONDecodeError, OSError):
+                    gate_decisions.append((rung, "ERROR"))
+
+        if gate_decisions:
+            sections.append("")
+            summary = ", ".join(f"{r}={d}" for r, d in gate_decisions)
+            sections.append(f"gate_status: {summary}")
+
     sections.append("")
     dashboard = "\n".join(sections)
 

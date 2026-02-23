@@ -6,4 +6,4 @@
 
 *1 rung(s) found.*
 
-gate_status: All rungs above have passed their respective promotion gates.
+gate_status: r0=PROMOTED

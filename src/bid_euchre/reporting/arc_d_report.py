@@ -93,6 +93,7 @@ def generate_arc_d_rung_report(
             sections.append("")
 
     # --- Promotion decision ---
+    decision = None
     if decision_path is not None:
         decision_path = Path(decision_path)
         if decision_path.exists():
@@ -101,6 +102,7 @@ def generate_arc_d_rung_report(
             sections.append("## Promotion Decision")
             sections.append("")
             sections.append(f"- **Outcome:** {decision.get('decision', 'UNKNOWN')}")
+            sections.append(f"- **gate_status:** {decision.get('decision', 'UNKNOWN')}")
             reasons = decision.get("reasons", [])
             if reasons:
                 for r in reasons:
@@ -108,24 +110,70 @@ def generate_arc_d_rung_report(
             sections.append("")
 
     # --- Attribution gap ---
+    # Priority: (1) decision JSON, (2) eval files from bundle, (3) inline bundle fields
     sections.append("## Attribution Gap")
     sections.append("")
-    olsa_eppd = olsa.get("net_eppd")
-    full_eppd = olsa_full.get("net_eppd")
+
+    attribution_gap = None
+    olsa_eppd = None
+    full_eppd = None
+
+    # Source 1: decision JSON
+    if decision is not None and decision.get("attribution_gap") is not None:
+        attribution_gap = decision["attribution_gap"]
+        # Also try to get per-arm values from decision
+        challenger = decision.get("challenger", {})
+        olsa_arm = decision.get("olsa_arm", {})
+        challenger_metrics = challenger.get("metrics_seed42", {})
+        olsa_metrics = olsa_arm.get("metrics_seed42", {})
+        if challenger_metrics:
+            full_eppd = challenger_metrics.get("net_expected_points_per_deal")
+        if olsa_metrics:
+            olsa_eppd = olsa_metrics.get("net_expected_points_per_deal")
+
+    # Source 2: load eval files referenced in bundle
+    if attribution_gap is None:
+        from bid_euchre.reporting.evaluator import load_eval_metrics
+
+        olsa_eval_path = olsa.get("eval_seed42")
+        full_eval_path = olsa_full.get("eval_seed42")
+        if olsa_eval_path:
+            try:
+                olsa_metrics = load_eval_metrics(olsa_eval_path)
+                olsa_eppd = olsa_metrics.get("net_expected_points_per_deal")
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        if full_eval_path:
+            try:
+                full_metrics = load_eval_metrics(full_eval_path)
+                full_eppd = full_metrics.get("net_expected_points_per_deal")
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        if olsa_eppd is not None and full_eppd is not None:
+            attribution_gap = full_eppd - olsa_eppd
+
+    # Source 3: inline bundle fields (legacy/future)
+    if attribution_gap is None:
+        olsa_eppd = olsa_eppd or olsa.get("net_eppd")
+        full_eppd = full_eppd or olsa_full.get("net_eppd")
+        if olsa_eppd is not None and full_eppd is not None:
+            attribution_gap = full_eppd - olsa_eppd
+
     if olsa_eppd is not None and full_eppd is not None:
-        gap = full_eppd - olsa_eppd
         sections.append("| Arm | net_eppd |")
         sections.append("|-----|----------|")
         sections.append(f"| OLSa (constrained) | {olsa_eppd:.4f} |")
         sections.append(f"| OLSa_Full (promotional) | {full_eppd:.4f} |")
-        sections.append(f"| **Attribution Gap** | **{gap:+.4f}** |")
+        sections.append(f"| **Attribution Gap** | **{attribution_gap:+.4f}** |")
         sections.append("")
-        if gap > 0:
+        if attribution_gap > 0:
             sections.append("Positive gap: feature selection improves bidding quality.")
-        elif gap < 0:
+        elif attribution_gap < 0:
             sections.append("Negative gap: constrained arm outperforms — investigate.")
         else:
             sections.append("Zero gap: arms perform identically.")
+    elif attribution_gap is not None:
+        sections.append(f"**Attribution gap:** {attribution_gap:+.4f}")
     else:
         sections.append("*Attribution gap not yet available — eval results pending.*")
     sections.append("")
