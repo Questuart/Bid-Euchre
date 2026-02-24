@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -19,6 +19,7 @@ help:
 	@echo ""
 	@echo "Gold path targets:"
 	@echo "  make check              - repo-lint + ruff + tests"
+	@echo "  make check-quiet        - full check, minimal output (logs to tmpfile)"
 	@echo "  make repo-lint          - repo linter (diff vs origin/main)"
 	@echo "  make lint               - ruff check ."
 	@echo "  make test               - pytest fast suite"
@@ -49,14 +50,26 @@ repo-lint:
 
 lint:
 	@echo ">>> Ruff"
-	$(PYTHON) -m ruff check .
+	$(PYTHON) -m ruff check -q .
 
 test:
 	@echo ">>> Pytest (fast suite)"
-	PYTHONPATH=.:src $(PYTHON) -m pytest -m "not slow" tests/
+	PYTHONPATH=.:src $(PYTHON) -m pytest -q -m "not slow" tests/
 
 check: repo-lint lint test notebook-check docs-check
 	@echo "✓ All checks passed"
+
+check-quiet:
+	@CHECK_LOG=$$(mktemp /tmp/make-check-XXXXXX); \
+	echo ">>> Running full check (logs → $$CHECK_LOG)"; \
+	if $(MAKE) check > "$$CHECK_LOG" 2>&1; then \
+		echo "✓ All checks passed (details: $$CHECK_LOG)"; \
+	else \
+		echo "✗ Checks FAILED (full log: $$CHECK_LOG)"; \
+		echo "--- Failure extract ---"; \
+		grep -n -i -A 3 'FAILED\|ERROR\|error:\|failed' "$$CHECK_LOG" | head -40; \
+		exit 1; \
+	fi
 
 notebook-sync:
 	@echo ">>> Jupytext sync (notebooks)"
