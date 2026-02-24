@@ -41,8 +41,24 @@ CHART_OUTPUT_DIR = ""  # dir for chart PNGs
 # # S0 Configuration & Data Loading
 
 # %%
-import glob as glob_mod
+import os
 from pathlib import Path
+
+# Ensure CWD is repo root (Jupyter kernels start in notebook dir)
+_cwd = Path.cwd()
+if not (_cwd / ".git").exists():
+    _root = _cwd
+    while _root != _root.parent:
+        _root = _root.parent
+        if (_root / ".git").exists():
+            os.chdir(_root)
+            break
+    else:
+        print(f"WARNING: Could not find repo root from {_cwd}")
+print(f"Working directory: {Path.cwd()}")
+
+# %%
+import glob as glob_mod
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -92,6 +108,11 @@ if EVAL_LOG_PATH:
             print(f"  Deals: {df['deal_id'].nunique()}, Source: {_data_source}")
         except (FileNotFoundError, ValueError) as exc:
             print(f"WARNING: Could not load eval logs: {exc}")
+
+if EVAL_LOG_PATH and df.empty:
+    print(f"WARNING: EVAL_LOG_PATH={EVAL_LOG_PATH!r} did not resolve to data.")
+    print(f"  CWD: {Path.cwd()}")
+    print("  Falling back to synthetic data.")
 
 if df.empty:
     # Synthetic demo data for CI / SMOKE fallback
