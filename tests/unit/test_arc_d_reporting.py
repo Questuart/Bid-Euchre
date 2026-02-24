@@ -296,9 +296,18 @@ def test_rung_report_sections(tmp_path):
     bundle_path = _make_bundle(tmp_path)
     report = generate_arc_d_rung_report(bundle_path)
     assert "# ARC_D Rung R0 Report" in report
-    assert "## Dual-Arm Comparison" in report
-    assert "## Feature Selection" in report
-    assert "## Attribution Gap" in report
+    # New SS1-SS11 structure
+    assert "## Executive Summary" in report
+    assert "## Data Inventory" in report
+    assert "## Feature Health Summary" in report
+    assert "## Outcome Health Summary" in report
+    assert "## Auction Analysis" in report
+    assert "## Model Specification & Feature Selection" in report
+    assert "## Model Performance" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "## Semantic Gate Summary" in report
+    assert "## Known Limitations" in report
+    assert "## Reproduction Commands" in report
     # Check computed gap table is present with net_eppd values
     assert "0.1500" in report  # olsa net_eppd
     assert "0.2200" in report  # olsa_full net_eppd
@@ -335,7 +344,8 @@ def test_rung_report_attribution_gap_pending(tmp_path):
     path.write_text(json.dumps(bundle, indent=2))
     report = generate_arc_d_rung_report(path)
     assert "pending" in report.lower()
-    assert "## Attribution Gap" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "### Attribution Gap" in report
 
 
 # ──────────────────────────────────────────────
@@ -525,18 +535,22 @@ def _make_eval_df(n_deals=50, seed=42):
 
 
 def test_rung_report_with_eval_df_has_new_sections(tmp_path):
-    """Report with eval_df includes Executive Summary, Deal Health, etc."""
+    """Report with eval_df includes all SS1-SS11 sections with data-driven content."""
     bundle_path = _make_bundle(tmp_path)
     eval_df = _make_eval_df()
 
     report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
 
     assert "## Executive Summary" in report
-    assert "## Data Provenance" in report
-    assert "## Deal Health" in report
+    assert "## Data Inventory" in report
+    assert "### Eval Dataset Summary" in report
+    assert "## Feature Health Summary" in report
+    assert "## Outcome Health Summary" in report
     assert "## Auction Analysis" in report
-    assert "## Gameplay Analysis" in report
-    assert "## Reproducibility" in report
+    assert "## Model Performance" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "## Known Limitations" in report
+    assert "## Reproduction Commands" in report
 
 
 def test_rung_report_with_eval_df_deal_count(tmp_path):
@@ -549,21 +563,27 @@ def test_rung_report_with_eval_df_deal_count(tmp_path):
     assert "100" in report  # n_deals in Executive Summary
 
 
-def test_rung_report_without_eval_df_backward_compatible(tmp_path):
-    """Report without eval_df produces same sections as before."""
+def test_rung_report_without_eval_df_graceful_degradation(tmp_path):
+    """Report without eval_df still has all SS1-SS11 sections with graceful degradation."""
     bundle_path = _make_bundle(tmp_path)
 
     report = generate_arc_d_rung_report(bundle_path)
 
-    # Original sections present
-    assert "## Dual-Arm Comparison" in report
-    assert "## Feature Selection" in report
-    assert "## Attribution Gap" in report
+    # All sections present (graceful degradation, not absent)
+    assert "## Executive Summary" in report
+    assert "## Data Inventory" in report
+    assert "## Feature Health Summary" in report
+    assert "## Outcome Health Summary" in report
+    assert "## Auction Analysis" in report
+    assert "## Model Specification & Feature Selection" in report
+    assert "## Model Performance" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "## Semantic Gate Summary" in report
+    assert "## Known Limitations" in report
+    assert "## Reproduction Commands" in report
 
-    # New sections absent
-    assert "## Executive Summary" not in report
-    assert "## Deal Health" not in report
-    assert "## Auction Analysis" not in report
+    # Graceful degradation messages for data-dependent sections
+    assert "*No eval data" in report or "*No eval dataset" in report
 
 
 def test_rung_report_model_performance_with_artifact(tmp_path):
@@ -707,7 +727,11 @@ def test_rung_report_attribution_gap_non_repo_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     report = generate_arc_d_rung_report(bundle_path)
-    assert "pending" not in report.lower(), (
+    # Attribution gap section must NOT show pending — eval paths should resolve
+    # via _resolve_bundle_ref even when CWD != repo root.
+    # (Note: "Gate status: pending" is expected when no decision_path is given,
+    #  so we check the attribution gap section specifically.)
+    assert "Attribution gap not yet available" not in report, (
         "Attribution gap shows 'pending' when CWD != repo root — "
         "_resolve_bundle_ref should resolve eval paths from bundle location"
     )
@@ -727,7 +751,7 @@ def test_rung_report_no_model_artifact_key(tmp_path):
 
 
 def test_rung_report_with_chart_dir(tmp_path):
-    """Report with chart_dir embeds chart references."""
+    """Report with chart_dir embeds chart references inline in sections."""
     bundle_path = _make_bundle(tmp_path)
     chart_dir = tmp_path / "charts"
     chart_dir.mkdir()
@@ -736,7 +760,7 @@ def test_rung_report_with_chart_dir(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, chart_dir=chart_dir)
 
-    assert "## Charts" in report
+    # Charts embedded inline in their respective sections (not a separate Charts section)
     assert "seat_balance_boxplot" in report
     assert "dual_arm_comparison" in report
 
@@ -753,7 +777,7 @@ def test_report_with_eval_df_has_feature_correlations(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
 
-    assert "## Feature Correlations" in report
+    assert "### Feature Correlations" in report
     assert "tricks_won" in report.lower() or "r |" in report
 
 
@@ -784,7 +808,7 @@ def test_report_with_comparator_battery(tmp_path):
 
     report = generate_arc_d_rung_report(path)
 
-    assert "## Comparator Battery" in report
+    assert "### Comparator Battery" in report
     assert "1.6274" in report
     assert "modeloespecifico" in report
 
@@ -805,7 +829,7 @@ def test_report_with_matchup_run_dir(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, matchup_run_dir=str(run_dir))
 
-    assert "## Head-to-Head Summary" in report
+    assert "### Head-to-Head Summary" in report
 
 
 def test_report_with_comparator_battery_path_string(tmp_path):
@@ -845,7 +869,7 @@ def test_report_with_comparator_battery_path_string(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path)
 
-    assert "## Comparator Battery" in report
+    assert "### Comparator Battery" in report
     assert "HybridOLSaBidder_r0" in report
     assert "GreedyBidder" in report
     assert "1.6274" in report
@@ -884,7 +908,7 @@ def test_report_with_comparator_battery_nested_bidders(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path)
 
-    assert "## Comparator Battery" in report
+    assert "### Comparator Battery" in report
     assert "HybridOLSaBidder_r0" in report
     assert "FixedBidder_6" in report
     # Must NOT show "bidders" or "schema" as bidder names
@@ -909,7 +933,7 @@ def test_report_h2h_matchup_id_extraction(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, matchup_run_dir=str(run_dir))
 
-    assert "## Head-to-Head Summary" in report
+    assert "### Head-to-Head Summary" in report
     # Even though logs are empty (no data parsed), the section is present.
     # Verify that if data were parsed, the matchup_id would be correct
     # by checking the implementation directly:
