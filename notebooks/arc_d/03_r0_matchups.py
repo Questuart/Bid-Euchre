@@ -42,6 +42,7 @@
 MODE = "SMOKE"  # SMOKE | QUICK | FULL
 SEED = 42  # RNG seed
 MATCHUP_RUN_DIR = ""  # Path to h2h run (empty = skip matchup analysis, show demo)
+MODEL_NAME = "hybrid_olsa_r0"  # Model name in matchup_id strings
 
 # %% [markdown]
 # # §0 Setup
@@ -144,6 +145,28 @@ if not _matchup_available:
 
 print(f"MODE={MODE}, matchup_available={_matchup_available}")
 
+
+# --- R0 team-resolution helpers ---
+def _r0_team(matchup_id: str) -> int:
+    """Return 0 or 1 indicating which team MODEL_NAME occupies.
+
+    Convention: in ``A_vs_B``, A sits on seats 0,2 (team 0).
+    If MODEL_NAME appears in the second position, R0 is team 1.
+    Self-play defaults to team 0 (symmetric, doesn't matter).
+    """
+    if "self_play" in matchup_id:
+        return 0
+    parts = matchup_id.split("_vs_")
+    if len(parts) == 2 and MODEL_NAME in parts[1]:
+        return 1
+    return 0
+
+
+def _r0_sign(matchup_id: str) -> int:
+    """Return +1 if R0 is team 0, -1 if R0 is team 1."""
+    return 1 if _r0_team(matchup_id) == 0 else -1
+
+
 # %% [markdown]
 # # §1 Matchup Overview
 #
@@ -152,27 +175,28 @@ print(f"MODE={MODE}, matchup_available={_matchup_available}")
 
 # %%
 if not df_all.empty:
-    # Aggregate per matchup: team0 vs team1 mean tricks
+    # Aggregate per matchup: R0 vs opponent mean tricks
     overview_rows = []
     for mid in sorted(df_all["matchup_id"].unique()):
         mdf = df_all[df_all["matchup_id"] == mid]
-        deal_df = mdf.drop_duplicates(subset=["deal_id", "team"])
         n_deals = mdf["deal_id"].nunique()
-        t0 = mdf[mdf["team"] == 0]["tricks_won"].mean()
-        t1 = mdf[mdf["team"] == 1]["tricks_won"].mean()
-        # Win rate: fraction of deals where team0 scored more tricks
+        r0_t = _r0_team(mid)
+        opp_t = 1 - r0_t
+        r0_tricks = mdf[mdf["team"] == r0_t]["tricks_won"].mean()
+        opp_tricks = mdf[mdf["team"] == opp_t]["tricks_won"].mean()
+        # Win rate: fraction of deals where R0's team scored more tricks
         deal_agg = mdf.groupby(["deal_id", "team"])["tricks_won"].mean().unstack()
-        if 0 in deal_agg.columns and 1 in deal_agg.columns:
-            win_rate_t0 = (deal_agg[0] > deal_agg[1]).mean()
+        if r0_t in deal_agg.columns and opp_t in deal_agg.columns:
+            r0_win_rate = (deal_agg[r0_t] > deal_agg[opp_t]).mean()
         else:
-            win_rate_t0 = np.nan
+            r0_win_rate = np.nan
         overview_rows.append(
             {
                 "matchup": mid,
                 "deals": n_deals,
-                "team0_tricks": round(t0, 3),
-                "team1_tricks": round(t1, 3),
-                "team0_win_rate": round(win_rate_t0, 3),
+                "r0_tricks": round(r0_tricks, 3),
+                "opp_tricks": round(opp_tricks, 3),
+                "r0_win_rate": round(r0_win_rate, 3),
             }
         )
 
@@ -289,21 +313,25 @@ if not df_all.empty:
         for fwd, rev in pairs_found:
             fwd_df = df_all[df_all["matchup_id"] == fwd]
             rev_df = df_all[df_all["matchup_id"] == rev]
-            fwd_delta = (
+            # Compute R0-relative delta for each seat arrangement
+            fwd_raw = (
                 fwd_df[fwd_df["team"] == 0]["tricks_won"].mean()
                 - fwd_df[fwd_df["team"] == 1]["tricks_won"].mean()
             )
-            rev_delta = (
+            rev_raw = (
                 rev_df[rev_df["team"] == 0]["tricks_won"].mean()
                 - rev_df[rev_df["team"] == 1]["tricks_won"].mean()
             )
-            print(f"\n  {fwd}: team0-team1 = {fwd_delta:+.3f}")
-            print(f"  {rev}: team0-team1 = {rev_delta:+.3f}")
-            # The deltas should have opposite signs (or both near zero)
-            if (fwd_delta > 0 and rev_delta > 0) or (fwd_delta < 0 and rev_delta < 0):
-                print("    WARNING: Deltas have same sign — possible positional bias")
+            fwd_r0_delta = fwd_raw * _r0_sign(fwd)
+            rev_r0_delta = rev_raw * _r0_sign(rev)
+            spread = abs(fwd_r0_delta - rev_r0_delta)
+            print(f"\n  {fwd}: R0 delta = {fwd_r0_delta:+.3f}")
+            print(f"  {rev}: R0 delta = {rev_r0_delta:+.3f}")
+            print(f"    Spread = {spread:.3f}")
+            if spread > 1.0:
+                print("    WARNING: Large spread — possible positional bias")
             else:
-                print("    OK: Deltas flip sign as expected")
+                print("    OK: R0-relative deltas are consistent across seat positions")
     else:
         print("No rotation pairs found.")
 else:
@@ -326,7 +354,7 @@ if not df_all.empty and "contract_type" in df_all.columns:
         parts = mid.split("_vs_")
         if len(parts) == 2:
             for p in parts:
-                if "hybrid_olsa" not in p:
+                if MODEL_NAME not in p:
                     opponents.add(p)
 
     for opp in sorted(opponents):
@@ -357,13 +385,17 @@ if not df_all.empty and "contract_type" in df_all.columns:
                     mr = grp["made_bid"].mean()
                     print(f"  {ctype}: {mr:.3f} (n={len(grp)})")
 
-        # Mean tricks by contract type
-        print("\nMean tricks_won by contract_type and team:")
+        # Mean tricks by contract type — R0-relative
+        print("\nMean tricks_won by contract_type (R0-relative):")
         for ctype in sorted(opp_df["contract_type"].unique()):
             grp = opp_df[opp_df["contract_type"] == ctype]
-            t0 = grp[grp["team"] == 0]["tricks_won"].mean()
-            t1 = grp[grp["team"] == 1]["tricks_won"].mean()
-            print(f"  {ctype}: team0={t0:.3f}, team1={t1:.3f}")
+            # Aggregate per matchup with correct team assignment
+            for omid in sorted(grp["matchup_id"].unique()):
+                mg = grp[grp["matchup_id"] == omid]
+                r0_t = _r0_team(omid)
+                r0_val = mg[mg["team"] == r0_t]["tricks_won"].mean()
+                opp_val = mg[mg["team"] == (1 - r0_t)]["tricks_won"].mean()
+                print(f"  {ctype} [{omid}]: R0={r0_val:.3f}, opp={opp_val:.3f}")
 else:
     print("No data for per-opponent analysis.")
 
@@ -388,17 +420,17 @@ if not df_all.empty and "contract_type" in df_all.columns:
             axes = [axes]
         for ax, ctype in zip(axes, ctypes):
             ctype_df = competitive_df[competitive_df["contract_type"] == ctype]
-            # Group by matchup_id, compute team0 mean tricks
-            means = (
-                ctype_df[ctype_df["team"] == 0]
-                .groupby("matchup_id")["tricks_won"]
-                .mean()
-                .sort_values(ascending=False)
-            )
+            # Group by matchup_id, compute R0's team mean tricks
+            r0_means = {}
+            for mid in ctype_df["matchup_id"].unique():
+                mg = ctype_df[ctype_df["matchup_id"] == mid]
+                r0_t = _r0_team(mid)
+                r0_means[mid] = mg[mg["team"] == r0_t]["tricks_won"].mean()
+            means = pd.Series(r0_means).sort_values(ascending=False)
             if not means.empty:
-                labels = [m.replace("hybrid_olsa_r0", "R0")[:25] for m in means.index]
+                labels = [m.replace(MODEL_NAME, "R0")[:25] for m in means.index]
                 ax.barh(labels, means.values)
-                ax.set_xlabel("Mean Tricks (Team 0)")
+                ax.set_xlabel("Mean Tricks (R0)")
                 ax.set_title(f"R0 Performance: {ctype}")
                 ax.invert_yaxis()
         plt.tight_layout()
@@ -415,30 +447,32 @@ else:
 if not df_all.empty:
     matchup_ids = sorted(df_all["matchup_id"].unique())
 
-    # Build summary: for each matchup, compute team0 tricks advantage
+    # Build summary: for each matchup, compute R0 tricks advantage
     summary_rows = []
     for mid in matchup_ids:
         mdf = df_all[df_all["matchup_id"] == mid]
         n = mdf["deal_id"].nunique()
-        t0 = mdf[mdf["team"] == 0]["tricks_won"].mean()
-        t1 = mdf[mdf["team"] == 1]["tricks_won"].mean()
-        me_delta = t0 - t1
+        r0_t = _r0_team(mid)
+        opp_t = 1 - r0_t
+        r0_tricks = mdf[mdf["team"] == r0_t]["tricks_won"].mean()
+        opp_tricks = mdf[mdf["team"] == opp_t]["tricks_won"].mean()
+        me_delta = r0_tricks - opp_tricks
 
         # Per contract type breakdown
         ct_deltas = {}
         if "contract_type" in mdf.columns:
             for ctype in sorted(mdf["contract_type"].unique()):
                 grp = mdf[mdf["contract_type"] == ctype]
-                ct0 = grp[grp["team"] == 0]["tricks_won"].mean()
-                ct1 = grp[grp["team"] == 1]["tricks_won"].mean()
-                ct_deltas[ctype] = round(ct0 - ct1, 3)
+                ct_r0 = grp[grp["team"] == r0_t]["tricks_won"].mean()
+                ct_opp = grp[grp["team"] == opp_t]["tricks_won"].mean()
+                ct_deltas[ctype] = round(ct_r0 - ct_opp, 3)
 
         summary_rows.append(
             {
                 "matchup": mid,
                 "n_deals": n,
-                "team0_tricks": round(t0, 3),
-                "team1_tricks": round(t1, 3),
+                "r0_tricks": round(r0_tricks, 3),
+                "opp_tricks": round(opp_tricks, 3),
                 "ME_delta": round(me_delta, 3),
                 **{f"delta_{ct}": ct_deltas.get(ct) for ct in sorted(ct_deltas.keys())},
             }
@@ -454,12 +488,12 @@ if not df_all.empty:
         fig_rank, ax_rank = plt.subplots(figsize=(10, max(3, len(competitive) * 0.5)))
         colors = ["#4CAF50" if d > 0 else "#F44336" for d in competitive["ME_delta"]]
         ax_rank.barh(
-            competitive["matchup"].str.replace("hybrid_olsa_r0", "R0"),
+            competitive["matchup"].str.replace(MODEL_NAME, "R0"),
             competitive["ME_delta"],
             color=colors,
         )
         ax_rank.axvline(0, color="black", linewidth=0.8)
-        ax_rank.set_xlabel("ME Delta (Team0 - Team1)")
+        ax_rank.set_xlabel("ME Delta (R0 Advantage)")
         ax_rank.set_title("Competitive Ranking: Tricks Advantage")
         ax_rank.invert_yaxis()
         plt.tight_layout()
