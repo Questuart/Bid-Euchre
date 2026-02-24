@@ -48,8 +48,34 @@ MODEL_NAME = "hybrid_olsa_r0"  # Model name in matchup_id strings
 # # §0 Setup
 
 # %%
-import glob as glob_mod
+import os
 from pathlib import Path
+
+# Ensure CWD is repo root (Jupyter kernels start in notebook dir)
+_cwd = Path.cwd()
+if not (_cwd / ".git").exists():
+    _root = _cwd
+    while _root != _root.parent:
+        _root = _root.parent
+        if (_root / ".git").exists():
+            os.chdir(_root)
+            break
+    else:
+        print(f"WARNING: Could not find repo root from {_cwd}")
+print(f"Working directory: {Path.cwd()}")
+
+# %% [markdown]
+# ## Available eval runs
+# Run this cell to discover local eval data:
+
+# %%
+import glob as _g
+
+for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
+    print(_p)
+
+# %%
+import glob as glob_mod
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -102,6 +128,12 @@ if MATCHUP_RUN_DIR:
             )
     else:
         print(f"Logs directory not found: {logs_dir}")
+
+if MATCHUP_RUN_DIR and not _matchup_available:
+    print(
+        f"WARNING: MATCHUP_RUN_DIR={MATCHUP_RUN_DIR!r} is set but no data was loaded.\n"
+        "  Check that the path exists relative to the repo root."
+    )
 
 if not _matchup_available:
     # Synthetic demo data for CI / SMOKE
