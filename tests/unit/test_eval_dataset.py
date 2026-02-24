@@ -12,7 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from bid_euchre.datasets.eval_dataset import build_eval_dataset
+from bid_euchre.datasets.eval_dataset import (
+    build_eval_dataset,
+    resolve_eval_log_from_bundle,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures: minimal hand_end records
@@ -399,3 +402,124 @@ class TestMalformedJson:
 
         assert len(df) == 8  # 2 valid hand_end records × 4 seats
         assert set(df["deal_id"]) == {0, 1}
+
+
+# ---------------------------------------------------------------------------
+# Tests: resolve_eval_log_from_bundle
+# ---------------------------------------------------------------------------
+
+
+def _setup_bundle_tree(tmp_path: Path) -> dict:
+    """Create a synthetic bundle/eval/log file tree for testing.
+
+    Returns a dict with paths: bundle_path, eval_json_path, log_path.
+    """
+    # Create fake .git dir so repo root detection works
+    (tmp_path / ".git").mkdir()
+
+    # Create run directory with a JSONL log file
+    run_id = "test_run_abc"
+    log_name = "game_log.jsonl"
+    run_dir = tmp_path / "data" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    log_path = run_dir / log_name
+    log_path.write_text('{"event": "hand_end"}\n')
+
+    # Create eval JSON
+    eval_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0" / "eval"
+    eval_dir.mkdir(parents=True)
+    eval_json_path = eval_dir / "eval_olsa_42.json"
+    eval_json_path.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "source_logs": [log_name],
+                "seed": 42,
+            }
+        )
+    )
+
+    # Create bundle JSON
+    bundle_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+    bundle_path = bundle_dir / "rung_bundle_r0.json"
+    # Eval path is relative to repo root
+    eval_rel = str(eval_json_path.relative_to(tmp_path))
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "olsa": {
+                    "eval_seed42": eval_rel,
+                    "eval_seed43": eval_rel,
+                },
+                "olsa_full": {
+                    "eval_seed42": eval_rel,
+                },
+            }
+        )
+    )
+
+    return {
+        "bundle_path": bundle_path,
+        "eval_json_path": eval_json_path,
+        "log_path": log_path,
+    }
+
+
+class TestResolveEvalLogFromBundle:
+    """Tests for resolve_eval_log_from_bundle."""
+
+    def test_happy_path(self, tmp_path: Path) -> None:
+        """Resolves the correct JSONL log path."""
+        paths = _setup_bundle_tree(tmp_path)
+        result = resolve_eval_log_from_bundle(paths["bundle_path"], arm="olsa", seed=42)
+        assert result == paths["log_path"]
+
+    def test_missing_bundle(self, tmp_path: Path) -> None:
+        """FileNotFoundError when bundle does not exist."""
+        with pytest.raises(FileNotFoundError, match="Bundle not found"):
+            resolve_eval_log_from_bundle(
+                tmp_path / "nonexistent.json", arm="olsa", seed=42
+            )
+
+    def test_invalid_arm(self, tmp_path: Path) -> None:
+        """KeyError when arm not in bundle."""
+        paths = _setup_bundle_tree(tmp_path)
+        with pytest.raises(KeyError, match="Arm 'bogus' not found"):
+            resolve_eval_log_from_bundle(paths["bundle_path"], arm="bogus", seed=42)
+
+    def test_invalid_seed(self, tmp_path: Path) -> None:
+        """KeyError when seed not in bundle arm."""
+        paths = _setup_bundle_tree(tmp_path)
+        with pytest.raises(KeyError, match="eval_seed99"):
+            resolve_eval_log_from_bundle(paths["bundle_path"], arm="olsa", seed=99)
+
+    def test_missing_eval_json(self, tmp_path: Path) -> None:
+        """FileNotFoundError when eval JSON file does not exist."""
+        paths = _setup_bundle_tree(tmp_path)
+        # Remove the eval JSON
+        paths["eval_json_path"].unlink()
+        with pytest.raises(FileNotFoundError, match="Eval JSON not found"):
+            resolve_eval_log_from_bundle(paths["bundle_path"], arm="olsa", seed=42)
+
+    def test_missing_log_file(self, tmp_path: Path) -> None:
+        """FileNotFoundError with regeneration hint when JSONL log missing."""
+        paths = _setup_bundle_tree(tmp_path)
+        # Remove the log file
+        paths["log_path"].unlink()
+        with pytest.raises(FileNotFoundError, match="JSONL game log not found"):
+            resolve_eval_log_from_bundle(paths["bundle_path"], arm="olsa", seed=42)
+
+    def test_missing_log_regeneration_hint(self, tmp_path: Path) -> None:
+        """Error message includes regeneration command."""
+        paths = _setup_bundle_tree(tmp_path)
+        paths["log_path"].unlink()
+        with pytest.raises(FileNotFoundError, match="Regenerate with"):
+            resolve_eval_log_from_bundle(paths["bundle_path"], arm="olsa", seed=42)
+
+    def test_olsa_full_arm(self, tmp_path: Path) -> None:
+        """Works with olsa_full arm."""
+        paths = _setup_bundle_tree(tmp_path)
+        result = resolve_eval_log_from_bundle(
+            paths["bundle_path"], arm="olsa_full", seed=42
+        )
+        assert result == paths["log_path"]
