@@ -783,6 +783,8 @@ def _render_dual_arm_comparison(
                         corrs[fc] = grp[fc].corr(grp["tricks_won"])
                     except Exception:
                         pass
+                # Filter NaN correlations (e.g. zero-variance features in no-trump)
+                corrs = {k: v for k, v in corrs.items() if not np.isnan(v)}
                 if not corrs:
                     continue
                 top = sorted(corrs.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
