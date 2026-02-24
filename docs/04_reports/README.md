@@ -2,29 +2,41 @@
 
 Historical analysis reports for completed research phases.
 
-Each report is a point-in-time snapshot with:
-- Embedded charts (in `assets/<report_date>/`)
-- Machine-readable provenance (`<report>_provenance.json`)
-- Links to detailed source documents in `docs/02_agent/`
+Each rung has its own directory containing:
+- The canonical report (markdown with embedded chart references)
+- Chart assets (`assets/charts/`)
+- Machine-readable provenance (`*_provenance.json`)
+- An `archive/` subdirectory for superseded revisions
+
+## Directory Structure
+
+```
+docs/04_reports/
+  phase0/                  Phase 0 (bidless) report + charts
+    phase0_bidless_20260207.md   (canonical, was r5)
+    assets/charts/               (chart PNGs)
+    archive/                     (r1-r4 superseded revisions)
+  r0/                      Arc D R0 rung report
+    model_arc_r0_20260222.md
+  model_arc_d_dashboard.md  Cross-rung progression dashboard
+```
 
 ## Index
 
 ### Arc D: OLSa-Hybrid Bidder
 
-| Report | Date | Phase | Summary |
-|--------|------|-------|---------|
-| [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Arc D | Cross-rung progression dashboard (snapshot) |
-| [model_arc_r0_20260222.md](model_arc_r0_20260222.md) | 2026-02-22 | Arc D | R0 baseline lock report (immutable snapshot) |
+| Report | Date | Summary |
+|--------|------|---------|
+| [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Cross-rung progression dashboard (snapshot) |
+| [r0/model_arc_r0_20260222.md](r0/model_arc_r0_20260222.md) | 2026-02-22 | R0 baseline lock report |
 
 Working copies of per-rung reports are generated to `data/reports/arc_d/` (gitignored).
 Use `--snapshot` flag with dashboard script to update the committed snapshot.
 
 ### Phase 0: Bidless
 
-| Report | Date | Phase | Summary |
-|--------|------|-------|---------|
-| [phase0_bidless_20260207_r5.md](phase0_bidless_20260207_r5.md) | 2026-02-18 | Phase 0 (Bidless) | **Current** — Glutton correlations, per-contract §6d tables |
-| [phase0_bidless_20260207_r4.md](phase0_bidless_20260207_r4.md) | 2026-02-16 | Phase 0 (Bidless) | Health-first restructure, 12 sections, 8 new charts, per-contract Ridge coefficients |
-| [phase0_bidless_20260207_r3.md](phase0_bidless_20260207_r3.md) | 2026-02-08 | Phase 0 (Bidless) | Comprehensive rewrite with normalization fix, seat×contract chart, coefficient heatmap |
-| [phase0_bidless_20260207_r2.md](phase0_bidless_20260207_r2.md) | 2026-02-07 | Phase 0 (Bidless) | Refactored report with chart versioning, t-test gate |
-| [phase0_bidless_20260207.md](phase0_bidless_20260207.md) | 2026-02-07 | Phase 0 (Bidless) | Original report (immutable) |
+| Report | Date | Summary |
+|--------|------|---------|
+| [phase0/phase0_bidless_20260207.md](phase0/phase0_bidless_20260207.md) | 2026-02-18 | Canonical report (16 charts, 12 sections) |
+
+Superseded revisions (r1-r4) are in `phase0/archive/`.

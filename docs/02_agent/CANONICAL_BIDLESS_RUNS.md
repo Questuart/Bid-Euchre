@@ -80,4 +80,4 @@ A run is eligible for promotion when:
 
 ## Related Reports
 
-- [Phase 0 Bidless Report](../04_reports/phase0_bidless_20260207.md) — Consolidated findings with embedded charts and provenance
+- [Phase 0 Bidless Report](../04_reports/phase0/phase0_bidless_20260207.md) — Consolidated findings with embedded charts and provenance

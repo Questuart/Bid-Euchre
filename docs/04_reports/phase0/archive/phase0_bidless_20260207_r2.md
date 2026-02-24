@@ -25,7 +25,7 @@ Before examining results, these checks confirm the simulation infrastructure is 
 
 > Source: `canonical_bidless_outcomes_zoom_42_20260204_222712`
 
-![Self-play control chart](assets/phase0_latest/self_play_control.png)
+![Self-play control chart](assets_latest/self_play_control.png)
 
 All 5 strategies in self-play show |mean delta| < 0.025 tricks (threshold: 0.25). This confirms zero systematic team bias in the simulation engine.
 
@@ -41,7 +41,7 @@ All 5 strategies in self-play show |mean delta| < 0.025 tricks (threshold: 0.25)
 
 > Source: `canonical_bidless_dataset_greedy_42_20260204_221121`
 
-![Hand value by seat](assets/phase0_latest/hand_value_by_seat.png)
+![Hand value by seat](assets_latest/hand_value_by_seat.png)
 
 Hand value distributions are identical across seats 0–3, confirming fair deal generation with no seat bias.
 
@@ -85,9 +85,9 @@ Zero violations detected across all 5 strategies. The competitive ordering is fu
 
 ### Strategy Landscape
 
-![Win rate heatmap](assets/phase0_latest/win_rate_heatmap.png)
+![Win rate heatmap](assets_latest/win_rate_heatmap.png)
 
-![Matchup summary](assets/phase0_latest/matchup_summary.png)
+![Matchup summary](assets_latest/matchup_summary.png)
 
 ---
 
@@ -208,9 +208,9 @@ Notable differences: `trump_power_avg` is much more dominant under glutton (-0.6
 - No bootstrap CIs on R² or MAE (acceptable for exploratory diagnostics)
 - This diagnostic is separate from the B0 hand-value regression in `train_b0.py`
 
-![Feature-outcome correlation](assets/phase0_latest/feature_outcome_correlation.png)
+![Feature-outcome correlation](assets_latest/feature_outcome_correlation.png)
 
-![Outcome distributions](assets/phase0_latest/outcome_distributions.png)
+![Outcome distributions](assets_latest/outcome_distributions.png)
 
 ---
 
@@ -218,11 +218,11 @@ Notable differences: `trump_power_avg` is much more dominant under glutton (-0.6
 
 > Source: `canonical_bidless_dataset_greedy_42_20260204_221121`
 
-![Hand value by contract](assets/phase0_latest/hand_value_by_contract.png)
+![Hand value by contract](assets_latest/hand_value_by_contract.png)
 
 Hand value distributions vary appropriately by contract type. Suit contracts show higher hand values on average (trump power contributes), while HIGH and LOW contracts show more symmetric distributions.
 
-![CDF of tricks by contract](assets/phase0_latest/cdf.png)
+![CDF of tricks by contract](assets_latest/cdf.png)
 
 CDF curves show distinct shapes by contract type. Suit contracts have heavier right tails (more high-trick outcomes due to trump advantage). HIGH and LOW are more symmetric around 5 tricks. Smooth, monotonic CDFs confirm adequate sample sizes.
 

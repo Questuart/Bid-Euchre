@@ -5,8 +5,8 @@
 > **Canonical git SHA:** `aef6c6a`
 > **Seed:** 42
 > **Total budget:** 5.1M hands across 5 canonical runs + 720K policy gate evidence (5.82M total)
-> **Charts:** New and regenerated charts in `assets/phase0_20260207_r5/`; r4 assets remain immutable
-> **Provenance:** [`phase0_bidless_20260207_r5_provenance.json`](phase0_bidless_20260207_r5_provenance.json)
+> **Charts:** `assets/charts/`
+> **Provenance:** [`phase0_bidless_20260207_provenance.json`](phase0_bidless_20260207_provenance.json)
 
 ---
 
@@ -77,7 +77,7 @@ Each canonical run is evaluated against a 4-test gate:
 
 When both teams play the same strategy, the expected mean tricks per team is exactly 5.0 (out of 10 total tricks). Any systematic deviation indicates a simulation bug or rule implementation error.
 
-![Self-play grouped boxplot](assets/phase0_20260207_r5/self_play_grouped_boxplot.png)
+![Self-play grouped boxplot](assets/charts/self_play_grouped_boxplot.png)
 
 The grouped boxplot shows tricks_won distributions for each strategy, broken down by contract group (aggregate, suit, high, low). All distributions center tightly on 5.0 with no visible bias.
 
@@ -115,7 +115,7 @@ All 20 rows pass. The largest single delta is 0.0236 (greedy/high), still an ord
 - **Key finding:** Hand value distributions are indistinguishable across seats 0–3 for all contract types.
 - **Pass criteria:** No statistically significant differences in hand_value distribution across seats (visual + quantitative).
 
-![Seat balance grouped boxplot](assets/phase0_20260207_r5/seat_balance_grouped_boxplot.png)
+![Seat balance grouped boxplot](assets/charts/seat_balance_grouped_boxplot.png)
 
 The grouped boxplot shows hand_value distributions for each contract group, broken down by seat. Within every contract group, the four seat boxplots overlap completely — no seat shows systematically higher or lower hand values.
 
@@ -151,31 +151,31 @@ All seats are balanced. Mean hand values cluster within ±0.4 points of each oth
 
 ### 5a. Hand Value Calibration
 
-![Hand value by contract comparison](assets/phase0_20260207_r5/hand_value_by_contract_comparison.png)
+![Hand value by contract comparison](assets/charts/hand_value_by_contract_comparison.png)
 
 Hand value distributions vary appropriately by contract type. Suit contracts show higher hand values on average (trump power contributes), while HIGH and LOW contracts show more symmetric distributions. Critically, greedy and glutton produce nearly identical hand value distributions within each contract type — confirming the hand evaluator is strategy-independent (it measures hand strength, not play policy outcomes).
 
-![Hand value all strategies](assets/phase0_20260207_r5/hand_value_all_strategies.png)
+![Hand value all strategies](assets/charts/hand_value_all_strategies.png)
 
 All three strategies (greedy, glutton, random_legal) produce indistinguishable hand value distributions within each contract type, confirming the hand evaluator is strategy-independent. This uses the mixed-play dataset (900K hands, 3 strategy matchups).
 
 ### 5b. Tricks Distributions
 
-![Tricks by contract comparison](assets/phase0_20260207_r5/tricks_by_contract_comparison.png)
+![Tricks by contract comparison](assets/charts/tricks_by_contract_comparison.png)
 
 Tricks_won distributions show clear contract-type structure. Suit contracts have wider spread (trump enables more extreme outcomes), while HIGH and LOW contracts cluster more tightly around 5.0. Greedy and glutton show similar distributional shapes, though glutton's distributions are slightly tighter (consistent with its more systematic play).
 
-![CDF comparison](assets/phase0_20260207_r5/cdf_comparison.png)
+![CDF comparison](assets/charts/cdf_comparison.png)
 
 Side-by-side CDFs confirm discrete, well-behaved distributions with no artifacts. Suit contracts show heavier tails in both directions. The CDF steps are clean and monotonic, confirming adequate sample sizes.
 
 ### 5c. Trump Suit Invariance
 
-![Hand value by trump comparison](assets/phase0_20260207_r5/hand_value_by_trump_comparison.png)
+![Hand value by trump comparison](assets/charts/hand_value_by_trump_comparison.png)
 
 Hand value distributions are nearly identical across all four trump suits (C, D, H, S) for both greedy and glutton. Per-suit variances range from σ² = 8321.9 to σ² = 8369.7 — a spread of less than 0.6% relative to the overall variance (σ² = 8349.2). The hand evaluator is trump-suit-invariant.
 
-![Outcome by trump comparison](assets/phase0_20260207_r5/outcome_by_trump_comparison.png)
+![Outcome by trump comparison](assets/charts/outcome_by_trump_comparison.png)
 
 Tricks-won distributions are symmetric around 5.0 for all four trump suits under both strategies. No suit shows a systematic advantage or disadvantage in trick production. The simulation engine treats all trump suits equally.
 
@@ -384,9 +384,9 @@ Zero violations detected across all 5 strategies. The competitive ordering is fu
 
 ### 8a. Strategy Landscape
 
-![Win rate heatmap](assets/phase0_20260207_r5/win_rate_heatmap.png)
+![Win rate heatmap](assets/charts/win_rate_heatmap.png)
 
-![Matchup summary](assets/phase0_20260207_r5/matchup_summary.png)
+![Matchup summary](assets/charts/matchup_summary.png)
 
 The win rate heatmap reveals a clear hierarchy. Key observations:
 
@@ -396,7 +396,7 @@ The win rate heatmap reveals a clear hierarchy. Key observations:
 
 ### 8b. Tricks Distribution by Matchup
 
-![Tricks distribution by matchup](assets/phase0_20260207_r5/tricks_distribution.png)
+![Tricks distribution by matchup](assets/charts/tricks_distribution.png)
 
 Violin plots show trick distributions for Team 0 across all 11 matchups. Self-play matchups (diagonal entries) center on 5.0 as expected. Cross-play matchups show clear distributional shifts — glutton vs weaker opponents shows a rightward shift (more high-trick outcomes), consistent with the win rate heatmap above.
 
@@ -445,7 +445,7 @@ This breakdown shows whether glutton's superiority is uniform across contract ty
 | high | +0.1306 | +0.0820 | +0.1794 |
 | low | +0.0526 | +0.0031 | +0.1008 |
 
-![Advantage by contract](assets/phase0_20260207_r5/advantage_by_contract.png)
+![Advantage by contract](assets/charts/advantage_by_contract.png)
 
 The bar chart makes the hierarchy clear: suit contracts show the strongest glutton advantage (+0.23 to +0.31), HIGH is moderate (+0.13), and LOW is statistically significant but marginal (+0.05, CI barely excludes zero). This pattern is consistent with glutton's aggressive play style — trump contracts offer more opportunities for systematic trick-taking, amplifying glutton's advantage.
 
