@@ -44,8 +44,34 @@ CHART_OUTPUT_DIR = ""
 # # S0 Configuration & Data Loading
 
 # %%
-import json
+import os
 from pathlib import Path
+
+# Ensure CWD is repo root (Jupyter kernels start in notebook dir)
+_cwd = Path.cwd()
+if not (_cwd / ".git").exists():
+    _root = _cwd
+    while _root != _root.parent:
+        _root = _root.parent
+        if (_root / ".git").exists():
+            os.chdir(_root)
+            break
+    else:
+        print(f"WARNING: Could not find repo root from {_cwd}")
+print(f"Working directory: {Path.cwd()}")
+
+# %% [markdown]
+# ## Available eval runs
+# Run this cell to discover local eval data:
+
+# %%
+import glob as _g
+
+for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
+    print(_p)
+
+# %%
+import json
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -92,6 +118,11 @@ if EVAL_LOG_PATH:
             print(f"  Deals: {df['deal_id'].nunique()}, Source: {_data_source}")
         except (FileNotFoundError, ValueError, IsADirectoryError) as exc:
             print(f"WARNING: Could not load eval logs: {exc}")
+
+if EVAL_LOG_PATH and df.empty:
+    print(f"WARNING: EVAL_LOG_PATH={EVAL_LOG_PATH!r} did not resolve to data.")
+    print(f"  CWD: {Path.cwd()}")
+    print("  Falling back to synthetic data.")
 
 if df.empty:
     # Synthetic demo data for CI / SMOKE fallback
