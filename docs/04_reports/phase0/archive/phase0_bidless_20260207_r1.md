@@ -53,7 +53,7 @@ Before examining results, these charts confirm the simulation infrastructure is 
 
 ### Self-Play Fairness (Aggregate)
 
-![Self-play control chart](assets/phase0_20260207/self_play_control.png)
+![Self-play control chart](assets_r1/self_play_control.png)
 
 All 5 strategies in self-play show |mean delta| < 0.025 tricks (threshold: 0.25). This confirms zero systematic team bias in the simulation engine.
 
@@ -67,13 +67,13 @@ All 5 strategies in self-play show |mean delta| < 0.025 tricks (threshold: 0.25)
 
 ### Self-Play Fairness (Per-Contract)
 
-![Self-play by contract](assets/phase0_20260207/self_play_by_contract.png)
+![Self-play by contract](assets_r1/self_play_by_contract.png)
 
 Self-play fairness holds within every contract type (NT:High, NT:Low, Trump-C, Trump-D, Trump-H, Trump-S). All bars cluster tightly around the 5.0 expected mean, with the green fairness band showing the ±0.25 threshold. No strategy shows contract-specific team bias.
 
 ### Seat Balance
 
-![Hand value by seat](assets/phase0_20260207/hand_value_by_seat.png)
+![Hand value by seat](assets_r1/hand_value_by_seat.png)
 
 Hand value distributions are identical across seats 0–3, confirming fair deal generation with no seat bias.
 
@@ -165,13 +165,13 @@ Zero violations detected across all 5 strategies. The competitive ordering is fu
 
 ### 5.6 Strategy Landscape
 
-![Win rate heatmap](assets/phase0_20260207/win_rate_heatmap.png)
+![Win rate heatmap](assets_r1/win_rate_heatmap.png)
 
-![Matchup summary](assets/phase0_20260207/matchup_summary.png)
+![Matchup summary](assets_r1/matchup_summary.png)
 
 ### 5.7 Tricks Distribution by Matchup
 
-![Tricks distribution by matchup](assets/phase0_20260207/tricks_distribution.png)
+![Tricks distribution by matchup](assets_r1/tricks_distribution.png)
 
 Violin plots show trick distributions for Team 0 across all 11 matchups. Self-play matchups (diagonal entries) center on 5.0 as expected. Cross-play matchups show clear distributional shifts — glutton vs weaker opponents shows a rightward shift (more high-trick outcomes), consistent with the win rate heatmap above.
 
@@ -242,13 +242,13 @@ Notable differences: `trump_power_avg` is much more dominant under glutton (-0.6
 
 ### 6.4 Feature-Outcome Visualizations
 
-![Feature-outcome correlation](assets/phase0_20260207/feature_outcome_correlation.png)
+![Feature-outcome correlation](assets_r1/feature_outcome_correlation.png)
 
-![Outcome distributions](assets/phase0_20260207/outcome_distributions.png)
+![Outcome distributions](assets_r1/outcome_distributions.png)
 
 ### 6.5 Feature Signal by Contract Type
 
-![Feature vs outcome by contract](assets/phase0_20260207/feature_vs_outcome_by_contract.png)
+![Feature vs outcome by contract](assets_r1/feature_vs_outcome_by_contract.png)
 
 The top-correlated feature (hand_value) shows a positive relationship with tricks_won across all three contract types. Pearson correlations are strongest for suit contracts (r = 0.400), with HIGH (r = 0.344) and LOW (r = 0.345) showing similar but slightly weaker signal. The binned-mean trend lines confirm a monotonic positive relationship in all cases — hand_value is a reliable predictor regardless of contract type.
 
@@ -264,15 +264,15 @@ The top-correlated feature (hand_value) shows a positive relationship with trick
 
 ## 7. Feature and Distribution Health
 
-![Hand value by contract](assets/phase0_20260207/hand_value_by_contract.png)
+![Hand value by contract](assets_r1/hand_value_by_contract.png)
 
 Hand value distributions vary appropriately by contract type. Suit contracts show higher hand values on average (trump power contributes), while HIGH and LOW contracts show more symmetric distributions. This confirms the hand evaluator is well-calibrated to contract structure.
 
-![CDF of tricks by contract](assets/phase0_20260207/cdf.png)
+![CDF of tricks by contract](assets_r1/cdf.png)
 
 CDF curves show distinct shapes by contract type. Suit contracts have heavier right tails (more high-trick outcomes due to trump advantage). HIGH and LOW contracts are more symmetric around 5 tricks. The smooth, monotonic CDFs confirm adequate sample sizes with no discretization artifacts.
 
-![CCDF (tail distribution) by contract](assets/phase0_20260207/ccdf.png)
+![CCDF (tail distribution) by contract](assets_r1/ccdf.png)
 
 The complementary CDF (log-scale) reveals tail behavior more clearly. Suit contracts maintain higher P(X > x) through the upper range — roughly 10% probability of winning 7+ tricks, compared to ~8% for NT contracts. All three contract types converge near 10 tricks (~1% probability), confirming the discrete distribution has no anomalous tail spikes.
 
@@ -286,19 +286,19 @@ This section examines whether the hand evaluator and outcome distributions are i
 
 ### 8.1 Hand Value by Trump Suit
 
-![Hand value by trump suit](assets/phase0_20260207/hand_value_by_trump.png)
+![Hand value by trump suit](assets_r1/hand_value_by_trump.png)
 
 Hand value distributions are nearly identical across all four trump suits (C, D, H, S). Means cluster tightly around ~497, and per-suit variances range from σ² = 8321.9 (C) to σ² = 8369.7 (H) — a spread of less than 0.6% relative to the overall variance (σ² = 8349.2). This confirms the hand evaluator is trump-suit-invariant.
 
 ### 8.2 Tricks Won by Trump Suit
 
-![Tricks won by trump suit](assets/phase0_20260207/outcome_by_trump.png)
+![Tricks won by trump suit](assets_r1/outcome_by_trump.png)
 
 Tricks-won distributions (violin plots) are symmetric around the mean of 5.0 for all four trump suits, with identical multimodal structure. No suit shows a systematic advantage or disadvantage in trick production. This validates that simulation outcomes are trump-suit-neutral.
 
 ### 8.3 Feature Means by Trump Suit
 
-![Feature heatmap by trump suit](assets/phase0_20260207/feature_heatmap_by_suit.png)
+![Feature heatmap by trump suit](assets_r1/feature_heatmap_by_suit.png)
 
 The Z-score normalized heatmap reveals that while aggregate features (hand_value, trump_power_sum, rank_sum) show zero variation across suits (z = 0.00), trump-specific interaction features show natural suit-level variation. For example:
 
@@ -311,7 +311,7 @@ These variations reflect natural combinatorial differences in how trump suit cho
 
 ### 8.4 Hand Value Variance by Trump Suit
 
-![Suit variance summary](assets/phase0_20260207/suit_variance_summary.png)
+![Suit variance summary](assets_r1/suit_variance_summary.png)
 
 All four suits track the overall variance (σ² = 8349.2, dashed red line) to within 0.6%. This confirms that modeling variance assumptions hold uniformly across trump suits — no suit requires variance-specific treatment in downstream models.
 

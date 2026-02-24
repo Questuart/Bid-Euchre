@@ -1,12 +1,12 @@
-# Phase 0 Bidless Report — 2026-02-07 (r5)
+# Phase 0 Bidless Report — 2026-02-07 (r4)
 
-> **Snapshot date:** 2026-02-16
-> **Revision:** r5
-> **Canonical git SHA:** `aef6c6a`
+> **Snapshot date:** 2026-02-07
+> **Revision:** r4
+> **Canonical git SHA:** `d65e724`
 > **Seed:** 42
 > **Total budget:** 5.1M hands across 5 canonical runs + 720K policy gate evidence (5.82M total)
-> **Charts:** New and regenerated charts in `assets/phase0_20260207_r5/`; r4 assets remain immutable
-> **Provenance:** [`phase0_bidless_20260207_r5_provenance.json`](phase0_bidless_20260207_r5_provenance.json)
+> **Charts:** New and regenerated charts in `assets_r4/`; r3 assets remain immutable
+> **Provenance:** [`phase0_bidless_20260207_r4_provenance.json`](phase0_bidless_20260207_r4_provenance.json)
 
 ---
 
@@ -18,7 +18,7 @@ Glutton is frozen as the canonical play policy for Phase 1 bidding model develop
 - **Deal fairness** — PASS. Hand value distributions are identical across seats 0–3 within each contract type. No seat or contract-type bias in deal generation.
 - **Feature health** — PASS. 41-feature hand evaluation is well-calibrated, trump-suit-invariant (variance spread < 0.6%), and produces healthy distributions with no anomalies.
 - **Feature signal** — R² ~0.19–0.24 per contract type (Ridge on tricks_won). Sufficient predictive signal for Phase 1 bidding models. Strategy-stable: greedy and glutton agree on top features.
-- **Policy decision** — Glutton advantage +0.19–0.21 mean tricks_won over greedy. All 6 bootstrap 95% CIs exclude zero across 3 seeds and both seat directions. One-sample t-test p < 0.001.
+- **Policy decision** — Glutton advantage +0.19–0.21 mean tricks_won over greedy. All 6 bootstrap 95% CIs exclude zero across 3 seeds and both seat directions. Welch's t-test p < 0.001.
 
 ---
 
@@ -77,7 +77,7 @@ Each canonical run is evaluated against a 4-test gate:
 
 When both teams play the same strategy, the expected mean tricks per team is exactly 5.0 (out of 10 total tricks). Any systematic deviation indicates a simulation bug or rule implementation error.
 
-![Self-play grouped boxplot](assets/phase0_20260207_r5/self_play_grouped_boxplot.png)
+![Self-play grouped boxplot](assets_r4/self_play_grouped_boxplot.png)
 
 The grouped boxplot shows tricks_won distributions for each strategy, broken down by contract group (aggregate, suit, high, low). All distributions center tightly on 5.0 with no visible bias.
 
@@ -115,28 +115,28 @@ All 20 rows pass. The largest single delta is 0.0236 (greedy/high), still an ord
 - **Key finding:** Hand value distributions are indistinguishable across seats 0–3 for all contract types.
 - **Pass criteria:** No statistically significant differences in hand_value distribution across seats (visual + quantitative).
 
-![Seat balance grouped boxplot](assets/phase0_20260207_r5/seat_balance_grouped_boxplot.png)
+![Seat balance grouped boxplot](assets_r4/seat_balance_grouped_boxplot.png)
 
-The grouped boxplot shows hand_value distributions for each contract group, broken down by seat. Within every contract group, the four seat boxplots overlap completely — no seat shows systematically higher or lower hand values.
+The grouped boxplot shows hand_value distributions for each seat, broken down by contract group. Boxplots overlap completely — no seat shows systematically higher or lower hand values.
 
-| Contract | Seat | N | Mean | P25 | P75 | Min | Max | Status |
-|----------|------|---|------|-----|-----|-----|-----|--------|
-| aggregate | 0 | 300,000 | 429.94 | 320 | 520 | 150 | 930 | PASS |
-| aggregate | 1 | 300,000 | 430.19 | 320 | 520 | 140 | 890 | PASS |
-| aggregate | 2 | 300,000 | 429.92 | 320 | 520 | 140 | 910 | PASS |
-| aggregate | 3 | 300,000 | 429.95 | 320 | 520 | 130 | 910 | PASS |
-| suit | 0 | 200,000 | 494.91 | 430 | 560 | 170 | 930 | PASS |
-| suit | 1 | 200,000 | 495.28 | 430 | 560 | 170 | 890 | PASS |
-| suit | 2 | 200,000 | 494.88 | 430 | 560 | 180 | 910 | PASS |
-| suit | 3 | 200,000 | 494.92 | 430 | 560 | 190 | 910 | PASS |
-| high | 0 | 50,000 | 299.74 | 270 | 330 | 150 | 440 | PASS |
-| high | 1 | 50,000 | 300.09 | 270 | 330 | 140 | 440 | PASS |
-| high | 2 | 50,000 | 300.02 | 270 | 330 | 140 | 460 | PASS |
-| high | 3 | 50,000 | 300.15 | 270 | 330 | 130 | 440 | PASS |
-| low | 0 | 50,000 | 300.26 | 270 | 330 | 160 | 450 | PASS |
-| low | 1 | 50,000 | 299.91 | 270 | 330 | 160 | 460 | PASS |
-| low | 2 | 50,000 | 299.98 | 270 | 330 | 140 | 460 | PASS |
-| low | 3 | 50,000 | 299.85 | 270 | 330 | 160 | 470 | PASS |
+| Seat | Contract | N | Mean | P25 | P75 | Min | Max | Status |
+|------|----------|---|------|-----|-----|-----|-----|--------|
+| 0 | aggregate | 300,000 | 429.94 | 320 | 520 | 150 | 930 | PASS |
+| 0 | suit | 200,000 | 494.91 | 430 | 560 | 170 | 930 | PASS |
+| 0 | high | 50,000 | 299.74 | 270 | 330 | 150 | 440 | PASS |
+| 0 | low | 50,000 | 300.26 | 270 | 330 | 160 | 450 | PASS |
+| 1 | aggregate | 300,000 | 430.19 | 320 | 520 | 140 | 890 | PASS |
+| 1 | suit | 200,000 | 495.28 | 430 | 560 | 170 | 890 | PASS |
+| 1 | high | 50,000 | 300.09 | 270 | 330 | 140 | 440 | PASS |
+| 1 | low | 50,000 | 299.91 | 270 | 330 | 160 | 460 | PASS |
+| 2 | aggregate | 300,000 | 429.92 | 320 | 520 | 140 | 910 | PASS |
+| 2 | suit | 200,000 | 494.88 | 430 | 560 | 180 | 910 | PASS |
+| 2 | high | 50,000 | 300.02 | 270 | 330 | 140 | 460 | PASS |
+| 2 | low | 50,000 | 299.98 | 270 | 330 | 140 | 460 | PASS |
+| 3 | aggregate | 300,000 | 429.95 | 320 | 520 | 130 | 910 | PASS |
+| 3 | suit | 200,000 | 494.92 | 430 | 560 | 190 | 910 | PASS |
+| 3 | high | 50,000 | 300.15 | 270 | 330 | 130 | 440 | PASS |
+| 3 | low | 50,000 | 299.85 | 270 | 330 | 160 | 470 | PASS |
 
 All seats are balanced. Mean hand values cluster within ±0.4 points of each other across seats for every contract type — suit contracts average ~495, HIGH ~300, LOW ~300. Percentile ranges (P25/P75) are identical across seats. Deal generation is fair.
 
@@ -151,31 +151,27 @@ All seats are balanced. Mean hand values cluster within ±0.4 points of each oth
 
 ### 5a. Hand Value Calibration
 
-![Hand value by contract comparison](assets/phase0_20260207_r5/hand_value_by_contract_comparison.png)
+![Hand value by contract comparison](assets_r4/hand_value_by_contract_comparison.png)
 
 Hand value distributions vary appropriately by contract type. Suit contracts show higher hand values on average (trump power contributes), while HIGH and LOW contracts show more symmetric distributions. Critically, greedy and glutton produce nearly identical hand value distributions within each contract type — confirming the hand evaluator is strategy-independent (it measures hand strength, not play policy outcomes).
 
-![Hand value all strategies](assets/phase0_20260207_r5/hand_value_all_strategies.png)
-
-All three strategies (greedy, glutton, random_legal) produce indistinguishable hand value distributions within each contract type, confirming the hand evaluator is strategy-independent. This uses the mixed-play dataset (900K hands, 3 strategy matchups).
-
 ### 5b. Tricks Distributions
 
-![Tricks by contract comparison](assets/phase0_20260207_r5/tricks_by_contract_comparison.png)
+![Tricks by contract comparison](assets_r4/tricks_by_contract_comparison.png)
 
 Tricks_won distributions show clear contract-type structure. Suit contracts have wider spread (trump enables more extreme outcomes), while HIGH and LOW contracts cluster more tightly around 5.0. Greedy and glutton show similar distributional shapes, though glutton's distributions are slightly tighter (consistent with its more systematic play).
 
-![CDF comparison](assets/phase0_20260207_r5/cdf_comparison.png)
+![CDF comparison](assets_r4/cdf_comparison.png)
 
 Side-by-side CDFs confirm discrete, well-behaved distributions with no artifacts. Suit contracts show heavier tails in both directions. The CDF steps are clean and monotonic, confirming adequate sample sizes.
 
 ### 5c. Trump Suit Invariance
 
-![Hand value by trump comparison](assets/phase0_20260207_r5/hand_value_by_trump_comparison.png)
+![Hand value by trump comparison](assets_r4/hand_value_by_trump_comparison.png)
 
 Hand value distributions are nearly identical across all four trump suits (C, D, H, S) for both greedy and glutton. Per-suit variances range from σ² = 8321.9 to σ² = 8369.7 — a spread of less than 0.6% relative to the overall variance (σ² = 8349.2). The hand evaluator is trump-suit-invariant.
 
-![Outcome by trump comparison](assets/phase0_20260207_r5/outcome_by_trump_comparison.png)
+![Outcome by trump comparison](assets_r4/outcome_by_trump_comparison.png)
 
 Tricks-won distributions are symmetric around 5.0 for all four trump suits under both strategies. No suit shows a systematic advantage or disadvantage in trick production. The simulation engine treats all trump suits equally.
 
@@ -210,8 +206,8 @@ All contract types exceed the 0.10 R² threshold. Suit contracts show the strong
 
 **Suit Contracts — Top 10 Features:**
 
-| Feature | Greedy Coeff | Glutton Coeff | Greedy Coeff Rank | Glutton Coeff Rank |
-|---------|-------------|--------------|-------------------|-------------------|
+| Feature | Greedy Coeff | Glutton Coeff | Greedy Rank | Glutton Rank |
+|---------|-------------|--------------|-------------|--------------|
 | `trump_rb_count` | +0.3050 | +0.1615 | 1 | 2 |
 | `second_highest_trump_rank` | -0.2984 | — | 2 | — |
 | `highest_trump_rank` | -0.2936 | — | 3 | — |
@@ -229,8 +225,8 @@ Notable: Greedy is driven by individual trump card ranks (`highest_trump_rank`, 
 
 **High Contracts — Top 10 Features:**
 
-| Feature | Greedy Coeff | Glutton Coeff | Greedy Coeff Rank | Glutton Coeff Rank |
-|---------|-------------|--------------|-------------------|-------------------|
+| Feature | Greedy Coeff | Glutton Coeff | Greedy Rank | Glutton Rank |
+|---------|-------------|--------------|-------------|--------------|
 | `offsuit_non_ace_count` | -0.1764 | -0.1642 | 1 | 2 |
 | `offsuit_aces` | +0.1764 | +0.1642 | 2 | 1 |
 | `offsuit_suits_with_ace` | +0.1610 | +0.1394 | 3 | 4 |
@@ -246,8 +242,8 @@ HIGH contracts show strong strategy stability — the top features are ace/offsu
 
 **Low Contracts — Top 10 Features:**
 
-| Feature | Greedy Coeff | Glutton Coeff | Greedy Coeff Rank | Glutton Coeff Rank |
-|---------|-------------|--------------|-------------------|-------------------|
+| Feature | Greedy Coeff | Glutton Coeff | Greedy Rank | Glutton Rank |
+|---------|-------------|--------------|-------------|--------------|
 | `offsuit_tens_count` | +0.6255 | +0.5753 | 1 | 1 |
 | `rank_sum` | +0.1244 | +0.1142 | 2 | 4 |
 | `hand_value` | +0.1244 | +0.1142 | 3 | 5 |
@@ -261,66 +257,7 @@ HIGH contracts show strong strategy stability — the top features are ace/offsu
 
 LOW contracts are dominated by `offsuit_tens_count` (coefficient +0.63/+0.58 — by far the strongest single feature in any contract type). Tens are the highest-ranked cards in LOW contracts, so this is expected. Both strategies agree on this and on most other rankings. Note the positive sign on `rank_sum` and `hand_value` — these are positively correlated with tens holdings despite LOW being a "worst cards win" contract, because the hand evaluator's scoring reflects relative card strength.
 
-### 6d. Per-Contract Correlation Ranking
-
-The §6c tables rank features by Ridge coefficient magnitude. This complementary view ranks by Pearson correlation with tricks_won — a simpler measure that doesn't account for feature interactions but is easier to interpret.
-
-*Pearson r computed on the glutton self-play dataset (300K hands). Ridge coefficients shown for both strategies.*
-
-*Note: Pearson r measures linear association between a single feature and tricks_won. Ridge coefficients account for all features simultaneously, so rankings can differ — a feature with high correlation may have a modest coefficient if correlated features capture its signal.*
-
-**Suit Contracts — Top 10 by Pearson Correlation:**
-
-| Feature | Pearson r | Greedy Coeff | Glutton Coeff |
-|---------|-----------|--------------|---------------|
-| `hand_value` | +0.4348 | +0.1555 | +0.0991 |
-| `trump_power_sum` | +0.4216 | +0.1642 | +0.1019 |
-| `offsuit_non_ace_count` | -0.4024 | -0.1539 | -0.0985 |
-| `trump_count` | +0.3770 | +0.0694 | +0.0517 |
-| `top_trump_count` | +0.3668 | +0.1393 | +0.0854 |
-| `top_trump_sum` | +0.3668 | +0.1393 | +0.0854 |
-| `third_highest_trump_rank` | +0.3667 | -0.1606 | -0.0350 |
-| `second_highest_trump_rank` | +0.3576 | -0.2984 | -0.0600 |
-| `bowers` | +0.3524 | +0.2082 | +0.1296 |
-| `trump_count_x_void_count` | +0.3506 | +0.2792 | +0.0474 |
-
-`hand_value` has the strongest positive correlation (r = +0.43), while `offsuit_non_ace_count` has the strongest negative correlation (r = -0.40) — more offsuit high cards means fewer trump, reducing trick-taking in suit contracts. Trump features dominate the list, consistent with §6c. Note `third_highest_trump_rank` and `second_highest_trump_rank` have positive correlations but negative Ridge coefficients — they correlate with having many trump cards (positive for tricks) but conditional on trump count, a higher rank means the trump holding is top-heavy, which the Ridge model penalizes.
-
-**High Contracts — Top 10 by Pearson Correlation:**
-
-| Feature | Pearson r | Greedy Coeff | Glutton Coeff |
-|---------|-----------|--------------|---------------|
-| `offsuit_non_ace_count` | -0.4216 | -0.1764 | -0.1642 |
-| `offsuit_aces` | +0.4216 | +0.1764 | +0.1642 |
-| `offsuit_suits_with_ace` | +0.3732 | +0.1610 | +0.1394 |
-| `hand_value` | +0.3403 | +0.0548 | +0.0535 |
-| `rank_sum` | +0.3403 | +0.0548 | +0.0535 |
-| `high_card_count` | +0.3095 | +0.0549 | +0.0555 |
-| `offsuit_suits_with_double_ace` | +0.2727 | +0.1041 | +0.1184 |
-| `offsuit_suits_with_ace_and_king` | +0.2231 | +0.0583 | +0.0608 |
-| `offsuit_best_rank_sum` | +0.2223 | +0.1002 | +0.1436 |
-| `offsuit_secondbest_rank_sum` | +0.2197 | +0.1013 | +0.1186 |
-
-Correlation and Ridge rankings align closely here — ace-related features dominate both. `offsuit_aces` and `offsuit_non_ace_count` are mirror images (r = ±0.42), reflecting that in no-trump HIGH contracts, aces are the primary trick-winning mechanism. Strategy agreement is strong: greedy and glutton coefficients track each other closely.
-
-**Low Contracts — Top 10 by Pearson Correlation:**
-
-| Feature | Pearson r | Greedy Coeff | Glutton Coeff |
-|---------|-----------|--------------|---------------|
-| `offsuit_tens_count` | +0.4240 | +0.6255 | +0.5753 |
-| `hand_value` | +0.3404 | +0.1244 | +0.1142 |
-| `rank_sum` | +0.3404 | +0.1244 | +0.1142 |
-| `low_card_count` | +0.3091 | -0.0515 | -0.0464 |
-| `offsuit_best_rank_sum` | +0.2215 | +0.0949 | +0.1726 |
-| `offsuit_secondbest_rank_sum` | +0.2175 | +0.1100 | +0.1488 |
-| `high_card_count` | -0.2163 | +0.0660 | +0.0600 |
-| `double_ten_jack_count` | +0.1880 | +0.0695 | +0.0475 |
-| `offsuit_suits_with_ace_and_king` | -0.1462 | -0.0188 | -0.0207 |
-| `offsuit_non_ace_count` | +0.1369 | -0.0410 | -0.0407 |
-
-`offsuit_tens_count` dominates both by correlation (r = +0.42) and by Ridge coefficient (+0.63/+0.58), confirming it as the single most important feature for LOW contracts. `low_card_count` shows an interesting divergence: high positive correlation (r = +0.31) but a small *negative* Ridge coefficient — its signal is absorbed by `offsuit_tens_count` and `rank_sum` in the multivariate model. `offsuit_non_ace_count` flips sign from §6c's suit contracts (negative there, positive here), reflecting that in LOW contracts, having more high-ranked offsuit cards paradoxically helps because the hand evaluator's `offsuit_non_ace_count` feature captures suit distribution properties that matter differently when 10s beat aces.
-
-### 6e. Caveats
+### 6d. Caveats
 
 - **Standardized coefficients are exploratory only** — they indicate relative feature importance within this model, not causal effects. A feature with a large coefficient may simply correlate with the true causal variable.
 - **Correlated features share variance** — many hand features are correlated (e.g., `bowers` and `trump_rb_count`), so individual coefficients can be unstable while their combined effect is stable.
@@ -373,20 +310,13 @@ Zero violations detected across all 5 strategies. The competitive ordering is fu
 - **Key finding:** Glutton dominates. Clean linear hierarchy: glutton > greedy > always_highest ≈ always_lowest > random_legal.
 - **What to look for:** Heatmap symmetry (direction-invariance), distributional shifts in cross-play (violin plots).
 
-**Strategy descriptions** (from source docstrings):
-- **glutton** — Partner-aware play with trump conservation, double-deck card tracking, position-aware aggression, and smart leads/discards.
-- **greedy** — Leads the highest-value card and plays the cheapest winning card when following; dumps the cheapest card when no winning play exists.
-- **always_highest** — Always plays the highest-ranked legal card (extreme aggression: cash everything immediately).
-- **always_lowest** — Always plays the lowest-ranked legal card (extreme conservatism: never spend power unless forced).
-- **random_legal** — Chooses uniformly at random among legal moves (no-intelligence baseline).
-
-**Win rate** = weighted proportion: (count(tricks ≥ 6) + 0.5 × count(tricks = 5)) / total_hands. Ties (exactly 5 tricks each) contribute 0.5 to each team's win rate, ensuring win_rate_team0 + win_rate_team1 = 1.0. A 55% win rate means team 0's weighted wins (full wins + half-credit ties) total 55% of all hands.
+**Win rate** = proportion of hands where team 0 won more tricks than team 1. A 55% win rate means team 0's strategy won 55 out of every 100 hands.
 
 ### 8a. Strategy Landscape
 
-![Win rate heatmap](assets/phase0_20260207_r5/win_rate_heatmap.png)
+![Win rate heatmap](assets_r4/win_rate_heatmap.png)
 
-![Matchup summary](assets/phase0_20260207_r5/matchup_summary.png)
+![Matchup summary](assets_r4/matchup_summary.png)
 
 The win rate heatmap reveals a clear hierarchy. Key observations:
 
@@ -396,7 +326,7 @@ The win rate heatmap reveals a clear hierarchy. Key observations:
 
 ### 8b. Tricks Distribution by Matchup
 
-![Tricks distribution by matchup](assets/phase0_20260207_r5/tricks_distribution.png)
+![Tricks distribution by matchup](assets_r4/tricks_distribution.png)
 
 Violin plots show trick distributions for Team 0 across all 11 matchups. Self-play matchups (diagonal entries) center on 5.0 as expected. Cross-play matchups show clear distributional shifts — glutton vs weaker opponents shows a rightward shift (more high-trick outcomes), consistent with the win rate heatmap above.
 
@@ -406,7 +336,7 @@ Violin plots show trick distributions for Team 0 across all 11 matchups. Self-pl
 
 - **Purpose:** Make the freeze decision: should glutton replace greedy as the canonical play policy?
 - **Data source:** Policy gate aggregate — 720K hands across 3 seeds × 2 directions × 6 contract scenarios.
-- **Methodology:** Bootstrap 95% CI on mean glutton advantage (trick delta). Gate passes if ALL CIs exclude zero.
+- **Methodology:** Bootstrap 95% CI on mean glutton advantage (tricks_won difference). Gate passes if ALL CIs exclude zero.
 - **Verdict:** PASS. Glutton frozen as canonical play policy.
 
 ### 9a. Methodology
@@ -414,12 +344,12 @@ Violin plots show trick distributions for Team 0 across all 11 matchups. Self-pl
 - **Seeds:** 42, 43, 44
 - **Hands per scenario:** 20,000 (120,000 per seed-direction)
 - **Directions:** Both `glutton_vs_greedy` and `greedy_vs_glutton` (confirms direction-invariant advantage)
-- **Statistic:** Bootstrap 95% CI on mean glutton advantage, measured as mean trick delta (tricks_team0 − tricks_team1, positive = glutton wins more tricks)
+- **Statistic:** Bootstrap 95% CI on mean glutton advantage, measured in mean tricks_won difference (positive = glutton wins more tricks)
 - **Gate criterion:** PASS if all CIs exclude zero
 
 ### 9b. Aggregate Results
 
-| Seed | Team 0 | Team 1 | Glutton Advantage (trick delta) | CI Lower | CI Upper | N | Status |
+| Seed | Team 0 | Team 1 | Glutton Advantage (tricks_won) | CI Lower | CI Upper | N | Status |
 |------|--------|--------|-------------------------------|----------|----------|---|--------|
 | 42 | glutton | greedy | +0.2110 | +0.1879 | +0.2324 | 120,000 | PASS |
 | 42 | greedy | glutton | +0.1862 | +0.1639 | +0.2082 | 120,000 | PASS |
@@ -430,13 +360,13 @@ Violin plots show trick distributions for Team 0 across all 11 matchups. Self-pl
 
 **All 6 CIs exclude zero.** Lowest CI lower bound: +0.1639 (seed 42, greedy_vs_glutton).
 
-Pooling all 720K hands, a one-sample t-test (H₀: mean advantage = 0) yields p < 0.001, confirming the bootstrap CI result.
+Pooling all 720K hands, Welch's t-test yields p < 0.001, confirming the bootstrap CI result.
 
 ### 9c. Advantage by Contract Type (Seed 42)
 
 This breakdown shows whether glutton's superiority is uniform across contract types or concentrated in specific contracts. Seed 42 is shown; all 3 seeds exhibit the same per-contract pattern.
 
-| Contract Type | Glutton Advantage (trick delta) | CI Lower | CI Upper |
+| Contract Type | Glutton Advantage (tricks_won) | CI Lower | CI Upper |
 |---------------|-------------------------------|----------|----------|
 | suit_S | +0.2731 | +0.2204 | +0.3276 |
 | suit_C | +0.3103 | +0.2580 | +0.3642 |
@@ -445,7 +375,7 @@ This breakdown shows whether glutton's superiority is uniform across contract ty
 | high | +0.1306 | +0.0820 | +0.1794 |
 | low | +0.0526 | +0.0031 | +0.1008 |
 
-![Advantage by contract](assets/phase0_20260207_r5/advantage_by_contract.png)
+![Advantage by contract](assets_r4/advantage_by_contract.png)
 
 The bar chart makes the hierarchy clear: suit contracts show the strongest glutton advantage (+0.23 to +0.31), HIGH is moderate (+0.13), and LOW is statistically significant but marginal (+0.05, CI barely excludes zero). This pattern is consistent with glutton's aggressive play style — trump contracts offer more opportunities for systematic trick-taking, amplifying glutton's advantage.
 
@@ -453,7 +383,7 @@ The bar chart makes the hierarchy clear: suit contracts show the strongest glutt
 
 **Finding:** Glutton consistently outperforms greedy across all seeds, directions, and contract types.
 
-**Evidence:** 6/6 aggregate bootstrap CIs exclude zero; 6/6 per-scenario CIs exclude zero at seed 42; pooled one-sample t-test p < 0.001.
+**Evidence:** 6/6 aggregate bootstrap CIs exclude zero; 6/6 per-scenario CIs exclude zero at seed 42; pooled Welch's t-test p < 0.001.
 
 **Caveat:** LOW contract advantage is marginal (CI lower bound +0.003). This is documented but does not affect the pooled gate decision.
 
@@ -475,7 +405,7 @@ The bar chart makes the hierarchy clear: suit contracts show the strongest glutt
 
 ### Play Policy Gate
 ```bash
-PYTHONPATH=src uv run python scripts/internal/play_policy_gate.py \
+PYTHONPATH=src uv run python scripts/play_policy_gate.py \
   --seeds 42,43,44 --n-per 20000
 ```
 
@@ -485,19 +415,17 @@ uv run python scripts/internal/evaluate_diagnostic_tricks.py \
   --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 \
   --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
   --seed 42 --output /tmp/diagnostic_tricks_evaluation.md \
-  --per-contract-json /tmp/phase0_r4/coefficients.json \
-  --cross-contract-table /tmp/phase0_r4/cross_contract_table.md
+  --per-contract-json /tmp/phase0_r4/coefficients.json
 ```
 
-### Chart Generation (r5)
+### Chart Generation (r4)
 ```bash
 PYTHONPATH=src uv run python scripts/internal/generate_r4_charts.py \
   --zoom-dir data/runs/canonical_bidless_outcomes_zoom_42_20260204_222712 \
   --greedy-dir data/runs/canonical_bidless_dataset_greedy_42_20260204_221121 \
   --glutton-dir data/runs/canonical_bidless_dataset_glutton_42_20260204_222713 \
-  --mixed-play-dir data/runs/canonical_bidless_dataset_mixed_play_42_20260204_221115 \
   --gate-json data/runs/play_policy_gate_aggregate_20260204_221656.json \
-  --output-dir docs/04_reports/assets/phase0_20260207_r5 \
+  --output-dir docs/04_reports/assets/phase0_20260207_r4 \
   --dpi 150
 ```
 
