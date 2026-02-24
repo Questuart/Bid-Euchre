@@ -757,12 +757,20 @@ def test_rung_report_with_chart_dir(tmp_path):
     chart_dir.mkdir()
     (chart_dir / "seat_balance_boxplot.png").write_bytes(b"fake")
     (chart_dir / "dual_arm_comparison.png").write_bytes(b"fake")
+    # Auction charts: use correct names (not make_rate_by_contract.png)
+    (chart_dir / "auction_health.png").write_bytes(b"fake")
+    (chart_dir / "bidder_performance.png").write_bytes(b"fake")
 
     report = generate_arc_d_rung_report(bundle_path, chart_dir=chart_dir)
 
     # Charts embedded inline in their respective sections (not a separate Charts section)
     assert "seat_balance_boxplot" in report
     assert "dual_arm_comparison" in report
+    # Finding 1: auction charts use correct filenames
+    assert "auction_health" in report
+    assert "bidder_performance" in report
+    # Old name must NOT appear
+    assert "make_rate_by_contract" not in report
 
 
 # ──────────────────────────────────────────────
@@ -947,3 +955,104 @@ def test_report_h2h_matchup_id_extraction(tmp_path):
             "vs_fixed6",
             "self_play",
         ), f"Expected clean matchup ID, got: {mid}"
+
+
+# ──────────────────────────────────────────────
+#  Review-fix tests (Findings 1, 4, 5)
+# ──────────────────────────────────────────────
+
+
+def test_reproduction_commands_use_new_notebook_names(tmp_path):
+    """Finding 4: Reproduction section references 3 new template notebooks, not old monolithic."""
+    bundle_path = _make_bundle(tmp_path)
+    eval_df = _make_eval_df()
+
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+
+    assert "10_feature_health.ipynb" in report
+    assert "20_outcome_health.ipynb" in report
+    assert "30_feature_outcome_eval.ipynb" in report
+    # Old monolithic name must NOT appear
+    assert "01_model_rung.ipynb" not in report
+
+
+def test_semantic_gate_path_artifact(tmp_path):
+    """Finding 5: Gate checks loaded from path-based semantic_gate_val."""
+    # Create a gate artifact JSON on disk
+    gate_data = {
+        "schema_version": 1,
+        "gate_status": "PASS",
+        "checks": [
+            {"check_id": "seat_balance", "status": "PASS", "detail": "OK"},
+            {
+                "check_id": "team_balance",
+                "contract_type": "suit",
+                "status": "WARN",
+                "detail": "Marginal",
+            },
+        ],
+    }
+    gate_path = tmp_path / "gate_val_olsa.json"
+    gate_path.write_text(json.dumps(gate_data))
+
+    # Bundle with semantic_gate_val as a path string (not inline dict)
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "semantic_gate_val": str(gate_path),
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    assert "## Semantic Gate Summary" in report
+    assert "### OLSa Gate Checks" in report
+    assert "seat_balance" in report
+    assert "team_balance" in report
+    assert "WARN" in report
+
+
+def test_semantic_gate_inline_dict_still_works(tmp_path):
+    """Finding 5 regression: inline gate_artifact dicts still render."""
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "gate_artifact": {
+                "schema_version": 1,
+                "gate_status": "PASS",
+                "checks": [
+                    {"check_id": "sample_size", "status": "PASS", "detail": "n=5000"},
+                ],
+            },
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    assert "### OLSa Gate Checks" in report
+    assert "sample_size" in report
+    assert "n=5000" in report

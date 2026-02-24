@@ -116,7 +116,9 @@ def generate_arc_d_rung_report(
             matchup_run_dir,
         )
     )
-    lines.extend(_render_semantic_gate_summary(bundle, olsa, olsa_full, decision))
+    lines.extend(
+        _render_semantic_gate_summary(bundle, olsa, olsa_full, decision, bundle_path)
+    )
     lines.extend(_render_known_limitations(eval_df))
     lines.extend(_render_reproduction_commands(bundle_path, eval_df, chart_path))
 
@@ -445,10 +447,11 @@ def _render_auction_analysis(
 
     # Chart embeds
     if chart_path is not None:
-        cp = chart_path / "make_rate_by_contract.png"
-        if cp.exists():
-            lines.append(f"![{cp.stem}]({cp})")
-            lines.append("")
+        for chart_name in ("auction_health.png", "bidder_performance.png"):
+            cp = chart_path / chart_name
+            if cp.exists():
+                lines.append(f"![{cp.stem}]({cp})")
+                lines.append("")
 
     if eval_df is None or eval_df.empty:
         lines.append("*No eval data available for auction analysis.*")
@@ -890,6 +893,7 @@ def _render_semantic_gate_summary(
     olsa: dict,
     olsa_full: dict,
     decision: dict | None,
+    bundle_path: Path | None = None,
 ) -> list[str]:
     """SS9: Semantic Gate Summary — gate checks table, tier results."""
     lines = ["## Semantic Gate Summary", ""]
@@ -925,15 +929,12 @@ def _render_semantic_gate_summary(
         lines.append("")
         has_gate_info = True
 
-    # Try to find gate artifact data in bundle
+    # Try to find gate artifact data in bundle (inline dict or path string)
     for arm_label, arm_data in [
         ("OLSa", olsa),
         ("OLSa_Full", olsa_full),
     ]:
-        gate_artifact = arm_data.get("gate_artifact")
-        if not gate_artifact or not isinstance(gate_artifact, dict):
-            continue
-        checks = gate_artifact.get("checks", [])
+        checks = _load_gate_checks(arm_data, bundle_path)
         if not checks:
             continue
 
@@ -1042,12 +1043,16 @@ def _render_reproduction_commands(
     lines.append("```")
     lines.append("")
 
-    lines.append("### Run Notebook")
+    lines.append("### Run Notebooks")
     lines.append("")
     lines.append("```bash")
-    lines.append("# Execute the model evaluation notebook:")
+    lines.append("# Execute the evaluation notebooks:")
     lines.append("uv run jupyter nbconvert --to notebook --execute \\")
-    lines.append("  notebooks/arc_d/<RUNG>/01_model_rung.ipynb")
+    lines.append("  notebooks/arc_d/<RUNG>/10_feature_health.ipynb")
+    lines.append("uv run jupyter nbconvert --to notebook --execute \\")
+    lines.append("  notebooks/arc_d/<RUNG>/20_outcome_health.ipynb")
+    lines.append("uv run jupyter nbconvert --to notebook --execute \\")
+    lines.append("  notebooks/arc_d/<RUNG>/30_feature_outcome_eval.ipynb")
     lines.append("```")
     lines.append("")
 
@@ -1057,6 +1062,43 @@ def _render_reproduction_commands(
 # ──────────────────────────────────────────────
 #  Private Helpers
 # ──────────────────────────────────────────────
+
+
+def _load_gate_checks(arm_data: dict, bundle_path: Path | None) -> list[dict]:
+    """Load gate checks from an arm's gate artifact (inline dict or path string).
+
+    Checks ``gate_artifact`` (inline dict), then ``semantic_gate_val`` and
+    ``semantic_gate_test`` (path strings resolved via ``_resolve_bundle_ref``).
+
+    Returns:
+        List of check dicts, or empty list if none found.
+    """
+    # Source 1: inline gate_artifact dict
+    gate_artifact = arm_data.get("gate_artifact")
+    if isinstance(gate_artifact, dict):
+        checks = gate_artifact.get("checks", [])
+        if checks:
+            return checks
+
+    # Source 2: path-based gate artifacts (semantic_gate_val / semantic_gate_test)
+    if bundle_path is not None:
+        for key in ("semantic_gate_val", "semantic_gate_test"):
+            ref = arm_data.get(key)
+            if not ref or not isinstance(ref, str):
+                continue
+            gate_file = _resolve_bundle_ref(bundle_path, ref)
+            if not gate_file.exists():
+                continue
+            try:
+                with open(gate_file) as f:
+                    gate_data = json.load(f)
+                checks = gate_data.get("checks", [])
+                if checks:
+                    return checks
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    return []
 
 
 def _resolve_attribution_gap(
