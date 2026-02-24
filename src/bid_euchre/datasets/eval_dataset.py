@@ -183,3 +183,86 @@ def build_eval_dataset(
     df["hand_id"] = df["deal_id"]
 
     return df
+
+
+def resolve_eval_log_from_bundle(
+    bundle_path: str | Path,
+    arm: str,
+    seed: int,
+) -> Path:
+    """Resolve the JSONL game log path for a specific arm and seed.
+
+    Deterministic lookup via the rung bundle -> eval JSON -> run_id + source_logs.
+    This avoids ambiguity when multiple eval runs exist for the same arm/seed.
+
+    Parameters
+    ----------
+    bundle_path:
+        Path to the rung bundle JSON (e.g.,
+        ``data/artifacts/arc_d/r0/rung_bundle_r0.json``).
+    arm:
+        Arm name as it appears in the bundle keys: ``"olsa"`` or ``"olsa_full"``.
+    seed:
+        Evaluation seed (e.g., 42, 43, 44).
+
+    Returns
+    -------
+    Path
+        Absolute path to the JSONL game log file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the bundle, eval JSON, or JSONL log file does not exist.
+    KeyError
+        If the arm or seed key is not found in the bundle.
+    """
+    bundle_path = Path(bundle_path)
+    if not bundle_path.exists():
+        raise FileNotFoundError(f"Bundle not found: {bundle_path}")
+
+    with bundle_path.open() as f:
+        bundle = json.load(f)
+
+    if arm not in bundle:
+        raise KeyError(
+            f"Arm '{arm}' not found in bundle. Available: {list(bundle.keys())}"
+        )
+
+    eval_key = f"eval_seed{seed}"
+    arm_data = bundle[arm]
+    if eval_key not in arm_data:
+        raise KeyError(
+            f"Eval key '{eval_key}' not found for arm '{arm}'. "
+            f"Available: {[k for k in arm_data if k.startswith('eval_')]}"
+        )
+
+    # Resolve eval JSON path relative to repo root
+    eval_json_rel = arm_data[eval_key]
+    repo_root = bundle_path.parent
+    while repo_root.name and not (repo_root / ".git").exists():
+        repo_root = repo_root.parent
+    if not (repo_root / ".git").exists():
+        repo_root = Path.cwd()  # fallback
+
+    eval_json_path = repo_root / eval_json_rel
+    if not eval_json_path.exists():
+        raise FileNotFoundError(f"Eval JSON not found: {eval_json_path}")
+
+    with eval_json_path.open() as f:
+        eval_data = json.load(f)
+
+    run_id = eval_data["run_id"]
+    source_log = eval_data["source_logs"][0]
+
+    log_path = repo_root / "data" / "runs" / run_id / source_log
+    if not log_path.exists():
+        arm_suffix = "_full" if "full" in arm else ""
+        raise FileNotFoundError(
+            f"JSONL game log not found: {log_path}\n"
+            f"Regenerate with: uv run python experiments/run_experiment.py "
+            f"--config experiments/configs/arc_d_eval_r0{arm_suffix}.yaml "
+            f"--seed {seed}"
+        )
+
+    return log_path
