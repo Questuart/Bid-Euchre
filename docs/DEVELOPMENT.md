@@ -26,14 +26,14 @@ Pre-commit hooks run automatically on `git commit`:
 
 Pre-commit is **fast** and does **not** run the full test suite.
 
-**Before opening a PR:**
+**Before opening a PR** (either one):
 
 ~~~bash
-make check          # Full output
-make check-quiet    # Minimal output (logs to tmpfile)
+make check-quiet    # Minimal output — preferred (logs to tmpfile)
+make check          # Full output (use when debugging failures)
 ~~~
 
-This runs the full suite including all tests.
+Both run the same suite (repo-lint + ruff + tests + notebook-check + docs-check).
 
 ## Make targets
 

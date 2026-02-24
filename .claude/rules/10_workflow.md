@@ -19,7 +19,7 @@ See @.claude/rules/15_testing_tiers.md for the full 2-tier testing policy.
 ## Context Efficiency Conventions
 
 - **Diffs**: Default to `git diff --stat` for PR scope overview; read targeted hunks only when needed.
-- **File reads**: Do not re-read files already loaded in context.
+- **File reads**: Avoid unnecessary re-reads of files already loaded in context (re-read after rebases, generated changes, or concurrent edits).
 - **Validation**: Use `make check-quiet` (not `make check`) as the default pre-PR command.
 
 ## Smoke Experiment (Optional)
