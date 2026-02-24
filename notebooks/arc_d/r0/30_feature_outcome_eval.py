@@ -33,16 +33,6 @@
 # - Run `make notebook-sync` before committing.
 # - Keep outputs cleared (`make notebook-check` verifies this).
 
-# %% [markdown]
-# ## Available eval runs
-# Run this cell to discover local eval data:
-
-# %%
-import glob as _g
-
-for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
-    print(_p)
-
 # %% tags=["parameters"]
 EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260221_180253"
 ARTIFACT_DIR = "data/artifacts/arc_d/r0"
@@ -69,6 +59,16 @@ if not (_cwd / ".git").exists():
     else:
         print(f"WARNING: Could not find repo root from {_cwd}")
 print(f"Working directory: {Path.cwd()}")
+
+# %% [markdown]
+# ## Available eval runs
+# Run this cell to discover local eval data:
+
+# %%
+import glob as _g
+
+for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
+    print(_p)
 
 # %%
 import json
