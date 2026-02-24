@@ -82,7 +82,15 @@ def plot_hand_value_by_seat(
 
     seat_colors = _cycle_base_colors(len(seats))
     if HAS_SEABORN:
-        sns.boxplot(data=df, x="seat", y="feat_hand_value", ax=ax, palette=seat_colors)
+        sns.boxplot(
+            data=df,
+            x="seat",
+            y="feat_hand_value",
+            ax=ax,
+            hue="seat",
+            palette=seat_colors,
+            legend=False,
+        )
     else:
         bp = ax.boxplot(data, labels=[f"Seat {s}" for s in seats], patch_artist=True)
         for patch, color in zip(bp["boxes"], seat_colors):
@@ -151,8 +159,10 @@ def plot_hand_value_by_contract(
             x="contract_type",
             y="feat_hand_value",
             ax=ax,
+            hue="contract_type",
             order=contracts,
             palette=colors,
+            legend=False,
         )
     else:
         data = [
@@ -980,8 +990,10 @@ def plot_hand_value_by_trump_suit(
             x="trump",
             y="feat_hand_value",
             ax=ax,
+            hue="trump",
             order=available_suits,
             palette=colors,
+            legend=False,
         )
     else:
         data = [
@@ -1101,9 +1113,11 @@ def plot_outcome_by_trump_suit(
             x="trump",
             y=outcome,
             ax=ax,
+            hue="trump",
             order=available_suits,
             palette=colors,
             inner="box",
+            legend=False,
         )
     else:
         data = [suit_df[suit_df["trump"] == s][outcome].values for s in available_suits]
@@ -1526,8 +1540,10 @@ def plot_hand_value_by_seat_and_contract(
                 x="seat",
                 y="feat_hand_value",
                 ax=ax,
+                hue="seat",
                 order=seats,
                 palette=seat_colors,
+                legend=False,
             )
         else:
             data = [
