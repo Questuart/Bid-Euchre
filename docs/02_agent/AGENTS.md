@@ -45,10 +45,11 @@ This doc is the **operational guide**. Before working in this repo, also review:
 
 ### Run before opening a PR
 
-Run everything CI runs:
+Run everything CI runs (either one):
 
 ~~~bash
-make check
+make check          # Full output (use when debugging failures)
+make check-quiet    # Minimal output — preferred default (logs to tmpfile)
 ~~~
 
 Run individual checks:

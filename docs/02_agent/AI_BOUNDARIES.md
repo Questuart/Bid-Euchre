@@ -67,9 +67,10 @@ uv run python experiments/run_experiment.py --config <config> --allow-nondetermi
 **Rationale**: Keeps outputs isolated, reproducible, and git-ignored by default.
 
 ### ✅ Run `make check` before proposing PRs
-**Required validation**:
+**Required validation** (either one):
 ```bash
-make check  # Runs: repo-lint + ruff + pytest (fast suite)
+make check-quiet    # Minimal output — preferred for agent workflows
+make check          # Full output (use when debugging failures)
 ```
 
 **Rationale**: Ensures consistency with CI gates. All PRs must pass these checks.

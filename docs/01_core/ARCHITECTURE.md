@@ -92,9 +92,10 @@ See `DATA_CONTRACT.md` for full details.
 
 ## Gold Path Commands
 
-Run before opening a PR:
+Run before opening a PR (either one):
 
 ```bash
+make check-quiet    # Same validation, minimal output — preferred (logs to tmpfile)
 make check          # Full validation (repo-lint + lint + tests)
 ```
 
