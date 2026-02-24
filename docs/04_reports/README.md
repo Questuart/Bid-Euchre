@@ -17,7 +17,8 @@ docs/04_reports/
     assets/charts/               (chart PNGs)
     archive/                     (r1-r4 superseded revisions)
   r0/                      Arc D R0 rung report
-    model_arc_r0_20260222.md
+    model_arc_r0_20260224.md
+    archive/                     (superseded revisions)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -28,7 +29,9 @@ docs/04_reports/
 | Report | Date | Summary |
 |--------|------|---------|
 | [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Cross-rung progression dashboard (snapshot) |
-| [r0/model_arc_r0_20260222.md](r0/model_arc_r0_20260222.md) | 2026-02-22 | R0 baseline lock report |
+| [r0/model_arc_r0_20260224.md](r0/model_arc_r0_20260224.md) | 2026-02-24 | R0 full evaluation report (11-section) |
+
+Superseded revisions in `r0/archive/`.
 
 Working copies of per-rung reports are generated to `data/reports/arc_d/` (gitignored).
 Use `--snapshot` flag with dashboard script to update the committed snapshot.
