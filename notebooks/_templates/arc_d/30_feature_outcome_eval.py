@@ -74,13 +74,23 @@ df = pd.DataFrame()
 
 if EVAL_LOG_PATH:
     eval_log = Path(EVAL_LOG_PATH)
-    if eval_log.exists():
+    if eval_log.is_dir():
+        # Convention: logs/ subdir contains JSONL files
+        candidates = sorted(eval_log.glob("logs/*.jsonl"))
+        if not candidates:
+            candidates = sorted(eval_log.glob("*.jsonl"))
+        if candidates:
+            eval_log = candidates[0]
+            print(f"  Resolved directory to: {eval_log.name}")
+        else:
+            print(f"WARNING: No .jsonl files found in {eval_log}")
+    if eval_log.exists() and eval_log.is_file():
         try:
             df = build_eval_dataset(str(eval_log), max_deals=max_deals)
             _data_source = "eval_logs"
             print(f"Loaded {len(df)} rows from {eval_log.name}")
             print(f"  Deals: {df['deal_id'].nunique()}, Source: {_data_source}")
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, ValueError, IsADirectoryError) as exc:
             print(f"WARNING: Could not load eval logs: {exc}")
 
 if df.empty:
@@ -146,21 +156,36 @@ if ARTIFACT_DIR:
         with open(bundle_path) as f:
             _rung_bundle = json.load(f)
 
+        def _resolve_path(ref: str, anchor: Path) -> Path:
+            """Resolve a repo-root-relative path via bundle location."""
+            p = Path(ref)
+            if p.exists():
+                return p
+            for ancestor in anchor.resolve().parents:
+                candidate = ancestor / ref
+                if candidate.exists():
+                    return candidate
+            return p
+
         # Load eval metrics for each arm
         for arm_key in ("olsa", "olsa_full"):
             arm_block = _rung_bundle.get(arm_key, {})
             eval_path = arm_block.get("eval_seed42")
             if eval_path:
                 try:
-                    _arm_metrics[arm_key] = load_eval_metrics(eval_path)
+                    _arm_metrics[arm_key] = load_eval_metrics(
+                        str(_resolve_path(eval_path, bundle_path))
+                    )
                 except (FileNotFoundError, json.JSONDecodeError):
                     pass
 
             # Load model artifact for predictions
             model_path = arm_block.get("artifact_path")
-            if model_path and Path(model_path).exists():
-                with open(model_path) as f:
-                    _model_artifacts[arm_key] = json.load(f)
+            if model_path:
+                resolved_model = _resolve_path(model_path, bundle_path)
+                if resolved_model.exists():
+                    with open(resolved_model) as f:
+                        _model_artifacts[arm_key] = json.load(f)
 
         if _arm_metrics:
             _eval_available = True

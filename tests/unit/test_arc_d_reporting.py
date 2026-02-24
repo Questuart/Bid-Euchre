@@ -10,6 +10,7 @@ Covers:
 
 import importlib.util
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -296,9 +297,18 @@ def test_rung_report_sections(tmp_path):
     bundle_path = _make_bundle(tmp_path)
     report = generate_arc_d_rung_report(bundle_path)
     assert "# ARC_D Rung R0 Report" in report
-    assert "## Dual-Arm Comparison" in report
-    assert "## Feature Selection" in report
-    assert "## Attribution Gap" in report
+    # New SS1-SS11 structure
+    assert "## Executive Summary" in report
+    assert "## Data Inventory" in report
+    assert "## Feature Health Summary" in report
+    assert "## Outcome Health Summary" in report
+    assert "## Auction Analysis" in report
+    assert "## Model Specification & Feature Selection" in report
+    assert "## Model Performance" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "## Semantic Gate Summary" in report
+    assert "## Known Limitations" in report
+    assert "## Reproduction Commands" in report
     # Check computed gap table is present with net_eppd values
     assert "0.1500" in report  # olsa net_eppd
     assert "0.2200" in report  # olsa_full net_eppd
@@ -335,7 +345,8 @@ def test_rung_report_attribution_gap_pending(tmp_path):
     path.write_text(json.dumps(bundle, indent=2))
     report = generate_arc_d_rung_report(path)
     assert "pending" in report.lower()
-    assert "## Attribution Gap" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "### Attribution Gap" in report
 
 
 # ──────────────────────────────────────────────
@@ -525,18 +536,22 @@ def _make_eval_df(n_deals=50, seed=42):
 
 
 def test_rung_report_with_eval_df_has_new_sections(tmp_path):
-    """Report with eval_df includes Executive Summary, Deal Health, etc."""
+    """Report with eval_df includes all SS1-SS11 sections with data-driven content."""
     bundle_path = _make_bundle(tmp_path)
     eval_df = _make_eval_df()
 
     report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
 
     assert "## Executive Summary" in report
-    assert "## Data Provenance" in report
-    assert "## Deal Health" in report
+    assert "## Data Inventory" in report
+    assert "### Eval Dataset Summary" in report
+    assert "## Feature Health Summary" in report
+    assert "## Outcome Health Summary" in report
     assert "## Auction Analysis" in report
-    assert "## Gameplay Analysis" in report
-    assert "## Reproducibility" in report
+    assert "## Model Performance" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "## Known Limitations" in report
+    assert "## Reproduction Commands" in report
 
 
 def test_rung_report_with_eval_df_deal_count(tmp_path):
@@ -549,21 +564,27 @@ def test_rung_report_with_eval_df_deal_count(tmp_path):
     assert "100" in report  # n_deals in Executive Summary
 
 
-def test_rung_report_without_eval_df_backward_compatible(tmp_path):
-    """Report without eval_df produces same sections as before."""
+def test_rung_report_without_eval_df_graceful_degradation(tmp_path):
+    """Report without eval_df still has all SS1-SS11 sections with graceful degradation."""
     bundle_path = _make_bundle(tmp_path)
 
     report = generate_arc_d_rung_report(bundle_path)
 
-    # Original sections present
-    assert "## Dual-Arm Comparison" in report
-    assert "## Feature Selection" in report
-    assert "## Attribution Gap" in report
+    # All sections present (graceful degradation, not absent)
+    assert "## Executive Summary" in report
+    assert "## Data Inventory" in report
+    assert "## Feature Health Summary" in report
+    assert "## Outcome Health Summary" in report
+    assert "## Auction Analysis" in report
+    assert "## Model Specification & Feature Selection" in report
+    assert "## Model Performance" in report
+    assert "## Dual-Arm Comparison & Attribution Gap" in report
+    assert "## Semantic Gate Summary" in report
+    assert "## Known Limitations" in report
+    assert "## Reproduction Commands" in report
 
-    # New sections absent
-    assert "## Executive Summary" not in report
-    assert "## Deal Health" not in report
-    assert "## Auction Analysis" not in report
+    # Graceful degradation messages for data-dependent sections
+    assert "*No eval data" in report or "*No eval dataset" in report
 
 
 def test_rung_report_model_performance_with_artifact(tmp_path):
@@ -707,7 +728,11 @@ def test_rung_report_attribution_gap_non_repo_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     report = generate_arc_d_rung_report(bundle_path)
-    assert "pending" not in report.lower(), (
+    # Attribution gap section must NOT show pending — eval paths should resolve
+    # via _resolve_bundle_ref even when CWD != repo root.
+    # (Note: "Gate status: pending" is expected when no decision_path is given,
+    #  so we check the attribution gap section specifically.)
+    assert "Attribution gap not yet available" not in report, (
         "Attribution gap shows 'pending' when CWD != repo root — "
         "_resolve_bundle_ref should resolve eval paths from bundle location"
     )
@@ -727,18 +752,26 @@ def test_rung_report_no_model_artifact_key(tmp_path):
 
 
 def test_rung_report_with_chart_dir(tmp_path):
-    """Report with chart_dir embeds chart references."""
+    """Report with chart_dir embeds chart references inline in sections."""
     bundle_path = _make_bundle(tmp_path)
     chart_dir = tmp_path / "charts"
     chart_dir.mkdir()
     (chart_dir / "seat_balance_boxplot.png").write_bytes(b"fake")
     (chart_dir / "dual_arm_comparison.png").write_bytes(b"fake")
+    # Auction charts: use correct names (not make_rate_by_contract.png)
+    (chart_dir / "auction_health.png").write_bytes(b"fake")
+    (chart_dir / "bidder_performance.png").write_bytes(b"fake")
 
     report = generate_arc_d_rung_report(bundle_path, chart_dir=chart_dir)
 
-    assert "## Charts" in report
+    # Charts embedded inline in their respective sections (not a separate Charts section)
     assert "seat_balance_boxplot" in report
     assert "dual_arm_comparison" in report
+    # Finding 1: auction charts use correct filenames
+    assert "auction_health" in report
+    assert "bidder_performance" in report
+    # Old name must NOT appear
+    assert "make_rate_by_contract" not in report
 
 
 # ──────────────────────────────────────────────
@@ -753,7 +786,7 @@ def test_report_with_eval_df_has_feature_correlations(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
 
-    assert "## Feature Correlations" in report
+    assert "### Feature Correlations" in report
     assert "tricks_won" in report.lower() or "r |" in report
 
 
@@ -784,7 +817,7 @@ def test_report_with_comparator_battery(tmp_path):
 
     report = generate_arc_d_rung_report(path)
 
-    assert "## Comparator Battery" in report
+    assert "### Comparator Battery" in report
     assert "1.6274" in report
     assert "modeloespecifico" in report
 
@@ -805,7 +838,7 @@ def test_report_with_matchup_run_dir(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, matchup_run_dir=str(run_dir))
 
-    assert "## Head-to-Head Summary" in report
+    assert "### Head-to-Head Summary" in report
 
 
 def test_report_with_comparator_battery_path_string(tmp_path):
@@ -845,7 +878,7 @@ def test_report_with_comparator_battery_path_string(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path)
 
-    assert "## Comparator Battery" in report
+    assert "### Comparator Battery" in report
     assert "HybridOLSaBidder_r0" in report
     assert "GreedyBidder" in report
     assert "1.6274" in report
@@ -884,7 +917,7 @@ def test_report_with_comparator_battery_nested_bidders(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path)
 
-    assert "## Comparator Battery" in report
+    assert "### Comparator Battery" in report
     assert "HybridOLSaBidder_r0" in report
     assert "FixedBidder_6" in report
     # Must NOT show "bidders" or "schema" as bidder names
@@ -909,7 +942,7 @@ def test_report_h2h_matchup_id_extraction(tmp_path):
 
     report = generate_arc_d_rung_report(bundle_path, matchup_run_dir=str(run_dir))
 
-    assert "## Head-to-Head Summary" in report
+    assert "### Head-to-Head Summary" in report
     # Even though logs are empty (no data parsed), the section is present.
     # Verify that if data were parsed, the matchup_id would be correct
     # by checking the implementation directly:
@@ -923,3 +956,233 @@ def test_report_h2h_matchup_id_extraction(tmp_path):
             "vs_fixed6",
             "self_play",
         ), f"Expected clean matchup ID, got: {mid}"
+
+
+# ──────────────────────────────────────────────
+#  Review-fix tests (Findings 1, 4, 5)
+# ──────────────────────────────────────────────
+
+
+def test_reproduction_commands_use_new_notebook_names(tmp_path):
+    """Finding 4: Reproduction section references 3 new template notebooks, not old monolithic."""
+    bundle_path = _make_bundle(tmp_path)
+    eval_df = _make_eval_df()
+
+    report = generate_arc_d_rung_report(bundle_path, eval_df=eval_df)
+
+    assert "10_feature_health.ipynb" in report
+    assert "20_outcome_health.ipynb" in report
+    assert "30_feature_outcome_eval.ipynb" in report
+    # Old monolithic name must NOT appear
+    assert "01_model_rung.ipynb" not in report
+
+
+def test_semantic_gate_path_artifact(tmp_path):
+    """Finding 5: Gate checks loaded from path-based semantic_gate_val."""
+    # Create a gate artifact JSON on disk
+    gate_data = {
+        "schema_version": 1,
+        "gate_status": "PASS",
+        "checks": [
+            {"check_id": "seat_balance", "status": "PASS", "detail": "OK"},
+            {
+                "check_id": "team_balance",
+                "contract_type": "suit",
+                "status": "WARN",
+                "detail": "Marginal",
+            },
+        ],
+    }
+    gate_path = tmp_path / "gate_val_olsa.json"
+    gate_path.write_text(json.dumps(gate_data))
+
+    # Bundle with semantic_gate_val as a path string (not inline dict)
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "semantic_gate_val": str(gate_path),
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    assert "## Semantic Gate Summary" in report
+    assert "### OLSa Gate Checks" in report
+    assert "seat_balance" in report
+    assert "team_balance" in report
+    assert "WARN" in report
+    # P2 fix: Gate Status column must show aggregate, not raw path
+    assert "### Per-Arm Gate Status" in report
+    assert "WARN (1 of 2)" in report
+    # Must NOT contain the raw filesystem path in Gate Status table
+    assert "gate_val_olsa.json" not in report.split("### OLSa Gate Checks")[0]
+
+
+def test_semantic_gate_inline_dict_still_works(tmp_path):
+    """Finding 5 regression: inline gate_artifact dicts still render."""
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "gate_artifact": {
+                "schema_version": 1,
+                "gate_status": "PASS",
+                "checks": [
+                    {"check_id": "sample_size", "status": "PASS", "detail": "n=5000"},
+                ],
+            },
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    assert "### OLSa Gate Checks" in report
+    assert "sample_size" in report
+    assert "n=5000" in report
+    # Inline dict: Gate Status shows aggregate too
+    assert "PASS (1/1)" in report
+
+
+def test_gate_status_str_fail_aggregate(tmp_path):
+    """Gate Status column shows FAIL count when checks contain failures."""
+    gate_data = {
+        "checks": [
+            {"check_id": "seat_balance", "status": "PASS", "detail": "OK"},
+            {"check_id": "model_r2", "status": "FAIL", "detail": "R2=0.01"},
+            {"check_id": "sample_size", "status": "FAIL", "detail": "n=50"},
+        ],
+    }
+    gate_path = tmp_path / "gate_val.json"
+    gate_path.write_text(json.dumps(gate_data))
+
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "semantic_gate_val": str(gate_path),
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    # FAIL aggregate in status table
+    assert "FAIL (2 of 3)" in report
+    # Raw path must NOT appear in the status table area
+    assert "gate_val.json |" not in report
+
+
+# ──────────────────────────────────────────────
+#  Notebook 30 logic tests (_resolve_path pattern)
+# ──────────────────────────────────────────────
+
+
+def test_notebook_resolve_path_pattern(tmp_path):
+    """Test the _resolve_path logic used in notebook 30 for CWD-independent path resolution."""
+
+    # Reproduce the exact _resolve_path helper from the notebook
+    def _resolve_path(ref: str, anchor: Path) -> Path:
+        """Resolve a repo-root-relative path via bundle location."""
+        p = Path(ref)
+        if p.exists():
+            return p
+        for ancestor in anchor.resolve().parents:
+            candidate = ancestor / ref
+            if candidate.exists():
+                return candidate
+        return p
+
+    # Set up a mock repo structure:
+    #   tmp_path/repo_root/data/artifacts/model.json   (the target file)
+    #   tmp_path/repo_root/data/bundles/bundle.json     (the anchor)
+    repo_root = tmp_path / "repo_root"
+    artifact_dir = repo_root / "data" / "artifacts"
+    artifact_dir.mkdir(parents=True)
+    target = artifact_dir / "model.json"
+    target.write_text('{"test": true}')
+
+    bundle_dir = repo_root / "data" / "bundles"
+    bundle_dir.mkdir(parents=True)
+    anchor = bundle_dir / "bundle.json"
+    anchor.write_text("{}")
+
+    # Repo-root-relative path (what bundles store)
+    rel_ref = "data/artifacts/model.json"
+
+    # Should resolve via ancestor walk
+    resolved = _resolve_path(rel_ref, anchor)
+    assert resolved.exists()
+    assert resolved.resolve() == target.resolve()
+
+    # Already-absolute path resolves directly
+    resolved_abs = _resolve_path(str(target), anchor)
+    assert resolved_abs.exists()
+
+    # Non-existent path returns the raw Path (fallback)
+    resolved_missing = _resolve_path("no/such/file.json", anchor)
+    assert not resolved_missing.exists()
+
+
+def test_notebook_eval_log_dir_resolution(tmp_path):
+    """Test the directory auto-resolution logic used in notebook 30 for EVAL_LOG_PATH."""
+    # Simulate a directory with logs/ subdirectory
+    eval_dir = tmp_path / "eval_run"
+    logs_dir = eval_dir / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "run_a.jsonl").write_text('{"test": 1}')
+    (logs_dir / "run_b.jsonl").write_text('{"test": 2}')
+
+    # Reproduce the notebook's directory resolution logic
+    eval_log = Path(str(eval_dir))
+    assert eval_log.is_dir()
+
+    candidates = sorted(eval_log.glob("logs/*.jsonl"))
+    assert len(candidates) == 2
+    # Should pick first sorted candidate
+    resolved = candidates[0]
+    assert resolved.name == "run_a.jsonl"
+
+    # Fallback: no logs/ subdir, glob *.jsonl at top level
+    flat_dir = tmp_path / "flat_eval"
+    flat_dir.mkdir()
+    (flat_dir / "games.jsonl").write_text('{"test": 1}')
+
+    eval_log2 = Path(str(flat_dir))
+    candidates2 = sorted(eval_log2.glob("logs/*.jsonl"))
+    assert len(candidates2) == 0
+    candidates2 = sorted(eval_log2.glob("*.jsonl"))
+    assert len(candidates2) == 1
+    assert candidates2[0].name == "games.jsonl"
