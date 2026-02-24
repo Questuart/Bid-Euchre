@@ -94,7 +94,8 @@ class TestNotebookTemplateContract:
             Path(__file__).resolve().parents[2]
             / "notebooks"
             / "arc_d"
-            / "02_r0_baseline.py"
+            / "r0"
+            / "40_r0_baseline.py"
         )
         source = r0_path.read_text()
         for section in REQUIRED_SECTIONS:
@@ -128,7 +129,11 @@ class TestNotebookTemplateContract:
 # ──────────────────────────────────────────────
 
 R0_PATH = (
-    Path(__file__).resolve().parents[2] / "notebooks" / "arc_d" / "02_r0_baseline.py"
+    Path(__file__).resolve().parents[2]
+    / "notebooks"
+    / "arc_d"
+    / "r0"
+    / "40_r0_baseline.py"
 )
 
 
@@ -180,14 +185,15 @@ class TestR0NotebookEnrichment:
         )
 
     def test_r0_matchup_notebook_exists(self):
-        """03_r0_matchups.py must exist with required section markers."""
+        """50_r0_matchups.py must exist with required section markers."""
         matchup_path = (
             Path(__file__).resolve().parents[2]
             / "notebooks"
             / "arc_d"
-            / "03_r0_matchups.py"
+            / "r0"
+            / "50_r0_matchups.py"
         )
-        assert matchup_path.exists(), "03_r0_matchups.py must exist"
+        assert matchup_path.exists(), "50_r0_matchups.py must exist"
         source = matchup_path.read_text()
         required_sections = [
             "§0 Setup",
@@ -208,7 +214,8 @@ class TestR0NotebookEnrichment:
             Path(__file__).resolve().parents[2]
             / "notebooks"
             / "arc_d"
-            / "03_r0_matchups.py"
+            / "r0"
+            / "50_r0_matchups.py"
         )
         source = matchup_path.read_text()
 
@@ -248,7 +255,8 @@ class TestR0NotebookEnrichment:
             Path(__file__).resolve().parents[2]
             / "notebooks"
             / "arc_d"
-            / "03_r0_matchups.py"
+            / "r0"
+            / "50_r0_matchups.py"
         )
         source = matchup_path.read_text()
 

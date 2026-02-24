@@ -44,9 +44,35 @@ PROMOTION_DECISION_PATH = "data/artifacts/arc_d/r0/promotion_decision_r0.json"
 # # §0 Setup
 
 # %%
+import os
+from pathlib import Path
+
+# Ensure CWD is repo root (Jupyter kernels start in notebook dir)
+_cwd = Path.cwd()
+if not (_cwd / ".git").exists():
+    _root = _cwd
+    while _root != _root.parent:
+        _root = _root.parent
+        if (_root / ".git").exists():
+            os.chdir(_root)
+            break
+    else:
+        print(f"WARNING: Could not find repo root from {_cwd}")
+print(f"Working directory: {Path.cwd()}")
+
+# %% [markdown]
+# ## Available eval runs
+# Run this cell to discover local eval data:
+
+# %%
+import glob as _g
+
+for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
+    print(_p)
+
+# %%
 import glob as glob_mod
 import json
-from pathlib import Path
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -101,6 +127,12 @@ if EVAL_RUN_DIR:
             print(f"  Deals: {df['deal_id'].nunique()}, Source: {_data_source}")
         except (FileNotFoundError, ValueError) as exc:
             print(f"WARNING: Could not load eval logs: {exc}")
+
+if EVAL_RUN_DIR and df.empty:
+    print(
+        f"WARNING: EVAL_RUN_DIR={EVAL_RUN_DIR!r} is set but no data was loaded.\n"
+        "  Check that the path exists relative to the repo root."
+    )
 
 if df.empty:
     # Synthetic demo data for CI / SMOKE fallback
