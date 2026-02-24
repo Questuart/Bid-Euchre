@@ -96,6 +96,7 @@ Run before opening a PR:
 
 ```bash
 make check          # Full validation (repo-lint + lint + tests)
+make check-quiet    # Same validation, minimal output (logs to tmpfile)
 ```
 
 Individual checks:

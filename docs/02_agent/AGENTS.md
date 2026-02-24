@@ -48,7 +48,8 @@ This doc is the **operational guide**. Before working in this repo, also review:
 Run everything CI runs:
 
 ~~~bash
-make check
+make check          # Full output
+make check-quiet    # Minimal output (logs to tmpfile)
 ~~~
 
 Run individual checks:

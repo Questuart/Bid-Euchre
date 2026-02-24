@@ -29,7 +29,8 @@ Pre-commit is **fast** and does **not** run the full test suite.
 **Before opening a PR:**
 
 ~~~bash
-make check
+make check          # Full output
+make check-quiet    # Minimal output (logs to tmpfile)
 ~~~
 
 This runs the full suite including all tests.
@@ -39,6 +40,7 @@ This runs the full suite including all tests.
 | Command | Purpose |
 |---------|---------|
 | `make check` | Run all checks (same as CI) |
+| `make check-quiet` | Run all checks, minimal output |
 | `make repo-lint` | Repo rules (diff vs origin/main) |
 | `make lint` | Ruff check . |
 | `make test` | Fast pytest suite |

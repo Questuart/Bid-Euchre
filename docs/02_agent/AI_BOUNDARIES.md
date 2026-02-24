@@ -69,7 +69,8 @@ uv run python experiments/run_experiment.py --config <config> --allow-nondetermi
 ### ✅ Run `make check` before proposing PRs
 **Required validation**:
 ```bash
-make check  # Runs: repo-lint + ruff + pytest (fast suite)
+make check          # Full output
+make check-quiet    # Minimal output (preferred for agent workflows)
 ```
 
 **Rationale**: Ensures consistency with CI gates. All PRs must pass these checks.

@@ -65,6 +65,7 @@ make sync               # Install dependencies (uses uv sync)
 
 ```bash
 make check              # Full validation: repo-lint + ruff + pytest + notebook-check + docs-check (run before PRs)
+make check-quiet        # Same validation, minimal output (logs to tmpfile)
 make test               # Pytest fast suite only
 make lint               # Ruff check only
 make repo-lint          # Repo boundary linter only

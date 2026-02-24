@@ -21,7 +21,7 @@ From @docs/02_agent/REVIEW_CHECKLIST.md:
 
 - [ ] Branch based on main
 - [ ] Scope lock — only touched declared files
-- [ ] `make check` passes
+- [ ] `make check` (or `make check-quiet`) passes
 - [ ] No artifacts in `data/runs/` or `data/reports/`
 - [ ] Exact repro command in PR description
 - [ ] Contract compliance (if touching rules/logging/metrics)
