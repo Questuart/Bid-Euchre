@@ -6,6 +6,8 @@ These tests validate the template's structural contract by reading the
 
 from pathlib import Path
 
+import pytest
+
 TEMPLATE_PATH = (
     Path(__file__).resolve().parents[2]
     / "notebooks"
@@ -271,3 +273,112 @@ class TestR0NotebookEnrichment:
         assert (
             "R0 Advantage" in s7_source
         ), "§7 chart must label ME delta as 'R0 Advantage'"
+
+
+# ──────────────────────────────────────────────
+#  Arc D template contract tests
+# ──────────────────────────────────────────────
+
+ARC_D_TEMPLATES = {
+    "10_feature_health": Path(__file__).resolve().parents[2]
+    / "notebooks"
+    / "_templates"
+    / "arc_d"
+    / "10_feature_health.py",
+    "20_outcome_health": Path(__file__).resolve().parents[2]
+    / "notebooks"
+    / "_templates"
+    / "arc_d"
+    / "20_outcome_health.py",
+    "30_feature_outcome_eval": Path(__file__).resolve().parents[2]
+    / "notebooks"
+    / "_templates"
+    / "arc_d"
+    / "30_feature_outcome_eval.py",
+}
+
+_ALL_TEMPLATE_IDS = list(ARC_D_TEMPLATES.keys())
+
+
+class TestArcDTemplateContract:
+    def test_templates_exist(self):
+        for name, path in ARC_D_TEMPLATES.items():
+            assert path.exists(), f"Template missing: {name} at {path}"
+
+    @pytest.mark.parametrize("template_id", _ALL_TEMPLATE_IDS)
+    def test_required_parameters_present(self, template_id):
+        source = ARC_D_TEMPLATES[template_id].read_text()
+        common_params = ["EVAL_LOG_PATH", "MODE", "RUNG_ID", "CHART_OUTPUT_DIR"]
+        for param in common_params:
+            assert (
+                f"{param} =" in source
+            ), f"{template_id} missing parameter declaration: {param}"
+        if template_id == "30_feature_outcome_eval":
+            assert (
+                "ARTIFACT_DIR =" in source
+            ), "30_feature_outcome_eval must declare ARTIFACT_DIR"
+
+    @pytest.mark.parametrize("template_id", _ALL_TEMPLATE_IDS)
+    def test_removed_parameters_absent(self, template_id):
+        source = ARC_D_TEMPLATES[template_id].read_text()
+        removed = ["SPLIT_TYPE", "ACTIVE_SPLIT", "MODEL_ARTIFACT_PATH"]
+        lines = source.split("\n")
+        param_lines = [l for l in lines if "=" in l and not l.strip().startswith("#")]
+        param_text = "\n".join(param_lines)
+        for param in removed:
+            assert (
+                f"{param} =" not in param_text
+            ), f"{template_id} should not declare removed parameter {param}"
+
+    @pytest.mark.parametrize("template_id", _ALL_TEMPLATE_IDS)
+    def test_jupytext_header_present(self, template_id):
+        source = ARC_D_TEMPLATES[template_id].read_text()
+        first_20 = "\n".join(source.split("\n")[:20])
+        assert "# ---" in first_20, f"{template_id} missing Jupytext header (# ---)"
+        assert "jupytext:" in first_20, f"{template_id} missing jupytext: key in header"
+
+    @pytest.mark.parametrize("template_id", _ALL_TEMPLATE_IDS)
+    def test_directory_resolution_pattern(self, template_id):
+        source = ARC_D_TEMPLATES[template_id].read_text()
+        assert (
+            ".is_dir()" in source
+        ), f"{template_id} must use .is_dir() for directory auto-resolution"
+
+    @pytest.mark.parametrize("template_id", _ALL_TEMPLATE_IDS)
+    def test_eval_dataset_import(self, template_id):
+        source = ARC_D_TEMPLATES[template_id].read_text()
+        assert (
+            "build_eval_dataset" in source
+        ), f"{template_id} must import build_eval_dataset"
+
+    def test_feature_health_imports(self):
+        source = ARC_D_TEMPLATES["10_feature_health"].read_text()
+        assert (
+            "from bid_euchre.diagnostics.charts import" in source
+        ), "10_feature_health must import from bid_euchre.diagnostics.charts"
+
+    def test_outcome_health_imports(self):
+        source = ARC_D_TEMPLATES["20_outcome_health"].read_text()
+        assert "from bid_euchre.diagnostics.auction_charts import" in source, (
+            "20_outcome_health must import from "
+            "bid_euchre.diagnostics.auction_charts"
+        )
+
+    def test_feature_outcome_eval_imports(self):
+        source = ARC_D_TEMPLATES["30_feature_outcome_eval"].read_text()
+        assert "load_eval_metrics" in source, (
+            "30_feature_outcome_eval must import load_eval_metrics "
+            "from reporting.evaluator"
+        )
+
+    def test_feature_outcome_eval_resolve_path(self):
+        source = ARC_D_TEMPLATES["30_feature_outcome_eval"].read_text()
+        assert (
+            "def _resolve_path" in source
+        ), "30_feature_outcome_eval must define _resolve_path helper"
+
+    def test_feature_outcome_eval_handles_directory_error(self):
+        source = ARC_D_TEMPLATES["30_feature_outcome_eval"].read_text()
+        assert (
+            "IsADirectoryError" in source
+        ), "30_feature_outcome_eval must handle IsADirectoryError"
