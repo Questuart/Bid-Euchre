@@ -353,21 +353,13 @@ class TestArcDTemplateContract:
 
     def test_feature_health_imports(self):
         source = ARC_D_TEMPLATES["10_feature_health"].read_text()
-        has_plot = (
-            "plot_feature_distribution" in source
-            or "plot_feature_correlation" in source
-        )
-        assert has_plot, (
-            "10_feature_health must import plot functions from "
-            "bid_euchre.diagnostics.charts"
-        )
+        assert (
+            "from bid_euchre.diagnostics.charts import" in source
+        ), "10_feature_health must import from bid_euchre.diagnostics.charts"
 
     def test_outcome_health_imports(self):
         source = ARC_D_TEMPLATES["20_outcome_health"].read_text()
-        has_auction = (
-            "plot_auction_health" in source or "plot_bidder_performance" in source
-        )
-        assert has_auction, (
+        assert "from bid_euchre.diagnostics.auction_charts import" in source, (
             "20_outcome_health must import from "
             "bid_euchre.diagnostics.auction_charts"
         )
