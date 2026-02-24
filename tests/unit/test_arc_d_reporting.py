@@ -10,6 +10,7 @@ Covers:
 
 import importlib.util
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -1022,6 +1023,11 @@ def test_semantic_gate_path_artifact(tmp_path):
     assert "seat_balance" in report
     assert "team_balance" in report
     assert "WARN" in report
+    # P2 fix: Gate Status column must show aggregate, not raw path
+    assert "### Per-Arm Gate Status" in report
+    assert "WARN (1 of 2)" in report
+    # Must NOT contain the raw filesystem path in Gate Status table
+    assert "gate_val_olsa.json" not in report.split("### OLSa Gate Checks")[0]
 
 
 def test_semantic_gate_inline_dict_still_works(tmp_path):
@@ -1056,3 +1062,127 @@ def test_semantic_gate_inline_dict_still_works(tmp_path):
     assert "### OLSa Gate Checks" in report
     assert "sample_size" in report
     assert "n=5000" in report
+    # Inline dict: Gate Status shows aggregate too
+    assert "PASS (1/1)" in report
+
+
+def test_gate_status_str_fail_aggregate(tmp_path):
+    """Gate Status column shows FAIL count when checks contain failures."""
+    gate_data = {
+        "checks": [
+            {"check_id": "seat_balance", "status": "PASS", "detail": "OK"},
+            {"check_id": "model_r2", "status": "FAIL", "detail": "R2=0.01"},
+            {"check_id": "sample_size", "status": "FAIL", "detail": "n=50"},
+        ],
+    }
+    gate_path = tmp_path / "gate_val.json"
+    gate_path.write_text(json.dumps(gate_data))
+
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "net_eppd": 0.15,
+            "semantic_gate_val": str(gate_path),
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "net_eppd": 0.22,
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+
+    report = generate_arc_d_rung_report(bundle_path)
+
+    # FAIL aggregate in status table
+    assert "FAIL (2 of 3)" in report
+    # Raw path must NOT appear in the status table area
+    assert "gate_val.json |" not in report
+
+
+# ──────────────────────────────────────────────
+#  Notebook 30 logic tests (_resolve_path pattern)
+# ──────────────────────────────────────────────
+
+
+def test_notebook_resolve_path_pattern(tmp_path):
+    """Test the _resolve_path logic used in notebook 30 for CWD-independent path resolution."""
+
+    # Reproduce the exact _resolve_path helper from the notebook
+    def _resolve_path(ref: str, anchor: Path) -> Path:
+        """Resolve a repo-root-relative path via bundle location."""
+        p = Path(ref)
+        if p.exists():
+            return p
+        for ancestor in anchor.resolve().parents:
+            candidate = ancestor / ref
+            if candidate.exists():
+                return candidate
+        return p
+
+    # Set up a mock repo structure:
+    #   tmp_path/repo_root/data/artifacts/model.json   (the target file)
+    #   tmp_path/repo_root/data/bundles/bundle.json     (the anchor)
+    repo_root = tmp_path / "repo_root"
+    artifact_dir = repo_root / "data" / "artifacts"
+    artifact_dir.mkdir(parents=True)
+    target = artifact_dir / "model.json"
+    target.write_text('{"test": true}')
+
+    bundle_dir = repo_root / "data" / "bundles"
+    bundle_dir.mkdir(parents=True)
+    anchor = bundle_dir / "bundle.json"
+    anchor.write_text("{}")
+
+    # Repo-root-relative path (what bundles store)
+    rel_ref = "data/artifacts/model.json"
+
+    # Should resolve via ancestor walk
+    resolved = _resolve_path(rel_ref, anchor)
+    assert resolved.exists()
+    assert resolved.resolve() == target.resolve()
+
+    # Already-absolute path resolves directly
+    resolved_abs = _resolve_path(str(target), anchor)
+    assert resolved_abs.exists()
+
+    # Non-existent path returns the raw Path (fallback)
+    resolved_missing = _resolve_path("no/such/file.json", anchor)
+    assert not resolved_missing.exists()
+
+
+def test_notebook_eval_log_dir_resolution(tmp_path):
+    """Test the directory auto-resolution logic used in notebook 30 for EVAL_LOG_PATH."""
+    # Simulate a directory with logs/ subdirectory
+    eval_dir = tmp_path / "eval_run"
+    logs_dir = eval_dir / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "run_a.jsonl").write_text('{"test": 1}')
+    (logs_dir / "run_b.jsonl").write_text('{"test": 2}')
+
+    # Reproduce the notebook's directory resolution logic
+    eval_log = Path(str(eval_dir))
+    assert eval_log.is_dir()
+
+    candidates = sorted(eval_log.glob("logs/*.jsonl"))
+    assert len(candidates) == 2
+    # Should pick first sorted candidate
+    resolved = candidates[0]
+    assert resolved.name == "run_a.jsonl"
+
+    # Fallback: no logs/ subdir, glob *.jsonl at top level
+    flat_dir = tmp_path / "flat_eval"
+    flat_dir.mkdir()
+    (flat_dir / "games.jsonl").write_text('{"test": 1}')
+
+    eval_log2 = Path(str(flat_dir))
+    candidates2 = sorted(eval_log2.glob("logs/*.jsonl"))
+    assert len(candidates2) == 0
+    candidates2 = sorted(eval_log2.glob("*.jsonl"))
+    assert len(candidates2) == 1
+    assert candidates2[0].name == "games.jsonl"

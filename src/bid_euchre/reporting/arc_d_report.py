@@ -924,8 +924,10 @@ def _render_semantic_gate_summary(
         lines.append("")
         lines.append("| Arm | Gate Status |")
         lines.append("|-----|-------------|")
-        lines.append(f"| OLSa (constrained) | {_gate_status_str(olsa)} |")
-        lines.append(f"| OLSa_Full (promotional) | {_gate_status_str(olsa_full)} |")
+        lines.append(f"| OLSa (constrained) | {_gate_status_str(olsa, bundle_path)} |")
+        lines.append(
+            f"| OLSa_Full (promotional) | {_gate_status_str(olsa_full, bundle_path)} |"
+        )
         lines.append("")
         has_gate_info = True
 
@@ -1206,9 +1208,24 @@ def _truncate_sha(sha: str | None) -> str:
     return sha[:8]
 
 
-def _gate_status_str(arm_data: dict) -> str:
-    """Extract gate status from arm data."""
-    gate_val = arm_data.get("semantic_gate_val")
-    if gate_val is None:
+def _gate_status_str(arm_data: dict, bundle_path: Path | None = None) -> str:
+    """Compute aggregate gate status from arm's gate checks.
+
+    Returns a human-readable string like "PASS (3/3)" or "FAIL (1 of 3)"
+    instead of raw path strings.
+    """
+    checks = _load_gate_checks(arm_data, bundle_path)
+    if not checks:
+        # No gate data at all
         return "\u2014"
-    return str(gate_val) if isinstance(gate_val, str) else "present"
+
+    total = len(checks)
+    statuses = [c.get("status", "?") for c in checks]
+    n_fail = statuses.count("FAIL")
+    n_warn = statuses.count("WARN")
+
+    if n_fail > 0:
+        return f"FAIL ({n_fail} of {total})"
+    if n_warn > 0:
+        return f"WARN ({n_warn} of {total})"
+    return f"PASS ({total}/{total})"
