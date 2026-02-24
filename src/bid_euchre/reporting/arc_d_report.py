@@ -256,7 +256,7 @@ def _render_data_inventory(
         lines.append(f"- **Training run:** {training_run}")
     split_manifest = bundle.get("split_manifest")
     if split_manifest:
-        lines.append(f"- **Split manifest:** `{split_manifest}`")
+        lines.append(f"- **Split manifest:** {split_manifest}")
     lines.append("")
 
     # Eval dataset summary
