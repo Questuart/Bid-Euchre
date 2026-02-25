@@ -28,6 +28,8 @@ from typing import Dict, Iterable, List
 
 import pandas as pd
 
+from bid_euchre.scoring import compute_points
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,6 +109,10 @@ def _expand_record(record: Dict) -> List[Dict]:
             "n_passes": n_passes,
             "auction_rounds": auction_rounds,
         }
+
+        # Compute points_won using scoring rules
+        pts_t0, pts_t1 = compute_points(winning_bid, bidder_position, t0, t1)
+        row["points_won"] = pts_t0 if team == 0 else pts_t1
 
         # Flatten features with feat_ prefix
         seat_features = features_list[seat] if seat < len(features_list) else {}

@@ -95,7 +95,7 @@ notebook-run-arc-d:
 ifdef NOTEBOOK
 	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --pattern "$(NOTEBOOK)"
 else
-	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --pattern "notebooks/arc_d/*.ipynb"
+	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --pattern "notebooks/arc_d/**/*.ipynb"
 endif
 
 docs-check:

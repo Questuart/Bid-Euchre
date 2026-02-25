@@ -56,7 +56,7 @@ def discover_notebooks(pattern: str = "notebooks/phase0_bidless/*.ipynb") -> lis
     Excludes archive/ subdirectory.
     """
     repo_root = Path(__file__).parent.parent
-    all_notebooks = sorted(glob.glob(str(repo_root / pattern)))
+    all_notebooks = sorted(glob.glob(str(repo_root / pattern), recursive=True))
     # Exclude archived notebooks
     notebooks = [Path(nb) for nb in all_notebooks if "archive" not in Path(nb).parts]
     return notebooks

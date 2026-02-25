@@ -404,6 +404,72 @@ class TestMalformedJson:
         assert set(df["deal_id"]) == {0, 1}
 
 
+class TestPointsWon:
+    """Tests for points_won column derived from compute_points."""
+
+    def test_made_bid_declaring_team(self, tmp_path: Path) -> None:
+        """Declaring team (team 0) made the bid → gets tricks won."""
+        log = tmp_path / "test.jsonl"
+        # Team 0 bids 6, wins 7 tricks
+        _write_jsonl(
+            log,
+            [_make_hand_end(winning_bid=6, bidder_position=0, t0=7, t1=3)],
+        )
+
+        df = build_eval_dataset(log)
+
+        # Seats 0,2 (team 0, declaring) → 7 points (made bid, get tricks)
+        for seat in (0, 2):
+            assert df.loc[df["seat"] == seat, "points_won"].iloc[0] == 7
+
+    def test_made_bid_defending_team(self, tmp_path: Path) -> None:
+        """Defending team (team 1) when bid is made → gets their tricks."""
+        log = tmp_path / "test.jsonl"
+        _write_jsonl(
+            log,
+            [_make_hand_end(winning_bid=6, bidder_position=0, t0=7, t1=3)],
+        )
+
+        df = build_eval_dataset(log)
+
+        # Seats 1,3 (team 1, defending) → 3 points (their tricks)
+        for seat in (1, 3):
+            assert df.loc[df["seat"] == seat, "points_won"].iloc[0] == 3
+
+    def test_set_bid_declaring_team(self, tmp_path: Path) -> None:
+        """Declaring team set → gets -bid."""
+        log = tmp_path / "test.jsonl"
+        # Team 0 bids 8, only wins 5 tricks → set
+        _write_jsonl(
+            log,
+            [_make_hand_end(winning_bid=8, bidder_position=0, t0=5, t1=5)],
+        )
+
+        df = build_eval_dataset(log)
+
+        # Seats 0,2 (team 0, declaring, set) → -8 points
+        for seat in (0, 2):
+            assert df.loc[df["seat"] == seat, "points_won"].iloc[0] == -8
+        # Seats 1,3 (team 1, defending) → 5 points
+        for seat in (1, 3):
+            assert df.loc[df["seat"] == seat, "points_won"].iloc[0] == 5
+
+    def test_no_bidder(self, tmp_path: Path) -> None:
+        """No bidder → both teams get their tricks as points."""
+        log = tmp_path / "test.jsonl"
+        _write_jsonl(
+            log,
+            [_make_hand_end(winning_bid=None, bidder_position=None, t0=6, t1=4)],
+        )
+
+        df = build_eval_dataset(log)
+
+        for seat in (0, 2):
+            assert df.loc[df["seat"] == seat, "points_won"].iloc[0] == 6
+        for seat in (1, 3):
+            assert df.loc[df["seat"] == seat, "points_won"].iloc[0] == 4
+
+
 # ---------------------------------------------------------------------------
 # Tests: resolve_eval_log_from_bundle
 # ---------------------------------------------------------------------------
