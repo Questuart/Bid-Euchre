@@ -59,7 +59,7 @@ def _make_h2h_summary(n_bidders: int = 7) -> dict:
                 "cvar_5": float(rng.normal(-0.5, 0.05)),
             }
 
-    return {"matchups": matchups}
+    return {"cells": matchups}
 
 
 class TestExtractNullSignal:
@@ -293,7 +293,7 @@ class TestDriftCheck:
                         "net_eppd_delta": 0.10,
                         "cvar_5": -0.5,
                     }
-        full_summary = {"matchups": full_matchups}
+        full_summary = {"cells": full_matchups}
 
         result = drift_check(quick_thresholds, full_summary)
         assert result["drift_ratio"] > 0.25

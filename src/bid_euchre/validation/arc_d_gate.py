@@ -202,13 +202,11 @@ def _load_thresholds(
         if auto_path.exists():
             resolved_path = auto_path
         else:
-            logger.warning(
-                "No threshold artifact found for %s at %s; "
-                "falling back to default thresholds",
-                rung_id,
-                auto_path,
+            raise FileNotFoundError(
+                f"No threshold artifact found for {rung_id} at {auto_path}; "
+                f"R1+ rungs require calibrated thresholds "
+                f"(run calibrate_arc_d_thresholds.py first)"
             )
-            return dict(_DEFAULT_THRESHOLDS)
 
     # Load and validate
     try:
@@ -238,7 +236,7 @@ def _load_thresholds(
 def _check_h2h_primary(
     bundle: dict,
     thresholds: dict,
-) -> tuple[str | None, str | None]:
+) -> tuple[str, str]:
     """Check H2H-primary promotion signal (R1+).
 
     Uses paired H2H challenger-vs-incumbent CI to determine promotion.
@@ -248,12 +246,11 @@ def _check_h2h_primary(
         thresholds: Loaded threshold dict.
 
     Returns:
-        Tuple of (decision, reason). Decision is "PROMOTED", "HALT", or None.
-        None means CI is inconclusive -- fall through to ADVANCED.
+        Tuple of (decision, reason). Decision is "PROMOTED", "HALT", or "ADVANCED".
     """
     h2h = bundle.get("h2h_challenger_vs_incumbent")
     if h2h is None:
-        return (None, None)
+        return ("ADVANCED", "H2H data absent — cannot evaluate primary signal")
 
     ci_low = h2h.get("ci_low")
     ci_high = h2h.get("ci_high")
@@ -262,7 +259,24 @@ def _check_h2h_primary(
     regression_threshold = thresholds.get("regression_threshold", REGRESSION_THRESHOLD)
 
     if ci_low is None or ci_high is None:
-        return (None, None)
+        return (
+            "ADVANCED",
+            "H2H CI bounds incomplete — cannot evaluate primary signal",
+        )
+
+    # Validate numeric types before formatting
+    try:
+        ci_low = float(ci_low)
+        ci_high = float(ci_high)
+        if net_eppd_delta is not None:
+            net_eppd_delta = float(net_eppd_delta)
+        else:
+            net_eppd_delta = 0.0
+    except (TypeError, ValueError) as e:
+        return (
+            "HALT",
+            f"H2H data has non-numeric fields: {e}",
+        )
 
     if ci_low > delta_floor:
         return (
@@ -278,7 +292,12 @@ def _check_h2h_primary(
             f"(delta={net_eppd_delta:.4f}, CI=[{ci_low:.4f}, {ci_high:.4f}])",
         )
 
-    return (None, None)
+    return (
+        "ADVANCED",
+        f"H2H primary inconclusive: CI=[{ci_low:.4f}, {ci_high:.4f}] "
+        f"spans decision boundaries (delta_floor={delta_floor:.4f}, "
+        f"regression_threshold={regression_threshold:.4f})",
+    )
 
 
 def promotion_gate(
@@ -376,71 +395,9 @@ def promotion_gate(
         if guardrail_result is not None:
             return ("HALT", [guardrail_result])
 
-        # --- H2H Primary Gate (R1+, if h2h data present) ---
+        # --- H2H Primary Gate (R1+, always decisive) ---
         h2h_decision, h2h_reason = _check_h2h_primary(bundle, thresholds)
-        if h2h_decision is not None:
-            return (h2h_decision, [h2h_reason])
-
-        # --- Fallback: Self-play improvement gate ---
-        # Regression check
-        c_net_eppd = _get_metric(challenger_metrics, "net_eppd")
-        i_net_eppd = _get_metric(incumbent_metrics, "net_eppd")
-        regression_threshold = thresholds.get(
-            "regression_threshold", REGRESSION_THRESHOLD
-        )
-
-        if c_net_eppd < i_net_eppd - regression_threshold:
-            return (
-                "HALT",
-                [
-                    f"regression detected: net_eppd={c_net_eppd:.4f} "
-                    f"< incumbent={i_net_eppd:.4f} - {regression_threshold}"
-                ],
-            )
-
-        # --- Sensitivity: both seeds 43+44 reversed -> HALT ---
-        sensitivity_result = _check_sensitivity(bundle, base_dir)
-        if sensitivity_result is not None:
-            return ("HALT", [sensitivity_result])
-
-        # --- R5: strict cvar_5 improvement ---
-        if rung_id == "r5":
-            c_cvar5 = _get_metric(challenger_metrics, "cvar_5")
-            i_cvar5 = _get_metric(incumbent_metrics, "cvar_5")
-            if c_cvar5 <= i_cvar5:
-                return (
-                    "ADVANCED",
-                    ["R5 cvar_5 not improved -- advancing without promotion"],
-                )
-
-        # --- Improvement gate ---
-        # SE requires std_points.  normalize_eval_metrics() derives it from
-        # the raw net_bidder_team_points list when possible.  If still absent,
-        # HALT with an explicit reason rather than silently using a wrong value.
-        delta_floor = thresholds.get("delta_floor", DELTA_FLOOR)
-        if "std_points" not in challenger_metrics:
-            return (
-                "HALT",
-                [
-                    "std_points unavailable for SE calculation "
-                    "(evaluator output missing net_bidder_team_points list "
-                    "and std_bidder_team_points scalar)"
-                ],
-            )
-        c_std = _get_metric(challenger_metrics, "std_points", 1.0)
-        c_n = _get_metric(challenger_metrics, "n_deals", 1.0)
-        se = c_std / (c_n**0.5) if c_n > 0 else 1.0
-        effective_delta = max(delta_floor, 1.5 * se)
-
-        if c_net_eppd <= i_net_eppd + effective_delta:
-            return (
-                "ADVANCED",
-                [
-                    f"insufficient improvement: delta={c_net_eppd - i_net_eppd:.4f}, "
-                    f"threshold={effective_delta:.4f} "
-                    f"(floor={delta_floor}, 1.5*SE={1.5 * se:.4f})"
-                ],
-            )
+        return (h2h_decision, [h2h_reason])
 
     # --- Record attribution_gap ---
     try:

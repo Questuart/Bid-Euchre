@@ -41,13 +41,13 @@ def extract_null_signal(h2h_summary: dict) -> dict:
 
     Args:
         h2h_summary: Loaded H2H battery summary JSON dict.
-            Expected structure: {"matchups": {key: {"net_eppd_delta": float, ...}}}
+            Expected structure: {"cells": {key: {...}}} or {"matchups": {key: {...}}}
             where key is "bidderA_vs_bidderB".
 
     Returns:
         Dict with null_abs_values, self_play_deltas, seat_swap_residuals.
     """
-    matchups = h2h_summary.get("matchups", {})
+    matchups = h2h_summary.get("cells", h2h_summary.get("matchups", {}))
 
     # 1. Self-play deltas: bidder_vs_bidder (diagonal)
     self_play_deltas: list[float] = []
@@ -95,7 +95,7 @@ def extract_cvar5_null(h2h_summary: dict) -> dict:
     Returns:
         Dict with cvar5_residuals and cvar5_residual_std.
     """
-    matchups = h2h_summary.get("matchups", {})
+    matchups = h2h_summary.get("cells", h2h_summary.get("matchups", {}))
 
     # Collect self-play cvar_5 values
     self_play_cvar5: dict[str, float] = {}
@@ -280,7 +280,7 @@ def main():
     if len(null_signal["null_abs_values"]) == 0:
         print(
             "Error: No null signal values extracted. "
-            "Check H2H summary format (needs 'matchups' with 'X_vs_X' keys).",
+            "Check H2H summary format (needs 'cells' or 'matchups' with 'X_vs_X' keys).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -303,10 +303,19 @@ def main():
 
         if drift_result["needs_recalibration"]:
             print(
-                f"WARNING: Drift ratio {drift_result['drift_ratio']:.3f} > 0.25 "
-                f"-- recalibration recommended using FULL data.",
+                f"Drift ratio {drift_result['drift_ratio']:.3f} > 0.25 "
+                f"-- recalibrating from FULL data.",
                 file=sys.stderr,
             )
+            # Recalibrate from FULL data
+            full_null_signal = extract_null_signal(full_summary)
+            full_cvar5_null = extract_cvar5_null(full_summary)
+            thresholds = calibrate_thresholds(
+                full_null_signal, full_cvar5_null, args.seed
+            )
+            thresholds["calibration_source"] = str(full_path.name)
+            thresholds["calibration_details"]["drift_check"] = drift_result
+            thresholds["calibration_details"]["recalibrated_from"] = "FULL"
 
     # Write output
     output_path = Path(args.output)

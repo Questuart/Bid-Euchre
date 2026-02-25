@@ -133,6 +133,11 @@ def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
         if missing_r1:
             errors.append(f"R1+ bundle missing required keys: {sorted(missing_r1)}")
 
+        # Enforce non-null values for R1+ required keys
+        for r1_key in REQUIRED_R1_PLUS_KEYS:
+            if r1_key in bundle and bundle[r1_key] is None:
+                errors.append(f"R1+ key '{r1_key}' must not be null")
+
         # Type-validate h2h_challenger_vs_incumbent as dict with required sub-keys
         h2h_inline = bundle.get("h2h_challenger_vs_incumbent")
         if h2h_inline is not None:

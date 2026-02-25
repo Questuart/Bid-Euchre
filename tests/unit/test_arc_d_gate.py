@@ -297,7 +297,7 @@ def _setup_gate_files(
     # Write H2H summary file (R1+ bundles) -- minimal placeholder
     h2h_summary_path = bundle.get("h2h_summary")
     if h2h_summary_path:
-        _write_json(tmp_path / h2h_summary_path, {"matchups": {}})
+        _write_json(tmp_path / h2h_summary_path, {"cells": {}})
 
     # Write split manifest file
     split_manifest = bundle.get("split_manifest")
@@ -711,9 +711,12 @@ class TestPromotionGate:
         assert decision == "HALT"
 
     def test_improvement_promoted(self, tmp_path):
-        """R1 with sufficient improvement -> PROMOTED."""
-        bundle = _make_bundle()
-        # Challenger well above incumbent
+        """R1 with H2H CI_low > delta_floor -> PROMOTED."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -724,11 +727,15 @@ class TestPromotionGate:
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
         assert decision == "PROMOTED"
+        assert any("H2H primary" in r for r in reasons)
 
     def test_insufficient_delta_advanced(self, tmp_path):
-        """Delta below threshold -> ADVANCED."""
-        bundle = _make_bundle()
-        # Challenger barely above incumbent (within noise)
+        """H2H CI inconclusive -> ADVANCED."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
+            )
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -741,11 +748,15 @@ class TestPromotionGate:
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
         assert decision == "ADVANCED"
-        assert any("insufficient improvement" in r for r in reasons)
+        assert any("inconclusive" in r for r in reasons)
 
     def test_regression_halt(self, tmp_path):
-        """net_eppd < incumbent - 0.05 -> HALT."""
-        bundle = _make_bundle()
+        """H2H CI_high < -regression_threshold -> HALT."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.10, ci_high=-0.06, net_eppd_delta=-0.08
+            )
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -756,11 +767,15 @@ class TestPromotionGate:
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
         assert decision == "HALT"
-        assert any("regression" in r for r in reasons)
+        assert any("H2H primary" in r for r in reasons)
 
     def test_both_seeds_reversed_halt(self, tmp_path):
-        """Both seeds 43+44 reversed -> HALT."""
-        bundle = _make_bundle()
+        """H2H regression -> HALT (sensitivity check is covered by H2H primary)."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.10, ci_high=-0.06, net_eppd_delta=-0.08
+            )
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -775,11 +790,15 @@ class TestPromotionGate:
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
         assert decision == "HALT"
-        assert any("sensitivity" in r for r in reasons)
+        assert any("H2H primary" in r for r in reasons)
 
     def test_one_seed_reversed_ok(self, tmp_path):
-        """Only one seed reversed -> continues (not HALT)."""
-        bundle = _make_bundle()
+        """H2H PROMOTED overrides seed reversal (H2H primary is decisive)."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -793,7 +812,8 @@ class TestPromotionGate:
         decision, reasons = promotion_gate(
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
-        assert decision != "HALT" or not any("sensitivity" in r for r in reasons)
+        assert decision == "PROMOTED"
+        assert any("H2H primary" in r for r in reasons)
 
     def test_bid_rate_too_low_halt(self, tmp_path):
         """bid_rate < 0.05 -> HALT (non-R0)."""
@@ -873,8 +893,13 @@ class TestPromotionGate:
         assert any("downside_variance" in r for r in reasons)
 
     def test_r5_cvar5_not_improved_advanced(self, tmp_path):
-        """R5 cvar_5 not improved -> ADVANCED."""
-        bundle = _make_bundle(rung_id="r5")
+        """R5 with inconclusive H2H -> ADVANCED (H2H primary decisive for R1+)."""
+        bundle = _make_bundle(
+            rung_id="r5",
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
+            ),
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -885,7 +910,7 @@ class TestPromotionGate:
             bundle_path, "r5", str(tmp_path), skip_eligibility=True
         )
         assert decision == "ADVANCED"
-        assert any("cvar_5" in r for r in reasons)
+        assert any("inconclusive" in r for r in reasons)
 
     def test_attribution_gap_recorded(self, tmp_path):
         """PROMOTED result includes attribution_gap value."""
@@ -958,8 +983,12 @@ class TestPromotionGate:
         assert any("Eligibility FAIL" in r for r in reasons)
 
     def test_eligibility_success_continues(self, tmp_path):
-        """compute_eligibility returns eligible -> gate continues to Tier 2."""
-        bundle = _make_bundle()
+        """compute_eligibility returns eligible -> gate continues to H2H primary."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        )
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
@@ -997,8 +1026,9 @@ class TestPromotionGate:
             decision, reasons = promotion_gate(
                 bundle_path, "r1", str(tmp_path), skip_eligibility=False
             )
-        # Should reach PROMOTED since challenger (0.60) > incumbent (0.40) + delta
+        # H2H primary with ci_low=0.02 > delta_floor=0.01 -> PROMOTED
         assert decision == "PROMOTED"
+        assert any("H2H primary" in r for r in reasons)
 
     def test_wrong_artifact_type_halt(self, tmp_path):
         """Artifact type != hybrid_olsa_v1 -> HALT."""
@@ -1012,9 +1042,13 @@ class TestPromotionGate:
         assert decision == "HALT"
         assert any("schema_version" in r for r in reasons)
 
-    def test_missing_std_points_halts_r1(self, tmp_path):
-        """R1+ with no std_points and no raw list -> HALT with explicit reason."""
-        bundle = _make_bundle()
+    def test_missing_std_points_r1_uses_h2h(self, tmp_path):
+        """R1+ without std_points still works via H2H primary (no SE needed)."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
+            )
+        )
         # Create metrics without std_points or net_bidder_team_points
         metrics_no_std = {
             "net_eppd": 0.60,
@@ -1036,12 +1070,17 @@ class TestPromotionGate:
         decision, reasons = promotion_gate(
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
-        assert decision == "HALT"
-        assert any("std_points unavailable" in r for r in reasons)
+        # H2H primary is decisive for R1+ -- no SE calculation needed
+        assert decision == "ADVANCED"
+        assert any("inconclusive" in r for r in reasons)
 
     def test_evaluator_canonical_names_work(self, tmp_path):
         """Metrics using only canonical evaluator names (no aliases) work."""
-        bundle = _make_bundle()
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        )
         # Use only canonical evaluator field names -- no short aliases
         canonical_metrics = {
             "net_expected_points_per_deal": 0.60,
@@ -1062,8 +1101,9 @@ class TestPromotionGate:
         decision, reasons = promotion_gate(
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
-        # Should reach improvement gate (not HALT on missing fields)
-        assert decision in ("PROMOTED", "ADVANCED")
+        # H2H primary is decisive -- canonical names work through guardrails
+        assert decision == "PROMOTED"
+        assert any("H2H primary" in r for r in reasons)
 
 
 # =============================================================================
@@ -1101,10 +1141,12 @@ class TestThresholdLoading:
         result = _load_thresholds(str(tmp_path), "r1")
         assert result["delta_floor"] == 0.03
 
-    def test_r1_falls_back_to_defaults_without_file(self, tmp_path):
-        """R1 falls back to defaults with warning when no file found."""
-        result = _load_thresholds(str(tmp_path), "r1")
-        assert result == _DEFAULT_THRESHOLDS
+    def test_r1_hard_fails_without_threshold_file(self, tmp_path):
+        """R1 hard fails when no threshold artifact found."""
+        import pytest
+
+        with pytest.raises(FileNotFoundError, match="R1\\+ rungs require"):
+            _load_thresholds(str(tmp_path), "r1")
 
     def test_r1_fails_with_explicit_missing_path(self, tmp_path):
         """R1 hard fails if explicit thresholds_path doesn't exist."""
@@ -1184,7 +1226,7 @@ class TestH2HPrimaryGate:
         assert any("H2H primary" in r for r in reasons)
 
     def test_h2h_primary_advanced(self, tmp_path):
-        """In-between CIs -> falls through to self-play gate (ADVANCED)."""
+        """In-between CIs -> ADVANCED from H2H primary."""
         bundle = _make_bundle(
             h2h_challenger_vs_incumbent=_make_h2h_inline(
                 ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
@@ -1193,7 +1235,6 @@ class TestH2HPrimaryGate:
         bundle_path = _setup_gate_files(
             tmp_path,
             bundle,
-            # Challenger barely above incumbent (within noise) -> ADVANCED via self-play
             challenger_metrics=_make_eval_metrics(
                 net_eppd=0.405, std_points=2.0, n_deals=50000
             ),
@@ -1203,7 +1244,7 @@ class TestH2HPrimaryGate:
             bundle_path, "r1", str(tmp_path), skip_eligibility=True
         )
         assert decision == "ADVANCED"
-        assert any("insufficient improvement" in r for r in reasons)
+        assert any("inconclusive" in r for r in reasons)
 
     def test_guardrails_use_loaded_thresholds(self, tmp_path):
         """Guardrails apply artifact threshold values, not hardcoded constants."""
@@ -1257,7 +1298,7 @@ class TestH2HPrimaryGate:
         assert "H2H primary" in reason
 
     def test_h2h_check_function_inconclusive(self):
-        """_check_h2h_primary returns None when CI spans zero."""
+        """_check_h2h_primary returns ADVANCED when CI spans zero."""
         bundle = {
             "h2h_challenger_vs_incumbent": _make_h2h_inline(
                 ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
@@ -1265,16 +1306,28 @@ class TestH2HPrimaryGate:
         }
         thresholds = dict(_DEFAULT_THRESHOLDS)
         decision, reason = _check_h2h_primary(bundle, thresholds)
-        assert decision is None
-        assert reason is None
+        assert decision == "ADVANCED"
+        assert "inconclusive" in reason
 
     def test_h2h_check_function_missing_data(self):
-        """_check_h2h_primary returns None when h2h data is absent."""
+        """_check_h2h_primary returns ADVANCED when h2h data is absent."""
         bundle = {}
         thresholds = dict(_DEFAULT_THRESHOLDS)
         decision, reason = _check_h2h_primary(bundle, thresholds)
-        assert decision is None
-        assert reason is None
+        assert decision == "ADVANCED"
+        assert "absent" in reason
+
+    def test_h2h_check_malformed_numeric_halt(self):
+        """_check_h2h_primary returns HALT on non-numeric CI values."""
+        bundle = {
+            "h2h_challenger_vs_incumbent": _make_h2h_inline(
+                ci_low="not_a_number", ci_high=0.06, net_eppd_delta=0.04
+            )
+        }
+        thresholds = dict(_DEFAULT_THRESHOLDS)
+        decision, reason = _check_h2h_primary(bundle, thresholds)
+        assert decision == "HALT"
+        assert "non-numeric" in reason
 
 
 # =============================================================================
@@ -1351,6 +1404,21 @@ class TestR1BundleValidation:
         valid, errors = validate_bundle(bundle)
         assert not valid
         assert any("gate_thresholds must be a string" in e for e in errors)
+
+    def test_r1_null_h2h_values_fail(self):
+        """R1 bundle with null h2h_challenger_vs_incumbent -> validation error."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=None,
+            h2h_summary=None,
+            gate_thresholds=None,
+        )
+        # Manually set keys to None (instead of absent) to test null enforcement
+        bundle["h2h_challenger_vs_incumbent"] = None
+        bundle["h2h_summary"] = None
+        bundle["gate_thresholds"] = None
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("must not be null" in e for e in errors)
 
     def test_r1_bundle_with_all_keys_passes(self):
         """R1 bundle with all required R1+ keys passes validation."""
