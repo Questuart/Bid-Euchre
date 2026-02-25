@@ -348,6 +348,20 @@ class TestRequiredR0NotebookSet:
             ipynb.exists()
         ), f"Paired .ipynb missing for {notebook} — run `make notebook-sync`"
 
+    def test_runner_discovery_covers_all_required(self):
+        """Glob pattern used by notebook runner must discover all required R0 notebooks."""
+        import glob as glob_mod
+
+        repo_root = Path(__file__).resolve().parents[2]
+        pattern = str(repo_root / "notebooks" / "arc_d" / "r0" / "*.ipynb")
+        discovered = {Path(p).name for p in glob_mod.glob(pattern)}
+        required_ipynb = {nb.replace(".py", ".ipynb") for nb in REQUIRED_R0_NOTEBOOKS}
+        missing = required_ipynb - discovered
+        assert not missing, (
+            f"Notebook runner glob would miss: {missing} — "
+            "check filename or directory structure"
+        )
+
 
 # ──────────────────────────────────────────────
 #  Arc D template contract tests

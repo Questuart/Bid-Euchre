@@ -125,15 +125,16 @@ if df.empty:
         t0 = rng.integers(0, 11)
         t1 = 10 - t0
         winning_bid = int(rng.integers(5, 11))
-        made = bool(t0 >= winning_bid)
         bidder_seat = int(rng.integers(0, 4))
         dealer_seat = int(rng.integers(0, 4))
+        bidder_team = 0 if bidder_seat in (0, 2) else 1
+        declaring_tricks = t0 if bidder_team == 0 else t1
+        made = bool(declaring_tricks >= winning_bid)
         n_bids = int(rng.integers(1, 5))
         n_passes = int(rng.integers(1, 5))
         auction_rounds = n_bids + n_passes
         for seat in range(4):
             team = 0 if seat in (0, 2) else 1
-            bidder_team = 0 if bidder_seat in (0, 2) else 1
             tricks = t0 if seat in (0, 2) else t1
             if team == bidder_team:
                 pts = tricks if made else -winning_bid
