@@ -59,6 +59,7 @@ Canonical scripts:
 **Research and internal tooling.** Not part of the canonical workflow.
 
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
+- `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
 - `generate_batch_report.py` — Batch report + eligibility gate
 - `generate_r4_charts.py` — One-off report chart regeneration utility
@@ -179,6 +180,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | Command | Purpose |
 |---------|---------|
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
+| `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
