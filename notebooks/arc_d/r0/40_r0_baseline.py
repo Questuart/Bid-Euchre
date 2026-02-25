@@ -312,61 +312,9 @@ else:
 # %% [markdown]
 # # §2 Auction Health
 #
-# Bid distribution, pass rate, and contract selection. Requires eval logs
-# (auction transcript data is not available in synthetic mode).
-
-# %%
-if _data_source == "eval_logs" and not df.empty:
-    # Aggregate to one row per deal (use seat 0 since auction fields are identical)
-    deal_df = df[df["seat"] == 0].copy()
-
-    # Bid distribution by contract type
-    if "contract_type" in deal_df.columns:
-        print("=== Bid Distribution ===")
-        for ctype in sorted(deal_df["contract_type"].unique()):
-            grp = deal_df[deal_df["contract_type"] == ctype]
-            if "winning_bid" in grp.columns:
-                bid_dist = grp["winning_bid"].value_counts().sort_index()
-                print(f"\n{ctype} (n={len(grp)}):")
-                print(bid_dist.to_string())
-
-        # Inline bid distribution bar chart
-        fig_bid, axes_bid = plt.subplots(
-            1,
-            len(deal_df["contract_type"].unique()),
-            figsize=(5 * len(deal_df["contract_type"].unique()), 4),
-            sharey=True,
-        )
-        if not hasattr(axes_bid, "__len__"):
-            axes_bid = [axes_bid]
-        for ax, ctype in zip(axes_bid, sorted(deal_df["contract_type"].unique())):
-            grp = deal_df[deal_df["contract_type"] == ctype]
-            if "winning_bid" in grp.columns:
-                grp["winning_bid"].value_counts().sort_index().plot.bar(ax=ax)
-                ax.set_title(f"Bid Distribution: {ctype}")
-                ax.set_xlabel("Winning Bid")
-                ax.set_ylabel("Count")
-        plt.tight_layout()
-        plt.show()
-
-    # Pass rate and auction length
-    if "n_passes" in deal_df.columns and "auction_rounds" in deal_df.columns:
-        print("\n=== Auction Summary ===")
-        pass_rate = deal_df["n_passes"].mean() / deal_df["auction_rounds"].mean()
-        print(f"Mean pass rate: {pass_rate:.3f}")
-        print(f"Mean bids/deal: {deal_df['n_bids'].mean():.2f}")
-        print(f"Mean passes/deal: {deal_df['n_passes'].mean():.2f}")
-
-    # Contract selection frequency
-    if "contract_type" in deal_df.columns:
-        print("\n=== Contract Selection ===")
-        print(deal_df["contract_type"].value_counts().to_string())
-else:
-    print(
-        "Auction health requires eval logs (not synthetic data) — skipping."
-        if _data_source != "eval_logs"
-        else "No data available for auction health."
-    )
+# Auction health analysis has been extracted to a dedicated notebook.
+# See `25_auction_health.py` for bid distributions, seat analysis,
+# and auction length diagnostics.
 
 # %% [markdown]
 # # §3 Gameplay Health
@@ -453,34 +401,8 @@ else:
 # %% [markdown]
 # # §4 Auction Outcomes
 #
-# Bid accuracy and make rate, faceted by contract type.
-# Uses bidder-only rows (one per deal) to avoid double-counting.
-
-# %%
-if not df.empty and "is_bidder" in df.columns:
-    bidder_df = df[df["is_bidder"] == True].copy()  # noqa: E712
-
-    if not bidder_df.empty and "contract_type" in bidder_df.columns:
-        print("=== Bid Accuracy & Make Rate ===")
-        for ctype in sorted(bidder_df["contract_type"].unique()):
-            grp = bidder_df[bidder_df["contract_type"] == ctype]
-            n = len(grp)
-            if "made_bid" in grp.columns and n > 0:
-                make_rate = grp["made_bid"].mean()
-                print(f"\n{ctype} (n={n}):")
-                print(f"  Make rate: {make_rate:.3f}")
-
-            if "winning_bid" in grp.columns and "tricks_won" in grp.columns:
-                overbid = (grp["tricks_won"] < grp["winning_bid"]).mean()
-                underbid = (grp["tricks_won"] > grp["winning_bid"] + 1).mean()
-                mean_surplus = (grp["tricks_won"] - grp["winning_bid"]).mean()
-                print(f"  Overbid rate: {overbid:.3f}")
-                print(f"  Underbid rate (>1 surplus): {underbid:.3f}")
-                print(f"  Mean surplus: {mean_surplus:+.2f}")
-    else:
-        print("No bidder rows found — skipping auction outcomes.")
-else:
-    print("No bidder flag available — skipping auction outcomes.")
+# Bid accuracy and make rate analysis have been extracted to
+# `25_auction_health.py` §S4–S5.
 
 # %% [markdown]
 # # §5 Gameplay Outcomes

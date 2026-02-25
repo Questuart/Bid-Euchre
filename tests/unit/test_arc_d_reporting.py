@@ -972,6 +972,7 @@ def test_reproduction_commands_use_new_notebook_names(tmp_path):
 
     assert "10_feature_health.ipynb" in report
     assert "20_outcome_health.ipynb" in report
+    assert "25_auction_health.ipynb" in report
     assert "30_feature_outcome_eval.ipynb" in report
     # Old monolithic name must NOT appear
     assert "01_model_rung.ipynb" not in report
