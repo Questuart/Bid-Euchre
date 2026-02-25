@@ -132,6 +132,7 @@ objective of future rungs (R1+).
 
 | Item | Value |
 |------|-------|
+| gate_status | PROMOTED |
 | Rung bundle | data/artifacts/arc_d/r0/rung_bundle_r0.json |
 | OLSa artifact | data/artifacts/arc_d/r0/hybrid_r0.json |
 | OLSa_Full artifact | data/artifacts/arc_d/r0/hybrid_r0_full.json |

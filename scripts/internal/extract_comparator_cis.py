@@ -19,6 +19,11 @@ Usage:
         --runs-dir data/runs \
         --seed 42 --n-bootstrap 10000 \
         --output data/artifacts/arc_d/r0/comparator_cis_r0.json
+
+The --seed value is used both for bootstrap resampling AND to select the correct
+run directories (pattern: auction_comparator_{name}_{seed}_*).  If JSONL-derived
+metrics disagree with the comparator battery, the script exits non-zero unless
+--force is supplied.
 """
 
 import argparse
@@ -189,6 +194,11 @@ def main():
         required=True,
         help="Output JSON path",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Write output even if JSONL-vs-battery validation fails",
+    )
     args = parser.parse_args()
 
     artifacts_dir = Path(args.artifacts_dir)
@@ -207,12 +217,15 @@ def main():
     # Locate JSONL log for each bidder
     all_data = {}
     for name in bidder_names:
-        # Find run directory matching auction_comparator_{name}_*
-        candidates = sorted(runs_dir.glob(f"auction_comparator_{name}_*"))
+        # Find run directory matching auction_comparator_{name}_{seed}_*
+        candidates = sorted(runs_dir.glob(f"auction_comparator_{name}_{args.seed}_*"))
         if not candidates:
-            print(f"ERROR: No run dir for {name}", file=sys.stderr)
+            print(
+                f"ERROR: No run dir for {name} with seed {args.seed}",
+                file=sys.stderr,
+            )
             sys.exit(1)
-        run_dir = candidates[-1]  # most recent
+        run_dir = candidates[-1]  # most recent matching seed
         logs = sorted(run_dir.glob("logs/*.jsonl"))
         if not logs:
             print(f"ERROR: No JSONL log in {run_dir}/logs/", file=sys.stderr)
@@ -223,16 +236,30 @@ def main():
 
     # Verify metrics match battery point estimates
     print("\nValidation (JSONL vs battery):")
+    mismatches = []
     for name in bidder_names:
         metrics = _compute_bidder_metrics(all_data[name])
         bat = battery["bidders"][name]
         net_match = abs(metrics["net_eppd"] - bat["net_eppd"]) < 0.01
         eppd_match = abs(metrics["eppd"] - bat["eppd"]) < 0.01
         status = "OK" if (net_match and eppd_match) else "MISMATCH"
+        if status == "MISMATCH":
+            mismatches.append(name)
         print(
             f"  {name}: net_eppd={metrics['net_eppd']:.4f} (bat={bat['net_eppd']:.4f}) "
             f"eppd={metrics['eppd']:.4f} (bat={bat['eppd']:.4f}) [{status}]"
         )
+
+    if mismatches:
+        msg = (
+            f"ERROR: JSONL-derived metrics disagree with battery for: "
+            f"{', '.join(mismatches)}"
+        )
+        if args.force:
+            print(f"WARNING: {msg} (continuing due to --force)", file=sys.stderr)
+        else:
+            print(f"{msg}\nUse --force to write output anyway.", file=sys.stderr)
+            sys.exit(1)
 
     # Compute metrics + bootstrap CIs for each bidder
     results = {}

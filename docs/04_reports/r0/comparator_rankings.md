@@ -92,3 +92,4 @@ scoring system.
 - **Extraction script:** scripts/internal/extract_comparator_cis.py
 - **Source data:** data/artifacts/arc_d/r0/comparator_cis_r0.json (gitignored)
 - **Battery metadata:** data/artifacts/arc_d/r0/comparator_battery_r0.json
+- **gate_status:** PROMOTED (see [r0_promotion_report.md](r0_promotion_report.md))
