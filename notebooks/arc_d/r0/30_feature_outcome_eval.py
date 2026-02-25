@@ -42,6 +42,9 @@ CHART_OUTPUT_DIR = ""
 
 # %% [markdown]
 # # S0 Configuration & Data Loading
+#
+# Load evaluation logs (JSONL primary, synthetic fallback), artifact bundles,
+# and eval metrics. Establishes all data dependencies for subsequent sections.
 
 # %%
 import os
@@ -72,6 +75,7 @@ for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
 
 # %%
 import json
+import warnings
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -92,7 +96,10 @@ from bid_euchre.reporting.evaluator import load_eval_metrics
 
 SEED = 42
 MODE_DEAL_COUNTS = {"SMOKE": 30, "QUICK": 2_000, "FULL": 50_000}
-max_deals = MODE_DEAL_COUNTS.get(MODE)
+# C2: MODE fallback with warning
+_max_deals = MODE_DEAL_COUNTS.get(MODE, 30)
+if MODE not in MODE_DEAL_COUNTS:
+    warnings.warn(f"Unknown MODE={MODE!r}, defaulting to 30 deals", stacklevel=2)
 
 # --- Data loading: JSONL primary, synthetic fallback ---
 _data_source = "synthetic"
@@ -112,7 +119,7 @@ if EVAL_LOG_PATH:
             print(f"WARNING: No .jsonl files found in {eval_log}")
     if eval_log.exists() and eval_log.is_file():
         try:
-            df = build_eval_dataset(str(eval_log), max_deals=max_deals)
+            df = build_eval_dataset(str(eval_log), max_deals=_max_deals)
             _data_source = "eval_logs"
             print(f"Loaded {len(df)} rows from {eval_log.name}")
             print(f"  Deals: {df['deal_id'].nunique()}, Source: {_data_source}")
@@ -127,7 +134,7 @@ if EVAL_LOG_PATH and df.empty:
 if df.empty:
     # Synthetic demo data for CI / SMOKE fallback
     rng = np.random.default_rng(SEED)
-    n_deals = max_deals or 30
+    n_deals = _max_deals or 30
     rows = []
     _synth_features = [
         "hand_value",
@@ -146,8 +153,16 @@ if df.empty:
         trump = rng.choice(["C", "D", "H", "S"]) if contract == "suit" else None
         t0 = int(rng.integers(0, 11))
         t1 = 10 - t0
+        _winning_bid = int(rng.integers(5, 11))
+        _made = bool(rng.random() > 0.3)
         for seat in range(4):
             team = 0 if seat in (0, 2) else 1
+            tricks = t0 if seat in (0, 2) else t1
+            # Compute points_won using scoring semantics
+            if _made or team == 1:
+                points = tricks
+            else:
+                points = -_winning_bid
             row = {
                 "deal_id": deal_id,
                 "hand_id": deal_id,
@@ -155,11 +170,12 @@ if df.empty:
                 "team": team,
                 "contract_type": contract,
                 "trump": trump,
-                "tricks_won": t0 if seat in (0, 2) else t1,
+                "tricks_won": tricks,
+                "points_won": points,
                 "is_bidder": seat == 0,
                 "is_declaring_team": team == 0,
-                "winning_bid": int(rng.integers(5, 11)),
-                "made_bid": bool(rng.random() > 0.3),
+                "winning_bid": _winning_bid,
+                "made_bid": _made,
                 "n_bids": int(rng.integers(1, 4)),
                 "n_passes": int(rng.integers(1, 4)),
                 "auction_rounds": 4,
@@ -237,22 +253,119 @@ METRIC_ALIASES = {
     "downside_variance": "downside_variance",
 }
 
-# Data summary
+# C22: Run metadata summary
 feat_cols = [c for c in df.columns if c.startswith("feat_")]
-print(f"\nDataset shape: {df.shape}")
-print(f"Feature columns: {len(feat_cols)}")
+print("=" * 60)
+print("RUN METADATA")
+print("=" * 60)
+print(f"  Data source:    {_data_source}")
+print(f"  Eval log path:  {EVAL_LOG_PATH or 'N/A (synthetic)'}")
+print(f"  Artifact dir:   {ARTIFACT_DIR or 'N/A'}")
+print(f"  Rung:           {RUNG_ID}")
+print(f"  Mode:           {MODE} (max_deals={_max_deals})")
+print(f"  Seed:           {SEED}")
+print(f"  Total deals:    {df['deal_id'].nunique():,}")
+print(f"  Total rows:     {len(df):,} (4 per deal)")
+print(f"  Feature columns: {len(feat_cols)}")
+if _model_artifacts:
+    print(f"  Arms loaded:    {list(_model_artifacts.keys())}")
 if "contract_type" in df.columns:
-    print(f"Contract types: {sorted(df['contract_type'].unique())}")
-    print("Deals per contract:")
+    ct_counts = df.drop_duplicates("deal_id")["contract_type"].value_counts()
+    print(f"  Contract types: {dict(ct_counts)}")
+
+# %% [markdown]
+# ## Fail-Fast Validation
+#
+# Assert-style checks on loaded data to catch pipeline issues early.
+# All checks must pass before proceeding to model analysis.
+
+# %%
+# C6: Fail-fast validation
+_validation_results = []
+
+# Check 1: tricks_won in valid range [0, 10]
+_range_ok = df["tricks_won"].between(0, 10).all()
+_validation_results.append(
+    {"check": "tricks_won range [0,10]", "status": "PASS" if _range_ok else "FAIL"}
+)
+assert _range_ok, f"tricks_won out of range: {df['tricks_won'].describe()}"
+
+# Check 2: team0 + team1 tricks == 10 (zero-sum per deal)
+_deal_tricks = df.groupby("deal_id").apply(
+    lambda g: g.drop_duplicates("team")["tricks_won"].sum()
+)
+_zerosum_ok = (_deal_tricks == 10).all()
+_validation_results.append(
+    {"check": "zero-sum (t0+t1=10)", "status": "PASS" if _zerosum_ok else "FAIL"}
+)
+assert _zerosum_ok, "Zero-sum violation detected"
+
+# Check 3: no missing contract_type
+_ct_ok = df["contract_type"].notna().all()
+_validation_results.append(
+    {"check": "no missing contract_type", "status": "PASS" if _ct_ok else "FAIL"}
+)
+assert _ct_ok, f"Missing contract_type: {df['contract_type'].isna().sum()} nulls"
+
+# Check 4: no missing tricks_won
+_tw_ok = df["tricks_won"].notna().all()
+_validation_results.append(
+    {"check": "no missing tricks_won", "status": "PASS" if _tw_ok else "FAIL"}
+)
+assert _tw_ok, f"Missing tricks_won: {df['tricks_won'].isna().sum()} nulls"
+
+# Check 5: feature columns present
+_feat_ok = len(feat_cols) > 0
+_validation_results.append(
+    {
+        "check": f"feat_* columns present ({len(feat_cols)})",
+        "status": "PASS" if _feat_ok else "FAIL",
+    }
+)
+assert _feat_ok, "No feat_* columns found"
+
+print("=== Fail-Fast Validation ===")
+for r in _validation_results:
+    print(f"  [{r['status']}] {r['check']}")
+print(f"\nAll {len(_validation_results)} checks passed.")
+
+# %% [markdown]
+# ## Balance & Symmetry Check
+#
+# Verify team balance across contract types before model analysis.
+# Detects systematic team bias that would confound feature-outcome analysis.
+
+# %%
+# C12: Balance/symmetry check
+print("=== Team Balance by Contract Type ===")
+if "contract_type" in df.columns and "team" in df.columns:
     for ct in sorted(df["contract_type"].unique()):
-        n = df[df["contract_type"] == ct]["deal_id"].nunique()
-        print(f"  {ct}: {n}")
+        subset = df[df["contract_type"] == ct]
+        t0 = subset[subset["team"] == 0]["tricks_won"]
+        t1 = subset[subset["team"] == 1]["tricks_won"]
+        if len(t0) >= 2 and len(t1) >= 2:
+            if HAS_SCIPY:
+                stat, p_val = scipy_stats.mannwhitneyu(t0, t1, alternative="two-sided")
+                print(
+                    f"  {ct}: team0={t0.mean():.3f}, "
+                    f"team1={t1.mean():.3f}, MWU p={p_val:.4f}"
+                )
+            else:
+                print(
+                    f"  {ct}: team0={t0.mean():.3f}, "
+                    f"team1={t1.mean():.3f} (scipy not available for MWU test)"
+                )
+        else:
+            print(f"  {ct}: insufficient data for balance check")
+else:
+    print("  Missing contract_type or team column -- skipping.")
 
 # %% [markdown]
 # # S1 Feature-Outcome Correlations
 #
 # Per-contract Pearson correlation of each feature with tricks_won.
 # Faceted by contract_type as required by the contract-type faceting rule.
+# Includes declaring/defending split and dual-target (tricks + points) analysis.
 
 # %%
 if not df.empty and "tricks_won" in df.columns and feat_cols:
@@ -362,6 +475,140 @@ if not df.empty and "tricks_won" in df.columns and feat_cols:
             )
         plt.show()
 
+        # C23-T2: Feature x points_won heatmap
+        if "points_won" in df.columns:
+            pts_corr_data = {}
+            for ct in ctypes:
+                grp = df[df["contract_type"] == ct]
+                ct_pts_corrs = {}
+                for fc in feat_cols:
+                    if pd.api.types.is_numeric_dtype(grp[fc]):
+                        valid = grp[fc].notna() & grp["points_won"].notna()
+                        if valid.sum() > 2:
+                            ct_pts_corrs[fc] = grp.loc[valid, fc].corr(
+                                grp.loc[valid, "points_won"]
+                            )
+                        else:
+                            ct_pts_corrs[fc] = np.nan
+                pts_corr_data[ct] = ct_pts_corrs
+
+            pts_corr_df = pd.DataFrame(pts_corr_data)
+            pts_corr_df.index = [c.replace("feat_", "") for c in pts_corr_df.index]
+
+            fig_pts, ax_pts = plt.subplots(figsize=(8, max(4, len(pts_corr_df) * 0.35)))
+            vmax_pts = max(abs(pts_corr_df.min().min()), abs(pts_corr_df.max().max()))
+            vmax_pts = max(vmax_pts, 0.1)
+            im_pts = ax_pts.imshow(
+                pts_corr_df.values,
+                aspect="auto",
+                cmap="RdBu_r",
+                vmin=-vmax_pts,
+                vmax=vmax_pts,
+            )
+            ax_pts.set_xticks(range(len(ctypes)))
+            ax_pts.set_xticklabels(ctypes)
+            ax_pts.set_yticks(range(len(pts_corr_df)))
+            ax_pts.set_yticklabels(pts_corr_df.index, fontsize=8)
+            ax_pts.set_title("Feature-Outcome Correlation (Pearson r vs points_won)")
+            plt.colorbar(im_pts, ax=ax_pts, label="Pearson r")
+            for i in range(len(pts_corr_df)):
+                for j in range(len(ctypes)):
+                    val = pts_corr_df.iloc[i, j]
+                    if not np.isnan(val):
+                        color = "white" if abs(val) > vmax_pts * 0.6 else "black"
+                        ax_pts.text(
+                            j,
+                            i,
+                            f"{val:.2f}",
+                            ha="center",
+                            va="center",
+                            fontsize=7,
+                            color=color,
+                        )
+            plt.tight_layout()
+            if CHART_OUTPUT_DIR:
+                out = Path(CHART_OUTPUT_DIR)
+                out.mkdir(parents=True, exist_ok=True)
+                fig_pts.savefig(
+                    out / "feature_points_won_heatmap.png",
+                    dpi=150,
+                    bbox_inches="tight",
+                )
+            plt.show()
+
+        # C23-T2: Declaring/defending split heatmaps
+        if "is_declaring_team" in df.columns:
+            for role_label, role_val in [("Declaring", True), ("Defending", False)]:
+                role_df = df[df["is_declaring_team"] == role_val]
+                role_corr_data = {}
+                for ct in ctypes:
+                    grp = role_df[role_df["contract_type"] == ct]
+                    ct_role_corrs = {}
+                    for fc in feat_cols:
+                        if pd.api.types.is_numeric_dtype(grp[fc]):
+                            valid = grp[fc].notna() & grp["tricks_won"].notna()
+                            if valid.sum() > 2:
+                                ct_role_corrs[fc] = grp.loc[valid, fc].corr(
+                                    grp.loc[valid, "tricks_won"]
+                                )
+                            else:
+                                ct_role_corrs[fc] = np.nan
+                    role_corr_data[ct] = ct_role_corrs
+
+                role_corr_df = pd.DataFrame(role_corr_data)
+                if role_corr_df.empty:
+                    continue
+                role_corr_df.index = [
+                    c.replace("feat_", "") for c in role_corr_df.index
+                ]
+
+                fig_role, ax_role = plt.subplots(
+                    figsize=(8, max(4, len(role_corr_df) * 0.35))
+                )
+                vmax_role = max(
+                    abs(role_corr_df.min().min()), abs(role_corr_df.max().max())
+                )
+                vmax_role = max(vmax_role, 0.1)
+                im_role = ax_role.imshow(
+                    role_corr_df.values,
+                    aspect="auto",
+                    cmap="RdBu_r",
+                    vmin=-vmax_role,
+                    vmax=vmax_role,
+                )
+                ax_role.set_xticks(range(len(ctypes)))
+                ax_role.set_xticklabels(ctypes)
+                ax_role.set_yticks(range(len(role_corr_df)))
+                ax_role.set_yticklabels(role_corr_df.index, fontsize=8)
+                ax_role.set_title(
+                    f"Feature-Outcome Correlation ({role_label}, Pearson r vs tricks_won)"
+                )
+                plt.colorbar(im_role, ax=ax_role, label="Pearson r")
+                for i in range(len(role_corr_df)):
+                    for j in range(len(ctypes)):
+                        val = role_corr_df.iloc[i, j]
+                        if not np.isnan(val):
+                            color = "white" if abs(val) > vmax_role * 0.6 else "black"
+                            ax_role.text(
+                                j,
+                                i,
+                                f"{val:.2f}",
+                                ha="center",
+                                va="center",
+                                fontsize=7,
+                                color=color,
+                            )
+                plt.tight_layout()
+                if CHART_OUTPUT_DIR:
+                    out = Path(CHART_OUTPUT_DIR)
+                    out.mkdir(parents=True, exist_ok=True)
+                    fig_role.savefig(
+                        out / f"feature_outcome_heatmap_{role_label.lower()}.png",
+                        dpi=150,
+                        bbox_inches="tight",
+                    )
+                plt.show()
+
         # --- Full correlation table with p-values ---
         print("\n=== Full Feature-Outcome Correlation Table ===")
         for ct in ctypes:
@@ -385,7 +632,9 @@ if not df.empty and "tricks_won" in df.columns and feat_cols:
                         {
                             "feature": fc.replace("feat_", ""),
                             "pearson_r": round(r_val, 4),
-                            "p_value": round(p_val, 6) if not np.isnan(p_val) else None,
+                            "p_value": (
+                                round(p_val, 6) if not np.isnan(p_val) else None
+                            ),
                             "n": n_valid,
                         }
                     )
@@ -394,6 +643,75 @@ if not df.empty and "tricks_won" in df.columns and feat_cols:
                     "pearson_r", key=abs, ascending=False
                 )
                 print(tbl.to_string(index=False))
+
+        # C23-T2: Dual-target correlation (features x points_won)
+        if "points_won" in df.columns:
+            print("\n=== Feature x points_won Correlation (per contract type) ===")
+            for ct in ctypes:
+                grp = df[df["contract_type"] == ct]
+                print(f"\n--- {ct} (n={len(grp)}) ---")
+                pts_rows = []
+                for fc in feat_cols:
+                    if not pd.api.types.is_numeric_dtype(grp[fc]):
+                        continue
+                    valid = grp[fc].notna() & grp["points_won"].notna()
+                    n_valid = valid.sum()
+                    if n_valid > 2:
+                        r_val = grp.loc[valid, fc].corr(grp.loc[valid, "points_won"])
+                        if HAS_SCIPY:
+                            _, p_val = scipy_stats.pearsonr(
+                                grp.loc[valid, fc], grp.loc[valid, "points_won"]
+                            )
+                        else:
+                            p_val = np.nan
+                        pts_rows.append(
+                            {
+                                "feature": fc.replace("feat_", ""),
+                                "pearson_r": round(r_val, 4),
+                                "p_value": (
+                                    round(p_val, 6) if not np.isnan(p_val) else None
+                                ),
+                                "n": n_valid,
+                            }
+                        )
+                if pts_rows:
+                    tbl_pts = pd.DataFrame(pts_rows).sort_values(
+                        "pearson_r", key=abs, ascending=False
+                    )
+                    print(tbl_pts.to_string(index=False))
+
+        # C23-T2: Declaring vs defending split
+        if "is_declaring_team" in df.columns:
+            for role_label, role_val in [("declaring", True), ("defending", False)]:
+                print(f"\n=== Feature-Outcome Correlations ({role_label}) ===")
+                role_df = df[df["is_declaring_team"] == role_val]
+                for ct in ctypes:
+                    grp = role_df[role_df["contract_type"] == ct]
+                    if len(grp) < 5:
+                        continue
+                    print(f"\n--- {ct} / {role_label} (n={len(grp)}) ---")
+                    role_rows = []
+                    for fc in feat_cols:
+                        if not pd.api.types.is_numeric_dtype(grp[fc]):
+                            continue
+                        valid = grp[fc].notna() & grp["tricks_won"].notna()
+                        n_valid = valid.sum()
+                        if n_valid > 2:
+                            r_val = grp.loc[valid, fc].corr(
+                                grp.loc[valid, "tricks_won"]
+                            )
+                            role_rows.append(
+                                {
+                                    "feature": fc.replace("feat_", ""),
+                                    "pearson_r": round(r_val, 4),
+                                    "n": n_valid,
+                                }
+                            )
+                    if role_rows:
+                        tbl_role = pd.DataFrame(role_rows).sort_values(
+                            "pearson_r", key=abs, ascending=False
+                        )
+                        print(tbl_role.to_string(index=False))
     else:
         print("No contract_type column -- skipping faceted correlation analysis.")
 else:
@@ -403,8 +721,9 @@ else:
 # # S2 Model Specification
 #
 # Feature selection and coefficient display for each model arm,
-# faceted by contract type. Includes coefficient heatmap and
-# side-by-side comparison of OLSa vs OLSa_Full.
+# faceted by contract type. Includes statsmodels OLS summary tables
+# (with std errors, t-stats, p-values, CIs) and side-by-side coefficient
+# comparison of OLSa vs OLSa_Full.
 
 # %%
 if _model_artifacts:
@@ -428,76 +747,38 @@ if _model_artifacts:
                 for fname, w in pairs:
                     print(f"    {fname:40s} {w:+.6f}")
 
-    # --- Coefficient heatmap for primary arm ---
-    primary_arm = (
-        "olsa_full"
-        if "olsa_full" in _model_artifacts
-        else next(iter(_model_artifacts), None)
-    )
-    if primary_arm:
-        artifact = _model_artifacts[primary_arm]
-        payoff = artifact.get("payoff_model", {})
-        contracts = sorted(payoff.keys())
-        all_features = set()
-        for model in payoff.values():
-            all_features.update(model.get("feature_names", []))
-        all_features_sorted = sorted(all_features)
+    # C34: statsmodels OLS summary tables (display-only refit)
+    try:
+        import statsmodels.api as sm
 
-        if all_features_sorted and contracts:
-            # Build coefs_by_contract dict for plot_coefficient_heatmap
-            coefs_by_contract = {}
-            for contract in contracts:
-                model = payoff[contract]
-                fnames = model.get("feature_names", [])
-                weights = model.get("weights", [])
-                series_data = {fn: 0.0 for fn in all_features_sorted}
-                for fn, w in zip(fnames, weights):
-                    series_data[fn] = w
-                coefs_by_contract[contract] = pd.Series(series_data)
-
-            try:
-                from bid_euchre.diagnostics.charts import plot_coefficient_heatmap
-
-                fig = plot_coefficient_heatmap(
-                    coefs_by_contract,
-                    top_n=len(all_features_sorted),
-                    title=f"Coefficient Heatmap: {primary_arm}",
-                )
-            except ImportError:
-                # Fallback: manual heatmap
-                coef_matrix = np.zeros((len(all_features_sorted), len(contracts)))
-                for j, contract in enumerate(contracts):
-                    model = payoff[contract]
-                    fnames = model.get("feature_names", [])
-                    weights = model.get("weights", [])
-                    for fname, w in zip(fnames, weights):
-                        if fname in all_features_sorted:
-                            coef_matrix[all_features_sorted.index(fname), j] = w
-
-                fig, ax = plt.subplots(
-                    figsize=(8, max(4, len(all_features_sorted) * 0.4))
-                )
-                im = ax.imshow(coef_matrix, aspect="auto", cmap="RdBu_r")
-                ax.set_xticks(range(len(contracts)))
-                ax.set_xticklabels(contracts)
-                ax.set_yticks(range(len(all_features_sorted)))
-                ax.set_yticklabels(all_features_sorted, fontsize=8)
-                ax.set_title(f"Coefficient Heatmap: {primary_arm}")
-                plt.colorbar(im, ax=ax, label="Weight")
-
-            plt.tight_layout()
-            if CHART_OUTPUT_DIR:
-                out = Path(CHART_OUTPUT_DIR)
-                out.mkdir(parents=True, exist_ok=True)
-                fig.savefig(
-                    out / "coefficient_heatmap.png", dpi=150, bbox_inches="tight"
-                )
-            plt.show()
+        for arm_key, artifact in _model_artifacts.items():
+            payoff = artifact.get("payoff_model", {})
+            for contract, model in sorted(payoff.items()):
+                feat_names = model.get("feature_names", [])
+                if not feat_names:
+                    continue
+                contract_df = df[df["contract_type"] == contract]
+                feat_c = [f"feat_{fn}" for fn in feat_names]
+                missing = [c for c in feat_c if c not in contract_df.columns]
+                if missing or len(contract_df) < len(feat_names) + 2:
+                    continue
+                X = contract_df[feat_c].values.astype(np.float64)
+                X_const = sm.add_constant(X)
+                y = contract_df["tricks_won"].values.astype(np.float64)
+                try:
+                    result = sm.OLS(y, X_const).fit()
+                    print(f"\n{'=' * 60}")
+                    print(f"OLS Summary: {arm_key} / {contract}")
+                    print(f"{'=' * 60}")
+                    print(result.summary(xname=["const"] + list(feat_names)))
+                except Exception as e:
+                    print(f"  Could not fit {arm_key}/{contract}: {e}")
+    except ImportError:
+        print("statsmodels not available -- skipping OLS summary tables.")
 
     # --- Coefficient comparison: OLSa vs OLSa_Full ---
     if len(_model_artifacts) >= 2:
         arm_keys = list(_model_artifacts.keys())
-        # Gather per-contract coefficient comparisons
         for arm0_key, arm1_key in [(arm_keys[0], arm_keys[1])]:
             payoff0 = _model_artifacts[arm0_key].get("payoff_model", {})
             payoff1 = _model_artifacts[arm1_key].get("payoff_model", {})
@@ -571,7 +852,9 @@ if _model_artifacts:
                 out = Path(CHART_OUTPUT_DIR)
                 out.mkdir(parents=True, exist_ok=True)
                 fig_comp.savefig(
-                    out / "coefficient_comparison.png", dpi=150, bbox_inches="tight"
+                    out / "coefficient_comparison.png",
+                    dpi=150,
+                    bbox_inches="tight",
                 )
             plt.show()
 
@@ -600,7 +883,8 @@ else:
 # # S3 Model Performance Diagnostics
 #
 # Predicted vs actual tricks, residual distribution, residuals vs predicted,
-# and bootstrap R2/MAE confidence intervals by contract type.
+# and bootstrap R2/MAE confidence intervals. All charts faceted by contract
+# type into separate panels, with pooled summary retained for overview.
 
 # %%
 if _model_artifacts and not df.empty and "tricks_won" in df.columns:
@@ -669,8 +953,9 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
         all_y_arr = np.array(all_y)
         all_pred_arr = np.array(all_pred)
         all_contracts_arr = np.array(all_contracts)
+        all_residuals = all_y_arr - all_pred_arr
 
-        # --- Use plot_model_diagnostics from diagnostics.model_charts ---
+        # --- Pooled model diagnostics (summary overview) ---
         try:
             from bid_euchre.diagnostics.model_charts import plot_model_diagnostics
 
@@ -678,17 +963,18 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
                 all_y_arr,
                 all_pred_arr,
                 all_contracts_arr,
-                title=f"Model Diagnostics: {primary_arm}",
+                title=f"Model Diagnostics (pooled): {primary_arm}",
             )
             if CHART_OUTPUT_DIR:
                 out = Path(CHART_OUTPUT_DIR)
                 out.mkdir(parents=True, exist_ok=True)
                 fig_diag.savefig(
-                    out / "pred_vs_actual_scatter.png", dpi=150, bbox_inches="tight"
+                    out / "pred_vs_actual_scatter.png",
+                    dpi=150,
+                    bbox_inches="tight",
                 )
             plt.show()
         except ImportError:
-            # Fallback: manual scatter + residual plots
             fig_s, ax_s = plt.subplots(figsize=(6, 5))
             ax_s.scatter(all_y_arr, all_pred_arr, alpha=0.3, s=5)
             lims = [
@@ -698,68 +984,101 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
             ax_s.plot(lims, lims, "r--", linewidth=1, label="y=x")
             ax_s.set_xlabel("Actual Tricks Won")
             ax_s.set_ylabel("Predicted Tricks Won")
-            ax_s.set_title(f"Pred vs Actual: {primary_arm}")
+            ax_s.set_title(f"Pred vs Actual (pooled): {primary_arm}")
             ax_s.legend()
             plt.tight_layout()
-            if CHART_OUTPUT_DIR:
-                out = Path(CHART_OUTPUT_DIR)
-                out.mkdir(parents=True, exist_ok=True)
-                fig_s.savefig(
-                    out / "pred_vs_actual_scatter.png", dpi=150, bbox_inches="tight"
-                )
             plt.show()
 
-        # --- Residual distribution (standalone) ---
-        all_residuals = all_y_arr - all_pred_arr
-        fig_resid, ax_resid = plt.subplots(figsize=(7, 5))
+        # C35: Faceted diagnostics by contract type
         ctypes_present = sorted(set(all_contracts_arr))
-        for ct in ctypes_present:
+
+        # --- Faceted Pred vs Actual scatter ---
+        n_ct = len(ctypes_present)
+        fig_fpa, axes_fpa = plt.subplots(1, n_ct, figsize=(6 * n_ct, 5), sharey=True)
+        if not hasattr(axes_fpa, "__len__"):
+            axes_fpa = [axes_fpa]
+        for ax_f, ct in zip(axes_fpa, ctypes_present):
             mask = all_contracts_arr == ct
-            ax_resid.hist(
-                all_residuals[mask],
-                bins=30,
-                alpha=0.5,
-                label=ct,
-                edgecolor="black",
-                linewidth=0.3,
+            ax_f.scatter(
+                all_y_arr[mask], all_pred_arr[mask], alpha=0.3, s=10, color="#3498db"
             )
-        ax_resid.axvline(0, color="red", linestyle="--", linewidth=1)
-        ax_resid.set_xlabel("Residual (actual - predicted)")
-        ax_resid.set_ylabel("Count")
-        ax_resid.set_title(f"Residual Distribution: {primary_arm}")
-        ax_resid.legend()
+            lims_ct = [
+                min(all_y_arr[mask].min(), all_pred_arr[mask].min()),
+                max(all_y_arr[mask].max(), all_pred_arr[mask].max()),
+            ]
+            ax_f.plot(lims_ct, lims_ct, "r--", linewidth=1, label="y=x")
+            ax_f.set_xlabel("Actual Tricks Won")
+            ax_f.set_ylabel("Predicted Tricks Won")
+            ax_f.set_title(f"Pred vs Actual: {ct}")
+            ax_f.legend(fontsize=8)
+            ax_f.grid(True, alpha=0.3)
+        plt.suptitle(f"Per-Contract Pred vs Actual: {primary_arm}", y=1.02)
         plt.tight_layout()
         if CHART_OUTPUT_DIR:
             out = Path(CHART_OUTPUT_DIR)
             out.mkdir(parents=True, exist_ok=True)
-            fig_resid.savefig(
-                out / "residual_distribution.png", dpi=150, bbox_inches="tight"
+            fig_fpa.savefig(
+                out / "pred_vs_actual_faceted.png", dpi=150, bbox_inches="tight"
             )
         plt.show()
 
-        # --- Residuals vs Predicted (standalone) ---
-        fig_rvp, ax_rvp = plt.subplots(figsize=(7, 5))
-        for ct in ctypes_present:
+        # --- Faceted Residual distribution ---
+        fig_frd, axes_frd = plt.subplots(1, n_ct, figsize=(6 * n_ct, 5), sharey=True)
+        if not hasattr(axes_frd, "__len__"):
+            axes_frd = [axes_frd]
+        for ax_f, ct in zip(axes_frd, ctypes_present):
             mask = all_contracts_arr == ct
-            ax_rvp.scatter(
+            ax_f.hist(
+                all_residuals[mask],
+                bins=30,
+                alpha=0.7,
+                color="#3498db",
+                edgecolor="black",
+                linewidth=0.3,
+            )
+            ax_f.axvline(0, color="red", linestyle="--", linewidth=1)
+            ax_f.set_xlabel("Residual (actual - predicted)")
+            ax_f.set_ylabel("Count")
+            ax_f.set_title(f"Residuals: {ct}")
+        plt.suptitle(f"Per-Contract Residual Distribution: {primary_arm}", y=1.02)
+        plt.tight_layout()
+        if CHART_OUTPUT_DIR:
+            out = Path(CHART_OUTPUT_DIR)
+            out.mkdir(parents=True, exist_ok=True)
+            fig_frd.savefig(
+                out / "residual_distribution_faceted.png",
+                dpi=150,
+                bbox_inches="tight",
+            )
+        plt.show()
+
+        # --- Faceted Residuals vs Predicted ---
+        fig_frvp, axes_frvp = plt.subplots(1, n_ct, figsize=(6 * n_ct, 5), sharey=True)
+        if not hasattr(axes_frvp, "__len__"):
+            axes_frvp = [axes_frvp]
+        for ax_f, ct in zip(axes_frvp, ctypes_present):
+            mask = all_contracts_arr == ct
+            ax_f.scatter(
                 all_pred_arr[mask],
                 all_residuals[mask],
                 alpha=0.3,
                 s=10,
-                label=ct,
+                color="#3498db",
             )
-        ax_rvp.axhline(0, color="red", linestyle="--", linewidth=1)
-        ax_rvp.set_xlabel("Predicted")
-        ax_rvp.set_ylabel("Residual (actual - predicted)")
-        ax_rvp.set_title(f"Residuals vs Predicted: {primary_arm}")
-        ax_rvp.legend()
-        ax_rvp.grid(True, alpha=0.3)
+            ax_f.axhline(0, color="red", linestyle="--", linewidth=1)
+            ax_f.set_xlabel("Predicted")
+            ax_f.set_ylabel("Residual")
+            ax_f.set_title(f"Resid vs Pred: {ct}")
+            ax_f.grid(True, alpha=0.3)
+        plt.suptitle(f"Per-Contract Residuals vs Predicted: {primary_arm}", y=1.02)
         plt.tight_layout()
         if CHART_OUTPUT_DIR:
             out = Path(CHART_OUTPUT_DIR)
             out.mkdir(parents=True, exist_ok=True)
-            fig_rvp.savefig(
-                out / "residual_vs_predicted.png", dpi=150, bbox_inches="tight"
+            fig_frvp.savefig(
+                out / "residual_vs_predicted_faceted.png",
+                dpi=150,
+                bbox_inches="tight",
             )
         plt.show()
 
@@ -767,19 +1086,54 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
         if MODE != "SMOKE" and len(all_y_arr) >= 50:
             boot_rng = np.random.default_rng(SEED)
             n_boot = 1_000 if MODE == "FULL" else 100
+
+            # C35: Faceted bootstrap R2 per contract type
+            for ct in ctypes_present:
+                ct_mask = all_contracts_arr == ct
+                if ct_mask.sum() < 10:
+                    continue
+                yt = all_y_arr[ct_mask]
+                yp = all_pred_arr[ct_mask]
+                ct_boot_r2 = []
+                ct_boot_mae = []
+                for _ in range(n_boot):
+                    idx = boot_rng.integers(0, len(yt), size=len(yt))
+                    ss_r = np.sum((yt[idx] - yp[idx]) ** 2)
+                    ss_t = np.sum((yt[idx] - yt[idx].mean()) ** 2)
+                    ct_boot_r2.append(1 - ss_r / ss_t if ss_t > 0 else float("nan"))
+                    ct_boot_mae.append(np.mean(np.abs(yt[idx] - yp[idx])))
+
+                ss_res_ct = np.sum((yt - yp) ** 2)
+                ss_tot_ct = np.sum((yt - yt.mean()) ** 2)
+                r2_ct = 1 - ss_res_ct / ss_tot_ct if ss_tot_ct > 0 else float("nan")
+                r2_ci_ct = np.nanpercentile(ct_boot_r2, [2.5, 97.5])
+                mae_ci_ct = np.nanpercentile(ct_boot_mae, [2.5, 97.5])
+
+                print(
+                    f"[{ct}] R2={r2_ct:.4f} "
+                    f"[{r2_ci_ct[0]:.4f}, {r2_ci_ct[1]:.4f}], "
+                    f"MAE={np.mean(np.abs(yt - yp)):.4f} "
+                    f"[{mae_ci_ct[0]:.4f}, {mae_ci_ct[1]:.4f}]"
+                )
+
+                # Update per_contract_metrics with CIs
+                for pm in per_contract_metrics:
+                    if pm["contract"] == ct:
+                        pm["R2_95CI"] = f"[{r2_ci_ct[0]:.4f}, {r2_ci_ct[1]:.4f}]"
+                        pm["MAE_95CI"] = f"[{mae_ci_ct[0]:.4f}, {mae_ci_ct[1]:.4f}]"
+
+            # Pooled bootstrap R2
+            boot_rng_pooled = np.random.default_rng(SEED + 1)
             boot_r2 = []
-            boot_mae = []
             for _ in range(n_boot):
-                idx = boot_rng.integers(0, len(all_y_arr), size=len(all_y_arr))
+                idx = boot_rng_pooled.integers(0, len(all_y_arr), size=len(all_y_arr))
                 y_b, p_b = all_y_arr[idx], all_pred_arr[idx]
                 ss_res_b = np.sum((y_b - p_b) ** 2)
                 ss_tot_b = np.sum((y_b - y_b.mean()) ** 2)
                 boot_r2.append(
                     1 - ss_res_b / ss_tot_b if ss_tot_b > 0 else float("nan")
                 )
-                boot_mae.append(np.mean(np.abs(y_b - p_b)))
 
-            # Histogram of bootstrap R2
             fig_boot, ax_boot = plt.subplots(figsize=(7, 5))
             ax_boot.hist(
                 boot_r2, bins=30, edgecolor="black", alpha=0.7, color="#3498db"
@@ -805,7 +1159,7 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
             ax_boot.axvline(r2_ci[1], color="gray", linestyle=":", linewidth=1)
             ax_boot.set_xlabel("Bootstrap R2")
             ax_boot.set_ylabel("Count")
-            ax_boot.set_title(f"Bootstrap R2 Distribution (n_boot={n_boot})")
+            ax_boot.set_title(f"Bootstrap R2 Distribution (pooled, n_boot={n_boot})")
             ax_boot.legend(fontsize=9)
             plt.tight_layout()
             if CHART_OUTPUT_DIR:
@@ -814,31 +1168,9 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
                 fig_boot.savefig(out / "bootstrap_r2.png", dpi=150, bbox_inches="tight")
             plt.show()
 
-            mae_ci = np.nanpercentile(boot_mae, [2.5, 97.5])
             overall_mae = np.mean(np.abs(all_y_arr - all_pred_arr))
             print(f"\nOverall R2={overall_r2:.4f} [{r2_ci[0]:.4f}, {r2_ci[1]:.4f}]")
-            print(f"Overall MAE={overall_mae:.4f} [{mae_ci[0]:.4f}, {mae_ci[1]:.4f}]")
-
-            # Add CIs to per-contract table
-            for pm in per_contract_metrics:
-                ct = pm["contract"]
-                ct_mask = all_contracts_arr == ct
-                if ct_mask.sum() < 10:
-                    continue
-                yt = all_y_arr[ct_mask]
-                yp = all_pred_arr[ct_mask]
-                ct_boot_r2 = []
-                ct_boot_mae = []
-                for _ in range(n_boot):
-                    idx = boot_rng.integers(0, len(yt), size=len(yt))
-                    ss_r = np.sum((yt[idx] - yp[idx]) ** 2)
-                    ss_t = np.sum((yt[idx] - yt[idx].mean()) ** 2)
-                    ct_boot_r2.append(1 - ss_r / ss_t if ss_t > 0 else float("nan"))
-                    ct_boot_mae.append(np.mean(np.abs(yt[idx] - yp[idx])))
-                r2_lo, r2_hi = np.nanpercentile(ct_boot_r2, [2.5, 97.5])
-                mae_lo, mae_hi = np.nanpercentile(ct_boot_mae, [2.5, 97.5])
-                pm["R2_95CI"] = f"[{r2_lo:.4f}, {r2_hi:.4f}]"
-                pm["MAE_95CI"] = f"[{mae_lo:.4f}, {mae_hi:.4f}]"
+            print(f"Overall MAE={overall_mae:.4f}")
 
         # --- Performance table ---
         print("\n=== Per-Contract Performance ===")
@@ -871,8 +1203,24 @@ else:
 # %% [markdown]
 # # S4 Dual-Arm Comparison
 #
-# Side-by-side OLSa vs OLSa_Full: eval metrics, per-contract R2 bars,
-# and attribution gap analysis.
+# Side-by-side OLSa vs OLSa_Full: eval metrics, attribution gap analysis,
+# and arm comparison table. R2 is computed from regression fit on this
+# notebook's eval data; all other metrics (net_eppd, make_rate, etc.)
+# come from simulation evaluation runs loaded in S0.
+
+# %% [markdown]
+# ### Metric Glossary
+#
+# | Metric | Definition | Source |
+# |--------|-----------|--------|
+# | net_eppd | Net expected points per deal (bidder - opponent) | Simulation eval |
+# | eppd | Expected points per deal (bidder team only) | Simulation eval |
+# | bid_rate | Fraction of deals where bidder chose to bid | Simulation eval |
+# | make_rate | Fraction of bid deals where declaring team made bid | Simulation eval |
+# | cvar_5 | Average points in worst 5% of deals (tail risk) | Simulation eval |
+# | downside_variance | Variance of points in deals where bidder was set | Simulation eval |
+# | R2 | Variance explained in tricks_won by model predictions | Notebook-computed |
+# | attribution_gap | net_eppd(OLSa_Full) - net_eppd(OLSa) | Derived |
 
 # %%
 if _model_artifacts and len(_model_artifacts) >= 2 and not df.empty:
@@ -920,7 +1268,9 @@ if _model_artifacts and len(_model_artifacts) >= 2 and not df.empty:
             ss_res_all = np.sum((arm_y_arr - arm_pred_arr) ** 2)
             ss_tot_all = np.sum((arm_y_arr - arm_y_arr.mean()) ** 2)
             arm_overall_metrics[arm_key] = {
-                "overall_r2": 1 - ss_res_all / ss_tot_all if ss_tot_all > 0 else np.nan,
+                "overall_r2": (
+                    1 - ss_res_all / ss_tot_all if ss_tot_all > 0 else np.nan
+                ),
                 "overall_mae": np.mean(np.abs(arm_y_arr - arm_pred_arr)),
                 "r2_by_contract": r2_by_ct,
             }
@@ -939,7 +1289,9 @@ if _model_artifacts and len(_model_artifacts) >= 2 and not df.empty:
             metrics_for_plot[arm_key] = arm_dict
 
         try:
-            from bid_euchre.diagnostics.model_charts import plot_dual_arm_comparison
+            from bid_euchre.diagnostics.model_charts import (
+                plot_dual_arm_comparison,
+            )
 
             fig_dual = plot_dual_arm_comparison(
                 metrics_for_plot,
@@ -949,59 +1301,13 @@ if _model_artifacts and len(_model_artifacts) >= 2 and not df.empty:
                 out = Path(CHART_OUTPUT_DIR)
                 out.mkdir(parents=True, exist_ok=True)
                 fig_dual.savefig(
-                    out / "dual_arm_comparison.png", dpi=150, bbox_inches="tight"
+                    out / "dual_arm_comparison.png",
+                    dpi=150,
+                    bbox_inches="tight",
                 )
             plt.show()
         except ImportError:
             print("plot_dual_arm_comparison not available -- skipping.")
-
-    # --- Per-contract R2 comparison bar chart ---
-    if arm_r2_by_contract:
-        arms = list(arm_r2_by_contract.keys())
-        all_cts = sorted(
-            set().union(*(r2d.keys() for r2d in arm_r2_by_contract.values()))
-        )
-
-        if all_cts:
-            fig_r2, ax_r2 = plt.subplots(figsize=(8, 5))
-            width = 0.35
-            x = np.arange(len(all_cts))
-            colors_r2 = ["#3498db", "#e67e22", "#2ecc71", "#e74c3c"]
-
-            for i, arm in enumerate(arms):
-                r2_vals = [arm_r2_by_contract[arm].get(ct, 0.0) for ct in all_cts]
-                bars = ax_r2.bar(
-                    x + i * width,
-                    r2_vals,
-                    width,
-                    label=arm,
-                    alpha=0.8,
-                    color=colors_r2[i % len(colors_r2)],
-                )
-                for bar, val in zip(bars, r2_vals):
-                    ax_r2.text(
-                        bar.get_x() + bar.get_width() / 2,
-                        bar.get_height(),
-                        f"{val:.3f}",
-                        ha="center",
-                        va="bottom",
-                        fontsize=8,
-                    )
-
-            ax_r2.set_xticks(x + width / 2)
-            ax_r2.set_xticklabels(all_cts)
-            ax_r2.set_ylabel("R2")
-            ax_r2.set_title("Per-Contract R2 Comparison")
-            ax_r2.legend()
-            ax_r2.grid(True, alpha=0.3, axis="y")
-            plt.tight_layout()
-            if CHART_OUTPUT_DIR:
-                out = Path(CHART_OUTPUT_DIR)
-                out.mkdir(parents=True, exist_ok=True)
-                fig_r2.savefig(
-                    out / "per_contract_r2_comparison.png", dpi=150, bbox_inches="tight"
-                )
-            plt.show()
 
     # --- Attribution gap analysis ---
     print("\n=== Attribution Gap Analysis ===")
@@ -1044,7 +1350,7 @@ else:
 # # S5 Calibration Analysis
 #
 # Calibration curve (binned predicted vs actual mean) and prediction
-# distribution, per contract type.
+# distribution faceted by contract type with actual tricks_won overlay.
 
 # %%
 if _model_artifacts and not df.empty and "tricks_won" in df.columns:
@@ -1100,7 +1406,9 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
                 out = Path(CHART_OUTPUT_DIR)
                 out.mkdir(parents=True, exist_ok=True)
                 fig_cal.savefig(
-                    out / "calibration_curve.png", dpi=150, bbox_inches="tight"
+                    out / "calibration_curve.png",
+                    dpi=150,
+                    bbox_inches="tight",
                 )
             plt.show()
         except ImportError:
@@ -1132,7 +1440,12 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
                 max(cal_y_arr.max(), cal_pred_arr.max()),
             ]
             ax_cal.plot(
-                lims, lims, "k--", linewidth=1, alpha=0.5, label="Perfect calibration"
+                lims,
+                lims,
+                "k--",
+                linewidth=1,
+                alpha=0.5,
+                label="Perfect calibration",
             )
             ax_cal.set_xlabel("Mean Predicted")
             ax_cal.set_ylabel("Mean Actual")
@@ -1161,34 +1474,53 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns:
                 out = Path(CHART_OUTPUT_DIR)
                 out.mkdir(parents=True, exist_ok=True)
                 fig_cal.savefig(
-                    out / "calibration_curve.png", dpi=150, bbox_inches="tight"
+                    out / "calibration_curve.png",
+                    dpi=150,
+                    bbox_inches="tight",
                 )
             plt.show()
 
-        # --- Standalone prediction distribution ---
-        fig_pdist, ax_pdist = plt.subplots(figsize=(7, 5))
+        # C37: Faceted prediction distribution with actual overlay
         ctypes_cal = sorted(set(cal_contracts_arr))
-        for ct in ctypes_cal:
+        n_ct_cal = len(ctypes_cal)
+        fig_pdist, axes_pdist = plt.subplots(
+            1, n_ct_cal, figsize=(6 * n_ct_cal, 4), sharey=True
+        )
+        if not hasattr(axes_pdist, "__len__"):
+            axes_pdist = [axes_pdist]
+        for ax_pd, ct in zip(axes_pdist, ctypes_cal):
             mask = cal_contracts_arr == ct
-            ax_pdist.hist(
+            ax_pd.hist(
                 cal_pred_arr[mask],
-                bins=30,
+                bins=20,
                 alpha=0.5,
-                label=ct,
+                label="Predicted",
+                color="blue",
                 edgecolor="black",
                 linewidth=0.3,
             )
-        ax_pdist.set_xlabel("Predicted Value")
-        ax_pdist.set_ylabel("Count")
-        ax_pdist.set_title(f"Prediction Distribution: {primary_arm}")
-        ax_pdist.legend()
-        ax_pdist.grid(True, alpha=0.3, axis="y")
+            ax_pd.hist(
+                cal_y_arr[mask],
+                bins=20,
+                alpha=0.5,
+                label="Actual",
+                color="orange",
+                edgecolor="black",
+                linewidth=0.3,
+            )
+            ax_pd.set_title(f"Pred vs Actual: {ct}")
+            ax_pd.set_xlabel("Value")
+            ax_pd.legend(fontsize=8)
+            ax_pd.grid(True, alpha=0.3, axis="y")
+        plt.suptitle(f"Prediction vs Actual Distribution: {primary_arm}", y=1.02)
         plt.tight_layout()
         if CHART_OUTPUT_DIR:
             out = Path(CHART_OUTPUT_DIR)
             out.mkdir(parents=True, exist_ok=True)
             fig_pdist.savefig(
-                out / "prediction_distribution.png", dpi=150, bbox_inches="tight"
+                out / "prediction_distribution_faceted.png",
+                dpi=150,
+                bbox_inches="tight",
             )
         plt.show()
 
@@ -1229,26 +1561,342 @@ else:
     print("No model artifacts or data -- skipping calibration analysis.")
 
 # %% [markdown]
-# # S6 Rung-Specific Analysis
+# # S6 Rung-Specific Analysis (R0)
 #
-# This section is intentionally left as a placeholder.
-# When copying this template for a specific rung (e.g., R0, R1a),
-# add rung-specific analysis here:
-#
-# Examples for R0:
-#   - Compare OLSa predictions to Phase 0 Ridge diagnostic
-#   - Feature selection justification (why these 3/1/1 features?)
-#   - Comparator landscape from comparator_battery_r0.json
-#   - Attribution gap investigation (gap = -0.1437)
-#   - Seed sensitivity across 42/43/44
-#
-# Examples for R1a+:
-#   - Auction dataset quality checks
-#   - Comparison with previous rung's model
-#   - Feature stability analysis across rungs
+# R0-specific model analysis: Gaussian assumption validation, feature selection
+# justification, residual structure analysis, bid decision audit, and
+# permutation importance. These analyses are unique to 30_'s model-focused
+# perspective and do not overlap with 40_'s comparator/seed sensitivity scope.
 
 # %%
-print("S6 is a placeholder -- fill when copying template for a specific rung.")
+# --- S6.1: Gaussian Assumption Validation ---
+# HybridOLSa assumes tricks ~ N(mu, sigma^2). Test per-contract residuals.
+print("=" * 60)
+print("S6.1: Gaussian Assumption Validation")
+print("=" * 60)
+
+if _model_artifacts and not df.empty:
+    primary_arm = (
+        "olsa_full" if "olsa_full" in _model_artifacts else next(iter(_model_artifacts))
+    )
+    artifact = _model_artifacts[primary_arm]
+    payoff = artifact.get("payoff_model", {})
+    contracts = sorted(payoff.keys())
+
+    _s6_residuals_by_ct = {}
+    for contract in contracts:
+        model = payoff[contract]
+        feature_names = model.get("feature_names", [])
+        weights = np.array(model.get("weights", []))
+        bias = model.get("bias", 0.0)
+        if not feature_names or len(weights) == 0:
+            continue
+        feat_c = [f"feat_{fn}" for fn in feature_names]
+        subset = df[df["contract_type"] == contract]
+        missing = [c for c in feat_c if c not in subset.columns]
+        if missing or len(subset) == 0:
+            continue
+        X = subset[feat_c].values.astype(np.float64)
+        y_actual = subset["tricks_won"].values.astype(np.float64)
+        y_pred_s6 = X @ weights + bias
+        resid = y_actual - y_pred_s6
+        _s6_residuals_by_ct[contract] = resid
+
+        if HAS_SCIPY and len(resid) >= 20:
+            # Shapiro-Wilk limited to 5000 samples
+            test_resid = resid[:5000] if len(resid) > 5000 else resid
+            stat, p = scipy_stats.shapiro(test_resid)
+            print(
+                f"  {contract}: Shapiro-Wilk stat={stat:.4f}, "
+                f"p={p:.4f} (n={len(test_resid)})"
+            )
+            if p < 0.05:
+                print(
+                    "    -> Rejects normality at alpha=0.05. "
+                    "Gaussian EV may be approximate."
+                )
+            else:
+                print("    -> Cannot reject normality at alpha=0.05.")
+        else:
+            print(f"  {contract}: n={len(resid)} (need >=20 + scipy for Shapiro-Wilk)")
+
+    # Q-Q plot
+    if _s6_residuals_by_ct and HAS_SCIPY:
+        n_qq = len(_s6_residuals_by_ct)
+        fig_qq, axes_qq = plt.subplots(1, n_qq, figsize=(5 * n_qq, 4), sharey=True)
+        if not hasattr(axes_qq, "__len__"):
+            axes_qq = [axes_qq]
+        for ax_qq, (ct, resid) in zip(axes_qq, sorted(_s6_residuals_by_ct.items())):
+            scipy_stats.probplot(resid, dist="norm", plot=ax_qq)
+            ax_qq.set_title(f"Q-Q Plot: {ct}")
+        plt.suptitle("Residual Q-Q Plots (Normal Reference)", y=1.02)
+        plt.tight_layout()
+        if CHART_OUTPUT_DIR:
+            out = Path(CHART_OUTPUT_DIR)
+            out.mkdir(parents=True, exist_ok=True)
+            fig_qq.savefig(out / "qq_residuals.png", dpi=150, bbox_inches="tight")
+        plt.show()
+else:
+    print("  No model artifacts -- skipping Gaussian validation.")
+
+# %%
+# --- S6.2: Feature Selection Justification ---
+# Explain the 3/1/1 sparse features vs top correlation features.
+print("=" * 60)
+print("S6.2: Feature Selection Justification")
+print("=" * 60)
+
+if _model_artifacts:
+    # Show which features each arm uses per contract
+    for arm_key, artifact in _model_artifacts.items():
+        payoff = artifact.get("payoff_model", {})
+        print(f"\n  {arm_key}:")
+        for contract, model in sorted(payoff.items()):
+            fnames = model.get("feature_names", [])
+            print(f"    {contract}: {fnames}")
+
+    # Compare with top correlation features from S1
+    if not df.empty and feat_cols:
+        print("\n  --- Comparison: Model Features vs Top Correlated ---")
+        sparse_arm = "olsa" if "olsa" in _model_artifacts else None
+        if sparse_arm:
+            payoff_s = _model_artifacts[sparse_arm].get("payoff_model", {})
+            for contract, model in sorted(payoff_s.items()):
+                selected = set(model.get("feature_names", []))
+                subset = df[df["contract_type"] == contract]
+                if len(subset) < 5:
+                    continue
+                # Top features by |r| with tricks_won
+                corr_vals = {}
+                for fc in feat_cols:
+                    if pd.api.types.is_numeric_dtype(subset[fc]):
+                        valid = subset[fc].notna() & subset["tricks_won"].notna()
+                        if valid.sum() > 2:
+                            corr_vals[fc.replace("feat_", "")] = abs(
+                                subset.loc[valid, fc].corr(
+                                    subset.loc[valid, "tricks_won"]
+                                )
+                            )
+                if corr_vals:
+                    # Filter NaN before sorting
+                    corr_clean = {k: v for k, v in corr_vals.items() if not np.isnan(v)}
+                    top_by_corr = sorted(
+                        corr_clean.items(), key=lambda x: x[1], reverse=True
+                    )[:5]
+                    top_names = [t[0] for t in top_by_corr]
+                    overlap = selected & set(top_names)
+                    print(
+                        f"\n    {contract}:"
+                        f"\n      Model features:      {sorted(selected)}"
+                        f"\n      Top-5 by |r|:        {top_names}"
+                        f"\n      Overlap:             {sorted(overlap)}"
+                        f"\n      Not in top-5:        "
+                        f"{sorted(selected - set(top_names))}"
+                    )
+else:
+    print("  No model artifacts -- skipping feature selection justification.")
+
+# %%
+# --- S6.3: Residual Structure Analysis ---
+# Correlate residuals with features NOT in the model to find missed signal.
+print("=" * 60)
+print("S6.3: Residual Structure Analysis")
+print("=" * 60)
+
+if _model_artifacts and not df.empty:
+    sparse_arm = "olsa" if "olsa" in _model_artifacts else None
+    if sparse_arm:
+        payoff_s = _model_artifacts[sparse_arm].get("payoff_model", {})
+        for contract, model in sorted(payoff_s.items()):
+            selected_feats = set(model.get("feature_names", []))
+            feature_names = model.get("feature_names", [])
+            weights_s = np.array(model.get("weights", []))
+            bias_s = model.get("bias", 0.0)
+            if not feature_names or len(weights_s) == 0:
+                continue
+            feat_c = [f"feat_{fn}" for fn in feature_names]
+            subset = df[df["contract_type"] == contract].copy()
+            missing = [c for c in feat_c if c not in subset.columns]
+            if missing or len(subset) < 10:
+                continue
+            X = subset[feat_c].values.astype(np.float64)
+            y_actual = subset["tricks_won"].values.astype(np.float64)
+            resid = y_actual - (X @ weights_s + bias_s)
+
+            # Correlate residuals with excluded features
+            excluded = [
+                fc for fc in feat_cols if fc.replace("feat_", "") not in selected_feats
+            ]
+            if not excluded:
+                continue
+            print(f"\n  --- {contract} (OLSa residuals vs excluded features) ---")
+            excl_rows = []
+            for fc in excluded:
+                if not pd.api.types.is_numeric_dtype(subset[fc]):
+                    continue
+                vals = subset[fc].values.astype(np.float64)
+                valid_mask = ~np.isnan(vals)
+                if valid_mask.sum() > 2:
+                    r_val = np.corrcoef(resid[valid_mask], vals[valid_mask])[0, 1]
+                    if HAS_SCIPY:
+                        _, p_val = scipy_stats.pearsonr(
+                            resid[valid_mask], vals[valid_mask]
+                        )
+                    else:
+                        p_val = np.nan
+                    excl_rows.append(
+                        {
+                            "feature": fc.replace("feat_", ""),
+                            "resid_corr": round(r_val, 4),
+                            "p_value": (
+                                round(p_val, 6) if not np.isnan(p_val) else None
+                            ),
+                        }
+                    )
+            if excl_rows:
+                excl_df = pd.DataFrame(excl_rows).sort_values(
+                    "resid_corr", key=abs, ascending=False
+                )
+                print(excl_df.to_string(index=False))
+                strong = excl_df[excl_df["resid_corr"].abs() > 0.1]
+                if len(strong) > 0:
+                    print(
+                        f"  -> {len(strong)} excluded features with |r|>0.1 "
+                        f"— consider for R1a+"
+                    )
+    else:
+        print("  No OLSa arm available for residual structure analysis.")
+else:
+    print("  No model artifacts -- skipping residual structure analysis.")
+
+# %%
+# --- S6.4: Bid Decision Audit ---
+# Trace sample deals through the pipeline to show how model math plays out.
+print("=" * 60)
+print("S6.4: Bid Decision Audit")
+print("=" * 60)
+
+if _model_artifacts and not df.empty:
+    primary_arm = (
+        "olsa_full" if "olsa_full" in _model_artifacts else next(iter(_model_artifacts))
+    )
+    artifact = _model_artifacts[primary_arm]
+    payoff = artifact.get("payoff_model", {})
+    sigma_model = artifact.get("sigma_model", {})
+
+    # Select up to 10 sample bidder deals
+    bidder_df = df[df["is_bidder"] == True].copy()  # noqa: E712
+    if len(bidder_df) > 0:
+        sample_n = min(10, len(bidder_df))
+        sample_rng = np.random.default_rng(SEED)
+        sample_idx = sample_rng.choice(len(bidder_df), size=sample_n, replace=False)
+        sample_rows = bidder_df.iloc[sample_idx]
+
+        print(f"\n  Tracing {sample_n} sample deals through {primary_arm}:\n")
+        for _, row in sample_rows.iterrows():
+            ct = row.get("contract_type", "?")
+            model = payoff.get(ct, {})
+            feat_names = model.get("feature_names", [])
+            weights_a = np.array(model.get("weights", []))
+            bias_a = model.get("bias", 0.0)
+
+            if not feat_names or len(weights_a) == 0:
+                print(f"  deal_id={row['deal_id']}: no model for {ct}")
+                continue
+
+            feat_vals = []
+            for fn in feat_names:
+                col = f"feat_{fn}"
+                feat_vals.append(row.get(col, np.nan))
+            feat_arr = np.array(feat_vals, dtype=np.float64)
+            mu = float(feat_arr @ weights_a + bias_a)
+
+            # Get sigma if available
+            sigma_info = sigma_model.get(ct, {})
+            sigma = sigma_info.get("sigma", None)
+            sigma_str = f"{sigma:.3f}" if sigma is not None else "N/A"
+
+            actual = row.get("tricks_won", "?")
+            bid = row.get("winning_bid", "?")
+            made = row.get("made_bid", "?")
+
+            outcome = "MADE" if made else "SET"
+            print(
+                f"  deal={row['deal_id']:>5}, "
+                f"ct={ct:>4}, "
+                f"bid={bid}, "
+                f"mu={mu:+.2f}, "
+                f"sigma={sigma_str}, "
+                f"actual={actual}, "
+                f"outcome={outcome}"
+            )
+        print("\n  Legend: mu=predicted tricks, sigma=residual std, outcome=MADE/SET")
+    else:
+        print("  No bidder rows found -- skipping audit.")
+else:
+    print("  No model artifacts -- skipping bid decision audit.")
+
+# %%
+# --- S6.5: Permutation Importance (C56) ---
+# For each feature in the model, permute column and measure R2 drop.
+print("=" * 60)
+print("S6.5: Permutation Feature Importance")
+print("=" * 60)
+
+if _model_artifacts and not df.empty:
+    perm_rng = np.random.default_rng(SEED)
+
+    for arm_key, artifact in _model_artifacts.items():
+        payoff = artifact.get("payoff_model", {})
+        print(f"\n  --- {arm_key} ---")
+
+        for contract, model in sorted(payoff.items()):
+            feature_names = model.get("feature_names", [])
+            weights_p = np.array(model.get("weights", []))
+            bias_p = model.get("bias", 0.0)
+            if not feature_names or len(weights_p) == 0:
+                continue
+
+            feat_c = [f"feat_{fn}" for fn in feature_names]
+            subset = df[df["contract_type"] == contract]
+            missing = [c for c in feat_c if c not in subset.columns]
+            if missing or len(subset) < 20:
+                continue
+
+            X = subset[feat_c].values.astype(np.float64)
+            y = subset["tricks_won"].values.astype(np.float64)
+            y_pred_base = X @ weights_p + bias_p
+            ss_tot = np.sum((y - y.mean()) ** 2)
+            if ss_tot == 0:
+                continue
+            ss_res_base = np.sum((y - y_pred_base) ** 2)
+            r2_base = 1 - ss_res_base / ss_tot
+
+            importance_rows = []
+            for feat_idx, feat_name in enumerate(feature_names):
+                X_perm = X.copy()
+                X_perm[:, feat_idx] = perm_rng.permutation(X_perm[:, feat_idx])
+                y_pred_perm = X_perm @ weights_p + bias_p
+                ss_res_perm = np.sum((y - y_pred_perm) ** 2)
+                r2_perm = 1 - ss_res_perm / ss_tot
+                importance = r2_base - r2_perm
+                importance_rows.append(
+                    {
+                        "feature": feat_name,
+                        "R2_base": round(r2_base, 4),
+                        "R2_permuted": round(r2_perm, 4),
+                        "R2_drop": round(importance, 4),
+                    }
+                )
+
+            if importance_rows:
+                imp_df = pd.DataFrame(importance_rows).sort_values(
+                    "R2_drop", ascending=False
+                )
+                print(f"\n    {contract} (base R2={r2_base:.4f}):")
+                print("    " + imp_df.to_string(index=False).replace("\n", "\n    "))
+else:
+    print("  No model artifacts -- skipping permutation importance.")
 
 # %% [markdown]
 # # S7 Summary & Promotion Readiness
@@ -1323,7 +1971,7 @@ if _eval_available:
 
 # --- Limitations ---
 print("\nKey Limitations:")
-print(f"  MODE={MODE} (max_deals={max_deals})")
+print(f"  MODE={MODE} (max_deals={_max_deals})")
 print(f"  Data source: {_data_source}")
 if _data_source == "synthetic":
     print(
