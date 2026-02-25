@@ -37,9 +37,13 @@ EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260221_180253"
 MODE = "QUICK"
 RUNG_ID = "r0"
 CHART_OUTPUT_DIR = ""
+SEED = 42
 
 # %% [markdown]
 # # S0 Configuration & Data Loading
+#
+# Imports, eval-log discovery, data loading (JSONL primary, synthetic fallback),
+# and run metadata summary.
 
 # %%
 import os
@@ -69,13 +73,13 @@ for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
     print(_p)
 
 # %%
-import glob as glob_mod
+import warnings
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import f_oneway
+from scipy.stats import f_oneway, pearsonr
 
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
 from bid_euchre.diagnostics.charts import (
@@ -93,7 +97,9 @@ from bid_euchre.diagnostics.health_checks import (
 matplotlib.use("Agg")
 
 MODE_DEAL_COUNTS = {"SMOKE": 30, "QUICK": 2_000, "FULL": 50_000}
-max_deals = MODE_DEAL_COUNTS.get(MODE)
+_max_deals = MODE_DEAL_COUNTS.get(MODE, 30)
+if MODE not in MODE_DEAL_COUNTS:
+    warnings.warn(f"Unknown MODE={MODE!r}, defaulting to 30 deals", stacklevel=2)
 
 # --- Data loading: JSONL primary, synthetic fallback ---
 _data_source = "synthetic"
@@ -102,13 +108,13 @@ df = pd.DataFrame()
 if EVAL_LOG_PATH:
     eval_path = Path(EVAL_LOG_PATH)
     if eval_path.is_dir():
-        log_files = sorted(glob_mod.glob(str(eval_path / "logs" / "*.jsonl")))
+        log_files = sorted(str(p) for p in (eval_path / "logs").glob("*.jsonl"))
         log_file = log_files[0] if log_files else None
     else:
         log_file = str(eval_path) if eval_path.exists() else None
     if log_file:
         try:
-            df = build_eval_dataset(log_file, max_deals=max_deals)
+            df = build_eval_dataset(log_file, max_deals=_max_deals)
             _data_source = "eval_logs"
             print(f"Loaded {len(df)} rows from {Path(log_file).name}")
             print(f"  Deals: {df['deal_id'].nunique()}, Source: {_data_source}")
@@ -122,8 +128,8 @@ if EVAL_LOG_PATH and df.empty:
 
 if df.empty:
     # Synthetic demo data for CI / SMOKE fallback
-    rng = np.random.default_rng(42)
-    n_deals = max_deals or 30
+    rng = np.random.default_rng(SEED)
+    n_deals = _max_deals or 30
     rows = []
     for deal_id in range(n_deals):
         contract = rng.choice(["suit", "high", "low"])
@@ -133,6 +139,14 @@ if df.empty:
         base_hv = float(rng.integers(200, 800))
         base_tc = int(rng.integers(0, 7))
         base_bow = int(rng.integers(0, 3))
+        base_aces = int(rng.integers(0, 5))
+        base_voids = int(rng.integers(0, 3))
+        base_singletons = int(rng.integers(0, 4))
+        base_long_suit = int(rng.integers(2, 7))
+        base_short_suit = int(rng.integers(0, 4))
+        base_offsuit_aces = int(rng.integers(0, 4))
+        base_offsuit_nac = int(rng.integers(0, 5))
+        bidder_seat = int(rng.integers(0, 4))
         for seat in range(4):
             team = 0 if seat in (0, 2) else 1
             rows.append(
@@ -144,9 +158,20 @@ if df.empty:
                     "contract_type": contract,
                     "trump": trump,
                     "tricks_won": t0 if seat in (0, 2) else t1,
+                    "bidder_seat": bidder_seat,
+                    "bidder_team": 0 if bidder_seat in (0, 2) else 1,
+                    "is_declaring_team": team == (0 if bidder_seat in (0, 2) else 1),
                     "feat_hand_value": base_hv + float(rng.normal(0, 5)),
                     "feat_trump_count": base_tc + int(rng.integers(-1, 2)),
                     "feat_bowers": base_bow,
+                    "feat_aces": base_aces + int(rng.integers(-1, 2)),
+                    "feat_voids": base_voids,
+                    "feat_singletons": base_singletons,
+                    "feat_long_suit_length": base_long_suit + int(rng.integers(-1, 2)),
+                    "feat_short_suit_count": base_short_suit,
+                    "feat_offsuit_aces": base_offsuit_aces,
+                    "feat_offsuit_non_ace_count": base_offsuit_nac
+                    + int(rng.integers(-1, 2)),
                 }
             )
     df = pd.DataFrame(rows)
@@ -157,10 +182,29 @@ print(f"\nMODE={MODE}, data_source={_data_source}")
 print(f"Shape: {df.shape}")
 print(f"Columns: {sorted(df.columns.tolist())}")
 
+# %%
+# Run metadata summary
+print("=" * 60)
+print("RUN METADATA")
+print("=" * 60)
+print(f"  Data source:    {_data_source}")
+print(f"  Total deals:    {df['deal_id'].nunique():,}")
+print(f"  Total rows:     {len(df):,} (4 per deal)")
+print(f"  Mode:           {MODE}")
+print(
+    f"  Contract types: "
+    f"{dict(df.drop_duplicates('deal_id')['contract_type'].value_counts())}"
+)
+
 # %% [markdown]
 # # S1 Health Scorecard
+#
+# Runs the 6-check health scorecard from `diagnostics/health_checks.py` and
+# renders a stacked PASS/WARN/FAIL bar chart.
 
 # %%
+scorecard = None
+
 if not df.empty:
     scorecard = compute_health_scorecard(df)
     scorecard_text = display_scorecard(scorecard)
@@ -204,6 +248,9 @@ else:
 
 # %% [markdown]
 # # S2 Dataset Integrity
+#
+# Manual integrity checks for data quality: row counts, feature presence,
+# NaN audit, and duplicate detection.
 
 # %%
 if not df.empty:
@@ -286,16 +333,19 @@ else:
 
 # %% [markdown]
 # # S3 Strata Completeness
+#
+# Validates that the dataset covers all expected strata (contract types, trump suits,
+# seats, teams) and visualizes deal counts as a stacked bar chart.
 
 # %%
 if not df.empty:
-    # Contract type distribution
+    # Empirical: depends on bidder behavior and deal generator
     if "contract_type" in df.columns:
         print("=== Contract Type Distribution ===")
         ct_counts = df.groupby("contract_type")["deal_id"].nunique()
         print(ct_counts.to_string())
 
-    # Trump suit distribution (suit contracts only)
+    # Empirical: depends on deal generator trump selection
     if "trump" in df.columns and "contract_type" in df.columns:
         suit_df = df[df["contract_type"] == "suit"].copy()
         if not suit_df.empty:
@@ -303,13 +353,13 @@ if not df.empty:
             trump_counts = suit_df.groupby("trump")["deal_id"].nunique()
             print(trump_counts.to_string())
 
-    # Seat distribution
+    # Structural invariant: _expand_record() guarantees 4 rows per deal
     if "seat" in df.columns:
         print("\n=== Seat Distribution ===")
         seat_counts = df["seat"].value_counts().sort_index()
         print(seat_counts.to_string())
 
-    # Team distribution
+    # Structural invariant: _expand_record() guarantees 2 teams (0, 1)
     if "team" in df.columns:
         print("\n=== Team Distribution ===")
         team_counts = df["team"].value_counts().sort_index()
@@ -364,9 +414,27 @@ else:
 
 # %% [markdown]
 # # S4 Symmetry Analysis
+#
+# Tests whether hand features are balanced across seats, suits, teams, and
+# contract types. Uses ANOVA with proper guards and faceted visualizations.
+
+# %%
+# Min-N guard: warn when any contract type has fewer than 30 deals
+MIN_DEALS_PER_STRATUM = 30
+if not df.empty and "contract_type" in df.columns:
+    deal_counts = df.drop_duplicates(subset=["deal_id"]).groupby("contract_type").size()
+    thin_strata = deal_counts[deal_counts < MIN_DEALS_PER_STRATUM]
+    if len(thin_strata) > 0:
+        warnings.warn(
+            f"Thin strata detected (< {MIN_DEALS_PER_STRATUM} deals): "
+            f"{thin_strata.to_dict()}. Sub-group charts may be noisy.",
+            stacklevel=2,
+        )
 
 # %% [markdown]
 # ## S4.1 By Contract Type
+#
+# Box plot of hand_value by contract type plus summary statistics.
 
 # %%
 if not df.empty and "feat_hand_value" in df.columns and "contract_type" in df.columns:
@@ -388,6 +456,8 @@ else:
 
 # %% [markdown]
 # ## S4.2 By Trump Suit (suit contracts only)
+#
+# ANOVA test of hand_value across trump suits with boxplot visualization.
 
 # %%
 if not df.empty and "feat_hand_value" in df.columns and "trump" in df.columns:
@@ -449,6 +519,9 @@ else:
 
 # %% [markdown]
 # ## S4.3 By Team
+#
+# Violin plots of hand_value by team faceted by contract type, with per-contract
+# ANOVA and declaring/defending segmentation.
 
 # %%
 if not df.empty and "feat_hand_value" in df.columns and "team" in df.columns:
@@ -485,6 +558,57 @@ if not df.empty and "feat_hand_value" in df.columns and "team" in df.columns:
                 out / "hand_value_by_team.png", dpi=150, bbox_inches="tight"
             )
         plt.show()
+
+        # Per-contract ANOVA for team balance
+        print("\n=== Team Balance ANOVA (per contract type) ===")
+        for ct in sorted(df["contract_type"].unique()):
+            subset = df[df["contract_type"] == ct]
+            groups = [
+                subset.loc[subset["team"] == t, "feat_hand_value"].dropna().values
+                for t in sorted(subset["team"].unique())
+            ]
+            groups = [g for g in groups if len(g) > 0]
+            if len(groups) >= 2:
+                f_stat, p_val = f_oneway(*groups)
+                print(f"  {ct}: F={f_stat:.3f}, p={p_val:.4f}")
+            else:
+                print(f"  {ct}: Not enough groups")
+
+        # Bidder team distribution per contract type
+        print("\n=== Bidder Team Distribution (per contract type) ===")
+        if "bidder_team" in df.columns:
+            for ct in sorted(df["contract_type"].unique()):
+                subset = df[df["contract_type"] == ct].drop_duplicates(
+                    subset=["deal_id"]
+                )
+                bt_counts = subset["bidder_team"].value_counts().sort_index()
+                print(f"  {ct}: {bt_counts.to_dict()}")
+        else:
+            print("  (bidder_team column not available)")
+
+        # Team balance ANOVA split by declaring/defending
+        print(
+            "\n=== Team Balance ANOVA -- Declaring vs Defending (per contract type) ==="
+        )
+        if "is_declaring_team" in df.columns:
+            for ct in sorted(df["contract_type"].unique()):
+                subset = df[df["contract_type"] == ct]
+                for role, role_label in [(True, "declaring"), (False, "defending")]:
+                    role_df = subset[subset["is_declaring_team"] == role]
+                    groups = [
+                        role_df.loc[role_df["team"] == t, "feat_hand_value"]
+                        .dropna()
+                        .values
+                        for t in sorted(role_df["team"].unique())
+                    ]
+                    groups = [g for g in groups if len(g) > 0]
+                    if len(groups) >= 2:
+                        f_stat, p_val = f_oneway(*groups)
+                        print(f"  {ct} ({role_label}): F={f_stat:.3f}, p={p_val:.4f}")
+                    else:
+                        print(f"  {ct} ({role_label}): Not enough groups")
+        else:
+            print("  (is_declaring_team column not available)")
     else:
         print("No contract_type column -- skipping team symmetry.")
 else:
@@ -492,6 +616,9 @@ else:
 
 # %% [markdown]
 # ## S4.4 By Seat
+#
+# Faceted boxplot of hand_value by seat and contract type, with per-contract ANOVA
+# and bidder seat distribution.
 
 # %%
 if (
@@ -522,11 +649,24 @@ if (
             print(f"  {ct}: F={f_stat:.3f}, p={p_val:.4f}")
         else:
             print(f"  {ct}: Not enough groups for ANOVA")
+
+    # Bidder seat distribution per contract type
+    print("\n=== Bidder Seat Distribution (per contract type) ===")
+    if "bidder_seat" in df.columns:
+        for ct in sorted(df["contract_type"].unique()):
+            subset = df[df["contract_type"] == ct].drop_duplicates(subset=["deal_id"])
+            bs_counts = subset["bidder_seat"].value_counts().sort_index()
+            print(f"  {ct}: {bs_counts.to_dict()}")
+    else:
+        print("  (bidder_seat column not available)")
 else:
     print("Skipping seat symmetry (missing data or columns).")
 
 # %% [markdown]
 # ## S4.5 Feature-Level Symmetry
+#
+# Identifies features with the highest cross-seat variance and renders a
+# Z-score heatmap of features by trump suit.
 
 # %%
 if not df.empty and "seat" in df.columns:
@@ -540,10 +680,9 @@ if not df.empty and "seat" in df.columns:
             seat_means = df.groupby("seat")[col].mean()
             seat_mean_vars[col] = seat_means.var()
 
-        # Top 5 features by variance across seats
-        top5_by_seat_var = sorted(seat_mean_vars, key=seat_mean_vars.get, reverse=True)[
-            :5
-        ]
+        # Top 5 features by variance across seats (NaN-safe sort)
+        valid_vars = {k: v for k, v in seat_mean_vars.items() if not np.isnan(v)}
+        top5_by_seat_var = sorted(valid_vars, key=valid_vars.get, reverse=True)[:5]
         print("=== Top 5 Features by Variance Across Seats ===")
         for col in top5_by_seat_var:
             seat_means = df.groupby("seat")[col].mean()
@@ -572,6 +711,9 @@ else:
 
 # %% [markdown]
 # # S5 Feature Distributions
+#
+# Histogram grid of top features by variance, pairwise correlation matrix,
+# summary statistics, and declaring vs defending comparison.
 
 # %%
 if not df.empty:
@@ -582,7 +724,7 @@ if not df.empty:
         # Top 9 features by variance (per contract pooled)
         variances = {c: df[c].var() for c in numeric_feats}
         top_9 = sorted(variances, key=variances.get, reverse=True)[:9]
-        top_9_names = [c.replace("feat_", "") for c in top_9]
+        top_9_names = [c.removeprefix("feat_") for c in top_9]
 
         fig_dist = plot_feature_distributions(df, features=top_9_names)
         if CHART_OUTPUT_DIR:
@@ -595,7 +737,7 @@ if not df.empty:
 
         # Correlation matrix: top 15
         top_15 = sorted(variances, key=variances.get, reverse=True)[:15]
-        top_15_names = [c.replace("feat_", "") for c in top_15]
+        top_15_names = [c.removeprefix("feat_") for c in top_15]
 
         fig_corr = plot_feature_correlation(df, features=top_15_names)
         if CHART_OUTPUT_DIR:
@@ -610,6 +752,22 @@ if not df.empty:
         print("\n=== Feature Summary Stats ===")
         desc = df[numeric_feats].describe().T
         print(desc[["count", "mean", "std", "min", "max"]].to_string())
+
+        # Declaring vs defending feature comparison
+        if "is_declaring_team" in df.columns:
+            print("\n=== Feature Means: Declaring vs Defending ===")
+            for feat in top_9[:3]:
+                col = feat if feat.startswith("feat_") else f"feat_{feat}"
+                if col in df.columns:
+                    decl_mean = df.loc[
+                        df["is_declaring_team"] == True, col  # noqa: E712
+                    ].mean()
+                    def_mean = df.loc[
+                        df["is_declaring_team"] == False, col  # noqa: E712
+                    ].mean()
+                    print(
+                        f"  {col}: declaring={decl_mean:.3f}, defending={def_mean:.3f}"
+                    )
     else:
         print("No numeric feature columns found.")
 else:
@@ -617,6 +775,10 @@ else:
 
 # %% [markdown]
 # # S6 Feature-Label Relationships
+#
+# Pearson correlation of each feature vs tricks_won, faceted by contract type.
+# Includes p-values, heatmap, top-10 table, scatter plots, and
+# declaring/defending split analysis.
 
 # %%
 if not df.empty and "tricks_won" in df.columns:
@@ -624,20 +786,28 @@ if not df.empty and "tricks_won" in df.columns:
     numeric_feats = [c for c in feat_cols if pd.api.types.is_numeric_dtype(df[c])]
 
     if numeric_feats and "contract_type" in df.columns:
-        # Pearson correlation per contract type
+        # Pearson correlation per contract type (with p-values)
         ctypes = sorted(df["contract_type"].unique())
         corr_data = {}
+        pval_data = {}
         for ct in ctypes:
             subset = df[df["contract_type"] == ct]
             corrs = {}
+            pvals = {}
             for col in numeric_feats:
                 valid = subset[col].notna() & subset["tricks_won"].notna()
                 if valid.sum() > 2:
-                    r = subset.loc[valid, col].corr(subset.loc[valid, "tricks_won"])
-                    corrs[col.replace("feat_", "")] = r
+                    valid_feat = subset.loc[valid, col].values
+                    valid_outcome = subset.loc[valid, "tricks_won"].values
+                    r_val, p_val = pearsonr(valid_feat, valid_outcome)
+                    feat_name = col.removeprefix("feat_")
+                    corrs[feat_name] = r_val
+                    pvals[feat_name] = p_val
             corr_data[ct] = corrs
+            pval_data[ct] = pvals
 
         corr_df = pd.DataFrame(corr_data)
+        pval_df = pd.DataFrame(pval_data)
         if not corr_df.empty:
             # Heatmap: feature x contract correlations
             fig_foc, ax_foc = plt.subplots(
@@ -676,7 +846,7 @@ if not df.empty and "tricks_won" in df.columns:
                 )
             plt.show()
 
-            # Table: top 10 features by |r| per contract
+            # Table: top 10 features by |r| per contract (with p-values)
             print("\n=== Top 10 Features by |r| per Contract Type ===")
             for ct in ctypes:
                 if ct in corr_df.columns:
@@ -684,7 +854,12 @@ if not df.empty and "tricks_won" in df.columns:
                     print(f"\n{ct}:")
                     for feat, abs_r in ranked.items():
                         actual_r = corr_df.loc[feat, ct]
-                        print(f"  {feat:30s} r={actual_r:+.4f}")
+                        p_str = ""
+                        if ct in pval_df.columns and feat in pval_df.index:
+                            p = pval_df.loc[feat, ct]
+                            if not np.isnan(p):
+                                p_str = f"  p={p:.4f}"
+                        print(f"  {feat:30s} r={actual_r:+.4f}{p_str}")
 
             # Scatter: top 3 features by max |r| across contracts
             max_abs_r = corr_df.abs().max(axis=1).nlargest(3)
@@ -725,6 +900,39 @@ if not df.empty and "tricks_won" in df.columns:
                         bbox_inches="tight",
                     )
                 plt.show()
+
+            # Declaring vs defending correlation split
+            if "is_declaring_team" in df.columns:
+                print("\n=== Feature-Outcome Correlations: Declaring vs Defending ===")
+                for ct in ctypes:
+                    print(f"\n{ct}:")
+                    subset = df[df["contract_type"] == ct]
+                    for role, role_label in [
+                        (True, "declaring"),
+                        (False, "defending"),
+                    ]:
+                        role_df = subset[subset["is_declaring_team"] == role]
+                        print(f"  {role_label} (n={len(role_df)}):")
+                        role_corrs = {}
+                        for col in numeric_feats:
+                            valid = role_df[col].notna() & role_df["tricks_won"].notna()
+                            if valid.sum() > 2:
+                                r_val, _ = pearsonr(
+                                    role_df.loc[valid, col].values,
+                                    role_df.loc[valid, "tricks_won"].values,
+                                )
+                                role_corrs[col.removeprefix("feat_")] = r_val
+                        if role_corrs:
+                            valid_corrs = {
+                                k: v for k, v in role_corrs.items() if not np.isnan(v)
+                            }
+                            top5 = sorted(
+                                valid_corrs,
+                                key=lambda k: abs(valid_corrs[k]),
+                                reverse=True,
+                            )[:5]
+                            for feat in top5:
+                                print(f"    {feat:30s} r={role_corrs[feat]:+.4f}")
         else:
             print("No valid feature-outcome correlations computed.")
     else:
@@ -734,6 +942,9 @@ else:
 
 # %% [markdown]
 # # S7 Summary
+#
+# Structured summary with scorecard recap, dataset stats, key findings,
+# and links to companion notebooks.
 
 # %%
 if not df.empty:
@@ -742,7 +953,7 @@ if not df.empty:
     print("=" * 60)
 
     # Recap scorecard
-    if "scorecard" in dir():
+    if scorecard is not None:
         summary = scorecard.summary()
         print(
             f"\nHealth Scorecard: {summary['PASS']} PASS, {summary['WARN']} WARN, {summary['FAIL']} FAIL"
@@ -766,8 +977,8 @@ if not df.empty:
     # Key findings
     print("\nKey findings:")
     if "contract_type" in df.columns:
-        ct_dist = df["contract_type"].value_counts()
-        print(f"  - Contract types: {ct_dist.to_dict()}")
+        ct_dist = df.drop_duplicates(subset=["deal_id"])["contract_type"].value_counts()
+        print(f"  - Contract types (deal-level): {ct_dist.to_dict()}")
     if "seat" in df.columns and "feat_hand_value" in df.columns:
         seat_means = df.groupby("seat")["feat_hand_value"].mean()
         seat_range = seat_means.max() - seat_means.min()
@@ -775,7 +986,9 @@ if not df.empty:
 
     # Links to companion notebooks
     print("\nCompanion notebooks:")
-    print("  - 01_model_rung_template.py (full model evaluation)")
-    print("  - 20_matchup_analysis.py (strategy matchup)")
+    print("  - 20_outcome_health.py (outcome distributions and team balance)")
+    print("  - 30_feature_outcome_eval.py (feature-outcome evaluation)")
+    print("  - 40_r0_baseline.py (R0 baseline model evaluation)")
+    print("  - 50_r0_matchups.py (strategy matchup analysis)")
 else:
     print("No data loaded -- report is empty.")
