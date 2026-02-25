@@ -1493,7 +1493,7 @@ The full execution plan with PR ordering, per-PR scope, and agent handoff instru
 
 ### Resolved Alignment Decisions (2026-02-25)
 
-1. **Report output path**: `docs/04_reports/r0/` (not `docs/04_reports/arc_d/`). Preserves continuity with existing `model_arc_r0_20260224.md`.
+1. **Report output path**: `docs/04_reports/r0/` (was previously under `arc_d`). Preserves continuity with existing `model_arc_r0_20260224.md`.
 2. **PR structure**: Notebook-centric streams (9 PRs, not 17). Each notebook owned by exactly one PR per phase. Eliminates same-file merge contention.
 3. **`points_won` semantics**: Align with `compute_points()` no-bid behavior (`scoring.py` L36-38). `points_won` is never `None`. No-bid rows use tricks-based scoring.
 4. **Issue-to-PR traceability**: Full trace matrix required. Every issue maps to exactly one owner PR per notebook (or is explicitly deferred).

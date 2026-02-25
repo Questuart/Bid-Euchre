@@ -19,7 +19,7 @@ This plan executes the 58 issues identified in the R0 notebook review. The work 
 - **Zero file overlap in Phase 1**: Each notebook is exclusively owned by one PR.
 - **`points_won` semantics aligned**: Uses `compute_points()` from `scoring.py`; never `None`.
 - **C59 distributed**: Audit/fix in each notebook-owner PR; PR-6 adds contract test only.
-- **Report path corrected**: `docs/04_reports/r0/` (not `docs/04_reports/arc_d/`).
+- **Report path corrected**: `docs/04_reports/r0/` (was previously under `arc_d`).
 - **F1 recursive fix**: Makefile + `run_notebooks.py` glob fix included in PR-0.
 
 ### Key Constraints
@@ -552,7 +552,7 @@ Every issue maps to exactly one owner PR per notebook (or is explicitly deferred
 | C59 | PR-5 | 50_ | Prefix audit/fix |
 | C59 | PR-6 | test | Prefix convention contract test |
 
-**Coverage:** All 58 issues accounted for. 3 explicitly deferred (C33, C50, C57). 3 no-action (C8 Low, C9 Info, C14 Low, C17 Info — 4 total).
+**Coverage:** All 58 issues accounted for. 3 explicitly deferred (C33, C50, C57). 4 no-action (C8 Low, C9 Info, C14 Low, C17 Info).
 
 ---
 
@@ -602,7 +602,7 @@ Phase 2: make check-quiet
 | Worktree pre-commit | Run `uv sync --all-extras && uv pip install pre-commit` in fresh worktrees. |
 | PATH for commits | Use `PATH=".venv/bin:$PATH" git commit ...` in worktrees. |
 | `points_won` never None | Use `compute_points()` — no-bid case returns tricks. Don't guard with `if points_won is not None`. |
-| Report output path | `docs/04_reports/r0/` — not `docs/04_reports/arc_d/`. |
+| Report output path | `docs/04_reports/r0/` — not the old `arc_d` subdirectory. |
 
 ### PR naming convention:
 
