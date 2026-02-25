@@ -127,7 +127,7 @@ if MATCHUP_RUN_DIR:
             _matchup_available = True
             print(
                 f"\nTotal: {len(df_all)} rows, "
-                f"{df_all['deal_id'].nunique()} deals, "
+                f"{df_all.drop_duplicates(subset=['matchup_id', 'deal_id']).shape[0]} deals, "
                 f"{df_all['matchup_id'].nunique()} matchups"
             )
     else:
@@ -261,14 +261,16 @@ print("RUN METADATA")
 print("=" * 60)
 print(f"  Data source:    {'matchup logs' if _matchup_available else 'synthetic demo'}")
 print(f"  Run directory:  {MATCHUP_RUN_DIR or 'N/A (synthetic)'}")
-print(f"  Total deals:    {df_all['deal_id'].nunique():,}")
+print(
+    f"  Total deals:    {df_all.drop_duplicates(subset=['matchup_id', 'deal_id']).shape[0]:,}"
+)
 print(f"  Total rows:     {len(df_all):,} (4 per deal)")
 print(
     f"  Matchups:       {df_all['matchup_id'].nunique() if 'matchup_id' in df_all.columns else 'N/A'}"
 )
 print(f"  Mode:           {MODE}")
 print(
-    f"  Contract types: {dict(df_all.drop_duplicates('deal_id')['contract_type'].value_counts()) if not df_all.empty else 'N/A'}"
+    f"  Contract types: {dict(df_all.drop_duplicates(subset=['matchup_id', 'deal_id'])['contract_type'].value_counts()) if not df_all.empty else 'N/A'}"
 )
 
 # %% [markdown]
@@ -468,7 +470,7 @@ if not df_all.empty and "contract_type" in df_all.columns:
         if opp_df.empty:
             continue
 
-        n_deals = opp_df["deal_id"].nunique()
+        n_deals = opp_df.drop_duplicates(subset=["matchup_id", "deal_id"]).shape[0]
         print(f"\n{'=' * 50}")
         print(f"Opponent: {opp} ({n_deals} deals across {len(opp_ids)} matchup(s))")
         print(f"{'=' * 50}")

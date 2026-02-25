@@ -111,9 +111,7 @@ if EVAL_LOG_PATH:
     log_path = Path(EVAL_LOG_PATH)
     if log_path.is_dir():
         # C1: use Path.glob() instead of glob_mod.glob()
-        log_files = sorted(
-            log_path / "logs" / f for f in (log_path / "logs").glob("*.jsonl")
-        )
+        log_files = sorted((log_path / "logs").glob("*.jsonl"))
         if log_files:
             log_path = log_files[0]
     if log_path.is_file():
