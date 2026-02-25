@@ -686,7 +686,9 @@ class OLSaBidder(BiddingPolicy):
     each using the corresponding sparse OLS model, floors to get bid amount,
     and picks the best candidate.
 
-    Artifact format: olsa_v1.json with models for "suit", "high", "low".
+    Artifact format: accepts both olsa_v1 and hybrid_olsa_v1 artifacts.
+    For hybrid_olsa_v1, uses the offensive sub-model (bidder's perspective)
+    and ignores residual_variance / risk_lambda fields.
     """
 
     def __init__(self, artifact_path: str, name: str = "olsa"):
@@ -695,13 +697,24 @@ class OLSaBidder(BiddingPolicy):
         with open(artifact_path) as f:
             artifact = json.load(f)
 
-        if artifact.get("artifact_type") != "olsa_v1":
+        artifact_type = artifact.get("artifact_type")
+        if artifact_type == "olsa_v1":
+            raw_models = artifact["models"]
+        elif artifact_type == "hybrid_olsa_v1":
+            raw_models = {}
+            for cf, model_data in artifact["payoff_model"].items():
+                if "offensive" in model_data:
+                    raw_models[cf] = model_data["offensive"]
+                else:
+                    raw_models[cf] = model_data
+        else:
             raise ValueError(
-                f"Expected artifact_type 'olsa_v1', got '{artifact.get('artifact_type')}'"
+                f"Expected artifact_type 'olsa_v1' or 'hybrid_olsa_v1', "
+                f"got '{artifact_type}'"
             )
 
         self.models = {}
-        for contract_family, model_data in artifact["models"].items():
+        for contract_family, model_data in raw_models.items():
             self.models[contract_family] = {
                 "weights": np.array(model_data["weights"], dtype=np.float64),
                 "bias": float(model_data["bias"]),
