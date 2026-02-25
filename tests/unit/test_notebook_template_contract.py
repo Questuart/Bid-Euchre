@@ -185,6 +185,37 @@ class TestR0NotebookEnrichment:
             "BatchComparisonResult uses .mannwhitney_pvalue"
         )
 
+    def test_r0_auction_health_notebook_exists(self):
+        """25_auction_health.py must exist with required section markers and library imports."""
+        auction_path = (
+            Path(__file__).resolve().parents[2]
+            / "notebooks"
+            / "arc_d"
+            / "r0"
+            / "25_auction_health.py"
+        )
+        assert auction_path.exists(), "25_auction_health.py must exist"
+        source = auction_path.read_text()
+        required_sections = [
+            "S0: Configuration",
+            "S1: Fail-Fast Validation",
+            "S2: Bid Distribution",
+            "S3: Bidder & Dealer Seat",
+            "S4: Make Rate & Surplus",
+            "S5: Seat-Faceted Bid Accuracy",
+            "S6: Auction Length & Pass Rate",
+            "S7: Summary",
+        ]
+        for section in required_sections:
+            assert section in source, f"25_auction_health missing section: {section}"
+        # Must use library chart functions, not inline code
+        assert (
+            "plot_auction_health" in source
+        ), "25_auction_health must call plot_auction_health()"
+        assert (
+            "plot_bidder_performance" in source
+        ), "25_auction_health must call plot_bidder_performance()"
+
     def test_r0_matchup_notebook_exists(self):
         """50_r0_matchups.py must exist with required section markers."""
         matchup_path = (
@@ -282,6 +313,40 @@ class TestR0NotebookEnrichment:
         assert (
             "R0 Advantage" in s7_source
         ), "§7 chart must label ME delta as 'R0 Advantage'"
+
+
+# ──────────────────────────────────────────────
+#  Required R0 notebook set (on-disk gate)
+# ──────────────────────────────────────────────
+
+# Canonical set of R0 notebooks that must exist on disk.
+# Adding a new notebook → add it here. Deleting/renaming → test fails.
+REQUIRED_R0_NOTEBOOKS = [
+    "10_feature_health.py",
+    "20_outcome_health.py",
+    "25_auction_health.py",
+    "30_feature_outcome_eval.py",
+    "40_r0_baseline.py",
+    "50_r0_matchups.py",
+]
+
+R0_NOTEBOOK_DIR = Path(__file__).resolve().parents[2] / "notebooks" / "arc_d" / "r0"
+
+
+class TestRequiredR0NotebookSet:
+    """Gate: every notebook in the canonical R0 set must exist on disk with paired .ipynb."""
+
+    @pytest.mark.parametrize("notebook", REQUIRED_R0_NOTEBOOKS)
+    def test_notebook_py_exists(self, notebook):
+        path = R0_NOTEBOOK_DIR / notebook
+        assert path.exists(), f"Required R0 notebook missing: {notebook}"
+
+    @pytest.mark.parametrize("notebook", REQUIRED_R0_NOTEBOOKS)
+    def test_notebook_ipynb_paired(self, notebook):
+        ipynb = R0_NOTEBOOK_DIR / notebook.replace(".py", ".ipynb")
+        assert (
+            ipynb.exists()
+        ), f"Paired .ipynb missing for {notebook} — run `make notebook-sync`"
 
 
 # ──────────────────────────────────────────────
