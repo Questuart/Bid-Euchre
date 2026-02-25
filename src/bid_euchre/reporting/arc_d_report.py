@@ -1056,6 +1056,8 @@ def _render_reproduction_commands(
     lines.append("uv run jupyter nbconvert --to notebook --execute \\")
     lines.append("  notebooks/arc_d/<RUNG>/20_outcome_health.ipynb")
     lines.append("uv run jupyter nbconvert --to notebook --execute \\")
+    lines.append("  notebooks/arc_d/<RUNG>/25_auction_health.ipynb")
+    lines.append("uv run jupyter nbconvert --to notebook --execute \\")
     lines.append("  notebooks/arc_d/<RUNG>/30_feature_outcome_eval.ipynb")
     lines.append("```")
     lines.append("")
