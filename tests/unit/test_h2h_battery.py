@@ -28,6 +28,9 @@ generate_matchups = _battery_mod.generate_matchups
 generate_h2h_config = _battery_mod.generate_h2h_config
 select_full_subset = _battery_mod.select_full_subset
 generate_summary = _battery_mod.generate_summary
+parse_run_results = _battery_mod.parse_run_results
+_compute_team_points = _battery_mod._compute_team_points
+_bootstrap_ci = _battery_mod._bootstrap_ci
 DEFAULT_ROSTER = _battery_mod.DEFAULT_ROSTER
 KEY_BIDDERS = _battery_mod.KEY_BIDDERS
 
@@ -364,3 +367,214 @@ class TestGenerateSummary:
         reloaded = json.loads(json_str)
         assert reloaded["schema"] == "h2h_battery_v1"
         assert len(reloaded["cells"]) == 49
+
+
+# ---------------------------------------------------------------------------
+# Tests: _compute_team_points
+# ---------------------------------------------------------------------------
+
+
+class TestComputeTeamPoints:
+    def test_team0_declares_and_makes(self):
+        """Team 0 declares, makes bid -> gets tricks won."""
+        record = {
+            "t0": 7,
+            "t1": 3,
+            "winning_bid": 6,
+            "bidder_position": 0,
+            "made_bid": True,
+        }
+        t0_pts, t1_pts = _compute_team_points(record)
+        assert t0_pts == 7
+        assert t1_pts == 3
+
+    def test_team0_declares_and_set(self):
+        """Team 0 declares, set -> gets -bid."""
+        record = {
+            "t0": 4,
+            "t1": 6,
+            "winning_bid": 6,
+            "bidder_position": 2,
+            "made_bid": False,
+        }
+        t0_pts, t1_pts = _compute_team_points(record)
+        assert t0_pts == -6
+        assert t1_pts == 6
+
+    def test_team1_declares_and_makes(self):
+        """Team 1 declares, makes bid -> gets tricks won."""
+        record = {
+            "t0": 3,
+            "t1": 7,
+            "winning_bid": 6,
+            "bidder_position": 1,
+            "made_bid": True,
+        }
+        t0_pts, t1_pts = _compute_team_points(record)
+        assert t0_pts == 3
+        assert t1_pts == 7
+
+    def test_team1_declares_and_set(self):
+        """Team 1 declares, set -> gets -bid."""
+        record = {
+            "t0": 6,
+            "t1": 4,
+            "winning_bid": 7,
+            "bidder_position": 3,
+            "made_bid": False,
+        }
+        t0_pts, t1_pts = _compute_team_points(record)
+        assert t0_pts == 6
+        assert t1_pts == -7
+
+
+# ---------------------------------------------------------------------------
+# Tests: _bootstrap_ci
+# ---------------------------------------------------------------------------
+
+
+class TestBootstrapCI:
+    def test_bootstrap_ci_deterministic(self):
+        """Same input + seed -> same CI."""
+        deltas = [0.1, 0.2, 0.3, -0.1, 0.05] * 20
+        ci1 = _bootstrap_ci(deltas, seed=42)
+        ci2 = _bootstrap_ci(deltas, seed=42)
+        assert ci1 == ci2
+
+    def test_bootstrap_ci_ordering(self):
+        """ci_low <= mean <= ci_high."""
+        import numpy as np
+
+        deltas = [0.1, 0.2, 0.3, -0.1, 0.05] * 20
+        ci_low, ci_high = _bootstrap_ci(deltas, seed=42)
+        mean_val = float(np.mean(deltas))
+        assert ci_low <= mean_val <= ci_high
+
+    def test_bootstrap_ci_single_value(self):
+        """Single value -> CI collapses to that value."""
+        ci_low, ci_high = _bootstrap_ci([0.5], seed=42)
+        assert ci_low == 0.5
+        assert ci_high == 0.5
+
+    def test_bootstrap_ci_positive_data(self):
+        """All positive deltas -> positive CI."""
+        deltas = [0.5, 0.6, 0.7, 0.8, 0.9] * 20
+        ci_low, ci_high = _bootstrap_ci(deltas, seed=42)
+        assert ci_low > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: parse_run_results
+# ---------------------------------------------------------------------------
+
+
+class TestParseRunResults:
+    def _make_hand_end_record(
+        self, matchup_id, t0, t1, winning_bid, bidder_position, made_bid
+    ):
+        """Create a synthetic hand_end JSONL record."""
+        return {
+            "event": "hand_end",
+            "matchup_id": matchup_id,
+            "deal_id": f"deal_{matchup_id}_{t0}_{t1}",
+            "t0": t0,
+            "t1": t1,
+            "winning_bid": winning_bid,
+            "bidder_position": bidder_position,
+            "made_bid": made_bid,
+        }
+
+    def _write_jsonl(self, path, records):
+        """Write records as JSONL."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            for rec in records:
+                f.write(json.dumps(rec) + "\n")
+
+    def test_parse_populates_cells(self, tmp_path):
+        """Parse fills in None-valued cells from JSONL data."""
+        # Create a skeleton summary with one matchup
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=10)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=10,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        # Verify cells start with None metrics
+        first_cell = next(iter(summary["cells"].values()))
+        assert first_cell["net_eppd_delta"] is None
+
+        # Create synthetic JSONL data for one matchup
+        mid = "alpha_self_play"
+        records = []
+        for _ in range(20):
+            # Team 0 declares, makes bid of 6, gets 7 tricks (team 1 gets 3)
+            records.append(self._make_hand_end_record(mid, 7, 3, 6, 0, True))
+            # Team 1 declares, makes bid of 5, gets 6 tricks (team 0 gets 4)
+            records.append(self._make_hand_end_record(mid, 4, 6, 5, 1, True))
+
+        run_dir = tmp_path / "test_run"
+        self._write_jsonl(run_dir / "game_log.jsonl", records)
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+
+        cell = result["cells"][mid]
+        assert cell["net_eppd_delta"] is not None
+        assert cell["deals_total"] == 40
+        assert cell["run_id"] == "test_run"
+
+    def test_parse_no_jsonl_returns_unchanged(self, tmp_path):
+        """Empty run dir returns summary unchanged."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=10)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=10,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        run_dir = tmp_path / "empty_run"
+        run_dir.mkdir()
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+        first_cell = next(iter(result["cells"].values()))
+        assert first_cell["net_eppd_delta"] is None
+
+    def test_parse_self_play_near_zero(self, tmp_path):
+        """Self-play with symmetric data -> net_eppd_delta near zero."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=100)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=100,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        mid = "alpha_self_play"
+        records = []
+        for i in range(100):
+            # Alternate who declares, symmetric outcomes
+            if i % 2 == 0:
+                records.append(self._make_hand_end_record(mid, 6, 4, 5, 0, True))
+            else:
+                records.append(self._make_hand_end_record(mid, 4, 6, 5, 1, True))
+
+        run_dir = tmp_path / "self_play_run"
+        self._write_jsonl(run_dir / "log.jsonl", records)
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+        cell = result["cells"][mid]
+        # Symmetric self-play: net_eppd_delta should be 0
+        assert cell["net_eppd_delta"] == 0.0
+        assert cell["win_rate_a"] == 0.5

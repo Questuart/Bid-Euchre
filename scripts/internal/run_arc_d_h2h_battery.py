@@ -40,6 +40,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 # ---------------------------------------------------------------------------
@@ -372,6 +373,183 @@ def generate_summary(
 
 
 # ---------------------------------------------------------------------------
+# Run result parsing
+# ---------------------------------------------------------------------------
+
+
+def _compute_team_points(record):
+    """Compute team-level points from a hand_end JSONL record.
+
+    Returns (team0_points, team1_points).
+    """
+    t0 = record["t0"]
+    t1 = record["t1"]
+    winning_bid = record["winning_bid"]
+    bidder_position = record["bidder_position"]
+    made_bid = record["made_bid"]
+
+    if bidder_position in (0, 2):  # Declarer on team 0
+        team0_points = t0 if made_bid else -winning_bid
+        team1_points = t1
+    else:  # Declarer on team 1
+        team0_points = t0
+        team1_points = t1 if made_bid else -winning_bid
+
+    return (team0_points, team1_points)
+
+
+def _bootstrap_ci(deltas, n_bootstrap=10000, ci=0.95, seed=42):
+    """Compute bootstrap percentile CI on mean of deltas.
+
+    Parameters
+    ----------
+    deltas : list[float]
+        Per-deal delta values.
+    n_bootstrap : int
+        Number of bootstrap resamples.
+    ci : float
+        Confidence level (default 0.95).
+    seed : int
+        RNG seed for reproducibility.
+
+    Returns
+    -------
+    tuple[float, float]
+        (ci_low, ci_high) bounds on the mean.
+    """
+    rng = np.random.default_rng(seed)
+    arr = np.array(deltas)
+    n = len(arr)
+
+    if n < 2:
+        mean_val = float(np.mean(arr)) if n > 0 else 0.0
+        return (mean_val, mean_val)
+
+    boot_means = np.empty(n_bootstrap)
+    for i in range(n_bootstrap):
+        sample = rng.choice(arr, size=n, replace=True)
+        boot_means[i] = np.mean(sample)
+
+    alpha = (1 - ci) / 2
+    return (
+        float(np.percentile(boot_means, 100 * alpha)),
+        float(np.percentile(boot_means, 100 * (1 - alpha))),
+    )
+
+
+def parse_run_results(run_dir, summary, seed=42):
+    """Parse JSONL logs from a completed experiment run and populate summary cells.
+
+    Reads hand_end events from JSONL log files in run_dir, groups them by
+    matchup_id, and computes per-cell metrics: net_eppd_delta, win_rate,
+    bid/make rates, and bootstrap CIs.
+
+    Parameters
+    ----------
+    run_dir : str or Path
+        Path to the experiment run directory containing JSONL log files.
+    summary : dict
+        Skeleton summary dict (h2h_battery_v1 schema) with cells to populate.
+    seed : int
+        RNG seed for bootstrap CI computation.
+
+    Returns
+    -------
+    dict
+        Updated summary with populated cell metrics.
+    """
+    run_path = Path(run_dir)
+    cells = summary.get("cells", {})
+
+    # Collect all hand_end records grouped by matchup_id
+    matchup_records = {}  # matchup_id -> list of records
+
+    # Find all JSONL files in the run directory (may be flat or nested)
+    jsonl_files = list(run_path.glob("**/*.jsonl"))
+    if not jsonl_files:
+        print(f"WARNING: No JSONL files found in {run_dir}", file=sys.stderr)
+        return summary
+
+    for jsonl_path in jsonl_files:
+        with open(jsonl_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if record.get("event") != "hand_end":
+                    continue
+
+                mid = record.get("matchup_id", "")
+                if mid not in matchup_records:
+                    matchup_records[mid] = []
+                matchup_records[mid].append(record)
+
+    # Populate each cell
+    for matchup_id, cell in cells.items():
+        records = matchup_records.get(matchup_id, [])
+        if not records:
+            continue
+
+        # Compute per-deal metrics
+        deltas = []  # net_points_a - net_points_b per deal
+        team0_wins = 0
+        bids_by_team0 = 0
+        bids_by_team1 = 0
+        makes_by_team0 = 0
+        makes_by_team1 = 0
+
+        for rec in records:
+            t0_pts, t1_pts = _compute_team_points(rec)
+            delta = t0_pts - t1_pts
+            deltas.append(delta)
+
+            if t0_pts > t1_pts:
+                team0_wins += 1
+
+            bp = rec.get("bidder_position", 0)
+            made = rec.get("made_bid", False)
+            if bp in (0, 2):
+                bids_by_team0 += 1
+                if made:
+                    makes_by_team0 += 1
+            else:
+                bids_by_team1 += 1
+                if made:
+                    makes_by_team1 += 1
+
+        n_deals = len(deltas)
+        if n_deals == 0:
+            continue
+
+        net_eppd_delta = float(np.mean(deltas))
+        ci_low, ci_high = _bootstrap_ci(deltas, seed=seed)
+
+        cell["net_eppd_a"] = round(net_eppd_delta, 6)
+        cell["net_eppd_b"] = round(-net_eppd_delta, 6)
+        cell["net_eppd_delta"] = round(net_eppd_delta, 6)
+        cell["ci_low"] = round(ci_low, 6)
+        cell["ci_high"] = round(ci_high, 6)
+        cell["win_rate_a"] = round(team0_wins / n_deals, 4)
+        cell["bid_rate_a"] = round(bids_by_team0 / n_deals, 4)
+        cell["bid_rate_b"] = round(bids_by_team1 / n_deals, 4)
+        cell["make_rate_a"] = (
+            round(makes_by_team0 / bids_by_team0, 4) if bids_by_team0 > 0 else None
+        )
+        cell["make_rate_b"] = (
+            round(makes_by_team1 / bids_by_team1, 4) if bids_by_team1 > 0 else None
+        )
+        cell["deals_total"] = n_deals
+        cell["run_id"] = run_path.name
+
+    return summary
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -416,7 +594,7 @@ def main():
     parser.add_argument(
         "--parse-run",
         default=None,
-        help="Path to existing run directory to parse into summary (not yet implemented)",
+        help="Path to existing run directory to parse into summary",
     )
     args = parser.parse_args()
 
@@ -469,19 +647,42 @@ def main():
 
     if args.config_only:
         print(
-            f"\nTo run:\n  uv run python experiments/run_experiment.py "
-            f"--config {config_path} --seed {args.seed}",
+            f"\nTo run:\n  uv run python experiments/run_experiment.py --seed {args.seed} "
+            f"--config {config_path}",
             file=sys.stderr,
         )
         sys.exit(0)
 
     if args.parse_run:
-        print(
-            "NOTE: --parse-run is a placeholder for future implementation.",
-            file=sys.stderr,
+        run_dir = Path(args.parse_run)
+        if not run_dir.exists():
+            print(f"ERROR: Run directory not found: {run_dir}", file=sys.stderr)
+            sys.exit(1)
+
+        # Generate skeleton summary then populate from run results
+        quick_source = args.quick_summary if args.mode == "FULL" else None
+        summary = generate_summary(
+            mode=args.mode,
+            seed=args.seed,
+            n_per=args.n_per,
+            roster=roster,
+            matchups=matchups,
+            config_dict=config,
+            quick_source=quick_source,
         )
+
+        summary = parse_run_results(run_dir, summary, seed=args.seed)
+
+        output_path.write_text(json.dumps(summary, indent=2) + "\n")
+        print(f"Parsed summary written to: {output_path}", file=sys.stderr)
+
+        # Report populated vs empty cells
+        populated = sum(
+            1 for c in summary["cells"].values() if c.get("net_eppd_delta") is not None
+        )
+        total = len(summary["cells"])
         print(
-            "Run parsing requires JSONL log analysis matching evaluator.py logic.",
+            f"  {populated}/{total} cells populated from run data",
             file=sys.stderr,
         )
         sys.exit(0)
@@ -509,8 +710,8 @@ def main():
         file=sys.stderr,
     )
     print(
-        f"\nTo run experiment:\n  uv run python experiments/run_experiment.py "
-        f"--config {config_path} --seed {args.seed}",
+        f"\nTo run experiment:\n  uv run python experiments/run_experiment.py --seed {args.seed} "
+        f"--config {config_path}",
         file=sys.stderr,
     )
 
