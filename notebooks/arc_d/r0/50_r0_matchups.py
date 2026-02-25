@@ -51,6 +51,8 @@ MODEL_NAME = "hybrid_olsa_r0"  # Model name in matchup_id strings
 import os
 from pathlib import Path
 
+# C59: prefix audit — no plot_* calls from diagnostics.charts in this notebook
+
 # Ensure CWD is repo root (Jupyter kernels start in notebook dir)
 _cwd = Path.cwd()
 if not (_cwd / ".git").exists():
@@ -75,8 +77,6 @@ for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
     print(_p)
 
 # %%
-import glob as glob_mod
-
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -86,7 +86,11 @@ from scipy import stats
 matplotlib.use("Agg")
 
 MODE_DEAL_COUNTS = {"SMOKE": 30, "QUICK": 2_000, "FULL": 50_000}
-max_deals = MODE_DEAL_COUNTS.get(MODE)
+_max_deals = MODE_DEAL_COUNTS.get(MODE, 30)
+if MODE not in MODE_DEAL_COUNTS:
+    import warnings
+
+    warnings.warn(f"Unknown MODE={MODE!r}, defaulting to 30 deals", stacklevel=2)
 
 # --- Load matchup data from JSONL logs ---
 _matchup_available = False
@@ -97,7 +101,7 @@ if MATCHUP_RUN_DIR:
 
     logs_dir = Path(MATCHUP_RUN_DIR) / "logs"
     if logs_dir.is_dir():
-        log_files = sorted(glob_mod.glob(str(logs_dir / "*.jsonl")))
+        log_files = sorted(str(p) for p in logs_dir.glob("*.jsonl"))
         frames = []
         for lf in log_files:
             lf_path = Path(lf)
@@ -110,7 +114,7 @@ if MATCHUP_RUN_DIR:
             else:
                 mid = stem
             try:
-                mdf = build_eval_dataset(lf, max_deals=max_deals)
+                mdf = build_eval_dataset(lf, max_deals=_max_deals)
                 if not mdf.empty:
                     mdf["matchup_id"] = mid
                     frames.append(mdf)
@@ -138,7 +142,7 @@ if MATCHUP_RUN_DIR and not _matchup_available:
 if not _matchup_available:
     # Synthetic demo data for CI / SMOKE
     rng = np.random.default_rng(SEED)
-    n_deals = max_deals or 30
+    n_deals = _max_deals
     matchup_ids = [
         "hybrid_olsa_r0_vs_modeloespecifico",
         "modeloespecifico_vs_hybrid_olsa_r0",
@@ -198,6 +202,74 @@ def _r0_sign(matchup_id: str) -> int:
     """Return +1 if R0 is team 0, -1 if R0 is team 1."""
     return 1 if _r0_team(matchup_id) == 0 else -1
 
+
+# %% [markdown]
+# ## Fail-Fast Validation
+#
+# Assert-style checks on loaded data to catch pipeline issues early.
+# Emulates the 20_outcome_health S1 pattern.
+
+# %%
+if not df_all.empty:
+    _validation_results = []
+
+    # Check 1: tricks_won in valid range [0, 10]
+    _range_ok = df_all["tricks_won"].between(0, 10).all()
+    _validation_results.append(
+        {"check": "tricks_won range [0,10]", "status": "PASS" if _range_ok else "FAIL"}
+    )
+    assert _range_ok, f"tricks_won out of range: {df_all['tricks_won'].describe()}"
+
+    # Check 2: tricks sum to 10 per deal
+    _deal_sums = df_all.groupby(["deal_id", "matchup_id"]).apply(
+        lambda g: g.drop_duplicates("team")["tricks_won"].sum()
+    )
+    _zerosum_ok = (_deal_sums == 10).all() if len(_deal_sums) > 0 else True
+    _validation_results.append(
+        {
+            "check": "zero-sum (t0+t1=10)",
+            "status": "PASS" if _zerosum_ok else "FAIL",
+        }
+    )
+
+    # Check 3: no missing contract_type
+    _ct_ok = df_all["contract_type"].notna().all()
+    _validation_results.append(
+        {"check": "no missing contract_type", "status": "PASS" if _ct_ok else "FAIL"}
+    )
+    assert (
+        _ct_ok
+    ), f"Missing contract_type: {df_all['contract_type'].isna().sum()} nulls"
+
+    # Check 4: no missing tricks_won
+    _tw_ok = df_all["tricks_won"].notna().all()
+    _validation_results.append(
+        {"check": "no missing tricks_won", "status": "PASS" if _tw_ok else "FAIL"}
+    )
+    assert _tw_ok, f"Missing tricks_won: {df_all['tricks_won'].isna().sum()} nulls"
+
+    print("=== Fail-Fast Validation ===")
+    for r in _validation_results:
+        print(f"  [{r['status']}] {r['check']}")
+    print(f"\nAll {len(_validation_results)} checks passed.")
+else:
+    print("WARNING: No data loaded — skipping validation.")
+
+# %%
+print("=" * 60)
+print("RUN METADATA")
+print("=" * 60)
+print(f"  Data source:    {'matchup logs' if _matchup_available else 'synthetic demo'}")
+print(f"  Run directory:  {MATCHUP_RUN_DIR or 'N/A (synthetic)'}")
+print(f"  Total deals:    {df_all['deal_id'].nunique():,}")
+print(f"  Total rows:     {len(df_all):,} (4 per deal)")
+print(
+    f"  Matchups:       {df_all['matchup_id'].nunique() if 'matchup_id' in df_all.columns else 'N/A'}"
+)
+print(f"  Mode:           {MODE}")
+print(
+    f"  Contract types: {dict(df_all.drop_duplicates('deal_id')['contract_type'].value_counts()) if not df_all.empty else 'N/A'}"
+)
 
 # %% [markdown]
 # # §1 Matchup Overview
