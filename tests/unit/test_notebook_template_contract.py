@@ -349,17 +349,23 @@ class TestRequiredR0NotebookSet:
         ), f"Paired .ipynb missing for {notebook} — run `make notebook-sync`"
 
     def test_runner_discovery_covers_all_required(self):
-        """Glob pattern used by notebook runner must discover all required R0 notebooks."""
-        import glob as glob_mod
+        """Actual notebook runner discover_notebooks() must find all required R0 notebooks."""
+        import importlib
+        import sys
 
-        repo_root = Path(__file__).resolve().parents[2]
-        pattern = str(repo_root / "notebooks" / "arc_d" / "r0" / "*.ipynb")
-        discovered = {Path(p).name for p in glob_mod.glob(pattern)}
+        # Import the runner helper directly so this test is coupled to real behavior
+        scripts_dir = str(Path(__file__).resolve().parents[2] / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        run_notebooks = importlib.import_module("run_notebooks")
+
+        discovered = run_notebooks.discover_notebooks("notebooks/arc_d/r0/*.ipynb")
+        discovered_names = {p.name for p in discovered}
         required_ipynb = {nb.replace(".py", ".ipynb") for nb in REQUIRED_R0_NOTEBOOKS}
-        missing = required_ipynb - discovered
+        missing = required_ipynb - discovered_names
         assert not missing, (
-            f"Notebook runner glob would miss: {missing} — "
-            "check filename or directory structure"
+            f"discover_notebooks() would miss: {missing} — "
+            "check runner filtering or directory structure"
         )
 
 
