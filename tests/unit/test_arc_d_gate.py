@@ -12,14 +12,19 @@ from unittest.mock import patch
 
 from bid_euchre.validation.arc_d_bundle import (
     BUNDLE_SCHEMA,
+    REQUIRED_H2H_INLINE_KEYS,
+    REQUIRED_R1_PLUS_KEYS,
     load_and_validate_bundle,
     validate_bundle,
     validate_bundle_files_exist,
 )
 from bid_euchre.validation.arc_d_gate import (
+    _DEFAULT_THRESHOLDS,
     _all_metrics_finite,
     _check_guardrails,
+    _check_h2h_primary,
     _get_metric,
+    _load_thresholds,
     normalize_eval_metrics,
     promotion_gate,
 )
@@ -42,8 +47,28 @@ upsert_registry = _registry_mod.upsert_registry
 # =============================================================================
 
 
+def _make_h2h_inline(**overrides) -> dict:
+    """Create a minimal h2h_challenger_vs_incumbent inline fixture."""
+    base = {
+        "challenger": "olsa_full_r1",
+        "incumbent": "olsa_full_r0",
+        "net_eppd_delta": 0.032,
+        "ci_low": 0.008,
+        "ci_high": 0.056,
+        "n_deals": 10000,
+        "ci_method": "paired_bootstrap",
+        "seat_directions": ["challenger_01", "challenger_23"],
+    }
+    base.update(overrides)
+    return base
+
+
 def _make_bundle(**overrides) -> dict:
-    """Create a minimal valid arc_d_rung_bundle_v1 fixture."""
+    """Create a minimal valid arc_d_rung_bundle_v1 fixture.
+
+    Includes R1+ keys (h2h_summary, h2h_challenger_vs_incumbent,
+    gate_thresholds) by default since the default rung_id is "r1".
+    """
     base = {
         "bundle_schema": BUNDLE_SCHEMA,
         "rung_id": "r1",
@@ -71,8 +96,16 @@ def _make_bundle(**overrides) -> dict:
             "eval_seed44": "data/artifacts/arc_d/r0/eval_r0_full_s44.json",
         },
         "split_manifest": "data/artifacts/arc_d/r1/split_manifest_r1.json",
+        # R1+ keys
+        "h2h_summary": "data/artifacts/arc_d/r0/h2h_battery_full.json",
+        "h2h_challenger_vs_incumbent": _make_h2h_inline(),
+        "gate_thresholds": "data/artifacts/arc_d/r0/gate_thresholds_r1.json",
     }
     base.update(overrides)
+    # R0 bundles don't have R1+ keys
+    if base.get("rung_id") == "r0":
+        for key in ("h2h_summary", "h2h_challenger_vs_incumbent", "gate_thresholds"):
+            base.pop(key, None)
     return base
 
 
@@ -135,6 +168,31 @@ def _content_hash_inline(metadata: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _make_gate_thresholds(**overrides) -> dict:
+    """Create a gate_thresholds_v1 fixture."""
+    base = {
+        "schema": "gate_thresholds_v1",
+        "generated_at": "2026-02-25T12:00:00Z",
+        "calibration_source": "h2h_battery_quick.json",
+        "calibration_method": "null_distribution_quantiles",
+        "seed": 42,
+        "thresholds": dict(_DEFAULT_THRESHOLDS),
+        "calibration_details": {
+            "null_abs_values": [0.001, 0.002, 0.003],
+            "q95_null_abs": 0.003,
+            "q99_null_abs": 0.003,
+            "self_play_net_eppd_std": 0.002,
+            "seat_swap_residual_std": 0.003,
+            "null_distribution_n": 3,
+            "self_play_cvar5_residuals": [0.01, 0.02],
+            "cvar5_residual_std": 0.007,
+            "drift_check": None,
+        },
+    }
+    base.update(overrides)
+    return base
+
+
 def _setup_gate_files(
     tmp_path: Path,
     bundle: dict,
@@ -146,6 +204,7 @@ def _setup_gate_files(
     incumbent_s43: dict | None = None,
     incumbent_s44: dict | None = None,
     artifact_type: str = "hybrid_olsa_v1",
+    gate_thresholds: dict | None = None,
 ) -> str:
     """Write bundle and referenced files to tmp_path. Returns bundle_path."""
     if challenger_metrics is None:
@@ -178,11 +237,15 @@ def _setup_gate_files(
         if path:
             _write_json(tmp_path / path, metrics)
 
-    # Write OLSa eval files
+    # Write OLSa eval files (all seeds for file existence checks)
     olsa = bundle.get("olsa", {})
     olsa_eval = olsa.get("eval_seed42")
     if olsa_eval:
         _write_json(tmp_path / olsa_eval, olsa_metrics)
+    for seed_key in ("eval_seed43", "eval_seed44"):
+        olsa_seed_path = olsa.get(seed_key)
+        if olsa_seed_path:
+            _write_json(tmp_path / olsa_seed_path, olsa_metrics)
 
     # Write incumbent eval files
     incumbent = bundle.get("incumbent", {})
@@ -206,6 +269,40 @@ def _setup_gate_files(
         }
         artifact["artifact_sha256"] = _content_hash_inline(content)
         _write_json(tmp_path / artifact_path, artifact)
+
+    # Write OLSa artifact file (for file existence checks)
+    olsa_artifact_path = olsa.get("artifact_path")
+    if olsa_artifact_path:
+        olsa_artifact = _make_artifact(artifact_type)
+        olsa_content = {
+            k: v
+            for k, v in olsa_artifact.items()
+            if k not in ("frozen_at", "artifact_sha256")
+        }
+        olsa_artifact["artifact_sha256"] = _content_hash_inline(olsa_content)
+        _write_json(tmp_path / olsa_artifact_path, olsa_artifact)
+
+    # Write incumbent artifact file (for file existence checks)
+    inc_artifact_path = incumbent.get("artifact_path")
+    if inc_artifact_path:
+        _write_json(tmp_path / inc_artifact_path, _make_artifact(artifact_type))
+
+    # Write gate thresholds file (R1+ bundles)
+    gate_thresholds_path = bundle.get("gate_thresholds")
+    if gate_thresholds_path:
+        if gate_thresholds is None:
+            gate_thresholds = _make_gate_thresholds()
+        _write_json(tmp_path / gate_thresholds_path, gate_thresholds)
+
+    # Write H2H summary file (R1+ bundles) -- minimal placeholder
+    h2h_summary_path = bundle.get("h2h_summary")
+    if h2h_summary_path:
+        _write_json(tmp_path / h2h_summary_path, {"matchups": {}})
+
+    # Write split manifest file
+    split_manifest = bundle.get("split_manifest")
+    if split_manifest:
+        _write_json(tmp_path / split_manifest, {"split_type": "three_way"})
 
     return str(bundle_path)
 
@@ -392,6 +489,11 @@ class TestBundleFilesExist:
                     _write_json(tmp_path / path, {})
         _write_json(tmp_path / bundle["incumbent"]["artifact_path"], {})
         _write_json(tmp_path / bundle["split_manifest"], {})
+        # R1+ path keys
+        if bundle.get("h2h_summary"):
+            _write_json(tmp_path / bundle["h2h_summary"], {})
+        if bundle.get("gate_thresholds"):
+            _write_json(tmp_path / bundle["gate_thresholds"], {})
 
         valid, errors = validate_bundle_files_exist(bundle, str(tmp_path))
         assert valid, f"Expected valid, got errors: {errors}"
@@ -962,6 +1064,305 @@ class TestPromotionGate:
         )
         # Should reach improvement gate (not HALT on missing fields)
         assert decision in ("PROMOTED", "ADVANCED")
+
+
+# =============================================================================
+# TestThresholdLoading
+# =============================================================================
+
+
+class TestThresholdLoading:
+    """Tests for _load_thresholds()."""
+
+    def test_r0_uses_defaults(self):
+        """R0 returns _DEFAULT_THRESHOLDS without needing artifact."""
+        result = _load_thresholds("/nonexistent", "r0")
+        assert result == _DEFAULT_THRESHOLDS
+
+    def test_r1_loads_from_file(self, tmp_path):
+        """R1 loads thresholds from gate_thresholds_r1.json."""
+        thresholds_data = _make_gate_thresholds()
+        # Override one value to verify it's loaded
+        thresholds_data["thresholds"]["delta_floor"] = 0.025
+        thresholds_path = tmp_path / "gate_thresholds_r1.json"
+        _write_json(thresholds_path, thresholds_data)
+
+        result = _load_thresholds(
+            str(tmp_path), "r1", thresholds_path="gate_thresholds_r1.json"
+        )
+        assert result["delta_floor"] == 0.025
+
+    def test_r1_auto_discovers(self, tmp_path):
+        """R1 auto-discovers gate_thresholds_r1.json in base_dir."""
+        thresholds_data = _make_gate_thresholds()
+        thresholds_data["thresholds"]["delta_floor"] = 0.03
+        _write_json(tmp_path / "gate_thresholds_r1.json", thresholds_data)
+
+        result = _load_thresholds(str(tmp_path), "r1")
+        assert result["delta_floor"] == 0.03
+
+    def test_r1_falls_back_to_defaults_without_file(self, tmp_path):
+        """R1 falls back to defaults with warning when no file found."""
+        result = _load_thresholds(str(tmp_path), "r1")
+        assert result == _DEFAULT_THRESHOLDS
+
+    def test_r1_fails_with_explicit_missing_path(self, tmp_path):
+        """R1 hard fails if explicit thresholds_path doesn't exist."""
+        import pytest
+
+        with pytest.raises(FileNotFoundError, match="Threshold artifact not found"):
+            _load_thresholds(str(tmp_path), "r1", thresholds_path="missing.json")
+
+    def test_threshold_loading_schema_validation(self, tmp_path):
+        """Malformed threshold artifact raises clear error."""
+        import pytest
+
+        bad_data = {"schema": "wrong_schema", "thresholds": {}}
+        _write_json(tmp_path / "bad.json", bad_data)
+
+        with pytest.raises(ValueError, match="gate_thresholds_v1"):
+            _load_thresholds(str(tmp_path), "r1", thresholds_path="bad.json")
+
+    def test_threshold_loading_missing_keys(self, tmp_path):
+        """Threshold artifact missing required keys raises error."""
+        import pytest
+
+        bad_data = {
+            "schema": "gate_thresholds_v1",
+            "thresholds": {"delta_floor": 0.01},  # Missing other required keys
+        }
+        _write_json(tmp_path / "partial.json", bad_data)
+
+        with pytest.raises(ValueError, match="missing required keys"):
+            _load_thresholds(str(tmp_path), "r1", thresholds_path="partial.json")
+
+
+# =============================================================================
+# TestH2HPrimaryGate
+# =============================================================================
+
+
+class TestH2HPrimaryGate:
+    """Tests for H2H-primary promotion gate (R1+)."""
+
+    def test_h2h_primary_promoted(self, tmp_path):
+        """CI_low > delta_floor -> PROMOTED."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        )
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            challenger_metrics=_make_eval_metrics(net_eppd=0.60),
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+        )
+        decision, reasons = promotion_gate(
+            bundle_path, "r1", str(tmp_path), skip_eligibility=True
+        )
+        assert decision == "PROMOTED"
+        assert any("H2H primary" in r for r in reasons)
+
+    def test_h2h_primary_halt(self, tmp_path):
+        """CI_high < -regression_threshold -> HALT."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.10, ci_high=-0.06, net_eppd_delta=-0.08
+            )
+        )
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            challenger_metrics=_make_eval_metrics(net_eppd=0.35),
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+        )
+        decision, reasons = promotion_gate(
+            bundle_path, "r1", str(tmp_path), skip_eligibility=True
+        )
+        assert decision == "HALT"
+        assert any("H2H primary" in r for r in reasons)
+
+    def test_h2h_primary_advanced(self, tmp_path):
+        """In-between CIs -> falls through to self-play gate (ADVANCED)."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
+            )
+        )
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            # Challenger barely above incumbent (within noise) -> ADVANCED via self-play
+            challenger_metrics=_make_eval_metrics(
+                net_eppd=0.405, std_points=2.0, n_deals=50000
+            ),
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+        )
+        decision, reasons = promotion_gate(
+            bundle_path, "r1", str(tmp_path), skip_eligibility=True
+        )
+        assert decision == "ADVANCED"
+        assert any("insufficient improvement" in r for r in reasons)
+
+    def test_guardrails_use_loaded_thresholds(self, tmp_path):
+        """Guardrails apply artifact threshold values, not hardcoded constants."""
+        # Create thresholds with wider bid_rate range
+        custom_thresholds = _make_gate_thresholds()
+        custom_thresholds["thresholds"]["bid_rate_min"] = 0.01
+        custom_thresholds["thresholds"]["bid_rate_max"] = 0.99
+
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        )
+        bundle_path = _setup_gate_files(
+            tmp_path,
+            bundle,
+            # bid_rate=0.03 would fail default thresholds (0.05) but pass custom (0.01)
+            challenger_metrics=_make_eval_metrics(net_eppd=0.60, bid_rate=0.03),
+            incumbent_metrics=_make_eval_metrics(net_eppd=0.40),
+            gate_thresholds=custom_thresholds,
+        )
+        decision, reasons = promotion_gate(
+            bundle_path, "r1", str(tmp_path), skip_eligibility=True
+        )
+        # Should NOT halt on bid_rate because custom threshold allows 0.01-0.99
+        assert decision == "PROMOTED"
+        assert any("H2H primary" in r for r in reasons)
+
+    def test_h2h_check_function_promoted(self):
+        """_check_h2h_primary returns PROMOTED when ci_low > delta_floor."""
+        bundle = {
+            "h2h_challenger_vs_incumbent": _make_h2h_inline(
+                ci_low=0.02, ci_high=0.06, net_eppd_delta=0.04
+            )
+        }
+        thresholds = dict(_DEFAULT_THRESHOLDS)
+        decision, reason = _check_h2h_primary(bundle, thresholds)
+        assert decision == "PROMOTED"
+        assert "H2H primary" in reason
+
+    def test_h2h_check_function_halt(self):
+        """_check_h2h_primary returns HALT when ci_high < -regression_threshold."""
+        bundle = {
+            "h2h_challenger_vs_incumbent": _make_h2h_inline(
+                ci_low=-0.10, ci_high=-0.06, net_eppd_delta=-0.08
+            )
+        }
+        thresholds = dict(_DEFAULT_THRESHOLDS)
+        decision, reason = _check_h2h_primary(bundle, thresholds)
+        assert decision == "HALT"
+        assert "H2H primary" in reason
+
+    def test_h2h_check_function_inconclusive(self):
+        """_check_h2h_primary returns None when CI spans zero."""
+        bundle = {
+            "h2h_challenger_vs_incumbent": _make_h2h_inline(
+                ci_low=-0.02, ci_high=0.04, net_eppd_delta=0.01
+            )
+        }
+        thresholds = dict(_DEFAULT_THRESHOLDS)
+        decision, reason = _check_h2h_primary(bundle, thresholds)
+        assert decision is None
+        assert reason is None
+
+    def test_h2h_check_function_missing_data(self):
+        """_check_h2h_primary returns None when h2h data is absent."""
+        bundle = {}
+        thresholds = dict(_DEFAULT_THRESHOLDS)
+        decision, reason = _check_h2h_primary(bundle, thresholds)
+        assert decision is None
+        assert reason is None
+
+
+# =============================================================================
+# TestR1BundleValidation
+# =============================================================================
+
+
+class TestR1BundleValidation:
+    """Tests for R1+ bundle key enforcement."""
+
+    def test_r1_bundle_missing_h2h_keys_fails(self):
+        """R1 bundle without REQUIRED_R1_PLUS_KEYS -> validation error."""
+        bundle = _make_bundle()
+        # Remove R1+ keys
+        del bundle["h2h_summary"]
+        del bundle["h2h_challenger_vs_incumbent"]
+        del bundle["gate_thresholds"]
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("R1+ bundle missing" in e for e in errors)
+
+    def test_r0_bundle_without_h2h_keys_passes(self):
+        """R0 bundle passes without R1+ keys (backward compat)."""
+        bundle = _make_bundle(rung_id="r0")
+        # R0 bundles don't have R1+ keys (stripped by _make_bundle)
+        assert "h2h_summary" not in bundle
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
+
+    def test_r1_h2h_inline_missing_subkeys_fails(self):
+        """R1 h2h_challenger_vs_incumbent missing required sub-keys -> error."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent={"challenger": "x"}  # Missing most keys
+        )
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("h2h_challenger_vs_incumbent missing" in e for e in errors)
+
+    def test_r1_h2h_inline_wrong_type_fails(self):
+        """R1 h2h_challenger_vs_incumbent as non-dict -> error."""
+        bundle = _make_bundle(h2h_challenger_vs_incumbent="not_a_dict")
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("h2h_challenger_vs_incumbent must be a dict" in e for e in errors)
+
+    def test_r1_h2h_files_checked(self, tmp_path):
+        """validate_bundle_files_exist checks h2h_summary + gate_thresholds paths."""
+        bundle = _make_bundle()
+        # Only create base files, not h2h_summary / gate_thresholds
+        for arm in ("olsa", "olsa_full"):
+            for key in ("artifact_path", "eval_seed42", "eval_seed43", "eval_seed44"):
+                path = bundle[arm].get(key)
+                if path:
+                    _write_json(tmp_path / path, {})
+        _write_json(tmp_path / bundle["incumbent"]["artifact_path"], {})
+        _write_json(tmp_path / bundle["split_manifest"], {})
+        # Don't write h2h_summary or gate_thresholds
+
+        valid, errors = validate_bundle_files_exist(bundle, str(tmp_path))
+        assert not valid
+        assert any("h2h_battery_full.json" in e for e in errors)
+        assert any("gate_thresholds_r1.json" in e for e in errors)
+
+    def test_r1_h2h_path_type_validation(self):
+        """R1 h2h_summary must be string path."""
+        bundle = _make_bundle(h2h_summary=42)
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("h2h_summary must be a string" in e for e in errors)
+
+    def test_r1_gate_thresholds_path_type_validation(self):
+        """R1 gate_thresholds must be string path."""
+        bundle = _make_bundle(gate_thresholds={"nested": "dict"})
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("gate_thresholds must be a string" in e for e in errors)
+
+    def test_r1_bundle_with_all_keys_passes(self):
+        """R1 bundle with all required R1+ keys passes validation."""
+        bundle = _make_bundle()
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
+        # Verify R1+ keys are present
+        for key in REQUIRED_R1_PLUS_KEYS:
+            assert key in bundle
+        # Verify inline H2H has all required sub-keys
+        for key in REQUIRED_H2H_INLINE_KEYS:
+            assert key in bundle["h2h_challenger_vs_incumbent"]
 
 
 # =============================================================================

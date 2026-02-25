@@ -45,6 +45,12 @@ def main():
         default=".",
         help="Base directory for resolving relative paths (default: .)",
     )
+    parser.add_argument(
+        "--thresholds",
+        type=str,
+        default=None,
+        help="Path to gate thresholds JSON (auto-discovered if not provided)",
+    )
     args = parser.parse_args()
 
     bundle_path = args.bundle
@@ -60,7 +66,9 @@ def main():
         sys.exit(1)
 
     # Run the gate
-    decision, reasons = promotion_gate(bundle_path, rung_id, base_dir)
+    decision, reasons = promotion_gate(
+        bundle_path, rung_id, base_dir, thresholds_path=args.thresholds
+    )
 
     # Print result
     print(f"Decision: {decision}")

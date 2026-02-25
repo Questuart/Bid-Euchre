@@ -1,0 +1,40 @@
+{
+  "bundle_schema": "arc_d_rung_bundle_v1",
+  "rung_id": "r1",
+  "arc": "arc_d",
+  "timestamp": "2026-02-25T12:00:00Z",
+  "olsa": {
+    "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1.json",
+    "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "eval_seed42": "data/artifacts/arc_d/r1/eval_r1.json",
+    "eval_seed43": "data/artifacts/arc_d/r1/eval_r1_s43.json",
+    "eval_seed44": "data/artifacts/arc_d/r1/eval_r1_s44.json"
+  },
+  "olsa_full": {
+    "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+    "artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "eval_seed42": "data/artifacts/arc_d/r1/eval_r1_full.json",
+    "eval_seed43": "data/artifacts/arc_d/r1/eval_r1_full_s43.json",
+    "eval_seed44": "data/artifacts/arc_d/r1/eval_r1_full_s44.json"
+  },
+  "incumbent": {
+    "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+    "rung_id": "r0",
+    "eval_seed42": "data/artifacts/arc_d/r0/eval_r0_full.json",
+    "eval_seed43": "data/artifacts/arc_d/r0/eval_r0_full_s43.json",
+    "eval_seed44": "data/artifacts/arc_d/r0/eval_r0_full_s44.json"
+  },
+  "split_manifest": "data/artifacts/arc_d/r1/split_manifest_r1.json",
+  "h2h_summary": "data/artifacts/arc_d/r0/h2h_battery_full.json",
+  "h2h_challenger_vs_incumbent": {
+    "challenger": "olsa_full_r1",
+    "incumbent": "olsa_full_r0",
+    "net_eppd_delta": 0.032,
+    "ci_low": 0.008,
+    "ci_high": 0.056,
+    "n_deals": 10000,
+    "ci_method": "paired_bootstrap",
+    "seat_directions": ["challenger_01", "challenger_23"]
+  },
+  "gate_thresholds": "data/artifacts/arc_d/r0/gate_thresholds_r1.json"
+}

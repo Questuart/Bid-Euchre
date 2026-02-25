@@ -39,6 +39,25 @@ REQUIRED_INCUMBENT_KEYS = {
 
 VALID_RUNG_IDS = {f"r{i}" for i in range(6)}
 
+# Keys required for R1+ bundles (not required for R0)
+REQUIRED_R1_PLUS_KEYS = {
+    "h2h_summary",
+    "h2h_challenger_vs_incumbent",
+    "gate_thresholds",
+}
+
+# Required sub-keys for h2h_challenger_vs_incumbent inline data
+REQUIRED_H2H_INLINE_KEYS = {
+    "challenger",
+    "incumbent",
+    "net_eppd_delta",
+    "ci_low",
+    "ci_high",
+    "n_deals",
+    "ci_method",
+    "seat_directions",
+}
+
 
 def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
     """Validate arc_d_rung_bundle_v1 schema.
@@ -108,6 +127,36 @@ def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
                 f"{comp_key} must be a string path or null, got {type(comp_val).__name__}"
             )
 
+    # R1+ required keys (not required for R0)
+    if rung_id is not None and rung_id != "r0":
+        missing_r1 = REQUIRED_R1_PLUS_KEYS - set(bundle.keys())
+        if missing_r1:
+            errors.append(f"R1+ bundle missing required keys: {sorted(missing_r1)}")
+
+        # Type-validate h2h_challenger_vs_incumbent as dict with required sub-keys
+        h2h_inline = bundle.get("h2h_challenger_vs_incumbent")
+        if h2h_inline is not None:
+            if not isinstance(h2h_inline, dict):
+                errors.append(
+                    f"h2h_challenger_vs_incumbent must be a dict, "
+                    f"got {type(h2h_inline).__name__}"
+                )
+            else:
+                missing_h2h = REQUIRED_H2H_INLINE_KEYS - set(h2h_inline.keys())
+                if missing_h2h:
+                    errors.append(
+                        f"h2h_challenger_vs_incumbent missing required keys: "
+                        f"{sorted(missing_h2h)}"
+                    )
+
+        # Type-validate h2h_summary and gate_thresholds as strings (paths)
+        for path_key in ("h2h_summary", "gate_thresholds"):
+            path_val = bundle.get(path_key)
+            if path_val is not None and not isinstance(path_val, str):
+                errors.append(
+                    f"{path_key} must be a string path, got {type(path_val).__name__}"
+                )
+
     return (len(errors) == 0, errors)
 
 
@@ -160,6 +209,12 @@ def validate_bundle_files_exist(bundle: dict, base_dir: str) -> tuple[bool, list
         comp_path = bundle.get(comp_key)
         if comp_path:
             file_paths.append(comp_path)
+
+    # R1+ path keys (h2h_summary, gate_thresholds are paths; h2h_challenger_vs_incumbent is inline)
+    for h2h_key in ("h2h_summary", "gate_thresholds"):
+        h2h_path = bundle.get(h2h_key)
+        if h2h_path and isinstance(h2h_path, str):
+            file_paths.append(h2h_path)
 
     for fp in file_paths:
         full_path = base / fp
