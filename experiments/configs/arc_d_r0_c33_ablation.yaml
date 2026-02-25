@@ -1,0 +1,62 @@
+# C33 Ablation: hybrid_olsa vs olsa mini-H2H
+#
+# Tests whether the Gaussian EV decision layer (HybridOLSaBidder) adds value
+# over the simple floor-based decision layer (OLSaBidder) when both use
+# identical regression coefficients from hybrid_r0.json (constrained arm).
+#
+# 4 matchups: self-play for each + both seat rotations of cross-matchup.
+# All trick play uses GluttonStrategy; only bidding policies vary.
+#
+# 4 matchups × 1 scenario × 10,000 hands = 40,000 hands.
+
+experiment_name: arc_d_r0_c33_ablation
+
+parameters:
+  seed: 42
+  n_per: 10000
+  log_level: hand
+  mode: head_to_head_matrix
+  pair_deals: true
+
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+bidding_policies:
+  - name: hybrid_olsa
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+
+  - name: olsa
+    class_name: OLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+
+matchups:
+  # hybrid_olsa self-play
+  - matchup_id: hybrid_olsa_self_play
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa, hybrid_olsa, hybrid_olsa, hybrid_olsa]
+
+  # olsa self-play
+  - matchup_id: olsa_self_play
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [olsa, olsa, olsa, olsa]
+
+  # hybrid_olsa vs olsa (hybrid as seats 0,2)
+  - matchup_id: hybrid_olsa_vs_olsa
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa, olsa, hybrid_olsa, olsa]
+
+  # olsa vs hybrid_olsa (olsa as seats 0,2)
+  - matchup_id: olsa_vs_hybrid_olsa
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [olsa, hybrid_olsa, olsa, hybrid_olsa]
+
+scenarios:
+  - contract_type: null   # Auction mode — bidders actually bid

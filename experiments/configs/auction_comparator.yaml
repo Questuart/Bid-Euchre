@@ -1,13 +1,15 @@
 # Auction Comparator: compare bidders in auction mode
 #
-# Primary metric: expected_points over bid-hands only
+# Primary metric: net_eppd (expected net differential per deal)
 # Gate: bid_rate > 0 for every comparator
 #
 # Usage:
 #   uv run python scripts/run_auction_comparator.py \
 #     --config experiments/configs/auction_comparator.yaml \
 #     --seed 42 \
-#     --olsa-artifact /path/to/olsa_v1.json
+#     --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0.json \
+#     --bidder-class HybridOLSaBidder \
+#     --bidder-name hybrid_olsa
 
 experiment_name: auction_comparator
 
@@ -25,8 +27,20 @@ bidding_policies:
   - name: modeloespecifico
     class_name: ModeloEspecifico
 
-  # OLSa is added dynamically by run_auction_comparator.py
-  # if --olsa-artifact is provided
+  # OLSa floor-based bidder using constrained-arm coefficients
+  - name: olsa
+    class_name: OLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+
+  # OLSa floor-based bidder using full-arm coefficients
+  - name: olsa_full
+    class_name: OLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+
+  # hybrid_olsa is added dynamically by run_auction_comparator.py
+  # if --olsa-artifact is provided with --bidder-class HybridOLSaBidder
 
 scenarios:
   - contract_type: null  # Auction mode
