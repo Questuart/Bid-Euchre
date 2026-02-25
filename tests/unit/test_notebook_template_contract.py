@@ -4,6 +4,7 @@ These tests validate the template's structural contract by reading the
 .py source file directly — no notebook execution required.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -367,10 +368,9 @@ class TestArcDTemplateContract:
 
     def test_outcome_health_imports(self):
         source = ARC_D_TEMPLATES["20_outcome_health"].read_text()
-        assert "from bid_euchre.diagnostics.auction_charts import" in source, (
-            "20_outcome_health must import from "
-            "bid_euchre.diagnostics.auction_charts"
-        )
+        assert (
+            "from bid_euchre.diagnostics.auction_charts import" in source
+        ), "20_outcome_health must import from bid_euchre.diagnostics.auction_charts"
 
     def test_feature_outcome_eval_imports(self):
         source = ARC_D_TEMPLATES["30_feature_outcome_eval"].read_text()
@@ -390,3 +390,107 @@ class TestArcDTemplateContract:
         assert (
             "IsADirectoryError" in source
         ), "30_feature_outcome_eval must handle IsADirectoryError"
+
+
+# ──────────────────────────────────────────────
+#  C59 prefix-convention contract tests
+# ──────────────────────────────────────────────
+
+
+class TestC59PrefixConvention:
+    """Validate no feat_-prefix anti-patterns exist in R0 notebooks.
+
+    The diagnostics chart API (plot_feature_distributions,
+    plot_feature_outcome_correlation, plot_feature_heatmap_by_suit)
+    expects UNPREFIXED feature names and internally re-adds the feat_
+    prefix. Passing feat_-prefixed names causes a double-prefix bug
+    (feat_feat_*) → no matching columns → empty/broken charts.
+
+    These tests catch regressions by detecting the anti-pattern.
+    """
+
+    R0_NOTEBOOK_DIR = Path(__file__).resolve().parents[2] / "notebooks" / "arc_d" / "r0"
+
+    PLOT_FUNCTIONS_NEEDING_UNPREFIXED = [
+        "plot_feature_distributions",
+        "plot_feature_outcome_correlation",
+        "plot_feature_heatmap_by_suit",
+    ]
+
+    def _get_r0_notebooks(self):
+        """Return all .py notebook files in the R0 directory."""
+        nbs = sorted(self.R0_NOTEBOOK_DIR.glob("*.py"))
+        assert nbs, f"No .py notebooks found in {self.R0_NOTEBOOK_DIR}"
+        return nbs
+
+    def test_no_double_prefix_literal(self):
+        """No notebook should contain the literal string 'feat_feat_'."""
+        for nb_path in self._get_r0_notebooks():
+            source = nb_path.read_text()
+            # Skip comments
+            code_lines = [
+                line for line in source.split("\n") if not line.strip().startswith("#")
+            ]
+            code_text = "\n".join(code_lines)
+            assert (
+                "feat_feat_" not in code_text
+            ), f"{nb_path.name} contains 'feat_feat_' — double-prefix bug detected"
+
+    @pytest.mark.parametrize(
+        "func_name",
+        [
+            "plot_feature_distributions",
+            "plot_feature_outcome_correlation",
+            "plot_feature_heatmap_by_suit",
+        ],
+    )
+    def test_plot_calls_use_unprefixed_features(self, func_name):
+        """Plot functions that expect unprefixed names must not receive feat_-prefixed args.
+
+        For each R0 notebook that calls a prefix-sensitive plot function with
+        features=<var>, verify that the variable was built with prefix stripping
+        (removeprefix or replace).
+        """
+        pattern = re.compile(
+            rf"{func_name}\s*\([^)]*features\s*=\s*(\w+)",
+            re.MULTILINE,
+        )
+        strip_patterns = [
+            r'removeprefix\s*\(\s*["\']feat_',
+            r'\.replace\s*\(\s*["\']feat_["\']\s*,\s*["\']["\']',
+            r'\.lstrip\s*\(\s*["\']feat_',
+        ]
+
+        for nb_path in self._get_r0_notebooks():
+            source = nb_path.read_text()
+            # Find all calls to this function with features= argument
+            for match in pattern.finditer(source):
+                var_name = match.group(1)
+                # Check if this variable name appears near a prefix-strip operation.
+                # Search the whole file for "var_name = ... removeprefix ..."
+                # Use re.DOTALL so .* spans newlines (multi-line list comprehensions).
+                has_strip = False
+                for sp in strip_patterns:
+                    if re.search(
+                        rf"{var_name}\s*=.*?{sp}",
+                        source,
+                        re.DOTALL,
+                    ):
+                        has_strip = True
+                        break
+                # Also accept if the variable is built from unprefixed literals
+                # e.g., features=["hand_value", "trump_count"]
+                if re.search(
+                    rf'{var_name}\s*=\s*\[(?:["\'][a-z_]+["\'],?\s*)+\]',
+                    source,
+                ):
+                    has_strip = True
+
+                if not has_strip:
+                    # This catches: top5 = df[feat_cols].var().nlargest(5).index
+                    # Without: top5_names = [c.removeprefix("feat_") for c in top5]
+                    assert False, (
+                        f"{nb_path.name}: {func_name}(features={var_name}) — "
+                        f"variable '{var_name}' may contain feat_-prefixed names. "
+                        f"Ensure prefix is stripped before passing to {func_name}()."
+                    )
