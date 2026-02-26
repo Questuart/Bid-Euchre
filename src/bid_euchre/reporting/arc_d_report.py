@@ -577,6 +577,11 @@ def _render_model_specification(
 
         lines.append(f"### {arm_label} Coefficients")
         lines.append("")
+        risk_lambda = model_data.get("risk_lambda")
+        if risk_lambda is not None:
+            lines.append(f"**risk_lambda:** {risk_lambda}")
+            lines.append("")
+        residual_variance = model_data.get("residual_variance", {})
         for contract, model in sorted(payoff.items()):
             fnames = model.get("feature_names", [])
             weights = model.get("weights", [])
@@ -585,7 +590,11 @@ def _render_model_specification(
                 continue
             lines.append(f"#### {contract}")
             lines.append("")
-            lines.append(f"Bias: {bias:.4f}")
+            rv = residual_variance.get(contract)
+            if isinstance(rv, (int, float)):
+                lines.append(f"Bias: {bias:.4f} | Residual variance: {rv:.4f}")
+            else:
+                lines.append(f"Bias: {bias:.4f}")
             lines.append("")
             lines.append("| Feature | Weight |")
             lines.append("|---------|--------|")
