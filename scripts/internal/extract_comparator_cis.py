@@ -195,6 +195,11 @@ def main():
         help="Output JSON path",
     )
     parser.add_argument(
+        "--battery-file",
+        default="comparator_battery_r0.json",
+        help="Battery JSON filename within artifacts-dir (default: comparator_battery_r0.json)",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Write output even if JSONL-vs-battery validation fails",
@@ -205,7 +210,7 @@ def main():
     runs_dir = Path(args.runs_dir)
 
     # Load comparator battery to get bidder list
-    battery_path = artifacts_dir / "comparator_battery_r0.json"
+    battery_path = artifacts_dir / args.battery_file
     if not battery_path.exists():
         print(f"ERROR: {battery_path} not found", file=sys.stderr)
         sys.exit(1)
