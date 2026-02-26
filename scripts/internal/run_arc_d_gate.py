@@ -17,14 +17,10 @@ Exit codes:
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
+from bid_euchre.core.time import utc_now_iso
 from bid_euchre.validation.arc_d_gate import promotion_gate
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def main():
@@ -83,7 +79,7 @@ def main():
         "decision": decision,
         "reasons": reasons,
         "bundle_path": bundle_path,
-        "timestamp": _utc_now_iso(),
+        "timestamp": utc_now_iso(),
     }
 
     decision_path = Path(bundle_path).parent / f"promotion_decision_{rung_id}.json"

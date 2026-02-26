@@ -14,16 +14,12 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-
-def _utc_now_iso() -> str:
-    """UTC time in ISO8601 with Z suffix."""
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+from bid_euchre.core.time import utc_now_iso
 
 
 def _sha256_file(path: str) -> str:
@@ -76,7 +72,13 @@ class SplitManifest:
 
     @classmethod
     def from_dict(cls, d: dict) -> SplitManifest:
-        return cls(**{k: v for k, v in d.items() if k in {f.name for f in dataclasses.fields(cls)}})
+        return cls(
+            **{
+                k: v
+                for k, v in d.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
 
     def save(self, path: str | Path) -> None:
         """Write manifest to JSON file."""
@@ -126,7 +128,9 @@ def create_grouped_split(
         (train_df, val_df_or_None, test_df, manifest)
     """
     if split_type not in ("two_way", "three_way"):
-        raise ValueError(f"split_type must be 'two_way' or 'three_way', got {split_type!r}")
+        raise ValueError(
+            f"split_type must be 'two_way' or 'three_way', got {split_type!r}"
+        )
 
     unique_ids = df["hand_id"].unique()
     rng = np.random.RandomState(seed)
@@ -162,7 +166,7 @@ def create_grouped_split(
             source_run_id=source_run_id,
             source_parquet_sha256=_sha256_file(source_parquet_path),
             partition_hashes=partition_hashes,
-            created_at_utc=_utc_now_iso(),
+            created_at_utc=utc_now_iso(),
         )
 
     else:  # three_way
@@ -203,7 +207,7 @@ def create_grouped_split(
             source_run_id=source_run_id,
             source_parquet_sha256=_sha256_file(source_parquet_path),
             partition_hashes=partition_hashes,
-            created_at_utc=_utc_now_iso(),
+            created_at_utc=utc_now_iso(),
         )
 
     return train_df, val_df, test_df, manifest
@@ -228,10 +232,9 @@ def verify_split_manifest(manifest: SplitManifest, df: pd.DataFrame, seed: int) 
         train_ids = unique_ids[:split_idx]
         test_ids = unique_ids[split_idx:]
 
-        return (
-            _hash_hand_ids(train_ids) == manifest.partition_hashes.get("train")
-            and _hash_hand_ids(test_ids) == manifest.partition_hashes.get("test")
-        )
+        return _hash_hand_ids(train_ids) == manifest.partition_hashes.get(
+            "train"
+        ) and _hash_hand_ids(test_ids) == manifest.partition_hashes.get("test")
     else:
         train_end = int(n_total * manifest.train_fraction)
         val_end = train_end + int(n_total * (manifest.val_fraction or 0))
