@@ -1196,7 +1196,7 @@ if not df.empty and "is_declaring_team" in df.columns and "winning_bid" in df.co
             n=("made_bid", "count"),
         )
         wr_by_bid["mean_surplus"] = decl_bidder.groupby("winning_bid").apply(
-            lambda g: (g["tricks_won"] - g["winning_bid"]).mean(),
+            lambda g: (g["tricks_won"] - g.name).mean(),
             include_groups=False,
         )
         print("\n=== Win Rate by Bid Value (Declaring Bidder) ===")
