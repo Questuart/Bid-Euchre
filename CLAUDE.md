@@ -139,7 +139,6 @@ uv run python -m pytest tests/unit/core/test_rules.py::test_specific  # Single t
 | `reporting/` | Report generation utilities |
 | `logging/` | JSONL game logging |
 | `analysis/` | Statistical analysis (stats, paired comparisons, models) |
-| `utils/` | Shared utility functions |
 | `validation/` | Promotion validation and schemas |
 | `scoring.py` | Top-level scoring module |
 

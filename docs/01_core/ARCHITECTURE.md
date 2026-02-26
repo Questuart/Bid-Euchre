@@ -19,7 +19,7 @@ Submodules:
 - `models/` — Model training/inference
 - `diagnostics/` — Visualization and analysis tools
 - `validation/` — Schema validation
-- `reporting/`, `logging/`, `analysis/`, `utils/` — Supporting utilities
+- `reporting/`, `logging/`, `analysis/` — Supporting utilities
 
 ### `experiments/`
 **Experiment configurations and canonical runner.**
