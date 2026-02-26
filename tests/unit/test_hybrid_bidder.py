@@ -262,6 +262,45 @@ def test_config_registration():
     assert "artifact_path" in BIDDING_REQUIRED_PARAMS["HybridOLSaBidder"]
 
 
+def test_cvar_uses_continuity_corrected_threshold(tmp_path: Path):
+    """CVaR make/set threshold matches EV's continuity correction (bid_n - 0.5).
+
+    We pick mu well above bid_n so the 5th-percentile tail straddles the
+    correction zone [bid_n - 0.5, bid_n). Draws in that region are classified
+    as "make" (net = 2x - 10) with the correction but "set" (net = x - bid_n - 10)
+    without it — a ~11-point swing per draw that materially changes CVaR.
+    """
+    path = _make_artifact(tmp_path, risk_lambda=1.0)
+    bidder = HybridOLSaBidder(path)
+
+    # mu=8, sigma=1.5, bid_n=6 → 5th pctile ≈ 5.53, right in [5.5, 6.0)
+    mu, sigma, bid_n = 8.0, 1.5, 6
+
+    # Compute penalty with the corrected threshold (bid_n - 0.5 = 5.5)
+    penalty_corrected = bidder._compute_risk_penalty(mu, sigma, bid_n)
+
+    # Manually compute what penalty would be WITHOUT the correction
+    # (using bid_n as threshold instead of bid_n - 0.5)
+    rng = np.random.RandomState(bidder._CVAR_SEED)
+    draws = rng.normal(mu, sigma, bidder._CVAR_DRAWS)
+    nets_uncorrected = np.where(
+        draws >= bid_n,  # no continuity correction
+        2.0 * draws - 10.0,
+        draws - bid_n - 10.0,
+    )
+    tail_size = max(1, int(bidder._CVAR_DRAWS * bidder._CVAR_TAIL))
+    sorted_nets = np.sort(nets_uncorrected)
+    cvar_uncorrected = float(sorted_nets[:tail_size].mean())
+    penalty_uncorrected = max(0.0, -cvar_uncorrected) * bidder.risk_lambda
+
+    # Corrected threshold is more lenient (more draws classified as "make"),
+    # so the penalty should be strictly lower than the uncorrected version
+    assert penalty_corrected < penalty_uncorrected, (
+        f"Corrected penalty {penalty_corrected:.4f} should be less than "
+        f"uncorrected {penalty_uncorrected:.4f}"
+    )
+
+
 def test_risk_lambda_override(tmp_path: Path):
     """risk_lambda parameter overrides artifact value."""
     path = _make_artifact(tmp_path, risk_lambda=0.5)

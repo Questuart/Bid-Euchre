@@ -962,9 +962,10 @@ class HybridOLSaBidder(BiddingPolicy):
         rng = np.random.RandomState(self._CVAR_SEED)
         draws = rng.normal(mu, sigma, self._CVAR_DRAWS)
 
-        # Compute net differential for each draw
+        # Compute net differential for each draw (continuity-corrected to match EV)
+        threshold = bid_n - 0.5
         nets = np.where(
-            draws >= bid_n,
+            draws >= threshold,
             2.0 * draws - 10.0,
             draws - bid_n - 10.0,
         )
