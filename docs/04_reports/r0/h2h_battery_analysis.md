@@ -227,11 +227,13 @@ is small and does not affect cross-matchup interpretation.
 | rankthetank | 0 | 6 | 0 | 6 |
 | stricthellraiser | 0 | 6 | 0 | 6 |
 
-**Note on win counts:** modeloespecifico and hybrid_olsa are tied at the QUICK
-resolution (9W vs 7W is misleading because modeloespecifico's draws resolve
-differently at higher power). The FULL subset only reran 6 modeloespecifico
-cross-matchups vs 12 for hybrid_olsa, so raw win counts are not directly
-comparable across bidders. Use the pairwise results below instead.
+**Note on win counts:** At QUICK resolution, modeloespecifico leads with 9W-0L
+vs hybrid_olsa's 7W-2L. However, modeloespecifico has 3 draws (CIs spanning
+zero at 2k deals) that may resolve with more data, while hybrid_olsa's 2
+losses are both to modeloespecifico. The FULL subset only reran 6
+modeloespecifico cross-matchups vs 12 for hybrid_olsa, so FULL win counts
+are not directly comparable across bidders. Use the pairwise results below
+instead.
 
 ### 4.4 Key Pairwise Matchups (FULL, 10k deals)
 
@@ -390,12 +392,15 @@ Run directories (local only, `data/runs/`):
    The mechanism is selective restraint (62.5% bid rate, 87.7% make rate).
 
 2. **hybrid_olsa ranks #2 overall** behind the domain-expert modeloespecifico
-   in self-play comparators, but the H2H gap to modeloespecifico (+0.64-0.78
-   net_eppd) is smaller than the self-play gap (+0.62) would suggest.
+   in self-play comparators. The H2H gap (+0.64-0.78 net_eppd) is comparable
+   to or larger than the self-play gap (+0.62), confirming modeloespecifico's
+   advantage is robust across evaluation methods.
 
-3. **The trained-vs-heuristic gap is enormous.** All four trained bidders
-   (including the simple floor-based olsa) dominate all three heuristic
-   bidders by 1-8 net_eppd. The OLS regression coefficients provide massive
+3. **The OLS-vs-heuristic gap is enormous.** The three OLS-trained bidders
+   (hybrid_olsa, olsa_full, olsa) dominate all three simple heuristics
+   (rankthetank, fiveheadfred, stricthellraiser) by 1-8 net_eppd.
+   modeloespecifico (a hand-tuned lookup table, not OLS-trained) also
+   dominates the heuristics. The OLS regression coefficients provide massive
    value even without the Gaussian wrapper.
 
 4. **olsa vs olsa_full is a draw in H2H** despite olsa_full's advantage in
