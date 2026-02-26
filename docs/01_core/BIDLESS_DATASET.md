@@ -61,10 +61,10 @@ Emit bidless datasets during simulations with:
 
 ```bash
 # Default: emit Parquet (canonical) + JSONL (debug)
-python experiments/run_experiment.py --config <config> --emit-bidless-dataset
+uv run python experiments/run_experiment.py --config <config> --seed 42 --emit-bidless-dataset
 
 # Emit only JSONL (debug format)
-python experiments/run_experiment.py --config <config> --emit-bidless-dataset --bidless-dataset-format jsonl
+uv run python experiments/run_experiment.py --config <config> --seed 42 --emit-bidless-dataset --bidless-dataset-format jsonl
 ```
 
 ## File location

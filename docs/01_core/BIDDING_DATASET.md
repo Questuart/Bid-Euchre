@@ -131,10 +131,10 @@ Emit bidding datasets during experiments with:
 
 ```bash
 # Default: emit Parquet (canonical) + JSONL (debug)
-python experiments/run_experiment.py --config <config> --emit-bidding-dataset
+uv run python experiments/run_experiment.py --config <config> --seed 42 --emit-bidding-dataset
 
 # Emit only JSONL (debug format)
-python experiments/run_experiment.py --config <config> --emit-bidding-dataset --bidding-dataset-format jsonl
+uv run python experiments/run_experiment.py --config <config> --seed 42 --emit-bidding-dataset --bidding-dataset-format jsonl
 ```
 
 ## File location

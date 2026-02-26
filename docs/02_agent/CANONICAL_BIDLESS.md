@@ -46,7 +46,7 @@ All canonical runs use:
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run pythonexperiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
 **Outputs** (in `<run_dir>/datasets/`):
@@ -67,7 +67,7 @@ PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run pythonexperiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
 ### A.2) Training Dataset (Features + Outcomes, Single-Policy: Glutton)
@@ -84,7 +84,7 @@ PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs
 
 **Command**:
 ```bash
-PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
 ### B) Shallow Matrix (Broad Coverage)
@@ -101,7 +101,7 @@ PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
+uv run pythonexperiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
 ```
 
 ### C) Zoom Run (High Precision)
@@ -118,7 +118,7 @@ PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs
 
 **Command**:
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
+uv run pythonexperiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
 ```
 
 ## Output Structure
@@ -153,7 +153,7 @@ data/runs/<run_id>/
 After running an experiment, generate reports with sanity tests:
 
 ```bash
-PYTHONPATH=src python scripts/generate_report.py \
+uv run pythonscripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 
@@ -277,22 +277,22 @@ The loader will:
 
 ```bash
 # Training dataset (single-policy greedy, for ML)
-PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_greedy.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Training dataset (single-policy glutton, for ML — requires gate PASS)
-PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Analysis dataset (multi-policy, for diagnostics)
-PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_mixed_play.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
 
 # Shallow matrix (broad sanity checking)
-PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
+uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --seed 42
 
 # Zoom run (high-precision decision cells)
-PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
+uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_outcomes_zoom.yaml --seed 42
 
 # Generate report (after any run)
-PYTHONPATH=src uv run python scripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 
@@ -307,7 +307,7 @@ This section documents the sequential workflow for promoting canonical baseline 
 Run the experiment:
 
 ```bash
-PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_dataset_greedy.yaml --emit-bidless-dataset --emit-bidless-outcomes-dataset
+uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_dataset_greedy.yaml --emit-bidless-dataset --emit-bidless-outcomes-dataset
 ```
 
 Capture the run directory:
@@ -319,7 +319,7 @@ DATASET_RUN=$(ls -td data/runs/canonical_bidless_dataset_greedy_42_* | head -1)
 Generate report (required to create `artifacts/canonical_summary.*`):
 
 ```bash
-PYTHONPATH=src uv run python scripts/generate_report.py --run-dir "$DATASET_RUN"
+uv run python scripts/generate_report.py --run-dir "$DATASET_RUN"
 ```
 
 Verify:
@@ -332,7 +332,7 @@ Verify:
 Run the experiment:
 
 ```bash
-PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml
+uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml
 ```
 
 Capture the run directory:
@@ -344,7 +344,7 @@ SHALLOW_RUN=$(ls -td data/runs/canonical_bidless_outcomes_matrix_shallow_42_* | 
 Run sanity gate:
 
 ```bash
-PYTHONPATH=src uv run python scripts/generate_report.py --run-dir "$SHALLOW_RUN" --fail-on-sanity-failures
+uv run python scripts/generate_report.py --run-dir "$SHALLOW_RUN" --fail-on-sanity-failures
 ```
 
 Gate semantics:
@@ -358,7 +358,7 @@ WARN does not block promotion; only FAIL blocks.
 Run the experiment:
 
 ```bash
-PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_zoom.yaml
+uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_zoom.yaml
 ```
 
 Capture the run directory:
@@ -370,7 +370,7 @@ ZOOM_RUN=$(ls -td data/runs/canonical_bidless_outcomes_zoom_42_* | head -1)
 Run sanity gate:
 
 ```bash
-PYTHONPATH=src uv run python scripts/generate_report.py --run-dir "$ZOOM_RUN" --fail-on-sanity-failures
+uv run python scripts/generate_report.py --run-dir "$ZOOM_RUN" --fail-on-sanity-failures
 ```
 
 ### Step 4: Verify Artifacts Exist
@@ -417,7 +417,7 @@ For any FAIL, check `strategy_sanity.md` for the specific test message and recom
 4. **Rerun with higher N (if sample-size related):**
 
 ```bash
-PYTHONPATH=src uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --n_per 5000
+uv run python experiments/run_experiment.py --seed 42 --config experiments/configs/canonical_bidless_outcomes_matrix_shallow.yaml --n_per 5000
 ```
 
 5. **Only after investigation and fix:** Re-execute from Step 2.

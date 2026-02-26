@@ -4,7 +4,7 @@
 > (`bidder_training_data.yaml`, `generate_bidder_training_data.py`, etc.) no longer
 > exist on disk. This document describes a superseded pipeline from 2026-01-03.
 > For current dataset collection, use the canonical runner:
-> `uv run python experiments/run_experiment.py --config <config> --seed 42`
+> `uv run uv run python experiments/run_experiment.py --config <config> --seed 42`
 
 ## Bidder-Aware Training Data (Current)
 
@@ -83,16 +83,16 @@ To regenerate this dataset:
 
 ```bash
 # Step 1: Run simulation
-PYTHONPATH=src python experiments/generate_bidder_training_data.py
+uv run pythonexperiments/generate_bidder_training_data.py
 
 # Step 2: Split into train/val/test
-python experiments/split_train_val_test.py \
+uv run python experiments/split_train_val_test.py \
   --input data/runs/bidder_training_data_42_*/logs/*.jsonl \
   --output data/runs/bidder_training_data_42_*/splits/ \
   --train-ratio 0.7 --val-ratio 0.15
 
 # Step 3: Convert to CSV
-python experiments/convert_splits_to_csv.py \
+uv run python experiments/convert_splits_to_csv.py \
   --splits-dir data/runs/bidder_training_data_42_*/splits/ \
   --output-dir data/training/
 ```

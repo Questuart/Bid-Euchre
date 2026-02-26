@@ -11,7 +11,7 @@ establishes whether glutton is reliably better than greedy before freezing.
 ### Fresh runs (recommended)
 
 ```bash
-PYTHONPATH=src python scripts/play_policy_gate.py \
+uv run pythonscripts/play_policy_gate.py \
   --seeds 42,43,44 \
   --n-per 20000
 ```
@@ -19,7 +19,7 @@ PYTHONPATH=src python scripts/play_policy_gate.py \
 ### Using existing runs
 
 ```bash
-PYTHONPATH=src python scripts/play_policy_gate.py \
+uv run pythonscripts/play_policy_gate.py \
   --skip-run \
   --run-ids 2026-02-04_run1,2026-02-04_run2,2026-02-04_run3
 ```
@@ -37,7 +37,7 @@ PYTHONPATH=src python scripts/play_policy_gate.py \
 ### Step 1: Run the Gate
 
 ```bash
-PYTHONPATH=src uv run python scripts/play_policy_gate.py --seeds 42,43,44 --n-per 20000
+uv run python scripts/play_policy_gate.py --seeds 42,43,44 --n-per 20000
 ```
 
 ### Step 2: Check Gate Output
@@ -61,12 +61,12 @@ If multiple seeds, an aggregate summary is written to:
 
 1. Run glutton training dataset:
    ```bash
-   PYTHONPATH=src uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
+   uv run python experiments/run_experiment.py --config experiments/configs/canonical_bidless_dataset_glutton.yaml --seed 42 --emit-bidless-dataset --emit-bidless-outcomes-dataset
    ```
 
 2. Generate canonical summary:
    ```bash
-   PYTHONPATH=src uv run python scripts/generate_report.py --run-dir data/runs/<run_id>
+   uv run python scripts/generate_report.py --run-dir data/runs/<run_id>
    ```
 
 3. Verify `artifacts/canonical_summary.json` exists with PASS/WARN/FAIL counts

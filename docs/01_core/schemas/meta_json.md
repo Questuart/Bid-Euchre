@@ -77,7 +77,7 @@ These are written by the experiment runner today but may expand over time:
 Typical reproduction command (adjust flags to match runner):
 
 ```bash
-python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config <config_path from meta.json> \
   --seed <seed from meta.json> \
   --n_per <n_per from meta.json>

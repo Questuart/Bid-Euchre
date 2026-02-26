@@ -56,7 +56,7 @@ Baseline is not:
 **How to run**:
 
 ```bash
-PYTHONPATH=src python scripts/run_suite.py \
+uv run pythonscripts/run_suite.py \
   --suite experiments/suites/baseline_full.yaml
 ```
 
@@ -96,10 +96,10 @@ PYTHONPATH=src python scripts/run_suite.py \
 **Manual Drift Check:**
 ```bash
 # 1. Run baseline_full suite
-python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml
+uv run python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml
 
 # 2. Compare against fixture
-python scripts/compare_rollup.py \
+uv run python scripts/compare_rollup.py \
   --rollup data/runs/suite_baseline_full_<timestamp>/rollup.json \
   --fixture data/fixtures/baseline_full_expected.json
 ```
@@ -184,7 +184,7 @@ Run these commands **in order** (copy/paste):
 ### 1. Quick random sanity (2 scenarios)
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run pythonexperiments/run_experiment.py \
   --config experiments/configs/quick_test_random.yaml \
   --seed 42 \
   --n_per 20 \
@@ -196,7 +196,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 ### 2. Greedy anchor (full scenario set)
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run pythonexperiments/run_experiment.py \
   --config experiments/configs/baseline_greedy.yaml \
   --seed 42 \
   --n_per 20 \
@@ -208,7 +208,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 ### 3. Multi-strategy comparison (full scenario set, common deals)
 
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run pythonexperiments/run_experiment.py \
   --config experiments/configs/strategy_comparison.yaml \
   --seed 42 \
   --n_per 20 \
@@ -222,7 +222,7 @@ PYTHONPATH=src python experiments/run_experiment.py \
 Starting in PR #20, `baseline_tiny` will be runnable via the suite runner:
 
 ```bash
-PYTHONPATH=src python scripts/run_suite.py \
+uv run pythonscripts/run_suite.py \
   --suite experiments/suites/baseline_tiny.yaml
 ```
 
