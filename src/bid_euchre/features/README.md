@@ -14,5 +14,5 @@ Extract features from hands for ML training and analysis.
 
 ## Contract
 - Features must be **deterministic** — same hand always produces same features
-- See [docs/01_core/BIDLESS_FEATURES.md](../../../docs/01_core/BIDLESS_FEATURES.md) for feature specification
+- Historical spec archived at `docs/archive/BIDLESS_FEATURES.md`. Current features defined in `hand_eval.py` docstrings.
 - See [docs/01_core/BIDLESS_DATASET.md](../../../docs/01_core/BIDLESS_DATASET.md) for dataset context
