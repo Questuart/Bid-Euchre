@@ -154,6 +154,20 @@ def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
                         f"{sorted(missing_h2h)}"
                     )
 
+                # Validate numeric sub-keys are non-null and numeric
+                NUMERIC_H2H_KEYS = {"net_eppd_delta", "ci_low", "ci_high", "n_deals"}
+                for nk in sorted(NUMERIC_H2H_KEYS):
+                    val = h2h_inline.get(nk)
+                    if val is None:
+                        errors.append(
+                            f"h2h_challenger_vs_incumbent['{nk}'] must not be null"
+                        )
+                    elif not isinstance(val, (int, float)):
+                        errors.append(
+                            f"h2h_challenger_vs_incumbent['{nk}'] must be numeric, "
+                            f"got {type(val).__name__}"
+                        )
+
         # Type-validate h2h_summary and gate_thresholds as strings (paths)
         for path_key in ("h2h_summary", "gate_thresholds"):
             path_val = bundle.get(path_key)

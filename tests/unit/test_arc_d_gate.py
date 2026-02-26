@@ -1373,6 +1373,28 @@ class TestR1BundleValidation:
         assert not valid
         assert any("h2h_challenger_vs_incumbent must be a dict" in e for e in errors)
 
+    def test_r1_h2h_inline_null_numeric_fails(self):
+        """R1 h2h_challenger_vs_incumbent with null numeric sub-keys -> error."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(ci_low=None, ci_high=None)
+        )
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("ci_low" in e and "must not be null" in e for e in errors)
+        assert any("ci_high" in e and "must not be null" in e for e in errors)
+
+    def test_r1_h2h_inline_non_numeric_fails(self):
+        """R1 h2h_challenger_vs_incumbent with non-numeric values -> error."""
+        bundle = _make_bundle(
+            h2h_challenger_vs_incumbent=_make_h2h_inline(net_eppd_delta="not_a_number")
+        )
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any(
+            "net_eppd_delta" in e and "must be numeric" in e and "str" in e
+            for e in errors
+        )
+
     def test_r1_h2h_files_checked(self, tmp_path):
         """validate_bundle_files_exist checks h2h_summary + gate_thresholds paths."""
         bundle = _make_bundle()
