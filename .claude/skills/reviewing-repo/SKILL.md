@@ -125,7 +125,7 @@ Show the user a concise table of what's stale:
 | Category | Count | Example |
 |----------|-------|---------|
 | Stale imports | <N> | `from bid_euchre.X import Y` → module moved |
-| Missing module coverage | <N> | `utils/` has no import check in §1.3 |
+| Missing module coverage | <N> | `analysis/` has no import check in §1.3 |
 | Dead commands | <N> | `make <target>` no longer exists |
 | Structure drift | <N> | prompt tree missing `analysis/` directory |
 | Stale file references | <N> | `scripts/foo.py` referenced but deleted |

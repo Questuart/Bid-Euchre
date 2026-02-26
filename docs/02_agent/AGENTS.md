@@ -304,8 +304,6 @@ Primary locations under `src/bid_euchre/`:
 - `reporting/` — report building helpers, styles, standardized paths
 - `logging/` — JSONL game logging and event schemas
 - `experiments/` — config parsing/structures used by `experiments/run_experiment.py`
-- `utils/` — generic helpers
-
 Top-level:
 
 - `experiments/` — scripts, configs, dashboards (runner lives here)

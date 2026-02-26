@@ -161,7 +161,7 @@ uv run python -c "from bid_euchre.reporting.charts import generate_contract_face
 
 # Verify logging and utils
 uv run python -c "from bid_euchre.logging.game_logger import GameLogger; print('logging OK')"
-uv run python -c "import bid_euchre.utils; print('utils OK')"
+uv run python -c "from bid_euchre.core.time import format_elapsed; print('time OK')"
 
 # Verify scoring (top-level module)
 uv run python -c "from bid_euchre.scoring import compute_points; print('scoring OK')"
@@ -922,7 +922,7 @@ bid-euchre/
 │   ├── validation/              # Schema validation, promotion gates
 │   ├── analysis/                # Statistical analysis, paired comparisons
 │   ├── experiments/             # Config system, batch metadata
-│   └── utils/                   # Generic helpers
+│   └── scoring.py               # Top-level scoring module
 │   # (verify via: ls -d src/bid_euchre/*/ | grep -v __pycache__)
 ├── experiments/                 # Experiment configs + runner
 │   ├── run_experiment.py        # THE canonical runner
