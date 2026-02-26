@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
-from bid_euchre.experiments.meta import utc_now_iso
+from bid_euchre.core.time import utc_now_iso
 from bid_euchre.models.freeze import verify_frozen
 
 logger = logging.getLogger(__name__)

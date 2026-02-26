@@ -29,13 +29,14 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 from scipy import stats
+
+from bid_euchre.core.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +100,6 @@ _SIGN_CHECK_FEATURES = {
     "high": "offsuit_aces",
     "low": "offsuit_tens_count",
 }
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _make_check(
@@ -1216,7 +1213,7 @@ def compute_semantic_gate(
     gate: dict[str, Any] = {
         "schema_version": SEMANTIC_GATE_SCHEMA_VERSION,
         "gate_status": gate_status,
-        "created_at_utc": _utc_now_iso(),
+        "created_at_utc": utc_now_iso(),
         "active_split": active_split,
         "mode": mode,
         "seed": seed,

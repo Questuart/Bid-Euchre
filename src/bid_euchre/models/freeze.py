@@ -13,15 +13,11 @@ import hashlib
 import json
 import logging
 import warnings
-from datetime import datetime, timezone
 from pathlib import Path
 
+from bid_euchre.core.time import utc_now_iso
+
 logger = logging.getLogger(__name__)
-
-
-def _utc_now_iso() -> str:
-    """UTC time in ISO8601 with Z suffix."""
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _sha256_file(path: str | Path) -> str:
@@ -81,7 +77,7 @@ def freeze_artifact(artifact_path: str | Path) -> dict:
 
     content_hash = _content_hash(metadata)
 
-    metadata["frozen_at"] = _utc_now_iso()
+    metadata["frozen_at"] = utc_now_iso()
     metadata["artifact_sha256"] = content_hash
 
     with open(path, "w") as f:
