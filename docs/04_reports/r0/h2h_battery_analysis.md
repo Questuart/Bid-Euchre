@@ -410,6 +410,9 @@ q99 quantiles are very close, suggesting the null signal has thin tails at
 
 ## 6. Artifact Inventory
 
+**gate_status:** PROMOTED (R0 overall; this report is informational for the
+R0→R1 transition)
+
 All artifacts in `data/artifacts/arc_d/r0/` (not committed to git).
 
 | Artifact | Schema | Size | Produced By |

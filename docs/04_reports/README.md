@@ -30,6 +30,10 @@ docs/04_reports/
 |--------|------|---------|
 | [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Cross-rung progression dashboard (snapshot) |
 | [r0/model_arc_r0_20260224.md](r0/model_arc_r0_20260224.md) | 2026-02-24 | R0 full evaluation report (11-section) |
+| [r0/r0_promotion_report.md](r0/r0_promotion_report.md) | 2026-02-25 | R0 promotion decision + gate threshold calibration |
+| [r0/comparator_rankings.md](r0/comparator_rankings.md) | 2026-02-25 | Comparator battery rankings (v2, 7 bidders) |
+| [r0/c33_ablation_report.md](r0/c33_ablation_report.md) | 2026-02-25 | C33 ablation: Gaussian EV wrapper effect (+0.21 net_eppd) |
+| [r0/h2h_battery_analysis.md](r0/h2h_battery_analysis.md) | 2026-02-25 | H2H battery analysis + gate threshold calibration |
 
 Superseded revisions in `r0/archive/`.
 
