@@ -484,7 +484,7 @@ def parse_run_results(run_dir, summary, seed=42):
                 if record.get("event") != "hand_end":
                     continue
 
-                mid = record.get("matchup_id", "")
+                mid = record.get("matchup_id") or record.get("strategy_id", "")
                 if mid not in matchup_records:
                     matchup_records[mid] = []
                 matchup_records[mid].append(record)
@@ -654,13 +654,17 @@ def main():
     # Generate experiment config
     config = generate_h2h_config(roster, matchups, args.seed, args.n_per)
 
-    # Write YAML config
+    # Write YAML config (skip when parsing existing run to avoid overwriting)
     output_path = Path(args.output)
-    config_path = output_path.parent / f"h2h_battery_{args.mode.lower()}_config.yaml"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-    print(f"Config written to: {config_path}", file=sys.stderr)
+
+    if not args.parse_run:
+        config_path = (
+            output_path.parent / f"h2h_battery_{args.mode.lower()}_config.yaml"
+        )
+        with open(config_path, "w") as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        print(f"Config written to: {config_path}", file=sys.stderr)
 
     if args.config_only:
         print(
