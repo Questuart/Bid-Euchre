@@ -949,7 +949,7 @@ bid-euchre/
 │   ├── 01_core/                 # Architecture, contracts, specs
 │   ├── 02_agent/                # AI agent guidelines (incl. this file)
 │   ├── 03_TODO/                 # Task tracking + reviews
-│   ├── 03_experiments/          # Experiment operational docs
+│   ├── 05_experiments/          # Experiment operational docs
 │   ├── 04_reports/              # Consolidated reports
 │   ├── archive/                 # Historical/frozen docs (do not modify)
 │   ├── images/                  # Documentation images (SVG, etc.)
