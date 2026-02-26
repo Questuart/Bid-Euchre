@@ -183,6 +183,7 @@ bar.
 | Training source run | canonical_bidless_dataset_glutton_42_20260221_175752 |
 | n_deals per eval seed | 50,000 |
 | Gate thresholds (R1) | data/artifacts/arc_d/r0/gate_thresholds_r1.json |
+| risk_lambda | 0.0 |
 
 ## Exclusions
 
