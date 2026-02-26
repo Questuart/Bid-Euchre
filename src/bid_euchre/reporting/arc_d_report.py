@@ -590,10 +590,11 @@ def _render_model_specification(
                 continue
             lines.append(f"#### {contract}")
             lines.append("")
-            lines.append(f"Bias: {bias:.4f}")
             rv = residual_variance.get(contract)
-            if rv is not None:
-                lines.append(f"  |  Residual variance: {rv:.4f}")
+            if isinstance(rv, (int, float)):
+                lines.append(f"Bias: {bias:.4f} | Residual variance: {rv:.4f}")
+            else:
+                lines.append(f"Bias: {bias:.4f}")
             lines.append("")
             lines.append("| Feature | Weight |")
             lines.append("|---------|--------|")
