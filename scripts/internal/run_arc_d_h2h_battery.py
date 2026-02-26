@@ -505,8 +505,16 @@ def parse_run_results(run_dir, summary, seed=42):
 
         for rec in records:
             bp = rec.get("bidder_position")
+
             if bp is None:
-                continue  # Skip all-pass / misdeal hands
+                # All-pass / misdeal: both teams score raw tricks, no bid
+                # penalty.  Count as a deal (delta=0) but skip bid/make stats.
+                t0 = rec.get("t0", 0)
+                t1 = rec.get("t1", 0)
+                deltas.append(t0 - t1)
+                if t0 > t1:
+                    team0_wins += 1
+                continue
 
             t0_pts, t1_pts = _compute_team_points(rec)
             delta = t0_pts - t1_pts

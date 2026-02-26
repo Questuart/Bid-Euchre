@@ -579,8 +579,8 @@ class TestParseRunResults:
         assert cell["net_eppd_delta"] == 0.0
         assert cell["win_rate_a"] == 0.5
 
-    def test_parse_skips_all_pass_hands(self, tmp_path):
-        """Hands with bidder_position=None are excluded from all stats."""
+    def test_parse_all_pass_hands_counted_but_unbid(self, tmp_path):
+        """All-pass hands count in deals_total but not in bid/make stats."""
         matchups = generate_matchups(_SMALL_ROSTER)
         config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=10)
         summary = generate_summary(
@@ -597,7 +597,7 @@ class TestParseRunResults:
         # 10 normal hands (team 0 declares)
         for _ in range(10):
             records.append(self._make_hand_end_record(mid, 7, 3, 6, 0, True))
-        # 5 all-pass hands (bidder_position=None)
+        # 5 all-pass hands (bidder_position=None, equal tricks)
         for _ in range(5):
             records.append(
                 {
@@ -631,10 +631,10 @@ class TestParseRunResults:
         result = parse_run_results(str(run_dir), summary, seed=42)
         cell = result["cells"][mid]
 
-        # Only 10 normal hands should count, not the 10 all-pass hands
-        assert cell["deals_total"] == 10
-        # All 10 normal hands were team 0 bids
-        assert cell["bid_rate_a"] == 1.0
+        # All 20 hands count in deals_total (per-deal contract)
+        assert cell["deals_total"] == 20
+        # bid_rate = bids / total_deals; 10 bids out of 20 deals
+        assert cell["bid_rate_a"] == 0.5
         assert cell["bid_rate_b"] == 0.0
 
     def test_parse_populates_cvar_5(self, tmp_path):
