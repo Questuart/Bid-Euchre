@@ -888,8 +888,7 @@ _MU_BUCKETS = [(3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
 
 def _is_decision_relevant(bucket_lo: int, bucket_hi: int) -> bool:
     """Check if a mu bucket overlaps the decision-relevant range."""
-    midpoint = (bucket_lo + bucket_hi) / 2.0
-    return _DECISION_MU_RANGE[0] <= midpoint <= _DECISION_MU_RANGE[1]
+    return bucket_lo < _DECISION_MU_RANGE[1] and bucket_hi > _DECISION_MU_RANGE[0]
 
 
 # Guard: S3 must have produced prediction arrays
