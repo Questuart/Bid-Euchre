@@ -504,6 +504,10 @@ def parse_run_results(run_dir, summary, seed=42):
         makes_by_team1 = 0
 
         for rec in records:
+            bp = rec.get("bidder_position")
+            if bp is None:
+                continue  # Skip all-pass / misdeal hands
+
             t0_pts, t1_pts = _compute_team_points(rec)
             delta = t0_pts - t1_pts
             deltas.append(delta)
@@ -511,7 +515,6 @@ def parse_run_results(run_dir, summary, seed=42):
             if t0_pts > t1_pts:
                 team0_wins += 1
 
-            bp = rec.get("bidder_position", 0)
             made = rec.get("made_bid", False)
             if bp in (0, 2):
                 bids_by_team0 += 1
@@ -529,11 +532,17 @@ def parse_run_results(run_dir, summary, seed=42):
         net_eppd_delta = float(np.mean(deltas))
         ci_low, ci_high = _bootstrap_ci(deltas, seed=seed)
 
+        # CVaR-5: mean of bottom 5% of deltas (tail risk measure)
+        sorted_deltas = sorted(deltas)
+        k = max(1, int(np.ceil(0.05 * n_deals)))
+        cvar_5 = float(np.mean(sorted_deltas[:k]))
+
         cell["net_eppd_a"] = round(net_eppd_delta, 6)
         cell["net_eppd_b"] = round(-net_eppd_delta, 6)
         cell["net_eppd_delta"] = round(net_eppd_delta, 6)
         cell["ci_low"] = round(ci_low, 6)
         cell["ci_high"] = round(ci_high, 6)
+        cell["cvar_5"] = round(cvar_5, 6)
         cell["win_rate_a"] = round(team0_wins / n_deals, 4)
         cell["bid_rate_a"] = round(bids_by_team0 / n_deals, 4)
         cell["bid_rate_b"] = round(bids_by_team1 / n_deals, 4)

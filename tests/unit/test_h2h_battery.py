@@ -578,3 +578,147 @@ class TestParseRunResults:
         # Symmetric self-play: net_eppd_delta should be 0
         assert cell["net_eppd_delta"] == 0.0
         assert cell["win_rate_a"] == 0.5
+
+    def test_parse_skips_all_pass_hands(self, tmp_path):
+        """Hands with bidder_position=None are excluded from all stats."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=10)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=10,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        mid = "alpha_self_play"
+        records = []
+        # 10 normal hands (team 0 declares)
+        for _ in range(10):
+            records.append(self._make_hand_end_record(mid, 7, 3, 6, 0, True))
+        # 5 all-pass hands (bidder_position=None)
+        for _ in range(5):
+            records.append(
+                {
+                    "event": "hand_end",
+                    "matchup_id": mid,
+                    "deal_id": "deal_allpass",
+                    "t0": 5,
+                    "t1": 5,
+                    "winning_bid": 0,
+                    "bidder_position": None,
+                    "made_bid": False,
+                }
+            )
+        # 5 all-pass hands (bidder_position missing entirely)
+        for _ in range(5):
+            records.append(
+                {
+                    "event": "hand_end",
+                    "matchup_id": mid,
+                    "deal_id": "deal_allpass_missing",
+                    "t0": 5,
+                    "t1": 5,
+                    "winning_bid": 0,
+                    "made_bid": False,
+                }
+            )
+
+        run_dir = tmp_path / "allpass_run"
+        self._write_jsonl(run_dir / "game_log.jsonl", records)
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+        cell = result["cells"][mid]
+
+        # Only 10 normal hands should count, not the 10 all-pass hands
+        assert cell["deals_total"] == 10
+        # All 10 normal hands were team 0 bids
+        assert cell["bid_rate_a"] == 1.0
+        assert cell["bid_rate_b"] == 0.0
+
+    def test_parse_populates_cvar_5(self, tmp_path):
+        """Parsed cells contain a numeric cvar_5 field."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=10)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=10,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        mid = "alpha_self_play"
+        records = []
+        for _ in range(20):
+            records.append(self._make_hand_end_record(mid, 7, 3, 6, 0, True))
+            records.append(self._make_hand_end_record(mid, 4, 6, 5, 1, True))
+
+        run_dir = tmp_path / "cvar_run"
+        self._write_jsonl(run_dir / "game_log.jsonl", records)
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+        cell = result["cells"][mid]
+
+        assert "cvar_5" in cell
+        assert isinstance(cell["cvar_5"], float)
+
+    def test_cvar_5_uniform_zeros(self, tmp_path):
+        """CVaR-5 of all-zero deltas is 0.0."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=20)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=20,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        mid = "alpha_self_play"
+        records = []
+        # 20 hands where both teams score equally -> delta = 0
+        for _ in range(20):
+            records.append(self._make_hand_end_record(mid, 5, 5, 5, 0, True))
+
+        run_dir = tmp_path / "cvar_zeros_run"
+        self._write_jsonl(run_dir / "game_log.jsonl", records)
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+        cell = result["cells"][mid]
+        assert cell["cvar_5"] == 0.0
+
+    def test_cvar_5_single_outlier(self, tmp_path):
+        """CVaR-5 with one extreme outlier in 20 deals picks up only that value."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=20)
+        summary = generate_summary(
+            mode="QUICK",
+            seed=42,
+            n_per=20,
+            roster=_SMALL_ROSTER,
+            matchups=matchups,
+            config_dict=config,
+        )
+
+        mid = "alpha_self_play"
+        records = []
+        # 19 hands where team0 wins 5-5 (delta=0 after scoring: 5-5=0)
+        for _ in range(19):
+            records.append(self._make_hand_end_record(mid, 5, 5, 5, 0, True))
+        # 1 hand where team0 gets set badly: t0=-10, t1=10 -> delta = -10 - 10 = -20
+        # Team 0 declares bid 10, gets 0 tricks -> set: t0_pts = -10, t1_pts = 10
+        records.append(self._make_hand_end_record(mid, 0, 10, 10, 0, False))
+
+        run_dir = tmp_path / "cvar_outlier_run"
+        self._write_jsonl(run_dir / "game_log.jsonl", records)
+
+        result = parse_run_results(str(run_dir), summary, seed=42)
+        cell = result["cells"][mid]
+
+        # 5% of 20 = 1 value, ceil(1.0)=1. Bottom 1 delta is -20.
+        # delta for the set hand: t0_pts=-10, t1_pts=10, delta=-10-10=-20
+        assert cell["cvar_5"] == -20.0
