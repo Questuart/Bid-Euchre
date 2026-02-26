@@ -14,3 +14,12 @@ Before claiming a PR is "done," ensure ALL of these are true:
 - [ ] **Contract Compliance**: Changes to core rules/logging/metrics comply with `docs/01_core/` docs
 
 Mark each box and provide proof in PR description.
+
+## Quality Standards
+
+These standards apply to all code changes in addition to the checklist above.
+
+- **Clean Imports**: `src/` modules cannot import from `experiments/` or `tests/`. Maintain architectural boundaries.
+- **Documentation Sync**: Code changes that affect contracts must update corresponding `docs/01_core/` documentation.
+- **Performance Conscious**: Simulation and strategy code should be efficient. Performance regressions require justification and benchmarks.
+- **Reproducible Experiments**: All experimental results must be reproducible with exact commands, seeds, and configs provided in PRs.

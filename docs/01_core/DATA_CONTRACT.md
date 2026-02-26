@@ -6,7 +6,7 @@ If you change a schema, update the relevant doc and bump schema versions where a
 ## Run artifacts
 
 - **meta.json (schema v2):** see `docs/01_core/schemas/meta_json.md`
-- **results JSON**: Strategy performance metrics including scoring/points aggregates; see `docs/01_core/SCORING.md`
+- **results JSON**: Strategy performance metrics including scoring/points aggregates; see `docs/01_core/METRICS.md`
 - **JSONL game log (schema v7):** see below
 
 ## JSONL Game Log Schema

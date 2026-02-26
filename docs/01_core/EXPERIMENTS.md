@@ -60,7 +60,7 @@ data/runs/<run_id>/
 
 All directories are created for every run, even if empty:
 
-- **`results/`**: Machine-readable outputs (JSON, JSONL, CSV, Parquet); see `docs/01_core/SCORING.md` for scoring field definitions
+- **`results/`**: Machine-readable outputs (JSON, JSONL, CSV, Parquet); see `docs/01_core/METRICS.md` for scoring field definitions
 - **`logs/`**: Structured logs and JSONL hand logs
 - **`reports/`**: Generated charts, dashboards, and analyses
 - **`splits/`**: Train/test/validation data splits (if training/evaluation workflows generate them)
