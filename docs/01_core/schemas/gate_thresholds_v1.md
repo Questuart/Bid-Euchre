@@ -84,5 +84,5 @@ cvar5_tolerance     = max(0.05, 2.0 * std(cvar5_pairwise_residuals))
 
 - **R0:** Gate always uses hardcoded defaults (no artifact needed).
 - **R1+:** Gate loads from `gate_thresholds_r1.json` (auto-discovered or explicit path).
-  Falls back to hardcoded defaults with a warning if artifact is not found.
-  Hard fails if an explicit `thresholds_path` argument points to a missing file.
+  Hard fails if artifact is not found (either auto-discovered or explicit path).
+  Run `calibrate_arc_d_thresholds.py` to produce the artifact before R1+ gate runs.
