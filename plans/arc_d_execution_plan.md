@@ -7,7 +7,7 @@
 
 ## v3 Changes (2026-02-20)
 
-Applies 31 review decisions from `plans/arc_d_gap_analysis.md`. Key changes:
+Applies 31 review decisions from `plans/archive/arc_d_gap_analysis.md`. Key changes:
 
 - **18 PRs** (was 16): added PR-P0 (net_eppd metric switch), PR-I4 (reporting extensions)
 - **Primary metric:** `net_eppd` (was `eppd`) — net point differential per deal
