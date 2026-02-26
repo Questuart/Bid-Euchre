@@ -64,6 +64,7 @@ Canonical scripts:
 - `generate_batch_report.py` — Batch report + eligibility gate
 - `generate_r4_charts.py` — One-off report chart regeneration utility
 - `play_policy_gate.py` — Play policy stability gate
+- `calibrate_arc_d_thresholds.py` — Arc D gate threshold calibration from H2H null signal
 - `run_arc_d_gate.py` — Arc D promotion gate runner
 - `run_arc_d_h2h_battery.py` — H2H all-vs-all battery runner (competitive validation)
 - `run_auction_comparator.py` — Auction comparator orchestrator
@@ -186,6 +187,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
+| `scripts/internal/calibrate_arc_d_thresholds.py` | Arc D gate threshold calibration from H2H null signal |
 | `scripts/internal/run_arc_d_gate.py` | Arc D promotion gate runner |
 | `scripts/internal/run_arc_d_h2h_battery.py` | H2H all-vs-all battery runner (competitive validation) |
 | `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
