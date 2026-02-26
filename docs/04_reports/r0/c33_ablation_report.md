@@ -157,8 +157,21 @@ R0 training (#396)
 uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/arc_d_r0_c33_ablation.yaml
 
-# Parse results into JSON artifact
+# Parse results into JSON artifact.
+# The C33 ablation uses a 2-bidder roster (hybrid_olsa, olsa), not the
+# default 7-bidder roster. Create a roster file matching DEFAULT_ROSTER
+# format for these two bidders:
+cat > /tmp/c33_roster.json <<'ROSTER'
+[
+  {"name": "hybrid_olsa", "class_name": "HybridOLSaBidder",
+   "params": {"artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json"}},
+  {"name": "olsa", "class_name": "OLSaBidder",
+   "params": {"artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json"}}
+]
+ROSTER
 PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+  --mode QUICK --seed 42 --n-per 10000 \
+  --roster /tmp/c33_roster.json \
   --parse-run data/runs/arc_d_r0_c33_ablation_42_20260225_170036 \
   --output data/artifacts/arc_d/r0/c33_ablation_results.json
 ```

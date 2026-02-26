@@ -22,11 +22,12 @@ Key metrics (OLSa_Full promotional arm, seed 42):
 | CVaR-5% | −6.411 |
 | net_CVaR-5% | −12.063 |
 
-The model ranks 2nd among 5 comparator bidders by net_eppd, trailing only
-`modeloespecifico` (+2.291) by 0.81 points/deal (p < 0.001). The gap is
-expected: `modeloespecifico` is a hand-tuned heuristic with full game knowledge,
-while OLSa_Full is a linear model trained from data. R0's purpose is to
-establish a working baseline, not to exceed heuristic performance.
+The model ranks 2nd among 7 comparator bidders by net_eppd (v2 battery,
+seed=42), trailing only `modeloespecifico` (+2.291) by 0.624 points/deal
+(p < 0.001). The gap is expected: `modeloespecifico` is a hand-tuned heuristic
+with full game knowledge, while the OLSa-Hybrid is a linear model trained from
+data. R0's purpose is to establish a working baseline, not to exceed heuristic
+performance.
 
 ## Gate Results
 
