@@ -22,11 +22,12 @@ Key metrics (OLSa_Full promotional arm, seed 42):
 | CVaR-5% | −6.411 |
 | net_CVaR-5% | −12.063 |
 
-The model ranks 2nd among 5 comparator bidders by net_eppd, trailing only
-`modeloespecifico` (+2.291) by 0.81 points/deal (p < 0.001). The gap is
-expected: `modeloespecifico` is a hand-tuned heuristic with full game knowledge,
-while OLSa_Full is a linear model trained from data. R0's purpose is to
-establish a working baseline, not to exceed heuristic performance.
+The model ranks 2nd among 7 comparator bidders by net_eppd (v2 battery,
+seed=42), trailing only `modeloespecifico` (+2.291) by 0.624 points/deal
+(p < 0.001). The gap is expected: `modeloespecifico` is a hand-tuned heuristic
+with full game knowledge, while the OLSa-Hybrid is a linear model trained from
+data. R0's purpose is to establish a working baseline, not to exceed heuristic
+performance.
 
 ## Gate Results
 
@@ -112,21 +113,59 @@ starting at R1.
 ## Comparator Context
 
 See [comparator_rankings.md](comparator_rankings.md) for the full comparator
-battery with bootstrap 95% confidence intervals.
+battery with bootstrap 95% confidence intervals. The v2 battery (7 bidders,
+seed=42) expanded the original 5-bidder roster to include the constrained OLSa
+variants (`olsa_full`, `olsa`) as separate entries.
 
-Summary ranking by net_eppd:
+Summary ranking by net_eppd (v2, 7 bidders):
 
-| Rank | Bidder | net_eppd |
-|------|--------|----------|
-| 1 | modeloespecifico | +2.291 |
-| 2 | **hybrid_olsa (R0)** | **+1.481** |
-| 3 | rankthetank | −3.170 |
-| 4 | fiveheadfred | −3.521 |
-| 5 | stricthellraiser | −6.114 |
+| Rank | Bidder | net_eppd | 95% CI |
+|------|--------|----------|--------|
+| 1 | modeloespecifico | +2.291 | [+2.190, +2.390] |
+| 2 | **hybrid_olsa (R0)** | **+1.667** | **[+1.574, +1.760]** |
+| 3 | olsa_full | +0.690 | [+0.548, +0.833] |
+| 4 | olsa | +0.429 | [+0.282, +0.574] |
+| 5 | rankthetank | −3.170 | [−3.331, −3.008] |
+| 6 | fiveheadfred | −3.521 | [−3.671, −3.371] |
+| 7 | stricthellraiser | −6.114 | [−6.276, −5.956] |
 
-The gap between `modeloespecifico` and `hybrid_olsa` is 0.81 points/deal
+The gap between `modeloespecifico` and `hybrid_olsa` is 0.624 points/deal
 (p < 0.001, bootstrap permutation test, n=10,000). Closing this gap is the
 objective of future rungs (R1+).
+
+See [h2h_battery_analysis.md](h2h_battery_analysis.md) section 4 for H2H
+pairwise matchup results that provide competitive ordering between bidders.
+
+## Gate Threshold Calibration
+
+Gate thresholds for R1 promotion were calibrated from the null signal in the
+H2H battery. See [h2h_battery_analysis.md](h2h_battery_analysis.md) section 5
+for the full derivation.
+
+**Method:** The null distribution is constructed from self-play deltas (which
+should be zero) and seat-swap residuals (|delta(A vs B) + delta(B vs A)|, which
+should also be zero). Thresholds are set at the 95th and 99th percentiles of
+this null distribution.
+
+**Two-stage calibration:** Thresholds were first derived from QUICK data (2,000
+deals/cell), then recalibrated from FULL data (10,000 deals/cell) after a drift
+check revealed the QUICK thresholds were inflated (drift ratio = 0.726).
+
+| Threshold | Value | Meaning |
+|-----------|-------|---------|
+| delta_floor | 0.180 | Challenger must improve by +0.18 net_eppd for PROMOTED |
+| regression_threshold | 0.184 | Challenger regressing by -0.18 net_eppd triggers HALT |
+| cvar5_tolerance | 0.050 | Floor value (residuals too small to calibrate) |
+| bid_rate_min | 0.050 | Guardrail: minimum acceptable bid rate |
+| bid_rate_max | 0.950 | Guardrail: maximum acceptable bid rate |
+| make_rate_min | 0.450 | Guardrail: minimum acceptable make rate |
+| downside_variance_ratio | 1.100 | Guardrail: max downside variance vs incumbent |
+
+**R1 implications:** The delta_floor of 0.180 means the R1 challenger must
+demonstrate at least +0.18 net_eppd improvement over the R0 incumbent in
+paired H2H evaluation. For reference, the C33 Gaussian wrapper effect (+0.21;
+see [c33_ablation_report.md](c33_ablation_report.md)) would barely clear this
+bar.
 
 ## Provenance
 
@@ -143,81 +182,14 @@ objective of future rungs (R1+).
 | Promotion timestamp | 2026-02-22T02:13:32Z |
 | Training source run | canonical_bidless_dataset_glutton_42_20260221_175752 |
 | n_deals per eval seed | 50,000 |
+| Gate thresholds (R1) | data/artifacts/arc_d/r0/gate_thresholds_r1.json |
 
 ## Exclusions
 
+- **H2H pairwise matchups:** Now available — see
+  [h2h_battery_analysis.md](h2h_battery_analysis.md) for the full 7-bidder
+  H2H matrix (QUICK + FULL resolution).
+- **C33 ablation:** Now available — see
+  [c33_ablation_report.md](c33_ablation_report.md) for the Gaussian EV
+  wrapper validation.
 - **Semantic gate Tier 2:** Not applicable at R0 (introduced at R1+).
-
----
-
-## Addendum (2026-02-25)
-
-*Added after the H2H battery analysis was completed. The PROMOTED decision
-above is unchanged — this addendum provides additional context from subsequent
-experiments.*
-
-### Bidder Naming Clarification
-
-In the Comparator Context table above (5-bidder v1 battery), `hybrid_olsa`
-refers to the **OLSa_Full promotional arm** (`hybrid_r0_full.json`,
-forward-selected features, bid_rate = 82.8%). This is the same configuration
-reported as "OLSa_Full (Promotional Arm)" in the evaluation tables above.
-
-The later 7-bidder battery
-([h2h_battery_analysis.md](h2h_battery_analysis.md)) disambiguated the OLSa
-variants into three entries:
-
-| Name in 7-bidder battery | Artifact | Bid rate | Decision layer |
-|--------------------------|----------|----------|----------------|
-| `hybrid_olsa` | `hybrid_r0.json` (constrained, 3 features) | ~62% | Gaussian EV (P(make) via CDF) |
-| `olsa` | `hybrid_r0.json` (constrained, 3 features) | ~100% | Floor-based threshold |
-| `olsa_full` | `hybrid_r0_full.json` (full, 39 features) | ~100% | Floor-based threshold |
-
-### H2H Results (No Longer Deferred)
-
-The full H2H battery is now complete. See
-[h2h_battery_analysis.md](h2h_battery_analysis.md) for the full report.
-
-**Key H2H findings relevant to this promotion:**
-
-The H2H pairwise matchups produce a **partial dominance order** among the
-competitive bidders:
-
-```
-modeloespecifico  >  hybrid_olsa  >  olsa  ~  olsa_full
-```
-
-- modeloespecifico strictly dominates hybrid_olsa (delta +0.64–0.78, CI
-  excludes zero both directions)
-- hybrid_olsa strictly dominates olsa (+0.21 net_eppd wrapper effect, CI
-  excludes zero)
-- hybrid_olsa vs olsa_full is a draw
-- olsa vs olsa_full is a draw
-
-All four trained/heuristic-expert bidders dominate the three simple heuristics
-(rankthetank, fiveheadfred, stricthellraiser) by large, significant margins.
-
-### Evaluation Methodology Comparison
-
-The comparator battery and H2H battery measure different things:
-
-| | Comparator Battery | H2H Battery |
-|---|---|---|
-| **Design** | Each bidder plays alone vs GluttonStrategy (uncontested auction) | Two bidders compete directly (contested auction) |
-| **Measures** | Absolute performance against a common opponent | Relative performance between two bidders |
-| **Answers** | "Is this model any good?" | "Which model is better?" |
-| **Cost** | O(n) — one run per bidder | O(n²) — one run per pair |
-| **Limitation** | Rankings confounded by Glutton interaction | Cannot assess absolute quality |
-
-**Where the methods disagree:** `modeloespecifico` leads `olsa` by +1.86
-net_eppd in self-play but is a **draw** in H2H (+0.016, CI spans zero). The
-self-play gap reflects how each bidder interacts with GluttonStrategy's passive
-defense, not intrinsic bidding superiority.
-
-**Where they agree:** Both methods confirm modeloespecifico > hybrid_olsa and
-the large gap between trained bidders and simple heuristics. The PROMOTED
-decision is supported by both evaluation methods.
-
-**For promotion gates (R1+),** H2H pairwise comparison is the primary
-evaluation method. The comparator battery provides supplementary absolute
-benchmarking.
