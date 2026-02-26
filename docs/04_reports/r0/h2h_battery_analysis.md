@@ -49,17 +49,65 @@ raw `eppd`.
 seed=42). A matchup is "significant" when the CI on `net_eppd_delta` excludes
 zero.
 
-### 1.4 The Seven Bidders
+### 1.4 What This Methodology Measures (and What It Does Not)
+
+**Design:** Two bidders compete directly on the same deals. Both bidders
+participate in a contested auction — bidder A's bid may outbid B or vice versa,
+changing which contracts each side plays. Deals are seat-swapped to control for
+positional advantage.
+
+**Strengths:**
+
+- **True competitive ordering.** Measures which bidder is actually better when
+  they face each other in a contested auction. This is the only evaluation
+  method that captures auction interaction effects.
+- **Controlled for deal luck.** Paired deals + seat-swapping isolate bidding
+  skill from card distribution variance.
+- **Used for promotion gates.** The R1 promotion gate requires the challenger
+  to beat the incumbent by a calibrated delta_floor in direct H2H, not in
+  self-play.
+
+**Limitations:**
+
+- **Relative only.** Two equally weak models produce delta ~ 0, just as two
+  equally strong models do. H2H cannot tell you whether the models are any
+  good in absolute terms — only which is better. For absolute benchmarking,
+  see the [comparator rankings](comparator_rankings.md).
+- **O(n²) cost.** 7 bidders require 49 matchups; this becomes expensive at
+  publication resolution (10k deals/cell = 490k deals). The QUICK-then-FULL
+  design mitigates this by running a survey at 2k/cell first.
+- **Opponent-specific.** A bidder's H2H performance depends on who it faces.
+  Rock-paper-scissors effects (intransitivity) are possible in theory, though
+  not observed in R0.
+
+**Comparison with self-play comparator battery:** The comparator battery
+([comparator_rankings.md](comparator_rankings.md)) evaluates each bidder
+independently against GluttonStrategy in uncontested auctions. It answers "is
+this model any good?" while H2H answers "which model is better?" The two
+methods can give different rankings — for example, `modeloespecifico` leads
+`olsa` by +1.86 net_eppd in self-play but is statistically indistinguishable
+from it in H2H (+0.016, CI spans zero). This divergence arises because
+self-play rankings are confounded by how each bidder interacts with the common
+opponent, while H2H captures the actual competitive dynamic.
+
+### 1.5 The Seven Bidders
 
 | Bidder | Type | Description |
 |--------|------|-------------|
-| **hybrid_olsa** | Trained (Gaussian EV) | R0 OLSa with analytical P(make) via normal CDF. Selective bidder (bid_rate ~0.62). Uses 3 constrained features. |
-| **olsa** | Trained (floor-based) | Same R0 regression coefficients as hybrid_olsa, but uses floor-based threshold decision. Bids on all hands. |
-| **olsa_full** | Trained (floor-based) | Full-arm OLSa with all 39 features, floor-based decision. Bids on all hands. |
+| **hybrid_olsa** | Trained (Gaussian EV) | R0 OLSa with analytical P(make) via normal CDF. Selective bidder (bid_rate ~0.62). Uses 3 constrained features from `hybrid_r0.json`. |
+| **olsa** | Trained (floor-based) | Same R0 regression coefficients as hybrid_olsa (`hybrid_r0.json`), but uses floor-based threshold decision. Bids on all hands. |
+| **olsa_full** | Trained (floor-based) | Full-arm OLSa with all 39 features from `hybrid_r0_full.json`, floor-based decision. Bids on all hands. |
 | **modeloespecifico** | Heuristic (lookup) | Domain-expert lookup table tuned for this game variant. Always bids. |
 | **rankthetank** | Heuristic | Conservative rank-based heuristic. Always bids. |
 | **fiveheadfred** | Heuristic | Aggressive heuristic emphasizing high cards. Always bids. |
 | **stricthellraiser** | Heuristic | Maximally aggressive bidder. Always bids, rarely makes. |
+
+**Naming note:** In this report, `hybrid_olsa` refers to the **constrained OLSa
+arm** with Gaussian EV wrapper (bid_rate ~62%, 3 features). This differs from
+the earlier 5-bidder comparator battery
+([comparator_rankings.md](comparator_rankings.md)), where `hybrid_olsa` referred
+to the **OLSa_Full promotional arm** (bid_rate ~83%, forward-selected features).
+The 7-bidder battery disambiguates by giving `olsa_full` its own entry.
 
 ---
 

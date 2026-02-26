@@ -146,5 +146,78 @@ objective of future rungs (R1+).
 
 ## Exclusions
 
-- **H2H Matchup Report:** Deferred per C50 (not required at R0).
 - **Semantic gate Tier 2:** Not applicable at R0 (introduced at R1+).
+
+---
+
+## Addendum (2026-02-25)
+
+*Added after the H2H battery analysis was completed. The PROMOTED decision
+above is unchanged — this addendum provides additional context from subsequent
+experiments.*
+
+### Bidder Naming Clarification
+
+In the Comparator Context table above (5-bidder v1 battery), `hybrid_olsa`
+refers to the **OLSa_Full promotional arm** (`hybrid_r0_full.json`,
+forward-selected features, bid_rate = 82.8%). This is the same configuration
+reported as "OLSa_Full (Promotional Arm)" in the evaluation tables above.
+
+The later 7-bidder battery
+([h2h_battery_analysis.md](h2h_battery_analysis.md)) disambiguated the OLSa
+variants into three entries:
+
+| Name in 7-bidder battery | Artifact | Bid rate | Decision layer |
+|--------------------------|----------|----------|----------------|
+| `hybrid_olsa` | `hybrid_r0.json` (constrained, 3 features) | ~62% | Gaussian EV (P(make) via CDF) |
+| `olsa` | `hybrid_r0.json` (constrained, 3 features) | ~100% | Floor-based threshold |
+| `olsa_full` | `hybrid_r0_full.json` (full, 39 features) | ~100% | Floor-based threshold |
+
+### H2H Results (No Longer Deferred)
+
+The full H2H battery is now complete. See
+[h2h_battery_analysis.md](h2h_battery_analysis.md) for the full report.
+
+**Key H2H findings relevant to this promotion:**
+
+The H2H pairwise matchups produce a **partial dominance order** among the
+competitive bidders:
+
+```
+modeloespecifico  >  hybrid_olsa  >  olsa  ~  olsa_full
+```
+
+- modeloespecifico strictly dominates hybrid_olsa (delta +0.64–0.78, CI
+  excludes zero both directions)
+- hybrid_olsa strictly dominates olsa (+0.21 net_eppd wrapper effect, CI
+  excludes zero)
+- hybrid_olsa vs olsa_full is a draw
+- olsa vs olsa_full is a draw
+
+All four trained/heuristic-expert bidders dominate the three simple heuristics
+(rankthetank, fiveheadfred, stricthellraiser) by large, significant margins.
+
+### Evaluation Methodology Comparison
+
+The comparator battery and H2H battery measure different things:
+
+| | Comparator Battery | H2H Battery |
+|---|---|---|
+| **Design** | Each bidder plays alone vs GluttonStrategy (uncontested auction) | Two bidders compete directly (contested auction) |
+| **Measures** | Absolute performance against a common opponent | Relative performance between two bidders |
+| **Answers** | "Is this model any good?" | "Which model is better?" |
+| **Cost** | O(n) — one run per bidder | O(n²) — one run per pair |
+| **Limitation** | Rankings confounded by Glutton interaction | Cannot assess absolute quality |
+
+**Where the methods disagree:** `modeloespecifico` leads `olsa` by +1.86
+net_eppd in self-play but is a **draw** in H2H (+0.016, CI spans zero). The
+self-play gap reflects how each bidder interacts with GluttonStrategy's passive
+defense, not intrinsic bidding superiority.
+
+**Where they agree:** Both methods confirm modeloespecifico > hybrid_olsa and
+the large gap between trained bidders and simple heuristics. The PROMOTED
+decision is supported by both evaluation methods.
+
+**For promotion gates (R1+),** H2H pairwise comparison is the primary
+evaluation method. The comparator battery provides supplementary absolute
+benchmarking.

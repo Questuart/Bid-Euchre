@@ -93,3 +93,49 @@ scoring system.
 - **Source data:** data/artifacts/arc_d/r0/comparator_cis_r0.json (gitignored)
 - **Battery metadata:** data/artifacts/arc_d/r0/comparator_battery_r0.json
 - **gate_status:** PROMOTED (see [r0_promotion_report.md](r0_promotion_report.md))
+
+### Bidder Identity Note
+
+In this battery, `hybrid_olsa` refers to the **OLSa_Full promotional arm** using
+the `hybrid_r0_full.json` artifact (forward-selected features, 82.8% bid rate).
+This is the same configuration reported as "OLSa_Full (Promotional Arm)" in the
+[promotion report](r0_promotion_report.md). The 7-bidder comparator battery in
+[h2h_battery_analysis.md](h2h_battery_analysis.md) later separated the OLSa
+variants into three distinct entries (`hybrid_olsa`, `olsa_full`, `olsa`) with
+different definitions — see that report for the full naming convention.
+
+### What This Methodology Measures (and What It Does Not)
+
+**Design:** Each bidder plays independently against GluttonStrategy (the
+card-playing policy that controls all four seats). There is no competing bidder
+in the auction — the bidder under test declares contracts uncontested, and
+Glutton handles all card play for both teams.
+
+**Strengths:**
+
+- **Absolute scale.** Provides a common benchmark for answering "is this model
+  any good?" A positive net_eppd means the bidder adds value relative to a
+  no-bid baseline.
+- **Progress tracking.** Enables rung-over-rung comparison against a fixed
+  reference point without running O(n²) pairwise matchups.
+- **Reproducible exam.** Same deals, same opponent, same conditions — isolates
+  the bidding policy as the only variable.
+
+**Limitations:**
+
+- **Confounded by the common opponent.** Rankings reflect how well each bidder
+  interacts with GluttonStrategy, not intrinsic bidding quality. A bidder tuned
+  to exploit Glutton's tendencies may score well here but show no advantage in
+  direct competition.
+- **No auction interaction.** Real games have contested auctions where one
+  bidder's bid changes which contracts the opponent gets to play. This battery
+  evaluates uncontested bidding — a fundamentally different task.
+- **Self-play rankings ≠ competitive ordering.** The H2H battery
+  ([h2h_battery_analysis.md](h2h_battery_analysis.md)) shows that some self-play
+  gaps do not replicate under direct opposition. For example,
+  `modeloespecifico` leads `olsa` by +1.86 net_eppd in self-play, but the two
+  are statistically indistinguishable in head-to-head (+0.016, CI spans zero).
+
+**Bottom line:** Use these rankings for absolute benchmarking and progress
+tracking. For competitive ordering between bidders, see the
+[H2H battery analysis](h2h_battery_analysis.md).
