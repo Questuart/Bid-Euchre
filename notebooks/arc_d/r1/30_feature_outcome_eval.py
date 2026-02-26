@@ -1155,10 +1155,12 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns and _s35_ava
     _pmake_results = {}  # {ct: {mace, n_bins_populated, bin_data}}
 
     # Build bidder-only predictions per contract
-    df_bidder = df[df["is_bidder"] == True].copy()  # noqa: E712
-    if len(df_bidder) == 0:
+    if not HAS_SCIPY:
+        print("  scipy not available -- skipping P(make) calibration.")
+    elif len(df[df["is_bidder"] == True]) == 0:  # noqa: E712
         print("  No bidder rows found -- skipping P(make) calibration.")
     else:
+        df_bidder = df[df["is_bidder"] == True].copy()  # noqa: E712
         for ct in sorted(payoff.keys()):
             model = payoff[ct]
             feature_names = model.get("feature_names", [])
@@ -1203,9 +1205,7 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns and _s35_ava
             threshold = bid_n_valid - 0.5
             z = (threshold - mu_valid) / sigma_ct
             z = np.clip(z, -_Z_CAP, _Z_CAP)
-            p_make_pred = (
-                1.0 - scipy_stats.norm.cdf(z) if HAS_SCIPY else np.zeros_like(z)
-            )
+            p_make_pred = 1.0 - scipy_stats.norm.cdf(z)
 
             # Actual make: tricks_won >= bid_n (integer comparison)
             actual_make = (y_valid >= bid_n_valid).astype(float)
@@ -1423,6 +1423,10 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns and _s35_ava
         lines.append(f"**Mode:** {MODE}")
         lines.append(f"**Data source:** {_data_source}")
         lines.append("")
+        lines.append("| Field | Value |")
+        lines.append("|-------|-------|")
+        lines.append(f"| gate_status | INFORMATIONAL ({RUNG_ID} diagnostics) |")
+        lines.append("")
 
         # --- Verdict ---
         max_skew = 0.0
@@ -1492,7 +1496,7 @@ if _model_artifacts and not df.empty and "tricks_won" in df.columns and _s35_ava
         lines.append("|----------|-------|-------------------|--------|")
         for ct in ctypes_s35:
             if ct in _hetero_results:
-                ratio, bvar_data = _hetero_results[ct]
+                ratio, _ = _hetero_results[ct]
                 s2 = _rv_sigma2.get(ct, 0.0)
                 status = (
                     "ok" if ratio <= 2.0 else ("warning" if ratio <= 4.0 else "HIGH")
