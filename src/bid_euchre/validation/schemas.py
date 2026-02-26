@@ -30,7 +30,7 @@ REQUIRED_META_FIELDS_V2 = [
     "config_sha256",
     "is_deterministic",
     "seed",
-    "n_per"
+    "n_per",
 ]
 
 
@@ -100,11 +100,13 @@ REQUIRED_RESULTS_FIELDS = [
 ]
 
 
-def validate_results_json(results: Dict[str, Any], raise_on_error: bool = False) -> List[str]:
+def validate_results_json(
+    results: Dict[str, Any], raise_on_error: bool = False
+) -> List[str]:
     """Validate results JSON file (from simulation.py outputs).
 
     Results files are per-scenario outputs (e.g., results/greedy/suit_H.json).
-    See docs/01_core/METRICS.md and SCORING.md for field definitions.
+    See docs/01_core/METRICS.md for field definitions.
 
     Args:
         results: Loaded results.json dict
@@ -181,7 +183,9 @@ REQUIRED_ROLLUP_FIELDS_V1 = [
 ]
 
 
-def validate_rollup_v1(rollup: Dict[str, Any], raise_on_error: bool = False) -> List[str]:
+def validate_rollup_v1(
+    rollup: Dict[str, Any], raise_on_error: bool = False
+) -> List[str]:
     """Validate rollup.json schema v1 (from scripts/run_suite.py).
 
     Rollup files are suite-level summaries that aggregate multiple runs.

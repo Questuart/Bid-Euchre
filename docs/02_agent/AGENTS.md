@@ -21,8 +21,7 @@ This doc is the **operational guide**. Before working in this repo, also review:
 
 **AI agent guidance (docs/02_agent/):**
 - `AI_BOUNDARIES.md` - What AI agents can/cannot do
-- `QUALITY_BAR.md` - Code quality standards
-- `REVIEW_CHECKLIST.md` - Pre-PR checklist
+- `REVIEW_CHECKLIST.md` - Pre-PR checklist and quality standards
 
 **Implementation tracking:**
 - `docs/03_TODO/CODEBASE_CONSISTENCY.md` - Known gaps between docs and code
