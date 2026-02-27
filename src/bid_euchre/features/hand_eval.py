@@ -502,8 +502,8 @@ def score_hand_scalar(
     """
     A simple monotonic scalar hand score.
 
-    Used ONLY for debugging / sanity checks / visualization.
-    Not used directly for strategy or bidding.
+    Used for debugging, sanity checks, visualization, and as the scoring
+    function for the RanktheTank and HeuristicSuitBidder bidding policies.
     """
 
     score = 0

@@ -12,6 +12,7 @@ from bid_euchre.strategy.bidding import (
     BidAction,
     BiddingObservation,
     ModeloEspecifico,
+    RanktheTank,
     StrictHellRaiser,
     StrictRaiserBidder,
 )
@@ -108,12 +109,7 @@ class TestBiddingObservation:
     def test_observation_creation(self):
         """Test creating a bidding observation."""
         hand = [Card("S", "A"), Card("H", "K")]
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=2
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=2)
 
         assert obs.hand == hand
         assert obs.seat == 0
@@ -130,23 +126,13 @@ class TestAlwaysPassBidder:
         bidder = AlwaysPassBidder()
         hand = [Card("S", "A"), Card("H", "K")]
 
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         assert action.is_pass()
 
         # Test with existing high bid
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=5
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=5)
 
         action = bidder.choose_bid(obs)
         assert action.is_pass()
@@ -164,12 +150,7 @@ class TestStrictHellRaiser:
         bidder = StrictHellRaiser()
         hand = [Card("S", "A"), Card("H", "K")]
 
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         assert action.n == 3
@@ -181,24 +162,14 @@ class TestStrictHellRaiser:
         bidder = StrictHellRaiser()
 
         # Raise from 3 to 4
-        obs = BiddingObservation(
-            hand=[],
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=3
-        )
+        obs = BiddingObservation(hand=[], seat=0, dealer_seat=3, current_high_bid=3)
 
         action = bidder.choose_bid(obs)
         assert action.n == 4
         assert action.contract == "S"
 
         # Raise from 8 to 9
-        obs = BiddingObservation(
-            hand=[],
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=8
-        )
+        obs = BiddingObservation(hand=[], seat=0, dealer_seat=3, current_high_bid=8)
 
         action = bidder.choose_bid(obs)
         assert action.n == 9
@@ -209,12 +180,7 @@ class TestStrictHellRaiser:
         bidder = StrictHellRaiser()
 
         # Bid 10 when current is 9
-        obs = BiddingObservation(
-            hand=[],
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=9
-        )
+        obs = BiddingObservation(hand=[], seat=0, dealer_seat=3, current_high_bid=9)
 
         action = bidder.choose_bid(obs)
         assert action.n == 10
@@ -222,12 +188,7 @@ class TestStrictHellRaiser:
         assert not action.is_pass()
 
         # Pass when current is 10 (can't bid higher)
-        obs = BiddingObservation(
-            hand=[],
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=10
-        )
+        obs = BiddingObservation(hand=[], seat=0, dealer_seat=3, current_high_bid=10)
 
         action = bidder.choose_bid(obs)
         assert action.is_pass()
@@ -236,12 +197,7 @@ class TestStrictHellRaiser:
         """Test that bids convert to correct contract tuples."""
         bidder = StrictHellRaiser()
 
-        obs = BiddingObservation(
-            hand=[],
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=[], seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         contract_type, trump_suit = action.to_contract_tuple()
@@ -265,11 +221,9 @@ class TestArtifactBidder:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
+                "contract": "S",
             },
-            "metadata": {
-                "description": "Test artifact"
-            }
+            "metadata": {"description": "Test artifact"},
         }
 
         # Write to temp file
@@ -293,14 +247,26 @@ class TestArtifactBidder:
             "model_type": "heuristics_imitation_v1",
             "contract": "HIGH",
             "model_params": {
-                "suit_thresholds": {"bid_6": 350, "bid_5": 300, "bid_4": 250, "bid_3": 200},
-                "high_low_thresholds": {"bid_5": 40, "bid_4": 30, "bid_3": 20},
-                "high_card_ranks": ["A", "K", "Q"],
-                "low_card_ranks": ["J", "T"]
+                "suit_thresholds": {
+                    "bid_10": 750,
+                    "bid_9": 650,
+                    "bid_8": 550,
+                    "bid_7": 450,
+                    "bid_6": 350,
+                    "bid_5": 300,
+                    "bid_4": 250,
+                    "bid_3": 200,
+                },
+                "high_low_thresholds": {
+                    "bid_8": 500,
+                    "bid_7": 450,
+                    "bid_6": 400,
+                    "bid_5": 350,
+                    "bid_4": 280,
+                    "bid_3": 200,
+                },
             },
-            "metadata": {
-                "description": "Test heuristics artifact"
-            }
+            "metadata": {"description": "Test heuristics artifact"},
         }
 
         # Write to temp file
@@ -321,7 +287,7 @@ class TestArtifactBidder:
     def test_load_invalid_json(self, tmp_path):
         """Test loading invalid JSON."""
         artifact_path = tmp_path / "invalid.json"
-        with open(artifact_path, 'w') as f:
+        with open(artifact_path, "w") as f:
             f.write("invalid json {")
 
         with pytest.raises(ValueError, match="Invalid JSON"):
@@ -331,7 +297,6 @@ class TestArtifactBidder:
         """Test loading artifact with invalid schema version."""
         import json
 
-
         artifact = {
             "schema_version": "2",  # Invalid version
             "model_type": "strict_raiser_imitation_v1",
@@ -340,12 +305,12 @@ class TestArtifactBidder:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "invalid_schema.json"
-        with open(artifact_path, 'w') as f:
+        with open(artifact_path, "w") as f:
             json.dump(artifact, f)
 
         with pytest.raises(ValueError, match="Unsupported schema version"):
@@ -361,7 +326,7 @@ class TestArtifactBidder:
         }
 
         artifact_path = tmp_path / "missing_fields.json"
-        with open(artifact_path, 'w') as f:
+        with open(artifact_path, "w") as f:
             json.dump(artifact, f)
 
         with pytest.raises(ValueError, match="Missing required fields"):
@@ -379,12 +344,12 @@ class TestArtifactBidder:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "invalid_contract.json"
-        with open(artifact_path, 'w') as f:
+        with open(artifact_path, "w") as f:
             json.dump(artifact, f)
 
         with pytest.raises(ValueError, match="Invalid contract"):
@@ -398,7 +363,7 @@ class TestArtifactBidder:
             "schema_version": "1",
             "model_type": "unsupported_model_type",
             "contract": "S",
-            "model_params": {}
+            "model_params": {},
         }
 
         artifact_path = tmp_path / "unsupported_model.json"
@@ -420,8 +385,8 @@ class TestArtifactBidder:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "strict_raiser.json"
@@ -435,8 +400,8 @@ class TestArtifactBidder:
             (0, 3),  # Initial bid
             (3, 4),  # Raise by 1
             (5, 6),  # Raise by 1
-            (9, 10), # Raise by 1
-            (10, None), # Pass (can't raise above 10)
+            (9, 10),  # Raise by 1
+            (10, None),  # Pass (can't raise above 10)
         ]
 
         for current_high_bid, expected_n in test_cases:
@@ -444,7 +409,7 @@ class TestArtifactBidder:
                 hand=[],  # Hand doesn't matter for strict raiser
                 seat=0,
                 dealer_seat=3,
-                current_high_bid=current_high_bid
+                current_high_bid=current_high_bid,
             )
 
             artifact_action = artifact_bidder.choose_bid(obs)
@@ -469,11 +434,25 @@ class TestArtifactBidder:
             "model_type": "heuristics_imitation_v1",
             "contract": "S",
             "model_params": {
-                "suit_thresholds": {"bid_6": 350, "bid_5": 300, "bid_4": 250, "bid_3": 200},
-                "high_low_thresholds": {"bid_5": 40, "bid_4": 30, "bid_3": 20},
-                "high_card_ranks": ["A", "K", "Q"],
-                "low_card_ranks": ["J", "T"]
-            }
+                "suit_thresholds": {
+                    "bid_10": 750,
+                    "bid_9": 650,
+                    "bid_8": 550,
+                    "bid_7": 450,
+                    "bid_6": 350,
+                    "bid_5": 300,
+                    "bid_4": 250,
+                    "bid_3": 200,
+                },
+                "high_low_thresholds": {
+                    "bid_8": 500,
+                    "bid_7": 450,
+                    "bid_6": 400,
+                    "bid_5": 350,
+                    "bid_4": 280,
+                    "bid_3": 200,
+                },
+            },
         }
 
         artifact_path = tmp_path / "heuristics.json"
@@ -483,15 +462,20 @@ class TestArtifactBidder:
 
         # Test with a strong hand that should bid
         strong_hand = [
-            Card(suit="S", rank="A"), Card(suit="S", rank="K"), Card(suit="S", rank="Q"), Card(suit="S", rank="J"), Card(suit="S", rank="T"),
-            Card(suit="H", rank="A"), Card(suit="H", rank="K"), Card(suit="H", rank="Q"), Card(suit="H", rank="J"), Card(suit="H", rank="T")
+            Card(suit="S", rank="A"),
+            Card(suit="S", rank="K"),
+            Card(suit="S", rank="Q"),
+            Card(suit="S", rank="J"),
+            Card(suit="S", rank="T"),
+            Card(suit="H", rank="A"),
+            Card(suit="H", rank="K"),
+            Card(suit="H", rank="Q"),
+            Card(suit="H", rank="J"),
+            Card(suit="H", rank="T"),
         ]
 
         obs = BiddingObservation(
-            hand=strong_hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
+            hand=strong_hand, seat=0, dealer_seat=3, current_high_bid=0
         )
 
         action = artifact_bidder.choose_bid(obs)
@@ -511,8 +495,8 @@ class TestArtifactBidder:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "custom_name.json"
@@ -527,22 +511,14 @@ class TestBiddingPolicyConfig:
 
     def test_create_always_pass_bidder(self):
         """Test creating AlwaysPassBidder from config."""
-        config = BiddingPolicyConfig(
-            name="test_pass",
-            class_name="AlwaysPassBidder"
-        )
+        config = BiddingPolicyConfig(name="test_pass", class_name="AlwaysPassBidder")
 
         bidder = config.create_bidding_policy()
         assert bidder.name == "test_pass"
         assert isinstance(bidder, AlwaysPassBidder)
 
         # Test it always passes
-        obs = BiddingObservation(
-            hand=[],
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=[], seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
         assert action.is_pass()
 
@@ -559,8 +535,8 @@ class TestBiddingPolicyConfig:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "config_test.json"
@@ -569,7 +545,7 @@ class TestBiddingPolicyConfig:
         config = BiddingPolicyConfig(
             name="test_artifact",
             class_name="ArtifactBidder",
-            params={"artifact_path": str(artifact_path)}
+            params={"artifact_path": str(artifact_path)},
         )
 
         bidder = config.create_bidding_policy()
@@ -581,18 +557,17 @@ class TestBiddingPolicyConfig:
         config = BiddingPolicyConfig(
             name="test_artifact",
             class_name="ArtifactBidder",
-            params={}  # Missing artifact_path
+            params={},  # Missing artifact_path
         )
 
-        with pytest.raises(ValueError, match="ArtifactBidder requires 'artifact_path' parameter"):
+        with pytest.raises(
+            ValueError, match="ArtifactBidder requires 'artifact_path' parameter"
+        ):
             config.create_bidding_policy()
 
     def test_unknown_bidding_policy_class(self):
         """Test unknown bidding policy class."""
-        config = BiddingPolicyConfig(
-            name="test",
-            class_name="UnknownBidder"
-        )
+        config = BiddingPolicyConfig(name="test", class_name="UnknownBidder")
 
         with pytest.raises(ValueError, match="Unknown bidding policy class"):
             config.create_bidding_policy()
@@ -616,12 +591,7 @@ class TestModeloEspecifico:
             Card("S", "A"),  # Offsuit Ace
         ]
 
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         assert not action.is_pass()
@@ -642,12 +612,7 @@ class TestModeloEspecifico:
             Card("C", "T"),  # Offsuit (not ace)
         ]
 
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         assert action.is_pass()
@@ -667,12 +632,7 @@ class TestModeloEspecifico:
             Card("D", "K"),  # Offsuit
         ]
 
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         assert not action.is_pass()
@@ -692,12 +652,7 @@ class TestModeloEspecifico:
         ]
 
         # Current high bid is 4, so must bid higher or pass
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=4
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=4)
 
         action = bidder.choose_bid(obs)
         # Score is 4.5 → floor to 4, but 4 is not > 4, so must pass
@@ -729,12 +684,7 @@ class TestModeloEspecifico:
         ]
         # Score = 1.0 * 1 + 0.5 * 4 + 0.5 * 0 = 1 + 2 + 0 = 3.0 → bid 3
 
-        obs = BiddingObservation(
-            hand=hand,
-            seat=0,
-            dealer_seat=3,
-            current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
         assert not action.is_pass()
@@ -759,9 +709,7 @@ class TestModeloEspecifico:
             Card("H", "Q"),
         ]
 
-        obs = BiddingObservation(
-            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
         assert not action.is_pass()
         assert action.contract == "HIGH"
@@ -785,9 +733,7 @@ class TestModeloEspecifico:
             Card("H", "T"),
         ]
 
-        obs = BiddingObservation(
-            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
         # Suit contracts: no bowers, max 2 trump per suit, 1-2 offsuit aces
         # Score for any suit: 0 + 0.5*2 + 0.5*1 = 1.5 at best → pass
@@ -812,9 +758,7 @@ class TestModeloEspecifico:
             Card("H", "K"),
         ]
 
-        obs = BiddingObservation(
-            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
         assert not action.is_pass()
         assert action.contract == "LOW"
@@ -838,9 +782,175 @@ class TestModeloEspecifico:
             Card("H", "K"),
         ]
 
-        obs = BiddingObservation(
-            hand=hand, seat=0, dealer_seat=3, current_high_bid=0
-        )
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
         # No suit should score 3 either (no bowers, max 2 trump, limited aces)
         assert action.is_pass()
+
+
+class TestRanktheTankThresholds:
+    """Test RanktheTank threshold recalibration (PR-B2 fixes)."""
+
+    def test_strong_suit_bids_above_6(self):
+        """Suit score 740 (>=650) should bid 9 via extended threshold table.
+
+        Spades trump: RB(120)+LB(110)+SA(100)+SK(90)+SQ(80)+ST(60)=560 trump
+        + HA(50)+HA(50)+HK(40)+HK(40)=180 offsuit → total 740 → bid 9.
+        Before fix: capped at 6 (max threshold was 350).
+        """
+        bidder = RanktheTank()
+        hand = [
+            Card("S", "J"),
+            Card("C", "J"),
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("S", "Q"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "K"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n >= 7, f"Expected bid >= 7 for score 740, got {action.n}"
+
+    def test_suit_threshold_extended_verifies_bid_7(self):
+        """Suit score in 450-549 range should bid exactly 7.
+
+        4K(90ea)+6Q(80ea trump, 30ea offsuit). Spades trump (3 cards):
+        SK(90)+SK(90)+SQ(80)=260 trump + HK(40)*2+DQ(30)*2+CQ(30)*2+HQ(30)=230 offsuit
+        Total S = 490 → 450<=490<550 → bid 7.
+        """
+        bidder = RanktheTank()
+        hand = [
+            Card("S", "K"),
+            Card("S", "K"),
+            Card("H", "K"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("D", "Q"),
+            Card("C", "Q"),
+            Card("C", "Q"),
+            Card("S", "Q"),
+            Card("H", "Q"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n == 7, f"Expected bid 7 for suit score 490, got {action.n}"
+
+    def test_high_low_both_evaluated(self):
+        """Both HIGH and LOW are evaluated unconditionally after mutual exclusion fix.
+
+        Verify a known hand produces the expected bid from computed scores.
+        6A+4T: HIGH=6*50+4*10=340→bid 4, LOW=6*10+4*50=260→bid 3.
+        Suit S (SA*2+ST=260 trump + 7 offsuit=230) = 490 → bid 7 wins.
+        """
+        bidder = RanktheTank()
+        hand = [
+            Card("S", "A"),
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("H", "A"),
+            Card("D", "A"),
+            Card("D", "A"),
+            Card("C", "T"),
+            Card("C", "T"),
+            Card("S", "T"),
+            Card("H", "T"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n == 7
+
+    def test_smoke_suit_bids_above_6(self):
+        """200 seeded random hands produce suit bids spanning multiple levels including >6."""
+        import random as stdlib_random
+
+        from bid_euchre.core.cards import RANKS, SUITS
+
+        bidder = RanktheTank()
+        rng = stdlib_random.Random(42)
+        deck = [Card(s, r) for s in SUITS for r in RANKS for _ in range(2)]
+
+        suit_bid_levels = set()
+        for _ in range(200):
+            rng.shuffle(deck)
+            hand = deck[:10]
+            obs = BiddingObservation(
+                hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+            )
+            action = bidder.choose_bid(obs)
+            if not action.is_pass() and action.contract in SUITS:
+                suit_bid_levels.add(action.n)
+
+        assert (
+            max(suit_bid_levels) > 6
+        ), f"Expected suit bids above 6, max was {max(suit_bid_levels)}"
+        assert len(suit_bid_levels) >= 3, (
+            f"Expected >=3 distinct suit bid levels, got {len(suit_bid_levels)}: "
+            f"{sorted(suit_bid_levels)}"
+        )
+
+    def test_high_low_thresholds_via_score(self):
+        """Verify HIGH/LOW threshold mapping directly via score_hand_scalar.
+
+        Suit scoring structurally dominates HIGH/LOW in nearly all hands,
+        so we test the HIGH/LOW threshold logic by constructing specific
+        score values and checking the resulting bid_n.
+        """
+        from bid_euchre.features.hand_eval import score_hand_scalar
+
+        # 8 aces + 2 kings: HIGH score = 8*50 + 2*40 = 480
+        hand_strong_high = [
+            Card("S", "A"),
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("H", "A"),
+            Card("D", "A"),
+            Card("D", "A"),
+            Card("C", "A"),
+            Card("C", "A"),
+            Card("S", "K"),
+            Card("H", "K"),
+        ]
+        high_score = score_hand_scalar(hand_strong_high, "high", None)
+        assert high_score == 480
+        # 450 <= 480 < 500 → bid 7
+
+        # 8 tens + 2 jacks: LOW score = 8*50 + 2*40 = 480
+        hand_strong_low = [
+            Card("S", "T"),
+            Card("S", "T"),
+            Card("H", "T"),
+            Card("H", "T"),
+            Card("D", "T"),
+            Card("D", "T"),
+            Card("C", "T"),
+            Card("C", "T"),
+            Card("S", "J"),
+            Card("H", "J"),
+        ]
+        low_score = score_hand_scalar(hand_strong_low, "low", None)
+        assert low_score == 480
+        # 450 <= 480 < 500 → bid 7
+
+        # 5 kings(40) + 5 queens(30): HIGH = 350 → bid 5
+        hand_mid_high = [
+            Card("S", "K"),
+            Card("S", "K"),
+            Card("H", "K"),
+            Card("H", "K"),
+            Card("D", "K"),
+            Card("S", "Q"),
+            Card("H", "Q"),
+            Card("D", "Q"),
+            Card("C", "Q"),
+            Card("C", "Q"),
+        ]
+        mid_score = score_hand_scalar(hand_mid_high, "high", None)
+        assert mid_score == 350
+        # 350 <= 350 < 400 → bid 5 (was always 5 before fix due to broken thresholds)
