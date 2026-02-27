@@ -449,21 +449,23 @@ class ModeloEspecifico(BiddingPolicy):
                 + 0.5 * features["offsuit_aces"]
             )
             bid_n = int(score)  # floor
-            if 3 <= bid_n <= 6 and bid_n > obs.current_high_bid:
+            # Floor of 3 is intentional: the heuristic formula (bowers + 0.5*trump
+            # + 0.5*offsuit_aces) cannot produce meaningful bids below 3.
+            if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
                 candidates.append((score, bid_n, suit))
 
         # Evaluate HIGH contract: score = 1.0 * offsuit_aces
         features_high = get_hand_features(obs.hand, "high", None)
         score_high = 1.0 * features_high["offsuit_aces"]
         bid_n_high = int(score_high)
-        if 3 <= bid_n_high <= 6 and bid_n_high > obs.current_high_bid:
+        if 3 <= bid_n_high <= 10 and bid_n_high > obs.current_high_bid:
             candidates.append((score_high, bid_n_high, "HIGH"))
 
         # Evaluate LOW contract: score = 1.0 * offsuit_tens_count
         features_low = get_hand_features(obs.hand, "low", None)
         score_low = 1.0 * features_low["offsuit_tens_count"]
         bid_n_low = int(score_low)
-        if 3 <= bid_n_low <= 6 and bid_n_low > obs.current_high_bid:
+        if 3 <= bid_n_low <= 10 and bid_n_low > obs.current_high_bid:
             candidates.append((score_low, bid_n_low, "LOW"))
 
         if not candidates:
@@ -745,7 +747,7 @@ class OLSaBidder(BiddingPolicy):
                 features = get_hand_features(obs.hand, "suit", suit)
                 predicted_tricks = self._predict("suit", features)
                 bid_n = math.floor(predicted_tricks)
-                if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+                if 1 <= bid_n <= 10 and bid_n > obs.current_high_bid:
                     candidates.append((predicted_tricks, bid_n, suit))
 
         # Evaluate HIGH
@@ -753,7 +755,7 @@ class OLSaBidder(BiddingPolicy):
             features = get_hand_features(obs.hand, "high", None)
             predicted_tricks = self._predict("high", features)
             bid_n = math.floor(predicted_tricks)
-            if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+            if 1 <= bid_n <= 10 and bid_n > obs.current_high_bid:
                 candidates.append((predicted_tricks, bid_n, "HIGH"))
 
         # Evaluate LOW
@@ -761,7 +763,7 @@ class OLSaBidder(BiddingPolicy):
             features = get_hand_features(obs.hand, "low", None)
             predicted_tricks = self._predict("low", features)
             bid_n = math.floor(predicted_tricks)
-            if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+            if 1 <= bid_n <= 10 and bid_n > obs.current_high_bid:
                 candidates.append((predicted_tricks, bid_n, "LOW"))
 
         if not candidates:
@@ -1014,7 +1016,7 @@ class HybridOLSaBidder(BiddingPolicy):
                 bid_n = math.floor(mu)
 
                 # Clamp bid to valid range
-                if bid_n < 3 or bid_n > 10:
+                if bid_n < 1 or bid_n > 10:
                     continue
 
                 # Must exceed current high bid
