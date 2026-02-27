@@ -42,7 +42,7 @@ class TestStrictRaiserModel:
             "initial_bid": {"n": 3, "contract": "S"},
             "raise_increment": 1,
             "max_bid": 10,
-            "contract": "S"
+            "contract": "S",
         }
         assert model.rules == expected_rules
 
@@ -97,10 +97,7 @@ class TestFiveHeadFredModel:
         """Test model initializes with correct rules."""
         model = FiveHeadFredModel("S")
 
-        expected_rules = {
-            "target_bid": 5,
-            "contract": "S"
-        }
+        expected_rules = {"target_bid": 5, "contract": "S"}
         assert model.rules == expected_rules
 
     def test_predict_bid_legal_cases(self):
@@ -167,7 +164,9 @@ class TestFiveHeadFredModel:
 
         # Different seeds should produce different timestamps but same structure
         artifact3 = model1.to_artifact_dict("H", seed=456)
-        assert artifact1["metadata"]["created_at"] != artifact3["metadata"]["created_at"]
+        assert (
+            artifact1["metadata"]["created_at"] != artifact3["metadata"]["created_at"]
+        )
         assert artifact1["model_params"] == artifact3["model_params"]
 
 
@@ -213,7 +212,7 @@ class TestTrainingPipeline:
             else:
                 teacher_dict = {
                     "n": teacher_action.n,
-                    "contract": teacher_action.contract
+                    "contract": teacher_action.contract,
                 }
 
             assert model_prediction == teacher_dict, (
@@ -223,14 +222,12 @@ class TestTrainingPipeline:
 
     def test_train_and_save_model(self):
         """Test end-to-end training and saving."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             output_path = f.name
 
         try:
             artifact = train_and_save_model(
-                contract="S",
-                output_path=output_path,
-                seed=42
+                contract="S", output_path=output_path, seed=42
             )
 
             # Check artifact was returned
@@ -250,9 +247,7 @@ class TestTrainingPipeline:
         artifact_name = "artifact_without_dir.json"
         try:
             artifact = train_and_save_model(
-                contract="S",
-                output_path=artifact_name,
-                seed=99
+                contract="S", output_path=artifact_name, seed=99
             )
 
             assert Path(artifact_name).exists()
@@ -273,7 +268,10 @@ class TestTrainingPipeline:
 
         # Check deterministic metadata
         metadata = artifacts[0]["metadata"]
-        assert artifacts[0]["metadata"]["created_at"] == artifacts[1]["metadata"]["created_at"]
+        assert (
+            artifacts[0]["metadata"]["created_at"]
+            == artifacts[1]["metadata"]["created_at"]
+        )
         assert metadata["training_seed"] == 42
 
     def test_different_contracts_produce_different_artifacts(self):
@@ -317,12 +315,15 @@ class TestHeuristicsModel:
         # Check structure of rules
         assert "suit_thresholds" in model.rules
         assert "high_low_thresholds" in model.rules
-        assert "high_card_ranks" in model.rules
-        assert "low_card_ranks" in model.rules
 
         # Check suit thresholds
         assert model.rules["suit_thresholds"]["bid_3"] == 200
         assert model.rules["suit_thresholds"]["bid_6"] == 350
+        assert model.rules["suit_thresholds"]["bid_10"] == 750
+
+        # Check high_low thresholds
+        assert model.rules["high_low_thresholds"]["bid_3"] == 200
+        assert model.rules["high_low_thresholds"]["bid_8"] == 500
 
     def test_to_artifact_dict(self):
         """Test artifact dictionary creation."""
@@ -385,7 +386,7 @@ class TestHeuristicsTrainingPipeline:
             else:
                 teacher_dict = {
                     "n": teacher_action.n,
-                    "contract": teacher_action.contract
+                    "contract": teacher_action.contract,
                 }
 
             assert model_prediction == teacher_dict, (
@@ -413,15 +414,12 @@ class TestHeuristicsTrainingPipeline:
 
     def test_train_and_save_model_fiveheadfred(self):
         """Test end-to-end training and saving for FiveHeadFred."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             output_path = f.name
 
         try:
             artifact = train_and_save_model(
-                contract="H",
-                output_path=output_path,
-                seed=99,
-                teacher="fiveheadfred"
+                contract="H", output_path=output_path, seed=99, teacher="fiveheadfred"
             )
 
             # Check artifact was returned
@@ -442,15 +440,12 @@ class TestHeuristicsTrainingPipeline:
 
     def test_train_and_save_model_heuristics(self):
         """Test end-to-end training and saving for heuristics."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             output_path = f.name
 
         try:
             artifact = train_and_save_model(
-                contract="S",
-                output_path=output_path,
-                seed=42,
-                teacher="heuristics"
+                contract="S", output_path=output_path, seed=42, teacher="heuristics"
             )
 
             # Check artifact was returned
@@ -477,7 +472,10 @@ class TestHeuristicsTrainingPipeline:
         assert artifacts[0] == artifacts[1]
 
         # Check deterministic metadata
-        assert artifacts[0]["metadata"]["created_at"] == artifacts[1]["metadata"]["created_at"]
+        assert (
+            artifacts[0]["metadata"]["created_at"]
+            == artifacts[1]["metadata"]["created_at"]
+        )
         assert artifacts[0]["metadata"]["training_seed"] == 42
 
     def test_different_seeds_produce_different_artifacts_heuristics(self):
@@ -489,7 +487,10 @@ class TestHeuristicsTrainingPipeline:
         assert artifact_42["model_params"] == artifact_99["model_params"]
 
         # But metadata should differ (different created_at due to seed)
-        assert artifact_42["metadata"]["created_at"] != artifact_99["metadata"]["created_at"]
+        assert (
+            artifact_42["metadata"]["created_at"]
+            != artifact_99["metadata"]["created_at"]
+        )
         assert artifact_42["metadata"]["training_seed"] == 42
         assert artifact_99["metadata"]["training_seed"] == 99
 
@@ -521,22 +522,14 @@ class TestTeacherParameter:
 
     def test_strict_raiser_teacher(self):
         """Test training with strict_raiser teacher."""
-        artifact = train_and_save_model(
-            contract="S",
-            seed=42,
-            teacher="strict_raiser"
-        )
+        artifact = train_and_save_model(contract="S", seed=42, teacher="strict_raiser")
 
         assert artifact["model_type"] == "strict_raiser_imitation_v1"
         assert artifact["metadata"]["teacher_model"] == "StrictRaiserBidder"
 
     def test_heuristics_teacher(self):
         """Test training with heuristics teacher."""
-        artifact = train_and_save_model(
-            contract="S",
-            seed=42,
-            teacher="heuristics"
-        )
+        artifact = train_and_save_model(contract="S", seed=42, teacher="heuristics")
 
         assert artifact["model_type"] == "heuristics_imitation_v1"
         assert artifact["metadata"]["teacher_model"] == "RanktheTank"
@@ -544,11 +537,7 @@ class TestTeacherParameter:
     def test_unknown_teacher_raises_error(self):
         """Test that unknown teacher raises ValueError."""
         with pytest.raises(ValueError, match="Unknown teacher type"):
-            train_and_save_model(
-                contract="S",
-                seed=42,
-                teacher="unknown_teacher"
-            )
+            train_and_save_model(contract="S", seed=42, teacher="unknown_teacher")
 
     def test_backward_compatibility_default_teacher(self):
         """Test that default teacher is strict_raiser for backward compatibility."""
@@ -565,7 +554,9 @@ class TestDatasetLoading:
 
     def test_fixture_exists(self):
         """Ensure the tiny fixture file exists."""
-        assert self.FIXTURE_PATH.exists(), f"Fixture file not found: {self.FIXTURE_PATH}"
+        assert (
+            self.FIXTURE_PATH.exists()
+        ), f"Fixture file not found: {self.FIXTURE_PATH}"
 
     def test_load_bidding_dataset_jsonl(self):
         """Test loading the JSONL dataset."""
@@ -585,7 +576,7 @@ class TestDatasetLoading:
 
     def test_load_empty_file(self):
         """Test loading an empty JSONL file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             temp_path = f.name
 
         try:
@@ -596,7 +587,7 @@ class TestDatasetLoading:
 
     def test_load_invalid_jsonl(self):
         """Test loading invalid JSONL raises appropriate error."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write("invalid json line\n")
             f.write("another invalid line\n")
             temp_path = f.name

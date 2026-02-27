@@ -5,7 +5,6 @@ Tests verify that ArtifactGreedyStrategy can load and execute teacher-style
 artifacts (strict_raiser_imitation_v1, heuristics_imitation_v1) deterministically.
 """
 
-
 import pytest
 
 from bid_euchre.core.cards import Card
@@ -26,11 +25,9 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
+                "contract": "S",
             },
-            "metadata": {
-                "description": "Test strict raiser artifact"
-            }
+            "metadata": {"description": "Test strict raiser artifact"},
         }
 
         artifact_path = tmp_path / "strict_raiser.json"
@@ -38,8 +35,7 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
 
         # Should load without error
         strategy = ArtifactGreedyStrategy(
-            name="test_strict",
-            artifact_path=str(artifact_path)
+            name="test_strict", artifact_path=str(artifact_path)
         )
 
         assert strategy.name == "test_strict"
@@ -52,14 +48,26 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             "model_type": "heuristics_imitation_v1",
             "contract": "HIGH",
             "model_params": {
-                "suit_thresholds": {"bid_6": 350, "bid_5": 300, "bid_4": 250, "bid_3": 200},
-                "high_low_thresholds": {"bid_5": 40, "bid_4": 30, "bid_3": 20},
-                "high_card_ranks": ["A", "K", "Q"],
-                "low_card_ranks": ["J", "T"]
+                "suit_thresholds": {
+                    "bid_10": 750,
+                    "bid_9": 650,
+                    "bid_8": 550,
+                    "bid_7": 450,
+                    "bid_6": 350,
+                    "bid_5": 300,
+                    "bid_4": 250,
+                    "bid_3": 200,
+                },
+                "high_low_thresholds": {
+                    "bid_8": 500,
+                    "bid_7": 450,
+                    "bid_6": 400,
+                    "bid_5": 350,
+                    "bid_4": 280,
+                    "bid_3": 200,
+                },
             },
-            "metadata": {
-                "description": "Test heuristics artifact"
-            }
+            "metadata": {"description": "Test heuristics artifact"},
         }
 
         artifact_path = tmp_path / "heuristics.json"
@@ -67,8 +75,7 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
 
         # Should load without error
         strategy = ArtifactGreedyStrategy(
-            name="test_heuristics",
-            artifact_path=str(artifact_path)
+            name="test_heuristics", artifact_path=str(artifact_path)
         )
 
         assert strategy.name == "test_heuristics"
@@ -84,20 +91,25 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "strict_raiser.json"
         dump_artifact(artifact, str(artifact_path))
 
         strategy = ArtifactGreedyStrategy(
-            name="test_strict",
-            artifact_path=str(artifact_path)
+            name="test_strict", artifact_path=str(artifact_path)
         )
 
         # Create a sample hand (content doesn't matter for strict raiser logic)
-        hand = [Card("S", "A"), Card("S", "K"), Card("H", "Q"), Card("D", "J"), Card("C", "T")]
+        hand = [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("H", "Q"),
+            Card("D", "J"),
+            Card("C", "T"),
+        ]
 
         # Test initial bid (current_high_bid = 0)
         bid_amount, contract_type, suit = strategy.decide_bid(
@@ -105,7 +117,7 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             current_high_bid=0,
             current_winner_index=None,
             partner_index=2,
-            player_index=0
+            player_index=0,
         )
 
         assert bid_amount == 3
@@ -122,19 +134,24 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 6,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "strict_raiser.json"
         dump_artifact(artifact, str(artifact_path))
 
         strategy = ArtifactGreedyStrategy(
-            name="test_strict",
-            artifact_path=str(artifact_path)
+            name="test_strict", artifact_path=str(artifact_path)
         )
 
-        hand = [Card("S", "A"), Card("S", "K"), Card("H", "Q"), Card("D", "J"), Card("C", "T")]
+        hand = [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("H", "Q"),
+            Card("D", "J"),
+            Card("C", "T"),
+        ]
 
         # Test raising (current_high_bid = 4)
         bid_amount, contract_type, suit = strategy.decide_bid(
@@ -142,7 +159,7 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             current_high_bid=4,
             current_winner_index=1,
             partner_index=2,
-            player_index=0
+            player_index=0,
         )
 
         assert bid_amount == 5  # 4 + 1
@@ -159,19 +176,24 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 5,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "strict_raiser.json"
         dump_artifact(artifact, str(artifact_path))
 
         strategy = ArtifactGreedyStrategy(
-            name="test_strict",
-            artifact_path=str(artifact_path)
+            name="test_strict", artifact_path=str(artifact_path)
         )
 
-        hand = [Card("S", "A"), Card("S", "K"), Card("H", "Q"), Card("D", "J"), Card("C", "T")]
+        hand = [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("H", "Q"),
+            Card("D", "J"),
+            Card("C", "T"),
+        ]
 
         # Test max bid (current_high_bid = 5, max_bid = 5)
         bid_amount, contract_type, suit = strategy.decide_bid(
@@ -179,7 +201,7 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             current_high_bid=5,
             current_winner_index=1,
             partner_index=2,
-            player_index=0
+            player_index=0,
         )
 
         assert bid_amount == 0  # Pass
@@ -193,30 +215,49 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             "model_type": "heuristics_imitation_v1",
             "contract": "HIGH",
             "model_params": {
-                "suit_thresholds": {"bid_6": 350, "bid_5": 300, "bid_4": 250, "bid_3": 200},
-                "high_low_thresholds": {"bid_5": 40, "bid_4": 30, "bid_3": 20},
-                "high_card_ranks": ["A", "K", "Q"],
-                "low_card_ranks": ["J", "T"]
-            }
+                "suit_thresholds": {
+                    "bid_10": 750,
+                    "bid_9": 650,
+                    "bid_8": 550,
+                    "bid_7": 450,
+                    "bid_6": 350,
+                    "bid_5": 300,
+                    "bid_4": 250,
+                    "bid_3": 200,
+                },
+                "high_low_thresholds": {
+                    "bid_8": 500,
+                    "bid_7": 450,
+                    "bid_6": 400,
+                    "bid_5": 350,
+                    "bid_4": 280,
+                    "bid_3": 200,
+                },
+            },
         }
 
         artifact_path = tmp_path / "heuristics.json"
         dump_artifact(artifact, str(artifact_path))
 
         strategy = ArtifactGreedyStrategy(
-            name="test_heuristics",
-            artifact_path=str(artifact_path)
+            name="test_heuristics", artifact_path=str(artifact_path)
         )
 
         # Strong hand with high cards (using valid ranks: T, J, Q, K, A)
-        hand = [Card("S", "A"), Card("H", "A"), Card("D", "K"), Card("C", "K"), Card("S", "Q")]
+        hand = [
+            Card("S", "A"),
+            Card("H", "A"),
+            Card("D", "K"),
+            Card("C", "K"),
+            Card("S", "Q"),
+        ]
 
         bid_amount, contract_type, suit = strategy.decide_bid(
             hand=hand,
             current_high_bid=0,
             current_winner_index=None,
             partner_index=2,
-            player_index=0
+            player_index=0,
         )
 
         # Strong hand should bid (exact amount depends on scoring, but should not pass)
@@ -237,22 +278,20 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             "model_params": {
                 "coefficients": [0.1, 0.2, -0.05],
                 "features": ["trump_count", "high_card_points", "suit_length"],
-                "intercept": 0.5
+                "intercept": 0.5,
             },
-            "metadata": {
-                "description": "Linear regression test"
-            }
+            "metadata": {"description": "Linear regression test"},
         }
 
         artifact_path = tmp_path / "linear.json"
         dump_artifact(artifact, str(artifact_path))
 
         # Should fail at initialization with clear error message
-        with pytest.raises(NotImplementedError, match="linear_regression artifacts are reserved for future work"):
-            ArtifactGreedyStrategy(
-                name="test_linear",
-                artifact_path=str(artifact_path)
-            )
+        with pytest.raises(
+            NotImplementedError,
+            match="linear_regression artifacts are reserved for future work",
+        ):
+            ArtifactGreedyStrategy(name="test_linear", artifact_path=str(artifact_path))
 
     def test_determinism_strict_raiser(self, tmp_path):
         """Test that strict_raiser artifact produces deterministic results."""
@@ -264,23 +303,27 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
                 "initial_bid": {"n": 3, "contract": "S"},
                 "raise_increment": 1,
                 "max_bid": 10,
-                "contract": "S"
-            }
+                "contract": "S",
+            },
         }
 
         artifact_path = tmp_path / "strict_raiser.json"
         dump_artifact(artifact, str(artifact_path))
 
         strategy1 = ArtifactGreedyStrategy(
-            name="test_strict_1",
-            artifact_path=str(artifact_path)
+            name="test_strict_1", artifact_path=str(artifact_path)
         )
         strategy2 = ArtifactGreedyStrategy(
-            name="test_strict_2",
-            artifact_path=str(artifact_path)
+            name="test_strict_2", artifact_path=str(artifact_path)
         )
 
-        hand = [Card("S", "A"), Card("S", "K"), Card("H", "Q"), Card("D", "J"), Card("C", "T")]
+        hand = [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("H", "Q"),
+            Card("D", "J"),
+            Card("C", "T"),
+        ]
 
         # Test multiple calls produce same result
         result1_a = strategy1.decide_bid(hand, 0, None, 2, 0)
@@ -297,22 +340,41 @@ class TestArtifactGreedyStrategyTeacherArtifacts:
             "model_type": "heuristics_imitation_v1",
             "contract": "HIGH",
             "model_params": {
-                "suit_thresholds": {"bid_6": 350, "bid_5": 300, "bid_4": 250, "bid_3": 200},
-                "high_low_thresholds": {"bid_5": 40, "bid_4": 30, "bid_3": 20},
-                "high_card_ranks": ["A", "K", "Q"],
-                "low_card_ranks": ["J", "T"]
-            }
+                "suit_thresholds": {
+                    "bid_10": 750,
+                    "bid_9": 650,
+                    "bid_8": 550,
+                    "bid_7": 450,
+                    "bid_6": 350,
+                    "bid_5": 300,
+                    "bid_4": 250,
+                    "bid_3": 200,
+                },
+                "high_low_thresholds": {
+                    "bid_8": 500,
+                    "bid_7": 450,
+                    "bid_6": 400,
+                    "bid_5": 350,
+                    "bid_4": 280,
+                    "bid_3": 200,
+                },
+            },
         }
 
         artifact_path = tmp_path / "heuristics.json"
         dump_artifact(artifact, str(artifact_path))
 
         strategy = ArtifactGreedyStrategy(
-            name="test_heuristics",
-            artifact_path=str(artifact_path)
+            name="test_heuristics", artifact_path=str(artifact_path)
         )
 
-        hand = [Card("S", "A"), Card("S", "K"), Card("H", "Q"), Card("D", "A"), Card("C", "K")]
+        hand = [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("H", "Q"),
+            Card("D", "A"),
+            Card("C", "K"),
+        ]
 
         # Test multiple calls produce same result
         result1 = strategy.decide_bid(hand, 0, None, 2, 0)

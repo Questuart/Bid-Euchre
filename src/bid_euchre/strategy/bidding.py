@@ -344,8 +344,16 @@ class RanktheTank(BiddingPolicy):
         for suit in ["C", "D", "H", "S"]:
             strength = score_hand_scalar(obs.hand, "suit", suit)
 
-            # Map strength to bid amount using HeuristicSuitBidder thresholds
-            if strength >= 350:
+            # Map strength to bid amount
+            if strength >= 750:
+                bid_n = 10
+            elif strength >= 650:
+                bid_n = 9
+            elif strength >= 550:
+                bid_n = 8
+            elif strength >= 450:
+                bid_n = 7
+            elif strength >= 350:
                 bid_n = 6
             elif strength >= 300:
                 bid_n = 5
@@ -360,39 +368,45 @@ class RanktheTank(BiddingPolicy):
             if bid_n > obs.current_high_bid:
                 candidates.append((strength, bid_n, suit))
 
-        # Evaluate HIGH/LOW contracts
-        high_cards = sum(1 for card in obs.hand if card.rank in {"A", "K", "Q"})
-        low_cards = sum(1 for card in obs.hand if card.rank in {"J", "T"})
+        # Evaluate HIGH contract (always, regardless of high/low card count)
+        strength_high = score_hand_scalar(obs.hand, "high", None)
+        if strength_high >= 500:
+            bid_n = 8
+        elif strength_high >= 450:
+            bid_n = 7
+        elif strength_high >= 400:
+            bid_n = 6
+        elif strength_high >= 350:
+            bid_n = 5
+        elif strength_high >= 280:
+            bid_n = 4
+        elif strength_high >= 200:
+            bid_n = 3
+        else:
+            bid_n = 0
 
-        # HIGH contract
-        if high_cards >= low_cards:
-            strength_high = score_hand_scalar(obs.hand, "high", None)
-            if strength_high >= 40:
-                bid_n = 5
-            elif strength_high >= 30:
-                bid_n = 4
-            elif strength_high >= 20:
-                bid_n = 3
-            else:
-                bid_n = 0
+        if bid_n > obs.current_high_bid:
+            candidates.append((strength_high, bid_n, "HIGH"))
 
-            if bid_n > obs.current_high_bid:
-                candidates.append((strength_high, bid_n, "HIGH"))
+        # Evaluate LOW contract (always, regardless of high/low card count)
+        strength_low = score_hand_scalar(obs.hand, "low", None)
+        if strength_low >= 500:
+            bid_n = 8
+        elif strength_low >= 450:
+            bid_n = 7
+        elif strength_low >= 400:
+            bid_n = 6
+        elif strength_low >= 350:
+            bid_n = 5
+        elif strength_low >= 280:
+            bid_n = 4
+        elif strength_low >= 200:
+            bid_n = 3
+        else:
+            bid_n = 0
 
-        # LOW contract
-        if low_cards > high_cards:
-            strength_low = score_hand_scalar(obs.hand, "low", None)
-            if strength_low >= 40:
-                bid_n = 5
-            elif strength_low >= 30:
-                bid_n = 4
-            elif strength_low >= 20:
-                bid_n = 3
-            else:
-                bid_n = 0
-
-            if bid_n > obs.current_high_bid:
-                candidates.append((strength_low, bid_n, "LOW"))
+        if bid_n > obs.current_high_bid:
+            candidates.append((strength_low, bid_n, "LOW"))
 
         # No valid candidates
         if not candidates:
@@ -550,8 +564,6 @@ class ArtifactBidder(BiddingPolicy):
         required_keys = {
             "suit_thresholds",
             "high_low_thresholds",
-            "high_card_ranks",
-            "low_card_ranks",
         }
         if not required_keys.issubset(params.keys()):
             raise ValueError(
@@ -610,62 +622,57 @@ class ArtifactBidder(BiddingPolicy):
         # Evaluate all contract options
         candidates = []
 
+        # Build sorted threshold lists from artifact params
+        suit_thresh = sorted(
+            (
+                (int(k.split("_")[1]), v)
+                for k, v in self.rules["suit_thresholds"].items()
+            ),
+            reverse=True,
+        )
+        hl_thresh = sorted(
+            (
+                (int(k.split("_")[1]), v)
+                for k, v in self.rules["high_low_thresholds"].items()
+            ),
+            reverse=True,
+        )
+
         # Evaluate suit contracts
         for suit in ["C", "D", "H", "S"]:
             strength = score_hand_scalar(obs.hand, "suit", suit)
-
-            # Map strength to bid amount
-            if strength >= self.rules["suit_thresholds"]["bid_6"]:
-                bid_n = 6
-            elif strength >= self.rules["suit_thresholds"]["bid_5"]:
-                bid_n = 5
-            elif strength >= self.rules["suit_thresholds"]["bid_4"]:
-                bid_n = 4
-            elif strength >= self.rules["suit_thresholds"]["bid_3"]:
-                bid_n = 3
-            else:
+            bid_n = 0
+            for level, threshold in suit_thresh:
+                if strength >= threshold:
+                    bid_n = level
+                    break
+            if bid_n == 0:
                 continue  # Too weak
 
             if bid_n > obs.current_high_bid:
                 candidates.append((strength, bid_n, suit))
 
-        # Evaluate HIGH/LOW contracts
-        high_cards = sum(
-            1 for card in obs.hand if card.rank in self.rules["high_card_ranks"]
-        )
-        low_cards = sum(
-            1 for card in obs.hand if card.rank in self.rules["low_card_ranks"]
-        )
+        # Evaluate HIGH contract (always, regardless of high/low card count)
+        strength_high = score_hand_scalar(obs.hand, "high", None)
+        bid_n = 0
+        for level, threshold in hl_thresh:
+            if strength_high >= threshold:
+                bid_n = level
+                break
 
-        # HIGH contract
-        if high_cards >= low_cards:
-            strength_high = score_hand_scalar(obs.hand, "high", None)
-            if strength_high >= self.rules["high_low_thresholds"]["bid_5"]:
-                bid_n = 5
-            elif strength_high >= self.rules["high_low_thresholds"]["bid_4"]:
-                bid_n = 4
-            elif strength_high >= self.rules["high_low_thresholds"]["bid_3"]:
-                bid_n = 3
-            else:
-                bid_n = 0
+        if bid_n > obs.current_high_bid:
+            candidates.append((strength_high, bid_n, "HIGH"))
 
-            if bid_n > obs.current_high_bid:
-                candidates.append((strength_high, bid_n, "HIGH"))
+        # Evaluate LOW contract (always, regardless of high/low card count)
+        strength_low = score_hand_scalar(obs.hand, "low", None)
+        bid_n = 0
+        for level, threshold in hl_thresh:
+            if strength_low >= threshold:
+                bid_n = level
+                break
 
-        # LOW contract
-        if low_cards > high_cards:
-            strength_low = score_hand_scalar(obs.hand, "low", None)
-            if strength_low >= self.rules["high_low_thresholds"]["bid_5"]:
-                bid_n = 5
-            elif strength_low >= self.rules["high_low_thresholds"]["bid_4"]:
-                bid_n = 4
-            elif strength_low >= self.rules["high_low_thresholds"]["bid_3"]:
-                bid_n = 3
-            else:
-                bid_n = 0
-
-            if bid_n > obs.current_high_bid:
-                candidates.append((strength_low, bid_n, "LOW"))
+        if bid_n > obs.current_high_bid:
+            candidates.append((strength_low, bid_n, "LOW"))
 
         # No valid candidates
         if not candidates:

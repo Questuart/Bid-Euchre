@@ -30,7 +30,7 @@ class StrictRaiserModel:
             "initial_bid": {"n": 3, "contract": "S"},
             "raise_increment": 1,
             "max_bid": 10,
-            "contract": "S"  # Always bid Spades
+            "contract": "S",  # Always bid Spades
         }
 
     def predict_bid(self, current_high_bid: int) -> Dict[str, Any]:
@@ -46,12 +46,12 @@ class StrictRaiserModel:
         if current_high_bid == 0:
             return {
                 "n": self.rules["initial_bid"]["n"],
-                "contract": self.rules["initial_bid"]["contract"]
+                "contract": self.rules["initial_bid"]["contract"],
             }
         elif current_high_bid < self.rules["max_bid"]:
             return {
                 "n": current_high_bid + self.rules["raise_increment"],
-                "contract": self.rules["contract"]
+                "contract": self.rules["contract"],
             }
         else:
             # Pass
@@ -79,8 +79,8 @@ class StrictRaiserModel:
                 "description": f"Deterministic imitation of StrictRaiserBidder for {contract} contract",
                 "training_data": "fixture dataset",
                 "training_seed": seed,
-                "teacher_model": "StrictRaiserBidder"
-            }
+                "teacher_model": "StrictRaiserBidder",
+            },
         }
 
 
@@ -99,10 +99,7 @@ class FiveHeadFredModel:
             contract: The contract to bid for (default: "S" for Spades)
         """
         # Encode the bidding rules as model parameters
-        self.rules = {
-            "target_bid": 5,
-            "contract": contract
-        }
+        self.rules = {"target_bid": 5, "contract": contract}
 
     def predict_bid(self, current_high_bid: int) -> Optional[Dict[str, Any]]:
         """
@@ -116,10 +113,7 @@ class FiveHeadFredModel:
         """
         # Bid 5 if legal (strictly greater than current_high_bid)
         if self.rules["target_bid"] > current_high_bid:
-            return {
-                "n": self.rules["target_bid"],
-                "contract": self.rules["contract"]
-            }
+            return {"n": self.rules["target_bid"], "contract": self.rules["contract"]}
         else:
             # Pass if 5 is not legal
             return None
@@ -147,8 +141,8 @@ class FiveHeadFredModel:
                 "description": f"FiveHeadFred baseline: always bids 5 for {contract} if legal, else passes",
                 "training_data": "deterministic rule",
                 "training_seed": seed,
-                "teacher_model": "FiveHeadFred"
-            }
+                "teacher_model": "FiveHeadFred",
+            },
         }
 
 
@@ -163,7 +157,7 @@ def load_bidding_dataset_jsonl(path: str) -> List[Dict[str, Any]]:
         List of dataset rows
     """
     rows = []
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -185,7 +179,11 @@ def create_synthetic_observations_for_strict_raiser() -> List[BiddingObservation
 
     # Create a dummy hand for all observations
     dummy_hand = [
-        Card("S", "K"), Card("S", "Q"), Card("H", "T"), Card("C", "A"), Card("C", "J")
+        Card("S", "K"),
+        Card("S", "Q"),
+        Card("H", "T"),
+        Card("C", "A"),
+        Card("C", "J"),
     ]
 
     observations = []
@@ -196,7 +194,7 @@ def create_synthetic_observations_for_strict_raiser() -> List[BiddingObservation
                     hand=dummy_hand,
                     seat=seat,
                     dealer_seat=dealer_seat,
-                    current_high_bid=current_high_bid
+                    current_high_bid=current_high_bid,
                 )
                 observations.append(obs)
 
@@ -230,10 +228,7 @@ def train_strict_raiser_model(contract: str = "S") -> StrictRaiserModel:
         if teacher_action.is_pass():
             teacher_dict = None
         else:
-            teacher_dict = {
-                "n": teacher_action.n,
-                "contract": teacher_action.contract
-            }
+            teacher_dict = {"n": teacher_action.n, "contract": teacher_action.contract}
 
         # Validate that model matches teacher
         if teacher_dict != model_prediction:
@@ -295,18 +290,23 @@ class HeuristicsModel:
         # Encode the bidding rules as model parameters
         self.rules = {
             "suit_thresholds": {
+                "bid_10": 750,
+                "bid_9": 650,
+                "bid_8": 550,
+                "bid_7": 450,
                 "bid_6": 350,
                 "bid_5": 300,
                 "bid_4": 250,
-                "bid_3": 200
+                "bid_3": 200,
             },
             "high_low_thresholds": {
-                "bid_5": 40,
-                "bid_4": 30,
-                "bid_3": 20
+                "bid_8": 500,
+                "bid_7": 450,
+                "bid_6": 400,
+                "bid_5": 350,
+                "bid_4": 280,
+                "bid_3": 200,
             },
-            "high_card_ranks": ["A", "K", "Q"],
-            "low_card_ranks": ["J", "T"]
         }
 
     def predict_bid(self, obs: BiddingObservation) -> Optional[Dict[str, Any]]:
@@ -329,7 +329,15 @@ class HeuristicsModel:
             strength = score_hand_scalar(obs.hand, "suit", suit)
 
             # Map strength to bid amount
-            if strength >= self.rules["suit_thresholds"]["bid_6"]:
+            if strength >= self.rules["suit_thresholds"]["bid_10"]:
+                bid_n = 10
+            elif strength >= self.rules["suit_thresholds"]["bid_9"]:
+                bid_n = 9
+            elif strength >= self.rules["suit_thresholds"]["bid_8"]:
+                bid_n = 8
+            elif strength >= self.rules["suit_thresholds"]["bid_7"]:
+                bid_n = 7
+            elif strength >= self.rules["suit_thresholds"]["bid_6"]:
                 bid_n = 6
             elif strength >= self.rules["suit_thresholds"]["bid_5"]:
                 bid_n = 5
@@ -343,39 +351,45 @@ class HeuristicsModel:
             if bid_n > obs.current_high_bid:
                 candidates.append((strength, bid_n, suit))
 
-        # Evaluate HIGH/LOW contracts
-        high_cards = sum(1 for card in obs.hand if card.rank in self.rules["high_card_ranks"])
-        low_cards = sum(1 for card in obs.hand if card.rank in self.rules["low_card_ranks"])
+        # Evaluate HIGH contract (always, regardless of high/low card count)
+        strength_high = score_hand_scalar(obs.hand, "high", None)
+        if strength_high >= self.rules["high_low_thresholds"]["bid_8"]:
+            bid_n = 8
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_7"]:
+            bid_n = 7
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_6"]:
+            bid_n = 6
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_5"]:
+            bid_n = 5
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_4"]:
+            bid_n = 4
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_3"]:
+            bid_n = 3
+        else:
+            bid_n = 0
 
-        # HIGH contract
-        if high_cards >= low_cards:
-            strength_high = score_hand_scalar(obs.hand, "high", None)
-            if strength_high >= self.rules["high_low_thresholds"]["bid_5"]:
-                bid_n = 5
-            elif strength_high >= self.rules["high_low_thresholds"]["bid_4"]:
-                bid_n = 4
-            elif strength_high >= self.rules["high_low_thresholds"]["bid_3"]:
-                bid_n = 3
-            else:
-                bid_n = 0
+        if bid_n > obs.current_high_bid:
+            candidates.append((strength_high, bid_n, "HIGH"))
 
-            if bid_n > obs.current_high_bid:
-                candidates.append((strength_high, bid_n, "HIGH"))
+        # Evaluate LOW contract (always, regardless of high/low card count)
+        strength_low = score_hand_scalar(obs.hand, "low", None)
+        if strength_low >= self.rules["high_low_thresholds"]["bid_8"]:
+            bid_n = 8
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_7"]:
+            bid_n = 7
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_6"]:
+            bid_n = 6
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_5"]:
+            bid_n = 5
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_4"]:
+            bid_n = 4
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_3"]:
+            bid_n = 3
+        else:
+            bid_n = 0
 
-        # LOW contract
-        if low_cards > high_cards:
-            strength_low = score_hand_scalar(obs.hand, "low", None)
-            if strength_low >= self.rules["high_low_thresholds"]["bid_5"]:
-                bid_n = 5
-            elif strength_low >= self.rules["high_low_thresholds"]["bid_4"]:
-                bid_n = 4
-            elif strength_low >= self.rules["high_low_thresholds"]["bid_3"]:
-                bid_n = 3
-            else:
-                bid_n = 0
-
-            if bid_n > obs.current_high_bid:
-                candidates.append((strength_low, bid_n, "LOW"))
+        if bid_n > obs.current_high_bid:
+            candidates.append((strength_low, bid_n, "LOW"))
 
         # No valid candidates
         if not candidates:
@@ -410,8 +424,8 @@ class HeuristicsModel:
                 "description": "Deterministic imitation of RanktheTank (v1 baseline)",
                 "training_data": "synthetic observations",
                 "training_seed": seed,
-                "teacher_model": "RanktheTank"
-            }
+                "teacher_model": "RanktheTank",
+            },
         }
 
 
@@ -430,17 +444,53 @@ def create_synthetic_observations_for_heuristics() -> List[BiddingObservation]:
     # Note: Bid Euchre uses T, J, Q, K, A ranks only
     test_hands = [
         # Strong spade hand
-        [Card("S", "A"), Card("S", "K"), Card("S", "Q"), Card("H", "A"), Card("C", "A")],
+        [
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("S", "Q"),
+            Card("H", "A"),
+            Card("C", "A"),
+        ],
         # Strong heart hand
-        [Card("H", "A"), Card("H", "K"), Card("H", "J"), Card("D", "A"), Card("S", "K")],
+        [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "J"),
+            Card("D", "A"),
+            Card("S", "K"),
+        ],
         # Mixed weak hand
-        [Card("C", "T"), Card("D", "T"), Card("H", "T"), Card("S", "T"), Card("C", "J")],
+        [
+            Card("C", "T"),
+            Card("D", "T"),
+            Card("H", "T"),
+            Card("S", "T"),
+            Card("C", "J"),
+        ],
         # High cards (good for HIGH)
-        [Card("S", "A"), Card("H", "K"), Card("D", "Q"), Card("C", "A"), Card("H", "Q")],
+        [
+            Card("S", "A"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "A"),
+            Card("H", "Q"),
+        ],
         # Low cards (good for LOW)
-        [Card("S", "J"), Card("H", "T"), Card("D", "J"), Card("C", "T"), Card("S", "T")],
+        [
+            Card("S", "J"),
+            Card("H", "T"),
+            Card("D", "J"),
+            Card("C", "T"),
+            Card("S", "T"),
+        ],
         # Balanced medium strength
-        [Card("S", "K"), Card("S", "Q"), Card("H", "T"), Card("C", "A"), Card("C", "J")],
+        [
+            Card("S", "K"),
+            Card("S", "Q"),
+            Card("H", "T"),
+            Card("C", "A"),
+            Card("C", "J"),
+        ],
     ]
 
     observations = []
@@ -452,7 +502,7 @@ def create_synthetic_observations_for_heuristics() -> List[BiddingObservation]:
                         hand=hand,
                         seat=seat,
                         dealer_seat=dealer_seat,
-                        current_high_bid=current_high_bid
+                        current_high_bid=current_high_bid,
                     )
                     observations.append(obs)
 
@@ -486,10 +536,7 @@ def train_heuristics_model(contract: str = "S") -> HeuristicsModel:
         if teacher_action.is_pass():
             teacher_dict = None
         else:
-            teacher_dict = {
-                "n": teacher_action.n,
-                "contract": teacher_action.contract
-            }
+            teacher_dict = {"n": teacher_action.n, "contract": teacher_action.contract}
 
         # Validate that model matches teacher
         if teacher_dict != model_prediction:
@@ -526,7 +573,7 @@ def train_and_save_model(
     contract: str = "S",
     output_path: Optional[str] = None,
     seed: int = 42,
-    teacher: str = "strict_raiser"
+    teacher: str = "strict_raiser",
 ) -> Dict[str, Any]:
     """
     Train model and save as bidding artifact.
