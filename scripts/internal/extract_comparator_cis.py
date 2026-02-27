@@ -204,6 +204,11 @@ def main():
         action="store_true",
         help="Write output even if JSONL-vs-battery validation fails",
     )
+    parser.add_argument(
+        "--single-seat",
+        action="store_true",
+        help="Merge 4 per-seat sub-runs per bidder",
+    )
     args = parser.parse_args()
 
     artifacts_dir = Path(args.artifacts_dir)
@@ -222,22 +227,81 @@ def main():
     # Locate JSONL log for each bidder
     all_data = {}
     for name in bidder_names:
-        # Find run directory matching auction_comparator_{name}_{seed}_*
-        candidates = sorted(runs_dir.glob(f"auction_comparator_{name}_{args.seed}_*"))
-        if not candidates:
-            print(
-                f"ERROR: No run dir for {name} with seed {args.seed}",
-                file=sys.stderr,
+        if args.single_seat:
+            # Merge 4 seat sub-runs per bidder.
+            # Use the latest matching directory per seat — sequential execution
+            # means each seat has a distinct timestamp, so exact-match grouping
+            # is not viable. Instead, select latest per seat and warn if the
+            # timestamps span more than 1 hour (suggesting mixed batches).
+            merged = {
+                "bidder_team_points": [],
+                "net_bidder_team_points": [],
+                "deals_total": 0,
+            }
+
+            seat_run_dirs = []  # (seat, path) pairs for logging
+            for seat in range(4):
+                pattern = f"auction_comparator_{name}_seat{seat}_{args.seed}_*"
+                candidates = sorted(runs_dir.glob(pattern))
+                if not candidates:
+                    print(
+                        f"ERROR: No run dir for {name} seat {seat}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                run_dir = candidates[-1]  # latest matching
+                seat_run_dirs.append((seat, run_dir))
+
+                logs = sorted(run_dir.glob("logs/*.jsonl"))
+                if not logs:
+                    print(
+                        f"ERROR: No JSONL log in {run_dir}/logs/",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                log_path = logs[0]
+                print(f"    {name} seat {seat}: {log_path}")
+                seat_data = _parse_jsonl_points(log_path)
+                merged["bidder_team_points"].extend(seat_data["bidder_team_points"])
+                merged["net_bidder_team_points"].extend(
+                    seat_data["net_bidder_team_points"]
+                )
+                merged["deals_total"] += seat_data["deals_total"]
+
+            # Batch coherence check: warn if timestamps span >1 hour
+            def _extract_timestamp(dir_path: Path) -> str:
+                """Extract YYYYMMDD_HHMMSS from run directory name."""
+                parts = dir_path.name.rsplit("_", 2)
+                return "_".join(parts[-2:]) if len(parts) >= 3 else ""
+
+            timestamps = [_extract_timestamp(p) for _, p in seat_run_dirs]
+            if len(set(timestamps)) > 1:
+                print(
+                    f"  NOTE: {name} seat dirs have different timestamps "
+                    f"({', '.join(timestamps)}); verify they are from the same batch",
+                    file=sys.stderr,
+                )
+
+            all_data[name] = merged
+        else:
+            # Original single-directory mode
+            candidates = sorted(
+                runs_dir.glob(f"auction_comparator_{name}_{args.seed}_*")
             )
-            sys.exit(1)
-        run_dir = candidates[-1]  # most recent matching seed
-        logs = sorted(run_dir.glob("logs/*.jsonl"))
-        if not logs:
-            print(f"ERROR: No JSONL log in {run_dir}/logs/", file=sys.stderr)
-            sys.exit(1)
-        log_path = logs[0]
-        print(f"  {name}: {log_path}")
-        all_data[name] = _parse_jsonl_points(log_path)
+            if not candidates:
+                print(
+                    f"ERROR: No run dir for {name} with seed {args.seed}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            run_dir = candidates[-1]  # most recent matching seed
+            logs = sorted(run_dir.glob("logs/*.jsonl"))
+            if not logs:
+                print(f"ERROR: No JSONL log in {run_dir}/logs/", file=sys.stderr)
+                sys.exit(1)
+            log_path = logs[0]
+            print(f"  {name}: {log_path}")
+            all_data[name] = _parse_jsonl_points(log_path)
 
     # Verify metrics match battery point estimates
     print("\nValidation (JSONL vs battery):")
