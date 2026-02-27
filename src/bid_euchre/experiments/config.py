@@ -154,6 +154,9 @@ class ExperimentConfig:
     matchups: Optional[List[Dict[str, str]]] = None
     strategy_roster_path: Optional[str] = None
     include_baselines: List[str] = field(default_factory=list)
+    seat_bidding_policies: Optional[List[str]] = (
+        None  # Per-seat policy names (list of 4)
+    )
 
     def __post_init__(self):
         """Process scenarios into ScenarioConfig objects."""
@@ -272,6 +275,9 @@ def load_config(config_path: str) -> ExperimentConfig:
             else:
                 raise ValueError(f"Unsupported baseline kind: {baseline['kind']}")
 
+    # Parse seat_bidding_policies if present
+    seat_bidding_policies = config_dict.get("seat_bidding_policies")
+
     return ExperimentConfig(
         experiment_name=config_dict["experiment_name"],
         mode=config_dict.get(
@@ -284,6 +290,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         matchups=config_dict.get("matchups"),
         strategy_roster_path=strategy_roster_path,
         include_baselines=include_baselines,
+        seat_bidding_policies=seat_bidding_policies,
     )
 
 
@@ -394,6 +401,9 @@ def save_config(config: ExperimentConfig, output_path: str):
         ],
         "parameters": config.parameters,
     }
+    # Include seat_bidding_policies if set
+    if config.seat_bidding_policies is not None:
+        config_dict["seat_bidding_policies"] = config.seat_bidding_policies
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:

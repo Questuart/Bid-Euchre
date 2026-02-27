@@ -133,7 +133,7 @@ def gate_check(metrics_by_bidder):
     return failures
 
 
-def format_json(metrics_by_bidder, gate_failures, seed, n_per):
+def format_json(metrics_by_bidder, gate_failures, seed, n_per, single_seat=False):
     """Generate JSON comparison output with arc_d_comparator_v1 schema."""
     bidders = {}
     for name, m in metrics_by_bidder.items():
@@ -145,13 +145,16 @@ def format_json(metrics_by_bidder, gate_failures, seed, n_per):
             "cvar_5": m.get("cvar_5"),
             "net_cvar_5": m.get("net_cvar_5"),
         }
-    return {
+    result = {
         "schema": "arc_d_comparator_v1",
         "seed": seed,
         "n_per": n_per,
         "gate_status": "FAIL" if gate_failures else "PASS",
         "bidders": bidders,
     }
+    if single_seat:
+        result["mode"] = "single_seat"
+    return result
 
 
 def format_report(metrics_by_bidder, gate_failures, seed):
@@ -233,6 +236,17 @@ def main():
         help="Policy name for the artifact bidder in output (default: derived from class)",
     )
     parser.add_argument(
+        "--single-seat",
+        action="store_true",
+        help="Run single-seat mode: each bidder evaluated one seat at a time",
+    )
+    parser.add_argument(
+        "--n-per",
+        type=int,
+        default=None,
+        help="Override n_per from config YAML",
+    )
+    parser.add_argument(
         "--output-format",
         default="markdown",
         choices=["markdown", "json"],
@@ -272,34 +286,89 @@ def main():
     # Track run directories per policy (populated during run or from --skip-run lookup)
     run_dirs_by_policy = {}
 
+    n_per_effective = args.n_per or n_per
+
     if not args.skip_run:
-        # Run experiment for each bidder individually
-        print(
-            f"Running auction comparator with {len(policies)} bidders, n_per={n_per}..."
-        )
-        for policy in policies:
-            policy_name = policy["name"]
+        if args.single_seat:
+            # Single-seat mode: 4 sub-experiments per bidder
+            print(
+                f"Running single-seat comparator with {len(policies)} bidders, "
+                f"n_per={n_per_effective}..."
+            )
+            base_per_seat = n_per_effective // 4
+            remainder = n_per_effective % 4
 
-            # Create a per-policy config
-            per_policy_config = {
-                "experiment_name": f"{experiment_name}_{policy_name}",
-                "bidding_policies": [policy],
-                "scenarios": config.get("scenarios", [{"contract_type": None}]),
-                "parameters": config.get("parameters", {}),
-            }
+            for policy in policies:
+                policy_name = policy["name"]
 
-            config_path = f"/tmp/auction_comparator_{policy_name}.yaml"
-            with open(config_path, "w") as f:
-                yaml.dump(per_policy_config, f)
+                for seat in range(4):
+                    seat_n = base_per_seat + (1 if seat < remainder else 0)
 
-            print(f"  Running {policy_name}...")
-            run_dir = run_experiment(config_path, args.seed)
-            if run_dir is None:
-                print(f"  FAILED: {policy_name}")
-                continue
+                    # Build seat_bidding_policies: target at this seat, always_pass elsewhere
+                    seat_bp = ["always_pass"] * 4
+                    seat_bp[seat] = policy_name
 
-            run_dirs_by_policy[policy_name] = run_dir
-            generate_evaluation(run_dir)
+                    per_seat_config = {
+                        "experiment_name": f"{experiment_name}_{policy_name}_seat{seat}",
+                        "bidding_policies": [
+                            policy,
+                            {"name": "always_pass", "class_name": "AlwaysPassBidder"},
+                        ],
+                        "seat_bidding_policies": seat_bp,
+                        "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                        "parameters": {
+                            **config.get("parameters", {}),
+                            "n_per": seat_n,
+                        },
+                    }
+
+                    config_path = (
+                        f"/tmp/auction_comparator_{policy_name}_seat{seat}.yaml"
+                    )
+                    with open(config_path, "w") as f:
+                        yaml.dump(per_seat_config, f)
+
+                    print(f"  Running {policy_name} seat {seat} ({seat_n} deals)...")
+                    run_dir = run_experiment(config_path, args.seed)
+                    if run_dir is None:
+                        print(f"  FAILED: {policy_name} seat {seat}")
+                        continue
+
+                    # Track with seat-specific key
+                    run_dirs_by_policy[f"{policy_name}_seat{seat}"] = run_dir
+                    generate_evaluation(run_dir)
+        else:
+            # Original 4-way self-play mode
+            print(
+                f"Running auction comparator with {len(policies)} bidders, "
+                f"n_per={n_per_effective}..."
+            )
+            for policy in policies:
+                policy_name = policy["name"]
+
+                # Create a per-policy config
+                per_policy_config = {
+                    "experiment_name": f"{experiment_name}_{policy_name}",
+                    "bidding_policies": [policy],
+                    "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                    "parameters": {
+                        **config.get("parameters", {}),
+                        "n_per": n_per_effective,
+                    },
+                }
+
+                config_path = f"/tmp/auction_comparator_{policy_name}.yaml"
+                with open(config_path, "w") as f:
+                    yaml.dump(per_policy_config, f)
+
+                print(f"  Running {policy_name}...")
+                run_dir = run_experiment(config_path, args.seed)
+                if run_dir is None:
+                    print(f"  FAILED: {policy_name}")
+                    continue
+
+                run_dirs_by_policy[policy_name] = run_dir
+                generate_evaluation(run_dir)
     else:
         # In --skip-run mode, scan data/runs/ for matching directories
         runs_path = Path("data/runs")
@@ -322,32 +391,80 @@ def main():
     # Collect metrics (require evaluation.json — no silent fallback)
     metrics_by_bidder = {}
     missing_evaluations = []
-    for policy in policies:
-        policy_name = policy["name"]
-        run_dir = run_dirs_by_policy.get(policy_name)
 
-        if not run_dir:
-            missing_evaluations.append(policy_name)
-            continue
+    if args.single_seat:
+        # Single-seat mode: merge evaluation.json across 4 seats per bidder
+        for policy in policies:
+            policy_name = policy["name"]
+            merged_deals = 0
+            merged_bid_hands = 0
+            merged_bidder_pts_sum = 0.0
+            merged_net_pts_sum = 0.0
+            missing_seat = False
 
-        evaluation = load_evaluation(run_dir)
-        if evaluation and evaluation.get("strategies"):
-            strat = evaluation["strategies"][0]
-            metrics_by_bidder[policy_name] = {
-                "expected_points": strat.get("expected_points", 0),
-                "expected_points_per_deal": strat.get("expected_points_per_deal", 0),
-                "net_expected_points_per_deal": strat.get(
-                    "net_expected_points_per_deal"
-                ),
-                "make_rate": strat.get("make_rate", 0),
-                "bid_rate": strat.get("bid_rate", 0),
-                "cvar_5": strat.get("cvar_5"),
-                "net_cvar_5": strat.get("net_cvar_5"),
-                "hands_with_bids": strat.get("hands_with_bids", 0),
-                "deals_total": strat.get("deals_total", 0),
-            }
-        else:
-            missing_evaluations.append(policy_name)
+            for seat in range(4):
+                key = f"{policy_name}_seat{seat}"
+                run_dir = run_dirs_by_policy.get(key)
+                if not run_dir:
+                    missing_seat = True
+                    continue
+                evaluation = load_evaluation(run_dir)
+                if evaluation and evaluation.get("strategies"):
+                    strat = evaluation["strategies"][0]
+                    dt = strat.get("deals_total", 0)
+                    merged_deals += dt
+                    merged_bid_hands += strat.get("hands_with_bids", 0)
+                    ep = strat.get("expected_points_per_deal", 0)
+                    nep = strat.get("net_expected_points_per_deal", 0)
+                    merged_bidder_pts_sum += ep * dt
+                    merged_net_pts_sum += nep * dt
+                else:
+                    missing_seat = True
+
+            if missing_seat or merged_deals == 0:
+                missing_evaluations.append(policy_name)
+            else:
+                metrics_by_bidder[policy_name] = {
+                    "expected_points": merged_bidder_pts_sum / merged_deals,
+                    "expected_points_per_deal": merged_bidder_pts_sum / merged_deals,
+                    "net_expected_points_per_deal": merged_net_pts_sum / merged_deals,
+                    "make_rate": 0,  # Not easily mergeable; CI script handles this
+                    "bid_rate": merged_bid_hands / merged_deals,
+                    "cvar_5": None,
+                    "net_cvar_5": None,
+                    "hands_with_bids": merged_bid_hands,
+                    "deals_total": merged_deals,
+                }
+    else:
+        # Original mode: one run per bidder
+        for policy in policies:
+            policy_name = policy["name"]
+            run_dir = run_dirs_by_policy.get(policy_name)
+
+            if not run_dir:
+                missing_evaluations.append(policy_name)
+                continue
+
+            evaluation = load_evaluation(run_dir)
+            if evaluation and evaluation.get("strategies"):
+                strat = evaluation["strategies"][0]
+                metrics_by_bidder[policy_name] = {
+                    "expected_points": strat.get("expected_points", 0),
+                    "expected_points_per_deal": strat.get(
+                        "expected_points_per_deal", 0
+                    ),
+                    "net_expected_points_per_deal": strat.get(
+                        "net_expected_points_per_deal"
+                    ),
+                    "make_rate": strat.get("make_rate", 0),
+                    "bid_rate": strat.get("bid_rate", 0),
+                    "cvar_5": strat.get("cvar_5"),
+                    "net_cvar_5": strat.get("net_cvar_5"),
+                    "hands_with_bids": strat.get("hands_with_bids", 0),
+                    "deals_total": strat.get("deals_total", 0),
+                }
+            else:
+                missing_evaluations.append(policy_name)
 
     if missing_evaluations:
         print("ERROR: Missing evaluation data for the following bidders:")
@@ -369,7 +486,13 @@ def main():
 
     # Generate report in requested format
     if args.output_format == "json":
-        output_data = format_json(metrics_by_bidder, gate_failures, args.seed, n_per)
+        output_data = format_json(
+            metrics_by_bidder,
+            gate_failures,
+            args.seed,
+            n_per_effective,
+            single_seat=args.single_seat,
+        )
         output_str = json.dumps(output_data, indent=2)
     else:
         output_str = format_report(metrics_by_bidder, gate_failures, args.seed)

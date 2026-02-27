@@ -414,12 +414,16 @@ def main():
         policies_to_run = strategies
         policy_type = "Strategies"
 
-    plan_count = len(policies_to_run)
-    if mode == "head_to_head_matrix":
+    seat_bp_names = getattr(config, "seat_bidding_policies", None)
+    if seat_bp_names:
+        plan_count = 1  # Single run with per-seat policies
+    elif mode == "head_to_head_matrix":
         matchups = (
             getattr(config, "matchups", None) or config.parameters.get("matchups") or []
         )
         plan_count = len(matchups)
+    else:
+        plan_count = len(policies_to_run)
 
     print("\n" + "=" * 70)
     print(f"🚀 Experiment: {config.experiment_name}")
@@ -494,6 +498,7 @@ def main():
             }
             for p in bidding_policy_cfgs
         ],
+        "seat_bidding_policies": getattr(config, "seat_bidding_policies", None),
         "scenarios": [
             {"contract_type": s.contract_type, "trump_suit": s.trump_suit}
             for s in scenarios
@@ -843,6 +848,7 @@ def main():
     else:
         # Determine what to iterate over: strategies or bidding policies
         has_auction_scenarios = any(s.contract_type is None for s in scenarios)
+        seat_bp_names = getattr(config, "seat_bidding_policies", None)
 
         if has_auction_scenarios and bidding_policies:
             # Use bidding policies for auction scenarios
@@ -869,9 +875,30 @@ def main():
                 )
             auction_seat_strategies = _make_self_play_strategies(play_cfg)
 
-        for policy_idx, policy in enumerate(policies_to_run):
+        if seat_bp_names:
+            # Per-seat bidding policy mode (single-seat comparator)
+            if len(seat_bp_names) != 4:
+                raise ValueError(
+                    f"seat_bidding_policies must have length 4 (got {len(seat_bp_names)})"
+                )
+            policy_cfg_by_name = {pc.name: pc for pc in bidding_policy_cfgs}
+            unknown = [n for n in seat_bp_names if n not in policy_cfg_by_name]
+            if unknown:
+                raise ValueError(
+                    f"Unknown seat_bidding_policies {unknown}. "
+                    f"Must be among: {', '.join(policy_cfg_by_name.keys())}"
+                )
+            seat_policies = [
+                policy_cfg_by_name[name].create_bidding_policy()
+                for name in seat_bp_names
+            ]
+
+            # Determine a label for this run (use the non-pass policy name)
+            active_names = [n for n in seat_bp_names if n != "always_pass"]
+            run_label = active_names[0] if active_names else "seat_mode"
+
             print("-" * 70)
-            print(f"{policy_type.title()}: {policy.name}")
+            print(f"Seat mode: {seat_bp_names}")
             print("-" * 70)
 
             # Set up logging
@@ -879,37 +906,34 @@ def main():
             if log_level_str != "none":
                 log_level = LogLevel(log_level_str)
                 logger = GameLogger(
-                    run_id=f"{run_id}_{policy.name}",
-                    strategy_id=policy.name,
+                    run_id=f"{run_id}_{run_label}",
+                    strategy_id=run_label,
                     level=log_level,
                     output_dir=logs_dir,
                 )
                 logger.open()
-                print(f"📝 Logging to: {logs_dir}/{logger.run_id}.jsonl")
+                print(f"  Logging to: {logs_dir}/{logger.run_id}.jsonl")
+
+            # Resolve play strategy if specified
+            seat_auction_strategies = None
+            if play_strategy_name and strategy_cfgs:
+                play_cfg = next(
+                    (sc for sc in strategy_cfgs if sc.name == play_strategy_name), None
+                )
+                if play_cfg:
+                    seat_auction_strategies = _make_self_play_strategies(play_cfg)
 
             try:
                 for i, scenario in enumerate(scenarios, 1):
-                    # Update bidless context for unique hand_id computation
-                    bidless_context["plan_id"] = policy_idx
-                    bidless_context["scenario_id"] = i - 1  # 0-indexed
-                    # Update strategy context for outcomes dataset
-                    # In self_play mode, both teams use the same strategy
-                    bidless_context["strategy_id"] = policy.name
-                    bidless_context["matchup_id"] = f"{policy.name}_vs_{policy.name}"
-                    if mode == "head_to_head" and team1_strategy_name:
-                        bidless_context["matchup_id"] = (
-                            f"{policy.name}_vs_{team1_strategy_name}"
-                        )
-                        bidless_context["team0_strategy"] = policy.name
-                        bidless_context["team1_strategy"] = team1_strategy_name
-                    else:
-                        bidless_context["team0_strategy"] = policy.name
-                        bidless_context["team1_strategy"] = policy.name
+                    bidless_context["plan_id"] = 0
+                    bidless_context["scenario_id"] = i - 1
+                    bidless_context["strategy_id"] = run_label
+                    bidless_context["matchup_id"] = f"{run_label}_seat_mode"
+                    bidless_context["team0_strategy"] = run_label
+                    bidless_context["team1_strategy"] = run_label
 
-                    # When pair_deals=True, use the same seed for all scenarios
-                    # so the same physical deals are played under different contracts
                     if pair_deals and seed is not None:
-                        scenario_seed = seed  # Same seed = same physical deals
+                        scenario_seed = seed
                     else:
                         scenario_seed = seed + (i - 1) if seed is not None else None
 
@@ -924,58 +948,28 @@ def main():
                         print()
 
                     scenario_start = time.time()
+                    bidding_hand_id_offset = (i - 1) * n_per
 
-                    # Compute hand_id offset: (policy_idx * num_scenarios + scenario_idx) * n_per
-                    bidding_hand_id_offset = (
-                        policy_idx * num_scenarios + (i - 1)
-                    ) * n_per
-
-                    if policy_type == "bidding_policy":
-                        # For bidding policies, use the policy directly in auction mode
-                        results = simulation.simulate_many_hands(
-                            n=n_per,
-                            contract_type=scenario.contract_type,
-                            trump_suit=scenario.trump_suit,
-                            seed=None,
-                            deal_seed=scenario_seed,
-                            strategy=None,
-                            strategies=auction_seat_strategies,
-                            bidding_policy=policy,
-                            logger=logger,
-                            bidding_dataset_run_id=run_id
-                            if args.emit_bidding_dataset
-                            else None,
-                            bidding_hand_id_offset=bidding_hand_id_offset
-                            if args.emit_bidding_dataset
-                            else 0,
-                            hooks=bidless_hooks,
-                        )
-                    else:
-                        # For strategies, use the existing logic
-                        policy_cfg = next(
-                            sc for sc in strategy_cfgs if sc.name == policy.name
-                        )
-                        seat_strategies = _make_seat_strategies(policy_cfg)
-                        results = simulation.simulate_many_hands(
-                            n=n_per,
-                            contract_type=scenario.contract_type,
-                            trump_suit=scenario.trump_suit,
-                            seed=None,
-                            deal_seed=scenario_seed,
-                            strategy=None,
-                            strategies=seat_strategies,
-                            bidding_policy=None,
-                            logger=logger,
-                            bidding_dataset_run_id=run_id
-                            if args.emit_bidding_dataset
-                            else None,
-                            bidding_hand_id_offset=bidding_hand_id_offset
-                            if args.emit_bidding_dataset
-                            else 0,
-                            hooks=bidless_hooks,
-                        )
+                    results = simulation.simulate_many_hands(
+                        n=n_per,
+                        contract_type=scenario.contract_type,
+                        trump_suit=scenario.trump_suit,
+                        seed=None,
+                        deal_seed=scenario_seed,
+                        strategy=None,
+                        strategies=seat_auction_strategies,
+                        bidding_policy=None,
+                        bidding_policies=seat_policies,
+                        logger=logger,
+                        bidding_dataset_run_id=run_id
+                        if args.emit_bidding_dataset
+                        else None,
+                        bidding_hand_id_offset=bidding_hand_id_offset
+                        if args.emit_bidding_dataset
+                        else 0,
+                        hooks=bidless_hooks,
+                    )
                     bidding_collectors = results.pop("bidding_collectors", [])
-                    # Stream write to avoid memory accumulation
                     if bidding_writer and bidding_collectors:
                         for collector in bidding_collectors:
                             bidding_writer.append_rows(collector.get_rows_sorted())
@@ -987,7 +981,7 @@ def main():
 
                     out_path = os.path.join(
                         results_dir,
-                        policy.name,
+                        run_label,
                         scenario_filename(scenario.contract_type, scenario.trump_suit),
                     )
                     save_results(results, out_path)
@@ -1000,7 +994,6 @@ def main():
                         if int(tricks) >= 6
                     )
                     ties = results["distribution_team0"].get(5, 0)
-                    # Weighted win rate: full wins + 0.5 × ties (ties contribute half to each team)
                     win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
 
                     print(
@@ -1012,17 +1005,179 @@ def main():
 
                     scenario_metrics.append(
                         {
-                            "strategy": policy.name,
+                            "strategy": run_label,
                             "scenario": label,
                             "duration_sec": round(scenario_duration, 2),
                             "hands_per_sec": round(hands_per_sec, 1),
                             "total_hands": n_per,
                         }
                     )
-
             finally:
                 if logger:
                     logger.close()
+
+        if not seat_bp_names:
+            for policy_idx, policy in enumerate(policies_to_run):
+                print("-" * 70)
+                print(f"{policy_type.title()}: {policy.name}")
+                print("-" * 70)
+
+                # Set up logging
+                logger = None
+                if log_level_str != "none":
+                    log_level = LogLevel(log_level_str)
+                    logger = GameLogger(
+                        run_id=f"{run_id}_{policy.name}",
+                        strategy_id=policy.name,
+                        level=log_level,
+                        output_dir=logs_dir,
+                    )
+                    logger.open()
+                    print(f"  Logging to: {logs_dir}/{logger.run_id}.jsonl")
+
+                try:
+                    for i, scenario in enumerate(scenarios, 1):
+                        # Update bidless context for unique hand_id computation
+                        bidless_context["plan_id"] = policy_idx
+                        bidless_context["scenario_id"] = i - 1  # 0-indexed
+                        # Update strategy context for outcomes dataset
+                        # In self_play mode, both teams use the same strategy
+                        bidless_context["strategy_id"] = policy.name
+                        bidless_context["matchup_id"] = (
+                            f"{policy.name}_vs_{policy.name}"
+                        )
+                        if mode == "head_to_head" and team1_strategy_name:
+                            bidless_context["matchup_id"] = (
+                                f"{policy.name}_vs_{team1_strategy_name}"
+                            )
+                            bidless_context["team0_strategy"] = policy.name
+                            bidless_context["team1_strategy"] = team1_strategy_name
+                        else:
+                            bidless_context["team0_strategy"] = policy.name
+                            bidless_context["team1_strategy"] = policy.name
+
+                        # When pair_deals=True, use the same seed for all scenarios
+                        # so the same physical deals are played under different contracts
+                        if pair_deals and seed is not None:
+                            scenario_seed = seed  # Same seed = same physical deals
+                        else:
+                            scenario_seed = seed + (i - 1) if seed is not None else None
+
+                        label = scenario.contract_type or "auction"
+                        if scenario.trump_suit:
+                            label += f" ({scenario.trump_suit})"
+
+                        print(
+                            f"\n[{i}/{len(scenarios)}] {label} - {n_per:,} hands",
+                            end="",
+                        )
+                        if scenario_seed is not None:
+                            print(f" (deal_seed={scenario_seed})")
+                        else:
+                            print()
+
+                        scenario_start = time.time()
+
+                        # Compute hand_id offset: (policy_idx * num_scenarios + scenario_idx) * n_per
+                        bidding_hand_id_offset = (
+                            policy_idx * num_scenarios + (i - 1)
+                        ) * n_per
+
+                        if policy_type == "bidding_policy":
+                            # For bidding policies, use the policy directly in auction mode
+                            results = simulation.simulate_many_hands(
+                                n=n_per,
+                                contract_type=scenario.contract_type,
+                                trump_suit=scenario.trump_suit,
+                                seed=None,
+                                deal_seed=scenario_seed,
+                                strategy=None,
+                                strategies=auction_seat_strategies,
+                                bidding_policy=policy,
+                                logger=logger,
+                                bidding_dataset_run_id=run_id
+                                if args.emit_bidding_dataset
+                                else None,
+                                bidding_hand_id_offset=bidding_hand_id_offset
+                                if args.emit_bidding_dataset
+                                else 0,
+                                hooks=bidless_hooks,
+                            )
+                        else:
+                            # For strategies, use the existing logic
+                            policy_cfg = next(
+                                sc for sc in strategy_cfgs if sc.name == policy.name
+                            )
+                            seat_strategies = _make_seat_strategies(policy_cfg)
+                            results = simulation.simulate_many_hands(
+                                n=n_per,
+                                contract_type=scenario.contract_type,
+                                trump_suit=scenario.trump_suit,
+                                seed=None,
+                                deal_seed=scenario_seed,
+                                strategy=None,
+                                strategies=seat_strategies,
+                                bidding_policy=None,
+                                logger=logger,
+                                bidding_dataset_run_id=run_id
+                                if args.emit_bidding_dataset
+                                else None,
+                                bidding_hand_id_offset=bidding_hand_id_offset
+                                if args.emit_bidding_dataset
+                                else 0,
+                                hooks=bidless_hooks,
+                            )
+                        bidding_collectors = results.pop("bidding_collectors", [])
+                        # Stream write to avoid memory accumulation
+                        if bidding_writer and bidding_collectors:
+                            for collector in bidding_collectors:
+                                bidding_writer.append_rows(collector.get_rows_sorted())
+
+                        scenario_duration = time.time() - scenario_start
+                        hands_per_sec = (
+                            n_per / scenario_duration if scenario_duration > 0 else 0
+                        )
+
+                        out_path = os.path.join(
+                            results_dir,
+                            policy.name,
+                            scenario_filename(
+                                scenario.contract_type, scenario.trump_suit
+                            ),
+                        )
+                        save_results(results, out_path)
+
+                        team0_avg = results["avg_team0"]
+                        team1_avg = results["avg_team1"]
+                        full_wins = sum(
+                            count
+                            for tricks, count in results["distribution_team0"].items()
+                            if int(tricks) >= 6
+                        )
+                        ties = results["distribution_team0"].get(5, 0)
+                        # Weighted win rate: full wins + 0.5 * ties
+                        win_rate = (full_wins + 0.5 * ties) / results["hands"] * 100
+
+                        print(
+                            f"  Team0: {team0_avg:.2f}  Team1: {team1_avg:.2f}  WinRate: {win_rate:.1f}%"
+                        )
+                        print(
+                            f"  Performance: {format_duration(scenario_duration)}, {hands_per_sec:.0f} hands/sec"
+                        )
+
+                        scenario_metrics.append(
+                            {
+                                "strategy": policy.name,
+                                "scenario": label,
+                                "duration_sec": round(scenario_duration, 2),
+                                "hands_per_sec": round(hands_per_sec, 1),
+                                "total_hands": n_per,
+                            }
+                        )
+
+                finally:
+                    if logger:
+                        logger.close()
 
     # Calculate total metrics
     total_duration = time.time() - start_time
