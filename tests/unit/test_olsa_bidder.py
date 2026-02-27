@@ -178,13 +178,13 @@ class TestOLSaBidder:
         assert action.n == 4
         assert action.contract == "H"
 
-    def test_weak_hand_passes(self, tmp_path):
-        """Test a weak hand passes."""
+    def test_weak_hand_bids_low(self, tmp_path):
+        """Test a weak hand bids its predicted value (floor lowered to 1)."""
         path = _make_artifact(tmp_path)
         bidder = OLSaBidder(path)
 
         # No bowers, 2 trump, no offsuit aces
-        # predicted = 0 + 0.5*2 + 0 = 1.0 → bid 1 < 3, pass
+        # predicted = 0 + 0.5*2 + 0 = 1.0 → bid 1 (floor lowered from 3 to 1)
         hand = [
             Card("S", "K"),
             Card("S", "Q"),
@@ -195,7 +195,8 @@ class TestOLSaBidder:
 
         obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
-        assert action.is_pass()
+        assert not action.is_pass()
+        assert action.n == 1
 
     def test_high_contract_with_aces(self, tmp_path):
         """Test HIGH contract with enough aces."""

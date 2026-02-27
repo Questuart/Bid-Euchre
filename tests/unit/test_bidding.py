@@ -11,7 +11,9 @@ from bid_euchre.strategy.bidding import (
     ArtifactBidder,
     BidAction,
     BiddingObservation,
+    HybridOLSaBidder,
     ModeloEspecifico,
+    OLSaBidder,
     RanktheTank,
     StrictHellRaiser,
     StrictRaiserBidder,
@@ -954,3 +956,238 @@ class TestRanktheTankThresholds:
         mid_score = score_hand_scalar(hand_mid_high, "high", None)
         assert mid_score == 350
         # 350 <= 350 < 400 → bid 5 (was always 5 before fix due to broken thresholds)
+
+
+class TestModeloEspecificoBidCeiling:
+    """Test ModeloEspecifico correctly bids above 6 (ceiling fix)."""
+
+    def test_very_strong_hand_bids_above_6(self):
+        """Hand with score >6 should bid 7+ (not pass due to ceiling bug)."""
+        bidder = ModeloEspecifico()
+
+        # In Hearts trump: RB(HJ)=bower, LB(DJ)=bower
+        # Trump: HJ, DJ, HA, HK, HQ, HT, HA(dup), HK(dup) = 8 trump, 2 bowers
+        # Offsuit aces: SA, CA = 2
+        # Score = 1.0*2 + 0.5*8 + 0.5*2 = 2+4+1 = 7.0 → bid 7
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("H", "T"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "A"),
+            Card("C", "A"),
+        ]
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass(), "Strong hand (score=7) should bid, not pass"
+        assert action.n == 7
+        assert action.contract == "H"
+
+    def test_score_exactly_6_still_bids(self):
+        """Hand with score exactly 6 should still bid 6 (regression)."""
+        bidder = ModeloEspecifico()
+
+        # 2 bowers + 6 trump total + 2 offsuit aces
+        # Score = 1.0*2 + 0.5*6 + 0.5*2 = 2+3+1 = 6.0 → bid 6
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("H", "T"),
+            Card("S", "A"),
+            Card("C", "A"),
+            Card("S", "K"),
+            Card("C", "K"),
+        ]
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n == 6
+
+    def test_existing_3_to_5_range_unchanged(self):
+        """Regression: bids in 3-5 range still work correctly."""
+        bidder = ModeloEspecifico()
+
+        # Score = 1.0*2 + 0.5*4 + 0.5*1 = 2+2+0.5 = 4.5 → bid 4
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "A"),
+        ]
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert action.n == 4
+
+
+class TestOLSaBidFloor:
+    """Test OLSa bidders accept bids below 3."""
+
+    def test_olsa_bids_below_3(self, tmp_path):
+        """OLSa predicting mu=1.5 should bid 1 (not pass due to floor)."""
+        import json
+
+        # Create minimal olsa_v1 artifact with bias=1.5 and zero weights
+        artifact = {
+            "artifact_type": "olsa_v1",
+            "models": {
+                "suit": {
+                    "weights": [0.0],
+                    "bias": 1.5,
+                    "feature_names": ["trump_count"],
+                }
+            },
+        }
+        artifact_path = tmp_path / "test_olsa.json"
+        artifact_path.write_text(json.dumps(artifact))
+
+        bidder = OLSaBidder(str(artifact_path), name="test_olsa")
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "Q"),
+            Card("D", "T"),
+            Card("C", "K"),
+            Card("H", "Q"),
+            Card("S", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "T"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass(), "OLSa predicting 1.5 should bid 1, not pass"
+        assert action.n == 1
+
+    def test_olsa_bids_2(self, tmp_path):
+        """OLSa predicting mu=2.5 should bid 2."""
+        import json
+
+        artifact = {
+            "artifact_type": "olsa_v1",
+            "models": {
+                "suit": {
+                    "weights": [0.0],
+                    "bias": 2.5,
+                    "feature_names": ["trump_count"],
+                }
+            },
+        }
+        artifact_path = tmp_path / "test_olsa_2.json"
+        artifact_path.write_text(json.dumps(artifact))
+
+        bidder = OLSaBidder(str(artifact_path), name="test_olsa_2")
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "Q"),
+            Card("D", "T"),
+            Card("C", "K"),
+            Card("H", "Q"),
+            Card("S", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "T"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass(), "OLSa predicting 2.5 should bid 2, not pass"
+        assert action.n == 2
+
+
+class TestHybridOLSaBidFloor:
+    """Test HybridOLSaBidder floor changed from 3 to 1."""
+
+    def test_hybrid_olsa_floor_does_not_skip_low_bids(self, tmp_path):
+        """HybridOLSa with mu=2.5 evaluates bid_n=2 (not skipped by range check).
+
+        Note: the net-differential payoff (2*tricks-10) means bids below ~5 always
+        have negative EV, so the bidder still passes. The fix ensures this is due to
+        EV, not due to the range filter rejecting bid_n < 3.
+        """
+        import json
+
+        artifact = {
+            "artifact_type": "hybrid_olsa_v1",
+            "payoff_model": {
+                "suit": {
+                    "weights": [0.0],
+                    "bias": 2.5,
+                    "feature_names": ["trump_count"],
+                }
+            },
+            "residual_variance": {"suit": 0.01},
+            "risk_lambda": 0.0,
+        }
+        artifact_path = tmp_path / "test_hybrid.json"
+        artifact_path.write_text(json.dumps(artifact))
+
+        bidder = HybridOLSaBidder(str(artifact_path), name="test_hybrid")
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "Q"),
+            Card("D", "T"),
+            Card("C", "K"),
+            Card("H", "Q"),
+            Card("S", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "T"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        # Should not raise — bid_n=2 is evaluated, passes due to negative EV
+        action = bidder.choose_bid(obs)
+        assert action.is_pass(), "mu=2.5 should pass (negative EV), not error"
+
+    def test_hybrid_olsa_positive_ev_bid(self, tmp_path):
+        """HybridOLSa with mu=7.0, sigma=0 (deterministic) bids 7."""
+        import json
+
+        artifact = {
+            "artifact_type": "hybrid_olsa_v1",
+            "payoff_model": {
+                "suit": {
+                    "weights": [0.0],
+                    "bias": 7.0,
+                    "feature_names": ["trump_count"],
+                }
+            },
+            "residual_variance": {"suit": 0.0},
+            "risk_lambda": 0.0,
+        }
+        artifact_path = tmp_path / "test_hybrid_pos.json"
+        artifact_path.write_text(json.dumps(artifact))
+
+        bidder = HybridOLSaBidder(str(artifact_path), name="test_hybrid_pos")
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "Q"),
+            Card("D", "T"),
+            Card("C", "K"),
+            Card("H", "Q"),
+            Card("S", "A"),
+            Card("D", "K"),
+            Card("C", "Q"),
+            Card("S", "T"),
+        ]
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        # sigma=0 deterministic: mu=7 >= bid_n=7, EV = 2*7-10 = 4.0 > 0
+        assert not action.is_pass(), "mu=7.0, sigma=0 should bid (EV=4.0)"
+        assert action.n == 7
