@@ -668,6 +668,62 @@ def check_registry_requires_gate_reference(
     return violations
 
 
+def check_promotion_report_requires_integrity_review(
+    changed: list[str],
+    repo_root: Path,
+) -> list[Violation]:
+    """Promotion report files must have a rung-matched measurement integrity review."""
+    violations: list[Violation] = []
+    for p in changed:
+        if not p.endswith(".md"):
+            continue
+        name = Path(p).name
+        # Scope: only files named <rung>_promotion_report.md under reports dir
+        if not name.endswith("_promotion_report.md"):
+            continue
+        if not any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES):
+            continue
+
+        abs_path = repo_root / p
+        if not abs_path.exists():
+            continue
+
+        # Extract rung from filename: e.g., "r0_promotion_report.md" -> "r0"
+        rung = name.removesuffix("_promotion_report.md")
+
+        # Enforce directory-rung consistency: filename rung must match parent dir
+        dir_name = abs_path.parent.name
+        if dir_name != rung:
+            violations.append(
+                Violation(
+                    rule="promotion-requires-integrity-review",
+                    path=p,
+                    message=(
+                        f"Promotion report rung '{rung}' does not match "
+                        f"directory '{dir_name}'. Convention requires "
+                        f"docs/04_reports/{rung}/{name}."
+                    ),
+                )
+            )
+            continue
+
+        # Require rung-matched companion: measurement_integrity_<rung>.md
+        expected = abs_path.parent / f"measurement_integrity_{rung}.md"
+        if not expected.exists():
+            violations.append(
+                Violation(
+                    rule="promotion-requires-integrity-review",
+                    path=p,
+                    message=(
+                        f"Promotion report requires companion file "
+                        f"'measurement_integrity_{rung}.md' in the same directory. "
+                        f"See docs/02_agent/MEASUREMENT_INTEGRITY_REVIEW.md for template."
+                    ),
+                )
+            )
+    return violations
+
+
 def check_canonical_runs_registry_consistency(
     changed: list[str],
     repo_root: Path,
@@ -1219,6 +1275,7 @@ def main() -> int:
     violations += check_no_cli_in_src(changed, repo_root)
     violations += check_no_import_experiments_package(changed, repo_root)
     violations += check_registry_requires_gate_reference(changed, repo_root)
+    violations += check_promotion_report_requires_integrity_review(changed, repo_root)
     violations += check_canonical_runs_registry_consistency(changed, repo_root)
     violations += check_artifacts_require_freeze(changed, repo_root)
     violations += check_gate_artifacts_schema(changed, repo_root)

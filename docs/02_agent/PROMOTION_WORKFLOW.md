@@ -212,3 +212,40 @@ When reviewing a promotion-track PR, verify:
 - [ ] PR has `promotion` label and CI gate passed
 - [ ] Report references gate evidence (lint rule enforced)
 - [ ] Repro command with `--seed` included in PR description
+
+## Measurement Integrity Review
+
+Before using evaluation results for promotion decisions, verify that the
+evaluation methodology has been reviewed. This is a human-judgment gate
+that supplements the automated gates in `arc_d_gate.py` and `semantic_gate.py`.
+
+- [ ] Measurement integrity review completed and filed in `docs/04_reports/<rung>/`
+- [ ] No category (c) blockers remain unresolved
+- [ ] All category (b) items have deferral cost descriptions
+
+See `docs/02_agent/MEASUREMENT_INTEGRITY_REVIEW.md` for the template.
+
+### Relationship to Gate Outcomes
+
+| Gate Outcome | Measurement Integrity Requirement |
+|-------------|-----------------------------------|
+| **PROMOTED** | Review complete, zero (c) items |
+| **ADVANCED** | Review complete, zero (c) items |
+| **HALT** | Review informational only |
+
+Category (c) items block both PROMOTED and ADVANCED outcomes.
+
+Category (b) items are tracked debt — explicit with cost descriptions, not hidden.
+They do not block advancement.
+
+### Naming Conventions
+
+- Promotion reports: `<rung>_promotion_report.md` (e.g., `r0_promotion_report.md`)
+- Measurement integrity reviews: `measurement_integrity_<rung>.md` (e.g., `measurement_integrity_r0.md`)
+- Both in `docs/04_reports/<rung>/`
+
+**Enforcement:** `make repo-lint` verifies that `*_promotion_report.md` files have
+a companion `measurement_integrity_*.md` file in the same directory
+(rule: `promotion-requires-integrity-review`).
+The (c)-blocks-advancement convention is enforced through review, not by the
+automated gate in `arc_d_gate.py`.
