@@ -691,6 +691,22 @@ def check_promotion_report_requires_integrity_review(
         # Extract rung from filename: e.g., "r0_promotion_report.md" -> "r0"
         rung = name.removesuffix("_promotion_report.md")
 
+        # Enforce directory-rung consistency: filename rung must match parent dir
+        dir_name = abs_path.parent.name
+        if dir_name != rung:
+            violations.append(
+                Violation(
+                    rule="promotion-requires-integrity-review",
+                    path=p,
+                    message=(
+                        f"Promotion report rung '{rung}' does not match "
+                        f"directory '{dir_name}'. Convention requires "
+                        f"docs/04_reports/{rung}/{name}."
+                    ),
+                )
+            )
+            continue
+
         # Require rung-matched companion: measurement_integrity_<rung>.md
         expected = abs_path.parent / f"measurement_integrity_{rung}.md"
         if not expected.exists():

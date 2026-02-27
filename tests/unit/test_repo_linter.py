@@ -338,6 +338,26 @@ def test_promotion_report_with_wrong_rung_integrity_file_fails(tmp_path: Path):
     assert v[0].rule == "promotion-requires-integrity-review"
 
 
+def test_promotion_report_in_wrong_directory_fails(tmp_path: Path):
+    """Promotion report with rung that doesn't match its directory fails."""
+    repo_root = tmp_path
+    # r0_promotion_report.md placed under r1/ directory
+    reports_dir = repo_root / "docs" / "04_reports" / "r1"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "r0_promotion_report.md").write_text("# Promo\n", encoding="utf-8")
+    (reports_dir / "measurement_integrity_r0.md").write_text(
+        "# Review\n", encoding="utf-8"
+    )
+
+    v = check_promotion_report_requires_integrity_review(
+        ["docs/04_reports/r1/r0_promotion_report.md"],
+        repo_root,
+    )
+    assert len(v) == 1
+    assert v[0].rule == "promotion-requires-integrity-review"
+    assert "does not match directory" in v[0].message
+
+
 def test_non_promotion_report_not_checked(tmp_path: Path):
     """Non-promotion report under 04_reports is not checked."""
     repo_root = tmp_path
