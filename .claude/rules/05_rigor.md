@@ -133,3 +133,6 @@ Before claiming analysis is "done":
 ---
 
 **Bottom line:** If it's not statistically defensible, it's not done. Rigor first, accessibility second.
+
+See also @.claude/rules/35_integrity.md for deferral cost analysis requirements
+when recommending deferral of methodology defects.

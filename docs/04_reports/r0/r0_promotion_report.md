@@ -4,6 +4,7 @@
 **Rung:** R0 (baseline)
 **Decision:** PROMOTED
 **Date:** 2026-02-22
+**Methodology Review:** [measurement_integrity_r0.md](measurement_integrity_r0.md)
 
 ## Executive Summary
 
