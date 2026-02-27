@@ -373,20 +373,40 @@ def main():
         # In --skip-run mode, scan data/runs/ for matching directories
         runs_path = Path("data/runs")
         if runs_path.is_dir():
-            for policy in policies:
-                policy_name = policy["name"]
-                prefix = f"{experiment_name}_{policy_name}_"
-                matches = sorted(
-                    (
-                        p
-                        for p in runs_path.iterdir()
-                        if p.is_dir() and p.name.startswith(prefix)
-                    ),
-                    key=lambda p: p.name,
-                    reverse=True,
-                )
-                if matches:
-                    run_dirs_by_policy[policy_name] = str(matches[0])
+            if args.single_seat:
+                # Single-seat skip-run: discover per-seat directories
+                for policy in policies:
+                    policy_name = policy["name"]
+                    for seat in range(4):
+                        prefix = f"{experiment_name}_{policy_name}_seat{seat}_"
+                        matches = sorted(
+                            (
+                                p
+                                for p in runs_path.iterdir()
+                                if p.is_dir() and p.name.startswith(prefix)
+                            ),
+                            key=lambda p: p.name,
+                            reverse=True,
+                        )
+                        if matches:
+                            run_dirs_by_policy[f"{policy_name}_seat{seat}"] = str(
+                                matches[0]
+                            )
+            else:
+                for policy in policies:
+                    policy_name = policy["name"]
+                    prefix = f"{experiment_name}_{policy_name}_"
+                    matches = sorted(
+                        (
+                            p
+                            for p in runs_path.iterdir()
+                            if p.is_dir() and p.name.startswith(prefix)
+                        ),
+                        key=lambda p: p.name,
+                        reverse=True,
+                    )
+                    if matches:
+                        run_dirs_by_policy[policy_name] = str(matches[0])
 
     # Collect metrics (require evaluation.json — no silent fallback)
     metrics_by_bidder = {}
@@ -400,6 +420,7 @@ def main():
             merged_bid_hands = 0
             merged_bidder_pts_sum = 0.0
             merged_net_pts_sum = 0.0
+            merged_make_count = 0  # bids where bidder earned positive points
             missing_seat = False
 
             for seat in range(4):
@@ -412,12 +433,16 @@ def main():
                 if evaluation and evaluation.get("strategies"):
                     strat = evaluation["strategies"][0]
                     dt = strat.get("deals_total", 0)
+                    hwb = strat.get("hands_with_bids", 0)
                     merged_deals += dt
-                    merged_bid_hands += strat.get("hands_with_bids", 0)
+                    merged_bid_hands += hwb
                     ep = strat.get("expected_points_per_deal", 0)
                     nep = strat.get("net_expected_points_per_deal", 0)
                     merged_bidder_pts_sum += ep * dt
                     merged_net_pts_sum += nep * dt
+                    # make_rate * hands_with_bids = number of made bids
+                    mr = strat.get("make_rate", 0)
+                    merged_make_count += int(round(mr * hwb))
                 else:
                     missing_seat = True
 
@@ -428,8 +453,13 @@ def main():
                     "expected_points": merged_bidder_pts_sum / merged_deals,
                     "expected_points_per_deal": merged_bidder_pts_sum / merged_deals,
                     "net_expected_points_per_deal": merged_net_pts_sum / merged_deals,
-                    "make_rate": 0,  # Not easily mergeable; CI script handles this
+                    "make_rate": merged_make_count / merged_bid_hands
+                    if merged_bid_hands > 0
+                    else 0.0,
                     "bid_rate": merged_bid_hands / merged_deals,
+                    # CVaR requires raw per-hand distributions; point estimates
+                    # from evaluation.json can't be merged. The CI extractor
+                    # computes these from JSONL logs directly.
                     "cvar_5": None,
                     "net_cvar_5": None,
                     "hands_with_bids": merged_bid_hands,
