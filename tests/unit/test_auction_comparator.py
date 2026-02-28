@@ -273,3 +273,104 @@ class TestBidderNameDerivation:
         unknown = "MyCustomBidder"
         name = _CLASS_TO_NAME.get(unknown, unknown.lower())
         assert name == "mycustombidder"
+
+
+class TestPlayStrategyConfig:
+    """Tests for play strategy configuration in auction_comparator.yaml."""
+
+    _CONFIG_PATH = (
+        Path(__file__).parent.parent.parent
+        / "experiments"
+        / "configs"
+        / "auction_comparator.yaml"
+    )
+
+    def test_config_has_strategies_section(self):
+        """auction_comparator.yaml must have a strategies section with glutton."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+        strategies = config.get("strategies", [])
+        assert strategies, "strategies section missing from auction_comparator.yaml"
+        names = [s["name"] for s in strategies]
+        assert "glutton" in names, f"Expected 'glutton' in strategies, got: {names}"
+        glutton = next(s for s in strategies if s["name"] == "glutton")
+        assert glutton["class_name"] == "GluttonStrategy"
+
+    def test_config_has_play_strategy_param(self):
+        """auction_comparator.yaml must set parameters.play_strategy to 'glutton'."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+        play_strategy = config.get("parameters", {}).get("play_strategy")
+        assert (
+            play_strategy == "glutton"
+        ), f"Expected parameters.play_strategy='glutton', got: {play_strategy}"
+
+    def test_generated_configs_contain_strategies(self):
+        """Generated per-policy configs must pass strategies and play_strategy through."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+
+        # Simulate the 4-way self-play config generation
+        experiment_name = config.get("experiment_name", "auction_comparator")
+        policies = config.get("bidding_policies", [])
+        n_per = config.get("parameters", {}).get("n_per", 10000)
+
+        for policy in policies:
+            per_policy_config = {
+                "experiment_name": f"{experiment_name}_{policy['name']}",
+                "bidding_policies": [policy],
+                "strategies": config.get("strategies", []),
+                "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                "parameters": {
+                    **config.get("parameters", {}),
+                    "n_per": n_per,
+                },
+            }
+            assert per_policy_config.get(
+                "strategies"
+            ), f"strategies missing for {policy['name']}"
+            assert (
+                per_policy_config["parameters"].get("play_strategy") == "glutton"
+            ), f"play_strategy missing for {policy['name']}"
+
+    def test_generated_single_seat_configs_contain_strategies(self):
+        """Generated single-seat configs must pass strategies and play_strategy through."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+
+        experiment_name = config.get("experiment_name", "auction_comparator")
+        policies = config.get("bidding_policies", [])
+
+        # Simulate single-seat config generation for first policy, seat 0
+        policy = policies[0]
+        seat_bp = ["always_pass"] * 4
+        seat_bp[0] = policy["name"]
+
+        per_seat_config = {
+            "experiment_name": f"{experiment_name}_{policy['name']}_seat0",
+            "bidding_policies": [
+                policy,
+                {"name": "always_pass", "class_name": "AlwaysPassBidder"},
+            ],
+            "seat_bidding_policies": seat_bp,
+            "strategies": config.get("strategies", []),
+            "scenarios": config.get("scenarios", [{"contract_type": None}]),
+            "parameters": {
+                **config.get("parameters", {}),
+                "n_per": 2500,
+            },
+        }
+        assert per_seat_config.get(
+            "strategies"
+        ), "strategies missing from single-seat config"
+        assert (
+            per_seat_config["parameters"].get("play_strategy") == "glutton"
+        ), "play_strategy missing from single-seat config"

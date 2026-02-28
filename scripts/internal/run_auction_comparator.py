@@ -315,6 +315,7 @@ def main():
                             {"name": "always_pass", "class_name": "AlwaysPassBidder"},
                         ],
                         "seat_bidding_policies": seat_bp,
+                        "strategies": config.get("strategies", []),
                         "scenarios": config.get("scenarios", [{"contract_type": None}]),
                         "parameters": {
                             **config.get("parameters", {}),
@@ -327,6 +328,18 @@ def main():
                     )
                     with open(config_path, "w") as f:
                         yaml.dump(per_seat_config, f)
+
+                    # Regression guard: ensure play strategy passed through
+                    with open(config_path) as _f:
+                        _written = yaml.safe_load(_f)
+                    assert _written.get(
+                        "strategies"
+                    ), f"Regression: strategies section missing from generated config {config_path}"
+                    assert _written.get(
+                        "parameters", {}
+                    ).get(
+                        "play_strategy"
+                    ), f"Regression: play_strategy missing from generated config {config_path}"
 
                     print(f"  Running {policy_name} seat {seat} ({seat_n} deals)...")
                     run_dir = run_experiment(config_path, args.seed)
@@ -350,6 +363,7 @@ def main():
                 per_policy_config = {
                     "experiment_name": f"{experiment_name}_{policy_name}",
                     "bidding_policies": [policy],
+                    "strategies": config.get("strategies", []),
                     "scenarios": config.get("scenarios", [{"contract_type": None}]),
                     "parameters": {
                         **config.get("parameters", {}),
@@ -360,6 +374,18 @@ def main():
                 config_path = f"/tmp/auction_comparator_{policy_name}.yaml"
                 with open(config_path, "w") as f:
                     yaml.dump(per_policy_config, f)
+
+                # Regression guard: ensure play strategy passed through
+                with open(config_path) as _f:
+                    _written = yaml.safe_load(_f)
+                assert _written.get(
+                    "strategies"
+                ), f"Regression: strategies section missing from generated config {config_path}"
+                assert _written.get(
+                    "parameters", {}
+                ).get(
+                    "play_strategy"
+                ), f"Regression: play_strategy missing from generated config {config_path}"
 
                 print(f"  Running {policy_name}...")
                 run_dir = run_experiment(config_path, args.seed)
