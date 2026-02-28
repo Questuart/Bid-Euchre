@@ -130,6 +130,7 @@ def play_single_hand(
                     seat=player_idx,
                     dealer_seat=dealer_index,
                     current_high_bid=current_high_bid,
+                    auction_transcript=tuple(dict(e) for e in _transcript),
                 )
 
                 # Get bid from policy
@@ -197,6 +198,7 @@ def play_single_hand(
                     seat=player_idx,
                     dealer_seat=dealer_index,
                     current_high_bid=current_high_bid,
+                    auction_transcript=tuple(dict(e) for e in _transcript),
                 )
 
                 # Get bid from policy
@@ -274,6 +276,7 @@ def play_single_hand(
                     seat=player_idx,
                     dealer_seat=dealer_index,
                     current_high_bid=current_high_bid,
+                    auction_transcript=tuple(dict(e) for e in _transcript),
                 )
                 bid_action = None
                 if bid == 0:

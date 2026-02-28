@@ -111,6 +111,7 @@ class BiddingObservation:
     seat: int  # Player's seat index (0-3)
     dealer_seat: int  # Dealer's seat index (0-3)
     current_high_bid: int  # Current highest bid (0-10, 0 means no bids yet)
+    auction_transcript: Tuple[dict, ...] = ()  # Prior bid actions in auction order
     allowed_contracts: Tuple[str, ...] = (
         "C",
         "D",
