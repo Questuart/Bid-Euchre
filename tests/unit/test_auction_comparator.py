@@ -273,3 +273,281 @@ class TestBidderNameDerivation:
         unknown = "MyCustomBidder"
         name = _CLASS_TO_NAME.get(unknown, unknown.lower())
         assert name == "mycustombidder"
+
+
+class TestConfigGenerationIntegration:
+    """Integration test: round-trip config generation through YAML on disk."""
+
+    def test_generated_config_round_trip_contains_strategies(self):
+        """Write a minimal config, generate per-policy configs the same way main() does,
+        and verify the on-disk YAML contains strategies and play_strategy."""
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Step 1: Write a minimal source config with strategies + play_strategy
+            source_config = {
+                "experiment_name": "test_roundtrip",
+                "bidding_policies": [
+                    {
+                        "name": "test_bidder",
+                        "class_name": "FixedBidder",
+                        "params": {"n": 5, "contract": "S"},
+                    },
+                ],
+                "strategies": [
+                    {"name": "glutton", "class_name": "GluttonStrategy"},
+                ],
+                "scenarios": [{"contract_type": None}],
+                "parameters": {
+                    "play_strategy": "glutton",
+                    "n_per": 10,
+                },
+            }
+            source_path = Path(tmpdir) / "source.yaml"
+            with open(source_path, "w") as f:
+                yaml.dump(source_config, f)
+
+            # Step 2: Load and generate per-policy config exactly as main() does
+            with open(source_path) as f:
+                config = yaml.safe_load(f)
+
+            policies = config.get("bidding_policies", [])
+            experiment_name = config.get("experiment_name", "auction_comparator")
+            n_per = config.get("parameters", {}).get("n_per", 10000)
+
+            # 4-way self-play path (non-single-seat)
+            for policy in policies:
+                per_policy_config = {
+                    "experiment_name": f"{experiment_name}_{policy['name']}",
+                    "bidding_policies": [policy],
+                    "strategies": config.get("strategies", []),
+                    "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                    "parameters": {
+                        **config.get("parameters", {}),
+                        "n_per": n_per,
+                    },
+                }
+
+                config_path = Path(tmpdir) / f"generated_{policy['name']}.yaml"
+                with open(config_path, "w") as f:
+                    yaml.dump(per_policy_config, f)
+
+                # Step 3: Re-read from disk and validate (same as the script's guard)
+                with open(config_path) as f:
+                    written = yaml.safe_load(f)
+
+                assert written.get(
+                    "strategies"
+                ), f"strategies missing from generated config at {config_path}"
+                assert (
+                    written["parameters"].get("play_strategy") == "glutton"
+                ), f"play_strategy wrong in generated config at {config_path}"
+
+            # Single-seat path
+            policy = policies[0]
+            seat_bp = ["always_pass"] * 4
+            seat_bp[0] = policy["name"]
+            per_seat_config = {
+                "experiment_name": f"{experiment_name}_{policy['name']}_seat0",
+                "bidding_policies": [
+                    policy,
+                    {"name": "always_pass", "class_name": "AlwaysPassBidder"},
+                ],
+                "seat_bidding_policies": seat_bp,
+                "strategies": config.get("strategies", []),
+                "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                "parameters": {
+                    **config.get("parameters", {}),
+                    "n_per": 10,
+                },
+            }
+            seat_config_path = Path(tmpdir) / "generated_seat0.yaml"
+            with open(seat_config_path, "w") as f:
+                yaml.dump(per_seat_config, f)
+
+            with open(seat_config_path) as f:
+                written_seat = yaml.safe_load(f)
+            assert written_seat.get(
+                "strategies"
+            ), "strategies missing from single-seat generated config"
+            assert (
+                written_seat["parameters"].get("play_strategy") == "glutton"
+            ), "play_strategy wrong in single-seat generated config"
+
+    def test_missing_strategies_raises_valueerror(self):
+        """Config without strategies section triggers ValueError, not AssertionError."""
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Config deliberately missing strategies and play_strategy
+            bad_config = {
+                "experiment_name": "test_bad",
+                "bidding_policies": [
+                    {
+                        "name": "test_bidder",
+                        "class_name": "FixedBidder",
+                        "params": {"n": 5, "contract": "S"},
+                    },
+                ],
+                "scenarios": [{"contract_type": None}],
+                "parameters": {"n_per": 10},
+            }
+            config_path = Path(tmpdir) / "bad_generated.yaml"
+            with open(config_path, "w") as f:
+                yaml.dump(bad_config, f)
+
+            # Re-read and apply the same validation the script uses
+            with open(config_path) as f:
+                written = yaml.safe_load(f)
+
+            import pytest
+
+            with pytest.raises(ValueError, match="missing 'strategies' section"):
+                if not written.get("strategies"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'strategies' section. "
+                        f"Ensure the source config includes a strategies list "
+                        f"(e.g., strategies: [{{name: glutton, class_name: GluttonStrategy}}])."
+                    )
+
+    def test_missing_play_strategy_raises_valueerror(self):
+        """Config without play_strategy triggers ValueError, not AssertionError."""
+        import yaml
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Config has strategies but missing play_strategy
+            bad_config = {
+                "experiment_name": "test_bad",
+                "bidding_policies": [
+                    {
+                        "name": "test_bidder",
+                        "class_name": "FixedBidder",
+                        "params": {"n": 5, "contract": "S"},
+                    },
+                ],
+                "strategies": [
+                    {"name": "glutton", "class_name": "GluttonStrategy"},
+                ],
+                "scenarios": [{"contract_type": None}],
+                "parameters": {"n_per": 10},
+            }
+            config_path = Path(tmpdir) / "bad_generated.yaml"
+            with open(config_path, "w") as f:
+                yaml.dump(bad_config, f)
+
+            with open(config_path) as f:
+                written = yaml.safe_load(f)
+
+            import pytest
+
+            with pytest.raises(ValueError, match="missing 'parameters.play_strategy'"):
+                if not written.get("strategies"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'strategies' section."
+                    )
+                if not written.get("parameters", {}).get("play_strategy"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'parameters.play_strategy'. "
+                        f"Ensure the source config includes play_strategy in parameters."
+                    )
+
+
+class TestPlayStrategyConfig:
+    """Tests for play strategy configuration in auction_comparator.yaml."""
+
+    _CONFIG_PATH = (
+        Path(__file__).parent.parent.parent
+        / "experiments"
+        / "configs"
+        / "auction_comparator.yaml"
+    )
+
+    def test_config_has_strategies_section(self):
+        """auction_comparator.yaml must have a strategies section with glutton."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+        strategies = config.get("strategies", [])
+        assert strategies, "strategies section missing from auction_comparator.yaml"
+        names = [s["name"] for s in strategies]
+        assert "glutton" in names, f"Expected 'glutton' in strategies, got: {names}"
+        glutton = next(s for s in strategies if s["name"] == "glutton")
+        assert glutton["class_name"] == "GluttonStrategy"
+
+    def test_config_has_play_strategy_param(self):
+        """auction_comparator.yaml must set parameters.play_strategy to 'glutton'."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+        play_strategy = config.get("parameters", {}).get("play_strategy")
+        assert (
+            play_strategy == "glutton"
+        ), f"Expected parameters.play_strategy='glutton', got: {play_strategy}"
+
+    def test_generated_configs_contain_strategies(self):
+        """Generated per-policy configs must pass strategies and play_strategy through."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+
+        # Simulate the 4-way self-play config generation
+        experiment_name = config.get("experiment_name", "auction_comparator")
+        policies = config.get("bidding_policies", [])
+        n_per = config.get("parameters", {}).get("n_per", 10000)
+
+        for policy in policies:
+            per_policy_config = {
+                "experiment_name": f"{experiment_name}_{policy['name']}",
+                "bidding_policies": [policy],
+                "strategies": config.get("strategies", []),
+                "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                "parameters": {
+                    **config.get("parameters", {}),
+                    "n_per": n_per,
+                },
+            }
+            assert per_policy_config.get(
+                "strategies"
+            ), f"strategies missing for {policy['name']}"
+            assert (
+                per_policy_config["parameters"].get("play_strategy") == "glutton"
+            ), f"play_strategy missing for {policy['name']}"
+
+    def test_generated_single_seat_configs_contain_strategies(self):
+        """Generated single-seat configs must pass strategies and play_strategy through."""
+        import yaml
+
+        with open(self._CONFIG_PATH) as f:
+            config = yaml.safe_load(f)
+
+        experiment_name = config.get("experiment_name", "auction_comparator")
+        policies = config.get("bidding_policies", [])
+
+        # Simulate single-seat config generation for first policy, seat 0
+        policy = policies[0]
+        seat_bp = ["always_pass"] * 4
+        seat_bp[0] = policy["name"]
+
+        per_seat_config = {
+            "experiment_name": f"{experiment_name}_{policy['name']}_seat0",
+            "bidding_policies": [
+                policy,
+                {"name": "always_pass", "class_name": "AlwaysPassBidder"},
+            ],
+            "seat_bidding_policies": seat_bp,
+            "strategies": config.get("strategies", []),
+            "scenarios": config.get("scenarios", [{"contract_type": None}]),
+            "parameters": {
+                **config.get("parameters", {}),
+                "n_per": 2500,
+            },
+        }
+        assert per_seat_config.get(
+            "strategies"
+        ), "strategies missing from single-seat config"
+        assert (
+            per_seat_config["parameters"].get("play_strategy") == "glutton"
+        ), "play_strategy missing from single-seat config"

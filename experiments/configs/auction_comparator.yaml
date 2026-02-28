@@ -42,10 +42,15 @@ bidding_policies:
   # hybrid_olsa is added dynamically by run_auction_comparator.py
   # if --olsa-artifact is provided with --bidder-class HybridOLSaBidder
 
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
 scenarios:
   - contract_type: null  # Auction mode
 
 parameters:
+  play_strategy: glutton
   n_per: 10000
   seed: 42
   log_level: hand

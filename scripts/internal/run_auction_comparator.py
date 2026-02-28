@@ -315,6 +315,7 @@ def main():
                             {"name": "always_pass", "class_name": "AlwaysPassBidder"},
                         ],
                         "seat_bidding_policies": seat_bp,
+                        "strategies": config.get("strategies", []),
                         "scenarios": config.get("scenarios", [{"contract_type": None}]),
                         "parameters": {
                             **config.get("parameters", {}),
@@ -327,6 +328,21 @@ def main():
                     )
                     with open(config_path, "w") as f:
                         yaml.dump(per_seat_config, f)
+
+                    # Validate play strategy passed through to generated config
+                    with open(config_path) as _f:
+                        _written = yaml.safe_load(_f)
+                    if not _written.get("strategies"):
+                        raise ValueError(
+                            f"Generated config {config_path} is missing 'strategies' section. "
+                            f"Ensure the source config includes a strategies list "
+                            f"(e.g., strategies: [{{name: glutton, class_name: GluttonStrategy}}])."
+                        )
+                    if not _written.get("parameters", {}).get("play_strategy"):
+                        raise ValueError(
+                            f"Generated config {config_path} is missing 'parameters.play_strategy'. "
+                            f"Ensure the source config includes play_strategy in parameters."
+                        )
 
                     print(f"  Running {policy_name} seat {seat} ({seat_n} deals)...")
                     run_dir = run_experiment(config_path, args.seed)
@@ -350,6 +366,7 @@ def main():
                 per_policy_config = {
                     "experiment_name": f"{experiment_name}_{policy_name}",
                     "bidding_policies": [policy],
+                    "strategies": config.get("strategies", []),
                     "scenarios": config.get("scenarios", [{"contract_type": None}]),
                     "parameters": {
                         **config.get("parameters", {}),
@@ -360,6 +377,21 @@ def main():
                 config_path = f"/tmp/auction_comparator_{policy_name}.yaml"
                 with open(config_path, "w") as f:
                     yaml.dump(per_policy_config, f)
+
+                # Validate play strategy passed through to generated config
+                with open(config_path) as _f:
+                    _written = yaml.safe_load(_f)
+                if not _written.get("strategies"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'strategies' section. "
+                        f"Ensure the source config includes a strategies list "
+                        f"(e.g., strategies: [{{name: glutton, class_name: GluttonStrategy}}])."
+                    )
+                if not _written.get("parameters", {}).get("play_strategy"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'parameters.play_strategy'. "
+                        f"Ensure the source config includes play_strategy in parameters."
+                    )
 
                 print(f"  Running {policy_name}...")
                 run_dir = run_experiment(config_path, args.seed)
