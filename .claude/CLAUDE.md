@@ -13,3 +13,9 @@ When compacting conversation context, preserve:
 4. **Blocking issues** — any unresolved errors or decisions needed
 
 Discard: exploration tangents, superseded plans, verbose file contents already summarized.
+
+## Post-PR Review
+- `/reviewing-changes` auto-triggers after `gh pr create` via PostToolUse hook
+- Reviews code quality, conventions, generates handoff summary
+- Auto-fixes are pushed as follow-up commits to the PR branch
+- Handoff summary is designed for `/copy` into a new session
