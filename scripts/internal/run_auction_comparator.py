@@ -329,17 +329,20 @@ def main():
                     with open(config_path, "w") as f:
                         yaml.dump(per_seat_config, f)
 
-                    # Regression guard: ensure play strategy passed through
+                    # Validate play strategy passed through to generated config
                     with open(config_path) as _f:
                         _written = yaml.safe_load(_f)
-                    assert _written.get(
-                        "strategies"
-                    ), f"Regression: strategies section missing from generated config {config_path}"
-                    assert _written.get(
-                        "parameters", {}
-                    ).get(
-                        "play_strategy"
-                    ), f"Regression: play_strategy missing from generated config {config_path}"
+                    if not _written.get("strategies"):
+                        raise ValueError(
+                            f"Generated config {config_path} is missing 'strategies' section. "
+                            f"Ensure the source config includes a strategies list "
+                            f"(e.g., strategies: [{{name: glutton, class_name: GluttonStrategy}}])."
+                        )
+                    if not _written.get("parameters", {}).get("play_strategy"):
+                        raise ValueError(
+                            f"Generated config {config_path} is missing 'parameters.play_strategy'. "
+                            f"Ensure the source config includes play_strategy in parameters."
+                        )
 
                     print(f"  Running {policy_name} seat {seat} ({seat_n} deals)...")
                     run_dir = run_experiment(config_path, args.seed)
@@ -375,17 +378,20 @@ def main():
                 with open(config_path, "w") as f:
                     yaml.dump(per_policy_config, f)
 
-                # Regression guard: ensure play strategy passed through
+                # Validate play strategy passed through to generated config
                 with open(config_path) as _f:
                     _written = yaml.safe_load(_f)
-                assert _written.get(
-                    "strategies"
-                ), f"Regression: strategies section missing from generated config {config_path}"
-                assert _written.get(
-                    "parameters", {}
-                ).get(
-                    "play_strategy"
-                ), f"Regression: play_strategy missing from generated config {config_path}"
+                if not _written.get("strategies"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'strategies' section. "
+                        f"Ensure the source config includes a strategies list "
+                        f"(e.g., strategies: [{{name: glutton, class_name: GluttonStrategy}}])."
+                    )
+                if not _written.get("parameters", {}).get("play_strategy"):
+                    raise ValueError(
+                        f"Generated config {config_path} is missing 'parameters.play_strategy'. "
+                        f"Ensure the source config includes play_strategy in parameters."
+                    )
 
                 print(f"  Running {policy_name}...")
                 run_dir = run_experiment(config_path, args.seed)
