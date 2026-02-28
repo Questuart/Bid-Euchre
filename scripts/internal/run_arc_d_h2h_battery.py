@@ -236,7 +236,7 @@ def select_full_subset(quick_summary, roster):
     Parameters
     ----------
     quick_summary : dict
-        QUICK battery summary (h2h_battery_v1 schema).
+        QUICK battery summary (h2h_battery_v2 schema).
     roster : list[dict]
         Full bidder roster.
 
@@ -303,7 +303,7 @@ def generate_summary(
     config_dict,
     quick_source=None,
 ):
-    """Generate a skeleton summary artifact (h2h_battery_v1 schema).
+    """Generate a skeleton summary artifact (h2h_battery_v2 schema).
 
     This produces the schema structure with empty cell data. Actual metrics
     would be populated after parsing experiment run results.
@@ -328,7 +328,7 @@ def generate_summary(
     Returns
     -------
     dict
-        Summary artifact in h2h_battery_v1 schema.
+        Summary artifact in h2h_battery_v2 schema.
     """
     cfg_sha = _config_sha(config_dict)
 
@@ -344,6 +344,17 @@ def generate_summary(
             "net_eppd_delta": None,
             "ci_low": None,
             "ci_high": None,
+            # Absolute per-team metrics (v2)
+            "abs_net_eppd_team0": None,
+            "abs_net_eppd_team1": None,
+            # Self-play full-game metrics (v2)
+            "fullgame_eppd": None,
+            "fullgame_cvar_5": None,
+            "fullgame_ci_low": None,
+            "fullgame_ci_high": None,
+            # Cross-matchup per-team CVaR (v2)
+            "cvar_5_team0": None,
+            "cvar_5_team1": None,
             "win_rate_a": 0.5 if is_self_play else None,
             "bid_rate_a": None,
             "bid_rate_b": None,
@@ -357,7 +368,7 @@ def generate_summary(
         }
 
     return {
-        "schema": "h2h_battery_v1",
+        "schema": "h2h_battery_v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": mode,
         "seed": seed,
@@ -437,19 +448,67 @@ def _bootstrap_ci(deltas, n_bootstrap=10000, ci=0.95, seed=42):
     )
 
 
+def _bootstrap_ci_fullgame(team0_pts, team1_pts, n_bootstrap=10000, ci=0.95, seed=42):
+    """Bootstrap CI on fullgame_eppd: resample DEALS, not individual team values.
+
+    For each bootstrap replicate, draw N deals with replacement,
+    compute (t0_pts + t1_pts) / 2 per deal, then take the mean.
+    This preserves within-deal dependence between team0 and team1.
+
+    Parameters
+    ----------
+    team0_pts : list[float]
+        Per-deal absolute points for team 0.
+    team1_pts : list[float]
+        Per-deal absolute points for team 1.
+    n_bootstrap : int
+        Number of bootstrap resamples.
+    ci : float
+        Confidence level (default 0.95).
+    seed : int
+        RNG seed for reproducibility.
+
+    Returns
+    -------
+    tuple[float, float]
+        (ci_low, ci_high) bounds on fullgame_eppd.
+    """
+    rng = np.random.default_rng(seed)
+    t0 = np.array(team0_pts)
+    t1 = np.array(team1_pts)
+    n = len(t0)
+
+    if n < 2:
+        mean_val = float((np.mean(t0) + np.mean(t1)) / 2) if n > 0 else 0.0
+        return (mean_val, mean_val)
+
+    per_deal_avg = (t0 + t1) / 2  # Per-deal average
+    boot_means = np.empty(n_bootstrap)
+    for i in range(n_bootstrap):
+        idx = rng.integers(0, n, size=n)
+        boot_means[i] = np.mean(per_deal_avg[idx])
+
+    alpha = (1 - ci) / 2
+    return (
+        float(np.percentile(boot_means, 100 * alpha)),
+        float(np.percentile(boot_means, 100 * (1 - alpha))),
+    )
+
+
 def parse_run_results(run_dir, summary, seed=42):
     """Parse JSONL logs from a completed experiment run and populate summary cells.
 
     Reads hand_end events from JSONL log files in run_dir, groups them by
     matchup_id, and computes per-cell metrics: net_eppd_delta, win_rate,
-    bid/make rates, and bootstrap CIs.
+    bid/make rates, bootstrap CIs, absolute per-team metrics, and
+    self-play full-game metrics (fullgame_eppd, fullgame_cvar_5).
 
     Parameters
     ----------
     run_dir : str or Path
         Path to the experiment run directory containing JSONL log files.
     summary : dict
-        Skeleton summary dict (h2h_battery_v1 schema) with cells to populate.
+        Skeleton summary dict (h2h_battery_v2 schema) with cells to populate.
     seed : int
         RNG seed for bootstrap CI computation.
 
@@ -497,6 +556,8 @@ def parse_run_results(run_dir, summary, seed=42):
 
         # Compute per-deal metrics
         deltas = []  # net_points_a - net_points_b per deal
+        team0_points_abs = []  # absolute per-deal team0 points
+        team1_points_abs = []  # absolute per-deal team1 points
         team0_wins = 0
         bids_by_team0 = 0
         bids_by_team1 = 0
@@ -512,6 +573,8 @@ def parse_run_results(run_dir, summary, seed=42):
                 t0 = rec.get("t0", 0)
                 t1 = rec.get("t1", 0)
                 deltas.append(t0 - t1)
+                team0_points_abs.append(t0)
+                team1_points_abs.append(t1)
                 if t0 > t1:
                     team0_wins += 1
                 continue
@@ -519,6 +582,8 @@ def parse_run_results(run_dir, summary, seed=42):
             t0_pts, t1_pts = _compute_team_points(rec)
             delta = t0_pts - t1_pts
             deltas.append(delta)
+            team0_points_abs.append(t0_pts)
+            team1_points_abs.append(t1_pts)
 
             if t0_pts > t1_pts:
                 team0_wins += 1
@@ -551,6 +616,40 @@ def parse_run_results(run_dir, summary, seed=42):
         cell["ci_low"] = round(ci_low, 6)
         cell["ci_high"] = round(ci_high, 6)
         cell["cvar_5"] = round(cvar_5, 6)
+
+        # Absolute per-team metrics (v2)
+        abs_team0 = float(np.mean(team0_points_abs))
+        abs_team1 = float(np.mean(team1_points_abs))
+        cell["abs_net_eppd_team0"] = round(abs_team0, 6)
+        cell["abs_net_eppd_team1"] = round(abs_team1, 6)
+
+        # Full-game metrics: self-play vs cross-matchup
+        is_self_play = cell.get("bidder_a") == cell.get("bidder_b")
+        if is_self_play:
+            # fullgame_eppd: average of both teams (exchangeable in self-play)
+            cell["fullgame_eppd"] = round((abs_team0 + abs_team1) / 2, 6)
+
+            # fullgame_cvar_5: Pool all absolute values from both teams,
+            # take bottom 5%
+            pooled = team0_points_abs + team1_points_abs  # 2*N values
+            sorted_pooled = sorted(pooled)
+            k_pooled = max(1, int(np.ceil(0.05 * len(pooled))))
+            cell["fullgame_cvar_5"] = round(float(np.mean(sorted_pooled[:k_pooled])), 6)
+
+            # Bootstrap CI for fullgame_eppd (resamples deals, not values)
+            fg_ci_low, fg_ci_high = _bootstrap_ci_fullgame(
+                team0_points_abs, team1_points_abs, seed=seed
+            )
+            cell["fullgame_ci_low"] = round(fg_ci_low, 6)
+            cell["fullgame_ci_high"] = round(fg_ci_high, 6)
+        else:
+            # Cross-matchup: compute per-team CVaR separately (DO NOT pool)
+            sorted_t0 = sorted(team0_points_abs)
+            sorted_t1 = sorted(team1_points_abs)
+            k_cross = max(1, int(np.ceil(0.05 * n_deals)))
+            cell["cvar_5_team0"] = round(float(np.mean(sorted_t0[:k_cross])), 6)
+            cell["cvar_5_team1"] = round(float(np.mean(sorted_t1[:k_cross])), 6)
+
         cell["win_rate_a"] = round(team0_wins / n_deals, 4)
         cell["bid_rate_a"] = round(bids_by_team0 / n_deals, 4)
         cell["bid_rate_b"] = round(bids_by_team1 / n_deals, 4)

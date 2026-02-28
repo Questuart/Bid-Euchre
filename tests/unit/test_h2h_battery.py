@@ -340,7 +340,7 @@ class TestGenerateSummary:
             config_dict=config,
         )
 
-        assert summary["schema"] == "h2h_battery_v1"
+        assert summary["schema"] == "h2h_battery_v2"
         assert summary["mode"] == "QUICK"
         assert summary["seed"] == 42
         assert summary["n_per"] == 2000
@@ -365,7 +365,7 @@ class TestGenerateSummary:
 
         json_str = json.dumps(summary)
         reloaded = json.loads(json_str)
-        assert reloaded["schema"] == "h2h_battery_v1"
+        assert reloaded["schema"] == "h2h_battery_v2"
         assert len(reloaded["cells"]) == 49
 
 
