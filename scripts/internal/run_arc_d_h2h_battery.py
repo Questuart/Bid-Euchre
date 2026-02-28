@@ -236,7 +236,7 @@ def select_full_subset(quick_summary, roster):
     Parameters
     ----------
     quick_summary : dict
-        QUICK battery summary (h2h_battery_v1 schema).
+        QUICK battery summary (h2h_battery_v2 schema).
     roster : list[dict]
         Full bidder roster.
 
