@@ -5,6 +5,15 @@
 **Date:** 2026-02-20 (v3 update)
 **Target path:** `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_execution_plan.md`
 
+## ⚠️ STALENESS WARNING (2026-02-28)
+
+**This plan is partially stale.** Waves 0–2 + R0b are COMPLETE. The plan still
+references provisional thresholds (delta_floor=0.01) — actual FULL-calibrated
+values are delta_floor=0.180, regression=0.184 (see MASTER_PLAN.md Stream 6).
+The prerequisites table in §10 is also stale (P0 is merged; all R0 work is done).
+For current project state, consult `plans/MASTER_PLAN.md` first. This plan
+remains the authoritative source for R1+ wave structure and PR sequencing.
+
 ## v3 Changes (2026-02-20)
 
 Applies 31 review decisions from `plans/archive/arc_d_gap_analysis.md`. Key changes:
@@ -783,7 +792,7 @@ def promotion_gate(bundle_path, rung_id):
     /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/eligibility.py.
     It adds Arc D-specific Tier 2 gates on top of the central eligibility engine.
     """
-    delta_floor = 0.01  # fixed floor, not configurable
+    delta_floor = 0.01  # ⚠️ SUPERSEDED: FULL-calibrated value is 0.180 (see MASTER_PLAN.md)
 
     # --- Pre-Gate: Bundle validation ---
     bundle = load_and_validate_bundle(bundle_path)
@@ -881,18 +890,23 @@ def promotion_gate(bundle_path, rung_id):
 
 ### Threshold Summary
 
+> **⚠️ SUPERSEDED:** The `0.01` values below are provisional pre-R0 estimates.
+> FULL-calibrated thresholds from R0 actuals: **delta_floor=0.180, regression=0.184**.
+> See `MASTER_PLAN.md` Stream 6 and `src/bid_euchre/validation/arc_d_gate.py` for
+> the implemented values. The table below is retained for historical context only.
+
 | Rung | Gate Type | Primary Condition | Additional | Sensitivity |
 |------|-----------|-------------------|------------|-------------|
 | R0 | Auto-promote | All 7 metrics finite (both arms) | None | None |
-| R1 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
-| R2 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
-| R3 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
-| R4 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
-| R5 | Improvement | net_eppd > control + max(0.01, 1.5\*SE) | **Strict cvar_5 improvement** | Both 43+44 < 0 -> HALT |
+| R1 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R2 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R3 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R4 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R5 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | **Strict cvar_5 improvement** | Both 43+44 < 0 -> HALT |
 
-**Note on provisional thresholds:** The thresholds above (delta_floor=0.01,
-cvar_5 tolerance=0.10, etc.) were originally calibrated for `eppd`. Since `net_eppd`
-values are systematically lower (net differential is harsher), these thresholds are
+**Note on provisional thresholds:** The thresholds above were originally calibrated
+for `eppd` at delta_floor=0.01. They have been **recalibrated from FULL-mode R0
+actuals** to delta_floor=0.180, regression=0.184. The original values are
 **provisional**. R0 establishes the net_eppd baseline; thresholds are recalibrated
 from R0 actuals before R1 promotion.
 
@@ -1925,7 +1939,7 @@ Verify: make repo-lint passes.
 
 | # | Action | Status |
 |---|--------|--------|
-| P0 | Merge PR-P0: switch primary metric to `net_eppd` | **Pending** |
+| P0 | Merge PR-P0: switch primary metric to `net_eppd` | **DONE** (merged, part of R0 completion) |
 | P1 | Merge HITL PR-1 (#370): `require_split()` | **DONE** (merged 2026-02-19) |
 | P2 | Merge HITL PR-2 (#372): `compute_semantic_gate()` | **DONE** (merged 2026-02-19) |
 | P3 | Merge HITL PR-3 (#374): model-rung notebook template | **DONE** (merged) |

@@ -65,13 +65,13 @@ exceeds current high bid. No sigma, no P(make), no EV check.
 
 | Rate | Bidder Arm | Context | Source |
 |------|-----------|---------|--------|
-| **62.5%** | hybrid_olsa (constrained, 3 features, Gaussian CDF) | Comparator self-play (uncontested, vs Glutton) | `comparator_rankings.md` v2 (10k deals, seed=42) |
+| **(see v4)** | hybrid_olsa (constrained, 3 features, Gaussian CDF) | Comparator self-play (uncontested, vs Glutton) | Pull from current `comparator_rankings.md` v4 (single-seat mode) |
 | **82.8%** | OLSa_Full (full, 39 features, floor-based) | R0 promotion eval (uncontested, vs Glutton) | `r0_promotion_report.md` (seed=42) |
 | **16.2%** | hybrid_olsa (constrained, 3 features, Gaussian CDF) | C33 ablation H2H (contested auction, vs olsa) | `c33_ablation_report.md` (10k deals, seed=42) |
 
-**Key distinction:** 62.5% and 82.8% are from *different model arms*, not the
+**Key distinction:** The comparator and promotion rates are from *different model arms*, not the
 same model in different contexts. The 16.2% competitive rate reflects auction
-interaction: hybrid_olsa yields 84% of auctions to olsa because olsa always
+interaction: hybrid_olsa yields most auctions to olsa because olsa always
 outbids it when both would bid (olsa has no EV threshold).
 
 ---
@@ -168,7 +168,7 @@ sigma from training. For each candidate bid:
 | Decision rule | floor(mu) >= 3 | EV > 0 |
 | Uses sigma? | No | Yes (per-contract residual variance) |
 | Accounts for uncertainty? | No | Yes (Gaussian model) |
-| Bid rate (comparator, uncontested) | ~100% | ~62.5% |
+| Bid rate (comparator, uncontested) | ~100% | See current `comparator_rankings.md` v4 |
 | Parameters beyond OLS | None | residual_variance, risk_lambda |
 
 ### 3.2 Risk Quantification (Analytical CVaR)
@@ -202,7 +202,7 @@ the intrinsic bid rate, which measures how often the bidder would bid in
 uncontested self-play.
 
 For context:
-- hybrid_olsa intrinsic bid rate: 62.5% (comparator_rankings.md v2, 10k deals)
+- hybrid_olsa intrinsic bid rate: pull from current `comparator_rankings.md` v4 at write time
 - hybrid_olsa competitive bid rate vs olsa: 16.2% (this report)
 - The 46pp gap reflects auction interaction: olsa outbids hybrid_olsa in most
   deals because olsa has no EV threshold and bids more aggressively.
