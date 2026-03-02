@@ -128,8 +128,8 @@ R0 training (#396)
   +---> C33 ablation (this report)
   |       validates wrapper architecture
   |
-  +---> Comparator battery v2 (comparator_rankings.md)
-  |       ranks all 7 bidders in self-play
+  +---> Comparator battery v4 (comparator_rankings.md)
+  |       ranks all 7 bidders (single-seat, GluttonStrategy)
   |
   +---> H2H battery (h2h_battery_analysis.md)
   |       competitive ordering + threshold calibration

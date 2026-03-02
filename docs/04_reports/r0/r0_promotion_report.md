@@ -23,12 +23,12 @@ Key metrics (OLSa_Full promotional arm, seed 42):
 | CVaR-5% | −6.411 |
 | net_CVaR-5% | −12.063 |
 
-The model ranks 2nd among 7 comparator bidders by net_eppd (v2 battery,
-seed=42), trailing only `modeloespecifico` (+2.291) by 0.624 points/deal
-(p < 0.001). The gap is expected: `modeloespecifico` is a hand-tuned heuristic
-with full game knowledge, while the OLSa-Hybrid is a linear model trained from
-data. R0's purpose is to establish a working baseline, not to exceed heuristic
-performance.
+The model ranks 2nd among 7 comparator bidders by net_eppd (v4 single-seat
+comparator with GluttonStrategy, seed=42), trailing only `modeloespecifico`
+(+1.587) by 1.132 points/deal (p < 0.001). The gap is expected:
+`modeloespecifico` is a hand-tuned heuristic with full game knowledge, while
+the OLSa-Hybrid is a linear model trained from data. R0's purpose is to
+establish a working baseline, not to exceed heuristic performance.
 
 ## Gate Results
 
@@ -114,23 +114,23 @@ starting at R1.
 ## Comparator Context
 
 See [comparator_rankings.md](comparator_rankings.md) for the full comparator
-battery with bootstrap 95% confidence intervals. The v2 battery (7 bidders,
-seed=42) expanded the original 5-bidder roster to include the constrained OLSa
-variants (`olsa_full`, `olsa`) as separate entries.
+battery with bootstrap 95% confidence intervals. The v4 single-seat comparator
+(7 bidders, 20,000 deals/bidder, GluttonStrategy card play, seed=42) evaluates
+each bidder in isolation against always-pass sentinels.
 
-Summary ranking by net_eppd (v2, 7 bidders):
+Summary ranking by net_eppd (v4 single-seat, 7 bidders):
 
 | Rank | Bidder | net_eppd | 95% CI |
 |------|--------|----------|--------|
-| 1 | modeloespecifico | +2.291 | [+2.190, +2.390] |
-| 2 | **hybrid_olsa (R0)** | **+1.667** | **[+1.574, +1.760]** |
-| 3 | olsa_full | +0.690 | [+0.548, +0.833] |
-| 4 | olsa | +0.429 | [+0.282, +0.574] |
-| 5 | rankthetank | −3.170 | [−3.331, −3.008] |
-| 6 | fiveheadfred | −3.521 | [−3.671, −3.371] |
-| 7 | stricthellraiser | −6.114 | [−6.276, −5.956] |
+| 1 | modeloespecifico | +1.587 | [+1.529, +1.645] |
+| 2 | **hybrid_olsa (R0)** | **+0.455** | **[+0.420, +0.491]** |
+| 3 | stricthellraiser | +0.076 | [+0.018, +0.132] |
+| 4 | olsa_full | −0.168 | [−0.260, −0.078] |
+| 5 | olsa | −0.342 | [−0.435, −0.250] |
+| 6 | fiveheadfred | −2.570 | [−2.667, −2.473] |
+| 7 | rankthetank | −9.767 | [−9.857, −9.675] |
 
-The gap between `modeloespecifico` and `hybrid_olsa` is 0.624 points/deal
+The gap between `modeloespecifico` and `hybrid_olsa` is 1.132 points/deal
 (p < 0.001, bootstrap permutation test, n=10,000). Closing this gap is the
 objective of future rungs (R1+).
 
@@ -186,12 +186,18 @@ bar.
 | Gate thresholds (R1) | data/artifacts/arc_d/r0/gate_thresholds_r1.json |
 | risk_lambda | 0.0 |
 
-## Exclusions
+## Companion Reports
 
-- **H2H pairwise matchups:** Now available — see
-  [h2h_battery_analysis.md](h2h_battery_analysis.md) for the full 7-bidder
-  H2H matrix (QUICK + FULL resolution).
-- **C33 ablation:** Now available — see
-  [c33_ablation_report.md](c33_ablation_report.md) for the Gaussian EV
-  wrapper validation.
+- [h2h_battery_analysis.md](h2h_battery_analysis.md) — Full 7-bidder H2H
+  matrix (QUICK + FULL resolution), gate threshold calibration.
+- [comparator_rankings.md](comparator_rankings.md) — v4 single-seat comparator
+  rankings with bootstrap CIs and behavioral analysis.
+- [c33_ablation_report.md](c33_ablation_report.md) — Gaussian EV wrapper
+  validation (+0.21 net_eppd).
+- [contract_selection_oracle.md](contract_selection_oracle.md) — Oracle regret
+  analysis: 82% pass-threshold regret, CALIBRATOR_WARRANTED but reframed.
+- [pass_threshold_decision.md](pass_threshold_decision.md) — B0 threshold
+  sweep: RETAIN t=0 (monotonic decline, model accuracy problem).
+- [measurement_integrity_r0.md](measurement_integrity_r0.md) — Methodology
+  limitations inventory and deferral cost analysis.
 - **Semantic gate Tier 2:** Not applicable at R0 (introduced at R1+).

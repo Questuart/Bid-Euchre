@@ -22,42 +22,43 @@
 
 | ID | Description | Category | Notes |
 |----|-------------|----------|-------|
-| L1 | Best-of-4 selection effect in comparator | (b) | Each bidder evaluated from all 4 seats; best-of-4 inflates absolute metrics |
-| L2 | LOD positional bias in comparator | (b) | Coupled with L1; same single-seat redesign fixes both |
-| L3 | bid_rate conflation in comparator | (b) | Coupled with L1; bid_rate mixes voluntary and forced bids |
-| L4 | GluttonStrategy confounding in comparator | (a) | Inherent to self-play design; opponent never bids, inflating declaring-team metrics |
+| L1 | Best-of-4 selection effect in comparator | (b) | **Resolved** by single-seat redesign (#466, #470). v4 evaluates one seat at a time. |
+| L2 | LOD positional bias in comparator | (b) | **Resolved** (coupled with L1; same single-seat redesign fixes both) |
+| L3 | bid_rate conflation in comparator | (b) | **Partially resolved** by single-seat mode; bid_rate now measures per-hand propensity in comparator. H2H bid_rate still conflates (team auction-win freq) |
+| L4 | GluttonStrategy confounding in comparator | (a) | Inherent to self-play design; opponent never bids, inflating declaring-team metrics. Play strategy now harmonized across instruments (C2c, #466). |
 | L5 | Pairwise not round-robin H2H | (a) | H2H battery tests all pairs but not full round-robin tournaments; accepted for efficiency |
 
 ## Deferral Cost Descriptions
 
-### B-L1: Best-of-4 selection effect
+### B-L1: Best-of-4 selection effect — RESOLVED
 
-- **Fix-now impact:** 2-3 PRs to implement single-seat comparator redesign
-  (see plans/comparator_experiment_redesign.md). Requires re-running comparator
-  battery for R0, updating all absolute metric tables.
-- **Fix-later impact:** Same fix cost plus crosswalk tables per rung (R0 vs R1
-  metrics not directly comparable if methodology changes between rungs). Each
-  additional rung of deferral adds one crosswalk.
-- **Never-fix consequence:** Absolute metrics (net_eppd, bid_rate) remain
-  inflated by selection effect. Rankings are unaffected (all bidders equally
-  inflated), but metric magnitudes are not comparable to single-seat
-  evaluations or theoretical expectations.
+Single-seat comparator implemented (#466, #470). v4 data (20,000 deals/bidder,
+single-seat mode, GluttonStrategy) is the canonical comparator instrument.
+Best-of-4 selection effect is eliminated by design.
 
-### B-L2: LOD positional bias
+Historical cost analysis (retained for context):
+- **Fix-now impact:** 2-3 PRs to implement single-seat comparator redesign.
+  Requires re-running comparator battery for R0, updating all absolute metric
+  tables.
+- **Fix-later impact:** Same fix cost plus crosswalk tables per rung.
+- **Never-fix consequence:** Absolute metrics remain inflated by selection
+  effect.
 
-- **Fix-now impact:** Coupled with L1 — same single-seat redesign fixes both.
-  No additional cost beyond L1.
-- **Fix-later impact:** Same compounding as L1.
-- **Never-fix consequence:** Seat-dependent strategies may show artificial
-  advantages; positional confound in absolute metrics.
+### B-L2: LOD positional bias — RESOLVED
 
-### B-L3: bid_rate conflation
+Coupled with L1 — resolved by the same single-seat redesign (#466, #470).
 
-- **Fix-now impact:** Coupled with L1 — single-seat design eliminates forced
-  bidding (last-bidder-must-bid scenarios are seat-dependent).
-- **Fix-later impact:** Same compounding as L1.
-- **Never-fix consequence:** bid_rate metric includes forced bids, making it
-  misleading as a measure of bidder selectivity. Relative rankings unaffected.
+### B-L3: bid_rate conflation — PARTIALLY RESOLVED
+
+Single-seat mode fixes comparator bid_rate conflation: in v4, bid_rate is a
+clean per-hand propensity measure (one bidder, uncontested auction).
+
+**Residual limitation:** H2H bid_rate still mixes voluntary and forced bids.
+In the H2H battery, both teams participate in contested auctions, so a bidder's
+observed bid_rate reflects both its intrinsic propensity and whether it was
+outbid. This is an inherent property of the H2H estimand (competitive ordering),
+not a methodology defect — but users should interpret H2H bid_rate as
+"team auction-win frequency" rather than "bidder selectivity."
 
 ## Blockers
 

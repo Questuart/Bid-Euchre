@@ -159,53 +159,59 @@ selectivity rather than better trick prediction.
 
 ---
 
-## 3. Comparator Rankings (7 Bidders)
+## 3. Comparator Rankings (v4, Single-Seat)
 
 ### 3.1 Design
 
-Each bidder plays 10,000 deals of self-play against GluttonStrategy (a
-strong baseline playing policy). Bootstrap CIs computed from 10,000 resamples.
+Each bidder plays 20,000 deals (5,000/seat × 4 seats) in single-seat mode
+against GluttonStrategy card play. The bidder under test occupies one seat
+while three always-pass sentinels fill the remaining seats. Bootstrap 95% CIs
+from 10,000 resamples.
+
+See [comparator_rankings.md](comparator_rankings.md) for full methodology,
+behavioral analysis, and version history (v1→v4 evolution).
 
 ### 3.2 Rankings
 
-| Rank | Bidder | net_eppd | 95% CI | eppd | Make Rate | Bid Rate |
-|------|--------|----------|--------|------|-----------|----------|
-| 1 | modeloespecifico | **+2.291** | [+2.190, +2.390] | 5.705 | 90.3% | 100% |
-| 2 | **hybrid_olsa** | **+1.667** | [+1.574, +1.760] | 3.567 | 87.7% | 62.5% |
-| 3 | olsa_full | +0.690 | [+0.548, +0.833] | 3.973 | 74.7% | 100% |
-| 4 | olsa | +0.429 | [+0.282, +0.574] | 3.766 | 73.2% | 100% |
-| 5 | rankthetank | -3.170 | [-3.331, -3.008] | 1.135 | 54.6% | 100% |
-| 6 | fiveheadfred | -3.521 | [-3.671, -3.371] | 1.565 | 58.2% | 100% |
-| 7 | stricthellraiser | -6.114 | [-6.276, -5.956] | -1.034 | 38.4% | 100% |
+| Rank | Bidder | net_eppd | 95% CI |
+|------|--------|----------|--------|
+| 1 | modeloespecifico | **+1.587** | [+1.529, +1.645] |
+| 2 | **hybrid_olsa** | **+0.455** | [+0.420, +0.491] |
+| 3 | stricthellraiser | +0.076 | [+0.018, +0.132] |
+| 4 | olsa_full | −0.168 | [−0.260, −0.078] |
+| 5 | olsa | −0.342 | [−0.435, −0.250] |
+| 6 | fiveheadfred | −2.570 | [−2.667, −2.473] |
+| 7 | rankthetank | −9.767 | [−9.857, −9.675] |
 
 ### 3.3 Pairwise Significance
 
 | Pair (higher vs lower) | Diff | p-value | Significant? |
 |------------------------|------|---------|-------------|
-| modeloespecifico vs hybrid_olsa | +0.624 | < 0.001 | Yes |
-| hybrid_olsa vs olsa_full | +0.978 | < 0.001 | Yes |
-| olsa_full vs olsa | +0.261 | 0.015 | Yes |
-| olsa vs rankthetank | +3.599 | < 0.001 | Yes |
-| rankthetank vs fiveheadfred | +0.351 | 0.001 | Yes |
-| fiveheadfred vs stricthellraiser | +2.593 | < 0.001 | Yes |
+| modeloespecifico vs hybrid_olsa | +1.132 | < 0.001 | Yes |
+| hybrid_olsa vs stricthellraiser | +0.379 | < 0.001 | Yes |
+| stricthellraiser vs olsa_full | +0.244 | < 0.001 | Yes |
+| olsa_full vs olsa | +0.174 | 0.009 | Yes |
+| olsa vs fiveheadfred | +2.227 | < 0.001 | Yes |
+| fiveheadfred vs rankthetank | +7.197 | < 0.001 | Yes |
 
 All 6 adjacent pairs are significantly separated at alpha=0.05. The tightest
-gap (olsa_full vs olsa, +0.261, p=0.015) confirms the full-arm's 39 features
-provide a small but real advantage over the constrained 3-feature arm in
-self-play.
+gap (olsa_full vs olsa, +0.174, p=0.009) confirms the full-arm's 39 features
+provide a small but real advantage over the constrained 3-feature arm.
 
 ### 3.4 Observations
 
 **Three tiers are visible:**
 
-1. **Competitive** (net_eppd > 0): modeloespecifico, hybrid_olsa, olsa_full, olsa
-2. **Weak** (net_eppd -4 to -3): rankthetank, fiveheadfred
-3. **Degenerate** (net_eppd < -6): stricthellraiser
+1. **Competitive** (net_eppd > 0): modeloespecifico, hybrid_olsa, stricthellraiser
+2. **Near-zero** (net_eppd −0.5 to 0): olsa_full, olsa
+3. **Negative** (net_eppd < −2): fiveheadfred, rankthetank
 
-hybrid_olsa is the only selective bidder (bid_rate=62.5%). Despite bidding
-40% less often than the other trained bidders, its make rate (87.7%) is close
-to modeloespecifico's (90.3%), and it achieves net_eppd nearly 1 point higher
-than olsa_full. The selectivity mechanism is the primary driver of its ranking.
+hybrid_olsa is the only selective bidder (bid_rate=19.7%). Despite bidding on
+fewer than 1 in 5 deals, its make rate (88.6%) is close to modeloespecifico's
+(94.7%), and it ranks 2nd overall. The selectivity mechanism is the primary
+driver of its ranking. Note: stricthellraiser's rank 3 reflects a degenerate
+single-seat mode (always bids 3 Spades), not its intended auction-raising
+behavior.
 
 modeloespecifico leads because it is a hand-tuned lookup table optimized for
 this exact game variant. It represents the ceiling for domain-specific
@@ -418,8 +424,8 @@ All artifacts in `data/artifacts/arc_d/r0/` (not committed to git).
 | Artifact | Schema | Size | Produced By |
 |----------|--------|------|-------------|
 | `c33_ablation_results.json` | `h2h_battery_v1` | 2.8 KB | H2H battery parser (4 cells) |
-| `comparator_battery_r0_v2.json` | `arc_d_comparator_v1` | 1.4 KB | Auction comparator (7 bidders) |
-| `comparator_cis_r0_v2.json` | `comparator_cis_v1` | 5.2 KB | CI extractor (bootstrap) |
+| `comparator_battery_r0_v4.json` | `arc_d_comparator_v1` | 1.4 KB | Auction comparator (7 bidders, single-seat) |
+| `comparator_cis_r0_v4.json` | `comparator_cis_v1` | 5.2 KB | CI extractor (bootstrap) |
 | `h2h_battery_quick.json` | `h2h_battery_v1` | 30.5 KB | H2H battery (49 cells, 2k/cell) |
 | `h2h_battery_full.json` | `h2h_battery_v1` | 23.2 KB | H2H battery (37 cells, 10k/cell) |
 | `gate_thresholds_r1.json` | `gate_thresholds_v1` | 1.1 KB | Threshold calibrator (FULL) |
@@ -484,7 +490,7 @@ PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
   --config experiments/configs/auction_comparator.yaml --seed 42 \
   --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0.json \
   --bidder-class HybridOLSaBidder --bidder-name hybrid_olsa \
-  --output-format json --output data/artifacts/arc_d/r0/comparator_battery_r0_v2.json
+  --output-format json --output data/artifacts/arc_d/r0/comparator_battery_r0_v4.json
 
 # C50 QUICK (generate config, run, parse)
 PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
@@ -512,6 +518,6 @@ PYTHONPATH=src uv run python scripts/internal/calibrate_arc_d_thresholds.py \
 # CI extraction
 PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \
   --artifacts-dir data/artifacts/arc_d/r0 --runs-dir data/runs --seed 42 \
-  --n-bootstrap 10000 --output data/artifacts/arc_d/r0/comparator_cis_r0_v2.json \
-  --battery-file comparator_battery_r0_v2.json
+  --n-bootstrap 10000 --output data/artifacts/arc_d/r0/comparator_cis_r0_v4.json \
+  --battery-file comparator_battery_r0_v4.json
 ```
