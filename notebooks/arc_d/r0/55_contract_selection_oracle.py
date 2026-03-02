@@ -268,12 +268,12 @@ for contract_family in ["suit", "high", "low"]:
         mu_vals += w * subset[fname].values
 
     subset["mu"] = mu_vals
-    subset["bid_n"] = np.floor(mu_vals).astype(int)
+    subset["bid_n"] = np.clip(np.floor(mu_vals).astype(int), 1, 10)
     subset["sigma"] = sigma
 
     # Fully vectorized utility computation
     subset["predicted_utility"] = compute_ev_vectorized(
-        mu_vals, sigma, np.floor(mu_vals).astype(int)
+        mu_vals, sigma, np.clip(np.floor(mu_vals).astype(int), 1, 10)
     )
 
     pred_parts.append(
@@ -480,10 +480,11 @@ if n_both_bid > 0:
     cs_mean = cs_regret.mean()
     cs_pct_wrong = (both_bid["model_choice"] != both_bid["oracle_choice"]).mean() * 100
 
-    # Bootstrap CI for contract-selection regret
+    # Bootstrap CI for contract-selection regret (independent RNG from S4 main bootstrap)
+    rng_cs = np.random.RandomState(43)
     boot_cs = np.array(
         [
-            cs_regret.sample(n=n_both_bid, replace=True, random_state=rng).mean()
+            cs_regret.sample(n=n_both_bid, replace=True, random_state=rng_cs).mean()
             for _ in range(n_bootstrap)
         ]
     )

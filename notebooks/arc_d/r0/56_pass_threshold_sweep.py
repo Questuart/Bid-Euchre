@@ -44,6 +44,7 @@
 
 # %% tags=["parameters"]
 MODE = "QUICK"  # SMOKE (~1k deals), QUICK (~10k deals), FULL (50k deals)
+CHART_OUTPUT_DIR = ""  # Set via papermill; empty = skip chart save
 
 # %%
 import hashlib
@@ -222,12 +223,12 @@ for contract_family in ["suit", "high", "low"]:
         mu_vals += w * subset[fname].values
 
     subset["mu"] = mu_vals
-    subset["bid_n"] = np.floor(mu_vals).astype(int)
+    subset["bid_n"] = np.clip(np.floor(mu_vals).astype(int), 1, 10)
     subset["sigma"] = sigma
 
     # Vectorized utility (risk_lambda=0 at R0 so utility=EV)
     subset["predicted_utility"] = compute_ev_vectorized(
-        mu_vals, sigma, np.floor(mu_vals).astype(int)
+        mu_vals, sigma, np.clip(np.floor(mu_vals).astype(int), 1, 10)
     )
 
     pred_parts.append(
@@ -761,9 +762,12 @@ ax.text(
 ax.set_title("Decision Summary")
 
 plt.tight_layout()
-plt.savefig("data/runs/b0_threshold_sweep.png", dpi=150, bbox_inches="tight")
+if CHART_OUTPUT_DIR:
+    _chart_out = Path(CHART_OUTPUT_DIR)
+    _chart_out.mkdir(parents=True, exist_ok=True)
+    fig.savefig(_chart_out / "b0_threshold_sweep.png", dpi=150, bbox_inches="tight")
+    print(f"Saved: {_chart_out / 'b0_threshold_sweep.png'}")
 plt.show()
-print("Saved: data/runs/b0_threshold_sweep.png")
 
 # %%
 # Final summary table: train vs val for all candidates

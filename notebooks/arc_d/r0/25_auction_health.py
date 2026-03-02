@@ -188,7 +188,10 @@ if "contract_type" in df.columns:
 # %%
 # --- Core shape checks ---
 assert len(df) > 0, "DataFrame is empty"
-assert df["deal_id"].nunique() >= 10, f"Need >= 10 deals, got {df['deal_id'].nunique()}"
+_min_deals = MODE_DEAL_COUNTS.get(MODE, 30)
+assert (
+    df["deal_id"].nunique() >= _min_deals
+), f"Need >= {_min_deals} deals for MODE={MODE}, got {df['deal_id'].nunique()}"
 assert (
     len(df) == 4 * df["deal_id"].nunique()
 ), f"Expected 4 rows/deal, got {len(df)} rows for {df['deal_id'].nunique()} deals"
