@@ -28,7 +28,7 @@ documentation.
 
 - **Directory:** `docs/04_reports/<rung>/` (e.g., `docs/04_reports/r0/`)
 - **Naming:** Flexible — use descriptive names that identify the content.
-  Examples: `c33_ablation_report.md`, `model_arc_r0_20260224.md`,
+  Examples: `c33_ablation_report.md`, `model_arc_r0.md`,
   `comparator_rankings.md`
 - **Forward-only:** This convention applies to new reports. Existing reports
   with date-stamped or legacy names are not required to rename.

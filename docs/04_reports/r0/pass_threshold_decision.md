@@ -133,7 +133,7 @@ No code changes. The pass gate at `bidding.py:1043` remains `best_utility <= 0`.
 | Protocol | `plans/r0_pass_threshold_protocol.md` v1 |
 | Notebook | `notebooks/arc_d/r0/56_pass_threshold_sweep.py` |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |
-| Model artifact | `data/artifacts/arc_d/r0/hybrid_r0.json` |
+| Model artifact | data/artifacts/arc_d/r0/hybrid_r0.json |
 | Split seed | 42 |
 | Bootstrap seed | 42 |
 | Mode | QUICK (10,000 deals) |
