@@ -1245,24 +1245,8 @@ class TestModeloEspecificoBidFloorRemoval:
         """Hand with score 0 for all contracts still passes (floor=1 rejects 0)."""
         bidder = ModeloEspecifico()
 
-        # All queens — no bowers, no aces, no tens
-        # Each suit: 0 bowers + 0.5*2 trump + 0 aces = 1.0 → bid 1
-        # Actually queens count as trump... let's use a hand with 1 card per suit
-        # to get 0.5 per suit (rounds to 0)
-        hand = [
-            Card("S", "Q"),
-            Card("H", "Q"),
-            Card("D", "Q"),
-            Card("C", "Q"),
-            Card("S", "K"),
-        ]
-        # S: 0 bowers + 0.5*2 + 0 aces = 1.0 → bid 1
-        # H: 0 bowers + 0.5*1 + 0 aces = 0.5 → bid 0 → rejected
-        # D: 0 bowers + 0.5*1 + 0 aces = 0.5 → bid 0 → rejected
-        # C: 0 bowers + 0.5*1 + 0 aces = 0.5 → bid 0 → rejected
-        # So S produces (1.0, 1, "S") — this hand does NOT pass anymore.
-        # To truly pass, we need < 1.0 for ALL contracts.
-        # A single non-ace, non-ten, non-bower card per suit with only 1 card:
+        # 4-card hand: 1 non-ace non-ten per suit → 0.5 per suit → int(0.5)=0 → rejected
+        # HIGH: 0 aces → 0; LOW: 0 tens → 0. All contracts rejected → pass.
         hand = [
             Card("S", "Q"),
             Card("H", "K"),
@@ -1292,15 +1276,8 @@ class TestRanktheTankFloorExtension:
         """
         from bid_euchre.features.hand_eval import score_hand_scalar
 
-        # Weak suit hand: 10 offsuit non-trump cards in Spades context
-        # All hearts: HT×2, HJ×2, HQ×2, HK×2, HA×2
-        # Spades score: 0 trump + offsuit = 2×10+2×40+2×30+2×40+2×50 = 340
-        # That's too high. Need weaker.
-
-        # Minimum-ish hand for Spades trump: no S cards at all
-        # HT, HT, DT, DT, CT, CT, HJ, DJ, HQ, DQ
-        # Spades score: 0 trump + offsuit: HT(10)+HT(10)+DT(10)+DT(10)+CT(10)+CT(10)+HJ(20)+DJ(20)+HQ(30)+DQ(30)
-        # = 6*10 + 2*20 + 2*30 = 60+40+60 = 160
+        # No Spades cards → Spades score is pure offsuit:
+        # 6×T(10) + 2×J(20) + 2×Q(30) = 60+40+60 = 160 → 150<=160<200 → bid 2
         hand_160 = [
             Card("H", "T"),
             Card("H", "T"),
