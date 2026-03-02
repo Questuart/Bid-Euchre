@@ -26,8 +26,6 @@ docs/04_reports/
     pass_threshold_decision.md   (B0 threshold sweep)
     measurement_integrity_r0.md  (methodology review)
     archive/                     (superseded revisions)
-  r1/                      Arc D R1 rung report + companions
-    30_feature_outcome_eval.md   (feature-outcome eval template)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
