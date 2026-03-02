@@ -3,6 +3,7 @@ Unit tests for the auction comparator gate logic.
 """
 
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,8 @@ format_report = _mod.format_report
 format_json = _mod.format_json
 gate_check = _mod.gate_check
 _CLASS_TO_NAME = _mod._CLASS_TO_NAME
+_merge_single_seat_evaluations = _mod._merge_single_seat_evaluations
+_write_batch_manifest = _mod._write_batch_manifest
 
 
 class TestGateCheck:
@@ -551,3 +554,147 @@ class TestPlayStrategyConfig:
         assert (
             per_seat_config["parameters"].get("play_strategy") == "glutton"
         ), "play_strategy missing from single-seat config"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for manifest/merging tests
+# ---------------------------------------------------------------------------
+
+
+def _make_evaluation_json(run_dir, deals_total=100, bid_rate=0.5, net_eppd=1.0):
+    """Create synthetic evaluation.json in run_dir."""
+    eval_dir = Path(run_dir) / "reports" / "bidding_strategy"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    evaluation = {
+        "strategies": [
+            {
+                "deals_total": deals_total,
+                "hands_with_bids": int(deals_total * bid_rate),
+                "expected_points_per_deal": net_eppd + 0.5,
+                "net_expected_points_per_deal": net_eppd,
+                "make_rate": 0.7,
+                "bid_rate": bid_rate,
+            }
+        ]
+    }
+    (eval_dir / "evaluation.json").write_text(json.dumps(evaluation))
+
+
+class TestSingleSeatMetricMerging:
+    """Tests for _merge_single_seat_evaluations()."""
+
+    def test_merged_metrics_weighted_by_deals(self, tmp_path):
+        """4 seats with different deal counts merge correctly."""
+        policies = [{"name": "alpha"}]
+        run_dirs = {}
+        # Seat 0: 100 deals, net_eppd=2.0; Seat 1: 100 deals, net_eppd=1.0
+        # Seat 2: 100 deals, net_eppd=0.5; Seat 3: 100 deals, net_eppd=0.5
+        for seat, neppd in enumerate([2.0, 1.0, 0.5, 0.5]):
+            d = tmp_path / f"run_alpha_seat{seat}"
+            d.mkdir()
+            _make_evaluation_json(d, deals_total=100, net_eppd=neppd)
+            run_dirs[f"alpha_seat{seat}"] = str(d)
+
+        metrics, missing = _merge_single_seat_evaluations(run_dirs, policies)
+        assert missing == []
+        assert "alpha" in metrics
+        # Weighted avg: (2.0*100 + 1.0*100 + 0.5*100 + 0.5*100) / 400 = 1.0
+        assert metrics["alpha"]["net_expected_points_per_deal"] == 1.0
+
+    def test_missing_seat_flags_error(self, tmp_path):
+        """Missing seat 3 → bidder in missing_evaluations."""
+        policies = [{"name": "alpha"}]
+        run_dirs = {}
+        for seat in range(3):  # Only 3 seats
+            d = tmp_path / f"run_alpha_seat{seat}"
+            d.mkdir()
+            _make_evaluation_json(d, deals_total=100, net_eppd=1.0)
+            run_dirs[f"alpha_seat{seat}"] = str(d)
+
+        metrics, missing = _merge_single_seat_evaluations(run_dirs, policies)
+        assert "alpha" in missing
+        assert "alpha" not in metrics
+
+    def test_merged_make_rate_calculation(self, tmp_path):
+        """Verify make_rate = total_made / total_bid_hands across seats."""
+        policies = [{"name": "alpha"}]
+        run_dirs = {}
+        for seat in range(4):
+            d = tmp_path / f"run_alpha_seat{seat}"
+            d.mkdir()
+            # Each seat: 100 deals, 50 bids, make_rate=0.7 → 35 made
+            _make_evaluation_json(d, deals_total=100, bid_rate=0.5, net_eppd=1.0)
+            run_dirs[f"alpha_seat{seat}"] = str(d)
+
+        metrics, _ = _merge_single_seat_evaluations(run_dirs, policies)
+        # Total: 400 deals, 200 bids, 140 made → make_rate = 0.7
+        assert metrics["alpha"]["make_rate"] == 0.7
+        assert metrics["alpha"]["bid_rate"] == 0.5
+        assert metrics["alpha"]["deals_total"] == 400
+
+
+class TestManifestCompletenessGate:
+    """Tests for _write_batch_manifest() completeness gate."""
+
+    def test_complete_batch_writes_manifest(self, tmp_path):
+        """All 4 seats for 1 policy → manifest written."""
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        policies = [{"name": "alpha"}]
+        run_dirs = {}
+        for seat in range(4):
+            d = runs_dir / f"run_alpha_seat{seat}"
+            d.mkdir()
+            _make_evaluation_json(d, deals_total=100)
+            run_dirs[f"alpha_seat{seat}"] = str(d)
+
+        path, bid = _write_batch_manifest(
+            str(runs_dir), "test", 42, 400, policies, run_dirs
+        )
+        assert path is not None
+        assert bid is not None
+        manifest = json.loads(Path(path).read_text())
+        assert manifest["schema"] == "batch_manifest_v1"
+        assert manifest["expected_seats"] == 4
+        assert len(manifest["members"]) == 4
+
+    def test_incomplete_batch_skips_manifest(self, tmp_path, capsys):
+        """Missing seat → no manifest, error printed."""
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        policies = [{"name": "alpha"}]
+        run_dirs = {}
+        for seat in range(3):  # Only 3 seats
+            d = runs_dir / f"run_alpha_seat{seat}"
+            d.mkdir()
+            _make_evaluation_json(d, deals_total=100)
+            run_dirs[f"alpha_seat{seat}"] = str(d)
+
+        path, bid = _write_batch_manifest(
+            str(runs_dir), "test", 42, 400, policies, run_dirs
+        )
+        assert path is None
+        assert bid is None
+        captured = capsys.readouterr()
+        assert "Incomplete batch" in captured.err
+
+    def test_missing_evaluation_skips_manifest(self, tmp_path, capsys):
+        """Dir exists but no evaluation.json → no manifest."""
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        policies = [{"name": "alpha"}]
+        run_dirs = {}
+        for seat in range(4):
+            d = runs_dir / f"run_alpha_seat{seat}"
+            d.mkdir()
+            if seat < 3:
+                _make_evaluation_json(d, deals_total=100)
+            # seat 3 has no evaluation.json
+            run_dirs[f"alpha_seat{seat}"] = str(d)
+
+        path, bid = _write_batch_manifest(
+            str(runs_dir), "test", 42, 400, policies, run_dirs
+        )
+        assert path is None
+        captured = capsys.readouterr()
+        assert "Missing evaluation.json" in captured.err
