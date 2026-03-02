@@ -105,7 +105,7 @@ Source: [h2h_battery_analysis.md](h2h_battery_analysis.md) SS4-4.
 **Where the tracks agree:**
 
 1. **Top 2 ordering is consistent.** Both tracks rank modeloespecifico first
-   and hybrid_olsa second. The H2H confirms the comparator gap (+0.644-0.777
+   and hybrid_olsa second. The H2H confirms the comparator gap (+0.644 to +0.777
    net_eppd_delta, CI excludes zero in both directions).
 
 2. **Tier separation is preserved.** Both tracks show a large gap between
@@ -334,7 +334,7 @@ indistinguishable in the tournament).
 ### 5.2 Implications for R1
 
 1. **The gap to close is +1.132 net_eppd** (comparator track,
-   modeloespecifico vs hybrid_olsa). The H2H gap (+0.644-0.777) is
+   modeloespecifico vs hybrid_olsa). The H2H gap (+0.644 to +0.777) is
    narrower but still significant.
 
 2. **Selectivity vs accuracy trade-off.** hybrid_olsa bids on 19.7% of
