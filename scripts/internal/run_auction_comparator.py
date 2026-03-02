@@ -609,57 +609,42 @@ def main():
                     manifest_data = json.loads(Path(args.manifest).read_text())
                     batch_id = manifest_data.get("batch_id")
                     print(f"  Using manifest: {args.manifest} (batch_id={batch_id})")
-                else:
-                    # Priority 2: auto-discover latest manifest
-                    pattern = f"batch_manifest_{experiment_name}_{args.seed}_*.json"
-                    manifests = sorted(runs_path.glob(pattern))
-                    if manifests:
-                        manifest_path = str(manifests[-1])
-                        run_dirs_by_policy = _load_batch_manifest(
-                            manifest_path, "data/runs"
-                        )
-                        manifest_data = json.loads(Path(manifest_path).read_text())
-                        batch_id = manifest_data.get("batch_id")
-                        print(
-                            f"  Auto-discovered manifest: {manifest_path} "
-                            f"(batch_id={batch_id})"
-                        )
-                    elif args.allow_legacy_seat_discovery:
-                        # Priority 3: legacy heuristic (opt-in only)
-                        print(
-                            "  WARNING: No batch manifest found. Using legacy "
-                            "'latest per seat' heuristic (unsafe — may mix batches).",
-                            file=sys.stderr,
-                        )
-                        for policy in policies:
-                            policy_name = policy["name"]
-                            for seat in range(4):
-                                prefix = f"{experiment_name}_{policy_name}_seat{seat}_"
-                                matches = sorted(
-                                    (
-                                        p
-                                        for p in runs_path.iterdir()
-                                        if p.is_dir() and p.name.startswith(prefix)
-                                    ),
-                                    key=lambda p: p.name,
-                                    reverse=True,
+                elif args.allow_legacy_seat_discovery:
+                    # Legacy heuristic (opt-in only)
+                    print(
+                        "  WARNING: No batch manifest provided. Using legacy "
+                        "'latest per seat' heuristic (unsafe — may mix batches).",
+                        file=sys.stderr,
+                    )
+                    for policy in policies:
+                        policy_name = policy["name"]
+                        for seat in range(4):
+                            prefix = f"{experiment_name}_{policy_name}_seat{seat}_"
+                            matches = sorted(
+                                (
+                                    p
+                                    for p in runs_path.iterdir()
+                                    if p.is_dir() and p.name.startswith(prefix)
+                                ),
+                                key=lambda p: p.name,
+                                reverse=True,
+                            )
+                            if matches:
+                                run_dirs_by_policy[f"{policy_name}_seat{seat}"] = str(
+                                    matches[0]
                                 )
-                                if matches:
-                                    run_dirs_by_policy[f"{policy_name}_seat{seat}"] = (
-                                        str(matches[0])
-                                    )
-                    else:
-                        # Priority 4: hard-fail (safe default)
-                        print(
-                            f"ERROR: No batch manifest found for "
-                            f"{experiment_name} seed={args.seed}.\n"
-                            f"Run the battery first (without --skip-run), "
-                            f"or provide --manifest <path>,\n"
-                            f"or use --allow-legacy-seat-discovery for "
-                            f"unsafe heuristic mode.",
-                            file=sys.stderr,
-                        )
-                        sys.exit(1)
+                else:
+                    # Hard-fail (safe default)
+                    print(
+                        f"ERROR: No batch manifest provided for "
+                        f"{experiment_name} seed={args.seed}.\n"
+                        f"Run the battery first (without --skip-run), "
+                        f"or provide --manifest <path>,\n"
+                        f"or use --allow-legacy-seat-discovery for "
+                        f"unsafe heuristic mode.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
             else:
                 for policy in policies:
                     policy_name = policy["name"]

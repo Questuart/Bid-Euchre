@@ -232,54 +232,60 @@ def _load_manifest_runs(manifest_path, bidder_names, runs_dir):
 def _validate_batch_coherence(seat_run_dirs, bidder_name, strict=True):
     """Validate that all seat runs in a batch share consistent metadata.
 
-    Checks: seed, n_per (from config in meta.json), and mode consistency.
+    Checks: seed, config_sha256, n_per (within ±1 for uneven seat splits),
+    and cardinality.
     If strict (manifest mode): sys.exit(1) on mismatch.
     If not strict (legacy mode): stderr warning only.
     """
     seeds = []
     n_pers = []
+    config_shas = []
+
+    def _report(msg):
+        if strict:
+            print(f"ERROR: {msg}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"WARNING: {msg}", file=sys.stderr)
+
     for seat, run_dir in seat_run_dirs:
         meta_path = Path(run_dir) / "meta.json"
         if not meta_path.exists():
-            msg = f"WARNING: No meta.json in {run_dir} (seat {seat} of {bidder_name})"
-            if strict:
-                print(f"ERROR: {msg}", file=sys.stderr)
-                sys.exit(1)
-            else:
-                print(msg, file=sys.stderr)
+            _report(f"No meta.json in {run_dir} (seat {seat} of {bidder_name})")
             continue
         meta = json.loads(meta_path.read_text())
         seeds.append(meta.get("seed"))
         config = meta.get("config", {})
         n_pers.append(config.get("parameters", {}).get("n_per"))
+        config_sha = meta.get("config_sha256")
+        if config_sha:
+            config_shas.append(config_sha)
 
     if len(set(seeds)) > 1:
-        msg = f"Batch coherence violation for {bidder_name}: mixed seeds {set(seeds)}"
-        if strict:
-            print(f"ERROR: {msg}", file=sys.stderr)
-            sys.exit(1)
-        else:
-            print(f"WARNING: {msg}", file=sys.stderr)
+        _report(
+            f"Batch coherence violation for {bidder_name}: mixed seeds {set(seeds)}"
+        )
 
-    if len(set(n_pers)) > 1:
-        msg = f"Batch coherence violation for {bidder_name}: mixed n_per {set(n_pers)}"
-        if strict:
-            print(f"ERROR: {msg}", file=sys.stderr)
-            sys.exit(1)
-        else:
-            print(f"WARNING: {msg}", file=sys.stderr)
+    if len(set(config_shas)) > 1:
+        _report(
+            f"Batch coherence violation for {bidder_name}: "
+            f"mixed config_sha256 {set(config_shas)}"
+        )
+
+    # n_per: allow ±1 variance for uneven seat splits (n_per % 4 != 0)
+    valid_n_pers = [n for n in n_pers if n is not None]
+    if valid_n_pers and (max(valid_n_pers) - min(valid_n_pers) > 1):
+        _report(
+            f"Batch coherence violation for {bidder_name}: "
+            f"n_per spread too large {set(valid_n_pers)} (max allowed: ±1)"
+        )
 
     # Cardinality check
     if len(seat_run_dirs) != 4:
-        msg = (
+        _report(
             f"Batch coherence violation for {bidder_name}: "
             f"expected 4 seats, got {len(seat_run_dirs)}"
         )
-        if strict:
-            print(f"ERROR: {msg}", file=sys.stderr)
-            sys.exit(1)
-        else:
-            print(f"WARNING: {msg}", file=sys.stderr)
 
 
 def _make_per_deal_net_array(data: dict) -> np.ndarray:
