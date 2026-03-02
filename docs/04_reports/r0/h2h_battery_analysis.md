@@ -485,11 +485,12 @@ All experiments are deterministic with seed=42. To reproduce:
 uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/arc_d_r0_c33_ablation.yaml
 
-# Comparator battery (7 bidders)
+# Comparator battery (7 bidders, single-seat v4)
 PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
   --config experiments/configs/auction_comparator.yaml --seed 42 \
   --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0.json \
   --bidder-class HybridOLSaBidder --bidder-name hybrid_olsa \
+  --single-seat --n-per 20000 \
   --output-format json --output data/artifacts/arc_d/r0/comparator_battery_r0_v4.json
 
 # C50 QUICK (generate config, run, parse)
@@ -515,9 +516,10 @@ PYTHONPATH=src uv run python scripts/internal/calibrate_arc_d_thresholds.py \
   --full-summary data/artifacts/arc_d/r0/h2h_battery_full.json \
   --seed 42 --output data/artifacts/arc_d/r0/gate_thresholds_r1.json
 
-# CI extraction
+# CI extraction (single-seat v4)
 PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \
   --artifacts-dir data/artifacts/arc_d/r0 --runs-dir data/runs --seed 42 \
-  --n-bootstrap 10000 --output data/artifacts/arc_d/r0/comparator_cis_r0_v4.json \
+  --n-bootstrap 10000 --single-seat \
+  --output data/artifacts/arc_d/r0/comparator_cis_r0_v4.json \
   --battery-file comparator_battery_r0_v4.json
 ```

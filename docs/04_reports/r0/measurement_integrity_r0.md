@@ -15,7 +15,7 @@
 | Battery | Purpose | Script Path | Deal Count | Seed |
 |---------|---------|-------------|------------|------|
 | H2H battery | Pairwise competitive ordering (7 bidders, 49 matchups) | scripts/internal/run_arc_d_h2h_battery.py | 10,000/cell (FULL) | 42 |
-| Comparator battery | Absolute metric extraction (7 bidders vs GluttonStrategy) | scripts/internal/run_auction_comparator.py | 50,000 (FULL) | 42 |
+| Comparator battery | Absolute metric extraction (7 bidders vs GluttonStrategy) | scripts/internal/run_auction_comparator.py | 20,000/bidder (v4 single-seat) | 42 |
 | Semantic gate | Model health checks (Tier 1 artifact integrity) | src/bid_euchre/diagnostics/semantic_gate.py | N/A (artifact checks) | N/A |
 
 ## Known Methodological Limitations

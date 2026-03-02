@@ -73,7 +73,7 @@ update existing reports.
 - `docs/04_reports/r0/h2h_battery_analysis.md` — Remove §3 duplication, fix
   terminology, update v2 provenance
 - `docs/04_reports/r0/r0_promotion_report.md` — Update comparator context table
-- `docs/04_reports/r0/model_arc_r0_20260224.md` — Update 5-bidder → 7-bidder v3
+- `docs/04_reports/r0/model_arc_r0.md` — Update 5-bidder → 7-bidder v4 (renamed from `model_arc_r0_20260224.md`)
 - `docs/04_reports/r0/measurement_integrity_r0.md` — Update to reflect GluttonStrategy
   as canonical comparator play strategy (post-C2c/#466 state)
 
