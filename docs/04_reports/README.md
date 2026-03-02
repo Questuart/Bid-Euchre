@@ -25,6 +25,7 @@ docs/04_reports/
     contract_selection_oracle.md (oracle regret analysis)
     pass_threshold_decision.md   (B0 threshold sweep)
     measurement_integrity_r0.md  (methodology review)
+    phase0_to_r0_progression.md  (Phase 0→R0 progression)
     archive/                     (superseded revisions)
   r1/                      Arc D R1 rung report + companions
     30_feature_outcome_eval.md   (feature-outcome eval template)
@@ -46,6 +47,7 @@ docs/04_reports/
 | [r0/contract_selection_oracle.md](r0/contract_selection_oracle.md) | 2026-03-01 | Contract selection oracle: regret decomposition, pass-threshold dominance |
 | [r0/pass_threshold_decision.md](r0/pass_threshold_decision.md) | 2026-03-02 | B0 threshold sweep decision: RETAIN t=0 (monotonic decline) |
 | [r0/measurement_integrity_r0.md](r0/measurement_integrity_r0.md) | 2026-02-26 | Methodology limitations + deferral costs (L1-L3 resolved/partially resolved) |
+| [r0/phase0_to_r0_progression.md](r0/phase0_to_r0_progression.md) | 2026-03-01 | Phase 0→R0 progression: variance direction check, contract mix shift, role asymmetry |
 
 Superseded revisions in `r0/archive/`.
 

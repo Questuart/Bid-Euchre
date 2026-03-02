@@ -121,6 +121,7 @@ Each rung is tracked by an `arc_d_rung_bundle_v1` bundle with these key fields:
 | `olsa_full` | dict | Promotional arm block (artifact path, eval path, feature set) |
 | `split_manifest` | str | Path to shared split manifest |
 | `training_report` | str | Path to training report |
+| `progression_report` | str | R1+ only. Path to rung-to-rung progression report. |
 
 ### Promotion Decision Schema (v3)
 
