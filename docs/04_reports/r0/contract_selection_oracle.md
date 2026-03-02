@@ -298,27 +298,23 @@ motivating a calibrator. Instead, 82% comes from the pass threshold. The gate
 result is technically correct but the prescribed remedy (calibrator) addresses
 only the minority of the problem.
 
-### 5.2 Recommendation for Phase B
+### 5.2 Decision: Path B + B0 Threshold Tuning
 
-Three paths forward, presented for decision-maker review:
-
-**Path A — Build calibrator anyway (original plan B1-B2):**
-- Addresses 17% of regret
-- Delays R0 finalization and R1 start
-- Risk: effort may be disproportionate to gain
+**Selected:** Path B (skip calibrator) + Path C sidecar (threshold tuning).
+Decision made 2026-03-01; see `plans/MASTER_PLAN.md` Phase B.
 
 **Path B — Skip calibrator, finalize R0, address in R1:**
-- Accept current contract selection for R0
-- R1 feature enrichment (already planned) addresses HIGH/LOW feature poverty
-- Pass-threshold tuning can happen independently
+- Calibrator addresses only 17% of regret → disproportionate effort
+- R1 feature enrichment addresses the dominant regret source (feature poverty)
 - Fastest path to R1
 
-**Path C — Targeted pass-threshold analysis (new intermediate step):**
-- Investigate whether threshold tuning alone (e.g., utility <= -X instead of
-  <= 0) captures a meaningful share of the 82% pass-threshold regret
+**B0 — Pass-threshold tuning (added as pre-registered protocol):**
+- A pre-registered sweep of the pass threshold `t` (where `utility <= -t → pass`)
+  on the existing oracle data, split 60/40 by deal_id
+- Protocol: `plans/r0_pass_threshold_protocol.md` (v1)
 - Quick analysis (~1 notebook), doesn't require new models
-- If threshold tuning captures significant value, implement as a targeted fix
-  before R0 finalization
+- If meaningful improvement found (SESOI = 0.05 net_diff), threshold is adopted
+  as an R0 hyperparameter before report finalization
 
 ### 5.3 Impact on R1 Design
 
@@ -339,17 +335,18 @@ R0 training (#396)
   +---> Model eval report (model_arc_r0_20260224.md)
   |       98.3% suit / 0.9% low / 0.8% high observed
   |
-  +---> Contract selection oracle (this report)
+  +---> Contract selection oracle (this report, #472)
   |       Oracle H+L: 31.9%, mean regret: 3.92
   |       Pass-threshold dominates (82% of regret)
   |
-  +---> Phase B decision (pending)
-  |       Path A: calibrator → re-runs → finalize R0
-  |       Path B: skip calibrator → finalize R0 → R1
-  |       Path C: threshold analysis → decide → finalize R0
+  +---> Phase B decision: Path B + B0
+  |       B0: threshold tuning (pre-registered protocol)
+  |       B1: SKIPPED (calibrator addresses only 17%)
+  |       B3: R0 report finalization (after B0 resolves)
   |
   +---> R1 training cycle (PR-R1a)
           Feature enrichment for HIGH/LOW
+          Re-tune threshold t per-rung
 ```
 
 ## 7. Provenance

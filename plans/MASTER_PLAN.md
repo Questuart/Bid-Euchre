@@ -6,7 +6,7 @@
 contract selection analysis, report pipeline infrastructure, R0 report updates, and
 R1 training cycle.
 
-**Last updated by:** A1 completion + Path B decision sync (2026-03-02)
+**Last updated by:** B0 threshold protocol + hyperparameter convention (2026-03-01)
 
 ---
 
@@ -31,20 +31,19 @@ are not finalized, and a critical analysis (contract selection) may require R0 e
 re-runs before reports can be locked. Meanwhile, report pipeline infrastructure (skills,
 chart runner, conventions) can be built in parallel since it's model-agnostic.
 
-**The critical path to R1 runs through the contract selection decision:**
+**The critical path to R1 now runs through threshold tuning:**
 
 ```
-Contract Selection Step 0 (oracle analysis)
+A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
   │
-  ├── Gap small → finalize R0 reports with current data → begin R1
-  │
-  └── Gap large → build calibrator → re-run R0 experiments → finalize R0 reports → begin R1
+  └── B0: Threshold tuning protocol (pre-registered)
+        │
+        ├── ADOPT → implement threshold → re-run R0 evals → B3 report finalization
+        ├── NOTE → record finding → B3 report finalization (no code change)
+        └── RETAIN → keep t=0 → B3 report finalization (no code change)
 ```
 
-**Three parallel tracks can proceed immediately:**
-1. Contract selection oracle analysis (determines the critical path)
-2. Report pipeline infrastructure (needed regardless of calibrator outcome)
-3. C33 ablation report refactor (R0-only, independent)
+**Parallel tracks:** A2 (pipeline), A3 (C33 ablation) proceed independently of B0.
 
 ---
 
@@ -55,9 +54,10 @@ Contract Selection Step 0 (oracle analysis)
 | **A1** | Contract selection Step 0 (oracle) | **COMPLETE** (#472, 2026-03-02) | — |
 | **A2** | Report pipeline infrastructure | NOT STARTED | None — start immediately |
 | **A3** | C33 ablation report refactor | NOT STARTED | None — start immediately |
+| **B0** | Pass-threshold tuning (pre-registered) | NOT STARTED | A1 (complete) — start immediately |
 | **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
 | **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
-| **B3** | R0 report finalization | UNBLOCKED | None (A1 complete, calibrator skipped) |
+| **B3** | R0 report finalization | UNBLOCKED | B0 decision (threshold must be decided before R0 reports finalize) |
 | **B4** | Skills testing on R0 data | BLOCKED | A2 + B3 |
 | **C1** | Dual-track + archetype analysis (C6) | BLOCKED | B3 |
 | **C2** | R1 training cycle (PR-R1a) | BLOCKED | B3 |
@@ -117,6 +117,28 @@ the oracle would profit. Root cause: feature poverty in HIGH/LOW models (1 featu
 **Decision: Path B selected** — skip calibrator, finalize R0, address in R1.
 Rationale: calibrator addresses only 17% of regret; the dominant fix (feature enrichment
 for HIGH/LOW) is already on the R1 roadmap. See `docs/04_reports/r0/contract_selection_oracle.md`.
+
+**B0 — Pass-Threshold Tuning (new, inserted after Step 0 result):**
+
+The oracle analysis revealed the dominant regret source is model conservatism (82%
+pass-threshold regret). Before finalizing R0 reports, we run a pre-registered threshold
+sweep to determine whether adjusting `t` (the pass gate parameter) recovers meaningful
+utility. See `plans/r0_pass_threshold_protocol.md` for the full protocol.
+
+| Attribute | Value |
+|-----------|-------|
+| Protocol | `plans/r0_pass_threshold_protocol.md` (v1, pre-registered) |
+| Data | Existing oracle dataset (40k hands), split 60/40 by deal_id |
+| Grid | 11 candidates: t ∈ {0.00, 0.25, 0.50, ..., 5.00} |
+| Primary endpoint | Mean net-differential per hand on validation partition |
+| SESOI | 0.05 net_diff per hand (within-R0 hyperparameter change) |
+| Decision | ADOPT / NOTE / RETAIN (see protocol §3.4) |
+| Effort | 1 notebook + 1 PR (~half day) |
+| Blocks | B3 (threshold must be decided before R0 reports finalize) |
+
+**Why B0 before B3:** If we finalize R0 reports with `t = 0` and then discover `t = 0.5`
+materially improves performance, we'd need to re-run R0 experiments and re-write reports.
+The threshold sweep is cheap (~30 min analysis on existing data) and prevents rework.
 
 **Sample-size note:** The sub-plan acceptance gate specifies ≥50,000 paired hands.
 Step 0 was run in QUICK mode (40,000 hands = 10k deals × 4 seats). This exceeds
@@ -288,8 +310,11 @@ calibrator question arose. **Create a detailed PR-R1a sub-plan when R0 is finali
   offsuit_tens_count) are clearly insufficient. Consider lowering `min_improvement` threshold
   in `feature_selection.py` for non-suit contracts, or adding hand-crafted distributional
   features (suit spread, void count for HIGH; low-card connectivity for LOW).
-- **Pass-threshold tuning:** Investigate whether `utility <= -X` (X > 0) recovers some of
-  the 82% pass-threshold regret. Can be a quick sensitivity sweep without new models.
+- **Pass-threshold tuning:** The pass threshold `t` is a rung-level hyperparameter (see
+  §Hyperparameter Registry below). R0 threshold is determined by B0 protocol
+  (`plans/r0_pass_threshold_protocol.md`). R1 must re-tune `t` using R1's oracle data,
+  since improved models shift the utility distribution. The B0 protocol can be re-used
+  as a template with updated data sources and potentially adjusted SESOI.
 - **Cross-contract calibration (Option B):** A unified regression may be worth revisiting
   since feature poverty and calibration problems interact.
 
@@ -307,14 +332,18 @@ A1: ✓ COMPLETE (#472)                A2: Pipeline Infrastructure       A3: C33
                                         PR-N4  (narrate skill)
                                         PR-N5  (draft skill)
 
-PHASE B — UNBLOCKED (Path B: no calibrator)
+PHASE B — B0 UNBLOCKED, then B3
 ──────────────────────────────────────────────────────
               A1 result: Path B
+                │
+    B0: Pass-Threshold Tuning ← NEW (pre-registered protocol)
+        Notebook 56 (sweep on existing oracle data)
+        Decision: ADOPT / NOTE / RETAIN
                 │
     B1: SKIPPED (calibrator addresses only 17% of regret)
     B2: SKIPPED (no calibrator to validate)
                 │
-           B3: R0 Report Finalization
+           B3: R0 Report Finalization ← blocked on B0 decision
                PR-N1 (rung report)
                PR-N2 (companion reports)
                 │
@@ -362,7 +391,17 @@ or work sequentially — no dependencies between them.
 - Deliverable: Empirically grounded ablation report with replay diagnostics
 - Sub-plan: `plans/c33_ablation_refactor_plan.md`
 
-### Phase B: Calibrator Decision & R0 Finalization (A1 resolved — Path B)
+### Phase B: Threshold Tuning & R0 Finalization (A1 resolved — Path B)
+
+**B0 — Pass-Threshold Tuning** (UNBLOCKED — A1 complete)
+- Pre-registered protocol: `plans/r0_pass_threshold_protocol.md` (v1)
+- Sweep 11 threshold candidates on existing oracle data (40k hands, 60/40 train/val split)
+- Primary endpoint: mean net-differential per hand on held-out validation
+- SESOI: 0.05 net_diff (within-R0 hyperparameter change)
+- Decision gate: ADOPT (implement + re-run evals) / NOTE (record, no change) / RETAIN (keep t=0)
+- Effort: 1 notebook + 1 decision report + 1 PR
+- **If ADOPT:** Additional effort for bidder code change + R0 eval re-runs (~3 seeds)
+- **Blocks B3:** Threshold must be decided before R0 reports finalize
 
 **B1 — Calibrator Build** ✗ SKIPPED (Path B — calibrator addresses only 17% of regret)
 - Gate fired CALIBRATOR_WARRANTED but regret decomposition showed the prescribed
@@ -371,8 +410,8 @@ or work sequentially — no dependencies between them.
 
 **B2 — R0 Experiment Re-runs** ✗ SKIPPED (no calibrator to validate)
 
-**B3 — R0 Report Finalization** (UNBLOCKED — A1 complete, B1/B2 skipped)
-- Uses current R0 data (no calibrator re-runs)
+**B3 — R0 Report Finalization** (blocked on B0 — threshold must be decided first)
+- Uses current R0 data (no calibrator re-runs), possibly with adjusted threshold if B0→ADOPT
 - Effort: 2 PRs (PR-N1 rung report refactor, PR-N2 companion consistency)
 - Sub-plan: `plans/report_narrative_overlay.md` Phases 1, 2
 - Note: PR-N2 must also update stale v2 comparator data in promotion report and
@@ -396,7 +435,7 @@ or work sequentially — no dependencies between them.
 - Effort: multiple PRs
 - Sub-plan: `plans/arc_d_execution_plan.md` (Wave 3+)
 - **Gap:** Create `plans/r1_training_plan.md` before starting — concrete commands,
-  validation gates, file paths. Must account for calibrator if adopted.
+  validation gates, file paths. Must include threshold re-tuning step (see §Hyperparameter Registry).
 
 ### Phase D: R1 Reports (blocked on C2 + B4)
 
@@ -413,6 +452,7 @@ or work sequentially — no dependencies between them.
 | Plan File | Governs | Status | Streams |
 |-----------|---------|--------|---------|
 | **`plans/MASTER_PLAN.md`** | All work sequencing | ACTIVE | All |
+| **`plans/r0_pass_threshold_protocol.md`** | B0 pass-threshold tuning | PRE-REGISTERED (v1) | 1 |
 | **`plans/contract_selection_analysis.md`** | Oracle analysis + calibrator | Step 0 COMPLETE, Steps 1–2 SKIPPED (v3) | 1 |
 | **`plans/report_narrative_overlay.md`** | Pipeline, reports, skills, C6 | ACTIVE (684 lines) | 2, 3, 5 |
 | **`plans/c33_ablation_refactor_plan.md`** | C33 report refactor | ACTIVE (1,040 lines) | 4 |
@@ -512,7 +552,37 @@ or work sequentially — no dependencies between them.
 
 ---
 
-## 8. Completion Checklist
+## 8. Hyperparameter Registry
+
+The bidding policy has several parameters that are tuned per-rung. This registry
+tracks them explicitly to prevent uncontrolled drift.
+
+| Parameter | Symbol | Where Stored | Tuning Method | Scope |
+|-----------|--------|-------------|---------------|-------|
+| OLS coefficients | β | `hybrid_r{N}.json` | OLS fit on TRAIN partition | Per-rung, per-contract-arm |
+| Residual variance | σ² | `hybrid_r{N}.json` | RMSE on TRAIN residuals | Per-rung, per-contract-family |
+| Pass threshold | t | `hybrid_r{N}.json` / bidder config | Pre-registered sweep protocol | Per-rung (see below) |
+| Risk lambda | λ | Experiment config | Manual (planned R3+) | Per-rung |
+| Feature set | F | `hybrid_r{N}.json` | Forward selection (GroupKFold) | Per-rung, per-arm |
+
+**Pass threshold convention:**
+- `t` is non-negative. Pass rule: `utility <= -t`
+- `t = 0` is current R0 default (pass when utility ≤ 0)
+- Positive `t` means the model tolerates negative utility before passing (more aggressive)
+- **Re-tuned per rung** because model accuracy changes with feature enrichment
+- R0 tuning protocol: `plans/r0_pass_threshold_protocol.md`
+- R1+ tuning: re-use protocol template with updated data source + potentially adjusted SESOI
+- Stored in model artifact alongside coefficients for reproducibility
+
+**Why per-rung tuning is required:** The optimal `t` depends on the distribution of
+`utility = EV - risk_penalty` across hands, which changes whenever model coefficients,
+features, or risk_lambda change. A threshold optimal for R0's 3/1/1 feature set would
+be suboptimal for R1's enriched features, because better predictions shift the utility
+distribution rightward (fewer false negatives → the threshold can be less aggressive).
+
+---
+
+## 9. Completion Checklist
 
 ### Phase A (parallel, no blockers)
 - [x] A1: Oracle contract mix computed, regret distribution reported, go/no-go decision made (#472)
@@ -523,7 +593,10 @@ or work sequentially — no dependencies between them.
 - [ ] A2-e: PR-N5 merged (`/draft-rung-reports` skill)
 - [ ] A3: C33 ablation report refactored with replay diagnostics
 
-### Phase B (blocked on A1 — now unblocked)
+### Phase B (B0 unblocked, B3 blocked on B0)
+- [ ] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`)
+- [ ] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
+- [ ] B0-c: Threshold decision documented (`docs/04_reports/r0/pass_threshold_decision.md`)
 - [x] B1: Calibrator decision documented — **Path B: SKIPPED** (regret decomposition shows calibrator addresses only 17%)
 - N/A B1-a: ~~Calibrator prototype~~ (skipped)
 - N/A B1-b: ~~Calibrator H2H validation~~ (skipped)
@@ -549,7 +622,7 @@ or work sequentially — no dependencies between them.
 
 ---
 
-## 9. Plan Maintenance
+## 10. Plan Maintenance
 
 Update this file when:
 - A work item completes (check the box, add PR number)

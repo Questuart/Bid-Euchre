@@ -75,6 +75,22 @@ context from auction transcripts.
 **Hand-ID grouping:** All splits group by `hand_id` (4 rows per hand) to prevent
 data leakage. Cross-validation within TRAIN also groups by `hand_id`.
 
+**Rung-level hyperparameters (added 2026-03-01):**
+Each rung produces a frozen model artifact with these tunable parameters:
+
+| Parameter | Symbol | Tuning Method | Notes |
+|-----------|--------|---------------|-------|
+| OLS coefficients | β | OLS fit on TRAIN | Per-contract-arm |
+| Residual variance | σ² | RMSE on TRAIN residuals | Per-contract-family |
+| Pass threshold | t | Pre-registered sweep on oracle data | Per-rung; see `MASTER_PLAN.md` §8 |
+| Risk lambda | λ | Manual (planned R3+) | Per-rung |
+| Feature set | F | Forward selection (GroupKFold) | Per-arm |
+
+The pass threshold `t` governs the pass/bid gate: `utility <= -t → pass`. At R0, `t = 0`
+(pass when EV ≤ 0). The threshold is tuned per-rung via the protocol in
+`plans/r0_pass_threshold_protocol.md` (reusable as template for R1+). See `bidding.py:1043`
+for the implementation point.
+
 **Dual-arm design:**
 Each rung trains two models in parallel -- OLSa_Full (promotional arm) and OLSa
 (attribution arm). OLSa_Full selects from the full feature pool and determines
