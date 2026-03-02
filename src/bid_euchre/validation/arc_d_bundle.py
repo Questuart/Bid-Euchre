@@ -245,8 +245,8 @@ def validate_bundle_files_exist(bundle: dict, base_dir: str) -> tuple[bool, list
         if h2h_batt_path and isinstance(h2h_batt_path, str):
             file_paths.append(h2h_batt_path)
 
-    # R1+ path keys (h2h_summary, gate_thresholds are paths; h2h_challenger_vs_incumbent is inline)
-    for h2h_key in ("h2h_summary", "gate_thresholds"):
+    # R1+ path keys (h2h_summary, gate_thresholds, progression_report are paths; h2h_challenger_vs_incumbent is inline)
+    for h2h_key in ("h2h_summary", "gate_thresholds", "progression_report"):
         h2h_path = bundle.get(h2h_key)
         if h2h_path and isinstance(h2h_path, str):
             file_paths.append(h2h_path)
