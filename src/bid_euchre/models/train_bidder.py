@@ -298,6 +298,8 @@ class HeuristicsModel:
                 "bid_5": 300,
                 "bid_4": 250,
                 "bid_3": 200,
+                "bid_2": 150,
+                "bid_1": 100,
             },
             "high_low_thresholds": {
                 "bid_8": 500,
@@ -306,6 +308,8 @@ class HeuristicsModel:
                 "bid_5": 350,
                 "bid_4": 280,
                 "bid_3": 200,
+                "bid_2": 150,
+                "bid_1": 100,
             },
         }
 
@@ -345,6 +349,10 @@ class HeuristicsModel:
                 bid_n = 4
             elif strength >= self.rules["suit_thresholds"]["bid_3"]:
                 bid_n = 3
+            elif strength >= self.rules["suit_thresholds"]["bid_2"]:
+                bid_n = 2
+            elif strength >= self.rules["suit_thresholds"]["bid_1"]:
+                bid_n = 1
             else:
                 continue  # Too weak
 
@@ -365,6 +373,10 @@ class HeuristicsModel:
             bid_n = 4
         elif strength_high >= self.rules["high_low_thresholds"]["bid_3"]:
             bid_n = 3
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_2"]:
+            bid_n = 2
+        elif strength_high >= self.rules["high_low_thresholds"]["bid_1"]:
+            bid_n = 1
         else:
             bid_n = 0
 
@@ -385,6 +397,10 @@ class HeuristicsModel:
             bid_n = 4
         elif strength_low >= self.rules["high_low_thresholds"]["bid_3"]:
             bid_n = 3
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_2"]:
+            bid_n = 2
+        elif strength_low >= self.rules["high_low_thresholds"]["bid_1"]:
+            bid_n = 1
         else:
             bid_n = 0
 
