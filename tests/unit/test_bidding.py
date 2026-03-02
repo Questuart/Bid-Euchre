@@ -600,12 +600,15 @@ class TestModeloEspecifico:
         assert action.n == 4
         assert action.contract == "H"  # Hearts should score highest
 
-    def test_weak_hand_passes(self):
-        """Test a weak hand (score < 3) passes."""
+    def test_weak_hand_bids_1(self):
+        """Weak hand (score=1.0) now bids 1 after floor removal (was pass with floor=3)."""
         bidder = ModeloEspecifico()
 
         # Hand with no bowers, 2 trump, no offsuit aces
-        # Score = 0 + 0.5 * 2 + 0 = 1.0 → pass
+        # Spades: 0 + 0.5*2 + 0 = 1.0 → bid_n=1
+        # LOW: 1 ten (CT) → score=1.0 → bid_n=1
+        # Others: score < 1.0 → bid_n=0 → rejected
+        # Candidates: (1.0, 1, "S") and (1.0, 1, "LOW"). max() picks "S" (lexicographic).
         hand = [
             Card("S", "K"),  # Trump King
             Card("S", "Q"),  # Trump Queen
@@ -617,7 +620,9 @@ class TestModeloEspecifico:
         obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
 
         action = bidder.choose_bid(obs)
-        assert action.is_pass()
+        assert not action.is_pass()
+        assert action.n == 1
+        assert action.contract == "S"
 
     def test_contract_selection_highest_score(self):
         """Test that the contract with highest score is selected."""
@@ -717,11 +722,15 @@ class TestModeloEspecifico:
         assert action.contract == "HIGH"
         assert action.n == 3
 
-    def test_high_contract_passes_with_2_offsuit_aces(self):
-        """HIGH with 2 offsuit aces → passes (score = 2 < 3)."""
+    def test_2_offsuit_aces_bids_2(self):
+        """2 offsuit aces now bids 2 after floor removal (was pass with floor=3).
+
+        All 4 suits score 2.0 → bid_n=2. HIGH: 2 aces → 2.0 → bid_n=2.
+        LOW: 2 tens → 2.0 → bid_n=2. All 6 produce (2.0, 2, contract).
+        max() picks "S" (lexicographic max among suit names).
+        """
         bidder = ModeloEspecifico()
 
-        # 2 aces → score 2.0 → floor(2.0) = 2 < 3, no suit should score 3 either
         hand = [
             Card("S", "A"),
             Card("H", "A"),
@@ -737,10 +746,9 @@ class TestModeloEspecifico:
 
         obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
-        # Suit contracts: no bowers, max 2 trump per suit, 1-2 offsuit aces
-        # Score for any suit: 0 + 0.5*2 + 0.5*1 = 1.5 at best → pass
-        # HIGH: 1.0 * 2 = 2 → pass
-        assert action.is_pass()
+        assert not action.is_pass()
+        assert action.n == 2
+        assert action.contract == "S"
 
     def test_low_contract_bids_with_3_offsuit_tens(self):
         """LOW with 3+ offsuit tens → bids 3 (score = 1.0 * 3 = 3)."""
@@ -766,11 +774,17 @@ class TestModeloEspecifico:
         assert action.contract == "LOW"
         assert action.n == 3
 
-    def test_low_contract_passes_with_2_offsuit_tens(self):
-        """LOW with 2 offsuit tens → passes (score = 2 < 3)."""
+    def test_2_offsuit_tens_bids_low_2(self):
+        """2 offsuit tens now bids LOW 2 after floor removal (was pass with floor=3).
+
+        S/H: 0 bowers + 0.5*3 trump + 0 aces = 1.5 → bid_n=1.
+        D/C: 0 bowers + 0.5*2 trump + 0 aces = 1.0 → bid_n=1.
+        HIGH: 0 aces → bid_n=0 → rejected.
+        LOW: 2 tens → 2.0 → bid_n=2.
+        Best: (2.0, 2, "LOW").
+        """
         bidder = ModeloEspecifico()
 
-        # 2 tens → score 2.0 → floor(2.0) = 2 < 3
         hand = [
             Card("S", "T"),
             Card("H", "T"),
@@ -786,8 +800,9 @@ class TestModeloEspecifico:
 
         obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
         action = bidder.choose_bid(obs)
-        # No suit should score 3 either (no bowers, max 2 trump, limited aces)
-        assert action.is_pass()
+        assert not action.is_pass()
+        assert action.n == 2
+        assert action.contract == "LOW"
 
 
 class TestRanktheTankThresholds:
@@ -1191,3 +1206,230 @@ class TestHybridOLSaBidFloor:
         # sigma=0 deterministic: mu=7 >= bid_n=7, EV = 2*7-10 = 4.0 > 0
         assert not action.is_pass(), "mu=7.0, sigma=0 should bid (EV=4.0)"
         assert action.n == 7
+
+
+class TestModeloEspecificoBidFloorRemoval:
+    """Test ModeloEspecifico bid floor lowered from 3 to 1 (comparator v5)."""
+
+    def test_bid_2_on_medium_weak_hand(self):
+        """Hand scoring 2.0 for exactly one suit bids 2.
+
+        Spades: 0 bowers + 4 trump (SK×2, SQ, ST) → 0 + 0.5*4 = 2.0 → bid_n=2.
+        Other suits: ≤2 trump → score ≤1.0 → bid_n ≤ 1.
+        HIGH: 0 aces → 0.0 → rejected.
+        LOW: 1 ten (ST) → 1.0 → bid_n=1.
+        Best candidate: (2.0, 2, "S").
+        """
+        bidder = ModeloEspecifico()
+
+        hand = [
+            Card("S", "K"),
+            Card("S", "K"),
+            Card("S", "Q"),
+            Card("S", "T"),
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("D", "K"),
+            Card("D", "Q"),
+            Card("C", "K"),
+            Card("C", "Q"),
+        ]
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()
+        assert action.n == 2
+        assert action.contract == "S"
+
+    def test_zero_score_still_passes(self):
+        """Hand with score 0 for all contracts still passes (floor=1 rejects 0)."""
+        bidder = ModeloEspecifico()
+
+        # 4-card hand: 1 non-ace non-ten per suit → 0.5 per suit → int(0.5)=0 → rejected
+        # HIGH: 0 aces → 0; LOW: 0 tens → 0. All contracts rejected → pass.
+        hand = [
+            Card("S", "Q"),
+            Card("H", "K"),
+            Card("D", "Q"),
+            Card("C", "K"),
+        ]
+        # S: 0 + 0.5*1 + 0 = 0.5 → 0 → rejected
+        # H: 0 + 0.5*1 + 0 = 0.5 → 0 → rejected
+        # D: 0 + 0.5*1 + 0 = 0.5 → 0 → rejected
+        # C: 0 + 0.5*1 + 0 = 0.5 → 0 → rejected
+        # HIGH: 0 aces → 0 → rejected
+        # LOW: 0 tens → 0 → rejected
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert action.is_pass()
+
+
+class TestRanktheTankFloorExtension:
+    """Test RanktheTank suit bid_1/bid_2 tiers and HIGH/LOW floor extension."""
+
+    def test_suit_low_tiers_via_score(self):
+        """Verify suit scores in [100, 200) map to bid_1 or bid_2.
+
+        These bids are never the winner in choose_bid (HIGH/LOW always
+        dominate), but the threshold mapping must be correct.
+        """
+        from bid_euchre.features.hand_eval import score_hand_scalar
+
+        # No Spades cards → Spades score is pure offsuit:
+        # 6×T(10) + 2×J(20) + 2×Q(30) = 60+40+60 = 160 → 150<=160<200 → bid 2
+        hand_160 = [
+            Card("H", "T"),
+            Card("H", "T"),
+            Card("D", "T"),
+            Card("D", "T"),
+            Card("C", "T"),
+            Card("C", "T"),
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "Q"),
+            Card("D", "Q"),
+        ]
+        score_s = score_hand_scalar(hand_160, "suit", "S")
+        assert score_s == 160, f"Expected 160, got {score_s}"
+
+        # Verify RanktheTank maps 150 <= 160 < 200 → bid 2
+        bidder = RanktheTank()
+        obs = BiddingObservation(
+            hand=hand_160, seat=0, dealer_seat=3, current_high_bid=0
+        )
+        action = bidder.choose_bid(obs)
+        # This hand's HIGH/LOW scores dominate, so the winning bid comes from there
+        assert not action.is_pass(), "Should bid (HIGH/LOW dominate)"
+
+    def test_rankthetank_always_bids_10_card_hands(self):
+        """Every 10-card hand produces at least one bid (HIGH/LOW invariant).
+
+        HIGH_score + LOW_score = 600, so at least one is ≥300 → bid 5+.
+        No 10-card hand should ever pass.
+        """
+        import random as stdlib_random
+
+        from bid_euchre.core.cards import RANKS, SUITS
+
+        bidder = RanktheTank()
+        rng = stdlib_random.Random(123)
+        deck = [Card(s, r) for s in SUITS for r in RANKS for _ in range(2)]
+
+        for i in range(200):
+            rng.shuffle(deck)
+            hand = deck[:10]
+            obs = BiddingObservation(
+                hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+            )
+            action = bidder.choose_bid(obs)
+            assert (
+                not action.is_pass()
+            ), f"Hand {i} passed unexpectedly: {[str(c) for c in hand]}"
+
+
+class TestHeuristicsModelParity:
+    """Verify HeuristicsModel produces identical bids to RanktheTank."""
+
+    def test_parity_across_hand_strengths(self):
+        """HeuristicsModel and RanktheTank produce identical bids on fixed hands."""
+        from bid_euchre.models.train_bidder import HeuristicsModel
+
+        rtt = RanktheTank()
+        hm = HeuristicsModel()
+
+        # Weak hand (no bowers, low trump)
+        weak = [
+            Card("S", "Q"),
+            Card("H", "Q"),
+            Card("D", "Q"),
+            Card("C", "Q"),
+            Card("S", "K"),
+            Card("H", "K"),
+            Card("D", "K"),
+            Card("C", "K"),
+            Card("S", "T"),
+            Card("H", "T"),
+        ]
+
+        # Medium hand (some bowers, moderate trump)
+        medium = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("D", "A"),
+            Card("C", "Q"),
+            Card("C", "T"),
+        ]
+
+        # Strong hand (heavy trump + bowers)
+        strong = [
+            Card("S", "J"),
+            Card("C", "J"),
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("S", "Q"),
+            Card("S", "T"),
+            Card("H", "A"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "K"),
+        ]
+
+        for label, hand in [("weak", weak), ("medium", medium), ("strong", strong)]:
+            obs = BiddingObservation(
+                hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+            )
+            rtt_action = rtt.choose_bid(obs)
+            hm_result = hm.predict_bid(obs)
+
+            if rtt_action.is_pass():
+                assert (
+                    hm_result is None
+                ), f"{label}: RTT passed but HM returned {hm_result}"
+            else:
+                assert hm_result is not None, f"{label}: RTT bid but HM returned None"
+                assert (
+                    rtt_action.n == hm_result["n"]
+                ), f"{label}: bid_n mismatch RTT={rtt_action.n} HM={hm_result['n']}"
+                assert rtt_action.contract == hm_result["contract"], (
+                    f"{label}: contract mismatch RTT={rtt_action.contract} "
+                    f"HM={hm_result['contract']}"
+                )
+
+    def test_parity_random_hands(self):
+        """HeuristicsModel matches RanktheTank on 100 random hands."""
+        import random as stdlib_random
+
+        from bid_euchre.core.cards import RANKS, SUITS
+        from bid_euchre.models.train_bidder import HeuristicsModel
+
+        rtt = RanktheTank()
+        hm = HeuristicsModel()
+        rng = stdlib_random.Random(42)
+        deck = [Card(s, r) for s in SUITS for r in RANKS for _ in range(2)]
+
+        for i in range(100):
+            rng.shuffle(deck)
+            hand = deck[:10]
+            obs = BiddingObservation(
+                hand=hand, seat=0, dealer_seat=3, current_high_bid=0
+            )
+            rtt_action = rtt.choose_bid(obs)
+            hm_result = hm.predict_bid(obs)
+
+            if rtt_action.is_pass():
+                assert hm_result is None, f"Hand {i}: RTT passed but HM bid {hm_result}"
+            else:
+                assert hm_result is not None, f"Hand {i}: RTT bid but HM passed"
+                assert (
+                    rtt_action.n == hm_result["n"]
+                ), f"Hand {i}: bid_n mismatch RTT={rtt_action.n} HM={hm_result['n']}"
+                assert rtt_action.contract == hm_result["contract"], (
+                    f"Hand {i}: contract mismatch RTT={rtt_action.contract} "
+                    f"HM={hm_result['contract']}"
+                )

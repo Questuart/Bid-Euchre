@@ -362,6 +362,10 @@ class RanktheTank(BiddingPolicy):
                 bid_n = 4
             elif strength >= 200:
                 bid_n = 3
+            elif strength >= 150:
+                bid_n = 2
+            elif strength >= 100:
+                bid_n = 1
             else:
                 continue  # Too weak, skip this contract
 
@@ -383,6 +387,10 @@ class RanktheTank(BiddingPolicy):
             bid_n = 4
         elif strength_high >= 200:
             bid_n = 3
+        elif strength_high >= 150:
+            bid_n = 2
+        elif strength_high >= 100:
+            bid_n = 1
         else:
             bid_n = 0
 
@@ -403,6 +411,10 @@ class RanktheTank(BiddingPolicy):
             bid_n = 4
         elif strength_low >= 200:
             bid_n = 3
+        elif strength_low >= 150:
+            bid_n = 2
+        elif strength_low >= 100:
+            bid_n = 1
         else:
             bid_n = 0
 
@@ -450,23 +462,21 @@ class ModeloEspecifico(BiddingPolicy):
                 + 0.5 * features["offsuit_aces"]
             )
             bid_n = int(score)  # floor
-            # Floor of 3 is intentional: the heuristic formula (bowers + 0.5*trump
-            # + 0.5*offsuit_aces) cannot produce meaningful bids below 3.
-            if 3 <= bid_n <= 10 and bid_n > obs.current_high_bid:
+            if 1 <= bid_n <= 10 and bid_n > obs.current_high_bid:
                 candidates.append((score, bid_n, suit))
 
         # Evaluate HIGH contract: score = 1.0 * offsuit_aces
         features_high = get_hand_features(obs.hand, "high", None)
         score_high = 1.0 * features_high["offsuit_aces"]
         bid_n_high = int(score_high)
-        if 3 <= bid_n_high <= 10 and bid_n_high > obs.current_high_bid:
+        if 1 <= bid_n_high <= 10 and bid_n_high > obs.current_high_bid:
             candidates.append((score_high, bid_n_high, "HIGH"))
 
         # Evaluate LOW contract: score = 1.0 * offsuit_tens_count
         features_low = get_hand_features(obs.hand, "low", None)
         score_low = 1.0 * features_low["offsuit_tens_count"]
         bid_n_low = int(score_low)
-        if 3 <= bid_n_low <= 10 and bid_n_low > obs.current_high_bid:
+        if 1 <= bid_n_low <= 10 and bid_n_low > obs.current_high_bid:
             candidates.append((score_low, bid_n_low, "LOW"))
 
         if not candidates:
