@@ -53,6 +53,168 @@ def _snapshot_runs_dir(runs_base="data/runs"):
     return {p.name for p in runs_path.iterdir() if p.is_dir()}
 
 
+def _write_batch_manifest(
+    runs_dir, experiment_name, seed, n_per, policies, run_dirs_by_policy
+):
+    """Write a batch manifest after a complete single-seat battery run.
+
+    The manifest is ONLY written when the batch is complete: all
+    len(policies) × 4 expected members must exist with valid evaluation.json.
+
+    Returns (manifest_path, batch_id) on success, (None, None) on failure.
+    """
+    expected_keys = []
+    for policy in policies:
+        for seat in range(4):
+            expected_keys.append(f"{policy['name']}_seat{seat}")
+
+    # Completeness gate
+    missing = [k for k in expected_keys if k not in run_dirs_by_policy]
+    if missing:
+        print(
+            f"ERROR: Incomplete batch — missing {len(missing)} members: "
+            + ", ".join(missing),
+            file=sys.stderr,
+        )
+        return None, None
+
+    # Validate evaluation.json exists for each member
+    members = {}
+    for key in expected_keys:
+        run_dir = run_dirs_by_policy[key]
+        eval_path = Path(run_dir) / "reports" / "bidding_strategy" / "evaluation.json"
+        if not eval_path.exists():
+            print(
+                f"ERROR: Missing evaluation.json in {run_dir}",
+                file=sys.stderr,
+            )
+            return None, None
+        members[key] = Path(run_dir).name
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    batch_id = f"{experiment_name}_{seed}_{timestamp}"
+    manifest = {
+        "schema": "batch_manifest_v1",
+        "batch_id": batch_id,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "experiment_name": experiment_name,
+        "seed": seed,
+        "n_per": n_per,
+        "mode": "single_seat",
+        "expected_policies": [p["name"] for p in policies],
+        "expected_seats": 4,
+        "members": members,
+    }
+
+    runs_path = Path(runs_dir)
+    manifest_path = runs_path / f"batch_manifest_{batch_id}.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    return str(manifest_path), batch_id
+
+
+def _load_batch_manifest(manifest_path, runs_dir):
+    """Load and validate a batch manifest, returning resolved run dirs.
+
+    Returns dict: {member_key: resolved_run_dir_path}
+    Calls sys.exit(1) on any validation failure.
+    """
+    manifest_p = Path(manifest_path)
+    if not manifest_p.exists():
+        print(f"ERROR: Manifest not found: {manifest_path}", file=sys.stderr)
+        sys.exit(1)
+
+    manifest = json.loads(manifest_p.read_text())
+    if manifest.get("schema") != "batch_manifest_v1":
+        print(
+            f"ERROR: Unknown manifest schema: {manifest.get('schema')}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    runs_path = Path(runs_dir)
+    resolved = {}
+    missing = []
+    for key, dirname in manifest["members"].items():
+        full_path = runs_path / dirname
+        if not full_path.is_dir():
+            missing.append(f"  {key}: {full_path}")
+        else:
+            resolved[key] = str(full_path)
+
+    if missing:
+        print(
+            "ERROR: Manifest references missing run directories:\n"
+            + "\n".join(missing),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return resolved
+
+
+def _merge_single_seat_evaluations(run_dirs_by_policy, policies, load_fn=None):
+    """Merge evaluation.json across 4 seats per bidder.
+
+    Returns (metrics_by_bidder, missing_evaluations).
+    The load_fn parameter enables test injection; defaults to load_evaluation.
+    """
+    if load_fn is None:
+        load_fn = load_evaluation
+
+    metrics_by_bidder = {}
+    missing_evaluations = []
+
+    for policy in policies:
+        policy_name = policy["name"]
+        merged_deals = 0
+        merged_bid_hands = 0
+        merged_bidder_pts_sum = 0.0
+        merged_net_pts_sum = 0.0
+        merged_make_count = 0
+        missing_seat = False
+
+        for seat in range(4):
+            key = f"{policy_name}_seat{seat}"
+            run_dir = run_dirs_by_policy.get(key)
+            if not run_dir:
+                missing_seat = True
+                continue
+            evaluation = load_fn(run_dir)
+            if evaluation and evaluation.get("strategies"):
+                strat = evaluation["strategies"][0]
+                dt = strat.get("deals_total", 0)
+                hwb = strat.get("hands_with_bids", 0)
+                merged_deals += dt
+                merged_bid_hands += hwb
+                ep = strat.get("expected_points_per_deal", 0)
+                nep = strat.get("net_expected_points_per_deal", 0)
+                merged_bidder_pts_sum += ep * dt
+                merged_net_pts_sum += nep * dt
+                mr = strat.get("make_rate", 0)
+                merged_make_count += int(round(mr * hwb))
+            else:
+                missing_seat = True
+
+        if missing_seat or merged_deals == 0:
+            missing_evaluations.append(policy_name)
+        else:
+            metrics_by_bidder[policy_name] = {
+                "expected_points": merged_bidder_pts_sum / merged_deals,
+                "expected_points_per_deal": merged_bidder_pts_sum / merged_deals,
+                "net_expected_points_per_deal": merged_net_pts_sum / merged_deals,
+                "make_rate": merged_make_count / merged_bid_hands
+                if merged_bid_hands > 0
+                else 0.0,
+                "bid_rate": merged_bid_hands / merged_deals,
+                "cvar_5": None,
+                "net_cvar_5": None,
+                "hands_with_bids": merged_bid_hands,
+                "deals_total": merged_deals,
+            }
+
+    return metrics_by_bidder, missing_evaluations
+
+
 def run_experiment(config_path, seed, runs_base="data/runs", extra_args=None):
     """Run a single experiment via the canonical runner.
 
@@ -133,7 +295,9 @@ def gate_check(metrics_by_bidder):
     return failures
 
 
-def format_json(metrics_by_bidder, gate_failures, seed, n_per, single_seat=False):
+def format_json(
+    metrics_by_bidder, gate_failures, seed, n_per, single_seat=False, batch_id=None
+):
     """Generate JSON comparison output with arc_d_comparator_v1 schema."""
     bidders = {}
     for name, m in metrics_by_bidder.items():
@@ -154,6 +318,8 @@ def format_json(metrics_by_bidder, gate_failures, seed, n_per, single_seat=False
     }
     if single_seat:
         result["mode"] = "single_seat"
+    if batch_id is not None:
+        result["batch_id"] = batch_id
     return result
 
 
@@ -256,6 +422,16 @@ def main():
     parser.add_argument(
         "--skip-run", action="store_true", help="Skip experiment run, just analyze"
     )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Explicit batch manifest path for --skip-run discovery",
+    )
+    parser.add_argument(
+        "--allow-legacy-seat-discovery",
+        action="store_true",
+        help="Allow heuristic 'latest per seat' discovery when no manifest exists (unsafe)",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -287,6 +463,7 @@ def main():
     run_dirs_by_policy = {}
 
     n_per_effective = args.n_per or n_per
+    batch_id = None  # Set when a manifest is written or loaded
 
     if not args.skip_run:
         if args.single_seat:
@@ -353,6 +530,23 @@ def main():
                     # Track with seat-specific key
                     run_dirs_by_policy[f"{policy_name}_seat{seat}"] = run_dir
                     generate_evaluation(run_dir)
+
+            # Write batch manifest (only if all seats completed)
+            manifest_path, batch_id = _write_batch_manifest(
+                "data/runs",
+                experiment_name,
+                args.seed,
+                n_per_effective,
+                policies,
+                run_dirs_by_policy,
+            )
+            if manifest_path:
+                print(f"  Batch manifest: {manifest_path}")
+            else:
+                print(
+                    "  WARNING: Incomplete batch — no manifest written",
+                    file=sys.stderr,
+                )
         else:
             # Original 4-way self-play mode
             print(
@@ -402,28 +596,70 @@ def main():
                 run_dirs_by_policy[policy_name] = run_dir
                 generate_evaluation(run_dir)
     else:
-        # In --skip-run mode, scan data/runs/ for matching directories
+        # In --skip-run mode, discover run directories
         runs_path = Path("data/runs")
         if runs_path.is_dir():
             if args.single_seat:
-                # Single-seat skip-run: discover per-seat directories
-                for policy in policies:
-                    policy_name = policy["name"]
-                    for seat in range(4):
-                        prefix = f"{experiment_name}_{policy_name}_seat{seat}_"
-                        matches = sorted(
-                            (
-                                p
-                                for p in runs_path.iterdir()
-                                if p.is_dir() and p.name.startswith(prefix)
-                            ),
-                            key=lambda p: p.name,
-                            reverse=True,
+                # Single-seat: manifest-based discovery with hard-fail default
+                if args.manifest:
+                    # Priority 1: explicit --manifest
+                    run_dirs_by_policy = _load_batch_manifest(
+                        args.manifest, "data/runs"
+                    )
+                    manifest_data = json.loads(Path(args.manifest).read_text())
+                    batch_id = manifest_data.get("batch_id")
+                    print(f"  Using manifest: {args.manifest} (batch_id={batch_id})")
+                else:
+                    # Priority 2: auto-discover latest manifest
+                    pattern = f"batch_manifest_{experiment_name}_{args.seed}_*.json"
+                    manifests = sorted(runs_path.glob(pattern))
+                    if manifests:
+                        manifest_path = str(manifests[-1])
+                        run_dirs_by_policy = _load_batch_manifest(
+                            manifest_path, "data/runs"
                         )
-                        if matches:
-                            run_dirs_by_policy[f"{policy_name}_seat{seat}"] = str(
-                                matches[0]
-                            )
+                        manifest_data = json.loads(Path(manifest_path).read_text())
+                        batch_id = manifest_data.get("batch_id")
+                        print(
+                            f"  Auto-discovered manifest: {manifest_path} "
+                            f"(batch_id={batch_id})"
+                        )
+                    elif args.allow_legacy_seat_discovery:
+                        # Priority 3: legacy heuristic (opt-in only)
+                        print(
+                            "  WARNING: No batch manifest found. Using legacy "
+                            "'latest per seat' heuristic (unsafe — may mix batches).",
+                            file=sys.stderr,
+                        )
+                        for policy in policies:
+                            policy_name = policy["name"]
+                            for seat in range(4):
+                                prefix = f"{experiment_name}_{policy_name}_seat{seat}_"
+                                matches = sorted(
+                                    (
+                                        p
+                                        for p in runs_path.iterdir()
+                                        if p.is_dir() and p.name.startswith(prefix)
+                                    ),
+                                    key=lambda p: p.name,
+                                    reverse=True,
+                                )
+                                if matches:
+                                    run_dirs_by_policy[f"{policy_name}_seat{seat}"] = (
+                                        str(matches[0])
+                                    )
+                    else:
+                        # Priority 4: hard-fail (safe default)
+                        print(
+                            f"ERROR: No batch manifest found for "
+                            f"{experiment_name} seed={args.seed}.\n"
+                            f"Run the battery first (without --skip-run), "
+                            f"or provide --manifest <path>,\n"
+                            f"or use --allow-legacy-seat-discovery for "
+                            f"unsafe heuristic mode.",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
             else:
                 for policy in policies:
                     policy_name = policy["name"]
@@ -445,58 +681,9 @@ def main():
     missing_evaluations = []
 
     if args.single_seat:
-        # Single-seat mode: merge evaluation.json across 4 seats per bidder
-        for policy in policies:
-            policy_name = policy["name"]
-            merged_deals = 0
-            merged_bid_hands = 0
-            merged_bidder_pts_sum = 0.0
-            merged_net_pts_sum = 0.0
-            merged_make_count = 0  # bids where bidder earned positive points
-            missing_seat = False
-
-            for seat in range(4):
-                key = f"{policy_name}_seat{seat}"
-                run_dir = run_dirs_by_policy.get(key)
-                if not run_dir:
-                    missing_seat = True
-                    continue
-                evaluation = load_evaluation(run_dir)
-                if evaluation and evaluation.get("strategies"):
-                    strat = evaluation["strategies"][0]
-                    dt = strat.get("deals_total", 0)
-                    hwb = strat.get("hands_with_bids", 0)
-                    merged_deals += dt
-                    merged_bid_hands += hwb
-                    ep = strat.get("expected_points_per_deal", 0)
-                    nep = strat.get("net_expected_points_per_deal", 0)
-                    merged_bidder_pts_sum += ep * dt
-                    merged_net_pts_sum += nep * dt
-                    # make_rate * hands_with_bids = number of made bids
-                    mr = strat.get("make_rate", 0)
-                    merged_make_count += int(round(mr * hwb))
-                else:
-                    missing_seat = True
-
-            if missing_seat or merged_deals == 0:
-                missing_evaluations.append(policy_name)
-            else:
-                metrics_by_bidder[policy_name] = {
-                    "expected_points": merged_bidder_pts_sum / merged_deals,
-                    "expected_points_per_deal": merged_bidder_pts_sum / merged_deals,
-                    "net_expected_points_per_deal": merged_net_pts_sum / merged_deals,
-                    "make_rate": merged_make_count / merged_bid_hands
-                    if merged_bid_hands > 0
-                    else 0.0,
-                    "bid_rate": merged_bid_hands / merged_deals,
-                    # CVaR requires raw per-hand distributions; point estimates
-                    # from evaluation.json can't be merged. The CI extractor
-                    # computes these from JSONL logs directly.
-                    "cvar_5": None,
-                    "net_cvar_5": None,
-                    "hands_with_bids": merged_bid_hands,
-                    "deals_total": merged_deals,
-                }
+        metrics_by_bidder, missing_evaluations = _merge_single_seat_evaluations(
+            run_dirs_by_policy, policies
+        )
     else:
         # Original mode: one run per bidder
         for policy in policies:
@@ -554,6 +741,7 @@ def main():
             args.seed,
             n_per_effective,
             single_seat=args.single_seat,
+            batch_id=batch_id,
         )
         output_str = json.dumps(output_data, indent=2)
     else:

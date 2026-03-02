@@ -137,6 +137,32 @@ Gate decisions are emitted as JSON with:
 See `src/bid_euchre/validation/arc_d_gate.py` for the gate runner implementation
 and `src/bid_euchre/validation/arc_d_bundle.py` for bundle schema validation.
 
+## Batch Manifest Schema (v1)
+
+When the auction comparator orchestrator completes a **full** single-seat battery (all policies × 4 seats), it writes a `batch_manifest_v1` JSON file alongside the run directories.
+
+**File location:** `data/runs/batch_manifest_{experiment_name}_{seed}_{YYYYMMDD_HHMMSS}.json`
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `schema` | str | Always `"batch_manifest_v1"` |
+| `batch_id` | str | `"{experiment_name}_{seed}_{timestamp}"` |
+| `created_at_utc` | str | ISO-8601 creation timestamp |
+| `experiment_name` | str | e.g., `"auction_comparator"` |
+| `seed` | int | RNG seed for the battery |
+| `n_per` | int | Total deals per bidder (divided across 4 seats) |
+| `mode` | str | Always `"single_seat"` for now |
+| `expected_policies` | list[str] | Policy names that should be present |
+| `expected_seats` | int | Always `4` |
+| `members` | dict[str, str] | `{"{policy}_seat{N}": "run_dir_basename"}` |
+
+**Completeness gate:** The manifest is ONLY written when the batch is complete — all `len(policies) × expected_seats` members must exist with valid `evaluation.json`. Partial batches produce no manifest.
+
+**Consumer behavior:**
+- **Default (no manifest, no flags):** Consumers hard-fail with guidance to provide `--manifest` or run the battery first.
+- **`--manifest <path>`:** Consumers load the specified manifest and validate all members. Hard-fail on any missing member.
+- **`--allow-legacy-seat-discovery`:** Consumers fall back to the heuristic "latest per seat" glob, with loud stderr warnings. Unsafe — may silently mix batches.
+
 ## Notes
 - Keep schemas small and versioned.
 - Prefer adding new fields over deleting/renaming existing ones (backward compatibility).

@@ -159,6 +159,129 @@ def _bootstrap_pairwise_pvalue(
     return count_extreme / n_bootstrap
 
 
+def _extract_timestamp(dir_path: Path) -> str:
+    """Extract YYYYMMDD_HHMMSS from run directory name."""
+    parts = dir_path.name.rsplit("_", 2)
+    return "_".join(parts[-2:]) if len(parts) >= 3 else ""
+
+
+def _load_manifest_runs(manifest_path, bidder_names, runs_dir):
+    """Load batch manifest and resolve run directories per bidder.
+
+    Returns dict: {bidder_name: [(seat, run_dir_path), ...]}
+    Calls sys.exit(1) on any validation failure.
+    """
+    manifest_p = Path(manifest_path)
+    if not manifest_p.exists():
+        print(f"ERROR: Manifest not found: {manifest_path}", file=sys.stderr)
+        sys.exit(1)
+
+    manifest = json.loads(manifest_p.read_text())
+    if manifest.get("schema") != "batch_manifest_v1":
+        print(
+            f"ERROR: Unknown manifest schema: {manifest.get('schema')}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    expected_seats = manifest.get("expected_seats", 4)
+    if expected_seats != 4:
+        print(
+            f"ERROR: Expected 4 seats, manifest says {expected_seats}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Validate bidder cardinality
+    expected_policies = manifest.get("expected_policies", [])
+    for name in bidder_names:
+        if name not in expected_policies:
+            print(
+                f"ERROR: Bidder '{name}' from battery not in manifest "
+                f"(manifest policies: {expected_policies})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    runs_path = Path(runs_dir)
+    result = {}
+    for name in bidder_names:
+        seat_dirs = []
+        for seat in range(4):
+            key = f"{name}_seat{seat}"
+            dirname = manifest["members"].get(key)
+            if dirname is None:
+                print(
+                    f"ERROR: Manifest missing member '{key}'",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            full_path = runs_path / dirname
+            if not full_path.is_dir():
+                print(
+                    f"ERROR: Manifest member '{key}' directory not found: {full_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            seat_dirs.append((seat, full_path))
+        result[name] = seat_dirs
+
+    return result
+
+
+def _validate_batch_coherence(seat_run_dirs, bidder_name, strict=True):
+    """Validate that all seat runs in a batch share consistent metadata.
+
+    Checks: seed, n_per (from config in meta.json), and mode consistency.
+    If strict (manifest mode): sys.exit(1) on mismatch.
+    If not strict (legacy mode): stderr warning only.
+    """
+    seeds = []
+    n_pers = []
+    for seat, run_dir in seat_run_dirs:
+        meta_path = Path(run_dir) / "meta.json"
+        if not meta_path.exists():
+            msg = f"WARNING: No meta.json in {run_dir} (seat {seat} of {bidder_name})"
+            if strict:
+                print(f"ERROR: {msg}", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print(msg, file=sys.stderr)
+            continue
+        meta = json.loads(meta_path.read_text())
+        seeds.append(meta.get("seed"))
+        config = meta.get("config", {})
+        n_pers.append(config.get("parameters", {}).get("n_per"))
+
+    if len(set(seeds)) > 1:
+        msg = f"Batch coherence violation for {bidder_name}: mixed seeds {set(seeds)}"
+        if strict:
+            print(f"ERROR: {msg}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"WARNING: {msg}", file=sys.stderr)
+
+    if len(set(n_pers)) > 1:
+        msg = f"Batch coherence violation for {bidder_name}: mixed n_per {set(n_pers)}"
+        if strict:
+            print(f"ERROR: {msg}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"WARNING: {msg}", file=sys.stderr)
+
+    # Cardinality check
+    if len(seat_run_dirs) != 4:
+        msg = (
+            f"Batch coherence violation for {bidder_name}: "
+            f"expected 4 seats, got {len(seat_run_dirs)}"
+        )
+        if strict:
+            print(f"ERROR: {msg}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"WARNING: {msg}", file=sys.stderr)
+
+
 def _make_per_deal_net_array(data: dict) -> np.ndarray:
     """Create per-deal net_eppd array: bid-hand differentials + zeros for passes.
 
@@ -209,6 +332,16 @@ def main():
         action="store_true",
         help="Merge 4 per-seat sub-runs per bidder",
     )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Batch manifest JSON for single-seat coherence validation",
+    )
+    parser.add_argument(
+        "--allow-legacy-seat-discovery",
+        action="store_true",
+        help="Allow heuristic 'latest per seat' discovery when no manifest exists",
+    )
     args = parser.parse_args()
 
     artifacts_dir = Path(args.artifacts_dir)
@@ -224,35 +357,70 @@ def main():
     bidder_names = list(battery["bidders"].keys())
     print(f"Bidders: {bidder_names}")
 
+    # Resolve single-seat run directories (manifest or legacy)
+    manifest_seat_dirs = None  # {bidder_name: [(seat, path), ...]}
+    use_strict_coherence = True
+    if args.single_seat:
+        if args.manifest:
+            # Priority 1: explicit manifest
+            manifest_seat_dirs = _load_manifest_runs(
+                args.manifest, bidder_names, str(runs_dir)
+            )
+            print(f"  Using manifest: {args.manifest}")
+        elif not args.allow_legacy_seat_discovery:
+            # Priority 2: hard-fail (safe default)
+            print(
+                "ERROR: --single-seat requires --manifest <path> for batch "
+                "coherence validation.\n"
+                "Run the battery first with the orchestrator to generate a "
+                "manifest, or use --allow-legacy-seat-discovery for unsafe "
+                "heuristic mode.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            # Priority 3: legacy heuristic (opt-in)
+            use_strict_coherence = False
+            print(
+                "  WARNING: No manifest provided. Using legacy 'latest per seat' "
+                "heuristic (may mix batches).",
+                file=sys.stderr,
+            )
+
     # Locate JSONL log for each bidder
     all_data = {}
+    run_directories = {}  # {bidder_name: [dir_basenames]} for provenance
     for name in bidder_names:
         if args.single_seat:
-            # Merge 4 seat sub-runs per bidder.
-            # Use the latest matching directory per seat — sequential execution
-            # means each seat has a distinct timestamp, so exact-match grouping
-            # is not viable. Instead, select latest per seat and warn if the
-            # timestamps span more than 1 hour (suggesting mixed batches).
             merged = {
                 "bidder_team_points": [],
                 "net_bidder_team_points": [],
                 "deals_total": 0,
             }
 
-            seat_run_dirs = []  # (seat, path) pairs for logging
-            for seat in range(4):
-                pattern = f"auction_comparator_{name}_seat{seat}_{args.seed}_*"
-                candidates = sorted(runs_dir.glob(pattern))
-                if not candidates:
-                    print(
-                        f"ERROR: No run dir for {name} seat {seat}",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                run_dir = candidates[-1]  # latest matching
-                seat_run_dirs.append((seat, run_dir))
+            if manifest_seat_dirs is not None:
+                # Manifest-resolved paths
+                seat_run_dirs = manifest_seat_dirs[name]
+            else:
+                # Legacy glob discovery
+                seat_run_dirs = []
+                for seat in range(4):
+                    pattern = f"auction_comparator_{name}_seat{seat}_{args.seed}_*"
+                    candidates = sorted(runs_dir.glob(pattern))
+                    if not candidates:
+                        print(
+                            f"ERROR: No run dir for {name} seat {seat}",
+                            file=sys.stderr,
+                        )
+                        sys.exit(1)
+                    seat_run_dirs.append((seat, candidates[-1]))
 
-                logs = sorted(run_dir.glob("logs/*.jsonl"))
+            # Validate batch coherence
+            _validate_batch_coherence(seat_run_dirs, name, strict=use_strict_coherence)
+
+            run_directories[name] = []
+            for seat, run_dir in seat_run_dirs:
+                logs = sorted(Path(run_dir).glob("logs/*.jsonl"))
                 if not logs:
                     print(
                         f"ERROR: No JSONL log in {run_dir}/logs/",
@@ -267,20 +435,7 @@ def main():
                     seat_data["net_bidder_team_points"]
                 )
                 merged["deals_total"] += seat_data["deals_total"]
-
-            # Batch coherence check: warn if timestamps span >1 hour
-            def _extract_timestamp(dir_path: Path) -> str:
-                """Extract YYYYMMDD_HHMMSS from run directory name."""
-                parts = dir_path.name.rsplit("_", 2)
-                return "_".join(parts[-2:]) if len(parts) >= 3 else ""
-
-            timestamps = [_extract_timestamp(p) for _, p in seat_run_dirs]
-            if len(set(timestamps)) > 1:
-                print(
-                    f"  NOTE: {name} seat dirs have different timestamps "
-                    f"({', '.join(timestamps)}); verify they are from the same batch",
-                    file=sys.stderr,
-                )
+                run_directories[name].append(Path(run_dir).name)
 
             all_data[name] = merged
         else:
@@ -424,10 +579,13 @@ def main():
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "seed": args.seed,
         "n_bootstrap": args.n_bootstrap,
+        "batch_manifest": args.manifest,
         "ranked_order": ranked,
         "bidders": results,
         "pairwise_significance": pairwise,
     }
+    if run_directories:
+        output["run_directories"] = run_directories
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -380,14 +380,16 @@ coverage of competitive dynamics.
         --output-format json \
         --output data/artifacts/arc_d/r0/comparator_battery_r0_v4.json
 
-**Step 2 — Extract CIs:**
+**Step 2 — Extract CIs** (use the batch manifest from Step 1 for coherence validation):
 
+    MANIFEST=$(ls -t data/runs/batch_manifest_auction_comparator_42_*.json | head -1)
     PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \
         --artifacts-dir data/artifacts/arc_d/r0 \
         --runs-dir data/runs \
         --seed 42 --n-bootstrap 10000 \
         --battery-file comparator_battery_r0_v4.json \
         --single-seat \
+        --manifest "$MANIFEST" \
         --output data/artifacts/arc_d/r0/comparator_cis_r0_v4.json
 
 **Step 3 — Run notebook** (cross-validates Source A, produces Source B):
