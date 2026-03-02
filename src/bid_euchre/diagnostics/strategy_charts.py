@@ -1,13 +1,18 @@
 """Strategy comparison chart functions for head-to-head analysis.
 
 Provides matplotlib-based visualizations for comparing strategy performance
-across matchups. Designed for head-to-head and self-play evaluation.
+across matchups, roster meta-analysis, and archetype-based scatter plots.
 """
 
-from typing import Any, Dict, Optional, Tuple
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 # Try to import seaborn, fall back gracefully
 try:
@@ -652,3 +657,170 @@ def plot_self_play_by_contract(
 
     plt.tight_layout()
     return fig
+
+
+# ================================
+# Archetype-Based Roster Charts
+# ================================
+
+ARCHETYPE_COLORS = {
+    "AGGRESSIVE": "#e74c3c",  # Red
+    "NEUTRAL": "#3498db",  # Blue
+    "SELECTIVE": "#27ae60",  # Green
+}
+
+
+def _roster_scatter(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    x_label: str,
+    y_label: str,
+    title: str,
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
+) -> plt.Figure:
+    """Internal helper for roster scatter plots.
+
+    Creates a scatter plot with points colored by archetype and labeled
+    by bidder name.
+
+    Args:
+        df: DataFrame with columns: bidder_name, archetype, and the
+            specified x_col and y_col.
+        x_col: Column name for x-axis values.
+        y_col: Column name for y-axis values.
+        x_label: Display label for x-axis.
+        y_label: Display label for y-axis.
+        title: Plot title.
+        figsize: Figure size tuple.
+
+    Returns:
+        matplotlib Figure
+    """
+    _apply_style()
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Plot each archetype group
+    for archetype, color in ARCHETYPE_COLORS.items():
+        mask = df["archetype"] == archetype
+        subset = df[mask]
+        if subset.empty:
+            continue
+        ax.scatter(
+            subset[x_col],
+            subset[y_col],
+            c=color,
+            s=100,
+            label=archetype,
+            edgecolors="black",
+            linewidths=0.5,
+            zorder=3,
+        )
+
+    # Label each point with bidder name
+    for _, row in df.iterrows():
+        ax.annotate(
+            row["bidder_name"],
+            (row[x_col], row[y_col]),
+            textcoords="offset points",
+            xytext=(8, 4),
+            fontsize=8,
+            ha="left",
+        )
+
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_title(title)
+    ax.legend(title="Archetype", loc="best")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_roster_calibration(
+    df: pd.DataFrame,
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Plot bid_rate vs make_rate scatter colored by archetype.
+
+    Shows bidder calibration: who overbids (high bid_rate, low make_rate)
+    vs who is well-calibrated (high make_rate relative to bid_rate).
+
+    Args:
+        df: DataFrame with columns: bidder_name, bid_rate, make_rate, archetype.
+        figsize: Figure size tuple.
+        title: Optional title override.
+
+    Returns:
+        matplotlib Figure
+    """
+    return _roster_scatter(
+        df,
+        x_col="bid_rate",
+        y_col="make_rate",
+        x_label="Bid Rate (per-hand propensity)",
+        y_label="Make Rate (conditional on bidding)",
+        title=title or "Roster Calibration: Bid Rate vs Make Rate",
+        figsize=figsize,
+    )
+
+
+def plot_roster_efficiency(
+    df: pd.DataFrame,
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Plot bid_rate vs net_eppd scatter colored by archetype.
+
+    Shows efficiency: the payoff curve of selectivity. Answers whether
+    it is better to bid rarely and make most, or bid often and accept sets.
+
+    Args:
+        df: DataFrame with columns: bidder_name, bid_rate, net_eppd, archetype.
+        figsize: Figure size tuple.
+        title: Optional title override.
+
+    Returns:
+        matplotlib Figure
+    """
+    return _roster_scatter(
+        df,
+        x_col="bid_rate",
+        y_col="net_eppd",
+        x_label="Bid Rate (per-hand propensity)",
+        y_label="Net EPPD (points per deal)",
+        title=title or "Roster Efficiency: Bid Rate vs Net EPPD",
+        figsize=figsize,
+    )
+
+
+def plot_roster_conversion(
+    df: pd.DataFrame,
+    figsize: Tuple[int, int] = FIGSIZE_SINGLE_PLOT,
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """Plot make_rate vs net_eppd scatter colored by archetype.
+
+    Shows conversion: who turns makes into points efficiently. Two bidders
+    with the same make_rate can have different net_eppd if bid levels differ.
+
+    Args:
+        df: DataFrame with columns: bidder_name, make_rate, net_eppd, archetype.
+        figsize: Figure size tuple.
+        title: Optional title override.
+
+    Returns:
+        matplotlib Figure
+    """
+    return _roster_scatter(
+        df,
+        x_col="make_rate",
+        y_col="net_eppd",
+        x_label="Make Rate (conditional on bidding)",
+        y_label="Net EPPD (points per deal)",
+        title=title or "Roster Conversion: Make Rate vs Net EPPD",
+        figsize=figsize,
+    )
