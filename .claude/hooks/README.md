@@ -60,6 +60,23 @@ Then restart your Claude session in that directory.
      cd ../Bid-Euchre-<branch-name>
 ```
 
+### `post-pr-review.sh` (PostToolUse)
+
+**Trigger:** After any Bash tool call
+
+**Purpose:** Auto-invokes `/reviewing-changes` skill after successful `gh pr create`
+
+**Behavior:**
+1. Checks if the Bash command contained `gh pr create` and exit code was 0
+2. If yes: emits structured JSON with `additionalContext` directive
+3. Claude reads the injected context and auto-invokes the `/reviewing-changes` skill
+4. The skill reviews code quality, convention compliance, and generates a handoff summary
+
+**How it works:**
+- PostToolUse hooks can return JSON with a `hookSpecificOutput.additionalContext` field
+- This text is injected into Claude's conversation context on the next turn
+- The directive instructs Claude to invoke the skill without waiting for user input
+
 ## Helper Script
 
 ### `../scripts/claude-worktree.sh`
