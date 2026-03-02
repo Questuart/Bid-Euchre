@@ -349,6 +349,50 @@ def test_rung_report_attribution_gap_pending(tmp_path):
     assert "### Attribution Gap" in report
 
 
+def test_rung_report_tier1_checks_rendered(tmp_path):
+    """Report renders tier_1_checks table from promotion_decision JSON."""
+    bundle = {
+        "bundle_schema": "arc_d_rung_bundle_v1",
+        "rung_id": "r0",
+        "arc": "arc_d",
+        "olsa": {
+            "artifact_path": "hybrid_r0.json",
+            "selected_features": {"suit": ["bowers"]},
+        },
+        "olsa_full": {
+            "artifact_path": "hybrid_r0_full.json",
+            "selected_features": {"suit": ["bowers", "trump_count"]},
+        },
+    }
+    bundle_path = tmp_path / "rung_bundle_r0.json"
+    bundle_path.write_text(json.dumps(bundle, indent=2))
+    decision = {
+        "decision": "PROMOTED",
+        "tier_1_checks": {
+            "artifact_integrity_olsa": "PASS",
+            "artifact_integrity_olsa_full": "PASS",
+            "no_nan_inf_olsa": "PASS",
+            "no_nan_inf_olsa_full": "PASS",
+        },
+        "gate_results": {
+            "primary": {
+                "metric": "auto_promote",
+                "note": "R0 is auto-promoted",
+                "pass": True,
+            }
+        },
+    }
+    decision_path = tmp_path / "promotion_decision_r0.json"
+    decision_path.write_text(json.dumps(decision, indent=2))
+    report = generate_arc_d_rung_report(bundle_path, decision_path=decision_path)
+    assert "### Tier 1 Checks (Artifact Integrity)" in report
+    assert "artifact_integrity_olsa" in report
+    assert "no_nan_inf_olsa_full" in report
+    assert "### Gate Results" in report
+    assert "auto_promote" in report
+    assert "PASS" in report
+
+
 # ──────────────────────────────────────────────
 #  Dashboard tests
 # ──────────────────────────────────────────────

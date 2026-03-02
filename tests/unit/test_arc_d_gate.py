@@ -487,6 +487,30 @@ class TestBundleValidation:
         assert not valid
         assert any("comparator_battery" in e and "int" in e for e in errors)
 
+    def test_bundle_h2h_battery_keys_valid(self):
+        """Bundle with h2h_battery_quick/full string paths passes."""
+        bundle = _make_bundle(
+            h2h_battery_quick="data/artifacts/arc_d/r0/h2h_battery_quick_v2.json",
+            h2h_battery_full="data/artifacts/arc_d/r0/h2h_battery_full_v2.json",
+        )
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
+
+    def test_bundle_without_h2h_battery_keys_passes(self):
+        """Bundle without h2h_battery keys passes (backward compat)."""
+        bundle = _make_bundle()
+        assert "h2h_battery_quick" not in bundle
+        assert "h2h_battery_full" not in bundle
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
+
+    def test_bundle_h2h_battery_wrong_type_fails(self):
+        """Bundle with non-string h2h_battery_quick produces error."""
+        bundle = _make_bundle(h2h_battery_quick=42)
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("h2h_battery_quick" in e and "int" in e for e in errors)
+
 
 class TestBundleFilesExist:
     """Tests for validate_bundle_files_exist()."""

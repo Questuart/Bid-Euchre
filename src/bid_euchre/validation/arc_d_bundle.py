@@ -128,6 +128,15 @@ def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
                 f"{comp_key} must be a string path or null, got {type(comp_val).__name__}"
             )
 
+    # Check optional H2H battery keys (type validation only — presence is optional)
+    for h2h_batt_key in ("h2h_battery_quick", "h2h_battery_full"):
+        h2h_batt_val = bundle.get(h2h_batt_key)
+        if h2h_batt_val is not None and not isinstance(h2h_batt_val, str):
+            errors.append(
+                f"{h2h_batt_key} must be a string path or null, "
+                f"got {type(h2h_batt_val).__name__}"
+            )
+
     # R1+ required keys (not required for R0)
     if rung_id is not None and rung_id != "r0":
         missing_r1 = REQUIRED_R1_PLUS_KEYS - set(bundle.keys())
@@ -230,12 +239,17 @@ def validate_bundle_files_exist(bundle: dict, base_dir: str) -> tuple[bool, list
         if comp_path:
             file_paths.append(comp_path)
 
-    # R1+ path keys (h2h_summary, gate_thresholds, progression_report are paths;
-    # h2h_challenger_vs_incumbent is inline)
-    for path_key in ("h2h_summary", "gate_thresholds", "progression_report"):
-        path_val = bundle.get(path_key)
-        if path_val and isinstance(path_val, str):
-            file_paths.append(path_val)
+    # Optional H2H battery paths
+    for h2h_batt_key in ("h2h_battery_quick", "h2h_battery_full"):
+        h2h_batt_path = bundle.get(h2h_batt_key)
+        if h2h_batt_path and isinstance(h2h_batt_path, str):
+            file_paths.append(h2h_batt_path)
+
+    # R1+ path keys (h2h_summary, gate_thresholds are paths; h2h_challenger_vs_incumbent is inline)
+    for h2h_key in ("h2h_summary", "gate_thresholds"):
+        h2h_path = bundle.get(h2h_key)
+        if h2h_path and isinstance(h2h_path, str):
+            file_paths.append(h2h_path)
 
     for fp in file_paths:
         full_path = base / fp
