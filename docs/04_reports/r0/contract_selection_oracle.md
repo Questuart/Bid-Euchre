@@ -28,7 +28,7 @@ oracle using 40,000 paired hands (QUICK mode, all 4 seats).
 |----------|-----------|-------------------|----------------|
 | Pass-threshold | 73.2% | **81.9%** | Model passes; oracle would bid |
 | Contract-selection | 11.9% | 16.9% | Both bid; model picks wrong contract |
-| Over-bidding | 3.0% | 1.2% | Model bids; oracle would pass |
+| Over-bidding | 0.5% | 1.1% | Model bids; oracle would pass |
 
 The model passes on **80.1%** of hands vs the oracle's **7.4%**. The primary
 problem is model conservatism (negative predicted utility on hands that would
@@ -150,18 +150,18 @@ passes?) matrix plus contract agreement:
 |--------|-------|--------|
 | Mean total regret | 3.92 | [3.89, 3.95] |
 | Median regret | 4.00 | — |
-| P95 regret | 12.00 | — |
-| Zero-regret hands | 11.9% | — |
+| P95 regret | 8.00 | — |
+| Zero-regret hands | 16.2% | — |
 
 ### 3.2 Regret Decomposition
 
 | Category | Hands | % Hands | Mean Regret | % Total Regret |
 |----------|-------|---------|-------------|----------------|
-| Pass-threshold | ~29,300 | 73.2% | 4.39 | **81.9%** |
-| Contract-selection | ~4,800 | 11.9% | 3.42 | 16.9% |
-| Correct (both pass) | ~2,800 | 6.9% | 0.00 | 0.0% |
-| Correct (same contract) | ~2,000 | 5.0% | 0.00 | 0.0% |
-| Over-bidding | ~1,200 | 3.0% | 1.58 | 1.2% |
+| Pass-threshold | 29,277 | 73.2% | 4.39 | **81.9%** |
+| Contract-selection | 4,760 | 11.9% | 5.57 | 16.9% |
+| Correct (both pass) | 2,770 | 6.9% | 0.00 | 0.0% |
+| Correct (same contract) | 2,989 | 7.5% | 0.00 | 0.0% |
+| Over-bidding | 204 | 0.5% | 8.78 | 1.1% |
 
 > See notebook 55_contract_selection_oracle, S4b for the full decomposition
 > with exact counts.
@@ -171,8 +171,8 @@ passes?) matrix plus contract agreement:
 | Contract | Oracle % | Model % | Delta |
 |----------|----------|---------|-------|
 | suit | 68.1% | 98.6% | -30.5pp |
-| high | 17.2% | 0.7% | +16.5pp |
-| low | 14.7% | 0.7% | +14.0pp |
+| high | 14.0% | 0.6% | +13.4pp |
+| low | 17.9% | 0.8% | +17.1pp |
 | PASS | 7.4% | 80.1% | -72.7pp |
 
 **Oracle HIGH+LOW combined share: 31.9%** (among non-pass hands) vs model's
@@ -183,12 +183,12 @@ passes?) matrix plus contract agreement:
 
 ### 3.4 Contract-Selection-Only Regret
 
-Restricted to hands where both model and oracle bid (n ~ 7,900):
+Restricted to hands where both model and oracle bid (n = 7,749, 19.4% of total):
 
 | Metric | Value | 95% CI |
 |--------|-------|--------|
-| Mean CS regret | 3.42 | [3.18, 3.67] |
-| Wrong contract rate | ~60% | — |
+| Mean CS regret | 3.42 | [3.30, 3.54] |
+| Wrong contract rate | 61.4% | — |
 
 Even among hands where the model bids, it picks the wrong contract ~60% of
 the time. However, this population is only ~20% of all hands; the other ~80%

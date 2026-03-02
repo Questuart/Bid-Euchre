@@ -66,7 +66,6 @@ DATA_ROOT = Path("data/runs/canonical_bidless_dataset_glutton_42_20260221_175752
 BIDLESS_PATH = DATA_ROOT / "datasets" / "bidless.parquet"
 OUTCOMES_PATH = DATA_ROOT / "datasets" / "bidless_outcomes.parquet"
 ARTIFACT_PATH = Path("data/artifacts/arc_d/r0/hybrid_r0.json")
-ARTIFACT_FULL_PATH = Path("data/artifacts/arc_d/r0/hybrid_r0_full.json")
 
 for p in [BIDLESS_PATH, OUTCOMES_PATH, ARTIFACT_PATH]:
     assert p.exists(), f"Missing: {p}"
@@ -79,9 +78,6 @@ print(f"MODE={MODE}, deal_limit={DEAL_LIMIT}")
 # --- Load model artifact (constrained arm — primary analysis) ---
 with open(ARTIFACT_PATH) as f:
     artifact = json.load(f)
-
-with open(ARTIFACT_FULL_PATH) as f:
-    artifact_full = json.load(f)
 
 risk_lambda = artifact["risk_lambda"]
 residual_var = artifact["residual_variance"]
