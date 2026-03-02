@@ -35,9 +35,8 @@ R0 comprised **96 merged PRs** (#389–#484) over **10 calendar days** (2026-02-
 | 5. Comparator Overhaul | #463–#474 | Feb 27–28 | 12 | v1→v4 calibration, dual-track analysis |
 | 6. Final Sweep | #475–#484 | Mar 1–2 | 10 | Threshold decisions, consistency pass |
 
-**PR type distribution:** 35% feat (34), 29% docs (28), 21% fix (20), 5% chore (5),
-2% test (2), 1% refactor (1). The 6 "other" PRs were batch-shipped docs (#447–#449)
-and late-arriving infrastructure (#473, #475).
+**PR type distribution:** 39% feat (37), 31% docs (30), 22% fix (21), 5% chore (5),
+2% test (2), 1% refactor (1).
 
 **Velocity:** Peak throughput was 19 PRs on Feb 26 (phases 3–4 overlapping). Foundation
 averaged 6/day, eval infrastructure 11/day, final sweep 5/day. The velocity curve
@@ -225,4 +224,4 @@ orchestration scripts. Battery-level gates should validate:
 | Calendar days | 10 |
 | Data source | GitHub API (`gh pr list --state merged`) |
 | Peak velocity | 19 PRs/day (2026-02-26) |
-| PR types | 34 feat, 28 docs, 20 fix, 5 chore, 2 test, 1 refactor |
+| PR types | 37 feat, 30 docs, 21 fix, 5 chore, 2 test, 1 refactor |
