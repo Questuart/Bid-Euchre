@@ -62,7 +62,7 @@
 
 ### I002 — Dead `utils/` module [HIGH]
 
-**Location:** `src/bid_euchre/utils/__init__.py` (9 lines, 0 exports)
+**Location:** src/bid_euchre/utils/__init__.py (9 lines, 0 exports) — since removed
 **Evidence:** `grep -rn "from bid_euchre.utils" src/ tests/` returns 0 matches; `__init__.py` is empty except imports
 **Impact:** Misleading module presence; potential import confusion
 **Recommendation:** Remove `utils/` entirely or repurpose with clear mandate
