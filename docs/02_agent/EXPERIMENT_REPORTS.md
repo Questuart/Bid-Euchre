@@ -35,7 +35,7 @@ documentation.
 
 ## Template
 
-Every experiment report should follow this 8-section structure. Sections may be
+Every experiment report should follow this structure. Sections may be
 combined or abbreviated when the content is trivial, but all should be present.
 
 ### Header
@@ -48,6 +48,19 @@ combined or abbreviated when the content is trivial, but all should be present.
 **Date:** <YYYY-MM-DD>
 **Purpose:** <one-line summary>
 ```
+
+### Executive Summary
+
+A concise overview (5-10 lines) that a reader can scan without reading the
+full report. Must include:
+
+- **Key quantitative findings** — the 2-3 most important numbers with CIs
+- **Decision or conclusion** — what the results mean for the project
+- **Surprising or non-obvious takeaways** — anything that changes prior
+  assumptions or reframes the problem
+
+The executive summary should be self-contained: a reader who stops here should
+walk away with the correct conclusion, not a misleading simplification.
 
 ### 1. Motivation
 
@@ -63,8 +76,9 @@ inform? Link to the plan or prior report that motivated it.
 
 ### 3. Results
 
-Tables with point estimates and 95% confidence intervals. Cross-reference
-notebook charts by name and section rather than duplicating analysis.
+Tables with point estimates and 95% confidence intervals. **Incorporate key
+chart references** throughout this section — visualizations make results
+concrete and scannable. See "Chart Integration" below for guidance.
 
 Example:
 
@@ -73,7 +87,8 @@ Example:
 |---------|----------------|--------|--------------|
 | A vs B  | +0.21          | [+0.01, +0.28] | Yes |
 
-See notebook `50_r0_matchups` Figure 3 for the full pairwise heatmap.
+> See notebook 55_contract_selection_oracle, S7b scatter plot for the
+> oracle vs model utility comparison.
 ```
 
 ### 4. Interpretation
@@ -120,6 +135,35 @@ uv run python experiments/run_experiment.py --seed 42 \
 ```
 
 ---
+
+## Chart Integration
+
+Reports should reference key visualizations from the companion notebook to
+make results concrete. Charts serve two purposes: (1) making distributions
+and relationships visible at a glance, and (2) providing evidence that
+supports the textual interpretation.
+
+**Guidelines:**
+
+- **Reference, don't duplicate.** Point to the notebook section and chart name
+  (e.g., "See notebook 55_contract_selection_oracle, S7b scatter plot").
+  Do not paste images or recreate chart data in the report.
+- **Describe what the chart shows.** Include a 1-2 sentence description of
+  what the reader should look for (e.g., "The red cluster at predicted
+  utility <= 0 visualizes the pass-threshold population").
+- **Use blockquote format** for chart callouts within the Results section:
+
+```markdown
+> **Regret Heatmap (S7c):** Confusion-matrix showing total regret
+> contribution by (model choice -> oracle choice). The pass->suit cell
+> dominates, confirming the decomposition numerically.
+```
+
+- **Place charts near the data they illustrate.** A scatter plot of predicted
+  vs actual belongs in Results, not buried in a Diagnostics appendix.
+- **Minimum charts per report:** At least one visualization reference for any
+  report with quantitative results. If the notebook has no charts, the report
+  should note this explicitly.
 
 ## Cross-Referencing
 

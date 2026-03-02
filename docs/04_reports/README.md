@@ -34,6 +34,7 @@ docs/04_reports/
 | [r0/comparator_rankings.md](r0/comparator_rankings.md) | 2026-02-28 | Comparator battery rankings (v4, single-seat, GluttonStrategy, 7 bidders) |
 | [r0/c33_ablation_report.md](r0/c33_ablation_report.md) | 2026-02-25 | C33 ablation: Gaussian EV wrapper effect (+0.21 net_eppd) |
 | [r0/h2h_battery_analysis.md](r0/h2h_battery_analysis.md) | 2026-02-25 | H2H battery analysis + gate threshold calibration |
+| [r0/contract_selection_oracle.md](r0/contract_selection_oracle.md) | 2026-03-01 | Contract selection oracle: regret decomposition, pass-threshold dominance |
 
 Superseded revisions in `r0/archive/`.
 
