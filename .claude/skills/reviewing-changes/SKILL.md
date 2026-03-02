@@ -1,7 +1,6 @@
 ---
 name: reviewing-changes
 description: Reviews changed code for quality, repo conventions, and correctness after PR creation. Auto-fixes simple issues (pushed as follow-up commit), flags convention violations, and generates an agent-ready handoff summary for /copy. Triggered automatically by PostToolUse hook after gh pr create.
-disable-model-invocation: true
 ---
 
 # /reviewing-changes — Post-PR Code Review & Handoff
