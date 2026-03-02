@@ -304,17 +304,15 @@ calibrator question arose. **Create a detailed PR-R1a sub-plan when R0 is finali
 - PR-R2a (opponent context features via auction_transcript) can parallel — off critical path
 
 **R1 design priorities from A1 oracle analysis:**
-- **HIGH/LOW feature enrichment is the #1 priority.** The 1-feature models (offsuit_aces,
-  offsuit_tens_count) are clearly insufficient. Consider lowering `min_improvement` threshold
-  in `feature_selection.py` for non-suit contracts, or adding hand-crafted distributional
-  features (suit spread, void count for HIGH; low-card connectivity for LOW).
-- **Pass-threshold tuning:** The pass threshold `t` is a rung-level hyperparameter (see
-  §Hyperparameter Registry below). R0 threshold is determined by B0 protocol
-  (`plans/r0_pass_threshold_protocol.md`). R1 must re-tune `t` using R1's oracle data,
-  since improved models shift the utility distribution. The B0 protocol can be re-used
-  as a template with updated data sources and potentially adjusted SESOI.
-- **Cross-contract calibration (Option B):** A unified regression may be worth revisiting
-  since feature poverty and calibration problems interact.
+See `plans/r1_follow_ups.md` for the complete prioritized list of follow-ups,
+including experimental designs, ablation protocols, and deferred report items.
+
+Summary (details + rationale in follow-ups file):
+- **HIGH/LOW feature enrichment** — #1 priority, addresses 82% of oracle regret
+- **Context features + unified model** — 2×2 factorial per rung for clean attribution
+- **Cross-contract calibration & oracle re-analysis** — revisit at R1
+- **Pass-threshold re-tuning** — reuse B0 protocol on R1 data
+- **Deferred report sections & measurement caveats** — fill at R1
 
 ---
 
@@ -455,6 +453,7 @@ or work sequentially — no dependencies between them.
 | **`plans/report_narrative_overlay.md`** | Pipeline, reports, skills, C6 | ACTIVE (684 lines) | 2, 3, 5 |
 | **`plans/c33_ablation_refactor_plan.md`** | C33 report refactor | ACTIVE (1,040 lines) | 4 |
 | **`plans/arc_d_execution_plan.md`** | Full Arc D (R0 done, R1+ remaining) | ACTIVE (v3) | 6 |
+| **`plans/r1_follow_ups.md`** | Prioritized R1 follow-ups, ablation designs, deferred items | ACTIVE | 6 |
 | `plans/comparator_dual_track_plan.md` | C6 background (absorbed into report_narrative_overlay P6) | REFERENCE | 5 |
 | `plans/bidder_correctness_fixes.md` | Fixes A/B/C | COMPLETE (#463–#465) | — |
 | `plans/comparator_rankings_refactor_plan.md` | Rankings report v4 | COMPLETE (#470) | — |
