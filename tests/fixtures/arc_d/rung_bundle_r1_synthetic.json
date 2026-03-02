@@ -36,5 +36,6 @@
     "ci_method": "paired_bootstrap",
     "seat_directions": ["challenger_01", "challenger_23"]
   },
-  "gate_thresholds": "data/artifacts/arc_d/r0/gate_thresholds_r1.json"
+  "gate_thresholds": "data/artifacts/arc_d/r0/gate_thresholds_r1.json",
+  "progression_report": "docs/04_reports/r1/r0_to_r1_progression.md"
 }

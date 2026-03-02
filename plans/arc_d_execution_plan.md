@@ -1103,6 +1103,11 @@ promotion gate:
 }
 ```
 
+**Required R1+ key (v3.2):**
+- `progression_report` (string): R1+ only — path to rung-to-rung progression report
+  (e.g., `docs/04_reports/r1/r0_to_r1_progression.md`). Enforced by bundle validator
+  as an artifact existence gate. R0 bundles are exempt (no prior rung).
+
 **Optional comparator keys (v3.1):**
 - `comparator_battery` (string | null): R0 only — path to heuristic battery JSON.
   Null at R1–R5 (R0-only artifact) or if battery script failed at R0.

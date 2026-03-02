@@ -89,8 +89,18 @@ When both arms are trained, a `rung_bundle_r{N}.json` packages them:
     "selected_features": {"suit": [...], "high": [...], "low": [...]}
   },
   "split_manifest": "split_manifest_r0_suit.json",
-  "training_report": "training_report_r0.json"
+  "training_report": "training_report_r0.json",
+  "progression_report": "docs/04_reports/r1/r0_to_r1_progression.md"
 }
+```
+
+Note: `progression_report` is required for R1+ bundles. It points to the
+rung-to-rung progression report documenting what changed between the prior
+and current rung. R0 bundles are exempt (no prior rung to compare against).
+
+```text
+R0: progression_report absent (exempted)
+R1+: progression_report = "docs/04_reports/r1/r0_to_r1_progression.md" (required)
 ```
 
 ## R5 Extension: Offensive/Defensive Sub-Models

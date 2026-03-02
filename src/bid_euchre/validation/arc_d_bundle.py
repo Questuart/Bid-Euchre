@@ -44,6 +44,7 @@ REQUIRED_R1_PLUS_KEYS = {
     "h2h_summary",
     "h2h_challenger_vs_incumbent",
     "gate_thresholds",
+    "progression_report",
 }
 
 # Required sub-keys for h2h_challenger_vs_incumbent inline data
@@ -169,7 +170,7 @@ def validate_bundle(bundle: dict) -> tuple[bool, list[str]]:
                         )
 
         # Type-validate h2h_summary and gate_thresholds as strings (paths)
-        for path_key in ("h2h_summary", "gate_thresholds"):
+        for path_key in ("h2h_summary", "gate_thresholds", "progression_report"):
             path_val = bundle.get(path_key)
             if path_val is not None and not isinstance(path_val, str):
                 errors.append(
@@ -229,11 +230,12 @@ def validate_bundle_files_exist(bundle: dict, base_dir: str) -> tuple[bool, list
         if comp_path:
             file_paths.append(comp_path)
 
-    # R1+ path keys (h2h_summary, gate_thresholds are paths; h2h_challenger_vs_incumbent is inline)
-    for h2h_key in ("h2h_summary", "gate_thresholds"):
-        h2h_path = bundle.get(h2h_key)
-        if h2h_path and isinstance(h2h_path, str):
-            file_paths.append(h2h_path)
+    # R1+ path keys (h2h_summary, gate_thresholds, progression_report are paths;
+    # h2h_challenger_vs_incumbent is inline)
+    for path_key in ("h2h_summary", "gate_thresholds", "progression_report"):
+        path_val = bundle.get(path_key)
+        if path_val and isinstance(path_val, str):
+            file_paths.append(path_val)
 
     for fp in file_paths:
         full_path = base / fp

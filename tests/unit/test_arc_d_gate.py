@@ -67,7 +67,7 @@ def _make_bundle(**overrides) -> dict:
     """Create a minimal valid arc_d_rung_bundle_v1 fixture.
 
     Includes R1+ keys (h2h_summary, h2h_challenger_vs_incumbent,
-    gate_thresholds) by default since the default rung_id is "r1".
+    gate_thresholds, progression_report) by default since the default rung_id is "r1".
     """
     base = {
         "bundle_schema": BUNDLE_SCHEMA,
@@ -100,11 +100,17 @@ def _make_bundle(**overrides) -> dict:
         "h2h_summary": "data/artifacts/arc_d/r0/h2h_battery_full.json",
         "h2h_challenger_vs_incumbent": _make_h2h_inline(),
         "gate_thresholds": "data/artifacts/arc_d/r0/gate_thresholds_r1.json",
+        "progression_report": "docs/04_reports/r1/r0_to_r1_progression.md",
     }
     base.update(overrides)
     # R0 bundles don't have R1+ keys
     if base.get("rung_id") == "r0":
-        for key in ("h2h_summary", "h2h_challenger_vs_incumbent", "gate_thresholds"):
+        for key in (
+            "h2h_summary",
+            "h2h_challenger_vs_incumbent",
+            "gate_thresholds",
+            "progression_report",
+        ):
             base.pop(key, None)
     return base
 
@@ -298,6 +304,13 @@ def _setup_gate_files(
     h2h_summary_path = bundle.get("h2h_summary")
     if h2h_summary_path:
         _write_json(tmp_path / h2h_summary_path, {"cells": {}})
+
+    # Write progression report file (R1+ bundles) -- plain text, not JSON
+    progression_report_path = bundle.get("progression_report")
+    if progression_report_path:
+        fp = tmp_path / progression_report_path
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text("# Placeholder progression report\ngate_status: N/A\n")
 
     # Write split manifest file
     split_manifest = bundle.get("split_manifest")
@@ -494,6 +507,11 @@ class TestBundleFilesExist:
             _write_json(tmp_path / bundle["h2h_summary"], {})
         if bundle.get("gate_thresholds"):
             _write_json(tmp_path / bundle["gate_thresholds"], {})
+        progression_report_path = bundle.get("progression_report")
+        if progression_report_path:
+            fp = tmp_path / progression_report_path
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text("# Placeholder\ngate_status: N/A\n")
 
         valid, errors = validate_bundle_files_exist(bundle, str(tmp_path))
         assert valid, f"Expected valid, got errors: {errors}"
@@ -1453,6 +1471,39 @@ class TestR1BundleValidation:
         # Verify inline H2H has all required sub-keys
         for key in REQUIRED_H2H_INLINE_KEYS:
             assert key in bundle["h2h_challenger_vs_incumbent"]
+
+    def test_r1_progression_report_non_string_fails(self):
+        """R1 progression_report must be a string path."""
+        bundle = _make_bundle(progression_report=42)
+        valid, errors = validate_bundle(bundle)
+        assert not valid
+        assert any("progression_report must be a string" in e for e in errors)
+
+    def test_r1_progression_report_file_checked(self, tmp_path):
+        """validate_bundle_files_exist checks progression_report path."""
+        bundle = _make_bundle()
+        # Create all files except progression_report
+        for arm in ("olsa", "olsa_full"):
+            for key in ("artifact_path", "eval_seed42", "eval_seed43", "eval_seed44"):
+                path = bundle[arm].get(key)
+                if path:
+                    _write_json(tmp_path / path, {})
+        _write_json(tmp_path / bundle["incumbent"]["artifact_path"], {})
+        _write_json(tmp_path / bundle["split_manifest"], {})
+        _write_json(tmp_path / bundle["h2h_summary"], {"cells": {}})
+        _write_json(tmp_path / bundle["gate_thresholds"], {})
+        # Don't write progression_report
+
+        valid, errors = validate_bundle_files_exist(bundle, str(tmp_path))
+        assert not valid
+        assert any("r0_to_r1_progression.md" in e for e in errors)
+
+    def test_r0_bundle_no_progression_report(self):
+        """R0 bundle passes without progression_report (R0 exempted)."""
+        bundle = _make_bundle(rung_id="r0")
+        assert "progression_report" not in bundle
+        valid, errors = validate_bundle(bundle)
+        assert valid, f"Expected valid, got errors: {errors}"
 
 
 # =============================================================================

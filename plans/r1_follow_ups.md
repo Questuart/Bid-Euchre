@@ -24,6 +24,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P4 | Pass-threshold re-tuning | **Yes** | — | Re-run B0 protocol |
 | P5 | Deferred report sections | No (deferrable) | — | |
 | P6 | H2H bid_rate caveat | No (deferrable) | — | Verify terminology |
+| P7 | Rung-to-rung report pipeline | No (deferrable) | — | Automate progression reports |
 
 **Disposition values:** DONE / DEFERRED (with rationale + target rung) / NOT APPLICABLE (with evidence)
 
@@ -267,6 +268,40 @@ causes persistent confusion.
 
 ---
 
+## Priority 7: Rung-to-Rung Report Pipeline
+
+**Status:** Planned (deferrable)
+**Origin:** Phase 0→R0 progression report (hand-written), bundle gate requirement
+
+### What
+
+The Phase 0→R0 progression report (`docs/04_reports/r0/phase0_to_r0_progression.md`)
+was manually authored. Starting at R1, `progression_report` is a required bundle
+artifact enforced by the rung bundle validator. Future rung transitions should have
+automated or semi-automated report generation.
+
+### Proposed Approach
+
+Either:
+- **Skill:** `/generate-progression-report` that takes prior + current bundle paths
+  and populates the 8-section template from `EXPERIMENT_REPORTS.md`
+- **Script:** `scripts/internal/generate_progression_report.py` with CLI args for
+  prior bundle, current bundle, and output path
+
+### Why R1→R2+ Is Cleaner
+
+R1→R2+ comparisons are cleaner than Phase 0→R0 because:
+1. Both rungs use the same game mode (auction-selected contracts)
+2. Both have standard bundle JSONs with comparable eval metrics
+3. The forced-vs-selected confound that complicated Phase 0→R0 does not apply
+
+### Dependencies
+
+- A2 pipeline infrastructure
+- R1 bundle available (eval runs complete)
+
+---
+
 ## Cross-Reference
 
 | Follow-Up | Master Plan Phase | Sub-Plan | Report |
@@ -277,3 +312,4 @@ causes persistent confusion.
 | Pass-threshold re-tune | Post-C2 | `r0_pass_threshold_protocol.md` (template) | `pass_threshold_decision.md` §6 |
 | Deferred report sections | B3/D1 | `report_narrative_overlay.md` | `comparator_rankings.md` §4, §8 |
 | H2H bid_rate caveat | All | `measurement_integrity_r0.md` L3 | All H2H reports |
+| Rung-to-rung pipeline | Post-A2 | — | `phase0_to_r0_progression.md` (template) |
