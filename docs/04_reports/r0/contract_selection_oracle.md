@@ -259,6 +259,33 @@ contract-selection slice. The 82% pass-threshold slice requires either:
 2. **Threshold adjustment:** Lowering the utility <= 0 pass gate
 3. **Both:** Better predictions + recalibrated threshold
 
+### 4.5 Limitations and Caveats
+
+**Auction independence:** The oracle evaluates each seat independently, assuming it
+can unilaterally declare any contract. In actual play, only one team wins the auction
+per deal, and the winning bid must exceed the current high bid. The oracle does not
+model auction competition — it asks "if this seat could declare, which contract
+maximizes net payoff?" not "would this seat win the auction?" Consequences:
+
+- The oracle's 7.4% pass rate is per-seat. In actual play, the effective pass rate
+  would be higher because some profitable hands lose the auction to opponents.
+- The 82% pass-threshold regret is therefore an **upper bound** on recoverable
+  regret — even with a perfect model, some of those hands would not win the auction.
+- Two seats on the same team may receive different oracle recommendations. The oracle
+  does not model intra-team bid coordination.
+
+This simplification is deliberate: it isolates contract selection quality from auction
+dynamics, which is the specific question Step 0 was designed to answer. An
+auction-aware oracle would require a full game simulation with strategic bidding,
+which would conflate contract choice regret with auction strategy regret.
+
+**Sample size:** The analysis uses QUICK mode (40,000 hands = 10,000 deals × 4
+seats). The sub-plan acceptance gate specified ≥50,000 paired hands. The shortfall
+does not affect the decision: mean regret is 3.92 with 95% CI [3.89, 3.95] — the
+signal is 40× above the 0.1 decision threshold, so additional samples would narrow
+an already-tight CI without changing the conclusion. A FULL-mode run (200,000 hands)
+can be produced for archival purposes if desired.
+
 ## 5. Impact & Decisions
 
 ### 5.1 Decision Gate Result

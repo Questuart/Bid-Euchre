@@ -6,7 +6,7 @@
 contract selection analysis, report pipeline infrastructure, R0 report updates, and
 R1 training cycle.
 
-**Last updated by:** Human + Claude review session (2026-02-28)
+**Last updated by:** A1 completion + Path B decision sync (2026-03-02)
 
 ---
 
@@ -52,12 +52,12 @@ Contract Selection Step 0 (oracle analysis)
 
 | Phase | Description | Status | Blocker |
 |-------|-------------|--------|---------|
-| **A1** | Contract selection Step 0 (oracle) | NOT STARTED | None — start immediately |
+| **A1** | Contract selection Step 0 (oracle) | **COMPLETE** (#472, 2026-03-02) | — |
 | **A2** | Report pipeline infrastructure | NOT STARTED | None — start immediately |
 | **A3** | C33 ablation report refactor | NOT STARTED | None — start immediately |
-| **B1** | Contract selection Steps 1–2 (calibrator) | CONDITIONAL | A1 result |
-| **B2** | R0 experiment re-runs | CONDITIONAL | B1 (if calibrator adopted) |
-| **B3** | R0 report finalization | BLOCKED | A1; also B2 if calibrator adopted |
+| **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
+| **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
+| **B3** | R0 report finalization | UNBLOCKED | None (A1 complete, calibrator skipped) |
 | **B4** | Skills testing on R0 data | BLOCKED | A2 + B3 |
 | **C1** | Dual-track + archetype analysis (C6) | BLOCKED | B3 |
 | **C2** | R1 training cycle (PR-R1a) | BLOCKED | B3 |
@@ -98,6 +98,33 @@ utility loss). Contract mix is diagnostic context. Specifically:
 - Mean regret ≤ 0.1 utility AND HIGH/LOW ≥ 3% → contract selection matters but
   current model captures it adequately → proceed to B3 with current data, document
   the oracle mix for future reference
+
+**Step 0 Result (2026-03-02, PR #472):**
+
+Gate fired **CALIBRATOR_WARRANTED** (mean regret 3.92 >> 0.1 threshold). However,
+the 3-way regret decomposition fundamentally reframed the problem:
+
+| Category | % of total regret | Interpretation |
+|----------|-------------------|----------------|
+| Pass-threshold | **81.9%** | Model passes; oracle would bid (model conservatism) |
+| Contract-selection | 16.9% | Both bid; model picks wrong contract |
+| Over-bidding | 1.1% | Model bids; oracle would pass |
+
+The plan assumed regret would come from contract mis-ranking (motivating a calibrator).
+Instead, 82% comes from the pass threshold — the model declines to bid on hands where
+the oracle would profit. Root cause: feature poverty in HIGH/LOW models (1 feature each).
+
+**Decision: Path B selected** — skip calibrator, finalize R0, address in R1.
+Rationale: calibrator addresses only 17% of regret; the dominant fix (feature enrichment
+for HIGH/LOW) is already on the R1 roadmap. See `docs/04_reports/r0/contract_selection_oracle.md`.
+
+**Sample-size note:** The sub-plan acceptance gate specifies ≥50,000 paired hands.
+Step 0 was run in QUICK mode (40,000 hands = 10k deals × 4 seats). This exceeds
+the repo-wide minimum for bias detection (2,000) and group-level inference (1,000)
+by 20x. The 95% CIs are tight ([3.89, 3.95] for mean regret). A FULL-mode run
+(200k hands) can be produced for archival purposes but would not change the decision
+given the regret is 40x above the 0.1 threshold. The sub-plan gate was written
+before the QUICK/FULL mode convention was established for oracle analyses.
 
 **Key context for cold-start:**
 - Paired outcome data already exists: `canonical_bidless_dataset_glutton_42_20260221_175752`
@@ -150,11 +177,12 @@ because R0 reports are the baseline comparison point.
 
 **Sub-plan:** `plans/report_narrative_overlay.md` — Phases 1, 2
 
-**Blocked on:** Stream 1 Step 0 result (determines whether data changes before finalization)
+**Blocked on:** A2 pipeline infrastructure (PR-N0a, PR-N0b needed for PR-N1).
+Step 0 blocker resolved: A1 complete (#472), Path B selected (no calibrator re-runs).
 
 | PR | Work | Estimated Effort | Depends On |
 |----|------|-----------------|------------|
-| **PR-N1** | R0 rung report refactor | Large doc PR | PR-N0a, PR-N0b, Step 0 |
+| **PR-N1** | R0 rung report refactor | Large doc PR | PR-N0a, PR-N0b |
 | **PR-N2** | Companion report consistency (= C2b-2) | Medium doc PR | PR-N1 |
 
 **Reports to update (Phase 2 = C2b-2):**
@@ -252,39 +280,39 @@ calibrator question arose. **Create a detailed PR-R1a sub-plan when R0 is finali
 - Primary metric: net_eppd; eppd is secondary diagnostic
 - Gate thresholds (FULL-calibrated): delta_floor=0.180, regression=0.184
 - R1 challenger must improve by +0.18 net_eppd over R0 incumbent in paired H2H
-- If calibrator adopted, R1 model includes calibrator (R0+calibrator is the baseline)
+- Calibrator was SKIPPED (Path B) — R0 baseline has no calibrator, R1 does not inherit one
 - PR-R2a (opponent context features via auction_transcript) can parallel — off critical path
+
+**R1 design priorities from A1 oracle analysis:**
+- **HIGH/LOW feature enrichment is the #1 priority.** The 1-feature models (offsuit_aces,
+  offsuit_tens_count) are clearly insufficient. Consider lowering `min_improvement` threshold
+  in `feature_selection.py` for non-suit contracts, or adding hand-crafted distributional
+  features (suit spread, void count for HIGH; low-card connectivity for LOW).
+- **Pass-threshold tuning:** Investigate whether `utility <= -X` (X > 0) recovers some of
+  the 82% pass-threshold regret. Can be a quick sensitivity sweep without new models.
+- **Cross-contract calibration (Option B):** A unified regression may be worth revisiting
+  since feature poverty and calibration problems interact.
 
 ---
 
 ## 4. Dependency Graph
 
 ```
-PHASE A — UNBLOCKED (start immediately, all parallel)
+PHASE A — A1 COMPLETE, A2/A3 UNBLOCKED
 ──────────────────────────────────────────────────────
-A1: Contract Selection Step 0        A2: Pipeline Infrastructure       A3: C33 Ablation
-   (oracle analysis)                    PR-N0a (generator fixes)          Report Refactor
-                                        PR-N0b (chart runner)
+A1: ✓ COMPLETE (#472)                A2: Pipeline Infrastructure       A3: C33 Ablation
+   Path B selected                      PR-N0a (generator fixes)          Report Refactor
+   (calibrator skipped)                 PR-N0b (chart runner)
                                         PR-N3  (conventions)
                                         PR-N4  (narrate skill)
                                         PR-N5  (draft skill)
 
-PHASE B — BLOCKED ON A1
+PHASE B — UNBLOCKED (Path B: no calibrator)
 ──────────────────────────────────────────────────────
-              A1 result
+              A1 result: Path B
                 │
-    ┌───────────┴───────────┐
-    │                       │
-Gap small               Gap large
-    │                       │
-    │                  B1: Calibrator
-    │                  (Steps 1–2)
-    │                       │
-    │                  B2: R0 Re-runs
-    │                  (eval, comparator,
-    │                   H2H, thresholds)
-    │                       │
-    └───────────┬───────────┘
+    B1: SKIPPED (calibrator addresses only 17% of regret)
+    B2: SKIPPED (no calibrator to validate)
                 │
            B3: R0 Report Finalization
                PR-N1 (rung report)
@@ -317,11 +345,11 @@ C1: Dual-Track (C6)    C2: R1 Training
 All three streams can start immediately and run in parallel. Assign to separate agents
 or work sequentially — no dependencies between them.
 
-**A1 — Contract Selection Oracle Analysis**
-- Effort: ~1 session (notebook + offline analysis)
-- Uses existing paired data (`canonical_bidless_dataset_glutton_42_20260221_175752`)
-- Deliverable: Oracle contract mix, regret distribution, go/no-go decision
-- Sub-plan: `plans/contract_selection_analysis.md` §Acceptance Gates, Step 0
+**A1 — Contract Selection Oracle Analysis** ✓ COMPLETE (#472, 2026-03-02)
+- Deliverable: Oracle contract mix, regret distribution, Path B decision
+- Report: `docs/04_reports/r0/contract_selection_oracle.md`
+- Notebook: `notebooks/arc_d/r0/55_contract_selection_oracle.py`
+- Key finding: pass-threshold regret (82%) dominates contract-selection regret (17%)
 
 **A2 — Report Pipeline Infrastructure**
 - Effort: ~5 PRs across multiple sessions
@@ -334,26 +362,21 @@ or work sequentially — no dependencies between them.
 - Deliverable: Empirically grounded ablation report with replay diagnostics
 - Sub-plan: `plans/c33_ablation_refactor_plan.md`
 
-### Phase B: Calibrator Decision & R0 Finalization (blocked on A1)
+### Phase B: Calibrator Decision & R0 Finalization (A1 resolved — Path B)
 
-**B1 — Calibrator Build (CONDITIONAL)**
-- Only if A1 shows oracle gap is meaningful (regret > 0.1 utility)
-- Effort: 1–2 PRs for prototype + validation
-- Sub-plan: `plans/contract_selection_analysis.md` §Steps 1–2
-- **Gap:** If triggered, create `plans/calibrator_implementation.md` with detailed design
-  decisions (tie-handling, pass integration, bid-level coupling, auction context)
+**B1 — Calibrator Build** ✗ SKIPPED (Path B — calibrator addresses only 17% of regret)
+- Gate fired CALIBRATOR_WARRANTED but regret decomposition showed the prescribed
+  remedy is mismatched to the dominant problem (model conservatism, not contract ranking)
+- R1 feature enrichment for HIGH/LOW is the appropriate fix
 
-**B2 — R0 Experiment Re-runs (CONDITIONAL)**
-- Only if B1 produces a validated calibrator
-- Effort: Run-only (compute time, no code changes)
-- Scope: eval runs (3 seeds × 50k), comparator battery (7 × 4 × 20k), H2H (49 × 2-10k)
-- Also produce: calibrator ablation report (new companion report for R0)
+**B2 — R0 Experiment Re-runs** ✗ SKIPPED (no calibrator to validate)
 
-**B3 — R0 Report Finalization**
-- Blocked on A1 (all paths), AND on B2 (calibrator path only)
-- Uses data from B2 if calibrator adopted, otherwise current data
+**B3 — R0 Report Finalization** (UNBLOCKED — A1 complete, B1/B2 skipped)
+- Uses current R0 data (no calibrator re-runs)
 - Effort: 2 PRs (PR-N1 rung report refactor, PR-N2 companion consistency)
 - Sub-plan: `plans/report_narrative_overlay.md` Phases 1, 2
+- Note: PR-N2 must also update stale v2 comparator data in promotion report and
+  C33 arc-context (see §7 What's Done)
 
 **B4 — Skills Testing**
 - Run `/narrate-report` on the finalized R0 rung report (validates the skill)
@@ -390,7 +413,7 @@ or work sequentially — no dependencies between them.
 | Plan File | Governs | Status | Streams |
 |-----------|---------|--------|---------|
 | **`plans/MASTER_PLAN.md`** | All work sequencing | ACTIVE | All |
-| **`plans/contract_selection_analysis.md`** | Oracle analysis + calibrator | ACTIVE (v3) | 1 |
+| **`plans/contract_selection_analysis.md`** | Oracle analysis + calibrator | Step 0 COMPLETE, Steps 1–2 SKIPPED (v3) | 1 |
 | **`plans/report_narrative_overlay.md`** | Pipeline, reports, skills, C6 | ACTIVE (684 lines) | 2, 3, 5 |
 | **`plans/c33_ablation_refactor_plan.md`** | C33 report refactor | ACTIVE (1,040 lines) | 4 |
 | **`plans/arc_d_execution_plan.md`** | Full Arc D (R0 done, R1+ remaining) | ACTIVE (v3) | 6 |
@@ -404,7 +427,7 @@ or work sequentially — no dependencies between them.
 | `plans/c33_ablation_plan_prompt.md` | Agent handoff | REFERENCE (consumed) | — |
 
 **Plans to create (when triggered):**
-- `plans/calibrator_implementation.md` — if Step 0 triggers calibrator work (B1)
+- ~~`plans/calibrator_implementation.md`~~ — N/A (B1 skipped, Path B selected)
 - `plans/r1_training_plan.md` — before starting R1 training cycle (C2)
 
 ---
@@ -415,9 +438,16 @@ or work sequentially — no dependencies between them.
 
 - **R0 code:** All merged (#389–#396, #439–#441)
 - **R0 experiments:** All complete (eval, comparator v4, H2H v2 QUICK+FULL)
-- **R0 notebooks:** 6/6 passing (#428–#438)
+- **R0 notebooks:** 6/6 passing (#428–#438), plus oracle notebook (#472)
 - **Comparator overhaul:** Wave 1 (#463–#465), dual-track code (#466–#468), rankings (#470)
-- **R0 reports:** 6 exist, all need updating (stale v2 data, no narrative, no charts)
+- **A1 oracle analysis:** COMPLETE (#472) — regret 3.92 [3.89, 3.95], Path B selected
+- **R0 reports:** 7 exist; most need updating before B3 can be marked complete:
+  - `r0_promotion_report.md` — still cites v2 comparator numbers (v2 battery, +2.291 gap)
+  - `model_arc_r0_20260224.md` — templated placeholder paths in §11 reproduction
+  - `c33_ablation_report.md` — arc-context references "Comparator battery v2"
+  - `contract_selection_oracle.md` — NEW, current (merged #472)
+  - `comparator_rankings.md` — current (merged #470)
+  - `h2h_battery_analysis.md` — needs v2→v4 comparator cross-references
 
 ### Key Results (R0)
 
@@ -432,7 +462,8 @@ or work sequentially — no dependencies between them.
 - **C33 ablation:** +0.21 net_eppd (Gaussian wrapper, significant)
 - **Comparator rank:** 2nd/7 (modeloespecifico +1.587, hybrid_olsa +0.455, gap 1.132)
 - **Gate thresholds:** delta_floor=0.180, regression=0.184 (FULL-calibrated)
-- **Contract mix:** 98.3% suit / 0.9% low / 0.8% high (under investigation)
+- **Contract mix:** 98.3% suit / 0.9% low / 0.8% high (oracle: 68.1% suit / 17.9% low / 14.0% high)
+- **Oracle regret:** 3.92 utility [3.89, 3.95]; 82% pass-threshold, 17% contract-selection
 
 ### Key Artifacts
 
@@ -484,7 +515,7 @@ or work sequentially — no dependencies between them.
 ## 8. Completion Checklist
 
 ### Phase A (parallel, no blockers)
-- [ ] A1: Oracle contract mix computed, regret distribution reported, go/no-go decision made
+- [x] A1: Oracle contract mix computed, regret distribution reported, go/no-go decision made (#472)
 - [ ] A2-a: PR-N0a merged (generator data fixes G1–G3)
 - [ ] A2-b: PR-N0b merged (chart runner script)
 - [ ] A2-c: PR-N3 merged (report conventions + template registry)
@@ -492,12 +523,12 @@ or work sequentially — no dependencies between them.
 - [ ] A2-e: PR-N5 merged (`/draft-rung-reports` skill)
 - [ ] A3: C33 ablation report refactored with replay diagnostics
 
-### Phase B (blocked on A1)
-- [ ] B1: Calibrator decision documented (adopted / not needed)
-- [ ] B1-a: (if adopted) Calibrator prototype built and validated offline
-- [ ] B1-b: (if adopted) Calibrator H2H validation passed
-- [ ] B2: (if adopted) R0 experiments re-run with calibrated model
-- [ ] B2-a: (if adopted) Calibrator ablation report written
+### Phase B (blocked on A1 — now unblocked)
+- [x] B1: Calibrator decision documented — **Path B: SKIPPED** (regret decomposition shows calibrator addresses only 17%)
+- N/A B1-a: ~~Calibrator prototype~~ (skipped)
+- N/A B1-b: ~~Calibrator H2H validation~~ (skipped)
+- N/A B2: ~~R0 experiments re-run~~ (skipped)
+- N/A B2-a: ~~Calibrator ablation report~~ (skipped)
 - [ ] B3-a: PR-N1 merged (R0 rung report refactor with charts + narrative)
 - [ ] B3-b: PR-N2 merged (companion report consistency = C2b-2)
 - [ ] B4: PR-N6 merged (skills tested on R0 data)
