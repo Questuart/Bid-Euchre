@@ -438,6 +438,33 @@ class TestBatchCoherenceValidation:
             dirs.append((seat, d))
         _validate_batch_coherence(dirs, "test_bidder", strict=True)
 
+    def test_partial_missing_config_sha256_fails_strict(self, tmp_path):
+        """3 seats with hash + 1 seat missing hash fails strict mode."""
+        sha = "d" * 64
+        dirs = []
+        for seat in range(4):
+            d = tmp_path / f"run_seat{seat}"
+            d.mkdir()
+            # Seat 3 has no config_sha256 (simulates older meta.json)
+            cfg_sha = sha if seat < 3 else None
+            _make_meta_json(d, seed=42, n_per=100, config_sha256=cfg_sha)
+            dirs.append((seat, d))
+        with pytest.raises(SystemExit):
+            _validate_batch_coherence(dirs, "test_bidder", strict=True)
+
+    def test_partial_missing_config_sha256_warns_nonstrict(self, tmp_path):
+        """3 seats with hash + 1 missing does NOT exit in non-strict mode."""
+        sha = "d" * 64
+        dirs = []
+        for seat in range(4):
+            d = tmp_path / f"run_seat{seat}"
+            d.mkdir()
+            cfg_sha = sha if seat < 3 else None
+            _make_meta_json(d, seed=42, n_per=100, config_sha256=cfg_sha)
+            dirs.append((seat, d))
+        # Non-strict: should warn but not exit
+        _validate_batch_coherence(dirs, "test_bidder", strict=False)
+
     def test_n_per_off_by_one_passes(self, tmp_path):
         """n_per varying by ±1 (uneven seat split) passes validation."""
         dirs = []

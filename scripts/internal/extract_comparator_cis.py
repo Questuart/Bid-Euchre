@@ -257,20 +257,27 @@ def _validate_batch_coherence(seat_run_dirs, bidder_name, strict=True):
         seeds.append(meta.get("seed"))
         config = meta.get("config", {})
         n_pers.append(config.get("parameters", {}).get("n_per"))
-        config_sha = meta.get("config_sha256")
-        if config_sha:
-            config_shas.append(config_sha)
+        config_shas.append(meta.get("config_sha256"))
 
     if len(set(seeds)) > 1:
         _report(
             f"Batch coherence violation for {bidder_name}: mixed seeds {set(seeds)}"
         )
 
-    if len(set(config_shas)) > 1:
-        _report(
-            f"Batch coherence violation for {bidder_name}: "
-            f"mixed config_sha256 {set(config_shas)}"
-        )
+    # config_sha256: in strict mode, require all seats to have it and match
+    non_null_shas = [s for s in config_shas if s]
+    if non_null_shas:
+        if len(non_null_shas) < len(config_shas) and strict:
+            _report(
+                f"Batch coherence violation for {bidder_name}: "
+                f"{len(config_shas) - len(non_null_shas)} of {len(config_shas)} "
+                f"seats missing config_sha256"
+            )
+        if len(set(non_null_shas)) > 1:
+            _report(
+                f"Batch coherence violation for {bidder_name}: "
+                f"mixed config_sha256 {set(non_null_shas)}"
+            )
 
     # n_per: allow ±1 variance for uneven seat splits (n_per % 4 != 0)
     valid_n_pers = [n for n in n_pers if n is not None]
