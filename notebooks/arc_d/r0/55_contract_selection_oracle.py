@@ -805,6 +805,206 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
+# ### S7b: Oracle Actual Net vs Model Predicted Utility
+#
+# The scatter below plots each hand's **oracle actual net** (the best realized payoff
+# with hindsight) against the **model's max predicted utility** (what the bidder
+# thought its best option was worth). Points on the diagonal would indicate perfect
+# prediction. Points in the bottom-right are hands where the model thinks it has
+# positive utility but the oracle outcome is worse; points in the upper-left are hands
+# the model undervalues — including the large pass-threshold population clustered at
+# predicted utility ≤ 0 but oracle net >> 0.
+
+# %%
+# Scatter: oracle actual net vs model max predicted utility, colored by regret category
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+# Color map for regret categories
+cat_colors = {
+    "correct_both_pass": "#999999",
+    "correct_same_contract": "#2ca02c",
+    "pass_threshold": "#d62728",
+    "contract_selection": "#ff7f0e",
+    "over_bidding": "#1f77b4",
+}
+cat_labels = {
+    "correct_both_pass": "Both pass (correct)",
+    "correct_same_contract": "Same contract (correct)",
+    "pass_threshold": "Pass-threshold error",
+    "contract_selection": "Contract-selection error",
+    "over_bidding": "Over-bidding error",
+}
+
+# --- Left panel: all hands ---
+ax = axes[0]
+# Plot correct categories first (background), then errors on top
+plot_order = [
+    "correct_both_pass",
+    "correct_same_contract",
+    "over_bidding",
+    "contract_selection",
+    "pass_threshold",
+]
+for cat in plot_order:
+    mask = pred_wide["regret_category"] == cat
+    if mask.sum() == 0:
+        continue
+    ax.scatter(
+        pred_wide.loc[mask, "model_max_utility"],
+        pred_wide.loc[mask, "oracle_actual_net"],
+        c=cat_colors[cat],
+        label=f"{cat_labels[cat]} ({mask.sum():,})",
+        alpha=0.15,
+        s=4,
+        rasterized=True,
+    )
+
+# Reference lines
+lims = [
+    min(pred_wide["model_max_utility"].min(), pred_wide["oracle_actual_net"].min())
+    - 0.5,
+    max(pred_wide["model_max_utility"].max(), pred_wide["oracle_actual_net"].max())
+    + 0.5,
+]
+ax.plot(lims, lims, "k--", alpha=0.3, linewidth=1, label="y=x (perfect)")
+ax.axhline(0, color="gray", linestyle=":", alpha=0.5)
+ax.axvline(0, color="gray", linestyle=":", alpha=0.5)
+ax.set_xlabel("Model max predicted utility")
+ax.set_ylabel("Oracle actual net")
+ax.set_title("Oracle Actual Net vs Model Predicted Utility")
+ax.legend(fontsize=7, markerscale=3, loc="upper left")
+
+# --- Right panel: non-pass hands only (zoom into the bidding region) ---
+ax = axes[1]
+bidders = pred_wide[~pred_wide["model_passes"]].copy()
+for cat in plot_order:
+    mask = bidders["regret_category"] == cat
+    if mask.sum() == 0:
+        continue
+    ax.scatter(
+        bidders.loc[mask, "model_max_utility"],
+        bidders.loc[mask, "oracle_actual_net"],
+        c=cat_colors[cat],
+        label=f"{cat_labels[cat]} ({mask.sum():,})",
+        alpha=0.25,
+        s=8,
+        rasterized=True,
+    )
+
+ax.plot(
+    [bidders["model_max_utility"].min(), bidders["model_max_utility"].max()],
+    [bidders["model_max_utility"].min(), bidders["model_max_utility"].max()],
+    "k--",
+    alpha=0.3,
+    linewidth=1,
+)
+ax.axhline(0, color="gray", linestyle=":", alpha=0.5)
+ax.set_xlabel("Model max predicted utility")
+ax.set_ylabel("Oracle actual net")
+ax.set_title("Zoom: Hands Where Model Bids")
+ax.legend(fontsize=7, markerscale=2, loc="upper left")
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ### S7c: Regret Heatmap — Model Choice vs Oracle Choice
+#
+# A confusion-matrix-style heatmap showing mean regret for each
+# (model family → oracle family) pair. The "pass" row/column captures the
+# dominant pass-threshold effect. Cell intensity = mean regret; annotation = count.
+
+# %%
+# Build confusion matrix with pass as a category
+pred_wide["model_family_with_pass"] = np.where(
+    pred_wide["model_passes"], "pass", pred_wide["model_family"]
+)
+pred_wide["oracle_family_with_pass"] = np.where(
+    pred_wide["oracle_passes"], "pass", pred_wide["oracle_family"]
+)
+
+families_with_pass = ["high", "low", "suit", "pass"]
+
+# Mean regret matrix
+regret_matrix = np.zeros((len(families_with_pass), len(families_with_pass)))
+count_matrix = np.zeros((len(families_with_pass), len(families_with_pass)), dtype=int)
+
+for i, mf in enumerate(families_with_pass):
+    for j, of in enumerate(families_with_pass):
+        mask = (pred_wide["model_family_with_pass"] == mf) & (
+            pred_wide["oracle_family_with_pass"] == of
+        )
+        count_matrix[i, j] = mask.sum()
+        if mask.sum() > 0:
+            regret_matrix[i, j] = pred_wide.loc[mask, "regret"].mean()
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Left: mean regret heatmap
+ax = axes[0]
+im = ax.imshow(regret_matrix, cmap="YlOrRd", aspect="auto")
+ax.set_xticks(range(len(families_with_pass)))
+ax.set_xticklabels(families_with_pass)
+ax.set_yticks(range(len(families_with_pass)))
+ax.set_yticklabels(families_with_pass)
+ax.set_xlabel("Oracle choice")
+ax.set_ylabel("Model choice")
+ax.set_title("Mean Regret by (Model → Oracle)")
+plt.colorbar(im, ax=ax, label="Mean regret (utility)")
+
+# Annotate with counts
+for i in range(len(families_with_pass)):
+    for j in range(len(families_with_pass)):
+        count = count_matrix[i, j]
+        regret_val = regret_matrix[i, j]
+        if count > 0:
+            text_color = "white" if regret_val > regret_matrix.max() * 0.6 else "black"
+            ax.text(
+                j,
+                i,
+                f"{count:,}\n({regret_val:.2f})",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color=text_color,
+            )
+
+# Right: total regret heatmap (mean × count = contribution to total)
+ax = axes[1]
+total_matrix = regret_matrix * count_matrix
+im2 = ax.imshow(total_matrix, cmap="YlOrRd", aspect="auto")
+ax.set_xticks(range(len(families_with_pass)))
+ax.set_xticklabels(families_with_pass)
+ax.set_yticks(range(len(families_with_pass)))
+ax.set_yticklabels(families_with_pass)
+ax.set_xlabel("Oracle choice")
+ax.set_ylabel("Model choice")
+ax.set_title("Total Regret by (Model → Oracle)")
+plt.colorbar(im2, ax=ax, label="Total regret (utility)")
+
+# Annotate with percentage of total
+grand_total = pred_wide["regret"].sum()
+for i in range(len(families_with_pass)):
+    for j in range(len(families_with_pass)):
+        cell_total = total_matrix[i, j]
+        if cell_total > 0:
+            pct = cell_total / grand_total * 100
+            text_color = "white" if cell_total > total_matrix.max() * 0.6 else "black"
+            ax.text(
+                j,
+                i,
+                f"{pct:.1f}%",
+                ha="center",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color=text_color,
+            )
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
 # ## Summary
 #
 # This notebook computed the oracle contract mix and regret distribution for the
