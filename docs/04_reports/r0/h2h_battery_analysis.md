@@ -14,14 +14,14 @@
 Six experiment campaigns were run to complete the R0-to-R1 transition,
 producing the data needed to calibrate promotion gates and train the R1 model.
 All runs used seed=42 for deterministic reproducibility. Total simulation
-budget: ~580,000 deals across all campaigns.
+budget: ~650,000 deals across all campaigns.
 
 ### 1.2 Campaign Inventory
 
 | Campaign | Deals | Bidders | Purpose |
 |----------|-------|---------|---------|
 | C33 Ablation | 40,000 | 2 (hybrid_olsa, olsa) | Isolate Gaussian EV wrapper effect |
-| Comparator Battery | 70,000 | 7 (all) | Rank bidders in self-play vs Glutton |
+| Comparator Battery | 140,000 | 7 (all) | Rank bidders in self-play vs Glutton |
 | C50 QUICK | 98,000 | 7 (all, 49 matchups) | Full H2H matrix at survey resolution |
 | C50 FULL | 370,000 | 7 (37 matchups) | Targeted rerun at publication resolution |
 | Threshold Calibration | N/A | N/A | Derive gate thresholds from null signal |
@@ -437,7 +437,7 @@ Run directories (local only, `data/runs/`):
 | `arc_d_r0_c33_ablation_42_20260225_170036` | 40,000 | C33 ablation |
 | `arc_d_r0_h2h_battery_42_20260225_170054` | 98,000 | C50 QUICK |
 | `arc_d_r0_h2h_battery_42_20260225_171235` | 370,000 | C50 FULL |
-| `auction_comparator_*_42_20260225_*` (7 runs) | 70,000 | Comparator battery |
+| `auction_comparator_*_42_20260225_*` (7 runs) | 140,000 | Comparator battery |
 
 ---
 

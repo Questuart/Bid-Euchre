@@ -12,7 +12,7 @@
 **What is this?** The R0 baseline establishment for Arc D's OLSa-Hybrid bidder
 — the first trainable bidding model in the Bid Euchre framework.
 
-**What did we do?** Six experiment campaigns totaling ~580,000 deals evaluated
+**What did we do?** Six experiment campaigns totaling ~650,000 deals evaluated
 two model arms (OLSa constrained + OLSa_Full promotional) across self-play,
 comparator, and head-to-head batteries. All runs used seed=42 for deterministic
 reproducibility.
