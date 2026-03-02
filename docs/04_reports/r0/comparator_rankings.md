@@ -19,9 +19,9 @@ evaluated (bid or pass), and pass deals contribute zero to the numerator but
 count in the denominator. This penalizes excessive passing and rewards
 calibrated selectivity.
 
-The rankings establish three clear tiers: two positive-net_eppd bidders
-(modeloespecifico, hybrid_olsa), a near-zero middle band
-(stricthellraiser, olsa_full, olsa), and two negative-net_eppd bidders
+The rankings establish three clear tiers: three positive-net_eppd bidders
+(modeloespecifico, hybrid_olsa, stricthellraiser), a near-zero middle band
+(olsa_full, olsa), and two negative-net_eppd bidders
 (fiveheadfred, rankthetank). All adjacent pairs are statistically
 distinguishable (§5).
 
@@ -191,7 +191,7 @@ adjacent-ranked bidders. n=10,000 bootstrap resamples, seed=42.
 | fiveheadfred vs rankthetank | +7.197 | < 0.001 | Yes |
 
 All six adjacent pairs are significantly separated at alpha=0.05. The tightest
-gap (olsa_full vs olsa, +0.174, p=0.009) confirms the full-arm's 39 features
+gap (olsa_full vs olsa, +0.174, p=0.009) confirms the full-arm's forward-selected features
 provide a small but real advantage over the constrained 3-feature arm.
 
 ## 6. Behavioral Profiles
@@ -218,7 +218,7 @@ systematically passes — bids only when risk-adjusted EV exceeds zero. Bid
 range: 1–10. Expected: low bid_rate, high make_rate on bid hands, net_eppd
 driven by quality of pass/bid boundary.
 
-**olsa_full** — Full-arm OLSa with all 39 forward-selected features from
+**olsa_full** — Full-arm OLSa with forward-selected features (2–3 per contract type, from pool of 39) from
 `hybrid_r0_full.json`, using floor-based threshold (bids at `floor(mu)` where
 mu is predicted tricks). No risk adjustment. Bid range: 1–10. Expected: always
 bids (floor threshold almost always produces a valid bid), moderate make_rate,
@@ -278,7 +278,7 @@ operating point.
 **olsa_full and olsa** — As expected, both always bid and olsa_full outperforms
 olsa (+0.174 net_eppd, p=0.009). Both have negative net_eppd, meaning their
 floor-based thresholds overbid on average — the predicted tricks exceed actual
-tricks often enough that set penalties outweigh make rewards. The 39 features
+tricks often enough that set penalties outweigh make rewards. The forward-selected features
 of olsa_full provide modestly better calibration (make_rate 0.763 vs 0.749).
 
 **fiveheadfred** — As expected: bid_rate=1.0, make_rate=0.649, net_eppd=−2.570.

@@ -79,7 +79,7 @@ is [0.0000, 0.0000] — trivially fails to exclude zero.
 
 ### 3.3 Guardrails
 
-- t ∈ {2.00, 2.50, 3.00, 4.00, 5.00} disqualified by overbid_regret > 10%
+- t ∈ {2.00, 2.50, 3.00, 4.00, 5.00} disqualified by overbid_regret > 10% (t=2.00 displays as 10.0% due to rounding; actual value exceeds threshold)
 - All candidates t ≤ 1.50 pass all guardrails
 - Make rate remains high (≥78%) across the entire grid — the model's bid_n
   (floor of predicted tricks) is conservative enough that make rate stays stable

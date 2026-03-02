@@ -85,7 +85,7 @@ positional advantage.
 independently against GluttonStrategy in uncontested auctions. It answers "is
 this model any good?" while H2H answers "which model is better?" The two
 methods can give different rankings — for example, `modeloespecifico` leads
-`olsa` by +1.86 net_eppd in self-play but is statistically indistinguishable
+`olsa` by +1.929 net_eppd in self-play but is statistically indistinguishable
 from it in H2H (+0.016, CI spans zero). This divergence arises because
 self-play rankings are confounded by how each bidder interacts with the common
 opponent, while H2H captures the actual competitive dynamic.
@@ -94,16 +94,16 @@ opponent, while H2H captures the actual competitive dynamic.
 
 | Bidder | Type | Description |
 |--------|------|-------------|
-| **hybrid_olsa** | Trained (Gaussian EV) | R0 OLSa with analytical P(make) via normal CDF. Selective bidder (bid_rate ~0.62). Uses 3 constrained features from `hybrid_r0.json`. |
+| **hybrid_olsa** | Trained (Gaussian EV) | R0 OLSa with analytical P(make) via normal CDF. Selective bidder (bid_rate ~0.20). Uses 3 constrained features from `hybrid_r0.json`. |
 | **olsa** | Trained (floor-based) | Same R0 regression coefficients as hybrid_olsa (`hybrid_r0.json`), but uses floor-based threshold decision. Bids on all hands. |
-| **olsa_full** | Trained (floor-based) | Full-arm OLSa with all 39 features from `hybrid_r0_full.json`, floor-based decision. Bids on all hands. |
+| **olsa_full** | Trained (floor-based) | Full-arm OLSa with forward-selected features (7 total, from pool of 39) from `hybrid_r0_full.json`, floor-based decision. Bids on all hands. |
 | **modeloespecifico** | Heuristic (lookup) | Domain-expert lookup table tuned for this game variant. Always bids. |
 | **rankthetank** | Heuristic | Conservative rank-based heuristic. Always bids. |
 | **fiveheadfred** | Heuristic | Aggressive heuristic emphasizing high cards. Always bids. |
 | **stricthellraiser** | Heuristic | Maximally aggressive bidder. Always bids, rarely makes. |
 
 **Naming note:** In this report, `hybrid_olsa` refers to the **constrained OLSa
-arm** with Gaussian EV wrapper (bid_rate ~62%, 3 features). This differs from
+arm** with Gaussian EV wrapper (bid_rate ~20%, 3 features). This differs from
 the earlier 5-bidder comparator battery
 ([comparator_rankings.md](comparator_rankings.md)), where `hybrid_olsa` referred
 to the **OLSa_Full promotional arm** (bid_rate ~83%, forward-selected features).
@@ -195,7 +195,7 @@ behavioral analysis, and version history (v1→v4 evolution).
 | fiveheadfred vs rankthetank | +7.197 | < 0.001 | Yes |
 
 All 6 adjacent pairs are significantly separated at alpha=0.05. The tightest
-gap (olsa_full vs olsa, +0.174, p=0.009) confirms the full-arm's 39 features
+gap (olsa_full vs olsa, +0.174, p=0.009) confirms the full-arm's forward-selected features
 provide a small but real advantage over the constrained 3-feature arm.
 
 ### 3.4 Observations
@@ -321,7 +321,7 @@ modeloespecifico  >  hybrid_olsa  >  olsa  ~  olsa_full
 - modeloespecifico vs olsa/olsa_full is a draw in H2H -- the gap visible in self-play doesn't replicate in head-to-head
 
 This last point is notable: in comparator self-play, modeloespecifico leads
-olsa by +1.86 net_eppd, but in H2H the difference is not significant. This
+olsa by +1.929 net_eppd, but in H2H the difference is not significant. This
 suggests the self-play gap is driven by how each bidder interacts with the
 GluttonStrategy playing policy, not by intrinsic bidding quality.
 
@@ -446,12 +446,13 @@ Run directories (local only, `data/runs/`):
 1. **The Gaussian EV wrapper works.** hybrid_olsa's analytical P(make)
    decision layer produces a statistically significant +0.21 net_eppd
    improvement over floor-based OLSa using identical regression coefficients.
-   The mechanism is selective restraint (62.5% bid rate, 87.7% make rate).
+   The mechanism is selective restraint (19.7% bid rate, 88.6% make rate).
 
 2. **hybrid_olsa ranks #2 overall** behind the domain-expert modeloespecifico
-   in self-play comparators. The H2H gap (+0.64-0.78 net_eppd) is comparable
-   to or larger than the self-play gap (+0.62), confirming modeloespecifico's
-   advantage is robust across evaluation methods.
+   in self-play comparators. The H2H gap (+0.64–0.78 net_eppd) is smaller
+   than the comparator gap (+1.132), suggesting the comparator gap is
+   partially inflated by play-strategy interaction effects (consistent with
+   §4.4 findings).
 
 3. **The OLS-vs-heuristic gap is enormous.** The three OLS-trained bidders
    (hybrid_olsa, olsa_full, olsa) dominate all three simple heuristics

@@ -26,6 +26,8 @@ docs/04_reports/
     pass_threshold_decision.md   (B0 threshold sweep)
     measurement_integrity_r0.md  (methodology review)
     archive/                     (superseded revisions)
+  r1/                      Arc D R1 rung report + companions
+    30_feature_outcome_eval.md   (feature-outcome eval template)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -36,7 +38,7 @@ docs/04_reports/
 | Report | Date | Summary |
 |--------|------|---------|
 | [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Cross-rung progression dashboard (snapshot) |
-| [r0/model_arc_r0.md](r0/model_arc_r0.md) | 2026-02-24 | R0 rung report (narrative refactor, 12 sections) |
+| [r0/model_arc_r0.md](r0/model_arc_r0.md) | 2026-03-01 | R0 rung report (narrative refactor, 12 sections) |
 | [r0/r0_promotion_report.md](r0/r0_promotion_report.md) | 2026-02-22 | R0 promotion decision + gate threshold calibration |
 | [r0/comparator_rankings.md](r0/comparator_rankings.md) | 2026-02-28 | Comparator battery rankings (v4, single-seat, GluttonStrategy, 7 bidders) |
 | [r0/c33_ablation_report.md](r0/c33_ablation_report.md) | 2026-02-25 | C33 ablation: Gaussian EV wrapper effect (+0.21 net_eppd) |
