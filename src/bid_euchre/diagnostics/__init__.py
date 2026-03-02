@@ -31,7 +31,11 @@ from .loaders import load_bidless_dataset, load_meta
 from .notebook_data import load_or_generate_features, load_or_generate_outcomes
 from .stats import compare_first_last_batch, compute_seat_balance
 from .strategy_charts import (
+    ARCHETYPE_COLORS,
     plot_matchup_summary,
+    plot_roster_calibration,
+    plot_roster_conversion,
+    plot_roster_efficiency,
     plot_self_play_control,
     plot_strategy_delta_bars,
     plot_tricks_distribution_comparison,
@@ -74,6 +78,11 @@ __all__ = [
     "plot_strategy_delta_bars",
     "plot_self_play_control",
     "plot_matchup_summary",
+    # Charts - Roster Meta-Analysis
+    "ARCHETYPE_COLORS",
+    "plot_roster_calibration",
+    "plot_roster_efficiency",
+    "plot_roster_conversion",
     # Stats
     "compare_first_last_batch",
     "compute_seat_balance",
