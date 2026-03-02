@@ -481,7 +481,7 @@ or work sequentially — no dependencies between them.
 - **A1 oracle analysis:** COMPLETE (#472) — regret 3.92 [3.89, 3.95], Path B selected
 - **R0 reports:** 7 exist; most need updating before B3 can be marked complete:
   - `r0_promotion_report.md` — still cites v2 comparator numbers (v2 battery, +2.291 gap)
-  - `model_arc_r0_20260224.md` — templated placeholder paths in §11 reproduction
+  - `model_arc_r0.md` — refactored narrative report (was `model_arc_r0_20260224.md`)
   - `c33_ablation_report.md` — arc-context references "Comparator battery v2"
   - `contract_selection_oracle.md` — NEW, current (merged #472)
   - `comparator_rankings.md` — current (merged #470)

@@ -43,7 +43,7 @@ each — or adjusting the pass/bid threshold.
 
 ## 1. Motivation
 
-The R0 evaluation report ([model_arc_r0_20260224.md](model_arc_r0_20260224.md))
+The R0 evaluation report ([model_arc_r0.md](model_arc_r0.md))
 showed a stark contract distribution:
 
 | Contract | Deals | Pct |
@@ -332,7 +332,7 @@ Regardless of Phase B path, R1 feature design should prioritize:
 ```
 R0 training (#396)
   |
-  +---> Model eval report (model_arc_r0_20260224.md)
+  +---> Model eval report (model_arc_r0.md)
   |       98.3% suit / 0.9% low / 0.8% high observed
   |
   +---> Contract selection oracle (this report, #472)

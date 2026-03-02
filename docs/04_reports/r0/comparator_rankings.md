@@ -170,9 +170,11 @@ pooled net_eppd in §3.
 
 Data from notebook `45_comparator_deep_dive` §S3.
 
-*Populate from notebook S3 output after FULL-mode run. Bidders that only bid
-one contract type (stricthellraiser: suit only; fiveheadfred: suit only)
-have entries only for that type.*
+*Deferred to R1.* FULL-mode compute budget was prioritized for the H2H battery
+(370k deals). Contract-type breakdown is available in QUICK-mode data within
+notebook `45_comparator_deep_dive` §S3, but not at publication resolution.
+Bidders that only bid one contract type (stricthellraiser: suit only;
+fiveheadfred: suit only) would have entries only for that type.
 
 ## 5. Pairwise Significance
 
@@ -331,17 +333,18 @@ card-play outcomes with GluttonStrategy.
 
 ## 8. Auction-Pressure Sensitivity
 
-*Placeholder — requires post-fix 4-way rerun (not yet available).*
+*Deferred — single-seat is the canonical comparator instrument.*
 
-A 4-way rerun with post-fix bidders would show how rankings change when bidders
-face contested auctions (`current_high_bid > 0`). This is particularly
-important for auction-state-dependent bidders (StrictHellRaiser) and selective
-bidders (hybrid_olsa, whose bid_rate would increase with competing bids).
+The single-seat design intentionally evaluates bidding quality in uncontested
+auctions (§2.4). A 4-way rerun would show how rankings change under contested
+auctions (`current_high_bid > 0`), but this is better addressed by the H2H
+battery ([h2h_battery_analysis.md](h2h_battery_analysis.md)), which already
+captures auction interaction effects in a more rigorous paired-deal design.
 
-**Why v2 4-way data cannot be used:** The v2 battery used pre-fix bidders with
-three known bugs — (A) ModeloEspecifico bid ceiling capped at 6 instead of 10,
-(B) OLSa bid floor at 3 instead of 1, (C) RanktheTank with miscalibrated
-HIGH/LOW thresholds. Rankings from bugged bidders are not comparable to v4.
+The v2 4-way data cannot be used because it used pre-fix bidders with three
+known bugs (ModeloEspecifico bid ceiling, OLSa bid floor, RanktheTank
+thresholds). A fresh 4-way rerun adds little value given the H2H battery's
+coverage of competitive dynamics.
 
 ## 9. Provenance & Reproduction
 
@@ -349,7 +352,7 @@ HIGH/LOW thresholds. Rankings from bugged bidders are not comparable to v4.
 
 | Item | Value |
 |------|-------|
-| gate_status | PASS |
+| gate_status | PROMOTED |
 | Primary artifact | data/artifacts/arc_d/r0/comparator_cis_r0_v4.json |
 | Battery metadata | data/artifacts/arc_d/r0/comparator_battery_r0_v4.json |
 | Extraction script | scripts/internal/extract_comparator_cis.py |

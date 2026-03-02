@@ -183,7 +183,7 @@ uv run python scripts/internal/generate_rung_charts.py \
 Create the narrative exemplar that defines the standard for all future auto-generated rung reports.
 
 #### P1-0: Generate Charts, Regenerate Report, and Rename
-- Archive current report: `model_arc_r0_20260224.md` → `archive/model_arc_r0_v1_20260224.md`
+- Archive current report: `model_arc_r0_20260224.md` → `model_arc_r0.md` (renamed; git history preserves original)
 - Generate charts first (stage 2 of pipeline):
   ```bash
   uv run python scripts/internal/generate_rung_charts.py \
@@ -683,9 +683,8 @@ All 6 open questions were resolved on 2026-02-28. See "Resolved Questions" in De
 1. **Archive versioning label format.** Proposed: `model_arc_r0_v1_20260224.md` (vN + original date).
    Confirm this pattern works for cases where a report has multiple revisions within the same day.
 
-2. **Cross-link update scope.** Renaming `model_arc_r0_20260224.md` → `model_arc_r0.md` requires
-   updating links in README.md, dashboard, and any companion reports that reference the old filename.
-   Need to grep for all references.
+2. **Cross-link update scope.** Rename `model_arc_r0_20260224.md` → `model_arc_r0.md` completed
+   in PR-N1 (B3). All references updated in docs/ and plans/.
 
 3. **Eval data glob pattern.** The regeneration command uses `*.jsonl` — need to verify the exact
    log file path in the eval run directory before running.
