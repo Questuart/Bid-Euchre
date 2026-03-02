@@ -352,7 +352,7 @@ coverage of competitive dynamics.
 
 | Item | Value |
 |------|-------|
-| gate_status | PASS |
+| gate_status | PROMOTED |
 | Primary artifact | data/artifacts/arc_d/r0/comparator_cis_r0_v4.json |
 | Battery metadata | data/artifacts/arc_d/r0/comparator_battery_r0_v4.json |
 | Extraction script | scripts/internal/extract_comparator_cis.py |

@@ -103,7 +103,7 @@ features. This is counter-intuitive but benign at R0:
    selectivity — the constrained arm only bids on hands where its simple model
    is confident, which happens to yield a higher net per deal.
 
-3. **R0 context.** Both arms are R0-quality models with R² ≈ 0.18–0.22. At
+3. **R0 context.** Both arms are R0-quality models with R² ≈ 0.24–0.29. At
    this early stage, the difference between hand-picked and forward-selected
    features is within noise. The gap is expected to resolve as model complexity
    increases in later rungs.
