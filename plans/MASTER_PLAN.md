@@ -6,7 +6,7 @@
 contract selection analysis, report pipeline infrastructure, R0 report updates, and
 R1 training cycle.
 
-**Last updated by:** B0 threshold protocol + hyperparameter convention (2026-03-01)
+**Last updated by:** B0 threshold sweep RETAIN decision (2026-03-02)
 
 ---
 
@@ -31,19 +31,17 @@ are not finalized, and a critical analysis (contract selection) may require R0 e
 re-runs before reports can be locked. Meanwhile, report pipeline infrastructure (skills,
 chart runner, conventions) can be built in parallel since it's model-agnostic.
 
-**The critical path to R1 now runs through threshold tuning:**
+**Critical path update:** Threshold tuning resolved as RETAIN — B3 now unblocked.
 
 ```
 A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
   │
-  └── B0: Threshold tuning protocol (pre-registered)
+  └── B0: Threshold tuning (COMPLETE — RETAIN, t=0 optimal for R0)
         │
-        ├── ADOPT → implement threshold → re-run R0 evals → B3 report finalization
-        ├── NOTE → record finding → B3 report finalization (no code change)
-        └── RETAIN → keep t=0 → B3 report finalization (no code change)
+        └── B3: R0 report finalization (UNBLOCKED — no code change needed)
 ```
 
-**Parallel tracks:** A2 (pipeline), A3 (C33 ablation) proceed independently of B0.
+**Parallel tracks:** A2 (pipeline), A3 (C33 ablation), B3 (reports) — all unblocked.
 
 ---
 
@@ -54,10 +52,10 @@ A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
 | **A1** | Contract selection Step 0 (oracle) | **COMPLETE** (#472, 2026-03-02) | — |
 | **A2** | Report pipeline infrastructure | NOT STARTED | None — start immediately |
 | **A3** | C33 ablation report refactor | NOT STARTED | None — start immediately |
-| **B0** | Pass-threshold tuning (pre-registered) | NOT STARTED | A1 (complete) — start immediately |
+| **B0** | Pass-threshold tuning (pre-registered) | **COMPLETE** (RETAIN, 2026-03-02) | — |
 | **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
 | **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
-| **B3** | R0 report finalization | BLOCKED | B0 decision (threshold must be decided before R0 reports finalize) |
+| **B3** | R0 report finalization | UNBLOCKED | B0 RETAIN — no code change, proceed to finalize reports |
 | **B4** | Skills testing on R0 data | BLOCKED | A2 + B3 |
 | **C1** | Dual-track + archetype analysis (C6) | BLOCKED | B3 |
 | **C2** | R1 training cycle (PR-R1a) | BLOCKED | B3 |
@@ -410,8 +408,8 @@ or work sequentially — no dependencies between them.
 
 **B2 — R0 Experiment Re-runs** ✗ SKIPPED (no calibrator to validate)
 
-**B3 — R0 Report Finalization** (blocked on B0 — threshold must be decided first)
-- Uses current R0 data (no calibrator re-runs), possibly with adjusted threshold if B0→ADOPT
+**B3 — R0 Report Finalization** (UNBLOCKED — B0 resolved as RETAIN)
+- Uses current R0 data, no threshold change (B0 confirmed t=0 is optimal)
 - Effort: 2 PRs (PR-N1 rung report refactor, PR-N2 companion consistency)
 - Sub-plan: `plans/report_narrative_overlay.md` Phases 1, 2
 - Note: PR-N2 must also update stale v2 comparator data in promotion report and
@@ -452,7 +450,7 @@ or work sequentially — no dependencies between them.
 | Plan File | Governs | Status | Streams |
 |-----------|---------|--------|---------|
 | **`plans/MASTER_PLAN.md`** | All work sequencing | ACTIVE | All |
-| **`plans/r0_pass_threshold_protocol.md`** | B0 pass-threshold tuning | PRE-REGISTERED (v1) | 1 |
+| **`plans/r0_pass_threshold_protocol.md`** | B0 pass-threshold tuning | EXECUTED — RETAIN (v1) | 1 |
 | **`plans/contract_selection_analysis.md`** | Oracle analysis + calibrator | Step 0 COMPLETE, Steps 1–2 SKIPPED (v3) | 1 |
 | **`plans/report_narrative_overlay.md`** | Pipeline, reports, skills, C6 | ACTIVE (684 lines) | 2, 3, 5 |
 | **`plans/c33_ablation_refactor_plan.md`** | C33 report refactor | ACTIVE (1,040 lines) | 4 |
@@ -593,10 +591,10 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 - [ ] A2-e: PR-N5 merged (`/draft-rung-reports` skill)
 - [ ] A3: C33 ablation report refactored with replay diagnostics
 
-### Phase B (B0 unblocked, B3 blocked on B0)
-- [ ] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`)
-- [ ] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
-- [ ] B0-c: Threshold decision documented (`docs/04_reports/r0/pass_threshold_decision.md`)
+### Phase B (B0 COMPLETE — RETAIN, B3 unblocked)
+- [x] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`) — #475
+- [x] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
+- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/pass_threshold_decision.md`) — no code change, t=0 optimal for R0
 - [x] B1: Calibrator decision documented — **Path B: SKIPPED** (regret decomposition shows calibrator addresses only 17%)
 - N/A B1-a: ~~Calibrator prototype~~ (skipped)
 - N/A B1-b: ~~Calibrator H2H validation~~ (skipped)
