@@ -927,6 +927,39 @@ def _render_semantic_gate_summary(
                 lines.append(f"- {r}")
             lines.append("")
 
+        # Tier 1 checks table from promotion_decision JSON
+        tier_1 = decision.get("tier_1_checks")
+        if isinstance(tier_1, dict) and tier_1:
+            lines.append("### Tier 1 Checks (Artifact Integrity)")
+            lines.append("")
+            lines.append("| Check | Result |")
+            lines.append("|-------|--------|")
+            for check_name, result in sorted(tier_1.items()):
+                lines.append(f"| {check_name} | {result} |")
+            lines.append("")
+
+        # Gate results from promotion_decision JSON
+        gate_results = decision.get("gate_results")
+        if isinstance(gate_results, dict) and gate_results:
+            lines.append("### Gate Results")
+            lines.append("")
+            for gate_name, gate_data in sorted(gate_results.items()):
+                if isinstance(gate_data, dict):
+                    metric = gate_data.get("metric", gate_name)
+                    passed = gate_data.get("pass", "?")
+                    note = gate_data.get("note", "")
+                    status_str = (
+                        "PASS"
+                        if passed is True
+                        else ("FAIL" if passed is False else str(passed))
+                    )
+                    lines.append(f"- **{metric}:** {status_str}")
+                    if note:
+                        lines.append(f"  - {note}")
+                else:
+                    lines.append(f"- **{gate_name}:** {gate_data}")
+            lines.append("")
+
     # Per-arm gate validation status
     olsa_gate = olsa.get("semantic_gate_val")
     full_gate = olsa_full.get("semantic_gate_val")

@@ -186,6 +186,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
+| `scripts/internal/generate_rung_charts.py` | Rung report chart generation from eval data + model artifacts |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/calibrate_arc_d_thresholds.py` | Arc D gate threshold calibration from H2H null signal |
 | `scripts/internal/run_arc_d_gate.py` | Arc D promotion gate runner |
