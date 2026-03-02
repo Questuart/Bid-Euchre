@@ -45,10 +45,87 @@ improvement the wrapper provides as context for the R1 gate threshold
 | hybrid_olsa | hybrid_r0.json | Gaussian CDF P(make) | 3 constrained |
 | olsa | hybrid_r0.json | Floor-based threshold | 3 constrained |
 
-Both bidders share identical OLS regression coefficients. The only difference
-is the bid/pass decision mechanism.
+**Bid rate definition:** `bid_rate = hands_with_bids / deals_total`
+(evaluator.py:326). In H2H matchups, this is the *competitive* bid rate --
+the fraction of deals where a bidder wins the contested auction. It is NOT
+the intrinsic bid rate, which measures how often the bidder would bid in
+uncontested self-play.
 
-## 3. Results
+For context:
+
+| Context | Bidder | Bid Rate | Source |
+|---------|--------|----------|--------|
+| Comparator self-play (uncontested, vs Glutton) | hybrid_olsa | 19.7% | [comparator_rankings.md](comparator_rankings.md) v4 |
+| C33 H2H (contested auction, vs olsa) | hybrid_olsa | 16.2% | This report |
+| C33 H2H (contested auction, vs hybrid_olsa) | olsa | 83.8% | This report |
+
+The 3.5pp gap between intrinsic (19.7%) and competitive (16.2%) bid rates
+reflects auction interaction: olsa outbids hybrid_olsa in some deals where
+both would bid, because olsa has no EV threshold and bids more aggressively.
+The much larger gap between hybrid_olsa (16.2%) and olsa (83.8%) reflects
+the core architectural difference: the EV wrapper causes hybrid_olsa to pass
+on hands where olsa's floor-based rule would bid.
+
+## 3. Architecture Comparison
+
+### 3.1 Bid/Pass Decision Mechanism
+
+Both bidders share identical OLS regression coefficients from `hybrid_r0.json`.
+The OLS model predicts mu (expected tricks_won) for each of the six candidate
+contracts (4 suits + HIGH + LOW). Both use `floor(mu)` to determine bid amount.
+The only difference is the decision layer that determines whether to bid or
+pass.
+
+**OLSa (floor-based threshold).** OLSa bids whenever `floor(mu) >= 1` and
+the bid exceeds the current high bid (bidding.py:751). It places every hand
+where the OLS model predicts at least 1 trick for some contract. No
+consideration of prediction uncertainty or expected value. This results in
+~100% bid rate in self-play (comparator), as most hands predict at least 1
+trick for some contract.
+
+**HybridOLSa (Gaussian EV wrapper).** HybridOLSa models the full distribution
+of tricks via the residual variance sigma from training. For each candidate bid
+(bidding.py:910-952):
+
+- Applies a continuity correction: `threshold = bid_n - 0.5`
+- Computes z-score: `z = (threshold - mu) / sigma` (capped at +/-6.0)
+- Computes `P(make) = 1 - Phi(z)` via the normal CDF
+- Computes conditional expectations via truncated normal:
+  `E[tricks|make] = mu + sigma * phi(z) / P(make)` and
+  `E[tricks|set] = mu - sigma * phi(z) / P(set)`
+- Computes net-differential payoffs:
+  `make_ev = 2 * E[tricks|make] - 10` and
+  `set_ev = E[tricks|set] - bid_n - 10`
+- Computes `EV = P(make) * make_ev + P(set) * set_ev`
+- Bids only if `EV > 0` (plus risk penalty, which is zero at R0)
+
+The wrapper enables "selective restraint" -- declining bids that OLSa would
+take when P(make) is low and the expected payoff is negative.
+
+| Property | OLSa | HybridOLSa |
+|----------|------|------------|
+| Decision rule | `floor(mu) >= 1` | `EV > 0` |
+| Uses sigma? | No | Yes (per-contract residual variance) |
+| Accounts for uncertainty? | No | Yes (Gaussian model) |
+| Bid rate (comparator, uncontested) | ~100% | 19.7% |
+| Parameters beyond OLS | None | residual_variance, risk_lambda |
+
+### 3.2 Risk Quantification (Analytical CVaR)
+
+The Gaussian model also enables Monte Carlo CVaR-5% computation from the left
+tail of the trick distribution (draws from `Normal(mu, sigma)`, takes mean of
+bottom 5%). This provides per-hand downside risk before
+play, penalizing high-variance hands even when EV is positive. At R0,
+`risk_lambda = 0.0`, so the risk penalty does not affect bid decisions. CVaR
+becomes active when `risk_lambda > 0` (planned for R3+).
+
+Both the EV wrapper and CVaR computation inherit the Gaussian assumption over
+a discrete, bounded [0, 10] support. The global sigma per contract family (no
+heteroscedasticity modeling) likely underestimates tail risk near boundaries.
+The continuity correction (`threshold = bid_n - 0.5`) partially mitigates the
+discrete-continuous mismatch.
+
+## 4. Results
 
 ### Self-Play Sanity
 
@@ -79,11 +156,33 @@ outperforms olsa.
 | Bid rate | 16.2% | 83.8% |
 | Make rate | 89.4% | 76.4% |
 
-See [h2h_battery_analysis.md](h2h_battery_analysis.md) section 2 for the
+These are *competitive* bid rates from H2H (see section 2 for context on
+bid rate semantics). See
+[h2h_battery_analysis.md](h2h_battery_analysis.md) section 2 for the
 full behavioral asymmetry analysis, and notebook `50_r0_matchups` for
 pairwise heatmaps.
 
-## 4. Interpretation
+## 5. Decision Divergence Evidence
+
+*Placeholder for forthcoming analysis from notebook `55_c33_ablation_deep_dive`.*
+
+This section will present empirical evidence for the selective restraint
+mechanism using a decision replay engine that reconstructs both bidders'
+decisions on the same hands. Key planned analyses:
+
+- **Aggregate EV distributions:** Histogram of EV for hands where OLSa would
+  bid, split by whether HybridOLSa agrees or passes (the "restraint zone").
+- **Decision divergence counts:** How many hands fall in each category
+  (both bid, both pass, OLSa-only bid, Hybrid-only bid), faceted by
+  contract_type.
+- **P(make) calibration:** Whether the Gaussian P(make) estimates are
+  directionally correct against actual make rates.
+- **Per-bid-level restraint:** Whether the wrapper mostly filters marginal
+  3-bids or prevents catastrophic high bids.
+- **Worked example:** A single hand showing the step-by-step EV computation
+  and how the wrapper's pass decision avoided a set.
+
+## 6. Interpretation
 
 The Gaussian CDF wrapper adds statistically significant value, but the
 mechanism is **selective restraint** rather than superior prediction:
@@ -93,12 +192,12 @@ mechanism is **selective restraint** rather than superior prediction:
    76.4%.
 
 2. **The wrapper avoids -EV contracts** rather than finding +EV ones the floor
-   misses. Both bidders use the same trick predictions; the difference is
-   entirely in the bid/pass decision boundary.
+   misses. Both bidders use the same trick predictions (section 3); the
+   difference is entirely in the bid/pass decision boundary.
 
 3. **The effect is modest** (+0.21 net_eppd). For context, the gap between
    hybrid_olsa and modeloespecifico is +1.132 net_eppd in single-seat comparator
-   ([comparator_rankings.md](comparator_rankings.md)). The wrapper effect is
+   ([comparator_rankings.md](comparator_rankings.md) v4). The wrapper effect is
    about one-fifth of the gap to the domain-expert ceiling.
 
 4. **Asymmetric deltas** (+0.147 vs -0.266) are expected in H2H with
@@ -106,7 +205,17 @@ mechanism is **selective restraint** rather than superior prediction:
    in most deals, so its advantage is compressed. When olsa is bidder A against
    hybrid_olsa as B, the effect is amplified.
 
-## 5. Impact & Decisions
+5. **Competitive vs intrinsic bid rates:** The 16.2% competitive bid rate
+   understates hybrid_olsa's intrinsic propensity (19.7% in uncontested
+   self-play). The gap reflects auction interaction -- olsa's aggressive
+   bidding captures deals that hybrid_olsa would also bid on. See section 2
+   for the full bid rate disambiguation.
+
+Section 5 (when completed) will provide direct empirical evidence for the
+restraint mechanism, including the EV distribution in the divergence zone,
+P(make) calibration quality, and per-bid-level breakdown.
+
+## 7. Impact & Decisions
 
 - **Architecture validated:** The Gaussian EV wrapper is worth maintaining
   through R1+. Removing it would sacrifice +0.21 net_eppd with no offsetting
@@ -120,7 +229,7 @@ mechanism is **selective restraint** rather than superior prediction:
 - **No action required:** This ablation confirms existing design, not a change
   proposal.
 
-## 6. Arc Context
+## 8. Arc Context
 
 ```
 R0 training (#396)
@@ -137,7 +246,7 @@ R0 training (#396)
   +---> R1 training cycle (PR-R1a, next)
 ```
 
-## 7. Provenance
+## 9. Provenance
 
 | Item | Value |
 |------|-------|
@@ -150,7 +259,7 @@ R0 training (#396)
 | Schema | h2h_battery_v1 |
 | Run ID | arc_d_r0_c33_ablation_42_20260225_170036 |
 
-## 8. Reproduction
+## 10. Reproduction
 
 ```bash
 # C33 ablation (4 matchups, 10k paired deals each)

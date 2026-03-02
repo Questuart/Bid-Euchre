@@ -6,7 +6,7 @@
 contract selection analysis, report pipeline infrastructure, R0 report updates, and
 R1 training cycle.
 
-**Last updated by:** B0 threshold sweep RETAIN decision (2026-03-02)
+**Last updated by:** B3 COMPLETE (#477, 2026-03-02) + C1/C2 unblocked
 
 ---
 
@@ -31,17 +31,20 @@ are not finalized, and a critical analysis (contract selection) may require R0 e
 re-runs before reports can be locked. Meanwhile, report pipeline infrastructure (skills,
 chart runner, conventions) can be built in parallel since it's model-agnostic.
 
-**Critical path update:** Threshold tuning resolved as RETAIN — B3 now unblocked.
+**Critical path update:** B3 complete (#477) — C1/C2 now unblocked.
 
 ```
 A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
   │
   └── B0: Threshold tuning (COMPLETE — RETAIN, t=0 optimal for R0)
         │
-        └── B3: R0 report finalization (UNBLOCKED — no code change needed)
+        └── B3: R0 report finalization (COMPLETE — #477, narrative overlay + v4 consistency)
+              │
+              ├── C1: Dual-track + archetype (UNBLOCKED)
+              └── C2: R1 training cycle (UNBLOCKED)
 ```
 
-**Parallel tracks:** A2 (pipeline), A3 (C33 ablation), B3 (reports) — all unblocked.
+**Parallel tracks:** A2 (pipeline), A3 (C33 ablation), C1 (dual-track), C2 (R1 training) — all unblocked.
 
 ---
 
@@ -50,15 +53,15 @@ A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
 | Phase | Description | Status | Blocker |
 |-------|-------------|--------|---------|
 | **A1** | Contract selection Step 0 (oracle) | **COMPLETE** (#472, 2026-03-02) | — |
-| **A2** | Report pipeline infrastructure | NOT STARTED | None — start immediately |
-| **A3** | C33 ablation report refactor | NOT STARTED | None — start immediately |
+| **A2** | Report pipeline infrastructure | IN PROGRESS | PR #483 |
+| **A3** | C33 ablation report refactor | IN PROGRESS | PR #480 |
 | **B0** | Pass-threshold tuning (pre-registered) | **COMPLETE** (RETAIN, 2026-03-02) | — |
 | **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
 | **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
-| **B3** | R0 report finalization | UNBLOCKED | B0 RETAIN — no code change, proceed to finalize reports |
-| **B4** | Skills testing on R0 data | BLOCKED | A2 + B3 |
-| **C1** | Dual-track + archetype analysis (C6) | BLOCKED | B3 |
-| **C2** | R1 training cycle (PR-R1a) | BLOCKED | B3 |
+| **B3** | R0 report finalization | **COMPLETE** (#477, 2026-03-02) | — |
+| **B4** | Skills testing on R0 data | BLOCKED | A2 |
+| **C1** | Dual-track + archetype analysis (C6) | UNBLOCKED | None — B3 complete |
+| **C2** | R1 training cycle (PR-R1a) | UNBLOCKED | None — B3 complete |
 | **D1** | R1 experiments + reports | BLOCKED | C2 + B4 (reports require validated skills) |
 
 ---
@@ -197,8 +200,8 @@ because R0 reports are the baseline comparison point.
 
 **Sub-plan:** `plans/report_narrative_overlay.md` — Phases 1, 2
 
-**Blocked on:** A2 pipeline infrastructure (PR-N0a, PR-N0b needed for PR-N1).
-Step 0 blocker resolved: A1 complete (#472), Path B selected (no calibrator re-runs).
+**Status:** COMPLETE (#477, 2026-03-02) — narrative overlay + v4 consistency merged.
+Combined PR-N1 + PR-N2 into single PR.
 
 | PR | Work | Estimated Effort | Depends On |
 |----|------|-----------------|------------|
@@ -328,37 +331,32 @@ A1: ✓ COMPLETE (#472)                A2: Pipeline Infrastructure       A3: C33
                                         PR-N4  (narrate skill)
                                         PR-N5  (draft skill)
 
-PHASE B — B0 UNBLOCKED, then B3
+PHASE B — B0 COMPLETE (RETAIN), B3 COMPLETE (#477)
 ──────────────────────────────────────────────────────
               A1 result: Path B
                 │
-    B0: Pass-Threshold Tuning ← NEW (pre-registered protocol)
-        Notebook 56 (sweep on existing oracle data)
-        Decision: ADOPT / NOTE / RETAIN
+    B0: ✓ COMPLETE (RETAIN, t=0 optimal)
+    B1: ✗ SKIPPED (calibrator addresses only 17% of regret)
+    B2: ✗ SKIPPED (no calibrator to validate)
                 │
-    B1: SKIPPED (calibrator addresses only 17% of regret)
-    B2: SKIPPED (no calibrator to validate)
+           B3: ✓ COMPLETE (#477 — narrative overlay + v4 consistency)
                 │
-           B3: R0 Report Finalization ← blocked on B0 decision
-               PR-N1 (rung report)
-               PR-N2 (companion reports)
-                │
-           B4: Skills Testing
+           B4: Skills Testing ← blocked on A2
                PR-N6 (test on R0 data)
 
-PHASE C — BLOCKED ON B3
+PHASE C — UNBLOCKED (B3 complete)
 ──────────────────────────────────────────────────────
-           B3 complete
+    ┌───────────┬───────────┐
+    │           │           │
+C1: Dual-Track  │  C2: R1 Training
+    PR-N7       │      (PR-R1a)
+    (report)    │          │
+                │     R1 experiments
+                │          │
+                │     D1: R1 Reports ← also requires B4 (validated skills)
+                │     (uses A2 skills)
                 │
-    ┌───────────┴───────────┐
-    │                       │
-C1: Dual-Track (C6)    C2: R1 Training
-    PR-N7                   (PR-R1a)
-    (report + viz)          │
-                       R1 experiments
-                            │
-                       D1: R1 Reports ← also requires B4 (validated skills)
-                       (uses A2 skills)
+           (both unblocked, can start immediately)
 ```
 
 ---
@@ -389,7 +387,7 @@ or work sequentially — no dependencies between them.
 
 ### Phase B: Threshold Tuning & R0 Finalization (A1 resolved — Path B)
 
-**B0 — Pass-Threshold Tuning** (UNBLOCKED — A1 complete)
+**B0 — Pass-Threshold Tuning** (COMPLETE — RETAIN, #476)
 - Pre-registered protocol: `plans/r0_pass_threshold_protocol.md` (v1)
 - Sweep 11 threshold candidates on existing oracle data (40k hands, 60/40 train/val split)
 - Primary endpoint: mean net-differential per hand on held-out validation
@@ -406,20 +404,19 @@ or work sequentially — no dependencies between them.
 
 **B2 — R0 Experiment Re-runs** ✗ SKIPPED (no calibrator to validate)
 
-**B3 — R0 Report Finalization** (UNBLOCKED — B0 resolved as RETAIN)
-- Uses current R0 data, no threshold change (B0 confirmed t=0 is optimal)
-- Effort: 2 PRs (PR-N1 rung report refactor, PR-N2 companion consistency)
-- Sub-plan: `plans/report_narrative_overlay.md` Phases 1, 2
-- Note: PR-N2 must also update stale v2 comparator data in promotion report and
-  C33 arc-context (see §7 What's Done)
+**B3 — R0 Report Finalization** ✓ COMPLETE (#477, 2026-03-02)
+- Combined PR-N1 + PR-N2 into single PR #477 (narrative overlay + v4 consistency)
+- All R0 reports updated to v4 comparator data, narrative sections added
+- C1 and C2 now unblocked
 
 **B4 — Skills Testing**
 - Run `/narrate-report` on the finalized R0 rung report (validates the skill)
 - Run `/draft-rung-reports r0` and compare against actual R0 reports
 - Effort: 1 PR (PR-N6)
 - Sub-plan: `plans/report_narrative_overlay.md` P4-2, P5-3
+- Blocked on A2 only (B3 complete)
 
-### Phase C: Post-R0 Finalization (blocked on B3)
+### Phase C: Post-R0 Finalization (UNBLOCKED — B3 complete)
 
 **C1 — Dual-Track + Archetype (C6)**
 - Side-by-side comparator vs H2H analysis
@@ -478,13 +475,14 @@ or work sequentially — no dependencies between them.
 - **R0 notebooks:** 6/6 passing (#428–#438), plus oracle notebook (#472)
 - **Comparator overhaul:** Wave 1 (#463–#465), dual-track code (#466–#468), rankings (#470)
 - **A1 oracle analysis:** COMPLETE (#472) — regret 3.92 [3.89, 3.95], Path B selected
-- **R0 reports:** 7 exist; most need updating before B3 can be marked complete:
-  - `r0_promotion_report.md` — still cites v2 comparator numbers (v2 battery, +2.291 gap)
-  - `model_arc_r0.md` — refactored narrative report (was `model_arc_r0_20260224.md`)
-  - `c33_ablation_report.md` — arc-context references "Comparator battery v2"
-  - `contract_selection_oracle.md` — NEW, current (merged #472)
-  - `comparator_rankings.md` — current (merged #470)
-  - `h2h_battery_analysis.md` — needs v2→v4 comparator cross-references
+- **R0 reports:** All finalized (#477 — narrative overlay + v4 consistency):
+  - `r0_promotion_report.md` — updated to v4 comparator data + narrative
+  - `model_arc_r0.md` — refactored narrative report
+  - `c33_ablation_report.md` — v4 arc-context, ready for A3 refactor
+  - `contract_selection_oracle.md` — current (#472)
+  - `comparator_rankings.md` — current (#470)
+  - `h2h_battery_analysis.md` — v4 cross-references updated
+  - `pass_threshold_decision.md` — current (#476)
 
 ### Key Results (R0)
 
@@ -590,7 +588,7 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 - [ ] A2-e: PR-N5 merged (`/draft-rung-reports` skill)
 - [ ] A3: C33 ablation report refactored with replay diagnostics
 
-### Phase B (B0 COMPLETE — RETAIN, B3 unblocked)
+### Phase B (B0 COMPLETE — RETAIN, B3 COMPLETE)
 - [x] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`) — #475
 - [x] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
 - [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/pass_threshold_decision.md`) — no code change, t=0 optimal for R0
@@ -599,11 +597,11 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 - N/A B1-b: ~~Calibrator H2H validation~~ (skipped)
 - N/A B2: ~~R0 experiments re-run~~ (skipped)
 - N/A B2-a: ~~Calibrator ablation report~~ (skipped)
-- [ ] B3-a: PR-N1 merged (R0 rung report refactor with charts + narrative)
-- [ ] B3-b: PR-N2 merged (companion report consistency = C2b-2)
+- [x] B3-a: PR-N1 merged — combined into #477 (narrative overlay + v4 consistency)
+- [x] B3-b: PR-N2 merged — combined into #477 (narrative overlay + v4 consistency)
 - [ ] B4: PR-N6 merged (skills tested on R0 data)
 
-### Phase C (blocked on B3)
+### Phase C (UNBLOCKED — B3 complete)
 - [ ] C1: PR-N7 merged (dual-track + archetype + scatter = C6)
 - [ ] C2-a: R1 training plan created (`plans/r1_training_plan.md`)
 - [ ] C2-b: R1 training data generated
