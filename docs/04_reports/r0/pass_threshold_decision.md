@@ -129,6 +129,7 @@ No code changes. The pass gate at `bidding.py:1043` remains `best_utility <= 0`.
 
 | Item | Value |
 |------|-------|
+| gate_status | RETAIN (B0 decision gate — no code change) |
 | Protocol | `plans/r0_pass_threshold_protocol.md` v1 |
 | Notebook | `notebooks/arc_d/r0/56_pass_threshold_sweep.py` |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |

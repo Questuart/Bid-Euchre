@@ -444,18 +444,19 @@ print(f"{'=' * 90}")
 # %% [markdown]
 # ## S5: Guardrails & Threshold Selection
 #
-# Apply hard guardrails to discard unsafe candidates, then select `t*` as the
-# candidate with highest `net_diff_mean` among survivors.
+# Apply **hard** guardrails (make_rate, overbid) to discard unsafe candidates.
+# Bid rate cap is **soft** (flagged but not disqualifying per protocol v1 §2.6).
+# Select `t*` as the candidate with highest `net_diff_mean` among survivors.
 
 # %%
-# Apply guardrails
+# Apply guardrails — hard floors disqualify, soft cap is advisory only
 train_sweep["pass_make_rate"] = train_sweep["make_rate"] >= MAKE_RATE_FLOOR
 train_sweep["pass_overbid"] = train_sweep["overbid_regret_share"] <= OVERBID_REGRET_CAP
-train_sweep["pass_bid_rate"] = train_sweep["bid_rate"] <= BID_RATE_CAP
+train_sweep["pass_bid_rate"] = (
+    train_sweep["bid_rate"] <= BID_RATE_CAP
+)  # Soft cap (advisory)
 train_sweep["all_guardrails"] = (
-    train_sweep["pass_make_rate"]
-    & train_sweep["pass_overbid"]
-    & train_sweep["pass_bid_rate"]
+    train_sweep["pass_make_rate"] & train_sweep["pass_overbid"]  # Hard floors only
 )
 
 survivors = train_sweep[train_sweep["all_guardrails"]]
@@ -463,7 +464,7 @@ disqualified = train_sweep[~train_sweep["all_guardrails"]]
 
 print(f"Survivors: {len(survivors)} / {len(train_sweep)} candidates")
 if len(disqualified) > 0:
-    print(f"Disqualified: {list(disqualified['t'].values)}")
+    print(f"Disqualified (hard guardrail violation): {list(disqualified['t'].values)}")
     for _, row in disqualified.iterrows():
         reasons = []
         if not row["pass_make_rate"]:
@@ -472,9 +473,17 @@ if len(disqualified) > 0:
             reasons.append(
                 f"overbid_share={row['overbid_regret_share']:.3f} > {OVERBID_REGRET_CAP}"
             )
-        if not row["pass_bid_rate"]:
-            reasons.append(f"bid_rate={row['bid_rate']:.3f} > {BID_RATE_CAP}")
         print(f"  t={row['t']:.2f}: {', '.join(reasons)}")
+
+# Soft cap advisory: flag but don't disqualify
+soft_cap_violations = train_sweep[
+    ~train_sweep["pass_bid_rate"] & train_sweep["all_guardrails"]
+]
+if len(soft_cap_violations) > 0:
+    print(
+        f"Soft cap advisory (bid_rate > {BID_RATE_CAP}): {list(soft_cap_violations['t'].values)}"
+    )
+    print("  (These remain eligible per protocol v1 §2.6 — soft cap is non-blocking)")
 
 # %%
 # Select t* — best net_diff_mean among survivors
@@ -590,12 +599,12 @@ print(f"  CI excludes 0: {ci_lo > 0 or ci_hi < 0}")
 # %%
 ci_excludes_zero = ci_lo > 0 or ci_hi < 0
 
-# Re-check guardrails on validation
+# Re-check hard guardrails on validation (soft cap is advisory only)
 val_guardrails_pass = (
     val_t_star["make_rate"] >= MAKE_RATE_FLOOR
     and val_t_star["overbid_regret_share"] <= OVERBID_REGRET_CAP
-    and val_t_star["bid_rate"] <= BID_RATE_CAP
 )
+val_soft_cap_warn = val_t_star["bid_rate"] > BID_RATE_CAP
 
 if val_delta > SESOI and ci_excludes_zero and val_guardrails_pass:
     decision = "ADOPT"
@@ -613,7 +622,11 @@ print(f"  Validation delta:     {val_delta:+.4f}")
 print(f"  SESOI:                {SESOI}")
 print(f"  Bootstrap 95% CI:     [{ci_lo:+.4f}, {ci_hi:+.4f}]")
 print(f"  CI excludes 0:        {ci_excludes_zero}")
-print(f"  Val guardrails pass:  {val_guardrails_pass}")
+print(f"  Val guardrails pass:  {val_guardrails_pass} (hard floors)")
+if val_soft_cap_warn:
+    print(
+        f"  Val bid_rate warning:  {val_t_star['bid_rate']:.3f} > {BID_RATE_CAP} (soft cap)"
+    )
 print("  ────────────────────────────────────────")
 print(f"  DECISION:             {decision}")
 print(f"{'=' * 60}")
