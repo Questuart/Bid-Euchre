@@ -262,7 +262,7 @@ This is for self-audit; not a hard guarantee.
 
 DOC COMMAND VALIDATION (required for docs changes that add/modify commands)
 For every command you add or change, include proof for at least one of:
-- `PYTHONPATH=src python <script> --help` (paste relevant flag lines), OR
+- `uv run python <script> --help` (paste relevant flag lines), OR
 - `ls <referenced path>` (for referenced configs/suites/scripts)
 
 STOP CONDITIONS (only)
@@ -741,7 +741,7 @@ IMPLEMENTATION
 
 DOC COMMAND VALIDATION (required for docs that add/modify commands)
 For every command you add or change, include proof for at least one of:
-- `PYTHONPATH=src python <script> --help` (paste relevant flag lines), OR
+- `uv run python <script> --help` (paste relevant flag lines), OR
 - `ls <referenced path>` (for referenced configs/suites/scripts)
 
 ──────────────────────────────────────────────────────────────────────────────

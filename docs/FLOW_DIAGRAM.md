@@ -711,7 +711,7 @@ This separation ensures reproducibility while allowing exploration of different 
 
 ### Run an experiment
 ```bash
-python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42
+uv run python experiments/run_experiment.py --config experiments/configs/quick_test.yaml --seed 42
 ```
 
 ### Validate before PR
@@ -725,7 +725,7 @@ make check  # repo-lint + ruff + pytest
 jupyter notebook notebooks/phase0_bidless/00_health_checks.ipynb
 
 # Automated reporting
-python scripts/generate_report.py --run-id <run_id>
+uv run python scripts/generate_report.py --run-dir <run_id>
 ```
 
 ---

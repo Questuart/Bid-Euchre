@@ -72,7 +72,7 @@ The baseline fixture `data/fixtures/baseline_full_expected.json` contains expect
 Compare a rollup against the fixture:
 
 ```bash
-python scripts/compare_rollup.py \
+uv run python scripts/compare_rollup.py \
   --rollup path/to/rollup.json \
   --fixture data/fixtures/baseline_full_expected.json
 ```
@@ -88,7 +88,7 @@ To update the fixture after intentional changes:
 
 1. Run the baseline_full suite:
    ```bash
-   python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml --seed 42 --n_per 100
+   uv run python scripts/run_suite.py --suite experiments/suites/baseline_full.yaml --seed 42 --n_per 100
    ```
 
 2. Copy the `summary` array from the generated `rollup.json` to the fixture

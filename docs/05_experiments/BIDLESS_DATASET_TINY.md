@@ -15,7 +15,7 @@ Run a small bidless dataset experiment using the canonical runner:
 
 ```bash
 uv run python experiments/run_experiment.py \
-    --config experiments/configs/bidless_dataset_tiny.yaml \
+    --config experiments/configs/bidless_dataset_collection.yaml \
     --seed 42
 ```
 

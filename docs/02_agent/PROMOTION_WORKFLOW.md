@@ -60,7 +60,7 @@ Artifact freeze prevents accidental modification between training and evaluation
 **Usage:**
 ```bash
 # Auto-freeze via CLI (recommended for promotion-track training)
-PYTHONPATH=src python scripts/train_olsa.py \
+uv run python scripts/train_olsa.py \
     --run-dir data/runs/... --seed 42 --output /tmp/artifacts/ --freeze
 ```
 
