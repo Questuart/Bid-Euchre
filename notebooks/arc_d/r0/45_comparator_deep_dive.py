@@ -254,8 +254,8 @@ summary_df
 # ## Assert gates
 
 # %%
-# Gate: 7 bidders loaded
-assert len(bidder_names) == 7, f"Expected 7 bidders, got {len(bidder_names)}"
+# Gate: 8 bidders loaded (v6 roster: 4 heuristic + 2 OLSa + 2 hybrid)
+assert len(bidder_names) == 8, f"Expected 8 bidders, got {len(bidder_names)}"
 
 # Gate: pass deals have net_pts == 0
 assert (

@@ -1,13 +1,24 @@
-# C33 Ablation: hybrid_olsa vs olsa mini-H2H
+# C33 Ablation: 3-arm attribution design for hybrid policy components
 #
-# Tests whether the Gaussian EV decision layer (HybridOLSaBidder) adds value
-# over the simple floor-based decision layer (OLSaBidder) when both use
-# identical regression coefficients from hybrid_r0.json (constrained arm).
+# Tests whether the Gaussian EV decision layer and bid-level search each
+# independently add value over the floor-based OLSaBidder baseline.
+# All three arms use identical regression coefficients from hybrid_r0.json
+# (constrained arm). Only decision logic differs.
 #
-# 4 matchups: self-play for each + both seat rotations of cross-matchup.
+# Arms:
+#   1. olsa             — floor(mu) bid selection (baseline)
+#   2. hybrid_olsa_floor — Gaussian EV wrapper, bid_level_search=false
+#   3. hybrid_olsa      — Gaussian EV wrapper, bid_level_search=true
+#
+# Attribution decomposition:
+#   wrapper effect = hybrid_olsa_floor - olsa
+#   search  effect = hybrid_olsa - hybrid_olsa_floor
+#   combined       = hybrid_olsa - olsa
+#
+# 9 matchups: 3 self-play + C(3,2)×2 = 6 directional cross.
 # All trick play uses GluttonStrategy; only bidding policies vary.
 #
-# 4 matchups × 1 scenario × 10,000 hands = 40,000 hands.
+# 9 matchups × 1 scenario × 10,000 hands = 90,000 hands.
 
 experiment_name: arc_d_r0_c33_ablation
 
@@ -27,6 +38,15 @@ bidding_policies:
     class_name: HybridOLSaBidder
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: true
+      risk_lambda: 0.0  # placeholder — Track D updates after lambda selection
+
+  - name: hybrid_olsa_floor
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: false
+      risk_lambda: 0.0  # placeholder — Track D updates after lambda selection
 
   - name: olsa
     class_name: OLSaBidder
@@ -34,25 +54,50 @@ bidding_policies:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
 
 matchups:
-  # hybrid_olsa self-play
+  # --- Self-play (3) ---
   - matchup_id: hybrid_olsa_self_play
     team0: glutton
     team1: glutton
     seat_bidding_policies: [hybrid_olsa, hybrid_olsa, hybrid_olsa, hybrid_olsa]
 
-  # olsa self-play
+  - matchup_id: hybrid_olsa_floor_self_play
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_floor, hybrid_olsa_floor, hybrid_olsa_floor, hybrid_olsa_floor]
+
   - matchup_id: olsa_self_play
     team0: glutton
     team1: glutton
     seat_bidding_policies: [olsa, olsa, olsa, olsa]
 
-  # hybrid_olsa vs olsa (hybrid as seats 0,2)
+  # --- Cross-matchups: wrapper effect (hybrid_floor vs olsa) ---
+  - matchup_id: hybrid_olsa_floor_vs_olsa
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_floor, olsa, hybrid_olsa_floor, olsa]
+
+  - matchup_id: olsa_vs_hybrid_olsa_floor
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [olsa, hybrid_olsa_floor, olsa, hybrid_olsa_floor]
+
+  # --- Cross-matchups: search effect (hybrid_search vs hybrid_floor) ---
+  - matchup_id: hybrid_olsa_vs_hybrid_olsa_floor
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa, hybrid_olsa_floor, hybrid_olsa, hybrid_olsa_floor]
+
+  - matchup_id: hybrid_olsa_floor_vs_hybrid_olsa
+    team0: glutton
+    team1: glutton
+    seat_bidding_policies: [hybrid_olsa_floor, hybrid_olsa, hybrid_olsa_floor, hybrid_olsa]
+
+  # --- Cross-matchups: combined effect (hybrid_search vs olsa) ---
   - matchup_id: hybrid_olsa_vs_olsa
     team0: glutton
     team1: glutton
     seat_bidding_policies: [hybrid_olsa, olsa, hybrid_olsa, olsa]
 
-  # olsa vs hybrid_olsa (olsa as seats 0,2)
   - matchup_id: olsa_vs_hybrid_olsa
     team0: glutton
     team1: glutton

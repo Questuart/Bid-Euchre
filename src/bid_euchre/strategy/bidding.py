@@ -785,6 +785,147 @@ class OLSaBidder(BiddingPolicy):
         return BidAction.bid(best[1], best[2])
 
 
+def compute_best_bid(
+    mu: float,
+    sigma: float,
+    current_high_bid: int,
+    pass_threshold: float = 0.0,
+    bid_level_search: bool = True,
+    risk_lambda: float = 0.0,
+    seed: int = 42,
+) -> tuple[int, float] | None:
+    """Find the best bid level for a single contract.
+
+    Evaluates legal bid levels and returns the one with highest utility,
+    or None if no level meets the pass threshold. This is the single source
+    of truth for hybrid bid-selection logic — used by HybridOLSaBidder and
+    by notebooks for analysis replay.
+
+    Args:
+        mu: Predicted trick mean from OLSa model.
+        sigma: Predicted trick std dev (residual from training).
+        current_high_bid: Current auction high bid (0 if opening).
+        pass_threshold: Non-negative threshold t; pass if utility <= -t.
+        bid_level_search: If True, search all legal levels. If False,
+            evaluate floor(mu) only (v1 behavior).
+        risk_lambda: CVaR risk penalty weight (0.0 = no penalty).
+        seed: RNG seed for CVaR Monte Carlo draws.
+
+    Returns:
+        (bid_n, utility) for the best legal level with utility > -pass_threshold,
+        or None if no level meets the threshold.
+    """
+    min_bid = max(1, current_high_bid + 1)
+    if min_bid > 10:
+        return None
+
+    if bid_level_search:
+        search_range = range(min_bid, 11)
+    else:
+        # v1 behavior: evaluate floor(mu) only
+        candidate = math.floor(mu)
+        if candidate < min_bid or candidate > 10:
+            return None
+        search_range = range(candidate, candidate + 1)
+
+    best_n = None
+    best_utility = None
+
+    for n in search_range:
+        ev = _compute_ev_static(mu, sigma, n)
+        penalty = _compute_risk_penalty_static(mu, sigma, n, risk_lambda, seed)
+        utility = ev - penalty
+
+        if (
+            best_utility is None
+            or utility > best_utility
+            or (utility == best_utility and n > best_n)
+        ):
+            best_utility = utility
+            best_n = n
+
+    if best_utility is None or best_utility <= -pass_threshold:
+        return None
+
+    return (best_n, best_utility)
+
+
+# ---------------------------------------------------------------------------
+# Static helpers for compute_best_bid (no class dependency)
+# ---------------------------------------------------------------------------
+
+_Z_CAP = 6.0
+_CVAR_SEED_DEFAULT = 42
+_CVAR_DRAWS = 1000
+_CVAR_TAIL = 0.05
+
+
+def _compute_ev_static(mu: float, sigma: float, bid_n: int) -> float:
+    """Compute expected net-differential value using Gaussian model.
+
+    Identical to HybridOLSaBidder._compute_ev but as a module-level function.
+    """
+    if sigma == 0.0:
+        if mu >= bid_n:
+            return 2.0 * mu - 10.0
+        else:
+            return mu - bid_n - 10.0
+
+    threshold = bid_n - 0.5
+    z = (threshold - mu) / sigma
+    z = max(-_Z_CAP, min(_Z_CAP, z))
+
+    p_make = 1.0 - norm.cdf(z)
+    p_set = 1.0 - p_make
+    pdf_z = norm.pdf(z)
+
+    if p_make > 1e-12:
+        e_tricks_make = mu + sigma * pdf_z / p_make
+    else:
+        e_tricks_make = mu
+
+    if p_set > 1e-12:
+        e_tricks_set = mu - sigma * pdf_z / p_set
+    else:
+        e_tricks_set = mu
+
+    make_ev = 2.0 * e_tricks_make - 10.0
+    set_ev = e_tricks_set - bid_n - 10.0
+
+    return p_make * make_ev + p_set * set_ev
+
+
+def _compute_risk_penalty_static(
+    mu: float, sigma: float, bid_n: int, risk_lambda: float, seed: int
+) -> float:
+    """Compute CVaR risk penalty. Module-level version of _compute_risk_penalty."""
+    if risk_lambda == 0.0:
+        return 0.0
+
+    if sigma == 0.0:
+        if mu >= bid_n:
+            net = 2.0 * mu - 10.0
+        else:
+            net = mu - bid_n - 10.0
+        return max(0.0, -net) * risk_lambda
+
+    rng = np.random.RandomState(seed)
+    draws = rng.normal(mu, sigma, _CVAR_DRAWS)
+
+    threshold = bid_n - 0.5
+    nets = np.where(
+        draws >= threshold,
+        2.0 * draws - 10.0,
+        draws - bid_n - 10.0,
+    )
+
+    tail_size = max(1, int(_CVAR_DRAWS * _CVAR_TAIL))
+    sorted_nets = np.sort(nets)
+    cvar = float(sorted_nets[:tail_size].mean())
+
+    return max(0.0, -cvar) * risk_lambda
+
+
 class HybridOLSaBidder(BiddingPolicy):
     """Hybrid OLSa bidder using Gaussian EV with net-differential scoring.
 
@@ -807,9 +948,16 @@ class HybridOLSaBidder(BiddingPolicy):
     _CVAR_TAIL = 0.05
 
     def __init__(
-        self, artifact_path: str, risk_lambda: float = None, name: str = "hybrid_olsa"
+        self,
+        artifact_path: str,
+        risk_lambda: float = None,
+        bid_level_search: bool = False,
+        pass_threshold: float = 0.0,
+        name: str = "hybrid_olsa",
     ):
         super().__init__(name)
+        self.bid_level_search = bool(bid_level_search)
+        self.pass_threshold = float(pass_threshold)
 
         with open(artifact_path) as f:
             artifact = json.load(f)
@@ -1024,19 +1172,21 @@ class HybridOLSaBidder(BiddingPolicy):
                     features = get_hand_features(obs.hand, "suit", contract)
 
                 mu = self._predict(contract_family, features, declaring=True)
-                bid_n = math.floor(mu)
 
-                # Clamp bid to valid range
-                if bid_n < 1 or bid_n > 10:
+                result = compute_best_bid(
+                    mu=mu,
+                    sigma=sigma,
+                    current_high_bid=obs.current_high_bid,
+                    pass_threshold=self.pass_threshold,
+                    bid_level_search=self.bid_level_search,
+                    risk_lambda=self.risk_lambda,
+                    seed=self._CVAR_SEED,
+                )
+
+                if result is None:
                     continue
 
-                # Must exceed current high bid
-                if bid_n <= obs.current_high_bid:
-                    continue
-
-                ev = self._compute_ev(mu, sigma, bid_n)
-                penalty = self._compute_risk_penalty(mu, sigma, bid_n)
-                utility = ev - penalty
+                bid_n, utility = result
 
                 if (
                     best_utility is None
@@ -1050,7 +1200,7 @@ class HybridOLSaBidder(BiddingPolicy):
                     best_bid_n = bid_n
                     best_contract = contract
 
-        if best_utility is None or best_utility <= 0:
+        if best_utility is None:
             return BidAction.pass_bid()
 
         return BidAction.bid(best_bid_n, best_contract)

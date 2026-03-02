@@ -2,7 +2,8 @@
 Unit tests for HybridOLSaBidder.
 
 Tests Gaussian EV computation, sigma=0 degenerate cases, z-cap stability,
-risk penalty, artifact loading, and config registration.
+risk penalty, artifact loading, config registration, bid-level search,
+pass-threshold, and parity between search modes.
 """
 
 import json
@@ -16,6 +17,7 @@ from scipy.stats import norm
 from bid_euchre.strategy.bidding import (
     BiddingObservation,
     HybridOLSaBidder,
+    compute_best_bid,
 )
 
 
@@ -310,3 +312,216 @@ def test_risk_lambda_override(tmp_path: Path):
     # Without override, uses artifact value
     bidder2 = HybridOLSaBidder(path)
     assert bidder2.risk_lambda == 0.5
+
+
+# ---------------------------------------------------------------------------
+# compute_best_bid() standalone function tests
+# ---------------------------------------------------------------------------
+
+
+class TestComputeBestBid:
+    """Tests for the compute_best_bid() standalone function."""
+
+    def test_overcall(self):
+        """With current_high_bid >= floor(mu), search finds levels above the high bid."""
+        # mu=5.5, current_high_bid=5 → floor(5.5)=5, which is NOT > 5
+        # Floor-only mode would skip this contract entirely
+        result_floor = compute_best_bid(5.5, 1.5, 5, bid_level_search=False)
+        assert result_floor is None, "Floor-only should fail when floor(mu) <= high bid"
+
+        # Search mode evaluates levels 6-10, may find positive utility at 6
+        # (though at mu=5.5 this will likely be negative — try stronger hand)
+        result_search = compute_best_bid(8.0, 1.5, 5, bid_level_search=True)
+        assert result_search is not None, "Search should find a bid above high bid"
+        bid_n, utility = result_search
+        assert bid_n >= 6, "Bid must exceed current_high_bid of 5"
+        assert utility > 0, "Selected bid should have positive utility"
+
+    def test_max_utility_picked(self):
+        """When multiple levels have positive utility, picks highest utility (not first)."""
+        # mu=7.0, sigma=1.5, current_high_bid=0 → levels 1-10 all legal
+        # EV is monotonically decreasing in bid_n for fixed mu, so bid_n=1 is best
+        result = compute_best_bid(7.0, 1.5, 0, bid_level_search=True)
+        assert result is not None
+
+        bid_n, utility = result
+        # Verify this is actually the max utility across all levels
+        for n in range(1, 11):
+            from bid_euchre.strategy.bidding import _compute_ev_static
+
+            ev_n = _compute_ev_static(7.0, 1.5, n)
+            assert (
+                utility >= ev_n - 1e-10
+            ), f"bid_n={bid_n} utility={utility:.4f} but bid_n={n} has ev={ev_n:.4f}"
+
+    def test_parity_with_v1(self, tmp_path: Path):
+        """bid_level_search=False produces identical results to v1 choose_bid logic.
+
+        We verify that for the same mu/sigma, compute_best_bid with search=False
+        returns the same bid_n as floor(mu) with the same utility.
+        """
+        mu, sigma = 8.0, 1.5  # floor(8.0) = 8
+        result = compute_best_bid(mu, sigma, 0, bid_level_search=False)
+        assert result is not None
+        bid_n, utility = result
+        assert bid_n == 8, "Floor-only should pick floor(mu)=8"
+
+        # Manually compute v1 EV at floor(mu)
+        from bid_euchre.strategy.bidding import _compute_ev_static
+
+        expected_ev = _compute_ev_static(mu, sigma, 8)
+        assert utility == pytest.approx(expected_ev)
+
+    def test_parity_pass_condition(self):
+        """bid_level_search=False with negative utility returns None (matches v1 PASS)."""
+        # mu=3.0, sigma=1.5 → floor(3)=3, EV at bid_n=3 is negative
+        result = compute_best_bid(3.0, 1.5, 0, bid_level_search=False)
+        # Verify: EV at bid_n=3 is indeed negative
+        from bid_euchre.strategy.bidding import _compute_ev_static
+
+        ev = _compute_ev_static(3.0, 1.5, 3)
+        assert ev < 0, "Sanity: EV should be negative"
+        assert result is None, "Should pass when utility is negative"
+
+    def test_pass_threshold(self):
+        """pass_threshold=0.5 rejects bids with utility <= -0.5."""
+        # Use a mu where utility is slightly negative at the only legal level
+        mu, sigma = 4.5, 1.5
+
+        # With t=0.0 (default), slightly negative utility → pass
+        result_strict = compute_best_bid(
+            mu, sigma, 0, pass_threshold=0.0, bid_level_search=False
+        )
+
+        # With t=0.5, bids with utility > -0.5 are accepted
+        result_lenient = compute_best_bid(
+            mu, sigma, 0, pass_threshold=0.5, bid_level_search=False
+        )
+
+        from bid_euchre.strategy.bidding import _compute_ev_static
+
+        ev = _compute_ev_static(mu, sigma, 4)  # floor(4.5) = 4
+        if -0.5 < ev <= 0:
+            # EV is in (-0.5, 0]: strict passes, lenient bids
+            assert result_strict is None
+            assert result_lenient is not None
+        elif ev <= -0.5:
+            # EV is very negative: both pass
+            assert result_strict is None
+            assert result_lenient is None
+        else:
+            # EV > 0: both bid
+            assert result_strict is not None
+            assert result_lenient is not None
+
+    def test_pass_threshold_convention(self):
+        """Verify pass threshold convention: pass if utility <= -t.
+
+        t=0.0 → pass when utility <= 0 (conservative, default).
+        t>0 → pass when utility <= -t (more aggressive, accepts slight negatives).
+        """
+        # Construct a case with known utility in range (-1, 0)
+        # mu=5.0, sigma=0, bid_n=5: EV = 2*5-10 = 0 → passes at t=0
+        result_t0 = compute_best_bid(
+            5.0, 0.0, 0, pass_threshold=0.0, bid_level_search=False
+        )
+        assert result_t0 is None, "utility=0 should pass at t=0"
+
+        # With t=0.01, utility=0 > -0.01 → bids
+        result_t001 = compute_best_bid(
+            5.0, 0.0, 0, pass_threshold=0.01, bid_level_search=False
+        )
+        assert result_t001 is not None, "utility=0 should bid at t=0.01"
+
+    def test_lambda_path_reproducible(self):
+        """Nonzero risk_lambda with fixed seed is deterministic."""
+        result1 = compute_best_bid(
+            7.0, 1.5, 0, risk_lambda=1.0, seed=42, bid_level_search=True
+        )
+        result2 = compute_best_bid(
+            7.0, 1.5, 0, risk_lambda=1.0, seed=42, bid_level_search=True
+        )
+        assert result1 == result2, "Same seed should produce identical results"
+
+        # Different seed produces different result (or same — just verify no crash)
+        result3 = compute_best_bid(
+            7.0, 1.5, 0, risk_lambda=1.0, seed=99, bid_level_search=True
+        )
+        assert result3 is not None
+
+    def test_search_all_levels_exhaustive(self):
+        """bid_level_search=True evaluates all legal levels, not just a subset."""
+        # With current_high_bid=0, search should evaluate levels 1-10
+        # Use sigma=0 so EV is deterministic and we can predict exactly
+        mu = 7.0  # sigma=0: make at bid_n<=7, set at bid_n>7
+
+        # bid_n=7: EV = 2*7-10 = 4
+        # bid_n=8: EV = 7-8-10 = -11
+        # bid_n=1: EV = 2*7-10 = 4 (same as 7, but 7 wins on tie-break)
+        result = compute_best_bid(mu, 0.0, 0, bid_level_search=True)
+        assert result is not None
+        bid_n, utility = result
+        # All make-levels (1-7) have EV=4.0; tie-break picks highest bid_n
+        assert bid_n == 7, f"Expected bid_n=7 (tie-break), got {bid_n}"
+        assert utility == pytest.approx(4.0)
+
+    def test_min_bid_boundary(self):
+        """When current_high_bid=9, only bid_n=10 is legal."""
+        result = compute_best_bid(10.0, 0.0, 9, bid_level_search=True)
+        assert result is not None
+        assert result[0] == 10
+
+        # current_high_bid=10 → no legal bids
+        result_none = compute_best_bid(10.0, 0.0, 10, bid_level_search=True)
+        assert result_none is None
+
+
+# ---------------------------------------------------------------------------
+# HybridOLSaBidder integration tests with new params
+# ---------------------------------------------------------------------------
+
+
+def test_bid_level_search_default_is_false(tmp_path: Path):
+    """Default bid_level_search=False preserves v1 behavior."""
+    path = _make_artifact(tmp_path)
+    bidder = HybridOLSaBidder(path)
+    assert bidder.bid_level_search is False
+
+
+def test_pass_threshold_default_is_zero(tmp_path: Path):
+    """Default pass_threshold=0.0."""
+    path = _make_artifact(tmp_path)
+    bidder = HybridOLSaBidder(path)
+    assert bidder.pass_threshold == 0.0
+
+
+def test_bidder_with_bid_level_search(tmp_path: Path):
+    """HybridOLSaBidder with bid_level_search=True produces a bid action."""
+    path = _make_artifact(tmp_path, suit_bias=8.0)  # Strong hand
+    bidder = HybridOLSaBidder(path, bid_level_search=True)
+
+    from bid_euchre.core.cards import Card
+
+    hand = [Card("S", "A")] * 10
+    obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+    action = bidder.choose_bid(obs)
+    assert not action.is_pass(), "Strong hand with search should bid"
+
+
+def test_bidder_parity_search_false(tmp_path: Path):
+    """bid_level_search=False + pass_threshold=0 reproduces v1 behavior exactly."""
+    path = _make_artifact(tmp_path, suit_bias=8.0)
+
+    bidder_v1 = HybridOLSaBidder(path)  # defaults: search=False, threshold=0.0
+    bidder_v2 = HybridOLSaBidder(path, bid_level_search=False, pass_threshold=0.0)
+
+    from bid_euchre.core.cards import Card
+
+    hand = [Card("S", "A")] * 10
+    obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+
+    action_v1 = bidder_v1.choose_bid(obs)
+    action_v2 = bidder_v2.choose_bid(obs)
+
+    assert action_v1.n == action_v2.n
+    assert action_v1.contract == action_v2.contract
