@@ -27,6 +27,7 @@ docs/04_reports/
     measurement_integrity_r0.md  (methodology review)
     phase0_to_r0_progression.md  (Phase 0→R0 progression)
     dual_track_analysis.md       (dual-track + archetype analysis)
+    r0_retrospective.md          (development process retrospective)
     archive/                     (superseded revisions)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
@@ -48,6 +49,7 @@ docs/04_reports/
 | [r0/measurement_integrity_r0.md](r0/measurement_integrity_r0.md) | 2026-02-26 | Methodology limitations + deferral costs (L1-L3 resolved/partially resolved) |
 | [r0/phase0_to_r0_progression.md](r0/phase0_to_r0_progression.md) | 2026-03-01 | Phase 0→R0 progression: variance direction check, contract mix shift, role asymmetry |
 | [r0/dual_track_analysis.md](r0/dual_track_analysis.md) | 2026-03-01 | Dual-track rankings, archetype classification, roster scatter plots |
+| [r0/r0_retrospective.md](r0/r0_retrospective.md) | 2026-03-02 | R0 development retrospective: process lessons, course corrections, R1 recommendations |
 
 Superseded revisions in `r0/archive/`.
 
