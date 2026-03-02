@@ -1,6 +1,6 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Version:** 3.4 (Drift-Resilient, Discovery-Driven)
+**Version:** 3.5 (Drift-Resilient, Discovery-Driven)
 **Last Updated:** February 2026
 
 ---
@@ -941,6 +941,7 @@ bid-euchre/
 │   └── performance/             # Benchmarks
 │   # (verify via: find tests -name "test_*.py" | wc -l)
 ├── notebooks/                   # Interactive analysis
+│   ├── arc_d/                   # Arc D evaluation notebooks (r0/, r1/, ...)
 │   ├── phase0_bidless/          # Bidless analysis notebooks
 │   ├── sandbox/                 # Exploratory notebooks and blog charts
 │   └── _templates/              # Notebook templates
@@ -987,6 +988,9 @@ bid-euchre/
 | **HITL Notebook Gates** | #370–376 | Notebook evaluation template, semantic gate engine | 12-check gate (2 tiers), model rung report template, eligibility engine |
 | **Arc D Planning** | #377–388 | OLSa-Hybrid bidder plan, execution plan v3 | 18-PR plan across 10 waves, 31 review decisions |
 | **Arc D Implementation** | #389–396 | Hybrid OLSa bidder, off/def sub-models, gate runner, reporting | HybridOLSaBidder, off/def R5a architecture, Arc D gate runner, 3 opt-in gate checks |
+| **R0 Eval & Reporting** | #397–416 | Eval redesign, comparator battery, R0 baseline lock | JSONL eval parser, comparator battery, R0 promotion, report upgrade |
+| **R0 Notebooks** | #417–438 | Notebook templates, instantiation, review fixes | 5 notebook templates, 9 review-fix PRs, formal reports, auction health |
+| **R0→R1 Transition** | #439–446 | H2H battery, ablation, gate calibration | OLSaBidder dual-format, H2H battery runner, threshold calibration |
 
 **Current state:** Derive via:
 
