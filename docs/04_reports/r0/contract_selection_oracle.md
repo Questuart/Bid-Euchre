@@ -175,6 +175,8 @@ passes?) matrix plus contract agreement:
 | low | 17.9% | 0.8% | +17.1pp |
 | PASS | 7.4% | 80.1% | -72.7pp |
 
+*^A Contract rows: % among non-pass hands. PASS row: % among all hands.*
+
 **Oracle HIGH+LOW combined share: 31.9%** (among non-pass hands) vs model's
 1.4%.
 

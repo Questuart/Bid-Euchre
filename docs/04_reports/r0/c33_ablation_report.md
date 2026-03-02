@@ -97,9 +97,9 @@ mechanism is **selective restraint** rather than superior prediction:
    entirely in the bid/pass decision boundary.
 
 3. **The effect is modest** (+0.21 net_eppd). For context, the gap between
-   hybrid_olsa and modeloespecifico is +0.62 net_eppd in self-play
+   hybrid_olsa and modeloespecifico is +1.132 net_eppd in single-seat comparator
    ([comparator_rankings.md](comparator_rankings.md)). The wrapper effect is
-   about one-third of the gap to the domain-expert ceiling.
+   about one-fifth of the gap to the domain-expert ceiling.
 
 4. **Asymmetric deltas** (+0.147 vs -0.266) are expected in H2H with
    seat-swapping. When hybrid_olsa is bidder A, it yields the auction to olsa

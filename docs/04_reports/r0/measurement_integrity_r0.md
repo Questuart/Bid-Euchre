@@ -24,7 +24,7 @@
 |----|-------------|----------|-------|
 | L1 | Best-of-4 selection effect in comparator | (b) | **Resolved** by single-seat redesign (#466, #470). v4 evaluates one seat at a time. |
 | L2 | LOD positional bias in comparator | (b) | **Resolved** (coupled with L1; same single-seat redesign fixes both) |
-| L3 | bid_rate conflation in comparator | (b) | **Partially resolved** by single-seat mode; bid_rate now measures per-hand propensity in comparator. H2H bid_rate still conflates (team auction-win freq) |
+| L3 | bid_rate conflation in comparator | (a) | **Partially resolved** by single-seat mode; bid_rate now measures per-hand propensity in comparator. H2H bid_rate still conflates (team auction-win freq) |
 | L4 | GluttonStrategy confounding in comparator | (a) | Inherent to self-play design; opponent never bids, inflating declaring-team metrics. Play strategy now harmonized across instruments (C2c, #466). |
 | L5 | Pairwise not round-robin H2H | (a) | H2H battery tests all pairs but not full round-robin tournaments; accepted for efficiency |
 

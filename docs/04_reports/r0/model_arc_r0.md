@@ -12,7 +12,7 @@
 **What is this?** The R0 baseline establishment for Arc D's OLSa-Hybrid bidder
 — the first trainable bidding model in the Bid Euchre framework.
 
-**What did we do?** Six experiment campaigns totaling ~580,000 deals evaluated
+**What did we do?** Six experiment campaigns totaling ~650,000 deals evaluated
 two model arms (OLSa constrained + OLSa_Full promotional) across self-play,
 comparator, and head-to-head batteries. All runs used seed=42 for deterministic
 reproducibility.
@@ -324,8 +324,8 @@ this reflects the larger outcome variance in no-trump contracts (std~3.2 vs
 2.5), not better predictions. MAE values are correspondingly higher for
 HIGH/LOW (2.2 vs 1.8 tricks).
 
-> See notebook 30_feature_outcome_eval, S3.5 for Gaussian diagnostic plots
-> (residual distributions, Q-Q plots, calibration curves).
+> See notebook 30_feature_outcome_eval, S6.1 for Gaussian assumption validation
+> (residual distributions, Q-Q plots, normality tests).
 
 ### OLSa (constrained)
 
@@ -413,7 +413,7 @@ auctions with paired, seat-swapped deals. See
 | modelo vs olsa | +0.016 | [−0.117, +0.147] | Draw |
 
 Dominance ordering: modeloespecifico > hybrid_olsa > olsa ~ olsa_full. The
-self-play gap between modeloespecifico and olsa (+1.93 comparator) does not
+self-play gap between modeloespecifico and olsa (+1.929 comparator) does not
 replicate in H2H (+0.016, CI spans zero) — a divergence explained by
 play-strategy interaction effects in the comparator battery.
 
