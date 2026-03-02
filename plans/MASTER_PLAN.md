@@ -6,7 +6,7 @@
 contract selection analysis, report pipeline infrastructure, R0 report updates, and
 R1 training cycle.
 
-**Last updated by:** B3 COMPLETE (#477, 2026-03-02) + C1/C2 unblocked
+**Last updated by:** B4 COMPLETE (#TBD, 2026-03-02) + A2/A3/C1 COMPLETE
 
 ---
 
@@ -53,14 +53,14 @@ A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
 | Phase | Description | Status | Blocker |
 |-------|-------------|--------|---------|
 | **A1** | Contract selection Step 0 (oracle) | **COMPLETE** (#472, 2026-03-02) | — |
-| **A2** | Report pipeline infrastructure | IN PROGRESS | PR #483 |
-| **A3** | C33 ablation report refactor | IN PROGRESS | PR #480 |
+| **A2** | Report pipeline infrastructure | **COMPLETE** (#483, 2026-03-02) | — |
+| **A3** | C33 ablation report refactor | **COMPLETE** (#480, #TBD) | — |
 | **B0** | Pass-threshold tuning (pre-registered) | **COMPLETE** (RETAIN, 2026-03-02) | — |
 | **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
 | **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
 | **B3** | R0 report finalization | **COMPLETE** (#477, 2026-03-02) | — |
-| **B4** | Skills testing on R0 data | BLOCKED | A2 |
-| **C1** | Dual-track + archetype analysis (C6) | UNBLOCKED | None — B3 complete |
+| **B4** | Skills testing on R0 data | **COMPLETE** (#TBD, 2026-03-02) | — |
+| **C1** | Dual-track + archetype analysis (C6) | **COMPLETE** (#481, 2026-03-02) | — |
 | **C2** | R1 training cycle (PR-R1a) | UNBLOCKED | None — B3 complete |
 | **D1** | R1 experiments + reports | BLOCKED | C2 + B4 (reports require validated skills) |
 
@@ -184,7 +184,6 @@ is model-agnostic and should be built now regardless of the calibrator decision.
 - Generator (`arc_d_report.py`) already supports `chart_dir` parameter — 10 PNG filenames
   are hardcoded in `_render_*()` functions but no script produces them yet
 - Chart manifest: 11 charts mapped to existing `plot_*` functions in `diagnostics/`
-- G1: Bundle comparator pointer stale (v1 → v4)
 - G2: Bundle has no H2H battery reference
 - G3: Report §8 (Semantic Gate) doesn't read gate checks from `promotion_decision_r0.json`
 - Skill pattern: see `.claude/skills/reviewing-changes/SKILL.md` for the multi-phase template
@@ -375,15 +374,12 @@ or work sequentially — no dependencies between them.
 - Notebook: `notebooks/arc_d/r0/55_contract_selection_oracle.py`
 - Key finding: pass-threshold regret (82%) dominates contract-selection regret (17%)
 
-**A2 — Report Pipeline Infrastructure**
-- Effort: ~5 PRs across multiple sessions
-- Order: PR-N0a ∥ PR-N0b ∥ PR-N3 → PR-N4 ∥ PR-N5
-- Deliverable: Chart runner, generator fixes, conventions doc, two skills
+**A2 — Report Pipeline Infrastructure** ✓ COMPLETE (#483, 2026-03-02)
+- Delivered: Chart runner, generator fixes, conventions doc, two skills
 - Sub-plan: `plans/report_narrative_overlay.md` Phases 0, 3, 4, 5
 
-**A3 — C33 Ablation Report Refactor**
-- Effort: 1–2 PRs
-- Deliverable: Empirically grounded ablation report with replay diagnostics
+**A3 — C33 Ablation Report Refactor** ✓ COMPLETE (#480 structural refactor, #TBD replay notebook)
+- Delivered: Empirically grounded ablation report with replay diagnostics
 - Sub-plan: `plans/c33_ablation_refactor_plan.md`
 
 ### Phase B: Threshold Tuning & R0 Finalization (A1 resolved — Path B)
@@ -410,18 +406,15 @@ or work sequentially — no dependencies between them.
 - All R0 reports updated to v4 comparator data, narrative sections added
 - C1 and C2 now unblocked
 
-**B4 — Skills Testing**
-- Run `/narrate-report` on the finalized R0 rung report (validates the skill)
-- Run `/draft-rung-reports r0` and compare against actual R0 reports
-- Effort: 1 PR (PR-N6)
+**B4 — Skills Testing** ✓ COMPLETE (#TBD, 2026-03-02)
+- Tested both skills against R0 data, fixed R0 edge cases (missing previous rung)
+- See `plans/b4_skills_testing_notes.md` for detailed findings
 - Sub-plan: `plans/report_narrative_overlay.md` P4-2, P5-3
-- Blocked on A2 only (B3 complete)
 
 ### Phase C: Post-R0 Finalization (UNBLOCKED — B3 complete)
 
-**C1 — Dual-Track + Archetype (C6)**
-- Side-by-side comparator vs H2H analysis
-- Effort: 1 large PR (PR-N7)
+**C1 — Dual-Track + Archetype (C6)** ✓ COMPLETE (#481, 2026-03-02)
+- Delivered: dual_track_analysis.md + 3 roster scatter charts + archetype classification
 - Sub-plan: `plans/report_narrative_overlay.md` Phase 6
 
 **C2 — R1 Training Cycle**
@@ -431,7 +424,7 @@ or work sequentially — no dependencies between them.
 - **Gap:** Create `plans/r1_training_plan.md` before starting — concrete commands,
   validation gates, file paths. Must include threshold re-tuning step (see §Hyperparameter Registry).
 
-### Phase D: R1 Reports (blocked on C2 + B4)
+### Phase D: R1 Reports (blocked on C2 only — B4 complete)
 
 - Run the four-stage pipeline on R1 data
 - Use `/narrate-report` and `/draft-rung-reports` skills from A2
@@ -582,12 +575,12 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 
 ### Phase A (parallel, no blockers)
 - [x] A1: Oracle contract mix computed, regret distribution reported, go/no-go decision made (#472)
-- [ ] A2-a: PR-N0a merged (generator data fixes G1–G3)
-- [ ] A2-b: PR-N0b merged (chart runner script)
-- [ ] A2-c: PR-N3 merged (report conventions + template registry)
-- [ ] A2-d: PR-N4 merged (`/narrate-report` skill)
-- [ ] A2-e: PR-N5 merged (`/draft-rung-reports` skill)
-- [ ] A3: C33 ablation report refactored with replay diagnostics
+- [x] A2-a: PR-N0a merged (generator data fixes G1–G3) — included in #483
+- [x] A2-b: PR-N0b merged (chart runner script) — included in #483
+- [x] A2-c: PR-N3 merged (report conventions + template registry) — included in #483
+- [x] A2-d: PR-N4 merged (`/narrate-report` skill) — included in #483
+- [x] A2-e: PR-N5 merged (`/draft-rung-reports` skill) — included in #483
+- [x] A3: C33 ablation report refactored with replay diagnostics (#480, #TBD)
 
 ### Phase B (B0 COMPLETE — RETAIN, B3 COMPLETE)
 - [x] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`) — #475
@@ -600,10 +593,10 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 - N/A B2-a: ~~Calibrator ablation report~~ (skipped)
 - [x] B3-a: PR-N1 merged — combined into #477 (narrative overlay + v4 consistency)
 - [x] B3-b: PR-N2 merged — combined into #477 (narrative overlay + v4 consistency)
-- [ ] B4: PR-N6 merged (skills tested on R0 data)
+- [x] B4: PR-N6 merged (skills tested on R0 data) — #TBD
 
 ### Phase C (UNBLOCKED — B3 complete)
-- [ ] C1: PR-N7 merged (dual-track + archetype + scatter = C6)
+- [x] C1: PR-N7 merged (dual-track + archetype + scatter = C6) — #481
 - [ ] C2-a: R1 training plan created (`plans/r1_training_plan.md`)
 - [ ] C2-b: R1 training data generated
 - [ ] C2-c: R1 model trained (dual-arm)

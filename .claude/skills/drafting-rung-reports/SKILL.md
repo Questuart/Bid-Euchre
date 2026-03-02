@@ -34,11 +34,14 @@ The user provides:
    gate_thresholds_r{N+1}.json     -- needed for H2H analysis
    ```
 
-3. Read previous rung's reports:
+3. Read previous rung's reports (if N > 0):
    ```bash
    ls docs/04_reports/r{N-1}/
    ```
    Read each report to use as a structural template.
+   **For R0:** There is no previous rung. Use the R0 exemplar reports in
+   `docs/04_reports/r0/` as structural templates (these serve as the canonical
+   examples for all future rungs). Skip any cross-rung comparison steps.
 
 4. Read conventions and templates:
    ```bash
@@ -63,7 +66,8 @@ The user provides:
    uv run python -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json')), indent=2))"
    ```
 
-2. Read the previous rung's promotion report for structural reference.
+2. Read the previous rung's promotion report for structural reference (if N > 0).
+   **For R0:** Use `REPORT_TEMPLATES.md` Section 1 as the sole structural reference.
 
 3. Draft each section following `REPORT_TEMPLATES.md` Section 1:
 
@@ -82,7 +86,7 @@ The user provides:
    Read all 3 eval seed files and tabulate net_eppd, eppd, bid_rate, make_rate.
 
    **Attribution Gap:** Compute and interpret gap direction.
-   Flag with `[NEEDS HUMAN REVIEW]` if gap direction changed from R{N-1}.
+   Flag with `[NEEDS HUMAN REVIEW]` if gap direction changed from R{N-1} (skip for R0).
 
    **Comparator Context:** Placeholder with `[POPULATE FROM COMPARATOR REPORT]`
    if comparator report draft is also being generated, otherwise
@@ -105,13 +109,16 @@ The user provides:
    uv run python -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/comparator_cis_r{N}_v4.json')), indent=2))"
    ```
 
-2. Read the previous rung's comparator_rankings.md for structure.
+2. Read the previous rung's comparator_rankings.md for structure (if N > 0).
+   **For R0:** Use `REPORT_TEMPLATES.md` Section 2 as the sole structural reference.
 
 3. Draft 9 sections following `REPORT_TEMPLATES.md` Section 2:
 
-   **Summary:** Identify tiers from net_eppd values. Note rank changes from R{N-1}.
+   **Summary:** Identify tiers from net_eppd values. Note rank changes from R{N-1}
+   (skip cross-rung comparison for R0 — this is the first ranking).
 
-   **Methodology:** Copy from previous rung, update deal counts and bidder count.
+   **Methodology:** Copy from previous rung (if N > 0), update deal counts and bidder
+   count. For R0, write methodology from scratch using `REPORT_TEMPLATES.md`.
 
    **Rankings Table:** Build from CI data: bidder, net_eppd, CI, bid_rate, make_rate.
    Sort by net_eppd descending.
@@ -121,11 +128,13 @@ The user provides:
 
    **Pairwise Statistical Significance:** Compute CI overlap matrix.
 
-   **Behavioral Profiles:** Draft using R{N-1} descriptions as base.
+   **Behavioral Profiles:** Draft using R{N-1} descriptions as base (if N > 0).
+   For R0, write fresh profiles from the metrics data.
    Flag any bidders whose metrics changed significantly with `[REVIEW]`.
    Flag new bidders with `[NEW BIDDER -- NEEDS PROFILE]`.
 
-   **Key Observations:** Compare R{N} rankings to R{N-1}.
+   **Key Observations:** Compare R{N} rankings to R{N-1} (if N > 0).
+   For R0, note the initial tier structure and key findings.
    Note rank changes, tier changes, new bidders.
 
    **Auction-Pressure Sensitivity:** Mark as `[DEFERRED]` if no 4-way data.
@@ -152,7 +161,8 @@ The user provides:
    "
    ```
 
-2. Read previous rung's H2H analysis for structure.
+2. Read previous rung's H2H analysis for structure (if N > 0).
+   **For R0:** Use `REPORT_TEMPLATES.md` Section 3 as the sole structural reference.
 
 3. Draft 8 sections following `REPORT_TEMPLATES.md` Section 3:
 
@@ -174,7 +184,7 @@ The user provides:
 
    **Conclusions:** Draft findings. Flag with `[NEEDS HUMAN REVIEW]`:
    - Any self-play cells failing sanity (delta != ~0)
-   - Threshold drift from previous rung
+   - Threshold drift from previous rung (skip for R0 — first rung)
    - Unexpected dominance reversals
 
    **Reproduction:** Commands with seeds.
@@ -189,7 +199,8 @@ The user provides:
 
 1. Read all available artifacts to understand evaluation scope.
 
-2. Read previous rung's measurement integrity review.
+2. Read previous rung's measurement integrity review (if N > 0).
+   **For R0:** There are no carry-forward items. All limitations are new.
 
 3. Read the measurement integrity template:
    ```bash
@@ -203,9 +214,9 @@ The user provides:
    **Evaluation Batteries:** Inventory all batteries run, with deal counts.
 
    **Known Methodological Limitations:**
-   - Carry forward all unresolved (b)-class items from R{N-1}
-   - Update resolution status for any items fixed in this rung
-   - Identify new limitations introduced by R{N} changes
+   - Carry forward all unresolved (b)-class items from R{N-1} (skip for R0)
+   - Update resolution status for any items fixed in this rung (skip for R0)
+   - Identify new limitations introduced by R{N} changes (all items are new for R0)
    - Classify each: (a) accepted, (b) deferred, (c) blocker
 
    **Deferral Cost Descriptions:**
