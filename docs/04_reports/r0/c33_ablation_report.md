@@ -181,19 +181,20 @@ vs 76.1-76.4%) drives the advantage.
 
 #### Per-Contract-Type Wrapper Effect
 
-The pooled +0.21 net_eppd may hide contract-type variation. Since sigma
-differs by contract family in the artifact, the wrapper's selectivity
-differs too. Per-contract wrapper effect computed from notebook
-`57_c33_ablation_deep_dive` (Tier A restraint rate, Tier B net_eppd where
-available):
+The pooled +0.21 net_eppd may hide contract-type variation. The wrapper's
+selectivity differs by contract family because residual sigma differs
+(from `hybrid_r0.json`):
 
-| Contract Type | Restraint Rate | Notes |
-|---------------|----------------|-------|
-| suit | High | Dominant contract; most restraint zone hands are suit bids |
-| high | Variable | Fewer observations; sigma larger than suit |
-| low | Variable | Fewest observations; sigma largest |
+| Contract Type | Residual Variance | Sigma | Restraint Implications |
+|---------------|-------------------|-------|------------------------|
+| suit | 2.339 | 1.530 | Lowest sigma → tightest P(make) estimates → most precise restraint. Dominant contract (98.3% of R0 bids), so most restraint zone hands are suit bids. |
+| high | 2.877 | 1.696 | 11% wider sigma → more hands pushed below EV=0 threshold. Fewer observations in R0 data. |
+| low | 2.898 | 1.702 | Widest sigma → broadest restraint zone. Fewest observations. |
 
-(Exact values depend on run data; see notebook S6 summary for current numbers.)
+Higher sigma widens the Gaussian uncertainty band around mu, pushing more
+hands below the EV=0 threshold and into the restraint zone. Tier A
+restraint rates and Tier B per-contract net_eppd breakdowns are in
+notebook `57_c33_ablation_deep_dive` sections S4 and S6.
 
 ### Behavioral Profile
 

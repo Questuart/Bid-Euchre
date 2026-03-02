@@ -348,9 +348,24 @@ if C33_RUN_DIR and artifact is not None:
         # Filter to cross-matchups only
         records = [r for r in records if is_cross_matchup(r)]
 
-        # Apply deal limit
+        # Apply deal limit with stratified sampling to preserve seat-direction
+        # balance. JSONL files are sequential per matchup, so global truncation
+        # would only keep one direction (e.g., hybrid_olsa_vs_olsa).
         if len(records) > _max_deals:
-            records = records[:_max_deals]
+            from collections import defaultdict
+
+            by_matchup = defaultdict(list)
+            for r in records:
+                by_matchup[r["_matchup_id"]].append(r)
+            n_matchups = len(by_matchup)
+            per_matchup = _max_deals // max(n_matchups, 1)
+            records = []
+            for mid_key in sorted(by_matchup):
+                records.extend(by_matchup[mid_key][:per_matchup])
+            print(
+                f"Stratified sampling: {n_matchups} matchups, "
+                f"{per_matchup} deals each → {len(records)} total"
+            )
 
         if records:
             _data_loaded = True

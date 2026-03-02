@@ -351,11 +351,11 @@ else:
     print("No data for tricks distribution.")
 
 # %% [markdown]
-# # §2.5 Net EPPD Delta Distribution
+# # §2.5 Tricks Delta Distribution
 #
-# Violin plots of per-deal net differential delta (team0 - team1) by matchup,
-# faceted by contract_type. Self-play violins (centered on zero) serve as
-# visual null reference.
+# Violin plots of per-deal tricks delta (mean team0 tricks_won minus mean
+# team1 tricks_won) by matchup, faceted by contract_type. Self-play violins
+# (centered on zero) serve as visual null reference.
 
 # %%
 if not df_all.empty and "contract_type" in df_all.columns:
@@ -409,14 +409,14 @@ if not df_all.empty and "contract_type" in df_all.columns:
             ax.set_yticks(range(len(labels)))
             ax.set_yticklabels(labels, fontsize=8)
             ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
-            ax.set_xlabel("Net Delta (team0 - team1)")
-            ax.set_title(f"Net Delta Distribution: {ctype}")
+            ax.set_xlabel("Tricks Delta (team0 - team1)")
+            ax.set_title(f"Tricks Delta Distribution: {ctype}")
             ax.invert_yaxis()
 
     plt.tight_layout()
     plt.show()
 else:
-    print("No data for net delta distribution.")
+    print("No data for tricks delta distribution.")
 
 # %% [markdown]
 # # §3 Self-Play Fairness
