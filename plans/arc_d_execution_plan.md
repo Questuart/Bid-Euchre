@@ -525,8 +525,8 @@ promotion decision record (`promotion_decision_r1.json`).
 | P2: 2×2 factorial (context + unified model) | DONE or DEFERRED with rationale |
 | P3: Oracle re-analysis at R1 | DONE (re-run oracle notebook on R1 model) |
 | P4: Pass-threshold re-tuning | DONE (re-run B0 protocol on R1 data) |
-| P5: Deferred report sections | DONE or DEFERRED |
-| P6: H2H bid_rate caveat | DONE (verify terminology in R1 reports) |
+| P5: Deferred report sections | DONE or DEFERRED with rationale |
+| P6: H2H bid_rate caveat | DONE or DEFERRED (verify terminology in R1 reports if DONE) |
 
 **Blocking items:** P1, P3, and P4 block promotion — they directly affect
 R1 model quality and decision validity. P2, P5, and P6 may be deferred
