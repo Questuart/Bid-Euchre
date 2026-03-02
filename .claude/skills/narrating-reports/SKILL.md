@@ -43,8 +43,8 @@ The user provides:
 
 5. Read the promotion decision and bundle for context:
    ```bash
-   python3 -c "import json; d=json.load(open('data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json')); print(json.dumps({k:v for k,v in d.items() if k not in ('challenger','olsa_arm','control')}, indent=2))"
-   python3 -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json')), indent=2))"
+   uv run python -c "import json; d=json.load(open('data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json')); print(json.dumps({k:v for k,v in d.items() if k not in ('challenger','olsa_arm','control')}, indent=2))"
+   uv run python -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json')), indent=2))"
    ```
 
 ## Phase 1 -- Executive Summary

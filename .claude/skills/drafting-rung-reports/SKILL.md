@@ -60,7 +60,7 @@ The user provides:
 
 1. Read the promotion decision JSON:
    ```bash
-   python3 -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json')), indent=2))"
+   uv run python -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/promotion_decision_r{N}.json')), indent=2))"
    ```
 
 2. Read the previous rung's promotion report for structural reference.
@@ -102,7 +102,7 @@ The user provides:
 
 1. Read the comparator CI JSON to get ranking data:
    ```bash
-   python3 -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/comparator_cis_r{N}_v4.json')), indent=2))"
+   uv run python -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/comparator_cis_r{N}_v4.json')), indent=2))"
    ```
 
 2. Read the previous rung's comparator_rankings.md for structure.
@@ -143,7 +143,7 @@ The user provides:
 
 1. Read H2H battery JSON files:
    ```bash
-   python3 -c "
+   uv run python -c "
    import json
    for fn in ['h2h_battery_quick_v2.json', 'h2h_battery_full_v2.json']:
        with open(f'data/artifacts/arc_d/r{N}/{fn}') as f:

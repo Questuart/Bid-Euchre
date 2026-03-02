@@ -62,7 +62,12 @@ def _load_eval_df(eval_dir: Path) -> pd.DataFrame:
         logger.error("No JSONL files in: %s", log_dir)
         sys.exit(1)
 
-    # Use the first (usually only) JSONL file
+    if len(jsonl_files) > 1:
+        logger.warning(
+            "Multiple JSONL files found in %s; using first: %s",
+            log_dir,
+            jsonl_files[0].name,
+        )
     log_path = jsonl_files[0]
     logger.info("Loading eval data from: %s", log_path)
     return build_eval_dataset(log_path)
@@ -492,7 +497,7 @@ def main() -> None:
         # Fallback: use CWD
         base_dir = Path.cwd()
 
-    logger.info("Rung: %s", args.rung)
+    logger.info("Rung: %s (used in chart titles)", args.rung)
     logger.info("Eval dir: %s", args.eval_dir)
     logger.info("Bundle: %s", args.bundle)
     logger.info("Base dir: %s", base_dir)
