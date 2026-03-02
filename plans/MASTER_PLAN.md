@@ -308,7 +308,8 @@ calibrator question arose. **Create a detailed PR-R1a sub-plan when R0 is finali
 
 **R1 design priorities from A1 oracle analysis:**
 See `plans/r1_follow_ups.md` for the complete prioritized list of follow-ups,
-including experimental designs, ablation protocols, and deferred report items.
+including experimental designs, ablation protocols, deferred report items, and
+R0 process lessons (W1–W6) from `docs/04_reports/r0/r0_retrospective.md`.
 
 Summary (details + rationale in follow-ups file):
 - **HIGH/LOW feature enrichment** — #1 priority, addresses 82% of oracle regret

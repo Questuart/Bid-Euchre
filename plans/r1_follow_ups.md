@@ -302,6 +302,27 @@ R1→R2+ comparisons are cleaner than Phase 0→R0 because:
 
 ---
 
+## R0 Process Lessons — Checklist
+
+**Source:** `docs/04_reports/r0/r0_retrospective.md` §5
+**Status:** Review before starting R1 execution (C2)
+
+These are development process recommendations from the R0 retrospective. They do not
+block promotion but should be reviewed and dispositioned before R1 execution begins.
+
+| # | Process Item | Disposition | Notes |
+|---|-------------|-------------|-------|
+| W1 | Pre-register calibration protocols before battery runs | — | Comparator v1→v4 required 4 iterations; define config, controls, and metrics upfront |
+| W2 | Run integration smoke test before large experiment runs | — | Parser bugs (#442, #443, #453) surfaced during battery execution, forcing reruns |
+| W3 | Review notebooks incrementally (per-notebook, not batch) | — | 72 items accumulated across 5 notebooks at R0; fix-forward, not fix-later |
+| W4 | Preserve design-first pattern, reduce plan iterations | — | R0 had 3 plan versions; target 1–2 by leveraging existing conventions |
+| W5 | Automate progression reports | — | = P7 above; implement early in R1 to reduce per-rung overhead |
+| W6 | Expand fail-fast gates into battery orchestration scripts | — | Validate deal counts, schema compatibility, metric completeness before aggregation |
+
+**Disposition values:** DONE / ADOPTED (with evidence) / DEFERRED (with rationale) / NOT APPLICABLE
+
+---
+
 ## Cross-Reference
 
 | Follow-Up | Master Plan Phase | Sub-Plan | Report |
@@ -313,3 +334,4 @@ R1→R2+ comparisons are cleaner than Phase 0→R0 because:
 | Deferred report sections | B3/D1 | `report_narrative_overlay.md` | `comparator_rankings.md` §4, §8 |
 | H2H bid_rate caveat | All | `measurement_integrity_r0.md` L3 | All H2H reports |
 | Rung-to-rung pipeline | Post-A2 | — | `phase0_to_r0_progression.md` (template) |
+| Process lessons (W1–W6) | Pre-C2 | `r0_retrospective.md` §5 | — |
