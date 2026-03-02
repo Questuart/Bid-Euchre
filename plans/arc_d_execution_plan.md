@@ -508,6 +508,30 @@ The 0.01 is the floor, not the fixed threshold.
 Plus guardrails, sensitivity seeds.
 **Promotion authority rests with OLSa_Full only.**
 
+**R1 follow-up gate (pre-promotion checklist):**
+Before R1 can be promoted, all items in `plans/r1_follow_ups.md` must be
+dispositioned. Each item must have one of:
+- **DONE** — implemented and validated in R1
+- **DEFERRED** — explicitly deferred with rationale and target rung
+- **NOT APPLICABLE** — determined not relevant with evidence
+
+This is a human-reviewed checklist, not an automated gate. The disposition
+is recorded in `r1_follow_ups.md` status fields and referenced in the R1
+promotion decision record (`promotion_decision_r1.json`).
+
+| Follow-Up | Required Disposition |
+|-----------|---------------------|
+| P1: HIGH/LOW feature enrichment | DONE (core R1 objective) |
+| P2: 2×2 factorial (context + unified model) | DONE or DEFERRED with rationale |
+| P3: Oracle re-analysis at R1 | DONE (re-run oracle notebook on R1 model) |
+| P4: Pass-threshold re-tuning | DONE (re-run B0 protocol on R1 data) |
+| P5: Deferred report sections | DONE or DEFERRED with rationale |
+| P6: H2H bid_rate caveat | DONE or DEFERRED (verify terminology in R1 reports if DONE) |
+
+**Blocking items:** P1, P3, and P4 block promotion — they directly affect
+R1 model quality and decision validity. P2, P5, and P6 may be deferred
+with documented rationale.
+
 ---
 
 ### Phase R2 -- Opponent Bidding Context
@@ -914,7 +938,7 @@ def promotion_gate(bundle_path, rung_id):
 | Rung | Gate Type | Primary Condition | Additional | Sensitivity |
 |------|-----------|-------------------|------------|-------------|
 | R0 | Auto-promote | All 7 metrics finite (both arms) | None | None |
-| R1 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
+| R1 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails + **follow-up gate** (see `r1_follow_ups.md`) | Both 43+44 < 0 -> HALT |
 | R2 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
 | R3 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
 | R4 | Improvement | net_eppd > control + max(~~0.01~~ 0.180, 1.5\*SE) | Standard guardrails | Both 43+44 < 0 -> HALT |
