@@ -197,8 +197,7 @@ def compute_actual_net(tricks_won: float, bid_n: int) -> float:
     """Compute actual net-differential for a declaring team."""
     if tricks_won >= bid_n:
         return 2.0 * tricks_won - 10.0
-    else:
-        return tricks_won - bid_n - 10.0
+    return tricks_won - bid_n - 10.0
 
 
 # %%
