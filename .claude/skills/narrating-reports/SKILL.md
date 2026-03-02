@@ -29,11 +29,12 @@ The user provides:
    ```
    Read each companion report to understand findings you'll summarize-and-link.
 
-3. Read the previous rung's final report (if exists):
+3. Read the previous rung's final report (if N > 0):
    ```bash
    cat docs/04_reports/r{N-1}/model_arc_r{N-1}.md
    ```
    Use for tone/structure continuity and cross-rung comparisons.
+   **Skip this step for R0** — there is no previous rung.
 
 4. Read conventions:
    ```bash
