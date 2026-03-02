@@ -1261,7 +1261,7 @@ if not df.empty and "is_bidder" in df.columns:
 # # §11 Comparator Battery
 #
 # Ranked net_eppd comparison across heuristic bidders.
-# Data source: comparator_battery key in rung bundle (expected: v4, 7 bidders).
+# Data source: comparator_battery key in rung bundle (expected: v6, 8 bidders).
 # Warns if stale v1 data (5 bidders) is detected.
 
 # %%
@@ -1292,16 +1292,16 @@ if _comparator_data is None and ARTIFACT_DIR:
 if isinstance(_comparator_data, dict) and "bidders" in _comparator_data:
     _comparator_data = _comparator_data["bidders"]
 
-# Version gate: v4 comparator has 7 bidders; v1 had only 5
+# Version gate: v6 comparator has 8 bidders; v4 had 7; v1 had only 5
 if _comparator_data and isinstance(_comparator_data, dict):
     _n_comp_bidders = len(_comparator_data)
-    if _n_comp_bidders < 7:
+    if _n_comp_bidders < 8:
         import warnings
 
         warnings.warn(
-            f"Comparator data has only {_n_comp_bidders} bidders (expected 7 for v4). "
-            "Bundle may reference stale v1 data. Update rung_bundle_r0.json to "
-            "point to comparator_battery_r0_v4.json.",
+            f"Comparator data has only {_n_comp_bidders} bidders (expected 8 for v6). "
+            "Bundle may reference stale data. Update rung_bundle_r0.json to "
+            "point to comparator_battery_r0_v6.json.",
             stacklevel=1,
         )
 

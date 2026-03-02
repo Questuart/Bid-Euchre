@@ -36,6 +36,7 @@ from .bidding import (
     RanktheTank,
     StrictHellRaiser,
     StrictRaiserBidder,  # backward-compat alias
+    compute_best_bid,
 )
 
 # Greedy strategies
@@ -69,6 +70,7 @@ __all__ = [
     "RanktheTank",
     "StrictHellRaiser",
     "StrictRaiserBidder",
+    "compute_best_bid",
     # Baselines
     "BasicStrategy",
     "RandomLegalStrategy",

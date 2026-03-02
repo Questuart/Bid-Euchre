@@ -27,6 +27,7 @@ bidding_policies:
     class_name: HybridOLSaBidder
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: true
 
   - name: olsa
     class_name: OLSaBidder

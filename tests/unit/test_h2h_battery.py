@@ -53,9 +53,9 @@ _SMALL_ROSTER = [
 
 class TestGenerateMatchups:
     def test_generate_matchups_count(self):
-        """7 bidders -> 7^2 = 49 matchups."""
+        """8 bidders -> 8^2 = 64 matchups."""
         matchups = generate_matchups(DEFAULT_ROSTER)
-        assert len(matchups) == 49
+        assert len(matchups) == 64
 
     def test_generate_matchups_small_roster(self):
         """3 bidders -> 3^2 = 9 matchups."""
@@ -66,7 +66,7 @@ class TestGenerateMatchups:
         """Each bidder gets exactly one self-play matchup."""
         matchups = generate_matchups(DEFAULT_ROSTER)
         self_plays = [m for m in matchups if m["bidder_a"] == m["bidder_b"]]
-        assert len(self_plays) == 7
+        assert len(self_plays) == 8
 
         # Each bidder name appears exactly once in self-play
         self_play_names = {m["bidder_a"] for m in self_plays}
@@ -85,8 +85,8 @@ class TestGenerateMatchups:
         for a, b in list(pairs):
             assert (b, a) in pairs, f"Missing reverse rotation for ({a}, {b})"
 
-        # 7 bidders: C(7,2) = 21 pairs, 2 rotations each = 42 cross matchups
-        assert len(cross_matchups) == 42
+        # 8 bidders: C(8,2) = 28 pairs, 2 rotations each = 56 cross matchups
+        assert len(cross_matchups) == 56
 
     def test_generate_matchups_deterministic(self):
         """Same roster -> same matchups every time."""
@@ -98,7 +98,7 @@ class TestGenerateMatchups:
         assert ids1 == ids2
 
     def test_matchup_id_uniqueness(self):
-        """All 49 matchup_ids are unique."""
+        """All 64 matchup_ids are unique."""
         matchups = generate_matchups(DEFAULT_ROSTER)
         ids = [m["matchup_id"] for m in matchups]
         assert len(ids) == len(
@@ -170,8 +170,8 @@ class TestGenerateH2HConfig:
         assert len(config["strategies"]) == 1
         assert config["strategies"][0]["class_name"] == "GluttonStrategy"
 
-        assert len(config["bidding_policies"]) == 7
-        assert len(config["matchups"]) == 49
+        assert len(config["bidding_policies"]) == 8
+        assert len(config["matchups"]) == 64
 
         assert config["scenarios"] == [{"contract_type": None}]
 
@@ -344,8 +344,8 @@ class TestGenerateSummary:
         assert summary["mode"] == "QUICK"
         assert summary["seed"] == 42
         assert summary["n_per"] == 2000
-        assert len(summary["roster"]) == 7
-        assert len(summary["cells"]) == 49
+        assert len(summary["roster"]) == 8
+        assert len(summary["cells"]) == 64
         assert summary["quick_source"] is None
         assert "script" in summary["provenance"]
         assert "git_sha" in summary["provenance"]
@@ -366,7 +366,7 @@ class TestGenerateSummary:
         json_str = json.dumps(summary)
         reloaded = json.loads(json_str)
         assert reloaded["schema"] == "h2h_battery_v2"
-        assert len(reloaded["cells"]) == 49
+        assert len(reloaded["cells"]) == 64
 
 
 # ---------------------------------------------------------------------------

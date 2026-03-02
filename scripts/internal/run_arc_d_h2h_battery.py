@@ -44,14 +44,25 @@ import numpy as np
 import yaml
 
 # ---------------------------------------------------------------------------
-# Default roster: 7 bidders for all-vs-all battery
+# Default roster: 8 bidders for all-vs-all battery
 # ---------------------------------------------------------------------------
 
 DEFAULT_ROSTER = [
     {
         "name": "hybrid_olsa",
         "class_name": "HybridOLSaBidder",
-        "params": {"artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json"},
+        "params": {
+            "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json",
+            "bid_level_search": True,
+        },
+    },
+    {
+        "name": "hybrid_olsa_full",
+        "class_name": "HybridOLSaBidder",
+        "params": {
+            "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+            "bid_level_search": True,
+        },
     },
     {
         "name": "olsa",
@@ -74,7 +85,7 @@ DEFAULT_ROSTER = [
 ]
 
 # Key bidders always included in FULL subset
-KEY_BIDDERS = {"hybrid_olsa", "olsa", "olsa_full"}
+KEY_BIDDERS = {"hybrid_olsa", "hybrid_olsa_full", "olsa", "olsa_full"}
 
 
 # ---------------------------------------------------------------------------
