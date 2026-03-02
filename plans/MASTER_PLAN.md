@@ -53,8 +53,8 @@ A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
 | Phase | Description | Status | Blocker |
 |-------|-------------|--------|---------|
 | **A1** | Contract selection Step 0 (oracle) | **COMPLETE** (#472, 2026-03-02) | — |
-| **A2** | Report pipeline infrastructure | NOT STARTED | None — start immediately |
-| **A3** | C33 ablation report refactor | NOT STARTED | None — start immediately |
+| **A2** | Report pipeline infrastructure | IN PROGRESS | PR #483 |
+| **A3** | C33 ablation report refactor | IN PROGRESS | PR #480 |
 | **B0** | Pass-threshold tuning (pre-registered) | **COMPLETE** (RETAIN, 2026-03-02) | — |
 | **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
 | **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
@@ -387,7 +387,7 @@ or work sequentially — no dependencies between them.
 
 ### Phase B: Threshold Tuning & R0 Finalization (A1 resolved — Path B)
 
-**B0 — Pass-Threshold Tuning** (UNBLOCKED — A1 complete)
+**B0 — Pass-Threshold Tuning** (COMPLETE — RETAIN, #476)
 - Pre-registered protocol: `plans/r0_pass_threshold_protocol.md` (v1)
 - Sweep 11 threshold candidates on existing oracle data (40k hands, 60/40 train/val split)
 - Primary endpoint: mean net-differential per hand on held-out validation

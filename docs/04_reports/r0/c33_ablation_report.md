@@ -45,9 +45,6 @@ improvement the wrapper provides as context for the R1 gate threshold
 | hybrid_olsa | hybrid_r0.json | Gaussian CDF P(make) | 3 constrained |
 | olsa | hybrid_r0.json | Floor-based threshold | 3 constrained |
 
-Both bidders share identical OLS regression coefficients. The only difference
-is the bid/pass decision mechanism.
-
 **Bid rate definition:** `bid_rate = hands_with_bids / deals_total`
 (evaluator.py:326). In H2H matchups, this is the *competitive* bid rate --
 the fraction of deals where a bidder wins the contested auction. It is NOT
@@ -115,8 +112,9 @@ take when P(make) is low and the expected payoff is negative.
 
 ### 3.2 Risk Quantification (Analytical CVaR)
 
-The Gaussian model also enables analytical CVaR-5% computation from the left
-tail of the trick distribution. This provides per-hand downside risk before
+The Gaussian model also enables Monte Carlo CVaR-5% computation from the left
+tail of the trick distribution (draws from `Normal(mu, sigma)`, takes mean of
+bottom 5%). This provides per-hand downside risk before
 play, penalizing high-variance hands even when EV is positive. At R0,
 `risk_lambda = 0.0`, so the risk penalty does not affect bid decisions. CVaR
 becomes active when `risk_lambda > 0` (planned for R3+).
