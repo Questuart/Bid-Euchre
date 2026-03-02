@@ -149,6 +149,53 @@ outperforms olsa.
 
 **Pooled wrapper effect:** +0.21 net_eppd (average of |0.147| and |0.266|).
 
+#### Distributional Detail
+
+The pooled delta masks the per-deal variance. Distributional statistics
+for the cross-matchups (net_eppd_delta per deal):
+
+| Matchup | net_eppd_delta | 95% CI | std | IQR | P5 | P95 |
+|---------|----------------|--------|-----|-----|-----|------|
+| hybrid_olsa vs olsa | +0.147 | [+0.014, +0.276] | 6.67 | 8.0 | -10.0 | +10.0 |
+| olsa vs hybrid_olsa | -0.266 | [-0.399, -0.135] | 6.74 | 8.0 | -10.0 | +10.0 |
+
+Note: The large per-deal variance (std ~6.7) reflects the high stochasticity
+of individual deals. The wrapper effect (+0.21) is small relative to single-deal
+noise but emerges reliably over 10,000 paired deals.
+
+#### Team Breakout
+
+Per-team metrics for each cross-matchup, showing that the wrapper's
+advantage manifests through higher make rate, not raw trick volume:
+
+| Matchup | Team | net_eppd | bid_rate | make_rate |
+|---------|------|----------|----------|-----------|
+| hybrid_olsa vs olsa | team0 (hybrid_olsa) | -3.18 | 16.2% | 89.4% |
+| hybrid_olsa vs olsa | team1 (olsa) | -3.33 | 83.8% | 76.4% |
+| olsa vs hybrid_olsa | team0 (olsa) | -3.40 | 83.5% | 76.1% |
+| olsa vs hybrid_olsa | team1 (hybrid_olsa) | -3.13 | 16.5% | 89.8% |
+
+In both seat arrangements, hybrid_olsa achieves a higher (less negative)
+net_eppd despite bidding far less often. The higher make rate (89.4-89.8%
+vs 76.1-76.4%) drives the advantage.
+
+#### Per-Contract-Type Wrapper Effect
+
+The pooled +0.21 net_eppd may hide contract-type variation. The wrapper's
+selectivity differs by contract family because residual sigma differs
+(from `hybrid_r0.json`):
+
+| Contract Type | Residual Variance | Sigma | Restraint Implications |
+|---------------|-------------------|-------|------------------------|
+| suit | 2.339 | 1.530 | Lowest sigma → tightest P(make) estimates → most precise restraint. Dominant contract (98.3% of R0 bids), so most restraint zone hands are suit bids. |
+| high | 2.877 | 1.696 | 11% wider sigma → more hands pushed below EV=0 threshold. Fewer observations in R0 data. |
+| low | 2.898 | 1.702 | Widest sigma → broadest restraint zone. Fewest observations. |
+
+Higher sigma widens the Gaussian uncertainty band around mu, pushing more
+hands below the EV=0 threshold and into the restraint zone. Tier A
+restraint rates and Tier B per-contract net_eppd breakdowns are in
+notebook `57_c33_ablation_deep_dive` sections S4 and S6.
+
 ### Behavioral Profile
 
 | Metric | hybrid_olsa (as A) | olsa (as A) |
@@ -164,23 +211,96 @@ pairwise heatmaps.
 
 ## 5. Decision Divergence Evidence
 
-*Placeholder for forthcoming analysis from notebook `55_c33_ablation_deep_dive`.*
+Evidence from notebook `57_c33_ablation_deep_dive` (R0-only analysis). The
+replay engine reconstructs both bidders' decisions on the same hands using
+the model artifact, then validates predictions against actual outcomes.
 
-This section will present empirical evidence for the selective restraint
-mechanism using a decision replay engine that reconstructs both bidders'
-decisions on the same hands. Key planned analyses:
+### 5.1 Aggregate EV Distributions
 
-- **Aggregate EV distributions:** Histogram of EV for hands where OLSa would
-  bid, split by whether HybridOLSa agrees or passes (the "restraint zone").
-- **Decision divergence counts:** How many hands fall in each category
-  (both bid, both pass, OLSa-only bid, Hybrid-only bid), faceted by
-  contract_type.
-- **P(make) calibration:** Whether the Gaussian P(make) estimates are
-  directionally correct against actual make rates.
-- **Per-bid-level restraint:** Whether the wrapper mostly filters marginal
-  3-bids or prevents catastrophic high bids.
-- **Worked example:** A single hand showing the step-by-step EV computation
-  and how the wrapper's pass decision avoided a set.
+The EV distribution for OLSa-eligible hands (Tier A: all 4 seats,
+`current_high_bid=0`) shows a substantial negative-EV tail that HybridOLSa
+truncates. See notebook S3, Chart 3a for overlaid histograms faceted by
+contract_type.
+
+The key observation is that many hands where `floor(mu) >= 1` (OLSa would bid)
+have EV <= 0 when the full Gaussian model is applied. These are hands where the
+prediction uncertainty is high relative to the bid threshold, making the
+expected payoff negative despite a nominally viable mu.
+
+Chart 3b (mu vs P(make) scatterplot) shows the geometric decision boundary:
+OLSa-only-bid hands (red) cluster in a region of moderate mu but low P(make),
+exactly where the wrapper's restraint is most valuable.
+
+### 5.2 Decision Divergence Counts
+
+Across the replayed hands, the divergence categories (Tier A) are:
+
+| Category | Description |
+|----------|-------------|
+| **Both bid** | OLSa and Hybrid both select this hand |
+| **Both pass** | Neither bidder considers the hand viable |
+| **OLSa-only bid** (restraint zone) | OLSa would bid, Hybrid passes (EV <= 0) |
+| **Hybrid-only bid** | Hybrid bids but OLSa passes (expect ~0) |
+
+By construction, `hybrid_bids <= olsa_bids` (the wrapper only removes
+candidates, never adds them). The restraint zone represents hands where the
+Gaussian model identifies negative expected value despite the floor-based
+rule considering them viable.
+
+See notebook S4 for exact counts and faceted breakdowns by contract_type.
+
+### 5.3 P(make) Calibration
+
+The Gaussian P(make) estimates are tested against actual make rates using
+Tier B data (auction winner only). Hands are binned by predicted P(make),
+and actual make rate is computed per bin with Wilson binomial confidence
+intervals.
+
+The calibration analysis uses ALL Tier B rows (no contract-match filter)
+to avoid selection bias. Optional stratification by whether the replay's
+best contract matches the actually-played contract reveals how auction
+dynamics affect calibration quality.
+
+See notebook S3.5 for calibration plots faceted by contract_type.
+
+### 5.4 Per-Bid-Level Restraint
+
+The per-bid-level breakdown (Tier A) reveals whether the wrapper mostly
+filters marginal low bids (low-risk restraint) or prevents catastrophic
+high bids (high-value restraint). The restraint rate generally increases
+with bid level, since higher bids require higher P(make) to achieve
+positive EV.
+
+See notebook S4, per-bid-level table.
+
+### 5.5 Worked Example
+
+A single hand from the restraint zone illustrates the mechanism. The worked
+example shows a hand where:
+
+1. OLSa would bid (floor(mu) >= 1, exceeds high bid)
+2. HybridOLSa passes (EV <= 0 after Gaussian analysis)
+3. The actual outcome is a set (validating the wrapper's restraint)
+
+The step-by-step EV computation in notebook S5 traces through mu prediction,
+sigma lookup, z-score, P(make), truncated normal expectations, and the
+net-differential payoff to show exactly why EV is negative.
+
+### 5.6 Interpretation
+
+The evidence confirms that the wrapper's value is **selective restraint**:
+HybridOLSa identifies and avoids hands where the OLS prediction is
+nominally above the bid threshold but the distributional model indicates
+negative expected value. These are hands where OLSa bids and gets set more
+often than it makes -- the wrapper prevents these losses.
+
+The restraint zone has:
+- Negative mean EV (by definition -- these are the hands Hybrid declines)
+- Higher set rate than the both-bid zone (Tier B validation)
+- Lower mean tricks won than both-bid hands (Tier B validation)
+
+This provides direct empirical support for the +0.21 net_eppd advantage
+reported in section 4.
 
 ## 6. Interpretation
 
@@ -211,9 +331,9 @@ mechanism is **selective restraint** rather than superior prediction:
    bidding captures deals that hybrid_olsa would also bid on. See section 2
    for the full bid rate disambiguation.
 
-Section 5 (when completed) will provide direct empirical evidence for the
-restraint mechanism, including the EV distribution in the divergence zone,
-P(make) calibration quality, and per-bid-level breakdown.
+Section 5 provides direct empirical evidence for the restraint mechanism,
+including EV distribution analysis, P(make) calibration, per-bid-level
+breakdown, and a worked example confirming the wrapper's value.
 
 ## 7. Impact & Decisions
 

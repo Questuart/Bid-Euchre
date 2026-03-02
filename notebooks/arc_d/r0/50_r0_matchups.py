@@ -351,6 +351,74 @@ else:
     print("No data for tricks distribution.")
 
 # %% [markdown]
+# # §2.5 Tricks Delta Distribution
+#
+# Violin plots of per-deal tricks delta (mean team0 tricks_won minus mean
+# team1 tricks_won) by matchup, faceted by contract_type. Self-play violins
+# (centered on zero) serve as visual null reference.
+
+# %%
+if not df_all.empty and "contract_type" in df_all.columns:
+    # Compute per-deal team delta: team0_tricks - team1_tricks
+    _deal_delta = (
+        df_all.groupby(["matchup_id", "deal_id", "contract_type"])
+        .apply(
+            lambda g: pd.Series(
+                {
+                    "delta": (
+                        g[g["team"] == 0]["tricks_won"].mean()
+                        - g[g["team"] == 1]["tricks_won"].mean()
+                    )
+                }
+            )
+        )
+        .reset_index()
+    )
+
+    ctypes = sorted(_deal_delta["contract_type"].unique())
+    matchup_ids = sorted(_deal_delta["matchup_id"].unique())
+    n_panels = max(1, len(ctypes))
+    fig, axes = plt.subplots(
+        1, n_panels, figsize=(6 * n_panels, max(4, len(matchup_ids) * 0.7)), sharey=True
+    )
+    if not hasattr(axes, "__len__"):
+        axes = [axes]
+
+    for ax, ctype in zip(axes, ctypes):
+        ct_data = _deal_delta[_deal_delta["contract_type"] == ctype]
+        violin_data = []
+        labels = []
+        colors = []
+        for mid in matchup_ids:
+            vals = ct_data[ct_data["matchup_id"] == mid]["delta"].values
+            if len(vals) > 0:
+                violin_data.append(vals)
+                labels.append(mid.replace(MODEL_NAME, "R0")[:30])
+                colors.append("#CCCCCC" if "self_play" in mid else "#4CAF50")
+
+        if violin_data:
+            parts = ax.violinplot(
+                violin_data,
+                positions=range(len(violin_data)),
+                vert=False,
+                showmedians=True,
+            )
+            for i, pc in enumerate(parts.get("bodies", [])):
+                pc.set_facecolor(colors[i])
+                pc.set_alpha(0.7)
+            ax.set_yticks(range(len(labels)))
+            ax.set_yticklabels(labels, fontsize=8)
+            ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
+            ax.set_xlabel("Tricks Delta (team0 - team1)")
+            ax.set_title(f"Tricks Delta Distribution: {ctype}")
+            ax.invert_yaxis()
+
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No data for tricks delta distribution.")
+
+# %% [markdown]
 # # §3 Self-Play Fairness
 #
 # R0 self-play: team0 vs team1 delta should be ~0, per contract_type.
