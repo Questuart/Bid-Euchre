@@ -54,6 +54,7 @@ DEFAULT_ROSTER = [
         "params": {
             "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json",
             "bid_level_search": True,
+            "risk_lambda": 0.0,  # placeholder — Track D updates after lambda selection
         },
     },
     {
@@ -62,6 +63,7 @@ DEFAULT_ROSTER = [
         "params": {
             "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
             "bid_level_search": True,
+            "risk_lambda": 0.0,  # placeholder — Track D updates after lambda selection
         },
     },
     {
