@@ -1261,8 +1261,8 @@ if not df.empty and "is_bidder" in df.columns:
 # # §11 Comparator Battery
 #
 # Ranked net_eppd comparison across heuristic bidders.
-# Data source: comparator_battery key in rung bundle or
-# comparator_battery_r0.json alongside the bundle.
+# Data source: comparator_battery key in rung bundle (expected: v4, 7 bidders).
+# Warns if stale v1 data (5 bidders) is detected.
 
 # %%
 _comparator_data = None
@@ -1291,6 +1291,19 @@ if _comparator_data is None and ARTIFACT_DIR:
 # Drill into "bidders" key if present (comparator battery JSON schema)
 if isinstance(_comparator_data, dict) and "bidders" in _comparator_data:
     _comparator_data = _comparator_data["bidders"]
+
+# Version gate: v4 comparator has 7 bidders; v1 had only 5
+if _comparator_data and isinstance(_comparator_data, dict):
+    _n_comp_bidders = len(_comparator_data)
+    if _n_comp_bidders < 7:
+        import warnings
+
+        warnings.warn(
+            f"Comparator data has only {_n_comp_bidders} bidders (expected 7 for v4). "
+            "Bundle may reference stale v1 data. Update rung_bundle_r0.json to "
+            "point to comparator_battery_r0_v4.json.",
+            stacklevel=1,
+        )
 
 if _comparator_data and isinstance(_comparator_data, dict):
     # C48: build full metrics table (all 6 metrics, not just net_eppd)

@@ -98,7 +98,7 @@ runs_dir = Path(RUNS_DIR)
 bidder_names = list(source_a["bidders"].keys())
 
 # MODE-based deal cap (only for fast iteration; FULL uses all data)
-DEAL_CAP = {"SMOKE": 200, "QUICK": 2000, "FULL": None}[MODE]
+DEAL_CAP = {"SMOKE": 30, "QUICK": 2000, "FULL": None}[MODE]
 
 frames = []
 for name in bidder_names:
@@ -140,9 +140,6 @@ print(
 # %%
 # For bid-hands: sum points_won by team, then compute declaring - defending
 # For pass deals: net_pts = 0
-
-# Filter to bidder rows only (is_bidder == True) for bid-hand aggregation
-bid_rows = df[df["is_bidder"] == True].copy()  # noqa: E712
 
 # For bid-hands, we need team-level points. Group by (bidder_name, deal_id, seat_slot)
 # to get one bidder row per deal per seat-slot. The bidder's team points and opponent
@@ -618,12 +615,6 @@ for name in ranked_order:
         mr_lo, mr_hi = mr_est, mr_est
 
     # std(net_pts) — computed on ALL deals (zeros for passes)
-    std_net = (
-        bd["net_pts"].std()
-        if "net_pts" in bd.columns
-        else deals[deals["bidder_name"] == name]["net_pts"].std()
-    )
-    # For pass deals, net_pts isn't in bd directly — compute from deals
     all_net = deals[deals["bidder_name"] == name]["net_pts"]
     std_net = float(all_net.std())
 

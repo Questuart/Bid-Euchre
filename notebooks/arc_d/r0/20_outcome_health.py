@@ -20,8 +20,8 @@
 # %% [markdown]
 # # Outcome Health — Arc D Evaluation
 #
-# **Goal:** Validate outcome distributions, team balance, auction health,
-# and bidder performance from an Arc D eval JSONL log.
+# **Goal:** Validate outcome distributions, team balance, and bidder
+# performance from an Arc D eval JSONL log.
 #
 # **Data source:** JSONL eval logs (primary) or synthetic demo data (CI fallback).
 #
@@ -36,6 +36,7 @@ EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260221_180253"
 MODE = "QUICK"
 RUNG_ID = "r0"
 CHART_OUTPUT_DIR = ""
+SEED = 42
 
 # %% [markdown]
 # # S0 Configuration & Data Loading
@@ -99,7 +100,6 @@ try:
 except ImportError:
     HAS_SCIPY = False
 
-SEED = 42
 MODE_DEAL_COUNTS = {"SMOKE": 30, "QUICK": 2_000, "FULL": 50_000}
 max_deals = MODE_DEAL_COUNTS.get(MODE, 30)
 

@@ -73,7 +73,7 @@ print(f"Working directory: {Path.cwd()}")
 # %%
 import glob as _g
 
-for _p in sorted(_g.glob("data/runs/arc_d_eval*")):
+for _p in sorted(_g.glob("data/runs/arc_d_r0_h2h*")):
     print(_p)
 
 # %%
@@ -553,8 +553,47 @@ else:
 if not df_all.empty:
     matchup_ids = sorted(df_all["matchup_id"].unique())
 
-    # Build summary: for each matchup, compute R0 tricks advantage
+    # Build summary with team breakout: two rows per matchup (team0, team1)
     summary_rows = []
+    for mid in matchup_ids:
+        mdf = df_all[df_all["matchup_id"] == mid]
+        n = mdf["deal_id"].nunique()
+        r0_t = _r0_team(mid)
+
+        for team_id in [0, 1]:
+            team_label = "R0" if team_id == r0_t else "opp"
+            team_tricks = mdf[mdf["team"] == team_id]["tricks_won"].mean()
+
+            # Per contract type breakdown
+            ct_means = {}
+            if "contract_type" in mdf.columns:
+                for ctype in sorted(mdf["contract_type"].unique()):
+                    grp = mdf[
+                        (mdf["contract_type"] == ctype) & (mdf["team"] == team_id)
+                    ]
+                    ct_means[ctype] = (
+                        round(grp["tricks_won"].mean(), 3) if len(grp) > 0 else None
+                    )
+
+            summary_rows.append(
+                {
+                    "matchup": mid,
+                    "team": f"team{team_id} ({team_label})",
+                    "n_deals": n,
+                    "mean_tricks": round(team_tricks, 3),
+                    **{
+                        f"tricks_{ct}": ct_means.get(ct)
+                        for ct in sorted(ct_means.keys())
+                    },
+                }
+            )
+
+    df_summary = pd.DataFrame(summary_rows)
+    print("=== Summary Table (team breakout) ===")
+    print(df_summary.to_string(index=False))
+
+    # Pooled ME delta table (one row per matchup for ranking)
+    delta_rows = []
     for mid in matchup_ids:
         mdf = df_all[df_all["matchup_id"] == mid]
         n = mdf["deal_id"].nunique()
@@ -564,7 +603,6 @@ if not df_all.empty:
         opp_tricks = mdf[mdf["team"] == opp_t]["tricks_won"].mean()
         me_delta = r0_tricks - opp_tricks
 
-        # Per contract type breakdown
         ct_deltas = {}
         if "contract_type" in mdf.columns:
             for ctype in sorted(mdf["contract_type"].unique()):
@@ -573,7 +611,7 @@ if not df_all.empty:
                 ct_opp = grp[grp["team"] == opp_t]["tricks_won"].mean()
                 ct_deltas[ctype] = round(ct_r0 - ct_opp, 3)
 
-        summary_rows.append(
+        delta_rows.append(
             {
                 "matchup": mid,
                 "n_deals": n,
@@ -584,22 +622,58 @@ if not df_all.empty:
             }
         )
 
-    df_summary = pd.DataFrame(summary_rows)
-    print("=== Summary Table ===")
-    print(df_summary.to_string(index=False))
+    df_deltas = pd.DataFrame(delta_rows)
+    print("\n=== ME Delta Table (R0 advantage) ===")
+    print(df_deltas.to_string(index=False))
 
-    # Overall competitive ranking bar chart
-    competitive = df_summary[~df_summary["matchup"].str.contains("self_play")]
+    # Overall competitive ranking bar chart with bootstrap CIs
+    competitive = df_deltas[~df_deltas["matchup"].str.contains("self_play")]
     if not competitive.empty:
+        # Bootstrap 95% CIs on ME delta per matchup
+        rng_rank = np.random.RandomState(SEED)
+        n_boot = 10_000
+        ci_lo_list, ci_hi_list = [], []
+        for mid in competitive["matchup"]:
+            mdf = df_all[df_all["matchup_id"] == mid]
+            r0_t = _r0_team(mid)
+            opp_t = 1 - r0_t
+            # Per-deal delta: R0 tricks - opp tricks
+            deal_agg = mdf.groupby(["deal_id", "team"])["tricks_won"].mean().unstack()
+            if r0_t in deal_agg.columns and opp_t in deal_agg.columns:
+                per_deal_delta = (deal_agg[r0_t] - deal_agg[opp_t]).values
+                boot_means = np.array(
+                    [
+                        rng_rank.choice(
+                            per_deal_delta, size=len(per_deal_delta), replace=True
+                        ).mean()
+                        for _ in range(n_boot)
+                    ]
+                )
+                ci_lo_list.append(np.percentile(boot_means, 2.5))
+                ci_hi_list.append(np.percentile(boot_means, 97.5))
+            else:
+                ci_lo_list.append(np.nan)
+                ci_hi_list.append(np.nan)
+
+        competitive = competitive.copy()
+        competitive["ci_lo"] = ci_lo_list
+        competitive["ci_hi"] = ci_hi_list
+
         fig_rank, ax_rank = plt.subplots(figsize=(10, max(3, len(competitive) * 0.5)))
         colors = ["#4CAF50" if d > 0 else "#F44336" for d in competitive["ME_delta"]]
+        labels = competitive["matchup"].str.replace(MODEL_NAME, "R0")
+        me_vals = competitive["ME_delta"].values
+        xerr_lo = me_vals - competitive["ci_lo"].values
+        xerr_hi = competitive["ci_hi"].values - me_vals
         ax_rank.barh(
-            competitive["matchup"].str.replace(MODEL_NAME, "R0"),
-            competitive["ME_delta"],
+            labels,
+            me_vals,
+            xerr=[xerr_lo, xerr_hi],
             color=colors,
+            capsize=3,
         )
         ax_rank.axvline(0, color="black", linewidth=0.8)
-        ax_rank.set_xlabel("ME Delta (R0 Advantage)")
+        ax_rank.set_xlabel("ME Delta (R0 Advantage) [95% CI]")
         ax_rank.set_title("Competitive Ranking: Tricks Advantage")
         ax_rank.invert_yaxis()
         plt.tight_layout()

@@ -27,8 +27,7 @@
 # **Data source:** JSONL eval logs (primary) or synthetic demo data (CI fallback).
 #
 # **Workflow rules**
-# - This template is COPIED per rung (not parameterized via papermill).
-# - Section 6 is filled per-rung with rung-specific analysis.
+# - This is the R0 rung-specific instance (copied from template, with R0-specific S6 analysis).
 # - Edit the `.py` file (paired, reviewable).
 # - Run `make notebook-sync` before committing.
 # - Keep outputs cleared (`make notebook-check` verifies this).
@@ -39,6 +38,7 @@ ARTIFACT_DIR = "data/artifacts/arc_d/r0"
 MODE = "QUICK"
 RUNG_ID = "r0"
 CHART_OUTPUT_DIR = ""
+SEED = 42
 
 # %% [markdown]
 # # S0 Configuration & Data Loading
@@ -94,7 +94,6 @@ except ImportError:
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
 from bid_euchre.reporting.evaluator import load_eval_metrics
 
-SEED = 42
 MODE_DEAL_COUNTS = {"SMOKE": 30, "QUICK": 2_000, "FULL": 50_000}
 # C2: MODE fallback with warning
 _max_deals = MODE_DEAL_COUNTS.get(MODE, 30)
