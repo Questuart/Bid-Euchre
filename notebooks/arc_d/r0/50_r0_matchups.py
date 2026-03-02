@@ -663,8 +663,8 @@ if not df_all.empty:
         colors = ["#4CAF50" if d > 0 else "#F44336" for d in competitive["ME_delta"]]
         labels = competitive["matchup"].str.replace(MODEL_NAME, "R0")
         me_vals = competitive["ME_delta"].values
-        xerr_lo = me_vals - competitive["ci_lo"].values
-        xerr_hi = competitive["ci_hi"].values - me_vals
+        xerr_lo = np.maximum(me_vals - competitive["ci_lo"].values, 0)
+        xerr_hi = np.maximum(competitive["ci_hi"].values - me_vals, 0)
         ax_rank.barh(
             labels,
             me_vals,
