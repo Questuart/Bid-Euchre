@@ -167,14 +167,18 @@ bid on a given hand.
 | Archetype | Criterion (single-seat) | R0 Bidders |
 |-----------|------------------------|------------|
 | **AGGRESSIVE** | bid_rate > 0.95 AND make_rate < 0.65 | fiveheadfred, rankthetank |
-| **SELECTIVE** | bid_rate < 0.50 | hybrid_olsa, modeloespecifico |
+| **SELECTIVE** | bid_rate < 0.50 | hybrid_olsa |
 | **NEUTRAL** | bid_rate > 0.95 AND make_rate >= 0.65 | stricthellraiser, olsa, olsa_full |
+
+**Override:** modeloespecifico → SELECTIVE† (formal criteria = NEUTRAL; override
+justified in §3.2 assignment table). Threshold criteria are intentionally coarse for
+R0's 7-bidder roster; a continuous selectivity metric may replace them at R1+.
 
 ### 3.2 Archetype Assignment Table
 
 | Bidder | bid_rate | make_rate | Archetype | Notes |
 |--------|----------|-----------|-----------|-------|
-| modeloespecifico | 0.986 | 0.947 | SELECTIVE | bid_rate near 1.0 but functionally selective (see note) |
+| modeloespecifico | 0.986 | 0.947 | SELECTIVE† | Override: formally NEUTRAL by threshold; see note below |
 | hybrid_olsa | 0.197 | 0.886 | SELECTIVE | Only 19.7% of hands pass risk threshold |
 | stricthellraiser | 1.000 | 0.943 | NEUTRAL | Degenerate single-seat mode (always bids 3S) |
 | olsa_full | 1.000 | 0.763 | NEUTRAL | Floor-based threshold, always bids |
@@ -182,19 +186,21 @@ bid on a given hand.
 | fiveheadfred | 1.000 | 0.649 | AGGRESSIVE | Always bids 5S, wins 2/3 |
 | rankthetank | 1.000 | 0.145 | AGGRESSIVE | Catastrophic overbidding post-recalibration |
 
-**Note on modeloespecifico:** Under the formal threshold criteria (bid_rate
-< 0.50), modeloespecifico would be classified as NEUTRAL (bid_rate=0.986).
-However, modeloespecifico is classified as SELECTIVE because it evaluates all
-six contracts and only bids when a hand-quality formula exceeds a minimum
-threshold (3). Its 1.4% pass rate (276/20,000 deals) reflects genuinely weak
-hands that no contract can profit from. More importantly, its behavioral
-profile — highest net_eppd, highest make_rate among high-volume bidders —
-is characteristic of a selective, quality-aware bidder that happens to find
-profitable bids on 98.6% of deals because of its superior hand evaluation.
+**†Note on modeloespecifico override:** The formal threshold criteria
+(bid_rate > 0.95 AND make_rate >= 0.65) place modeloespecifico in NEUTRAL.
+It is overridden to SELECTIVE based on three quantitative observations:
 
-The threshold criteria are intentionally loose for R0 (only 7 bidders). At
-R1+ with more bidders, a continuous selectivity metric (e.g., bid_rate x
-make_rate) may replace the categorical classification.
+1. **Multi-contract evaluation:** evaluates all 6 contracts per hand with a
+   quality threshold (min score ≥ 3), unlike NEUTRAL bidders that bid
+   unconditionally on a single contract
+2. **Highest make_rate (0.947):** exceeds all NEUTRAL bidders (0.749–0.943),
+   consistent with quality-gated bid selection
+3. **Highest net_eppd (+1.587):** 3.5× the next NEUTRAL bidder, suggesting
+   its hand evaluation filters out marginally unprofitable bids
+
+The 1.4% pass rate (276/20,000 deals unprofitable) is small but non-zero —
+modeloespecifico does reject hands. Its behavioral profile is qualitatively
+distinct from the NEUTRAL cluster (always-bid, moderate make_rate).
 
 ### 3.3 H2H Performance by Opponent Archetype
 

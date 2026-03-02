@@ -701,18 +701,19 @@ def _roster_scatter(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Plot each archetype group
-    for archetype, color in ARCHETYPE_COLORS.items():
+    # Plot each archetype group (iterate data archetypes, not dict keys,
+    # so unrecognized labels get a fallback color instead of being silently dropped)
+    for archetype in df["archetype"].unique():
         mask = df["archetype"] == archetype
         subset = df[mask]
-        if subset.empty:
-            continue
+        color = ARCHETYPE_COLORS.get(archetype, "#95a5a6")  # Gray fallback
+        label = archetype if archetype in ARCHETYPE_COLORS else f"{archetype} (other)"
         ax.scatter(
             subset[x_col],
             subset[y_col],
             c=color,
             s=100,
-            label=archetype,
+            label=label,
             edgecolors="black",
             linewidths=0.5,
             zorder=3,
