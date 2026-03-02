@@ -57,7 +57,7 @@ A1: Oracle analysis (COMPLETE — 82% pass-threshold regret)
 | **B0** | Pass-threshold tuning (pre-registered) | NOT STARTED | A1 (complete) — start immediately |
 | **B1** | Contract selection Steps 1–2 (calibrator) | **SKIPPED** (Path B) | — |
 | **B2** | R0 experiment re-runs | **SKIPPED** (Path B) | — |
-| **B3** | R0 report finalization | UNBLOCKED | B0 decision (threshold must be decided before R0 reports finalize) |
+| **B3** | R0 report finalization | BLOCKED | B0 decision (threshold must be decided before R0 reports finalize) |
 | **B4** | Skills testing on R0 data | BLOCKED | A2 + B3 |
 | **C1** | Dual-track + archetype analysis (C6) | BLOCKED | B3 |
 | **C2** | R1 training cycle (PR-R1a) | BLOCKED | B3 |
