@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate rung report charts from eval data and model artifacts.
 
-Produces 10 chart PNGs that the Arc D rung report generator embeds inline
+Produces 11 chart PNGs that the Arc D rung report generator embeds inline
 when ``chart_dir`` is provided.
 
 Usage:
