@@ -177,11 +177,12 @@ because R0 reports are the baseline comparison point.
 
 **Sub-plan:** `plans/report_narrative_overlay.md` — Phases 1, 2
 
-**Blocked on:** Stream 1 Step 0 result (determines whether data changes before finalization)
+**Blocked on:** A2 pipeline infrastructure (PR-N0a, PR-N0b needed for PR-N1).
+Step 0 blocker resolved: A1 complete (#472), Path B selected (no calibrator re-runs).
 
 | PR | Work | Estimated Effort | Depends On |
 |----|------|-----------------|------------|
-| **PR-N1** | R0 rung report refactor | Large doc PR | PR-N0a, PR-N0b, Step 0 |
+| **PR-N1** | R0 rung report refactor | Large doc PR | PR-N0a, PR-N0b |
 | **PR-N2** | Companion report consistency (= C2b-2) | Medium doc PR | PR-N1 |
 
 **Reports to update (Phase 2 = C2b-2):**
@@ -361,7 +362,7 @@ or work sequentially — no dependencies between them.
 - Deliverable: Empirically grounded ablation report with replay diagnostics
 - Sub-plan: `plans/c33_ablation_refactor_plan.md`
 
-### Phase B: Calibrator Decision & R0 Finalization (blocked on A1)
+### Phase B: Calibrator Decision & R0 Finalization (A1 resolved — Path B)
 
 **B1 — Calibrator Build** ✗ SKIPPED (Path B — calibrator addresses only 17% of regret)
 - Gate fired CALIBRATOR_WARRANTED but regret decomposition showed the prescribed
