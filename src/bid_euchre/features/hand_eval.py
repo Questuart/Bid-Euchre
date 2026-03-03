@@ -494,6 +494,16 @@ def get_hand_features(
 # ===========================
 
 
+# ── Derivation: scalar hand score (uniform weighting) ──
+# Source: hand-crafted heuristic for monotonic hand-strength ordering, not learned
+# Formula:
+#   Suit: right bower=120, left bower=110, trump A=100..T=60, offsuit A=50..T=10
+#   HIGH/LOW: (rank_strength + 1) × 10  (rank_strength is 0..4)
+# Assumptions: uniform 10-point spacing gives adequate separation for
+#   threshold-based bidders; not calibrated to expected tricks
+# See also: RanktheTank in strategy/bidding.py, get_hand_features() hand_value
+
+
 def score_hand_scalar(
     hand: List[Card],
     contract_type: str,

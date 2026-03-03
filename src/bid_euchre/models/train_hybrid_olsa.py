@@ -8,6 +8,19 @@ Supports two arms:
   - OLSa (constrained): locked 3/1/1 features matching CONTRACT_FEATURES
   - OLSa_Full: forward-selected from all 39 features
 
+Dual-arm rationale:
+  - OLSa provides an attribution-stable baseline with fixed feature sets
+    (3 suit, 1 high, 1 low) for consistent rung-to-rung comparison.
+  - OLSa_Full is the promotional arm; forward selection via GroupKFold
+    cross-validation (grouped by hand_id to prevent 4-row leakage) finds
+    the best feature subset from all 39 features per contract.
+
+Design choices:
+  - OLS over ridge/regularized: interpretability is primary for Arc D
+    evaluation; regularization was tested but not needed given feature count.
+  - Artifact schema: hybrid_olsa_v1 with per-contract sub-models (weights,
+    bias, feature_names), residual_variance, and risk_lambda fields.
+
 CLI usage (preferred):
     PYTHONPATH=src python scripts/train_hybrid_olsa.py \\
         --run-dir data/runs/<run_id> --seed 42 --output /tmp/hybrid/
