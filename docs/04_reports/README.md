@@ -28,6 +28,7 @@ docs/04_reports/
     phase0_to_r0_progression.md  (Phase 0→R0 progression)
     dual_track_analysis.md       (dual-track + archetype analysis)
     r0_retrospective.md          (development process retrospective)
+    normalizer_offline_screen.md (Track E normalizer pre-screen)
     archive/                     (superseded revisions)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
@@ -50,6 +51,7 @@ docs/04_reports/
 | [r0/phase0_to_r0_progression.md](r0/phase0_to_r0_progression.md) | 2026-03-01 | Phase 0→R0 progression: variance direction check, contract mix shift, role asymmetry |
 | [r0/dual_track_analysis.md](r0/dual_track_analysis.md) | 2026-03-01 | Dual-track rankings, archetype classification, roster scatter plots |
 | [r0/r0_retrospective.md](r0/r0_retrospective.md) | 2026-03-02 | R0 development retrospective: process lessons, course corrections, R1 recommendations |
+| [r0/normalizer_offline_screen.md](r0/normalizer_offline_screen.md) | 2026-03-03 | Track E normalizer pre-screen: NO_GO_DEFER_R1 (accuracy +4% but net_eppd -0.269) |
 
 Superseded revisions in `r0/archive/`.
 
