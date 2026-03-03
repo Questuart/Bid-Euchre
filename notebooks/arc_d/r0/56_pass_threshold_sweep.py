@@ -20,7 +20,10 @@
 # %% [markdown]
 # # Pass-Threshold Tuning Sweep — B0 (v2: bid-level search)
 #
-# **Protocol:** `plans/r0_pass_threshold_protocol.md` v1 (pre-registered)
+# **Protocol:** `plans/r0_pass_threshold_protocol.md` v1 (pre-registered).
+# v2 lineage: `plans/r0_canonical_v2_plan.md` §4a defines a v2 threshold
+# protocol amendment; this notebook uses v1 protocol logic with v2 bid-level
+# search policy (Amendment D: threshold before lambda).
 #
 # **v2 change:** Bid-level search enabled (`bid_level_search=True`). The bidder
 # now searches all legal bid levels (1–10) for each contract, picking the level
@@ -227,12 +230,18 @@ def bid_level_search_vectorized(
     best_bid_n = np.ones(n, dtype=int)
     best_utility = np.full(n, -np.inf)
 
+    # Guard: risk_lambda != 0 requires CVaR penalty implementation (not yet vectorized).
+    # Remove this assert and add penalty logic when lambda tuning is integrated.
+    assert risk_lambda == 0.0, (
+        f"risk_lambda={risk_lambda} but CVaR penalty not implemented in vectorized helper. "
+        "Use compute_best_bid() from bidding.py for non-zero lambda."
+    )
+
     # Iterate ascending; use >= so last (highest n) with max utility wins
     # This matches compute_best_bid() tie-break: prefer higher n on equal utility
     for bid_n in range(1, 11):
         ev = compute_ev_vectorized(mu_vals, sigma, np.full(n, bid_n))
-        # risk_lambda penalty would go here; at R0 lambda=0 so utility=EV
-        utility = ev
+        utility = ev  # At lambda=0, utility = EV (no CVaR penalty)
         better_or_tie = utility >= best_utility
         best_utility = np.where(better_or_tie, utility, best_utility)
         best_bid_n = np.where(better_or_tie, bid_n, best_bid_n)

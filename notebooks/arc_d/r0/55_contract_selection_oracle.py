@@ -277,12 +277,18 @@ def bid_level_search_vectorized(
     best_bid_n = np.ones(n, dtype=int)
     best_utility = np.full(n, -np.inf)
 
+    # Guard: risk_lambda != 0 requires CVaR penalty implementation (not yet vectorized).
+    # Remove this assert and add penalty logic when lambda tuning is integrated.
+    assert risk_lambda == 0.0, (
+        f"risk_lambda={risk_lambda} but CVaR penalty not implemented in vectorized helper. "
+        "Use compute_best_bid() from bidding.py for non-zero lambda."
+    )
+
     # Iterate ascending; use >= so last (highest n) with max utility wins
     # This matches compute_best_bid() tie-break: prefer higher n on equal utility
     for bid_n in range(1, 11):
         ev = compute_ev_vectorized(mu_vals, sigma, np.full(n, bid_n))
-        # risk_lambda penalty would go here; at R0 lambda=0 so utility=EV
-        utility = ev
+        utility = ev  # At lambda=0, utility = EV (no CVaR penalty)
         better_or_tie = utility >= best_utility
         best_utility = np.where(better_or_tie, utility, best_utility)
         best_bid_n = np.where(better_or_tie, bid_n, best_bid_n)
@@ -708,6 +714,52 @@ gate_result = {
     "mode": MODE,
 }
 print(f"\nGate result (JSON): {json.dumps(gate_result, indent=2)}")
+
+# %% [markdown]
+# ### S6b: v2 Normalizer Trigger Check
+#
+# The v2 plan (`plans/r0_canonical_v2_plan.md` §6, Scope Decision #6) defines a
+# **separate** normalizer trigger based on contract-selection regret *share*:
+#
+# > Normalizer conditional — only if oracle decomposition shows
+# > contract-selection regret share ≥ 25%.
+#
+# This is distinct from the Step-0 calibrator gate above. The calibrator gate
+# uses total mean regret (≷ 0.1) to decide if *any* calibrator work is warranted.
+# The normalizer trigger uses the CS regret *share of total regret* to decide
+# if a contract normalizer specifically should be pursued.
+
+# %%
+# Compute CS regret share from decomposition (S4b)
+cs_row = decomp[decomp["regret_category"] == "contract_selection"]
+if len(cs_row) > 0:
+    cs_regret_share = cs_row["pct_total_regret"].iloc[0] / 100.0
+else:
+    cs_regret_share = 0.0
+
+NORMALIZER_TRIGGER_THRESHOLD = 0.25  # 25% of total regret
+
+normalizer_triggered = cs_regret_share >= NORMALIZER_TRIGGER_THRESHOLD
+
+print(f"\n{'=' * 70}")
+print("v2 NORMALIZER TRIGGER CHECK")
+print(f"{'=' * 70}")
+print(f"  CS regret share:      {cs_regret_share:.1%} of total regret")
+print(f"  Trigger threshold:    {NORMALIZER_TRIGGER_THRESHOLD:.0%}")
+print(f"  TRIGGERED:            {normalizer_triggered}")
+if normalizer_triggered:
+    print("  → Contract normalizer track (PR-F) is ACTIVATED")
+    print("  → Normalizer implementation + H2H ablation required before freeze")
+else:
+    print("  → Contract normalizer track SKIPPED")
+    print("  → Record 'not triggered' in normalizer report")
+print(f"{'=' * 70}")
+
+# Add to machine-readable gate result
+gate_result["cs_regret_share"] = round(cs_regret_share, 4)
+gate_result["normalizer_trigger_threshold"] = NORMALIZER_TRIGGER_THRESHOLD
+gate_result["normalizer_triggered"] = normalizer_triggered
+print(f"\nUpdated gate result (JSON): {json.dumps(gate_result, indent=2)}")
 
 # %% [markdown]
 # ## S7: Diagnostic Deep-Dive
