@@ -154,16 +154,14 @@ def check_guardrails(
         every checked guardrail is satisfied.
     """
     violations: list[str] = []
-    if metrics.get("bid_rate", 0) < bid_rate_floor:
-        violations.append(
-            f"bid_rate {metrics['bid_rate']:.4f} < floor {bid_rate_floor}"
-        )
-    if metrics.get("bid_rate", 1) > bid_rate_cap:
-        violations.append(f"bid_rate {metrics['bid_rate']:.4f} > cap {bid_rate_cap}")
-    if metrics.get("make_rate", 0) < make_rate_floor:
-        violations.append(
-            f"make_rate {metrics['make_rate']:.4f} < floor {make_rate_floor}"
-        )
+    bid_rate = metrics.get("bid_rate")
+    make_rate = metrics.get("make_rate")
+    if bid_rate is not None and bid_rate < bid_rate_floor:
+        violations.append(f"bid_rate {bid_rate:.4f} < floor {bid_rate_floor}")
+    if bid_rate is not None and bid_rate > bid_rate_cap:
+        violations.append(f"bid_rate {bid_rate:.4f} > cap {bid_rate_cap}")
+    if make_rate is not None and make_rate < make_rate_floor:
+        violations.append(f"make_rate {make_rate:.4f} < floor {make_rate_floor}")
     return (len(violations) == 0, violations)
 
 
@@ -201,6 +199,9 @@ def bootstrap_paired_delta(
             "Keys must match between baseline and candidate. "
             f"baseline has {len(baseline)} keys, candidate has {len(candidate)} keys."
         )
+
+    if not baseline:
+        raise ValueError("No paired observations")
 
     # Align by key to compute paired deltas
     keys = sorted(baseline.keys())

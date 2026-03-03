@@ -208,6 +208,18 @@ class TestGuardrails:
         assert ok2 is False
         assert len(violations2) == 2
 
+    def test_guardrails_partial_metrics_no_keyerror(self):
+        """check_guardrails with empty dict should not raise KeyError."""
+        passed, violations = check_guardrails({})
+        assert passed is True  # no metrics to violate
+        assert violations == []
+
+    def test_guardrails_only_bid_rate(self):
+        """check_guardrails with only bid_rate should check just that."""
+        passed, violations = check_guardrails({"bid_rate": 0.03})
+        assert passed is False
+        assert len(violations) == 1
+
 
 # ---------------------------------------------------------------------------
 # bootstrap_paired_delta
@@ -246,6 +258,11 @@ class TestBootstrapPairedDelta:
         candidate = {1: 0.0, 3: 1.0}  # key 3 not in baseline
         with pytest.raises(ValueError, match="Keys must match"):
             bootstrap_paired_delta(baseline, candidate)
+
+    def test_bootstrap_empty_dicts_raises(self):
+        """bootstrap_paired_delta with empty dicts should raise ValueError."""
+        with pytest.raises(ValueError, match="No paired observations"):
+            bootstrap_paired_delta({}, {})
 
 
 # ---------------------------------------------------------------------------
