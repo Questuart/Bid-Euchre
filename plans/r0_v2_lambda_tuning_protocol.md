@@ -4,7 +4,7 @@
 **Rung:** R0 v2 (corrected baseline)
 **Date:** 2026-03-02
 **Type:** Pre-registered analysis protocol
-**Status:** PRE-REGISTERED (not yet executed)
+**Status:** COMPLETED — RETAIN lambda=0.0 (H2H confirmed)
 **Governs:** Track D (Lambda Tuning) of R0 Canonical v2
 
 ---
@@ -274,6 +274,7 @@ Key parameters:
 | v1 | 2026-03-02 | Initial protocol | Pre-registered before execution |
 | v2 | 2026-03-02 | Simulation-based tuning (section 8) | Offline replay cannot capture auction dynamics or opponent responses; full self-play simulation provides higher-fidelity evaluation |
 | v3 | 2026-03-03 | Seat-level bid propensity guardrail (section 9) | Deal-level metric is wrong estimand for multi-seat self-play; seat-level propensity correctly measures the behavioral concern (selectivity) that the guardrail targets |
+| v4 | 2026-03-03 | H2H confirmation → RETAIN lambda=0.0 (section 10) | lambda*=0.5 PROVISIONAL failed H2H confirmation: -1.15 net_eppd delta, CI excludes 0 |
 
 ---
 
@@ -438,3 +439,137 @@ Applying epsilon-greedy (§8.4, ε=0.02) to corrected guardrail-passing survivor
 | `analysis/sweep.py` `check_guardrails()` | Accept `seat_bid_propensity` for bid_rate bounds in self-play context |
 | `lambda_sweep_selfplay_v1.json` | Update `lambda_star` from 1.0 to 0.5, add `seat_bid_propensity` per result |
 | `nb59` | Display both metrics; use seat-level for guardrail evaluation |
+
+---
+
+## 10. Amendment v4 — H2H Confirmation: RETAIN lambda=0.0
+
+### 10.1 Context
+
+Per section 8.5, lambda*=0.5 was selected as PROVISIONAL by the corrected
+simulation-based sweep (section 9). Non-zero lambda requires H2H confirmation
+before config adoption. The sweep used 4-seat self-play (all seats use the same
+bidder with GluttonStrategy trick play), which may not reflect performance when
+competing against a differently-tuned bidder.
+
+### 10.2 Experiment Design
+
+A targeted H2H experiment comparing `hybrid_olsa(lambda=0.5)` against
+`hybrid_olsa(lambda=0.0)`, using the same model artifact (`hybrid_r0.json`)
+and `bid_level_search=true`, `pass_threshold=0.0` for both arms.
+
+| Parameter | Value |
+|-----------|-------|
+| Config | `/tmp/lambda_h2h_confirmation.yaml` |
+| Seed | 42 |
+| n_per | 10,000 deals per matchup |
+| Mode | `head_to_head_matrix` |
+| Pair deals | true |
+| Matchups | 4 (2 self-play + 2 cross-rotation) |
+| Total deals | 40,000 |
+| Run ID | `lambda_h2h_confirmation_42_20260302_223731` |
+
+Matchup structure:
+- `lambda05_self_play`: all 4 seats use lambda=0.5
+- `lambda00_self_play`: all 4 seats use lambda=0.0
+- `lambda05_vs_lambda00`: lambda=0.5 on seats 0,2 vs lambda=0.0 on seats 1,3
+- `lambda00_vs_lambda05`: lambda=0.0 on seats 0,2 vs lambda=0.5 on seats 1,3
+
+### 10.3 Results
+
+#### Self-Play Diagnostics
+
+| Metric | lambda=0.5 | lambda=0.0 |
+|--------|-----------|-----------|
+| fullgame_eppd | 4.767 | 4.894 |
+| bid_rate (deal) | 95.3% | 100.0% |
+| make_rate | 100.0% | 96.9% |
+| seat_bid_propensity | 46.8% | 93.5% |
+
+#### Cross-Matchup Results (Primary Evidence)
+
+| Rotation | lambda=0.5 net_eppd | lambda=0.0 net_eppd | delta (05-00) | 95% CI |
+|----------|--------------------|--------------------|---------------|--------|
+| R1 (05 as team0) | 4.370 | 5.590 | -1.220 | [-1.296, -1.144] |
+| R2 (00 as team0) | 4.440 | 5.513 | -1.072 | [-1.149, -0.997] |
+| **Paired average** | **4.405** | **5.552** | **-1.146** | **[-1.186, -1.106]** |
+
+#### Auction Dynamics
+
+| Rotation | lambda=0.5 wins auction | lambda=0.0 wins auction | All-pass |
+|----------|------------------------|------------------------|----------|
+| R1 (05 as team0) | 17.8% | 82.2% | 0.0% |
+| R2 (00 as team0) | 18.9% | 81.1% | 0.0% |
+
+When competing head-to-head, lambda=0.5 wins the auction only ~18% of the time
+(vs ~82% for lambda=0.0). Although lambda=0.5 achieves near-perfect make rate
+(99.9-100%), ceding 82% of auctions to the opponent is catastrophic: the
+opponent scores on those deals while lambda=0.5 gets only defender points.
+
+### 10.4 Decision
+
+**Per section 8.5 decision table:**
+
+| Condition | Observed | Decision |
+|-----------|----------|----------|
+| lambda* > 0.0 | Yes (0.5) | Requires H2H confirmation |
+| H2H delta >= 0 | No (-1.146) | -- |
+| CI excludes 0 | Yes ([-1.186, -1.106]) | -- |
+| delta < 0 AND CI excludes 0 | **Yes** | **RETAIN lambda=0.0** |
+
+**RESULT: RETAIN lambda=0.0**
+
+Lambda=0.5 is significantly worse than lambda=0.0 in head-to-head competition.
+The sweep's self-play advantage (+0.884 net_eppd at lambda=0.5 vs lambda=0.0)
+reverses to a -1.146 disadvantage in H2H, a swing of -2.03 net_eppd.
+
+### 10.5 Interpretation
+
+The self-play vs H2H divergence reveals a fundamental dynamic:
+
+1. **Self-play (same lambda both teams):** Lambda=0.5 performs well because
+   both teams pass on marginal hands symmetrically. The reduced bid rate creates
+   more defender opportunities, and the hands that ARE bid are high-confidence
+   (100% make rate).
+
+2. **H2H (different lambda):** Lambda=0.0 bids aggressively on marginal hands.
+   In head-to-head, this means lambda=0.0 wins ~82% of auctions. Even with a
+   slightly lower make rate (99.0%), owning 82% of auctions at ~5.5 net_eppd
+   dominates lambda=0.5's 18% auction share.
+
+3. **Auction dominance > make rate:** The make rate improvement from lambda=0.5
+   (100% vs 97%) is small relative to the auction share loss (18% vs 82%).
+   The net effect is strongly negative.
+
+### 10.6 Config Surface Impact
+
+Since the decision is RETAIN, **no config surface changes are needed**. The
+existing `risk_lambda: 0.0` placeholder values remain correct:
+
+| Config location | File | Line | Value |
+|----------------|------|------|-------|
+| Auction comparator | `experiments/configs/auction_comparator.yaml` | L50, L58 | `risk_lambda: 0.0` (unchanged) |
+| C33 ablation | `experiments/configs/arc_d_r0_c33_ablation.yaml` | L42, L49 | `risk_lambda: 0.0` (unchanged) |
+| H2H battery roster | `scripts/internal/run_arc_d_h2h_battery.py` | L57, L66 | `risk_lambda: 0.0` (unchanged) |
+
+The placeholder comment can now be replaced with a RETAIN decision comment.
+
+### 10.7 Implications for R1
+
+The RETAIN decision means the current R0 model operates risk-neutral. For R1:
+
+1. **CVaR machinery is validated** — the risk penalty code works correctly
+2. **Lambda=0.0 is optimal given current model quality** — the model's predictions
+   are not accurate enough on marginal hands to benefit from tail-risk avoidance
+3. **Re-tune lambda after R1 model improvements** — if R1 training improves
+   prediction accuracy on marginal hands, lambda > 0 may become beneficial
+4. **Consider joint threshold-lambda optimization** — the sequential approach
+   (threshold first, then lambda) may miss interaction effects
+
+### 10.8 Repro Command
+
+```bash
+uv run python experiments/run_experiment.py \
+  --config /tmp/lambda_h2h_confirmation.yaml \
+  --seed 42 --force
+```
