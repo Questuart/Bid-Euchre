@@ -2,7 +2,7 @@
 
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
-**Date:** 2026-03-02
+**Date:** 2026-03-02 (v1); 2026-03-03 (v2 context update)
 **Purpose:** Determine whether tuning the pass gate threshold improves R0 net-differential
 
 ## Executive Summary
@@ -30,6 +30,14 @@ only be recovered through better predictions (R1+ model improvements), not
 through a threshold shift on R0's model.
 
 No code changes required. The pass gate remains `best_utility <= 0`.
+
+**V2 context:** With bid-level search (v2 policy), the model now bids on ~96%
+of hands at t=0, dramatically changing the effective behavior compared to the
+~20% bid_rate observed in the v1 sweep below. Bid-level search finds profitable
+bid levels for marginal hands, effectively resolving the pass-threshold
+problem without requiring threshold tuning. The RETAIN t=0 decision is
+confirmed and strengthened by v2: the threshold is no longer the binding
+constraint on bidding frequency.
 
 ## 1. Motivation
 
@@ -118,10 +126,17 @@ No code changes. The pass gate at `bidding.py:1043` remains `best_utility <= 0`.
 ## 6. Implications for Future Rungs
 
 - **R1 re-tune:** Each rung that improves model predictions should re-run this
-  protocol (or an updated v2). Better predictions may make threshold tuning viable.
-- **Feature importance:** The pass-threshold regret is fundamentally about prediction
-  accuracy for marginal hands. Features that improve calibration near the bid/pass
-  boundary (e.g., opponent context in R2) may unlock threshold gains.
+  protocol (or an updated version). Better predictions may make threshold tuning
+  viable, though bid-level search has largely addressed the pass-threshold
+  problem at the search level.
+- **Bid-level search interaction:** With v2 bid-level search, the model bids
+  ~96% of hands at t=0. The threshold's practical relevance is reduced because
+  bid-level search finds profitable bid amounts for most hands. Future threshold
+  sweeps should account for this interaction.
+- **Contract-type composition:** At R0, the marginal hands admitted by lower
+  thresholds are predominantly suit contracts. R1's HIGH/LOW feature enrichment
+  may change this composition, warranting a re-evaluation of the threshold's
+  effect on contract-type selection.
 - **Protocol reuse:** The pre-registered protocol and notebook can be re-executed
   on R1 data by changing only the artifact path and dataset path.
 
@@ -138,3 +153,4 @@ No code changes. The pass gate at `bidding.py:1043` remains `best_utility <= 0`.
 | Bootstrap seed | 42 |
 | Mode | QUICK (10,000 deals) |
 | Repro command | `PYTHONPATH=src uv run papermill notebooks/arc_d/r0/56_pass_threshold_sweep.ipynb /tmp/out.ipynb -p MODE QUICK` |
+| V2 decision | RETAIN t=0 confirmed; bid-level search resolves pass-threshold at search level |

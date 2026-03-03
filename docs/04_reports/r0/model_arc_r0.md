@@ -27,18 +27,23 @@ the top bidders in the framework:
 | bid_rate | 63.2% | 82.8% |
 | make_rate | 87.3% | 83.3% |
 
-In the v4 single-seat comparator (GluttonStrategy, 20k deals/bidder),
-hybrid_olsa ranks 2nd of 7 at net_eppd +0.455 (comparator), trailing
-modeloespecifico (+1.587, comparator) by 1.132 points/deal. The Gaussian EV
-wrapper adds +0.21 net_eppd over floor-based OLSa (C33 ablation, H2H).
+In the v6 single-seat comparator (GluttonStrategy, 20k deals/bidder, 8
+bidders), hybrid_olsa ranks 1-2 (tied with hybrid_olsa_full) among 8 bidders at
+net_eppd +2.131 (comparator), leading modeloespecifico (+1.604, comparator) by
++0.527 points/deal (p < 0.001). The bid-level search (v2) dramatically changed
+bidding behavior: bid_rate rose from 19.7% to 96.1%, make_rate from 88.6% to
+100%, driving the net_eppd improvement from +0.455 to +2.131. The C33 ablation
+shows a combined search effect (+0.43) and wrapper effect (+0.75).
 
 **What are the caveats?** The attribution gap is negative (−0.14): the
 constrained arm slightly outperforms the full arm on net_eppd, likely because
 the constrained arm's hand-picked features are more robust at R0 model quality.
 HIGH/LOW contract types have small sample sizes (261/281 deals) and only 1
-feature each, producing high regret (oracle analysis, PR #472). The model passes
-on 80% of hands where a hindsight-optimal oracle would profitably bid — a model
-accuracy problem, not a threshold problem (B0 sweep, PR #476: RETAIN t=0).
+feature each, producing high regret (oracle analysis, PR #472). The v2 bid-level
+search substantially reduced pass-threshold regret (CS regret share: 90.9%),
+though model accuracy remains the binding constraint (pass-threshold decision:
+RETAIN t=0). Lambda tuning (RETAIN lambda=0.0) and normalizer screening
+(NO_GO_DEFER_R1) were evaluated and deferred.
 
 **What's the decision?** **PROMOTED** — passes all Tier 1 artifact integrity
 gates, stable across 3 evaluation seeds (net_eppd range < 0.06), and
@@ -49,11 +54,13 @@ establishes a working baseline for R1 feature enrichment.
 | Report | Focus |
 |--------|-------|
 | [r0_promotion_report.md](r0_promotion_report.md) | Promotion decision, gate results, threshold calibration |
-| [comparator_rankings.md](comparator_rankings.md) | v4 single-seat rankings (7 bidders, GluttonStrategy) |
-| [h2h_battery_analysis.md](h2h_battery_analysis.md) | H2H battery, competitive ordering, threshold derivation |
-| [c33_ablation_report.md](c33_ablation_report.md) | Gaussian EV wrapper effect (+0.21 net_eppd) |
-| [contract_selection_oracle.md](contract_selection_oracle.md) | Oracle regret analysis, pass-threshold dominance |
+| [comparator_rankings.md](comparator_rankings.md) | v6 single-seat rankings (8 bidders, GluttonStrategy) |
+| [h2h_battery_analysis.md](h2h_battery_analysis.md) | H2H battery (v4), competitive ordering, threshold derivation |
+| [c33_ablation_report.md](c33_ablation_report.md) | C33 v2: search effect +0.43, wrapper effect +0.75 |
+| [contract_selection_oracle.md](contract_selection_oracle.md) | Oracle regret analysis, CS regret share 90.9% |
 | [pass_threshold_decision.md](pass_threshold_decision.md) | B0 threshold sweep: RETAIN t=0 |
+| [lambda_decision.md](lambda_decision.md) | Lambda tuning: RETAIN lambda=0.0 (FINAL) |
+| [normalizer_offline_screen.md](normalizer_offline_screen.md) | Normalizer screen: NO_GO_DEFER_R1 |
 | [measurement_integrity_r0.md](measurement_integrity_r0.md) | Methodology limitations + deferral costs |
 
 ---
@@ -370,7 +377,7 @@ stronger predictors than the forward-selected features, and the lower bid rate
 (63.2% vs 82.8%) means OLSa only bids on high-confidence hands. See
 [r0_promotion_report.md](r0_promotion_report.md) §4 for full interpretation.
 
-### Comparator Battery (v4, Single-Seat, GluttonStrategy)
+### Comparator Battery (v6, Single-Seat, GluttonStrategy)
 
 The single-seat comparator evaluates each bidder in isolation — one seat bids
 while three always-pass sentinels fill the remaining seats — producing an
@@ -378,44 +385,44 @@ absolute benchmark free from auction interaction confounds. See
 [comparator_rankings.md](comparator_rankings.md) for full methodology and
 behavioral analysis.
 
-| Rank | Bidder | net_eppd (comparator) | 95% CI |
-|------|--------|----------------------|--------|
-| 1 | modeloespecifico | +1.587 | [+1.529, +1.645] |
-| 2 | **hybrid_olsa** | **+0.455** | **[+0.420, +0.491]** |
-| 3 | stricthellraiser | +0.076 | [+0.018, +0.132] |
-| 4 | olsa_full | −0.168 | [−0.260, −0.078] |
-| 5 | olsa | −0.342 | [−0.435, −0.250] |
-| 6 | fiveheadfred | −2.570 | [−2.667, −2.473] |
-| 7 | rankthetank | −9.767 | [−9.857, −9.675] |
+| Rank | Bidder | net_eppd (comparator) | 95% CI | bid_rate | make_rate |
+|------|--------|----------------------|--------|----------|-----------|
+| 1 | **hybrid_olsa_full** | **+2.170** | **[+2.081, +2.257]** | 96.8% | 100% |
+| 2 | **hybrid_olsa** | **+2.131** | **[+2.042, +2.216]** | 96.1% | 100% |
+| 3 | modeloespecifico | +1.604 | [+1.489, +1.720] | 100% | 94.7% |
+| 4 | stricthellraiser | +0.085 | [−0.027, +0.197] | | |
+| 5 | olsa_full | −0.012 | [−0.193, +0.173] | | |
+| 6 | olsa | −0.225 | [−0.413, −0.037] | | |
+| 7 | fiveheadfred | −2.579 | | | |
+| 8 | rankthetank | −9.665 | | | |
 
-The gap between modeloespecifico and hybrid_olsa is 1.132 points/deal
-(comparator, p < 0.001) — the primary improvement target for R1+.
+hybrid_olsa_full and hybrid_olsa are statistically tied (delta=+0.038,
+p=0.5457). hybrid_olsa now leads modeloespecifico by +0.527 points/deal
+(p < 0.001) — a reversal from v4 where modelo led by +1.132. The improvement
+is driven by bid-level search (v2): hybrid_olsa bid_rate rose from 19.7% to
+96.1% and make_rate from 88.6% to 100%.
 
 **Instrument note:** Eval net_eppd (+1.627 for OLSa, eval) and comparator
-net_eppd (+0.455 for hybrid_olsa, comparator v4 single-seat) measure different
+net_eppd (+2.131 for hybrid_olsa, comparator v6 single-seat) measure different
 estimands. Eval uses self-play where both teams bid; the comparator uses
 single-seat mode where only the test bidder bids against always-pass sentinels,
 with GluttonStrategy card play. The eval figure reflects competitive bidding
 dynamics while the comparator isolates bidding quality in a controlled setting.
 
+**Source:** comparator_cis_r0_v6.json
+
 ### Key H2H Matchups
 
 Head-to-head matchups pit bidders directly against each other in contested
 auctions with paired, seat-swapped deals. See
-[h2h_battery_analysis.md](h2h_battery_analysis.md) for the full 7-bidder matrix
-(QUICK + FULL resolution) and gate threshold derivation.
+[h2h_battery_analysis.md](h2h_battery_analysis.md) for the full H2H matrix
+(QUICK + FULL resolution, v4) and gate threshold derivation.
 
-| A vs B | delta (H2H) | 95% CI | Verdict |
-|--------|-------------|--------|---------|
-| modelo vs hybrid_olsa | +0.644 | [+0.545, +0.743] | modelo wins |
-| hybrid_olsa vs olsa | +0.147 | [+0.014, +0.276] | hybrid wins |
-| hybrid_olsa vs olsa_full | +0.033 | [−0.101, +0.160] | Draw |
-| modelo vs olsa | +0.016 | [−0.117, +0.147] | Draw |
+**H2H Self-Play (FULL, v4):** delta=−0.048, CI=[−0.132, +0.038],
+fullgame_eppd=4.894. The near-zero delta confirms self-play symmetry; the
+fullgame_eppd of 4.894 establishes the H2H baseline.
 
-Dominance ordering: modeloespecifico > hybrid_olsa > olsa ~ olsa_full. The
-self-play gap between modeloespecifico and olsa (+1.929 comparator) does not
-replicate in H2H (+0.016, CI spans zero) — a divergence explained by
-play-strategy interaction effects in the comparator battery.
+**Source:** h2h_battery_quick_v4, h2h_battery_full_v4
 
 ### Promotion Decision
 
@@ -484,28 +491,36 @@ These are R0-specific limitations, not generic caveats:
 1. **Feature poverty for HIGH/LOW.** The HIGH model uses 1 feature
    (offsuit_aces) and the LOW model uses 1 feature (offsuit_tens_count),
    producing ~9 discrete predicted-trick values each. This prevents meaningful
-   calibration and is the dominant source of oracle regret (82% pass-threshold
-   regret, PR #472). R1 feature enrichment is the primary remedy.
+   calibration and is the dominant source of oracle regret (CS regret share
+   90.9%). R1 feature enrichment is the primary remedy.
 
 2. **Negative attribution gap.** The constrained arm outperforms the
    promotional arm by 0.14 net_eppd (eval). This suggests forward feature
    selection at R0's sample size and model complexity does not yet add value
    beyond hand-picked features. Monitored via `check_dual_arm_coherence` at R1+.
 
-3. **Single-seed comparator data.** Comparator rankings and H2H matchups use
-   seed=42 only. Multi-seed averaging would reduce variance in ranking
+3. **Single-seed comparator data.** Comparator rankings (v6) and H2H matchups
+   (v4) use seed=42 only. Multi-seed averaging would reduce variance in ranking
    estimates but was not prioritized for R0 given the clear tier separation.
 
 4. **Pass-threshold regret is a model problem, not a threshold problem.** The
    B0 sweep (PR #476) showed net_diff decreases monotonically with higher t —
-   marginal hands can't be profitably bid at R0 model quality. This can only
-   be addressed through better models (R1+).
+   marginal hands can't be profitably bid at R0 model quality. Bid-level search
+   (v2) substantially improved bidding behavior (bid_rate 19.7% to 96.1%) but
+   model accuracy remains the binding constraint. This can only be further
+   addressed through better models (R1+).
 
 5. **GluttonStrategy confounding.** Both comparator and eval instruments use
    GluttonStrategy for card play. Rankings reflect interaction with this
    specific play strategy. See
    [measurement_integrity_r0.md](measurement_integrity_r0.md) for full
    limitation inventory.
+
+6. **Normalizer deferred to R1.** Offline screening showed normalizer adds
+   +4% accuracy but degrades net_eppd by −0.269 (CI [−0.287, −0.251]). This
+   is a model poverty problem, not a miscalibration — deferred to R1 where
+   richer models may benefit from normalization. See
+   [normalizer_offline_screen.md](normalizer_offline_screen.md).
 
 ---
 
