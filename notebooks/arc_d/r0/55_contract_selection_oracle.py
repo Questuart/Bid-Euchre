@@ -318,7 +318,9 @@ for contract_family in ["suit", "high", "low"]:
     subset["sigma"] = sigma
 
     # v2: Bid-level search — evaluate all legal levels, pick best utility
-    best_bid_n, best_utility = bid_level_search_vectorized(mu_vals, sigma)
+    best_bid_n, best_utility = bid_level_search_vectorized(
+        mu_vals, sigma, risk_lambda=risk_lambda
+    )
     subset["bid_n"] = best_bid_n
     subset["predicted_utility"] = best_utility
 
@@ -718,7 +720,7 @@ print(f"\nGate result (JSON): {json.dumps(gate_result, indent=2)}")
 # %% [markdown]
 # ### S6b: v2 Normalizer Trigger Check
 #
-# The v2 plan (`plans/r0_canonical_v2_plan.md` §6, Scope Decision #6) defines a
+# The v2 normalizer protocol (`plans/r0_v2_normalizer_protocol.md`) defines a
 # **separate** normalizer trigger based on contract-selection regret *share*:
 #
 # > Normalizer conditional — only if oracle decomposition shows

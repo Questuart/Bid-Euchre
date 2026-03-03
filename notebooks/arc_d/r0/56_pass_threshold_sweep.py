@@ -21,9 +21,10 @@
 # # Pass-Threshold Tuning Sweep — B0 (v2: bid-level search)
 #
 # **Protocol:** `plans/r0_pass_threshold_protocol.md` v1 (pre-registered).
-# v2 lineage: `plans/r0_canonical_v2_plan.md` §4a defines a v2 threshold
-# protocol amendment; this notebook uses v1 protocol logic with v2 bid-level
-# search policy (Amendment D: threshold before lambda).
+# v2 lineage: `plans/r0_v2_threshold_protocol.md` amends v1 protocol;
+# `plans/r0_v2_pr_a_amendments.md` Amendment D establishes threshold→lambda
+# sequential ordering. This notebook uses v1 protocol logic with v2 bid-level
+# search policy.
 #
 # **v2 change:** Bid-level search enabled (`bid_level_search=True`). The bidder
 # now searches all legal bid levels (1–10) for each contract, picking the level
@@ -286,7 +287,9 @@ for contract_family in ["suit", "high", "low"]:
     subset["sigma"] = sigma
 
     # v2: Bid-level search — evaluate all legal levels, pick best utility
-    best_bid_n, best_utility = bid_level_search_vectorized(mu_vals, sigma)
+    best_bid_n, best_utility = bid_level_search_vectorized(
+        mu_vals, sigma, risk_lambda=risk_lambda
+    )
     subset["bid_n"] = best_bid_n
     subset["predicted_utility"] = best_utility
 
