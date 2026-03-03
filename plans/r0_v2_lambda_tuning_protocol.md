@@ -273,6 +273,7 @@ Key parameters:
 |---------|------|--------|-----------|
 | v1 | 2026-03-02 | Initial protocol | Pre-registered before execution |
 | v2 | 2026-03-02 | Simulation-based tuning (section 8) | Offline replay cannot capture auction dynamics or opponent responses; full self-play simulation provides higher-fidelity evaluation |
+| v3 | 2026-03-03 | Seat-level bid propensity guardrail (section 9) | Deal-level metric is wrong estimand for multi-seat self-play; seat-level propensity correctly measures the behavioral concern (selectivity) that the guardrail targets |
 
 ---
 
@@ -360,3 +361,80 @@ If v1 (nb58) and v2 (nb59) disagree on the ADOPT/RETAIN direction:
 - **v2 (simulation) takes precedence** for the formal decision
 - The disagreement should be documented in the decision summary
 - If both agree, this increases confidence in the result
+
+---
+
+## 9. Amendment v3 — Seat-Level Bid Propensity Guardrail
+
+### 9.1 Problem: Metric-Definition Mismatch
+
+The guardrail `bid_rate in [0.05, 0.95]` (§2.6) was inherited from the
+pass-threshold protocol (`r0_v2_threshold_protocol.md` §2.6), which evaluated
+bids via **offline replay** — one seat at a time, `current_high_bid=0`. In that
+context, the evaluator's `bid_rate` (fraction of deals with an auction winner)
+equals per-seat bid propensity because there is exactly one real bidder per deal.
+
+The v2 simulation-based sweep (§8) runs **4-seat self-play** where all four
+seats use the same HybridOLSaBidder policy. In this context:
+
+- **Evaluator's `bid_rate`** = fraction of deals where ANY seat wins the auction
+  (deal-level aggregate). Source: `evaluator.py:326` — `hands_with_bids / deals_total`.
+- **Seat-level bid propensity** = fraction of individual seat-opportunities where
+  the policy submits a non-pass bid action. Source: `auction_transcript` in JSONL
+  `hand_end` records.
+- **Relationship:** `deal_bid_rate ≈ 1 - (1-p)^4` where `p` = seat propensity.
+
+With 4 independent bidders, even moderate seat propensity inflates deal-level
+bid_rate toward 1.0. A seat propensity of 46.8% (lambda=0.5) produces a deal
+bid_rate of 95.3%. A seat propensity of 93.5% (lambda=0.0) produces 100.0%.
+
+The v2 sweep initially selected lambda*=1.0 because it was the highest-performing
+candidate that passed the 0.95 deal-level cap. Lambda=0.0 through 0.5 all
+"failed" a guardrail that was measuring the wrong estimand.
+
+### 9.2 Corrected Guardrail Metric
+
+**Amendment:** In the simulation-based sweep context (§8), the guardrail
+`bid_rate in [0.05, 0.95]` applies to **seat-level bid propensity**, not the
+evaluator's deal-level `bid_rate`.
+
+Seat-level propensity is computed from `auction_transcript` in JSONL hand_end
+records:
+
+```python
+seat_bids = sum(1 for entry in transcript if entry["action"] == "BID")
+seat_opportunities = len(transcript)  # 4 per deal in self-play
+seat_bid_propensity = total_seat_bids / total_seat_opportunities
+```
+
+The guardrail bounds [0.05, 0.95] are unchanged. Only the metric is corrected.
+
+### 9.3 Corrected Results
+
+| Lambda | net_eppd | Deal bid_rate | Seat propensity | Guardrail (seat-level) |
+|--------|----------|---------------|-----------------|------------------------|
+| 0.0 | 2.238 | 100.0% | 93.5% | PASS |
+| 0.05 | 2.270 | 100.0% | 91.7% | PASS |
+| 0.1 | 2.685 | 100.0% | 81.8% | PASS |
+| 0.2 | 2.905 | 100.0% | 74.2% | PASS |
+| 0.5 | 3.122 | 95.3% | 46.8% | PASS |
+| 1.0 | 2.216 | 53.0% | 16.9% | PASS |
+| 2.0 | 0.696 | 12.9% | 3.4% | **FAIL** (floor) |
+
+### 9.4 Corrected Selection
+
+Applying epsilon-greedy (§8.4, ε=0.02) to corrected guardrail-passing survivors:
+
+1. Best net_eppd = 3.122 (lambda=0.5)
+2. Epsilon band: 3.122 - 0.02 = 3.102
+3. No other lambda within ε: lambda=0.2 (2.905) is 0.217 below
+4. **Result: lambda*=0.5 (PROVISIONAL)**
+
+### 9.5 Implementation Changes Required
+
+| Component | Change |
+|-----------|--------|
+| `run_lambda_sweep.py` | Add `seat_bid_propensity` field to per-lambda results |
+| `analysis/sweep.py` `check_guardrails()` | Accept `seat_bid_propensity` for bid_rate bounds in self-play context |
+| `lambda_sweep_selfplay_v1.json` | Update `lambda_star` from 1.0 to 0.5, add `seat_bid_propensity` per result |
+| `nb59` | Display both metrics; use seat-level for guardrail evaluation |

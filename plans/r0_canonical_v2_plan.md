@@ -267,10 +267,12 @@ corrected guardrail-passing survivors:
 
 #### 4.5.5 Protocol Amendment Record
 
-| Amendment | Date | Change | Rationale |
-|-----------|------|--------|-----------|
-| v2 §8 | 2026-03-02 | Simulation-based tuning | Capture auction dynamics |
-| **v3 §9** | **2026-03-03** | **Seat-level bid propensity guardrail** | Deal-level metric is wrong estimand for multi-seat self-play; seat-level propensity correctly measures the behavioral concern (selectivity) that the guardrail targets |
+Amendments are tracked in `r0_v2_lambda_tuning_protocol.md` §7 (Amendment Log).
+
+| Amendment | Date | Change | Protocol Section | Rationale |
+|-----------|------|--------|------------------|-----------|
+| v2 | 2026-03-02 | Simulation-based tuning | §8 | Capture auction dynamics |
+| v3 | 2026-03-03 | Seat-level bid propensity guardrail | §9 | Deal-level metric is wrong estimand for multi-seat self-play; seat-level propensity correctly measures selectivity |
 
 ---
 
@@ -291,8 +293,58 @@ will change significantly.
 
 **Code blocker:** Both nb55 and nb56 hard-assert `risk_lambda == 0.0` in their
 inline `bid_level_search_vectorized()`. The vectorized helper has no CVaR penalty
-implementation. With lambda=0.5, notebooks will crash. See §5.2 for the scalar
-fallback fix required before re-running.
+implementation. With lambda=0.5, notebooks will crash.
+
+**Required fix (PR-A scope):** Replace the assert in `analysis/sweep.py`'s
+`bid_level_search_vectorized()` (line 90) with a scalar fallback that delegates
+to production `compute_best_bid()` for non-zero lambda:
+
+```python
+from bid_euchre.strategy.bidding import compute_best_bid
+
+# Inside bid_level_search_vectorized(), replace assert with:
+if risk_lambda != 0.0:
+    # Scalar fallback: production compute_best_bid() for non-zero lambda.
+    # Vectorized CVaR deferred to R1.
+    best_bid_n = np.ones(n, dtype=int)
+    best_utility = np.full(n, -np.inf)
+    for i in range(n):
+        result = compute_best_bid(
+            mu=float(mu_vals[i]),
+            sigma=sigma,
+            current_high_bid=0,       # single-seat context (opening bidder)
+            pass_threshold=pass_threshold,
+            bid_level_search=True,
+            risk_lambda=risk_lambda,
+            seed=seed,
+        )
+        # compute_best_bid returns (bid_n, utility) or None if no bid meets threshold
+        if result is not None:
+            best_bid_n[i] = result[0]
+            best_utility[i] = result[1]
+        else:
+            best_bid_n[i] = 0         # pass — no valid bid
+            best_utility[i] = -np.inf
+    return best_bid_n, best_utility
+
+# ... original vectorized path for lambda=0 continues below ...
+```
+
+**Key call-safety notes:**
+- `current_high_bid=0` — single-seat context, required positional arg in
+  `compute_best_bid()` (bidding.py:800)
+- `compute_best_bid()` returns `None` when no bid level meets the pass threshold
+  (bidding.py:857) — must check before tuple indexing
+- `bid_n=0` sentinel for pass — consistent with nb55/nb56 convention where
+  `bid_n=0` means "model passes this hand"
+- `seed=42` for CVaR Monte Carlo draws — deterministic, matches production default
+
+**Parity test (required):** After implementing, spot-check 100 hands comparing
+scalar fallback output against direct `compute_best_bid()` calls with lambda=0.5.
+Results must be bit-identical.
+
+Also update nb55 (line 282) and nb56 (line 236) to import from `analysis/sweep`
+instead of maintaining inline copies.
 
 ### 5.2 Implementation (PR-A scope)
 
