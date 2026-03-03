@@ -715,11 +715,18 @@ def main():
         # Extract seat-level bid propensity from auction transcripts
         seat_prop = extract_seat_bid_propensity(run_dir)
         if seat_prop is not None:
+            # Use raw value for guardrail decisions to avoid rounding flipping
+            # boundary cases (e.g., 0.04996 rounds to 0.0500 but fails >= 0.05).
+            # Store rounded value only for display/reporting.
+            metrics["seat_bid_propensity_raw"] = seat_prop
             metrics["seat_bid_propensity"] = round(seat_prop, 4)
 
-        # Use seat-level propensity for guardrails if available (self-play context)
+        # Use seat-level propensity for guardrails if available (self-play context).
+        # Use the raw (unrounded) value for the decision.
         guardrail_key = (
-            "seat_bid_propensity" if "seat_bid_propensity" in metrics else "bid_rate"
+            "seat_bid_propensity_raw"
+            if "seat_bid_propensity_raw" in metrics
+            else "bid_rate"
         )
         metrics["guardrails"] = apply_guardrails(metrics, bid_rate_key=guardrail_key)
         sweep_results.append(metrics)

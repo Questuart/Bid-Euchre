@@ -191,6 +191,30 @@ class TestApplyGuardrailsBidRateKey:
         assert result["pass_bid_rate_floor"] is True
         assert result["pass_bid_rate_cap"] is True
 
+    def test_raw_value_avoids_rounding_boundary_flip(self):
+        """Using raw (unrounded) value prevents rounding from flipping boundary decisions.
+
+        Example: raw 0.04996 rounds to 0.0500, which is >= 0.05 floor.
+        But the raw value 0.04996 is < 0.05 and should FAIL.
+        """
+        raw_val = 0.04996
+        rounded_val = round(raw_val, 4)  # 0.0500
+        # Rounded value would pass (0.0500 >= 0.05)
+        metrics_rounded = {"seat_bid_propensity": rounded_val, "make_rate": 1.0}
+        result_rounded = run_lambda_sweep.apply_guardrails(
+            metrics_rounded, bid_rate_key="seat_bid_propensity"
+        )
+        assert (
+            result_rounded["pass_bid_rate_floor"] is True
+        )  # Wrong! Rounding hides failure
+
+        # Raw value correctly fails (0.04996 < 0.05)
+        metrics_raw = {"seat_bid_propensity_raw": raw_val, "make_rate": 1.0}
+        result_raw = run_lambda_sweep.apply_guardrails(
+            metrics_raw, bid_rate_key="seat_bid_propensity_raw"
+        )
+        assert result_raw["pass_bid_rate_floor"] is False  # Correct
+
 
 # ---------------------------------------------------------------------------
 # select_lambda_star with seat-level guardrails

@@ -330,6 +330,7 @@ def is_cross_matchup(record: dict) -> bool:
 
 # %%
 _data_loaded = False
+_jsonl_loaded = False
 records = []
 
 if C33_RUN_DIR and artifact is not None:
@@ -369,6 +370,7 @@ if C33_RUN_DIR and artifact is not None:
 
         if records:
             _data_loaded = True
+            _jsonl_loaded = True
             print(f"Loaded {len(records)} cross-matchup hand_end records from JSONL")
     else:
         print(f"Logs directory not found: {logs_dir}")
@@ -430,7 +432,7 @@ print("DATA SUMMARY")
 print(f"{'=' * 60}")
 print(f"  Records:    {n_deals}")
 print(f"  Mode:       {MODE}")
-print(f"  Data type:  {'JSONL' if C33_RUN_DIR else 'synthetic'}")
+print(f"  Data type:  {'JSONL' if _jsonl_loaded else 'synthetic'}")
 
 # %% [markdown]
 # # S2: Decision Replay Engine
