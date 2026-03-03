@@ -140,21 +140,25 @@ def check_guardrails(
     bid_rate_floor: float = 0.05,
     bid_rate_cap: float = 0.95,
     make_rate_floor: float = 0.45,
+    bid_rate_key: str = "bid_rate",
 ) -> tuple[bool, list[str]]:
     """Check bid_rate and make_rate against guardrail bounds.
 
     Args:
-        metrics: Dict containing ``"bid_rate"`` and/or ``"make_rate"`` keys.
+        metrics: Dict containing bid rate and/or ``"make_rate"`` keys.
         bid_rate_floor: Minimum acceptable bid rate.
         bid_rate_cap: Maximum acceptable bid rate.
         make_rate_floor: Minimum acceptable make rate.
+        bid_rate_key: Key to use for bid rate (default ``"bid_rate"``). Use
+            ``"seat_bid_propensity"`` for self-play contexts where deal-level
+            bid_rate inflates.
 
     Returns:
         ``(all_pass, violation_messages)`` where *all_pass* is True when
         every checked guardrail is satisfied.
     """
     violations: list[str] = []
-    bid_rate = metrics.get("bid_rate")
+    bid_rate = metrics.get(bid_rate_key)
     make_rate = metrics.get("make_rate")
     if bid_rate is not None and bid_rate < bid_rate_floor:
         violations.append(f"bid_rate {bid_rate:.4f} < floor {bid_rate_floor}")
