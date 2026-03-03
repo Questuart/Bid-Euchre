@@ -217,17 +217,37 @@ the residual distributions differ materially across contract types.
 
 ### 3.4 Artifact Format
 
-The unified model artifact should extend the existing `hybrid_olsa_v1` format:
+The unified model artifact must be **loader-compatible** with the existing
+`HybridOLSaBidder` loader (`bidding.py:992-1008`), which iterates
+`artifact["payoff_model"]` expecting per-contract-family keys (`suit`,
+`high`, `low`) each containing `weights`, `bias`, and `feature_names`.
+The bid loop (`bidding.py:1155`) hardcodes `contract_map = {"suit": [...],
+"high": [...], "low": [...]}` and skips unknown families.
+
+**Approach:** The training pipeline decomposes the unified model's coefficients
+into per-contract-family format by absorbing the contract indicators into
+per-family bias terms:
+
+- **suit family:** `bias = intercept` (is_high=0, is_low=0), `weights` =
+  non-indicator coefficients (interaction terms for is_high/is_low zeroed out)
+- **high family:** `bias = intercept + w_is_high` (+ any is_high interaction
+  terms absorbed into corresponding feature weights)
+- **low family:** `bias = intercept + w_is_low` (+ any is_low interaction
+  terms absorbed into corresponding feature weights)
 
 ```json
 {
   "artifact_type": "hybrid_olsa_v1",
   "model_type": "unified",
+  "training_info": {
+    "description": "Unified cross-contract OLS, decomposed to per-family format",
+    "unified_intercept": 4.82,
+    "unified_coefficients": {"feature_1": 0.31, "is_high": -0.45, "is_low": -0.52}
+  },
   "payoff_model": {
-    "unified": {
-      "intercept": ...,
-      "coefficients": {"feature_1": ..., "is_high": ..., "is_low": ..., ...}
-    }
+    "suit": {"weights": [0.31, ...], "bias": 4.82, "feature_names": ["feature_1", ...]},
+    "high": {"weights": [0.31, ...], "bias": 4.37, "feature_names": ["feature_1", ...]},
+    "low":  {"weights": [0.31, ...], "bias": 4.30, "feature_names": ["feature_1", ...]}
   },
   "residual_variance": {
     "suit": ...,
@@ -237,8 +257,23 @@ The unified model artifact should extend the existing `hybrid_olsa_v1` format:
 }
 ```
 
-The `model_type: "unified"` field signals to `HybridOLSaBidder` that a single
-model should be used with contract-type indicators, rather than separate models.
+**Key design decisions:**
+
+1. **`model_type: "unified"`** is metadata only — it signals provenance
+   (single training run) but does NOT require a loader code path change.
+   The loader sees standard per-family entries and loads them normally.
+
+2. **`training_info`** preserves the raw unified coefficients for
+   reproducibility and debugging. The loader ignores unknown top-level keys.
+
+3. **`feature_names` per family** may differ: suit includes all base features,
+   while high/low include base features plus absorbed interaction terms.
+   The decomposition is handled by the training pipeline, not the loader.
+
+4. **No loader extension required.** The existing `HybridOLSaBidder` loads
+   and uses this artifact identically to per-contract models. The only
+   difference is how the artifact was produced (single unified training
+   vs independent per-contract training).
 
 ---
 
@@ -327,3 +362,4 @@ model (simpler architecture, no additional calibration layer).
 | Version | Date | Change | Rationale |
 |---------|------|--------|-----------|
 | v1 | 2026-03-02 | Initial protocol | Pre-registered before execution |
+| v1.1 | 2026-03-02 | Fix §3.4 artifact format to match loader expectations | Protocol specified `intercept`/`coefficients` naming and `payoff_model.unified` key, but loader expects per-contract `weights`/`bias`/`feature_names`. Now uses decomposed per-family format — no loader extension needed. |
