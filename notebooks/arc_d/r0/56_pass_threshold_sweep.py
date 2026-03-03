@@ -18,9 +18,19 @@
 # ---
 
 # %% [markdown]
-# # Pass-Threshold Tuning Sweep — B0
+# # Pass-Threshold Tuning Sweep — B0 (v2: bid-level search)
 #
-# **Protocol:** `plans/r0_pass_threshold_protocol.md` v1 (pre-registered)
+# **Protocol:** `plans/r0_pass_threshold_protocol.md` v1 (pre-registered).
+# v2 lineage: `plans/r0_v2_threshold_protocol.md` amends v1 protocol;
+# `plans/r0_v2_pr_a_amendments.md` Amendment D establishes threshold→lambda
+# sequential ordering. This notebook uses v1 protocol logic with v2 bid-level
+# search policy.
+#
+# **v2 change:** Bid-level search enabled (`bid_level_search=True`). The bidder
+# now searches all legal bid levels (1–10) for each contract, picking the level
+# with highest utility. Previously, only `floor(mu)` was evaluated (v1 behavior).
+# This matches the production `HybridOLSaBidder.choose_bid()` with bid-level
+# search and `risk_lambda=0.0`.
 #
 # **Goal:** Determine whether shifting the pass gate from `utility <= 0`
 # to `utility <= -t` (for some `t > 0`) recovers meaningful value from
@@ -34,7 +44,7 @@
 # **Sections:**
 # - S0: Setup & data loading
 # - S1: Feature-outcome join & pivot
-# - S2: Model predictions & utilities
+# - S2: Model predictions & utilities (v2: bid-level search)
 # - S3: Train/validation split
 # - S4: Threshold sweep on train partition
 # - S5: Guardrails & threshold selection
@@ -154,10 +164,26 @@ assert n_hands >= 1_000, f"Insufficient hands: {n_hands} (need ≥1,000)"
 # %% [markdown]
 # ## S2: Model Predictions & Utilities
 #
-# Vectorized EV computation matching `bidding.py:910-952`.
+# **v2 change:** Bid-level search replaces `floor(mu)` single-level evaluation.
+# For each hand and contract, we search all legal bid levels (1–10) and pick the
+# level with highest utility. This matches `compute_best_bid()` in
+# `bidding.py:788-850` with `risk_lambda=0.0`.
+#
+# The vectorized implementation below evaluates all 10 levels simultaneously via
+# numpy broadcasting, producing identical results to calling `compute_best_bid()`
+# per-hand (validated by spot-check below).
+#
+# **Pooling justification:** Metrics (net_diff, bid_rate, make_rate, regret shares)
+# are reported pooled across contract types because the threshold `t` tunes the
+# *cross-contract pass/bid decision* — each hand selects the single best contract
+# among all 6 candidates. Per-contract-type breakout is not meaningful here since
+# the unit of analysis is the hand-level bid/pass decision, not individual contract
+# performance.
 
 # %%
 CONTRACT_KEYS = ["suit_C", "suit_D", "suit_H", "suit_S", "high", "low"]
+
+from bid_euchre.strategy.bidding import compute_best_bid
 
 
 def compute_ev_vectorized(
@@ -165,7 +191,7 @@ def compute_ev_vectorized(
 ) -> np.ndarray:
     """Vectorized HybridOLSaBidder._compute_ev() — Gaussian expected net-differential.
 
-    Matches bidding.py:910-952 exactly.
+    Matches bidding.py _compute_ev_static() exactly.
     """
     Z_CAP = 6.0
 
@@ -187,6 +213,41 @@ def compute_ev_vectorized(
     set_ev = e_tricks_set - bid_n - 10.0
 
     return p_make * make_ev + p_set * set_ev
+
+
+def bid_level_search_vectorized(
+    mu_vals: np.ndarray, sigma: float, risk_lambda: float = 0.0
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized bid-level search across all legal levels (1–10).
+
+    For each hand, evaluates utility at every bid level and selects the level
+    with highest utility. Tie-break: prefer higher bid level (matches
+    compute_best_bid() at bidding.py:839-843).
+
+    Returns:
+        (best_bid_n, best_utility) arrays of shape (n_hands,)
+    """
+    n = len(mu_vals)
+    best_bid_n = np.ones(n, dtype=int)
+    best_utility = np.full(n, -np.inf)
+
+    # Guard: risk_lambda != 0 requires CVaR penalty implementation (not yet vectorized).
+    # Remove this assert and add penalty logic when lambda tuning is integrated.
+    assert risk_lambda == 0.0, (
+        f"risk_lambda={risk_lambda} but CVaR penalty not implemented in vectorized helper. "
+        "Use compute_best_bid() from bidding.py for non-zero lambda."
+    )
+
+    # Iterate ascending; use >= so last (highest n) with max utility wins
+    # This matches compute_best_bid() tie-break: prefer higher n on equal utility
+    for bid_n in range(1, 11):
+        ev = compute_ev_vectorized(mu_vals, sigma, np.full(n, bid_n))
+        utility = ev  # At lambda=0, utility = EV (no CVaR penalty)
+        better_or_tie = utility >= best_utility
+        best_utility = np.where(better_or_tie, utility, best_utility)
+        best_bid_n = np.where(better_or_tie, bid_n, best_bid_n)
+
+    return best_bid_n, best_utility
 
 
 # %%
@@ -223,13 +284,14 @@ for contract_family in ["suit", "high", "low"]:
         mu_vals += w * subset[fname].values
 
     subset["mu"] = mu_vals
-    subset["bid_n"] = np.clip(np.floor(mu_vals).astype(int), 1, 10)
     subset["sigma"] = sigma
 
-    # Vectorized utility (risk_lambda=0 at R0 so utility=EV)
-    subset["predicted_utility"] = compute_ev_vectorized(
-        mu_vals, sigma, np.clip(np.floor(mu_vals).astype(int), 1, 10)
+    # v2: Bid-level search — evaluate all legal levels, pick best utility
+    best_bid_n, best_utility = bid_level_search_vectorized(
+        mu_vals, sigma, risk_lambda=risk_lambda
     )
+    subset["bid_n"] = best_bid_n
+    subset["predicted_utility"] = best_utility
 
     pred_parts.append(
         subset[
@@ -248,6 +310,37 @@ for contract_family in ["suit", "high", "low"]:
 
 pred_df = pd.concat(pred_parts, ignore_index=True)
 print(f"Predictions: {len(pred_df):,} rows")
+
+# %%
+# Spot-check: vectorized results match compute_best_bid() (scalar reference impl)
+_sample = pred_df.sample(min(100, len(pred_df)), random_state=42)
+_mismatches = 0
+for _, row in _sample.iterrows():
+    result = compute_best_bid(
+        mu=row["mu"],
+        sigma=row["sigma"],
+        current_high_bid=0,
+        pass_threshold=0.0,
+        bid_level_search=True,
+        risk_lambda=0.0,
+    )
+    if result is None:
+        # compute_best_bid returns None when utility <= 0
+        # vectorized always returns a value; check utility is <= 0
+        assert (
+            row["predicted_utility"] <= 0 + 1e-9
+        ), f"Mismatch: compute_best_bid=None but vectorized utility={row['predicted_utility']}"
+    else:
+        ref_n, ref_util = result
+        assert (
+            ref_n == row["bid_n"]
+        ), f"bid_n mismatch: {ref_n} vs {row['bid_n']} (mu={row['mu']:.4f})"
+        assert (
+            abs(ref_util - row["predicted_utility"]) < 1e-9
+        ), f"utility mismatch: {ref_util} vs {row['predicted_utility']}"
+print(
+    f"Spot-check: {len(_sample)} hands validated against compute_best_bid() — all match"
+)
 
 # %%
 # Pivot predictions wide

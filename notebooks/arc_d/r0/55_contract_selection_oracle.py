@@ -18,10 +18,16 @@
 # ---
 
 # %% [markdown]
-# # Contract Selection Oracle Analysis — Step 0
+# # Contract Selection Oracle Analysis — Step 0 (v2: bid-level search)
 #
 # **Goal:** Measure the oracle contract mix and regret distribution to determine
 # whether a calibrator for HIGH/LOW contract selection is warranted.
+#
+# **v2 change:** Bid-level search enabled (`bid_level_search=True`). The model
+# now searches all legal bid levels (1–10) for each contract, picking the level
+# with highest utility. Previously, only `floor(mu)` was evaluated. This changes
+# the model's bid_n values and therefore actual_net and regret decomposition.
+# Also determines normalizer trigger check (contract-selection regret ≥ 25%).
 #
 # **Decision gate (from `plans/contract_selection_analysis.md`):**
 # - Mean regret > 0.1 utility → calibrator worth pursuing → Steps 1–2
@@ -34,7 +40,7 @@
 # **Sections:**
 # - S0: Setup & data loading
 # - S1: Feature-outcome join & pivot (construction path)
-# - S2: Model predictions & predicted utilities
+# - S2: Model predictions & predicted utilities (v2: bid-level search)
 # - S3: Realized net-differentials & oracle selection
 # - S4: Regret analysis (oracle - model)
 # - S5: Oracle contract mix
@@ -56,6 +62,7 @@ from scipy.stats import norm
 
 # Project imports
 from bid_euchre.datasets.join import join_features_outcomes
+from bid_euchre.strategy.bidding import compute_best_bid
 
 # %% [markdown]
 # ## S0: Setup & Configuration
@@ -168,9 +175,14 @@ assert not tricks_wide[trick_cols].isna().any().any(), "NaN in pivoted tricks!"
 # %% [markdown]
 # ## S2: Model Predictions & Predicted Utilities
 #
+# **v2 change:** Bid-level search replaces `floor(mu)` single-level evaluation.
+# For each hand and contract, we search all legal bid levels (1–10) and pick the
+# level with highest utility. This matches `compute_best_bid()` in
+# `bidding.py:788-850` with `risk_lambda=0.0`.
+#
 # For each (deal_id, seat) and each of the 6 contracts, compute:
 # - `mu(c)` — OLS prediction from model artifact
-# - `bid_n(c)` = floor(mu)
+# - `bid_n(c)` — optimal bid level from bid-level search (was: floor(mu))
 # - `utility(c)` = compute_ev(mu, sigma, bid_n) — the Gaussian expected net-differential
 #
 # Since `risk_lambda = 0` at R0, utility = EV (no CVaR penalty).
@@ -249,6 +261,41 @@ def compute_actual_net(tricks_won: float, bid_n: int) -> float:
         return tricks_won - bid_n - 10.0
 
 
+def bid_level_search_vectorized(
+    mu_vals: np.ndarray, sigma: float, risk_lambda: float = 0.0
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized bid-level search across all legal levels (1–10).
+
+    For each hand, evaluates utility at every bid level and selects the level
+    with highest utility. Tie-break: prefer higher bid level (matches
+    compute_best_bid() at bidding.py:839-843).
+
+    Returns:
+        (best_bid_n, best_utility) arrays of shape (n_hands,)
+    """
+    n = len(mu_vals)
+    best_bid_n = np.ones(n, dtype=int)
+    best_utility = np.full(n, -np.inf)
+
+    # Guard: risk_lambda != 0 requires CVaR penalty implementation (not yet vectorized).
+    # Remove this assert and add penalty logic when lambda tuning is integrated.
+    assert risk_lambda == 0.0, (
+        f"risk_lambda={risk_lambda} but CVaR penalty not implemented in vectorized helper. "
+        "Use compute_best_bid() from bidding.py for non-zero lambda."
+    )
+
+    # Iterate ascending; use >= so last (highest n) with max utility wins
+    # This matches compute_best_bid() tie-break: prefer higher n on equal utility
+    for bid_n in range(1, 11):
+        ev = compute_ev_vectorized(mu_vals, sigma, np.full(n, bid_n))
+        utility = ev  # At lambda=0, utility = EV (no CVaR penalty)
+        better_or_tie = utility >= best_utility
+        best_utility = np.where(better_or_tie, utility, best_utility)
+        best_bid_n = np.where(better_or_tie, bid_n, best_bid_n)
+
+    return best_bid_n, best_utility
+
+
 # %%
 # Build per-hand predictions for all 6 contracts (vectorized per contract family)
 
@@ -268,13 +315,14 @@ for contract_family in ["suit", "high", "low"]:
         mu_vals += w * subset[fname].values
 
     subset["mu"] = mu_vals
-    subset["bid_n"] = np.clip(np.floor(mu_vals).astype(int), 1, 10)
     subset["sigma"] = sigma
 
-    # Fully vectorized utility computation
-    subset["predicted_utility"] = compute_ev_vectorized(
-        mu_vals, sigma, np.clip(np.floor(mu_vals).astype(int), 1, 10)
+    # v2: Bid-level search — evaluate all legal levels, pick best utility
+    best_bid_n, best_utility = bid_level_search_vectorized(
+        mu_vals, sigma, risk_lambda=risk_lambda
     )
+    subset["bid_n"] = best_bid_n
+    subset["predicted_utility"] = best_utility
 
     pred_parts.append(
         subset[
@@ -293,6 +341,35 @@ for contract_family in ["suit", "high", "low"]:
 
 pred_df = pd.concat(pred_parts, ignore_index=True)
 print(f"Predictions: {len(pred_df):,} rows")
+
+# %%
+# Spot-check: vectorized results match compute_best_bid() (scalar reference impl)
+_sample = pred_df.sample(min(100, len(pred_df)), random_state=42)
+_mismatches = 0
+for _, row in _sample.iterrows():
+    result = compute_best_bid(
+        mu=row["mu"],
+        sigma=row["sigma"],
+        current_high_bid=0,
+        pass_threshold=0.0,
+        bid_level_search=True,
+        risk_lambda=0.0,
+    )
+    if result is None:
+        assert (
+            row["predicted_utility"] <= 0 + 1e-9
+        ), f"Mismatch: compute_best_bid=None but vectorized utility={row['predicted_utility']}"
+    else:
+        ref_n, ref_util = result
+        assert (
+            ref_n == row["bid_n"]
+        ), f"bid_n mismatch: {ref_n} vs {row['bid_n']} (mu={row['mu']:.4f})"
+        assert (
+            abs(ref_util - row["predicted_utility"]) < 1e-9
+        ), f"utility mismatch: {ref_util} vs {row['predicted_utility']}"
+print(
+    f"Spot-check: {len(_sample)} hands validated against compute_best_bid() — all match"
+)
 
 # %%
 # Pivot predictions wide — one column per contract for mu, utility, tricks
@@ -639,6 +716,52 @@ gate_result = {
     "mode": MODE,
 }
 print(f"\nGate result (JSON): {json.dumps(gate_result, indent=2)}")
+
+# %% [markdown]
+# ### S6b: v2 Normalizer Trigger Check
+#
+# The v2 normalizer protocol (`plans/r0_v2_normalizer_protocol.md`) defines a
+# **separate** normalizer trigger based on contract-selection regret *share*:
+#
+# > Normalizer conditional — only if oracle decomposition shows
+# > contract-selection regret share ≥ 25%.
+#
+# This is distinct from the Step-0 calibrator gate above. The calibrator gate
+# uses total mean regret (≷ 0.1) to decide if *any* calibrator work is warranted.
+# The normalizer trigger uses the CS regret *share of total regret* to decide
+# if a contract normalizer specifically should be pursued.
+
+# %%
+# Compute CS regret share from decomposition (S4b)
+cs_row = decomp[decomp["regret_category"] == "contract_selection"]
+if len(cs_row) > 0:
+    cs_regret_share = cs_row["pct_total_regret"].iloc[0] / 100.0
+else:
+    cs_regret_share = 0.0
+
+NORMALIZER_TRIGGER_THRESHOLD = 0.25  # 25% of total regret
+
+normalizer_triggered = cs_regret_share >= NORMALIZER_TRIGGER_THRESHOLD
+
+print(f"\n{'=' * 70}")
+print("v2 NORMALIZER TRIGGER CHECK")
+print(f"{'=' * 70}")
+print(f"  CS regret share:      {cs_regret_share:.1%} of total regret")
+print(f"  Trigger threshold:    {NORMALIZER_TRIGGER_THRESHOLD:.0%}")
+print(f"  TRIGGERED:            {normalizer_triggered}")
+if normalizer_triggered:
+    print("  → Contract normalizer track (PR-F) is ACTIVATED")
+    print("  → Normalizer implementation + H2H ablation required before freeze")
+else:
+    print("  → Contract normalizer track SKIPPED")
+    print("  → Record 'not triggered' in normalizer report")
+print(f"{'=' * 70}")
+
+# Add to machine-readable gate result
+gate_result["cs_regret_share"] = round(cs_regret_share, 4)
+gate_result["normalizer_trigger_threshold"] = NORMALIZER_TRIGGER_THRESHOLD
+gate_result["normalizer_triggered"] = normalizer_triggered
+print(f"\nUpdated gate result (JSON): {json.dumps(gate_result, indent=2)}")
 
 # %% [markdown]
 # ## S7: Diagnostic Deep-Dive
