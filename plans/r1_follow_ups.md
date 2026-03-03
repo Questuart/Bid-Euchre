@@ -23,8 +23,9 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P3 | Oracle re-analysis at R1 | **Yes** | — | Regret decomposition shift |
 | P4 | Pass-threshold re-tuning | **Yes** | — | Re-run B0 protocol |
 | P5 | Deferred report sections | No (deferrable) | — | |
-| P6 | H2H bid_rate caveat | No (deferrable) | — | Verify terminology |
+| P6 | H2H bid_rate caveat | No (deferrable) | DONE | Adopted by v2 — fix terminology during report regeneration (§7.4 of r0_canonical_v2_plan.md) |
 | P7 | Rung-to-rung report pipeline | No (deferrable) | — | Automate progression reports |
+| P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
 
 **Disposition values:** DONE / DEFERRED (with rationale + target rung) / NOT APPLICABLE (with evidence)
 
@@ -249,7 +250,7 @@ rankings (suggesting auction dynamics matter more than expected).
 
 ## Priority 6: H2H bid_rate Conflation (L3)
 
-**Status:** Permanent caveat on H2H instrument
+**Status:** DONE — adopted by R0 v2 (r0_canonical_v2_plan.md §7.4)
 **Origin:** Measurement integrity review (measurement_integrity_r0.md L3)
 
 ### What
@@ -262,9 +263,15 @@ These are different estimands sharing similar names.
 rather than "bidder selectivity." This is an inherent property of the H2H
 estimand (competitive ordering), not a methodology defect.
 
-**Action:** Ensure all R1+ reports and notebooks use correct terminology.
-Consider renaming the H2H field to `auction_win_rate_a/b` if the conflation
-causes persistent confusion.
+**Actions:**
+1. Ensure all R1+ reports and notebooks use correct terminology.
+   Consider renaming the H2H field to `auction_win_rate_a/b` if the conflation
+   causes persistent confusion.
+2. Report **seat-balanced competitive bid rate** as the headline metric in H2H
+   reports (e.g., C33 §2): average the two reciprocal cross-matchups per bidder.
+   Keep single-cell rates as supporting detail. Example from R0 C33:
+   `hybrid_olsa: (16.2+16.5)/2 = 16.35%`, `olsa: (83.8+83.5)/2 = 83.65%`.
+   Low cost, improves defensibility without changing conclusions.
 
 ---
 
@@ -302,6 +309,71 @@ R1→R2+ comparisons are cleaner than Phase 0→R0 because:
 
 ---
 
+## Priority 8: Bid-Level Search in HybridOLSaBidder
+
+**Status:** DONE — adopted by R0 v2 (#493 `compute_best_bid()`, verified max-utility search)
+**Origin:** R0 report Q&A session (2026-03-02), C33 ablation code review
+**Blocks promotion:** No longer blocking — implemented in v2
+
+### What
+
+The current HybridOLSaBidder evaluates **one bid level per contract**: `bid_n = floor(mu)`.
+If EV is negative at that level, it skips the contract entirely. It never checks whether
+a lower bid level would have positive EV.
+
+Example: `mu = 4.8` → `bid_n = 4`. If EV < 0 at bid 4 (e.g., P(make|4) is too low given
+sigma), bidding 3 might have positive EV — higher P(make) and lower set penalty. But the
+current code never evaluates this.
+
+This is a "greedy single-point" limitation that leaves value on the table, especially for
+marginal hands near the bid/pass boundary.
+
+### Implementation
+
+Add a `bid_level_search` parameter to `HybridOLSaBidder.__init__()` (default `False` for
+backward compatibility with R0):
+
+```python
+# In choose_bid(), replace single-level evaluation with:
+for search_n in range(bid_n, max(0, obs.current_high_bid), -1):
+    ev = self._compute_ev(mu, sigma, search_n)
+    penalty = self._compute_risk_penalty(mu, sigma, search_n)
+    utility = ev - penalty
+    if utility > 0 and (best_utility is None or utility > best_utility):
+        best_utility = utility
+        best_bid_n = search_n
+        best_contract = contract
+        break  # Highest level with positive EV is optimal (EV decreases as bid rises)
+```
+
+**Note:** EV is monotonically decreasing with bid level (higher bid → lower P(make) →
+lower EV), so the first positive-EV level found searching downward is optimal. No need
+to evaluate all levels.
+
+**Cost:** Minimal — at most ~10 additional `_compute_ev` calls per contract (fast
+arithmetic, no model inference).
+
+### Ablation Design
+
+At R1, run a C33-style ablation:
+- Arm A: `bid_level_search=False` (R0 behavior)
+- Arm B: `bid_level_search=True`
+- Same model artifact, same deals, seat-swapped
+
+This cleanly isolates the bid-level search contribution from P1 (feature enrichment)
+and other R1 changes.
+
+### Interaction with Other Priorities
+
+- **P1 (HIGH/LOW enrichment):** Compounding potential — better features produce more
+  accurate mu/sigma for HIGH/LOW, and bid-level search unlocks bids at lower levels
+  where the current code passes. Test interaction via the P2 factorial.
+- **P4 (pass-threshold re-tune):** Bid-level search may reduce the need for threshold
+  adjustment — hands that currently pass because EV < 0 at floor(mu) might bid at a
+  lower level instead.
+
+---
+
 ## R0 Process Lessons — Checklist
 
 **Source:** `docs/04_reports/r0/r0_retrospective.md` §5
@@ -334,4 +406,5 @@ block promotion but should be reviewed and dispositioned before R1 execution beg
 | Deferred report sections | B3/D1 | `report_narrative_overlay.md` | `comparator_rankings.md` §4, §8 |
 | H2H bid_rate caveat | All | `measurement_integrity_r0.md` L3 | All H2H reports |
 | Rung-to-rung pipeline | Post-A2 | — | `phase0_to_r0_progression.md` (template) |
+| Bid-level search | C2 (R1 training) | `r0_report_qa.md` Q4 | `c33_ablation_report.md` |
 | Process lessons (W1–W6) | Pre-C2 | `r0_retrospective.md` §5 | — |

@@ -1,0 +1,431 @@
+# R0 Canonical v2 — Execution Plan
+
+**Date:** 2026-03-02
+**Status:** ACTIVE
+**Scope:** Final R0 revision — freeze corrected baseline with bid-level search,
+tuned lambda, conditional normalizer, and full report regeneration.
+**Supersedes:** Previous session plan (PR-D2/H/I, now complete).
+
+---
+
+## 1. Context & Governance
+
+### 1.1 Why Reopen R0
+
+R0 was promoted as r0-canonical-v1 with known limitations:
+- ModeloEspecifico and RanktheTank had artificial bid floors (#491 fixed)
+- HybridOLSaBidder evaluated only `floor(mu)` — never searched lower bid levels (#493 added `bid_level_search`)
+- Lambda (risk aversion) was hardcoded at 0.0 without empirical validation (#500 added sweep tooling)
+- Oracle analysis (nb55 v2) found contract-selection regret share = 90.9% → normalizer TRIGGERED
+
+These changes alter the model's decision surface enough to invalidate v1 batteries,
+notebooks, and reports. A controlled revision to v2 is required.
+
+### 1.2 Governance Rules
+
+- **v1 is immutable.** Do not overwrite v1 artifacts. Retain for provenance.
+- **v2 is the sole target freeze.** All new artifacts use v2 naming.
+- **One execution branch:** All v2 work on `main` via worktree PRs.
+- **No partial freezes.** Either all v2 gates pass or v2 does not ship.
+
+---
+
+## 2. Behavioral Delta (v1 → v2)
+
+### 2.1 Already Merged (code complete)
+
+| PR | Change | Behavioral Impact |
+|----|--------|-------------------|
+| #491 | ModeloEspecifico floor 3→1, RanktheTank bid 1/2 tiers | Baseline bidders can now bid 1-2 |
+| #493 | `bid_level_search=True`, 8-bidder roster, `risk_lambda` placeholder | HybridOLSa evaluates all legal bid levels (max-utility) |
+| #494 | 4 pre-registered protocols (threshold, lambda, normalizer, OneModel) | Governance framework |
+| #495 | nb58 lambda tuning notebook | Track D offline analysis |
+| #496 | Protocol doc fixes | Wording corrections |
+| #497 | v2 bid-level search in nb55 + nb56 | Oracle/threshold use new policy |
+| #498 | Provenance derivation comments | Documentation only |
+| #499 | `analysis/sweep.py` primitives | Reusable analysis functions |
+| #500 | `run_lambda_sweep.py`, nb59, protocol §8 amendment | Simulation-based lambda tooling |
+
+### 2.2 Remaining Work (this plan)
+
+| Item | Type | Impact |
+|------|------|--------|
+| Lambda freeze | Config | Inject selected lambda into all configs |
+| Normalizer (conditional) | Code + config | Cross-contract calibration layer |
+| All batteries re-run | Experiment | Fresh v2 data for all instruments |
+| All notebooks re-run | Analysis | Consistent with v2 policy |
+| All reports regenerated | Documentation | Consistent with v2 data |
+| Promotion gate + HITL sign-off | Governance | New control before freeze |
+
+### 2.3 Bid-Level Search Verification
+
+**Status: VERIFIED.** Production code (`compute_best_bid()`, bidding.py:797-859)
+evaluates ALL legal bid levels and selects max utility. Tie-break prefers higher
+bid amount. NOT break-on-first. Implementations in `analysis/sweep.py` and
+notebooks 55/56 match production with spot-check validation (100-hand sample).
+
+---
+
+## 3. Step 0: Plan Commit + Archival (FIRST ACTION)
+
+**Must execute before any other work.** This preserves the plan and cleans
+up stale plans in a single housekeeping PR.
+
+### 3.0.1 Commit this plan
+
+Copy this file to `plans/r0_canonical_v2_plan.md` in the repo.
+
+### 3.0.2 Archive plans WITHOUT active references
+
+Only archive plans that are NOT referenced by active notebooks or reports.
+Plans with active provenance references stay in place until post-freeze cleanup.
+
+**Safe to archive now** (referenced only by `MASTER_PLAN.md`, which is itself
+deferred to post-freeze. No notebook or doc references outside `plans/`):
+
+```bash
+cd plans
+git mv bidder_correctness_fixes.md archive/
+git mv c33_ablation_plan_prompt.md archive/
+git mv c33_ablation_refactor_plan.md archive/
+git mv c33_ablation_review_notes.md archive/
+git mv comparator_dual_track_plan.md archive/
+git mv comparator_experiment_redesign.md archive/
+git mv comparator_rankings_refactor_plan.md archive/
+git mv comparator_rankings_review_notes.md archive/
+git mv comparator_single_seat.md archive/
+git mv b4_skills_testing_notes.md archive/
+git mv report_narrative_overlay.md archive/
+git mv handoff_comparator_v5.md archive/
+git mv r0_report_qa.md archive/
+git mv r0_v2_onemodel_protocol.md archive/
+```
+
+**Note on MASTER_PLAN.md cross-references:** `MASTER_PLAN.md` references 11 of these 14
+files in its sub-plan registry (lines 444-455). Since MASTER_PLAN.md is itself deferred
+to post-freeze (§12.2), its internal links to `plans/archive/` will be temporarily broken.
+This is acceptable: MASTER_PLAN.md is a superseded governance document being retained only
+for provenance. During the post-freeze cleanup PR, update MASTER_PLAN.md sub-plan registry
+paths to `plans/archive/` before archiving it.
+
+**Deferred to post-freeze** (have active notebook/doc references):
+
+| Plan | Referenced By | Deferred Until |
+|------|--------------|---------------|
+| `MASTER_PLAN.md` | `r1_follow_ups.md:6`, `contract_selection_oracle.md:306` | Post-freeze: update refs → archive |
+| `contract_selection_analysis.md` | `55_contract_selection_oracle.py:32,99`, `contract_selection_oracle.md:58,366` | Post-freeze: update refs → archive |
+| `r0_pass_threshold_protocol.md` | `56_pass_threshold_sweep.py:23,843`, `pass_threshold_decision.md:41,133` | Post-freeze: update refs → archive |
+| `r0_v2_threshold_protocol.md` | `56_pass_threshold_sweep.py:24` | Post-freeze: update refs → archive |
+| `r0_v2_pr_a_amendments.md` | `56_pass_threshold_sweep.py:25` | Post-freeze: update refs → archive |
+
+Post-freeze cleanup PR: update all notebook/doc references to `plans/archive/` paths,
+then archive remaining 5 plans.
+
+### 3.0.3 Update r1_follow_ups.md
+
+Close P6 and P8 (adopted by v2). See §11.
+
+### 3.0.4 Commit as housekeeping PR
+
+Single PR: plan commit + archive + r1_follow_ups update.
+Branch: `plans-r0-v2-housekeeping`
+
+---
+
+## 4. Phase 0: Lambda Freeze (Prerequisite)
+
+**Sub-plan:** `plans/r0_v2_lambda_tuning_protocol.md` (§8: simulation-based)
+
+### 4.1 Execution (COMPLETED)
+
+```bash
+uv run python scripts/internal/run_lambda_sweep.py \
+  --seed 42 --n-per 10000 \
+  --artifact-path data/artifacts/arc_d/r0/hybrid_r0.json \
+  --output data/artifacts/arc_d/r0/lambda_sweep_selfplay_v1.json
+```
+
+Grid: `[0.0, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]`
+
+### 4.2 Analysis
+
+```bash
+uv run papermill \
+  notebooks/arc_d/r0/59_lambda_simulation_sweep.ipynb \
+  /tmp/nb59_quick.ipynb \
+  -p SWEEP_OUTPUT data/artifacts/arc_d/r0/lambda_sweep_selfplay_v1.json \
+  -p MODE QUICK
+```
+
+### 4.3 Decision Fork
+
+- **lambda\*=0.0 → FINAL:** No config changes. Proceed to Phase 1.
+- **lambda\*>0.0 → PROVISIONAL:** Must confirm with H2H before proceeding.
+  If confirmed, inject lambda into all configs:
+  - `experiments/configs/auction_comparator.yaml`
+  - `experiments/configs/arc_d_r0_c33_ablation.yaml`
+  - `scripts/internal/run_arc_d_h2h_battery.py` (DEFAULT_ROSTER)
+
+### 4.4 Sweep Results (completed 2026-03-03)
+
+| Lambda | net_eppd | delta vs λ=0 | 95% CI | bid_rate | make_rate | Guardrails |
+|--------|----------|-------------|--------|----------|-----------|------------|
+| 0.0 | 2.238 | — | — | 100.0% | 96.9% | FAIL (bid_rate_cap) |
+| 0.05 | 2.270 | +0.032 | [+0.021, +0.044] | 100.0% | 97.0% | FAIL |
+| 0.1 | 2.685 | +0.447 | [+0.391, +0.502] | 100.0% | 99.2% | FAIL |
+| 0.2 | 2.905 | +0.666 | [+0.605, +0.727] | 100.0% | 99.7% | FAIL |
+| 0.5 | 3.122 | +0.884 | [+0.815, +0.952] | 95.3% | 100.0% | FAIL |
+| **1.0** | **2.216** | **-0.023** | [-0.103, +0.058] | **53.0%** | **100.0%** | **PASS** |
+| 2.0 | 0.696 | -1.542 | [-1.620, -1.462] | 12.9% | 100.0% | PASS |
+
+### 4.5 Lambda Decision: RETAIN lambda=0.0 PROVISIONAL
+
+**Amendment (2026-03-03):** The sweep results above are INVALIDATED for guardrail
+purposes due to a **metric-definition mismatch**:
+
+- **What happened:** The `bid_rate` metric in the evaluator measures "fraction of
+  deals with an auction winner" (deal-level), NOT per-seat bid propensity.
+- **Why it matters:** In the 4-seat self-play sweep setup, even moderate per-seat
+  bid propensity produces near-100% deal-level bid_rate (≈ 1-(1-p)^4). The
+  `bid_rate_cap=0.95` guardrail was designed for single-seat comparator context
+  where bid_rate = per-hand bid propensity for one bidder.
+- **Consequence:** Lambda=0.0 through 0.5 were incorrectly flagged as failing
+  bid_rate_cap. Lambda=1.0 was selected as lambda* only because it passed a
+  guardrail applied to the wrong estimand.
+
+**Decision:** Retain lambda=0.0 PROVISIONAL until the metric is corrected.
+
+**Required follow-up:**
+1. Add seat-level bid propensity extraction to `run_lambda_sweep.py`
+2. Re-run small multi-seed sweep (0.0, 0.5, 1.0) with corrected metric
+3. Apply pre-registered epsilon-greedy rule with proper seat-level guardrails
+4. Document as protocol §9 amendment
+
+---
+
+## 5. Phase 1: Normalizer (Track E, Conditional)
+
+**Sub-plan:** `plans/r0_v2_normalizer_protocol.md`
+
+### 5.1 Trigger Check
+
+**Already evaluated:** nb55 v2 (PR #497) found CS regret share = 90.9%.
+Trigger threshold = 25%. **TRIGGERED.**
+
+**Lambda impact:** With lambda retained at 0.0, the nb55 v2 result stands
+without re-evaluation. If lambda changes after the metric fix (§4.5), nb55
+must be re-run with the new lambda value.
+
+### 5.2 Implementation (PR-A scope)
+
+#### Normalizer Design (per protocol §3.1, with escalation)
+
+**Tier 1: Affine transform** (6 parameters)
+```
+normalized_utility(ct) = alpha[ct] * raw_utility + beta[ct]
+```
+Where `alpha[ct]` and `beta[ct]` are learned from oracle training data.
+
+**Tier 2: Escalation** — If affine A/B eval shows positive direction but
+< +0.05 net_eppd, try isotonic regression or Platt scaling before rejecting.
+Only escalate once; if Tier 2 also fails adoption criteria, reject normalizer.
+
+#### New Code
+
+| File | Change | Est. Lines |
+|------|--------|-----------|
+| `src/bid_euchre/models/normalizer.py` | NEW: Train normalizer from oracle data, save as standalone artifact | ~150 |
+| `src/bid_euchre/strategy/bidding.py` | Add `normalizer_path` param to HybridOLSaBidder, load + apply before cross-contract comparison | ~30 |
+| `tests/unit/test_normalizer.py` | NEW: Training, application, identity, parity tests | ~200 |
+| Normalizer artifact | NEW file `normalizer_r0_v1.json` (alpha/beta per contract type) — separate from `hybrid_r0.json` |  |
+
+**Immutability rule:** `hybrid_r0.json` is NEVER modified. The normalizer is a separate
+artifact loaded via `normalizer_path` parameter. This preserves model provenance and allows
+normalizer-on vs normalizer-off comparisons using the same model artifact.
+
+#### Training
+
+- **Data:** Training partition of oracle dataset (60/40 hash split by deal_id, seed=42)
+- **Label:** Oracle's optimal contract per hand
+- **Method:** Fit affine parameters to maximize utility-ranking accuracy
+- **Validation:** Held-out partition
+
+#### A/B Evaluation (per protocol §3.3)
+
+| Arm | Policy |
+|-----|--------|
+| A (control) | v2 baseline (bid-level search + lambda) |
+| B (treatment) | v2 baseline + normalizer |
+
+**Evaluation approach:** Create a separate comparator config
+(`auction_comparator_normalizer.yaml`) that duplicates the canonical config but adds
+`normalizer_path: data/artifacts/arc_d/r0/normalizer_r0_v1.json` to HybridOLSaBidder
+entries. Run config-pinned (no CLI injection).
+
+#### Adoption Criteria (per protocol §3.4)
+
+| Criterion | Threshold |
+|-----------|-----------|
+| net_eppd improvement | >= +0.05 vs control |
+| 95% bootstrap CI | Excludes 0 |
+| H2H confirmation | Positive delta |
+| bid_rate | [0.05, 0.95] |
+| make_rate | >= 0.45 |
+
+#### Decision
+
+- **ADOPT:** Incorporate normalizer into canonical v2 artifact. Full recascade required.
+- **REJECT:** Document finding, proceed without normalizer. No recascade.
+
+### 5.3 Recascade (if adopted)
+
+Per protocol §3.5: normalizer changes contract selection → all batteries must re-run
+with normalizer applied. This means Phase 2 batteries run AFTER normalizer decision,
+not before. If normalizer is rejected, Phase 2 runs without it.
+
+---
+
+## 6. Phase 2: Full Battery Cycle (PR-B scope)
+
+Run after normalizer decision is resolved. All batteries use the final v2 policy
+(bid-level search + frozen lambda + normalizer if adopted).
+
+### 6.1 Track A: Comparator Battery → v6
+
+```bash
+uv run python scripts/internal/run_auction_comparator.py \
+  --config experiments/configs/auction_comparator.yaml \
+  --seed 42 --single-seat --n-per 5000 \
+  --output-format json \
+  --output data/artifacts/arc_d/r0/comparator_battery_r0_v6.json
+```
+
+### 6.2 Track B: H2H Battery → v4
+
+```bash
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
+  --mode QUICK --seed 42 --n-per 2000 \
+  --output data/artifacts/arc_d/r0/h2h_battery_quick_v4.json
+```
+
+### 6.3 Track C: C33 Ablation Rerun
+
+```bash
+uv run python experiments/run_experiment.py --seed 42 \
+  --config experiments/configs/arc_d_r0_c33_ablation.yaml
+```
+
+### 6.4 Parallelism
+
+Tracks A, B, and C are independent → run simultaneously.
+
+---
+
+## 7. Phase 3: Notebooks + Reports (PR-B scope, continued)
+
+### 7.1 Update Rung Bundle
+
+Edit `data/artifacts/arc_d/r0/rung_bundle_r0.json` with new artifact pointers.
+
+### 7.2 Re-run ALL Notebooks
+
+All 8 notebooks in `notebooks/arc_d/r0/` must be re-run with v2 data.
+
+### 7.3 Regenerate ALL Reports
+
+Full regeneration of all 11 reports in `docs/04_reports/r0/`.
+
+---
+
+## 8. Promotion Readiness Gate
+
+### 8.1 Gate Checklist
+
+See `plans/r0_canonical_v2_promotion_gate.md` for the full checklist.
+
+### 8.2 HITL Sign-Off
+
+Required after gate pass, before tagging v2.
+
+### 8.3 Freeze
+
+On approval: tag as `r0-canonical-v2`, publish changelog.
+
+---
+
+## 9. Artifact Versioning Table
+
+| Artifact | v1 (immutable) | v2 (new) |
+|----------|---------------|----------|
+| Comparator battery | `comparator_battery_r0_v4.json` | `comparator_battery_r0_v6.json` |
+| Comparator CIs | `comparator_cis_r0_v4.json` | `comparator_cis_r0_v6.json` |
+| H2H QUICK | `h2h_battery_quick_v2.json` | `h2h_battery_quick_v4.json` |
+| H2H FULL | `h2h_battery_full_v2.json` | `h2h_battery_full_v4.json` |
+| Lambda sweep | — | `lambda_sweep_selfplay_v1.json` |
+| Normalizer artifact | — | `normalizer_r0_v1.json` (if adopted) |
+| Model artifact | `hybrid_r0.json` | `hybrid_r0.json` (UNCHANGED) |
+
+---
+
+## 10. Sub-Plan Registry
+
+| Sub-Plan | Governs | Status |
+|----------|---------|--------|
+| `r0_v2_lambda_tuning_protocol.md` | Phase 0 (lambda freeze) | ACTIVE — metric fix needed |
+| `r0_v2_normalizer_protocol.md` | Phase 1 (normalizer) | ACTIVE — TRIGGERED |
+| `r0_canonical_v2_promotion_gate.md` | Phase 3 (gate + sign-off) | TO CREATE |
+
+---
+
+## 11. r1_follow_ups Dispositions
+
+Items absorbed by v2 (close in `r1_follow_ups.md`):
+
+| Item | Disposition | Reason |
+|------|-------------|--------|
+| **P8** (bid-level search) | **CLOSED — adopted by v2** | `compute_best_bid()` in #493 |
+| **P6** (H2H bid_rate caveat) | **CLOSED — adopted by v2** | Fix terminology during report regeneration |
+
+---
+
+## 12. Plan Archival Schedule
+
+### 12.1 Step 0 — Archive Now (14 files)
+
+See §3.0.2 for the list.
+
+### 12.2 Post-Freeze — Archive After Reference Update (5 files)
+
+See §3.0.2 deferred table.
+
+### 12.3 Keep (not archived)
+
+- `r0_canonical_v2_plan.md` (this plan)
+- `r0_v2_lambda_tuning_protocol.md` (active sub-plan)
+- `r0_v2_normalizer_protocol.md` (active sub-plan)
+- `arc_d_execution_plan.md` (R1+ reference)
+- `r1_follow_ups.md` (active follow-ups)
+
+---
+
+## 13. PR Structure
+
+### PR-A: Normalizer + Gate Framework
+### PR-B: Batteries + Notebooks + Reports + Sign-off
+
+---
+
+## 14. Verification
+
+### Pre-PR-A
+```bash
+make check-quiet
+uv run python -m pytest tests/unit/test_normalizer.py -v
+```
+
+### Pre-PR-B
+```bash
+make check-quiet
+make notebook-check
+make docs-check
+```
