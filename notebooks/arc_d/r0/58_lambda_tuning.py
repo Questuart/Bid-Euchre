@@ -185,6 +185,12 @@ print(f"Contract keys: {sorted(actual_keys)}")
 # 2. Compute utility = EV - risk_penalty for each contract at each lambda
 # 3. Select best contract (max utility) and decide bid vs pass
 # 4. Measure realized net-differential from actual tricks
+#
+# **Pooling justification:** Metrics (net_eppd, bid_rate, make_rate) are reported
+# pooled across contract types because lambda tunes the *cross-contract decision
+# policy* — each hand selects the single best contract among all 6 candidates.
+# Per-contract-type breakout is not meaningful here since the unit of analysis is
+# the hand-level bid/pass decision, not individual contract performance.
 
 # %%
 CONTRACT_KEYS = ["suit_C", "suit_D", "suit_H", "suit_S", "high", "low"]
@@ -331,7 +337,16 @@ def evaluate_lambda(
 
             bid_n, utility = result
 
-            if best_utility is None or utility > best_utility:
+            # Tie-break matches HybridOLSaBidder.choose_bid() (bidding.py:1191-1198):
+            # on equal utility, prefer higher (bid_n, contract_key) tuple.
+            if (
+                best_utility is None
+                or utility > best_utility
+                or (
+                    utility == best_utility
+                    and (bid_n, ck) > (best_bid_n, best_contract)
+                )
+            ):
                 best_utility = utility
                 best_contract = ck
                 best_bid_n = bid_n
