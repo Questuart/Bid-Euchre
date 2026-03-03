@@ -41,7 +41,7 @@
 # %% tags=["parameters"]
 MODE = "SMOKE"  # SMOKE | QUICK | FULL
 SEED = 42  # RNG seed
-MATCHUP_RUN_DIR = ""  # Path to h2h run (empty = skip matchup analysis, show demo)
+MATCHUP_RUN_DIR = "data/runs/arc_d_r0_h2h_battery_42_20260302_231835"
 MODEL_NAME = "hybrid_olsa_r0"  # Model name in matchup_id strings
 
 # %% [markdown]

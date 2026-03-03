@@ -42,8 +42,8 @@
 # %% tags=["parameters"]
 MODE = "SMOKE"  # SMOKE | QUICK | FULL
 SEED = 42
-ARTIFACT_PATH = "data/artifacts/arc_d/r0/comparator_cis_r0_v4.json"
-BATTERY_PATH = "data/artifacts/arc_d/r0/comparator_battery_r0_v4.json"
+ARTIFACT_PATH = "data/artifacts/arc_d/r0/comparator_cis_r0_v6.json"
+BATTERY_PATH = "data/artifacts/arc_d/r0/comparator_battery_r0_v6.json"
 RUNS_DIR = "data/runs"
 
 # %% [markdown]
