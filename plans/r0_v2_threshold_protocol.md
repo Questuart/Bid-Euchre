@@ -189,7 +189,7 @@ retain `t = 0.0`.
 
 | Condition | Decision | Action |
 |-----------|----------|--------|
-| delta > 0 AND CI excludes 0 AND guardrails pass | **ADOPT** | Set threshold for v2 policy, record in model artifact |
+| delta > 0 AND CI excludes 0 AND guardrails pass | **ADOPT** | Set threshold for v2 policy, record in bidding policy configuration (YAML configs) |
 | delta CI includes 0 | **RETAIN** | Keep t=0.0, no change |
 | delta < 0 | **RETAIN** | Threshold tuning harmful, keep t=0.0 |
 
@@ -253,3 +253,4 @@ while `lambda` controls the risk penalty on hands already in the pool.
 | v1 | 2026-03-01 | Initial protocol | Pre-registered before execution |
 | v1-exec | 2026-03-02 | Executed; decision RETAIN (t=0 optimal for floor-only policy) | Monotonic decline in net_diff |
 | v2 | 2026-03-02 | Re-tune for `bid_level_search=True` policy | v2 policy changes utility landscape; v1 result may not transfer |
+| v2.1 | 2026-03-02 | Fix §3.3 ADOPT action: "record in model artifact" → "record in bidding policy configuration" | pass_threshold is a config/policy parameter (§1.3 line 65), not a model artifact field |

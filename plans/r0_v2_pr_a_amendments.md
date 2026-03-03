@@ -128,6 +128,33 @@ so differences are attributable only to the decision layer, not the model.
 
 ---
 
+## Amendment D — Threshold→Lambda Sequential Ordering (Post-PR-B Review)
+
+**Context:** The R0 v2 session plan (Phase 3a/3b) initially grouped threshold
+and lambda tuning as potentially parallel. The pre-registered protocols
+(`r0_v2_threshold_protocol.md` §4, `r0_v2_lambda_tuning_protocol.md` §4)
+specify **strict sequential ordering**: threshold first, then lambda.
+
+**Governing decision:** Threshold→lambda sequential is the canonical ordering
+for R0 v2 execution. This explicitly overrides any prior "parallel" framing
+in session plans or discussion.
+
+**Rationale:** Threshold controls which hands enter the bidding pool (the
+selection boundary). Lambda controls the risk penalty applied to hands already
+in the pool. Tuning threshold with lambda=0.0 isolates the selection effect.
+Then lambda is tuned conditional on the selected threshold, preserving causal
+clarity in the 2-stage hyperparameter search.
+
+**Execution sequence:**
+1. Track C: Tune `pass_threshold` with `risk_lambda=0.0` → yields `t*`
+2. Track D: Tune `risk_lambda` with `pass_threshold=t*` → yields `lambda*`
+3. Both values applied to all canonical configs before battery runs
+
+**Status:** Documented here as governing override. Both protocol docs
+already specify this ordering.
+
+---
+
 ## Resolved Findings (No Code Changes Needed)
 
 | Finding | Severity | Resolution |
