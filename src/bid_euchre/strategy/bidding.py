@@ -318,6 +318,15 @@ class HighLowHeuristicBidder(BiddingPolicy):
             return BidAction.pass_bid()
 
 
+# ── Derivation: RanktheTank threshold-to-bid mapping ──
+# Source: hand-crafted heuristic baseline, not learned from data
+# Formula: score_hand_scalar() → ~10-point spacing thresholds → bid_n
+#   Suit: 100→1, 150→2, 200→3, 250→4, 300→5, 350→6, 450→7, 550→8, 650→9, 750→10
+#   HIGH/LOW: 100→1, 150→2, 200→3, 280→4, 350→5, 400→6, 450→7, 500→8
+# Assumptions: score_hand_scalar provides monotonic ordering of hand strength
+# See also: score_hand_scalar() in features/hand_eval.py
+
+
 class RanktheTank(BiddingPolicy):
     """
     Rank-sum based bidder (v1 baseline) that evaluates all contract options.
@@ -860,6 +869,17 @@ _CVAR_DRAWS = 1000
 _CVAR_TAIL = 0.05
 
 
+# ── Derivation: truncated normal EV ──
+# Source: standard truncated normal distribution theory
+# Formula:
+#   Payoff: make (t >= bid) → net = 2t - 10; set (t < bid) → net = t - b - 10
+#   Continuity correction: threshold = bid_n - 0.5 (half-integer boundary)
+#   Conditional expectations: E[X|X≥k] = μ + σ·φ(z)/Φ̄(z)  (inverse Mills ratio)
+#   Z_CAP = 6.0 prevents numerical overflow in extreme CDF/PDF tails
+# Assumptions: tricks ~ N(μ, σ²), residual variance from OLS training
+# See also: compute_ev_vectorized in nb56, analysis/sweep.py
+
+
 def _compute_ev_static(mu: float, sigma: float, bid_n: int) -> float:
     """Compute expected net-differential value using Gaussian model.
 
@@ -893,6 +913,18 @@ def _compute_ev_static(mu: float, sigma: float, bid_n: int) -> float:
     set_ev = e_tricks_set - bid_n - 10.0
 
     return p_make * make_ev + p_set * set_ev
+
+
+# ── Derivation: CVaR risk penalty (Monte Carlo) ──
+# Source: Conditional Value-at-Risk (CVaR) via simulation
+# Formula:
+#   1. Draw 1000 samples from N(μ, σ²), compute net payoff for each
+#   2. Sort nets ascending, take bottom 5% (tail_size = max(1, 50))
+#   3. CVaR = mean of that tail
+#   4. Penalty = max(0, -CVaR) × λ  (only penalizes downside risk)
+# Assumptions: 1000 draws gives adequate precision for bid selection;
+#   Monte Carlo avoids complex analytical truncated-normal CVaR formulas
+# See also: plans/r0_v2_lambda_tuning_protocol.md
 
 
 def _compute_risk_penalty_static(
