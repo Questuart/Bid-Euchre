@@ -168,38 +168,109 @@ uv run papermill \
 
 ### 4.4 Sweep Results (completed 2026-03-03)
 
-| Lambda | net_eppd | delta vs λ=0 | 95% CI | bid_rate | make_rate | Guardrails |
-|--------|----------|-------------|--------|----------|-----------|------------|
-| 0.0 | 2.238 | — | — | 100.0% | 96.9% | FAIL (bid_rate_cap) |
-| 0.05 | 2.270 | +0.032 | [+0.021, +0.044] | 100.0% | 97.0% | FAIL |
-| 0.1 | 2.685 | +0.447 | [+0.391, +0.502] | 100.0% | 99.2% | FAIL |
-| 0.2 | 2.905 | +0.666 | [+0.605, +0.727] | 100.0% | 99.7% | FAIL |
-| 0.5 | 3.122 | +0.884 | [+0.815, +0.952] | 95.3% | 100.0% | FAIL |
-| **1.0** | **2.216** | **-0.023** | [-0.103, +0.058] | **53.0%** | **100.0%** | **PASS** |
-| 2.0 | 0.696 | -1.542 | [-1.620, -1.462] | 12.9% | 100.0% | PASS |
+Raw sweep output with BOTH deal-level and seat-level metrics:
 
-### 4.5 Lambda Decision: RETAIN lambda=0.0 PROVISIONAL
+| Lambda | net_eppd | delta vs λ=0 | 95% CI | Deal bid_rate | Seat propensity | make_rate |
+|--------|----------|-------------|--------|---------------|-----------------|-----------|
+| 0.0 | 2.238 | — | — | 100.0% | 93.5% | 96.9% |
+| 0.05 | 2.270 | +0.032 | [+0.021, +0.044] | 100.0% | 91.7% | 97.0% |
+| 0.1 | 2.685 | +0.447 | [+0.391, +0.502] | 100.0% | 81.8% | 99.2% |
+| 0.2 | 2.905 | +0.666 | [+0.605, +0.727] | 100.0% | 74.2% | 99.7% |
+| **0.5** | **3.122** | **+0.884** | **[+0.815, +0.952]** | **95.3%** | **46.8%** | **100.0%** |
+| 1.0 | 2.216 | -0.023 | [-0.103, +0.058] | 53.0% | 16.9% | 100.0% |
+| 2.0 | 0.696 | -1.542 | [-1.620, -1.462] | 12.9% | 3.4% | 100.0% |
 
-**Amendment (2026-03-03):** The sweep results above are INVALIDATED for guardrail
-purposes due to a **metric-definition mismatch**:
+**Seat propensity** = fraction of individual seat-opportunities where the policy
+submits a non-pass bid action, computed from `auction_transcript` in JSONL hand_end
+records. This is the behaviorally meaningful selectivity metric.
 
-- **What happened:** The `bid_rate` metric in the evaluator measures "fraction of
-  deals with an auction winner" (deal-level), NOT per-seat bid propensity.
-- **Why it matters:** In the 4-seat self-play sweep setup, even moderate per-seat
-  bid propensity produces near-100% deal-level bid_rate (≈ 1-(1-p)^4). The
-  `bid_rate_cap=0.95` guardrail was designed for single-seat comparator context
-  where bid_rate = per-hand bid propensity for one bidder.
+**Deal bid_rate** = fraction of deals where any seat won the auction (evaluator's
+`bid_rate` field). This is inflated in multi-seat self-play: even with moderate
+seat-level propensity, deal-level rate ≈ 1-(1-p)^4.
+
+### 4.5 Lambda Guardrail Metric Mismatch & Corrected Decision
+
+#### 4.5.1 Discovery: Metric-Definition Mismatch
+
+The sweep initially selected lambda*=1.0 (artifact `lambda_sweep_selfplay_v1.json`).
+This was **incorrect** due to a guardrail metric mismatch:
+
+- **Protocol guardrail (§2.6):** `bid_rate in [0.05, 0.95]` — hard bounds.
+- **Origin:** Copied from the pass-threshold protocol (`r0_v2_threshold_protocol.md`
+  §2.6), which ran on **offline replay** where `bid_rate` = per-hand bid propensity
+  for a single seat (opening bidder, `current_high_bid=0`).
+- **Sweep context:** The lambda sweep used **4-seat self-play simulation**
+  (`run_lambda_sweep.py`), where the evaluator's `bid_rate` measures "fraction
+  of deals with an auction winner" — a deal-level aggregate, not per-seat
+  propensity.
+- **Inflation effect:** In 4-seat self-play, `deal_bid_rate ≈ 1-(1-p)^4` where
+  `p` = per-seat propensity. A seat propensity of 46.8% (lambda=0.5) produces
+  deal_bid_rate = 95.3%, barely under the 95% cap. A seat propensity of 93.5%
+  (lambda=0.0) produces deal_bid_rate = 100.0%, far above.
 - **Consequence:** Lambda=0.0 through 0.5 were incorrectly flagged as failing
-  bid_rate_cap. Lambda=1.0 was selected as lambda* only because it passed a
-  guardrail applied to the wrong estimand.
+  `bid_rate_cap`. Lambda=1.0 was selected as lambda* only because it was the
+  best-performing value that passed a guardrail applied to the **wrong estimand**.
 
-**Decision:** Retain lambda=0.0 PROVISIONAL until the metric is corrected.
+**Root cause:** The protocol's guardrail metric was defined for one evaluation
+context (single-seat offline replay) and applied without adaptation to a different
+evaluation context (multi-seat self-play simulation). The behavioral concern
+underlying the guardrail (selectivity) is valid — the metric operationalization
+was not.
 
-**Required follow-up:**
-1. Add seat-level bid propensity extraction to `run_lambda_sweep.py`
-2. Re-run small multi-seed sweep (0.0, 0.5, 1.0) with corrected metric
-3. Apply pre-registered epsilon-greedy rule with proper seat-level guardrails
-4. Document as protocol §9 amendment
+#### 4.5.2 Corrected Guardrail Application
+
+The guardrail concern — "a model that bids on everything isn't being selective" —
+maps to **seat-level bid propensity**, which can be extracted from
+`auction_transcript` in the JSONL logs. Applying the same [0.05, 0.95] bounds
+to seat-level propensity:
+
+| Lambda | Seat propensity | Guardrail (seat-level) |
+|--------|-----------------|------------------------|
+| 0.0 | 93.5% | PASS |
+| 0.05 | 91.7% | PASS |
+| 0.1 | 81.8% | PASS |
+| 0.2 | 74.2% | PASS |
+| 0.5 | 46.8% | PASS |
+| 1.0 | 16.9% | PASS |
+| 2.0 | 3.4% | **FAIL** (floor) |
+
+Only lambda=2.0 fails — it's too conservative (3.4% seat propensity, below the
+5% floor). All other candidates pass.
+
+#### 4.5.3 Corrected Lambda Selection
+
+Applying the pre-registered epsilon-greedy rule (protocol §8.4, ε=0.02) to the
+corrected guardrail-passing survivors:
+
+1. **Best net_eppd among survivors:** lambda=0.5 → 3.122
+2. **Epsilon band:** 3.122 - 0.02 = 3.102
+3. **No other lambda within ε of best:** lambda=0.2 (2.905) is the next closest
+4. **Result:** lambda*=0.5
+
+#### 4.5.4 Decision: lambda*=0.5 PROVISIONAL
+
+| Field | Value |
+|-------|-------|
+| Selected lambda | **0.5** |
+| net_eppd | 3.122 |
+| Delta vs baseline (λ=0) | +0.884 [+0.815, +0.952] (CI excludes zero) |
+| Seat bid propensity | 46.8% (well within [0.05, 0.95]) |
+| make_rate | 100.0% (above 0.45 floor) |
+| Status | **PROVISIONAL** (per protocol §8.5: lambda > 0 requires H2H confirmation) |
+
+**Next steps:**
+1. Fix `run_lambda_sweep.py` to compute and store seat-level propensity (Task #3)
+2. Update `lambda_sweep_selfplay_v1.json` artifact: change `lambda_star` from 1.0 to 0.5
+3. Run H2H confirmation for lambda=0.5 vs lambda=0.0 → if confirmed, status → FINAL
+4. If H2H rejects → retain lambda=0.0
+5. Document full metric mismatch analysis in the lambda decision report (§7.3.1)
+
+#### 4.5.5 Protocol Amendment Record
+
+| Amendment | Date | Change | Rationale |
+|-----------|------|--------|-----------|
+| v2 §8 | 2026-03-02 | Simulation-based tuning | Capture auction dynamics |
+| **v3 §9** | **2026-03-03** | **Seat-level bid propensity guardrail** | Deal-level metric is wrong estimand for multi-seat self-play; seat-level propensity correctly measures the behavioral concern (selectivity) that the guardrail targets |
 
 ---
 
@@ -212,9 +283,16 @@ purposes due to a **metric-definition mismatch**:
 **Already evaluated:** nb55 v2 (PR #497) found CS regret share = 90.9%.
 Trigger threshold = 25%. **TRIGGERED.**
 
-**Lambda impact:** With lambda retained at 0.0, the nb55 v2 result stands
-without re-evaluation. If lambda changes after the metric fix (§4.5), nb55
-must be re-run with the new lambda value.
+**Lambda impact:** Lambda*=0.5 (PROVISIONAL, §4.5.4). Since lambda≠0, the policy
+has changed from what nb55 v2 evaluated (which used lambda=0.0). **Must re-run
+nb55 with lambda=0.5** to confirm normalizer trigger still holds. Given the
+shift in bid behavior (seat propensity 93.5% → 46.8%), the regret decomposition
+will change significantly.
+
+**Code blocker:** Both nb55 and nb56 hard-assert `risk_lambda == 0.0` in their
+inline `bid_level_search_vectorized()`. The vectorized helper has no CVaR penalty
+implementation. With lambda=0.5, notebooks will crash. See §5.2 for the scalar
+fallback fix required before re-running.
 
 ### 5.2 Implementation (PR-A scope)
 
@@ -333,7 +411,83 @@ All 8 notebooks in `notebooks/arc_d/r0/` must be re-run with v2 data.
 
 ### 7.3 Regenerate ALL Reports
 
-Full regeneration of all 11 reports in `docs/04_reports/r0/`.
+Full regeneration of all 11 existing reports in `docs/04_reports/r0/`, plus one
+new report documenting the lambda decision.
+
+#### 7.3.1 NEW: Lambda Guardrail Metric Decision Report
+
+**File:** `docs/04_reports/r0/lambda_decision.md`
+
+**Purpose:** Document the lambda sweep metric mismatch discovery, the corrected
+analysis, the decision, and the evidence chain. This is the canonical reference
+for why lambda=0.5 was selected and how the guardrail error was identified and
+resolved.
+
+**Required sections:**
+
+1. **Executive Summary** — lambda*=0.5 selected (PROVISIONAL → FINAL after H2H).
+   The initial sweep artifact incorrectly selected lambda*=1.0 due to a metric-
+   definition mismatch in the bid_rate guardrail. Corrected analysis with seat-
+   level propensity confirms lambda=0.5 as the optimal value.
+
+2. **Background** — CVaR risk penalty motivation, protocol design (pre-registered
+   grid, epsilon-greedy selection, guardrails), simulation-based evaluation (§8
+   amendment).
+
+3. **The Metric Mismatch**
+   - **Origin of the 0.95 bid_rate_cap:** Threshold protocol §2.6, designed for
+     offline replay (single-seat, `current_high_bid=0`) where `bid_rate` ≈ per-
+     seat propensity. Lambda protocol copied it verbatim.
+   - **Evaluator's bid_rate definition:** `evaluator.py:326` — `hands_with_bids
+     / deals_total` = fraction of deals with an auction winner (deal-level).
+   - **Self-play inflation:** In 4-seat self-play, deal_bid_rate ≈ 1-(1-p)^4.
+     A seat propensity of 46.8% (lambda=0.5) produces 95.3% deal-level rate.
+   - **Context sensitivity table:** Single-seat comparator vs self-play vs H2H
+     — which context each metric is appropriate for.
+
+4. **Corrected Analysis**
+   - Seat-level propensity extraction from `auction_transcript` in JSONL records.
+   - Full 7-point grid with both deal-level and seat-level metrics (table from §4.4).
+   - Corrected guardrail evaluation: all candidates pass except lambda=2.0.
+   - Epsilon-greedy selection: lambda*=0.5 (net_eppd=3.122, no competitor within ε=0.02).
+
+5. **Why lambda=0.5 Is the Right Decision**
+   - **Performance evidence:** +0.884 net_eppd over baseline, CI [+0.815, +0.952]
+     excludes zero. Largest positive delta in the grid.
+   - **Behavioral profile:** 46.8% seat propensity — genuinely selective (passes
+     on >50% of hands), not a "bid everything" policy.
+   - **make_rate:** 100.0% — zero set rate, purely upside from correct bids.
+   - **Monotonic pattern:** net_eppd increases monotonically from λ=0.0 to λ=0.5,
+     then drops sharply at λ=1.0 and λ=2.0 as bid suppression dominates. The
+     peak at λ=0.5 represents the optimal risk-reward tradeoff.
+   - **Protocol compliance:** Pre-registered grid, pre-registered selection rule,
+     pre-registered guardrail bounds — only the metric operationalization was
+     corrected, not the decision logic.
+
+6. **H2H Confirmation** (to be filled after H2H runs)
+   - H2H confirmation is required per protocol §8.5.
+   - If H2H confirms: lambda=0.5 → FINAL, update all config surfaces.
+   - If H2H rejects: retain lambda=0.0, document finding.
+
+7. **Code Changes Required**
+   - `run_lambda_sweep.py`: add `seat_bid_propensity` field to results
+   - `analysis/sweep.py`: update `check_guardrails()` to accept seat-level metric
+   - `lambda_sweep_selfplay_v1.json`: update `lambda_star` from 1.0 to 0.5
+   - Config surfaces (if FINAL): `auction_comparator.yaml`, `arc_d_r0_c33_ablation.yaml`,
+     `run_arc_d_h2h_battery.py`
+
+8. **Provenance**
+   - Protocol: `plans/r0_v2_lambda_tuning_protocol.md` (§8 simulation amendment,
+     §9 seat-level metric amendment)
+   - Sweep artifact: `data/artifacts/arc_d/r0/lambda_sweep_selfplay_v1.json`
+   - JSONL source: `data/runs/lambda_sweep_*_42_*/logs/*.jsonl`
+   - Evaluator metric: `src/bid_euchre/reporting/evaluator.py:326,373`
+   - Plan reference: `plans/r0_canonical_v2_plan.md` §4.4–§4.5
+
+#### 7.3.2 Existing Reports (full regeneration)
+
+All 11 existing reports in `docs/04_reports/r0/` receive full regeneration with
+v2 data (not surgical edits — v2 is a new canonical baseline).
 
 ---
 
@@ -361,7 +515,8 @@ On approval: tag as `r0-canonical-v2`, publish changelog.
 | Comparator CIs | `comparator_cis_r0_v4.json` | `comparator_cis_r0_v6.json` |
 | H2H QUICK | `h2h_battery_quick_v2.json` | `h2h_battery_quick_v4.json` |
 | H2H FULL | `h2h_battery_full_v2.json` | `h2h_battery_full_v4.json` |
-| Lambda sweep | — | `lambda_sweep_selfplay_v1.json` |
+| Lambda sweep | — | `lambda_sweep_selfplay_v1.json` (update `lambda_star` to 0.5) |
+| Lambda decision report | — | `docs/04_reports/r0/lambda_decision.md` (NEW) |
 | Normalizer artifact | — | `normalizer_r0_v1.json` (if adopted) |
 | Model artifact | `hybrid_r0.json` | `hybrid_r0.json` (UNCHANGED) |
 
@@ -371,7 +526,7 @@ On approval: tag as `r0-canonical-v2`, publish changelog.
 
 | Sub-Plan | Governs | Status |
 |----------|---------|--------|
-| `r0_v2_lambda_tuning_protocol.md` | Phase 0 (lambda freeze) | ACTIVE — metric fix needed |
+| `r0_v2_lambda_tuning_protocol.md` | Phase 0 (lambda freeze) | ACTIVE — lambda*=0.5 PROVISIONAL, awaiting H2H + §9 amendment |
 | `r0_v2_normalizer_protocol.md` | Phase 1 (normalizer) | ACTIVE — TRIGGERED |
 | `r0_canonical_v2_promotion_gate.md` | Phase 3 (gate + sign-off) | TO CREATE |
 
