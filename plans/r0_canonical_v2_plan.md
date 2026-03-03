@@ -166,6 +166,10 @@ uv run papermill \
   - `experiments/configs/arc_d_r0_c33_ablation.yaml`
   - `scripts/internal/run_arc_d_h2h_battery.py` (DEFAULT_ROSTER)
 
+**Outcome:** Sweep selected lambda*=0.5, but H2H confirmation **failed**
+(delta=-1.15, CI [-1.19, -1.11]). Decision: **RETAIN lambda=0.0 (FINAL)**.
+See §4.5.4 for details.
+
 ### 4.4 Sweep Results (completed 2026-03-03)
 
 Raw sweep output with BOTH deal-level and seat-level metrics:
@@ -247,23 +251,19 @@ corrected guardrail-passing survivors:
 3. **No other lambda within ε of best:** lambda=0.2 (2.905) is the next closest
 4. **Result:** lambda*=0.5
 
-#### 4.5.4 Decision: lambda*=0.5 PROVISIONAL
+#### 4.5.4 Decision: RETAIN lambda=0.0 (FINAL)
 
 | Field | Value |
 |-------|-------|
-| Selected lambda | **0.5** |
-| net_eppd | 3.122 |
-| Delta vs baseline (λ=0) | +0.884 [+0.815, +0.952] (CI excludes zero) |
-| Seat bid propensity | 46.8% (well within [0.05, 0.95]) |
-| make_rate | 100.0% (above 0.45 floor) |
-| Status | **PROVISIONAL** (per protocol §8.5: lambda > 0 requires H2H confirmation) |
+| Sweep winner | lambda=0.5 (net_eppd=3.122 in self-play) |
+| H2H result | **lambda=0.5 loses**: delta=-1.15, CI [-1.19, -1.11] |
+| Root cause | lambda=0.5 wins only 18% of auctions vs 82% for lambda=0.0 |
+| Final decision | **RETAIN lambda=0.0** |
+| Status | **FINAL** (H2H confirmed per protocol §8.5 and §10) |
 
-**Next steps:**
-1. Fix `run_lambda_sweep.py` to compute and store seat-level propensity (Task #3)
-2. Update `lambda_sweep_selfplay_v1.json` artifact: change `lambda_star` from 1.0 to 0.5
-3. Run H2H confirmation for lambda=0.5 vs lambda=0.0 → if confirmed, status → FINAL
-4. If H2H rejects → retain lambda=0.0
-5. Document full metric mismatch analysis in the lambda decision report (§7.3.1)
+The sweep's self-play advantage (+0.884) reversed to a -1.15 disadvantage in
+H2H. Ceding 82% of auctions to the opponent is catastrophic regardless of
+make rate improvements. See protocol Amendment v4 (§10) for full analysis.
 
 #### 4.5.5 Protocol Amendment Record
 
@@ -273,6 +273,7 @@ Amendments are tracked in `r0_v2_lambda_tuning_protocol.md` §7 (Amendment Log).
 |-----------|------|--------|------------------|-----------|
 | v2 | 2026-03-02 | Simulation-based tuning | §8 | Capture auction dynamics |
 | v3 | 2026-03-03 | Seat-level bid propensity guardrail | §9 | Deal-level metric is wrong estimand for multi-seat self-play; seat-level propensity correctly measures selectivity |
+| v4 | 2026-03-03 | H2H confirmation: RETAIN lambda=0.0 | §10 | lambda=0.5 loses H2H (delta=-1.15), cedes 82% of auctions |
 
 ---
 
@@ -285,19 +286,17 @@ Amendments are tracked in `r0_v2_lambda_tuning_protocol.md` §7 (Amendment Log).
 **Already evaluated:** nb55 v2 (PR #497) found CS regret share = 90.9%.
 Trigger threshold = 25%. **TRIGGERED.**
 
-**Lambda impact:** Lambda*=0.5 (PROVISIONAL, §4.5.4). Since lambda≠0, the policy
-has changed from what nb55 v2 evaluated (which used lambda=0.0). **Must re-run
-nb55 with lambda=0.5** to confirm normalizer trigger still holds. Given the
-shift in bid behavior (seat propensity 93.5% → 46.8%), the regret decomposition
-will change significantly.
+**Lambda impact:** Lambda decision is FINAL: RETAIN lambda=0.0 (§4.5.4).
+The nb55 v2 evaluation (which used lambda=0.0) remains valid — no re-run needed.
 
-**Code blocker:** Both nb55 and nb56 hard-assert `risk_lambda == 0.0` in their
-inline `bid_level_search_vectorized()`. The vectorized helper has no CVaR penalty
-implementation. With lambda=0.5, notebooks will crash.
+**Code blocker (RESOLVED):** Both nb55 and nb56 had inline `bid_level_search_vectorized()`
+asserting `risk_lambda == 0.0`. PR #503 added a scalar fallback in `analysis/sweep.py`.
+Since the lambda decision is RETAIN (lambda=0.0), this code path is not exercised
+in production, but remains available for future R1 exploration.
 
-**Required fix (PR-A scope):** Replace the assert in `analysis/sweep.py`'s
-`bid_level_search_vectorized()` (line 90) with a scalar fallback that delegates
-to production `compute_best_bid()` for non-zero lambda:
+**Implemented fix (PR #503):** Scalar fallback in `analysis/sweep.py`'s
+`bid_level_search_vectorized()` delegates to production `compute_best_bid()`
+for non-zero lambda:
 
 ```python
 from bid_euchre.strategy.bidding import compute_best_bid
@@ -471,16 +470,18 @@ new report documenting the lambda decision.
 **File:** `docs/04_reports/r0/lambda_decision.md`
 
 **Purpose:** Document the lambda sweep metric mismatch discovery, the corrected
-analysis, the decision, and the evidence chain. This is the canonical reference
-for why lambda=0.5 was selected and how the guardrail error was identified and
-resolved.
+analysis, the H2H confirmation failure, and the RETAIN decision. This is the
+canonical reference for why lambda=0.0 is retained despite lambda=0.5 winning
+the self-play sweep.
 
 **Required sections:**
 
-1. **Executive Summary** — lambda*=0.5 selected (PROVISIONAL → FINAL after H2H).
-   The initial sweep artifact incorrectly selected lambda*=1.0 due to a metric-
-   definition mismatch in the bid_rate guardrail. Corrected analysis with seat-
-   level propensity confirms lambda=0.5 as the optimal value.
+1. **Executive Summary** — lambda sweep selected lambda*=0.5 (PROVISIONAL),
+   but H2H confirmation failed: delta=-1.15, CI [-1.19, -1.11].
+   Decision: RETAIN lambda=0.0 (FINAL). The initial sweep artifact incorrectly
+   selected lambda*=1.0 due to a metric-definition mismatch in the bid_rate
+   guardrail. Corrected analysis with seat-level propensity identified
+   lambda=0.5 as the self-play optimum, but it loses head-to-head.
 
 2. **Background** — CVaR risk penalty motivation, protocol design (pre-registered
    grid, epsilon-greedy selection, guardrails), simulation-based evaluation (§8
@@ -503,23 +504,20 @@ resolved.
    - Corrected guardrail evaluation: all candidates pass except lambda=2.0.
    - Epsilon-greedy selection: lambda*=0.5 (net_eppd=3.122, no competitor within ε=0.02).
 
-5. **Why lambda=0.5 Is the Right Decision**
-   - **Performance evidence:** +0.884 net_eppd over baseline, CI [+0.815, +0.952]
-     excludes zero. Largest positive delta in the grid.
-   - **Behavioral profile:** 46.8% seat propensity — genuinely selective (passes
-     on >50% of hands), not a "bid everything" policy.
-   - **make_rate:** 100.0% — zero set rate, purely upside from correct bids.
-   - **Monotonic pattern:** net_eppd increases monotonically from λ=0.0 to λ=0.5,
-     then drops sharply at λ=1.0 and λ=2.0 as bid suppression dominates. The
-     peak at λ=0.5 represents the optimal risk-reward tradeoff.
-   - **Protocol compliance:** Pre-registered grid, pre-registered selection rule,
-     pre-registered guardrail bounds — only the metric operationalization was
-     corrected, not the decision logic.
+5. **Self-Play vs H2H Divergence**
+   - **Self-play evidence:** lambda=0.5 showed +0.884 net_eppd over baseline,
+     CI [+0.815, +0.952]. Both teams pass symmetrically on marginal hands.
+   - **H2H evidence:** lambda=0.5 **loses** with delta=-1.15, CI [-1.19, -1.11].
+     It wins only 18% of auctions vs 82% for lambda=0.0.
+   - **Root cause:** In H2H, the aggressive (lambda=0.0) bidder dominates the
+     auction. Even with higher make rate, ceding 82% of auctions is catastrophic.
+   - **Conclusion:** RETAIN lambda=0.0. The self-play advantage does not
+     transfer to competitive play.
 
-6. **H2H Confirmation** (to be filled after H2H runs)
-   - H2H confirmation is required per protocol §8.5.
-   - If H2H confirms: lambda=0.5 → FINAL, update all config surfaces.
-   - If H2H rejects: retain lambda=0.0, document finding.
+6. **H2H Confirmation Result**
+   - H2H confirmation required per protocol §8.5 (lambda > 0 → PROVISIONAL).
+   - **Result: FAILED.** delta=-1.146, 95% CI [-1.186, -1.106], excludes 0.
+   - Decision: RETAIN lambda=0.0 (FINAL). See protocol Amendment v4 (§10).
 
 7. **Code Changes Required**
    - `run_lambda_sweep.py`: add `seat_bid_propensity` field to results
@@ -567,8 +565,8 @@ On approval: tag as `r0-canonical-v2`, publish changelog.
 | Comparator CIs | `comparator_cis_r0_v4.json` | `comparator_cis_r0_v6.json` |
 | H2H QUICK | `h2h_battery_quick_v2.json` | `h2h_battery_quick_v4.json` |
 | H2H FULL | `h2h_battery_full_v2.json` | `h2h_battery_full_v4.json` |
-| Lambda sweep | — | `lambda_sweep_selfplay_v1.json` (update `lambda_star` to 0.5) |
-| Lambda decision report | — | `docs/04_reports/r0/lambda_decision.md` (NEW) |
+| Lambda sweep | — | `lambda_sweep_selfplay_v1.json` (RETAIN lambda=0.0) |
+| Lambda decision report | — | `docs/04_reports/r0/lambda_decision.md` (NEW — documents RETAIN decision) |
 | Normalizer artifact | — | `normalizer_r0_v1.json` (if adopted) |
 | Model artifact | `hybrid_r0.json` | `hybrid_r0.json` (UNCHANGED) |
 
@@ -578,7 +576,7 @@ On approval: tag as `r0-canonical-v2`, publish changelog.
 
 | Sub-Plan | Governs | Status |
 |----------|---------|--------|
-| `r0_v2_lambda_tuning_protocol.md` | Phase 0 (lambda freeze) | ACTIVE — lambda*=0.5 PROVISIONAL, awaiting H2H + §9 amendment |
+| `r0_v2_lambda_tuning_protocol.md` | Phase 0 (lambda freeze) | COMPLETED — RETAIN lambda=0.0 (H2H confirmed, Amendment v4) |
 | `r0_v2_normalizer_protocol.md` | Phase 1 (normalizer) | ACTIVE — TRIGGERED |
 | `r0_canonical_v2_promotion_gate.md` | Phase 3 (gate + sign-off) | TO CREATE |
 
