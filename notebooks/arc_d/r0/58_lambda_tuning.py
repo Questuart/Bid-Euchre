@@ -31,22 +31,23 @@
 # OLS coefficients fixed (from `hybrid_r0.json`) and replay bidding decisions
 # with different lambda values, evaluating which produces the best outcomes.
 #
+# **Split:** Deterministic 60/40 hash split by `deal_id` (protocol §2.2).
+# Select `lambda*` on train (60%), evaluate on validation (40%).
+#
 # **Grid:** `[0.0, 0.1, 0.2, 0.5, 1.0, 2.0]`
 #
-# **Primary endpoint:** net_eppd (net expected points per deal) on held-out folds
+# **Primary endpoint:** net_eppd (net expected points per deal) on validation
 #
 # **Guardrails:**
 # - bid_rate in [0.05, 0.95]
 # - make_rate >= 0.45
 #
-# **Selection:** max net_eppd subject to guardrails passing
-#
 # **Sections:**
 # - S0: Setup & configuration
 # - S1: Data loading & preparation
-# - S2: Lambda grid sweep (per-hand replay)
-# - S3: GroupKFold cross-validation
-# - S4: Selection + guardrails
+# - S2: Lambda grid sweep (full-data overview)
+# - S3: Train/validation split + selection
+# - S4: Validation evaluation + bootstrap CI
 # - S5: Report summary & visualizations
 
 # %% tags=["parameters"]
@@ -54,11 +55,15 @@ MODE = "SMOKE"  # SMOKE (~100 deals), QUICK (~2000 deals), FULL (all)
 SEED = 42
 ARTIFACT_PATH = "data/artifacts/arc_d/r0/hybrid_r0.json"
 CHART_OUTPUT_DIR = ""  # Set via papermill; empty = skip chart save
+# Track C output — update after threshold sweep completes.
+# If Track C retains t=0.0, this stays 0.0.
+PASS_THRESHOLD = 0.0
 
 # %%
 import hashlib
 import json
 import math
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -88,10 +93,10 @@ assert artifact_path.exists(), f"Missing artifact: {artifact_path}"
 MODE_LIMITS = {"SMOKE": 100, "QUICK": 2_000, "FULL": None}
 DEAL_LIMIT = MODE_LIMITS[MODE]
 print(f"MODE={MODE}, SEED={SEED}, deal_limit={DEAL_LIMIT}")
+print(f"PASS_THRESHOLD={PASS_THRESHOLD}")
 
 # --- Protocol constants ---
 LAMBDA_GRID = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0]
-N_FOLDS = 5
 BOOTSTRAP_SEED = SEED
 N_BOOTSTRAP = 10_000
 
@@ -278,22 +283,25 @@ if n_nan > 0:
 
 
 # %%
-def evaluate_lambda(df: pd.DataFrame, risk_lambda: float) -> dict:
+def evaluate_lambda(
+    df: pd.DataFrame, risk_lambda: float, pass_threshold: float = 0.0
+) -> dict:
     """Evaluate a lambda value on wide-format data (6 contracts per hand).
 
     For each hand, find the best contract via compute_best_bid logic:
     - For each of 6 contracts, compute utility = EV - risk_penalty at optimal bid_n
     - Select the contract with max utility
-    - If best utility <= 0 (pass threshold), the hand passes (net=0)
+    - If best utility <= -pass_threshold, the hand passes (net=0)
     - If hand bids, compute actual net from realized tricks
 
-    Returns dict of endpoint metrics.
+    Returns dict of endpoint metrics including per-hand net array.
     """
     n = len(df)
     net_per_hand = np.zeros(n)
     bid_flags = np.zeros(n, dtype=bool)
     make_flags = np.full(n, np.nan)
     bid_n_chosen = np.zeros(n, dtype=int)
+    deal_ids = df["deal_id"].values
 
     for i in range(n):
         best_utility = None
@@ -312,7 +320,7 @@ def evaluate_lambda(df: pd.DataFrame, risk_lambda: float) -> dict:
                 mu,
                 sigma,
                 current_high_bid=0,
-                pass_threshold=0.0,
+                pass_threshold=pass_threshold,
                 bid_level_search=True,
                 risk_lambda=risk_lambda,
                 seed=SEED,
@@ -328,8 +336,9 @@ def evaluate_lambda(df: pd.DataFrame, risk_lambda: float) -> dict:
                 best_contract = ck
                 best_bid_n = bid_n
 
-        # Decision: bid or pass
-        if best_utility is not None and best_utility > 0:
+        # Decision: bid or pass (compute_best_bid already applies pass_threshold
+        # per-contract; if we got a result, it passed the threshold)
+        if best_contract is not None:
             bid_flags[i] = True
             bid_n_chosen[i] = best_bid_n
             actual_tricks = df.iloc[i][f"actual_tricks_{best_contract}"]
@@ -354,11 +363,29 @@ def evaluate_lambda(df: pd.DataFrame, risk_lambda: float) -> dict:
         "n_total": n,
         "mean_bid_n": float(bid_n_chosen[bid_flags].mean()) if n_bid > 0 else np.nan,
         "net_per_hand": net_per_hand,  # Keep for bootstrap
+        "deal_ids": deal_ids,  # Keep for deal-level grouping
     }
 
 
 # %%
-# Quick full-data sweep for overview (before CV)
+# --- Timing estimate ---
+# Run a small sample to estimate FULL runtime before committing
+_t0 = time.time()
+_timing_sample = pred_wide.head(min(200, len(pred_wide)))
+_ = evaluate_lambda(_timing_sample, risk_lambda=1.0, pass_threshold=PASS_THRESHOLD)
+_t1 = time.time()
+_per_hand_ms = (_t1 - _t0) / len(_timing_sample) * 1000
+_est_full_s = _per_hand_ms * n_hands * len(LAMBDA_GRID) / 1000
+print(f"Timing: {_per_hand_ms:.1f} ms/hand (lambda>0, bid_level_search=True)")
+print(f"Estimated full sweep: {_est_full_s:.0f}s ({_est_full_s / 60:.1f} min)")
+if DEAL_LIMIT is None and _est_full_s > 3600:
+    print(
+        "WARNING: Estimated runtime > 1 hour. "
+        "Consider QUICK mode for initial validation."
+    )
+
+# %%
+# Quick full-data sweep for overview (before train/val split)
 print(f"\n{'=' * 90}")
 print(f"FULL-DATA LAMBDA SWEEP (n={n_hands:,} hands)")
 print(f"{'=' * 90}")
@@ -370,7 +397,7 @@ print(f"{'-' * 90}")
 
 overview_results = []
 for lam in LAMBDA_GRID:
-    result = evaluate_lambda(pred_wide, lam)
+    result = evaluate_lambda(pred_wide, lam, pass_threshold=PASS_THRESHOLD)
     overview_results.append(result)
     print(
         f"{lam:>8.1f} {result['net_eppd']:>10.4f} {result['bid_rate']:>10.3f} "
@@ -379,258 +406,289 @@ for lam in LAMBDA_GRID:
     )
 
 overview_df = pd.DataFrame(
-    [{k: v for k, v in r.items() if k != "net_per_hand"} for r in overview_results]
+    [
+        {k: v for k, v in r.items() if k not in ("net_per_hand", "deal_ids")}
+        for r in overview_results
+    ]
 )
 print(f"{'=' * 90}")
 
 # %% [markdown]
-# ## S3: GroupKFold Cross-Validation
+# ## S3: Train/Validation Split + Selection
 #
-# Split deals into K=5 folds by deal_id (GroupKFold). For each fold:
-# - Evaluate all lambda values on the held-out fold
-# - The "training" step is just selecting which lambda is best on the
-#   non-held-out folds (we're tuning a decision hyperparameter, not
-#   retraining OLS coefficients)
+# **Protocol §2.2:** Deterministic 60/40 split by `deal_id` hash.
+# - Train: `deal_id hash % 5 in {0, 1, 2}` (60%)
+# - Validation: `deal_id hash % 5 in {3, 4}` (40%)
+#
+# Select `lambda*` on **train** partition only (protocol §3.1).
+
 
 # %%
-# Assign fold IDs deterministically by hashing deal_id
-deal_ids = pred_wide["deal_id"].unique()
-
-
-def assign_fold(deal_id, n_folds: int = N_FOLDS, seed: int = SEED) -> int:
-    """Deterministic fold assignment based on deal_id hash."""
+# Deterministic hash-based train/val split (protocol §2.2)
+def deal_partition(deal_id: str, seed: int = 42) -> str:
+    """Deterministic partition assignment based on deal_id hash."""
     h = hashlib.sha256(f"{deal_id}:{seed}".encode()).hexdigest()
-    return int(h[:8], 16) % n_folds
+    bucket = int(h[:8], 16) % 5
+    return "train" if bucket < 3 else "val"
 
 
-fold_map = {did: assign_fold(did) for did in deal_ids}
-pred_wide["fold"] = pred_wide["deal_id"].map(fold_map)
-
-fold_counts = pred_wide.groupby("fold")["deal_id"].nunique()
-print("Fold distribution (n_deals per fold):")
-for fold_id, count in fold_counts.items():
-    print(f"  Fold {fold_id}: {count:,} deals")
-
-# Validate: no deal appears in multiple folds
-assert pred_wide.groupby("deal_id")["fold"].nunique().max() == 1, "Fold leakage!"
-
-# %%
-# Cross-validation sweep
-cv_results = []
-
-for fold_id in range(N_FOLDS):
-    val_mask = pred_wide["fold"] == fold_id
-    val_fold = pred_wide[val_mask]
-    train_fold = pred_wide[~val_mask]
-
-    for lam in LAMBDA_GRID:
-        val_result = evaluate_lambda(val_fold, lam)
-        train_result = evaluate_lambda(train_fold, lam)
-
-        cv_results.append(
-            {
-                "fold": fold_id,
-                "risk_lambda": lam,
-                "val_net_eppd": val_result["net_eppd"],
-                "val_bid_rate": val_result["bid_rate"],
-                "val_make_rate": val_result["make_rate"],
-                "val_n_bid": val_result["n_bid"],
-                "val_n_total": val_result["n_total"],
-                "train_net_eppd": train_result["net_eppd"],
-                "train_bid_rate": train_result["bid_rate"],
-                "train_make_rate": train_result["make_rate"],
-            }
-        )
-
-cv_df = pd.DataFrame(cv_results)
-print(f"CV results: {len(cv_df)} rows ({N_FOLDS} folds x {len(LAMBDA_GRID)} lambdas)")
-
-# %%
-# Aggregate CV results: mean +/- std across folds
-cv_agg = (
-    cv_df.groupby("risk_lambda")
-    .agg(
-        mean_val_net_eppd=("val_net_eppd", "mean"),
-        std_val_net_eppd=("val_net_eppd", "std"),
-        mean_val_bid_rate=("val_bid_rate", "mean"),
-        std_val_bid_rate=("val_bid_rate", "std"),
-        mean_val_make_rate=("val_make_rate", "mean"),
-        std_val_make_rate=("val_make_rate", "std"),
-        mean_train_net_eppd=("train_net_eppd", "mean"),
-        std_train_net_eppd=("train_net_eppd", "std"),
-    )
-    .reset_index()
+pred_wide["partition"] = pred_wide["deal_id"].apply(
+    lambda d: deal_partition(d, seed=SEED)
 )
 
-print(f"\n{'=' * 100}")
-print(f"CROSS-VALIDATION SUMMARY ({N_FOLDS}-fold GroupKFold)")
-print(f"{'=' * 100}")
+train_df = pred_wide[pred_wide["partition"] == "train"].copy()
+val_df = pred_wide[pred_wide["partition"] == "val"].copy()
+
+n_train_deals = train_df["deal_id"].nunique()
+n_val_deals = val_df["deal_id"].nunique()
+n_train_hands = len(train_df)
+n_val_hands = len(val_df)
+
+print(f"Train: {n_train_deals:,} deals, {n_train_hands:,} hands")
+print(f"Val:   {n_val_deals:,} deals, {n_val_hands:,} hands")
 print(
-    f"{'lambda':>8} {'val_eppd':>10} {'(std)':>8} {'train_eppd':>12} "
-    f"{'val_bid%':>10} {'val_make%':>10}"
+    f"Split: {n_train_deals / (n_train_deals + n_val_deals):.1%} / "
+    f"{n_val_deals / (n_train_deals + n_val_deals):.1%}"
 )
-print(f"{'-' * 100}")
-for _, row in cv_agg.iterrows():
-    print(
-        f"{row['risk_lambda']:>8.1f} {row['mean_val_net_eppd']:>10.4f} "
-        f"({row['std_val_net_eppd']:>6.4f}) {row['mean_train_net_eppd']:>12.4f} "
-        f"{row['mean_val_bid_rate']:>10.3f} {row['mean_val_make_rate']:>10.3f}"
-    )
-print(f"{'=' * 100}")
 
-# %% [markdown]
-# ## S4: Selection + Guardrails
-#
-# Apply guardrails to filter candidates, then select the lambda with
-# the highest mean cross-validated net_eppd.
+# Validate no deal leakage
+train_deal_set = set(train_df["deal_id"].unique())
+val_deal_set = set(val_df["deal_id"].unique())
+assert len(train_deal_set & val_deal_set) == 0, "Train/val deal leakage!"
+print("No train/val deal leakage.")
 
 # %%
-# Apply guardrails
-cv_agg["pass_bid_rate_floor"] = cv_agg["mean_val_bid_rate"] >= BID_RATE_FLOOR
-cv_agg["pass_bid_rate_cap"] = cv_agg["mean_val_bid_rate"] <= BID_RATE_CAP
-cv_agg["pass_make_rate"] = cv_agg["mean_val_make_rate"] >= MAKE_RATE_FLOOR
-cv_agg["all_guardrails"] = (
-    cv_agg["pass_bid_rate_floor"]
-    & cv_agg["pass_bid_rate_cap"]
-    & cv_agg["pass_make_rate"]
+# Evaluate all lambda candidates on TRAIN partition (protocol §3.1)
+print(f"\n{'=' * 90}")
+print(f"TRAIN PARTITION SWEEP (n={n_train_hands:,} hands, {n_train_deals:,} deals)")
+print(f"{'=' * 90}")
+print(
+    f"{'lambda':>8} {'net_eppd':>10} {'bid_rate':>10} "
+    f"{'make_rate':>10} {'mean_bid_n':>10} {'n_bid':>8}"
+)
+print(f"{'-' * 90}")
+
+train_results = []
+for lam in LAMBDA_GRID:
+    result = evaluate_lambda(train_df, lam, pass_threshold=PASS_THRESHOLD)
+    train_results.append(result)
+    print(
+        f"{lam:>8.1f} {result['net_eppd']:>10.4f} {result['bid_rate']:>10.3f} "
+        f"{result['make_rate']:>10.3f} {result['mean_bid_n']:>10.2f} "
+        f"{result['n_bid']:>8d}"
+    )
+
+train_df_summary = pd.DataFrame(
+    [
+        {k: v for k, v in r.items() if k not in ("net_per_hand", "deal_ids")}
+        for r in train_results
+    ]
+)
+print(f"{'=' * 90}")
+
+# %%
+# Apply guardrails on train results (protocol §3.1)
+train_df_summary["pass_bid_rate_floor"] = train_df_summary["bid_rate"] >= BID_RATE_FLOOR
+train_df_summary["pass_bid_rate_cap"] = train_df_summary["bid_rate"] <= BID_RATE_CAP
+train_df_summary["pass_make_rate"] = train_df_summary["make_rate"] >= MAKE_RATE_FLOOR
+train_df_summary["all_guardrails"] = (
+    train_df_summary["pass_bid_rate_floor"]
+    & train_df_summary["pass_bid_rate_cap"]
+    & train_df_summary["pass_make_rate"]
 )
 
-survivors = cv_agg[cv_agg["all_guardrails"]]
-disqualified = cv_agg[~cv_agg["all_guardrails"]]
+survivors = train_df_summary[train_df_summary["all_guardrails"]]
+disqualified = train_df_summary[~train_df_summary["all_guardrails"]]
 
-print(f"Survivors: {len(survivors)} / {len(cv_agg)} candidates")
+print(f"Survivors: {len(survivors)} / {len(train_df_summary)} candidates")
 if len(disqualified) > 0:
     print(f"Disqualified: {list(disqualified['risk_lambda'].values)}")
     for _, row in disqualified.iterrows():
         reasons = []
         if not row["pass_bid_rate_floor"]:
-            reasons.append(
-                f"bid_rate={row['mean_val_bid_rate']:.3f} < {BID_RATE_FLOOR}"
-            )
+            reasons.append(f"bid_rate={row['bid_rate']:.3f} < {BID_RATE_FLOOR}")
         if not row["pass_bid_rate_cap"]:
-            reasons.append(f"bid_rate={row['mean_val_bid_rate']:.3f} > {BID_RATE_CAP}")
+            reasons.append(f"bid_rate={row['bid_rate']:.3f} > {BID_RATE_CAP}")
         if not row["pass_make_rate"]:
-            reasons.append(
-                f"make_rate={row['mean_val_make_rate']:.3f} < {MAKE_RATE_FLOOR}"
-            )
+            reasons.append(f"make_rate={row['make_rate']:.3f} < {MAKE_RATE_FLOOR}")
         print(f"  lambda={row['risk_lambda']:.1f}: {', '.join(reasons)}")
 
-# %%
-# Select best lambda among survivors
+# Select lambda* = max net_eppd among survivors (protocol §3.1)
 if len(survivors) == 0:
     print("WARNING: No candidates pass all guardrails. Retaining lambda=0.0.")
     lambda_star = 0.0
 else:
-    best_row = survivors.loc[survivors["mean_val_net_eppd"].idxmax()]
+    best_row = survivors.loc[survivors["net_eppd"].idxmax()]
     lambda_star = best_row["risk_lambda"]
 
-lambda_star_agg = cv_agg[cv_agg["risk_lambda"] == lambda_star].iloc[0]
-baseline_agg = cv_agg[cv_agg["risk_lambda"] == 0.0].iloc[0]
+print(f"\nlambda* (selected on train): {lambda_star:.1f}")
 
-cv_delta = lambda_star_agg["mean_val_net_eppd"] - baseline_agg["mean_val_net_eppd"]
-
-print(f"\n{'=' * 60}")
-print("SELECTION RESULT")
-print(f"{'=' * 60}")
-print(f"  lambda* (selected):   {lambda_star:.1f}")
-print(f"  CV net_eppd(lambda*): {lambda_star_agg['mean_val_net_eppd']:.4f}")
-print(f"  CV net_eppd(0.0):     {baseline_agg['mean_val_net_eppd']:.4f}")
-print(f"  CV delta:             {cv_delta:+.4f}")
-print(f"  CV bid_rate:          {lambda_star_agg['mean_val_bid_rate']:.3f}")
-print(f"  CV make_rate:         {lambda_star_agg['mean_val_make_rate']:.3f}")
-print(f"{'=' * 60}")
+# %% [markdown]
+# ## S4: Validation Evaluation + Bootstrap CI
+#
+# Evaluate `lambda*` and `lambda=0.0` on the **held-out validation** partition
+# (protocol §3.2). Bootstrap CI is grouped by `deal_id` to respect the
+# deal-level sampling unit.
 
 # %%
-# Bootstrap 95% CI on delta (lambda* vs lambda=0) using per-fold results
-# Resample folds to estimate uncertainty in the CV mean difference
+# Evaluate lambda* and baseline on VALIDATION partition (protocol §3.2)
+val_result_star = evaluate_lambda(val_df, lambda_star, pass_threshold=PASS_THRESHOLD)
+val_result_base = evaluate_lambda(val_df, 0.0, pass_threshold=PASS_THRESHOLD)
 
-# Get per-fold deltas
-fold_deltas = []
-for fold_id in range(N_FOLDS):
-    fold_cv = cv_df[cv_df["fold"] == fold_id]
-    star_eppd = fold_cv.loc[
-        fold_cv["risk_lambda"] == lambda_star, "val_net_eppd"
-    ].values[0]
-    base_eppd = fold_cv.loc[fold_cv["risk_lambda"] == 0.0, "val_net_eppd"].values[0]
-    fold_deltas.append(star_eppd - base_eppd)
+val_delta = val_result_star["net_eppd"] - val_result_base["net_eppd"]
 
-fold_deltas = np.array(fold_deltas)
-print(f"Per-fold deltas (lambda*={lambda_star:.1f} vs 0.0): {fold_deltas}")
+print(f"\n{'=' * 70}")
+print(f"VALIDATION RESULTS (n={n_val_hands:,} hands, {n_val_deals:,} deals)")
+print(f"{'=' * 70}")
+print(f"  lambda*={lambda_star:.1f}:")
+print(f"    net_eppd:   {val_result_star['net_eppd']:.4f}")
+print(f"    bid_rate:   {val_result_star['bid_rate']:.3f}")
+print(f"    make_rate:  {val_result_star['make_rate']:.3f}")
+print(f"    mean_bid_n: {val_result_star['mean_bid_n']:.2f}")
+print("  lambda=0.0 (baseline):")
+print(f"    net_eppd:   {val_result_base['net_eppd']:.4f}")
+print(f"    bid_rate:   {val_result_base['bid_rate']:.3f}")
+print(f"    make_rate:  {val_result_base['make_rate']:.3f}")
+print(f"    mean_bid_n: {val_result_base['mean_bid_n']:.2f}")
+print(f"  Delta:        {val_delta:+.4f}")
+print(f"{'=' * 70}")
 
-# Also do deal-level bootstrap for tighter CI
-# Get per-deal net for lambda* and lambda=0 from the full-data sweep
-net_star = overview_results[LAMBDA_GRID.index(lambda_star)]["net_per_hand"]
-net_baseline = overview_results[LAMBDA_GRID.index(0.0)]["net_per_hand"]
-deal_deltas = net_star - net_baseline
+# %%
+# Check validation guardrails for lambda*
+val_guardrails_pass = (
+    BID_RATE_FLOOR <= val_result_star["bid_rate"] <= BID_RATE_CAP
+    and val_result_star["make_rate"] >= MAKE_RATE_FLOOR
+)
+print(
+    f"Validation guardrails for lambda*={lambda_star:.1f}: "
+    f"{'PASS' if val_guardrails_pass else 'FAIL'}"
+)
+if not val_guardrails_pass:
+    print(
+        f"  bid_rate={val_result_star['bid_rate']:.3f}, "
+        f"make_rate={val_result_star['make_rate']:.3f}"
+    )
 
+# %%
+# Bootstrap 95% CI on delta, grouped by deal_id (protocol §3.2)
+# Each deal has 4 hands (seats) — resample at deal level to preserve grouping.
+
+# Build per-deal net arrays for lambda* and baseline
+val_deal_ids = val_result_star["deal_ids"]
+net_star = val_result_star["net_per_hand"]
+net_base = val_result_base["net_per_hand"]
+
+# Group by deal_id: compute mean net per deal
+val_deal_df = pd.DataFrame(
+    {
+        "deal_id": val_deal_ids,
+        "net_star": net_star,
+        "net_base": net_base,
+    }
+)
+deal_means = (
+    val_deal_df.groupby("deal_id")
+    .agg(
+        net_star_mean=("net_star", "mean"),
+        net_base_mean=("net_base", "mean"),
+    )
+    .reset_index()
+)
+
+deal_deltas = (deal_means["net_star_mean"] - deal_means["net_base_mean"]).values
+n_deals_val = len(deal_deltas)
+
+assert (
+    n_deals_val == n_val_deals
+), f"Deal count mismatch: {n_deals_val} vs {n_val_deals}"
+
+# Bootstrap: resample deals, compute mean delta
 rng = np.random.RandomState(BOOTSTRAP_SEED)
 boot_deltas = np.array(
     [
-        rng.choice(deal_deltas, size=len(deal_deltas), replace=True).mean()
+        rng.choice(deal_deltas, size=n_deals_val, replace=True).mean()
         for _ in range(N_BOOTSTRAP)
     ]
 )
 ci_lo, ci_hi = np.percentile(boot_deltas, [2.5, 97.5])
 ci_excludes_zero = ci_lo > 0 or ci_hi < 0
 
-print("\nBootstrap 95% CI on delta (deal-level):")
-print(f"  Delta: {cv_delta:+.4f}")
-print(f"  95% CI: [{ci_lo:+.4f}, {ci_hi:+.4f}]")
+print(
+    f"\nDeal-level bootstrap 95% CI (n_deals={n_deals_val:,}, "
+    f"n_bootstrap={N_BOOTSTRAP:,}):"
+)
+print(f"  Delta (val):  {val_delta:+.4f}")
+print(f"  95% CI:       [{ci_lo:+.4f}, {ci_hi:+.4f}]")
 print(f"  CI excludes 0: {ci_excludes_zero}")
 
 # %% [markdown]
 # ## S5: Report Summary & Visualizations
 
 # %%
-# --- Decision summary ---
+# --- Decision summary (protocol §3.3) ---
 print(f"\n{'=' * 70}")
 print("LAMBDA TUNING DECISION SUMMARY")
 print(f"{'=' * 70}")
-print(f"  Selected lambda*:     {lambda_star:.1f}")
-print(f"  CV net_eppd delta:    {cv_delta:+.4f} (lambda* vs 0.0)")
-print(f"  Bootstrap 95% CI:     [{ci_lo:+.4f}, {ci_hi:+.4f}]")
-print(f"  CI excludes 0:        {ci_excludes_zero}")
-print(f"  CV bid_rate:          {lambda_star_agg['mean_val_bid_rate']:.3f}")
-print(f"  CV make_rate:         {lambda_star_agg['mean_val_make_rate']:.3f}")
+print(f"  Selected lambda*:        {lambda_star:.1f}")
+print(f"  pass_threshold (from C): {PASS_THRESHOLD:.1f}")
+print(f"  Val net_eppd delta:      {val_delta:+.4f} (lambda* vs 0.0)")
+print(f"  Bootstrap 95% CI:        [{ci_lo:+.4f}, {ci_hi:+.4f}]")
+print(f"  CI excludes 0:           {ci_excludes_zero}")
+print(f"  Val guardrails:          {'PASS' if val_guardrails_pass else 'FAIL'}")
+print(f"  Val bid_rate:            {val_result_star['bid_rate']:.3f}")
+print(f"  Val make_rate:           {val_result_star['make_rate']:.3f}")
 print()
 
 if lambda_star == 0.0:
-    print("  RESULT: lambda=0.0 is optimal. No risk penalty improves net_eppd.")
+    print(
+        "  RESULT: lambda=0.0 is optimal on train. No risk penalty improves net_eppd."
+    )
     print("  ACTION: Retain risk_lambda=0.0 in all configs (no change needed).")
-elif ci_excludes_zero and cv_delta > 0:
-    print(f"  RESULT: lambda={lambda_star:.1f} significantly improves net_eppd.")
-    print(f"  ACTION: Update risk_lambda to {lambda_star:.1f} in canonical configs:")
+elif val_delta > 0 and ci_excludes_zero and val_guardrails_pass:
+    print(
+        f"  RESULT: lambda={lambda_star:.1f} significantly improves net_eppd on validation."
+    )
+    print(
+        f"  ACTION: ADOPT — update risk_lambda to {lambda_star:.1f} in canonical configs:"
+    )
     print("    - experiments/configs/auction_comparator.yaml")
     print("    - experiments/configs/arc_d_r0_c33_ablation.yaml")
     print("    - scripts/internal/run_arc_d_h2h_battery.py (DEFAULT_ROSTER)")
+elif val_delta > 0 and not ci_excludes_zero:
+    print(
+        f"  RESULT: lambda={lambda_star:.1f} selected on train, but CI includes 0 on validation."
+    )
+    print("  ACTION: RETAIN — retain risk_lambda=0.0 (effect not significant).")
 else:
-    print(f"  RESULT: lambda={lambda_star:.1f} selected but CI includes 0.")
-    print("  ACTION: Retain risk_lambda=0.0 (effect not significant).")
+    print(f"  RESULT: lambda={lambda_star:.1f} does not improve validation net_eppd.")
+    print("  ACTION: RETAIN — retain risk_lambda=0.0.")
 
 print(f"{'=' * 70}")
 
 # %%
 # --- Visualization ---
 fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-fig.suptitle(f"Lambda Tuning Sweep (Track D, R0 v2) -- MODE={MODE}", fontsize=14)
+fig.suptitle(
+    f"Lambda Tuning Sweep (Track D, R0 v2) — MODE={MODE}, "
+    f"pass_threshold={PASS_THRESHOLD}",
+    fontsize=14,
+)
 
-# Plot 1: Net EPPD vs lambda
+# Plot 1: Full-data net_eppd vs lambda (overview)
 ax = axes[0, 0]
-ax.errorbar(
-    cv_agg["risk_lambda"],
-    cv_agg["mean_val_net_eppd"],
-    yerr=cv_agg["std_val_net_eppd"],
-    fmt="o-",
-    label="Val (CV mean +/- std)",
-    color="C1",
-    capsize=4,
+ax.plot(
+    overview_df["risk_lambda"],
+    overview_df["net_eppd"],
+    "o-",
+    label="Full data",
+    color="C0",
 )
 ax.plot(
-    cv_agg["risk_lambda"],
-    cv_agg["mean_train_net_eppd"],
+    train_df_summary["risk_lambda"],
+    train_df_summary["net_eppd"],
     "s--",
-    label="Train (CV mean)",
-    color="C0",
+    label="Train (60%)",
+    color="C1",
     alpha=0.7,
 )
 ax.axvline(
@@ -641,21 +699,19 @@ ax.axvline(
     label=f"lambda*={lambda_star:.1f}",
 )
 ax.set_xlabel("risk_lambda")
-ax.set_ylabel("Mean Net EPPD")
-ax.set_title("Primary: Net EPPD vs Lambda")
+ax.set_ylabel("Net EPPD")
+ax.set_title("Net EPPD vs Lambda")
 ax.legend(fontsize=8)
 ax.grid(True, alpha=0.3)
 
 # Plot 2: Bid rate vs lambda
 ax = axes[0, 1]
-ax.errorbar(
-    cv_agg["risk_lambda"],
-    cv_agg["mean_val_bid_rate"],
-    yerr=cv_agg["std_val_bid_rate"],
-    fmt="o-",
-    label="Val (CV)",
-    color="C1",
-    capsize=4,
+ax.plot(
+    overview_df["risk_lambda"],
+    overview_df["bid_rate"],
+    "o-",
+    label="Full data",
+    color="C0",
 )
 ax.axhline(
     BID_RATE_FLOOR,
@@ -680,14 +736,12 @@ ax.grid(True, alpha=0.3)
 
 # Plot 3: Make rate vs lambda
 ax = axes[0, 2]
-ax.errorbar(
-    cv_agg["risk_lambda"],
-    cv_agg["mean_val_make_rate"],
-    yerr=cv_agg["std_val_make_rate"],
-    fmt="o-",
-    label="Val (CV)",
-    color="C1",
-    capsize=4,
+ax.plot(
+    overview_df["risk_lambda"],
+    overview_df["make_rate"],
+    "o-",
+    label="Full data",
+    color="C0",
 )
 ax.axhline(
     MAKE_RATE_FLOOR,
@@ -703,31 +757,27 @@ ax.set_title("Make Rate vs Lambda")
 ax.legend(fontsize=8)
 ax.grid(True, alpha=0.3)
 
-# Plot 4: Per-fold net_eppd profiles
+# Plot 4: Train vs validation net_eppd for lambda* and baseline
 ax = axes[1, 0]
-for fold_id in range(N_FOLDS):
-    fold_data = cv_df[cv_df["fold"] == fold_id]
-    ax.plot(
-        fold_data["risk_lambda"],
-        fold_data["val_net_eppd"],
-        "o-",
-        alpha=0.5,
-        label=f"Fold {fold_id}",
-        markersize=4,
-    )
-ax.plot(
-    cv_agg["risk_lambda"],
-    cv_agg["mean_val_net_eppd"],
-    "k-",
-    linewidth=2,
-    label="CV Mean",
-)
-ax.axvline(lambda_star, color="red", linestyle=":", alpha=0.7)
-ax.set_xlabel("risk_lambda")
-ax.set_ylabel("Val Net EPPD")
-ax.set_title("Per-Fold Val Net EPPD")
-ax.legend(fontsize=7, ncol=2)
-ax.grid(True, alpha=0.3)
+train_star = train_df_summary.loc[
+    train_df_summary["risk_lambda"] == lambda_star, "net_eppd"
+].values[0]
+train_base = train_df_summary.loc[
+    train_df_summary["risk_lambda"] == 0.0, "net_eppd"
+].values[0]
+labels = ["lambda=0.0", f"lambda*={lambda_star:.1f}"]
+train_vals = [train_base, train_star]
+val_vals = [val_result_base["net_eppd"], val_result_star["net_eppd"]]
+x = np.arange(len(labels))
+width = 0.35
+ax.bar(x - width / 2, train_vals, width, label="Train", color="C1", alpha=0.7)
+ax.bar(x + width / 2, val_vals, width, label="Val", color="C2", alpha=0.7)
+ax.set_xticks(x)
+ax.set_xticklabels(labels)
+ax.set_ylabel("Net EPPD")
+ax.set_title("Train vs Val: lambda* vs Baseline")
+ax.legend(fontsize=8)
+ax.grid(True, alpha=0.3, axis="y")
 
 # Plot 5: Bootstrap distribution of delta
 ax = axes[1, 1]
@@ -742,7 +792,7 @@ ax.axvline(
 )
 ax.axvline(ci_hi, color="red", linestyle="--", alpha=0.7)
 ax.axvline(
-    cv_delta, color="blue", linestyle="-", alpha=0.7, label=f"Delta={cv_delta:+.4f}"
+    val_delta, color="blue", linestyle="-", alpha=0.7, label=f"Delta={val_delta:+.4f}"
 )
 ax.set_xlabel("Delta (lambda* - 0.0)")
 ax.set_ylabel("Count")
@@ -757,14 +807,15 @@ summary_text = (
     f"Lambda Tuning Result\n"
     f"{'=' * 30}\n\n"
     f"Selected lambda*: {lambda_star:.1f}\n"
-    f"CV delta: {cv_delta:+.4f}\n"
+    f"pass_threshold: {PASS_THRESHOLD:.1f}\n"
+    f"Val delta: {val_delta:+.4f}\n"
     f"Bootstrap 95% CI: [{ci_lo:+.4f}, {ci_hi:+.4f}]\n"
     f"CI excludes 0: {ci_excludes_zero}\n\n"
-    f"CV bid_rate: {lambda_star_agg['mean_val_bid_rate']:.3f}\n"
-    f"CV make_rate: {lambda_star_agg['mean_val_make_rate']:.3f}\n\n"
-    f"MODE={MODE}, n_hands={n_hands:,}\n"
+    f"Val bid_rate: {val_result_star['bid_rate']:.3f}\n"
+    f"Val make_rate: {val_result_star['make_rate']:.3f}\n\n"
+    f"Train: {n_train_deals:,} deals, Val: {n_val_deals:,} deals\n"
+    f"MODE={MODE}\n"
     f"Grid: {LAMBDA_GRID}\n"
-    f"K-fold: {N_FOLDS}\n"
     f"Guardrails: bid_rate [{BID_RATE_FLOOR}, {BID_RATE_CAP}],\n"
     f"  make_rate >= {MAKE_RATE_FLOOR}"
 )
@@ -790,23 +841,22 @@ plt.show()
 
 # %%
 # --- Full results table ---
-print(f"\n{'=' * 110}")
-print("FULL CROSS-VALIDATION RESULTS TABLE")
-print(f"{'=' * 110}")
+print(f"\n{'=' * 100}")
+print("FULL-DATA OVERVIEW RESULTS TABLE")
+print(f"{'=' * 100}")
 print(
-    f"{'lambda':>8} | {'CV val_eppd':>12} {'(std)':>8} | "
-    f"{'CV bid_rate':>12} {'(std)':>8} | "
-    f"{'CV make_rate':>12} {'(std)':>8} | {'Guards':>6}"
+    f"{'lambda':>8} | {'net_eppd':>10} | "
+    f"{'bid_rate':>10} | "
+    f"{'make_rate':>10} | {'mean_bid_n':>10} | {'n_bid':>8}"
 )
-print(f"{'-' * 110}")
-for _, row in cv_agg.iterrows():
-    guard = "PASS" if row["all_guardrails"] else "FAIL"
+print(f"{'-' * 100}")
+for _, row in overview_df.iterrows():
     marker = " <- lambda*" if row["risk_lambda"] == lambda_star else ""
     print(
-        f"{row['risk_lambda']:>8.1f} | {row['mean_val_net_eppd']:>12.4f} "
-        f"({row['std_val_net_eppd']:>6.4f}) | "
-        f"{row['mean_val_bid_rate']:>12.3f} ({row['std_val_bid_rate']:>6.4f}) | "
-        f"{row['mean_val_make_rate']:>12.3f} ({row['std_val_make_rate']:>6.4f}) | "
-        f"{guard:>6}{marker}"
+        f"{row['risk_lambda']:>8.1f} | {row['net_eppd']:>10.4f} | "
+        f"{row['bid_rate']:>10.3f} | "
+        f"{row['make_rate']:>10.3f} | "
+        f"{row['mean_bid_n']:>10.2f} | "
+        f"{row['n_bid']:>8.0f}{marker}"
     )
-print(f"{'=' * 110}")
+print(f"{'=' * 100}")
