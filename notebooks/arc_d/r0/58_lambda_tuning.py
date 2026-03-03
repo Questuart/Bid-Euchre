@@ -20,6 +20,19 @@
 # %% [markdown]
 # # Lambda Tuning Sweep — Track D (R0 v2)
 #
+# **Status: SUPPLEMENTARY DIAGNOSTIC**
+#
+# This notebook performs offline replay-based lambda tuning using the bidless
+# dataset. It has been superseded for decision-making by the simulation-based
+# sweep in `notebooks/arc_d/r0/59_lambda_simulation_sweep.py` (which uses
+# `scripts/internal/run_lambda_sweep.py` for full self-play evaluation).
+#
+# This notebook remains useful as a fast diagnostic and for understanding
+# the offline replay methodology, but the simulation-based results take
+# precedence for the ADOPT/RETAIN decision per protocol Amendment v2.
+#
+# ---
+#
 # **Protocol:** `plans/r0_v2_lambda_tuning_protocol.md`
 #
 # **Goal:** Select the optimal `risk_lambda` for the HybridOLSa bidder.

@@ -272,3 +272,91 @@ Key parameters:
 | Version | Date | Change | Rationale |
 |---------|------|--------|-----------|
 | v1 | 2026-03-02 | Initial protocol | Pre-registered before execution |
+| v2 | 2026-03-02 | Simulation-based tuning (section 8) | Offline replay cannot capture auction dynamics or opponent responses; full self-play simulation provides higher-fidelity evaluation |
+
+---
+
+## 8. Amendment v2 — Simulation-Based Tuning
+
+### 8.1 Motivation
+
+The v1 protocol uses offline replay on the bidless dataset: for each hand, it
+replays the bid/pass decision at each lambda and measures outcomes using the
+pre-recorded trick counts. This is fast but cannot capture:
+
+1. **Auction dynamics:** In self-play, opponent bidding changes with lambda
+   (different bids win the auction), affecting which contracts are played.
+2. **Contract selection interactions:** In replay, contract outcomes are fixed;
+   in simulation, the chosen contract affects trick play.
+3. **Self-play equilibrium effects:** Higher lambda may shift the bid
+   distribution, changing the opponent's effective strategy.
+
+Simulation-based evaluation addresses all three limitations at the cost of
+requiring full experiment runs per grid point.
+
+### 8.2 Comparison: v1 (Offline Replay) vs v2 (Simulation)
+
+| Dimension | v1 Offline Replay (nb58) | v2 Simulation (nb59) |
+|-----------|--------------------------|----------------------|
+| Data source | Bidless dataset (fixed outcomes) | Self-play experiments (dynamic) |
+| Auction dynamics | Not captured (fixed opponents) | Fully captured |
+| Contract interactions | Not captured | Fully captured |
+| Speed | Fast (~minutes) | Slow (~hours for FULL) |
+| Statistical power | Higher (all deals, 4 seats) | Lower per grid point (paired deals) |
+| Bootstrap unit | Deal-level (4 seats per deal) | Deal-level (paired across lambda) |
+| Decision authority | **Supplementary diagnostic** | **Primary decision evidence** |
+
+### 8.3 Grid Amendment
+
+The v2 grid adds `lambda=0.05` to improve resolution at the low end:
+
+| Version | Grid |
+|---------|------|
+| v1 | [0.0, 0.1, 0.2, 0.5, 1.0, 2.0] |
+| v2 | [0.0, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0] |
+
+Rationale: The v1 oracle analysis (nb55) found that pass-threshold regret
+dominates. If lambda effects are small, the 0.0-to-0.1 gap may miss a
+useful mild risk aversion setting.
+
+### 8.4 Selection Rule: Epsilon-Greedy
+
+The v2 selection rule replaces simple argmax with epsilon-greedy:
+
+1. Apply guardrails: discard candidates violating bid_rate or make_rate bounds
+2. Among survivors, find `best_net_eppd = max(net_eppd)`
+3. Select `lambda* = min(lambda)` such that `best_net_eppd - net_eppd(lambda) <= epsilon`
+
+**epsilon = 0.02** (net_eppd units)
+
+Rationale: When multiple lambdas produce similar net_eppd, prefer the smallest
+(most risk-neutral) to minimize unnecessary bid suppression. The epsilon value
+of 0.02 is well below the typical bootstrap CI width (~0.1-0.3 net_eppd),
+ensuring we only prefer a smaller lambda when the difference is negligible.
+
+### 8.5 PROVISIONAL/FINAL Status
+
+Simulation-based results carry a confirmation requirement:
+
+| lambda* | Status | Next Step |
+|---------|--------|-----------|
+| 0.0 | FINAL | No further action |
+| > 0.0 | PROVISIONAL | Confirm via H2H battery before config adoption |
+
+H2H confirmation is required because simulation uses self-play (GluttonStrategy
+opponent), which may not reflect performance against the full bidder roster.
+
+### 8.6 Tooling
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Sweep runner | `scripts/internal/run_lambda_sweep.py` | Self-play experiments + analysis |
+| Analysis notebook | `notebooks/arc_d/r0/59_lambda_simulation_sweep.py` | Visualization + decision gate |
+| Offline replay (v1) | `notebooks/arc_d/r0/58_lambda_tuning.py` | Supplementary diagnostic |
+
+### 8.7 Decision Precedence
+
+If v1 (nb58) and v2 (nb59) disagree on the ADOPT/RETAIN direction:
+- **v2 (simulation) takes precedence** for the formal decision
+- The disagreement should be documented in the decision summary
+- If both agree, this increases confidence in the result

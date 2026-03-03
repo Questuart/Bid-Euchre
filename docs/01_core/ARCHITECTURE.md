@@ -68,6 +68,7 @@ Canonical scripts:
 - `run_arc_d_gate.py` — Arc D promotion gate runner
 - `run_arc_d_h2h_battery.py` — H2H all-vs-all battery runner (competitive validation)
 - `run_auction_comparator.py` — Auction comparator orchestrator
+- `run_lambda_sweep.py` — Simulation-based risk_lambda tuning sweep
 - `update_arc_registry.py` — Arc D registry updater (MODEL_ARC_RUNS.md)
 - `validate_arc_d_rung_contract.py` — Arc D rung bundle validator
 
@@ -192,6 +193,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/run_arc_d_gate.py` | Arc D promotion gate runner |
 | `scripts/internal/run_arc_d_h2h_battery.py` | H2H all-vs-all battery runner (competitive validation) |
 | `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
+| `scripts/internal/run_lambda_sweep.py` | Simulation-based risk_lambda tuning sweep |
 | `scripts/internal/update_arc_registry.py` | Arc D registry updater (MODEL_ARC_RUNS.md) |
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |
 
