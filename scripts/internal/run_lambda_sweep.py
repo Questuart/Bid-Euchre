@@ -234,6 +234,52 @@ def load_per_deal_nets(run_dir):
 
 
 # ---------------------------------------------------------------------------
+# Seat-level bid propensity
+# ---------------------------------------------------------------------------
+
+
+def extract_seat_bid_propensity(run_dir):
+    """Extract per-seat bid propensity from auction transcripts in JSONL logs.
+
+    In self-play, each hand_end record has auction_transcript with 4 entries
+    (one per seat). Each entry has action: "BID" or "PASS".
+
+    Returns float: fraction of seat-opportunities where action was "BID".
+    Returns None if no auction_transcript data found.
+    """
+    logs_dir = Path(run_dir) / "logs"
+    if not logs_dir.is_dir():
+        return None
+
+    total_bids = 0
+    total_opportunities = 0
+
+    for log_file in sorted(logs_dir.glob("*.jsonl")):
+        with open(log_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("event") != "hand_end":
+                    continue
+                transcript = record.get("auction_transcript")
+                if not transcript:
+                    continue
+                for entry in transcript:
+                    total_opportunities += 1
+                    if entry.get("action") == "BID":
+                        total_bids += 1
+
+    if total_opportunities == 0:
+        return None
+    return total_bids / total_opportunities
+
+
+# ---------------------------------------------------------------------------
 # Deal pairing validation
 # ---------------------------------------------------------------------------
 
@@ -304,14 +350,22 @@ def paired_bootstrap_ci(
 
 
 def apply_guardrails(
-    metrics, bid_rate_floor=0.05, bid_rate_cap=0.95, make_rate_floor=0.45
+    metrics,
+    bid_rate_floor=0.05,
+    bid_rate_cap=0.95,
+    make_rate_floor=0.45,
+    bid_rate_key="bid_rate",
 ):
     """Apply guardrail checks to a metrics dict.
+
+    Args:
+        bid_rate_key: Key for bid rate metric. Use "seat_bid_propensity" for
+            self-play contexts where deal-level bid_rate inflates.
 
     Returns dict with guardrail results: {pass_bid_rate_floor, pass_bid_rate_cap,
     pass_make_rate, all_pass}.
     """
-    bid_rate = metrics.get("bid_rate")
+    bid_rate = metrics.get(bid_rate_key)
     make_rate = metrics.get("make_rate")
 
     result = {
@@ -490,6 +544,8 @@ def format_sweep_summary(
             "make_rate": r["make_rate"],
             "guardrails": r.get("guardrails", {}),
         }
+        if "seat_bid_propensity" in r:
+            entry["seat_bid_propensity"] = r["seat_bid_propensity"]
         lam = r["risk_lambda"]
         if bootstrap_results and lam in bootstrap_results:
             delta, ci_lo, ci_hi = bootstrap_results[lam]
@@ -656,8 +712,16 @@ def main():
             "hands_with_bids": strat.get("hands_with_bids", 0),
         }
 
-        # Apply guardrails
-        metrics["guardrails"] = apply_guardrails(metrics)
+        # Extract seat-level bid propensity from auction transcripts
+        seat_prop = extract_seat_bid_propensity(run_dir)
+        if seat_prop is not None:
+            metrics["seat_bid_propensity"] = round(seat_prop, 4)
+
+        # Use seat-level propensity for guardrails if available (self-play context)
+        guardrail_key = (
+            "seat_bid_propensity" if "seat_bid_propensity" in metrics else "bid_rate"
+        )
+        metrics["guardrails"] = apply_guardrails(metrics, bid_rate_key=guardrail_key)
         sweep_results.append(metrics)
 
         # Load per-deal nets for bootstrap

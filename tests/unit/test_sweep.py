@@ -220,6 +220,37 @@ class TestGuardrails:
         assert passed is False
         assert len(violations) == 1
 
+    def test_bid_rate_key_custom(self):
+        """check_guardrails uses bid_rate_key to select the bid rate metric."""
+        # deal-level bid_rate would fail cap, but seat_bid_propensity passes
+        metrics = {
+            "bid_rate": 0.99,
+            "seat_bid_propensity": 0.5,
+            "make_rate": 0.7,
+        }
+        ok, violations = check_guardrails(metrics, bid_rate_key="seat_bid_propensity")
+        assert ok is True
+        assert violations == []
+
+    def test_bid_rate_key_below_floor(self):
+        """check_guardrails detects violation using custom bid_rate_key."""
+        metrics = {
+            "bid_rate": 0.13,
+            "seat_bid_propensity": 0.034,
+            "make_rate": 1.0,
+        }
+        ok, violations = check_guardrails(metrics, bid_rate_key="seat_bid_propensity")
+        assert ok is False
+        assert any("floor" in v for v in violations)
+
+    def test_bid_rate_key_missing(self):
+        """When custom bid_rate_key is absent from metrics, no bid rate violation."""
+        ok, violations = check_guardrails(
+            {"make_rate": 0.7}, bid_rate_key="seat_bid_propensity"
+        )
+        assert ok is True
+        assert violations == []
+
 
 # ---------------------------------------------------------------------------
 # bootstrap_paired_delta
