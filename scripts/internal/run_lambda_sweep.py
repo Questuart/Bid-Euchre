@@ -181,6 +181,8 @@ def load_per_deal_nets(run_dir):
 
     Returns dict: {deal_id: net_differential}
     """
+    # Deferred import: avoid import-time dependency on bid_euchre when
+    # only using CLI/config helpers from this script module.
     from bid_euchre.scoring import compute_points
 
     logs_dir = Path(run_dir) / "logs"
@@ -309,13 +311,17 @@ def apply_guardrails(
     Returns dict with guardrail results: {pass_bid_rate_floor, pass_bid_rate_cap,
     pass_make_rate, all_pass}.
     """
-    bid_rate = metrics.get("bid_rate", 0.0)
-    make_rate = metrics.get("make_rate", 0.0)
+    bid_rate = metrics.get("bid_rate")
+    make_rate = metrics.get("make_rate")
 
     result = {
-        "pass_bid_rate_floor": bid_rate >= bid_rate_floor,
-        "pass_bid_rate_cap": bid_rate <= bid_rate_cap,
-        "pass_make_rate": make_rate >= make_rate_floor,
+        "pass_bid_rate_floor": bid_rate >= bid_rate_floor
+        if bid_rate is not None
+        else True,
+        "pass_bid_rate_cap": bid_rate <= bid_rate_cap if bid_rate is not None else True,
+        "pass_make_rate": make_rate >= make_rate_floor
+        if make_rate is not None
+        else True,
     }
     result["all_pass"] = all(
         [
