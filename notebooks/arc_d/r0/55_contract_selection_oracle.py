@@ -741,7 +741,7 @@ else:
 
 NORMALIZER_TRIGGER_THRESHOLD = 0.25  # 25% of total regret
 
-normalizer_triggered = cs_regret_share >= NORMALIZER_TRIGGER_THRESHOLD
+normalizer_triggered = bool(cs_regret_share >= NORMALIZER_TRIGGER_THRESHOLD)
 
 print(f"\n{'=' * 70}")
 print("v2 NORMALIZER TRIGGER CHECK")

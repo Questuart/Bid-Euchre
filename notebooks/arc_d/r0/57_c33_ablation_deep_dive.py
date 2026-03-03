@@ -41,7 +41,7 @@
 # %% tags=["parameters"]
 MODE = "SMOKE"  # SMOKE | QUICK | FULL
 SEED = 42  # RNG seed
-C33_RUN_DIR = ""  # Path to C33 ablation run (empty = synthetic fallback)
+C33_RUN_DIR = "data/runs/arc_d_r0_c33_ablation_42_20260302_230400"
 ARTIFACT_PATH = "data/artifacts/arc_d/r0/hybrid_r0.json"
 
 # %% [markdown]
