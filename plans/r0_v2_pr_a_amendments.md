@@ -155,6 +155,34 @@ already specify this ordering.
 
 ---
 
+## Amendment E — Analysis Primitives Extraction (PR-I)
+
+**Date:** 2026-03-02
+**Applied in:** PR-I
+
+**Scope:** Extract reusable analysis primitives from notebooks into `src/bid_euchre/analysis/sweep.py`.
+
+**Functions extracted:**
+- `deal_partition(deal_id, seed)` — deterministic 60/40 train/val hash split
+- `compute_ev_vectorized(mu, sigma, bid_n)` — Gaussian EV (vectorized `_compute_ev_static`)
+- `bid_level_search_vectorized(mu, sigma, risk_lambda)` — max-utility bid search
+- `check_guardrails(metrics, floors, caps)` — reusable guardrail check
+- `bootstrap_paired_delta(baseline, candidate, ...)` — paired bootstrap CI
+
+**Generalization design:**
+- `ParameterSweep` base class with `ThresholdSweep` and `LambdaSweep` subclasses
+- Shared: train/val split, grid evaluation, bootstrap validation
+- Subclass-specific: `evaluate_candidate()` implementation
+
+**Parity tests:**
+- `compute_ev_vectorized` vs `_compute_ev_static` for scalar inputs
+- `deal_partition` vs inline nb56 implementation
+
+**Notebook rewiring:** Deferred — notebooks keep working with inline implementations.
+Import-based rewiring is a separate follow-up after protocols are validated.
+
+---
+
 ## Resolved Findings (No Code Changes Needed)
 
 | Finding | Severity | Resolution |
