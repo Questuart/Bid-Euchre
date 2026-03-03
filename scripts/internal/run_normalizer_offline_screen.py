@@ -180,7 +180,7 @@ def build_hand_table(
 # ---------------------------------------------------------------------------
 
 
-def make_hand_decisions(hand_table: pd.DataFrame) -> dict:
+def make_hand_decisions(hand_table: pd.DataFrame, pass_threshold: float = 0.0) -> dict:
     """Per-hand oracle and model contract decisions.
 
     Returns dict of arrays. Scalar arrays have shape ``(n_hands,)``;
@@ -198,15 +198,23 @@ def make_hand_decisions(hand_table: pd.DataFrame) -> dict:
     deal_ids = hand_table["deal_id"].values.reshape(n_hands, N_CONTRACTS)[:, 0]
     seats = hand_table["seat"].values.reshape(n_hands, N_CONTRACTS)[:, 0]
 
-    # --- Oracle: argmax actual_net (all contracts eligible since bid_n > 0) ---
-    oracle_idx = np.argmax(actual_nets, axis=1)
+    # --- Oracle: argmax actual_net where bid_n > 0 ---
+    # Spec: oracle picks from contracts where bid_level_search found a valid bid.
+    # If all bid_n == 0, oracle passes (actual_net = 0).
+    oracle_eligible = bid_ns > 0
+    oracle_scores = np.where(oracle_eligible, actual_nets, -np.inf)
+    oracle_idx = np.argmax(oracle_scores, axis=1)
     oracle_net = np.take_along_axis(actual_nets, oracle_idx[:, None], axis=1).squeeze(
         -1
     )
+    # If all bid_n == 0 for a hand, oracle passes
+    all_oracle_pass = ~oracle_eligible.any(axis=1)
+    oracle_idx = np.where(all_oracle_pass, -1, oracle_idx)
+    oracle_net = np.where(all_oracle_pass, 0.0, oracle_net)
 
     # --- Model: argmax utility where utility > 0 ---
     # Tie-break: higher bid_n → higher contract_key index
-    model_eligible = utilities > 0
+    model_eligible = utilities > -pass_threshold
     ck_index = np.arange(N_CONTRACTS)[None, :]
     tiebreak = bid_ns * 1e-10 + ck_index * 1e-14
     model_scores = np.where(model_eligible, utilities + tiebreak, -np.inf)
@@ -328,6 +336,7 @@ def fit_normalizer(
     decisions: dict,
     train_mask: np.ndarray,
     lambda_reg: float = 1e-3,
+    pass_threshold: float = 0.0,
 ) -> dict:
     """Fit affine normalizer via softmax NLL on train split.
 
@@ -377,7 +386,7 @@ def fit_normalizer(
     alpha_per_key = alpha[FAMILY_IDX_FOR_KEY]
     beta_per_key = beta[FAMILY_IDX_FOR_KEY]
     u_norm = utilities * alpha_per_key[None, :] + beta_per_key[None, :]
-    norm_eligible = u_norm > 0
+    norm_eligible = u_norm > -pass_threshold
     norm_scores = np.where(norm_eligible, u_norm, -np.inf)
     norm_idx = np.argmax(norm_scores, axis=1)
     norm_idx = np.where(norm_eligible.any(axis=1), norm_idx, -1)
@@ -401,6 +410,7 @@ def _select_normalized_contract(
     utilities: np.ndarray,
     bid_ns: np.ndarray,
     params: dict,
+    pass_threshold: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Apply normalizer and select contract.
 
@@ -413,7 +423,7 @@ def _select_normalized_contract(
 
     u_norm = utilities * alpha_per_key[None, :] + beta_per_key[None, :]
 
-    norm_eligible = u_norm > 0
+    norm_eligible = u_norm > -pass_threshold
     ck_index = np.arange(N_CONTRACTS)[None, :]
     tiebreak = bid_ns * 1e-10 + ck_index * 1e-14
     norm_scores = np.where(norm_eligible, u_norm + tiebreak, -np.inf)
@@ -430,6 +440,7 @@ def evaluate_validation(
     params: dict,
     n_bootstrap: int,
     seed: int,
+    pass_threshold: float = 0.0,
 ) -> dict:
     """Compute all validation metrics on the held-out split."""
     mask = val_mask
@@ -445,7 +456,9 @@ def evaluate_validation(
     deal_ids = decisions["deal_ids"][mask]
 
     # Apply normalizer
-    norm_idx, _ = _select_normalized_contract(utilities, bid_ns, params)
+    norm_idx, _ = _select_normalized_contract(
+        utilities, bid_ns, params, pass_threshold=pass_threshold
+    )
 
     norm_bids = norm_idx >= 0
     norm_net = np.where(
@@ -666,7 +679,7 @@ def main(argv: list[str] | None = None) -> dict:
     print(f"  Complete hands: {n_hands:,}")
 
     print("Computing oracle and model decisions...")
-    decisions = make_hand_decisions(hand_table)
+    decisions = make_hand_decisions(hand_table, pass_threshold=args.pass_threshold)
 
     # --- Step 0: Diagnostic Zero ---
     print("\n=== Step 0: Diagnostic Zero ===")
@@ -696,7 +709,9 @@ def main(argv: list[str] | None = None) -> dict:
 
     # --- Step 1: Fit ---
     print("\n=== Step 1: Normalizer Fit ===")
-    fit_result = fit_normalizer(decisions, train_mask)
+    fit_result = fit_normalizer(
+        decisions, train_mask, pass_threshold=args.pass_threshold
+    )
     print(f"  Optimizer: {fit_result['optimizer_status']}")
     if fit_result["params"]:
         print(f"  Alpha: {fit_result['params']['alpha']}")
@@ -719,7 +734,12 @@ def main(argv: list[str] | None = None) -> dict:
     # --- Step 2: Validation ---
     print(f"\n=== Step 2: Validation ({val_mask.sum():,} hands) ===")
     val_metrics = evaluate_validation(
-        decisions, val_mask, fit_result["params"], args.n_bootstrap, args.seed
+        decisions,
+        val_mask,
+        fit_result["params"],
+        args.n_bootstrap,
+        args.seed,
+        pass_threshold=args.pass_threshold,
     )
     print(
         f"  Accuracy: {val_metrics['accuracy_baseline']:.4f} → "

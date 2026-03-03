@@ -206,14 +206,22 @@ be even worse.
 
 ### Go/No-Go Gate
 
-| Criterion | Threshold | Result | Status |
-|-----------|-----------|--------|--------|
-| delta_net_eppd > 0 | > 0 | -0.269 | **FAIL** |
-| CI upper < +0.03 | < +0.03 for NO_GO | -0.251 | **FAIL** (NO_GO confirmed) |
-| accuracy_lift >= 0.02 | >= 0.02 for passing | +0.040 | Pass |
-| delta_net_eppd >= +0.08 | >= +0.08 for GO | -0.269 | FAIL |
-| CI excludes 0 (positive) | ci_low > 0 for GO | -0.287 | FAIL |
-| Guardrails | All pass for GO | FAIL | FAIL |
+**NO_GO criteria** (any one triggers NO_GO):
+
+| Criterion | Threshold | Result | Triggered? |
+|-----------|-----------|--------|------------|
+| delta_net_eppd <= 0 | Must be > 0 | -0.269 | **Yes** |
+| CI upper bound < +0.03 | Must be >= +0.03 | -0.251 | **Yes** |
+| accuracy_lift < 0.02 | Must be >= 0.02 | +0.040 | No |
+
+**GO criteria** (all required for GO -- not evaluated since NO_GO triggered):
+
+| Criterion | Threshold | Result | Met? |
+|-----------|-----------|--------|------|
+| delta_net_eppd >= +0.08 | >= +0.08 | -0.269 | No |
+| CI excludes 0 (positive) | ci_low > 0 | -0.287 | No |
+| Guardrails pass | All pass | FAIL | No |
+| accuracy_lift >= 0.03 | >= 0.03 | +0.040 | Yes |
 
 **Two NO_GO criteria triggered:** delta <= 0 and ci_high < +0.03. Decision:
 **NO_GO_DEFER_R1**.

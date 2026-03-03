@@ -535,6 +535,79 @@ class TestDecisionRubric:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Test: pass_threshold affects model eligibility
+# ---------------------------------------------------------------------------
+
+
+class TestPassThreshold:
+    def test_pass_threshold_zero_excludes_negative_utility(self):
+        """With pass_threshold=0, hands with utility in (-0.5, 0) do NOT bid."""
+        hand_table = _make_synthetic_hand_table(n_deals=1, n_seats=1, seed=0)
+        # Set utilities: some negative, some positive
+        hand_table["utility"] = [-0.3, -0.1, 0.5, 0.2, -0.4, 1.0]
+        hand_table["bid_n"] = 3
+        hand_table["actual_net"] = 1.0
+
+        decisions = make_hand_decisions(hand_table, pass_threshold=0.0)
+        # Model should only pick from indices where utility > 0 (indices 2, 3, 5)
+        assert decisions["model_idx"][0] in (2, 3, 5)
+        # Specifically, suit_S (idx=5, utility=1.0) should win
+        assert decisions["model_idx"][0] == 5
+
+    def test_pass_threshold_positive_includes_near_zero_utility(self):
+        """With pass_threshold=0.5, hands with utility in (-0.5, 0) SHOULD bid."""
+        hand_table = _make_synthetic_hand_table(n_deals=1, n_seats=1, seed=0)
+        # Set utilities: the "best" is at index 0 with -0.1 (above -0.5 threshold)
+        hand_table["utility"] = [-0.1, -0.6, -0.7, -0.8, -0.9, -1.0]
+        hand_table["bid_n"] = 3
+        hand_table["actual_net"] = 1.0
+
+        # With t=0.0, all utilities are negative → model passes
+        decisions_t0 = make_hand_decisions(hand_table, pass_threshold=0.0)
+        assert decisions_t0["model_idx"][0] == -1  # pass
+
+        # With t=0.5, utility > -0.5 → index 0 is eligible
+        decisions_t05 = make_hand_decisions(hand_table, pass_threshold=0.5)
+        assert decisions_t05["model_idx"][0] == 0  # bids on high
+
+
+# ---------------------------------------------------------------------------
+# Test: Oracle eligibility filters by bid_n > 0
+# ---------------------------------------------------------------------------
+
+
+class TestOracleEligibility:
+    def test_oracle_skips_bid_n_zero(self):
+        """Oracle does NOT select contracts where bid_n == 0."""
+        hand_table = _make_synthetic_hand_table(n_deals=1, n_seats=1, seed=0)
+        # Contract 0 (high) has best actual_net but bid_n=0
+        hand_table["actual_net"] = [10.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+        hand_table["bid_n"] = [0, 3, 3, 3, 3, 3]
+        hand_table["utility"] = [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+        decisions = make_hand_decisions(hand_table)
+        # Oracle should NOT pick index 0 (bid_n=0), should pick index 5 (next best)
+        assert decisions["oracle_idx"][0] != 0
+        assert decisions["oracle_idx"][0] == 5
+
+    def test_oracle_all_bid_n_zero_passes(self):
+        """When all bid_n == 0, oracle passes (idx=-1, net=0)."""
+        hand_table = _make_synthetic_hand_table(n_deals=1, n_seats=1, seed=0)
+        hand_table["actual_net"] = [10.0, 5.0, 3.0, 2.0, 1.0, 0.5]
+        hand_table["bid_n"] = 0  # all zero
+        hand_table["utility"] = -1.0
+
+        decisions = make_hand_decisions(hand_table)
+        assert decisions["oracle_idx"][0] == -1
+        assert decisions["oracle_net"][0] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Test: Diagnostic Zero
+# ---------------------------------------------------------------------------
+
+
 class TestDiagnosticZero:
     def test_no_disagreement(self):
         """When model matches oracle perfectly, no early exit."""
