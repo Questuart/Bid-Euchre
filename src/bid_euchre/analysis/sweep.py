@@ -88,7 +88,11 @@ def compute_ev_vectorized(
 
 
 def bid_level_search_vectorized(
-    mu_vals: np.ndarray, sigma: float, risk_lambda: float = 0.0
+    mu_vals: np.ndarray,
+    sigma: float,
+    risk_lambda: float = 0.0,
+    pass_threshold: float = 0.0,
+    seed: int = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Vectorized bid-level search across all legal levels (1-10).
 
@@ -96,28 +100,48 @@ def bid_level_search_vectorized(
     level with highest utility. Tie-break: prefer higher bid level (matches
     ``compute_best_bid()`` in ``bidding.py``).
 
+    For non-zero ``risk_lambda``, falls back to a scalar loop calling
+    production ``compute_best_bid()`` (vectorized CVaR deferred to R1).
+
     Args:
         mu_vals: Predicted tricks array.
         sigma: Residual standard deviation (scalar).
-        risk_lambda: Risk penalty weight.  Must be 0.0 — non-zero lambda
-            requires CVaR penalty which is not yet vectorized.
+        risk_lambda: Risk penalty weight. Non-zero triggers scalar fallback.
+        pass_threshold: Minimum utility for non-pass bid (default 0.0).
+        seed: RNG seed for CVaR Monte Carlo (only used when risk_lambda > 0).
 
     Returns:
         ``(best_bid_n, best_utility)`` arrays of shape ``(n_hands,)``.
-
-    Raises:
-        AssertionError: If *risk_lambda* is not 0.0.
+        ``best_bid_n[i] = 0`` means the model passes that hand.
     """
     n = len(mu_vals)
     best_bid_n = np.ones(n, dtype=int)
     best_utility = np.full(n, -np.inf)
 
-    assert risk_lambda == 0.0, (
-        f"risk_lambda={risk_lambda} but CVaR penalty not implemented in "
-        "vectorized helper. Use compute_best_bid() from bidding.py for "
-        "non-zero lambda."
-    )
+    if risk_lambda != 0.0:
+        # Scalar fallback: production compute_best_bid() for non-zero lambda.
+        # Vectorized CVaR deferred to R1.
+        from bid_euchre.strategy.bidding import compute_best_bid
 
+        for i in range(n):
+            result = compute_best_bid(
+                mu=float(mu_vals[i]),
+                sigma=sigma,
+                current_high_bid=0,
+                pass_threshold=pass_threshold,
+                bid_level_search=True,
+                risk_lambda=risk_lambda,
+                seed=seed,
+            )
+            if result is not None:
+                best_bid_n[i] = result[0]
+                best_utility[i] = result[1]
+            else:
+                best_bid_n[i] = 0
+                best_utility[i] = -np.inf
+        return best_bid_n, best_utility
+
+    # Original vectorized path for lambda=0 (unchanged).
     # Iterate ascending; use >= so last (highest n) with max utility wins.
     # This matches compute_best_bid() tie-break: prefer higher n on equal utility.
     for bid_n in range(1, 11):
