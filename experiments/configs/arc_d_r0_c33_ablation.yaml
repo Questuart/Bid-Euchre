@@ -39,14 +39,14 @@ bidding_policies:
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
       bid_level_search: true
-      risk_lambda: 0.0  # placeholder — Track D updates after lambda selection
+      risk_lambda: 0.0  # Track D: RETAIN (H2H confirmed lambda=0.0 optimal)
 
   - name: hybrid_olsa_floor
     class_name: HybridOLSaBidder
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
       bid_level_search: false
-      risk_lambda: 0.0  # placeholder — Track D updates after lambda selection
+      risk_lambda: 0.0  # Track D: RETAIN (H2H confirmed lambda=0.0 optimal)
 
   - name: olsa
     class_name: OLSaBidder
