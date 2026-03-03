@@ -16,7 +16,7 @@ from bid_euchre.analysis.sweep import (
     compute_ev_vectorized,
     deal_partition,
 )
-from bid_euchre.strategy.bidding import _compute_ev_static
+from bid_euchre.strategy.bidding import _compute_ev_static, compute_best_bid
 
 # ---------------------------------------------------------------------------
 # deal_partition
@@ -144,11 +144,93 @@ class TestBidLevelSearch:
         best_n, _ = bid_level_search_vectorized(mu, sigma=1.0)
         assert best_n[0] == 1, f"Expected bid_n=1 for mu=0.5, got {best_n[0]}"
 
-    def test_lambda_nonzero_raises(self):
-        """Non-zero risk_lambda should raise AssertionError."""
-        mu = np.array([5.0])
-        with pytest.raises(AssertionError, match="risk_lambda"):
-            bid_level_search_vectorized(mu, sigma=1.5, risk_lambda=0.5)
+    def test_scalar_fallback_produces_results(self):
+        """Non-zero risk_lambda triggers scalar fallback with valid results."""
+        mu = np.array([5.0, 7.0, 3.0, 9.0])
+        best_n, best_util = bid_level_search_vectorized(mu, sigma=1.5, risk_lambda=0.5)
+        assert best_n.shape == (4,)
+        assert best_util.shape == (4,)
+        # bid_n in [0, 10]: 0 = pass, 1-10 = valid bid
+        assert np.all(best_n >= 0)
+        assert np.all(best_n <= 10)
+        # Hands that bid should have finite utility; passes get -inf
+        for i in range(len(mu)):
+            if best_n[i] > 0:
+                assert np.isfinite(
+                    best_util[i]
+                ), f"Expected finite utility for bid at mu={mu[i]}"
+            else:
+                assert best_util[i] == -np.inf
+
+    def test_scalar_fallback_parity_with_compute_best_bid(self):
+        """Scalar fallback agrees with direct compute_best_bid() calls."""
+        mu_vals = np.array([4.0, 6.0, 8.0, 2.0, 5.5])
+        sigma = 1.5
+        risk_lambda = 0.3
+        seed = 42
+
+        best_n, best_util = bid_level_search_vectorized(
+            mu_vals, sigma=sigma, risk_lambda=risk_lambda, seed=seed
+        )
+
+        for i, mu in enumerate(mu_vals):
+            result = compute_best_bid(
+                mu=float(mu),
+                sigma=sigma,
+                current_high_bid=0,
+                pass_threshold=0.0,
+                bid_level_search=True,
+                risk_lambda=risk_lambda,
+                seed=seed,
+            )
+            if result is not None:
+                assert best_n[i] == result[0], (
+                    f"bid_n mismatch at mu={mu}: "
+                    f"vectorized={best_n[i]}, scalar={result[0]}"
+                )
+                np.testing.assert_allclose(
+                    best_util[i],
+                    result[1],
+                    atol=1e-12,
+                    err_msg=f"utility mismatch at mu={mu}",
+                )
+            else:
+                assert best_n[i] == 0, f"Expected pass (0) at mu={mu}"
+                assert best_util[i] == -np.inf
+
+    def test_scalar_fallback_with_pass(self):
+        """Low mu + risk penalty causes all hands to pass (bid_n=0).
+
+        pass_threshold semantics: pass when utility <= -pass_threshold.
+        With pass_threshold=0.0, pass when utility <= 0. Low mu values
+        produce negative utility, so compute_best_bid returns None.
+        """
+        mu = np.array([0.5, 1.0, 2.0])
+        best_n, best_util = bid_level_search_vectorized(
+            mu, sigma=1.5, risk_lambda=0.5, pass_threshold=0.0
+        )
+        assert np.all(best_n == 0), f"Expected all passes, got {best_n}"
+        assert np.all(
+            best_util == -np.inf
+        ), f"Expected -inf utility for passes, got {best_util}"
+
+    def test_new_params_accepted_on_lambda_zero(self):
+        """pass_threshold and seed accepted on vectorized path (lambda=0)."""
+        mu = np.array([5.0, 7.0])
+        # Should not raise — new params are accepted even on lambda=0 path
+        best_n, best_util = bid_level_search_vectorized(
+            mu, sigma=1.5, risk_lambda=0.0, pass_threshold=0.0, seed=99
+        )
+        assert best_n.shape == (2,)
+        assert np.all(best_n >= 1)
+
+    def test_scalar_fallback_deterministic(self):
+        """Scalar fallback produces identical results with same seed."""
+        mu = np.array([5.0, 7.0, 3.0])
+        r1 = bid_level_search_vectorized(mu, sigma=1.5, risk_lambda=0.5, seed=42)
+        r2 = bid_level_search_vectorized(mu, sigma=1.5, risk_lambda=0.5, seed=42)
+        np.testing.assert_array_equal(r1[0], r2[0])
+        np.testing.assert_array_equal(r1[1], r2[1])
 
 
 # ---------------------------------------------------------------------------
