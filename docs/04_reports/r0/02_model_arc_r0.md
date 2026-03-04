@@ -24,15 +24,10 @@ the top bidders in the framework:
 
 | Metric | OLSa (constrained, eval) | OLSa_Full (promotional, eval) |
 |--------|--------------------------|-------------------------------|
-| net_eppd | +1.627 | +1.484 |
-| eppd | +3.566 | +4.174 |
-| bid_rate | 63.2% | 82.8% |
-| make_rate | 87.3% | 83.3% |
-
-<!-- TODO(v2-notebooks): Update eval table above from re-run notebooks.
-     bid_level_search (v2) drives bid_rate to ~100% for both arms and will
-     shift net_eppd, eppd, make_rate, and contract mix accordingly.
-     Eval run: arc_d_eval_r0_42_20260303_201729 -->
+| net_eppd | +1.953 | +1.932 |
+| eppd | +5.815 | +5.795 |
+| bid_rate | 100% | 100% |
+| make_rate | 95.2% | 94.9% |
 
 In the v6 single-seat comparator (GluttonStrategy, 20k deals/bidder, 8
 bidders), hybrid_olsa ranks 1-2 (tied with hybrid_olsa_full) among 8 bidders at
@@ -84,21 +79,18 @@ establishes a working baseline for R1 feature enrichment.
 
 ### Eval Dataset Summary
 
-<!-- TODO(v2-notebooks): Update deal counts and contract mix from re-run
-     notebooks. bid_level_search (v2) eliminates all-pass redeals, so total
-     deals = N_PER and contract mix will shift (more HIGH/LOW expected). -->
-
-- **Total deals:** 31,612
-- **Total rows:** 126,448
+- **Total deals:** 50,000
+- **Total rows:** 200,000
 - **Seats per deal:** 4
+- **Bid rate:** 100% (v2 bid-level search eliminates all-pass redeals)
 
 ### Per-Contract Deal Counts
 
 | Contract Type | Deals | Rows | Pct |
 |---------------|-------|------|-----|
-| high | 261 | 1044 | 0.8% |
-| low | 281 | 1124 | 0.9% |
-| suit | 31070 | 124280 | 98.3% |
+| suit | 30,760 | 123,040 | 61.5% |
+| high | 7,635 | 30,540 | 15.3% |
+| low | 11,605 | 46,420 | 23.2% |
 
 ---
 
@@ -125,7 +117,7 @@ Max deviation from grand mean = 0.58 (grand mean = 491.7)
 
 ### Per-Contract Feature Statistics
 
-#### high (n=1044)
+#### high (n=30,540)
 
 | Feature | Mean | Std | Min | Max |
 |---------|------|-----|-----|-----|
@@ -135,7 +127,7 @@ Max deviation from grand mean = 0.58 (grand mean = 491.7)
 | offsuit_aces | 2.00 | 2.40 | 0.00 | 7.00 |
 | offsuit_non_ace_count | 8.00 | 2.40 | 3.00 | 10.00 |
 
-#### low (n=1124)
+#### low (n=46,420)
 
 | Feature | Mean | Std | Min | Max |
 |---------|------|-----|-----|-----|
@@ -145,7 +137,7 @@ Max deviation from grand mean = 0.58 (grand mean = 491.7)
 | offsuit_tens_count | 2.00 | 2.43 | 0.00 | 7.00 |
 | offsuit_secondbest_rank_sum | 8.57 | 2.25 | 3.00 | 16.00 |
 
-#### suit (n=124280)
+#### suit (n=123,040)
 
 | Feature | Mean | Std | Min | Max |
 |---------|------|-----|-----|-----|
@@ -161,61 +153,57 @@ Max deviation from grand mean = 0.58 (grand mean = 491.7)
 
 The overall mean tricks of 5.00 confirms the eval dataset is unbiased — in a
 10-trick game with paired deals, the expected mean is exactly 5. The suit
-contract distribution is tighter (std=2.50, P5=1.0-P95=9.0) than HIGH/LOW
-(std~3.2), reflecting that trump contracts create more predictable trick counts.
+contract distribution is tighter (std=2.15, P5=1.0-P95=9.0) than HIGH/LOW
+(std~1.9), reflecting that trump contracts create more dispersed outcomes due
+to role asymmetry (declaring mean ~6.3, defending mean ~3.7).
 
-**Sample size warning:** HIGH (n=261 deals, 1044 rows) and LOW (n=281 deals,
-1124 rows) fall below the 2,000-deal minimum for reliable distribution
-characterization. These are adequate for R0 baseline purposes but not for
-production inference on per-contract metrics.
+With v2 bid-level search producing 100% bid_rate, all 50,000 deals have auction
+outcomes. HIGH (n=7,635 deals, 30,540 rows) and LOW (n=11,605 deals, 46,420 rows)
+now far exceed the 2,000-deal minimum for reliable distribution characterization.
 
 > See notebook 20_outcome_health for outcome distributions and make-rate
 > analysis by contract type.
 
 - **Overall mean tricks:** 5.00
-- **Overall std:** 2.51
+- **Overall std:** 2.07
 - **Range:** [0.0, 10.0]
 
 ### Per-Contract Outcome Statistics
 
 | Contract | Mean | Std | P5 | P95 | n |
 |----------|------|-----|-----|-----|---|
-| high | 5.00 | 3.14 | 0.0 | 10.0 | 1044 |
-| low | 5.00 | 3.21 | 0.0 | 10.0 | 1124 |
-| suit | 5.00 | 2.50 | 1.0 | 9.0 | 124280 |
+| suit | 5.00 | 2.15 | 1.0 | 9.0 | 123,040 |
+| high | 5.00 | 1.94 | 2.0 | 8.0 | 30,540 |
+| low | 5.00 | 1.92 | 2.0 | 8.0 | 46,420 |
 
-<!-- TODO(v2-notebooks): Update outcome stats from re-run notebooks.
-     v2 contract mix shift will change per-contract n values and may
-     affect make_rate (bid_level_search bids more aggressively). -->
-
-**Overall make rate:** 0.873
+**Overall make rate:** 0.952
 
 | Contract | Make Rate | n |
 |----------|-----------|---|
-| high | 0.766 | 261 |
-| low | 0.769 | 281 |
-| suit | 0.875 | 31070 |
+| suit | 0.956 | 30,760 |
+| high | 0.954 | 7,635 |
+| low | 0.937 | 11,605 |
 
 ---
 
 ## Auction Analysis
 
-<!-- TODO(v2-notebooks): Update auction narrative and tables from re-run
-     notebooks. v2 bid_level_search evaluates all legal bid levels and
-     drives bid_rate to ~100%, which will increase HIGH/LOW contract share
-     (closer to oracle-optimal 31.9%) and shift bid-level distributions. -->
-
-The auction is dominated by suit contracts (98.3%), with HIGH/LOW selected less
-than 1% each. This reflects the R0 model's 1-feature HIGH/LOW specifications
-— offsuit_aces (HIGH) and offsuit_tens_count (LOW) — which produce conservative
-trick predictions that rarely exceed the bid/pass threshold. The oracle analysis
+The v2 auction shows a dramatically diversified contract mix compared to v1.
+Suit contracts account for 61.5% of deals, with HIGH (15.3%) and LOW (23.2%)
+now meaningfully represented. This shift is driven by bid-level search (v2):
+the model evaluates all legal bid levels and selects by maximum utility, enabling
+it to bid lower on HIGH/LOW hands where the 1-feature models produce moderate
+trick predictions. The oracle analysis
 ([10_contract_selection_oracle.md](10_contract_selection_oracle.md)) shows the
-hindsight-optimal HIGH+LOW share is 31.9%, confirming substantial under-selection.
+hindsight-optimal HIGH+LOW share is 31.9%; the v2 model achieves 38.5%,
+overshooting slightly due to bidding on marginal hands that the oracle would pass.
 
-Bid levels cluster tightly around 5-6 for suit (mean 5.78), with HIGH/LOW
-averaging ~7 (reflecting that these contracts are only bid on very strong hands
-that clear the Gaussian EV threshold). Seat balance in auction outcomes is
-verified in notebook 25_auction_health.
+Bid levels concentrate at 3-4 (mean 3.74), reflecting the model's willingness
+to bid conservatively. The bid=4 level dominates at 73.9%, with bid=3 at 25.8%
+and a small bid=2 tail (0.3%). The narrow range [2,4] contrasts sharply with
+v1's [5,8] range — bid-level search finds profitable bids at lower levels that
+the v1 floor-only policy missed. Seat balance in auction outcomes is verified
+in notebook 25_auction_health.
 
 > See notebook 25_auction_health for bid distribution histograms and seat-level
 > auction balance diagnostics.
@@ -224,23 +212,23 @@ verified in notebook 25_auction_health.
 
 | Contract | Count | Pct |
 |----------|-------|-----|
-| suit | 31070 | 98.3% |
-| low | 281 | 0.9% |
-| high | 261 | 0.8% |
+| suit | 30,760 | 61.5% |
+| low | 11,605 | 23.2% |
+| high | 7,635 | 15.3% |
 
 ### Bid Distribution
 
-- **Mean winning bid:** 5.80
-- **Bid range:** 5--8
-- **Std:** 0.59
+- **Mean winning bid:** 3.74
+- **Bid range:** 2--4
+- **Std:** 0.45
 
 ### Auction Summary
 
 | Contract | Deals | Make Rate | Mean Bid |
 |----------|-------|-----------|----------|
-| high | 261 | 0.766 | 7.05 |
-| low | 281 | 0.769 | 7.08 |
-| suit | 31070 | 0.875 | 5.78 |
+| high | 7,635 | 0.954 | 3.72 |
+| low | 11,605 | 0.937 | 3.77 |
+| suit | 30,760 | 0.956 | 3.73 |
 
 ### Auction Plumbing Validation
 
@@ -400,21 +388,20 @@ HIGH/LOW (2.2 vs 1.8 tricks).
 
 | Arm | net_eppd (eval) |
 |-----|-----------------|
-| OLSa (constrained) | +1.627 (eval) |
-| OLSa_Full (promotional) | +1.484 (eval) |
-| **Attribution Gap** | **-0.1437** |
+| OLSa (constrained) | +1.953 (eval) |
+| OLSa_Full (promotional) | +1.932 (eval) |
+| **Attribution Gap** | **+0.021** |
 
-The attribution gap is negative: the constrained arm slightly outperforms the
-promotional arm. This is counter-intuitive but benign at R0 — the constrained
-arm's hand-picked features (bowers, trump_count, offsuit_aces) are individually
-stronger predictors than the forward-selected features. With v2 bid-level
-search, both arms now bid on ~100% of deals, so the gap reflects pure model
-quality rather than bid-rate selectivity. See
+The attribution gap is near zero and slightly positive: the constrained arm
+marginally outperforms the promotional arm by +0.021 net_eppd. This is benign
+at R0 — the constrained arm's hand-picked features (bowers, trump_count,
+offsuit_aces) are individually strong predictors, and the forward-selected
+features add marginal complexity without improving trick prediction accuracy.
+With v2 bid-level search, both arms bid on 100% of deals, so the gap reflects
+pure model quality rather than bid-rate selectivity. The gap narrowed
+substantially from v1 (−0.144) to v2 (+0.021), confirming that v1's apparent
+gap was inflated by differential bid-rate effects. See
 [01_r0_promotion_report.md](01_r0_promotion_report.md) §4 for full interpretation.
-
-<!-- TODO(v2-notebooks): Update attribution gap numbers from re-run notebooks.
-     v2 bid_level_search changes both arms to ~100% bid_rate, which may
-     shift the attribution gap magnitude. -->
 
 ### Comparator Battery (v6, Single-Seat, GluttonStrategy)
 
@@ -441,7 +428,7 @@ p=0.5457). hybrid_olsa now leads modeloespecifico by +0.527 points/deal
 is driven by bid-level search (v2): hybrid_olsa bid_rate rose from 19.7% to
 96.1% and make_rate from 88.6% to 100%.
 
-**Instrument note:** Eval net_eppd (+1.627 for OLSa, eval) and comparator
+**Instrument note:** Eval net_eppd (+1.953 for OLSa, eval) and comparator
 net_eppd (+2.131 for hybrid_olsa, comparator v6 single-seat) measure different
 estimands. Eval uses self-play where both teams bid; the comparator uses
 single-seat mode where only the test bidder bids against always-pass sentinels,
