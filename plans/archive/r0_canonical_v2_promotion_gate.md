@@ -1,8 +1,8 @@
 # R0 Canonical v2 — Promotion Gate Checklist
 
 **Date:** 2026-03-03
-**Status:** ALL AUTOMATED CHECKS PASS — awaiting HITL sign-off
-**Blocked until:** HITL approval
+**Status:** ✅ APPROVED — frozen as r0-canonical-v2
+**Signed off:** 2026-03-04
 
 ---
 
@@ -27,11 +27,13 @@
 ## HITL Sign-Off
 
 ```
-Approver: _______________
-Date/Time: _______________
-Decision: APPROVE / REJECT
-Rationale: _______________
-Scope approved: [list artifacts + reports]
+Approver: HITL (user)
+Date/Time: 2026-03-04T19:50:00Z
+Decision: APPROVE
+Rationale: 11/11 gate checks PASS. All v2 reports complete (0 TODO markers).
+           Three consistency-fix PRs (#524, #525, #526) resolved all post-merge findings.
+Scope approved: All R0 v2 artifacts, reports (docs/04_reports/r0/), decisions (lambda RETAIN,
+                threshold RETAIN, normalizer NO_GO_DEFER_R1, bid-level search ADOPTED).
 ```
 
 ---
@@ -40,5 +42,4 @@ Scope approved: [list artifacts + reports]
 
 - Gate is **blocking**: no freeze until ALL checks are PASS.
 - G6 requires the delta review document (`docs/04_reports/r0/22_v1_v2_delta_review.md`).
-- G3 note: stale cross-refs in `plans/MASTER_PLAN.md` are not checked by `docs-check`
-  and are deferred to post-freeze cleanup.
+- G3 note: stale cross-refs in `plans/MASTER_PLAN.md` resolved in PR #525 (archived) and #526 (path fixes).

@@ -3,7 +3,7 @@
 **Date:** 2026-03-01
 **Source:** Master plan execution sessions (A1 oracle analysis, B0 threshold sweep,
 contract selection analysis, comparator overhaul)
-**Governing doc:** `plans/MASTER_PLAN.md` §Stream 6
+**Governing doc:** `plans/r1_master_plan.md` (supersedes archived `plans/archive/MASTER_PLAN.md` §Stream 6)
 
 Items are ordered by expected impact on R1 model quality, with experimental
 designs where applicable.
@@ -23,7 +23,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P3 | Oracle re-analysis at R1 | **Yes** | — | Regret decomposition shift |
 | P4 | Pass-threshold re-tuning | **Yes** | — | Re-run B0 protocol |
 | P5 | Deferred report sections | No (deferrable) | — | |
-| P6 | H2H bid_rate caveat | No (deferrable) | DONE | Adopted by v2 — fix terminology during report regeneration (§7.4 of r0_canonical_v2_plan.md) |
+| P6 | H2H bid_rate caveat | No (deferrable) | DONE | Adopted by v2 — fix terminology during report regeneration (§7.4 of plans/archive/r0_canonical_v2_plan.md) |
 | P7 | Rung-to-rung report pipeline | No (deferrable) | — | Automate progression reports |
 | P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
 | P9 | Extract notebook-only gate results to artifacts | No (deferrable) | — | nb55 oracle gate result has no committed JSON; see notebook boundary audit |
@@ -251,7 +251,7 @@ rankings (suggesting auction dynamics matter more than expected).
 
 ## Priority 6: H2H bid_rate Conflation (L3)
 
-**Status:** DONE — adopted by R0 v2 (r0_canonical_v2_plan.md §7.4)
+**Status:** DONE — adopted by R0 v2 (plans/archive/r0_canonical_v2_plan.md §7.4)
 **Origin:** Measurement integrity review (20_measurement_integrity_r0.md L3)
 
 ### What
