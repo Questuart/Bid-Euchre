@@ -17,7 +17,7 @@ All must pass before Step 1 begins. Verified by HITL-1 sign-off.
 | **E2: Schema contract** | Assertion in dataset generator validates column names, types, row counts | Passes | — |
 | **E3: Protocol registration** | `ls plans/r1_threshold_protocol.md plans/r1_lambda_protocol.md plans/r1_normalizer_trigger.md` | All 3 exist | — |
 | **E4: HITL-1 sign-off** | Human reviews pre-registered protocols and training plan | Approved | — |
-| **E5: Gate dry-run** | `uv run python scripts/internal/run_arc_d_gate.py --bundle data/artifacts/arc_d/r0/rung_bundle_r0.json --base-dir .` | Returns result without crash (expected HALT — no R1 artifacts yet) | — |
+| **E5: Gate dry-run** | `uv run python scripts/internal/run_arc_d_gate.py --bundle data/artifacts/arc_d/r0/rung_bundle_r0.json --base-dir .` | Executes without crash (validates gate infrastructure works) | — |
 
 ---
 
@@ -204,14 +204,17 @@ uv run python scripts/internal/run_arc_d_h2h_battery.py \
 
 # Gate X3: QUICK H2H go/no-go
 # Check gate-critical matchups (§3.7.3)
+# Battery schema is h2h_battery_v2: cells dict keyed by matchup_id,
+# each cell has bidder_a, bidder_b, net_eppd_delta.
 uv run python -c "
 import json
 battery = json.load(open('data/artifacts/arc_d/r1/h2h_battery_quick.json'))
+assert battery['schema'] == 'h2h_battery_v2', f'Unexpected schema: {battery[\"schema\"]}'
 # Check primary: hybrid_olsa_full_r1 vs hybrid_olsa_full_r0
-for m in battery['matchups']:
-    if m['team0'] == 'hybrid_olsa_full_r1' and m['team1'] == 'hybrid_olsa_full_r0':
-        delta = m['net_eppd_delta']
-        print(f'Primary matchup delta: {delta:+.4f}')
+for mid, cell in battery['cells'].items():
+    if cell['bidder_a'] == 'hybrid_olsa_full_r1' and cell['bidder_b'] == 'hybrid_olsa_full_r0':
+        delta = cell['net_eppd_delta']
+        print(f'Primary matchup ({mid}): delta = {delta:+.4f}')
         if delta < -0.05:
             print('X3 STOP: H2H delta < -0.05')
         elif abs(delta) <= 0.05:
@@ -243,17 +246,22 @@ uv run python scripts/internal/run_arc_d_h2h_battery.py \
 # Dual-seat comparator (PRIMARY — partner-aware)
 # The comparator iterates over all bidding_policies in the config YAML internally.
 # No per-bidder shell loop needed.
+# --output-format json + --output required for downstream CI extraction.
 uv run python scripts/internal/run_auction_comparator.py \
     --config experiments/configs/r1_comparator_dual_seat.yaml \
-    --seed 42 --n-per 2000
+    --seed 42 --n-per 2000 \
+    --output-format json \
+    --output data/artifacts/arc_d/r1/comparator_battery_r1_dual.json
 
 # Single-seat comparator (CONTINUITY — legacy, R0-comparable)
 uv run python scripts/internal/run_auction_comparator.py \
     --config experiments/configs/r1_comparator_single_seat.yaml \
     --single-seat \
-    --seed 42 --n-per 2000
+    --seed 42 --n-per 2000 \
+    --output-format json \
+    --output data/artifacts/arc_d/r1/comparator_battery_r1_single.json
 
-# Extract bootstrap CIs
+# Extract bootstrap CIs (reads battery JSON written above)
 uv run python scripts/internal/extract_comparator_cis.py \
     --artifacts-dir data/artifacts/arc_d/r1 \
     --battery-file comparator_battery_r1_dual.json \
