@@ -943,8 +943,16 @@ def main():
     if missing_evaluations:
         print("ERROR: Missing evaluation data for the following bidders:")
         for name in missing_evaluations:
-            run_dir = run_dirs_by_policy.get(name, "<no run directory found>")
-            print(f"  - {name}  (run_dir: {run_dir})")
+            # In dual/single-seat modes, run_dirs are keyed by sub-experiment
+            # (e.g., name_team0), not base name. Show any matching sub-keys.
+            matching_dirs = {
+                k: v for k, v in run_dirs_by_policy.items() if k.startswith(name)
+            }
+            if matching_dirs:
+                for sub_key, run_dir in matching_dirs.items():
+                    print(f"  - {name}  (sub-key: {sub_key}, run_dir: {run_dir})")
+            else:
+                print(f"  - {name}  (no run directory found)")
         print("\nTo generate evaluation data, re-run without --skip-run:")
         print(
             f"  uv run python scripts/run_auction_comparator.py --config {args.config} --seed {args.seed}"

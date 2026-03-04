@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -31,13 +32,31 @@ from bid_euchre.datasets.join import join_features_outcomes
 
 
 def load_model_artifact(artifact_path):
-    """Load and validate an OLSa/Hybrid model artifact."""
+    """Load and validate an OLSa/Hybrid model artifact.
+
+    Normalizes artifact structure: hybrid artifacts use 'payoff_model'
+    and top-level 'residual_variance'; this extracts per-family models
+    with attached sigma (sqrt of residual variance).
+    """
     with open(artifact_path) as f:
         artifact = json.load(f)
 
     artifact_type = artifact.get("artifact_type", "")
     if artifact_type not in ("olsa_v1", "hybrid_olsa_v1"):
         print(f"WARNING: Unexpected artifact_type={artifact_type!r}", file=sys.stderr)
+
+    # Normalize: hybrid artifacts store models under 'payoff_model',
+    # non-hybrid under 'models'. Extract to uniform 'models' dict.
+    if "payoff_model" in artifact and "models" not in artifact:
+        residual_variance = artifact.get("residual_variance", {})
+        models = {}
+        for cf, model in artifact["payoff_model"].items():
+            model_copy = dict(model)
+            # Compute sigma from residual_variance (matches HybridOLSaBidder._sigma)
+            var = residual_variance.get(cf, 0.0)
+            model_copy["sigma"] = math.sqrt(max(0.0, var))
+            models[cf] = model_copy
+        artifact["models"] = models
 
     return artifact
 
@@ -129,6 +148,11 @@ def run_sweep(artifact, df, grid, seed):
 
     # Determine which models to use (hybrid has 'suit', 'high', 'low')
     models = artifact.get("models", {})
+    if not models:
+        raise ValueError(
+            "No model families found in artifact. "
+            "Expected 'models' or 'payoff_model' with per-contract-family entries."
+        )
 
     # Evaluate per contract family, then merge
     train_results = {}
