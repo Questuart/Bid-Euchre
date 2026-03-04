@@ -26,6 +26,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P6 | H2H bid_rate caveat | No (deferrable) | DONE | Adopted by v2 — fix terminology during report regeneration (§7.4 of r0_canonical_v2_plan.md) |
 | P7 | Rung-to-rung report pipeline | No (deferrable) | — | Automate progression reports |
 | P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
+| P9 | Extract notebook-only gate results to artifacts | No (deferrable) | — | nb55 oracle gate result has no committed JSON; see notebook boundary audit |
 
 **Disposition values:** DONE / DEFERRED (with rationale + target rung) / NOT APPLICABLE (with evidence)
 
@@ -371,6 +372,41 @@ and other R1 changes.
 - **P4 (pass-threshold re-tune):** Bid-level search may reduce the need for threshold
   adjustment — hands that currently pass because EV < 0 at floor(mu) might bid at a
   lower level instead.
+
+---
+
+## Priority 9: Extract Notebook-Only Gate Results to Artifacts
+
+**Status:** Planned for R1
+**Origin:** Notebook boundary audit (PR #518, X-2 from HITL review)
+
+### Problem
+
+The notebook boundary audit (Task #30) found that several decision-critical outputs
+exist only in notebook cell outputs (gitignored) or report prose — not in committed
+machine-readable artifacts. The highest-severity case:
+
+**nb55 (contract selection oracle):** The normalizer trigger (`cs_regret_share 90.9%
+>= 25%`) activated Track E. The gate result, regret decomposition (CS 90.9%, pass
+threshold 5.3%, over-bidding 3.7%), and oracle contract mix exist nowhere in
+`data/artifacts/` — only in notebook output and transcribed report text.
+
+### Lower-Severity Findings (informational)
+
+| Notebook | Finding | Disposition |
+|----------|---------|-------------|
+| nb45 | Contract-type breakdown (§S3) and Source B CIs (§S5) cited by `03_comparator_rankings.md` but notebook-only | Acceptable — report acknowledges deferral; metrics are supplemental |
+| nb56 | Sweep results in report text but no JSON artifact | Acceptable — numbers are in committed report; JSON is nice-to-have |
+| nb57 | Section 6 divergence evidence is notebook-only | Acceptable — decision basis (H2H/comparator) is clean; evidence is mechanistic supplement |
+
+### What to Do at R1
+
+1. **nb55:** Add `--output` flag to write gate result JSON (regret decomposition,
+   oracle mix, trigger boolean) to `data/artifacts/arc_d/{rung}/oracle_gate_{rung}.json`.
+   Template: same pattern as `normalizer_offline_screen_v1.json`.
+2. **General:** For any new decision notebook at R1, require a committed artifact
+   capturing gate-critical outputs. The `.claude/rules/45_notebook_boundary.md` rule
+   codifies this going forward.
 
 ---
 

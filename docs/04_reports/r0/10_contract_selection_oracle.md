@@ -418,6 +418,7 @@ R0 training (#396)
 | Sub-plan | plans/contract_selection_analysis.md (v3) |
 | PR (v1) | #472 |
 | V2 update | PR #497 (bid-level search in oracle), CS regret share 90.9% |
+| Artifact | None — gate result and regret decomposition exist only in this report and notebook output. See §8 for reproduction. R1 follow-up: extract gate result to committed JSON artifact (P9 in r1_follow_ups.md). |
 
 ## 8. Reproduction
 
