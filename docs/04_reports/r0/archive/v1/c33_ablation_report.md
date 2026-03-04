@@ -1,5 +1,9 @@
 # C33 Ablation: Gaussian EV Wrapper Effect
 
+> **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
+> The current version is at [`../c33_ablation_report.md`](../c33_ablation_report.md).
+> See [README.md](README.md) for the v1→v2 delta summary.
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline)
 **Date:** 2026-02-25

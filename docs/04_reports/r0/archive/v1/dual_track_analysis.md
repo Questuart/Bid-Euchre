@@ -1,5 +1,9 @@
 # R0 Dual-Track Analysis: Decision Quality vs Full-Game Performance
 
+> **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
+> The current version is at [`../dual_track_analysis.md`](../dual_track_analysis.md).
+> See [README.md](README.md) for the v1→v2 delta summary.
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
 **Date:** 2026-03-01

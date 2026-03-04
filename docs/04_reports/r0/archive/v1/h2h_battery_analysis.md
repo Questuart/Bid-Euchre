@@ -1,5 +1,9 @@
 # R0 H2H Battery Analysis & Experiment Summary
 
+> **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
+> The current version is at [`../h2h_battery_analysis.md`](../h2h_battery_analysis.md).
+> See [README.md](README.md) for the v1→v2 delta summary.
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline lock)
 **Date:** 2026-02-25

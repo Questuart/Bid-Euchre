@@ -1,5 +1,9 @@
 # Phase 0 → R0 Progression Report
 
+> **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
+> The current version is at [`../phase0_to_r0_progression.md`](../phase0_to_r0_progression.md).
+> See [README.md](README.md) for the v1→v2 delta summary.
+
 **Arc:** D — OLSa-Hybrid Bidder
 **Rung:** R0
 **Date:** 2026-03-01

@@ -1,5 +1,9 @@
 # Measurement Integrity Review — R0
 
+> **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
+> The current version is at [`../measurement_integrity_r0.md`](../measurement_integrity_r0.md).
+> See [README.md](README.md) for the v1→v2 delta summary.
+
 ## Header
 
 | Field | Value |

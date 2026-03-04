@@ -511,7 +511,7 @@ Run directories (local only, data/runs/):
 
 | Run | Deals | Purpose |
 |-----|-------|---------|
-| arc_d_r0_c33_ablation_42_20260302_230400 | 40,000 | C33 ablation (v2) |
+| arc_d_r0_c33_ablation_42_20260302_230400 | 90,000 | C33 dedicated run (3 policies, v1 source) |
 | arc_d_r0_h2h_battery_42_20260302_230409 | 128,000 | C50 QUICK (v4) |
 | arc_d_r0_h2h_battery_42_20260302_231835 | 520,000 | C50 FULL (v4) |
 | auction_comparator_*_42_20260302_* (32 runs) | 160,000 | Comparator battery (v6) |
