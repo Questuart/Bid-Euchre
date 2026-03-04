@@ -882,13 +882,13 @@ If stale, restore with `git restore`.
 11 files moved to `plans/archive/`. `MASTER_PLAN.md` archived; this plan
 (`r1_master_plan.md`) is now the governing document for R1.
 
-### 4.5 Update MEMORY.md
+### 4.4 Update MEMORY.md
 
 - Remove R0 v2 "remaining steps" section (Task #27, #28 will be done)
 - Add R1 training cycle as current work
 - Trim stale R0 details to stay under 180-line limit
 
-### 4.6 Verify Infrastructure
+### 4.5 Verify Infrastructure
 
 Before starting PR-R1a, confirm:
 - [ ] `data/artifacts/arc_d/r0/hybrid_r0_full.json` exists and is the v2 model
@@ -1351,7 +1351,7 @@ selecting wrong bid levels, net_eppd could decrease despite "better" models.
    net_eppd. But the normalizer lesson showed that aggregate improvement can mask
    per-family regression. Add a diagnostic step after eval: compute net_eppd
    separately for suit, HIGH, and LOW. If any family regresses by >0.1 net_eppd,
-   block execution. **Formalized as gate X6** (§3.8): any per-family regression >0.1 is a hard STOP.
+   block execution. **Formalized as gate X6** (§8.10): any per-family regression >0.1 is a hard STOP.
 2. **Feature enrichment → bid quality pipeline.** After P1 training, before
    running the full gate: run a small offline sample (1000 hands) through the
    R1 model and compare:
@@ -1630,7 +1630,7 @@ task list. **Bold** tasks are on the critical path.
  └── #2  Tag r0-canonical-v2
       ├── **#3  PR-cleanup** (archive 11 plans + 2 untracked + MASTER_PLAN)  ─┐ PARALLEL
       └── #5  PR-R1-plan (training plan + 3 protocol files)                  ─┘ PARALLEL
-           └── #6  Verify infra prerequisites (§4.6 + Entry Gate E1-E5)
+           └── #6  Verify infra prerequisites (§4.5 + Entry Gate E1-E5)
                 └── continues to Infrastructure phase
 #4  Merge PR #522 (readiness plan) ── independent, can merge immediately
 ```
