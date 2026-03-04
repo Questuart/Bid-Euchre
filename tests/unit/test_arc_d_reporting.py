@@ -974,7 +974,7 @@ def test_report_h2h_matchup_id_extraction(tmp_path):
     bundle_path = _make_bundle(tmp_path)
 
     # Run dir name with underscores (realistic)
-    run_dir = tmp_path / "arc_d_eval_r0_42_20260221_180253"
+    run_dir = tmp_path / "arc_d_eval_r0_42_20260303_201729"
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True)
 

@@ -34,7 +34,7 @@
 # %% tags=["parameters"]
 MODE = "SMOKE"  # SMOKE | QUICK | FULL
 SEED = 42  # RNG seed
-EVAL_RUN_DIR = "data/runs/arc_d_eval_r0_42_20260221_180253"  # R0 eval run
+EVAL_RUN_DIR = "data/runs/arc_d_eval_r0_42_20260303_201729"  # R0 eval run
 ARTIFACT_DIR = "data/artifacts/arc_d/r0"  # R0 artifact directory
 RUNG_ID = "r0"  # R0 baseline
 CHART_OUTPUT_DIR = ""  # dir for chart PNGs
