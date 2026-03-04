@@ -223,4 +223,5 @@ Despite the negative result, this protocol execution provides:
 | Baseline artifact | `data/artifacts/arc_d/r0/hybrid_r0.json` (constrained), `hybrid_r0_full.json` (full) |
 | Comparator config | `experiments/configs/auction_comparator_onemodel.yaml` |
 | Battery output | `data/artifacts/arc_d/r0/onemodel_comparator_v1.json` |
+| gate_status | RETAIN (Track F decision gate -- unified model rejected) |
 | Git SHA | See `training_info.git_sha` in artifact |

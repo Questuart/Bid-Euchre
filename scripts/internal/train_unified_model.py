@@ -26,19 +26,15 @@ import json
 import logging
 import os
 import subprocess
-import sys
 from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
 
-# Ensure src/ is on path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from bid_euchre.datasets.join import join_features_outcomes  # noqa: E402
-from bid_euchre.models.feature_selection import forward_select  # noqa: E402
-from bid_euchre.models.freeze import freeze_artifact  # noqa: E402
-from bid_euchre.models.train_olsa import _compute_metrics, _fit_ols  # noqa: E402
+from bid_euchre.datasets.join import join_features_outcomes
+from bid_euchre.models.feature_selection import forward_select
+from bid_euchre.models.freeze import freeze_artifact
+from bid_euchre.models.train_olsa import _compute_metrics, _fit_ols
 
 logger = logging.getLogger(__name__)
 
