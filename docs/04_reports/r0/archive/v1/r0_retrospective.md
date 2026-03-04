@@ -1,6 +1,8 @@
 # R0 Development Retrospective — Lessons Learned
 
-> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
+> **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
+> The current version is at [`../r0_retrospective.md`](../r0_retrospective.md).
+> See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
@@ -26,8 +28,7 @@
 ## 1. Scope & Timeline
 
 R0 comprised **96 merged PRs** (#389–#484) over **10 calendar days** (2026-02-21 to
-2026-03-02), plus a **v2 canonical phase** (#493–#508) over **2 additional days**
-(2026-03-02 to 2026-03-03), organized into 7 development phases:
+2026-03-02), organized into 6 development phases:
 
 | Phase | PRs | Dates | Count | Theme |
 |-------|-----|-------|-------|-------|
@@ -37,10 +38,9 @@ R0 comprised **96 merged PRs** (#389–#484) over **10 calendar days** (2026-02-
 | 4. Reports & Methodology | #442–#462 | Feb 26–27 | 21 | Bug fixes, docs, measurement integrity |
 | 5. Comparator Overhaul | #463–#474 | Feb 27–28 | 12 | v1→v4 calibration, dual-track analysis |
 | 6. Final Sweep | #475–#484 | Mar 1–2 | 10 | Threshold decisions, consistency pass |
-| 7. V2 Canonical | #493–#508 | Mar 2–3 | 16 | Bid-level search, lambda/normalizer, v6 batteries |
 
-**PR type distribution (phases 1–6):** 39% feat (37), 31% docs (30), 22% fix (21),
-5% chore (5), 2% test (2), 1% refactor (1).
+**PR type distribution:** 39% feat (37), 31% docs (30), 22% fix (21), 5% chore (5),
+2% test (2), 1% refactor (1).
 
 **Velocity:** Peak throughput was 19 PRs on Feb 26 (phases 3–4 overlapping). Foundation
 averaged 6/day, eval infrastructure 11/day, final sweep 5/day. The velocity curve
@@ -102,19 +102,15 @@ bug-fix PRs within hours:
 staged as smaller incremental changes. The "big bang" approach created a burst of
 follow-up fixes that could have been caught pre-merge.
 
-### Comparator v1 → v6 evolution
+### Comparator v1 → v4 evolution
 
-The comparator battery required 6 calibration iterations across phases 5–7:
+The comparator battery required 4 calibration iterations across 12 PRs (#463–#474):
 1. **v1** (initial): Revealed ModeloEspecifico ceiling and OLSa floor issues
 2. **v2**: Added single-seat mode to eliminate seat-rotation confounds
 3. **v3**: Recalibrated RanktheTank thresholds, harmonized play strategy
 4. **v4**: Added absolute metrics, auction transcripts, GluttonStrategy standardization
-5. **v5/v6**: Added hybrid_olsa_full as 8th bidder, re-ran with bid-level search (v2 policy)
 
 Each iteration invalidated the previous run's data, requiring full re-execution.
-The v4→v6 transition was particularly impactful: bid-level search changed
-hybrid_olsa's ranking from 2nd of 7 (net_eppd +0.455) to 1-2 of 8 (net_eppd
-+2.131), reversing the gap with modeloespecifico.
 
 **Lesson:** Define the calibration protocol upfront — what constitutes a valid
 comparator configuration, what controls are needed, what metrics to collect. This was
@@ -179,41 +175,6 @@ Several conventions were codified only after the pattern had been observed 2–3
 
 For R1, these conventions exist from day 1 — a compounding benefit of the R0 process.
 
-## 4b. V2 Canonical Lessons (Phase 7)
-
-The v2 canonical phase (#493–#508) introduced bid-level search and re-ran all
-evaluation batteries. Key lessons:
-
-### Bid-level search had outsized impact
-
-The single change of evaluating all legal bid levels (instead of only floor(mu))
-transformed hybrid_olsa's competitive position: net_eppd +0.455 to +2.131,
-bid_rate 19.7% to 96.1%, make_rate 88.6% to 100%. This validates the
-architecture's potential — the underlying model was unchanged, only the search
-over bid levels was added.
-
-### Lambda tuning reversal
-
-Lambda=0.5 showed +0.884 net_eppd in self-play simulation sweeps but reversed
-to delta=-1.15 in H2H validation, winning only 18% of auctions. This confirms
-that self-play metrics can be misleading for risk parameters that affect auction
-competitiveness. H2H validation is essential for any parameter that changes
-bidding aggressiveness.
-
-### Normalizer: accuracy is not value
-
-The normalizer added +4% prediction accuracy but degraded net_eppd by -0.269.
-At R0 model quality, more accurate predictions actually lead to worse bidding
-decisions (the model becomes more accurately pessimistic about marginal hands).
-This is a model poverty problem, not a calibration failure — deferred to R1
-where richer features may change the tradeoff.
-
-### Pre-registered protocols paid off
-
-The threshold, lambda, and normalizer evaluations all used pre-registered
-protocols with explicit decision criteria. This eliminated ambiguity in
-interpreting results and made the RETAIN/NO_GO decisions straightforward.
-
 ## 5. Recommendations for R1
 
 ### Pre-register calibration protocols
@@ -261,10 +222,10 @@ orchestration scripts. Battery-level gates should validate:
 | Item | Value |
 |------|-------|
 | gate_status | N/A (process retrospective, no model evaluation) |
-| PR range | #389–#484, #493–#508 (v2 canonical) |
-| Total PRs | 96 + 16 (v2) = 112 |
-| Date range | 2026-02-21 to 2026-03-03 |
-| Calendar days | 11 |
+| PR range | #389–#484 |
+| Total PRs | 96 |
+| Date range | 2026-02-21 to 2026-03-02 |
+| Calendar days | 10 |
 | Data source | GitHub API (`gh pr list --state merged`) |
 | Peak velocity | 19 PRs/day (2026-02-26) |
 | PR types | 37 feat, 30 docs, 21 fix, 5 chore, 2 test, 1 refactor |

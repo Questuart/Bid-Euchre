@@ -1,5 +1,7 @@
 # R0 Dual-Track Analysis: Decision Quality vs Full-Game Performance
 
+> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
 **Date:** 2026-03-03

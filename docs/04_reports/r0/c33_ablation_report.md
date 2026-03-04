@@ -1,5 +1,7 @@
 # C33 Ablation: Gaussian EV Wrapper + Bid-Level Search Effect (v2)
 
+> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline)
 **Date:** 2026-03-03
@@ -16,9 +18,9 @@ HybridOLSa, ablation now captures combined wrapper + search effect.
    Gaussian EV wrapper and bid-level search in HybridOLSa vs floor-based OLSa,
    both using identical regression coefficients.
 
-2. **What did we do?** 40,000 deals (4 matchups x 10,000 paired deals), seed=42.
-   Embedded within the v4 FULL H2H battery. Self-play sanity checks for both
-   arms.
+2. **What did we do?** 4-cell subset (2 cross-matchups + 2 self-play) from the
+   v4 FULL H2H battery (10,000 paired deals per cell = 40,000 deals analyzed).
+   Source: `h2h_battery_full_v4.json`. Self-play sanity checks for both arms.
 
 3. **What did we find?** The combined wrapper + search effect is asymmetric:
    +0.071 (CI spans zero) when hybrid_olsa is bidder A, -0.183 (significant)
@@ -451,14 +453,17 @@ R0 training (#396)
 | Item | Value |
 |------|-------|
 | gate_status | PROMOTED (R0 overall; this ablation is informational) |
-| H2H Artifact | data/artifacts/arc_d/r0/h2h_battery_full_v4.json |
+| Primary data source | data/artifacts/arc_d/r0/h2h_battery_full_v4.json |
+| Cells used | 4 of 52 (hybrid_olsa vs olsa cross-matchups + self-play) |
 | Comparator Artifact | data/artifacts/arc_d/r0/comparator_battery_r0_v6.json |
 | OLSa model | data/artifacts/arc_d/r0/hybrid_r0.json |
 | Git SHA | ee5f9c20330a8e1c9b2311f363237c342bb1a704 |
 | Seed | 42 |
-| n_deals | 40,000 (4 matchups x 10,000) |
+| n_deals (analyzed) | 40,000 (4 cells x 10,000 paired deals) |
+| n_deals (parent run) | 520,000 (full H2H FULL v4 battery, 52 cells) |
 | Schema | h2h_battery_v2 |
-| Run ID | arc_d_r0_c33_ablation_42_20260302_230400 |
+| H2H FULL Run ID | arc_d_r0_h2h_battery_42_20260302_231835 |
+| Dedicated C33 Run ID (v1) | arc_d_r0_c33_ablation_42_20260302_230400 (90k deals, 3 policies; v1 source) |
 
 ### Companion Reports
 
@@ -471,25 +476,16 @@ R0 training (#396)
 ## 11. Reproduction
 
 ```bash
-# C33 ablation (4 matchups, 10k paired deals each)
+# v2 C33 data is a 4-cell subset of the H2H FULL battery.
+# To reproduce the full H2H FULL battery (which contains the C33 cells):
+PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+  --mode FULL --seed 42 --n-per 10000
+
+# The C33-relevant cells are:
+#   hybrid_olsa_self_play, olsa_self_play,
+#   hybrid_olsa_vs_olsa, olsa_vs_hybrid_olsa
+
+# v1 used a dedicated 3-policy C33 run (also reproducible):
 uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/arc_d_r0_c33_ablation.yaml
-
-# Parse results into JSON artifact.
-# The C33 ablation uses a 2-bidder roster (hybrid_olsa, olsa), not the
-# default 8-bidder roster. Create a roster file matching DEFAULT_ROSTER
-# format for these two bidders:
-cat > /tmp/c33_roster.json <<'ROSTER'
-[
-  {"name": "hybrid_olsa", "class_name": "HybridOLSaBidder",
-   "params": {"artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json"}},
-  {"name": "olsa", "class_name": "OLSaBidder",
-   "params": {"artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json"}}
-]
-ROSTER
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
-  --mode QUICK --seed 42 --n-per 10000 \
-  --roster /tmp/c33_roster.json \
-  --parse-run data/runs/arc_d_r0_c33_ablation_42_20260302_230400 \
-  --output data/artifacts/arc_d/r0/c33_ablation_results.json
 ```
