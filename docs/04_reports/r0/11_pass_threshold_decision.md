@@ -48,7 +48,7 @@ to the pass-threshold — the model passes on hands where the oracle (with perfe
 hindsight) would profitably bid. This B0 sweep investigates whether shifting the
 pass gate from `utility ≤ 0` to `utility ≤ -t` recovers value.
 
-**Protocol:** `plans/r0_pass_threshold_protocol.md` v1 (pre-registered)
+**Protocol:** `plans/archive/r0_pass_threshold_protocol.md` v1 (pre-registered)
 
 ## 2. Methodology
 
@@ -147,7 +147,7 @@ No code changes. The pass gate at `bidding.py:1043` remains `best_utility <= 0`.
 | Item | Value |
 |------|-------|
 | gate_status | RETAIN (B0 decision gate — no code change) |
-| Protocol | `plans/r0_pass_threshold_protocol.md` v1 |
+| Protocol | `plans/archive/r0_pass_threshold_protocol.md` v1 |
 | Notebook | `notebooks/arc_d/r0/56_pass_threshold_sweep.py` |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |
 | Model artifact | data/artifacts/arc_d/r0/hybrid_r0.json |

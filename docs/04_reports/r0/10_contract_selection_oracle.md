@@ -60,7 +60,7 @@ showed a stark contract distribution:
 Whether this distribution is problematic depends on the **oracle contract mix**
 — the distribution that maximizes net payoff when the same hand is evaluated
 under all 6 contracts with hindsight. The sub-plan
-(plans/contract_selection_analysis.md) identified four hypothesized root causes
+(plans/archive/contract_selection_analysis.md) identified four hypothesized root causes
 and specified this Step 0 oracle/regret analysis as the prerequisite for any
 corrective action.
 
@@ -350,7 +350,7 @@ prescribed remedy addressed only the minority of the problem.
 ### 5.2 Decision: Path B + B0 Threshold Tuning
 
 **Selected:** Path B (skip calibrator) + Path C sidecar (threshold tuning).
-Decision made 2026-03-01; see `plans/MASTER_PLAN.md` Phase B.
+Decision made 2026-03-01; see `plans/archive/MASTER_PLAN.md` Phase B.
 
 **Path B — Skip calibrator, finalize R0, address in R1:**
 - Calibrator addresses only 17% of regret → disproportionate effort
@@ -360,7 +360,7 @@ Decision made 2026-03-01; see `plans/MASTER_PLAN.md` Phase B.
 **B0 — Pass-threshold tuning (added as pre-registered protocol):**
 - A pre-registered sweep of the pass threshold `t` (where `utility <= -t → pass`)
   on the existing oracle data, split 60/40 by deal_id
-- Protocol: `plans/r0_pass_threshold_protocol.md` (v1)
+- Protocol: `plans/archive/r0_pass_threshold_protocol.md` (v1)
 - Quick analysis (~1 notebook), doesn't require new models
 - If meaningful improvement found (SESOI = 0.05 net_diff), threshold is adopted
   as an R0 hyperparameter before report finalization
@@ -415,7 +415,7 @@ R0 training (#396)
 | Seed | 42 (dataset generation) |
 | n_hands | ~40,000 (QUICK mode: 10k deals x 4 seats) |
 | Bootstrap | 10,000 resamples, seed 42 |
-| Sub-plan | plans/contract_selection_analysis.md (v3) |
+| Sub-plan | plans/archive/contract_selection_analysis.md (v3) |
 | PR (v1) | #472 |
 | V2 update | PR #497 (bid-level search in oracle), CS regret share 90.9% |
 | Artifact | None — gate result and regret decomposition exist only in this report and notebook output. See §8 for reproduction. R1 follow-up: extract gate result to committed JSON artifact (P9 in r1_follow_ups.md). |

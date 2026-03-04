@@ -59,8 +59,8 @@ within-contract predictions (model-quality issue, not normalizer-fixable).
 This offline screen distinguishes between these two failure modes before committing
 to full A/B integration.
 
-**Protocol:** plans/r0_v2_normalizer_protocol.md (pre-registered)
-**Spec:** plans/r0_v2_normalizer_screen_spec.md
+**Protocol:** plans/archive/r0_v2_normalizer_protocol.md (pre-registered)
+**Spec:** plans/archive/r0_v2_normalizer_screen_spec.md
 
 ## 2. Methodology
 
