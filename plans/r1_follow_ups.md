@@ -74,7 +74,7 @@ at the cost of one extra experiment lane.
 **Why:** The R0 path is already recorded as promoted and frozen, and the 2026-03-01
 oracle decision explicitly points feature enrichment to R1; changing R0 now muddies
 rung semantics and governance (see
-[contract_selection_oracle.md](../docs/04_reports/r0/contract_selection_oracle.md),
+[10_contract_selection_oracle.md](../docs/04_reports/r0/10_contract_selection_oracle.md),
 [model_arc_d_dashboard.md](../docs/04_reports/model_arc_d_dashboard.md)).
 
 ---
@@ -193,7 +193,7 @@ bottleneck.
 ## Priority 4: Pass-Threshold Re-Tuning
 
 **Status:** Planned for each rung
-**Origin:** B0 threshold sweep (#476), pass_threshold_decision.md §6
+**Origin:** B0 threshold sweep (#476), 11_pass_threshold_decision.md §6
 
 ### What
 
@@ -251,7 +251,7 @@ rankings (suggesting auction dynamics matter more than expected).
 ## Priority 6: H2H bid_rate Conflation (L3)
 
 **Status:** DONE — adopted by R0 v2 (r0_canonical_v2_plan.md §7.4)
-**Origin:** Measurement integrity review (measurement_integrity_r0.md L3)
+**Origin:** Measurement integrity review (20_measurement_integrity_r0.md L3)
 
 ### What
 
@@ -282,7 +282,7 @@ estimand (competitive ordering), not a methodology defect.
 
 ### What
 
-The Phase 0→R0 progression report (`docs/04_reports/r0/phase0_to_r0_progression.md`)
+The Phase 0→R0 progression report (`docs/04_reports/r0/23_phase0_to_r0_progression.md`)
 was manually authored. Starting at R1, `progression_report` is a required bundle
 artifact enforced by the rung bundle validator. Future rung transitions should have
 automated or semi-automated report generation.
@@ -376,7 +376,7 @@ and other R1 changes.
 
 ## R0 Process Lessons — Checklist
 
-**Source:** `docs/04_reports/r0/r0_retrospective.md` §5
+**Source:** `docs/04_reports/r0/21_r0_retrospective.md` §5
 **Status:** Review before starting R1 execution (C2)
 
 These are development process recommendations from the R0 retrospective. They do not
@@ -399,12 +399,12 @@ block promotion but should be reviewed and dispositioned before R1 execution beg
 
 | Follow-Up | Master Plan Phase | Sub-Plan | Report |
 |-----------|-------------------|----------|--------|
-| HIGH/LOW features | C2 (R1 training) | `arc_d_execution_plan.md` | `contract_selection_oracle.md` §5.3 |
+| HIGH/LOW features | C2 (R1 training) | `arc_d_execution_plan.md` | `10_contract_selection_oracle.md` §5.3 |
 | Partner context + unified model | C2 (R1 training) | `arc_d_execution_plan.md` Phase R1, `contract_selection_analysis.md` §Option B | — |
-| Oracle re-analysis | Post-C2 | `contract_selection_analysis.md` | `contract_selection_oracle.md` |
-| Pass-threshold re-tune | Post-C2 | `r0_pass_threshold_protocol.md` (template) | `pass_threshold_decision.md` §6 |
-| Deferred report sections | B3/D1 | `report_narrative_overlay.md` | `comparator_rankings.md` §4, §8 |
-| H2H bid_rate caveat | All | `measurement_integrity_r0.md` L3 | All H2H reports |
-| Rung-to-rung pipeline | Post-A2 | — | `phase0_to_r0_progression.md` (template) |
-| Bid-level search | C2 (R1 training) | `r0_report_qa.md` Q4 | `c33_ablation_report.md` |
-| Process lessons (W1–W6) | Pre-C2 | `r0_retrospective.md` §5 | — |
+| Oracle re-analysis | Post-C2 | `contract_selection_analysis.md` | `10_contract_selection_oracle.md` |
+| Pass-threshold re-tune | Post-C2 | `r0_pass_threshold_protocol.md` (template) | `11_pass_threshold_decision.md` §6 |
+| Deferred report sections | B3/D1 | `report_narrative_overlay.md` | `03_comparator_rankings.md` §4, §8 |
+| H2H bid_rate caveat | All | `20_measurement_integrity_r0.md` L3 | All H2H reports |
+| Rung-to-rung pipeline | Post-A2 | — | `23_phase0_to_r0_progression.md` (template) |
+| Bid-level search | C2 (R1 training) | `r0_report_qa.md` Q4 | `05_c33_ablation_report.md` |
+| Process lessons (W1–W6) | Pre-C2 | `21_r0_retrospective.md` §5 | — |

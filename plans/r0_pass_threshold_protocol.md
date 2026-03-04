@@ -223,7 +223,7 @@ If the decision is ADOPT:
 | 3 | Run sweep on train partition | net_diff_mean by t (11 candidates) |
 | 4 | Evaluate t*_train on validation | Primary + secondary endpoints, bootstrap CIs |
 | 5 | Apply decision gate | ADOPT / NOTE / RETAIN decision |
-| 6 | Write threshold decision report | `docs/04_reports/r0/pass_threshold_decision.md` |
+| 6 | Write threshold decision report | `docs/04_reports/r0/11_pass_threshold_decision.md` |
 
 ### 4.2 Dependencies
 
@@ -246,7 +246,7 @@ If the decision is ADOPT:
 | Item | Value |
 |------|-------|
 | Protocol version | v1 |
-| Oracle analysis | PR #472, `docs/04_reports/r0/contract_selection_oracle.md` |
+| Oracle analysis | PR #472, `docs/04_reports/r0/10_contract_selection_oracle.md` |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |
 | Model artifact | `data/artifacts/arc_d/r0/hybrid_r0.json` |
 | Bidder pass gate | `src/bid_euchre/strategy/bidding.py:1043` |

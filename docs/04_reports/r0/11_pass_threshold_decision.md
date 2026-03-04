@@ -154,5 +154,5 @@ No code changes. The pass gate at `bidding.py:1043` remains `best_utility <= 0`.
 | Split seed | 42 |
 | Bootstrap seed | 42 |
 | Mode | QUICK (10,000 deals) |
-| Repro command | `PYTHONPATH=src uv run papermill notebooks/arc_d/r0/56_pass_threshold_sweep.ipynb /tmp/out.ipynb -p MODE QUICK` |
+| Repro command | `uv run papermill notebooks/arc_d/r0/56_pass_threshold_sweep.ipynb /tmp/out.ipynb -p MODE QUICK` |
 | V2 decision | RETAIN t=0 confirmed; bid-level search resolves pass-threshold at search level |

@@ -92,7 +92,7 @@ positional advantage.
 - **Relative only.** Two equally weak models produce delta ~ 0, just as two
   equally strong models do. H2H cannot tell you whether the models are any
   good in absolute terms -- only which is better. For absolute benchmarking,
-  see the [comparator rankings](comparator_rankings.md).
+  see the [comparator rankings](03_comparator_rankings.md).
 - **O(n^2) cost.** 8 bidders require 64 matchups; this becomes expensive at
   publication resolution (10k deals/cell = 640k deals). The QUICK-then-FULL
   design mitigates this by running a survey at 2k/cell first.
@@ -101,7 +101,7 @@ positional advantage.
   not observed in R0.
 
 **Comparison with self-play comparator battery:** The comparator battery
-([comparator_rankings.md](comparator_rankings.md)) evaluates each bidder
+([03_comparator_rankings.md](03_comparator_rankings.md)) evaluates each bidder
 independently against GluttonStrategy in uncontested auctions. It answers "is
 this model any good?" while H2H answers "which model is better?" The two
 methods can give different rankings -- for example, in v2 the hybrid bidders
@@ -183,7 +183,7 @@ understood from the comparator battery, where the effects are additive:
 - **Wrapper effect:** +0.75 net_eppd (estimated from v1-to-v2 improvement
   attributable to wrapper + search synergy)
 
-See [c33_ablation_report.md](c33_ablation_report.md) for full decomposition
+See [05_c33_ablation_report.md](05_c33_ablation_report.md) for full decomposition
 analysis.
 
 **Team auction-win frequency profile:**
@@ -212,7 +212,7 @@ against GluttonStrategy card play. The bidder under test occupies one seat
 while three always-pass sentinels fill the remaining seats. Bootstrap 95% CIs
 from 10,000 resamples.
 
-See [comparator_rankings.md](comparator_rankings.md) for full methodology,
+See [03_comparator_rankings.md](03_comparator_rankings.md) for full methodology,
 behavioral analysis, and version history.
 
 ### 3.2 Rankings
@@ -265,170 +265,50 @@ bids 3 Spades), not its intended auction-raising behavior.
 
 ---
 
-## 4. H2H Battery: Full Matrix
+## 4. H2H Battery Summary
 
-### 4.1 Design
+8x8 H2H matrix: QUICK (64 matchups, 2k deals/cell) + FULL (52 matchups, 10k
+deals/cell). All 8 self-play CIs span zero (pass). See
+[07_h2h_pairwise_analysis.md](07_h2h_pairwise_analysis.md) for the full pairwise
+matrix, dominance structure, and behavioral asymmetry analysis.
 
-**QUICK phase (v4):** 8 bidders x 8 bidders = 64 matchups (including
-self-play), 2,000 paired deals per cell. Purpose: survey-resolution coverage
-of the full matrix.
+### 4.1 Average H2H Delta Rankings
 
-**FULL phase (v4):** 52 of 64 matchups rerun at 10,000 paired deals. Selection
-criteria: all cells involving {hybrid_olsa, hybrid_olsa_full, olsa, olsa_full,
-modeloespecifico} + key cross-tier matchups. Purpose: publication-resolution
-data for key matchups and gate calibration.
+Average pooled net_eppd_delta across trained-bidder matchups (FULL, 10k deals).
+W/L/D from QUICK (complete 8x8 matrix).
 
-### 4.2 Self-Play Sanity
+| Rank | Bidder | Avg H2H delta | Record (W/L/D) |
+|------|--------|---------------|----------------|
+| 1 | modeloespecifico | +0.230 | 5/0/2 |
+| 2 | hybrid_olsa_full | +0.015 | 3/1/3 |
+| 3 | olsa_full | -0.054 | 3/0/4 |
+| 4 | hybrid_olsa | -0.063 | 3/1/3 |
+| 5 | olsa | -0.128 | 2/4/1 |
 
-Self-play cells should show `net_eppd_delta ~ 0` (a bidder playing itself
-should not favor either team). CIs should span zero.
+Heuristic bidders (stricthellraiser, fiveheadfred, rankthetank) lose all
+trained-bidder matchups by +0.35 to +10.5 net_eppd.
 
-**FULL results (10k deals each):**
+### 4.2 Key Findings
 
-| Bidder | delta | 95% CI | Spans zero? | fullgame_eppd |
-|--------|-------|--------|-------------|---------------|
-| hybrid_olsa | -0.048 | [-0.132, +0.038] | Yes | 4.894 |
-| hybrid_olsa_full | -0.022 | [-0.108, +0.062] | Yes | 4.890 |
-| olsa | -0.017 | [-0.156, +0.122] | Yes | 3.714 |
-| olsa_full | -0.066 | [-0.205, +0.069] | Yes | 3.747 |
-| modeloespecifico | -0.083 | [-0.183, +0.020] | Yes | 4.691 |
-| fiveheadfred | -0.107 | [-0.253, +0.034] | Yes | 3.540 |
-| stricthellraiser | -0.020 | [-0.203, +0.162] | Yes | 2.150 |
-| rankthetank | +0.061 | [-0.176, +0.294] | Yes | -1.645 |
+**modeloespecifico retains the H2H crown.** Beats all trained bidders --
+hybrid_olsa by pooled +0.35 delta (both rotations significant), hybrid_olsa_full
+by pooled +0.26 delta (both rotations significant). The v2 gap is roughly half
+the v1 gap (+0.25/-0.46 vs +0.64/-0.78), showing bid-level search made the
+hybrid bidders substantially more competitive.
 
-All 8 self-play CIs span zero (pass). This is an improvement over v1, where
-rankthetank showed a marginally significant positional bias. At 10k deals with
-the v2 code, all bidders pass the self-play sanity check.
+**hybrid_olsa beats base olsa modestly.** Pooled +0.13 delta, but only 1 of 2
+rotations is individually significant. hybrid_olsa_full beats olsa more cleanly
+(both rotations significant, pooled +0.20).
 
-The fullgame_eppd values for self-play cells provide an absolute quality metric:
-hybrid_olsa (4.894) and hybrid_olsa_full (4.890) achieve the highest self-play
-eppd, indicating they extract the most value when both teams use the same
-strategy. modeloespecifico follows at 4.691. The floor-based bidders (olsa
-3.714, olsa_full 3.747) are substantially lower, reflecting their tendency to
-bid on negative-EV hands.
+**hybrid_olsa and hybrid_olsa_full are indistinguishable.** CI spans zero in
+both directions (pooled delta 0.04). The 3-feature constrained arm matches the
+7-feature promotional arm in competitive play.
 
-### 4.3 Dominance Structure
-
-**QUICK matrix (64 cells, 2k deals) -- Win/Loss/Draw:**
-
-| Bidder | W | L | D |
-|--------|---|---|---|
-| modeloespecifico | 5 | 0 | 2 |
-| hybrid_olsa_full | 3 | 1 | 3 |
-| hybrid_olsa | 3 | 1 | 3 |
-| olsa_full | 3 | 0 | 4 |
-| olsa | 2 | 4 | 1 |
-| fiveheadfred | 2 | 5 | 0 |
-| rankthetank | 1 | 6 | 0 |
-| stricthellraiser | 0 | 7 | 0 |
-
-**FULL subset (52 cells, 10k deals) -- Win/Loss/Draw:**
-
-| Bidder | W | L | D | Matchups |
-|--------|---|---|---|----------|
-| hybrid_olsa_full | 4 | 1 | 2 | 7 |
-| modeloespecifico | 3 | 0 | 1 | 4 |
-| hybrid_olsa | 3 | 1 | 3 | 7 |
-| olsa_full | 3 | 2 | 2 | 7 |
-| olsa | 3 | 3 | 1 | 7 |
-| fiveheadfred | 0 | 4 | 0 | 4 |
-| stricthellraiser | 0 | 4 | 0 | 4 |
-| rankthetank | 0 | 4 | 0 | 4 |
-
-**Note on win counts:** At QUICK resolution, modeloespecifico leads with 5W-0L
-while the hybrid bidders show 3W-1L (both losing only to modeloespecifico). At
-FULL resolution with more data, hybrid_olsa_full resolves an additional draw
-into a win (4W-1L). The single loss for both hybrids is to modeloespecifico. Use
-the pairwise results below for precise dominance ordering.
-
-### 4.4 Key Pairwise Matchups (FULL, 10k deals)
-
-**Trained bidders head-to-head:**
-
-| A vs B | delta | 95% CI | Verdict |
-|--------|-------|--------|---------|
-| modeloespecifico vs hybrid_olsa | +0.252 | [+0.153, +0.352] | **modelo wins** |
-| hybrid_olsa vs modeloespecifico | -0.455 | [-0.556, -0.357] | **modelo wins** |
-| modeloespecifico vs hybrid_olsa_full | +0.165 | [+0.064, +0.265] | **modelo wins** |
-| hybrid_olsa_full vs modeloespecifico | -0.355 | [-0.457, -0.256] | **modelo wins** |
-| hybrid_olsa vs olsa | +0.071 | [-0.065, +0.204] | Draw |
-| olsa vs hybrid_olsa | -0.183 | [-0.315, -0.054] | **hybrid wins** |
-| hybrid_olsa_full vs olsa | +0.137 | [+0.000, +0.270] | **hybrid_full wins** |
-| olsa vs hybrid_olsa_full | -0.270 | [-0.404, -0.140] | **hybrid_full wins** |
-| hybrid_olsa vs hybrid_olsa_full | -0.075 | [-0.159, +0.010] | Draw |
-| hybrid_olsa_full vs hybrid_olsa | -0.003 | [-0.088, +0.082] | Draw |
-| hybrid_olsa vs olsa_full | -0.065 | [-0.200, +0.064] | Draw |
-| olsa_full vs hybrid_olsa | -0.096 | [-0.226, +0.031] | Draw |
-| hybrid_olsa_full vs olsa_full | +0.000 | [-0.135, +0.131] | Draw |
-| olsa_full vs hybrid_olsa_full | -0.149 | [-0.280, -0.020] | **hybrid_full wins** |
-| modeloespecifico vs olsa | +0.135 | [+0.002, +0.267] | **modelo wins** |
-| olsa vs modeloespecifico | -0.263 | [-0.396, -0.132] | **modelo wins** |
-| modeloespecifico vs olsa_full | +0.032 | [-0.101, +0.158] | Draw |
-| olsa_full vs modeloespecifico | -0.184 | [-0.313, -0.052] | **modelo wins** |
-| olsa vs olsa_full | -0.061 | [-0.198, +0.076] | Draw |
-| olsa_full vs olsa | -0.028 | [-0.168, +0.109] | Draw |
-
-**Interpretation:**
-
-The trained bidders form a **partial dominance order with asymmetric evidence:**
+**Partial dominance order:**
 
 ```
 modeloespecifico  >  hybrid_olsa_full  ~  hybrid_olsa  >  olsa  ~  olsa_full
-                         |                    |
-                         +----(draw)-----------+
 ```
-
-- **modeloespecifico strictly dominates all** -- beats hybrid_olsa (both
-  directions significant), hybrid_olsa_full (both directions significant), olsa
-  (both directions significant), and olsa_full (significant in one direction).
-- **hybrid_olsa_full and hybrid_olsa are draws** against each other (CI spans
-  zero both ways). Their competitive positions are effectively identical.
-- **hybrid_olsa vs olsa** is asymmetric: significant in one direction only.
-  The pooled effect (+0.13) favors hybrid_olsa.
-- **hybrid_olsa_full beats olsa and olsa_full** more cleanly than hybrid_olsa
-  does (both directions significant for olsa, one direction for olsa_full).
-- **olsa vs olsa_full is a draw** in H2H despite olsa_full's higher self-play
-  ranking.
-
-**v1-to-v2 shift in the modelo gap:** In v1, modeloespecifico led hybrid_olsa by
-+0.644/−0.777 net_eppd in H2H. In v2, the gap narrowed to +0.252/−0.455 --
-roughly half the v1 gap. Bid-level search made the hybrid bidders substantially
-more competitive against the domain-expert heuristic, though modeloespecifico
-retains a statistically significant edge.
-
-**Trained vs heuristic bidders:** All trained bidders beat all heuristic
-bidders with large, highly significant margins (deltas ranging from +0.35 to
-+10.5 net_eppd). The gap between the "competitive" and "weak" tiers is the
-dominant structure in the matrix.
-
-### 4.5 Behavioral Asymmetry
-
-A striking pattern emerges in the hybrid vs floor-based matchups. When
-hybrid_olsa faces olsa:
-
-- hybrid_olsa team auction-win frequency: 11.7% (highly selective)
-- olsa team auction-win frequency: 88.3% (near-universal)
-
-When the seats swap:
-
-- olsa team auction-win frequency: 87.8%
-- hybrid_olsa team auction-win frequency: 12.3%
-
-hybrid_olsa yields the auction to olsa in ~88% of deals, bidding only when
-its Gaussian CDF indicates high P(make). When it does bid, it makes 90% of its
-contracts vs olsa's 76%. This is the same selective restraint mechanism seen in
-v1, but v2's bid-level search means hybrid_olsa selects optimal bid levels when
-it does bid.
-
-A parallel pattern appears in the hybrid_olsa vs modeloespecifico matchups:
-
-- hybrid_olsa team auction-win frequency: 41.6% vs modelo's 58.4%
-- modelo team auction-win frequency: 58.2% vs hybrid_olsa's 41.9%
-
-The auction-win frequencies are much more balanced between these two
-because both are selective, high-make-rate bidders. modeloespecifico edges out
-hybrid_olsa in the auction roughly 58% of the time, which drives its competitive
-advantage.
 
 ---
 
@@ -567,9 +447,10 @@ Run directories (local only, data/runs/):
 
 | Report | Focus |
 |--------|-------|
-| [c33_ablation_report.md](c33_ablation_report.md) | Wrapper + search decomposition |
-| [comparator_rankings.md](comparator_rankings.md) | Absolute benchmarking (v6) |
-| [r0_promotion_report.md](r0_promotion_report.md) | Gate results, multi-seed |
+| [07_h2h_pairwise_analysis.md](07_h2h_pairwise_analysis.md) | Full pairwise matrix, dominance, behavioral asymmetry |
+| [05_c33_ablation_report.md](05_c33_ablation_report.md) | Wrapper + search decomposition |
+| [03_comparator_rankings.md](03_comparator_rankings.md) | Absolute benchmarking (v6) |
+| [01_r0_promotion_report.md](01_r0_promotion_report.md) | Gate results, multi-seed |
 
 ---
 
@@ -583,15 +464,14 @@ uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/arc_d_r0_c33_ablation.yaml
 
 # Comparator battery (8 bidders, single-seat v6)
-PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
-  --config experiments/configs/auction_comparator.yaml --seed 42 \
-  --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0.json \
-  --bidder-class HybridOLSaBidder --bidder-name hybrid_olsa \
-  --single-seat --n-per 20000 \
-  --output-format json --output data/artifacts/arc_d/r0/comparator_battery_r0_v6.json
+uv run python scripts/internal/run_auction_comparator.py \
+  --config experiments/configs/auction_comparator.yaml \
+  --seed 42 --single-seat --n-per 20000 \
+  --output-format json \
+  --output data/artifacts/arc_d/r0/comparator_battery_r0_v6.json
 
 # C50 QUICK v4 (generate config, run, parse)
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
   --mode QUICK --seed 42 --n-per 2000 \
   --output data/artifacts/arc_d/r0/h2h_battery_quick_v4.json
 uv run python experiments/run_experiment.py --seed 42 \
@@ -599,7 +479,7 @@ uv run python experiments/run_experiment.py --seed 42 \
 # Then: --parse-run <run_dir> to populate
 
 # C50 FULL v4 (subset of QUICK)
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
   --mode FULL --seed 42 --n-per 10000 \
   --quick-summary data/artifacts/arc_d/r0/h2h_battery_quick_v4.json \
   --output data/artifacts/arc_d/r0/h2h_battery_full_v4.json
@@ -608,13 +488,13 @@ uv run python experiments/run_experiment.py --seed 42 \
 # Then: --parse-run <run_dir> to populate
 
 # Threshold calibration (with drift check)
-PYTHONPATH=src uv run python scripts/internal/calibrate_arc_d_thresholds.py \
+uv run python scripts/internal/calibrate_arc_d_thresholds.py \
   --h2h-summary data/artifacts/arc_d/r0/h2h_battery_quick_v4.json \
   --full-summary data/artifacts/arc_d/r0/h2h_battery_full_v4.json \
   --seed 42 --output data/artifacts/arc_d/r0/gate_thresholds_r1.json
 
 # CI extraction (single-seat v6)
-PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \
+uv run python scripts/internal/extract_comparator_cis.py \
   --artifacts-dir data/artifacts/arc_d/r0 --runs-dir data/runs --seed 42 \
   --n-bootstrap 10000 --single-seat \
   --output data/artifacts/arc_d/r0/comparator_cis_r0_v6.json \

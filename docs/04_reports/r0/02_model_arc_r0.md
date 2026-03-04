@@ -55,15 +55,15 @@ establishes a working baseline for R1 feature enrichment.
 
 | Report | Focus |
 |--------|-------|
-| [r0_promotion_report.md](r0_promotion_report.md) | Promotion decision, gate results, threshold calibration |
-| [comparator_rankings.md](comparator_rankings.md) | v6 single-seat rankings (8 bidders, GluttonStrategy) |
-| [h2h_battery_analysis.md](h2h_battery_analysis.md) | H2H battery (v4), competitive ordering, threshold derivation |
-| [c33_ablation_report.md](c33_ablation_report.md) | C33 v2: search effect +0.43, wrapper effect +0.75 |
-| [contract_selection_oracle.md](contract_selection_oracle.md) | Oracle regret analysis, CS regret share 90.9% |
-| [pass_threshold_decision.md](pass_threshold_decision.md) | B0 threshold sweep: RETAIN t=0 |
-| [lambda_decision.md](lambda_decision.md) | Lambda tuning: RETAIN lambda=0.0 (FINAL) |
-| [normalizer_offline_screen.md](normalizer_offline_screen.md) | Normalizer screen: NO_GO_DEFER_R1 |
-| [measurement_integrity_r0.md](measurement_integrity_r0.md) | Methodology limitations + deferral costs |
+| [01_r0_promotion_report.md](01_r0_promotion_report.md) | Promotion decision, gate results, threshold calibration |
+| [03_comparator_rankings.md](03_comparator_rankings.md) | v6 single-seat rankings (8 bidders, GluttonStrategy) |
+| [04_r0_experiment_summary.md](04_r0_experiment_summary.md) | H2H battery (v4), competitive ordering, threshold derivation |
+| [05_c33_ablation_report.md](05_c33_ablation_report.md) | C33 v2: search effect +0.43, wrapper effect +0.75 |
+| [10_contract_selection_oracle.md](10_contract_selection_oracle.md) | Oracle regret analysis, CS regret share 90.9% |
+| [11_pass_threshold_decision.md](11_pass_threshold_decision.md) | B0 threshold sweep: RETAIN t=0 |
+| [12_lambda_decision.md](12_lambda_decision.md) | Lambda tuning: RETAIN lambda=0.0 (FINAL) |
+| [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md) | Normalizer screen: NO_GO_DEFER_R1 |
+| [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md) | Methodology limitations + deferral costs |
 
 ---
 
@@ -189,7 +189,7 @@ The auction is dominated by suit contracts (98.3%), with HIGH/LOW selected less
 than 1% each. This reflects the R0 model's 1-feature HIGH/LOW specifications
 — offsuit_aces (HIGH) and offsuit_tens_count (LOW) — which produce conservative
 trick predictions that rarely exceed the bid/pass threshold. The oracle analysis
-([contract_selection_oracle.md](contract_selection_oracle.md)) shows the
+([10_contract_selection_oracle.md](10_contract_selection_oracle.md)) shows the
 hindsight-optimal HIGH+LOW share is 31.9%, confirming substantial under-selection.
 
 Bid levels cluster tightly around 5-6 for suit (mean 5.78), with HIGH/LOW
@@ -221,6 +221,18 @@ verified in notebook 25_auction_health.
 | high | 261 | 0.766 | 7.05 |
 | low | 281 | 0.769 | 7.08 |
 | suit | 31070 | 0.875 | 5.78 |
+
+### Auction Plumbing Validation
+
+Auction mechanics are validated by 5 test files covering the full bidding and play pipeline:
+
+- `tests/unit/test_auction_bidding_rules.py` — all-pass redeal, strict-increasing bids, winner determination, contract type selection
+- `tests/unit/test_bidding_sequential_semantics.py` — LOD bidding order, strict-raise legality
+- `tests/integration/test_rules_invariants.py` — bower ordering, trump beats non-trump, follow-suit, LOW rank reversal
+- `tests/integration/test_auction_repeatability.py` — seed determinism for auction mode
+- `tests/integration/test_simulation_validation.py` — trick distribution sums, team totals = 10, average in [4,6]
+
+The comparator battery (including dumb bidders like rankthetank and fiveheadfred) runs through the full auction + play pipeline, serving as an implicit integration test across all contract types and bid levels.
 
 ---
 
@@ -377,14 +389,14 @@ promotional arm. This is counter-intuitive but benign at R0 — the constrained
 arm's hand-picked features (bowers, trump_count, offsuit_aces) are individually
 stronger predictors than the forward-selected features, and the lower bid rate
 (63.2% vs 82.8%) means OLSa only bids on high-confidence hands. See
-[r0_promotion_report.md](r0_promotion_report.md) §4 for full interpretation.
+[01_r0_promotion_report.md](01_r0_promotion_report.md) §4 for full interpretation.
 
 ### Comparator Battery (v6, Single-Seat, GluttonStrategy)
 
 The single-seat comparator evaluates each bidder in isolation — one seat bids
 while three always-pass sentinels fill the remaining seats — producing an
 absolute benchmark free from auction interaction confounds. See
-[comparator_rankings.md](comparator_rankings.md) for full methodology and
+[03_comparator_rankings.md](03_comparator_rankings.md) for full methodology and
 behavioral analysis.
 
 | Rank | Bidder | net_eppd (comparator) | 95% CI | bid_rate | make_rate |
@@ -392,11 +404,11 @@ behavioral analysis.
 | 1 | **hybrid_olsa_full** | **+2.170** | **[+2.081, +2.257]** | 96.8% | 100% |
 | 2 | **hybrid_olsa** | **+2.131** | **[+2.042, +2.216]** | 96.1% | 100% |
 | 3 | modeloespecifico | +1.604 | [+1.489, +1.720] | 100% | 94.7% |
-| 4 | stricthellraiser | +0.085 | [−0.027, +0.197] | | |
-| 5 | olsa_full | −0.012 | [−0.193, +0.173] | | |
-| 6 | olsa | −0.225 | [−0.413, −0.037] | | |
-| 7 | fiveheadfred | −2.579 | | | |
-| 8 | rankthetank | −9.665 | | | |
+| 4 | stricthellraiser | +0.085 | [−0.027, +0.197] | 100% | 94.5% |
+| 5 | olsa_full | −0.012 | [−0.193, +0.173] | 100% | 77.2% |
+| 6 | olsa | −0.225 | [−0.413, −0.037] | 100% | 75.6% |
+| 7 | fiveheadfred | −2.579 | [−2.771, −2.384] | 100% | 64.9% |
+| 8 | rankthetank | −9.665 | [−9.851, −9.483] | 100% | 15.0% |
 
 hybrid_olsa_full and hybrid_olsa are statistically tied (delta=+0.038,
 p=0.5457). hybrid_olsa now leads modeloespecifico by +0.527 points/deal
@@ -413,16 +425,21 @@ dynamics while the comparator isolates bidding quality in a controlled setting.
 
 **Source:** comparator_cis_r0_v6.json
 
-### Key H2H Matchups
+### H2H Self-Play Baseline
 
 Head-to-head matchups pit bidders directly against each other in contested
 auctions with paired, seat-swapped deals. See
-[h2h_battery_analysis.md](h2h_battery_analysis.md) for the full H2H matrix
+[04_r0_experiment_summary.md](04_r0_experiment_summary.md) for the full H2H matrix
 (QUICK + FULL resolution, v4) and gate threshold derivation.
 
 **H2H Self-Play (FULL, v4):** delta=−0.048, CI=[−0.132, +0.038],
 fullgame_eppd=4.894. The near-zero delta confirms self-play symmetry; the
 fullgame_eppd of 4.894 establishes the H2H baseline.
+
+For pairwise competitive matchups, see the
+[H2H pairwise analysis](07_h2h_pairwise_analysis.md) companion report. Key
+results: modeloespecifico beats hybrid_olsa by ~0.35 net_eppd delta (both
+rotations significant); hybrid_olsa dominates stricthellraiser by ~1.53 delta.
 
 **Source:** h2h_battery_quick_v4, h2h_battery_full_v4
 
@@ -515,14 +532,14 @@ These are R0-specific limitations, not generic caveats:
 5. **GluttonStrategy confounding.** Both comparator and eval instruments use
    GluttonStrategy for card play. Rankings reflect interaction with this
    specific play strategy. See
-   [measurement_integrity_r0.md](measurement_integrity_r0.md) for full
+   [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md) for full
    limitation inventory.
 
 6. **Normalizer deferred to R1.** Offline screening showed normalizer adds
    +4% accuracy but degrades net_eppd by −0.269 (CI [−0.287, −0.251]). This
    is a model poverty problem, not a miscalibration — deferred to R1 where
    richer models may benefit from normalization. See
-   [normalizer_offline_screen.md](normalizer_offline_screen.md).
+   [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md).
 
 ---
 
@@ -532,7 +549,7 @@ These are R0-specific limitations, not generic caveats:
 
 ```bash
 # Parse JSONL logs into eval DataFrame:
-PYTHONPATH=src uv run python -c "
+uv run python -c "
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
 df = build_eval_dataset('data/runs/arc_d_eval_r0_42_20260221_180253/logs/*.jsonl')
 df.to_parquet('eval_df.parquet')
@@ -543,7 +560,7 @@ df.to_parquet('eval_df.parquet')
 
 ```bash
 # Regenerate the auto-generated tables:
-PYTHONPATH=src uv run python -c "
+uv run python -c "
 from bid_euchre.reporting.arc_d_report import generate_arc_d_rung_report
 import pandas as pd
 df = pd.read_parquet('eval_df.parquet')

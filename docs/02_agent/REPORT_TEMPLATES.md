@@ -11,7 +11,7 @@ sources, and which sections need interpretation vs data extraction.
 ## 1. Promotion Report
 
 **Purpose:** Formal gate decision document for each rung.
-**Exemplar:** `docs/04_reports/r0/r0_promotion_report.md`
+**Exemplar:** `docs/04_reports/r0/01_r0_promotion_report.md`
 **Primary artifacts:** `promotion_decision_r{N}.json`, `rung_bundle_r{N}.json`,
   eval metric files (`eval_r{N}.json`, `eval_r{N}_s43.json`, `eval_r{N}_s44.json`)
 
@@ -24,7 +24,7 @@ sources, and which sections need interpretation vs data extraction.
 | 3 | **Gate Results** | `promotion_decision_r{N}.json` > tier_1_checks | Minimal — add one-line descriptions of each check |
 | 4 | **Evaluation Metrics** | Eval files (3 seeds) | Moderate — multi-seed stability table + commentary |
 | 5 | **Attribution Gap** | Decision > attribution_gap + eval metrics | Yes — explain direction and magnitude |
-| 6 | **Comparator Context** | Summarize from comparator_rankings.md | Yes — summarize-and-link pattern |
+| 6 | **Comparator Context** | Summarize from 03_comparator_rankings.md | Yes — summarize-and-link pattern |
 | 7 | **Gate Thresholds** | `gate_thresholds_r{N+1}.json` (if recalibrated) | Moderate — explain threshold derivation |
 | 8 | **Companion Reports** | Directory listing | No — cross-link table |
 | 9 | **Provenance** | Bundle paths + timestamps | No — data extraction |
@@ -52,7 +52,7 @@ olsa_arm: {arm, metrics_seed42: {net_expected_points_per_deal, ...}}
 ## 2. Comparator Rankings
 
 **Purpose:** Absolute benchmarking of all bidders via single-seat comparator.
-**Exemplar:** `docs/04_reports/r0/comparator_rankings.md`
+**Exemplar:** `docs/04_reports/r0/03_comparator_rankings.md`
 **Primary artifacts:** `comparator_battery_r{N}_v4.json`, `comparator_cis_r{N}_v4.json`
 
 ### Section Structure (9 sections)
@@ -95,7 +95,7 @@ olsa_arm: {arm, metrics_seed42: {net_expected_points_per_deal, ...}}
 ## 3. H2H Battery Analysis
 
 **Purpose:** Competitive ordering via head-to-head matchups.
-**Exemplar:** `docs/04_reports/r0/h2h_battery_analysis.md`
+**Exemplar:** `docs/04_reports/r0/04_r0_experiment_summary.md`
 **Primary artifacts:** `h2h_battery_quick_v2.json`, `h2h_battery_full_v2.json`,
   `gate_thresholds_r{N+1}.json`
 
@@ -105,7 +105,7 @@ olsa_arm: {arm, metrics_seed42: {net_expected_points_per_deal, ...}}
 |---|---------|--------|----------------------|
 | 1 | **What Was Done** | Run metadata | Moderate — campaign inventory + methodology |
 | 2 | **C33 Ablation** | H2H subset (if applicable) | Yes — wrapper effect interpretation |
-| 3 | **Comparator Summary** | Summarize from comparator_rankings.md | Minimal — summarize-and-link |
+| 3 | **Comparator Summary** | Summarize from 03_comparator_rankings.md | Minimal — summarize-and-link |
 | 4 | **H2H Full Matrix** | Battery JSON cells | Moderate — dominance ordering, surprises |
 | 5 | **Gate Threshold Calibration** | `gate_thresholds_r{N+1}.json` | Yes — explain derivation method |
 | 6 | **Artifact Inventory** | File listing | No — data extraction |
@@ -146,7 +146,7 @@ breakout makes this asymmetry visible.
 ## 4. Measurement Integrity Review
 
 **Purpose:** Methodology limitations and deferral cost analysis.
-**Exemplar:** `docs/04_reports/r0/measurement_integrity_r0.md`
+**Exemplar:** `docs/04_reports/r0/20_measurement_integrity_r0.md`
 **Primary artifacts:** All artifacts (cross-cutting review)
 **Template:** `docs/02_agent/MEASUREMENT_INTEGRITY_REVIEW.md`
 

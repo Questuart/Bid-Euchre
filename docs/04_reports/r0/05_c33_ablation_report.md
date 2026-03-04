@@ -170,7 +170,7 @@ bottom 5%). This provides per-hand downside risk before play, penalizing
 high-variance hands even when EV is positive. At R0, `risk_lambda = 0.0`, so
 the risk penalty does not affect bid decisions. CVaR becomes active when
 `risk_lambda > 0` (evaluated in the lambda decision --
-see [lambda_decision.md](lambda_decision.md)).
+see [12_lambda_decision.md](12_lambda_decision.md)).
 
 Both the EV wrapper and CVaR computation inherit the Gaussian assumption over
 a discrete, bounded [0, 10] support. The global sigma per contract family (no
@@ -418,7 +418,7 @@ over floor-based OLSa:
   value.
 
 - **Gate threshold context:** The delta_floor for R1 promotion is 0.180
-  (see [h2h_battery_analysis.md](h2h_battery_analysis.md)). The v2 H2H pooled
+  (see [04_r0_experiment_summary.md](04_r0_experiment_summary.md)). The v2 H2H pooled
   effect (+0.13) would NOT clear this bar on its own, but the combined
   architectural value is clearly demonstrated by the comparator gap (+2.356).
 
@@ -439,10 +439,10 @@ R0 training (#396)
   +---> C33 ablation v2 (this report, wrapper+search: +0.13 H2H, +2.36 comp)
   |       validates combined architecture
   |
-  +---> Comparator battery v6 (comparator_rankings.md)
+  +---> Comparator battery v6 (03_comparator_rankings.md)
   |       ranks all 8 bidders (single-seat, GluttonStrategy)
   |
-  +---> H2H battery v4 (h2h_battery_analysis.md)
+  +---> H2H battery v4 (04_r0_experiment_summary.md)
   |       competitive ordering + threshold calibration
   |
   +---> R1 training cycle (PR-R1a, next)
@@ -469,16 +469,16 @@ R0 training (#396)
 
 | Report | Focus |
 |--------|-------|
-| [h2h_battery_analysis.md](h2h_battery_analysis.md) | Full H2H matrix + gate thresholds |
-| [comparator_rankings.md](comparator_rankings.md) | Absolute benchmarking (v6, 8 bidders) |
-| [r0_promotion_report.md](r0_promotion_report.md) | Gate results, multi-seed |
+| [04_r0_experiment_summary.md](04_r0_experiment_summary.md) | Full H2H matrix + gate thresholds |
+| [03_comparator_rankings.md](03_comparator_rankings.md) | Absolute benchmarking (v6, 8 bidders) |
+| [01_r0_promotion_report.md](01_r0_promotion_report.md) | Gate results, multi-seed |
 
 ## 11. Reproduction
 
 ```bash
 # v2 C33 data is a 4-cell subset of the H2H FULL battery.
 # To reproduce the full H2H FULL battery (which contains the C33 cells):
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
   --mode FULL --seed 42 --n-per 10000
 
 # The C33-relevant cells are:

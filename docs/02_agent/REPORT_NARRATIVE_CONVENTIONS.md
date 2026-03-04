@@ -52,7 +52,7 @@ Every data section (tables, charts, statistics) should be followed by
 > Both arms show positive net_eppd, with OLSa slightly outperforming OLSa_Full
 > (+0.14 gap). This negative attribution gap is unexpected — the constrained
 > arm's hand-picked features appear more robust at R0 model quality. See
-> [r0_promotion_report.md](r0_promotion_report.md) for multi-seed stability
+> [01_01_r0_promotion_report.md](01_r0_promotion_report.md) for multi-seed stability
 > analysis.
 
 **Anti-pattern:** Tables without any interpretation. Every table needs at
@@ -108,7 +108,7 @@ When reporting point estimates without confidence intervals:
 
 ```markdown
 - Note: R² values are point estimates from a single eval seed; bootstrap
-  CIs from multi-seed runs are in [r0_promotion_report.md].
+  CIs from multi-seed runs are in [01_r0_promotion_report.md].
 ```
 
 ### Statistical Test Notes
@@ -117,7 +117,7 @@ When a comparison lacks formal testing:
 
 ```markdown
 - The +0.21 attribution gap is from a single H2H run. See
-  [c33_ablation_report.md] for the ablation with bootstrap CIs.
+  [05_c33_ablation_report.md] for the ablation with bootstrap CIs.
 ```
 
 ---
@@ -129,7 +129,7 @@ When a comparison lacks formal testing:
 Use relative Markdown links within the same report directory:
 
 ```markdown
-See [comparator_rankings.md](comparator_rankings.md) for full analysis.
+See [03_comparator_rankings.md](03_comparator_rankings.md) for full analysis.
 ```
 
 ### Companion Reports Section
@@ -141,8 +141,8 @@ Every rung report should end with a companion reports table:
 
 | Report | Focus |
 |--------|-------|
-| [r0_promotion_report.md](r0_promotion_report.md) | Gate results, multi-seed |
-| [comparator_rankings.md](comparator_rankings.md) | Absolute benchmarking |
+| [01_01_r0_promotion_report.md](01_r0_promotion_report.md) | Gate results, multi-seed |
+| [03_comparator_rankings.md](03_comparator_rankings.md) | Absolute benchmarking |
 ```
 
 ### Cross-Rung Links
@@ -150,7 +150,7 @@ Every rung report should end with a companion reports table:
 When referencing a previous rung's report:
 
 ```markdown
-Compared to R0 ([model_arc_r0.md](../r0/model_arc_r0.md)), R1 shows...
+Compared to R0 ([02_model_arc_r0.md](../r0/02_model_arc_r0.md)), R1 shows...
 ```
 
 ---
@@ -159,7 +159,7 @@ Compared to R0 ([model_arc_r0.md](../r0/model_arc_r0.md)), R1 shows...
 
 ### Stable Filenames
 
-Reports use stable filenames without dates (e.g., `model_arc_r0.md`, not
+Reports use stable filenames without dates (e.g., `02_model_arc_r0.md`, not
 `model_arc_r0_20260224.md`). The generation timestamp lives in the report
 header.
 
@@ -226,6 +226,6 @@ from bid_euchre.reporting.arc_d_report import generate_arc_d_rung_report
 df = build_eval_dataset('data/runs/.../logs/*.jsonl')
 generate_arc_d_rung_report('data/artifacts/.../rung_bundle_r0.json',
     eval_df=df, chart_dir='data/reports/.../charts/',
-    output_path='docs/04_reports/r0/model_arc_r0.md')
+    output_path='docs/04_reports/r0/02_model_arc_r0.md')
 "
 ```

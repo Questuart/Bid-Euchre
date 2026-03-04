@@ -117,7 +117,7 @@ the oracle would profit. Root cause: feature poverty in HIGH/LOW models (1 featu
 
 **Decision: Path B selected** — skip calibrator, finalize R0, address in R1.
 Rationale: calibrator addresses only 17% of regret; the dominant fix (feature enrichment
-for HIGH/LOW) is already on the R1 roadmap. See `docs/04_reports/r0/contract_selection_oracle.md`.
+for HIGH/LOW) is already on the R1 roadmap. See `docs/04_reports/r0/10_contract_selection_oracle.md`.
 
 **B0 — Pass-Threshold Tuning (new, inserted after Step 0 result):**
 
@@ -211,10 +211,10 @@ Combined PR-N1 + PR-N2 into single PR.
 
 | Report | Key Changes |
 |--------|-------------|
-| `h2h_battery_analysis.md` §3 | v2→v4 comparator data, field terminology fixes |
-| `r0_promotion_report.md` | v2→v4 exec summary + comparator table, gate descriptions |
-| `comparator_rankings.md` §4, §8 | Resolve placeholder sections (populate from FULL data or defer with rationale) |
-| `measurement_integrity_r0.md` | Play strategy context (GluttonStrategy), L3 resolved |
+| `04_r0_experiment_summary.md` §3 | v2→v4 comparator data, field terminology fixes |
+| `01_r0_promotion_report.md` | v2→v4 exec summary + comparator table, gate descriptions |
+| `03_comparator_rankings.md` §4, §8 | Resolve placeholder sections (populate from FULL data or defer with rationale) |
+| `20_measurement_integrity_r0.md` | Play strategy context (GluttonStrategy), L3 resolved |
 | `docs/04_reports/README.md` | Stale directory listing, missing entries |
 
 **Key context for cold-start:**
@@ -308,7 +308,7 @@ calibrator question arose. **Create a detailed PR-R1a sub-plan when R0 is finali
 **R1 design priorities from A1 oracle analysis:**
 See `plans/r1_follow_ups.md` for the complete prioritized list of follow-ups,
 including experimental designs, ablation protocols, deferred report items, and
-R0 process lessons (W1–W6) from `docs/04_reports/r0/r0_retrospective.md`.
+R0 process lessons (W1–W6) from `docs/04_reports/r0/21_r0_retrospective.md`.
 
 Summary (details + rationale in follow-ups file):
 - **HIGH/LOW feature enrichment** — #1 priority, addresses 82% of oracle regret
@@ -370,7 +370,7 @@ or work sequentially — no dependencies between them.
 
 **A1 — Contract Selection Oracle Analysis** ✓ COMPLETE (#472, 2026-03-02)
 - Deliverable: Oracle contract mix, regret distribution, Path B decision
-- Report: `docs/04_reports/r0/contract_selection_oracle.md`
+- Report: `docs/04_reports/r0/10_contract_selection_oracle.md`
 - Notebook: `notebooks/arc_d/r0/55_contract_selection_oracle.py`
 - Key finding: pass-threshold regret (82%) dominates contract-selection regret (17%)
 
@@ -414,7 +414,7 @@ or work sequentially — no dependencies between them.
 ### Phase C: Post-R0 Finalization (UNBLOCKED — B3 complete)
 
 **C1 — Dual-Track + Archetype (C6)** ✓ COMPLETE (#481, 2026-03-02)
-- Delivered: dual_track_analysis.md + 3 roster scatter charts + archetype classification
+- Delivered: 06_dual_track_analysis.md + 3 roster scatter charts + archetype classification
 - Sub-plan: `plans/report_narrative_overlay.md` Phase 6
 
 **C2 — R1 Training Cycle**
@@ -470,13 +470,13 @@ or work sequentially — no dependencies between them.
 - **Comparator overhaul:** Wave 1 (#463–#465), dual-track code (#466–#468), rankings (#470)
 - **A1 oracle analysis:** COMPLETE (#472) — regret 3.92 [3.89, 3.95], Path B selected
 - **R0 reports:** All finalized (#477 — narrative overlay + v4 consistency):
-  - `r0_promotion_report.md` — updated to v4 comparator data + narrative
-  - `model_arc_r0.md` — refactored narrative report
-  - `c33_ablation_report.md` — v4 arc-context, ready for A3 refactor
+  - `01_r0_promotion_report.md` — updated to v4 comparator data + narrative
+  - `02_model_arc_r0.md` — refactored narrative report
+  - `05_c33_ablation_report.md` — v4 arc-context, ready for A3 refactor
   - `contract_selection_oracle.md` — current (#472)
-  - `comparator_rankings.md` — current (#470)
-  - `h2h_battery_analysis.md` — v4 cross-references updated
-  - `pass_threshold_decision.md` — current (#476)
+  - `03_comparator_rankings.md` — current (#470)
+  - `04_r0_experiment_summary.md` — v4 cross-references updated
+  - `11_pass_threshold_decision.md` — current (#476)
 
 ### Key Results (R0)
 
@@ -585,7 +585,7 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 ### Phase B (B0 COMPLETE — RETAIN, B3 COMPLETE)
 - [x] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`) — #475
 - [x] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
-- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/pass_threshold_decision.md`) — no code change, t=0 optimal for R0
+- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/11_pass_threshold_decision.md`) — no code change, t=0 optimal for R0
 - [x] B1: Calibrator decision documented — **Path B: SKIPPED** (regret decomposition shows calibrator addresses only 17%)
 - N/A B1-a: ~~Calibrator prototype~~ (skipped)
 - N/A B1-b: ~~Calibrator H2H validation~~ (skipped)

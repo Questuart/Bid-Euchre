@@ -1,7 +1,7 @@
 # Pass-Threshold Tuning Decision — B0
 
 > **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
-> The current version is at [`../pass_threshold_decision.md`](../pass_threshold_decision.md).
+> The current version is at [`../11_pass_threshold_decision.md`](../11_pass_threshold_decision.md).
 > See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)

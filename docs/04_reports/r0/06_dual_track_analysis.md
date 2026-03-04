@@ -74,7 +74,7 @@ sentinels with GluttonStrategy card play. Rankings by absolute net_eppd.
 | 7 | fiveheadfred | -2.579 | [-2.771, -2.384] | 1.000 | 0.649 |
 | 8 | rankthetank | -9.665 | [-9.851, -9.483] | 1.000 | 0.150 |
 
-Source: [comparator_rankings.md](comparator_rankings.md) v6, comparator_cis_r0_v6.json.
+Source: [03_comparator_rankings.md](03_comparator_rankings.md) v6, comparator_cis_r0_v6.json.
 
 ### 2.3 Full-Game Track (H2H Battery)
 
@@ -146,7 +146,7 @@ total game value than modelo's formula-based approach.
 | rankthetank | 2 | 12 | 0 |
 | stricthellraiser | 0 | 14 | 0 |
 
-Source: [h2h_battery_analysis.md](h2h_battery_analysis.md), h2h_battery_quick_v4.json / h2h_battery_full_v4.json.
+Source: [04_r0_experiment_summary.md](04_r0_experiment_summary.md), h2h_battery_quick_v4.json / h2h_battery_full_v4.json.
 
 ### 2.4 Track Agreement/Disagreement Analysis
 
@@ -496,4 +496,4 @@ The archetype classification has changed character in v6:
 | Chart functions | `plot_roster_calibration`, `plot_roster_efficiency`, `plot_roster_conversion` |
 | Play strategy | GluttonStrategy (both tracks, harmonized by C2c/#466) |
 | Seed | 42 |
-| Related reports | [comparator_rankings.md](comparator_rankings.md), [h2h_battery_analysis.md](h2h_battery_analysis.md) |
+| Related reports | [03_comparator_rankings.md](03_comparator_rankings.md), [04_r0_experiment_summary.md](04_r0_experiment_summary.md) |

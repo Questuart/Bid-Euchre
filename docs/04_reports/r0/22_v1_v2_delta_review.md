@@ -238,7 +238,8 @@ neutral. The archetype system's discriminative power has diminished.
 
 | Category | v1 share | v2 share | Flag |
 |----------|----------|----------|------|
-| Pass-threshold regret | **81.9%** | ~5% (implied) | **Dominant → negligible** |
+| Pass-threshold regret | **81.9%** | **5.3%** | **Dominant → negligible** |
+| Over-bidding (bid level) regret | 1.2% | **3.7%** | Minor → minor |
 | Contract-selection regret | 16.9% | **90.9%** | **Minor → dominant** |
 
 **Explanation:** Bid-level search eliminated most pass-threshold regret by bidding
@@ -377,3 +378,9 @@ No delta is orphaned or unexplained.
 
 **Reviewed by:** Claude Opus 4.6
 **Status:** COMPLETE — ready for promotion gate (Task #11)
+
+| Item | Value |
+|------|-------|
+| gate_status | N/A (delta review, not a gate evaluation) |
+| Scope | v1 → v2 behavioral changes across all instruments |
+| Date | 2026-03-03 |

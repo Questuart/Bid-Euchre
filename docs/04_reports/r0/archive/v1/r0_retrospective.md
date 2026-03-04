@@ -1,7 +1,7 @@
 # R0 Development Retrospective — Lessons Learned
 
 > **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
-> The current version is at [`../r0_retrospective.md`](../r0_retrospective.md).
+> The current version is at [`../21_r0_retrospective.md`](../21_r0_retrospective.md).
 > See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)

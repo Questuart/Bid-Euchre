@@ -49,8 +49,8 @@ tests that hypothesis with appropriate caveats about comparability.
 
 **Prior work:**
 - Phase 0 baseline: [phase0_bidless_20260207.md](../phase0/phase0_bidless_20260207.md)
-- R0 rung report: [model_arc_r0.md](model_arc_r0.md)
-- R0 promotion decision: [r0_promotion_report.md](r0_promotion_report.md)
+- R0 rung report: [02_model_arc_r0.md](02_model_arc_r0.md)
+- R0 promotion decision: [01_r0_promotion_report.md](01_r0_promotion_report.md)
 
 ---
 
@@ -167,7 +167,7 @@ R0 produces 98.3% suit contracts because the R0 model uses only 1 feature each f
 HIGH (offsuit_aces) and LOW (offsuit_tens_count). These sparse specifications rarely
 produce positive expected value, so the bidder almost always selects suit contracts
 where the 3-feature model provides better discrimination. This is a known R0 limitation
-documented in the [model specification](model_arc_r0.md) and motivating R1's
+documented in the [model specification](02_model_arc_r0.md) and motivating R1's
 HIGH/LOW feature enrichment.
 
 ### Confound Analysis
@@ -193,7 +193,7 @@ property, not a coincidence.
 
 ## 5. Impact & Decisions
 
-- **R0 is PROMOTED** — already decided via the [R0 promotion gate](r0_promotion_report.md).
+- **R0 is PROMOTED** — already decided via the [R0 promotion gate](01_r0_promotion_report.md).
   This report validates retroactively and does not change any decision.
 - **Variance results inform R1 priorities:** The extreme contract mix concentration
   (98.3% suit) and sparse HIGH/LOW models confirm that HIGH/LOW feature enrichment
@@ -244,7 +244,7 @@ auction-generated data for the first time.
 | R0 seed | 42 |
 | Phase 0 sample | 300,000 hands × 4 seats = 1,200,000 rows |
 | R0 sample | 31,612 deals × 4 seats = 126,448 rows |
-| R0 promotion decision | PROMOTED (see r0_promotion_report.md) |
+| R0 promotion decision | PROMOTED (see 01_r0_promotion_report.md) |
 | V2 comparator | v6 (8 bidders, hybrid_olsa net_eppd +2.131) |
 
 ---

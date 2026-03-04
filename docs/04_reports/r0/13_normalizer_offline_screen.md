@@ -20,8 +20,8 @@ softmax NLL on 191,552 hands (50,000 deals, seed=42, 60/40 deal-grouped split).
 
 | Metric | Baseline | Normalized | Delta |
 |--------|----------|------------|-------|
-| Accuracy (oracle match) | 33.3% | 37.3% | +4.0% |
-| Net EPPD | 2.036 | 1.767 | **-0.269** |
+| `accuracy` | 33.3% | 37.3% | +4.0% |
+| `net_eppd` | 2.036 | 1.767 | **-0.269** |
 | 95% CI (delta) | | | [-0.287, -0.251] |
 | Bid rate | 95.8% | 97.1% | +1.3pp |
 | Make rate | — | 99.9% | — |
@@ -35,8 +35,8 @@ toward contracts the model lacks the features to evaluate well, converting basel
 suit-contract profits into high/low-contract losses.
 
 **This is model poverty, not miscalibration.** A normalizer cannot fix the underlying
-problem: R0's HIGH model uses only `offsuit_non_ace_count` and LOW uses only
-`offsuit_non_ace_count` — one feature each versus three for suit. Richer features
+problem: R0's HIGH model uses only `offsuit_aces` and LOW uses only
+`offsuit_tens_count` — one feature each versus three for suit. Richer features
 (R1+) are the prerequisite for meaningful cross-contract calibration.
 
 ## 1. Motivation
@@ -47,8 +47,8 @@ into three components:
 | Component | Share |
 |-----------|-------|
 | Contract selection | 90.9% |
-| Pass threshold | — |
-| Bid level | — |
+| Pass threshold | 5.3% |
+| Over-bidding (bid level) | 3.7% |
 
 At 90.9% share, the contract-selection regret exceeded the protocol's 25% trigger
 threshold, activating Track E (normalizer evaluation). However, a high CS regret
@@ -147,8 +147,8 @@ Train loss decreased from identity (confirming optimizer progress):
 
 | Metric | Baseline | Normalized | Delta | Status |
 |--------|----------|------------|-------|--------|
-| Accuracy (oracle match) | 33.27% | 37.31% | +4.04% | Positive |
-| Net EPPD (mean actual_net) | 2.036 | 1.767 | -0.269 | **Negative** |
+| `accuracy` | 33.27% | 37.31% | +4.04% | Positive |
+| `net_eppd` | 2.036 | 1.767 | -0.269 | **Negative** |
 | 95% CI (delta) | — | — | [-0.287, -0.251] | Excludes 0 (wrong direction) |
 | Bid rate | 95.77% | 97.07% | +1.30pp | — |
 | New bidders (pass to bid) | — | 2,560 | — | — |
@@ -178,9 +178,9 @@ undervalues high/low contracts relative to suit — the oracle does indeed selec
 high/low more often than the baseline model.
 
 However, the model's predictions for high/low contracts are based on a single feature
-each (`offsuit_non_ace_count`). When the normalizer redirects a hand from suit to high,
-the model's confidence in the suit prediction was based on 3 features (trump suit
-count, off-ace count, offsuit non-ace count), while the high prediction is based on
+each (`offsuit_aces` for HIGH, `offsuit_tens_count` for LOW). When the normalizer redirects a hand from suit to high,
+the model's confidence in the suit prediction was based on 3 features (bowers,
+trump_count, offsuit_aces), while the high prediction is based on
 just 1 feature. The redirect sacrifices information-rich predictions for
 information-poor ones.
 
