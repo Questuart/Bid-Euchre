@@ -37,10 +37,10 @@ bidding behavior: bid_rate rose from 19.7% to 96.1%, make_rate from 88.6% to
 100%, driving the net_eppd improvement from +0.455 to +2.131. The C33 ablation
 shows a combined search effect (+0.43) and wrapper effect (+0.75).
 
-**What are the caveats?** The attribution gap is negative (−0.14): the
+**What are the caveats?** The attribution gap is negative (−0.02): the
 constrained arm slightly outperforms the full arm on net_eppd, likely because
 the constrained arm's hand-picked features are more robust at R0 model quality.
-With v2 bid-level search both arms now bid ~100% of deals, so the gap reflects
+With v2 bid-level search both arms now bid 100% of deals, so the gap reflects
 pure model quality rather than bid-rate selectivity. HIGH/LOW contract types
 have small sample sizes and only 1 feature each, producing high regret (oracle
 analysis, PR #472). The v2 bid-level search substantially reduced
@@ -348,10 +348,12 @@ a hand-evaluation model (ignoring opponent hands and play dynamics) is likely
 well below 1.0 — even a perfect hand evaluator cannot predict the random
 elements of deal, trick play, and opponent decisions.
 
-The HIGH/LOW R² values (0.28-0.29) are slightly higher than suit (0.24), but
-this reflects the larger outcome variance in no-trump contracts (std~3.2 vs
-2.5), not better predictions. MAE values are correspondingly higher for
-HIGH/LOW (2.2 vs 1.8 tricks).
+R² values are similar across contract types (~0.21-0.22), with MAE slightly
+lower for HIGH/LOW (1.35-1.36 tricks) than suit (1.52). The v2 population
+(100% bid_rate) includes marginal hands that v1's selective bidding excluded,
+reducing R² relative to v1 (0.24-0.29 → 0.21-0.22) while MAE improved
+substantially (v1 HIGH/LOW ~2.2, suit ~1.8 → v2 HIGH/LOW ~1.4, suit ~1.5),
+reflecting v2's lower bid levels and tighter outcome distributions.
 
 > See notebook 30_feature_outcome_eval, S6.1 for Gaussian assumption validation
 > (residual distributions, Q-Q plots, normality tests).
@@ -360,17 +362,17 @@ HIGH/LOW (2.2 vs 1.8 tricks).
 
 | Contract | R² | MAE | n |
 |----------|-----|-----|---|
-| high | 0.2793 | 2.2105 | 1044 |
-| low | 0.2865 | 2.2524 | 1124 |
-| suit | 0.2430 | 1.7775 | 124280 |
+| high | 0.2158 | 1.3589 | 30,540 |
+| low | 0.2087 | 1.3525 | 46,420 |
+| suit | 0.2166 | 1.5225 | 123,040 |
 
 ### OLSa_Full (promotional)
 
 | Contract | R² | MAE | n |
 |----------|-----|-----|---|
-| high | 0.2799 | 2.1987 | 1044 |
-| low | 0.2820 | 2.2554 | 1124 |
-| suit | 0.2469 | 1.7730 | 124280 |
+| high | 0.2155 | 1.3623 | 30,540 |
+| low | 0.2087 | 1.3570 | 46,420 |
+| suit | 0.2225 | 1.5168 | 123,040 |
 
 ---
 
@@ -390,16 +392,16 @@ HIGH/LOW (2.2 vs 1.8 tricks).
 |-----|-----------------|
 | OLSa (constrained) | +1.953 (eval) |
 | OLSa_Full (promotional) | +1.932 (eval) |
-| **Attribution Gap** | **+0.021** |
+| **Attribution Gap** | **−0.021** |
 
-The attribution gap is near zero and slightly positive: the constrained arm
-marginally outperforms the promotional arm by +0.021 net_eppd. This is benign
+The attribution gap (OLSa_Full − OLSa) is near zero and slightly negative: the
+promotional arm trails the constrained arm by −0.021 net_eppd. This is benign
 at R0 — the constrained arm's hand-picked features (bowers, trump_count,
 offsuit_aces) are individually strong predictors, and the forward-selected
 features add marginal complexity without improving trick prediction accuracy.
 With v2 bid-level search, both arms bid on 100% of deals, so the gap reflects
 pure model quality rather than bid-rate selectivity. The gap narrowed
-substantially from v1 (−0.144) to v2 (+0.021), confirming that v1's apparent
+substantially from v1 (−0.144) to v2 (−0.021), confirming that v1's apparent
 gap was inflated by differential bid-rate effects. See
 [01_r0_promotion_report.md](01_r0_promotion_report.md) §4 for full interpretation.
 
@@ -526,9 +528,10 @@ These are R0-specific limitations, not generic caveats:
    90.9%). R1 feature enrichment is the primary remedy.
 
 2. **Negative attribution gap.** The constrained arm outperforms the
-   promotional arm by 0.14 net_eppd (eval). This suggests forward feature
-   selection at R0's sample size and model complexity does not yet add value
-   beyond hand-picked features. Monitored via `check_dual_arm_coherence` at R1+.
+   promotional arm by 0.02 net_eppd (eval, gap = −0.021). This suggests
+   forward feature selection at R0's sample size and model complexity does not
+   yet add value beyond hand-picked features. Monitored via
+   `check_dual_arm_coherence` at R1+.
 
 3. **Single-seed comparator data.** Comparator rankings (v6) and H2H matchups
    (v4) use seed=42 only. Multi-seed averaging would reduce variance in ranking
