@@ -153,7 +153,7 @@ Max deviation from grand mean = 0.58 (grand mean = 491.7)
 
 The overall mean tricks of 5.00 confirms the eval dataset is unbiased — in a
 10-trick game with paired deals, the expected mean is exactly 5. The suit
-contract distribution is tighter (std=2.15, P5=1.0-P95=9.0) than HIGH/LOW
+contract distribution is wider (std=2.15, P5=1.0-P95=9.0) than HIGH/LOW
 (std~1.9), reflecting that trump contracts create more dispersed outcomes due
 to role asymmetry (declaring mean ~6.3, defending mean ~3.7).
 
