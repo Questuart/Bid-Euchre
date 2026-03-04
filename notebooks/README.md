@@ -91,4 +91,3 @@ See `sandbox/README.md` for the sandbox notebook workflow.
 
 - `src/bid_euchre/reporting/` — Production visualization code
 - `experiments/` — Reproducible experiment scripts
-- `docs/03_TODO/REPO_REVIEW_2026_01_27.md` — Arc B roadmap context

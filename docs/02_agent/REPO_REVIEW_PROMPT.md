@@ -161,7 +161,7 @@ uv run python -c "from bid_euchre.reporting.charts import generate_contract_face
 
 # Verify logging and utils
 uv run python -c "from bid_euchre.logging.game_logger import GameLogger; print('logging OK')"
-uv run python -c "from bid_euchre.core.time import format_elapsed; print('time OK')"
+uv run python -c "from bid_euchre.core.time import utc_now_iso; print('time OK')"
 
 # Verify scoring (top-level module)
 uv run python -c "from bid_euchre.scoring import compute_points; print('scoring OK')"

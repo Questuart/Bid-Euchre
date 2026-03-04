@@ -20,6 +20,7 @@ Submodules:
 - `diagnostics/` — Visualization and analysis tools
 - `validation/` — Schema validation
 - `reporting/`, `logging/`, `analysis/` — Supporting utilities
+- `scoring.py` — Top-level scoring module (compute_points)
 
 ### `experiments/`
 **Experiment configurations and canonical runner.**
@@ -52,8 +53,16 @@ Canonical scripts:
 - `train_bidder.py` — Bidder model training
 - `train_hybrid_olsa.py` — Hybrid OLSa training pipeline (Arc D)
 - `train_olsa.py` — OLSa model training (extracted from `models.train_olsa`)
+- `update_r0_bundle.py` — Update R0 rung bundle with eval paths (Arc D)
 - `validate_configs.py` — Config validation utility
 - `validate_teacher_roster.py` — Teacher roster validation
+- `write_r0_promotion.py` — Write R0 auto-promotion decision (Arc D)
+
+Deprecation wrappers (forward to `scripts/internal/` with a warning):
+- `evaluate_diagnostic_tricks.py`, `play_policy_gate.py`, `run_auction_comparator.py`
+
+Shell scripts:
+- `run_r0b.sh` — R0 baseline lock reproduction commands (Arc D Wave 3)
 
 ### `scripts/internal/`
 **Research and internal tooling.** Not part of the canonical workflow.
@@ -176,7 +185,9 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/compare_runs.py` | Compare two runs with bootstrap statistics |
 | `scripts/compare_rollup.py` | Drift detection against baseline fixture |
 | `scripts/lint_repo.py` | Repository linter |
+| `scripts/run_charts.py` | Production chart generation |
 | `scripts/run_notebooks.py` | Notebook execution via papermill (CI) |
+| `scripts/run_tests.py` | Test runner utility |
 | `scripts/validate_configs.py` | Config validation |
 | `scripts/validate_teacher_roster.py` | Teacher roster validation |
 

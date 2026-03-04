@@ -234,7 +234,6 @@ See `archive/README.md` for details on archived notebooks.
 
 ## See Also
 
-- **Development Plan:** `docs/03_TODO/BIDDING_DEVELOPMENT_PLAN.md` - Phase 0 context
 - **Diagnostics Module:** `src/bid_euchre/diagnostics/` - Importable helpers
 - **Data Contract:** `docs/01_core/DATA_CONTRACT.md` - Dataset schema
 - **Experiment Configs:** `experiments/configs/bidless_dataset_collection.yaml`
