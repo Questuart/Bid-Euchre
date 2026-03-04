@@ -70,6 +70,7 @@ Canonical scripts:
 - `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_lambda_sweep.py` — Simulation-based risk_lambda tuning sweep
 - `run_normalizer_offline_screen.py` — Normalizer go/no-go offline screening pipeline
+- `train_unified_model.py` — Unified cross-contract OLS training (Track F OneModel)
 - `update_arc_registry.py` — Arc D registry updater (MODEL_ARC_RUNS.md)
 - `validate_arc_d_rung_contract.py` — Arc D rung bundle validator
 
@@ -196,6 +197,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
 | `scripts/internal/run_lambda_sweep.py` | Simulation-based risk_lambda tuning sweep |
 | `scripts/internal/run_normalizer_offline_screen.py` | Normalizer go/no-go offline screening pipeline |
+| `scripts/internal/train_unified_model.py` | Unified cross-contract OLS training (Track F OneModel) |
 | `scripts/internal/update_arc_registry.py` | Arc D registry updater (MODEL_ARC_RUNS.md) |
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |
 

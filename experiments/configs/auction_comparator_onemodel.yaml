@@ -1,0 +1,69 @@
+# Auction Comparator: OneModel (Track F) evaluation
+#
+# Compares the unified cross-contract model against the full v2 baseline.
+# Uses the same bidder roster as the v6 battery, but replaces hybrid_olsa
+# and hybrid_olsa_full artifact paths with the unified model.
+#
+# Usage:
+#   uv run python scripts/internal/run_auction_comparator.py \
+#     --config experiments/configs/auction_comparator_onemodel.yaml \
+#     --seed 42 --single-seat --n-per 5000 \
+#     --output-format json \
+#     --output data/artifacts/arc_d/r0/onemodel_comparator_v1.json
+
+experiment_name: auction_comparator_onemodel
+
+bidding_policies:
+  - name: fiveheadfred
+    class_name: FixedBidder
+    params: {n: 5, contract: "S"}
+
+  - name: stricthellraiser
+    class_name: StrictHellRaiser
+
+  - name: rankthetank
+    class_name: RanktheTank
+
+  - name: modeloespecifico
+    class_name: ModeloEspecifico
+
+  # OLSa floor-based bidder using unified model
+  - name: olsa
+    class_name: OLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_unified.json
+
+  # OLSa floor-based bidder using unified model (same as constrained — unified has one model)
+  - name: olsa_full
+    class_name: OLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_unified.json
+
+  # Hybrid OLSa with Gaussian EV wrapper — unified model + bid-level search
+  - name: hybrid_olsa
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_unified.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  # Hybrid OLSa with Gaussian EV wrapper — unified model + bid-level search (same artifact)
+  - name: hybrid_olsa_full
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_unified.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  play_strategy: glutton
+  n_per: 10000
+  seed: 42
+  log_level: hand
