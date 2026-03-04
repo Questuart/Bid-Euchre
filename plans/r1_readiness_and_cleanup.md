@@ -1380,6 +1380,88 @@ Response:
 
 ---
 
+## 9. Task Dependency Map
+
+Full task breakdown with dependency chains. Task IDs correspond to the project
+task list. **Bold** tasks are on the critical path.
+
+### 9.1 Pre-R1 Phase (sequential gate, then parallel)
+
+```
+#1  HITL sign-off ─────────────────── BLOCKER for all R1 work
+ └── #2  Tag r0-canonical-v2
+      ├── **#3  PR-cleanup** (archive 11 plans + 2 untracked + MASTER_PLAN)  ─┐ PARALLEL
+      └── #5  PR-R1-plan (training plan + 3 protocol files)                  ─┘ PARALLEL
+           └── #6  Verify infra prerequisites (§4.6 + Entry Gate E1-E5)
+                └── continues to Infrastructure phase
+#4  Merge PR #522 (readiness plan) ── independent, can merge immediately
+```
+
+### 9.2 Infrastructure Phase (strictly sequential)
+
+```
+#7  PR-R1a: features + dataset + locked base expansion ── Step 1
+ └── #8  Smoke-test training pipeline (Gate X1) ─────── Step 2
+      └── **#9  Train dual-arm R1 models (Gate X2)** ── Step 3
+```
+
+### 9.3 Execution Phase (parallel fan-out, then sequential tuning)
+
+```
+#9 ──┬── **#10 Eval runs (3-seed)** ───── Step 4 ─┐
+     ├── #11 H2H challenger-vs-incumbent ── Step 5 ─┤ PARALLEL (all 3)
+     └── #12 Comparator battery ─────────── Step 6 ─┘
+              │
+              ├── all three complete ──────────────┐
+              │                                    ▼
+              │                          **#13 Threshold (P4)** ── Step 7
+              │                                    │
+              │                          **#14 Lambda** ────────── Step 8
+              │
+              ├── #10 completes ──┬── #15 Oracle (P3) ──────── Step 9
+              │                   │     └── #16 Normalizer ──── Step 10 (conditional)
+              │                   │
+              │                   └── #17 Ablation (4-arm) ─── Step 11
+              │                        (also needs #9)
+              │
+              └── #13 + #14 + #16 complete ──→ #18 Rerun coordination
+```
+
+### 9.4 Reporting & Promotion Phase (sequential)
+
+```
+#19 Notebooks (needs #10) ─┐
+#17 Ablation ──────────────┤
+#18 Rerun coordination ────┘──→ #20 R1 Reports (Gate X8)
+                                  └── **#21 Promotion Gate** (Step 12, HITL-3)
+```
+
+### 9.5 Parallelism Opportunities
+
+| Phase | Parallel Tasks | Savings vs Sequential |
+|-------|---------------|----------------------|
+| Pre-R1 | #3 (cleanup) ∥ #5 (protocols) | Both depend on #2, not each other |
+| Eval fan-out | #10 ∥ #11 ∥ #12 | 3 independent batteries after training |
+| Analysis | #15 (oracle) ∥ #17 (ablation) ∥ #13→#14 (tuning) | Oracle and ablation don't need threshold/lambda |
+| Notebooks | #19 can start as soon as eval data exists (#10) | Doesn't wait for tuning |
+
+### 9.6 Critical Path
+
+Longest dependency chain (determines minimum calendar time):
+
+```
+#1 → #2 → #3 → #6 → #7 → #8 → #9 → #10 → #13 → #14 → #18 → #20 → #21
+```
+
+**13 tasks on critical path.** Off-critical-path work (#5, #11, #12, #15, #16, #17, #19)
+can proceed in parallel without delaying the promotion gate, provided compute resources
+are available.
+
+**Best case (no ADOPTs):** ~1 day compute + HITL decision time at 3 checkpoints.
+**Worst case (all ADOPTs):** ~3 days compute + HITL decision time. See §3.4 for timebox.
+
+---
+
 ## Cross-References
 
 | Document | Relationship |
