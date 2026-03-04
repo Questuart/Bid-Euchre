@@ -1,0 +1,73 @@
+{
+  "schema": "h2h_roster_v1",
+  "description": "R1 canonical 6-bidder H2H roster (r1_master_plan.md §3.7.1). All-vs-all matrix: 36 cells (30 cross + 6 self-play) per decision round.",
+  "bidders": [
+    {
+      "name": "hybrid_olsa_full_r1",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    },
+    {
+      "name": "hybrid_olsa_r1",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    },
+    {
+      "name": "modeloespecifico_r1",
+      "class_name": "ModeloEspecifico",
+      "params": {
+        "feature_weights": {
+          "suit": {"bowers": 1.0, "trump_count": 0.5, "offsuit_aces": 0.5},
+          "high": {"offsuit_aces": 1.0, "quick_tricks": 1.0},
+          "low": {"offsuit_tens_count": 1.0, "quick_tricks": 1.0}
+        },
+        "partner_weights": {
+          "partner_bid_level": 1.0,
+          "partner_passed": 1.0,
+          "partner_suit_match": 1.0,
+          "partner_bid_confidence": 1.0
+        }
+      }
+    },
+    {
+      "name": "hybrid_olsa_full_r0",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    },
+    {
+      "name": "hybrid_olsa_r0",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    },
+    {
+      "name": "modeloespecifico_r0",
+      "class_name": "ModeloEspecifico",
+      "params": {}
+    }
+  ],
+  "play_strategy": "glutton",
+  "gate_critical_matchups": [
+    {"a": "hybrid_olsa_full_r1", "b": "hybrid_olsa_full_r0", "purpose": "Primary class-local promotion signal (hybrid_full)"},
+    {"a": "hybrid_olsa_r1", "b": "hybrid_olsa_r0", "purpose": "Constrained class-local rung-over-rung"},
+    {"a": "modeloespecifico_r1", "b": "modeloespecifico_r0", "purpose": "Baseline class-local rung-over-rung"},
+    {"a": "hybrid_olsa_full_r1", "b": "hybrid_olsa_r1", "purpose": "Within-rung full vs constrained"},
+    {"a": "hybrid_olsa_full_r1", "b": "modeloespecifico_r1", "purpose": "External pressure check (learned vs hand-coded)"},
+    {"a": "hybrid_olsa_full_r1", "b": "modeloespecifico_r0", "purpose": "Cross-class cross-rung sanity"}
+  ]
+}

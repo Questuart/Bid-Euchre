@@ -112,6 +112,126 @@ def _write_batch_manifest(
     return str(manifest_path), batch_id
 
 
+def _write_dual_seat_manifest(
+    runs_dir, experiment_name, seed, n_per, policies, run_dirs_by_policy
+):
+    """Write a batch manifest after a complete dual-seat battery run.
+
+    Dual-seat: 2 sub-experiments per bidder (team0 = seats 0+2, team1 = seats 1+3).
+    Returns (manifest_path, batch_id) on success, (None, None) on failure.
+    """
+    expected_keys = []
+    for policy in policies:
+        for team in range(2):
+            expected_keys.append(f"{policy['name']}_team{team}")
+
+    # Completeness gate
+    missing = [k for k in expected_keys if k not in run_dirs_by_policy]
+    if missing:
+        print(
+            f"ERROR: Incomplete batch — missing {len(missing)} members: "
+            + ", ".join(missing),
+            file=sys.stderr,
+        )
+        return None, None
+
+    # Validate evaluation.json exists for each member
+    members = {}
+    for key in expected_keys:
+        run_dir = run_dirs_by_policy[key]
+        eval_path = Path(run_dir) / "reports" / "bidding_strategy" / "evaluation.json"
+        if not eval_path.exists():
+            print(
+                f"ERROR: Missing evaluation.json in {run_dir}",
+                file=sys.stderr,
+            )
+            return None, None
+        members[key] = Path(run_dir).name
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    batch_id = f"{experiment_name}_{seed}_{timestamp}"
+    manifest = {
+        "schema": "batch_manifest_v1",
+        "batch_id": batch_id,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "experiment_name": experiment_name,
+        "seed": seed,
+        "n_per": n_per,
+        "mode": "dual_seat",
+        "expected_policies": [p["name"] for p in policies],
+        "expected_teams": 2,
+        "members": members,
+    }
+
+    runs_path = Path(runs_dir)
+    manifest_path = runs_path / f"batch_manifest_{batch_id}.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    return str(manifest_path), batch_id
+
+
+def _merge_dual_seat_evaluations(run_dirs_by_policy, policies, load_fn=None):
+    """Merge evaluation.json across 2 teams per bidder (dual-seat mode).
+
+    Returns (metrics_by_bidder, missing_evaluations).
+    The load_fn parameter enables test injection; defaults to load_evaluation.
+    """
+    if load_fn is None:
+        load_fn = load_evaluation
+
+    metrics_by_bidder = {}
+    missing_evaluations = []
+
+    for policy in policies:
+        policy_name = policy["name"]
+        merged_deals = 0
+        merged_bid_hands = 0
+        merged_bidder_pts_sum = 0.0
+        merged_net_pts_sum = 0.0
+        merged_make_count = 0
+        missing_team = False
+
+        for team in range(2):
+            key = f"{policy_name}_team{team}"
+            run_dir = run_dirs_by_policy.get(key)
+            if not run_dir:
+                missing_team = True
+                continue
+            evaluation = load_fn(run_dir)
+            if evaluation and evaluation.get("strategies"):
+                strat = evaluation["strategies"][0]
+                dt = strat.get("deals_total", 0)
+                hwb = strat.get("hands_with_bids", 0)
+                merged_deals += dt
+                merged_bid_hands += hwb
+                ep = strat.get("expected_points_per_deal", 0)
+                nep = strat.get("net_expected_points_per_deal", 0)
+                merged_bidder_pts_sum += ep * dt
+                merged_net_pts_sum += nep * dt
+                mr = strat.get("make_rate", 0)
+                merged_make_count += int(round(mr * hwb))
+            else:
+                missing_team = True
+
+        if missing_team or merged_deals == 0:
+            missing_evaluations.append(policy_name)
+        else:
+            metrics_by_bidder[policy_name] = {
+                "expected_points": merged_bidder_pts_sum / merged_deals,
+                "expected_points_per_deal": merged_bidder_pts_sum / merged_deals,
+                "net_expected_points_per_deal": merged_net_pts_sum / merged_deals,
+                "make_rate": merged_make_count / merged_bid_hands
+                if merged_bid_hands > 0
+                else 0.0,
+                "bid_rate": merged_bid_hands / merged_deals,
+                "cvar_5": None,
+                "net_cvar_5": None,
+                "hands_with_bids": merged_bid_hands,
+                "deals_total": merged_deals,
+            }
+
+    return metrics_by_bidder, missing_evaluations
+
+
 def _load_batch_manifest(manifest_path, runs_dir):
     """Load and validate a batch manifest, returning resolved run dirs.
 
@@ -296,7 +416,13 @@ def gate_check(metrics_by_bidder):
 
 
 def format_json(
-    metrics_by_bidder, gate_failures, seed, n_per, single_seat=False, batch_id=None
+    metrics_by_bidder,
+    gate_failures,
+    seed,
+    n_per,
+    single_seat=False,
+    dual_seat=False,
+    batch_id=None,
 ):
     """Generate JSON comparison output with arc_d_comparator_v1 schema."""
     bidders = {}
@@ -316,7 +442,9 @@ def format_json(
         "gate_status": "FAIL" if gate_failures else "PASS",
         "bidders": bidders,
     }
-    if single_seat:
+    if dual_seat:
+        result["mode"] = "dual_seat"
+    elif single_seat:
         result["mode"] = "single_seat"
     if batch_id is not None:
         result["batch_id"] = batch_id
@@ -407,6 +535,11 @@ def main():
         help="Run single-seat mode: each bidder evaluated one seat at a time",
     )
     parser.add_argument(
+        "--dual-seat",
+        action="store_true",
+        help="Run dual-seat mode: both partnership seats use the same bidder",
+    )
+    parser.add_argument(
         "--n-per",
         type=int,
         default=None,
@@ -433,6 +566,9 @@ def main():
         help="Allow heuristic 'latest per seat' discovery when no manifest exists (unsafe)",
     )
     args = parser.parse_args()
+
+    if args.single_seat and args.dual_seat:
+        parser.error("--single-seat and --dual-seat are mutually exclusive")
 
     # Load config
     with open(args.config) as f:
@@ -466,7 +602,89 @@ def main():
     batch_id = None  # Set when a manifest is written or loaded
 
     if not args.skip_run:
-        if args.single_seat:
+        if args.dual_seat:
+            # Dual-seat mode: 2 sub-experiments per bidder (team0=seats 0+2, team1=seats 1+3)
+            print(
+                f"Running dual-seat comparator with {len(policies)} bidders, "
+                f"n_per={n_per_effective}..."
+            )
+            base_per_team = n_per_effective // 2
+            remainder = n_per_effective % 2
+
+            for policy in policies:
+                policy_name = policy["name"]
+
+                for team in range(2):
+                    team_n = base_per_team + (1 if team < remainder else 0)
+                    # Team 0 = seats 0+2, Team 1 = seats 1+3
+                    team_seats = [team, team + 2]
+
+                    seat_bp = ["always_pass"] * 4
+                    for s in team_seats:
+                        seat_bp[s] = policy_name
+
+                    per_team_config = {
+                        "experiment_name": f"{experiment_name}_{policy_name}_team{team}",
+                        "bidding_policies": [
+                            policy,
+                            {"name": "always_pass", "class_name": "AlwaysPassBidder"},
+                        ],
+                        "seat_bidding_policies": seat_bp,
+                        "strategies": config.get("strategies", []),
+                        "scenarios": config.get("scenarios", [{"contract_type": None}]),
+                        "parameters": {
+                            **config.get("parameters", {}),
+                            "n_per": team_n,
+                        },
+                    }
+
+                    config_path = (
+                        f"/tmp/auction_comparator_{policy_name}_team{team}.yaml"
+                    )
+                    with open(config_path, "w") as f:
+                        yaml.dump(per_team_config, f)
+
+                    # Validate play strategy passed through to generated config
+                    with open(config_path) as _f:
+                        _written = yaml.safe_load(_f)
+                    if not _written.get("strategies"):
+                        raise ValueError(
+                            f"Generated config {config_path} is missing 'strategies' section. "
+                            f"Ensure the source config includes a strategies list "
+                            f"(e.g., strategies: [{{name: glutton, class_name: GluttonStrategy}}])."
+                        )
+                    if not _written.get("parameters", {}).get("play_strategy"):
+                        raise ValueError(
+                            f"Generated config {config_path} is missing 'parameters.play_strategy'. "
+                            f"Ensure the source config includes play_strategy in parameters."
+                        )
+
+                    print(f"  Running {policy_name} team {team} ({team_n} deals)...")
+                    run_dir = run_experiment(config_path, args.seed)
+                    if run_dir is None:
+                        print(f"  FAILED: {policy_name} team {team}")
+                        continue
+
+                    run_dirs_by_policy[f"{policy_name}_team{team}"] = run_dir
+                    generate_evaluation(run_dir)
+
+            # Write batch manifest
+            manifest_path, batch_id = _write_dual_seat_manifest(
+                "data/runs",
+                experiment_name,
+                args.seed,
+                n_per_effective,
+                policies,
+                run_dirs_by_policy,
+            )
+            if manifest_path:
+                print(f"  Batch manifest: {manifest_path}")
+            else:
+                print(
+                    "  WARNING: Incomplete batch — no manifest written",
+                    file=sys.stderr,
+                )
+        elif args.single_seat:
             # Single-seat mode: 4 sub-experiments per bidder
             print(
                 f"Running single-seat comparator with {len(policies)} bidders, "
@@ -599,7 +817,25 @@ def main():
         # In --skip-run mode, discover run directories
         runs_path = Path("data/runs")
         if runs_path.is_dir():
-            if args.single_seat:
+            if args.dual_seat:
+                # Dual-seat: manifest-based discovery (no legacy heuristic)
+                if args.manifest:
+                    run_dirs_by_policy = _load_batch_manifest(
+                        args.manifest, "data/runs"
+                    )
+                    manifest_data = json.loads(Path(args.manifest).read_text())
+                    batch_id = manifest_data.get("batch_id")
+                    print(f"  Using manifest: {args.manifest} (batch_id={batch_id})")
+                else:
+                    print(
+                        f"ERROR: No batch manifest provided for "
+                        f"{experiment_name} seed={args.seed}.\n"
+                        f"Run the battery first (without --skip-run), "
+                        f"or provide --manifest <path>.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+            elif args.single_seat:
                 # Single-seat: manifest-based discovery with hard-fail default
                 if args.manifest:
                     # Priority 1: explicit --manifest
@@ -665,7 +901,11 @@ def main():
     metrics_by_bidder = {}
     missing_evaluations = []
 
-    if args.single_seat:
+    if args.dual_seat:
+        metrics_by_bidder, missing_evaluations = _merge_dual_seat_evaluations(
+            run_dirs_by_policy, policies
+        )
+    elif args.single_seat:
         metrics_by_bidder, missing_evaluations = _merge_single_seat_evaluations(
             run_dirs_by_policy, policies
         )
@@ -726,6 +966,7 @@ def main():
             args.seed,
             n_per_effective,
             single_seat=args.single_seat,
+            dual_seat=getattr(args, "dual_seat", False),
             batch_id=batch_id,
         )
         output_str = json.dumps(output_data, indent=2)

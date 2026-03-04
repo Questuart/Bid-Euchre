@@ -1,0 +1,83 @@
+# R1 Single-Seat Auction Comparator — 6-bidder canonical roster (§3.7.1)
+#
+# CONTINUITY diagnostic: single-seat mode (R0-comparable). Partner seats use
+# AlwaysPassBidder, so partner features see no real signal. This produces
+# rankings comparable to R0 single-seat results for drift detection.
+#
+# Usage:
+#   uv run python scripts/internal/run_auction_comparator.py \
+#     --config experiments/configs/auction_comparator_r1_legacy.yaml \
+#     --single-seat --seed 42 --n-per 5000 \
+#     --output-format json \
+#     --output data/artifacts/arc_d/r1/comparator_battery_r1_legacy.json
+
+experiment_name: auction_comparator_r1_legacy
+
+bidding_policies:
+  # --- R1 variants ---
+
+  - name: hybrid_olsa_full_r1
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r1/hybrid_r1_full.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: hybrid_olsa_r1
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r1/hybrid_r1.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: modeloespecifico_r1
+    class_name: ModeloEspecifico
+    params:
+      feature_weights:
+        suit:
+          bowers: 1.0
+          trump_count: 0.5
+          offsuit_aces: 0.5
+        high:
+          offsuit_aces: 1.0
+          quick_tricks: 1.0
+        low:
+          offsuit_tens_count: 1.0
+          quick_tricks: 1.0
+      partner_weights:
+        partner_bid_level: 1.0
+        partner_passed: 1.0
+        partner_suit_match: 1.0
+        partner_bid_confidence: 1.0
+
+  # --- R0 variants ---
+
+  - name: hybrid_olsa_full_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: hybrid_olsa_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: modeloespecifico_r0
+    class_name: ModeloEspecifico
+
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  play_strategy: glutton
+  n_per: 10000
+  seed: 42
+  log_level: hand

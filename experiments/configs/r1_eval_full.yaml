@@ -1,0 +1,73 @@
+# R1 Evaluation — FULL mode (50k deals × 3 seeds)
+#
+# Self-play evaluation for all 6 canonical R1 bidders.
+# FULL mode for production reports and promotion gate inputs.
+#
+# Usage:
+#   for seed in 42 43 44; do
+#     uv run python experiments/run_experiment.py \
+#       --config experiments/configs/r1_eval_full.yaml \
+#       --seed $seed --n_per 50000
+#   done
+
+experiment_name: r1_eval_full
+
+bidding_policies:
+  - name: hybrid_olsa_full_r1
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r1/hybrid_r1_full.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: hybrid_olsa_r1
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r1/hybrid_r1.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: modeloespecifico_r1
+    class_name: ModeloEspecifico
+    params:
+      feature_weights:
+        suit:
+          bowers: 1.0
+          trump_count: 0.5
+          offsuit_aces: 0.5
+        high:
+          offsuit_aces: 1.0
+          quick_tricks: 1.0
+        low:
+          offsuit_tens_count: 1.0
+          quick_tricks: 1.0
+      partner_weights:
+        partner_bid_level: 1.0
+        partner_passed: 1.0
+        partner_suit_match: 1.0
+        partner_bid_confidence: 1.0
+
+  - name: hybrid_olsa_full_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: hybrid_olsa_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  - name: modeloespecifico_r0
+    class_name: ModeloEspecifico
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  n_per: 50000
+  seed: 42
+  log_level: hand
