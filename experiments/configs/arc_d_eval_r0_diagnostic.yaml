@@ -15,10 +15,12 @@ bidding_policies:
     class_name: HybridOLSaBidder
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+      bid_level_search: true
   - name: hybrid_olsa_r0
     class_name: HybridOLSaBidder
     params:
       artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: true
 
 scenarios:
   - contract_type: null  # Auction mode

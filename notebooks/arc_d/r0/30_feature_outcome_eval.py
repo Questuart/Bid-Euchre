@@ -33,7 +33,7 @@
 # - Keep outputs cleared (`make notebook-check` verifies this).
 
 # %% tags=["parameters"]
-EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260221_180253"
+EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260303_201729"
 ARTIFACT_DIR = "data/artifacts/arc_d/r0"
 MODE = "QUICK"
 RUNG_ID = "r0"

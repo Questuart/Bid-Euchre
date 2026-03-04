@@ -33,7 +33,7 @@
 # - Parameterize via papermill -- do not hardcode paths.
 
 # %% tags=["parameters"]
-EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260221_180253"
+EVAL_LOG_PATH = "data/runs/arc_d_eval_r0_42_20260303_201729"
 MODE = "QUICK"
 RUNG_ID = "r0"
 CHART_OUTPUT_DIR = ""

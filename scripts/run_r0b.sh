@@ -11,18 +11,18 @@
 #   hybrid_r0.json      — OLSa constrained arm (3/1/1 locked features)
 #   hybrid_r0_full.json  — OLSa_Full promotional arm (forward-selected features)
 #
-# Eval run IDs:
-#   arc_d_eval_r0_42_20260221_180253      (OLSa, seed 42)
-#   arc_d_eval_r0_43_20260221_180412      (OLSa, seed 43)
-#   arc_d_eval_r0_44_20260221_180531      (OLSa, seed 44)
-#   arc_d_eval_r0_full_42_20260221_180650 (OLSa_Full, seed 42)
-#   arc_d_eval_r0_full_43_20260221_180807 (OLSa_Full, seed 43)
-#   arc_d_eval_r0_full_44_20260221_180923 (OLSa_Full, seed 44)
+# Eval run IDs (v2, with bid_level_search=true):
+#   arc_d_eval_r0_42_20260303_201729      (OLSa, seed 42)
+#   arc_d_eval_r0_43_20260303_201730      (OLSa, seed 43)
+#   arc_d_eval_r0_44_20260303_201731      (OLSa, seed 44)
+#   arc_d_eval_r0_full_42_20260303_201732 (OLSa_Full, seed 42)
+#   arc_d_eval_r0_full_43_20260303_201734 (OLSa_Full, seed 43)
+#   arc_d_eval_r0_full_44_20260303_201735 (OLSa_Full, seed 44)
 #
 # Promotion decision: PROMOTED
-#   OLSa net_eppd:      1.6274
-#   OLSa_Full net_eppd:  1.4837
-#   Attribution gap:    -0.1437
+#   OLSa net_eppd:      1.9529
+#   OLSa_Full net_eppd:  1.9323
+#   Attribution gap:    -0.0207
 set -euo pipefail
 
 echo "=== Step 1: Generate training data ==="

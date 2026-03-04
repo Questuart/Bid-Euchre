@@ -29,6 +29,11 @@ the top bidders in the framework:
 | bid_rate | 63.2% | 82.8% |
 | make_rate | 87.3% | 83.3% |
 
+<!-- TODO(v2-notebooks): Update eval table above from re-run notebooks.
+     bid_level_search (v2) drives bid_rate to ~100% for both arms and will
+     shift net_eppd, eppd, make_rate, and contract mix accordingly.
+     Eval run: arc_d_eval_r0_42_20260303_201729 -->
+
 In the v6 single-seat comparator (GluttonStrategy, 20k deals/bidder, 8
 bidders), hybrid_olsa ranks 1-2 (tied with hybrid_olsa_full) among 8 bidders at
 net_eppd +2.131 (comparator), leading modeloespecifico (+1.604, comparator) by
@@ -40,12 +45,14 @@ shows a combined search effect (+0.43) and wrapper effect (+0.75).
 **What are the caveats?** The attribution gap is negative (−0.14): the
 constrained arm slightly outperforms the full arm on net_eppd, likely because
 the constrained arm's hand-picked features are more robust at R0 model quality.
-HIGH/LOW contract types have small sample sizes (261/281 deals) and only 1
-feature each, producing high regret (oracle analysis, PR #472). The v2 bid-level
-search substantially reduced pass-threshold regret (CS regret share: 90.9%),
-though model accuracy remains the binding constraint (pass-threshold decision:
-RETAIN t=0). Lambda tuning (RETAIN lambda=0.0) and normalizer screening
-(NO_GO_DEFER_R1) were evaluated and deferred.
+With v2 bid-level search both arms now bid ~100% of deals, so the gap reflects
+pure model quality rather than bid-rate selectivity. HIGH/LOW contract types
+have small sample sizes and only 1 feature each, producing high regret (oracle
+analysis, PR #472). The v2 bid-level search substantially reduced
+pass-threshold regret (CS regret share: 90.9%), though model accuracy remains
+the binding constraint (pass-threshold decision: RETAIN t=0). Lambda tuning
+(RETAIN lambda=0.0) and normalizer screening (NO_GO_DEFER_R1) were evaluated
+and deferred.
 
 **What's the decision?** **PROMOTED** — passes all Tier 1 artifact integrity
 gates, stable across 3 evaluation seeds (net_eppd range < 0.06), and
@@ -76,6 +83,10 @@ establishes a working baseline for R1 feature enrichment.
 - **Split manifest:** data/artifacts/arc_d/r0/split_manifest_r0_suit.json
 
 ### Eval Dataset Summary
+
+<!-- TODO(v2-notebooks): Update deal counts and contract mix from re-run
+     notebooks. bid_level_search (v2) eliminates all-pass redeals, so total
+     deals = N_PER and contract mix will shift (more HIGH/LOW expected). -->
 
 - **Total deals:** 31,612
 - **Total rows:** 126,448
@@ -173,6 +184,10 @@ production inference on per-contract metrics.
 | low | 5.00 | 3.21 | 0.0 | 10.0 | 1124 |
 | suit | 5.00 | 2.50 | 1.0 | 9.0 | 124280 |
 
+<!-- TODO(v2-notebooks): Update outcome stats from re-run notebooks.
+     v2 contract mix shift will change per-contract n values and may
+     affect make_rate (bid_level_search bids more aggressively). -->
+
 **Overall make rate:** 0.873
 
 | Contract | Make Rate | n |
@@ -184,6 +199,11 @@ production inference on per-contract metrics.
 ---
 
 ## Auction Analysis
+
+<!-- TODO(v2-notebooks): Update auction narrative and tables from re-run
+     notebooks. v2 bid_level_search evaluates all legal bid levels and
+     drives bid_rate to ~100%, which will increase HIGH/LOW contract share
+     (closer to oracle-optimal 31.9%) and shift bid-level distributions. -->
 
 The auction is dominated by suit contracts (98.3%), with HIGH/LOW selected less
 than 1% each. This reflects the R0 model's 1-feature HIGH/LOW specifications
@@ -387,9 +407,14 @@ HIGH/LOW (2.2 vs 1.8 tricks).
 The attribution gap is negative: the constrained arm slightly outperforms the
 promotional arm. This is counter-intuitive but benign at R0 — the constrained
 arm's hand-picked features (bowers, trump_count, offsuit_aces) are individually
-stronger predictors than the forward-selected features, and the lower bid rate
-(63.2% vs 82.8%) means OLSa only bids on high-confidence hands. See
+stronger predictors than the forward-selected features. With v2 bid-level
+search, both arms now bid on ~100% of deals, so the gap reflects pure model
+quality rather than bid-rate selectivity. See
 [01_r0_promotion_report.md](01_r0_promotion_report.md) §4 for full interpretation.
+
+<!-- TODO(v2-notebooks): Update attribution gap numbers from re-run notebooks.
+     v2 bid_level_search changes both arms to ~100% bid_rate, which may
+     shift the attribution gap magnitude. -->
 
 ### Comparator Battery (v6, Single-Seat, GluttonStrategy)
 
@@ -525,9 +550,9 @@ These are R0-specific limitations, not generic caveats:
 4. **Pass-threshold regret is a model problem, not a threshold problem.** The
    B0 sweep (PR #476) showed net_diff decreases monotonically with higher t —
    marginal hands can't be profitably bid at R0 model quality. Bid-level search
-   (v2) substantially improved bidding behavior (bid_rate 19.7% to 96.1%) but
-   model accuracy remains the binding constraint. This can only be further
-   addressed through better models (R1+).
+   (v2) drives bid_rate to ~100% for both arms (eval) and substantially
+   improved bidding behavior, but model accuracy remains the binding constraint.
+   This can only be further addressed through better models (R1+).
 
 5. **GluttonStrategy confounding.** Both comparator and eval instruments use
    GluttonStrategy for card play. Rankings reflect interaction with this
@@ -551,7 +576,7 @@ These are R0-specific limitations, not generic caveats:
 # Parse JSONL logs into eval DataFrame:
 uv run python -c "
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
-df = build_eval_dataset('data/runs/arc_d_eval_r0_42_20260221_180253/logs/*.jsonl')
+df = build_eval_dataset('data/runs/arc_d_eval_r0_42_20260303_201729/logs/*.jsonl')
 df.to_parquet('eval_df.parquet')
 "
 ```

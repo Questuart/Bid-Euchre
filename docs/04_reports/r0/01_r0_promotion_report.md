@@ -18,12 +18,11 @@ per deal across three independent evaluation seeds.
 
 | Metric | Value | Definition |
 |--------|-------|------------|
-| `net_eppd` | +1.484 | Net expected points per deal (bidder − opponent). **Differential.** Includes 0 for all-pass redeals. |
-| `eppd` | +4.174 | Expected points per deal (bidder only). **Absolute.** Includes 0 for all-pass redeals. |
-| `bid_rate` | 82.8% | Fraction of deals with an auction winner. Higher = bids more often. |
-| `make_rate` | 83.3% | Fraction of won auctions where declaring team makes contract. |
-| `CVaR-5%` | −6.411 | Average of worst 5% of bidder point outcomes. **Absolute tail risk.** Higher = less risky. |
-| `net_CVaR-5%` | −12.063 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
+| `net_eppd` | +1.932 | Net expected points per deal (bidder − opponent). **Differential.** |
+| `eppd` | +5.795 | Expected points per deal (bidder only). **Absolute.** |
+| `bid_rate` | 100.0% | Fraction of deals with an auction winner. v2 bid-level search bids every deal. |
+| `make_rate` | 94.9% | Fraction of won auctions where declaring team makes contract. |
+| `net_CVaR-5%` | −11.230 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
 
 **Comparator context** (hybrid_olsa, single-seat vs GluttonStrategy, seed 42):
 
@@ -37,9 +36,10 @@ per deal across three independent evaluation seeds.
 The model ranks 1-2 among 8 comparator bidders by net_eppd (v6 single-seat
 comparator with GluttonStrategy, seed=42), tied with hybrid_olsa_full (+2.170,
 p=0.5457) and leading `modeloespecifico` (+1.604) by +0.527 points/deal
-(p < 0.001). The v2 bid-level search transformed bidding behavior: bid_rate
-rose from 19.7% to 96.1%, make_rate from 88.6% to 100%, driving the
-comparator net_eppd from +0.455 to +2.131.
+(p < 0.001). The v2 bid-level search transformed bidding behavior across both
+self-play and comparator: self-play bid_rate rose from ~63-83% (v1) to 100%
+(v2), while make_rate shifted from ~83-87% (v1) to ~95% (v2) as the model now
+bids on every deal at the optimal level rather than passing marginal hands.
 
 ## Gate Results
 
@@ -68,13 +68,11 @@ the full pool of 39 hand features.
 
 | Metric | Seed 42 | Seed 43 | Seed 44 | Range | Definition |
 |--------|---------|---------|---------|-------|------------|
-| `net_eppd` | +1.484 | +1.455 | +1.426 | 0.058 | Net expected points per deal (bidder − opponent). **Differential.** Includes 0 for all-pass redeals. |
-| `eppd` | +4.174 | +4.139 | +4.131 | 0.044 | Expected points per deal (bidder only). **Absolute.** Includes 0 for all-pass redeals. |
-| `bid_rate` | 0.828 | 0.825 | 0.827 | 0.004 | Fraction of deals with an auction winner. Higher = bids more often. |
-| `make_rate` | 0.833 | 0.832 | 0.830 | 0.003 | Fraction of won auctions where declaring team makes contract. |
-| `CVaR-5%` | −6.411 | −6.418 | −6.428 | 0.017 | Average of worst 5% of bidder point outcomes. **Absolute tail risk.** Higher = less risky. |
-| `net_CVaR-5%` | −12.063 | −12.056 | −12.070 | 0.014 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
-| `downside_var` | 0.430 | 0.436 | 0.437 | 0.007 | Variance of deal outcomes below zero. Lower = more predictable losses. |
+| `net_eppd` | +1.932 | +1.933 | +1.935 | 0.003 | Net expected points per deal (bidder − opponent). **Differential.** |
+| `eppd` | +5.795 | +5.795 | +5.794 | 0.001 | Expected points per deal (bidder only). **Absolute.** |
+| `bid_rate` | 1.000 | 1.000 | 1.000 | 0.000 | Fraction of deals with an auction winner. v2 bid-level search bids every deal. |
+| `make_rate` | 0.949 | 0.949 | 0.949 | 0.001 | Fraction of won auctions where declaring team makes contract. |
+| `net_CVaR-5%` | −11.230 | −11.208 | −11.213 | 0.022 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
 
 ### OLSa (Attribution Arm) — self-play evaluation, 50,000 deals per seed
 
@@ -83,19 +81,20 @@ offsuit_aces), 1 for high (offsuit_aces), 1 for low (offsuit_tens_count).
 
 | Metric | Seed 42 | Seed 43 | Seed 44 | Range | Definition |
 |--------|---------|---------|---------|-------|------------|
-| `net_eppd` | +1.627 | +1.595 | +1.623 | 0.033 | Net expected points per deal (bidder − opponent). **Differential.** Includes 0 for all-pass redeals. |
-| `eppd` | +3.566 | +3.534 | +3.571 | 0.037 | Expected points per deal (bidder only). **Absolute.** Includes 0 for all-pass redeals. |
-| `bid_rate` | 0.632 | 0.630 | 0.634 | 0.004 | Fraction of deals with an auction winner. Higher = bids more often. |
-| `make_rate` | 0.873 | 0.870 | 0.872 | 0.003 | Fraction of won auctions where declaring team makes contract. |
-| `CVaR-5%` | −6.154 | −6.139 | −6.141 | 0.015 | Average of worst 5% of bidder point outcomes. **Absolute tail risk.** Higher = less risky. |
-| `net_CVaR-5%` | −11.784 | −11.805 | −11.806 | 0.023 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
-| `downside_var` | 0.318 | 0.310 | 0.313 | 0.008 | Variance of deal outcomes below zero. Lower = more predictable losses. |
+| `net_eppd` | +1.953 | +1.954 | +1.951 | 0.003 | Net expected points per deal (bidder − opponent). **Differential.** |
+| `eppd` | +5.815 | +5.816 | +5.812 | 0.004 | Expected points per deal (bidder only). **Absolute.** |
+| `bid_rate` | 1.000 | 1.000 | 1.000 | 0.000 | Fraction of deals with an auction winner. v2 bid-level search bids every deal. |
+| `make_rate` | 0.952 | 0.952 | 0.951 | 0.001 | Fraction of won auctions where declaring team makes contract. |
+| `net_CVaR-5%` | −10.998 | −10.894 | −11.044 | 0.150 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
 
 ### Multi-Seed Stability
 
-All metrics show tight cross-seed ranges (< 0.06 for net_eppd, < 0.005 for
-bid/make rates), confirming that R0 evaluation is reproducible and not
-sensitive to deal sampling.
+All metrics show tight cross-seed ranges (< 0.003 for net_eppd, 0.000 for
+bid_rate, < 0.001 for make_rate), confirming that R0 evaluation is
+reproducible and not sensitive to deal sampling. The v2 bid-level search
+produces exceptionally stable results because every deal is bid on (100%
+bid_rate), eliminating the pass/bid boundary as a source of cross-seed
+variance.
 
 **Pooling note:** All metrics in this report are pooled across contract types.
 The promotion report is a summary/decision document — per-contract breakouts
@@ -156,29 +155,33 @@ Data source: `hybrid_r0.json` (OLSa) and `hybrid_r0_full.json` (OLSa_Full).
 
 ## Attribution Gap
 
-**Gap = −0.1437** (OLSa_Full net_eppd − OLSa net_eppd at seed 42)
+**Gap = −0.0207** (OLSa_Full net_eppd − OLSa net_eppd at seed 42)
 
-The attribution gap is negative: the constrained arm (OLSa) slightly
-*outperforms* the promotional arm (OLSa_Full) on net_eppd despite using fewer
-features. This is counter-intuitive but benign at R0:
+The attribution gap is negative but near zero: the constrained arm (OLSa)
+slightly *outperforms* the promotional arm (OLSa_Full) on net_eppd despite
+using fewer features. The gap narrowed dramatically from v1 (−0.144) to v2
+(−0.021), consistent with the v2 bid-level search equalizing bid behavior
+across both arms:
 
-1. **Feature selection explains the inversion.** The constrained arm's 3/1/1
-   features (bowers, trump_count, offsuit_aces for suit; offsuit_aces for high;
-   offsuit_tens_count for low) were hand-picked as the strongest individual
-   predictors from domain knowledge. The full arm's forward selection picked
-   different features (hand_value, quick_tricks, low_card_count for suit;
+1. **Bid-level search eliminates the bid_rate confound.** In v1, the two arms
+   had very different bid rates (OLSa 63.2% vs OLSa_Full 82.8%), meaning the
+   gap reflected both feature quality *and* bid selectivity differences. In v2,
+   both arms bid on 100% of deals at their respective optimal levels, isolating
+   the gap to pure feature quality differences.
+
+2. **Feature selection explains the residual inversion.** The constrained arm's
+   3/1/1 features (bowers, trump_count, offsuit_aces for suit; offsuit_aces for
+   high; offsuit_tens_count for low) were hand-picked as the strongest
+   individual predictors from domain knowledge. The full arm's forward selection
+   picked different features (hand_value, quick_tricks, low_card_count for suit;
    offsuit_non_ace_count + offsuit_best_rank_sum for high/low) that maximize
    R² but may include weaker marginal contributors.
 
-2. **Bid rate differences amplify small effects.** OLSa bids conservatively
-   (63.2% bid rate) vs OLSa_Full (82.8%). Lower bid rate means higher
-   selectivity — the constrained arm only bids on hands where its simple model
-   is confident, which happens to yield a higher net per deal.
-
 3. **R0 context.** Both arms are R0-quality models with R² ≈ 0.24–0.29. At
    this early stage, the difference between hand-picked and forward-selected
-   features is within noise. The gap is expected to resolve as model complexity
-   increases in later rungs.
+   features is within noise. The near-zero gap (−0.021) confirms that feature
+   choice is a minor factor at R0. The gap is expected to resolve as model
+   complexity increases in later rungs.
 
 The attribution gap is monitored by the `check_dual_arm_coherence` gate check
 starting at R1.
@@ -260,6 +263,9 @@ wrapper effect (+0.75) both comfortably exceed this bar (see
 | Promotion timestamp | 2026-02-22T02:13:32Z |
 | Training source run | canonical_bidless_dataset_glutton_42_20260221_175752 |
 | n_deals per eval seed | 50,000 |
+| Eval policy | bid_level_search: true (v2) |
+| OLSa eval runs | arc_d_eval_r0_42_20260303_201729, arc_d_eval_r0_43_20260303_201730, arc_d_eval_r0_44_20260303_201731 |
+| OLSa_Full eval runs | arc_d_eval_r0_full_42_20260303_201732, arc_d_eval_r0_full_43_20260303_201734, arc_d_eval_r0_full_44_20260303_201735 |
 | Gate thresholds (R1) | data/artifacts/arc_d/r0/gate_thresholds_r1.json |
 | risk_lambda | 0.0 |
 | Comparator version | v6 (8 bidders, comparator_cis_r0_v6.json) |

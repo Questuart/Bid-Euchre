@@ -215,7 +215,7 @@ Every report should include a reproduction section with:
 ### Chart Generation
 uv run python scripts/internal/generate_rung_charts.py \
   --rung r0 \
-  --eval-dir data/runs/arc_d_eval_r0_42_20260221_180253 \
+  --eval-dir data/runs/arc_d_eval_r0_42_20260303_201729 \
   --bundle data/artifacts/arc_d/r0/rung_bundle_r0.json \
   --output-dir data/reports/arc_d/r0/charts/
 
