@@ -17,21 +17,21 @@ and R0 (auction-selected contracts, n=50,000 deals = 200,000 rows) show the expe
 divergence in contract selection and outcome distributions:
 
 - **Contract mix shift:** Phase 0 forced ~33/33/33 suit/high/low → R0 auctions
-  produce a heavily suit-dominated mix, driven by R0's 1-feature HIGH/LOW
-  models that rarely find profitable non-suit contracts.
-  <!-- UPDATE: recompute exact contract mix percentages from new eval run -->
-- **Variance direction (suit, declaring-side):** Phase 0 std(tricks_won) = 1.72 →
-  R0 declaring-side std is expected to remain lower. The reduction is directionally
-  consistent with auction selection filtering weak hands, though the comparison is
-  confounded by the forced-vs-selected contract asymmetry.
-  <!-- UPDATE: recompute R0 declaring-side std from new eval run -->
+  produce 61.5% suit / 23.2% low / 15.3% high, driven by R0's 1-feature HIGH/LOW
+  models that rarely find profitable non-suit contracts. Compared to v1's 98.3%
+  suit concentration, v2 bid-level search dramatically diversified the mix.
+- **Variance direction (declaring-side):** Phase 0 std(tricks_won) = 1.87 (high) and
+  1.88 (low) → R0 declaring-side std = 1.659 (high, −11.3%) and 1.696 (low, −9.8%).
+  Suit is essentially flat: Phase 0 = 1.72, R0 declaring = 1.736 (+0.9%). The
+  high/low reductions are directionally consistent with auction selection filtering
+  weak hands; suit's flatness may reflect the already-strong 3-feature model leaving
+  less room for selection-based variance reduction.
 - **Mean stability:** mean(tricks_won) = 5.00 in both phases across all contract types,
   confirming simulation fairness (symmetric self-play).
-- **R0 role asymmetry:** R0 declaring teams are expected to average ~7 tricks (suit),
-  reflecting the auction's selection of strong hands. The overall R0 suit std is higher
-  than Phase 0's (1.72) due to pooling across roles with different means — this is a
-  Simpson's paradox artifact, not a real variance increase.
-  <!-- UPDATE: recompute exact R0 declaring mean and overall std from new eval run -->
+- **R0 role asymmetry:** R0 declaring teams average 6.265 tricks (suit), 6.001 (high),
+  5.894 (low), reflecting the auction's selection of strong hands. The overall R0 suit
+  std (2.148) is higher than Phase 0's (1.72) due to pooling across roles with different
+  means — this is a Simpson's paradox artifact, not a real variance increase.
 - **V2 bid-level search impact:** R0 now uses bid-level search (v2 policy), producing
   100% bid_rate (up from 63.2% in v1). All 50,000 deals are bid on, yielding 100,000
   declaring-side rows (2 seats × 50,000 deals; up from ~63,224 in v1).
@@ -92,7 +92,7 @@ not a controlled experiment. Differences could reflect:
 1. **Selection effects** — auction filters weak hands (expected direction: lower declaring variance)
 2. **Model imperfections** — R0's 1-feature HIGH/LOW models rarely bid non-suit contracts
 3. **Role asymmetry** — R0 has declaring/defending teams; Phase 0 is symmetric
-4. **Sample size imbalance** — Phase 0 has 800,000 suit rows vs R0's ~200,000 <!-- UPDATE: recompute exact R0 suit row count from new eval run -->
+4. **Sample size imbalance** — Phase 0 has 800,000 suit rows vs R0's 123,040 suit rows (61,520 declaring + 61,520 defending)
 
 ---
 
@@ -103,36 +103,25 @@ not a controlled experiment. Differences could reflect:
 | Contract | Phase | Mean | Std | P5 | P25 | P50 | P75 | P95 | n |
 |----------|-------|------|-----|-----|-----|-----|-----|-----|---|
 | suit | Phase 0 | 5.00 | 1.72 | 2.00 | 4.00 | 5.00 | 6.00 | 8.00 | 800,000 |
-| suit | R0 (all) | 5.00 | — | — | — | — | — | — | — |
-| suit | R0 declaring | — | — | — | — | — | — | — | — |
-| suit | R0 defending | — | — | — | — | — | — | — | — |
+| suit | R0 (all) | 5.00 | 2.15 | 1.00 | 4.00 | 5.00 | 6.00 | 9.00 | 123,040 |
+| suit | R0 declaring | 6.27 | 1.74 | 3.00 | 5.00 | 6.00 | 7.00 | 9.00 | 61,520 |
+| suit | R0 defending | 3.74 | 1.74 | 1.00 | 3.00 | 4.00 | 5.00 | 7.00 | 61,520 |
 | high | Phase 0 | 5.00 | 1.87 | 2.00 | 4.00 | 5.00 | 6.00 | 8.00 | 200,000 |
-| high | R0 (all) | 5.00 | — | — | — | — | — | — | — |
-| high | R0 declaring | — | — | — | — | — | — | — | — |
-| high | R0 defending | — | — | — | — | — | — | — | — |
+| high | R0 (all) | 5.00 | 1.94 | 2.00 | 4.00 | 5.00 | 6.00 | 8.00 | 30,540 |
+| high | R0 declaring | 6.00 | 1.66 | 3.00 | 5.00 | 6.00 | 7.00 | 9.00 | 15,270 |
+| high | R0 defending | 4.00 | 1.66 | 1.00 | 3.00 | 4.00 | 5.00 | 7.00 | 15,270 |
 | low | Phase 0 | 5.00 | 1.88 | 2.00 | 4.00 | 5.00 | 6.00 | 8.00 | 200,000 |
-| low | R0 (all) | 5.00 | — | — | — | — | — | — | — |
-| low | R0 declaring | — | — | — | — | — | — | — | — |
-| low | R0 defending | — | — | — | — | — | — | — | — |
-
-<!-- UPDATE: All R0 rows in Table 1 need recomputation from new eval run
-     arc_d_eval_r0_42_20260303_201729. With 100% bid_rate, n values will be
-     much larger (50,000 declaring-side suit rows expected vs old 62,140).
-     High/low sample sizes may also change significantly. -->
-
-Percentiles omitted for R0 high/low declaring/defending where sample sizes are small.
+| low | R0 (all) | 5.00 | 1.92 | 2.00 | 4.00 | 5.00 | 6.00 | 8.00 | 46,420 |
+| low | R0 declaring | 5.89 | 1.70 | 3.00 | 5.00 | 6.00 | 7.00 | 9.00 | 23,210 |
+| low | R0 defending | 4.11 | 1.70 | 1.00 | 3.00 | 4.00 | 5.00 | 7.00 | 23,210 |
 
 ### Table 2: Contract Mix Comparison
 
 | Contract | Phase 0 | R0 |
 |----------|---------|-----|
-| suit | 66.7% (forced: 4 trumps × 2 = 8 of 12 slots) | — |
-| high | 16.7% (1 of 6 contract types) | — |
-| low | 16.7% (1 of 6 contract types) | — |
-
-<!-- UPDATE: Recompute R0 contract mix percentages from new eval run.
-     With 100% bid_rate and bid-level search, the contract mix may differ
-     from the v1 98.3/0.8/0.9 split. Total R0 rows = 200,000 (50,000 deals × 4 seats). -->
+| suit | 66.7% (forced: 4 trumps × 2 = 8 of 12 slots) | 61.5% (30,760 deals) |
+| high | 16.7% (1 of 6 contract types) | 15.3% (7,635 deals) |
+| low | 16.7% (1 of 6 contract types) | 23.2% (11,605 deals) |
 
 Note: Phase 0 percentages reflect the bidless dataset structure where each hand
 plays each contract type. Suit has 4 trump variants per hand while high and low have
@@ -142,15 +131,15 @@ plays each contract type. Suit has 4 trump variants per hand while high and low 
 
 | Contract | Phase 0 Std | R0 Declaring Std | Ratio | Direction |
 |----------|-------------|-------------------|-------|-----------|
-| suit | 1.72 | — | — | — |
-| high | 1.87 | — | — | — |
-| low | 1.88 | — | — | — |
+| suit | 1.72 | 1.74 | 1.009 | +0.9% (flat) |
+| high | 1.87 | 1.66 | 0.887 | −11.3% (lower) |
+| low | 1.88 | 1.70 | 0.902 | −9.8% (lower) |
 
-<!-- UPDATE: Recompute R0 declaring-side std and variance ratios from new eval run.
-     Direction (lower variance for declaring side) is expected to hold. -->
-
-All three contract types are expected to show reduced declaring-side variance in R0
-compared to the Phase 0 forced-contract baseline, consistent with v1 findings.
+High and low show meaningful declaring-side variance reduction (−11.3% and −9.8%),
+consistent with auction selection filtering weak hands. Suit is essentially flat
+(+0.9%), suggesting the 3-feature suit model already provides strong discrimination
+and the auction adds little additional variance reduction beyond what the model
+captures.
 
 **Chart references:**
 - Phase 0 outcome distributions: Phase 0 report §5b
@@ -160,14 +149,14 @@ compared to the Phase 0 forced-contract baseline, consistent with v1 findings.
 
 ## 4. Interpretation
 
-### Variance Direction Check: Confirmed
+### Variance Direction Check: Partially Confirmed
 
-The directional hypothesis is expected to hold: R0 declaring-side std(tricks_won)
-should be lower than Phase 0 std in all three contract types, consistent with the
-v1 findings. With v2 bid-level search producing 100% bid_rate, the R0 declaring-side
-sample sizes are now much larger (50,000 declaring observations for suit), providing
-stronger statistical power for this comparison.
-<!-- UPDATE: recompute exact variance ratios and reductions from new eval run -->
+The directional hypothesis holds for high (−11.3%) and low (−9.8%) but not for suit
+(+0.9%, effectively flat). With v2 bid-level search producing 100% bid_rate, the R0
+declaring-side sample sizes are large (61,520 suit, 15,270 high, 23,210 low),
+providing strong statistical power. The suit result is notable: the 3-feature suit
+model (bowers, trump_count, offsuit_aces) apparently provides sufficient discrimination
+that auction selection does not further reduce variance relative to the forced baseline.
 
 ### Why Overall R0 Variance Is Higher
 
@@ -175,9 +164,8 @@ The R0 overall (all-seats) suit std exceeds Phase 0's 1.72. This is expected
 and is *not* evidence against the hypothesis. The inflation comes from pooling two
 subpopulations with different means:
 
-<!-- UPDATE: recompute R0 declaring/defending mean and std from new eval run -->
-- R0 declaring: mean ~7, std ~1.6 (expected direction)
-- R0 defending: mean ~3, std ~1.6 (complementary)
+- R0 declaring: mean = 6.265, std = 1.736
+- R0 defending: mean = 3.735, std = 1.736
 
 Pooling these into a single distribution produces a bimodal-like spread with inflated
 standard deviation (Simpson's paradox in variance). Phase 0 has no declaring/defending
@@ -190,11 +178,13 @@ R0 produces a heavily suit-dominated contract mix because the R0 model uses only
 specifications rarely produce positive expected value, so the bidder almost always
 selects suit contracts where the 3-feature model provides better discrimination.
 With v2 bid-level search, the bidder now evaluates all legal bid levels and bids on
-every deal (100% bid_rate, up from 63.2% in v1), but the contract type concentration
-is expected to remain similar. This is a known R0 limitation documented in the
-[model specification](02_model_arc_r0.md) and motivating R1's HIGH/LOW feature
+every deal (100% bid_rate, up from 63.2% in v1). The contract mix has actually
+*diversified* dramatically: suit dropped from 98.3% (v1) to 61.5%, with high rising
+to 15.3% and low to 23.2%. Bid-level search unlocked non-suit contracts that were
+invisible to the v1 `floor(mu)` policy. Despite this diversification, suit still
+dominates — the 1-feature HIGH/LOW models remain a known R0 limitation documented in
+the [model specification](02_model_arc_r0.md) and motivating R1's HIGH/LOW feature
 enrichment.
-<!-- UPDATE: recompute exact R0 contract mix from new eval run -->
 
 ### Confound Analysis
 
@@ -203,12 +193,12 @@ enrichment.
    genuine filtering (weak hands pass) or mean-shift mechanics (declaring teams always
    have stronger hands by construction).
 2. **Symmetric vs asymmetric play:** Phase 0 uses GluttonStrategy for all 4 seats
-   (pure play, no bidding). R0 uses OLSa_Full R0 for all 4 seats (self-play with
+   (pure play, no bidding). R0 uses OLSa R0 for all 4 seats (self-play with
    auction). The introduction of an auction changes both hand selection and play dynamics.
-3. **Sample size:** R0 high/low declaring observations may still be small relative
-   to suit. The variance ratios for non-suit contracts should be interpreted with
-   appropriate caution depending on final sample sizes.
-   <!-- UPDATE: check R0 high/low declaring counts from new eval run -->
+3. **Sample size:** R0 high declaring = 15,270 rows and low declaring = 23,210 rows,
+   both large enough for reliable variance estimation. Phase 0 has 200,000 rows per
+   non-suit contract type. The 13:1 (high) and 9:1 (low) ratios are acceptable for
+   the std comparison but preclude fine-grained subgroup analysis.
 
 ### Mean Stability
 
@@ -290,7 +280,7 @@ auction-generated data for the first time.
 ### Phase 0 Statistics
 
 ```bash
-PYTHONPATH=src uv run python -c "
+uv run python -c "
 from bid_euchre.datasets.join import join_features_outcomes
 df = join_features_outcomes(
     'data/runs/canonical_bidless_dataset_glutton_42_20260221_175752/datasets/bidless.parquet',
@@ -307,7 +297,7 @@ for ct in ['suit', 'high', 'low']:
 ### R0 Statistics
 
 ```bash
-PYTHONPATH=src uv run python -c "
+uv run python -c "
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
 df = build_eval_dataset(
     'data/runs/arc_d_eval_r0_42_20260303_201729/logs/'
