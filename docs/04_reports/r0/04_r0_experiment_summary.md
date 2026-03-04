@@ -92,7 +92,7 @@ positional advantage.
 - **Relative only.** Two equally weak models produce delta ~ 0, just as two
   equally strong models do. H2H cannot tell you whether the models are any
   good in absolute terms -- only which is better. For absolute benchmarking,
-  see the [comparator rankings](comparator_rankings.md).
+  see the [comparator rankings](03_comparator_rankings.md).
 - **O(n^2) cost.** 8 bidders require 64 matchups; this becomes expensive at
   publication resolution (10k deals/cell = 640k deals). The QUICK-then-FULL
   design mitigates this by running a survey at 2k/cell first.
@@ -101,7 +101,7 @@ positional advantage.
   not observed in R0.
 
 **Comparison with self-play comparator battery:** The comparator battery
-([comparator_rankings.md](comparator_rankings.md)) evaluates each bidder
+([03_comparator_rankings.md](03_comparator_rankings.md)) evaluates each bidder
 independently against GluttonStrategy in uncontested auctions. It answers "is
 this model any good?" while H2H answers "which model is better?" The two
 methods can give different rankings -- for example, in v2 the hybrid bidders
@@ -183,7 +183,7 @@ understood from the comparator battery, where the effects are additive:
 - **Wrapper effect:** +0.75 net_eppd (estimated from v1-to-v2 improvement
   attributable to wrapper + search synergy)
 
-See [c33_ablation_report.md](c33_ablation_report.md) for full decomposition
+See [05_c33_ablation_report.md](05_c33_ablation_report.md) for full decomposition
 analysis.
 
 **Team auction-win frequency profile:**
@@ -212,7 +212,7 @@ against GluttonStrategy card play. The bidder under test occupies one seat
 while three always-pass sentinels fill the remaining seats. Bootstrap 95% CIs
 from 10,000 resamples.
 
-See [comparator_rankings.md](comparator_rankings.md) for full methodology,
+See [03_comparator_rankings.md](03_comparator_rankings.md) for full methodology,
 behavioral analysis, and version history.
 
 ### 3.2 Rankings
@@ -269,7 +269,7 @@ bids 3 Spades), not its intended auction-raising behavior.
 
 8x8 H2H matrix: QUICK (64 matchups, 2k deals/cell) + FULL (52 matchups, 10k
 deals/cell). All 8 self-play CIs span zero (pass). See
-[h2h_pairwise_analysis.md](h2h_pairwise_analysis.md) for the full pairwise
+[07_h2h_pairwise_analysis.md](07_h2h_pairwise_analysis.md) for the full pairwise
 matrix, dominance structure, and behavioral asymmetry analysis.
 
 ### 4.1 Average H2H Delta Rankings
@@ -447,10 +447,10 @@ Run directories (local only, data/runs/):
 
 | Report | Focus |
 |--------|-------|
-| [h2h_pairwise_analysis.md](h2h_pairwise_analysis.md) | Full pairwise matrix, dominance, behavioral asymmetry |
-| [c33_ablation_report.md](c33_ablation_report.md) | Wrapper + search decomposition |
-| [comparator_rankings.md](comparator_rankings.md) | Absolute benchmarking (v6) |
-| [r0_promotion_report.md](r0_promotion_report.md) | Gate results, multi-seed |
+| [07_h2h_pairwise_analysis.md](07_h2h_pairwise_analysis.md) | Full pairwise matrix, dominance, behavioral asymmetry |
+| [05_c33_ablation_report.md](05_c33_ablation_report.md) | Wrapper + search decomposition |
+| [03_comparator_rankings.md](03_comparator_rankings.md) | Absolute benchmarking (v6) |
+| [01_r0_promotion_report.md](01_r0_promotion_report.md) | Gate results, multi-seed |
 
 ---
 

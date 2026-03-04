@@ -6,7 +6,7 @@
 **Version:** v2
 **Purpose:** H2H pairwise matchup analysis -- full matrix, dominance structure, behavioral asymmetry
 
-Companion to [h2h_battery_analysis.md](h2h_battery_analysis.md) (experiment summary).
+Companion to [04_r0_experiment_summary.md](04_r0_experiment_summary.md) (experiment summary).
 
 ---
 
@@ -210,20 +210,20 @@ advantage.
 ## 7. Provenance
 
 **Source data:**
-- H2H battery QUICK v4: `data/artifacts/arc_d/r0/h2h_battery_quick_v4.json`
-- H2H battery FULL v4: `data/artifacts/arc_d/r0/h2h_battery_full_v4.json`
+- H2H battery QUICK v4: data/artifacts/arc_d/r0/h2h_battery_quick_v4.json
+- H2H battery FULL v4: data/artifacts/arc_d/r0/h2h_battery_full_v4.json
 
 **Experiment runs:**
 - C50 QUICK: `data/runs/arc_d_r0_h2h_battery_42_20260302_230409` (128,000 deals)
 - C50 FULL: `data/runs/arc_d_r0_h2h_battery_42_20260302_231835` (520,000 deals)
 
-**Parent report:** [h2h_battery_analysis.md](h2h_battery_analysis.md) (experiment
+**Parent report:** [04_r0_experiment_summary.md](04_r0_experiment_summary.md) (experiment
 summary with C33 ablation, comparator rankings, and gate threshold calibration)
 
 **Related reports:**
-- [c33_ablation_report.md](c33_ablation_report.md) -- Wrapper + search decomposition
-- [comparator_rankings.md](comparator_rankings.md) -- Absolute benchmarking (v6)
-- [r0_promotion_report.md](r0_promotion_report.md) -- Gate results, multi-seed
+- [05_c33_ablation_report.md](05_c33_ablation_report.md) -- Wrapper + search decomposition
+- [03_comparator_rankings.md](03_comparator_rankings.md) -- Absolute benchmarking (v6)
+- [01_r0_promotion_report.md](01_r0_promotion_report.md) -- Gate results, multi-seed
 
 | Item | Value |
 |------|-------|

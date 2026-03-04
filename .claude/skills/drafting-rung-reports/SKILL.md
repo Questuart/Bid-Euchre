@@ -109,7 +109,7 @@ The user provides:
    uv run python -c "import json; print(json.dumps(json.load(open('data/artifacts/arc_d/r{N}/comparator_cis_r{N}_v4.json')), indent=2))"
    ```
 
-2. Read the previous rung's comparator_rankings.md for structure (if N > 0).
+2. Read the previous rung's comparator rankings report for structure (if N > 0).
    **For R0:** Use `REPORT_TEMPLATES.md` Section 2 as the sole structural reference.
 
 3. Draft 9 sections following `REPORT_TEMPLATES.md` Section 2:

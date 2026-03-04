@@ -54,7 +54,7 @@ improves competitive performance.
 **Protocol:** `plans/r0_v2_lambda_tuning_protocol.md` (v1, amended to v4)
 
 **Dependency:** Track D runs sequentially after Track C (pass-threshold tuning). The
-Track C result (RETAIN t=0, see [pass_threshold_decision.md](pass_threshold_decision.md))
+Track C result (RETAIN t=0, see [11_pass_threshold_decision.md](11_pass_threshold_decision.md))
 is used as a fixed input (`pass_threshold=0.0`) throughout this protocol.
 
 ## 2. Methodology
@@ -208,7 +208,7 @@ failure mode.
 
 ### 5.3 Connection to Model Quality
 
-The lambda result parallels the [pass_threshold_decision.md](pass_threshold_decision.md)
+The lambda result parallels the [11_pass_threshold_decision.md](11_pass_threshold_decision.md)
 finding: R0's model is not accurate enough on marginal hands to benefit from selective
 bidding. Both the threshold sweep and the lambda sweep point to the same root cause --
 the model's predictions near the bid/pass boundary are insufficiently calibrated.
@@ -288,7 +288,7 @@ uv run python experiments/run_experiment.py \
 
 | Report | Focus |
 |--------|-------|
-| [pass_threshold_decision.md](pass_threshold_decision.md) | Track C threshold sweep (same root cause: model quality) |
-| [normalizer_offline_screen.md](normalizer_offline_screen.md) | Track E normalizer pre-screen (related model quality limitation) |
-| [model_arc_r0.md](model_arc_r0.md) | R0 rung report (overall model evaluation) |
-| [h2h_battery_analysis.md](h2h_battery_analysis.md) | H2H battery analysis (competitive ordering) |
+| [11_pass_threshold_decision.md](11_pass_threshold_decision.md) | Track C threshold sweep (same root cause: model quality) |
+| [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md) | Track E normalizer pre-screen (related model quality limitation) |
+| [02_model_arc_r0.md](02_model_arc_r0.md) | R0 rung report (overall model evaluation) |
+| [04_r0_experiment_summary.md](04_r0_experiment_summary.md) | H2H battery analysis (competitive ordering) |

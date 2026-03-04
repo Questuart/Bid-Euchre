@@ -1,7 +1,7 @@
 # ARC_D Rung R0 Report
 
 > **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
-> The current version is at [`../model_arc_r0.md`](../model_arc_r0.md).
+> The current version is at [`../02_model_arc_r0.md`](../02_model_arc_r0.md).
 > See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)

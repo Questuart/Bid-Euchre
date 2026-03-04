@@ -1,7 +1,7 @@
 # R0 Promotion Report
 
 > **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
-> The current version is at [`../r0_promotion_report.md`](../r0_promotion_report.md).
+> The current version is at [`../01_r0_promotion_report.md`](../01_r0_promotion_report.md).
 > See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)

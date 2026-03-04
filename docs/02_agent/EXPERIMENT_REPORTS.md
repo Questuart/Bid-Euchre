@@ -27,9 +27,9 @@ Reports live in `docs/04_reports/<rung>/` alongside the rung's other
 documentation.
 
 - **Directory:** `docs/04_reports/<rung>/` (e.g., `docs/04_reports/r0/`)
-- **Naming:** Flexible — use descriptive names that identify the content.
-  Examples: `c33_ablation_report.md`, `model_arc_r0.md`,
-  `comparator_rankings.md`
+- **Naming:** `[NN_]<descriptive_name>.md` — optional numeric prefix for ordering.
+  Examples: `05_c33_ablation_report.md`, `02_model_arc_r0.md`,
+  `03_comparator_rankings.md`
 - **Forward-only:** This convention applies to new reports. Existing reports
   with date-stamped or legacy names are not required to rename.
 
@@ -168,7 +168,7 @@ supports the textual interpretation.
 ## Cross-Referencing
 
 - **Between reports:** Use relative markdown links
-  (`[comparator_rankings.md](comparator_rankings.md)`).
+  (`[03_comparator_rankings.md](03_comparator_rankings.md)`).
 - **To notebooks:** Reference by name and section
   (`notebook 50_r0_matchups, Figure 3`). Do NOT duplicate notebook analysis
   in the report.

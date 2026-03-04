@@ -36,8 +36,8 @@
 | L3 | bid_rate conflation in comparator | (b) | **Resolved** in comparator by single-seat mode; bid_rate now measures per-hand propensity. H2H bid_rate still conflates (team auction-win freq) — residual deferral, see B-L3. |
 | L4 | GluttonStrategy confounding in comparator | (a) | Inherent to self-play design; opponent never bids, inflating declaring-team metrics. Play strategy now harmonized across instruments (C2c, #466). |
 | L5 | Pairwise not round-robin H2H | (a) | H2H battery tests all pairs but not full round-robin tournaments; accepted for efficiency |
-| L6 | Normalizer deferral | (a) | Normalizer screen showed +4% accuracy but -0.269 net_eppd. Deferred to R1 (NO_GO_DEFER_R1). Model poverty, not miscalibration — see [normalizer_offline_screen.md](normalizer_offline_screen.md) |
-| L7 | Self-play vs H2H lambda divergence | (a) | Lambda=0.5 showed +0.884 in self-play but -1.15 in H2H. Self-play metrics can mislead for parameters affecting auction competitiveness. Lambda=0.0 RETAINED. See [lambda_decision.md](lambda_decision.md) |
+| L6 | Normalizer deferral | (a) | Normalizer screen showed +4% accuracy but -0.269 net_eppd. Deferred to R1 (NO_GO_DEFER_R1). Model poverty, not miscalibration — see [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md) |
+| L7 | Self-play vs H2H lambda divergence | (a) | Lambda=0.5 showed +0.884 in self-play but -1.15 in H2H. Self-play metrics can mislead for parameters affecting auction competitiveness. Lambda=0.0 RETAINED. See [12_lambda_decision.md](12_lambda_decision.md) |
 
 ## Deferral Cost Descriptions
 

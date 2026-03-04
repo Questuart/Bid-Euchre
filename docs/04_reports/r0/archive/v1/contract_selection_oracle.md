@@ -1,7 +1,7 @@
 # Contract Selection Oracle Analysis
 
 > **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
-> The current version is at [`../contract_selection_oracle.md`](../contract_selection_oracle.md).
+> The current version is at [`../10_contract_selection_oracle.md`](../10_contract_selection_oracle.md).
 > See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)

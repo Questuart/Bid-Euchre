@@ -668,6 +668,19 @@ def check_registry_requires_gate_reference(
     return violations
 
 
+def _strip_numeric_prefix(name: str) -> str:
+    """Strip optional numeric prefix from report filename.
+
+    Examples:
+        "01_r0_promotion_report.md" -> "r0_promotion_report.md"
+        "r0_promotion_report.md" -> "r0_promotion_report.md"
+        "20_measurement_integrity_r0.md" -> "measurement_integrity_r0.md"
+    """
+    import re
+
+    return re.sub(r"^\d+_", "", name)
+
+
 def check_promotion_report_requires_integrity_review(
     changed: list[str],
     repo_root: Path,
@@ -678,8 +691,10 @@ def check_promotion_report_requires_integrity_review(
         if not p.endswith(".md"):
             continue
         name = Path(p).name
-        # Scope: only files named <rung>_promotion_report.md under reports dir
-        if not name.endswith("_promotion_report.md"):
+        # Strip optional numeric prefix (e.g., "01_r0_..." -> "r0_...")
+        base_name = _strip_numeric_prefix(name)
+        # Scope: only files named [NN_]<rung>_promotion_report.md under reports dir
+        if not base_name.endswith("_promotion_report.md"):
             continue
         if not any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES):
             continue
@@ -688,8 +703,8 @@ def check_promotion_report_requires_integrity_review(
         if not abs_path.exists():
             continue
 
-        # Extract rung from filename: e.g., "r0_promotion_report.md" -> "r0"
-        rung = name.removesuffix("_promotion_report.md")
+        # Extract rung from filename: e.g., "01_r0_promotion_report.md" -> "r0"
+        rung = base_name.removesuffix("_promotion_report.md")
 
         # Enforce directory-rung consistency: filename rung must match parent dir
         dir_name = abs_path.parent.name
@@ -707,16 +722,19 @@ def check_promotion_report_requires_integrity_review(
             )
             continue
 
-        # Require rung-matched companion: measurement_integrity_<rung>.md
-        expected = abs_path.parent / f"measurement_integrity_{rung}.md"
-        if not expected.exists():
+        # Require rung-matched companion: [NN_]measurement_integrity_<rung>.md
+        # Search for any file matching the pattern (with or without numeric prefix)
+        companion_pattern = f"*measurement_integrity_{rung}.md"
+        companions = list(abs_path.parent.glob(companion_pattern))
+        if not companions:
             violations.append(
                 Violation(
                     rule="promotion-requires-integrity-review",
                     path=p,
                     message=(
                         f"Promotion report requires companion file "
-                        f"'measurement_integrity_{rung}.md' in the same directory. "
+                        f"'measurement_integrity_{rung}.md' (with optional numeric prefix) "
+                        f"in the same directory. "
                         f"See docs/02_agent/MEASUREMENT_INTEGRITY_REVIEW.md for template."
                     ),
                 )

@@ -1,7 +1,7 @@
 # R0 Comparator Rankings (v4, Single-Seat, 7 Bidders)
 
 > **⚠ SUPERSEDED** — This is the v1 version, archived for reference.
-> The current version is at [`../comparator_rankings.md`](../comparator_rankings.md).
+> The current version is at [`../03_comparator_rankings.md`](../03_comparator_rankings.md).
 > See [README.md](README.md) for the v1→v2 delta summary.
 
 **Arc:** D (OLSa-Hybrid Bidder)

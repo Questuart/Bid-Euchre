@@ -48,7 +48,7 @@ of 90.9% supersedes the v1 decomposition for decision-making purposes.
 
 ## 1. Motivation
 
-The R0 evaluation report ([model_arc_r0.md](model_arc_r0.md))
+The R0 evaluation report ([02_model_arc_r0.md](02_model_arc_r0.md))
 showed a stark contract distribution:
 
 | Contract | Deals | Pct |
@@ -379,14 +379,14 @@ design should prioritize:
   calibration problems interact.
 - **Normalizer interaction:** The normalizer screen (NO_GO_DEFER_R1) found
   +4% accuracy but -0.269 net_eppd. With richer R1 features, normalization
-  may become beneficial. See [normalizer_offline_screen.md](normalizer_offline_screen.md).
+  may become beneficial. See [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md).
 
 ## 6. Arc Context
 
 ```
 R0 training (#396)
   |
-  +---> Model eval report (model_arc_r0.md)
+  +---> Model eval report (02_model_arc_r0.md)
   |       98.3% suit / 0.9% low / 0.8% high observed
   |
   +---> Contract selection oracle (this report, #472)

@@ -55,15 +55,15 @@ establishes a working baseline for R1 feature enrichment.
 
 | Report | Focus |
 |--------|-------|
-| [r0_promotion_report.md](r0_promotion_report.md) | Promotion decision, gate results, threshold calibration |
-| [comparator_rankings.md](comparator_rankings.md) | v6 single-seat rankings (8 bidders, GluttonStrategy) |
-| [h2h_battery_analysis.md](h2h_battery_analysis.md) | H2H battery (v4), competitive ordering, threshold derivation |
-| [c33_ablation_report.md](c33_ablation_report.md) | C33 v2: search effect +0.43, wrapper effect +0.75 |
-| [contract_selection_oracle.md](contract_selection_oracle.md) | Oracle regret analysis, CS regret share 90.9% |
-| [pass_threshold_decision.md](pass_threshold_decision.md) | B0 threshold sweep: RETAIN t=0 |
-| [lambda_decision.md](lambda_decision.md) | Lambda tuning: RETAIN lambda=0.0 (FINAL) |
-| [normalizer_offline_screen.md](normalizer_offline_screen.md) | Normalizer screen: NO_GO_DEFER_R1 |
-| [measurement_integrity_r0.md](measurement_integrity_r0.md) | Methodology limitations + deferral costs |
+| [01_r0_promotion_report.md](01_r0_promotion_report.md) | Promotion decision, gate results, threshold calibration |
+| [03_comparator_rankings.md](03_comparator_rankings.md) | v6 single-seat rankings (8 bidders, GluttonStrategy) |
+| [04_r0_experiment_summary.md](04_r0_experiment_summary.md) | H2H battery (v4), competitive ordering, threshold derivation |
+| [05_c33_ablation_report.md](05_c33_ablation_report.md) | C33 v2: search effect +0.43, wrapper effect +0.75 |
+| [10_contract_selection_oracle.md](10_contract_selection_oracle.md) | Oracle regret analysis, CS regret share 90.9% |
+| [11_pass_threshold_decision.md](11_pass_threshold_decision.md) | B0 threshold sweep: RETAIN t=0 |
+| [12_lambda_decision.md](12_lambda_decision.md) | Lambda tuning: RETAIN lambda=0.0 (FINAL) |
+| [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md) | Normalizer screen: NO_GO_DEFER_R1 |
+| [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md) | Methodology limitations + deferral costs |
 
 ---
 
@@ -189,7 +189,7 @@ The auction is dominated by suit contracts (98.3%), with HIGH/LOW selected less
 than 1% each. This reflects the R0 model's 1-feature HIGH/LOW specifications
 — offsuit_aces (HIGH) and offsuit_tens_count (LOW) — which produce conservative
 trick predictions that rarely exceed the bid/pass threshold. The oracle analysis
-([contract_selection_oracle.md](contract_selection_oracle.md)) shows the
+([10_contract_selection_oracle.md](10_contract_selection_oracle.md)) shows the
 hindsight-optimal HIGH+LOW share is 31.9%, confirming substantial under-selection.
 
 Bid levels cluster tightly around 5-6 for suit (mean 5.78), with HIGH/LOW
@@ -389,14 +389,14 @@ promotional arm. This is counter-intuitive but benign at R0 — the constrained
 arm's hand-picked features (bowers, trump_count, offsuit_aces) are individually
 stronger predictors than the forward-selected features, and the lower bid rate
 (63.2% vs 82.8%) means OLSa only bids on high-confidence hands. See
-[r0_promotion_report.md](r0_promotion_report.md) §4 for full interpretation.
+[01_r0_promotion_report.md](01_r0_promotion_report.md) §4 for full interpretation.
 
 ### Comparator Battery (v6, Single-Seat, GluttonStrategy)
 
 The single-seat comparator evaluates each bidder in isolation — one seat bids
 while three always-pass sentinels fill the remaining seats — producing an
 absolute benchmark free from auction interaction confounds. See
-[comparator_rankings.md](comparator_rankings.md) for full methodology and
+[03_comparator_rankings.md](03_comparator_rankings.md) for full methodology and
 behavioral analysis.
 
 | Rank | Bidder | net_eppd (comparator) | 95% CI | bid_rate | make_rate |
@@ -429,7 +429,7 @@ dynamics while the comparator isolates bidding quality in a controlled setting.
 
 Head-to-head matchups pit bidders directly against each other in contested
 auctions with paired, seat-swapped deals. See
-[h2h_battery_analysis.md](h2h_battery_analysis.md) for the full H2H matrix
+[04_r0_experiment_summary.md](04_r0_experiment_summary.md) for the full H2H matrix
 (QUICK + FULL resolution, v4) and gate threshold derivation.
 
 **H2H Self-Play (FULL, v4):** delta=−0.048, CI=[−0.132, +0.038],
@@ -437,7 +437,7 @@ fullgame_eppd=4.894. The near-zero delta confirms self-play symmetry; the
 fullgame_eppd of 4.894 establishes the H2H baseline.
 
 For pairwise competitive matchups, see the
-[H2H pairwise analysis](h2h_battery_analysis.md) companion report. Key
+[H2H pairwise analysis](07_h2h_pairwise_analysis.md) companion report. Key
 results: modeloespecifico beats hybrid_olsa by ~0.35 net_eppd delta (both
 rotations significant); hybrid_olsa dominates stricthellraiser by ~1.53 delta.
 
@@ -532,14 +532,14 @@ These are R0-specific limitations, not generic caveats:
 5. **GluttonStrategy confounding.** Both comparator and eval instruments use
    GluttonStrategy for card play. Rankings reflect interaction with this
    specific play strategy. See
-   [measurement_integrity_r0.md](measurement_integrity_r0.md) for full
+   [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md) for full
    limitation inventory.
 
 6. **Normalizer deferred to R1.** Offline screening showed normalizer adds
    +4% accuracy but degrades net_eppd by −0.269 (CI [−0.287, −0.251]). This
    is a model poverty problem, not a miscalibration — deferred to R1 where
    richer models may benefit from normalization. See
-   [normalizer_offline_screen.md](normalizer_offline_screen.md).
+   [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md).
 
 ---
 

@@ -240,12 +240,14 @@ They do not block advancement.
 
 ### Naming Conventions
 
-- Promotion reports: `<rung>_promotion_report.md` (e.g., `r0_promotion_report.md`)
-- Measurement integrity reviews: `measurement_integrity_<rung>.md` (e.g., `measurement_integrity_r0.md`)
+- Promotion reports: `[NN_]<rung>_promotion_report.md` (e.g., `01_r0_promotion_report.md`)
+- Measurement integrity reviews: `[NN_]measurement_integrity_<rung>.md` (e.g., `20_measurement_integrity_r0.md`)
+- Optional numeric prefix `NN_` controls display ordering within the directory
 - Both in `docs/04_reports/<rung>/`
 
 **Enforcement:** `make repo-lint` verifies that `*_promotion_report.md` files have
-a companion `measurement_integrity_*.md` file in the same directory
-(rule: `promotion-requires-integrity-review`).
+a companion `*measurement_integrity_*.md` file in the same directory
+(rule: `promotion-requires-integrity-review`). The numeric prefix is stripped
+when extracting the rung identifier.
 The (c)-blocks-advancement convention is enforced through review, not by the
 automated gate in `arc_d_gate.py`.

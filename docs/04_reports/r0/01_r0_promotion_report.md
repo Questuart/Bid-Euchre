@@ -6,7 +6,7 @@
 **Rung:** R0 (baseline)
 **Decision:** PROMOTED
 **Date:** 2026-02-22
-**Methodology Review:** [measurement_integrity_r0.md](measurement_integrity_r0.md)
+**Methodology Review:** [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md)
 
 ## Executive Summary
 
@@ -185,7 +185,7 @@ starting at R1.
 
 ## Comparator Context
 
-See [comparator_rankings.md](comparator_rankings.md) for the full comparator
+See [03_comparator_rankings.md](03_comparator_rankings.md) for the full comparator
 battery with bootstrap 95% confidence intervals. The v6 single-seat comparator
 (8 bidders, 20,000 deals/bidder, GluttonStrategy card play, seed=42) evaluates
 each bidder in isolation against always-pass sentinels.
@@ -209,7 +209,7 @@ p=0.5457). hybrid_olsa leads `modeloespecifico` by +0.527 points/deal
 (p < 0.001) — a reversal from v4 where modelo led by +1.132. The improvement
 is driven by v2 bid-level search.
 
-See [h2h_battery_analysis.md](h2h_battery_analysis.md) section 4 for H2H
+See [04_r0_experiment_summary.md](04_r0_experiment_summary.md) section 4 for H2H
 pairwise matchup results that provide competitive ordering between bidders.
 
 **Source:** comparator_cis_r0_v6.json
@@ -217,7 +217,7 @@ pairwise matchup results that provide competitive ordering between bidders.
 ## Gate Threshold Calibration
 
 Gate thresholds for R1 promotion were calibrated from the null signal in the
-H2H battery. See [h2h_battery_analysis.md](h2h_battery_analysis.md) section 5
+H2H battery. See [04_r0_experiment_summary.md](04_r0_experiment_summary.md) section 5
 for the full derivation.
 
 **Method:** The null distribution is constructed from self-play deltas (which
@@ -243,7 +243,7 @@ check revealed the QUICK thresholds were inflated (drift ratio = 0.726).
 demonstrate at least +0.18 net_eppd improvement over the R0 incumbent in
 paired H2H evaluation. For reference, the C33 v2 search effect (+0.43) and
 wrapper effect (+0.75) both comfortably exceed this bar (see
-[c33_ablation_report.md](c33_ablation_report.md)).
+[05_c33_ablation_report.md](05_c33_ablation_report.md)).
 
 ## Provenance
 
@@ -267,20 +267,20 @@ wrapper effect (+0.75) both comfortably exceed this bar (see
 
 ## Companion Reports
 
-- [h2h_battery_analysis.md](h2h_battery_analysis.md) — H2H battery (v4),
+- [04_r0_experiment_summary.md](04_r0_experiment_summary.md) — H2H battery (v4),
   gate threshold calibration.
-- [comparator_rankings.md](comparator_rankings.md) — v6 single-seat comparator
+- [03_comparator_rankings.md](03_comparator_rankings.md) — v6 single-seat comparator
   rankings (8 bidders) with bootstrap CIs and behavioral analysis.
-- [c33_ablation_report.md](c33_ablation_report.md) — C33 v2: search effect
+- [05_c33_ablation_report.md](05_c33_ablation_report.md) — C33 v2: search effect
   +0.43, wrapper effect +0.75.
-- [contract_selection_oracle.md](contract_selection_oracle.md) — Oracle regret
+- [10_contract_selection_oracle.md](10_contract_selection_oracle.md) — Oracle regret
   analysis: CS regret share 90.9%.
-- [pass_threshold_decision.md](pass_threshold_decision.md) — B0 threshold
+- [11_pass_threshold_decision.md](11_pass_threshold_decision.md) — B0 threshold
   sweep: RETAIN t=0 (monotonic decline, model accuracy problem).
-- [lambda_decision.md](lambda_decision.md) — Lambda tuning: RETAIN
+- [12_lambda_decision.md](12_lambda_decision.md) — Lambda tuning: RETAIN
   lambda=0.0 (FINAL).
-- [normalizer_offline_screen.md](normalizer_offline_screen.md) — Normalizer
+- [13_normalizer_offline_screen.md](13_normalizer_offline_screen.md) — Normalizer
   screen: NO_GO_DEFER_R1.
-- [measurement_integrity_r0.md](measurement_integrity_r0.md) — Methodology
+- [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md) — Methodology
   limitations inventory and deferral cost analysis.
 - **Semantic gate Tier 2:** Not applicable at R0 (introduced at R1+).

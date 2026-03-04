@@ -32,7 +32,7 @@ adjacent pairs are NOT statistically distinguishable, indicating unresolved
 ties in the 8-bidder field.
 
 For competitive ordering between bidders in contested auctions, see the
-[H2H battery analysis](h2h_battery_analysis.md). The comparator and H2H
+[H2H battery analysis](04_r0_experiment_summary.md). The comparator and H2H
 instruments measure **different estimands** — see S2.4 for what this
 methodology captures and what it does not.
 
@@ -140,12 +140,12 @@ play for both teams.
   well for Glutton's play patterns may score differently with other play
   strategies.
 - **Self-play rankings may not match competitive ordering.** The H2H battery
-  ([h2h_battery_analysis.md](h2h_battery_analysis.md)) shows that some
+  ([04_r0_experiment_summary.md](04_r0_experiment_summary.md)) shows that some
   self-play gaps do not replicate under direct opposition.
 
 **Bottom line:** Use these rankings for absolute benchmarking and progress
 tracking. For competitive ordering between bidders, see the
-[H2H battery analysis](h2h_battery_analysis.md).
+[H2H battery analysis](04_r0_experiment_summary.md).
 
 ## 3. Rankings Table
 
@@ -411,7 +411,7 @@ overbidding.
 The single-seat design intentionally evaluates bidding quality in uncontested
 auctions (S2.4). A 4-way rerun would show how rankings change under contested
 auctions (`current_high_bid > 0`), but this is better addressed by the H2H
-battery ([h2h_battery_analysis.md](h2h_battery_analysis.md)), which already
+battery ([04_r0_experiment_summary.md](04_r0_experiment_summary.md)), which already
 captures auction interaction effects in a more rigorous paired-deal design.
 
 ## 9. Provenance & Reproduction

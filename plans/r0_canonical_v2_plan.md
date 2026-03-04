@@ -112,9 +112,9 @@ paths to `plans/archive/` before archiving it.
 
 | Plan | Referenced By | Deferred Until |
 |------|--------------|---------------|
-| `MASTER_PLAN.md` | `r1_follow_ups.md:6`, `contract_selection_oracle.md:306` | Post-freeze: update refs → archive |
-| `contract_selection_analysis.md` | `55_contract_selection_oracle.py:32,99`, `contract_selection_oracle.md:58,366` | Post-freeze: update refs → archive |
-| `r0_pass_threshold_protocol.md` | `56_pass_threshold_sweep.py:23,843`, `pass_threshold_decision.md:41,133` | Post-freeze: update refs → archive |
+| `MASTER_PLAN.md` | `r1_follow_ups.md:6`, `10_contract_selection_oracle.md:306` | Post-freeze: update refs → archive |
+| `contract_selection_analysis.md` | `55_contract_selection_oracle.py:32,99`, `10_contract_selection_oracle.md:58,366` | Post-freeze: update refs → archive |
+| `r0_pass_threshold_protocol.md` | `56_pass_threshold_sweep.py:23,843`, `11_pass_threshold_decision.md:41,133` | Post-freeze: update refs → archive |
 | `r0_v2_threshold_protocol.md` | `56_pass_threshold_sweep.py:24` | Post-freeze: update refs → archive |
 | `r0_v2_pr_a_amendments.md` | `56_pass_threshold_sweep.py:25` | Post-freeze: update refs → archive |
 
@@ -467,7 +467,7 @@ new report documenting the lambda decision.
 
 #### 7.3.1 NEW: Lambda Guardrail Metric Decision Report
 
-**File:** `docs/04_reports/r0/lambda_decision.md`
+**File:** `docs/04_reports/r0/12_lambda_decision.md`
 
 **Purpose:** Document the lambda sweep metric mismatch discovery, the corrected
 analysis, the H2H confirmation failure, and the RETAIN decision. This is the
@@ -566,7 +566,7 @@ On approval: tag as `r0-canonical-v2`, publish changelog.
 | H2H QUICK | `h2h_battery_quick_v2.json` | `h2h_battery_quick_v4.json` |
 | H2H FULL | `h2h_battery_full_v2.json` | `h2h_battery_full_v4.json` |
 | Lambda sweep | — | `lambda_sweep_selfplay_v1.json` (RETAIN lambda=0.0) |
-| Lambda decision report | — | `docs/04_reports/r0/lambda_decision.md` (NEW — documents RETAIN decision) |
+| Lambda decision report | — | `docs/04_reports/r0/12_lambda_decision.md` (NEW — documents RETAIN decision) |
 | Normalizer artifact | — | `normalizer_r0_v1.json` (if adopted) |
 | Model artifact | `hybrid_r0.json` | `hybrid_r0.json` (UNCHANGED) |
 

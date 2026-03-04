@@ -14,6 +14,6 @@ These are the v1 versions of the R0 reports, superseded by v2 (PR #510).
 | hybrid_olsa comparator net_eppd | +0.455 (rank 2) | +2.131 (rank 1-2) |
 | hybrid_olsa bid_rate | 19.7% | 96.1% |
 | C33 ablation | wrapper +0.21 | search +0.43, wrapper +0.75 |
-| New reports in v2 | — | lambda_decision.md, normalizer_offline_screen.md |
+| New reports in v2 | — | 12_lambda_decision.md, 13_normalizer_offline_screen.md |
 
 These files are preserved for historical reference and delta review.
