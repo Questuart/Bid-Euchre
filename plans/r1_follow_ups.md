@@ -24,7 +24,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P4 | Pass-threshold re-tuning | **Yes** | — | Re-run B0 protocol |
 | P5 | Deferred report sections | No (deferrable) | — | |
 | P6 | H2H bid_rate caveat | No (deferrable) | DONE | Adopted by v2 — fix terminology during report regeneration (§7.4 of plans/archive/r0_canonical_v2_plan.md) |
-| P7 | Rung-to-rung report pipeline | No (deferrable) | — | Automate progression reports |
+| P7 | Rung-to-rung report pipeline | No (deferrable) | MANUAL at R1 | Step 12a: written manually from artifacts. Automation deferred to R2+. |
 | P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
 | P9 | Extract notebook-only gate results to artifacts | No (deferrable) | — | nb55 oracle gate result has no committed JSON; see notebook boundary audit |
 
@@ -424,7 +424,7 @@ block promotion but should be reviewed and dispositioned before R1 execution beg
 | W2 | Run integration smoke test before large experiment runs | — | Parser bugs (#442, #443, #453) surfaced during battery execution, forcing reruns |
 | W3 | Review notebooks incrementally (per-notebook, not batch) | — | 72 items accumulated across 5 notebooks at R0; fix-forward, not fix-later |
 | W4 | Preserve design-first pattern, reduce plan iterations | — | R0 had 3 plan versions; target 1–2 by leveraging existing conventions |
-| W5 | Automate progression reports | — | = P7 above; implement early in R1 to reduce per-rung overhead |
+| W5 | Automate progression reports | DEFER to R2+ | = P7 above; R1 report manual (Step 12a), automate once pattern confirmed across two rungs |
 | W6 | Expand fail-fast gates into battery orchestration scripts | — | Validate deal counts, schema compatibility, metric completeness before aggregation |
 
 **Disposition values:** DONE / ADOPTED (with evidence) / DEFERRED (with rationale) / NOT APPLICABLE
