@@ -151,7 +151,29 @@ passes?) matrix plus contract agreement:
 
 ## 3. Results
 
-### 3.1 Regret Summary
+### 3.1 V2 Decomposition (Binding)
+
+With bid-level search (v2 policy, PR #497), the model bids on ~96% of hands.
+Contract-selection regret dominates — the model picks the wrong contract on
+57.8% of hands.
+
+| Category | Hands | % Total Regret |
+|----------|-------|---------------|
+| Contract selection | 23,106 | **90.9%** |
+| Pass threshold | 1,279 | **5.3%** |
+| Over-bidding (bid level) | 2,561 | **3.7%** |
+
+The v2 oracle confirms that the remaining regret is concentrated in contract
+mis-ranking: the model still selects suit 98.3% of the time, while the oracle
+would select HIGH/LOW for 31.9% of biddable hands. This shifts the R1 priority
+from "bid more hands" to "bid the right contract type."
+
+### 3.2 V1 Decomposition (Historical)
+
+The v1 decomposition below is retained for provenance. V2 supersedes v1 for
+all decision-making purposes.
+
+#### 3.2.1 Regret Summary
 
 | Metric | Value | 95% CI |
 |--------|-------|--------|
@@ -160,7 +182,7 @@ passes?) matrix plus contract agreement:
 | P95 regret | 8.00 | — |
 | Zero-regret hands | 16.2% | — |
 
-### 3.2 Regret Decomposition
+#### 3.2.2 Regret Decomposition
 
 | Category | Hands | % Hands | Mean Regret | % Total Regret |
 |----------|-------|---------|-------------|----------------|
@@ -173,7 +195,7 @@ passes?) matrix plus contract agreement:
 > See notebook 55_contract_selection_oracle, S4b for the full decomposition
 > with exact counts.
 
-### 3.3 Oracle Contract Mix
+#### 3.2.3 Oracle Contract Mix
 
 | Contract | Oracle % | Model % | Delta |
 |----------|----------|---------|-------|
@@ -190,7 +212,7 @@ passes?) matrix plus contract agreement:
 > See notebook 55_contract_selection_oracle, S7 bar chart for the visual
 > comparison of oracle vs model contract mix.
 
-### 3.4 Contract-Selection-Only Regret
+#### 3.2.4 Contract-Selection-Only Regret
 
 Restricted to hands where both model and oracle bid (n = 7,749, 19.4% of total):
 
@@ -203,7 +225,7 @@ Even among hands where the model bids, it picks the wrong contract ~60% of
 the time. However, this population is only ~20% of all hands; the other ~80%
 never reach the contract comparison because the model passes.
 
-### 3.5 Key Visualizations
+### 3.3 Key Visualizations
 
 > **Oracle Actual Net vs Model Predicted Utility (S7b):** Scatter plot showing
 > the relationship between what the model predicts and what actually happens.
@@ -220,32 +242,16 @@ never reach the contract comparison because the model passes.
 > hands) and a broad distribution centered around 4-6 utility (error hands).
 > The non-zero regret panel shows the error population in isolation.
 
-### 3.6 V2 Update: Bid-Level Search Impact
-
-With bid-level search (v2 policy, PR #497), the regret decomposition shifts
-fundamentally:
-
-- **Model bid_rate:** ~96% (up from ~20% in v1) — bid-level search finds
-  profitable bid levels for most hands
-- **CS regret share: 90.9%** — contract-selection is now the dominant regret
-  source (was 16.9% in v1)
-- **Pass-threshold regret:** No longer dominant — bid-level search resolved
-  the model conservatism problem identified in v1
-
-The v2 oracle confirms that the remaining regret is concentrated in contract
-mis-ranking: the model still selects suit 98.3% of the time, while the oracle
-would select HIGH/LOW for 31.9% of biddable hands. This shifts the R1 priority
-from "bid more hands" to "bid the right contract type."
-
 ## 4. Interpretation
 
-### 4.1 V2 Context: Contract Selection Is Now the Binding Constraint
+### 4.1 Contract Selection Is the Binding Constraint (V2)
 
-With v2 bid-level search, the model now bids on ~96% of hands — the
-pass-threshold problem identified in v1 is largely resolved by finding
-profitable bid levels for marginal hands. The dominant remaining problem
-is contract mis-ranking: the model selects suit for nearly all hands while
-the oracle would select HIGH/LOW for 31.9% of biddable hands.
+The v2 regret decomposition (section 3.1) shows contract-selection regret at
+90.9% of total — the binding constraint for R1. With bid-level search, the
+model now bids on ~96% of hands, so the pass-threshold problem from v1 (81.9%
+of regret) is largely resolved. The dominant remaining problem is contract
+mis-ranking: the model selects suit for nearly all hands while the oracle
+would select HIGH/LOW for 31.9% of biddable hands.
 
 The mechanism: the HIGH model has 1 feature (offsuit_aces) and the LOW model
 has 1 feature (offsuit_tens_count). These sparse specifications produce
@@ -331,11 +337,15 @@ can be produced for archival purposes if desired.
 
 **Formal gate: CALIBRATOR_WARRANTED** (mean regret 3.92 >> 0.1 threshold).
 
-However, the regret decomposition fundamentally changes the interpretation.
-The plan assumed the regret — if large — would come from contract mis-ranking,
-motivating a calibrator. Instead, 82% comes from the pass threshold. The gate
-result is technically correct but the prescribed remedy (calibrator) addresses
-only the minority of the problem.
+With v2 bid-level search, contract-selection regret is 90.9% of total (section
+3.1) — the gate result and the prescribed remedy (calibrator) are now aligned.
+However, the underlying cause is feature poverty for HIGH/LOW (1 feature each),
+so a calibrator alone cannot fix the problem without richer features (R1).
+
+**V1 context (retained):** In the v1 decomposition (section 3.2), the plan
+assumed the regret would come from contract mis-ranking, but 82% came from the
+pass threshold instead. The gate result was technically correct but the
+prescribed remedy addressed only the minority of the problem.
 
 ### 5.2 Decision: Path B + B0 Threshold Tuning
 

@@ -222,6 +222,18 @@ verified in notebook 25_auction_health.
 | low | 281 | 0.769 | 7.08 |
 | suit | 31070 | 0.875 | 5.78 |
 
+### Auction Plumbing Validation
+
+Auction mechanics are validated by 5 test files covering the full bidding and play pipeline:
+
+- `tests/unit/test_auction_bidding_rules.py` — all-pass redeal, strict-increasing bids, winner determination, contract type selection
+- `tests/unit/test_bidding_sequential_semantics.py` — LOD bidding order, strict-raise legality
+- `tests/integration/test_rules_invariants.py` — bower ordering, trump beats non-trump, follow-suit, LOW rank reversal
+- `tests/integration/test_auction_repeatability.py` — seed determinism for auction mode
+- `tests/integration/test_simulation_validation.py` — trick distribution sums, team totals = 10, average in [4,6]
+
+The comparator battery (including dumb bidders like rankthetank and fiveheadfred) runs through the full auction + play pipeline, serving as an implicit integration test across all contract types and bid levels.
+
 ---
 
 ## Model Specification & Feature Selection
@@ -413,7 +425,7 @@ dynamics while the comparator isolates bidding quality in a controlled setting.
 
 **Source:** comparator_cis_r0_v6.json
 
-### Key H2H Matchups
+### H2H Self-Play Baseline
 
 Head-to-head matchups pit bidders directly against each other in contested
 auctions with paired, seat-swapped deals. See
@@ -423,6 +435,11 @@ auctions with paired, seat-swapped deals. See
 **H2H Self-Play (FULL, v4):** delta=−0.048, CI=[−0.132, +0.038],
 fullgame_eppd=4.894. The near-zero delta confirms self-play symmetry; the
 fullgame_eppd of 4.894 establishes the H2H baseline.
+
+For pairwise competitive matchups, see the
+[H2H pairwise analysis](h2h_battery_analysis.md) companion report. Key
+results: modeloespecifico beats hybrid_olsa by ~0.35 net_eppd delta (both
+rotations significant); hybrid_olsa dominates stricthellraiser by ~1.53 delta.
 
 **Source:** h2h_battery_quick_v4, h2h_battery_full_v4
 

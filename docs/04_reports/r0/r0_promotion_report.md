@@ -14,16 +14,25 @@ The R0 rung of Arc D's OLSa-Hybrid bidder was **PROMOTED** after passing all
 Tier 1 artifact integrity checks and demonstrating positive net expected points
 per deal across three independent evaluation seeds.
 
-Key metrics (OLSa_Full promotional arm, seed 42):
+**Self-play evaluation** (OLSa_Full promotional arm, seed 42):
 
-| Metric | Value |
-|--------|-------|
-| net_eppd | +1.484 |
-| eppd | +4.174 |
-| bid_rate | 82.8% |
-| make_rate | 83.3% |
-| CVaR-5% | −6.411 |
-| net_CVaR-5% | −12.063 |
+| Metric | Value | Definition |
+|--------|-------|------------|
+| `net_eppd` | +1.484 | Net expected points per deal (bidder − opponent). **Differential.** Includes 0 for all-pass redeals. |
+| `eppd` | +4.174 | Expected points per deal (bidder only). **Absolute.** Includes 0 for all-pass redeals. |
+| `bid_rate` | 82.8% | Fraction of deals with an auction winner. Higher = bids more often. |
+| `make_rate` | 83.3% | Fraction of won auctions where declaring team makes contract. |
+| `CVaR-5%` | −6.411 | Average of worst 5% of bidder point outcomes. **Absolute tail risk.** Higher = less risky. |
+| `net_CVaR-5%` | −12.063 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
+
+**Comparator context** (hybrid_olsa, single-seat vs GluttonStrategy, seed 42):
+
+| Metric | Value | Definition |
+|--------|-------|------------|
+| `net_eppd` | +2.131 | Net expected points per deal. **Differential** vs always-pass sentinels. |
+| `bid_rate` | 0.961 | Fraction of deals bid on. |
+| `make_rate` | 1.000 | Fraction of bids that make contract. |
+| Rank | 2 of 8 | Tied with hybrid_olsa_full (p=0.5457). |
 
 The model ranks 1-2 among 8 comparator bidders by net_eppd (v6 single-seat
 comparator with GluttonStrategy, seed=42), tied with hybrid_olsa_full (+2.170,
@@ -36,53 +45,114 @@ comparator net_eppd from +0.455 to +2.131.
 
 All four Tier 1 artifact integrity checks passed:
 
-| Check | Result |
-|-------|--------|
-| artifact_integrity_olsa | PASS |
-| artifact_integrity_olsa_full | PASS |
-| no_nan_inf_olsa | PASS |
-| no_nan_inf_olsa_full | PASS |
+| Check | Result | What it checks |
+|-------|--------|----------------|
+| `artifact_integrity_olsa` | PASS | Validates JSON schema, required fields, coefficient shapes for OLSa arm |
+| `artifact_integrity_olsa_full` | PASS | Same validation for OLSa_Full arm |
+| `no_nan_inf_olsa` | PASS | Checks all numeric values are finite (no NaN/Inf) in OLSa arm |
+| `no_nan_inf_olsa_full` | PASS | Same check for OLSa_Full arm |
 
-R0 uses a reduced gate (Tier 1 only). Full semantic gate checks (Tier 2:
-calibration, fairness, stability) are introduced at R1+.
+R0 uses only Tier 1 (artifact integrity) checks because Tier 2 checks
+(calibration, fairness, stability) require a predecessor rung for comparison,
+which R0 does not have. Full Tier 2 semantic gate checks are introduced at R1+.
+
+Gate logic: `src/bid_euchre/validation/arc_d_gate.py` (promotion gate),
+`src/bid_euchre/diagnostics/semantic_gate.py` (semantic gate engine).
 
 ## Evaluation Metrics
 
-### OLSa_Full (Promotional Arm)
+### OLSa_Full (Promotional Arm) — self-play evaluation, 50,000 deals per seed
 
 The OLSa_Full arm uses forward-selected features (2–3 per contract type) from
 the full pool of 39 hand features.
 
-| Metric | Seed 42 | Seed 43 | Seed 44 | Range |
-|--------|---------|---------|---------|-------|
-| net_eppd | +1.484 | +1.455 | +1.426 | 0.058 |
-| eppd | +4.174 | +4.139 | +4.131 | 0.044 |
-| bid_rate | 0.828 | 0.825 | 0.827 | 0.004 |
-| make_rate | 0.833 | 0.832 | 0.830 | 0.003 |
-| CVaR-5% | −6.411 | −6.418 | −6.428 | 0.017 |
-| net_CVaR-5% | −12.063 | −12.056 | −12.070 | 0.014 |
-| downside_var | 0.430 | 0.436 | 0.437 | 0.007 |
+| Metric | Seed 42 | Seed 43 | Seed 44 | Range | Definition |
+|--------|---------|---------|---------|-------|------------|
+| `net_eppd` | +1.484 | +1.455 | +1.426 | 0.058 | Net expected points per deal (bidder − opponent). **Differential.** Includes 0 for all-pass redeals. |
+| `eppd` | +4.174 | +4.139 | +4.131 | 0.044 | Expected points per deal (bidder only). **Absolute.** Includes 0 for all-pass redeals. |
+| `bid_rate` | 0.828 | 0.825 | 0.827 | 0.004 | Fraction of deals with an auction winner. Higher = bids more often. |
+| `make_rate` | 0.833 | 0.832 | 0.830 | 0.003 | Fraction of won auctions where declaring team makes contract. |
+| `CVaR-5%` | −6.411 | −6.418 | −6.428 | 0.017 | Average of worst 5% of bidder point outcomes. **Absolute tail risk.** Higher = less risky. |
+| `net_CVaR-5%` | −12.063 | −12.056 | −12.070 | 0.014 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
+| `downside_var` | 0.430 | 0.436 | 0.437 | 0.007 | Variance of deal outcomes below zero. Lower = more predictable losses. |
 
-### OLSa (Attribution Arm)
+### OLSa (Attribution Arm) — self-play evaluation, 50,000 deals per seed
 
 The OLSa constrained arm uses locked features: 3 for suit (bowers, trump_count,
 offsuit_aces), 1 for high (offsuit_aces), 1 for low (offsuit_tens_count).
 
-| Metric | Seed 42 | Seed 43 | Seed 44 | Range |
-|--------|---------|---------|---------|-------|
-| net_eppd | +1.627 | +1.595 | +1.623 | 0.033 |
-| eppd | +3.566 | +3.534 | +3.571 | 0.037 |
-| bid_rate | 0.632 | 0.630 | 0.634 | 0.004 |
-| make_rate | 0.873 | 0.870 | 0.872 | 0.003 |
-| CVaR-5% | −6.154 | −6.139 | −6.141 | 0.015 |
-| net_CVaR-5% | −11.784 | −11.805 | −11.806 | 0.023 |
-| downside_var | 0.318 | 0.310 | 0.313 | 0.008 |
+| Metric | Seed 42 | Seed 43 | Seed 44 | Range | Definition |
+|--------|---------|---------|---------|-------|------------|
+| `net_eppd` | +1.627 | +1.595 | +1.623 | 0.033 | Net expected points per deal (bidder − opponent). **Differential.** Includes 0 for all-pass redeals. |
+| `eppd` | +3.566 | +3.534 | +3.571 | 0.037 | Expected points per deal (bidder only). **Absolute.** Includes 0 for all-pass redeals. |
+| `bid_rate` | 0.632 | 0.630 | 0.634 | 0.004 | Fraction of deals with an auction winner. Higher = bids more often. |
+| `make_rate` | 0.873 | 0.870 | 0.872 | 0.003 | Fraction of won auctions where declaring team makes contract. |
+| `CVaR-5%` | −6.154 | −6.139 | −6.141 | 0.015 | Average of worst 5% of bidder point outcomes. **Absolute tail risk.** Higher = less risky. |
+| `net_CVaR-5%` | −11.784 | −11.805 | −11.806 | 0.023 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
+| `downside_var` | 0.318 | 0.310 | 0.313 | 0.008 | Variance of deal outcomes below zero. Lower = more predictable losses. |
 
 ### Multi-Seed Stability
 
 All metrics show tight cross-seed ranges (< 0.06 for net_eppd, < 0.005 for
 bid/make rates), confirming that R0 evaluation is reproducible and not
 sensitive to deal sampling.
+
+**Pooling note:** All metrics in this report are pooled across contract types.
+The promotion report is a summary/decision document — per-contract breakouts
+are available in notebooks 40/45, the comparator rankings report (§4), and the
+model specification report.
+
+### Model Specification Comparison
+
+| Attribute | OLSa (constrained) | OLSa_Full (promotional) |
+|-----------|---------------------|-------------------------|
+| Selection method | Hand-picked (domain knowledge) | Forward-selected (from 39-feature pool) |
+| Suit features | 3 (bowers, trump_count, offsuit_aces) | 3 (hand_value, quick_tricks, low_card_count) |
+| High features | 1 (offsuit_aces) | 2 (offsuit_non_ace_count, offsuit_best_rank_sum) |
+| Low features | 1 (offsuit_tens_count) | 2 (offsuit_tens_count, offsuit_best_rank_sum) |
+| Feature overlap | — | 1 of 9 unique features (offsuit_tens_count in low) |
+
+Per-contract coefficient comparison:
+
+**Suit:**
+
+| Feature | OLSa weight | OLSa_Full weight |
+|---------|-------------|------------------|
+| bowers | +0.449 | — |
+| trump_count | +0.432 | — |
+| offsuit_aces | +0.340 | — |
+| hand_value | — | +0.008 |
+| quick_tricks | — | +0.195 |
+| low_card_count | — | +0.151 |
+| **Intercept** | **2.746** | **0.238** |
+| **σ²** | **2.340** | **2.319** |
+
+**High:**
+
+| Feature | OLSa weight | OLSa_Full weight |
+|---------|-------------|------------------|
+| offsuit_aces | +0.711 | — |
+| offsuit_non_ace_count | — | −0.660 |
+| offsuit_best_rank_sum | — | +0.059 |
+| **Intercept** | **3.579** | **9.542** |
+| **σ²** | **2.877** | **2.855** |
+
+**Low:**
+
+| Feature | OLSa weight | OLSa_Full weight |
+|---------|-------------|------------------|
+| offsuit_tens_count | +0.715 | +0.665 |
+| offsuit_best_rank_sum | — | +0.058 |
+| **Intercept** | **3.569** | **2.950** |
+| **σ²** | **2.898** | **2.877** |
+
+The two arms share only one feature (`offsuit_tens_count` in low contracts)
+out of 9 unique features. Despite using entirely different feature sets for
+suit contracts, both arms achieve similar residual variance (σ² within 1%),
+confirming that the 3-feature budget — not feature choice — is the binding
+constraint at R0.
+
+Data source: `hybrid_r0.json` (OLSa) and `hybrid_r0_full.json` (OLSa_Full).
 
 ## Attribution Gap
 
@@ -120,7 +190,8 @@ battery with bootstrap 95% confidence intervals. The v6 single-seat comparator
 (8 bidders, 20,000 deals/bidder, GluttonStrategy card play, seed=42) evaluates
 each bidder in isolation against always-pass sentinels.
 
-Summary ranking by net_eppd (v6 single-seat, 8 bidders):
+Summary ranking by `net_eppd` (v6 single-seat, 8 bidders). `net_eppd` is net
+expected points per deal (**differential** vs always-pass sentinels):
 
 | Rank | Bidder | net_eppd | 95% CI |
 |------|--------|----------|--------|

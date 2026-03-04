@@ -280,12 +280,9 @@ uv run python scripts/internal/run_lambda_sweep.py \
 
 ```bash
 uv run python experiments/run_experiment.py \
-  --config /tmp/lambda_h2h_confirmation.yaml \
+  --config experiments/configs/lambda_h2h_confirmation.yaml \
   --seed 42 --force
 ```
-
-Note: The H2H confirmation config was generated dynamically by the sweep notebook.
-See protocol section 10.2 for the matchup structure.
 
 ### Companion Reports
 

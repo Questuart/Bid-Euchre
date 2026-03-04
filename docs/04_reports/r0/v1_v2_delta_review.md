@@ -378,3 +378,9 @@ No delta is orphaned or unexplained.
 
 **Reviewed by:** Claude Opus 4.6
 **Status:** COMPLETE — ready for promotion gate (Task #11)
+
+| Item | Value |
+|------|-------|
+| gate_status | N/A (delta review, not a gate evaluation) |
+| Scope | v1 → v2 behavioral changes across all instruments |
+| Date | 2026-03-03 |
