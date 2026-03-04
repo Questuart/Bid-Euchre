@@ -19,18 +19,23 @@ added), bid-level search in HybridOLSa, QUICK/FULL both at v4, comparator at v6.
 Seven experiment campaigns were run to complete the R0-to-R1 transition,
 producing the data needed to calibrate promotion gates and train the R1 model.
 All runs used seed=42 for deterministic reproducibility. Total simulation
-budget: ~808,000 deals across all campaigns.
+budget: ~888,000 deals across all campaigns.
 
 ### 1.2 Campaign Inventory
 
 | Campaign | Deals | Bidders | Purpose |
 |----------|-------|---------|---------|
-| C33 Ablation (v2) | 40,000 | 2 (hybrid_olsa, olsa) | Isolate combined wrapper + search effect |
+| C33 Ablation (v2) | 40,000* | 2 (hybrid_olsa, olsa) | Isolate combined wrapper + search effect |
 | Comparator Battery (v6) | 160,000 | 8 (all) | Rank bidders in self-play vs Glutton |
 | C50 QUICK (v4) | 128,000 | 8 (all, 64 matchups) | Full H2H matrix at survey resolution |
 | C50 FULL (v4) | 520,000 | 8 (all, 52 matchups) | Targeted rerun at publication resolution |
+| Lambda H2H Confirmation | 40,000 | 2 (lambda=0.0, lambda=0.5) | H2H confirmation of self-play lambda selection |
 | Threshold Calibration | N/A | N/A | Derive gate thresholds from null signal |
 | Drift Check | N/A | N/A | Validate QUICK thresholds against FULL |
+
+*C33 v2 deals are a 4-cell subset analyzed from the C50 FULL run, not a separate simulation.
+Unique simulated deals: 160,000 + 128,000 + 520,000 + 40,000 = 848,000 (plus 90,000 from the
+dedicated C33 v1 run = 938,000 total including v1 source data).
 
 ### 1.3 Simulation Design
 
