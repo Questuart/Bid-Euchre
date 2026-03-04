@@ -33,8 +33,9 @@ divergence in contract selection and outcome distributions:
   Simpson's paradox artifact, not a real variance increase.
   <!-- UPDATE: recompute exact R0 declaring mean and overall std from new eval run -->
 - **V2 bid-level search impact:** R0 now uses bid-level search (v2 policy), producing
-  100% bid_rate (up from 63.2% in v1). All 50,000 deals are bid on, yielding 50,000
-  declaring-side observations (up from ~31,612). net_eppd = 1.9529, make_rate = 0.9515.
+  100% bid_rate (up from 63.2% in v1). All 50,000 deals are bid on, yielding 100,000
+  declaring-side rows (2 seats × 50,000 deals; up from ~63,224 in v1).
+  net_eppd = 1.9529, make_rate = 0.9515.
 
 R0 is already PROMOTED. This report validates retroactively and establishes the
 progression report pattern for future rung transitions.
@@ -229,8 +230,8 @@ property, not a coincidence.
   v2 policy (bid-level search). The v2 policy dramatically changed R0's bidding
   behavior: bid_rate rose from 63.2% to 100% in self-play evaluation, net_eppd
   improved to 1.9529, and make_rate reached 0.9515. With 100% bid_rate, all 50,000
-  deals are bid on, yielding 50,000 declaring-side observations (up from ~31,612
-  in v1). The comparator instrument also improved: bid_rate from 19.7% to 96.1%,
+  deals are bid on, yielding 100,000 declaring-side rows (2 seats × 50,000 deals;
+  up from ~63,224 in v1). The comparator instrument also improved: bid_rate from 19.7% to 96.1%,
   net_eppd from +0.455 to +2.131 (v6 comparator). The Phase 0 baseline is unchanged
   (bidless, no auction), so the cross-phase comparison remains valid — only the R0
   data has been updated to reflect v2 policy.
