@@ -392,11 +392,11 @@ behavioral analysis.
 | 1 | **hybrid_olsa_full** | **+2.170** | **[+2.081, +2.257]** | 96.8% | 100% |
 | 2 | **hybrid_olsa** | **+2.131** | **[+2.042, +2.216]** | 96.1% | 100% |
 | 3 | modeloespecifico | +1.604 | [+1.489, +1.720] | 100% | 94.7% |
-| 4 | stricthellraiser | +0.085 | [−0.027, +0.197] | | |
-| 5 | olsa_full | −0.012 | [−0.193, +0.173] | | |
-| 6 | olsa | −0.225 | [−0.413, −0.037] | | |
-| 7 | fiveheadfred | −2.579 | | | |
-| 8 | rankthetank | −9.665 | | | |
+| 4 | stricthellraiser | +0.085 | [−0.027, +0.197] | 100% | 94.5% |
+| 5 | olsa_full | −0.012 | [−0.193, +0.173] | 100% | 77.2% |
+| 6 | olsa | −0.225 | [−0.413, −0.037] | 100% | 75.6% |
+| 7 | fiveheadfred | −2.579 | [−2.771, −2.384] | 100% | 64.9% |
+| 8 | rankthetank | −9.665 | [−9.851, −9.483] | 100% | 15.0% |
 
 hybrid_olsa_full and hybrid_olsa are statistically tied (delta=+0.038,
 p=0.5457). hybrid_olsa now leads modeloespecifico by +0.527 points/deal
@@ -532,7 +532,7 @@ These are R0-specific limitations, not generic caveats:
 
 ```bash
 # Parse JSONL logs into eval DataFrame:
-PYTHONPATH=src uv run python -c "
+uv run python -c "
 from bid_euchre.datasets.eval_dataset import build_eval_dataset
 df = build_eval_dataset('data/runs/arc_d_eval_r0_42_20260221_180253/logs/*.jsonl')
 df.to_parquet('eval_df.parquet')
@@ -543,7 +543,7 @@ df.to_parquet('eval_df.parquet')
 
 ```bash
 # Regenerate the auto-generated tables:
-PYTHONPATH=src uv run python -c "
+uv run python -c "
 from bid_euchre.reporting.arc_d_report import generate_arc_d_rung_report
 import pandas as pd
 df = pd.read_parquet('eval_df.parquet')

@@ -65,7 +65,7 @@ hand in isolation.
 | **make_rate** | `bids_made / hands_with_bids` | Conditional on bidding |
 | **CVaR-5%** | Mean of worst 5% of bid-hand outcomes | Bid-hands only |
 | **net_CVaR-5%** | Mean of worst 5% of per-deal net differentials | All deals |
-| **std(net_pts)** | Standard deviation of per-deal net points | All deals (Source B) |
+| **std(net_pts)** | Standard deviation of per-deal net points | All deals |
 
 Pass deals contribute 0 to numerator terms but count in denominators. This
 means a bidder that passes on every hand scores `net_eppd=0` — the neutral
@@ -152,11 +152,7 @@ tracking. For competitive ordering between bidders, see the
 All eight comparator bidders ranked by net_eppd descending. Bootstrap 95%
 confidence intervals in brackets.
 
-**Source A** columns derive from the extraction artifact (bootstrap CIs on
-JSONL-computed metrics). **Source B** columns derive from notebook
-`45_comparator_deep_dive` S5 (bootstrap CIs on per-deal indicators).
-
-| Rank | Bidder | net_eppd [95% CI]^A | eppd [95% CI]^A | bid_rate^A | make_rate^A | CVaR-5% [95% CI]^A | net_CVaR-5% [95% CI]^A |
+| Rank | Bidder | net_eppd [95% CI] | eppd [95% CI] | bid_rate | make_rate | CVaR-5% [95% CI] | net_CVaR-5% [95% CI] |
 |------|--------|---------------------|-----------------|------------|-------------|---------------------|------------------------|
 | 1 | hybrid_olsa_full | +2.170 [+2.081, +2.257] | +5.925 [+5.872, +5.977] | 0.968 | 1.000 | +2.822 [+2.760, +2.934] | -4.355 [-4.479, -4.132] |
 | 2 | hybrid_olsa | +2.131 [+2.042, +2.216] | +5.869 [+5.813, +5.922] | 0.961 | 1.000 | +2.863 [+2.813, +2.979] | -4.275 [-4.375, -4.042] |
@@ -167,7 +163,7 @@ JSONL-computed metrics). **Source B** columns derive from notebook
 | 7 | fiveheadfred | -2.579 [-2.771, -2.384] | +2.248 [+2.098, +2.401] | 1.000 | 0.649 | -5.000 [-5.000, -5.000] | -13.272 [-13.352, -13.188] |
 | 8 | rankthetank | -9.665 [-9.851, -9.483] | -5.552 [-5.712, -5.393] | 1.000 | 0.150 | -9.256 [-9.320, -9.196] | -15.088 [-15.160, -14.952] |
 
-^A Source A: extraction artifact (comparator_cis_r0_v6.json, schema `comparator_cis_v1`).
+**Source:** extraction artifact (comparator_cis_r0_v6.json, schema `comparator_cis_v1`).
 
 **Notes:**
 
@@ -185,7 +181,7 @@ JSONL-computed metrics). **Source B** columns derive from notebook
    of tricks. The 3-4% of deals they pass are hands where no bid level yields
    positive expected utility.
 
-3. **bid_rate and make_rate** are reported here as bare fractions from Source A.
+3. **bid_rate and make_rate** are reported here as bare fractions.
    Bootstrap CIs on these rates, plus std(net_pts), are available in notebook
    `45_comparator_deep_dive` S5.
 
@@ -441,21 +437,16 @@ captures auction interaction effects in a more rigorous paired-deal design.
 
 **Step 1 — Run battery** (8 bidders x 4 seats = 32 sub-experiments):
 
-    PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
+    uv run python scripts/internal/run_auction_comparator.py \
         --config experiments/configs/auction_comparator.yaml \
-        --seed 42 \
-        --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0.json \
-        --bidder-class HybridOLSaBidder \
-        --bidder-name hybrid_olsa \
-        --single-seat \
-        --n-per 20000 \
+        --seed 42 --single-seat --n-per 20000 \
         --output-format json \
         --output data/artifacts/arc_d/r0/comparator_battery_r0_v6.json
 
 **Step 2 — Extract CIs** (use the batch manifest from Step 1 for coherence validation):
 
     MANIFEST=$(ls -t data/runs/batch_manifest_auction_comparator_42_*.json | head -1)
-    PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \
+    uv run python scripts/internal/extract_comparator_cis.py \
         --artifacts-dir data/artifacts/arc_d/r0 \
         --runs-dir data/runs \
         --seed 42 --n-bootstrap 10000 \
@@ -464,7 +455,7 @@ captures auction interaction effects in a more rigorous paired-deal design.
         --manifest "$MANIFEST" \
         --output data/artifacts/arc_d/r0/comparator_cis_r0_v6.json
 
-**Step 3 — Run notebook** (cross-validates Source A, produces Source B):
+**Step 3 — Run notebook** (cross-validates extraction artifact, produces additional metrics):
 
     uv run jupytext --to ipynb --output notebooks/arc_d/r0/45_comparator_deep_dive.ipynb \
         notebooks/arc_d/r0/45_comparator_deep_dive.py

@@ -478,7 +478,7 @@ R0 training (#396)
 ```bash
 # v2 C33 data is a 4-cell subset of the H2H FULL battery.
 # To reproduce the full H2H FULL battery (which contains the C33 cells):
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
   --mode FULL --seed 42 --n-per 10000
 
 # The C33-relevant cells are:

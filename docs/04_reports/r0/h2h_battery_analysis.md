@@ -583,15 +583,14 @@ uv run python experiments/run_experiment.py --seed 42 \
   --config experiments/configs/arc_d_r0_c33_ablation.yaml
 
 # Comparator battery (8 bidders, single-seat v6)
-PYTHONPATH=src uv run python scripts/internal/run_auction_comparator.py \
-  --config experiments/configs/auction_comparator.yaml --seed 42 \
-  --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0.json \
-  --bidder-class HybridOLSaBidder --bidder-name hybrid_olsa \
-  --single-seat --n-per 20000 \
-  --output-format json --output data/artifacts/arc_d/r0/comparator_battery_r0_v6.json
+uv run python scripts/internal/run_auction_comparator.py \
+  --config experiments/configs/auction_comparator.yaml \
+  --seed 42 --single-seat --n-per 20000 \
+  --output-format json \
+  --output data/artifacts/arc_d/r0/comparator_battery_r0_v6.json
 
 # C50 QUICK v4 (generate config, run, parse)
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
   --mode QUICK --seed 42 --n-per 2000 \
   --output data/artifacts/arc_d/r0/h2h_battery_quick_v4.json
 uv run python experiments/run_experiment.py --seed 42 \
@@ -599,7 +598,7 @@ uv run python experiments/run_experiment.py --seed 42 \
 # Then: --parse-run <run_dir> to populate
 
 # C50 FULL v4 (subset of QUICK)
-PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+uv run python scripts/internal/run_arc_d_h2h_battery.py \
   --mode FULL --seed 42 --n-per 10000 \
   --quick-summary data/artifacts/arc_d/r0/h2h_battery_quick_v4.json \
   --output data/artifacts/arc_d/r0/h2h_battery_full_v4.json
@@ -608,13 +607,13 @@ uv run python experiments/run_experiment.py --seed 42 \
 # Then: --parse-run <run_dir> to populate
 
 # Threshold calibration (with drift check)
-PYTHONPATH=src uv run python scripts/internal/calibrate_arc_d_thresholds.py \
+uv run python scripts/internal/calibrate_arc_d_thresholds.py \
   --h2h-summary data/artifacts/arc_d/r0/h2h_battery_quick_v4.json \
   --full-summary data/artifacts/arc_d/r0/h2h_battery_full_v4.json \
   --seed 42 --output data/artifacts/arc_d/r0/gate_thresholds_r1.json
 
 # CI extraction (single-seat v6)
-PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \
+uv run python scripts/internal/extract_comparator_cis.py \
   --artifacts-dir data/artifacts/arc_d/r0 --runs-dir data/runs --seed 42 \
   --n-bootstrap 10000 --single-seat \
   --output data/artifacts/arc_d/r0/comparator_cis_r0_v6.json \
