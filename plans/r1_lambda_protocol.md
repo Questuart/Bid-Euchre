@@ -105,9 +105,11 @@ The selected threshold t* from Step 7 is used as a fixed input.
 ```bash
 uv run python scripts/internal/run_lambda_sweep.py \
     --seed 42 \
-    --grid 0.0 0.05 0.1 0.2 0.5 1.0 2.0 \
+    --grid "0.0,0.05,0.1,0.2,0.5,1.0,2.0" \
+    --artifact-path data/artifacts/arc_d/r1/hybrid_r1_full.json \
     --pass-threshold <t from Step 7> \
-    --n-deals 10000
+    --n-per 10000 \
+    --output data/artifacts/arc_d/r1/lambda_sweep_r1.json
 ```
 
 **Selection rule:** Epsilon-greedy (ε = 0.02 net_eppd units).
@@ -213,7 +215,7 @@ gap — a positive signal for R2 lambda viability.
 | Bootstrap | 10,000 resamples, seed=42, grouped by deal_id |
 | Grid | [0.0, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0] |
 | R0 v2 result | RETAIN λ=0.0 (self-play +0.884 reversed to −1.146 in H2H) |
-| R0 v2 report | `docs/04_reports/r0/archive/12_lambda_decision.md` |
+| R0 v2 report | `docs/04_reports/r0/12_lambda_decision.md` |
 | Depends on | Step 7 result (pass_threshold = t*) |
 
 ---

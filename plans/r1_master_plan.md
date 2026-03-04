@@ -39,7 +39,7 @@ These no longer block R1 or need any further action.
 
 | # | Follow-Up | Blocks? | Origin |
 |---|-----------|---------|--------|
-| P7 | Rung-to-rung report pipeline | No (deferrable) | Phase 0→R0 progression report was manual; R1+ needs automation |
+| P7 | Rung-to-rung report pipeline | No (deferrable) | R1 progression report written manually at Step 12a; automation deferred to R2+ |
 | P9 | Extract notebook-only gate results to artifacts | No (deferrable) | PR #518 notebook boundary audit — nb55 oracle gate result has no committed JSON |
 
 ### Updated Blocking Checklist for R1
@@ -65,7 +65,7 @@ dispositioned before R1 execution starts. Proposed dispositions:
 | W2 | Run integration smoke test before large experiments | **ADOPT** | Parser bugs #442/#443/#453 cost reruns. Add `--dry-run` + small N validation step to battery scripts. |
 | W3 | Review notebooks incrementally | **ADOPT** | 72 items accumulated at R0 batch review. Review each R1 notebook within 24h of creation. |
 | W4 | Preserve design-first, reduce plan iterations | **ADOPT** | R0 had 3 plan versions; target 1 R1 plan version by using follow-ups + execution plan as foundation. |
-| W5 | Automate progression reports | **DEFER** to R1-late | = P7 above. Build after R1 bundle exists as template input. |
+| W5 | Automate progression reports | **DEFER** to R2+ | = P7 above. R1 report written manually at Step 12a; automate once the pattern is confirmed across two rungs. |
 | W6 | Expand fail-fast gates into battery scripts | **ADOPT** | Add schema/count/metric pre-checks to comparator + H2H runners. |
 
 ---
@@ -713,7 +713,7 @@ consume these artifacts — not notebook cell outputs.
 |---|------|--------|
 | P2 | OneModel / unified architecture | **R5** (HITL decision: defer until richer features change capacity argument) |
 | P5 | Deferred report sections (comparator §4, §8) | R1 reports |
-| P7 | Rung-to-rung report pipeline | R1-late |
+| P7 | Rung-to-rung report pipeline | Step 12a (manual); automate at R2+ |
 | P9 | Oracle gate JSON artifact extraction | With P3 |
 
 ### 3.13 HITL Checkpoint Framework

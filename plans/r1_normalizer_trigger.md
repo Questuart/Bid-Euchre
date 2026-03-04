@@ -143,7 +143,7 @@ If the normalizer is evaluated but does not meet adoption criteria:
 | Trigger metric | `cs_regret_share` (contract-selection regret / total regret) |
 | Trigger threshold | 30% (from `r1_follow_ups.md` P3) |
 | R0 v2 CS regret | 90.9% (triggered, but screen returned NO_GO) |
-| R0 v2 screen report | `docs/04_reports/r0/archive/13_normalizer_offline_screen.md` |
+| R0 v2 screen report | `docs/04_reports/r0/13_normalizer_offline_screen.md` |
 | R0 v2 screen artifact | `normalizer_offline_screen_v1.json` (NO_GO_DEFER_R1) |
 | R0 v2 normalizer protocol | `plans/archive/r0_v2_normalizer_protocol.md` |
 | ADOPT cascade spec | `plans/r1_master_plan.md` §3.6.3 |

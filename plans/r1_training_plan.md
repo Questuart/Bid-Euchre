@@ -17,7 +17,7 @@ All must pass before Step 1 begins. Verified by HITL-1 sign-off.
 | **E2: Schema contract** | Assertion in dataset generator validates column names, types, row counts | Passes | — |
 | **E3: Protocol registration** | `ls plans/r1_threshold_protocol.md plans/r1_lambda_protocol.md plans/r1_normalizer_trigger.md` | All 3 exist | — |
 | **E4: HITL-1 sign-off** | Human reviews pre-registered protocols and training plan | Approved | — |
-| **E5: Gate dry-run** | `uv run python -c "from bid_euchre.validation.arc_d_gate import run_arc_d_gate; print(run_arc_d_gate('data/artifacts/arc_d/r0', 'r1'))"` | Returns result without crash (expected HALT — no R1 artifacts yet) | — |
+| **E5: Gate dry-run** | `uv run python scripts/internal/run_arc_d_gate.py --bundle data/artifacts/arc_d/r0/rung_bundle_r0.json --base-dir .` | Returns result without crash (expected HALT — no R1 artifacts yet) | — |
 
 ---
 
@@ -126,7 +126,10 @@ CONTRACT_FEATURES = {
 uv run python -c "
 from bid_euchre.models.train_hybrid_olsa import train_hybrid_olsa
 result = train_hybrid_olsa(
-    run_dir='data/training/r1/canonical_auction_context_42.parquet',
+    run_dir='data/runs/<canonical_auction_run_id>',
+    # PR-R1a: generate_auction_context_dataset.py must produce a run directory
+    # with datasets/bidless.parquet and datasets/bidless_outcomes.parquet
+    # (train_hybrid_olsa expects this directory structure, not a bare parquet path)
     seed=42,
     output_dir='data/artifacts/arc_d/r1',
     split_type='three_way',
@@ -148,8 +151,8 @@ r0 = json.load(open('data/artifacts/arc_d/r0/hybrid_r0_full.json'))
 r1 = json.load(open('data/artifacts/arc_d/r1/hybrid_r1_full.json'))
 report_r0 = json.load(open('data/artifacts/arc_d/r0/training_report_r0.json'))
 report_r1 = json.load(open('data/artifacts/arc_d/r1/training_report_r1.json'))
-r0_r2 = report_r0['full_metrics']['suit']['r_squared']
-r1_r2 = report_r1['full_metrics']['suit']['r_squared']
+r0_r2 = report_r0['full']['suit']['r2_test']
+r1_r2 = report_r1['full']['suit']['r2_test']
 delta = r1_r2 - r0_r2
 print(f'Suit R²: R0={r0_r2:.4f}, R1={r1_r2:.4f}, delta={delta:+.4f}')
 assert delta >= -0.01, f'X2 FAIL: Suit regression {delta:+.4f} exceeds -0.01 threshold'
@@ -238,29 +241,25 @@ uv run python scripts/internal/run_arc_d_h2h_battery.py \
 
 ```bash
 # Dual-seat comparator (PRIMARY — partner-aware)
-for bidder in hybrid_olsa_full_r1 hybrid_olsa_r1 modeloespecifico_r1 \
-              hybrid_olsa_full_r0 hybrid_olsa_r0 modeloespecifico_r0; do
-    uv run python scripts/internal/run_auction_comparator.py \
-        --config experiments/configs/r1_comparator_dual_seat.yaml \
-        --bidder-name $bidder \
-        --seed 42 --n-per 2000
-done
+# The comparator iterates over all bidding_policies in the config YAML internally.
+# No per-bidder shell loop needed.
+uv run python scripts/internal/run_auction_comparator.py \
+    --config experiments/configs/r1_comparator_dual_seat.yaml \
+    --seed 42 --n-per 2000
 
 # Single-seat comparator (CONTINUITY — legacy, R0-comparable)
-for bidder in hybrid_olsa_full_r1 hybrid_olsa_r1 modeloespecifico_r1 \
-              hybrid_olsa_full_r0 hybrid_olsa_r0 modeloespecifico_r0; do
-    uv run python scripts/internal/run_auction_comparator.py \
-        --config experiments/configs/r1_comparator_single_seat.yaml \
-        --bidder-name $bidder \
-        --single-seat \
-        --seed 42 --n-per 2000
-done
+uv run python scripts/internal/run_auction_comparator.py \
+    --config experiments/configs/r1_comparator_single_seat.yaml \
+    --single-seat \
+    --seed 42 --n-per 2000
 
 # Extract bootstrap CIs
 uv run python scripts/internal/extract_comparator_cis.py \
-    --input data/artifacts/arc_d/r1/comparator_battery_r1_dual.json \
-    --output data/artifacts/arc_d/r1/comparator_cis_r1_dual.json \
-    --seed 42 --n-bootstrap 10000
+    --artifacts-dir data/artifacts/arc_d/r1 \
+    --battery-file comparator_battery_r1_dual.json \
+    --runs-dir data/runs \
+    --seed 42 --n-bootstrap 10000 \
+    --output data/artifacts/arc_d/r1/comparator_cis_r1_dual.json
 ```
 
 ### Gates X4, X5, X6 (after Steps 4–6 complete)
@@ -288,12 +287,15 @@ Execute per `plans/r1_threshold_protocol.md`.
 **Key commands:**
 
 ```bash
-# Sweep on auction-context data
+# Threshold sweep runs offline on predictions — no simulation needed.
+# PR-R1a: create scripts/internal/run_threshold_sweep.py as a CLI wrapper
+# around the sweep.ThresholdSweep API (src/bid_euchre/analysis/sweep.py:328).
+# R0 used a notebook (56_pass_threshold); R1 needs a script for reproducibility.
 uv run python scripts/internal/run_threshold_sweep.py \
+    --artifact-path data/artifacts/arc_d/r1/hybrid_r1_full.json \
     --data data/training/r1/canonical_auction_context_42.parquet \
-    --grid 0.0 0.1 0.2 0.5 1.0 2.0 5.0 \
+    --grid "0.0,0.1,0.2,0.5,1.0,2.0,5.0" \
     --seed 42 \
-    --split-ratio 0.6 \
     --output data/artifacts/arc_d/r1/threshold_sweep_r1.json
 
 # Decision: ADOPT t* or RETAIN t=0
@@ -312,16 +314,19 @@ Execute per `plans/r1_lambda_protocol.md`. Sequential after Step 7.
 # Self-play sweep (diagnostic)
 uv run python scripts/internal/run_lambda_sweep.py \
     --seed 42 \
-    --grid 0.0 0.05 0.1 0.2 0.5 1.0 2.0 \
+    --grid "0.0,0.05,0.1,0.2,0.5,1.0,2.0" \
+    --artifact-path data/artifacts/arc_d/r1/hybrid_r1_full.json \
     --pass-threshold <t from Step 7> \
-    --n-deals 10000
+    --n-per 10000 \
+    --output data/artifacts/arc_d/r1/lambda_sweep_r1.json
 
 # If self-play identifies candidate λ*:
-# H2H confirmation (QUICK then FULL)
+# H2H confirmation — lambda is set via roster file, not CLI flag.
+# PR-R1a: create experiments/configs/r1_h2h_lambda_roster.json with
+# a hybrid_olsa_full_r1_lambda entry having risk_lambda=<λ*>.
 uv run python scripts/internal/run_arc_d_h2h_battery.py \
     --mode QUICK --seed 42 --n-per 2000 \
-    --roster experiments/configs/r1_h2h_roster.json \
-    --lambda <λ*> \
+    --roster experiments/configs/r1_h2h_lambda_roster.json \
     --output data/artifacts/arc_d/r1/h2h_lambda_confirmation_quick.json
 
 # Decision: ADOPT λ* or RETAIN λ=0
@@ -335,7 +340,8 @@ uv run python scripts/internal/run_arc_d_h2h_battery.py \
 **Parallel with Steps 7–8.** Re-run oracle notebook on R1 eval data.
 
 ```bash
-# Execute oracle notebook
+# Execute oracle notebook (PR-R1a: create R1 copy from R0 version)
+# R0 original: notebooks/arc_d/r0/55_contract_selection_oracle.py
 uv run python notebooks/arc_d/r1/55_contract_selection_oracle.py
 
 # Check normalizer trigger (30% cs_regret threshold)
@@ -394,19 +400,28 @@ Output: `data/artifacts/arc_d/r1/deep_debug_r1.json`
 
 **Purpose:** Three-class local promotion + global winner selection.
 
+### 12a. Write R0→R1 Progression Report
+
+**Required bundle artifact** (`progression_report` field, validated by `arc_d_bundle.py`).
+Written manually from committed artifacts; automation deferred to R2+.
+
+**Template:** `docs/04_reports/r0/23_phase0_to_r0_progression.md` (8-section format)
+**Output:** `docs/04_reports/r1/r0_to_r1_progression.md`
+
+Sections: Executive summary, feature/architecture delta, H2H rung-over-rung results
+with CIs, comparator ranking shifts, guardrail comparison, regret decomposition shift,
+key decisions (threshold, lambda, normalizer), provenance.
+
+### 12b. Run Promotion Gate
+
 ```bash
-# Run arc_d_gate for each class
-uv run python -c "
-from bid_euchre.validation.arc_d_gate import run_arc_d_gate
-# Multi-class gate adapter (PR-R1b deliverable)
-for class_name in ['hybrid_full', 'hybrid_constrained', 'modeloespecifico']:
-    result = run_arc_d_gate(
-        base_dir='data/artifacts/arc_d/r1',
-        rung_id='r1',
-        # class-specific bundle path
-    )
-    print(f'{class_name}: {result}')
-"
+# Run promotion_gate for each class via CLI
+# Multi-class gate adapter (PR-R1b deliverable) iterates over per-class bundles.
+for class in hybrid_full hybrid_constrained modeloespecifico; do
+    uv run python scripts/internal/run_arc_d_gate.py \
+        --bundle data/artifacts/arc_d/r1/rung_bundle_r1_${class}.json \
+        --base-dir .
+done
 
 # Output: multi_class_gate_r1.json
 # Gate X8: Report feature-name QA before publishing
@@ -448,7 +463,8 @@ for class_name in ['hybrid_full', 'hybrid_constrained', 'modeloespecifico']:
 | Comparator CIs | `data/artifacts/arc_d/r1/comparator_cis_r1_dual.json` | Step 6 |
 | Threshold sweep | `data/artifacts/arc_d/r1/threshold_sweep_r1.json` | Step 7 |
 | Lambda sweep | `data/artifacts/arc_d/r1/lambda_sweep_r1.json` | Step 8 |
-| Multi-class gate | `data/artifacts/arc_d/r1/multi_class_gate_r1.json` | Step 12 |
+| Progression report | `docs/04_reports/r1/r0_to_r1_progression.md` | Step 12a |
+| Multi-class gate | `data/artifacts/arc_d/r1/multi_class_gate_r1.json` | Step 12b |
 
 ---
 
@@ -478,7 +494,7 @@ for class_name in ['hybrid_full', 'hybrid_constrained', 'modeloespecifico']:
 | Locked base source | `src/bid_euchre/models/train_olsa.py:32` (`CONTRACT_FEATURES`) |
 | Feature extraction | `src/bid_euchre/features/hand_eval.py:178` (`get_hand_features()`) |
 | Training pipeline | `src/bid_euchre/models/train_hybrid_olsa.py:346` (`train_hybrid_olsa()`) |
-| Gate engine | `src/bid_euchre/validation/arc_d_gate.py:340` (`run_arc_d_gate()`) |
+| Gate engine | `src/bid_euchre/validation/arc_d_gate.py:303` (`promotion_gate()`) |
 | H2H runner | `scripts/internal/run_arc_d_h2h_battery.py` |
 | Comparator runner | `scripts/internal/run_auction_comparator.py` |
 | Lambda sweep | `scripts/internal/run_lambda_sweep.py` |
