@@ -87,18 +87,20 @@ These are R0-completed work with no further utility at top level:
 | `r0_v2_normalizer_protocol.md` | NO_GO_DEFER_R1 decided | Results in `13_normalizer_offline_screen.md` |
 | `r0_pass_threshold_protocol.md` | Superseded by v2 threshold protocol | Both now complete |
 | `contract_selection_analysis.md` | Step 0 complete, Steps 1–2 SKIPPED (Path B) | All info captured in follow-ups + oracle report |
-| `r0_v2_normalizer_screen_spec.md` | Normalizer screen executed (PR #507–#509) | Currently untracked — commit to archive |
-| `r0_v2_hitl_review_qa.md` | HITL review log, all findings addressed (#516–#518) | Currently untracked — commit to archive |
+| `r0_v2_normalizer_screen_spec.md` | Normalizer screen executed (PR #507–#509) | Deleted in PR #525 (results in report 13) |
+| `r0_v2_hitl_review_qa.md` | HITL review log, all findings addressed (#516–#518) | Deleted in PR #525 (findings addressed in #516–#518) |
 
-**Total:** 11 files to archive.
+**Total:** 9 files archived to `plans/archive/`, 2 deleted. ✅ Done in PR #525.
 
 ### 2.2 Files to Keep at Top Level
 
 | File | Reason |
 |------|--------|
-| `MASTER_PLAN.md` | Governing document — update with R1 status |
 | `arc_d_execution_plan.md` | Authoritative for R1+ wave structure and PR sequencing |
 | `r1_follow_ups.md` | R1 promotion gate checklist (active) |
+
+> **Note:** `MASTER_PLAN.md` was archived to `plans/archive/` in PR #525.
+> This plan (`r1_master_plan.md`) is now the governing document for R1.
 
 ### 2.3 Files to Create
 
@@ -241,10 +243,10 @@ Sequenced per dependency, with W2 smoke tests integrated:
 | 10 | Normalizer re-evaluation (conditional) | Screen re-run | Contract-selection calibration | Step 9 (triggered only if cs_regret >30%) |
 | 11 | Multi-class 4-arm ablation (3 classes × 4 arms, §3.5) | QUICK + 1 non-QUICK | Feature/data/partner attribution per class | Steps 3–4 |
 | 11a | Deep-debug (§3.15, conditional) | Diagnostic | Partner-context failure root cause | Step 11 (triggered if any Δ_partner ≤ 0) |
-| 12 | Promotion gate (class-local + global winner, §3.7) | Gate run | 3 class decisions + 1 global winner | Steps 4–11 |
+| 12 | Promotion gate (class-local + global winner, §3.7) | Gate run | 3 class decisions + 1 global winner | Steps 4–11 (including 11a if triggered) |
 
 **Step ordering rationale:** Threshold → lambda is the same sequential ordering used
-at R0 v2 (§4 of `r0_v2_threshold_protocol.md`). Lambda uses the selected threshold.
+at R0 v2 (§4 of `plans/archive/r0_v2_threshold_protocol.md`). Lambda uses the selected threshold.
 The normalizer is conditional on oracle results (Step 9) to avoid unnecessary work if
 contract-selection regret remains low.
 
@@ -396,7 +398,7 @@ Each protocol follows the same template pattern established at R0 v2.
 
 #### 3.6.1 Pass-Threshold Protocol (P4)
 
-**Template:** `plans/r0_v2_threshold_protocol.md` (v2, §2–§3)
+**Template:** `plans/archive/r0_v2_threshold_protocol.md` (v2, §2–§3)
 **Output:** `plans/r1_threshold_protocol.md`
 
 | Parameter | R0 v2 Value | R1 Value | Rationale |
@@ -404,7 +406,7 @@ Each protocol follows the same template pattern established at R0 v2.
 | Data source | Bidless dataset | **Auction-context dataset** | R1 trains on auction-context; threshold must match training distribution |
 | Grid | [0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0] | Same 7-point grid | R0 v2 showed monotonic decline; retain same grid to detect if R1 features change the shape |
 | Split | 60/40 by deal_id hash (seed=42) | Same method | Consistency with R0 |
-| Utility function | `compute_best_bid(mu, sigma, current_high_bid=0, pass_threshold=t, bid_level_search=True, risk_lambda=0.0, seed=42)` (`bidding.py:797`) | Same (risk_lambda from Step 8 if ADOPT) | Sequential: threshold first at λ=0, then lambda at selected t |
+| Utility function | `compute_best_bid(mu, sigma, current_high_bid, pass_threshold=t, bid_level_search=True, risk_lambda=0.0, seed=42)` (`bidding.py:797`) | Same (risk_lambda from Step 8 if ADOPT) | Sequential: threshold first at λ=0, then lambda at selected t |
 | SESOI | CI-excludes-0 (no minimum delta) | Same | Free hyperparameter — any significant improvement is worth adopting |
 | Guardrails | bid_rate ∈ [0.05, 0.95], make_rate ≥ 0.45 | Same | Standard bounds |
 
@@ -418,7 +420,7 @@ lambda, lambda blocks the gate.
 
 #### 3.6.2 Lambda Re-evaluation
 
-**Template:** `plans/r0_v2_lambda_tuning_protocol.md` (v2 amendment §8.3)
+**Template:** `plans/archive/r0_v2_lambda_tuning_protocol.md` (v2 amendment §8.3)
 **Output:** `plans/r1_lambda_protocol.md`
 **Infrastructure:** `scripts/internal/run_lambda_sweep.py` (default grid at line 593), `src/bid_euchre/analysis/sweep.py`
 
@@ -443,7 +445,7 @@ and H2H disagree again (the R0 pattern), RETAIN λ=0.0 and document.
 
 #### 3.6.3 Normalizer Re-evaluation (Conditional)
 
-**Template:** `plans/r0_v2_normalizer_protocol.md` + `r0_v2_normalizer_screen_spec.md`
+**Template:** `plans/archive/r0_v2_normalizer_protocol.md` (screen spec was deleted in PR #525 — see `docs/04_reports/r0/13_normalizer_offline_screen.md` for results)
 **Output:** `plans/r1_normalizer_protocol.md` (only if triggered)
 **Trigger:** Oracle re-analysis (Step 9) shows contract-selection regret share >30%
 
@@ -865,14 +867,9 @@ a valid finding, not a bug.
 
 ## 4. Pre-R1 Cleanup Tasks
 
-### 4.1 Commit Untracked Files
+### 4.1 Commit Untracked Files — ✅ DONE (PR #525)
 
-Two plan files are untracked on main:
-
-| File | Action |
-|------|--------|
-| `plans/r0_v2_hitl_review_qa.md` | Commit to `plans/archive/` |
-| `plans/r0_v2_normalizer_screen_spec.md` | Commit to `plans/archive/` |
+Both files were deleted (not archived) as their content was captured in formal reports.
 
 ### 4.2 Dirty Notebook
 
@@ -880,18 +877,10 @@ Two plan files are untracked on main:
 Check if this is expected (leftover from HITL review execution) or needs cleanup.
 If stale, restore with `git restore`.
 
-### 4.3 Archive R0 Plans
+### 4.3 Archive R0 Plans — ✅ DONE (PR #525)
 
-Move 11 files per §2.1 to `plans/archive/`. This should be a single cleanup PR
-after HITL sign-off, since some files (v2_plan, promotion_gate) reference the
-ongoing sign-off process.
-
-### 4.4 Update MASTER_PLAN.md
-
-After HITL sign-off:
-- Update Phase C2 status: UNBLOCKED → **IN_PROGRESS**
-- Update §10 completion checklist with HITL sign-off date and tag
-- Add reference to `r1_training_plan.md` in Sub-Plan Registry
+11 files moved to `plans/archive/`. `MASTER_PLAN.md` archived; this plan
+(`r1_master_plan.md`) is now the governing document for R1.
 
 ### 4.5 Update MEMORY.md
 
@@ -1362,7 +1351,7 @@ selecting wrong bid levels, net_eppd could decrease despite "better" models.
    net_eppd. But the normalizer lesson showed that aggregate improvement can mask
    per-family regression. Add a diagnostic step after eval: compute net_eppd
    separately for suit, HIGH, and LOW. If any family regresses by >0.1 net_eppd,
-   flag for investigation. This is not a gate (don't block on it) but a diagnostic.
+   block execution. **Formalized as gate X6** (§3.8): any per-family regression >0.1 is a hard STOP.
 2. **Feature enrichment → bid quality pipeline.** After P1 training, before
    running the full gate: run a small offline sample (1000 hands) through the
    R1 model and compare:
@@ -1658,7 +1647,7 @@ task list. **Bold** tasks are on the critical path.
 
 ```
 #9 ──┬── **#10 Eval runs (3-seed)** ───── Step 4 ─┐
-     ├── #11 H2H challenger-vs-incumbent ── Step 5 ─┤ PARALLEL (all 3)
+     ├── #11 H2H 6×6 all-vs-all battery ── Step 5 ─┤ PARALLEL (all 3)
      └── #12 Comparator battery ─────────── Step 6 ─┘
               │
               ├── all three complete ──────────────┐
@@ -1715,7 +1704,7 @@ are available.
 
 | Document | Relationship |
 |----------|-------------|
-| `plans/MASTER_PLAN.md` §Stream 6, §9 C2 | Governing plan for R1 |
+| `plans/archive/MASTER_PLAN.md` §Stream 6, §9 C2 | R0 governing plan (archived; this plan supersedes for R1) |
 | `plans/arc_d_execution_plan.md` §Phase R1 | R1 wave structure and PR sequencing |
 | `plans/r1_follow_ups.md` | R1 promotion gate checklist |
 | `docs/04_reports/r0/10_contract_selection_oracle.md` | Oracle analysis (P1/P3 baseline) |
