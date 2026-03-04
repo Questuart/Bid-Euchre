@@ -233,7 +233,7 @@ Sequenced per dependency, with W2 smoke tests integrated:
 | 2 | Smoke-test training pipeline | SMOKE (~30 deals) | No crashes, schema correct | Step 1 |
 | 3 | Train dual-arm R1 models | Full training | Model artifacts | Step 2 (smoke must pass first per W2) |
 | 4 | 3-seed eval runs (42, 43, 44) | QUICK + FULL | Eval logs for gate | Step 3 |
-| 5 | H2H all-vs-all (6 bidders, 30 matchups, §3.7.2) | QUICK then FULL | Class-local + global promotion signal | Step 3 |
+| 5 | H2H all-vs-all (6 bidders, 36 cells, §3.7.2) | QUICK then FULL | Class-local + global promotion signal | Step 3 |
 | 6 | Comparator battery (6 bidders, dual-seat + legacy, §3.14) | QUICK then FULL | Rankings + continuity | Step 3 |
 | 7 | Pass-threshold re-tuning (P4) | Protocol re-run | Optimal t for R1 | Step 4 |
 | 8 | Lambda re-evaluation | Sweep re-run | Optimal λ for R1 | Step 7 (sequential: threshold first, lambda second) |
@@ -508,7 +508,7 @@ be artifact/config-pinned and verified to differ where expected.
 for partner-aware evaluation; single-seat mode for continuity diagnostic.
 
 **H2H:** Run **all-vs-all matrix** over all 6 bidders with both seat rotations and
-paired deal sets. This produces a 6×6 matrix (30 unique matchups) per decision round.
+paired deal sets. This produces a 6×6 matrix (36 cells: 30 cross + 6 self-play) per decision round.
 
 **QUICK→FULL policy:**
 - QUICK runs all cells first for go/no-go gates.
@@ -530,7 +530,15 @@ paired deal sets. This produces a 6×6 matrix (30 unique matchups) per decision 
 
 Each class is tested independently: does R1 beat R0 within this class?
 
-**Per-class checks (Layers 1–5 from `arc_d_gate.py`):**
+**Per-class checks (Layers 1–5, modeled on `arc_d_gate.py`):**
+
+> **Implementation note:** The current `arc_d_gate.py` is single-challenger
+> (loads `bundle["olsa_full"]` vs one incumbent). R1 requires a **multi-class
+> gate adapter** that iterates over 3 (challenger, incumbent) pairs and
+> produces per-class decisions. This adapter is a required deliverable in
+> PR-R1b (see §3.8, artifact `multi_class_gate_r1.json`). Until built,
+> class-local decisions for hybrid_constrained and modeloespecifico are
+> produced manually using the same layer logic.
 
 **Layer 1 — Framework Health (8 checks):**
 no_nan_inf, schema_version, artifact_integrity, min_sample_size, tricks_range,
@@ -622,7 +630,8 @@ Under `data/artifacts/arc_d/r1/`:
 - `oracle_gate_r1.json` — P9 oracle gate artifact (NEW)
 - `comparator_r1_dual.json` — dual-seat comparator results (all 6 bidders)
 - `comparator_r1_legacy.json` — single-seat comparator (continuity diagnostic)
-- `h2h_allvsall_r1.json` — 6×6 H2H matrix (30 unique matchups, both rotations)
+- `h2h_allvsall_r1.json` — 6×6 H2H matrix (36 cells: 30 cross + 6 self-play, both rotations)
+- `multi_class_gate_r1.json` — multi-class gate adapter output: per-class Layer 1–5 results (NEW, requires `arc_d_gate.py` extension)
 - `class_local_decisions_r1.json` — per-class PROMOTE/RETAIN table (NEW)
 - `global_winner_r1.json` — global promotion decision with rationale (NEW)
 - `ablation_multiclass_r1.json` — consolidated 3-class 4-arm ablation deltas (NEW)
@@ -692,7 +701,7 @@ consume these artifacts — not notebook cell outputs.
 | `arc_d_eval_r1.yaml` | `arc_d_eval_r0.yaml` + R1 model path |
 | `arc_d_eval_r1_full.yaml` | `arc_d_eval_r0_full.yaml` + R1 model path |
 | `arc_d_r1_head_to_head.yaml` | `arc_d_r0_head_to_head.yaml` + R1 challenger |
-| `auction_comparator_r1_dual.yaml` | `auction_comparator.yaml` + dual-seat mode + 10 bidders (§3.14) |
+| `auction_comparator_r1_dual.yaml` | `auction_comparator.yaml` + dual-seat mode + 6 bidders (§3.7.1, §3.14) |
 | `auction_comparator_r1_legacy.yaml` | `auction_comparator.yaml` + single-seat (continuity diagnostic) |
 | `modelo_especifico_r1.yaml` | New — ModeloEspecifico R1 feature config (§3.2.1) |
 
@@ -797,10 +806,12 @@ This is a PR-R1a deliverable (infra change before batteries run).
 | `hybrid_olsa_r0` | hybrid_constrained | No |
 | `modeloespecifico_r0` | modeloespecifico | No |
 
-Non-partner-aware bidders (R0 variants) will see partner PASS entries in dual-seat
-mode but ignore them — their behavior is identical to single-seat mode.
+In dual-seat mode, the partner seat runs the **same policy** (not AlwaysPassBidder),
+so the partner will bid normally. Non-partner-aware bidders (R0 variants) simply
+ignore partner features in their decision logic — their bid decisions are identical
+to single-seat mode, but their partner's bids now contribute to the auction outcome.
 
-**H2H:** All-vs-all 6×6 matrix (30 unique matchups), both seat rotations, paired
+**H2H:** All-vs-all 6×6 matrix (36 cells: 30 cross + 6 self-play), both seat rotations, paired
 deal sets. Gate-critical matchups are listed in §3.7.3.
 
 **Reporting rule:** Every metric in a report must be labeled with its instrument tier
@@ -928,10 +939,10 @@ HITL sign-off (Task #28)
         └── PR-R1b: R1 training + eval + promotion
                 ├── Train dual-arm models
                 ├── 3-seed eval runs
-                ├── H2H battery (3 matchups: R1 vs R0, ME-R1 vs ME-R0, R1 vs ME-R1)
+                ├── H2H battery (6×6 all-vs-all, 36 cells = 30 cross + 6 self-play, §3.7.2)
                 ├── Three-tier comparator (§3.14):
-                │     ├── Dual-seat battery (10 bidders, primary/gating)
-                │     └── Single-seat battery (legacy, continuity diagnostic)
+                │     ├── Dual-seat battery (6 bidders, primary/gating)
+                │     └── Single-seat battery (6 bidders, continuity diagnostic)
                 ├── P4: Pass-threshold re-tuning (→ re-eval if ADOPT)
                 ├── Lambda re-evaluation (sequential after threshold)
                 ├── P3: Oracle re-analysis + P9: oracle_gate_r1.json
