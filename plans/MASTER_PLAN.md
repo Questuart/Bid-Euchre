@@ -585,7 +585,7 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 ### Phase B (B0 COMPLETE — RETAIN, B3 COMPLETE)
 - [x] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`) — #475
 - [x] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
-- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/pass_threshold_decision.md`) — no code change, t=0 optimal for R0
+- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/11_pass_threshold_decision.md`) — no code change, t=0 optimal for R0
 - [x] B1: Calibrator decision documented — **Path B: SKIPPED** (regret decomposition shows calibrator addresses only 17%)
 - N/A B1-a: ~~Calibrator prototype~~ (skipped)
 - N/A B1-b: ~~Calibrator H2H validation~~ (skipped)

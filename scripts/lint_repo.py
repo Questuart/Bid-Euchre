@@ -722,10 +722,12 @@ def check_promotion_report_requires_integrity_review(
             )
             continue
 
-        # Require rung-matched companion: [NN_]measurement_integrity_<rung>.md
-        # Search for any file matching the pattern (with or without numeric prefix)
-        companion_pattern = f"*measurement_integrity_{rung}.md"
-        companions = list(abs_path.parent.glob(companion_pattern))
+        # Require rung-matched companion: measurement_integrity_<rung>.md
+        # Accept with or without NN_ numeric prefix (but not arbitrary prefixes)
+        parent = abs_path.parent
+        exact = parent / f"measurement_integrity_{rung}.md"
+        numbered = list(parent.glob(f"[0-9][0-9]_measurement_integrity_{rung}.md"))
+        companions = ([exact] if exact.exists() else []) + numbered
         if not companions:
             violations.append(
                 Violation(
