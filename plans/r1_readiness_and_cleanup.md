@@ -120,14 +120,15 @@ Two core PRs from the execution plan, plus follow-up work:
 
 | PR | Concept | Key Deliverables |
 |----|---------|-----------------|
-| **PR-R1a** | Partner context infra + canonical auction dataset | Feature extraction (4 partner features), auction-context dataset generator, canonical dataset (~50k deals) |
-| **PR-R1b** | R1 dual-arm training + eval + promotion | Model training, 3-seed eval, H2H, comparator battery, gate run |
+| **PR-R1a** | Partner context infra + canonical auction dataset | Feature extraction (4 partner features), auction-context dataset generator, canonical dataset (~50k deals), ModeloEspecifico R1 (§3.2.1), dual-seat comparator mode (§3.14) |
+| **PR-R1b** | R1 dual-arm training + eval + promotion | Model training, 3-seed eval, H2H, three-tier comparator battery (§3.14), gate run |
 
 Plus follow-up work that may be separate PRs or folded in:
 
 | Work | Folds Into | Rationale |
 |------|-----------|-----------|
 | P1: HIGH/LOW feature enrichment | PR-R1a (locked base expansion uses existing features) | Expand locked base from 3/1/1 to 3/2/2; lower `min_improvement` for Full arm |
+| ModeloEspecifico R1 | PR-R1a (infra alongside partner features) | Parameterized constructor with R1 weights (§3.2.1); dual-seat comparator mode (§3.14) |
 | P4: Pass-threshold re-tuning | PR-R1b (post-training step) | Pre-register R1 protocol, then re-run on R1 data |
 | Lambda re-evaluation | PR-R1b (post-threshold, pre-gate) | Re-run lambda sweep on R1 model; sequential after threshold (same as R0 v2 ordering) |
 | P3: Oracle re-analysis | PR-R1b (post-eval step) | Re-run nb55 on R1 artifacts |
@@ -171,6 +172,34 @@ the mini-protocol in §8.7 (checkpoint C3).
 
 **Total candidate pool:** 43 features (39 hand + 4 partner context). No new features
 added to `hand_eval.py`.
+
+#### 3.2.1 ModeloEspecifico R1 — Baseline Bidder
+
+ModeloEspecifico (`src/bid_euchre/strategy/bidding.py:444`) is a hand-coded heuristic
+bidder that receives the **same feature enrichment as OLSa** at every rung, but with
+fixed weights (no learned parameters). It serves as the controlled baseline: any gap
+between ModeloEspecifico R1 and OLSa R1 measures the **value of learned weights**.
+
+**R1 formulas (hand-coded, weight = 1.0 for all new features):**
+
+| Contract | R0 Formula | R1 Formula |
+|----------|-----------|-----------|
+| **Suit** | 1.0×`bowers` + 0.5×`trump_count` + 0.5×`offsuit_aces` | **Unchanged** |
+| **HIGH** | 1.0×`offsuit_aces` | 1.0×`offsuit_aces` + **1.0×`quick_tricks`** |
+| **LOW** | 1.0×`offsuit_tens_count` | 1.0×`offsuit_tens_count` + **1.0×`quick_tricks`** |
+
+**Partner context features (all weight 1.0):** ModeloEspecifico R1 reads
+`BiddingObservation.auction_transcript` and adds to its bid score:
+- 1.0×`partner_bid_level` + 1.0×`partner_passed` + 1.0×`partner_suit_match` + 1.0×`partner_bid_confidence`
+
+These are added to the raw score before `floor()` determines the bid level.
+
+**Implementation:** Parameterized constructor (feature config dict) rather than a
+separate `ModeloEspecificoR1` class. This allows rung-specific configs without class
+proliferation. Registered in `BIDDING_POLICY_REGISTRY` with the existing key.
+
+**Rung evolution rule:** At each future rung, ModeloEspecifico receives the same locked
+base expansion as OLSa with weight = 1.0 for all new features. This is a standing policy.
 
 ### 3.3 Training Design
 
@@ -323,9 +352,10 @@ would be needed for that, but that configuration may not be valid (partner featu
 require auction-context data by construction). The sequential design is sufficient
 for promotion decision support.
 
-**Evaluation instrument:** Comparator battery (single-seat, GluttonStrategy play)
-is the primary. H2H is secondary for Arms 1 and 4 (the two endpoints that map to
-actual rung candidates).
+**Evaluation instrument:** Three-tier comparator per §3.14. Dual-seat comparator
+(primary) for Arms 3 and 4 (which use partner context). Single-seat comparator
+(continuity diagnostic) for all arms. H2H is secondary for Arms 1 and 4 (the two
+endpoints that map to actual rung candidates).
 
 ### 3.6 Hyperparameter Tuning & Calibration Protocols
 
@@ -559,6 +589,9 @@ consume these artifacts — not notebook cell outputs.
 | `arc_d_eval_r1.yaml` | `arc_d_eval_r0.yaml` + R1 model path |
 | `arc_d_eval_r1_full.yaml` | `arc_d_eval_r0_full.yaml` + R1 model path |
 | `arc_d_r1_head_to_head.yaml` | `arc_d_r0_head_to_head.yaml` + R1 challenger |
+| `auction_comparator_r1_dual.yaml` | `auction_comparator.yaml` + dual-seat mode + 10 bidders (§3.14) |
+| `auction_comparator_r1_legacy.yaml` | `auction_comparator.yaml` + single-seat (continuity diagnostic) |
+| `modelo_especifico_r1.yaml` | New — ModeloEspecifico R1 feature config (§3.2.1) |
 
 ### 3.12 Deferrable Items (Track but Don't Block)
 
@@ -618,6 +651,68 @@ Every HITL-2 decision must produce a record with these fields:
 Decision records are stored in `docs/04_reports/r1/` alongside the corresponding
 decision report (e.g., `r1_threshold_decision.md` includes the decision record
 as an appendix).
+
+### 3.14 Three-Tier Instrument Design
+
+R1 introduces partner-context-aware bidders (HybridOLSaBidder R1, ModeloEspecifico R1).
+The existing single-seat comparator runs `AlwaysPassBidder` in partner seats, so partner
+features see no real signal. R1 uses a three-tier instrument hierarchy:
+
+| Tier | Mode | Role | Gating? | Partner Signal? |
+|------|------|------|---------|----------------|
+| **Dual-seat comparator** | Both team seats (0+2 or 1+3) use the same bidding policy; opponent seats use `AlwaysPassBidder` | Primary evaluation | **Yes** | **Yes** — partner makes real bids visible in `auction_transcript` |
+| **Single-seat comparator** | Legacy: one seat bids, other 3 use `AlwaysPassBidder` | Continuity diagnostic | **No** | **No** — partner always passes |
+| **Full 4-seat** (exploratory) | All 4 seats use real bidding policies (target team + fixed opponent pair) | Exploratory | **No** | **Yes** — all players bid |
+
+**Design rationale:** Changing the comparator methodology mid-ladder would break
+rung-to-rung trend continuity. By running both dual-seat (primary) and single-seat
+(legacy), R1 gets valid partner-context measurement AND preserves comparison against
+R0 rankings. Full 4-seat is exploratory at R1 to avoid changing promotion semantics.
+
+**Dual-seat infrastructure change:** `run_auction_comparator.py` needs a new mode
+where both team seats use the candidate bidder:
+```
+# Current single-seat mode:
+seat_bp = ["always_pass"] * 4
+seat_bp[seat] = policy_name          # Only target seat bids
+
+# New dual-seat mode:
+seat_bp = ["always_pass"] * 4
+seat_bp[seat] = policy_name          # Target seat bids
+seat_bp[(seat + 2) % 4] = policy_name  # Partner seat also bids
+```
+This is a PR-R1a deliverable (infra change before batteries run).
+
+**R1 Battery Composition (dual-seat comparator, primary):**
+
+| Bidder | Version | Partner-Aware? | Purpose |
+|--------|---------|---------------|---------|
+| HybridOLSaBidder R1 (constrained) | R1 3/2/2 + partner | Yes | Promotional candidate |
+| HybridOLSaBidder R1 (full) | R1 forward-selected + partner | Yes | Attribution ceiling |
+| ModeloEspecifico R1 | R1 enriched (§3.2.1) | Yes | **Baseline** — hand-coded enrichment control |
+| HybridOLSaBidder R0 (constrained) | Frozen R0 v2 | No | Incumbent |
+| ModeloEspecifico R0 | Frozen R0 | No | Incumbent baseline |
+| StrictHellRaiser | Unchanged | No | Rankings context |
+| OLSa_Full R0 | Unchanged | No | Rankings context |
+| OLSa R0 | Unchanged | No | Rankings context |
+| FiveHeadFred | Unchanged | No | Rankings context |
+| RankTheTank | Unchanged | No | Rankings context |
+
+**10 bidders total** (R0's 8 + R1 constrained + R1 full). Non-partner-aware bidders
+will see partner PASS entries in dual-seat mode but ignore them — their behavior is
+identical to single-seat mode.
+
+**H2H Battery (primary, gating):**
+
+| Matchup | Purpose |
+|---------|---------|
+| R1 Constrained vs R0 Constrained | **Promotion gate signal** (Layer 4) |
+| ModeloEspecifico R1 vs ModeloEspecifico R0 | **Baseline enrichment delta** (independent P1 signal) |
+| R1 Constrained vs ModeloEspecifico R1 | **Value of learned weights** (how much does OLS improve over fixed w=1.0) |
+
+**Reporting rule:** Every metric in a report must be labeled with its instrument tier
+(dual-seat / single-seat / H2H / full-4-seat). This extends the instrument labeling
+rule in §3.10.
 
 ---
 
@@ -688,6 +783,8 @@ HITL sign-off (Task #28)
     └── PR-R1a: Partner context infra + canonical auction dataset
         │   ├── Feature extraction (4 partner features from auction_transcript)
         │   ├── P1: Locked base expansion (3/2/2 using existing features)
+        │   ├── ModeloEspecifico R1: parameterized constructor + R1 weights (§3.2.1)
+        │   ├── Dual-seat comparator mode in run_auction_comparator.py (§3.14)
         │   ├── Lower min_improvement for OLSa_Full (per §8.7 mini-protocol)
         │   ├── Auction-context dataset generator
         │   └── Generate canonical dataset (FULL, ~50k deals)
@@ -695,8 +792,10 @@ HITL sign-off (Task #28)
         └── PR-R1b: R1 training + eval + promotion
                 ├── Train dual-arm models
                 ├── 3-seed eval runs
-                ├── H2H challenger-vs-incumbent (QUICK → FULL)
-                ├── Comparator battery
+                ├── H2H battery (3 matchups: R1 vs R0, ME-R1 vs ME-R0, R1 vs ME-R1)
+                ├── Three-tier comparator (§3.14):
+                │     ├── Dual-seat battery (10 bidders, primary/gating)
+                │     └── Single-seat battery (legacy, continuity diagnostic)
                 ├── P4: Pass-threshold re-tuning (→ re-eval if ADOPT)
                 ├── Lambda re-evaluation (sequential after threshold)
                 ├── P3: Oracle re-analysis + P9: oracle_gate_r1.json
