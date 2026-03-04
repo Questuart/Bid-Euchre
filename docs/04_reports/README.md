@@ -43,15 +43,15 @@ docs/04_reports/
 | [model_arc_d_dashboard.md](model_arc_d_dashboard.md) | 2026-02-22 | Cross-rung progression dashboard (snapshot) |
 | [r0/model_arc_r0.md](r0/model_arc_r0.md) | 2026-03-01 | R0 rung report (narrative refactor, 12 sections) |
 | [r0/r0_promotion_report.md](r0/r0_promotion_report.md) | 2026-02-22 | R0 promotion decision + gate threshold calibration |
-| [r0/comparator_rankings.md](r0/comparator_rankings.md) | 2026-02-28 | Comparator battery rankings (v4, single-seat, GluttonStrategy, 7 bidders) |
-| [r0/c33_ablation_report.md](r0/c33_ablation_report.md) | 2026-02-25 | C33 ablation: Gaussian EV wrapper effect (+0.21 net_eppd) |
-| [r0/h2h_battery_analysis.md](r0/h2h_battery_analysis.md) | 2026-02-25 | H2H battery analysis + gate threshold calibration |
+| [r0/comparator_rankings.md](r0/comparator_rankings.md) | 2026-03-03 | Comparator battery rankings (v6, single-seat, GluttonStrategy, 8 bidders) |
+| [r0/c33_ablation_report.md](r0/c33_ablation_report.md) | 2026-03-03 | C33 ablation: Gaussian EV wrapper + bid-level search (+0.13 H2H pooled, +2.36 comparator gap) |
+| [r0/h2h_battery_analysis.md](r0/h2h_battery_analysis.md) | 2026-03-03 | H2H battery analysis + gate threshold calibration |
 | [r0/contract_selection_oracle.md](r0/contract_selection_oracle.md) | 2026-03-01 | Contract selection oracle: regret decomposition, pass-threshold dominance |
 | [r0/pass_threshold_decision.md](r0/pass_threshold_decision.md) | 2026-03-02 | B0 threshold sweep decision: RETAIN t=0 (monotonic decline) |
 | [r0/lambda_decision.md](r0/lambda_decision.md) | 2026-03-03 | D0 lambda tuning decision: RETAIN lambda=0.0 (self-play gain reversed in H2H) |
-| [r0/measurement_integrity_r0.md](r0/measurement_integrity_r0.md) | 2026-02-26 | Methodology limitations + deferral costs (L1-L3 resolved/partially resolved) |
+| [r0/measurement_integrity_r0.md](r0/measurement_integrity_r0.md) | 2026-03-03 | Methodology limitations + deferral costs (L1-L3 resolved/partially resolved) |
 | [r0/phase0_to_r0_progression.md](r0/phase0_to_r0_progression.md) | 2026-03-01 | Phase 0→R0 progression: variance direction check, contract mix shift, role asymmetry |
-| [r0/dual_track_analysis.md](r0/dual_track_analysis.md) | 2026-03-01 | Dual-track rankings, archetype classification, roster scatter plots |
+| [r0/dual_track_analysis.md](r0/dual_track_analysis.md) | 2026-03-03 | Dual-track rankings, archetype classification, roster scatter plots |
 | [r0/r0_retrospective.md](r0/r0_retrospective.md) | 2026-03-02 | R0 development retrospective: process lessons, course corrections, R1 recommendations |
 | [r0/normalizer_offline_screen.md](r0/normalizer_offline_screen.md) | 2026-03-03 | Track E normalizer pre-screen: NO_GO_DEFER_R1 (accuracy +4% but net_eppd -0.269) |
 

@@ -119,11 +119,11 @@ class TestComputeEV:
 
 class TestBidLevelSearch:
     def test_basic(self):
-        """Returns valid bid_n in [1, 10]."""
+        """Returns valid bid_n in [0, 10] (0=pass, 1-10=bid)."""
         mu = np.array([5.0, 7.0, 3.0])
         best_n, best_util = bid_level_search_vectorized(mu, sigma=1.5)
         assert best_n.shape == (3,)
-        assert np.all(best_n >= 1)
+        assert np.all(best_n >= 0)
         assert np.all(best_n <= 10)
 
     def test_high_mu_positive_utility(self):
@@ -138,11 +138,12 @@ class TestBidLevelSearch:
         ), f"Expected high utility for mu=9, got {best_util[0]:.4f}"
         assert best_n[0] >= 1
 
-    def test_low_mu_bids_low(self):
-        """Very low mu should result in lowest bid level."""
+    def test_low_mu_passes(self):
+        """Very low mu with negative max-EV should pass (bid_n=0)."""
         mu = np.array([0.5])
-        best_n, _ = bid_level_search_vectorized(mu, sigma=1.0)
-        assert best_n[0] == 1, f"Expected bid_n=1 for mu=0.5, got {best_n[0]}"
+        best_n, best_util = bid_level_search_vectorized(mu, sigma=1.0)
+        assert best_n[0] == 0, f"Expected bid_n=0 (pass) for mu=0.5, got {best_n[0]}"
+        assert best_util[0] == -np.inf
 
     def test_scalar_fallback_produces_results(self):
         """Non-zero risk_lambda triggers scalar fallback with valid results."""
@@ -216,7 +217,7 @@ class TestBidLevelSearch:
 
     def test_new_params_accepted_on_lambda_zero(self):
         """pass_threshold and seed accepted on vectorized path (lambda=0)."""
-        mu = np.array([5.0, 7.0])
+        mu = np.array([7.0, 9.0])
         # Should not raise — new params are accepted even on lambda=0 path
         best_n, best_util = bid_level_search_vectorized(
             mu, sigma=1.5, risk_lambda=0.0, pass_threshold=0.0, seed=99
@@ -231,6 +232,119 @@ class TestBidLevelSearch:
         r2 = bid_level_search_vectorized(mu, sigma=1.5, risk_lambda=0.5, seed=42)
         np.testing.assert_array_equal(r1[0], r2[0])
         np.testing.assert_array_equal(r1[1], r2[1])
+
+    def test_vectorized_pass_threshold_filters_negative_ev(self):
+        """Vectorized path (lambda=0) returns bid_n=0 for negative max-EV hands.
+
+        Regression test for pass_threshold being ignored on the vectorized path.
+        With very low mu values (e.g., 2.0 with sigma=1.5), the best possible
+        EV across all bid levels is negative. These hands must get bid_n=0
+        when pass_threshold=0.0.
+        """
+        # mu=2.0 with sigma=1.5: max EV across all levels is negative.
+        # mu=9.0 with sigma=1.5: clearly positive EV.
+        mu = np.array([2.0, 9.0, 1.5, 0.5, 8.0])
+        sigma = 1.5
+        best_n, best_util = bid_level_search_vectorized(
+            mu, sigma=sigma, risk_lambda=0.0, pass_threshold=0.0
+        )
+
+        # Verify low-mu hands that have negative max-EV get bid_n=0
+        for i in range(len(mu)):
+            # Compute max EV across all levels for this hand
+            max_ev = max(
+                float(
+                    compute_ev_vectorized(np.array([mu[i]]), sigma, np.array([bid_n]))[
+                        0
+                    ]
+                )
+                for bid_n in range(1, 11)
+            )
+            if max_ev < 0.0:
+                assert best_n[i] == 0, (
+                    f"Hand with mu={mu[i]}, max_ev={max_ev:.4f} should pass "
+                    f"(bid_n=0) but got bid_n={best_n[i]}"
+                )
+                assert best_util[i] == -np.inf
+            else:
+                assert best_n[i] >= 1, (
+                    f"Hand with mu={mu[i]}, max_ev={max_ev:.4f} should bid "
+                    f"but got bid_n={best_n[i]}"
+                )
+
+    def test_vectorized_parity_with_scalar_at_lambda_zero(self):
+        """Vectorized path (lambda=0) matches scalar compute_best_bid() results.
+
+        For pass_threshold=0.0 and lambda=0.0, the vectorized path should
+        agree with the scalar compute_best_bid() on which hands pass vs bid,
+        and on the selected bid levels.
+        """
+        rng = np.random.RandomState(42)
+        mu_vals = rng.uniform(0.5, 9.5, size=100)
+        sigma = 1.5
+
+        best_n_vec, best_util_vec = bid_level_search_vectorized(
+            mu_vals, sigma=sigma, risk_lambda=0.0, pass_threshold=0.0
+        )
+
+        for i, mu in enumerate(mu_vals):
+            result = compute_best_bid(
+                mu=float(mu),
+                sigma=sigma,
+                current_high_bid=0,
+                pass_threshold=0.0,
+                bid_level_search=True,
+                risk_lambda=0.0,
+                seed=42,
+            )
+            if result is not None:
+                assert best_n_vec[i] == result[0], (
+                    f"bid_n mismatch at mu={mu:.3f}: "
+                    f"vectorized={best_n_vec[i]}, scalar={result[0]}"
+                )
+                np.testing.assert_allclose(
+                    best_util_vec[i],
+                    result[1],
+                    atol=1e-12,
+                    err_msg=f"utility mismatch at mu={mu:.3f}",
+                )
+            else:
+                assert (
+                    best_n_vec[i] == 0
+                ), f"Expected pass (0) at mu={mu:.3f}, got bid_n={best_n_vec[i]}"
+                assert best_util_vec[i] == -np.inf
+
+    def test_vectorized_custom_pass_threshold(self):
+        """Vectorized path respects non-zero pass_threshold values.
+
+        With a higher pass_threshold, more hands should be filtered to pass.
+        """
+        mu = np.array([5.0, 7.0, 3.0, 9.0, 4.0])
+        sigma = 1.5
+
+        # With threshold=0.0
+        n_t0, u_t0 = bid_level_search_vectorized(
+            mu, sigma=sigma, risk_lambda=0.0, pass_threshold=0.0
+        )
+        # With threshold=2.0 (stricter)
+        n_t2, u_t2 = bid_level_search_vectorized(
+            mu, sigma=sigma, risk_lambda=0.0, pass_threshold=2.0
+        )
+
+        # Higher threshold should produce at least as many passes
+        passes_t0 = np.sum(n_t0 == 0)
+        passes_t2 = np.sum(n_t2 == 0)
+        assert passes_t2 >= passes_t0, (
+            f"Higher threshold should cause more passes: "
+            f"t=0.0 passes={passes_t0}, t=2.0 passes={passes_t2}"
+        )
+
+        # Hands that pass under t=0 should also pass under t=2
+        for i in range(len(mu)):
+            if n_t0[i] == 0:
+                assert (
+                    n_t2[i] == 0
+                ), f"Hand {i} (mu={mu[i]}) passes at t=0.0 but bids at t=2.0"
 
 
 # ---------------------------------------------------------------------------

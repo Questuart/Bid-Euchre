@@ -1,5 +1,7 @@
 # Normalizer Offline Screen — Track E Pre-Screen
 
+> **Version:** v2 (PR #508) | New in v2
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
 **Date:** 2026-03-03

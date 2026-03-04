@@ -141,7 +141,7 @@ def bid_level_search_vectorized(
                 best_utility[i] = -np.inf
         return best_bid_n, best_utility
 
-    # Original vectorized path for lambda=0 (unchanged).
+    # Original vectorized path for lambda=0.
     # Iterate ascending; use >= so last (highest n) with max utility wins.
     # This matches compute_best_bid() tie-break: prefer higher n on equal utility.
     for bid_n in range(1, 11):
@@ -150,6 +150,13 @@ def bid_level_search_vectorized(
         better_or_tie = utility >= best_utility
         best_utility = np.where(better_or_tie, utility, best_utility)
         best_bid_n = np.where(better_or_tie, bid_n, best_bid_n)
+
+    # Apply pass threshold: hands where best utility < threshold should pass.
+    # This mirrors the scalar path where compute_best_bid() returns None
+    # (mapped to bid_n=0) when the best utility is below pass_threshold.
+    pass_mask = best_utility < pass_threshold
+    best_bid_n = np.where(pass_mask, 0, best_bid_n)
+    best_utility = np.where(pass_mask, -np.inf, best_utility)
 
     return best_bid_n, best_utility
 
