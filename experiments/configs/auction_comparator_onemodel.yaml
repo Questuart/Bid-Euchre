@@ -64,6 +64,6 @@ scenarios:
 
 parameters:
   play_strategy: glutton
-  n_per: 10000
+  n_per: 5000
   seed: 42
   log_level: hand
