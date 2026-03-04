@@ -233,14 +233,15 @@ Sequenced per dependency, with W2 smoke tests integrated:
 | 2 | Smoke-test training pipeline | SMOKE (~30 deals) | No crashes, schema correct | Step 1 |
 | 3 | Train dual-arm R1 models | Full training | Model artifacts | Step 2 (smoke must pass first per W2) |
 | 4 | 3-seed eval runs (42, 43, 44) | QUICK + FULL | Eval logs for gate | Step 3 |
-| 5 | H2H challenger-vs-incumbent | QUICK then FULL | Primary promotion signal | Step 3 |
-| 6 | Comparator battery (7 bidders) | QUICK then FULL | Rankings context | Step 3 |
+| 5 | H2H all-vs-all (6 bidders, 30 matchups, §3.7.2) | QUICK then FULL | Class-local + global promotion signal | Step 3 |
+| 6 | Comparator battery (6 bidders, dual-seat + legacy, §3.14) | QUICK then FULL | Rankings + continuity | Step 3 |
 | 7 | Pass-threshold re-tuning (P4) | Protocol re-run | Optimal t for R1 | Step 4 |
 | 8 | Lambda re-evaluation | Sweep re-run | Optimal λ for R1 | Step 7 (sequential: threshold first, lambda second) |
 | 9 | Oracle re-analysis (P3) | Notebook re-run | Regret decomposition shift | Step 4 |
 | 10 | Normalizer re-evaluation (conditional) | Screen re-run | Contract-selection calibration | Step 9 (triggered only if cs_regret >30%) |
-| 11 | 4-arm feature ablation (P1) | QUICK + 1 non-QUICK sanity check | Feature/data/partner attribution | Steps 3–4 |
-| 12 | Promotion gate | Gate run | PROMOTED / ADVANCED / HALT | Steps 4–11 |
+| 11 | Multi-class 4-arm ablation (3 classes × 4 arms, §3.5) | QUICK + 1 non-QUICK | Feature/data/partner attribution per class | Steps 3–4 |
+| 11a | Deep-debug (§3.15, conditional) | Diagnostic | Partner-context failure root cause | Step 11 (triggered if any Δ_partner ≤ 0) |
+| 12 | Promotion gate (class-local + global winner, §3.7) | Gate run | 3 class decisions + 1 global winner | Steps 4–11 |
 
 **Step ordering rationale:** Threshold → lambda is the same sequential ordering used
 at R0 v2 (§4 of `r0_v2_threshold_protocol.md`). Lambda uses the selected threshold.
@@ -310,24 +311,46 @@ case (all ADOPTs): ~3 days of compute plus HITL decision time.
 This ensures each hyperparameter is tuned against the correct utility landscape
 while minimizing FULL-mode compute.
 
-### 3.5 Four-Arm Ablation Design (P1)
+### 3.5 Multi-Class Ablation Program
 
-The ablation isolates three independent effects: feature enrichment, data source
-change (bidless→auction-context), and partner context features. Each arm changes
-exactly one factor from the previous arm.
+The same 4-arm ablation structure is run for **all three bidder classes**. This
+produces a consolidated "what changed and why" narrative across classes.
+
+**Three classes:**
+
+| Class | R0 Variant | R1 Variant | Weights |
+|-------|-----------|-----------|---------|
+| `hybrid_full` | `hybrid_olsa_full_r0` | `hybrid_olsa_full_r1` | Forward-selected (learned) |
+| `hybrid_constrained` | `hybrid_olsa_r0` | `hybrid_olsa_r1` | Locked base (learned) |
+| `modeloespecifico` | `modeloespecifico_r0` | `modeloespecifico_r1` | Hand-coded (w=1.0) per §3.2.1 |
+
+**4-arm structure (identical per class):**
 
 | Arm | Locked Base | Data Source | Partner Features | Purpose |
 |-----|------------|-------------|-----------------|---------|
-| **1: R0 Frozen** | 3/1/1 | Bidless | No | Baseline (exact R0 v2 model) |
-| **2: P1 Enriched** | 3/2/2 | Bidless | No | Isolate feature enrichment lift |
-| **3: P1 + Auction** | 3/2/2 | Auction-context | No | Isolate data source effect |
-| **4: Full R1** | 3/2/2 | Auction-context | Yes | Isolate partner context lift |
+| **1: R0 Frozen** | R0 config | Bidless | No | Baseline (exact R0 v2) |
+| **2: +Feature Enrichment** | R1 config (3/2/2 for constrained/modelo, full pool for hybrid_full) | Bidless | No | Isolate feature enrichment lift |
+| **3: +Auction-Context** | R1 config | Auction-context | No | Isolate data source effect |
+| **4: +Partner Context** | R1 config | Auction-context | Yes | Isolate partner context lift |
 
-**Deltas measured:**
-- **Arm 2 − Arm 1** = feature enrichment lift (pure P1 value, same data/no partner)
-- **Arm 3 − Arm 2** = data source effect (auction-context vs bidless, no partner)
-- **Arm 4 − Arm 3** = partner context lift (partner features on same data)
-- **Arm 4 − Arm 1** = total R1 improvement (end-to-end)
+**Deltas reported per class:**
+
+| Delta | Definition | What It Measures |
+|-------|-----------|-----------------|
+| **Δ_feat** | Arm 2 − Arm 1 | Feature enrichment lift |
+| **Δ_data** | Arm 3 − Arm 2 | Auction-context data effect |
+| **Δ_partner** | Arm 4 − Arm 3 | Partner context lift |
+| **Δ_total** | Arm 4 − Arm 1 | End-to-end R1 improvement |
+
+**Consolidated ablation report:** All three classes appear side-by-side in one table:
+
+```
+| Class            | Δ_feat [CI]   | Δ_data [CI]   | Δ_partner [CI] | Δ_total [CI]  |
+|------------------|---------------|---------------|----------------|---------------|
+| hybrid_full      | ...           | ...           | ...            | ...           |
+| hybrid_constr.   | ...           | ...           | ...            | ...           |
+| modeloespecifico | ...           | ...           | ...            | ...           |
+```
 
 **Three guardrails (HITL-approved):**
 
@@ -347,15 +370,12 @@ exactly one factor from the previous arm.
 
 **Caveat:** This is a sequential ablation, not a full 2×2×2 factorial. It estimates
 main effects (feature enrichment, data source, partner context) but cannot fully
-isolate the data×partner interaction. A fifth arm (P1 features + bidless + partner=yes)
-would be needed for that, but that configuration may not be valid (partner features
-require auction-context data by construction). The sequential design is sufficient
-for promotion decision support.
+isolate the data×partner interaction. The sequential design is sufficient for
+promotion decision support.
 
 **Evaluation instrument:** Three-tier comparator per §3.14. Dual-seat comparator
 (primary) for Arms 3 and 4 (which use partner context). Single-seat comparator
-(continuity diagnostic) for all arms. H2H is secondary for Arms 1 and 4 (the two
-endpoints that map to actual rung candidates).
+(continuity diagnostic) for all arms.
 
 ### 3.6 Hyperparameter Tuning & Calibration Protocols
 
@@ -463,9 +483,54 @@ Proceed to promotion gate with the un-normalized model.
 that normalizer was not warranted and why. This becomes the R1 baseline for R2
 comparison.
 
-### 3.7 Promotion Gate Criteria
+### 3.7 Promotion Decision Contract (Three Classes + Global Winner)
 
-R1 uses the full gate from `arc_d_gate.py` (R1+ path, not R0 simplified path):
+R1 uses a **two-stage promotion** model: class-local tests first, then global
+winner selection. This replaces the single-candidate gate from R0.
+
+#### 3.7.1 Canonical Evaluation Roster (6 bidders)
+
+All comparator and H2H runs use exactly these 6 bidders. R0 and R1 variants must
+be artifact/config-pinned and verified to differ where expected.
+
+| ID | Bidder | Class |
+|----|--------|-------|
+| 1 | `hybrid_olsa_full_r1` | hybrid_full |
+| 2 | `hybrid_olsa_r1` | hybrid_constrained |
+| 3 | `modeloespecifico_r1` | modeloespecifico |
+| 4 | `hybrid_olsa_full_r0` | hybrid_full |
+| 5 | `hybrid_olsa_r0` | hybrid_constrained |
+| 6 | `modeloespecifico_r0` | modeloespecifico |
+
+#### 3.7.2 Battery Design
+
+**Comparator:** Run all 6 bidders every R1 decision round. Dual-seat mode (§3.14)
+for partner-aware evaluation; single-seat mode for continuity diagnostic.
+
+**H2H:** Run **all-vs-all matrix** over all 6 bidders with both seat rotations and
+paired deal sets. This produces a 6×6 matrix (30 unique matchups) per decision round.
+
+**QUICK→FULL policy:**
+- QUICK runs all cells first for go/no-go gates.
+- FULL runs all cells for the **final** decision round only.
+- Deal pairing is fixed across reruns for valid deltas.
+
+#### 3.7.3 Gate-Critical Matchups (Must Be Explicitly Reported)
+
+| Matchup | Purpose |
+|---------|---------|
+| `hybrid_olsa_full_r1` vs `hybrid_olsa_full_r0` | Primary class-local promotion signal (hybrid_full) |
+| `hybrid_olsa_r1` vs `hybrid_olsa_r0` | Constrained class-local rung-over-rung |
+| `modeloespecifico_r1` vs `modeloespecifico_r0` | Baseline class-local rung-over-rung |
+| `hybrid_olsa_full_r1` vs `hybrid_olsa_r1` | Within-rung full vs constrained |
+| `hybrid_olsa_full_r1` vs `modeloespecifico_r1` | External pressure check (learned vs hand-coded) |
+| `hybrid_olsa_full_r1` vs `modeloespecifico_r0` | Cross-class cross-rung sanity |
+
+#### 3.7.4 Stage 1: Class-Local Promotion Test
+
+Each class is tested independently: does R1 beat R0 within this class?
+
+**Per-class checks (Layers 1–5 from `arc_d_gate.py`):**
 
 **Layer 1 — Framework Health (8 checks):**
 no_nan_inf, schema_version, artifact_integrity, min_sample_size, tricks_range,
@@ -480,19 +545,50 @@ Artifact freeze, split manifest, semantic gate (12 Tier-1 + 3 Tier-2)
 |-----------|-----------|
 | bid_rate | [0.05, 0.95] |
 | make_rate | ≥ 0.45 |
-| cvar_5 regression | Within 0.10 of incumbent |
-| downside_variance | ≤ incumbent × 1.10 |
-| contract_mix_shift | No family deviates >15% from R0 v2 (same as X4; carries C10 criterion into promotion) |
+| cvar_5 regression | Within 0.10 of R0 class incumbent |
+| downside_variance | ≤ R0 class incumbent × 1.10 |
+| contract_mix_shift | No family deviates >15% from R0 v2 |
 
-**Layer 4 — H2H Primary Gate:**
-- PROMOTED: CI_low > 0.180 (delta_floor, FULL-calibrated)
-- HALT: CI_high < −0.184 (regression_threshold)
-- ADVANCED: Otherwise (inconclusive)
+**Layer 4 — H2H Class-Local Gate:**
+- PROMOTE_CLASS: r1_class beats r0_class, CI_low > 0.180
+- HALT_CLASS: CI_high < −0.184
+- ADVANCE_CLASS: Inconclusive
 
-**Layer 5 — Sensitivity:**
-Seeds 43+44 both reversed → HALT
+**Layer 5 — Sensitivity:** Seeds 43+44 both reversed for this class → HALT_CLASS
 
-**Layer 6 — Follow-Up Checklist (full P1–P9):**
+**Output:** Class-local decision table:
+
+```
+| Class              | H2H Delta [CI]  | Guardrails | Sensitivity | Decision       |
+|--------------------|-----------------|------------|-------------|----------------|
+| hybrid_full        | ...             | PASS/FAIL  | PASS/FAIL   | PROMOTE/RETAIN |
+| hybrid_constrained | ...             | PASS/FAIL  | PASS/FAIL   | PROMOTE/RETAIN |
+| modeloespecifico   | ...             | PASS/FAIL  | PASS/FAIL   | PROMOTE/RETAIN |
+```
+
+#### 3.7.5 Stage 2: Global Winner Selection
+
+From **promoted classes only**, select one global incumbent for next rung.
+
+**Primary selector:** Pairwise H2H net_eppd strength in the all-vs-all 6×6 matrix.
+The promoted R1 variant with the highest aggregate H2H win rate against all other
+promoted R1 variants becomes the global incumbent.
+
+**Secondary selectors (for ties or close calls):**
+1. Guardrail stability (fewer guardrail-near-threshold values preferred)
+2. Sensitivity consistency (more robust across seeds preferred)
+3. Comparator rank and trend context (higher comparator rank supports but doesn't
+   override H2H)
+4. Downside risk (lower cvar_5 / downside_variance as tiebreaker)
+
+**Output:** Global winner decision record with:
+- Which classes promoted and which retained
+- Pairwise H2H matrix among promoted R1 variants
+- Selected global winner with rationale
+- Non-selected promoted classes kept as **tracked challengers** (not discarded)
+
+#### 3.7.6 Follow-Up Checklist (full P1–P9)
+
 Every item in `r1_follow_ups.md` must be dispositioned as DONE, DEFERRED (with
 rationale and target rung), or NOT APPLICABLE (with evidence). This is a human-
 reviewed checklist per `arc_d_execution_plan.md:512`. Blocking items (P1, P3, P4)
@@ -524,6 +620,13 @@ Under `data/artifacts/arc_d/r1/`:
 - `training_report_r1.json` — training summary
 - `semantic_gate_val_r1.json` / `semantic_gate_test_r1.json` — gate results
 - `oracle_gate_r1.json` — P9 oracle gate artifact (NEW)
+- `comparator_r1_dual.json` — dual-seat comparator results (all 6 bidders)
+- `comparator_r1_legacy.json` — single-seat comparator (continuity diagnostic)
+- `h2h_allvsall_r1.json` — 6×6 H2H matrix (30 unique matchups, both rotations)
+- `class_local_decisions_r1.json` — per-class PROMOTE/RETAIN table (NEW)
+- `global_winner_r1.json` — global promotion decision with rationale (NEW)
+- `ablation_multiclass_r1.json` — consolidated 3-class 4-arm ablation deltas (NEW)
+- `deep_debug_r1.json` — partner-context debug bundle, if triggered (NEW)
 - `promotion_decision_r1.json` — gate outcome
 - `rung_bundle_r1.json` — bundle manifest
 
@@ -683,36 +786,69 @@ seat_bp[(seat + 2) % 4] = policy_name  # Partner seat also bids
 ```
 This is a PR-R1a deliverable (infra change before batteries run).
 
-**R1 Battery Composition (dual-seat comparator, primary):**
+**R1 Battery Composition — Canonical 6-Bidder Roster (§3.7.1):**
 
-| Bidder | Version | Partner-Aware? | Purpose |
-|--------|---------|---------------|---------|
-| HybridOLSaBidder R1 (constrained) | R1 3/2/2 + partner | Yes | Promotional candidate |
-| HybridOLSaBidder R1 (full) | R1 forward-selected + partner | Yes | Attribution ceiling |
-| ModeloEspecifico R1 | R1 enriched (§3.2.1) | Yes | **Baseline** — hand-coded enrichment control |
-| HybridOLSaBidder R0 (constrained) | Frozen R0 v2 | No | Incumbent |
-| ModeloEspecifico R0 | Frozen R0 | No | Incumbent baseline |
-| StrictHellRaiser | Unchanged | No | Rankings context |
-| OLSa_Full R0 | Unchanged | No | Rankings context |
-| OLSa R0 | Unchanged | No | Rankings context |
-| FiveHeadFred | Unchanged | No | Rankings context |
-| RankTheTank | Unchanged | No | Rankings context |
+| Bidder | Class | Partner-Aware? |
+|--------|-------|---------------|
+| `hybrid_olsa_full_r1` | hybrid_full | Yes |
+| `hybrid_olsa_r1` | hybrid_constrained | Yes |
+| `modeloespecifico_r1` | modeloespecifico | Yes |
+| `hybrid_olsa_full_r0` | hybrid_full | No |
+| `hybrid_olsa_r0` | hybrid_constrained | No |
+| `modeloespecifico_r0` | modeloespecifico | No |
 
-**10 bidders total** (R0's 8 + R1 constrained + R1 full). Non-partner-aware bidders
-will see partner PASS entries in dual-seat mode but ignore them — their behavior is
-identical to single-seat mode.
+Non-partner-aware bidders (R0 variants) will see partner PASS entries in dual-seat
+mode but ignore them — their behavior is identical to single-seat mode.
 
-**H2H Battery (primary, gating):**
-
-| Matchup | Purpose |
-|---------|---------|
-| R1 Constrained vs R0 Constrained | **Promotion gate signal** (Layer 4) |
-| ModeloEspecifico R1 vs ModeloEspecifico R0 | **Baseline enrichment delta** (independent P1 signal) |
-| R1 Constrained vs ModeloEspecifico R1 | **Value of learned weights** (how much does OLS improve over fixed w=1.0) |
+**H2H:** All-vs-all 6×6 matrix (30 unique matchups), both seat rotations, paired
+deal sets. Gate-critical matchups are listed in §3.7.3.
 
 **Reporting rule:** Every metric in a report must be labeled with its instrument tier
 (dual-seat / single-seat / H2H / full-4-seat). This extends the instrument labeling
 rule in §3.10.
+
+### 3.15 Deep-Debug Protocol (Partner-Context Failure)
+
+**Trigger:** Mandatory if any class has Δ_partner ≤ 0 (from §3.5 ablation) OR
+H2H materially regresses after partner features are added.
+
+**Track A — Data Integrity:**
+- Validate partner feature non-null rates (expect >90% for `partner_bid_level`,
+  100% for `partner_passed`)
+- Distribution sanity: partner features should have variance > 0 and correlate
+  with at least one outcome metric
+- Seat mapping: verify partner is `(seat + 2) % 4`, not adjacent seat
+- Check for all-zero partner columns in training data
+
+**Track B — Model Usage:**
+- Verify partner features are selected/weighted in the trained model artifact:
+  check `hybrid_r1.json` weights and `feature_selection_log_r1_full.json`
+- Run **partner-off counterfactual inference:** zero out partner features at
+  inference time, re-score the same eval dataset, and measure net_eppd delta.
+  If partner-off produces identical predictions → model isn't using them.
+
+**Track C — Decision-Level Effects:**
+- Compare contract mix and bid-level distributions between partner-on (Arm 4)
+  and partner-off (Arm 3). Focus on hands where partner bid ≥ 3 (strong signal).
+- Compute make_rate and net_eppd on the slice of "redirected" hands (where the
+  model changed its contract or bid level due to partner signal).
+
+**Track D — Instrument Divergence:**
+- If comparator shows positive Δ_partner but H2H shows negative, analyze
+  auction-win pressure: in H2H, both teams have partner context, so the
+  advantage may wash out or create adverse competitive dynamics (§8.3 pattern).
+- Report contested-auction win rate by contract family.
+
+**Output:** `deep_debug_r1.json` with:
+- Root cause hypothesis (data quality / model capacity / instrument artifact /
+  competitive wash-out)
+- Recommended fix path (retrain with feature forcing / fix data pipeline /
+  accept null result and document)
+
+**Escalation:** If deep-debug identifies a data integrity issue (Track A), this
+is a **hard stop** — return to Step 1 (dataset generation) and rerun from there.
+If the issue is competitive wash-out (Track D), document and proceed — this is
+a valid finding, not a bug.
 
 ---
 
@@ -933,6 +1069,7 @@ no crashes, no warnings, just wrong decisions.
 **Defensive measures already in plan:**
 - 4-arm ablation (§3.5) isolates feature enrichment, data source, and partner context effects
 - Oracle re-analysis (P3) detects whether regret decomposition shifts
+- Deep-debug protocol (§3.15) Track A validates partner feature data integrity; Track B verifies model usage of partner features
 
 **GAP — What's missing:**
 1. **Feature predictive-power smoke test.** After generating the auction-context
@@ -986,6 +1123,7 @@ bidding aggressiveness can look great in isolation but reverse under competition
 **Defensive measures already in plan:**
 - H2H validation is required (Step 5 in §3.4)
 - Promotion gate uses H2H CI as primary signal (not comparator)
+- Deep-debug protocol (§3.15) Track D diagnoses instrument divergence (comparator positive / H2H negative) as competitive wash-out vs actual regression
 
 **GAP — What's missing:**
 1. **QUICK H2H checkpoint before FULL.** The current plan says "QUICK then FULL"
@@ -1206,6 +1344,7 @@ selecting wrong bid levels, net_eppd could decrease despite "better" models.
 **Defensive measures already in plan:**
 - Oracle re-analysis (P3) detects regret decomposition shift
 - Guardrail: make_rate ≥ 0.45 catches catastrophic overbidding
+- Deep-debug protocol (§3.15) Track C analyzes decision-level effects on "redirected" hands (contract or bid level changed due to partner signal) — this is the partner-context variant of the accuracy-up-value-down pattern
 
 **GAP — What's missing:**
 1. **Per-contract-family net_eppd decomposition.** The promotion gate uses aggregate
