@@ -1,10 +1,8 @@
 # Contract Selection Oracle Analysis
 
-> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
-
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline)
-**Date:** 2026-03-01 (v1); 2026-03-03 (v2 update)
+**Date:** 2026-03-01
 **Purpose:** Measure oracle contract mix and regret distribution to determine whether a calibrator for HIGH/LOW contract selection is warranted
 
 ---
@@ -15,34 +13,31 @@ The HybridOLSa bidder selects suit contracts 98.3% of the time. This analysis
 measures the gap between the model's contract selection and a hindsight-optimal
 oracle using 40,000 paired hands (QUICK mode, all 4 seats).
 
-**V2 update:** With bid-level search (v2 policy), the model now bids on ~96%
-of hands (up from ~20% in v1), fundamentally changing the regret decomposition.
-Pass-threshold regret is no longer dominant; contract-selection regret is now
-the primary source.
-
 **Key findings:**
 
-- **Oracle HIGH+LOW share: 31.9%** vs model's ~1.4% — HIGH/LOW remain
-  massively under-selected
-- **CS regret share: 90.9%** — contract-selection is now the dominant regret
-  source (was 16.9% pre-v2)
-- **Decision gate fires: CALIBRATOR_WARRANTED** — and the v2 regret
-  decomposition now supports this: the model bids on most hands but picks
-  the wrong contract
+- **Oracle HIGH+LOW share: 31.9%** vs model's 1.4% — HIGH/LOW are massively
+  under-selected
+- **Mean total regret: 3.92 utility** [3.89, 3.95] — far above the 0.1
+  decision threshold
+- **Decision gate fires: CALIBRATOR_WARRANTED** — but the regret decomposition
+  reveals the dominant source is *not* contract selection
 
-**V2 regret shift:** Bid-level search resolved the pass-threshold problem by
-finding profitable bid levels for marginal hands. The remaining regret is
-concentrated in contract mis-ranking — the model selects suit 98.3% of the
-time while the oracle would select HIGH/LOW 31.9% of the time.
+**Regret decomposition (the critical insight):**
 
-**Implication:** The dominant remaining regret source is feature poverty for
-HIGH/LOW (1 feature each), which prevents the model from identifying hands
-where non-suit contracts are optimal. R1 feature enrichment addresses this
-directly.
+| Category | % of hands | % of total regret | Interpretation |
+|----------|-----------|-------------------|----------------|
+| Pass-threshold | 73.2% | **81.9%** | Model passes; oracle would bid |
+| Contract-selection | 11.9% | 16.9% | Both bid; model picks wrong contract |
+| Over-bidding | 0.5% | 1.1% | Model bids; oracle would pass |
 
-**Note:** The v1 results below are retained for context. The v1 analysis
-was conducted before bid-level search was adopted. The v2 CS regret share
-of 90.9% supersedes the v1 decomposition for decision-making purposes.
+The model passes on **80.1%** of hands vs the oracle's **7.4%**. The primary
+problem is model conservatism (negative predicted utility on hands that would
+actually profit), not contract mis-ranking among biddable hands.
+
+**Implication:** A calibrator that only re-ranks contracts (Option C from the
+sub-plan) would address at most 17% of the regret. The dominant win comes from
+improving model accuracy — particularly for HIGH/LOW, which have only 1 feature
+each — or adjusting the pass/bid threshold.
 
 ---
 
@@ -97,9 +92,7 @@ Following the 4-step construction path from the sub-plan:
 For each hand and each of the 6 contracts, compute:
 
 - **mu** — OLS predicted tricks from the constrained-arm model (hybrid_r0.json)
-- **bid_n** — v2 uses bid-level search (compute_best_bid) to evaluate all
-  legal bid levels and select the one maximizing expected utility; v1 used
-  floor(mu)
+- **bid_n** = floor(mu) — the bid the model would place
 - **predicted_utility** = compute_ev(mu, sigma, bid_n) — Gaussian expected
   net-differential (matching bidding.py:910-952)
 
@@ -220,46 +213,19 @@ never reach the contract comparison because the model passes.
 > hands) and a broad distribution centered around 4-6 utility (error hands).
 > The non-zero regret panel shows the error population in isolation.
 
-### 3.6 V2 Update: Bid-Level Search Impact
-
-With bid-level search (v2 policy, PR #497), the regret decomposition shifts
-fundamentally:
-
-- **Model bid_rate:** ~96% (up from ~20% in v1) — bid-level search finds
-  profitable bid levels for most hands
-- **CS regret share: 90.9%** — contract-selection is now the dominant regret
-  source (was 16.9% in v1)
-- **Pass-threshold regret:** No longer dominant — bid-level search resolved
-  the model conservatism problem identified in v1
-
-The v2 oracle confirms that the remaining regret is concentrated in contract
-mis-ranking: the model still selects suit 98.3% of the time, while the oracle
-would select HIGH/LOW for 31.9% of biddable hands. This shifts the R1 priority
-from "bid more hands" to "bid the right contract type."
-
 ## 4. Interpretation
 
-### 4.1 V2 Context: Contract Selection Is Now the Binding Constraint
+### 4.1 The Model Is Too Conservative, Not Wrong About Contracts
 
-With v2 bid-level search, the model now bids on ~96% of hands — the
-pass-threshold problem identified in v1 is largely resolved by finding
-profitable bid levels for marginal hands. The dominant remaining problem
-is contract mis-ranking: the model selects suit for nearly all hands while
-the oracle would select HIGH/LOW for 31.9% of biddable hands.
+The dominant finding is **not** that the model mis-ranks contracts. It is that
+the model declines to bid on 80% of hands where the oracle would profit. This
+is a model-accuracy problem, not a contract-comparison problem.
 
-The mechanism: the HIGH model has 1 feature (offsuit_aces) and the LOW model
-has 1 feature (offsuit_tens_count). These sparse specifications produce
-utility predictions that rarely compete with the 3-feature suit model,
-even when HIGH/LOW would actually be the better contract. The remaining
-regret is a **feature poverty problem**, addressable through R1 feature
-enrichment.
-
-**V1 context (retained):** Before bid-level search, the dominant finding was
-that the model declined to bid on 80% of hands where the oracle would profit.
-This was a model-accuracy problem manifesting as pass-threshold regret (81.9%).
-Bid-level search resolved this by finding profitable bid levels at lower bid
-amounts (e.g., bidding 5 instead of passing when floor(mu)=4 yields negative
-utility but bid_n=5 yields positive utility at a lower bid).
+The mechanism: when the OLS model predicts mu = 3.5 for a hand, the Gaussian
+EV computation at bid_n = 3 with sigma ~1.6 yields negative utility (the
+probability mass below the make threshold is too large). The model passes. But
+the actual outcome might be 5 or 6 tricks — well above the bid. The model's
+**trick predictions are systematically low** for hands it declines.
 
 ### 4.2 Feature Poverty Is the Proximate Cause
 
@@ -283,20 +249,17 @@ the *primary* mechanism suppressing HIGH/LOW is not that suit out-competes them
 in utility ranking — it's that HIGH/LOW utilities are almost always negative,
 so they never even enter the competition.
 
-### 4.4 Calibrator Alone Is Insufficient (V1 Analysis)
-
-**Note:** This section reflects the v1 analysis. In v2, bid-level search
-resolved the pass-threshold problem, and the CS regret share rose to 90.9%.
-A calibrator addressing contract mis-ranking is now more relevant than in v1,
-though the root cause remains feature poverty for HIGH/LOW.
+### 4.4 Calibrator Alone Is Insufficient
 
 A calibrator (Option C from the sub-plan) re-ranks contracts among the 6
-candidates at bid time. In v1, if all 6 predicted utilities were <= 0, the
-model passed regardless of ranking, and the calibrator would address at most
-the 17% contract-selection slice. In v2, the model bids on ~96% of hands, so
-the calibrator would address the 90.9% CS regret share — but the underlying
-feature poverty means re-ranking alone cannot produce accurate HIGH/LOW
-predictions. Better features (R1) remain the primary remedy.
+candidates at bid time. But if all 6 predicted utilities are <= 0, the model
+passes regardless of ranking. The calibrator would address at most the 17%
+contract-selection slice. The 82% pass-threshold slice requires either:
+
+1. **Better models:** More features for HIGH/LOW (and possibly suit) to produce
+   higher, more accurate mu predictions
+2. **Threshold adjustment:** Lowering the utility <= 0 pass gate
+3. **Both:** Better predictions + recalibrated threshold
 
 ### 4.5 Limitations and Caveats
 
@@ -357,19 +320,14 @@ Decision made 2026-03-01; see `plans/MASTER_PLAN.md` Phase B.
 
 ### 5.3 Impact on R1 Design
 
-With v2 bid-level search resolving the pass-threshold problem, R1 feature
-design should prioritize:
+Regardless of Phase B path, R1 feature design should prioritize:
 
 - **HIGH/LOW feature enrichment:** The 1-feature models are clearly
-  insufficient. The CS regret share of 90.9% is now almost entirely
-  attributable to HIGH/LOW feature poverty. `min_improvement` threshold in
-  feature selection may need lowering for non-suit contracts.
+  insufficient. `min_improvement` threshold in feature selection may need
+  lowering for non-suit contracts.
 - **Cross-contract calibration:** A unified regression (Option B from the
   sub-plan) may be worth revisiting in R1, since the feature poverty and
   calibration problems interact.
-- **Normalizer interaction:** The normalizer screen (NO_GO_DEFER_R1) found
-  +4% accuracy but -0.269 net_eppd. With richer R1 features, normalization
-  may become beneficial. See [normalizer_offline_screen.md](normalizer_offline_screen.md).
 
 ## 6. Arc Context
 
@@ -401,13 +359,12 @@ R0 training (#396)
 | Notebook | notebooks/arc_d/r0/55_contract_selection_oracle.py |
 | Model artifact | data/artifacts/arc_d/r0/hybrid_r0.json |
 | Dataset | canonical_bidless_dataset_glutton_42_20260221_175752 |
-| Git SHA (v1) | 81d96bfb8f2702651c4eb1331a31c7d4a1ef8f2f |
+| Git SHA | 81d96bfb8f2702651c4eb1331a31c7d4a1ef8f2f |
 | Seed | 42 (dataset generation) |
 | n_hands | ~40,000 (QUICK mode: 10k deals x 4 seats) |
 | Bootstrap | 10,000 resamples, seed 42 |
 | Sub-plan | plans/contract_selection_analysis.md (v3) |
-| PR (v1) | #472 |
-| V2 update | PR #497 (bid-level search in oracle), CS regret share 90.9% |
+| PR | #472 |
 
 ## 8. Reproduction
 

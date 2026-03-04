@@ -1,10 +1,8 @@
 # Phase 0 → R0 Progression Report
 
-> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
-
 **Arc:** D — OLSa-Hybrid Bidder
 **Rung:** R0
-**Date:** 2026-03-01 (v1); 2026-03-03 (v2 context note)
+**Date:** 2026-03-01
 **Purpose:** Post-hoc cross-phase comparison documenting the transition from bidless
 baseline (Phase 0) to first bidding model (R0)
 
@@ -198,13 +196,6 @@ property, not a coincidence.
 - **Variance results inform R1 priorities:** The extreme contract mix concentration
   (98.3% suit) and sparse HIGH/LOW models confirm that HIGH/LOW feature enrichment
   is the correct R1 priority (see P1 in R1 follow-ups).
-- **V2 bid-level search context:** The v2 policy (bid-level search) dramatically
-  changed R0's bidding behavior in the comparator instrument: bid_rate rose from
-  19.7% to 96.1%, net_eppd from +0.455 to +2.131, and hybrid_olsa now leads
-  modeloespecifico by +0.527 (v6 comparator). The eval dataset statistics in this
-  report reflect the pre-v2 self-play runs and remain valid for the Phase 0 to R0
-  progression comparison. The v2 comparator numbers characterize R0's competitive
-  position but do not change the self-play outcome distributions analyzed here.
 - **Progression report pattern:** This report establishes the template for future
   rung-to-rung comparisons. Starting at R1, a `progression_report` is a required
   bundle artifact enforced by the rung bundle validator.
@@ -217,7 +208,6 @@ property, not a coincidence.
 Phase 0 (bidless baseline)
   ↓  [this report]
 R0 (first bidding model, OLSa-Hybrid with 3/1/1 features)
-  ↓  R0 v2: bid-level search adopted, lambda=0.0 retained, normalizer deferred
   ↓  [R1 follow-ups: HIGH/LOW enrichment, 2×2 factorial design]
 R1 (enriched features, auction-trained data)
   ↓
@@ -226,10 +216,8 @@ R2+ (context features, risk adjustment)
 
 Phase 0 provides the unconditional baseline — what outcomes look like when every hand
 plays every contract. R0 introduces selection via auction, reducing declaring-side
-variance and concentrating contracts. The v2 canonical update added bid-level search,
-which dramatically improved R0's comparator ranking (net_eppd +0.455 to +2.131) without
-changing the underlying model. R1 will address the HIGH/LOW feature gap and train on
-auction-generated data for the first time.
+variance and concentrating contracts. R1 will address the HIGH/LOW feature gap and
+train on auction-generated data for the first time.
 
 ---
 
@@ -245,7 +233,6 @@ auction-generated data for the first time.
 | Phase 0 sample | 300,000 hands × 4 seats = 1,200,000 rows |
 | R0 sample | 31,612 deals × 4 seats = 126,448 rows |
 | R0 promotion decision | PROMOTED (see r0_promotion_report.md) |
-| V2 comparator | v6 (8 bidders, hybrid_olsa net_eppd +2.131) |
 
 ---
 

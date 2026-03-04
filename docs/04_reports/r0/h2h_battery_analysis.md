@@ -1,5 +1,7 @@
 # R0 H2H Battery Analysis & Experiment Summary (v2)
 
+> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline lock)
 **Date:** 2026-03-03

@@ -1,5 +1,7 @@
 # Lambda Tuning Decision — Track D
 
+> **Version:** v2 (PR #510) | New in v2
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
 **Date:** 2026-03-03

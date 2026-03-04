@@ -1,5 +1,7 @@
 # C33 Ablation: Gaussian EV Wrapper + Bid-Level Search Effect (v2)
 
+> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline)
 **Date:** 2026-03-03

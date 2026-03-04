@@ -1,5 +1,7 @@
 # R0 Comparator Rankings (v6, Single-Seat, 8 Bidders)
 
+> **Version:** v2 (PR #510) | v1 archived at `archive/v1/`
+
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0
 **Date:** 2026-03-03 (v6; supersedes v1-v5 in git history)
