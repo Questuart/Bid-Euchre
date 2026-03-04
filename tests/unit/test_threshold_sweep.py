@@ -81,6 +81,19 @@ class TestLoadModelArtifact:
         loaded = load_model_artifact(str(path))
         assert loaded["models"]["suit"]["sigma"] == 0.0
 
+    def test_hybrid_artifact_offdef_variance(self, tmp_path):
+        """Off/def artifacts have dict variance; uses offensive (declaring) role."""
+        artifact = _make_hybrid_artifact(
+            weights_by_cf={"suit": ([1.0], 0.0, ["bowers"])},
+            residual_variance={"suit": {"offensive": 4.0, "defensive": 9.0}},
+        )
+        path = tmp_path / "artifact.json"
+        path.write_text(json.dumps(artifact))
+
+        loaded = load_model_artifact(str(path))
+        # sigma = sqrt(offensive variance) = sqrt(4.0) = 2.0
+        assert loaded["models"]["suit"]["sigma"] == pytest.approx(2.0)
+
     def test_non_hybrid_artifact_uses_models_key(self, tmp_path):
         """Non-hybrid artifacts that already have 'models' key pass through."""
         artifact = {

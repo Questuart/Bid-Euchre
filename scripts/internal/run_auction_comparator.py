@@ -946,7 +946,9 @@ def main():
             # In dual/single-seat modes, run_dirs are keyed by sub-experiment
             # (e.g., name_team0), not base name. Show any matching sub-keys.
             matching_dirs = {
-                k: v for k, v in run_dirs_by_policy.items() if k.startswith(name)
+                k: v
+                for k, v in run_dirs_by_policy.items()
+                if k == name or k.startswith(f"{name}_")
             }
             if matching_dirs:
                 for sub_key, run_dir in matching_dirs.items():

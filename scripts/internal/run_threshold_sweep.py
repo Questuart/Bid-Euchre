@@ -52,8 +52,13 @@ def load_model_artifact(artifact_path):
         models = {}
         for cf, model in artifact["payoff_model"].items():
             model_copy = dict(model)
-            # Compute sigma from residual_variance (matches HybridOLSaBidder._sigma)
+            # Compute sigma from residual_variance (matches HybridOLSaBidder._sigma).
+            # Off/def artifacts store {"offensive": ..., "defensive": ...} per cf;
+            # flat artifacts store a single float. Use offensive (declaring) for
+            # threshold tuning since the bidder is choosing whether to declare.
             var = residual_variance.get(cf, 0.0)
+            if isinstance(var, dict):
+                var = var.get("offensive", 0.0)
             model_copy["sigma"] = math.sqrt(max(0.0, var))
             models[cf] = model_copy
         artifact["models"] = models
