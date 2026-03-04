@@ -25,4 +25,3 @@ parameters:
   n_per: 10  # Small n_per for tiny suite
   seed: 42
   log_level: none
-  # TODO: Add bidless_dataset_collection: true when PR 140 lands

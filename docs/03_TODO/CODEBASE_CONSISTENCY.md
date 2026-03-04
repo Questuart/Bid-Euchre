@@ -1,7 +1,7 @@
 # CODEBASE_CONSISTENCY — doc/code gap tracker (RULES.md + METRICS.md)
 
 **Created:** 2026-01-04
-**Last verified on main:** 2026-02-18 (commit `c5a346e`)
+**Last verified on main:** 2026-03-03 (commit `b042708`)
 **Status:** Active
 
 ## How to read this file
