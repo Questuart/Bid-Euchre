@@ -132,8 +132,8 @@
 ### I004 — Stale notebook README references [LOW]
 
 **Location:**
-- `notebooks/README.md:94` → references `docs/03_TODO/REPO_REVIEW_2026_01_27.md` (deleted)
-- `notebooks/phase0_bidless/README.md:237` → references `docs/03_TODO/BIDDING_DEVELOPMENT_PLAN.md` (deleted)
+- `notebooks/README.md:94` → references docs/03_TODO/REPO_REVIEW_2026_01_27.md (deleted)
+- `notebooks/phase0_bidless/README.md:237` → references docs/03_TODO/BIDDING_DEVELOPMENT_PLAN.md (deleted)
 **Impact:** Dead links for agents navigating notebook documentation
 **Effort:** Trivial (update or remove references)
 **Recommendation:** Remove or update stale references in a cleanup PR.
