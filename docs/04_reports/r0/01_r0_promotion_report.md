@@ -8,38 +8,50 @@
 **Date:** 2026-02-22 (v1 decision); 2026-03-04 (v2 eval refresh)
 **Methodology Review:** [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md)
 
+> **Naming convention:** Each model arm has two names — a **model name** used in
+> self-play evaluation and a **strategy name** used in comparator/H2H batteries:
+>
+> | Model Name | Strategy Name | Arm | Artifact |
+> |------------|---------------|-----|----------|
+> | OLSa | hybrid_olsa | Constrained (attribution) | `hybrid_r0.json` |
+> | OLSa_Full | hybrid_olsa_full | Promotional | `hybrid_r0_full.json` |
+>
+> Self-play sections use model names; comparator and H2H sections use strategy
+> names. The "hybrid" prefix denotes the Gaussian EV wrapper + bid-level search;
+> non-prefixed variants (olsa, olsa_full) use floor-based thresholds without search.
+
 ## Executive Summary
 
 The R0 rung of Arc D's OLSa-Hybrid bidder was **PROMOTED** after passing all
 Tier 1 artifact integrity checks and demonstrating positive net expected points
 per deal across three independent evaluation seeds.
 
-**Self-play evaluation** (OLSa_Full promotional arm, seed 42):
+**Self-play evaluation** (seed 42, both arms):
 
-| Metric | Value | Definition |
-|--------|-------|------------|
-| `net_eppd` | +1.932 | Net expected points per deal (bidder − opponent). **Differential.** |
-| `eppd` | +5.795 | Expected points per deal (bidder only). **Absolute.** |
-| `bid_rate` | 100.0% | Fraction of deals with an auction winner. v2 bid-level search bids every deal. |
-| `make_rate` | 94.9% | Fraction of won auctions where declaring team makes contract. |
-| `net_CVaR-5%` | −11.230 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
+| Metric | OLSa_Full (promotional) | OLSa (constrained) | Definition |
+|--------|-------------------------|---------------------|------------|
+| `net_eppd` | +1.932 | +1.953 | Net expected points per deal (bidder − opponent). **Differential.** |
+| `eppd` | +5.795 | +5.815 | Expected points per deal (bidder only). **Absolute.** |
+| `bid_rate` | 100.0% | 100.0% | Fraction of deals with an auction winner. v2 bid-level search bids every deal. |
+| `make_rate` | 94.9% | 95.2% | Fraction of won auctions where declaring team makes contract. |
+| `net_CVaR-5%` | −11.230 | −10.998 | Average of worst 5% of net point outcomes. **Differential tail risk.** Higher = less risky. |
 
-**Comparator context** (hybrid_olsa, single-seat vs GluttonStrategy, seed 42):
+**Comparator context** (single-seat vs GluttonStrategy, seed 42, both arms):
 
-| Metric | Value | Definition |
-|--------|-------|------------|
-| `net_eppd` | +2.131 | Net expected points per deal. **Differential** vs always-pass sentinels. |
-| `bid_rate` | 0.961 | Fraction of deals bid on. |
-| `make_rate` | 1.000 | Fraction of bids that make contract. |
-| Rank | 2 of 8 | Tied with hybrid_olsa_full (p=0.5457). |
+| Metric | hybrid_olsa_full (OLSa_Full) | hybrid_olsa (OLSa) | Definition |
+|--------|------------------------------|---------------------|------------|
+| `net_eppd` | +2.170 | +2.131 | Net expected points per deal. **Differential** vs always-pass sentinels. |
+| `bid_rate` | 0.968 | 0.961 | Fraction of deals bid on. |
+| `make_rate` | 1.000 | 1.000 | Fraction of bids that make contract. |
+| Rank | 1 of 8 | 2 of 8 | Statistically tied (delta=+0.038, p=0.5457). |
 
-The model ranks 1-2 among 8 comparator bidders by net_eppd (v6 single-seat
-comparator with GluttonStrategy, seed=42), tied with hybrid_olsa_full (+2.170,
-p=0.5457) and leading `modeloespecifico` (+1.604) by +0.527 points/deal
-(p < 0.001). The v2 bid-level search transformed bidding behavior across both
-self-play and comparator: self-play bid_rate rose from ~63-83% (v1) to 100%
-(v2), while make_rate shifted from ~83-87% (v1) to ~95% (v2) as the model now
-bids on every deal at the optimal level rather than passing marginal hands.
+Both arms rank 1-2 among 8 comparator bidders by net_eppd (v6 single-seat
+comparator with GluttonStrategy, seed=42), statistically tied (p=0.5457) and
+leading `modeloespecifico` (+1.604) by +0.5-0.6 points/deal (p < 0.001). The
+v2 bid-level search transformed bidding behavior across both self-play and
+comparator: self-play bid_rate rose from ~63-83% (v1) to 100% (v2), while
+make_rate shifted from ~83-87% (v1) to ~95% (v2) as the model now bids on
+every deal at the optimal level rather than passing marginal hands.
 
 ## Gate Results
 
@@ -198,8 +210,8 @@ expected points per deal (**differential** vs always-pass sentinels):
 
 | Rank | Bidder | net_eppd | 95% CI |
 |------|--------|----------|--------|
-| 1 | **hybrid_olsa_full** | **+2.170** | **[+2.081, +2.257]** |
-| 2 | **hybrid_olsa (R0)** | **+2.131** | **[+2.042, +2.216]** |
+| 1 | **hybrid_olsa_full** (OLSa_Full) | **+2.170** | **[+2.081, +2.257]** |
+| 2 | **hybrid_olsa** (OLSa) | **+2.131** | **[+2.042, +2.216]** |
 | 3 | modeloespecifico | +1.604 | [+1.489, +1.720] |
 | 4 | stricthellraiser | +0.085 | [−0.027, +0.197] |
 | 5 | olsa_full | −0.012 | [−0.193, +0.173] |

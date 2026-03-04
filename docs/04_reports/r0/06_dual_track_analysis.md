@@ -8,6 +8,10 @@
 **Purpose:** Side-by-side analysis of two complementary evaluation tracks,
 archetype classification, and roster meta-analysis
 
+> **Naming:** `hybrid_olsa` = constrained arm (OLSa, 3 features, `hybrid_r0.json`);
+> `hybrid_olsa_full` = promotional arm (OLSa_Full, 7 features, `hybrid_r0_full.json`).
+> See [01_r0_promotion_report.md](01_r0_promotion_report.md) for full naming convention.
+
 ---
 
 ## 1. Summary

@@ -12,7 +12,10 @@
 ## Executive Summary
 
 **What is this?** The R0 baseline establishment for Arc D's OLSa-Hybrid bidder
-— the first trainable bidding model in the Bid Euchre framework.
+— the first trainable bidding model in the Bid Euchre framework. See
+[01_r0_promotion_report.md](01_r0_promotion_report.md) for the naming convention
+mapping model names (OLSa, OLSa_Full) to strategy names (hybrid_olsa,
+hybrid_olsa_full) used in comparator/H2H batteries.
 
 **What did we do?** Six experiment campaigns totaling ~650,000 deals evaluated
 two model arms (OLSa constrained + OLSa_Full promotional) across self-play,
@@ -30,9 +33,9 @@ the top bidders in the framework:
 | make_rate | 95.2% | 94.9% |
 
 In the v6 single-seat comparator (GluttonStrategy, 20k deals/bidder, 8
-bidders), hybrid_olsa ranks 1-2 (tied with hybrid_olsa_full) among 8 bidders at
-net_eppd +2.131 (comparator), leading modeloespecifico (+1.604, comparator) by
-+0.527 points/deal (p < 0.001). The bid-level search (v2) dramatically changed
+bidders), both arms rank 1-2: hybrid_olsa_full (OLSa_Full) at +2.170 and
+hybrid_olsa (OLSa) at +2.131, statistically tied (p=0.5457) and leading
+modeloespecifico (+1.604, comparator) by +0.5-0.6 points/deal (p < 0.001). The bid-level search (v2) dramatically changed
 bidding behavior: bid_rate rose from 19.7% to 96.1%, make_rate from 88.6% to
 100%, driving the net_eppd improvement from +0.455 to +2.131. The C33 ablation
 shows a combined search effect (+0.43) and wrapper effect (+0.75).
@@ -415,8 +418,8 @@ behavioral analysis.
 
 | Rank | Bidder | net_eppd (comparator) | 95% CI | bid_rate | make_rate |
 |------|--------|----------------------|--------|----------|-----------|
-| 1 | **hybrid_olsa_full** | **+2.170** | **[+2.081, +2.257]** | 96.8% | 100% |
-| 2 | **hybrid_olsa** | **+2.131** | **[+2.042, +2.216]** | 96.1% | 100% |
+| 1 | **hybrid_olsa_full** (OLSa_Full) | **+2.170** | **[+2.081, +2.257]** | 96.8% | 100% |
+| 2 | **hybrid_olsa** (OLSa) | **+2.131** | **[+2.042, +2.216]** | 96.1% | 100% |
 | 3 | modeloespecifico | +1.604 | [+1.489, +1.720] | 100% | 94.7% |
 | 4 | stricthellraiser | +0.085 | [−0.027, +0.197] | 100% | 94.5% |
 | 5 | olsa_full | −0.012 | [−0.193, +0.173] | 100% | 77.2% |
@@ -430,12 +433,14 @@ p=0.5457). hybrid_olsa now leads modeloespecifico by +0.527 points/deal
 is driven by bid-level search (v2): hybrid_olsa bid_rate rose from 19.7% to
 96.1% and make_rate from 88.6% to 100%.
 
-**Instrument note:** Eval net_eppd (+1.953 for OLSa, eval) and comparator
-net_eppd (+2.131 for hybrid_olsa, comparator v6 single-seat) measure different
-estimands. Eval uses self-play where both teams bid; the comparator uses
-single-seat mode where only the test bidder bids against always-pass sentinels,
-with GluttonStrategy card play. The eval figure reflects competitive bidding
-dynamics while the comparator isolates bidding quality in a controlled setting.
+**Instrument note:** Eval net_eppd (OLSa +1.953, OLSa_Full +1.932) and
+comparator net_eppd (hybrid_olsa +2.131, hybrid_olsa_full +2.170) measure
+different estimands. Eval uses self-play where both teams bid; the comparator
+uses single-seat mode where only the test bidder bids against always-pass
+sentinels, with GluttonStrategy card play. The eval figure reflects competitive
+bidding dynamics while the comparator isolates bidding quality in a controlled
+setting. OLSa = hybrid_olsa, OLSa_Full = hybrid_olsa_full (see
+[01_r0_promotion_report.md](01_r0_promotion_report.md) naming convention).
 
 **Source:** comparator_cis_r0_v6.json
 
