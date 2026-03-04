@@ -219,9 +219,9 @@ Despite the negative result, this protocol execution provides:
 | Bootstrap seed | 42 |
 | Bootstrap resamples | 10,000 |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |
-| Unified artifact | `data/artifacts/arc_d/r0/hybrid_r0_unified.json` |
+| Unified artifact | data/artifacts/arc_d/r0/hybrid_r0_unified.json (not generated — model rejected) |
 | Baseline artifact | `data/artifacts/arc_d/r0/hybrid_r0.json` (constrained), `hybrid_r0_full.json` (full) |
 | Comparator config | `experiments/configs/auction_comparator_onemodel.yaml` |
-| Battery output | `data/artifacts/arc_d/r0/onemodel_comparator_v1.json` |
+| Battery output | data/artifacts/arc_d/r0/onemodel_comparator_v1.json (not generated — model rejected) |
 | gate_status | RETAIN (Track F decision gate -- unified model rejected) |
 | Git SHA | See `training_info.git_sha` in artifact |
