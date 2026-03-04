@@ -5,7 +5,7 @@
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R0 (baseline)
 **Decision:** PROMOTED
-**Date:** 2026-02-22
+**Date:** 2026-02-22 (v1 decision); 2026-03-04 (v2 eval refresh)
 **Methodology Review:** [20_measurement_integrity_r0.md](20_measurement_integrity_r0.md)
 
 ## Executive Summary
@@ -259,8 +259,10 @@ wrapper effect (+0.75) both comfortably exceed this bar (see
 | OLSa SHA256 | 7b523cd6f0de41a82eca55f6b0bedc09d18630638609226ee3e8ddb443f71fe8 |
 | OLSa_Full SHA256 | 5436b759f525466976244766dee8d98472dcfe243ac1d4542885e6cd0e6dcbc7 |
 | Promotion decision | data/artifacts/arc_d/r0/promotion_decision_r0.json |
-| Evaluator git SHA | b194908ca8b0cf265d78c4661716e56343796db3 |
-| Promotion timestamp | 2026-02-22T02:13:32Z |
+| Evaluator git SHA (v1) | b194908ca8b0cf265d78c4661716e56343796db3 |
+| Evaluator git SHA (v2) | 2b674e85f9ffd780748830a517c7fafd7388bb4a |
+| Promotion timestamp (v1) | 2026-02-22T02:13:32Z |
+| V2 eval refresh timestamp | 2026-03-04T04:38:04Z |
 | Training source run | canonical_bidless_dataset_glutton_42_20260221_175752 |
 | n_deals per eval seed | 50,000 |
 | Eval policy | bid_level_search: true (v2) |

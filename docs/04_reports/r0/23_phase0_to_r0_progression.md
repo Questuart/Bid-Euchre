@@ -67,7 +67,7 @@ tests that hypothesis with appropriate caveats about comparability.
 | Source | Dataset | Hands | Rows | Contracts | Mode |
 |--------|---------|-------|------|-----------|------|
 | Phase 0 | canonical_bidless_dataset_glutton_42_20260221_175752 | 300,000 | 1,200,000 | Forced (suit × 4 trumps + high + low) | Symmetric self-play, no auction |
-| R0 | arc_d_eval_r0_42_20260303_201729 | 50,000 | 200,000 | Auction-selected (v2 bid-level search) | Symmetric self-play with OLSa_Full R0 bidder |
+| R0 | arc_d_eval_r0_42_20260303_201729 | 50,000 | 200,000 | Auction-selected (v2 bid-level search) | Symmetric self-play with OLSa R0 bidder |
 
 **Phase 0 loader:** `join_features_outcomes()` from `src/bid_euchre/datasets/join.py`
 (same loader used by oracle notebook `55_contract_selection_oracle.py`).
