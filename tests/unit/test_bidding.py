@@ -1265,6 +1265,111 @@ class TestModeloEspecificoBidFloorRemoval:
         assert action.is_pass()
 
 
+class TestModeloEspecificoR1:
+    """Test ModeloEspecifico R1 parameterization (feature_weights + partner_weights)."""
+
+    def test_default_weights_constant(self):
+        """Default feature_weights matches the R0 locked formulas."""
+        expected = {
+            "suit": {"bowers": 1.0, "trump_count": 0.5, "offsuit_aces": 0.5},
+            "high": {"offsuit_aces": 1.0},
+            "low": {"offsuit_tens_count": 1.0},
+        }
+        assert ModeloEspecifico._DEFAULT_FEATURE_WEIGHTS == expected
+
+    def test_custom_suit_weights_change_bid(self):
+        """Custom suit weights produce different bids than default."""
+        # Double the bower weight → scores increase for suit contracts
+        custom_weights = {
+            "suit": {"bowers": 2.0, "trump_count": 0.5, "offsuit_aces": 0.5},
+            "high": {"offsuit_aces": 1.0},
+            "low": {"offsuit_tens_count": 1.0},
+        }
+        bidder = ModeloEspecifico(feature_weights=custom_weights)
+
+        # 2 bowers + 4 trump + 1 offsuit ace
+        # Default: 1.0*2 + 0.5*4 + 0.5*1 = 4.5 → bid 4
+        # Custom:  2.0*2 + 0.5*4 + 0.5*1 = 6.5 → bid 6
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "A"),
+        ]
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+
+        default_bidder = ModeloEspecifico()
+        default_action = default_bidder.choose_bid(obs)
+        assert default_action.n == 4  # Baseline
+
+        custom_action = bidder.choose_bid(obs)
+        assert custom_action.n == 6  # Higher due to doubled bower weight
+
+    def test_partner_weights_increase_bid(self):
+        """Partner weights add to score when transcript shows partner bid."""
+        partner_weights = {
+            "partner_bid_level": 0.5,
+            "partner_passed": 0.0,
+            "partner_suit_match": 0.0,
+            "partner_bid_confidence": 0.0,
+        }
+        bidder = ModeloEspecifico(partner_weights=partner_weights)
+
+        # Hand: 2 bowers + 4 trump + 1 offsuit ace → default score 4.5 → bid 4
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "A"),
+        ]
+
+        # Partner (seat 2) bid suit level 4 → partner_bid_level=4
+        # Partner contribution: 0.5 * 4 = 2.0
+        # Total score: 4.5 + 2.0 = 6.5 → bid 6
+        transcript = (
+            {"seat": 2, "action": "BID", "tricks_bid": 4, "contract_type": "suit"},
+        )
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=0,
+            auction_transcript=transcript,
+        )
+        action = bidder.choose_bid(obs)
+        assert action.n == 6
+        assert action.contract == "H"
+
+    def test_empty_transcript_no_partner_contribution(self):
+        """Empty transcript → zero partner contribution even with weights set."""
+        partner_weights = {
+            "partner_bid_level": 10.0,
+            "partner_passed": 10.0,
+            "partner_suit_match": 10.0,
+            "partner_bid_confidence": 10.0,
+        }
+        bidder = ModeloEspecifico(partner_weights=partner_weights)
+        default_bidder = ModeloEspecifico()
+
+        hand = [
+            Card("H", "J"),
+            Card("D", "J"),
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("S", "A"),
+        ]
+
+        obs = BiddingObservation(hand=hand, seat=0, dealer_seat=3, current_high_bid=0)
+
+        assert bidder.choose_bid(obs).n == default_bidder.choose_bid(obs).n
+        assert (
+            bidder.choose_bid(obs).contract == default_bidder.choose_bid(obs).contract
+        )
+
+
 class TestRanktheTankFloorExtension:
     """Test RanktheTank suit bid_1/bid_2 tiers and HIGH/LOW floor extension."""
 

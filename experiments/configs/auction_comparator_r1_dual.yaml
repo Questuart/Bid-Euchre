@@ -1,0 +1,88 @@
+# R1 Dual-Seat Auction Comparator — 6-bidder canonical roster (§3.7.1)
+#
+# PRIMARY evaluation instrument for R1: both partnership seats use the same
+# bidder, so partner features receive real signal from a bidding partner.
+#
+# Usage:
+#   uv run python scripts/internal/run_auction_comparator.py \
+#     --config experiments/configs/auction_comparator_r1_dual.yaml \
+#     --dual-seat --seed 42 --n-per 5000 \
+#     --output-format json \
+#     --output data/artifacts/arc_d/r1/comparator_battery_r1_dual.json
+
+experiment_name: auction_comparator_r1_dual
+
+bidding_policies:
+  # --- R1 variants (partner-aware) ---
+
+  # Hybrid OLSa Full R1 — forward-selected from all 43 features
+  - name: hybrid_olsa_full_r1
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r1/hybrid_r1_full.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  # Hybrid OLSa R1 — constrained arm (locked base 3/2/2 + partner features)
+  - name: hybrid_olsa_r1
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r1/hybrid_r1.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  # ModeloEspecifico R1 — hand-coded baseline with R1 feature enrichment (§3.2.1)
+  - name: modeloespecifico_r1
+    class_name: ModeloEspecifico
+    params:
+      feature_weights:
+        suit:
+          bowers: 1.0
+          trump_count: 0.5
+          offsuit_aces: 0.5
+        high:
+          offsuit_aces: 1.0
+          quick_tricks: 1.0
+        low:
+          offsuit_tens_count: 1.0
+          quick_tricks: 1.0
+      partner_weights:
+        partner_bid_level: 1.0
+        partner_passed: 1.0
+        partner_suit_match: 1.0
+        partner_bid_confidence: 1.0
+
+  # --- R0 variants (partner-unaware, continuity baselines) ---
+
+  # Hybrid OLSa Full R0
+  - name: hybrid_olsa_full_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  # Hybrid OLSa R0
+  - name: hybrid_olsa_r0
+    class_name: HybridOLSaBidder
+    params:
+      artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+      bid_level_search: true
+      risk_lambda: 0.0
+
+  # ModeloEspecifico R0 (default weights = identical to R0 behavior)
+  - name: modeloespecifico_r0
+    class_name: ModeloEspecifico
+
+strategies:
+  - name: glutton
+    class_name: GluttonStrategy
+
+scenarios:
+  - contract_type: null  # Auction mode
+
+parameters:
+  play_strategy: glutton
+  n_per: 10000
+  seed: 42
+  log_level: hand

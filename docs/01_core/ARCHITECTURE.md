@@ -70,6 +70,7 @@ Shell scripts:
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
+- `generate_auction_context_dataset.py` — Auction-context dataset generator (R1 partner features)
 - `generate_batch_report.py` — Batch report + eligibility gate
 - `generate_r4_charts.py` — One-off report chart regeneration utility
 - `play_policy_gate.py` — Play policy stability gate
@@ -79,6 +80,7 @@ Shell scripts:
 - `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_lambda_sweep.py` — Simulation-based risk_lambda tuning sweep
 - `run_normalizer_offline_screen.py` — Normalizer go/no-go offline screening pipeline
+- `run_threshold_sweep.py` — Grid search over pass_threshold values (R1 threshold tuning)
 - `train_unified_model.py` — Unified cross-contract OLS training (Track F OneModel)
 - `update_arc_registry.py` — Arc D registry updater (MODEL_ARC_RUNS.md)
 - `validate_arc_d_rung_contract.py` — Arc D rung bundle validator
@@ -198,6 +200,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
+| `scripts/internal/generate_auction_context_dataset.py` | Auction-context dataset generator (R1 partner features) |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
 | `scripts/internal/generate_rung_charts.py` | Rung report chart generation from eval data + model artifacts |
@@ -208,6 +211,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
 | `scripts/internal/run_lambda_sweep.py` | Simulation-based risk_lambda tuning sweep |
 | `scripts/internal/run_normalizer_offline_screen.py` | Normalizer go/no-go offline screening pipeline |
+| `scripts/internal/run_threshold_sweep.py` | Grid search over pass_threshold values (R1 threshold tuning) |
 | `scripts/internal/train_unified_model.py` | Unified cross-contract OLS training (Track F OneModel) |
 | `scripts/internal/update_arc_registry.py` | Arc D registry updater (MODEL_ARC_RUNS.md) |
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |

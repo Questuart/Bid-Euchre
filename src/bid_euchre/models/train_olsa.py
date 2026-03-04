@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 # Per-contract feature specs
 CONTRACT_FEATURES = {
-    "suit": ["bowers", "trump_count", "offsuit_aces"],
-    "high": ["offsuit_aces"],
-    "low": ["offsuit_tens_count"],
+    "suit": ["bowers", "trump_count", "offsuit_aces"],  # 3 (unchanged)
+    "high": ["offsuit_aces", "quick_tricks"],  # 2 (R1: +quick_tricks)
+    "low": ["offsuit_tens_count", "quick_tricks"],  # 2 (R1: +quick_tricks)
 }
 
 
@@ -113,7 +113,8 @@ def train_olsa(run_dir, seed, split_manifest_dir=None, split_type="two_way"):
             continue
 
         train_df, val_df, test_df, manifest = create_grouped_split(
-            sub, seed,
+            sub,
+            seed,
             source_run_id=source_run_id,
             source_parquet_path=bidless_path,
             split_type=split_type,
@@ -252,9 +253,13 @@ if __name__ == "__main__":
     )
 
     parser = argparse.ArgumentParser(description="Train OLSa models")
-    parser.add_argument("--run-dir", required=True, help="Canonical bidless run directory")
+    parser.add_argument(
+        "--run-dir", required=True, help="Canonical bidless run directory"
+    )
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output", required=True, help="Output directory for artifacts")
+    parser.add_argument(
+        "--output", required=True, help="Output directory for artifacts"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")

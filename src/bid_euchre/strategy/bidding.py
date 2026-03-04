@@ -443,19 +443,44 @@ class RanktheTank(BiddingPolicy):
 
 class ModeloEspecifico(BiddingPolicy):
     """
-    Feature-weighted bidder using hand-coded weights.
+    Feature-weighted bidder with configurable weights.
 
-    Formulas (locked):
+    Default formulas (R0, locked):
       suit: 1.0 * bowers + 0.5 * trump_count + 0.5 * offsuit_aces
       HIGH: 1.0 * offsuit_aces
       LOW:  1.0 * offsuit_tens_count
 
+    R1 adds optional partner_weights for auction context features.
     The score maps directly to bid amount (floored).
     Named after the blog post's "specific model" baseline.
     """
 
-    def __init__(self, name: str = "modelo_especifico"):
+    _DEFAULT_FEATURE_WEIGHTS = {
+        "suit": {"bowers": 1.0, "trump_count": 0.5, "offsuit_aces": 0.5},
+        "high": {"offsuit_aces": 1.0},
+        "low": {"offsuit_tens_count": 1.0},
+    }
+
+    def __init__(
+        self,
+        name: str = "modelo_especifico",
+        feature_weights: dict | None = None,
+        partner_weights: dict | None = None,
+    ):
         super().__init__(name)
+        self.feature_weights = feature_weights or self._DEFAULT_FEATURE_WEIGHTS
+        self.partner_weights = partner_weights
+
+    def _compute_partner_score(self, obs, contract_family):
+        """Compute partner feature contribution to score."""
+        if not self.partner_weights or not obs.auction_transcript:
+            return 0.0
+        from ..features.auction_context import extract_partner_features
+
+        partner_feats = extract_partner_features(
+            obs.seat, obs.auction_transcript, observer_best_contract=contract_family
+        )
+        return sum(w * partner_feats[f] for f, w in self.partner_weights.items())
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         from ..features.hand_eval import get_hand_features
@@ -463,27 +488,30 @@ class ModeloEspecifico(BiddingPolicy):
         candidates = []
 
         # Evaluate suit contracts
+        partner_score_suit = self._compute_partner_score(obs, "suit")
         for suit in ["C", "D", "H", "S"]:
             features = get_hand_features(obs.hand, "suit", suit)
-            score = (
-                1.0 * features["bowers"]
-                + 0.5 * features["trump_count"]
-                + 0.5 * features["offsuit_aces"]
-            )
+            weights = self.feature_weights.get("suit", {})
+            score = sum(w * features[f] for f, w in weights.items())
+            score += partner_score_suit
             bid_n = int(score)  # floor
             if 1 <= bid_n <= 10 and bid_n > obs.current_high_bid:
                 candidates.append((score, bid_n, suit))
 
-        # Evaluate HIGH contract: score = 1.0 * offsuit_aces
+        # Evaluate HIGH contract
         features_high = get_hand_features(obs.hand, "high", None)
-        score_high = 1.0 * features_high["offsuit_aces"]
+        weights_high = self.feature_weights.get("high", {})
+        score_high = sum(w * features_high[f] for f, w in weights_high.items())
+        score_high += self._compute_partner_score(obs, "high")
         bid_n_high = int(score_high)
         if 1 <= bid_n_high <= 10 and bid_n_high > obs.current_high_bid:
             candidates.append((score_high, bid_n_high, "HIGH"))
 
-        # Evaluate LOW contract: score = 1.0 * offsuit_tens_count
+        # Evaluate LOW contract
         features_low = get_hand_features(obs.hand, "low", None)
-        score_low = 1.0 * features_low["offsuit_tens_count"]
+        weights_low = self.feature_weights.get("low", {})
+        score_low = sum(w * features_low[f] for f, w in weights_low.items())
+        score_low += self._compute_partner_score(obs, "low")
         bid_n_low = int(score_low)
         if 1 <= bid_n_low <= 10 and bid_n_low > obs.current_high_bid:
             candidates.append((score_low, bid_n_low, "LOW"))
