@@ -1,7 +1,7 @@
 # OneModel Decision Report: RETAIN Separate Models
 
 **Track:** F (Unified Cross-Contract Model)
-**Protocol:** `plans/r0_v2_onemodel_protocol.md` v1
+**Protocol:** `plans/archive/r0_v2_onemodel_protocol.md` v1
 **Date:** 2026-03-03
 **Decision:** RETAIN separate per-contract models
 **Gate status:** FAIL (delta < 0)
@@ -213,7 +213,7 @@ Despite the negative result, this protocol execution provides:
 
 | Item | Value |
 |------|-------|
-| Protocol | `plans/r0_v2_onemodel_protocol.md` v1 |
+| Protocol | `plans/archive/r0_v2_onemodel_protocol.md` v1 |
 | Decision | RETAIN separate per-contract models |
 | Training seed | 42 |
 | Bootstrap seed | 42 |

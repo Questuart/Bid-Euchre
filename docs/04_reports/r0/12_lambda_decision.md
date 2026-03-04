@@ -51,7 +51,7 @@ canonical config surfaces carry explicit `risk_lambda: 0.0` entries awaiting the
 of this protocol. This Track D investigation determines whether a non-zero lambda
 improves competitive performance.
 
-**Protocol:** `plans/r0_v2_lambda_tuning_protocol.md` (v1, amended to v4)
+**Protocol:** `plans/archive/r0_v2_lambda_tuning_protocol.md` (v1, amended to v4)
 
 **Dependency:** Track D runs sequentially after Track C (pass-threshold tuning). The
 Track C result (RETAIN t=0, see [11_pass_threshold_decision.md](11_pass_threshold_decision.md))
@@ -253,7 +253,7 @@ Since the decision is RETAIN, no config surface changes are needed. The existing
 | Item | Value |
 |------|-------|
 | gate_status | RETAIN (D0 decision gate -- no code change) |
-| Protocol | `plans/r0_v2_lambda_tuning_protocol.md` v1 (amended to v4) |
+| Protocol | `plans/archive/r0_v2_lambda_tuning_protocol.md` v1 (amended to v4) |
 | Sweep artifact | data/artifacts/arc_d/r0/lambda_sweep_selfplay_v1.json |
 | Sweep script | `scripts/internal/run_lambda_sweep.py` |
 | Analysis notebook | `notebooks/arc_d/r0/59_lambda_simulation_sweep.py` |
