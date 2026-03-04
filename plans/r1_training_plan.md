@@ -37,6 +37,12 @@ uv run python scripts/internal/generate_auction_context_dataset.py \
 > **Note:** `generate_auction_context_dataset.py` is a new script created in PR-R1a.
 > It runs the simulation with the R0 model in all bidding seats, logging
 > `auction_transcript` for each hand, then extracts the 4 partner features.
+>
+> **Data contract (Step 1 → Step 3):** This script must produce a **run directory**
+> (e.g., `data/runs/<canonical_auction_run_id>/`) containing
+> `datasets/bidless.parquet` and `datasets/bidless_outcomes.parquet`.
+> `train_hybrid_olsa` expects this directory structure, not a bare parquet path.
+> The `--output` path above is the parquet location within that directory.
 
 **Gate X1 — Feature Smoke Test:**
 
@@ -211,8 +217,10 @@ import json
 battery = json.load(open('data/artifacts/arc_d/r1/h2h_battery_quick.json'))
 assert battery['schema'] == 'h2h_battery_v2', f'Unexpected schema: {battery[\"schema\"]}'
 # Check primary: hybrid_olsa_full_r1 vs hybrid_olsa_full_r0
+found = False
 for mid, cell in battery['cells'].items():
     if cell['bidder_a'] == 'hybrid_olsa_full_r1' and cell['bidder_b'] == 'hybrid_olsa_full_r0':
+        found = True
         delta = cell['net_eppd_delta']
         print(f'Primary matchup ({mid}): delta = {delta:+.4f}')
         if delta < -0.05:
@@ -222,6 +230,7 @@ for mid, cell in battery['cells'].items():
         else:
             print('X3 GO: H2H delta > +0.05')
         break
+assert found, 'X3 FAIL: primary matchup (hybrid_olsa_full_r1 vs hybrid_olsa_full_r0) not found in battery'
 "
 
 # FULL (final round only — after all ADOPT decisions resolved)
