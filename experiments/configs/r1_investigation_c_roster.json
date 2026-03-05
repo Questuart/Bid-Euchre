@@ -1,0 +1,60 @@
+{
+  "schema": "h2h_roster_v1",
+  "description": "Investigation C: Zero-out partner features at inference. R1 models with partner features forced to 0 vs R0 baselines. If regression disappears, partner features are confirmed net-harmful.",
+  "bidders": [
+    {
+      "name": "hybrid_olsa_full_r1_ablated",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "zero_partner_features": true
+      }
+    },
+    {
+      "name": "hybrid_olsa_r1_ablated",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "zero_partner_features": true
+      }
+    },
+    {
+      "name": "hybrid_olsa_full_r1",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    },
+    {
+      "name": "hybrid_olsa_full_r0",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    },
+    {
+      "name": "hybrid_olsa_r0",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0
+      }
+    }
+  ],
+  "play_strategy": "glutton",
+  "gate_critical_matchups": [
+    {"a": "hybrid_olsa_full_r1_ablated", "b": "hybrid_olsa_full_r0", "purpose": "Primary ablation: does zeroing partner features eliminate regression?"},
+    {"a": "hybrid_olsa_r1_ablated", "b": "hybrid_olsa_r0", "purpose": "Constrained arm ablation control"},
+    {"a": "hybrid_olsa_full_r1_ablated", "b": "hybrid_olsa_full_r1", "purpose": "Ablation effect size: how much do partner features change predictions?"},
+    {"a": "hybrid_olsa_full_r1", "b": "hybrid_olsa_full_r0", "purpose": "Baseline regression confirmation (should match original -0.76 suit delta)"}
+  ]
+}

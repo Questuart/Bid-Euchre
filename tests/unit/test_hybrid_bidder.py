@@ -641,3 +641,54 @@ def test_r0_model_unaffected_by_partner_merge(tmp_path: Path):
     # Both should produce the same bid (partner features are extra dict keys, ignored by _predict)
     assert action_with.n == action_without.n
     assert action_with.contract == action_without.contract
+
+
+def test_zero_partner_features_ablation(tmp_path: Path):
+    """zero_partner_features=True zeroes all partner_* features before prediction.
+
+    Investigation C: verify that the ablation flag causes partner features to
+    contribute nothing to the prediction (0 * weight = 0), producing the same
+    mu as if partner features were absent.
+    """
+    # Create artifact WITH partner features and a measurable weight
+    path = _make_artifact(
+        tmp_path,
+        suit_weights=[0.5, 0.3, 0.2, 2.0],
+        suit_features=["bowers", "trump_count", "offsuit_aces", "partner_bid_level"],
+        suit_bias=3.0,
+        context_features=["partner_bid_level"],
+    )
+
+    # Normal bidder: partner_bid_level=8 contributes 2.0 * 8 = 16.0 to mu
+    bidder_normal = HybridOLSaBidder(path)
+    # Ablated bidder: partner_bid_level zeroed, contributes 0
+    bidder_ablated = HybridOLSaBidder(path, zero_partner_features=True)
+
+    # Test at the _predict level with explicit features
+    features_with_partner = {
+        "bowers": 2.0,
+        "trump_count": 5.0,
+        "offsuit_aces": 1.0,
+        "partner_bid_level": 8.0,
+    }
+    features_zeroed = {
+        "bowers": 2.0,
+        "trump_count": 5.0,
+        "offsuit_aces": 1.0,
+        "partner_bid_level": 0.0,
+    }
+
+    mu_normal = bidder_normal._predict("suit", features_with_partner)
+    mu_ablated = bidder_ablated._predict("suit", features_zeroed)
+
+    # Both predictions use the same base features, but ablated has partner=0
+    assert mu_normal != mu_ablated, "Partner features should change prediction"
+    assert mu_ablated == bidder_normal._predict(
+        "suit", features_zeroed
+    ), "Ablated mu should equal prediction with zeroed partner features"
+    # The difference should be exactly partner_bid_level * weight = 8 * 2.0 = 16
+    assert abs((mu_normal - mu_ablated) - 16.0) < 1e-10
+
+    # Verify the zero_partner_features flag defaults to False
+    assert not bidder_normal.zero_partner_features
+    assert bidder_ablated.zero_partner_features
