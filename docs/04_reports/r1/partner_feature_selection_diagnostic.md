@@ -2,8 +2,8 @@
 
 **Date:** 2026-03-05
 **Rung:** R1
-**Training data:** `data/runs/canonical_auction_r1_42` (41,424 hands from 50k deals)
-**Artifacts:** `data/artifacts/arc_d/r1/hybrid_r1.json`, `hybrid_r1_full.json`
+**Training data:** data/runs/canonical_auction_r1_42 (41,424 hands from 50k deals)
+**Artifacts:** data/artifacts/arc_d/r1/hybrid_r1.json, hybrid_r1_full.json
 **PR:** #532 (additive forward selection), #533 (plan update)
 
 ---
@@ -145,12 +145,12 @@ See `plans/r1_follow_ups.md` item P10 and `plans/r1_training_plan.md` §R2 proto
 
 | Item | Value |
 |------|-------|
-| Training data | `data/runs/canonical_auction_r1_42/datasets/bidless.parquet` |
-| Constrained artifact | `data/artifacts/arc_d/r1/hybrid_r1.json` (sha256=d44d28e9e3fa) |
-| Full artifact | `data/artifacts/arc_d/r1/hybrid_r1_full.json` (sha256=f47b1d521005) |
-| FS log (constrained) | `data/artifacts/arc_d/r1/feature_selection_log_r1_constrained.json` |
-| FS log (full) | `data/artifacts/arc_d/r1/feature_selection_log_r1_full.json` |
-| Training report | `data/artifacts/arc_d/r1/training_report_r1.json` |
+| Training data | data/runs/canonical_auction_r1_42/datasets/bidless.parquet |
+| Constrained artifact | data/artifacts/arc_d/r1/hybrid_r1.json (sha256=d44d28e9e3fa) |
+| Full artifact | data/artifacts/arc_d/r1/hybrid_r1_full.json (sha256=f47b1d521005) |
+| FS log (constrained) | data/artifacts/arc_d/r1/feature_selection_log_r1_constrained.json |
+| FS log (full) | data/artifacts/arc_d/r1/feature_selection_log_r1_full.json |
+| Training report | data/artifacts/arc_d/r1/training_report_r1.json |
 | Forward select impl | `src/bid_euchre/models/feature_selection.py` (min_improvement=0.005) |
 | Additive FS impl | PR #532 (`context_candidates` in `train_hybrid_olsa.py`) |
 | gate_status | X2 PASS — both arms suit R² not regressed (see §6) |
