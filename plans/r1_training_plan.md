@@ -228,6 +228,23 @@ print('X2 PASS: Both arms suit R² not regressed')
 
 **STOP if X2 fails.** Investigate feature selection / data quality.
 
+### Step 3c Results (2026-03-05)
+
+**Completed.** Both arms retrained with `context_candidates`. Gate X2 passed.
+
+| Arm | Contract | R² (R0) | R² (R1) | Delta | Partner features |
+|-----|----------|---------|---------|-------|-----------------|
+| Constrained | suit | 0.2153 | 0.6178 | +0.4024 | bid_level, passed, suit_match |
+| Constrained | high | — | 0.5764 | — | suit_match |
+| Constrained | low | — | 0.5532 | — | suit_match |
+| Full | suit | 0.2220 | 0.6271 | +0.4052 | bid_confidence, passed, suit_match |
+| Full | high | — | 0.5696 | — | suit_match |
+| Full | low | — | 0.5515 | — | suit_match |
+
+**Finding:** High/low selected only `partner_suit_match` in both arms. Confounded
+by sample size (4k high, 5.5k low vs 32k suit). Not gate-blocking; deferred to R2.
+See `docs/04_reports/r1/partner_feature_selection_diagnostic.md`.
+
 ---
 
 ## 4. 3-Seed Eval Runs (Step 4)
@@ -578,3 +595,13 @@ done
 | H2H runner | `scripts/internal/run_arc_d_h2h_battery.py` |
 | Comparator runner | `scripts/internal/run_auction_comparator.py` |
 | Lambda sweep | `scripts/internal/run_lambda_sweep.py` |
+
+---
+
+## R2 Context-Feature Protocol (Pre-Registered)
+
+**Moved to:** `plans/r2_follow_ups.md` §F1
+
+R2 will run rebalanced training (≥10k hands/contract), full context pool forward
+selection, and either ablation (if features selected) or forced-inclusion sensitivity
+(if not). See the full 4-step protocol in the R2 follow-ups doc.

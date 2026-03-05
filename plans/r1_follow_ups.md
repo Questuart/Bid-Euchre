@@ -27,6 +27,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P7 | Rung-to-rung report pipeline | No (deferrable) | MANUAL at R1 | Step 12a: written manually from artifacts. Automation deferred to R2+. |
 | P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
 | P9 | Extract notebook-only gate results to artifacts | No (deferrable) | — | nb55 oracle gate result has no committed JSON; see notebook boundary audit |
+| P10 | R2 context-feature confirmation for high/low | No (deferrable) | DEFERRED to R2 | Sample-size confound; see `docs/04_reports/r1/partner_feature_selection_diagnostic.md` |
 
 **Disposition values:** DONE / DEFERRED (with rationale + target rung) / NOT APPLICABLE (with evidence)
 
@@ -407,6 +408,44 @@ threshold 5.3%, over-bidding 3.7%), and oracle contract mix exist nowhere in
 2. **General:** For any new decision notebook at R1, require a committed artifact
    capturing gate-critical outputs. The `.claude/rules/45_notebook_boundary.md` rule
    codifies this going forward.
+
+---
+
+## Priority 10: R2 Context-Feature Confirmation for HIGH/LOW
+
+**Status:** DEFERRED to R2
+**Origin:** R1 Step 3c training analysis — `partner_bid_level` and `partner_passed` not
+selected for high/low by either arm (constrained or full). Confounded by suit-heavy
+training distribution (77% suit, 10% high, 13% low).
+**Diagnostic:** `docs/04_reports/r1/partner_feature_selection_diagnostic.md`
+
+### What
+
+Forward selection at R1 selected only `partner_suit_match` for high/low contracts.
+The remaining partner features (`partner_bid_level`, `partner_passed`) showed
+deltas below the 0.005 R² threshold (+0.001 for high, +0.0003 for low). Two
+explanations are confounded: (A) genuinely redundant features for no-trump, or
+(B) insufficient sample size (4k high, 5.5k low vs 32k suit).
+
+### Why Defer
+
+- R1 gate stability: current models passed Gate X2 with +0.40 R² improvement
+- Fixing requires either rebalanced data (more high/low deals) or lower threshold
+  (risks overfitting)
+- R2 will have fresh training data — proper venue for confirmation
+
+### R2 Pre-Registered Protocol
+
+See `plans/r1_training_plan.md` §R2 Context-Feature Protocol for the full
+4-step decision framework (train → check → ablate or force-include → adopt rule).
+
+### Acceptance Criteria
+
+- R2 training data has ≥10k hands per contract family (rebalanced generation)
+- Forward selection re-run with full context pool (partner + any new opponent features)
+- If `partner_bid_level`/`partner_passed` still not selected: forced-inclusion
+  sensitivity experiment to quantify the true delta
+- Decision documented in R2 progression report
 
 ---
 
