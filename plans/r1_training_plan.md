@@ -5,6 +5,11 @@
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
 **Status:** Gate X3 STOP — regression investigation in progress (see diagnostic report)
 
+> **Document role:** This is the **R1 operational execution checklist** — CLI
+> commands, gate results, artifact paths. For strategic governance (feature
+> design, protocols, failure modes), see `r1_master_plan.md`. For the R0–R5
+> ladder roadmap (wave structure, PR sequencing), see `arc_d_execution_plan.md`.
+
 > **Rung boundary note:** This plan covers R1 execution only. R1 must complete
 > its retrain-first baseline cycle before any R1.5 execution begins. R1.5 is a
 > formally defined subsequent rung for partner-semantics redesign — see
@@ -254,11 +259,18 @@ See `docs/04_reports/r1/partner_feature_selection_diagnostic.md`.
 > **Stale note:** Step 3c trained with 4 partner features including
 > `partner_bid_confidence`, which was removed in PR #538 (linearly redundant
 > with `partner_bid_level`). The full arm results above include this feature.
+> Step 3d will retrain both arms from scratch with the corrected 3-feature set,
+> making 3c artifacts historical only.
 
 ### 3d. Retrain with 3 partner features (post-investigation)
 
 **Status:** BLOCKED — waiting on regression investigation
 (see `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`)
+
+> **Blocking chain:** Steps 4–12 are blocked until 3d completes. Step 3e
+> (feature-effect testing) runs immediately after 3d, before Step 4. The
+> full dependency is: regression investigation → 3d retrain → 3e counterfactual
+> → Step 4 eval → Step 5 H2H → Steps 6–12.
 
 After the regression investigation (Investigations F–I) identifies root cause:
 
@@ -536,6 +548,9 @@ Run at QUICK + 1 non-QUICK sanity check (guardrail §3.5).
 
 ### 11a. Deep-Debug (Conditional)
 
+> Blocked on same regression investigation as §3d — see
+> `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`.
+
 **Trigger:** Any class has Δ_partner ≤ 0.
 
 Execute per `r1_master_plan.md` §3.15 (Tracks A–D).
@@ -580,15 +595,10 @@ done
 
 ## Hyperparameter ADOPT Rerun Matrix
 
-| Threshold | Lambda | Normalizer | Steps to Rerun | Final Config |
-|-----------|--------|-----------|----------------|-------------|
-| RETAIN | RETAIN | SKIP | None | t=0, λ=0, no normalizer |
-| ADOPT t* | RETAIN | SKIP | 4–6 (QUICK with t*) | t*, λ=0 |
-| RETAIN | ADOPT λ* | SKIP | 4–6 (QUICK with λ*) | t=0, λ* |
-| ADOPT t* | ADOPT λ* | SKIP | 4–6 (QUICK with t*), then 4–6 (FULL with t*+λ*) | t*, λ* |
-| Any | Any | ADOPT | Full recascade: 4–8, 11 Arm 4 | t*, λ*, normalizer |
+See `r1_master_plan.md` §3.4 for the full ADOPT rerun matrix (5-row decision
+table covering RETAIN/ADOPT combinations for threshold, lambda, and normalizer).
 
-**Only the final round's data feeds the promotion gate (Step 12).**
+**Key rule:** Only the final round's data feeds the promotion gate (Step 12).
 
 ---
 

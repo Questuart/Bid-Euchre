@@ -1,10 +1,16 @@
 # R1 Readiness: Cleanup, Archival & Training Plan Scope
 
 **Date:** 2026-03-03
-**Status:** PLAN — awaiting approval
+**Status:** IN EXECUTION — Gate X3 STOP, regression investigation in progress
 **Scope:** Pre-R1 cleanup (plan archival, untracked files, MASTER_PLAN update),
 R1 follow-ups delta analysis, and full scope outline for `r1_training_plan.md`.
 **Governs:** Transition from R0 v2 freeze to R1 execution (C2).
+
+> **Document role:** This is the **R1 strategic governance document** — feature
+> design, training protocols, failure modes, HITL checkpoints, and promotion
+> contract. For R1 operational execution (CLI commands, gate results), see
+> `r1_training_plan.md`. For the R0–R5 ladder roadmap (wave structure, PR
+> sequencing), see `arc_d_execution_plan.md`.
 
 ---
 
@@ -106,13 +112,13 @@ These are R0-completed work with no further utility at top level:
 
 | File | Purpose | When |
 |------|---------|------|
-| `plans/r1_training_plan.md` | Concrete R1 execution checklist (§3 below) | Before first R1 PR |
+| `plans/r1_training_plan.md` | Operational execution checklist (derived from §3 below) | Before first R1 PR |
 
 ---
 
 ## 3. R1 Training Plan Scope
 
-The `r1_training_plan.md` (MASTER_PLAN §9 C2-a) is the operational plan for R1
+The `r1_training_plan.md` (per the archived `plans/archive/MASTER_PLAN.md` task C2-a) is the operational plan for R1
 execution. Based on the follow-ups analysis, arc_d_execution_plan §Phase R1, and
 process lessons W1–W4, here is the full scope:
 
@@ -866,6 +872,9 @@ a valid finding, not a bug.
 
 ## 4. Pre-R1 Cleanup Tasks
 
+> **Section status (2026-03-05):** All pre-R1 cleanup tasks completed (PR #525,
+> PR #528). This section is retained for provenance.
+
 ### 4.1 Commit Untracked Files — ✅ DONE (PR #525)
 
 Both files were deleted (not archived) as their content was captured in formal reports.
@@ -881,20 +890,20 @@ If stale, restore with `git restore`.
 11 files moved to `plans/archive/`. `MASTER_PLAN.md` archived; this plan
 (`r1_master_plan.md`) is now the governing document for R1.
 
-### 4.4 Update MEMORY.md
+### 4.4 Update MEMORY.md — ✅ DONE
 
 - Remove R0 v2 "remaining steps" section (Task #27, #28 will be done)
 - Add R1 training cycle as current work
 - Trim stale R0 details to stay under 180-line limit
 
-### 4.5 Verify Infrastructure
+### 4.5 Verify Infrastructure — ✅ DONE
 
 Before starting PR-R1a, confirm:
-- [ ] `data/artifacts/arc_d/r0/hybrid_r0_full.json` exists and is the v2 model
-- [ ] `data/artifacts/arc_d/r0/gate_thresholds_r1.json` exists with FULL-calibrated values
-- [ ] `arc_d_gate.py` `_load_thresholds()` can find R1 threshold file
-- [ ] Training pipeline (`train_hybrid_olsa.py`) accepts `rung_id="r1"` correctly
-- [ ] `BiddingObservation.auction_transcript` is populated during simulation
+- [x] `data/artifacts/arc_d/r0/hybrid_r0_full.json` exists and is the v2 model
+- [x] `data/artifacts/arc_d/r0/gate_thresholds_r1.json` exists with FULL-calibrated values
+- [x] `arc_d_gate.py` `_load_thresholds()` can find R1 threshold file
+- [x] Training pipeline (`train_hybrid_olsa.py`) accepts `rung_id="r1"` correctly
+- [x] `BiddingObservation.auction_transcript` is populated during simulation
 
 ---
 
@@ -1016,9 +1025,12 @@ metrics (#400, #401).
 
 | Component | Integration Boundary | Specific Danger |
 |-----------|---------------------|-----------------|
-| Feature extraction (PR-R1a) | `auction_transcript` dict → 4 numeric features | Wrong seat for "partner" (seat arithmetic mod 4), missing transcript entries, None handling for early-round bids |
+| Feature extraction (PR-R1a) | `auction_transcript` dict → 3 numeric features | Wrong seat for "partner" (seat arithmetic mod 4), missing transcript entries, None handling for early-round bids |
 | Dataset generator (PR-R1a) | bidless pipeline → auction-context pipeline | Training code (`train_hybrid_olsa.py`) loads `bidless.parquet`. New dataset has different columns. Loading path must be updated or the old path silently produces data without partner features. |
 | R1 gate path (PR-R1b) | `arc_d_gate.py` R1+ branch | R0 used the simplified path (no guardrails, no incumbent comparison). The R1+ path has never been exercised with real data. Guardrail thresholds, incumbent loading, H2H CI parsing are all first-run code. |
+> **Update (2026-03-05):** Gates X1, X2, and X3 have now been exercised with real
+> R1 data. The first-run risk for training and H2H evaluation paths has been
+> mitigated. Remaining first-run paths: comparator battery (X4–X6), promotion gate (X8).
 | Bundle schema (PR-R1b) | `arc_d_bundle.py` validation | R1 bundle has new required fields (`progression_report`, R1-specific artifacts). First real validation run may expose schema mismatches. |
 | `normalize_eval_metrics()` | evaluator names ↔ gate alias names | R1 may introduce new metric keys (e.g., partner-context diagnostics). The ACL layer must bridge them or the gate silently drops metrics. |
 
