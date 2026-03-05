@@ -37,6 +37,8 @@ and lays out a concrete investigation plan with reproduction commands.
 6. **C (zero-out ablation)** — Definitive test. Small code change + H2H re-run.
 7. **D (distribution shift)** — May need re-run with `log_level: trick` if
    auction transcripts are not in current logs.
+8. **I (training data variance)** — Free (parquet stats + sklearn). Tests whether
+   R² improvement is a data artifact rather than partner feature signal.
 
 ---
 
@@ -301,6 +303,33 @@ The R² improvement is real but misleading as a game-quality metric.
 - The prediction inflation correlates with the regression magnitude
 
 **Test:** Combined with Investigation B (bid/set rate comparison).
+
+### H9: R² Improvement Is a Training Data Artifact (Lower Outcome Variance)
+
+**Claim:** The R² tripling from 0.22 to 0.62 is partially or wholly an artifact
+of switching from bidless to auction-context training data. The auction-context
+data has lower residual variance in `tricks_won` because contracts were selected
+through real 4-player auctions (sensible contract selection) rather than
+quasi-randomly (only one seat bids in bidless runs).
+
+**Mechanism:**
+- R0 bidless data: only the observer bids, opponents use GluttonStrategy
+  (no bidding). Contracts may be poorly matched to hands → high trick variance
+- R1 auction-context data: all 4 seats bid with the same artifact. Winning
+  contracts are selected through competitive auction → better hand-contract
+  fit → lower trick variance
+- R² = 1 - (residual variance / total variance). If total variance drops
+  while residual variance stays constant, R² rises mechanically
+- The model isn't more accurate; the data is just more predictable
+
+**Testable predictions:**
+- `tricks_won` variance (suit) is lower in R1 training data than R0
+- Training hand-only models (no partner features) on R1 data produces R²
+  significantly higher than R0's 0.22
+- The R² gap between hand-only-on-R1 and R0 accounts for a substantial
+  fraction of the total +0.40 improvement
+
+**Test:** See Investigation I.
 
 ### H1 vs H3: How to Distinguish
 
@@ -740,6 +769,93 @@ print(f"R1 intercept: {r1_suit['intercept']:.4f}")
 **Expected if H7:** Significant weight changes in locked features. This would
 mean even with partner features zeroed, the R1 model makes different predictions
 than R0 — the regression has a base-model component.
+
+**Status:** PENDING
+
+**Findings:**
+
+_(to be filled after investigation)_
+
+### Investigation I: Training Data Variance + Hand-Only R² Control
+
+**Question:** Is the R² improvement from better data rather than better features?
+
+**Method:** Two tests:
+
+1. Compare `tricks_won` variance between R0 bidless and R1 auction-context data
+2. Train hand-only models (same 3 locked suit features, no partner features)
+   on R1 data and compare R² to R0
+
+If hand-only R² on R1 data is significantly higher than R0's 0.22, the data
+itself is "easier" and partner features get undeserved credit for the improvement.
+
+**Reproduction:**
+
+```python
+# Test 1: Outcome variance comparison
+import pandas as pd
+
+r0 = pd.read_parquet(
+    "data/runs/canonical_bidless_dataset_glutton_42_20260221_175752/datasets/bidless.parquet"
+)
+r1 = pd.read_parquet(
+    "data/runs/canonical_auction_r1_42/datasets/bidless.parquet"
+)
+
+print("tricks_won variance by contract type:")
+for ct in ["suit", "high", "low"]:
+    r0_suit = r0[r0["contract_type"] == ct]["tricks_won"]
+    r1_suit = r1[r1["contract_type"] == ct]["tricks_won"]
+    print(f"  {ct}: R0 var={r0_suit.var():.3f} (n={len(r0_suit)}), "
+          f"R1 var={r1_suit.var():.3f} (n={len(r1_suit)}), "
+          f"ratio={r1_suit.var()/r0_suit.var():.3f}")
+```
+
+```python
+# Test 2: Hand-only model on R1 data
+import json
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import GroupKFold
+
+# Get the 3 locked suit features from R0 artifact
+r0_art = json.load(open("data/artifacts/arc_d/r0/hybrid_r0.json"))
+locked_features = r0_art["payoff_model"]["suit"]["feature_names"]
+print(f"Locked suit features: {locked_features}")
+
+# Train hand-only on R1 data
+r1 = pd.read_parquet(
+    "data/runs/canonical_auction_r1_42/datasets/bidless.parquet"
+)
+suit = r1[r1["contract_type"] == "suit"].copy()
+X = suit[locked_features].values.astype(np.float64)
+y = suit["tricks_won"].values.astype(np.float64)
+groups = suit["hand_id"].values
+
+gkf = GroupKFold(n_splits=5)
+r2_scores = []
+for train_idx, test_idx in gkf.split(X, y, groups):
+    model = LinearRegression()
+    model.fit(X[train_idx], y[train_idx])
+    r2_scores.append(model.score(X[test_idx], y[test_idx]))
+
+hand_only_r2 = np.mean(r2_scores)
+print(f"\nHand-only R² on R1 data: {hand_only_r2:.4f}")
+print(f"R0 hand-only R²:         0.215")
+print(f"R1 full model R²:        0.618")
+print(f"\nR² decomposition:")
+print(f"  Data quality effect:    {hand_only_r2 - 0.215:+.4f}")
+print(f"  Partner feature effect: {0.618 - hand_only_r2:+.4f}")
+print(f"  Total improvement:      {0.618 - 0.215:+.4f}")
+```
+
+**Expected if H9:** Hand-only R² on R1 data >> 0.22, meaning a significant
+portion of the +0.40 improvement is from data quality, not partner features.
+The R² decomposition quantifies how much each factor contributes.
+
+**Expected if NOT H9:** Hand-only R² on R1 data ≈ 0.22, meaning the data
+change doesn't explain the improvement and partner features are truly adding
+signal (even if that signal is confounded per H3).
 
 **Status:** PENDING
 
