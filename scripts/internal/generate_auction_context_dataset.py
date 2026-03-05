@@ -223,6 +223,7 @@ def run_auction_experiment(
             "n_per": n_deals,
             "play_strategy": play_strategy,
             "mode": "auction",
+            "log_level": "hand",
         },
     }
 
