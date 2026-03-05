@@ -1231,8 +1231,10 @@ class HybridOLSaBidder(BiddingPolicy):
                 else:
                     features = get_hand_features(obs.hand, "suit", contract)
 
-                # Merge partner features if model uses them and auction context available
-                if obs.auction_transcript:
+                # Merge partner features if model uses context features.
+                # Always extract (even with empty transcript) so defaults (0)
+                # are available — the first bidder has no transcript yet.
+                if self.context_features:
                     from ..features.auction_context import extract_partner_features
 
                     partner_feats = extract_partner_features(

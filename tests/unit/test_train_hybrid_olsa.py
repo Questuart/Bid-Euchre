@@ -432,8 +432,19 @@ def test_context_candidates_additive_forward_selection(tmp_path: Path):
         # Selected features should be a superset of (or equal to) locked base
         assert len(selected) >= len(locked)
 
-    # Artifact should record context_features
-    assert artifact["context_features"] == PARTNER_FEATURE_NAMES
+    # Artifact context_features should be a subset of candidates (actually selected)
+    assert set(artifact["context_features"]).issubset(set(PARTNER_FEATURE_NAMES))
+    # At least some context features should have been selected (synthetic data
+    # has partner_bid_level correlated with nothing, but forward_select always
+    # tries adding — with random data some may pass the improvement threshold)
+    # The key invariant: context_features ⊆ candidates, and all listed features
+    # appear in at least one contract's model.
+    for cf_name in artifact["context_features"]:
+        found = any(
+            cf_name in artifact["payoff_model"][cf]["feature_names"]
+            for cf in artifact["payoff_model"]
+        )
+        assert found, f"context_features lists '{cf_name}' but no model uses it"
 
     # Feature selection log should be produced
     assert "constrained_feature_selection_log" in result

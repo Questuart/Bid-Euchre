@@ -35,6 +35,7 @@ def _make_artifact(
     residual_variance=None,
     risk_lambda=0.0,
     artifact_type="hybrid_olsa_v1",
+    context_features=None,
 ) -> str:
     """Create a temporary hybrid_olsa_v1 artifact and return its path."""
     if suit_weights is None:
@@ -75,7 +76,7 @@ def _make_artifact(
         },
         "residual_variance": residual_variance,
         "risk_lambda": risk_lambda,
-        "context_features": [],
+        "context_features": context_features or [],
         "training_seed": 42,
         "training_run_id": "test_run",
         "split_type": "three_way",
@@ -540,6 +541,7 @@ def test_partner_features_used_when_in_model(tmp_path: Path):
         suit_weights=[0.5, 0.3, 0.2, 0.1],
         suit_features=["bowers", "trump_count", "offsuit_aces", "partner_bid_level"],
         suit_bias=6.0,
+        context_features=["partner_bid_level"],
     )
     bidder = HybridOLSaBidder(path)
 
@@ -568,24 +570,25 @@ def test_partner_features_used_when_in_model(tmp_path: Path):
 
 
 def test_partner_features_empty_transcript_defaults(tmp_path: Path):
-    """HybridOLSaBidder with partner features works when auction_transcript is empty."""
+    """HybridOLSaBidder with partner features works when auction_transcript is empty.
+
+    The first bidder in an auction has an empty transcript. Partner features
+    should default to 0 (extract_partner_features returns zeros for empty input).
+    """
     # Artifact includes partner_bid_level in suit features
     path = _make_artifact(
         tmp_path,
         suit_weights=[0.5, 0.3, 0.2, 0.1],
         suit_features=["bowers", "trump_count", "offsuit_aces", "partner_bid_level"],
         suit_bias=6.0,
+        context_features=["partner_bid_level"],
     )
     bidder = HybridOLSaBidder(path)
 
     from bid_euchre.core.cards import Card
 
     hand = [Card("S", "A")] * 10
-    # Empty auction_transcript (default) — partner features not merged,
-    # so partner_bid_level will be missing from features dict → KeyError
-    # unless the model doesn't require it OR transcript is non-empty.
-    # With empty transcript (default tuple), partner features are NOT merged.
-    # The R0 path (no partner features in model) should still work.
+    # Empty transcript — partner features default to 0 (no partner info yet)
     obs = BiddingObservation(
         hand=hand,
         seat=0,
@@ -593,10 +596,9 @@ def test_partner_features_empty_transcript_defaults(tmp_path: Path):
         current_high_bid=0,
         auction_transcript=(),
     )
-    # This will KeyError because partner_bid_level is in model but not in features.
-    # This is expected behavior: R1 models require auction_transcript at runtime.
-    with pytest.raises(KeyError):
-        bidder.choose_bid(obs)
+    action = bidder.choose_bid(obs)
+    # Should not crash — partner features default to 0 with empty transcript
+    assert action is not None
 
 
 def test_r0_model_unaffected_by_partner_merge(tmp_path: Path):

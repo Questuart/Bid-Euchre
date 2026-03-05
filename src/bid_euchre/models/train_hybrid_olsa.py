@@ -366,12 +366,30 @@ def _train_arm(
                 feature_names,
             )
 
+    # Derive actually-selected context features (union across contract families)
+    selected_context: list[str] = []
+    if context_candidates:
+        pool_set = set(context_candidates)
+        seen = set()
+        for cf_model in models.values():
+            # Handle both flat and off/def model structures
+            if "feature_names" in cf_model:
+                names = cf_model["feature_names"]
+            elif "offensive" in cf_model:
+                names = cf_model["offensive"]["feature_names"]
+            else:
+                continue
+            for f in names:
+                if f in pool_set and f not in seen:
+                    seen.add(f)
+                    selected_context.append(f)
+
     artifact = _build_artifact(
         rung_id=rung_id,
         models=models,
         residual_variances=residual_variances,
         risk_lambda=risk_lambda,
-        context_features=context_candidates or [],
+        context_features=selected_context,
         seed=seed,
         source_run_id=source_run_id,
         split_type=split_type,
