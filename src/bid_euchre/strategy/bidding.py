@@ -1244,6 +1244,17 @@ class HybridOLSaBidder(BiddingPolicy):
                     )
                     features = {**features, **partner_feats}
 
+                    # Backward compat: old artifacts may expect
+                    # partner_bid_confidence (removed PR #538).
+                    # Derive from partner_bid_level / 10.
+                    if (
+                        "partner_bid_confidence" not in features
+                        and "partner_bid_confidence" in self.context_features
+                    ):
+                        features["partner_bid_confidence"] = (
+                            features.get("partner_bid_level", 0) / 10.0
+                        )
+
                 mu = self._predict(contract_family, features, declaring=True)
 
                 result = compute_best_bid(

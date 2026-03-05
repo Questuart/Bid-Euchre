@@ -1208,6 +1208,68 @@ class TestHybridOLSaBidFloor:
         assert action.n == 7
 
 
+class TestHybridOLSaPartnerBidConfidenceCompat:
+    """Backward compat: old artifacts with partner_bid_confidence still work."""
+
+    def test_old_artifact_with_partner_bid_confidence(self, tmp_path):
+        """Artifact expecting partner_bid_confidence doesn't crash at runtime."""
+        import json
+
+        artifact = {
+            "artifact_type": "hybrid_olsa_v1",
+            "context_features": [
+                "partner_bid_level",
+                "partner_bid_confidence",
+                "partner_passed",
+                "partner_suit_match",
+            ],
+            "payoff_model": {
+                "suit": {
+                    "weights": [0.0, 0.0, 0.0, 0.0, 0.0],
+                    "bias": 7.0,
+                    "feature_names": [
+                        "trump_count",
+                        "partner_bid_level",
+                        "partner_bid_confidence",
+                        "partner_passed",
+                        "partner_suit_match",
+                    ],
+                }
+            },
+            "residual_variance": {"suit": 0.0},
+            "risk_lambda": 0.0,
+        }
+        artifact_path = tmp_path / "old_r1_full.json"
+        artifact_path.write_text(json.dumps(artifact))
+
+        bidder = HybridOLSaBidder(str(artifact_path), name="test_compat")
+
+        hand = [
+            Card("H", "A"),
+            Card("H", "K"),
+            Card("H", "Q"),
+            Card("H", "T"),
+            Card("S", "A"),
+            Card("S", "K"),
+            Card("D", "A"),
+            Card("D", "K"),
+            Card("C", "A"),
+            Card("C", "K"),
+        ]
+        obs = BiddingObservation(
+            hand=hand,
+            seat=0,
+            dealer_seat=3,
+            current_high_bid=0,
+            auction_transcript=[
+                {"seat": 2, "action": "BID", "tricks_bid": 6, "contract_type": "suit"},
+            ],
+        )
+        # Must not raise KeyError
+        action = bidder.choose_bid(obs)
+        assert action is not None
+
+
 class TestModeloEspecificoBidFloorRemoval:
     """Test ModeloEspecifico bid floor lowered from 3 to 1 (comparator v5)."""
 
