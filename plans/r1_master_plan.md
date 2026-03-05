@@ -151,7 +151,7 @@ Plus follow-up work that may be separate PRs or folded in:
 |---------|------|-----------|
 | `partner_bid_level` | int | Highest bid level partner made (0 if passed) |
 | `partner_passed` | bool→int | 1 if partner has passed |
-| `partner_suit_match` | bool→int | 1 if partner bid same suit family |
+| `partner_suit_match` | bool→int | 1 if partner bid the same contract family (suit/high/low) |
 
 **Feature enrichment (P1) — HITL FINAL DECISION:**
 
@@ -218,7 +218,7 @@ base expansion as OLSa with weight = 1.0 for all new features. This is a standin
 **P1 feature enrichment details (HITL final decision):**
 - Use **existing** features only. No new features added to `hand_eval.py`.
 - OLSa locked base expands from 3/1/1 → 3/2/2 using interpretable, domain-meaningful features.
-- OLSa_Full forward-selects from the full 43-feature pool with lowered `min_improvement`.
+- OLSa_Full forward-selects from the full 42-feature pool with lowered `min_improvement`.
 - The lowered `min_improvement` value is determined by a pre-registered
   mini-protocol (see §8.7, checkpoint C3): test 3 candidates (0.005, 0.002, 0.001),
   success = HIGH model selects ≥2 features, failure = suit model R² regresses >0.01.
@@ -978,7 +978,7 @@ HITL sign-off (Task #28)
      HIGH: `offsuit_aces` + `quick_tricks`. LOW: `offsuit_tens_count` + `quick_tricks`.
      No new features added to `hand_eval.py` — uses existing features only.
      Design rationale: human-interpretable parameters over maximal predictive power.
-   - OLSa_Full (promotional): Forward-selects from the full 43-feature pool
+   - OLSa_Full (promotional): Forward-selects from the full 42-feature pool
      (39 existing + 3 partner context) with lowered `min_improvement`
      to avoid premature HIGH/LOW stopping.
    - Validated via 4-arm ablation (§3.5) with 3 HITL-approved guardrails.

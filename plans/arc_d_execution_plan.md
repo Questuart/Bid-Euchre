@@ -473,7 +473,7 @@ and train expanded model.
 **Partner context features (candidates):**
 - `partner_bid_level`: highest bid level partner made (0 if passed)
 - `partner_passed`: 1 if partner has passed, 0 otherwise
-- `partner_suit_match`: 1 if partner bid same suit family
+- `partner_suit_match`: 1 if partner bid the same contract family (suit/high/low) as the candidate contract
 
 **OLSa arm:**
 - Starting features: R0's 3/1/1 locked base
