@@ -301,7 +301,7 @@ def _train_arm(
                 # Stage 2: fit partner features on residuals
                 residual = y_train - (X_base @ w_base + b_base)
                 X_partner = X_train[:, partner_indices]
-                w_partner, _ = _fit_ols(X_partner, residual)  # discard residual bias
+                w_partner, b_partner = _fit_ols(X_partner, residual)
 
                 # Combine weights in original feature order
                 weights = np.zeros(len(feature_names))
@@ -309,7 +309,9 @@ def _train_arm(
                     weights[idx] = w_base[i]
                 for i, idx in enumerate(partner_indices):
                     weights[idx] = w_partner[i]
-                bias = b_base
+                # Both biases needed: b_base centers the base prediction,
+                # b_partner corrects the systematic offset in residuals
+                bias = b_base + b_partner
             else:
                 # No partner features selected — standard OLS
                 weights, bias = _fit_ols(X_train, y_train)
