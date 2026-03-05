@@ -450,6 +450,42 @@ def test_context_candidates_additive_forward_selection(tmp_path: Path):
     assert "constrained_feature_selection_log" in result
 
 
+def test_full_arm_context_features_populated(tmp_path: Path):
+    """Full arm artifact should have context_features when context_candidates provided."""
+    from bid_euchre.features.auction_context import PARTNER_FEATURE_NAMES
+
+    run_dir = _make_synthetic_run(tmp_path, include_partner_features=True)
+    output_dir = str(tmp_path / "output")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="full",
+        freeze=False,
+        rung_id="test",
+        context_candidates=list(PARTNER_FEATURE_NAMES),
+    )
+
+    with open(result["artifacts"]["full"]) as f:
+        artifact = json.load(f)
+
+    # Full arm should populate context_features (subset of candidates)
+    assert set(artifact.get("context_features", [])).issubset(
+        set(PARTNER_FEATURE_NAMES)
+    )
+    # Every listed context feature must appear in at least one contract model
+    for cf_name in artifact["context_features"]:
+        found = any(
+            cf_name in artifact["payoff_model"][cf]["feature_names"]
+            for cf in artifact["payoff_model"]
+        )
+        assert found, f"context_features lists '{cf_name}' but no model uses it"
+
+    # Feature selection log should be produced for full arm
+    assert "feature_selection_log" in result
+
+
 def test_context_candidates_none_backward_compat(tmp_path: Path):
     """Constrained arm without context_candidates uses only locked base (R0 path)."""
     from bid_euchre.models.train_olsa import CONTRACT_FEATURES
