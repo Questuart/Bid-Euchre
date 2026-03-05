@@ -501,6 +501,7 @@ def train_hybrid_olsa(
             feature_budget=feature_budget,
             do_forward_select=True,
             offensive_defensive=offensive_defensive,
+            context_candidates=context_candidates,
         )
 
         artifact_full_path = os.path.join(output_dir, f"hybrid_{rung_id}_full.json")
