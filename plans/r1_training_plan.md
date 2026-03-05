@@ -228,6 +228,23 @@ print('X2 PASS: Both arms suit R² not regressed')
 
 **STOP if X2 fails.** Investigate feature selection / data quality.
 
+### Step 3c Results (2026-03-05)
+
+**Completed.** Both arms retrained with `context_candidates`. Gate X2 passed.
+
+| Arm | Contract | R² (R0) | R² (R1) | Delta | Partner features |
+|-----|----------|---------|---------|-------|-----------------|
+| Constrained | suit | 0.2153 | 0.6178 | +0.4024 | bid_level, passed, suit_match |
+| Constrained | high | — | 0.5764 | — | suit_match |
+| Constrained | low | — | 0.5532 | — | suit_match |
+| Full | suit | 0.2220 | 0.6271 | +0.4052 | bid_confidence, passed, suit_match |
+| Full | high | — | 0.5696 | — | suit_match |
+| Full | low | — | 0.5515 | — | suit_match |
+
+**Finding:** High/low selected only `partner_suit_match` in both arms. Confounded
+by sample size (4k high, 5.5k low vs 32k suit). Not gate-blocking; deferred to R2.
+See `docs/04_reports/r1/partner_feature_selection_diagnostic.md`.
+
 ---
 
 ## 4. 3-Seed Eval Runs (Step 4)
@@ -578,3 +595,68 @@ done
 | H2H runner | `scripts/internal/run_arc_d_h2h_battery.py` |
 | Comparator runner | `scripts/internal/run_auction_comparator.py` |
 | Lambda sweep | `scripts/internal/run_lambda_sweep.py` |
+
+---
+
+## R2 Context-Feature Protocol (Pre-Registered)
+
+**Trigger:** R2 training begins.
+**Motivation:** R1 could not determine whether `partner_bid_level` and `partner_passed`
+are genuinely uninformative for high/low, or simply underpowered at 4–5k hands.
+**Diagnostic:** `docs/04_reports/r1/partner_feature_selection_diagnostic.md`
+
+### Step A: Generate Rebalanced Training Data
+
+R2 dataset generation must produce ≥10,000 hands per contract family. Options:
+- Stratified deal generation (force contract-type balance)
+- Larger total deal count (≥150k deals to get ~15k high hands at current 10% rate)
+- Or both
+
+### Step B: Train with Full Context Pool
+
+Run forward selection with expanded candidate pool:
+- Partner features: `partner_bid_level`, `partner_passed`, `partner_suit_match`, `partner_bid_confidence`
+- Any new R2 opponent context features (if added)
+
+```bash
+PYTHONPATH=src uv run python scripts/train_hybrid_olsa.py \
+    --run-dir data/runs/<r2_canonical_run> \
+    --seed 42 \
+    --output data/artifacts/arc_d/r2 \
+    --rung-id r2 \
+    --feature-budget "suit:10,high:5,low:5" \
+    --context-candidates "<full_context_pool>"
+```
+
+### Step C: Check Selection by Contract Family
+
+Compare R2 vs R1 selected features for high/low:
+- **If `partner_bid_level` or `partner_passed` now selected:** Run ablation battery (Step C1)
+- **If still not selected:** Run forced-inclusion sensitivity (Step D)
+
+#### Step C1: Ablation Battery (if features selected)
+
+| Arm | Configuration | Purpose |
+|-----|--------------|---------|
+| Baseline | All selected context features | Reference |
+| −partner_block | Remove all partner features | Partner contribution |
+| −bid_level | Remove partner_bid_level only | Marginal bid_level value |
+| −passed | Remove partner_passed only | Marginal passed value |
+
+Run H2H between baseline and each ablation arm (QUICK, 2k deals, seed 42).
+
+### Step D: Forced-Inclusion Sensitivity (if not selected)
+
+If forward selection still rejects `partner_bid_level`/`partner_passed` for high/low
+even with ≥10k hands:
+
+1. Train model with forced inclusion of all 4 partner features for high/low
+2. Compare held-out R² vs standard-selected model
+3. Run 3-seed H2H (forced vs selected) at QUICK
+
+### Adoption Rule
+
+Keep a context feature only if **all three conditions** hold:
+1. Consistent held-out R² gain across 3 seeds (positive delta, CI excludes 0)
+2. Stable coefficient sign across seeds (no sign flips)
+3. H2H net_eppd delta ≥ 0 (no regression in game-play performance)
