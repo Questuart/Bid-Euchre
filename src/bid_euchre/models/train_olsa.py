@@ -47,9 +47,16 @@ def _grouped_train_test_split(df, seed, train_frac=0.8):
     return df[train_mask], df[~train_mask]
 
 
-def _fit_ols(X, y):
+def _fit_ols(X, y, alpha=0.0):
     """
-    Fit OLS with intercept using normal equation.
+    Fit OLS (or Ridge) with intercept using normal equation.
+
+    Args:
+        X: Feature matrix (n_samples, n_features).
+        y: Target vector (n_samples,).
+        alpha: L2 regularization strength. When alpha > 0, applies Ridge
+            penalty to feature weights only (intercept is not regularized).
+            Default 0.0 preserves standard OLS behavior.
 
     Falls back to lstsq on LinAlgError or ill-conditioning.
     Returns (weights, bias) where weights excludes intercept.
@@ -57,6 +64,10 @@ def _fit_ols(X, y):
     X_with_intercept = np.column_stack([np.ones(len(X)), X])
     XtX = X_with_intercept.T @ X_with_intercept
     Xty = X_with_intercept.T @ y
+
+    # Ridge penalty on feature weights only (skip intercept at index 0)
+    if alpha > 0:
+        XtX[1:, 1:] += alpha * np.eye(X.shape[1])
 
     try:
         beta = np.linalg.solve(XtX, Xty)

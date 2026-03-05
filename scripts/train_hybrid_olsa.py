@@ -86,6 +86,18 @@ def main() -> None:
         "forward selection, e.g. 'partner_bid_level,partner_passed,"
         "partner_suit_match'",
     )
+    parser.add_argument(
+        "--training-mode",
+        choices=["joint", "ridge", "two_stage"],
+        default="joint",
+        help="Weight fitting strategy: 'joint' (OLS), 'ridge' (L2), 'two_stage' (fit base then partner on residuals)",
+    )
+    parser.add_argument(
+        "--ridge-alpha",
+        type=float,
+        default=1.0,
+        help="L2 penalty strength for 'ridge' mode (default: 1.0)",
+    )
 
     args = parser.parse_args()
 
@@ -111,6 +123,8 @@ def main() -> None:
         risk_lambda=args.risk_lambda,
         offensive_defensive=args.offensive_defensive,
         context_candidates=context_candidates,
+        training_mode=args.training_mode,
+        ridge_alpha=args.ridge_alpha,
     )
 
     print(f"\nTraining complete for rung {result['rung_id']}")
