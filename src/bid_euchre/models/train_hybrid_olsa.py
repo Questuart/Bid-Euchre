@@ -146,10 +146,12 @@ def _train_arm(
         training_mode: Weight fitting strategy. One of:
             - "joint" (default): standard OLS, current behavior.
             - "ridge": L2-regularized OLS with ``ridge_alpha`` penalty.
-            - "two_stage": fit base features first, then partner features on
-              residuals (prevents OLS weight redistribution). Only valid for
-              the constrained arm (do_forward_select=False). Falls back to
-              "joint" when no context_candidates are set.
+            - "two_stage": fit locked base features first, then context/partner
+              features on residuals (prevents OLS weight redistribution).
+              Requires a fixed feature set: incompatible with forward selection
+              (do_forward_select=True raises ValueError). When context_candidates
+              are provided, all candidates are included directly (no additive
+              selection). Falls back to "joint" when no context_candidates.
         ridge_alpha: L2 penalty strength for "ridge" mode (default 1.0).
 
     Raises:
@@ -213,6 +215,30 @@ def _train_arm(
             feature_names = selected_names
             if feature_selection_log is not None:
                 feature_selection_log[contract_family] = fs_log
+        elif context_candidates and training_mode == "two_stage":
+            # Two-stage: use all context candidates directly (no forward selection).
+            # Forward selection scores with joint OLS, which is the wrong objective
+            # for two-stage fitting. Use the full fixed set instead.
+            locked_names = feature_spec[contract_family]
+            additive_pool = [c for c in context_candidates if c not in locked_names]
+            all_candidates = locked_names + additive_pool
+
+            missing = [c for c in all_candidates if c not in train_df.columns]
+            if missing:
+                raise ValueError(
+                    f"Context candidates missing from data for {contract_family}: {missing}"
+                )
+
+            feature_names = all_candidates
+            # No forward selection — record that all candidates were included
+            if feature_selection_log is not None:
+                feature_selection_log[contract_family] = {
+                    "steps": [],
+                    "final_r2": None,
+                    "n_selected": len(feature_names),
+                    "locked_base": locked_names,
+                    "note": "two_stage: all context candidates included (no selection)",
+                }
         elif context_candidates:
             # Constrained + additive: locked base + forward-select from context pool
             locked_names = feature_spec[contract_family]
@@ -499,10 +525,10 @@ def train_hybrid_olsa(
         context_candidates: Optional list of context feature names (e.g. partner
             features) for additive forward selection on the constrained arm.
         training_mode: Weight fitting strategy ("joint", "ridge", "two_stage").
-            Note: "two_stage" only applies to the constrained arm (locked base +
-            context candidates). The full arm always falls back to "joint" when
-            "two_stage" is requested, because forward selection scores candidates
-            with joint OLS and two-stage uses a different fit objective.
+            Note: "two_stage" uses a fixed feature set (locked base + all context
+            candidates, no forward selection) to ensure selection/fit consistency.
+            The full arm always falls back to "joint" when "two_stage" is
+            requested, because forward selection uses a different scoring objective.
         ridge_alpha: L2 penalty strength for "ridge" mode (default 1.0).
 
     Returns:

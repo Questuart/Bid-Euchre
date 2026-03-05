@@ -754,3 +754,45 @@ def test_two_stage_full_arm_falls_back_to_joint(tmp_path: Path):
     with open(result["artifacts"]["constrained"]) as f:
         art_constrained = json.load(f)
     assert art_constrained["training_mode"] == "two_stage"
+
+
+def test_two_stage_constrained_includes_all_context_candidates(tmp_path: Path):
+    """two_stage + context_candidates: all candidates included (no forward selection)."""
+    from bid_euchre.features.auction_context import PARTNER_FEATURE_NAMES
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    run_dir = _make_synthetic_run(tmp_path, seed=99, include_partner_features=True)
+    output_dir = str(tmp_path / "output")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="constrained",
+        freeze=False,
+        context_candidates=PARTNER_FEATURE_NAMES,
+        training_mode="two_stage",
+    )
+
+    with open(result["artifacts"]["constrained"]) as f:
+        art = json.load(f)
+
+    # Every contract should include ALL locked base + ALL context candidates
+    for cf in ["suit", "high", "low"]:
+        if cf not in art["payoff_model"]:
+            continue
+        selected = art["payoff_model"][cf]["feature_names"]
+        expected = CONTRACT_FEATURES[cf] + [
+            c for c in PARTNER_FEATURE_NAMES if c not in CONTRACT_FEATURES[cf]
+        ]
+        assert (
+            selected == expected
+        ), f"{cf}: expected all candidates {expected}, got {selected}"
+
+    # Feature selection log should note no selection was performed
+    assert "constrained_feature_selection_log" in result
+    with open(result["constrained_feature_selection_log"]) as f:
+        fs_log = json.load(f)
+    for cf in fs_log:
+        assert fs_log[cf]["steps"] == [], f"Expected no selection steps for {cf}"
+        assert "two_stage" in fs_log[cf].get("note", "")
