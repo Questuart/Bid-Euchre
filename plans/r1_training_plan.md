@@ -3,7 +3,7 @@
 **Date:** 2026-03-04
 **Governing doc:** `plans/r1_master_plan.md` §3
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
-**Status:** PRE-REGISTERED (Step 0)
+**Status:** Step 3c (retrain constrained arm with partner features)
 
 ---
 
@@ -132,10 +132,7 @@ CONTRACT_FEATURES = {
 uv run python -c "
 from bid_euchre.models.train_hybrid_olsa import train_hybrid_olsa
 result = train_hybrid_olsa(
-    run_dir='data/runs/<canonical_auction_run_id>',
-    # PR-R1a: generate_auction_context_dataset.py must produce a run directory
-    # with datasets/bidless.parquet and datasets/bidless_outcomes.parquet
-    # (train_hybrid_olsa expects this directory structure, not a bare parquet path)
+    run_dir='data/runs/canonical_auction_r1_42',
     seed=42,
     output_dir='data/artifacts/arc_d/r1',
     split_type='three_way',
@@ -143,8 +140,63 @@ result = train_hybrid_olsa(
     rung_id='r1',
     risk_lambda=0.0,
     feature_budget={'suit': 10, 'high': 5, 'low': 5},
+    context_candidates=[
+        'partner_bid_level', 'partner_passed',
+        'partner_suit_match', 'partner_bid_confidence',
+    ],
 )
 print(result)
+"
+```
+
+> **PR #532 note:** The `context_candidates` parameter enables additive forward
+> selection for the constrained arm: locked 3/2/2 base features are held fixed,
+> and forward selection picks from the 4 partner features on top.
+> The full arm already forward-selects from all 43 features (including partner
+> features) and is unaffected by this parameter.
+
+### ✅ 3b-original (COMPLETED — pre-PR #532, no context_candidates)
+
+First training run completed **before PR #532** with `context_candidates=None`.
+Results: Gate X2 passed (suit R² delta +0.4052), but constrained arm had only
+locked 3/2/2 features — no partner features.
+
+### 3c. Retrain with context_candidates (post-PR #532)
+
+**Purpose:** Retrain both arms so the constrained arm picks up partner features
+via additive forward selection. The full arm is unchanged (already uses all 43
+features). Uses the same canonical data and seed as 3b.
+
+```bash
+# CLI version (equivalent to 3b inline):
+PYTHONPATH=src uv run python scripts/train_hybrid_olsa.py \
+    --run-dir data/runs/canonical_auction_r1_42 \
+    --seed 42 \
+    --output data/artifacts/arc_d/r1 \
+    --rung-id r1 \
+    --feature-budget "suit:10,high:5,low:5" \
+    --context-candidates \
+        "partner_bid_level,partner_passed,partner_suit_match,partner_bid_confidence"
+```
+
+**Verify constrained arm picked up partner features:**
+
+```bash
+uv run python -c "
+import json
+art = json.load(open('data/artifacts/arc_d/r1/hybrid_r1.json'))
+ctx = art.get('context_features', [])
+print(f'Context features in constrained artifact: {ctx}')
+assert len(ctx) > 0, 'X2b FAIL: No partner features selected by constrained arm'
+
+# Check per-contract feature lists
+for cf in ['suit', 'high', 'low']:
+    model = art['payoff_model'][cf]
+    names = model.get('feature_names', model.get('offensive', {}).get('feature_names', []))
+    partner_in_model = [n for n in names if n.startswith('partner_')]
+    print(f'  {cf}: {len(names)} features total, {len(partner_in_model)} partner')
+
+print('X2b PASS: Constrained arm has partner features')
 "
 ```
 
@@ -153,16 +205,24 @@ print(result)
 ```bash
 uv run python -c "
 import json
-r0 = json.load(open('data/artifacts/arc_d/r0/hybrid_r0_full.json'))
-r1 = json.load(open('data/artifacts/arc_d/r1/hybrid_r1_full.json'))
 report_r0 = json.load(open('data/artifacts/arc_d/r0/training_report_r0.json'))
 report_r1 = json.load(open('data/artifacts/arc_d/r1/training_report_r1.json'))
+
+# Full arm check (unchanged from original)
 r0_r2 = report_r0['full']['suit']['r2_test']
 r1_r2 = report_r1['full']['suit']['r2_test']
-delta = r1_r2 - r0_r2
-print(f'Suit R²: R0={r0_r2:.4f}, R1={r1_r2:.4f}, delta={delta:+.4f}')
-assert delta >= -0.01, f'X2 FAIL: Suit regression {delta:+.4f} exceeds -0.01 threshold'
-print('X2 PASS: Suit R² not regressed')
+delta_full = r1_r2 - r0_r2
+print(f'Full suit R²: R0={r0_r2:.4f}, R1={r1_r2:.4f}, delta={delta_full:+.4f}')
+assert delta_full >= -0.01, f'X2 FAIL (full): Suit regression {delta_full:+.4f} exceeds -0.01'
+
+# Constrained arm check (new — verify partner features don't degrade)
+r0_c_r2 = report_r0['constrained']['suit']['r2_test']
+r1_c_r2 = report_r1['constrained']['suit']['r2_test']
+delta_constr = r1_c_r2 - r0_c_r2
+print(f'Constrained suit R²: R0={r0_c_r2:.4f}, R1={r1_c_r2:.4f}, delta={delta_constr:+.4f}')
+assert delta_constr >= -0.01, f'X2 FAIL (constrained): Suit regression {delta_constr:+.4f}'
+
+print('X2 PASS: Both arms suit R² not regressed')
 "
 ```
 
@@ -471,7 +531,8 @@ done
 | R1 full model | `data/artifacts/arc_d/r1/hybrid_r1_full.json` | Step 3 |
 | R1 rung bundle | `data/artifacts/arc_d/r1/rung_bundle_r1.json` | Step 3 |
 | Training report | `data/artifacts/arc_d/r1/training_report_r1.json` | Step 3 |
-| Feature selection log | `data/artifacts/arc_d/r1/feature_selection_log_r1_full.json` | Step 3 |
+| Feature selection log (full) | `data/artifacts/arc_d/r1/feature_selection_log_r1_full.json` | Step 3b |
+| Feature selection log (constrained) | `data/artifacts/arc_d/r1/feature_selection_log_r1_constrained.json` | Step 3c |
 | Split manifest | `data/artifacts/arc_d/r1/split_manifest_r1_suit.json` | Step 3 |
 | H2H battery (QUICK) | `data/artifacts/arc_d/r1/h2h_battery_quick.json` | Step 5 |
 | H2H battery (FULL) | `data/artifacts/arc_d/r1/h2h_battery_full.json` | Step 5 |
@@ -511,6 +572,8 @@ done
 | Locked base source | `src/bid_euchre/models/train_olsa.py:32` (`CONTRACT_FEATURES`) |
 | Feature extraction | `src/bid_euchre/features/hand_eval.py:178` (`get_hand_features()`) |
 | Training pipeline | `src/bid_euchre/models/train_hybrid_olsa.py:346` (`train_hybrid_olsa()`) |
+| Additive fwd select | PR #532 — `context_candidates` param + runtime partner feature merge |
+| Partner features | `src/bid_euchre/features/auction_context.py` (4 features) |
 | Gate engine | `src/bid_euchre/validation/arc_d_gate.py:303` (`promotion_gate()`) |
 | H2H runner | `scripts/internal/run_arc_d_h2h_battery.py` |
 | Comparator runner | `scripts/internal/run_auction_comparator.py` |
