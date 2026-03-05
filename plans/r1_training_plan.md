@@ -31,25 +31,24 @@ uv run python scripts/internal/generate_auction_context_dataset.py \
     --bidder-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
     --seed 42 \
     --n-deals 50000 \
-    --output data/training/r1/canonical_auction_context_42.parquet
+    --output-dir data/runs/canonical_auction_r1_42
 ```
 
 > **Note:** `generate_auction_context_dataset.py` is a new script created in PR-R1a.
 > It runs the simulation with the R0 model in all bidding seats, logging
-> `auction_transcript` for each hand, then extracts the 4 partner features.
+> `auction_transcript` for each hand, then extracts the 3 partner features.
 >
-> **Data contract (Step 1 → Step 3):** This script must produce a **run directory**
-> (e.g., `data/runs/<canonical_auction_run_id>/`) containing
+> **Data contract (Step 1 → Step 3):** This script produces a **run directory**
+> (e.g., `data/runs/canonical_auction_r1_42/`) containing
 > `datasets/bidless.parquet` and `datasets/bidless_outcomes.parquet`.
-> `train_hybrid_olsa` expects this directory structure, not a bare parquet path.
-> The `--output` path above is the parquet location within that directory.
+> `train_hybrid_olsa` expects this directory structure.
 
 **Gate X1 — Feature Smoke Test:**
 
 ```bash
 uv run python -c "
 import pandas as pd
-df = pd.read_parquet('data/training/r1/canonical_auction_context_42.parquet')
+df = pd.read_parquet('data/runs/canonical_auction_r1_42/datasets/bidless.parquet')
 # Check partner features exist and are non-trivial
 for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match']:
     assert col in df.columns, f'Missing column: {col}'
