@@ -191,7 +191,7 @@ assert len(ctx) > 0, 'X2b FAIL: No partner features selected by constrained arm'
 
 # Check per-contract feature lists
 for cf in ['suit', 'high', 'low']:
-    model = art['models'][cf]
+    model = art['payoff_model'][cf]
     names = model.get('feature_names', model.get('offensive', {}).get('feature_names', []))
     partner_in_model = [n for n in names if n.startswith('partner_')]
     print(f'  {cf}: {len(names)} features total, {len(partner_in_model)} partner')
