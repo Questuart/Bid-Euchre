@@ -1014,10 +1014,12 @@ class HybridOLSaBidder(BiddingPolicy):
         bid_level_search: bool = False,
         pass_threshold: float = 0.0,
         name: str = "hybrid_olsa",
+        zero_partner_features: bool = False,
     ):
         super().__init__(name)
         self.bid_level_search = bool(bid_level_search)
         self.pass_threshold = float(pass_threshold)
+        self.zero_partner_features = bool(zero_partner_features)
 
         with open(artifact_path) as f:
             artifact = json.load(f)
@@ -1254,6 +1256,13 @@ class HybridOLSaBidder(BiddingPolicy):
                         features["partner_bid_confidence"] = (
                             features.get("partner_bid_level", 0) / 10.0
                         )
+
+                # Investigation C ablation: zero out partner features at
+                # inference to test whether partner signal causes regression.
+                if self.zero_partner_features:
+                    for key in features:
+                        if key.startswith("partner_"):
+                            features[key] = 0.0
 
                 mu = self._predict(contract_family, features, declaring=True)
 
