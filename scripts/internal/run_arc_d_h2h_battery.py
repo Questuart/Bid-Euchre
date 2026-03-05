@@ -737,7 +737,18 @@ def main():
         if not roster_path.exists():
             print(f"ERROR: Roster file not found: {roster_path}", file=sys.stderr)
             sys.exit(1)
-        roster = json.loads(roster_path.read_text())
+        roster_data = json.loads(roster_path.read_text())
+        # Support both plain list and structured {"bidders": [...]} format
+        if isinstance(roster_data, dict) and "bidders" in roster_data:
+            roster = roster_data["bidders"]
+        elif isinstance(roster_data, list):
+            roster = roster_data
+        else:
+            print(
+                f"ERROR: Roster file must be a list or dict with 'bidders' key: {roster_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
     else:
         roster = DEFAULT_ROSTER
 
