@@ -59,22 +59,19 @@ uv run python scripts/internal/generate_auction_context_dataset.py \
 
 ```bash
 uv run python -c "
-import pandas as pd
-# Load features and outcomes, then join on shared keys
-bidless = pd.read_parquet('data/runs/canonical_auction_r1_42/datasets/bidless.parquet')
-outcomes = pd.read_parquet('data/runs/canonical_auction_r1_42/datasets/bidless_outcomes.parquet')
-# Partner features are inside the hand_features struct column — flatten first
-features = pd.json_normalize(bidless['hand_features'])
-df = pd.concat([bidless.drop(columns=['hand_features']), features], axis=1)
-df = df.merge(outcomes[['hand_id', 'seat', 'contract_type', 'tricks_won']],
-              on=['hand_id', 'seat', 'contract_type'])
+from bid_euchre.datasets.join import join_features_outcomes
+# join_features_outcomes flattens hand_features, joins outcomes (tricks_team0/1),
+# and assigns per-seat tricks_won. Returns: hand_id, seat, contract_type,
+# trump_suit, <feature columns>, tricks_won.
+RUN = 'data/runs/canonical_auction_r1_42/datasets'
+df = join_features_outcomes(f'{RUN}/bidless.parquet', f'{RUN}/bidless_outcomes.parquet')
 # Check partner features exist and are non-trivial
 for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match']:
     assert col in df.columns, f'Missing column: {col}'
     null_rate = df[col].isna().mean()
     assert null_rate < 0.10, f'{col} null rate too high: {null_rate:.2%}'
     assert df[col].std() > 0, f'{col} has zero variance'
-# Check suit correlation (tricks_won comes from outcomes join)
+# Check suit correlation (tricks_won assigned by join utility)
 suit = df[df['contract_type'] == 'suit']
 for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match']:
     r = suit[col].corr(suit['tricks_won'])

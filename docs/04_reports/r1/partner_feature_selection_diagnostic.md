@@ -5,9 +5,12 @@
 **Training data:** data/runs/canonical_auction_r1_42 (41,424 hands from 50k deals)
 **Artifacts:** data/artifacts/arc_d/r1/hybrid_r1.json, hybrid_r1_full.json
 **PR:** #532 (additive forward selection), #533 (plan update)
-**Note:** `partner_bid_confidence` was subsequently removed from the feature
-registry (PR #538) as linearly redundant with `partner_bid_level`. Results
-below reflect the pre-removal selection run.
+**Historical report:** This diagnostic documents the Step 3c training run which
+used **4 partner features** (including `partner_bid_confidence`). PR #538
+subsequently removed `partner_bid_confidence` as linearly redundant with
+`partner_bid_level`. All tables, feature counts (43 total, 4 partner), and
+selection results below reflect the pre-removal run. The current R1 spec
+uses 3 partner features / 42 total; Step 3d will retrain with corrected features.
 
 ---
 
@@ -28,7 +31,7 @@ High/low together represent only 23% of training data — an 8× imbalance vs su
 ## 2. Forward Selection Results — Constrained Arm (OLSa)
 
 Locked base features (from `CONTRACT_FEATURES`): suit=3, high=2, low=2.
-Additive candidate pool: 3 partner features (post-PR #538; originally 4, `partner_bid_confidence` removed).
+Additive candidate pool: 4 partner features (pre-PR #538 run; see header note).
 Stopping threshold: `min_improvement=0.005` (0.5% R²).
 
 ### Suit (31,954 hands)
