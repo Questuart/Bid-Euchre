@@ -3,6 +3,7 @@
 **Date:** 2026-03-05
 **Status:** IN PROGRESS — hypotheses documented, investigations pending
 **Blocking:** Gate X3 (STOP), Steps 6–12 of R1 training plan
+**gate_status:** X3 STOP — primary delta -0.348, suit delta -0.76
 **Provenance:** H2H battery run `arc_d_r0_h2h_battery_42_20260304_210528`, seed 42, 2k deals/matchup
 
 ## Quick Context
