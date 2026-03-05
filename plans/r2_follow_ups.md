@@ -77,7 +77,8 @@ Run H2H between baseline and each ablation arm (QUICK, 2k deals, seed 42).
 If forward selection still rejects `partner_bid_level`/`partner_passed` for high/low
 even with ≥10k hands:
 
-1. Train model with forced inclusion of all 4 partner features for high/low
+1. Train model with forced inclusion of all 3 R1 partner features for high/low
+   (or the R1.5 partner-semantics features if R1.5 precedes R2 confirmation)
 2. Compare held-out R² vs standard-selected model
 3. Run 3-seed H2H (forced vs selected) at QUICK
 

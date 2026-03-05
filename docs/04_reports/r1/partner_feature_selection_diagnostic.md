@@ -28,7 +28,7 @@ High/low together represent only 23% of training data — an 8× imbalance vs su
 ## 2. Forward Selection Results — Constrained Arm (OLSa)
 
 Locked base features (from `CONTRACT_FEATURES`): suit=3, high=2, low=2.
-Additive candidate pool: 4 partner features.
+Additive candidate pool: 3 partner features (post-PR #538; originally 4, `partner_bid_confidence` removed).
 Stopping threshold: `min_improvement=0.005` (0.5% R²).
 
 ### Suit (31,954 hands)
@@ -141,8 +141,10 @@ consistent cross-validated improvement — harder to achieve with small samples.
 - Even with only `partner_suit_match`, high/low models are substantially better
 - Gate X2 passed for both arms (delta > +0.40)
 
-**R2:** Pre-registered context-feature confirmation experiment for high/low.
-See `plans/r1_follow_ups.md` item P10 and `plans/r1_training_plan.md` §R2 protocol.
+**R1.5/R2:** Partner-semantics redesign happens at R1.5 (suit-aware features replacing
+coarse contract-family features). High/low confirmation with rebalanced data at R2.
+See `plans/r1_follow_ups.md` item P10 and `plans/r2_follow_ups.md` F1 for the
+pre-registered protocol.
 
 ## 7. Provenance
 

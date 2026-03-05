@@ -61,6 +61,9 @@ uv run python scripts/internal/generate_auction_context_dataset.py \
 uv run python -c "
 import pandas as pd
 df = pd.read_parquet('data/runs/canonical_auction_r1_42/datasets/bidless.parquet')
+# Partner features are inside the hand_features struct column — flatten first
+features = pd.json_normalize(df['hand_features'])
+df = pd.concat([df.drop(columns=['hand_features']), features], axis=1)
 # Check partner features exist and are non-trivial
 for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match']:
     assert col in df.columns, f'Missing column: {col}'

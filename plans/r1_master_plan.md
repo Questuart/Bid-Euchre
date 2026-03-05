@@ -128,7 +128,7 @@ Two core PRs from the execution plan, plus follow-up work:
 
 | PR | Concept | Key Deliverables |
 |----|---------|-----------------|
-| **PR-R1a** | Partner context infra + canonical auction dataset | Feature extraction (4 partner features), auction-context dataset generator, canonical dataset (~50k deals), ModeloEspecifico R1 (§3.2.1), dual-seat comparator mode (§3.14) |
+| **PR-R1a** | Partner context infra + canonical auction dataset | Feature extraction (3 partner features), auction-context dataset generator, canonical dataset (~50k deals), ModeloEspecifico R1 (§3.2.1), dual-seat comparator mode (§3.14) |
 | **PR-R1b** | R1 dual-arm training + eval + promotion | Model training, 3-seed eval, H2H, three-tier comparator battery (§3.14), gate run |
 
 Plus follow-up work that may be separate PRs or folded in:
@@ -925,7 +925,7 @@ HITL sign-off (Task #28)
     │                 plans/r1_normalizer_trigger.md (trigger rule only)
     │
     └── PR-R1a: Partner context infra + canonical auction dataset
-        │   ├── Feature extraction (4 partner features from auction_transcript)
+        │   ├── Feature extraction (3 partner features from auction_transcript)
         │   ├── P1: Locked base expansion (3/2/2 using existing features)
         │   ├── ModeloEspecifico R1: parameterized constructor + R1 weights (§3.2.1)
         │   ├── Dual-seat comparator mode in run_auction_comparator.py (§3.14)
@@ -1085,7 +1085,7 @@ no crashes, no warnings, just wrong decisions.
 **GAP — What's missing:**
 1. **Feature predictive-power smoke test.** After generating the auction-context
    dataset, compute Pearson correlation between each partner feature and trick
-   outcomes. If all 4 partner features have |r| < 0.01, something is wrong with
+   outcomes. If all 3 partner features have |r| < 0.01, something is wrong with
    extraction. This takes 5 lines of code and 10 seconds to run. Gate: at least
    1 partner feature should have |r| > 0.02 for suit contracts.
 2. **Config pinning for dataset generation.** The dataset generator must use the
@@ -1472,7 +1472,7 @@ All must pass before any experiment step begins:
 
 | Gate | When | Stop Criterion | Go Criterion | Blocks |
 |------|------|---------------|-------------|--------|
-| **X1: Feature smoke** | After Step 1 (dataset gen) | Any partner feature has all-zero or all-NaN values | All 4 partner features have \|r\| > 0.02 for suit; no NaN | Step 2 |
+| **X1: Feature smoke** | After Step 1 (dataset gen) | Any partner feature has all-zero or all-NaN values | All 3 partner features have \|r\| > 0.02 for suit; no NaN | Step 2 |
 | **X2: Suit regression** | After Step 3 (training) | Suit model R² < R0 suit R² − 0.01 | Suit R² ≥ R0 suit R² | Step 4 |
 | **X3: QUICK H2H go/no-go** | After Step 5 QUICK | H2H delta < −0.05 | delta > 0 (or within noise: ±0.05) | Step 5 FULL |
 | **X4: Bid distribution** | After Steps 4–6 | Contract mix deviates >15% from R0 v2 in any family | Mix within expected range | Step 7 |
@@ -1884,6 +1884,46 @@ catches this before the promotion gate.
 **Minimum bar:** At least the counterfactual and the ablation delta are
 mandatory. Slice analysis and decision-shift audit are strongly recommended
 and mandatory if the counterfactual shows ambiguous results.
+
+---
+
+## 11. Documentation Hygiene
+
+### 11.1 Archive Stale TODO Files
+
+Archive stale files under `docs/03_TODO/` once their content is either superseded
+by active files in `plans/` or no longer needed for execution.
+
+**Rules:**
+- Do NOT migrate active planning into `docs/03_TODO/`; treat `plans/` as the
+  authoritative location for live execution/governance documents.
+- For each archived TODO file, add a short note indicating:
+  - Why it is stale
+  - Which active file supersedes it
+  - Whether it remains historically useful
+- **Goal:** Reduce competing plan narratives and keep the active R1/R1.5/R2
+  story centralized in `plans/`.
+
+**Current candidates for archive review:**
+- `docs/03_TODO/CODEBASE_CONSISTENCY.md` — likely superseded by repo linter
+- `docs/03_TODO/REPO_REVIEW_2026-02-26.md` — snapshot; historical only
+- `docs/03_TODO/REPO_REVIEW_2026-03-03.md` — snapshot; historical only
+
+### 11.2 Single Source of Truth
+
+Each concept should have exactly one authoritative location:
+
+| Concept | Authoritative Source |
+|---------|---------------------|
+| R1 feature design | `r1_master_plan.md` §3.2 |
+| R1 operational steps | `r1_training_plan.md` |
+| Rung ladder (R1→R1.5→R2) | `r1_master_plan.md` §10 |
+| Promotion gate thresholds | `r1_master_plan.md` §3.7 |
+| R0–R5 wave structure / PR sequencing | `arc_d_execution_plan.md` §4–§6 |
+| Artifact schema | `arc_d_execution_plan.md` §2 |
+
+Other documents should cross-reference, not duplicate. When updating a concept,
+update the authoritative source first, then propagate cross-references.
 
 ---
 
