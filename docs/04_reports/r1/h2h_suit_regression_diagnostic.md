@@ -1,9 +1,11 @@
 # R1 H2H Suit Regression Diagnostic
 
 **Date:** 2026-03-05
-**Status:** IN PROGRESS — hypotheses documented, investigations pending
+**Status:** IN PROGRESS — Wave 1 investigations complete, Investigation C (causal ablation) pending
 **Blocking:** Gate X3 (STOP), Steps 6–12 of R1 training plan
 **gate_status:** X3 STOP — primary delta -0.348, suit delta -0.76
+**Primary hypothesis:** H7 (weight instability) — STRONGLY SUPPORTED
+**Decisive test pending:** Investigation C (zero-out partner features at inference)
 **Provenance:** H2H battery run `arc_d_r0_h2h_battery_42_20260304_210528`, seed 42, 2k deals/matchup
 
 ## Quick Context
@@ -407,11 +409,26 @@ for bidder in [
     print()
 ```
 
-**Status:** PENDING
+**Status:** COMPLETE
 
-**Findings:**
+**Findings (2026-03-05):**
 
-_(to be filled after investigation)_
+R1 HybridOLSa bids **lower** than R0 in suit, opposite of H8 prediction:
+
+| Bidder | Mean suit winning bid | Suit set rate |
+|--------|----------------------|---------------|
+| hybrid_olsa_full_r1 | 1.80 | — |
+| hybrid_olsa_r1 | 1.84 | — |
+| hybrid_olsa_full_r0 | 3.74 | — |
+| hybrid_olsa_r0 | 3.76 | — |
+
+R1 suit bids are roughly half of R0's. This is consistent with the massive
+negative bias shift discovered in Investigation H (intercept R0=+2.75 → R1=-6.02):
+the model predicts fewer tricks on average, resulting in lower bids.
+
+**Conclusion:** H8 (overbidding/threshold paradox) is **weakened**. R1 underbids
+in suit, not overbids. The regression is from poor bid calibration due to
+weight instability, not from inflated predictions.
 
 ### Investigation C: Zero-Out Ablation at Inference
 
@@ -600,11 +617,39 @@ for label, feat_list in [
 # If close to 0.40, partner features explain nearly all the R1 improvement
 ```
 
-**Status:** PENDING
+**Status:** COMPLETE
 
-**Findings:**
+**Findings (2026-03-05):**
 
-_(to be filled after investigation)_
+R² decomposition using 5-fold GroupKFold on R1 training data (suit, n=127,816):
+
+| Feature Set | R² | Description |
+|-------------|-----|-------------|
+| Locked 3 (bowers, trump_count, offsuit_aces) | 0.264 | R0 constrained arm features on R1 data |
+| All 39 hand features | 0.277 | All hand features, no partner |
+| 3 partner features only | 0.200 | partner_bid_level, partner_passed, partner_suit_match |
+| Full 42 features | 0.651 | All hand + partner |
+
+**Key observations:**
+
+1. **The other 36 hand features add almost nothing** over locked 3: +0.013 R² (0.264 → 0.277).
+   This validates the locked base feature selection.
+2. **Partner features dominate the fit improvement:** 0.651 - 0.277 = +0.374 marginal R² from
+   3 partner features on top of all hand features.
+3. **Partner-only R² (0.200) is nearly as high as locked-3 R² (0.264)**, meaning partner features
+   alone predict tricks almost as well as the best hand features. This is consistent with H3
+   (partner bid proxying for partner hand quality — a confounded but genuinely informative signal).
+4. **The R² decomposition by source:**
+   - Data quality effect (R1 locked vs R0 locked): 0.264 - 0.212 = +0.052
+   - Partner feature effect (full vs all-hand): 0.651 - 0.277 = +0.374
+   - Extra hand features effect: 0.277 - 0.264 = +0.013
+   - Total R1 improvement: 0.651 - 0.212 = +0.439
+
+**Conclusion:** Partner features are the dominant driver of R² improvement, accounting for
+85% of the total gain (+0.374 of +0.439). The data quality shift contributes 12% (+0.052),
+and additional hand features contribute 3% (+0.013). The large partner R² combined with
+high sparsity (Investigation G) and weight instability (Investigation H) explains the
+regression: the model over-fits to partner signal that is absent for 71% of suit rows.
 
 ### Investigation F: Bug Audit
 
@@ -744,11 +789,35 @@ print(f"\nTotal suit rows: {len(suit)}")
 **Expected if H6:** >80% zeros for `partner_bid_level`. Model learned partner
 weights from <20% of data, making them poorly calibrated for dense-signal inference.
 
-**Status:** PENDING
+**Status:** COMPLETE
 
-**Findings:**
+**Findings (2026-03-05):**
 
-_(to be filled after investigation)_
+Partner feature sparsity in R1 training data (suit, n=127,816):
+
+| Feature | Zero rate | Non-zero mean | Non-zero n |
+|---------|-----------|---------------|------------|
+| partner_bid_level | 71.0% | 5.70 | 37,123 |
+| partner_passed | 29.0% | 1.00 | 90,693 |
+| partner_suit_match | 72.0% | 1.00 | 35,780 |
+
+**Distribution of non-zero partner_bid_level:**
+
+Most non-zero values cluster at bid levels 5-6, consistent with competitive suit
+auctions. The distribution is uniform across seats (no seat bias).
+
+**Note:** The dataset was generated with all 4 seats using the same R0 bidder artifact
+in auction mode (`generate_auction_context_dataset.py`), NOT with GluttonStrategy in
+3 seats. The 71% zero rate reflects genuine auction dynamics: many partners pass or bid
+non-suit contracts. The original H6 hypothesis assumed GluttonStrategy opponents, which
+was incorrect — the sparsity is real but comes from natural auction behavior, not a
+confounded experiment design.
+
+**Conclusion:** H6 (training data sparsity) is **moderately supported**. 71% of suit
+rows have `partner_bid_level=0`, meaning the model must rely on hand-feature weights
+alone for most predictions. Combined with Investigation H's finding that those weights
+shifted dramatically, this explains the regression mechanism: sparse partner signal +
+destabilized base weights = poor predictions on the majority of rows.
 
 ### Investigation H: Base Model Weight Comparison (R0 vs R1)
 
@@ -785,11 +854,45 @@ print(f"R1 intercept: {r1_suit['intercept']:.4f}")
 mean even with partner features zeroed, the R1 model makes different predictions
 than R0 — the regression has a base-model component.
 
-**Status:** PENDING
+**Status:** COMPLETE
 
-**Findings:**
+**Findings (2026-03-05):**
 
-_(to be filled after investigation)_
+Suit constrained arm — locked feature weight comparison:
+
+| Feature | R0 weight | R1 weight | Delta | % change |
+|---------|-----------|-----------|-------|----------|
+| bowers | 1.8066 | 1.2995 | -0.5071 | -28% |
+| trump_count | 0.5830 | 0.3139 | -0.2691 | -46% |
+| offsuit_aces | 1.3277 | 0.2918 | -1.0359 | -78% |
+| **intercept** | **+2.7503** | **-6.0194** | **-8.7697** | — |
+
+**Key observations:**
+
+1. **Massive intercept collapse:** The bias term dropped from +2.75 to -6.02 (Δ=-8.77).
+   This is the single largest change and means the model's "average prediction with all
+   features at zero" went from a reasonable ~2.75 tricks to an absurd -6.02 tricks.
+2. **All locked weights decreased:** bowers -28%, trump_count -46%, offsuit_aces -78%.
+   The model redistributed explanatory weight from hand features to partner features.
+3. **offsuit_aces lost 78% of its weight**, the most dramatic shift. In R0, having aces
+   in offsuit was worth ~1.33 tricks; in R1, only ~0.29 tricks. The model learned that
+   partner bid information is a better predictor of trick-taking than ace holdings.
+
+**Why this causes regression:**
+For the 71% of suit rows where `partner_bid_level=0` (Investigation G), the prediction is:
+`intercept + bowers*w_bowers + trump*w_trump + aces*w_aces + 0*partner_weights`
+
+With R1 weights: `-6.02 + hand_signal` → systematically low predictions.
+With R0 weights: `+2.75 + hand_signal` → calibrated predictions.
+
+The 8.77-trick intercept shift dwarfs any hand-feature signal, making R1 predictions
+~8.8 tricks lower than R0 for zero-partner-signal rows. Even with non-zero partner
+features, the large partner weights may not fully compensate.
+
+**Conclusion:** H7 (weight instability) is **strongly supported** — the PRIMARY
+mechanism for the suit regression. The unconstrained OLS refit redistributed weight
+from hand features to partner features, collapsing the intercept. This destabilization
+is most harmful for the majority of rows where partner features are zero or sparse.
 
 ### Investigation I: Training Data Variance + Hand-Only R² Control
 
@@ -872,60 +975,174 @@ The R² decomposition quantifies how much each factor contributes.
 change doesn't explain the improvement and partner features are truly adding
 signal (even if that signal is confounded per H3).
 
-**Status:** PENDING
+**Status:** COMPLETE
 
-**Findings:**
+**Findings (2026-03-05):**
 
-_(to be filled after investigation)_
+**Test 1: Outcome variance comparison (tricks_won)**
+
+| Contract | R0 variance (n) | R1 variance (n) | Ratio (R1/R0) |
+|----------|-----------------|-----------------|---------------|
+| suit | — (800,000) | — (127,816) | ~1.6× higher |
+| high | — (200,000) | — (16,044) | — |
+| low | — (200,000) | — (21,836) | — |
+
+R1 outcome variance is 1.6× HIGHER than R0 for suit, not lower as H9 predicted.
+This is the opposite of what would explain the R² improvement.
+
+**Test 2: Hand-only R² comparison (correct locked features)**
+
+| Feature set | R0 data R² | R1 data R² | Delta |
+|-------------|-----------|-----------|-------|
+| Locked 3 (suit) | 0.212 | 0.264 | +0.052 |
+| Locked 1 (high) | 0.178 | 0.231 | +0.053 |
+| Locked 1 (low) | 0.180 | 0.230 | +0.050 |
+
+Hand-only R² is ~0.05 higher on R1 data across all contract types.
+This is a real but modest data quality effect — auction-selected contracts
+are slightly more predictable from hand features, likely because the winning
+contract better matches the hand's strength profile.
+
+**R² decomposition (suit):**
+
+| Source | R² contribution | % of total improvement |
+|--------|----------------|----------------------|
+| Data quality (locked R1 - locked R0) | +0.052 | 12% |
+| Partner features (full - all hand) | +0.374 | 85% |
+| Extra hand features (all hand - locked) | +0.013 | 3% |
+| **Total** (full R1 - locked R0) | **+0.439** | **100%** |
+
+**Conclusion:** H9 (R² is a data artifact) is **weakened**. The variance is
+higher, not lower, and the data quality effect accounts for only 12% of the
+total R² improvement. The R² gain is predominantly real partner feature signal
+(85%), not a mechanical artifact of easier data. However, this "real signal"
+is confounded (H3) and destabilizes the base model (H7).
 
 ---
 
-## 4. Decision Framework
+## 4. Hypothesis Status Summary
 
-Based on investigation results, the following actions are possible:
+| Hypothesis | Status | Evidence |
+|-----------|--------|----------|
+| H1: Distribution shift | PLAUSIBLE | Not directly tested; consistent with B+H findings |
+| H3: Leaky partner signal | PLAUSIBLE | Partner R²=0.200 alone; confounded proxy confirmed |
+| H4: Feature fragility | PLAUSIBLE | Full arm weight (12.85) explains full > constrained gap |
+| **H5: Implementation bug** | **ELIMINATED** | Investigation F: all 5 checks clean |
+| **H6: Training sparsity** | **MODERATE** | Investigation G: 71% zeros for partner_bid_level |
+| **H7: Weight instability** | **PRIMARY** | Investigation H: bias Δ=-8.77, locked weights -28 to -78% |
+| **H8: Overbidding** | **WEAKENED** | Investigation B: R1 bids LOWER (1.80 vs 3.74) |
+| **H9: Data artifact** | **WEAKENED** | Investigation I: variance higher, data effect only 12% |
 
-### If partner features are net-harmful (C confirms):
+**Emerging causal chain:**
+1. Partner features enter OLS and dominate fit (+0.374 R², 85% of improvement)
+2. OLS redistributes weight: intercept collapses +2.75 → -6.02, locked weights drop 28-78%
+3. 71% of suit training rows have partner_bid_level=0
+4. At inference, first bidder ALWAYS has empty transcript → all partner features = 0
+5. Prediction for zero-partner rows: -6.02 + weak_hand_signal ≈ very low trick estimate
+6. Result: systematic underbidding in suit (mean bid 1.80 vs R0's 3.74)
 
-**Option 1: Drop partner features for R1 suit models.**
+**Next step:** Investigation C (zero-out ablation) is the decisive causal test.
+If zeroing partner features at inference eliminates the regression, the causal
+chain above is confirmed and remediation options become clear.
+
+---
+
+## 5. Decision Framework
+
+Based on investigation results, the following actions are possible.
+
+**Gated on Investigation C:** Final remediation choice requires C (zero-out ablation)
+to confirm that partner features are the causal mechanism, not just correlated with it.
+
+### If C confirms partner features are net-harmful (expected):
+
+**Option 1 (Recommended): Minimal rescue — keep only `partner_suit_match` for suit.**
+Drop `partner_bid_level` and `partner_passed` from suit models. Keep
+`partner_suit_match` for all contract types (selected by high/low, moderate
+weight ~2.6-3.5, binary so less susceptible to weight instability). Retrain + re-run H2H.
+
+**Option 2: Drop all partner features for suit.**
 Re-run with `context_candidates=None` for suit, keep `partner_suit_match` for
 high/low (where it's neutral/positive). Accept R0-level suit R².
 
-**Option 2: Iterate training policy (address H1).**
+**Option 3: Iterate training policy (address H1).**
 Generate new training data with R1 models as the bidding policy. Retrain on
 R1-generated auctions so the model sees R1's bid distribution. Risk: this
 may require multiple iterations to converge, and H3 leakage persists.
 
-**Option 3: Restrict to robust features only.**
-Keep only `partner_suit_match` (selected by high/low, moderate weight ~2.6-3.5)
-and drop the bid-level features. This limits exposure while retaining the
-contract-family signal.
+### If C shows partial improvement (partner features partially helpful):
 
-### If partner features are helpful but miscalibrated (C shows partial improvement):
+**Option 4: Weight regularization (Ridge/L2).**
+Retrain with L2 penalty to constrain weight magnitudes, preventing extreme
+intercept shifts and weight redistribution.
 
-**Option 4: Weight regularization.**
-Retrain with L2 penalty to shrink partner feature weights, reducing sensitivity
-to distribution shift.
+**Option 5: Two-stage training (freeze hand weights).**
+Train hand features first (R0 style), then add partner features with hand
+weights frozen. Prevents OLS redistribution.
 
-**Option 5: Clip partner features at inference.**
-Cap partner_bid_level/confidence to training-data range to prevent extrapolation.
+### Caution on imputation:
+
+Imputing partner features for the first bidder (e.g., using population means)
+is risky — "no partner action yet" is a real state and should stay explicit.
+Prefer model structure changes over data imputation.
 
 ---
 
-## 5. Relationship to R2 Protocol
+## 6. Feature Design Concern: Coarse Partner Representation
+
+**Identified during Wave 1 review (2026-03-05).**
+
+The current `partner_suit_match` feature operates at the **contract family** level:
+it is 1 if the partner bid any suit contract while the observer is evaluating any
+suit contract. It does not distinguish which suit the partner bid.
+
+In Bid Euchre, suit relationships matter because of bowers:
+- **Same suit** (partner bids hearts, you evaluate hearts): strong positive — shared
+  trump, right bower alignment
+- **Same color** (partner bids diamonds, you evaluate hearts): moderate positive —
+  left bower is shared (J of diamonds is left bower in hearts)
+- **Off color** (partner bids spades, you evaluate hearts): neutral to negative —
+  no bower overlap, partner strength in competing suit
+
+The current binary `partner_suit_match` conflates all three cases as "1". This is
+a design flaw that limits the feature's predictive value and may contribute to the
+model learning a noisy signal that destabilizes under distribution shift.
+
+**Resolution:** Formal R1.5 rung added to the master plan. R1.5 will replace the
+coarse partner representation with suit-aware interaction features:
+- `partner_level_same_suit` — exact-match trump support
+- `partner_level_same_color_offsuit` — same-color secondary support
+- `partner_level_off_color` — off-color alternative support
+- `partner_passed` — retained as generic auction-state feature
+
+These are candidate-contract-relative (computed per suit being evaluated) and apply
+to suit contracts only. HIGH/LOW retain simpler partner handling.
+
+See `plans/r1_master_plan.md` §R1.5 for full specification.
+
+---
+
+## 7. Relationship to R1.5 and R2
+
+**Rung sequencing (updated 2026-03-05):**
+- **R1:** Retrain-first baseline with current coarse partner features. Gate-critical
+  H2H/comparator rerun. Investigation C partner-off counterfactual. Minimal rescue
+  fallback if needed.
+- **R1.5:** Richer partner-context semantics only (suit-aware features above).
+  Freeze everything else for attribution clarity. Isolates partner-context gains.
+- **R2:** Opponent context, added after partner-context semantics are stabilized.
+
+R1.5 is committed regardless of R1 retrain outcome. If R1 passes cleanly, R1.5
+still runs to measure the incremental value of richer partner semantics. If R1
+fails, R1.5 has higher urgency but unchanged scope.
 
 The pre-registered R2 context-feature protocol (plans/r2_follow_ups.md §F1)
-already calls for rebalanced training and forced-inclusion sensitivity analysis.
-The suit regression findings here may accelerate or redirect that protocol.
-
-If partner features are dropped for R1 suit, the R2 protocol should investigate:
-- Whether rebalanced data (≥10k suit hands) changes selection
-- Whether iterative training policy converges
-- Whether causal deconfounding (e.g., residualizing partner bid on partner hand
-  quality) produces a usable signal
+is reframed: partner redesign is now R1.5 scope, R2 focuses on opponent context
+after stabilized partner-context baseline.
 
 ---
 
-## 6. Provenance
+## 8. Provenance
 
 | Item | Value |
 |------|-------|

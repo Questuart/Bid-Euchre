@@ -1,9 +1,16 @@
 # R1 Training Plan — Operational Execution Checklist
 
-**Date:** 2026-03-04
-**Governing doc:** `plans/r1_master_plan.md` §3
+**Date:** 2026-03-04 (updated 2026-03-05)
+**Governing doc:** `plans/r1_master_plan.md` §3 and §10
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
 **Status:** Gate X3 STOP — regression investigation in progress (see diagnostic report)
+
+> **Rung boundary note:** This plan covers R1 execution only. R1 must complete
+> its retrain-first baseline cycle before any R1.5 execution begins. R1.5 is a
+> formally defined subsequent rung for partner-semantics redesign — see
+> `r1_master_plan.md` §10.3. R1.5 scope is independent of R1 outcome: if R1
+> passes, R1.5 tests richer partner semantics; if R1 fails, R1.5 is elevated
+> in priority but its scope does not change.
 
 ---
 
@@ -263,6 +270,33 @@ After the regression investigation (Investigations F–I) identifies root cause:
 
 Any fixes from the investigation (e.g., bug fixes, training data changes,
 feature extraction corrections) should be applied **before** retraining.
+
+### 3e. Partner-Off Counterfactual / Feature-Effect Testing (Required)
+
+**Purpose:** Verify that partner features have non-zero decision-level impact,
+per the standing feature-effect testing requirement (`r1_master_plan.md` §10.5).
+
+After retraining (Step 3d) and before proceeding to full evaluation batteries:
+
+1. **Counterfactual feature-off inference:** Zero out partner features at
+   inference time, re-score the same eval dataset, measure net_eppd delta.
+   If delta is near zero, partner features are not contributing to decisions.
+
+2. **Ablation delta:** Compare retrained model against a partner-free model
+   (same locked base, same data, no partner features). Report delta with CIs.
+
+3. **Decision-shift audit:** On hands where partner-on and partner-off models
+   disagree, report contract-type shift, bid-level shift, and outcome quality.
+
+**Gate:** If counterfactual shows zero decision impact (all bid decisions
+identical with and without partner features), investigate before proceeding
+to H2H batteries. This catches the "features selected but unused" failure
+mode early.
+
+> **R1.5 context:** Regardless of whether R1 partner features show positive
+> contribution, R1.5 will proceed with redesigned partner-semantics features
+> (see `r1_master_plan.md` §10.3). The R1 counterfactual establishes the
+> baseline that R1.5 aims to improve upon.
 
 ---
 
@@ -617,10 +651,18 @@ done
 
 ---
 
-## R2 Context-Feature Protocol (Pre-Registered)
+## R1.5 / R2 Context-Feature Protocol (Pre-Registered)
 
-**Moved to:** `plans/r2_follow_ups.md` §F1
+**Partner semantics:** `plans/r1_master_plan.md` §10.3 (R1.5 rung definition)
+**High/low confirmation:** `plans/r2_follow_ups.md` §F1
 
-R2 will run rebalanced training (≥10k hands/contract), full context pool forward
-selection, and either ablation (if features selected) or forced-inclusion sensitivity
-(if not). See the full 4-step protocol in the R2 follow-ups doc.
+**Rung sequencing:** R1.5 (partner-semantics redesign) precedes R2 (opponent
+context). Partner feature redesign items that were previously scoped as R2 are
+now R1.5 scope. R2 adds opponent context only, after partner semantics are
+stabilized.
+
+R1.5 will replace coarse partner features with candidate-contract-relative
+relation-aware features (§10.3.1). R2 will run rebalanced training (≥10k
+hands/contract), full context pool forward selection (R1.5 partner + R2
+opponent), and either ablation (if features selected) or forced-inclusion
+sensitivity (if not). See the full protocol in the respective plan docs.
