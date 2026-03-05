@@ -466,11 +466,10 @@ and train expanded model.
 - `partner_bid_level`: highest bid level partner made (0 if passed)
 - `partner_passed`: 1 if partner has passed, 0 otherwise
 - `partner_suit_match`: 1 if partner bid same suit family
-- `partner_bid_confidence`: partner_bid_level / 10 (normalized)
 
 **OLSa arm:**
 - Starting features: R0's 3/1/1 locked base
-- Candidate pool: 4 partner context features only
+- Candidate pool: 3 partner context features only
 - Feature budget: suit:10, high:5, low:5
 
 **OLSa_Full arm:**
@@ -1657,8 +1656,7 @@ consistency.
    /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/features/bidding_context.py
    def extract_partner_context(auction_history, seat) -> dict[str, float]:
        """Extract partner bidding context features.
-       Returns: partner_bid_level, partner_passed, partner_suit_match,
-                partner_bid_confidence.
+       Returns: partner_bid_level, partner_passed, partner_suit_match.
        """
 
 4. Generate canonical auction-context dataset:

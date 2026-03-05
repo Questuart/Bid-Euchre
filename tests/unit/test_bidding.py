@@ -1313,7 +1313,6 @@ class TestModeloEspecificoR1:
             "partner_bid_level": 0.5,
             "partner_passed": 0.0,
             "partner_suit_match": 0.0,
-            "partner_bid_confidence": 0.0,
         }
         bidder = ModeloEspecifico(partner_weights=partner_weights)
 
@@ -1349,7 +1348,6 @@ class TestModeloEspecificoR1:
             "partner_bid_level": 10.0,
             "partner_passed": 10.0,
             "partner_suit_match": 10.0,
-            "partner_bid_confidence": 10.0,
         }
         bidder = ModeloEspecifico(partner_weights=partner_weights)
         default_bidder = ModeloEspecifico()

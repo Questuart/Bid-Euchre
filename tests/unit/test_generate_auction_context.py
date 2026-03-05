@@ -123,15 +123,15 @@ class TestBuildDataset:
                 assert fname in features, f"Missing: {fname}"
                 assert features[fname] is not None
 
-    def test_43_features_per_row(self, tmp_path):
-        """Each row has 43 features (39 hand + 4 partner)."""
+    def test_42_features_per_row(self, tmp_path):
+        """Each row has 42 features (39 hand + 3 partner)."""
         jsonl_path = str(tmp_path / "test.jsonl")
         _write_jsonl([_make_hand_end_record()], jsonl_path)
 
         bidless, _ = build_dataset_from_jsonl(jsonl_path)
 
         for row in bidless:
-            assert len(row["hand_features"]) == 43
+            assert len(row["hand_features"]) == 42
 
     def test_outcomes_schema_matches_bidless_format(self, tmp_path):
         """Outcomes DataFrame has the expected columns."""

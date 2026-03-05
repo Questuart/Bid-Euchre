@@ -51,17 +51,17 @@ uv run python -c "
 import pandas as pd
 df = pd.read_parquet('data/training/r1/canonical_auction_context_42.parquet')
 # Check partner features exist and are non-trivial
-for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match', 'partner_bid_confidence']:
+for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match']:
     assert col in df.columns, f'Missing column: {col}'
     null_rate = df[col].isna().mean()
     assert null_rate < 0.10, f'{col} null rate too high: {null_rate:.2%}'
     assert df[col].std() > 0, f'{col} has zero variance'
 # Check suit correlation
 suit = df[df['contract_type'] == 'suit']
-for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match', 'partner_bid_confidence']:
+for col in ['partner_bid_level', 'partner_passed', 'partner_suit_match']:
     r = suit[col].corr(suit['tricks_won'])
     assert abs(r) > 0.02, f'{col} suit correlation too weak: r={r:.4f}'
-print('X1 PASS: All 4 partner features valid')
+print('X1 PASS: All 3 partner features valid')
 print(f'Dataset: {len(df)} rows, {df[\"contract_type\"].value_counts().to_dict()}')
 "
 ```
@@ -142,7 +142,7 @@ result = train_hybrid_olsa(
     feature_budget={'suit': 10, 'high': 5, 'low': 5},
     context_candidates=[
         'partner_bid_level', 'partner_passed',
-        'partner_suit_match', 'partner_bid_confidence',
+        'partner_suit_match',
     ],
 )
 print(result)
@@ -176,7 +176,7 @@ PYTHONPATH=src uv run python scripts/train_hybrid_olsa.py \
     --rung-id r1 \
     --feature-budget "suit:10,high:5,low:5" \
     --context-candidates \
-        "partner_bid_level,partner_passed,partner_suit_match,partner_bid_confidence"
+        "partner_bid_level,partner_passed,partner_suit_match"
 ```
 
 **Verify constrained arm picked up partner features:**

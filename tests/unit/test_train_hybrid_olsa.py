@@ -112,9 +112,6 @@ def _make_synthetic_run(
         features_data["partner_suit_match"] = rng.randint(0, 2, size=n_rows).astype(
             float
         )
-        features_data["partner_bid_confidence"] = (
-            features_data["partner_bid_level"] / 10.0
-        )
 
     # Make bowers strongly predict tricks for testability
     features_df = pd.DataFrame(features_data)

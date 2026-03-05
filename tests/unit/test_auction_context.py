@@ -1,7 +1,5 @@
 """Tests for partner bidding context feature extraction."""
 
-import pytest
-
 from bid_euchre.features.auction_context import (
     PARTNER_FEATURE_NAMES,
     extract_partner_features,
@@ -46,7 +44,6 @@ class TestExtractPartnerFeatures:
         assert result["partner_bid_level"] == 0
         assert result["partner_passed"] == 0
         assert result["partner_suit_match"] == 0
-        assert result["partner_bid_confidence"] == 0.0
 
     def test_partner_suit_match(self):
         transcript = [_bid_entry(2, 4, "suit", "S")]
@@ -57,11 +54,6 @@ class TestExtractPartnerFeatures:
         transcript = [_bid_entry(2, 3, "high")]
         result = extract_partner_features(0, transcript, observer_best_contract="suit")
         assert result["partner_suit_match"] == 0
-
-    def test_partner_bid_confidence_normalized(self):
-        transcript = [_bid_entry(2, 7, "suit", "D")]
-        result = extract_partner_features(0, transcript)
-        assert result["partner_bid_confidence"] == pytest.approx(0.7)
 
     def test_multiple_entries_takes_highest(self):
         transcript = [

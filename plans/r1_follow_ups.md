@@ -91,7 +91,7 @@ analysis Option B (unified regression), master plan §Stream 6
 
 The Arc D rung ladder adds context features incrementally:
 - **R1:** Partner context (`partner_bid_level`, `partner_passed`,
-  `partner_suit_match`, `partner_bid_confidence`)
+  `partner_suit_match`)
 - **R2:** Opponent context (`opponent_max_bid`, `opponent_bid_count`,
   `opponent_suit_signal`, `opponent_aggression`)
 - **R3+:** Full transcript, seat awareness, etc.
