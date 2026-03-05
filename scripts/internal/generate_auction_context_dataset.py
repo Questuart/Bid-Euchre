@@ -127,7 +127,7 @@ def build_dataset_from_jsonl(jsonl_path):
                 # 39 hand features
                 features = get_hand_features(hand_cards, contract_type, trump_suit)
 
-                # 4 partner features
+                # 3 partner features
                 partner_feats = extract_partner_features(
                     seat, auction_transcript, observer_best_contract=contract_type
                 )

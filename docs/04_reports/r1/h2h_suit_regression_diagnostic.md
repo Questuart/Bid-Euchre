@@ -700,12 +700,22 @@ R0 models should be unaffected (they don't use partner features). Verify:
 This was already observed in the H2H results (R0 self-play ~4.9, balanced).
 If R0 is fine, the bug is specific to the partner feature path.
 
-**Status:** PENDING — should be investigated BEFORE the ML hypotheses (B, E)
-since a bug would invalidate all ML conclusions.
+**Status:** COMPLETE — no bugs found
 
-**Findings:**
+**Findings (2026-03-05):**
 
-_(to be filled after investigation)_
+All 5 checks passed. No implementation bugs detected.
+
+| Check | Result | Detail |
+|-------|--------|--------|
+| F1: Partner seat calc | ✅ CLEAN | `(seat + 2) % 4` correct for partnerships (0,2) and (1,3) |
+| F2: Spot-check features | ✅ CLEAN | `entry["seat"] != partner_seat` correctly filters to partner entries only |
+| F3: Feature ordering | ✅ CLEAN | `_predict()` iterates `model["feature_names"]` → `features[f]` lookup. Artifact names come from forward selection on same column names produced by `get_hand_features()` + partner merge |
+| F4: Transcript fields | ✅ CLEAN | Both training (`generate_auction_context_dataset.py:128-132`) and runtime (`bidding.py:1229-1243`) call identical functions with consistent `observer_best_contract` values ("suit"/"high"/"low") |
+| F5: R0 unaffected | ✅ CLEAN | R0 models don't use partner features (`context_features=[]`). `choose_bid` only merges partner features when `self.context_features` is truthy. R0 self-play ~4.9 confirms no cross-contamination |
+
+**Conclusion:** H5 (implementation bug) is **eliminated**. The regression is an
+ML/data phenomenon, not a code error. Proceed to Investigation G (training sparsity).
 
 ### Investigation G: Training Data Partner Feature Sparsity
 
