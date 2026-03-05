@@ -692,3 +692,87 @@ def test_zero_partner_features_ablation(tmp_path: Path):
     # Verify the zero_partner_features flag defaults to False
     assert not bidder_normal.zero_partner_features
     assert bidder_ablated.zero_partner_features
+
+
+def test_zero_partner_features_ablation_choose_bid(tmp_path: Path):
+    """zero_partner_features=True zeroes partner features in the choose_bid() path.
+
+    Companion to test_zero_partner_features_ablation which tests _predict()
+    directly. This test exercises the full choose_bid() code path with a
+    BiddingObservation containing a transcript, verifying that the ablation
+    flag causes the same bid as an empty-transcript observation (where partner
+    features default to 0).
+    """
+    from bid_euchre.core.cards import Card
+
+    # Use bid_level_search=False (floor-based) and a bias that makes the
+    # partner contribution change floor(mu). Without partner: mu ~ bias + hand
+    # contribution. With partner_bid_level=6 and weight=1.0: mu increases by 6.
+    # This shifts floor(mu) and therefore the bid level.
+    path = _make_artifact(
+        tmp_path,
+        suit_weights=[0.0, 0.0, 0.0, 1.0],
+        suit_features=["bowers", "trump_count", "offsuit_aces", "partner_bid_level"],
+        suit_bias=4.5,
+        high_weights=[0.0],
+        high_bias=1.0,
+        low_weights=[0.0],
+        low_bias=1.0,
+        context_features=["partner_bid_level"],
+        residual_variance={"suit": 0.0, "high": 0.0, "low": 0.0},
+    )
+
+    hand = [Card("S", "A")] * 10
+    transcript = (
+        {
+            "seat": 2,
+            "action": "BID",
+            "tricks_bid": 6,
+            "contract_type": "suit",
+            "trump": "S",
+        },
+    )
+
+    # Non-ablated bidder with transcript — partner_bid_level=6 adds 6.0 to mu
+    # mu = 4.5 + 6.0 = 10.5, floor = 10
+    bidder_normal = HybridOLSaBidder(path, bid_level_search=False)
+    obs_with_transcript = BiddingObservation(
+        hand=hand,
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+        auction_transcript=transcript,
+    )
+    action_normal = bidder_normal.choose_bid(obs_with_transcript)
+
+    # Ablated bidder with same transcript — partner_bid_level zeroed
+    # mu = 4.5 + 0.0 = 4.5, floor = 4
+    bidder_ablated = HybridOLSaBidder(
+        path, bid_level_search=False, zero_partner_features=True
+    )
+    action_ablated = bidder_ablated.choose_bid(obs_with_transcript)
+
+    # Non-ablated bidder with empty transcript — partner features default to 0
+    # mu = 4.5 + 0.0 = 4.5, floor = 4
+    obs_empty_transcript = BiddingObservation(
+        hand=hand,
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+        auction_transcript=(),
+    )
+    action_empty = bidder_normal.choose_bid(obs_empty_transcript)
+
+    # Ablated bid should match the empty-transcript bid (both have partner=0)
+    assert action_ablated.n == action_empty.n, (
+        f"Ablated bid ({action_ablated.n}) should match empty-transcript bid "
+        f"({action_empty.n})"
+    )
+    assert action_ablated.contract == action_empty.contract
+
+    # Normal bid with transcript should differ from ablated (partner weight=1.0
+    # with partner_bid_level=6 adds 6.0 to mu, changing floor from 4 to 10)
+    assert action_normal.n != action_ablated.n, (
+        f"Normal bid with transcript ({action_normal.n} {action_normal.contract}) "
+        f"should differ from ablated ({action_ablated.n} {action_ablated.contract})"
+    )
