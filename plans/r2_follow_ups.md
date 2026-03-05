@@ -44,8 +44,7 @@ R2 dataset must have ≥10,000 hands per contract family. Options:
 #### Step B: Train with Full Context Pool
 
 Run forward selection with expanded candidate pool:
-- Partner features: `partner_bid_level`, `partner_passed`, `partner_suit_match`,
-  `partner_bid_confidence`
+- Partner features: `partner_bid_level`, `partner_passed`, `partner_suit_match`
 - Any new R2 opponent context features (if added)
 
 #### Step C: Check Selection by Contract Family

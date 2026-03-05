@@ -4,9 +4,9 @@ Generate auction-context dataset with partner bidding features.
 
 Runs an auction-mode experiment (all 4 seats bidding with the same artifact),
 then post-processes JSONL logs to produce a bidless-format parquet dataset
-augmented with 4 partner auction features per row.
+augmented with 3 partner auction features per row.
 
-Output: standard run directory with datasets/bidless.parquet (43-feature
+Output: standard run directory with datasets/bidless.parquet (42-feature
 hand_features struct) and datasets/bidless_outcomes.parquet.
 
 Usage:
@@ -132,7 +132,7 @@ def build_dataset_from_jsonl(jsonl_path):
                     seat, auction_transcript, observer_best_contract=contract_type
                 )
 
-                # Merge into single dict (43 features)
+                # Merge into single dict (42 features)
                 merged_features = {**features, **partner_feats}
 
                 bidless_rows.append(
@@ -171,9 +171,9 @@ def validate_dataset(bidless_df, outcomes_df):
         assert fname in sample_features, f"Missing partner feature: {fname}"
         assert sample_features[fname] is not None, f"Null partner feature: {fname}"
 
-    # Assert feature dict has 43 keys (39 hand + 4 partner)
+    # Assert feature dict has 42 keys (39 hand + 3 partner)
     n_features = len(sample_features)
-    assert n_features == 43, f"Expected 43 features, got {n_features}"
+    assert n_features == 42, f"Expected 42 features, got {n_features}"
 
     # Assert outcomes match hands
     n_hands_bidless = bidless_df["hand_id"].nunique()
@@ -182,7 +182,7 @@ def validate_dataset(bidless_df, outcomes_df):
         n_hands_bidless == n_hands_outcomes
     ), f"Hand count mismatch: bidless={n_hands_bidless}, outcomes={n_hands_outcomes}"
 
-    print(f"  Gate X1 PASS: {n_hands_bidless} hands, 43 features, 4 rows/hand")
+    print(f"  Gate X1 PASS: {n_hands_bidless} hands, 42 features, 4 rows/hand")
 
 
 def print_partner_feature_stats(bidless_df):

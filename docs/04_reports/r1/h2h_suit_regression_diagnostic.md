@@ -28,10 +28,14 @@ and lays out a concrete investigation plan with reproduction commands.
 
 1. **F (bug audit)** — Rule out implementation bugs first. If found, fixes
    invalidate all ML conclusions. Code review + spot checks, no re-runs needed.
-2. **B (bid/set rates)** — Free (log parsing). Determines if R1 over-bids in suit.
-3. **E (partial R²)** — Free (training data). Quantifies partner feature leakage.
-4. **C (zero-out ablation)** — Definitive test. Small code change + H2H re-run.
-5. **D (distribution shift)** — May need re-run with `log_level: full` if
+2. **G (training data sparsity)** — Free (parquet stats). Determines if partner
+   features are learned from a tiny, non-representative sample.
+3. **H (base model comparison)** — Free (artifact JSON). Determines if locked
+   feature weights shifted between R0 and R1.
+4. **B (bid/set rates)** — Free (log parsing). Determines if R1 over-bids in suit.
+5. **E (partial R²)** — Free (training data). Quantifies partner feature leakage.
+6. **C (zero-out ablation)** — Definitive test. Small code change + H2H re-run.
+7. **D (distribution shift)** — May need re-run with `log_level: trick` if
    auction transcripts are not in current logs.
 
 ---
@@ -74,6 +78,11 @@ The R² tripled, but game performance worsened.
 High/low models only use `partner_suit_match` (weight ~3.5). Suit models use
 3 partner features with large coefficients — particularly `partner_bid_confidence`
 at 12.85 in the full arm.
+
+> **Update:** `partner_bid_confidence` was removed from the feature registry
+> (PR #538) as it is linearly redundant with `partner_bid_level` (= bid_level / 10).
+> The full arm's 12.85 weight was an artifact of the compressed [0,1] scale.
+> Investigation results above apply to the pre-removal model artifacts.
 
 ---
 
@@ -182,6 +191,116 @@ could explain the regression.
    auction transcripts with different field names or structures. For example,
    if training uses `"tricks_bid"` but inference uses `"bid_level"`, the
    partner features would silently default to 0.
+
+### H6: Training Data Partner Sparsity (Glutton Confounder)
+
+**Claim:** The training data was generated with GluttonStrategy in non-observer
+seats. Glutton doesn't bid, so partner features (`partner_bid_level`,
+`partner_passed`) are near-zero for most training rows. The model learned what
+non-zero partner features mean from a tiny, non-representative sample.
+
+**Mechanism:**
+- Dataset generator runs with one seat using the target bidder, three seats
+  using GluttonStrategy (which always passes or doesn't participate in auction)
+- Result: `partner_bid_level == 0` for the vast majority of training rows
+- The model fits partner feature weights from the small minority of rows where
+  the partner (also using the target bidder in a self-play setup) actually bid
+- At H2H inference, the partner *always* bids (both teams use real bidders),
+  so non-zero partner features appear constantly
+- Weights calibrated on sparse data extrapolate poorly to dense data
+
+**Testable predictions:**
+- Training data has >80% of suit rows with `partner_bid_level == 0`
+- The distribution of non-zero partner features in training differs significantly
+  from the inference distribution
+
+**Test:**
+
+```python
+import pandas as pd
+train = pd.read_parquet("data/runs/canonical_auction_r1_42/datasets/bidless.parquet")
+suit = train[train["contract_type"] == "suit"]
+# Check sparsity
+zero_rate = (suit["partner_bid_level"] == 0).mean()
+print(f"partner_bid_level == 0: {zero_rate:.1%}")
+print(f"partner_bid_level distribution:")
+print(suit["partner_bid_level"].value_counts().sort_index())
+# If >80% zeros, the model learned partner weights from a tiny sample
+```
+
+### H7: Retraining on Different Data Changed the Base Model
+
+**Claim:** Even the locked 3 hand features for suit may have different weights
+in R1 vs R0, because R1 was trained on a different dataset (auction-context
+parquet from `generate_auction_context_dataset.py`) than R0 (original bidless
+parquet from `run_experiment.py`). The base model itself may have shifted.
+
+**Mechanism:**
+- R0 trained on `canonical_bidless_dataset_glutton_42` (standard experiment runner)
+- R1 trained on `canonical_auction_r1_42` (auction context generator script)
+- Different scripts, different deal populations, potentially different seat/contract
+  distributions
+- Even with the same locked features, different training data → different weights
+  → different predictions
+
+**Testable predictions:**
+- R0 and R1 constrained arm suit weights differ for the 3 locked features
+  (bowers, trump_count, offsuit_aces)
+- R1 constrained arm with partner features zeroed still performs differently
+  from R0 (implicating the base model, not partner features)
+
+**Test:**
+
+```python
+import json
+
+r0 = json.load(open("data/artifacts/arc_d/r0/hybrid_r0.json"))
+r1 = json.load(open("data/artifacts/arc_d/r1/hybrid_r1.json"))
+
+r0_suit = r0["payoff_model"]["suit"]
+r1_suit = r1["payoff_model"]["suit"]
+
+print("Feature comparison (suit constrained arm):")
+for i, name in enumerate(r0_suit["feature_names"]):
+    r0_w = r0_suit["weights"][i]
+    # Find matching feature in R1
+    if name in r1_suit["feature_names"]:
+        r1_idx = r1_suit["feature_names"].index(name)
+        r1_w = r1_suit["weights"][r1_idx]
+        delta = r1_w - r0_w
+        print(f"  {name}: R0={r0_w:.4f}, R1={r1_w:.4f}, delta={delta:+.4f}")
+    else:
+        print(f"  {name}: R0={r0_w:.4f}, R1=MISSING")
+
+print(f"\nR0 intercept: {r0_suit['intercept']:.4f}")
+print(f"R1 intercept: {r1_suit['intercept']:.4f}")
+```
+
+### H8: R² Improvement Doesn't Imply Better Bidding (Threshold Paradox)
+
+**Claim:** Better prediction accuracy (R²) can produce worse bidding because
+bidding is a threshold decision. If partner features inflate predictions by a
+constant amount, R² improves (more variance explained) but bid levels shift
+upward, increasing the set rate.
+
+**Mechanism:**
+- Partner features add a positive signal (partner bid → partner has good hand →
+  we'll win more tricks)
+- This inflates trick predictions by some amount (e.g., +1.5 tricks on average)
+- R² improves because the model explains more variance in tricks_won
+- But `compute_best_bid()` translates predictions into bid levels via thresholds
+- Inflated predictions → bidding 7 instead of 6 → more sets → worse points
+
+This is NOT a modeling error in the traditional sense. The predictions may be
+"correct" on the training distribution but systematically too high at inference.
+The R² improvement is real but misleading as a game-quality metric.
+
+**Testable predictions:**
+- R1 mean trick prediction (suit, declaring) is higher than R0
+- R1 set rate (suit) is higher than R0
+- The prediction inflation correlates with the regression magnitude
+
+**Test:** Combined with Investigation B (bid/set rate comparison).
 
 ### H1 vs H3: How to Distinguish
 
@@ -312,7 +431,7 @@ training data (R0-generated) and H2H inference (R1-generated)?
 
 **Method:**
 1. Load training parquet, filter to suit, compute summary stats for
-   `partner_bid_level`, `partner_passed`, `partner_suit_match`, `partner_bid_confidence`
+   `partner_bid_level`, `partner_passed`, `partner_suit_match`
 2. Load R1 self-play H2H logs, extract the same features from auction transcripts
 3. Compare means, standard deviations, and distributions
 4. Estimate prediction error: `shift_in_feature × model_weight`
@@ -322,9 +441,9 @@ training data (R0-generated) and H2H inference (R1-generated)?
 ```python
 # Step 1: Training data partner feature distribution (suit only)
 import pandas as pd
-train = pd.read_parquet("data/training/r1/canonical_auction_context_42.parquet")
+train = pd.read_parquet("data/runs/canonical_auction_r1_42/datasets/bidless.parquet")
 suit_train = train[train["contract_type"] == "suit"]
-for col in ["partner_bid_level", "partner_passed", "partner_suit_match", "partner_bid_confidence"]:
+for col in ["partner_bid_level", "partner_passed", "partner_suit_match"]:
     print(f"TRAINING {col}: mean={suit_train[col].mean():.3f}, std={suit_train[col].std():.3f}")
 ```
 
@@ -342,7 +461,7 @@ partner_feats = []
 with open(logfile) as f:
     for line in f:
         record = json.loads(line)
-        if record.get("contract_type") != "suit":
+        if record.get("contract") != "suit":
             continue
         transcript = record.get("auction_transcript", [])
         for seat in range(4):
@@ -351,7 +470,7 @@ with open(logfile) as f:
 
 import pandas as pd
 inference_df = pd.DataFrame(partner_feats)
-for col in ["partner_bid_level", "partner_passed", "partner_suit_match", "partner_bid_confidence"]:
+for col in ["partner_bid_level", "partner_passed", "partner_suit_match"]:
     print(f"INFERENCE {col}: mean={inference_df[col].mean():.3f}, std={inference_df[col].std():.3f}")
 ```
 
@@ -366,7 +485,7 @@ names = suit_model["feature_names"]
 weights = suit_model["weights"]
 weight_map = dict(zip(names, weights))
 
-for col in ["partner_bid_confidence", "partner_passed", "partner_suit_match"]:
+for col in ["partner_bid_level", "partner_passed", "partner_suit_match"]:
     if col in weight_map:
         shift = inference_df[col].mean() - suit_train[col].mean()
         contribution = shift * weight_map[col]
@@ -376,7 +495,7 @@ for col in ["partner_bid_confidence", "partner_passed", "partner_suit_match"]:
 
 Note: The JSONL may or may not include `auction_transcript` depending on
 `log_level`. If not present, this investigation requires re-running the
-self-play matchup with `log_level: full` or a modified logger. Check with:
+self-play matchup with `log_level: trick` (valid levels: `none`, `hand`, `trick`). Check with:
 `head -1 <logfile> | python -c "import json,sys; d=json.load(sys.stdin); print('auction_transcript' in d)"`
 
 **Expected if H1:** Large shift, especially in bid level / confidence.
@@ -411,7 +530,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import GroupKFold
 
 # Load training data
-train = pd.read_parquet("data/training/r1/canonical_auction_context_42.parquet")
+train = pd.read_parquet("data/runs/canonical_auction_r1_42/datasets/bidless.parquet")
 suit = train[train["contract_type"] == "suit"].copy()
 y = suit["tricks_won"].values
 
@@ -489,12 +608,12 @@ import json, pandas as pd
 from bid_euchre.features.auction_context import extract_partner_features
 
 # Load one suit hand from training data
-train = pd.read_parquet("data/training/r1/canonical_auction_context_42.parquet")
+train = pd.read_parquet("data/runs/canonical_auction_r1_42/datasets/bidless.parquet")
 suit_train = train[train["contract_type"] == "suit"].iloc[0]
 
 # Show what the training data recorded
 print("Training data partner features:")
-for col in ["partner_bid_level", "partner_passed", "partner_suit_match", "partner_bid_confidence"]:
+for col in ["partner_bid_level", "partner_passed", "partner_suit_match"]:
     print(f"  {col}: {suit_train[col]}")
 
 # If we can recover the auction_transcript for this hand, re-extract
@@ -549,6 +668,80 @@ If R0 is fine, the bug is specific to the partner feature path.
 
 **Status:** PENDING — should be investigated BEFORE the ML hypotheses (B, E)
 since a bug would invalidate all ML conclusions.
+
+**Findings:**
+
+_(to be filled after investigation)_
+
+### Investigation G: Training Data Partner Feature Sparsity
+
+**Question:** What fraction of training rows have non-zero partner features?
+If GluttonStrategy doesn't bid, most rows may have `partner_bid_level == 0`.
+
+**Method:** Load training parquet, compute sparsity stats for partner features
+in suit contracts.
+
+**Reproduction:**
+
+```python
+import pandas as pd
+train = pd.read_parquet("data/runs/canonical_auction_r1_42/datasets/bidless.parquet")
+suit = train[train["contract_type"] == "suit"]
+
+print("Partner feature sparsity (suit contracts):")
+for col in ["partner_bid_level", "partner_passed", "partner_suit_match"]:
+    zero_rate = (suit[col] == 0).mean()
+    nonzero = suit[col][suit[col] != 0]
+    print(f"  {col}: {zero_rate:.1%} zeros, "
+          f"non-zero mean={nonzero.mean():.2f} (n={len(nonzero)})")
+print(f"\nTotal suit rows: {len(suit)}")
+```
+
+**Expected if H6:** >80% zeros for `partner_bid_level`. Model learned partner
+weights from <20% of data, making them poorly calibrated for dense-signal inference.
+
+**Status:** PENDING
+
+**Findings:**
+
+_(to be filled after investigation)_
+
+### Investigation H: Base Model Weight Comparison (R0 vs R1)
+
+**Question:** Did the locked hand features change weights between R0 and R1
+(same features, different training data)?
+
+**Method:** Compare weights and intercepts for the 3 locked suit features
+between R0 and R1 constrained arm artifacts.
+
+**Reproduction:**
+
+```python
+import json
+
+r0 = json.load(open("data/artifacts/arc_d/r0/hybrid_r0.json"))
+r1 = json.load(open("data/artifacts/arc_d/r1/hybrid_r1.json"))
+
+r0_suit = r0["payoff_model"]["suit"]
+r1_suit = r1["payoff_model"]["suit"]
+
+print("Suit constrained arm — locked feature weights:")
+for i, name in enumerate(r0_suit["feature_names"]):
+    r0_w = r0_suit["weights"][i]
+    if name in r1_suit["feature_names"]:
+        r1_idx = r1_suit["feature_names"].index(name)
+        r1_w = r1_suit["weights"][r1_idx]
+        print(f"  {name}: R0={r0_w:.4f}, R1={r1_w:.4f}, delta={r1_w - r0_w:+.4f}")
+
+print(f"\nR0 intercept: {r0_suit['intercept']:.4f}")
+print(f"R1 intercept: {r1_suit['intercept']:.4f}")
+```
+
+**Expected if H7:** Significant weight changes in locked features. This would
+mean even with partner features zeroed, the R1 model makes different predictions
+than R0 — the regression has a base-model component.
+
+**Status:** PENDING
 
 **Findings:**
 
@@ -612,7 +805,7 @@ If partner features are dropped for R1 suit, the R2 protocol should investigate:
 | R1 constrained artifact | data/artifacts/arc_d/r1/hybrid_r1.json |
 | R0 full artifact | data/artifacts/arc_d/r0/hybrid_r0_full.json |
 | R0 constrained artifact | data/artifacts/arc_d/r0/hybrid_r0.json |
-| Training data | data/training/r1/canonical_auction_context_42.parquet |
+| Training data | data/runs/canonical_auction_r1_42/datasets/bidless.parquet |
 | ME_r1 config fix | PR #536 (partner_weights updated before this run) |
 | Bootstrap | 10,000 resamples, seed 42 |
 | Prior report | partner_feature_selection_diagnostic.md |

@@ -146,7 +146,6 @@ Plus follow-up work that may be separate PRs or folded in:
 | `partner_bid_level` | int | Highest bid level partner made (0 if passed) |
 | `partner_passed` | bool→int | 1 if partner has passed |
 | `partner_suit_match` | bool→int | 1 if partner bid same suit family |
-| `partner_bid_confidence` | float | partner_bid_level / 10 |
 
 **Feature enrichment (P1) — HITL FINAL DECISION:**
 
@@ -192,7 +191,7 @@ between ModeloEspecifico R1 and OLSa R1 measures the **value of learned weights*
 
 **Partner context features (all weight 1.0):** ModeloEspecifico R1 reads
 `BiddingObservation.auction_transcript` and adds to its bid score:
-- 1.0×`partner_bid_level` + 1.0×`partner_passed` + 1.0×`partner_suit_match` + 1.0×`partner_bid_confidence`
+- 1.0×`partner_bid_level` + 1.0×`partner_passed` + 1.0×`partner_suit_match`
 
 These are added to the raw score before `floor()` determines the bid level.
 

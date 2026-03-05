@@ -5,6 +5,9 @@
 **Training data:** data/runs/canonical_auction_r1_42 (41,424 hands from 50k deals)
 **Artifacts:** data/artifacts/arc_d/r1/hybrid_r1.json, hybrid_r1_full.json
 **PR:** #532 (additive forward selection), #533 (plan update)
+**Note:** `partner_bid_confidence` was subsequently removed from the feature
+registry (PR #538) as linearly redundant with `partner_bid_level`. Results
+below reflect the pre-removal selection run.
 
 ---
 

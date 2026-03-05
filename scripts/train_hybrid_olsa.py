@@ -84,7 +84,7 @@ def main() -> None:
         default=None,
         help="Comma-separated context feature names for constrained arm additive "
         "forward selection, e.g. 'partner_bid_level,partner_passed,"
-        "partner_suit_match,partner_bid_confidence'",
+        "partner_suit_match'",
     )
 
     args = parser.parse_args()

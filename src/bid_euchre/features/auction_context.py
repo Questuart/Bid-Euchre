@@ -9,7 +9,6 @@ Features:
     partner_bid_level: Highest bid level partner made (0 if passed/no action)
     partner_passed: 1 if partner explicitly passed, 0 otherwise
     partner_suit_match: 1 if partner bid same contract family as observer context
-    partner_bid_confidence: partner_bid_level / 10 (normalized to [0, 1])
 """
 
 from __future__ import annotations
@@ -34,11 +33,10 @@ def extract_partner_features(
             If None, partner_suit_match defaults to 0.
 
     Returns:
-        Dict with 4 features:
+        Dict with 3 features:
             partner_bid_level (int): 0-10, highest bid partner made
             partner_passed (int): 0 or 1
             partner_suit_match (int): 0 or 1
-            partner_bid_confidence (float): 0.0-1.0
     """
     partner_seat = (seat + 2) % 4
 
@@ -62,13 +60,10 @@ def extract_partner_features(
     if observer_best_contract is not None and partner_contract_type is not None:
         partner_suit_match = int(partner_contract_type == observer_best_contract)
 
-    partner_bid_confidence = partner_bid_level / 10.0
-
     return {
         "partner_bid_level": partner_bid_level,
         "partner_passed": partner_passed,
         "partner_suit_match": partner_suit_match,
-        "partner_bid_confidence": partner_bid_confidence,
     }
 
 
@@ -77,5 +72,4 @@ PARTNER_FEATURE_NAMES = [
     "partner_bid_level",
     "partner_passed",
     "partner_suit_match",
-    "partner_bid_confidence",
 ]
