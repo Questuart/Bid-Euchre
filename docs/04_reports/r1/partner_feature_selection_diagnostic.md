@@ -153,3 +153,4 @@ See `plans/r1_follow_ups.md` item P10 and `plans/r1_training_plan.md` §R2 proto
 | Training report | `data/artifacts/arc_d/r1/training_report_r1.json` |
 | Forward select impl | `src/bid_euchre/models/feature_selection.py` (min_improvement=0.005) |
 | Additive FS impl | PR #532 (`context_candidates` in `train_hybrid_olsa.py`) |
+| gate_status | X2 PASS — both arms suit R² not regressed (see §6) |
