@@ -1699,6 +1699,182 @@ are available.
 
 ---
 
+## 10. Rung Ladder: R1, R1.5, R2 Definitions
+
+### 10.1 Rung Sequencing Overview
+
+The Arc D ladder proceeds through rungs that each isolate one category of
+change for clean attribution. The three next rungs are:
+
+| Rung | Scope | What Changes | What Is Frozen |
+|------|-------|-------------|----------------|
+| **R1** | Retrain-first baseline + current partner features | Locked base expansion (3/2/2), 3 coarse partner features, auction-context data | Feature extraction code, partner feature definitions, hand features |
+| **R1.5** | Richer partner-context semantics | Partner feature family redesigned (relation-aware, candidate-contract-relative) | Hand features, model architecture, opponent context (none yet), locked base |
+| **R2** | Opponent context | Opponent context features added | Partner semantics (stabilized at R1.5), hand features, locked base |
+
+**Key invariant:** Each rung adds exactly one category of change. R1.5 exists
+to isolate partner-context semantic improvements from R2's opponent-context
+additions. Without R1.5, partner redesign and opponent context would be
+conflated in R2, destroying attribution clarity.
+
+### 10.2 R1 Scope (Current Rung)
+
+R1 runs a **strict retrain-first baseline** on the current spec before any
+R1.5 work begins. The R1 cycle includes:
+
+1. **Retrain-first baseline:** Retrain both arms with the current 3 partner
+   features after fixing any identified bugs (H7 weight instability, etc.)
+2. **Gate-critical H2H/comparator rerun:** Full battery evaluation of the
+   retrained models
+3. **Partner-off counterfactual (Investigation C):** Zero out partner features
+   at inference time to measure their actual decision-level contribution
+4. **Minimal rescue (fallback):** If retrain fails, allowed as an R1 fallback
+   only if documented with root cause
+
+**R1 completion criteria:** Either R1 passes its promotion gate (retrained
+model recovers), or R1 produces a documented failure analysis that motivates
+R1.5. In both cases, R1.5 proceeds as the next rung.
+
+### 10.3 R1.5 Definition — Partner-Semantics Rung
+
+**Purpose:** Replace the coarse suit-level partner representation with richer
+relation-aware features that capture Euchre-specific partner signal, while
+freezing all other moving parts for attribution clarity.
+
+**Why R1.5 exists regardless of R1 outcome:**
+- If R1 succeeds: R1.5 tests whether richer partner semantics provide
+  additional lift beyond the coarse features
+- If R1 fails: R1.5 is elevated in priority because the coarse partner
+  features may be the failure mechanism (H6 sparse signal, overly blunt
+  suit-match representation)
+- In either case, R1.5 scope remains the same — isolate partner-context
+  semantic gains before R2 adds opponent context
+
+**What changes at R1.5:**
+- Partner feature family replaced with candidate-contract-relative features
+  (see §10.3.1)
+- Forward selection re-run with the new partner feature pool
+- All partner features are for suit contracts only; HIGH/LOW retain their
+  simpler partner handling unless explicitly extended later
+
+**What remains frozen at R1.5:**
+- Hand features (39 features from `hand_eval.py`)
+- Locked base features (3/2/2 from R1)
+- Model architecture (separate per-contract OLS, not unified)
+- No opponent context (deferred to R2)
+- Scoring, rules, simulation engine
+
+#### 10.3.1 Planned R1.5 Partner-Semantics Features (Suit Contracts Only)
+
+These are **candidate-contract-relative** features. They are computed
+separately for each suit being evaluated (C, D, H, S), not once globally per
+hand. They replace the current coarse partner features (`partner_bid_level`,
+`partner_passed`, `partner_suit_match`).
+
+| Feature | Definition | Concise Label |
+|---------|-----------|---------------|
+| `partner_level_same_suit` | Highest bid level partner made in the exact candidate suit. Example: evaluating hearts; partner bid 7H -> 7. Partner bid 7D -> 0. | Exact-match trump support |
+| `partner_level_same_color_offsuit` | Highest bid level partner made in the other suit of the same color as the candidate suit. Example: evaluating hearts; partner bid 7D -> 7 (diamonds is same-color offsuit to hearts). Example: evaluating spades; partner bid 6C -> 6. | Same-color secondary support |
+| `partner_level_off_color` | Highest bid level partner made in either suit of the opposite color from the candidate suit. Example: evaluating hearts; partner bid 7S or 7C -> 7. Example: evaluating diamonds; partner bid 6S -> 6. | Off-color alternative support |
+| `partner_passed` | 1 if partner explicitly passed at any point in the auction before or during the current transcript, else 0. Generic auction-state feature, not suit-specific. | Partner passed |
+
+**Clarifying rules:**
+- These features are for **suit contracts only**. HIGH and LOW keep their
+  simpler partner handling unless the plan explicitly extends them later.
+- If partner made multiple bids, use the **highest relevant bid level** per
+  channel.
+- The three level features are mutually exclusive by suit relation for any
+  single partner bid, but over a whole transcript multiple channels may be
+  non-zero if partner bid multiple suits.
+- `partner_level_same_color_offsuit` means same color, different suit — not
+  "same suit family."
+- `partner_level_off_color` is a separate channel whose coefficient/sign is
+  learned. Do not hard-code negative meaning into it.
+- **First-bidder empty transcript** is a valid state: all three level features
+  are 0, and `partner_passed` = 0. This must not be imputed away.
+
+**Design rationale:** The current R1 `partner_suit_match` feature is a binary
+flag that collapses all same-color support into one bit. It cannot distinguish
+between a partner who bid 7 in the exact candidate suit (strong direct support)
+vs a partner who bid 5 in the same-color offsuit (moderate indirect support).
+The R1.5 feature family provides three graded channels that capture the
+Euchre-specific structure of suit relationships (bowers, color families).
+
+#### 10.3.2 R1.5 Experiment Outline
+
+**Scale policy:**
+1. QUICK screen of semantics variants (partner feature combinations)
+2. 3-seed QUICK on finalist feature set
+3. One FULL confirmation round on the winner
+
+**Gating expectations:**
+- Gate X2 equivalent: suit R² must not regress from R1 baseline
+- Gate X3 equivalent: QUICK H2H delta vs R1 incumbent must not be < -0.05
+- Partner-off counterfactual must show measurable decision shift (not null)
+- Feature-effect testing (§10.5) is mandatory
+
+#### 10.3.3 R1.5 Stabilization Methods (If Needed)
+
+If R1.5 partner features show instability (weight sign flips across seeds,
+high coefficient variance), the following methods are available in priority
+order:
+
+1. **Redesign only** — adjust feature definitions, granularity, or
+   normalization. Preferred because it addresses root cause.
+2. **Redesign + Ridge** — add L2 regularization to constrain weight magnitude.
+   Low implementation cost; Ridge is well-understood.
+3. **Redesign + Two-stage** — fit hand features first, then add partner
+   features on residuals. Moderate complexity; isolates partner contribution.
+4. **Weight anchoring** — anchor partner feature weights toward a prior
+   (e.g., R1 weights). Last resort due to implementation complexity and
+   risk of suppressing genuine signal.
+
+### 10.4 R2 Scope — Opponent Context After Stabilized Partner Context
+
+R2 adds opponent context features **after** partner-context semantics have been
+isolated and stabilized at R1.5. R2 does NOT revisit partner feature design.
+
+**What changes at R2:**
+- Opponent context features added (e.g., `opponent_max_bid`,
+  `opponent_bid_count`, `opponent_suit_signal`, `opponent_aggression`)
+- Forward selection re-run with expanded context pool (partner R1.5 + opponent)
+- Potentially rebalanced training data (≥10k hands per contract family, per F1)
+
+**What remains frozen at R2:**
+- Partner feature definitions (from R1.5)
+- Hand features, locked base, model architecture
+
+**Key constraint:** Partner redesign and opponent context must NOT arrive in the
+same rung. R1.5 ensures partner semantics are stable before R2 adds the
+opponent dimension.
+
+### 10.5 Standing Requirement: Feature-Effect Testing (All Rungs)
+
+Every rung that introduces a new feature family must include explicit testing
+showing the effect of the newly added features **beyond training-set fit**.
+This is a standing requirement, not optional.
+
+**Required tests at every rung:**
+
+| Test | Purpose | Method |
+|------|---------|--------|
+| **Counterfactual feature-off inference** | Verify features have non-zero decision impact | Zero out the new feature family at inference time; re-score the same eval dataset; measure net_eppd delta vs feature-on |
+| **Ablation delta on paired deal sets** | Quantify feature contribution with CIs | Train model with and without the new feature family on the same data split; evaluate both on paired deal sets; report delta with bootstrap CIs |
+| **Slice analysis on feature-active hands** | Verify features help where they have signal | Restrict evaluation to hands where the new features are non-zero/non-default; compare make_rate and net_eppd on this slice between feature-on and feature-off models |
+| **Decision-shift audit** | Characterize how features change bidding | For hands where the feature-on model makes a different bid decision than the feature-off model, report: contract-type shift, bid-level shift, pass-to-bid conversion rate, and outcome quality on the shifted hands |
+| **Instrument-labeled reporting** | Prevent instrument conflation | Every metric in every report must be labeled with its source instrument (comparator dual-seat / comparator single-seat / H2H / self-play). See §3.10 instrument labeling rule. |
+
+**Failure mode this prevents:** A feature family that improves training R² but
+has zero or negative impact on game-play decisions. The R0 normalizer showed
+this exact pattern (accuracy +4%, net_eppd -0.269). Feature-effect testing
+catches this before the promotion gate.
+
+**Minimum bar:** At least the counterfactual and the ablation delta are
+mandatory. Slice analysis and decision-shift audit are strongly recommended
+and mandatory if the counterfactual shows ambiguous results.
+
+---
+
 ## Cross-References
 
 | Document | Relationship |
@@ -1706,6 +1882,7 @@ are available.
 | `plans/archive/MASTER_PLAN.md` §Stream 6, §9 C2 | R0 governing plan (archived; this plan supersedes for R1) |
 | `plans/arc_d_execution_plan.md` §Phase R1 | R1 wave structure and PR sequencing |
 | `plans/r1_follow_ups.md` | R1 promotion gate checklist |
+| `plans/r2_follow_ups.md` | R2 follow-ups (opponent context scope) |
 | `docs/04_reports/r0/10_contract_selection_oracle.md` | Oracle analysis (P1/P3 baseline) |
 | `docs/04_reports/r0/11_pass_threshold_decision.md` | Threshold protocol template (P4) |
 | `docs/04_reports/r0/21_r0_retrospective.md` §5 | Process lessons W1–W6 |

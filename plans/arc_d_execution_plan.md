@@ -533,16 +533,108 @@ with documented rationale.
 
 ---
 
+### Phase R1.5 -- Partner-Semantics Enrichment (Added 2026-03-05)
+
+**Objective:** Replace the coarse contract-family-level partner representation
+with suit-aware interaction features that capture Euchre's bower and color
+dynamics. Isolate the value of richer partner semantics before R2 adds opponent
+context.
+
+**Non-goals:** No opponent context. No training method changes (Ridge, two-stage)
+unless R1 retrain fails. `risk_lambda = 0`.
+
+**Why this rung exists:**
+- The current `partner_suit_match` treats all suit bids as equivalent. In Euchre,
+  partner bidding the same trump vs same color vs off-color has very different
+  implications (bower sharing, void coverage).
+- R1 regression investigation showed partner features dominate the fit (+0.374 R²)
+  but are too coarse to capture the actual game dynamics.
+- Giving partner semantics their own rung isolates the effect from future opponent
+  context (R2), enabling clean rung-to-rung attribution.
+
+**Rung sequencing:**
+- R1.5 executes AFTER R1 retrain-first baseline completes (regardless of R1 outcome).
+- If R1 passes cleanly, R1.5 measures incremental value of richer semantics.
+- If R1 fails, R1.5 has higher urgency but unchanged scope.
+- R1.5 is committed regardless of R1 outcome.
+
+**Required inputs:**
+- R1 incumbent artifact (promoted, advanced, or rescued)
+- Canonical auction-context dataset from PR-R1a (same dataset as R1 — freeze
+  data source for attribution clarity)
+- Split: `three_way`, seed=42
+
+**Partner-semantics features (suit contracts only):**
+
+These are candidate-contract-relative: computed separately for each suit being
+evaluated (C, D, H, S), not once globally per hand.
+
+| Feature | Description | Example (evaluating hearts) |
+|---------|-------------|----------------------------|
+| `partner_level_same_suit` | Highest bid level partner made in the exact candidate suit. **Exact-match trump support.** | Partner bid 7H → 7. Partner bid 7D → 0. |
+| `partner_level_same_color_offsuit` | Highest bid level partner made in the other suit of the same color. **Same-color secondary support** (bower sharing: J of diamonds is left bower in hearts). | Partner bid 7D → 7. Partner bid 7S → 0. |
+| `partner_level_off_color` | Highest bid level partner made in either suit of the opposite color. **Off-color alternative support.** Coefficient sign is learned, not hard-coded. | Partner bid 7S or 7C → 7. |
+| `partner_passed` | 1 if partner explicitly passed. Generic auction-state feature, not suit-specific. Retained from R1. | Partner passed → 1. |
+
+**Clarifying rules:**
+- The three level features are mutually exclusive by suit relation for any single
+  partner bid, but over a whole transcript multiple channels may be non-zero if
+  partner bid multiple suits.
+- Empty transcript for first bidder is a valid state: all three level features = 0,
+  partner_passed = 0. Do not impute — "no partner action yet" is real information.
+- HIGH and LOW retain simpler partner handling unless explicitly extended later.
+- Do not describe `same_color_offsuit` as "same suit family." It means same color,
+  different suit.
+
+**OLSa arm:**
+- Starting features: R1's locked base (3/2/2 + any R1 partner features retained)
+- Candidate pool: 3 new suit-aware partner features (replacing `partner_suit_match`
+  for suit contracts)
+- Feature budget: suit:10, high:5, low:5
+
+**OLSa_Full arm:**
+- Starting features: empty (selected from scratch)
+- Candidate pool: all 39 hand + 4 suit-aware partner features
+- Feature budget: none (threshold-only stopping)
+
+**Stabilization methods (if R1 retrain still regresses):**
+
+Screen at QUICK scale, ordered by implementation complexity:
+1. **Redesign only** — new suit-aware features with standard OLS
+2. **Redesign + Ridge** — L2 penalty to constrain weight magnitudes
+3. **Redesign + two-stage** — freeze hand weights, fit partner weights additively
+4. **Weight anchoring** — last resort only, due to implementation complexity
+
+**Scale guidance:**
+- QUICK screen all candidate semantics variants
+- 3-seed QUICK on finalists
+- One FULL gate-critical confirmation round on the winner
+
+**Feature-effect testing (required per §7.5):**
+R1.5 report must answer: "What is the incremental value of richer partner
+semantics over coarse partner context?" using all 5 required evidence types
+from §7.5.
+
+**Expected outputs:** Same artifact pattern as R1, with `r1.5` suffix.
+
+**Promotion:** Same gate as R1 — improvement over R1 incumbent.
+
+---
+
 ### Phase R2 -- Opponent Bidding Context
 
 **Objective:** Add opponent bid context features. Train model with
-partner + opponent context cumulated.
+partner + opponent context cumulated. R2 executes AFTER R1.5 stabilizes
+the partner-context baseline — opponent context is added on top of
+richer partner semantics, not alongside coarse partner features.
 
-**Non-goals:** No full transcript analysis. `risk_lambda = 0`.
+**Non-goals:** No full transcript analysis. No partner redesign (done in R1.5).
+`risk_lambda = 0`.
 
 **Required inputs:**
-- R1 incumbent artifact (promoted or advanced)
-- Canonical auction-context dataset from PR-R1a (same dataset as R1)
+- R1.5 incumbent artifact (promoted or advanced)
+- Canonical auction-context dataset (may need regeneration if R1.5 changes
+  the feature extraction pipeline)
 - Split: `three_way`, seed=42
 
 **Opponent context features (candidates):**
@@ -710,7 +802,7 @@ For each pair (rejected_A, rejected_B) across all rungs:
 
 ---
 
-## §5) PR Decomposition (18 PRs)
+## §5) PR Decomposition (20 PRs)
 
 Every PR has exactly one concept. R1-R4 are each split into a feature/infra
 PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
@@ -725,9 +817,11 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 | PR-R0a | R0 | Hybrid training pipeline + feature selection utility + `--arm-mode` CLI flag + bundle writing | New: training script, feature selection module + tests |
 | PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle + R0 comparator battery + comparator script updates | New: eval configs, registry doc. Modified: run_auction_comparator.py (--bidder-class, --output-format json, net_eppd). Artifacts: frozen models + evals + comparator_battery_r0.json |
 | PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset (generated with HybridOLSaBidder R0) | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
-| PR-R1b | R1 | R1 dual-arm training + eval + promotion | Feature selection + train + eval + gate for both arms. Depends on PR-I2 + PR-R0b + PR-R1a |
+| PR-R1b | R1 | R1 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Feature selection + train + eval + gate for both arms. Depends on PR-I2 + PR-R0b + PR-R1a |
+| PR-R1.5a | R1.5 | Suit-aware partner feature extraction (partner_level_same_suit, partner_level_same_color_offsuit, partner_level_off_color) | Modified: auction_context.py. New: suit-relation features + tests. HIGH/LOW unchanged. |
+| PR-R1.5b | R1.5 | R1.5 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Same pattern as R1b. Attribution: richer semantics vs coarse partner context. |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
-| PR-R2b | R2 | R2 dual-arm training + eval + promotion | Same pattern as R1b |
+| PR-R2b | R2 | R2 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Same pattern as R1b. Attribution: opponent context vs stabilized partner baseline. |
 | PR-R3a | R3 | Full transcript context feature extraction | New: transcript context features + tests |
 | PR-R3b | R3 | R3 dual-arm training + eval + promotion | Same pattern as R1b |
 | PR-R4a | R4 | Seat awareness feature extraction | New: seat features + tests |
@@ -767,27 +861,33 @@ Wave 4 (after R0b promoted + R1a + I2):
   [R1b] R1 dual-arm training + eval + promotion (requires R1a's auction-context dataset)
   [R3a] Full transcript features (after R2a merged)
 
-Wave 5 (after R1b + R2a):
-  [R2b] R2 dual-arm training + eval + promotion
+Wave 4.5 (after R1b, parallel with R1.5a):
+  [R1.5a] Suit-aware partner feature extraction (code-only)
+
+Wave 5 (after R1b + R1.5a):
+  [R1.5b] R1.5 dual-arm training + eval + promotion
   [R4a] Seat awareness features (after R3a merged)
 
-Wave 6 (after R2b + R3a):
+Wave 6 (after R1.5b + R2a):
+  [R2b] R2 dual-arm training + eval + promotion
+
+Wave 7 (after R2b + R3a):
   [R3b] R3 dual-arm training + eval + promotion
 
-Wave 7 (after R3b + R4a):
+Wave 8 (after R3b + R4a):
   [R4b] R4 dual-arm training + eval + promotion
 
-Wave 8 (after R4b + R5a):
+Wave 9 (after R4b + R5a):
   [R5b] R5 dual-arm training + eval + promotion (independent lambda per arm)
 
-Wave 9 (after all rungs):
+Wave 10 (after all rungs):
   [F] Consolidation report + arc dashboard
 ```
 
 ### Critical Path
 
 ```
-P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R2b -> R3b -> R4b -> R5b -> F
+P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R1.5a -> R1.5b -> R2b -> R3b -> R4b -> R5b -> F
 ```
 
 **No external blockers remain.** All HITL dependencies (#370, #372, #374, #375,
@@ -796,6 +896,7 @@ P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R2b -> R3b -> R4b -> R5b -> F
 **Off critical path (can develop in parallel):**
 PR-I2, PR-I3, PR-I4, PR-R2a, PR-R3a, PR-R4a, PR-R5a -- all code-only PRs that
 add features or architecture without running promotions.
+PR-R1.5a can be developed in parallel with R1b execution (code-only).
 
 ### Parallel-Safe Summary
 
@@ -808,11 +909,13 @@ Wave 2:  [I2] [I3] [I4] [R0a] [R5a]                   <- parallel, no external b
 Wave 3:  [R0b] [R2a]                                   <- after R0a
 Wave 3+: [R1a]                                         <- after R0b promotes (E2)
 Wave 4:  [R1b] [R3a]                                   <- after R0b + R1a + I2
-Wave 5:  [R2b] [R4a]                                   <- after R1b / R3a
-Wave 6:  [R3b]                                         <- after R2b + R3a
-Wave 7:  [R4b]                                         <- after R3b + R4a
-Wave 8:  [R5b]                                         <- after R4b + R5a
-Wave 9:  [F]                                           <- after all
+Wave 4.5:[R1.5a]                                       <- after R1a (code-only, parallel w/ R1b)
+Wave 5:  [R1.5b] [R4a]                                 <- after R1b + R1.5a / R3a
+Wave 6:  [R2b]                                         <- after R1.5b + R2a
+Wave 7:  [R3b]                                         <- after R2b + R3a
+Wave 8:  [R4b]                                         <- after R3b + R4a
+Wave 9:  [R5b]                                         <- after R4b + R5a
+Wave 10: [F]                                           <- after all
 ```
 
 ---
@@ -1015,6 +1118,86 @@ Maximum rollback depth = 1 rung.
 | STL-8 | Schema version mismatch | HALT. Fix artifact loader or pipeline. |
 
 On halt: file GitHub issue with `stop-the-line` label. Resolve before continuing.
+
+---
+
+## §7.5) Feature-Effect Attribution Contract (Ladder-Wide)
+
+> **Added 2026-03-05.** Applies to ALL rungs R1+.
+
+### Motivation
+
+The R1 regression investigation demonstrated that training-metric improvement
+(R² tripling) can mask deployment-facing regression (-0.76 pts/deal in suit).
+Training R², validation R², and even test R² are necessary but insufficient
+evidence that a new feature family helps in actual game play. Each rung must
+produce deployment-facing attribution evidence, not just fit metrics.
+
+### Standing Requirement
+
+Every rung report (R1+) must decompose the rung's total effect into:
+
+| Component | Definition | Method |
+|-----------|-----------|--------|
+| **Data-source effect** | R² change from switching training data alone (same features) | Train locked-base model on old vs new data; compare R² |
+| **New feature-family effect** | R² change from adding the rung's new features | Full model R² minus hand-only R² on same data |
+| **Total rung effect** | End-to-end metric delta vs prior rung incumbent | Standard promotion gate metrics (net_eppd, H2H delta) |
+
+A promotion claim **cannot** rely on training/validation/test R² alone. Any
+claim that a new feature family "helped" must be backed by at least one
+deployment-facing test from the required evidence list below.
+
+### Required Evidence Per Rung
+
+Each rung must produce ALL of the following for the new feature family
+introduced at that rung:
+
+1. **Counterfactual feature-off inference:** Run the rung's model with the new
+   feature family zeroed at inference. Compare net_eppd/H2H delta to the
+   feature-on baseline. This isolates deployment harm/benefit.
+
+2. **Ablation delta on paired deal sets:** Same deals, same seeds — compare
+   feature-on vs feature-off predictions and outcomes. Report paired bootstrap
+   CI on the delta.
+
+3. **Slice analysis on feature-active hands:** Evaluate only hands where the
+   new feature family is non-trivial (non-zero, above median, etc.). Report
+   metrics separately for feature-active vs feature-inactive slices.
+
+4. **Decision-shift audit:** Count how often the new features change the
+   contract choice or bid level relative to the prior-rung model. Report the
+   fraction of hands where the decision shifts and the direction.
+
+5. **Instrument-labeled reporting:** Report all metrics separately for each
+   evaluation instrument (comparator self-play, H2H battery, dual-seat,
+   single-seat). Do not pool across instruments.
+
+### Rung-Specific Attribution Contracts
+
+| Rung | Attribution question | Decomposition required |
+|------|---------------------|----------------------|
+| R1 | Coarse partner context + auction data shift | data-source effect vs partner-feature effect |
+| R1.5 | Richer partner semantics vs coarse partner | R1.5 feature effect vs R1 baseline (same data) |
+| R2 | Opponent context on top of stabilized partner | opponent-feature effect vs R1.5 partner baseline |
+| R3+ | Additional context families | Same pattern: isolate new family from existing |
+
+### Scope Boundary
+
+This section defines the **contract and required outputs**. Rung-specific plans
+(`r1_master_plan.md`, `r1_training_plan.md`, etc.) carry the exact experiment
+designs, reproduction commands, and report templates. This section does not
+prescribe report format — only that the evidence listed above must exist.
+
+### Anti-Patterns
+
+- **R² as sole promotion evidence:** Training R² improved → promoted. This is
+  the exact failure mode from R1. Unacceptable without deployment-facing tests.
+- **Pooled instrument reporting:** Mixing comparator and H2H results obscures
+  whether the feature helps in one context but harms in another.
+- **Missing counterfactual:** "We added features and net_eppd went up" without
+  running the feature-off counterfactual. Correlation is not attribution.
+- **Undocumented data-source effect:** Switching training data changes outcomes
+  independent of features. Must be measured, not assumed to be zero.
 
 ---
 
