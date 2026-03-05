@@ -167,11 +167,11 @@ predictive power. `quick_tricks` is particularly well-suited because `_chain_qui
 contracts it counts A-down chains, for LOW contracts it counts T-up chains. This means
 the same feature name captures the right semantics per contract type automatically.
 
-**For OLSa_Full:** Forward selection searches the full pool (39 existing + 4 partner
+**For OLSa_Full:** Forward selection searches the full pool (39 existing + 3 partner
 context) with lowered `min_improvement` threshold. The lower threshold is tuned via
 the mini-protocol in §8.7 (checkpoint C3).
 
-**Total candidate pool:** 43 features (39 hand + 4 partner context). No new features
+**Total candidate pool:** 42 features (39 hand + 3 partner context). No new features
 added to `hand_eval.py`.
 
 #### 3.2.1 ModeloEspecifico R1 — Baseline Bidder
@@ -206,8 +206,8 @@ base expansion as OLSa with weight = 1.0 for all new features. This is a standin
 
 | Arm | Starting Features | Candidate Pool | Budget | Stopping |
 |-----|-------------------|---------------|--------|----------|
-| **OLSa** (constrained/attribution) | Locked base: 3/2/2 (suit unchanged; HIGH `offsuit_aces`+`quick_tricks`; LOW `offsuit_tens_count`+`quick_tricks`) | 4 partner context features only (per `arc_d_execution_plan.md:473`) | suit:10, high:5, low:5 | `min_improvement` threshold |
-| **OLSa_Full** (promotional) | Empty (from scratch) | All 43 features (39 existing + 4 partner context) | No budget | Lowered `min_improvement` (tune per §8.7 protocol) |
+| **OLSa** (constrained/attribution) | Locked base: 3/2/2 (suit unchanged; HIGH `offsuit_aces`+`quick_tricks`; LOW `offsuit_tens_count`+`quick_tricks`) | 3 partner context features only (per `arc_d_execution_plan.md:473`) | suit:10, high:5, low:5 | `min_improvement` threshold |
+| **OLSa_Full** (promotional) | Empty (from scratch) | All 42 features (39 existing + 3 partner context) | No budget | Lowered `min_improvement` (tune per §8.7 protocol) |
 
 **P1 feature enrichment details (HITL final decision):**
 - Use **existing** features only. No new features added to `hand_eval.py`.
@@ -970,7 +970,7 @@ HITL sign-off (Task #28)
      No new features added to `hand_eval.py` — uses existing features only.
      Design rationale: human-interpretable parameters over maximal predictive power.
    - OLSa_Full (promotional): Forward-selects from the full 43-feature pool
-     (39 existing + 4 partner context) with lowered `min_improvement`
+     (39 existing + 3 partner context) with lowered `min_improvement`
      to avoid premature HIGH/LOW stopping.
    - Validated via 4-arm ablation (§3.5) with 3 HITL-approved guardrails.
 

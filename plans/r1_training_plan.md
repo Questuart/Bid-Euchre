@@ -157,8 +157,8 @@ print(result)
 
 > **PR #532 note:** The `context_candidates` parameter enables additive forward
 > selection for the constrained arm: locked 3/2/2 base features are held fixed,
-> and forward selection picks from the 4 partner features on top.
-> The full arm already forward-selects from all 43 features (including partner
+> and forward selection picks from the 3 partner features on top.
+> The full arm already forward-selects from all 42 features (including partner
 > features) and is unaffected by this parameter.
 
 ### ✅ 3b-original (COMPLETED — pre-PR #532, no context_candidates)
@@ -643,7 +643,7 @@ done
 | Feature extraction | `src/bid_euchre/features/hand_eval.py:178` (`get_hand_features()`) |
 | Training pipeline | `src/bid_euchre/models/train_hybrid_olsa.py:346` (`train_hybrid_olsa()`) |
 | Additive fwd select | PR #532 — `context_candidates` param + runtime partner feature merge |
-| Partner features | `src/bid_euchre/features/auction_context.py` (4 features) |
+| Partner features | `src/bid_euchre/features/auction_context.py` (3 features) |
 | Gate engine | `src/bid_euchre/validation/arc_d_gate.py:303` (`promotion_gate()`) |
 | H2H runner | `scripts/internal/run_arc_d_h2h_battery.py` |
 | Comparator runner | `scripts/internal/run_auction_comparator.py` |

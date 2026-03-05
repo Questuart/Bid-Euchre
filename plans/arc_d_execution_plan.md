@@ -18,7 +18,7 @@ remains the authoritative source for R1+ wave structure and PR sequencing.
 
 Applies 31 review decisions from `plans/archive/arc_d_gap_analysis.md`. Key changes:
 
-- **18 PRs** (was 16): added PR-P0 (net_eppd metric switch), PR-I4 (reporting extensions)
+- **20 PRs** (was 16): added PR-P0 (net_eppd switch), PR-I4 (reporting), PR-R1.5a, PR-R1.5b
 - **Primary metric:** `net_eppd` (was `eppd`) — net point differential per deal
 - **Dual-arm design:** OLSa_Full (promotional) + OLSa (attribution) at every rung
 - **Always-advance gate:** PROMOTED / ADVANCED / HALT (was blocking PROMOTE/REJECT)
@@ -42,7 +42,7 @@ context-aware risk-adjusted EV bidder, progressively incorporating bidding
 context from auction transcripts.
 
 **What this document is:**
-- A complete, decision-final execution plan decomposed into 18 PRs
+- A complete, decision-final execution plan decomposed into 20 PRs
 - Every PR is implementable without further product decisions
 - All governance rules are embedded as requirements for execution agents
 
@@ -474,7 +474,7 @@ and train expanded model.
 
 **OLSa_Full arm:**
 - Starting features: empty (selected from scratch)
-- Candidate pool: all 39 hand features + 4 partner context features = 43 candidates
+- Candidate pool: all 39 hand features + 3 partner context features = 42 candidates
 - Feature budget: none (threshold-only stopping at 0.005 per-family R-squared improvement)
 
 **Expected outputs (all under `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/`):**
