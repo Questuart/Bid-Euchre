@@ -1231,6 +1231,19 @@ class HybridOLSaBidder(BiddingPolicy):
                 else:
                     features = get_hand_features(obs.hand, "suit", contract)
 
+                # Merge partner features if model uses context features.
+                # Always extract (even with empty transcript) so defaults (0)
+                # are available — the first bidder has no transcript yet.
+                if self.context_features:
+                    from ..features.auction_context import extract_partner_features
+
+                    partner_feats = extract_partner_features(
+                        obs.seat,
+                        obs.auction_transcript,
+                        observer_best_contract=contract_family,
+                    )
+                    features = {**features, **partner_feats}
+
                 mu = self._predict(contract_family, features, declaring=True)
 
                 result = compute_best_bid(

@@ -79,6 +79,13 @@ def main() -> None:
         action="store_true",
         help="Train separate offensive/defensive sub-models per contract",
     )
+    parser.add_argument(
+        "--context-candidates",
+        default=None,
+        help="Comma-separated context feature names for constrained arm additive "
+        "forward selection, e.g. 'partner_bid_level,partner_passed,"
+        "partner_suit_match,partner_bid_confidence'",
+    )
 
     args = parser.parse_args()
 
@@ -87,6 +94,10 @@ def main() -> None:
     feature_budget = None
     if args.feature_budget:
         feature_budget = _parse_feature_budget(args.feature_budget)
+
+    context_candidates = None
+    if args.context_candidates:
+        context_candidates = [c.strip() for c in args.context_candidates.split(",")]
 
     result = train_hybrid_olsa(
         run_dir=args.run_dir,
@@ -99,6 +110,7 @@ def main() -> None:
         rung_id=args.rung_id,
         risk_lambda=args.risk_lambda,
         offensive_defensive=args.offensive_defensive,
+        context_candidates=context_candidates,
     )
 
     print(f"\nTraining complete for rung {result['rung_id']}")

@@ -12,8 +12,14 @@ import pandas as pd
 from bid_euchre.models.train_hybrid_olsa import train_hybrid_olsa
 
 
-def _make_synthetic_run(tmp_path: Path, n_hands=100, seed=42):
+def _make_synthetic_run(
+    tmp_path: Path, n_hands=100, seed=42, include_partner_features=False
+):
     """Create a synthetic bidless run directory with parquet files.
+
+    Args:
+        include_partner_features: If True, add 4 partner context columns to the
+            bidless parquet, simulating auction-context-enriched datasets.
 
     Returns the run_dir path.
     """
@@ -96,6 +102,19 @@ def _make_synthetic_run(tmp_path: Path, n_hands=100, seed=42):
         base = rng.randn(n_hands)
         noise = rng.normal(0, 0.05, n_rows)
         features_data[fname] = np.repeat(base, 4) + noise
+
+    # Add partner features if requested
+    if include_partner_features:
+        features_data["partner_bid_level"] = rng.randint(0, 8, size=n_rows).astype(
+            float
+        )
+        features_data["partner_passed"] = rng.randint(0, 2, size=n_rows).astype(float)
+        features_data["partner_suit_match"] = rng.randint(0, 2, size=n_rows).astype(
+            float
+        )
+        features_data["partner_bid_confidence"] = (
+            features_data["partner_bid_level"] / 10.0
+        )
 
     # Make bowers strongly predict tricks for testability
     features_df = pd.DataFrame(features_data)
@@ -378,3 +397,88 @@ def test_non_numeric_columns_excluded(tmp_path: Path):
         selected = set(model["feature_names"])
         leaked = selected & non_features
         assert not leaked, f"Non-feature columns in {cf}: {leaked}"
+
+
+def test_context_candidates_additive_forward_selection(tmp_path: Path):
+    """Constrained arm with context_candidates includes locked base + selected context features."""
+    from bid_euchre.features.auction_context import PARTNER_FEATURE_NAMES
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    run_dir = _make_synthetic_run(tmp_path, include_partner_features=True)
+    output_dir = str(tmp_path / "output")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="constrained",
+        freeze=False,
+        context_candidates=PARTNER_FEATURE_NAMES,
+    )
+
+    with open(result["artifacts"]["constrained"]) as f:
+        artifact = json.load(f)
+
+    # Every contract's selected features must include the locked base
+    for cf in ["suit", "high", "low"]:
+        if cf not in artifact["payoff_model"]:
+            continue
+        selected = artifact["payoff_model"][cf]["feature_names"]
+        locked = CONTRACT_FEATURES[cf]
+        for feat in locked:
+            assert (
+                feat in selected
+            ), f"Locked base feature '{feat}' missing from {cf}: {selected}"
+        # Selected features should be a superset of (or equal to) locked base
+        assert len(selected) >= len(locked)
+
+    # Artifact context_features should be a subset of candidates (actually selected)
+    assert set(artifact["context_features"]).issubset(set(PARTNER_FEATURE_NAMES))
+    # At least some context features should have been selected (synthetic data
+    # has partner_bid_level correlated with nothing, but forward_select always
+    # tries adding — with random data some may pass the improvement threshold)
+    # The key invariant: context_features ⊆ candidates, and all listed features
+    # appear in at least one contract's model.
+    for cf_name in artifact["context_features"]:
+        found = any(
+            cf_name in artifact["payoff_model"][cf]["feature_names"]
+            for cf in artifact["payoff_model"]
+        )
+        assert found, f"context_features lists '{cf_name}' but no model uses it"
+
+    # Feature selection log should be produced
+    assert "constrained_feature_selection_log" in result
+
+
+def test_context_candidates_none_backward_compat(tmp_path: Path):
+    """Constrained arm without context_candidates uses only locked base (R0 path)."""
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    run_dir = _make_synthetic_run(tmp_path)
+    output_dir = str(tmp_path / "output")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="constrained",
+        freeze=False,
+    )
+
+    with open(result["artifacts"]["constrained"]) as f:
+        artifact = json.load(f)
+
+    # Features should be exactly the locked base (no additive selection)
+    for cf in ["suit", "high", "low"]:
+        if cf not in artifact["payoff_model"]:
+            continue
+        selected = artifact["payoff_model"][cf]["feature_names"]
+        assert (
+            selected == CONTRACT_FEATURES[cf]
+        ), f"Expected locked base for {cf}, got {selected}"
+
+    # context_features should be empty
+    assert artifact["context_features"] == []
+
+    # No feature selection log
+    assert "constrained_feature_selection_log" not in result

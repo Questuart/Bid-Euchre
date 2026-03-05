@@ -35,6 +35,7 @@ def _make_artifact(
     residual_variance=None,
     risk_lambda=0.0,
     artifact_type="hybrid_olsa_v1",
+    context_features=None,
 ) -> str:
     """Create a temporary hybrid_olsa_v1 artifact and return its path."""
     if suit_weights is None:
@@ -75,7 +76,7 @@ def _make_artifact(
         },
         "residual_variance": residual_variance,
         "risk_lambda": risk_lambda,
-        "context_features": [],
+        "context_features": context_features or [],
         "training_seed": 42,
         "training_run_id": "test_run",
         "split_type": "three_way",
@@ -525,3 +526,118 @@ def test_bidder_parity_search_false(tmp_path: Path):
 
     assert action_v1.n == action_v2.n
     assert action_v1.contract == action_v2.contract
+
+
+# ---------------------------------------------------------------------------
+# Partner feature runtime integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_partner_features_used_when_in_model(tmp_path: Path):
+    """HybridOLSaBidder merges partner features when model uses them."""
+    # Create artifact with partner features in suit model
+    path = _make_artifact(
+        tmp_path,
+        suit_weights=[0.5, 0.3, 0.2, 0.1],
+        suit_features=["bowers", "trump_count", "offsuit_aces", "partner_bid_level"],
+        suit_bias=6.0,
+        context_features=["partner_bid_level"],
+    )
+    bidder = HybridOLSaBidder(path)
+
+    from bid_euchre.core.cards import Card
+
+    hand = [Card("S", "A")] * 10
+    transcript = (
+        {
+            "seat": 2,
+            "action": "BID",
+            "tricks_bid": 6,
+            "contract_type": "suit",
+            "trump": "S",
+        },
+    )
+    obs = BiddingObservation(
+        hand=hand,
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+        auction_transcript=transcript,
+    )
+    action = bidder.choose_bid(obs)
+    # Should not crash — partner_bid_level is available from transcript
+    assert action is not None
+
+
+def test_partner_features_empty_transcript_defaults(tmp_path: Path):
+    """HybridOLSaBidder with partner features works when auction_transcript is empty.
+
+    The first bidder in an auction has an empty transcript. Partner features
+    should default to 0 (extract_partner_features returns zeros for empty input).
+    """
+    # Artifact includes partner_bid_level in suit features
+    path = _make_artifact(
+        tmp_path,
+        suit_weights=[0.5, 0.3, 0.2, 0.1],
+        suit_features=["bowers", "trump_count", "offsuit_aces", "partner_bid_level"],
+        suit_bias=6.0,
+        context_features=["partner_bid_level"],
+    )
+    bidder = HybridOLSaBidder(path)
+
+    from bid_euchre.core.cards import Card
+
+    hand = [Card("S", "A")] * 10
+    # Empty transcript — partner features default to 0 (no partner info yet)
+    obs = BiddingObservation(
+        hand=hand,
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+        auction_transcript=(),
+    )
+    action = bidder.choose_bid(obs)
+    # Should not crash — partner features default to 0 with empty transcript
+    assert action is not None
+
+
+def test_r0_model_unaffected_by_partner_merge(tmp_path: Path):
+    """R0 model (no partner features) works regardless of auction_transcript."""
+    path = _make_artifact(tmp_path, suit_bias=8.0)  # Standard R0 features
+    bidder = HybridOLSaBidder(path)
+
+    from bid_euchre.core.cards import Card
+
+    hand = [Card("S", "A")] * 10
+
+    # With transcript: partner features merged but not used by model
+    transcript = (
+        {
+            "seat": 2,
+            "action": "BID",
+            "tricks_bid": 6,
+            "contract_type": "suit",
+            "trump": "S",
+        },
+    )
+    obs_with = BiddingObservation(
+        hand=hand,
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+        auction_transcript=transcript,
+    )
+    action_with = bidder.choose_bid(obs_with)
+
+    # Without transcript: no partner features merged
+    obs_without = BiddingObservation(
+        hand=hand,
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+    )
+    action_without = bidder.choose_bid(obs_without)
+
+    # Both should produce the same bid (partner features are extra dict keys, ignored by _predict)
+    assert action_with.n == action_without.n
+    assert action_with.contract == action_without.contract
