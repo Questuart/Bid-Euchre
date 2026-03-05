@@ -524,7 +524,7 @@ Key observations:
    was retrained with a 3/2/2 locked base (vs R0's 3/1/1), and the expanded
    base features shifted during training to produce systematically lower mu.
 
-**Conclusion:** H1 (leaky signal) and H3 (feature fragility) are **RULED OUT**.
+**Conclusion:** H1 (distribution shift) and H3 (leaky partner signal) are **NOT PRIMARY**.
 Partner features are net-helpful. The regression is caused by **H7 (weight
 instability)** — the locked base feature weights shifted during R1 retraining
 in a way that suppresses suit predictions. The partner features partially mask
@@ -1085,8 +1085,8 @@ is confounded (H3) and destabilizes the base model (H7).
 
 | Hypothesis | Status | Evidence |
 |-----------|--------|----------|
-| **H1: Distribution shift** | **RULED OUT** | Investigation C: partner features are net-positive (+1.3 eppd) |
-| **H3: Leaky partner signal** | **RULED OUT** | Investigation C: removing partner signal makes regression 4.8× worse |
+| **H1: Distribution shift** | **NOT PRIMARY** | Investigation C: partner features are net-positive (+1.3 eppd); distribution stability not directly tested |
+| **H3: Leaky partner signal** | **NOT PRIMARY** | Investigation C: removing partner signal makes regression 4.8× worse; confounding not fully excluded |
 | H4: Feature fragility | PLAUSIBLE | Full arm weight (12.85) explains full > constrained gap |
 | **H5: Implementation bug** | **ELIMINATED** | Investigation F: all 5 checks clean |
 | **H6: Training sparsity** | **CONTRIBUTING** | Investigation G: 71% zeros for partner_bid_level |
