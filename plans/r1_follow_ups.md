@@ -35,7 +35,14 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 
 ## Priority 1: HIGH/LOW Feature Enrichment
 
-**Status:** Planned for R1
+> **Historical note (2026-03-05):** This section was written before the R1 locked
+> base expansion (PR #529) and R1/R1.5/R2 ladder formalization. The R1 approach
+> settled on expanding the locked base from 3/1/1 to 3/2/2 using **existing** features
+> (`quick_tricks` + `offsuit_aces`/`offsuit_tens_count`), NOT new hand-crafted features.
+> The 3-arm ablation below was superseded by the 4-arm multi-class ablation in
+> `r1_master_plan.md` §3.5. New distributional features are deferred to R2+.
+
+**Status:** PARTIALLY DONE — locked base expansion adopted (PR #529); new features deferred
 **Origin:** Oracle analysis (#472) — 82% of regret is pass-threshold (model conservatism),
 caused by 1-feature HIGH/LOW models that can't produce positive utility for most hands.
 

@@ -97,6 +97,10 @@ at 12.85 in the full arm.
 
 ## 2. Hypotheses
 
+> **Numbering note:** H2 was merged into H1 during early triage (both concerned
+> distribution shift). Remaining IDs (H1, H3–H9) are stable and cross-referenced
+> in `r1_master_plan.md` §10 and `r2_follow_ups.md`.
+
 ### H1: Training-Inference Distribution Shift (Primary)
 
 **Claim:** The suit model learned partner feature distributions from R0's bidding
@@ -105,7 +109,7 @@ behavior, but at H2H inference both seats use R1 models, which bid differently.
 **Mechanism:**
 - Training data generated with R0 model (no partner awareness) in all seats
 - R0's bid-level distribution in suit contracts defines the "normal" range for
-  `partner_bid_level`, `partner_passed`, `partner_bid_confidence`
+  `partner_bid_level`, `partner_passed`, `partner_suit_match`
 - At inference, R1 models (which incorporate partner features into their bids)
   produce a different bid distribution
 - Large weights (12.85, 7.11) amplify even small distribution shifts into

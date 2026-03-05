@@ -5,20 +5,24 @@
 **Date:** 2026-02-20 (v3 update)
 **Target path:** `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_execution_plan.md`
 
-## ⚠️ STALENESS WARNING (2026-02-28)
+> **Document role:** This is the **R0–R5 ladder roadmap** — wave structure, PR
+> sequencing, artifact schema, and promotion decision contract. For R1 strategic
+> governance (feature design, protocols, failure modes), see `r1_master_plan.md`.
+> For R1 operational execution (CLI commands, gate results), see `r1_training_plan.md`.
 
-**This plan is partially stale.** Waves 0–2 + R0b are COMPLETE. The plan still
-references provisional thresholds (delta_floor=0.01) — actual FULL-calibrated
-values are delta_floor=0.180, regression=0.184 (see MASTER_PLAN.md Stream 6).
-The prerequisites table in §10 is also stale (P0 is merged; all R0 work is done).
-For current project state, consult `plans/MASTER_PLAN.md` first. This plan
-remains the authoritative source for R1+ wave structure and PR sequencing.
+## ⚠️ STALENESS WARNING (2026-03-05, updated)
+
+**Partially stale.** Waves 0–2 + R0b are COMPLETE. R1 is IN PROGRESS (Gate X3 STOP,
+regression investigation ongoing). Provisional thresholds have been corrected in this
+file (delta_floor=0.180, regression=0.184). The prerequisites table in §10 and the
+handoff blocks in §9 are R0-era artifacts — for R1+ execution, use `r1_training_plan.md`.
+For current project state, consult `r1_master_plan.md` first.
 
 ## v3 Changes (2026-02-20)
 
 Applies 31 review decisions from `plans/archive/arc_d_gap_analysis.md`. Key changes:
 
-- **18 PRs** (was 16): added PR-P0 (net_eppd metric switch), PR-I4 (reporting extensions)
+- **20 PRs** (was 16): added PR-P0 (net_eppd switch), PR-I4 (reporting), PR-R1.5a, PR-R1.5b
 - **Primary metric:** `net_eppd` (was `eppd`) — net point differential per deal
 - **Dual-arm design:** OLSa_Full (promotional) + OLSa (attribution) at every rung
 - **Always-advance gate:** PROMOTED / ADVANCED / HALT (was blocking PROMOTE/REJECT)
@@ -42,7 +46,7 @@ context-aware risk-adjusted EV bidder, progressively incorporating bidding
 context from auction transcripts.
 
 **What this document is:**
-- A complete, decision-final execution plan decomposed into 18 PRs
+- A complete, decision-final execution plan decomposed into 20 PRs
 - Every PR is implementable without further product decisions
 - All governance rules are embedded as requirements for execution agents
 
@@ -361,6 +365,8 @@ This measures the value of unconstrained feature selection beyond the sparse bas
 
 ### Phase R0 -- Baseline Lock
 
+> **Status: COMPLETE** — PRs #476–#489. R0 frozen at tag `r0-canonical-v2`.
+
 **Objective:** Freeze the `HybridOLSaBidder` with sparse hand features (3/1/1)
 using `hybrid_olsa_v1` schema. Establish baseline metrics for all subsequent
 rung comparisons. **Both arms are trained at R0** (Decision 31).
@@ -449,6 +455,8 @@ PREREQUISITE: run_auction_comparator.py must be updated (PR-R0b scope):
 
 ### Phase R1 -- Partner Bidding Context
 
+> **Status: IN PROGRESS** — Gate X3 STOP. Regression investigation ongoing (see `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`).
+
 **Objective:** Add partner's bidding history features via
 `BiddingObservation.auction_history`. Extract partner context features
 and train expanded model.
@@ -465,7 +473,7 @@ and train expanded model.
 **Partner context features (candidates):**
 - `partner_bid_level`: highest bid level partner made (0 if passed)
 - `partner_passed`: 1 if partner has passed, 0 otherwise
-- `partner_suit_match`: 1 if partner bid same suit family
+- `partner_suit_match`: 1 if partner bid the same contract family (suit/high/low) as the candidate contract
 
 **OLSa arm:**
 - Starting features: R0's 3/1/1 locked base
@@ -474,7 +482,7 @@ and train expanded model.
 
 **OLSa_Full arm:**
 - Starting features: empty (selected from scratch)
-- Candidate pool: all 39 hand features + 4 partner context features = 43 candidates
+- Candidate pool: all 39 hand features + 3 partner context features = 42 candidates
 - Feature budget: none (threshold-only stopping at 0.005 per-family R-squared improvement)
 
 **Expected outputs (all under `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r1/`):**
@@ -502,8 +510,8 @@ and train expanded model.
 4. OLSa: maximum budget suit:10, high:5, low:5. OLSa_Full: no budget.
 
 **Promotion (OLSa_Full determines):**
-`net_eppd > control.net_eppd + max(0.01, 1.5 * SE)` where `SE = std_bidder_team_points / sqrt(n_deals)`.
-The 0.01 is the floor, not the fixed threshold.
+`net_eppd > control.net_eppd + max(0.180, 1.5 * SE)` where `SE = std_bidder_team_points / sqrt(n_deals)`.
+The 0.180 is the floor (FULL-calibrated from R0b), not the fixed threshold.
 Plus guardrails, sensitivity seeds.
 **Promotion authority rests with OLSa_Full only.**
 
@@ -534,6 +542,8 @@ with documented rationale.
 ---
 
 ### Phase R1.5 -- Partner-Semantics Enrichment (Added 2026-03-05)
+
+> **Status: PLANNED** — Contingency rung. Blocked until R1 regression resolved.
 
 **Objective:** Replace the coarse contract-family-level partner representation
 with suit-aware interaction features that capture Euchre's bower and color
@@ -934,7 +944,7 @@ def promotion_gate(bundle_path, rung_id):
     /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/src/bid_euchre/reporting/eligibility.py.
     It adds Arc D-specific Tier 2 gates on top of the central eligibility engine.
     """
-    delta_floor = 0.01  # ⚠️ SUPERSEDED: FULL-calibrated value is 0.180 (see MASTER_PLAN.md)
+    delta_floor = 0.180  # FULL-calibrated from R0b (see r1_master_plan.md §3.7)
 
     # --- Pre-Gate: Bundle validation ---
     bundle = load_and_validate_bundle(bundle_path)
@@ -1432,8 +1442,8 @@ data/artifacts/arc_d/
       "raw_delta": 0.12,
       "SE": 0.031,
       "effective_delta": 0.047,
-      "delta_floor": 0.01,
-      "formula": "max(0.01, 1.5 * SE)",
+      "delta_floor": 0.180,
+      "formula": "max(0.180, 1.5 * SE)",
       "pass": true
     },
     "bid_rate": { "value": 0.52, "range": [0.05, 0.95], "pass": true },
@@ -1453,6 +1463,11 @@ data/artifacts/arc_d/
 ---
 
 ## §9) Execution-Agent Handoff Blocks
+
+> **Deprecation note (2026-03-05):** The handoff blocks below were written for
+> R0-era PRs (P0, I1–I4, R0a–R0b), all of which are now COMPLETE. For R1+
+> execution, use `r1_training_plan.md` operational steps instead. These blocks
+> are retained for provenance and may inform future rung handoff templates.
 
 ### H-P0: Switch Primary Metric to net_eppd
 
@@ -1574,7 +1589,7 @@ Create /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal
   replaces matching rung_id, or appends. Generates row from bundle JSON.
 
 All thresholds from section 7 Promotion Decision Contract:
-  delta_floor = 0.01
+  delta_floor = 0.180
   bid_rate range = [0.05, 0.95]
   make_rate >= 0.45
   cvar_5 tolerance = 0.10
@@ -2161,6 +2176,11 @@ Verify: make repo-lint passes.
 
 ## §10) Verification & Runbook
 
+> **Scope note (2026-03-05):** This verification checklist was written for R0
+> pre-flight. For R1+ validation, use `make check` + the gate framework in
+> `r1_training_plan.md` (Gates X1–X8). The checklist below remains useful as
+> a reference for the verification patterns but is not actively maintained.
+
 ### Prerequisites (must complete before any Arc D promotion)
 
 | # | Action | Status |
@@ -2227,7 +2247,7 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
 - [ ] All 8 original non-negotiable fixes reflected:
   - [x] §1: R0-R5 rung structure (bidding context ladder, not model complexity)
   - [x] §2: `hybrid_olsa_v1` artifact schema with `payoff_model` (single-model, analytical P(make))
-  - [x] §7: Tighter thresholds (delta 0.01, bid_rate [0.05,0.95], make_rate>=0.45, cvar_5 0.10, dv 1.10x)
+  - [x] §7: Tighter thresholds (delta 0.180, bid_rate [0.05,0.95], make_rate>=0.45, cvar_5 0.10, dv 1.10x)
   - [x] §8: Output paths (`docs/02_agent/MODEL_ARC_RUNS.md`, `docs/04_reports/model_arc_*`)
   - [x] §8: Semantic gate naming (`semantic_gate_val.json`, `semantic_gate_test.json`)
   - [x] §2: Risk utility sign (`risk_penalty = max(0, -CVaR_5)` always >= 0, utility <= EV)
@@ -2238,7 +2258,7 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
   - [x] P1-2: Dependency gate reflects pipeline reality (compute_eligibility exists in reporting/eligibility.py) -- §3
   - [x] P1-3: Absolute paths everywhere -- all sections
   - [x] P2-4: Schema doc + validator (hybrid_olsa_v1.md + linter rule) -- §2, §9 H-I1
-  - [x] P2-5: Promotion delta with confidence (max(0.01, 1.5*SE)) -- §7
+  - [x] P2-5: Promotion delta with confidence (max(0.180, 1.5*SE)) -- §7
   - [x] P2-6: Doc-sync PR (PR-I3) -- §5, §9 H-I3
   - [x] P3-7: `make repo-lint` for doc-only PRs -- §1, §9 H-I3
 - [ ] Post-merge review findings (6 fixes):
@@ -2267,6 +2287,6 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
 - [ ] All file paths absolute (`/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/...`)
 - [ ] All thresholds are concrete numbers (no "roughly", "likely", "cursory")
 - [ ] Schema doc path explicitly referenced with validation contract
-- [ ] Promotion delta uses `max(0.01, 1.5*SE)` form
+- [ ] Promotion delta uses `max(0.180, 1.5*SE)` form
 - [ ] Required 10-section document structure present (§1-§10)
-- [ ] 18 PRs in §5, 18 PRs in wave graph, 18 PRs in critical path
+- [ ] 20 PRs in §5, 20 PRs in wave graph, 20 PRs in critical path

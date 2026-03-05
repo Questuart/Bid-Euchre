@@ -5,9 +5,12 @@
 **Training data:** data/runs/canonical_auction_r1_42 (41,424 hands from 50k deals)
 **Artifacts:** data/artifacts/arc_d/r1/hybrid_r1.json, hybrid_r1_full.json
 **PR:** #532 (additive forward selection), #533 (plan update)
-**Note:** `partner_bid_confidence` was subsequently removed from the feature
-registry (PR #538) as linearly redundant with `partner_bid_level`. Results
-below reflect the pre-removal selection run.
+**Historical report:** This diagnostic documents the Step 3c training run which
+used **4 partner features** (including `partner_bid_confidence`). PR #538
+subsequently removed `partner_bid_confidence` as linearly redundant with
+`partner_bid_level`. All tables, feature counts (43 total, 4 partner), and
+selection results below reflect the pre-removal run. The current R1 spec
+uses 3 partner features / 42 total; Step 3d will retrain with corrected features.
 
 ---
 
@@ -28,7 +31,7 @@ High/low together represent only 23% of training data — an 8× imbalance vs su
 ## 2. Forward Selection Results — Constrained Arm (OLSa)
 
 Locked base features (from `CONTRACT_FEATURES`): suit=3, high=2, low=2.
-Additive candidate pool: 4 partner features.
+Additive candidate pool: 4 partner features (pre-PR #538 run; see header note).
 Stopping threshold: `min_improvement=0.005` (0.5% R²).
 
 ### Suit (31,954 hands)
@@ -141,8 +144,10 @@ consistent cross-validated improvement — harder to achieve with small samples.
 - Even with only `partner_suit_match`, high/low models are substantially better
 - Gate X2 passed for both arms (delta > +0.40)
 
-**R2:** Pre-registered context-feature confirmation experiment for high/low.
-See `plans/r1_follow_ups.md` item P10 and `plans/r1_training_plan.md` §R2 protocol.
+**R1.5/R2:** Partner-semantics redesign happens at R1.5 (suit-aware features replacing
+coarse contract-family features). High/low confirmation with rebalanced data at R2.
+See `plans/r1_follow_ups.md` item P10 and `plans/r2_follow_ups.md` F1 for the
+pre-registered protocol.
 
 ## 7. Provenance
 

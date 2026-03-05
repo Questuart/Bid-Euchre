@@ -1,10 +1,16 @@
 # R1 Readiness: Cleanup, Archival & Training Plan Scope
 
 **Date:** 2026-03-03
-**Status:** PLAN — awaiting approval
+**Status:** IN EXECUTION — Gate X3 STOP, regression investigation in progress
 **Scope:** Pre-R1 cleanup (plan archival, untracked files, MASTER_PLAN update),
 R1 follow-ups delta analysis, and full scope outline for `r1_training_plan.md`.
 **Governs:** Transition from R0 v2 freeze to R1 execution (C2).
+
+> **Document role:** This is the **R1 strategic governance document** — feature
+> design, training protocols, failure modes, HITL checkpoints, and promotion
+> contract. For R1 operational execution (CLI commands, gate results), see
+> `r1_training_plan.md`. For the R0–R5 ladder roadmap (wave structure, PR
+> sequencing), see `arc_d_execution_plan.md`.
 
 ---
 
@@ -106,13 +112,13 @@ These are R0-completed work with no further utility at top level:
 
 | File | Purpose | When |
 |------|---------|------|
-| `plans/r1_training_plan.md` | Concrete R1 execution checklist (§3 below) | Before first R1 PR |
+| `plans/r1_training_plan.md` | Operational execution checklist (derived from §3 below) | Before first R1 PR |
 
 ---
 
 ## 3. R1 Training Plan Scope
 
-The `r1_training_plan.md` (MASTER_PLAN §9 C2-a) is the operational plan for R1
+The `r1_training_plan.md` (per the archived `plans/archive/MASTER_PLAN.md` task C2-a) is the operational plan for R1
 execution. Based on the follow-ups analysis, arc_d_execution_plan §Phase R1, and
 process lessons W1–W4, here is the full scope:
 
@@ -122,7 +128,7 @@ Two core PRs from the execution plan, plus follow-up work:
 
 | PR | Concept | Key Deliverables |
 |----|---------|-----------------|
-| **PR-R1a** | Partner context infra + canonical auction dataset | Feature extraction (4 partner features), auction-context dataset generator, canonical dataset (~50k deals), ModeloEspecifico R1 (§3.2.1), dual-seat comparator mode (§3.14) |
+| **PR-R1a** | Partner context infra + canonical auction dataset | Feature extraction (3 partner features), auction-context dataset generator, canonical dataset (~50k deals), ModeloEspecifico R1 (§3.2.1), dual-seat comparator mode (§3.14) |
 | **PR-R1b** | R1 dual-arm training + eval + promotion | Model training, 3-seed eval, H2H, three-tier comparator battery (§3.14), gate run |
 
 Plus follow-up work that may be separate PRs or folded in:
@@ -145,7 +151,7 @@ Plus follow-up work that may be separate PRs or folded in:
 |---------|------|-----------|
 | `partner_bid_level` | int | Highest bid level partner made (0 if passed) |
 | `partner_passed` | bool→int | 1 if partner has passed |
-| `partner_suit_match` | bool→int | 1 if partner bid same suit family |
+| `partner_suit_match` | bool→int | 1 if partner bid the same contract family (suit/high/low) |
 
 **Feature enrichment (P1) — HITL FINAL DECISION:**
 
@@ -167,11 +173,11 @@ predictive power. `quick_tricks` is particularly well-suited because `_chain_qui
 contracts it counts A-down chains, for LOW contracts it counts T-up chains. This means
 the same feature name captures the right semantics per contract type automatically.
 
-**For OLSa_Full:** Forward selection searches the full pool (39 existing + 4 partner
+**For OLSa_Full:** Forward selection searches the full pool (39 existing + 3 partner
 context) with lowered `min_improvement` threshold. The lower threshold is tuned via
 the mini-protocol in §8.7 (checkpoint C3).
 
-**Total candidate pool:** 43 features (39 hand + 4 partner context). No new features
+**Total candidate pool:** 42 features (39 hand + 3 partner context). No new features
 added to `hand_eval.py`.
 
 #### 3.2.1 ModeloEspecifico R1 — Baseline Bidder
@@ -206,13 +212,13 @@ base expansion as OLSa with weight = 1.0 for all new features. This is a standin
 
 | Arm | Starting Features | Candidate Pool | Budget | Stopping |
 |-----|-------------------|---------------|--------|----------|
-| **OLSa** (constrained/attribution) | Locked base: 3/2/2 (suit unchanged; HIGH `offsuit_aces`+`quick_tricks`; LOW `offsuit_tens_count`+`quick_tricks`) | 4 partner context features only (per `arc_d_execution_plan.md:473`) | suit:10, high:5, low:5 | `min_improvement` threshold |
-| **OLSa_Full** (promotional) | Empty (from scratch) | All 43 features (39 existing + 4 partner context) | No budget | Lowered `min_improvement` (tune per §8.7 protocol) |
+| **OLSa** (constrained/attribution) | Locked base: 3/2/2 (suit unchanged; HIGH `offsuit_aces`+`quick_tricks`; LOW `offsuit_tens_count`+`quick_tricks`) | 3 partner context features only (per `arc_d_execution_plan.md:473`) | suit:10, high:5, low:5 | `min_improvement` threshold |
+| **OLSa_Full** (promotional) | Empty (from scratch) | All 42 features (39 existing + 3 partner context) | No budget | Lowered `min_improvement` (tune per §8.7 protocol) |
 
 **P1 feature enrichment details (HITL final decision):**
 - Use **existing** features only. No new features added to `hand_eval.py`.
 - OLSa locked base expands from 3/1/1 → 3/2/2 using interpretable, domain-meaningful features.
-- OLSa_Full forward-selects from the full 43-feature pool with lowered `min_improvement`.
+- OLSa_Full forward-selects from the full 42-feature pool with lowered `min_improvement`.
 - The lowered `min_improvement` value is determined by a pre-registered
   mini-protocol (see §8.7, checkpoint C3): test 3 candidates (0.005, 0.002, 0.001),
   success = HIGH model selects ≥2 features, failure = suit model R² regresses >0.01.
@@ -866,6 +872,9 @@ a valid finding, not a bug.
 
 ## 4. Pre-R1 Cleanup Tasks
 
+> **Section status (2026-03-05):** All pre-R1 cleanup tasks completed (PR #525,
+> PR #528). This section is retained for provenance.
+
 ### 4.1 Commit Untracked Files — ✅ DONE (PR #525)
 
 Both files were deleted (not archived) as their content was captured in formal reports.
@@ -881,20 +890,20 @@ If stale, restore with `git restore`.
 11 files moved to `plans/archive/`. `MASTER_PLAN.md` archived; this plan
 (`r1_master_plan.md`) is now the governing document for R1.
 
-### 4.4 Update MEMORY.md
+### 4.4 Update MEMORY.md — ✅ DONE
 
 - Remove R0 v2 "remaining steps" section (Task #27, #28 will be done)
 - Add R1 training cycle as current work
 - Trim stale R0 details to stay under 180-line limit
 
-### 4.5 Verify Infrastructure
+### 4.5 Verify Infrastructure — ✅ DONE
 
 Before starting PR-R1a, confirm:
-- [ ] `data/artifacts/arc_d/r0/hybrid_r0_full.json` exists and is the v2 model
-- [ ] `data/artifacts/arc_d/r0/gate_thresholds_r1.json` exists with FULL-calibrated values
-- [ ] `arc_d_gate.py` `_load_thresholds()` can find R1 threshold file
-- [ ] Training pipeline (`train_hybrid_olsa.py`) accepts `rung_id="r1"` correctly
-- [ ] `BiddingObservation.auction_transcript` is populated during simulation
+- [x] `data/artifacts/arc_d/r0/hybrid_r0_full.json` exists and is the v2 model
+- [x] `data/artifacts/arc_d/r0/gate_thresholds_r1.json` exists with FULL-calibrated values
+- [x] `arc_d_gate.py` `_load_thresholds()` can find R1 threshold file
+- [x] Training pipeline (`train_hybrid_olsa.py`) accepts `rung_id="r1"` correctly
+- [x] `BiddingObservation.auction_transcript` is populated during simulation
 
 ---
 
@@ -916,7 +925,7 @@ HITL sign-off (Task #28)
     │                 plans/r1_normalizer_trigger.md (trigger rule only)
     │
     └── PR-R1a: Partner context infra + canonical auction dataset
-        │   ├── Feature extraction (4 partner features from auction_transcript)
+        │   ├── Feature extraction (3 partner features from auction_transcript)
         │   ├── P1: Locked base expansion (3/2/2 using existing features)
         │   ├── ModeloEspecifico R1: parameterized constructor + R1 weights (§3.2.1)
         │   ├── Dual-seat comparator mode in run_auction_comparator.py (§3.14)
@@ -969,8 +978,8 @@ HITL sign-off (Task #28)
      HIGH: `offsuit_aces` + `quick_tricks`. LOW: `offsuit_tens_count` + `quick_tricks`.
      No new features added to `hand_eval.py` — uses existing features only.
      Design rationale: human-interpretable parameters over maximal predictive power.
-   - OLSa_Full (promotional): Forward-selects from the full 43-feature pool
-     (39 existing + 4 partner context) with lowered `min_improvement`
+   - OLSa_Full (promotional): Forward-selects from the full 42-feature pool
+     (39 existing + 3 partner context) with lowered `min_improvement`
      to avoid premature HIGH/LOW stopping.
    - Validated via 4-arm ablation (§3.5) with 3 HITL-approved guardrails.
 
@@ -1016,9 +1025,12 @@ metrics (#400, #401).
 
 | Component | Integration Boundary | Specific Danger |
 |-----------|---------------------|-----------------|
-| Feature extraction (PR-R1a) | `auction_transcript` dict → 4 numeric features | Wrong seat for "partner" (seat arithmetic mod 4), missing transcript entries, None handling for early-round bids |
+| Feature extraction (PR-R1a) | `auction_transcript` dict → 3 numeric features | Wrong seat for "partner" (seat arithmetic mod 4), missing transcript entries, None handling for early-round bids |
 | Dataset generator (PR-R1a) | bidless pipeline → auction-context pipeline | Training code (`train_hybrid_olsa.py`) loads `bidless.parquet`. New dataset has different columns. Loading path must be updated or the old path silently produces data without partner features. |
 | R1 gate path (PR-R1b) | `arc_d_gate.py` R1+ branch | R0 used the simplified path (no guardrails, no incumbent comparison). The R1+ path has never been exercised with real data. Guardrail thresholds, incumbent loading, H2H CI parsing are all first-run code. |
+> **Update (2026-03-05):** Gates X1, X2, and X3 have now been exercised with real
+> R1 data. The first-run risk for training and H2H evaluation paths has been
+> mitigated. Remaining first-run paths: comparator battery (X4–X6), promotion gate (X8).
 | Bundle schema (PR-R1b) | `arc_d_bundle.py` validation | R1 bundle has new required fields (`progression_report`, R1-specific artifacts). First real validation run may expose schema mismatches. |
 | `normalize_eval_metrics()` | evaluator names ↔ gate alias names | R1 may introduce new metric keys (e.g., partner-context diagnostics). The ACL layer must bridge them or the gate silently drops metrics. |
 
@@ -1073,7 +1085,7 @@ no crashes, no warnings, just wrong decisions.
 **GAP — What's missing:**
 1. **Feature predictive-power smoke test.** After generating the auction-context
    dataset, compute Pearson correlation between each partner feature and trick
-   outcomes. If all 4 partner features have |r| < 0.01, something is wrong with
+   outcomes. If all 3 partner features have |r| < 0.01, something is wrong with
    extraction. This takes 5 lines of code and 10 seconds to run. Gate: at least
    1 partner feature should have |r| > 0.02 for suit contracts.
 2. **Config pinning for dataset generation.** The dataset generator must use the
@@ -1460,7 +1472,7 @@ All must pass before any experiment step begins:
 
 | Gate | When | Stop Criterion | Go Criterion | Blocks |
 |------|------|---------------|-------------|--------|
-| **X1: Feature smoke** | After Step 1 (dataset gen) | Any partner feature has all-zero or all-NaN values | All 4 partner features have \|r\| > 0.02 for suit; no NaN | Step 2 |
+| **X1: Feature smoke** | After Step 1 (dataset gen) | Any partner feature has all-zero or all-NaN values | All 3 partner features have \|r\| > 0.02 for suit; no NaN | Step 2 |
 | **X2: Suit regression** | After Step 3 (training) | Suit model R² < R0 suit R² − 0.01 | Suit R² ≥ R0 suit R² | Step 4 |
 | **X3: QUICK H2H go/no-go** | After Step 5 QUICK | H2H delta < −0.05 | delta > 0 (or within noise: ±0.05) | Step 5 FULL |
 | **X4: Bid distribution** | After Steps 4–6 | Contract mix deviates >15% from R0 v2 in any family | Mix within expected range | Step 7 |
@@ -1872,6 +1884,46 @@ catches this before the promotion gate.
 **Minimum bar:** At least the counterfactual and the ablation delta are
 mandatory. Slice analysis and decision-shift audit are strongly recommended
 and mandatory if the counterfactual shows ambiguous results.
+
+---
+
+## 11. Documentation Hygiene
+
+### 11.1 Archive Stale TODO Files
+
+Archive stale files under `docs/03_TODO/` once their content is either superseded
+by active files in `plans/` or no longer needed for execution.
+
+**Rules:**
+- Do NOT migrate active planning into `docs/03_TODO/`; treat `plans/` as the
+  authoritative location for live execution/governance documents.
+- For each archived TODO file, add a short note indicating:
+  - Why it is stale
+  - Which active file supersedes it
+  - Whether it remains historically useful
+- **Goal:** Reduce competing plan narratives and keep the active R1/R1.5/R2
+  story centralized in `plans/`.
+
+**Current candidates for archive review:**
+- `docs/03_TODO/CODEBASE_CONSISTENCY.md` — likely superseded by repo linter
+- `docs/03_TODO/REPO_REVIEW_2026-02-26.md` — snapshot; historical only
+- `docs/03_TODO/REPO_REVIEW_2026-03-03.md` — snapshot; historical only
+
+### 11.2 Single Source of Truth
+
+Each concept should have exactly one authoritative location:
+
+| Concept | Authoritative Source |
+|---------|---------------------|
+| R1 feature design | `r1_master_plan.md` §3.2 |
+| R1 operational steps | `r1_training_plan.md` |
+| Rung ladder (R1→R1.5→R2) | `r1_master_plan.md` §10 |
+| Promotion gate thresholds | `r1_master_plan.md` §3.7 |
+| R0–R5 wave structure / PR sequencing | `arc_d_execution_plan.md` §4–§6 |
+| Artifact schema | `arc_d_execution_plan.md` §2 |
+
+Other documents should cross-reference, not duplicate. When updating a concept,
+update the authoritative source first, then propagate cross-references.
 
 ---
 
