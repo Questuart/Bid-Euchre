@@ -95,9 +95,11 @@ def _build_artifact(
     seed: int,
     source_run_id: str,
     split_type: str,
+    training_mode: str = "joint",
+    ridge_alpha: float | None = None,
 ) -> dict:
     """Build a hybrid_olsa_v1 artifact dict."""
-    return {
+    artifact = {
         "artifact_type": "hybrid_olsa_v1",
         "schema_version": 1,
         "rung_id": rung_id,
@@ -108,9 +110,13 @@ def _build_artifact(
         "training_seed": seed,
         "training_run_id": source_run_id,
         "split_type": split_type,
+        "training_mode": training_mode,
         "frozen_at": None,
         "artifact_sha256": None,
     }
+    if ridge_alpha is not None:
+        artifact["ridge_alpha"] = ridge_alpha
+    return artifact
 
 
 def _train_arm(
@@ -128,6 +134,8 @@ def _train_arm(
     do_forward_select: bool = False,
     offensive_defensive: bool = False,
     context_candidates: list[str] | None = None,
+    training_mode: str = "joint",
+    ridge_alpha: float = 1.0,
 ) -> tuple[dict, dict, dict | None]:
     """Train one arm (constrained or full) and return (artifact, metrics, fs_log).
 
@@ -135,6 +143,13 @@ def _train_arm(
         context_candidates: Optional list of context feature names (e.g. partner
             features) to forward-select from, additive on top of the locked base
             from feature_spec. Only used when do_forward_select is False.
+        training_mode: Weight fitting strategy. One of:
+            - "joint" (default): standard OLS, current behavior.
+            - "ridge": L2-regularized OLS with ``ridge_alpha`` penalty.
+            - "two_stage": fit base features first, then partner features on
+              residuals (prevents OLS weight redistribution). Falls back to
+              "joint" when no context_candidates are set.
+        ridge_alpha: L2 penalty strength for "ridge" mode (default 1.0).
     """
     models = {}
     residual_variances = {}
@@ -171,6 +186,7 @@ def _train_arm(
             y_train = train_df["tricks_won"].values.astype(np.float64)
             groups = train_df["hand_id"].values
 
+            fs_alpha = ridge_alpha if training_mode == "ridge" else 0.0
             selected_names, fs_log = forward_select(
                 X_train_all,
                 y_train,
@@ -178,6 +194,7 @@ def _train_arm(
                 groups=groups,
                 max_features=budget,
                 seed=seed,
+                alpha=fs_alpha,
             )
             feature_names = selected_names
             if feature_selection_log is not None:
@@ -200,6 +217,7 @@ def _train_arm(
             y_train = train_df["tricks_won"].values.astype(np.float64)
             groups = train_df["hand_id"].values
 
+            fs_alpha = ridge_alpha if training_mode == "ridge" else 0.0
             selected_names, fs_log = forward_select(
                 X_train_all,
                 y_train,
@@ -208,6 +226,7 @@ def _train_arm(
                 max_features=budget,
                 seed=seed,
                 locked_base=locked_indices,
+                alpha=fs_alpha,
             )
             feature_names = selected_names
             if feature_selection_log is not None:
@@ -221,7 +240,42 @@ def _train_arm(
         X_test = test_df[feature_names].values.astype(np.float64)
         y_test = test_df["tricks_won"].values.astype(np.float64)
 
-        weights, bias = _fit_ols(X_train, y_train)
+        # Dispatch weight fitting based on training_mode
+        if training_mode == "ridge":
+            weights, bias = _fit_ols(X_train, y_train, alpha=ridge_alpha)
+        elif training_mode == "two_stage" and context_candidates:
+            # Two-stage: fit base features first, then partner on residuals
+            base_names = feature_spec[contract_family]
+            base_indices = [
+                feature_names.index(f) for f in base_names if f in feature_names
+            ]
+            partner_indices = [
+                i for i in range(len(feature_names)) if i not in base_indices
+            ]
+
+            if partner_indices:
+                # Stage 1: fit base features only
+                X_base = X_train[:, base_indices]
+                w_base, b_base = _fit_ols(X_base, y_train)
+
+                # Stage 2: fit partner features on residuals
+                residual = y_train - (X_base @ w_base + b_base)
+                X_partner = X_train[:, partner_indices]
+                w_partner, _ = _fit_ols(X_partner, residual)  # discard residual bias
+
+                # Combine weights in original feature order
+                weights = np.zeros(len(feature_names))
+                for i, idx in enumerate(base_indices):
+                    weights[idx] = w_base[i]
+                for i, idx in enumerate(partner_indices):
+                    weights[idx] = w_partner[i]
+                bias = b_base
+            else:
+                # No partner features selected — standard OLS
+                weights, bias = _fit_ols(X_train, y_train)
+        else:
+            # "joint" mode (default) or two_stage without context_candidates
+            weights, bias = _fit_ols(X_train, y_train)
 
         # Residual variance on TRAIN only
         y_pred_train = X_train @ weights + bias
@@ -393,6 +447,8 @@ def _train_arm(
         seed=seed,
         source_run_id=source_run_id,
         split_type=split_type,
+        training_mode=training_mode,
+        ridge_alpha=ridge_alpha if training_mode == "ridge" else None,
     )
 
     return artifact, training_metrics, feature_selection_log
@@ -410,6 +466,8 @@ def train_hybrid_olsa(
     risk_lambda: float = 0.0,
     offensive_defensive: bool = False,
     context_candidates: list[str] | None = None,
+    training_mode: str = "joint",
+    ridge_alpha: float = 1.0,
 ) -> dict:
     """Train hybrid OLSa models from a canonical bidless run directory.
 
@@ -426,6 +484,8 @@ def train_hybrid_olsa(
         offensive_defensive: If True, train separate offensive/defensive sub-models.
         context_candidates: Optional list of context feature names (e.g. partner
             features) for additive forward selection on the constrained arm.
+        training_mode: Weight fitting strategy ("joint", "ridge", "two_stage").
+        ridge_alpha: L2 penalty strength for "ridge" mode (default 1.0).
 
     Returns:
         Dict with artifact paths and training summary.
@@ -463,6 +523,8 @@ def train_hybrid_olsa(
             do_forward_select=False,
             offensive_defensive=offensive_defensive,
             context_candidates=context_candidates,
+            training_mode=training_mode,
+            ridge_alpha=ridge_alpha,
         )
 
         artifact_path = os.path.join(output_dir, f"hybrid_{rung_id}.json")
@@ -502,6 +564,8 @@ def train_hybrid_olsa(
             do_forward_select=True,
             offensive_defensive=offensive_defensive,
             context_candidates=context_candidates,
+            training_mode=training_mode,
+            ridge_alpha=ridge_alpha,
         )
 
         artifact_full_path = os.path.join(output_dir, f"hybrid_{rung_id}_full.json")

@@ -515,3 +515,192 @@ def test_context_candidates_none_backward_compat(tmp_path: Path):
 
     # No feature selection log
     assert "constrained_feature_selection_log" not in result
+
+
+def test_training_mode_joint_default(tmp_path: Path):
+    """Default training_mode='joint' produces same results as before (backward compat)."""
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    run_dir = _make_synthetic_run(tmp_path, seed=99)
+    output_dir_default = str(tmp_path / "output_default")
+    output_dir_joint = str(tmp_path / "output_joint")
+
+    result_default = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_default,
+        arm_mode="constrained",
+        freeze=False,
+    )
+
+    result_joint = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_joint,
+        arm_mode="constrained",
+        freeze=False,
+        training_mode="joint",
+    )
+
+    with open(result_default["artifacts"]["constrained"]) as f:
+        art_default = json.load(f)
+    with open(result_joint["artifacts"]["constrained"]) as f:
+        art_joint = json.load(f)
+
+    # Weights and biases should be identical
+    for cf in CONTRACT_FEATURES:
+        if cf not in art_default["payoff_model"]:
+            continue
+        w_default = art_default["payoff_model"][cf]["weights"]
+        w_joint = art_joint["payoff_model"][cf]["weights"]
+        np.testing.assert_allclose(w_default, w_joint, atol=1e-12)
+        assert (
+            art_default["payoff_model"][cf]["bias"]
+            == art_joint["payoff_model"][cf]["bias"]
+        )
+
+    # Artifact metadata should record training_mode
+    assert art_joint["training_mode"] == "joint"
+    assert "ridge_alpha" not in art_joint
+
+
+def test_training_mode_ridge(tmp_path: Path):
+    """Ridge mode with alpha>0 produces different weights than joint, but valid predictions."""
+    run_dir = _make_synthetic_run(tmp_path, seed=99)
+    output_dir_joint = str(tmp_path / "output_joint")
+    output_dir_ridge = str(tmp_path / "output_ridge")
+
+    result_joint = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_joint,
+        arm_mode="constrained",
+        freeze=False,
+        training_mode="joint",
+    )
+
+    result_ridge = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_ridge,
+        arm_mode="constrained",
+        freeze=False,
+        training_mode="ridge",
+        ridge_alpha=10.0,
+    )
+
+    with open(result_joint["artifacts"]["constrained"]) as f:
+        art_joint = json.load(f)
+    with open(result_ridge["artifacts"]["constrained"]) as f:
+        art_ridge = json.load(f)
+
+    # Weights should differ with large alpha
+    any_differ = False
+    for cf in art_joint["payoff_model"]:
+        w_joint = np.array(art_joint["payoff_model"][cf]["weights"])
+        w_ridge = np.array(art_ridge["payoff_model"][cf]["weights"])
+        if not np.allclose(w_joint, w_ridge, atol=1e-6):
+            any_differ = True
+        # Ridge weights should be smaller in magnitude (shrinkage)
+        assert np.linalg.norm(w_ridge) <= np.linalg.norm(w_joint) + 1e-6
+    assert any_differ, "Ridge with alpha=10.0 should produce different weights than OLS"
+
+    # Artifact metadata should record ridge params
+    assert art_ridge["training_mode"] == "ridge"
+    assert art_ridge["ridge_alpha"] == 10.0
+
+    # Residual variances should still be valid
+    for cf, var in art_ridge["residual_variance"].items():
+        assert 0 < var < 25, f"Unexpected residual_variance for {cf}: {var}"
+
+
+def test_training_mode_two_stage(tmp_path: Path):
+    """Two-stage produces base weights identical to base-only fit, plus partner weights."""
+    from bid_euchre.features.auction_context import PARTNER_FEATURE_NAMES
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    run_dir = _make_synthetic_run(tmp_path, seed=99, include_partner_features=True)
+    output_dir_two_stage = str(tmp_path / "output_two_stage")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_two_stage,
+        arm_mode="constrained",
+        freeze=False,
+        context_candidates=PARTNER_FEATURE_NAMES,
+        training_mode="two_stage",
+    )
+
+    with open(result["artifacts"]["constrained"]) as f:
+        art = json.load(f)
+
+    # Artifact metadata
+    assert art["training_mode"] == "two_stage"
+    assert "ridge_alpha" not in art
+
+    # Every contract should have valid model
+    for cf in ["suit", "high", "low"]:
+        if cf not in art["payoff_model"]:
+            continue
+        model = art["payoff_model"][cf]
+        weights = model["weights"]
+        bias = model["bias"]
+        feature_names = model["feature_names"]
+
+        # Should have at least the base features
+        base = CONTRACT_FEATURES[cf]
+        for feat in base:
+            assert feat in feature_names, f"Missing base feature {feat} in {cf}"
+
+        # Weights should be finite
+        assert all(np.isfinite(w) for w in weights)
+        assert np.isfinite(bias)
+
+    # Residual variances should be valid
+    for cf, var in art["residual_variance"].items():
+        assert 0 < var < 25, f"Unexpected residual_variance for {cf}: {var}"
+
+
+def test_training_mode_two_stage_without_context_falls_back(tmp_path: Path):
+    """Two_stage without context_candidates behaves like joint."""
+    from bid_euchre.models.train_olsa import CONTRACT_FEATURES
+
+    run_dir = _make_synthetic_run(tmp_path, seed=99)
+    output_dir_joint = str(tmp_path / "output_joint")
+    output_dir_two_stage = str(tmp_path / "output_two_stage")
+
+    result_joint = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_joint,
+        arm_mode="constrained",
+        freeze=False,
+        training_mode="joint",
+    )
+
+    result_two_stage = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir_two_stage,
+        arm_mode="constrained",
+        freeze=False,
+        training_mode="two_stage",
+    )
+
+    with open(result_joint["artifacts"]["constrained"]) as f:
+        art_joint = json.load(f)
+    with open(result_two_stage["artifacts"]["constrained"]) as f:
+        art_two_stage = json.load(f)
+
+    # Without context_candidates, two_stage falls back to joint — same weights
+    for cf in CONTRACT_FEATURES:
+        if cf not in art_joint["payoff_model"]:
+            continue
+        w_joint = art_joint["payoff_model"][cf]["weights"]
+        w_two_stage = art_two_stage["payoff_model"][cf]["weights"]
+        np.testing.assert_allclose(w_joint, w_two_stage, atol=1e-12)
+        assert (
+            art_joint["payoff_model"][cf]["bias"]
+            == art_two_stage["payoff_model"][cf]["bias"]
+        )

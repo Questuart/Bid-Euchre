@@ -16,14 +16,34 @@ logger = logging.getLogger(__name__)
 
 
 def _ols_r2(
-    X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    alpha: float = 0.0,
 ) -> float:
-    """Fit OLS on train and return R² on test."""
+    """Fit OLS (or Ridge) on train and return R² on test.
+
+    Args:
+        alpha: L2 regularization strength. When alpha > 0, applies Ridge
+            penalty to feature weights only (intercept is not regularized).
+    """
     X_with_intercept = np.column_stack([np.ones(len(X_train)), X_train])
-    try:
-        beta, _, _, _ = np.linalg.lstsq(X_with_intercept, y_train, rcond=None)
-    except np.linalg.LinAlgError:
-        return -np.inf
+
+    if alpha > 0:
+        # Ridge: use normal equation with penalty
+        XtX = X_with_intercept.T @ X_with_intercept
+        XtX[1:, 1:] += alpha * np.eye(X_train.shape[1])
+        Xty = X_with_intercept.T @ y_train
+        try:
+            beta = np.linalg.solve(XtX, Xty)
+        except np.linalg.LinAlgError:
+            return -np.inf
+    else:
+        try:
+            beta, _, _, _ = np.linalg.lstsq(X_with_intercept, y_train, rcond=None)
+        except np.linalg.LinAlgError:
+            return -np.inf
 
     X_test_with_intercept = np.column_stack([np.ones(len(X_test)), X_test])
     y_pred = X_test_with_intercept @ beta
@@ -40,6 +60,7 @@ def _grouped_cv_r2(
     y: np.ndarray,
     groups: np.ndarray,
     cv_folds: int,
+    alpha: float = 0.0,
 ) -> float:
     """Compute mean R² across grouped k-fold CV splits."""
     gkf = GroupKFold(n_splits=cv_folds)
@@ -48,7 +69,7 @@ def _grouped_cv_r2(
     for train_idx, test_idx in gkf.split(X, y, groups):
         X_tr, X_te = X[train_idx], X[test_idx]
         y_tr, y_te = y[train_idx], y[test_idx]
-        r2 = _ols_r2(X_tr, y_tr, X_te, y_te)
+        r2 = _ols_r2(X_tr, y_tr, X_te, y_te, alpha=alpha)
         r2_scores.append(r2)
 
     return float(np.mean(r2_scores))
@@ -64,6 +85,7 @@ def forward_select(
     min_improvement: float = 0.005,
     seed: int = 42,
     locked_base: list[int] | None = None,
+    alpha: float = 0.0,
 ) -> tuple[list[str], dict]:
     """Stepwise forward feature selection with grouped cross-validation.
 
@@ -81,6 +103,7 @@ def forward_select(
         min_improvement: Minimum R² improvement to continue adding features.
         seed: Random seed (for reproducibility in tie-breaking).
         locked_base: Column indices that are always included (for OLSa arm).
+        alpha: L2 regularization strength for CV scoring (default 0.0 = OLS).
 
     Returns:
         (selected_names, selection_log) where selection_log has per-step R² trace.
@@ -103,7 +126,7 @@ def forward_select(
     # Compute baseline R² with locked features (if any)
     if selected_indices:
         X_sel = X_train[:, selected_indices]
-        best_r2 = _grouped_cv_r2(X_sel, y_train, groups, cv_folds)
+        best_r2 = _grouped_cv_r2(X_sel, y_train, groups, cv_folds, alpha=alpha)
     else:
         best_r2 = -np.inf
 
@@ -116,7 +139,7 @@ def forward_select(
         for idx in remaining_indices:
             trial_indices = selected_indices + [idx]
             X_trial = X_train[:, trial_indices]
-            r2 = _grouped_cv_r2(X_trial, y_train, groups, cv_folds)
+            r2 = _grouped_cv_r2(X_trial, y_train, groups, cv_folds, alpha=alpha)
 
             if r2 > best_candidate_r2 or (
                 r2 == best_candidate_r2
