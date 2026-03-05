@@ -704,3 +704,53 @@ def test_training_mode_two_stage_without_context_falls_back(tmp_path: Path):
             art_joint["payoff_model"][cf]["bias"]
             == art_two_stage["payoff_model"][cf]["bias"]
         )
+
+
+def test_two_stage_rejects_forward_select(tmp_path: Path):
+    """two_stage + do_forward_select=True raises ValueError."""
+    import pytest
+
+    from bid_euchre.models.train_hybrid_olsa import _train_arm
+
+    # We don't even need real data — the guard fires before any training
+    with pytest.raises(ValueError, match="incompatible with do_forward_select"):
+        _train_arm(
+            df=pd.DataFrame(),
+            feature_spec={},
+            seed=42,
+            source_run_id="test",
+            source_parquet_path="test.parquet",
+            split_type="three_way",
+            output_dir=str(tmp_path),
+            arm_name="full",
+            do_forward_select=True,
+            training_mode="two_stage",
+        )
+
+
+def test_two_stage_full_arm_falls_back_to_joint(tmp_path: Path):
+    """arm_mode='both' with two_stage: full arm uses joint, constrained uses two_stage."""
+    from bid_euchre.features.auction_context import PARTNER_FEATURE_NAMES
+
+    run_dir = _make_synthetic_run(tmp_path, seed=99, include_partner_features=True)
+    output_dir = str(tmp_path / "output")
+
+    result = train_hybrid_olsa(
+        run_dir=run_dir,
+        seed=42,
+        output_dir=output_dir,
+        arm_mode="both",
+        freeze=False,
+        context_candidates=PARTNER_FEATURE_NAMES,
+        training_mode="two_stage",
+    )
+
+    # Full arm should fall back to "joint" (not crash)
+    with open(result["artifacts"]["full"]) as f:
+        art_full = json.load(f)
+    assert art_full["training_mode"] == "joint"
+
+    # Constrained arm should use "two_stage"
+    with open(result["artifacts"]["constrained"]) as f:
+        art_constrained = json.load(f)
+    assert art_constrained["training_mode"] == "two_stage"

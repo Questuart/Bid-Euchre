@@ -147,10 +147,24 @@ def _train_arm(
             - "joint" (default): standard OLS, current behavior.
             - "ridge": L2-regularized OLS with ``ridge_alpha`` penalty.
             - "two_stage": fit base features first, then partner features on
-              residuals (prevents OLS weight redistribution). Falls back to
+              residuals (prevents OLS weight redistribution). Only valid for
+              the constrained arm (do_forward_select=False). Falls back to
               "joint" when no context_candidates are set.
         ridge_alpha: L2 penalty strength for "ridge" mode (default 1.0).
+
+    Raises:
+        ValueError: If training_mode="two_stage" with do_forward_select=True,
+            because forward selection scores candidates with joint OLS while
+            two-stage uses a different fit objective.
     """
+    if training_mode == "two_stage" and do_forward_select:
+        raise ValueError(
+            "training_mode='two_stage' is incompatible with do_forward_select=True. "
+            "Two-stage fitting requires a fixed feature set (locked base + context "
+            "candidates) because forward selection scores candidates with joint OLS, "
+            "which would produce a feature subset optimized for the wrong model class."
+        )
+
     models = {}
     residual_variances = {}
     training_metrics = {}
@@ -485,6 +499,10 @@ def train_hybrid_olsa(
         context_candidates: Optional list of context feature names (e.g. partner
             features) for additive forward selection on the constrained arm.
         training_mode: Weight fitting strategy ("joint", "ridge", "two_stage").
+            Note: "two_stage" only applies to the constrained arm (locked base +
+            context candidates). The full arm always falls back to "joint" when
+            "two_stage" is requested, because forward selection scores candidates
+            with joint OLS and two-stage uses a different fit objective.
         ridge_alpha: L2 penalty strength for "ridge" mode (default 1.0).
 
     Returns:
@@ -548,6 +566,16 @@ def train_hybrid_olsa(
 
     # --- Full arm (OLSa_Full with forward selection) ---
     if arm_mode in ("both", "full"):
+        # two_stage is incompatible with forward selection — fall back to joint
+        # for the full arm (two_stage only makes sense with locked base + context)
+        full_arm_mode = training_mode
+        if training_mode == "two_stage":
+            logger.info(
+                "Full arm uses forward selection; falling back to "
+                "training_mode='joint' (two_stage requires fixed feature set)."
+            )
+            full_arm_mode = "joint"
+
         logger.info("Training full arm (OLSa_Full) with forward selection...")
         artifact_full, metrics_full, fs_log = _train_arm(
             df,
@@ -564,7 +592,7 @@ def train_hybrid_olsa(
             do_forward_select=True,
             offensive_defensive=offensive_defensive,
             context_candidates=context_candidates,
-            training_mode=training_mode,
+            training_mode=full_arm_mode,
             ridge_alpha=ridge_alpha,
         )
 
