@@ -8,7 +8,7 @@
 
 ## Quick Context
 
-R1 added 4 **partner bidding context features** (extracted from auction transcripts)
+R1 added **partner bidding context features** (extracted from auction transcripts)
 to the OLSa hybrid bidder. These features describe what the partner bid during
 the auction (bid level, whether they passed, whether they bid the same contract
 family). Training R² improved dramatically (+0.40 for suit), but H2H game
@@ -16,6 +16,11 @@ performance **regressed** by -0.76 pts/deal for suit contracts.
 
 This report documents the regression, proposes hypotheses for why it happened,
 and lays out a concrete investigation plan with reproduction commands.
+
+> **Note:** The H2H battery that produced these results used models trained with
+> 4 partner features (including `partner_bid_confidence`, removed in PR #538 as
+> redundant with `partner_bid_level`). After investigation completes, models will
+> be retrained with 3 partner features and the H2H battery re-run.
 
 **Key files:**
 - Training pipeline: `src/bid_euchre/models/train_hybrid_olsa.py`

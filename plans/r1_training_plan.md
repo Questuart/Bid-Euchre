@@ -3,7 +3,7 @@
 **Date:** 2026-03-04
 **Governing doc:** `plans/r1_master_plan.md` §3
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
-**Status:** Step 3c (retrain constrained arm with partner features)
+**Status:** Gate X3 STOP — regression investigation in progress (see diagnostic report)
 
 ---
 
@@ -244,6 +244,26 @@ print('X2 PASS: Both arms suit R² not regressed')
 **Finding:** High/low selected only `partner_suit_match` in both arms. Confounded
 by sample size (4k high, 5.5k low vs 32k suit). Not gate-blocking; deferred to R2.
 See `docs/04_reports/r1/partner_feature_selection_diagnostic.md`.
+
+> **Stale note:** Step 3c trained with 4 partner features including
+> `partner_bid_confidence`, which was removed in PR #538 (linearly redundant
+> with `partner_bid_level`). The full arm results above include this feature.
+
+### 3d. Retrain with 3 partner features (post-investigation)
+
+**Status:** BLOCKED — waiting on regression investigation
+(see `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`)
+
+After the regression investigation (Investigations F–I) identifies root cause:
+
+1. **Retrain both arms** with 3 partner features (`partner_bid_level`,
+   `partner_passed`, `partner_suit_match`) using the same command as 3c
+2. **Re-run Gate X2** to verify R² is not degraded
+3. **Proceed to Step 4 → Step 5** (3-seed eval → H2H battery re-run)
+4. **Re-evaluate Gate X3** with the corrected models
+
+Any fixes from the investigation (e.g., bug fixes, training data changes,
+feature extraction corrections) should be applied **before** retraining.
 
 ---
 
