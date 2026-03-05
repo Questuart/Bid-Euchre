@@ -127,12 +127,19 @@ def _train_arm(
     feature_budget: dict[str, int] | None = None,
     do_forward_select: bool = False,
     offensive_defensive: bool = False,
+    context_candidates: list[str] | None = None,
 ) -> tuple[dict, dict, dict | None]:
-    """Train one arm (constrained or full) and return (artifact, metrics, fs_log)."""
+    """Train one arm (constrained or full) and return (artifact, metrics, fs_log).
+
+    Args:
+        context_candidates: Optional list of context feature names (e.g. partner
+            features) to forward-select from, additive on top of the locked base
+            from feature_spec. Only used when do_forward_select is False.
+    """
     models = {}
     residual_variances = {}
     training_metrics = {}
-    feature_selection_log = {} if do_forward_select else None
+    feature_selection_log = {} if (do_forward_select or context_candidates) else None
 
     for contract_family in ["suit", "high", "low"]:
         sub = df[df["contract_type"] == contract_family]
@@ -175,8 +182,38 @@ def _train_arm(
             feature_names = selected_names
             if feature_selection_log is not None:
                 feature_selection_log[contract_family] = fs_log
+        elif context_candidates:
+            # Constrained + additive: locked base + forward-select from context pool
+            locked_names = feature_spec[contract_family]
+            additive_pool = [c for c in context_candidates if c not in locked_names]
+            all_candidates = locked_names + additive_pool
+            locked_indices = list(range(len(locked_names)))
+            budget = (feature_budget or {}).get(contract_family)
+
+            missing = [c for c in all_candidates if c not in train_df.columns]
+            if missing:
+                raise ValueError(
+                    f"Context candidates missing from data for {contract_family}: {missing}"
+                )
+
+            X_train_all = train_df[all_candidates].values.astype(np.float64)
+            y_train = train_df["tricks_won"].values.astype(np.float64)
+            groups = train_df["hand_id"].values
+
+            selected_names, fs_log = forward_select(
+                X_train_all,
+                y_train,
+                candidate_names=all_candidates,
+                groups=groups,
+                max_features=budget,
+                seed=seed,
+                locked_base=locked_indices,
+            )
+            feature_names = selected_names
+            if feature_selection_log is not None:
+                feature_selection_log[contract_family] = fs_log
         else:
-            # Use prescribed features
+            # Use prescribed features (R0 path)
             feature_names = feature_spec[contract_family]
 
         X_train = train_df[feature_names].values.astype(np.float64)
@@ -334,7 +371,7 @@ def _train_arm(
         models=models,
         residual_variances=residual_variances,
         risk_lambda=risk_lambda,
-        context_features=[],
+        context_features=context_candidates or [],
         seed=seed,
         source_run_id=source_run_id,
         split_type=split_type,
@@ -354,6 +391,7 @@ def train_hybrid_olsa(
     rung_id: str = "r0",
     risk_lambda: float = 0.0,
     offensive_defensive: bool = False,
+    context_candidates: list[str] | None = None,
 ) -> dict:
     """Train hybrid OLSa models from a canonical bidless run directory.
 
@@ -368,6 +406,8 @@ def train_hybrid_olsa(
         rung_id: Rung identifier (e.g., "r0").
         risk_lambda: Risk penalty coefficient (default 0.0 for R0).
         offensive_defensive: If True, train separate offensive/defensive sub-models.
+        context_candidates: Optional list of context feature names (e.g. partner
+            features) for additive forward selection on the constrained arm.
 
     Returns:
         Dict with artifact paths and training summary.
@@ -391,7 +431,7 @@ def train_hybrid_olsa(
     # --- Constrained arm (OLSa with locked 3/1/1 features) ---
     if arm_mode in ("both", "constrained"):
         logger.info("Training constrained arm (OLSa)...")
-        artifact, metrics, _ = _train_arm(
+        artifact, metrics, fs_log_constrained = _train_arm(
             df,
             CONTRACT_FEATURES,
             seed,
@@ -404,6 +444,7 @@ def train_hybrid_olsa(
             risk_lambda=risk_lambda,
             do_forward_select=False,
             offensive_defensive=offensive_defensive,
+            context_candidates=context_candidates,
         )
 
         artifact_path = os.path.join(output_dir, f"hybrid_{rung_id}.json")
@@ -415,6 +456,15 @@ def train_hybrid_olsa(
 
         result["artifacts"]["constrained"] = artifact_path
         result["constrained_metrics"] = metrics
+
+        # Save constrained arm feature selection log (when context_candidates used)
+        if fs_log_constrained:
+            fs_log_c_path = os.path.join(
+                output_dir, f"feature_selection_log_{rung_id}_constrained.json"
+            )
+            with open(fs_log_c_path, "w") as f:
+                json.dump(fs_log_constrained, f, indent=2)
+            result["constrained_feature_selection_log"] = fs_log_c_path
 
     # --- Full arm (OLSa_Full with forward selection) ---
     if arm_mode in ("both", "full"):
