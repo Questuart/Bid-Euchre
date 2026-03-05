@@ -45,10 +45,9 @@ bidding_policies:
           offsuit_tens_count: 1.0
           quick_tricks: 1.0
       partner_weights:
-        partner_bid_level: 1.0
-        partner_passed: 1.0
+        partner_bid_level: 0.5
+        partner_passed: -1.0
         partner_suit_match: 1.0
-        partner_bid_confidence: 1.0
 
   # --- R0 variants ---
 
