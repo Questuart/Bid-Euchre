@@ -3,7 +3,7 @@
 **Date:** 2026-03-04 (updated 2026-03-05)
 **Governing doc:** `plans/r1_master_plan.md` §3 and §10
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
-**Status:** Gate X3 STOP — regression investigation in progress (see diagnostic report)
+**Status:** Gate X3 STOP — H10 (bid-level search degeneracy) identified as structural cause. Payoff model revision required.
 
 > **Document role:** This is the **R1 operational execution checklist** — CLI
 > commands, gate results, artifact paths. For strategic governance (feature
@@ -266,26 +266,24 @@ See `docs/04_reports/r1/partner_feature_selection_diagnostic.md`.
 > Step 3d will retrain both arms from scratch with the corrected 3-feature set,
 > making 3c artifacts historical only.
 
-### 3d. Retrain with 3 partner features (post-investigation)
+### 3d. Retrain with 3 partner features + two-stage (post-investigation)
 
-**Status:** BLOCKED — waiting on regression investigation
-(see `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`)
+**Status:** COMPLETED (two-stage) — regression NOT resolved
 
-> **Blocking chain:** Steps 4–12 are blocked until 3d completes. Step 3e
-> (feature-effect testing) runs immediately after 3d, before Step 4. The
-> full dependency is: regression investigation → 3d retrain → 3e counterfactual
-> → Step 4 eval → Step 5 H2H → Steps 6–12.
+Two-stage training (PRs #548/#549) was implemented and tested:
+- Training data regenerated as `canonical_auction_r1_42_v2` (3 partner features,
+  no stale `partner_bid_confidence`)
+- Two-stage constrained arm: suit R² = 0.596, Gate X2 PASS
+- H2H battery: primary delta = -0.348, identical to joint R1. Gate X3 STOP.
+- ME_R1 regresses by -9.475 eppd (hand-coded weights, no OLS)
 
-After the regression investigation (Investigations F–I) identifies root cause:
+**Finding:** H7 (weight instability) was real but not the primary cause. The
+structural cause is H10 (bid-level search degeneracy) — `compute_best_bid()`
+always selects the minimum legal bid because `make_payoff = 2t - 10` is
+bid-independent. This affects R0 and R1 equally but is masked in R0 by
+4-way auction competition. See diagnostic report §2 H10 for details.
 
-1. **Retrain both arms** with 3 partner features (`partner_bid_level`,
-   `partner_passed`, `partner_suit_match`) using the same command as 3c
-2. **Re-run Gate X2** to verify R² is not degraded
-3. **Proceed to Step 4 → Step 5** (3-seed eval → H2H battery re-run)
-4. **Re-evaluate Gate X3** with the corrected models
-
-Any fixes from the investigation (e.g., bug fixes, training data changes,
-feature extraction corrections) should be applied **before** retraining.
+**Blocking:** Steps 4-12 remain blocked until the payoff model is revised.
 
 ### 3e. Partner-Off Counterfactual / Feature-Effect Testing (Required)
 
