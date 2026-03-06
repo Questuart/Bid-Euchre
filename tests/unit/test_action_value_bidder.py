@@ -385,3 +385,77 @@ class TestActionValueBidder:
         action = bidder.choose_bid(obs)
         if not action.is_pass():
             assert action.n == 10  # Only legal bid level
+
+    def test_rejects_mismatched_feature_names(self):
+        """feature_names validation catches reordered/missing features at load time."""
+        artifact = _make_mock_artifact()
+        # Scramble the suit model's feature_names
+        artifact["models"]["suit"]["feature_names"] = ["wrong_feature"] * (
+            len(STATE_FEATURE_NAMES) + len(ACTION_FEATURE_NAMES)
+        )
+        path = self._write_artifact(artifact)
+        with pytest.raises(ValueError, match="feature_names mismatch"):
+            ActionValueBidder(artifact_path=path)
+
+    def test_rejects_mismatched_pass_feature_names(self):
+        """Pass model feature_names validated separately (state-only, no action features)."""
+        artifact = _make_mock_artifact()
+        artifact["models"]["pass"]["feature_names"] = ["wrong"] * len(
+            STATE_FEATURE_NAMES
+        )
+        path = self._write_artifact(artifact)
+        with pytest.raises(ValueError, match="pass model feature_names mismatch"):
+            ActionValueBidder(artifact_path=path)
+
+    def test_accepts_artifact_without_feature_names(self):
+        """Artifacts without feature_names load without error (backward compat)."""
+        artifact = _make_mock_artifact()
+        for model in artifact["models"].values():
+            del model["feature_names"]
+        path = self._write_artifact(artifact)
+        bidder = ActionValueBidder(artifact_path=path)
+        assert "suit" in bidder.models
+
+
+# ── Pass proxy encoding ───────────────────────────────────
+
+
+class TestPassProxyEncoding:
+    """Verify that pass ("none") encoding uses "high" proxy intentionally
+    and produces the expected neutral indicator values."""
+
+    def test_none_uses_high_hand_features(self):
+        """Pass features match "high" hand features (no trump dependency)."""
+        obs = _make_obs()
+        none_features = extract_state_features(obs, "none", None)
+        high_features = extract_state_features(obs, "high", None)
+
+        # First 39 elements (hand features) should be identical
+        np.testing.assert_array_equal(
+            none_features[:39],
+            high_features[:39],
+            err_msg="Pass hand features should match 'high' proxy",
+        )
+
+    def test_none_indicators_all_zero(self):
+        """Pass encoding zeroes all contract and trump indicators."""
+        obs = _make_obs()
+        features = extract_state_features(obs, "none", None)
+        is_high_idx = STATE_FEATURE_NAMES.index("is_high")
+        is_low_idx = STATE_FEATURE_NAMES.index("is_low")
+        trump_c_idx = STATE_FEATURE_NAMES.index("trump_C")
+
+        assert features[is_high_idx] == 0.0
+        assert features[is_low_idx] == 0.0
+        for i in range(4):
+            assert features[trump_c_idx + i] == 0.0
+
+    def test_none_differs_from_high_in_indicators(self):
+        """Pass and high share hand features but differ in is_high indicator."""
+        obs = _make_obs()
+        none_features = extract_state_features(obs, "none", None)
+        high_features = extract_state_features(obs, "high", None)
+        is_high_idx = STATE_FEATURE_NAMES.index("is_high")
+
+        assert none_features[is_high_idx] == 0.0
+        assert high_features[is_high_idx] == 1.0

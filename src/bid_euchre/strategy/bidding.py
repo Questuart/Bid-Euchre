@@ -1401,11 +1401,21 @@ def extract_state_features(
 
     Returns:
         np.ndarray of shape (52,) with features in STATE_FEATURE_NAMES order.
+
+    Note on pass ("none") encoding:
+        get_hand_features() requires a contract_type; there is no contract-neutral
+        path without modifying the frozen hand_eval.py. We use "high" as proxy
+        because it has no trump dependency (no bowers, no trump suit reranking),
+        making it the least contract-specific option. The indicator dummies
+        (is_high, is_low, trump_*) are all zeroed for "none", so only the 39 hand
+        features carry the "high" interpretation. This is symmetric: the dataset
+        generator uses the same extract_state_features("none", None) call, so the
+        pass model trains and infers on identically-encoded features.
     """
     from ..features.auction_context import extract_partner_features
     from ..features.hand_eval import get_hand_features
 
-    # Hand features (39): use "high" as proxy for "none" (no trump dependency)
+    # Hand features (39): "high" proxy for "none" — see docstring note above.
     hand_contract = contract_family if contract_family != "none" else "high"
     hand_feats = get_hand_features(obs.hand, hand_contract, trump_suit)
     hand_arr = np.array(
@@ -1509,6 +1519,28 @@ class ActionValueBidder(BiddingPolicy):
         }
         self.pass_model = models["pass"]
         self.context_features = artifact.get("metadata", {}).get("context_features", [])
+
+        # Validate feature_names match expected runtime feature order.
+        # OLS is a dot product — mismatched feature order silently mispredicts.
+        expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+        for family in ("suit", "high", "low"):
+            model = self.models[family]
+            if "feature_names" in model:
+                if list(model["feature_names"]) != expected_bid_features:
+                    raise ValueError(
+                        f"Artifact {family} model feature_names mismatch. "
+                        f"Expected {len(expected_bid_features)} features: "
+                        f"{expected_bid_features[:3]}...{expected_bid_features[-2:]}, "
+                        f"got {list(model['feature_names'])[:3]}..."
+                        f"{list(model['feature_names'])[-2:]}"
+                    )
+        if "feature_names" in self.pass_model:
+            if list(self.pass_model["feature_names"]) != STATE_FEATURE_NAMES:
+                raise ValueError(
+                    f"Artifact pass model feature_names mismatch. "
+                    f"Expected {len(STATE_FEATURE_NAMES)} state-only features, "
+                    f"got {len(self.pass_model['feature_names'])} features."
+                )
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
