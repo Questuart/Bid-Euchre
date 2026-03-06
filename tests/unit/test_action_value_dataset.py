@@ -84,6 +84,22 @@ class TestDeterministicDealer:
             d = _deterministic_dealer(seed, deal_id)
             assert 0 <= d <= 3
 
+    def test_matches_engine_formula(self, seed):
+        """Verify dealer derivation matches play_single_hand's auction-mode formula.
+
+        The engine uses: random.Random(deal_seed + deal_id).randrange(4)
+        NOT the _deal_rng formula (seed * 1_000_003 + deal_id).
+        """
+        import random
+
+        for deal_id in range(20):
+            expected = random.Random(seed + deal_id).randrange(4)
+            actual = _deterministic_dealer(seed, deal_id)
+            assert actual == expected, (
+                f"Dealer mismatch at deal_id={deal_id}: "
+                f"engine={expected}, generator={actual}"
+            )
+
 
 # ── Partial Auction ───────────────────────────────────────────
 
