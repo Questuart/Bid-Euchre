@@ -24,9 +24,11 @@ The user can `/copy` this into a new Claude Code session to resume work.
 (or "None.")
 
 ### Review Findings
-- Auto-fixes: [N applied / pushed as commit `<sha>`] (or "none needed")
 - Blockers: [N] ([list each with file:line and rule ID])
 - Warnings: [N] ([list each briefly])
+- Follow-up issues: [N created] (or "none needed")
+  - [issue URL] — [category]
+  - ...
 
 ### Needs Human Decision
 - [Each BLOCK item with context on why it needs judgment]
@@ -37,6 +39,8 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Worktree: `[worktree-path]`
 - Branch: `[branch]` → PR #[number]
 - make check: [PASSED / FAILED]
+- Commit status: [`success` / `failure` / `not published`]
+- Auto-merge: [ARMED / NOT ARMED]
 - Verdict: [READY TO MERGE / NEEDS ATTENTION]
 
 ### Context for Next Agent
