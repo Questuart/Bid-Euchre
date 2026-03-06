@@ -283,6 +283,14 @@ always selects the minimum legal bid because `make_payoff = 2t - 10` is
 bid-independent. This affects R0 and R1 equally but is masked in R0 by
 4-way auction competition. See diagnostic report §2 H10 for details.
 
+**H10 scope correction (Investigation J):** H10 only applies when
+`bid_level_search=True` (H2H configs). Comparator runs use `bid_level_search=False`
+(default), so models bid at `floor(mu)` in the 5-7 range — comparator results are
+unaffected by the degeneracy. ME_R1's -9.475 regression is from catastrophic
+overbidding (mean bid 8.4, 70-88% make rate), not from excessive passing. Partner
+feature auction dynamics are bidirectional: hybrid R1 passes too much, ME_R1 bids
+too aggressively. See diagnostic report Investigation J.
+
 **Blocking:** Steps 4-12 remain blocked until the payoff model is revised.
 
 ### 3e. Partner-Off Counterfactual / Feature-Effect Testing (Required)

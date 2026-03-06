@@ -1147,7 +1147,7 @@ is confounded (H3) and destabilizes the base model (H7).
 | **H7: Weight instability** | **CONFIRMED (CONTRIBUTING)** | Investigation H + C confirmed mechanism, but two-stage fix did not resolve regression — H7 is real but not primary |
 | **H8: Overbidding** | **WEAKENED** | Investigation B: R1 bids LOWER (1.80 vs 3.74) |
 | **H9: Data artifact** | **WEAKENED** | Investigation I: variance higher, data effect only 12% |
-| **H10: Bid-level search degeneracy** | **CONFIRMED (STRUCTURAL)** | Two-stage remediation failed (delta unchanged at -0.348); ME_R1 regresses -9.5 (no OLS); EV monotonically decreasing in bid level |
+| **H10: Bid-level search degeneracy** | **CONFIRMED (H2H-ONLY)** | EV monotonically decreasing in bid level when `bid_level_search=True`; only H2H configs use this — comparator uses `floor(mu)` (bids 5-7) |
 
 **Revised causal chain (2026-03-05):**
 
@@ -1171,6 +1171,77 @@ but produced identical regression (delta = -0.348). The structural cause is H10:
 structural cause. The `compute_best_bid()` payoff model must be revised before
 partner features can show their value in H2H play. H7 is a real contributing
 factor but not primary.
+
+### Investigation J: Declaring vs Defending Analysis
+
+**Question:** How does declaring vs defending frequency differ between R0 and R1
+in H2H, and what is the point impact of the asymmetry?
+
+**Status:** COMPLETE
+
+**H10 Scope Correction:**
+
+The R0 comparator runs used `bid_level_search=False` (default in
+`HybridOLSaBidder.__init__`). Models bid at `floor(mu)`, producing bids in the
+5-7 range with mode at 6. This is NOT the bid-level search degeneracy.
+
+Only H2H configs set `bid_level_search=True`, which causes min-legal bidding
+(bid=1 always maximizes EV because `make_payoff = 2t - 10` is bid-independent).
+Both R0 and R1 hybrid models in H2H bid at 1-4 (not 5-7). The auction compresses
+bids to `current_high + 1` for all `bid_level_search` models.
+
+H10 remains valid for interpreting H2H results but does NOT affect comparator
+results or the R0 canonical evaluation.
+
+**Bid-level distribution evidence:**
+
+R0 Comparator (`bid_level_search=False`, vs AlwaysPass):
+
+| Level | HybridOLSa | OLSa |
+|-------|-----------|------|
+| 5     | 31.7%     | 4.7% |
+| 6     | 55.8%     | 73.5%|
+| 7     | 11.9%     | 21.7%|
+| 8     | 0.6%      | 0.1% |
+
+H2H (`bid_level_search=True`):
+
+| Matchup | Mean Bid | Distribution |
+|---------|----------|-------------|
+| R0 self-play | 3.76 | 3: 23%, 4: 77% |
+| R0 vs R1 | 2.92 | 1-2: 28%, 3: 51%, 4: 21% |
+| R0 vs ME_R0 | 5.14 | 4: 17%, 5: 56%, 6: 22% |
+| ME_R1 self-play | 8.82 | 7: 9%, 8: 27%, 9: 32%, 10: 31% |
+| ME_R1 vs hybrid | 8.37 | 7: 16%, 8: 31%, 9: 25%, 10: 20% |
+
+**Declaring vs defending asymmetry:**
+
+When R0 faces R1 in H2H, R0 declares ~60% of hands (vs 50% in self-play).
+R1 partner features cause more passing, so R0 wins more auctions.
+
+- Declaring yields ~840-910 pts/hand vs ~710-780 defending
+- The ~130 pts/hand gap means declaring frequency is a major performance driver
+- R1 models declare only 40% against R0 (vs 50% in self-play), losing ~13 pts/hand
+  from reduced declaration alone
+- R1's 99% make rate (vs R0's 97%) only saves ~4-5 pts/hand — insufficient to
+  compensate for the declaring frequency disadvantage
+
+**ME_R1 overbidding diagnosis:**
+
+ME_R1 is NOT defending/passing — it declares 98-99% of hands vs hybrid opponents.
+The partner weights (`partner_bid_level: 0.5`, `partner_suit_match: 1.0`,
+`partner_passed: -1.0`) add +2-3.5 to the score when the partner bids, pushing
+the floor from ~5 to ~8.
+
+- Mean winning bid: 8.35-8.37 vs hybrid opponents; 8.82 in self-play
+- Make rate only 70-88% at these levels → frequent sets → -9.475 eppd regression
+- The ME_R1 regression is from **catastrophic overbidding**, not from excessive
+  passing
+
+This changes the interpretation of partner feature auction dynamics: they are
+**bidirectional** — hybrid models pass too much (`partner_passed=-1.0` penalty),
+while ME_R1 bids too aggressively (`partner_bid_level` inflation). The current
+partner feature design creates unstable auction dynamics in both directions.
 
 ---
 
