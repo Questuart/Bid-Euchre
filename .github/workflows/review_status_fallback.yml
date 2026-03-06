@@ -28,19 +28,19 @@ jobs:
             if [ "$STATUS" = "pending" ] && [ -n "$CREATED" ]; then
               AGE_SECONDS=$(( $(date +%s) - $(date -d "$CREATED" +%s) ))
               if [ "$AGE_SECONDS" -gt 3600 ]; then
+                # Dedupe: skip if we already posted a fallback comment for this SHA
+                EXISTING=$(gh api "repos/${REPO}/issues/${PR_NUM}/comments" \
+                  --jq "[.[] | select(.body | contains(\"Review status fallback\")) | select(.body | contains(\"${HEAD_SHA:0:7}\"))] | length" 2>/dev/null || echo "0")
+                if [ "$EXISTING" != "0" ]; then
+                  echo "PR #${PR_NUM}: fallback already posted for ${HEAD_SHA:0:7} — skipping"
+                  continue
+                fi
                 echo "PR #${PR_NUM}: reviewing-changes stuck pending for ${AGE_SECONDS}s"
-                gh pr comment "$PR_NUM" --repo "$REPO" --body "$(cat <<'COMMENT'
-          **Review status fallback:** `reviewing-changes` has been `pending` for >1 hour.
-
-          The Claude session may have ended before completing review. To unblock:
-
-          1. Re-run `/reviewing-changes` in a new Claude Code session, **or**
-          2. Manually set the status:
-             ```bash
-             scripts/internal/set_review_status.sh success "Manual override"
-             ```
-          COMMENT
-          )"
+                BODY="Review status fallback: reviewing-changes has been pending for >1 hour (sha: ${HEAD_SHA:0:7})."
+                BODY="${BODY}"$'\n\n'"The Claude session may have ended before completing review. To unblock:"
+                BODY="${BODY}"$'\n\n'"1. Re-run /reviewing-changes in a new Claude Code session, or"
+                BODY="${BODY}"$'\n'"2. Manually set the status: scripts/internal/set_review_status.sh success \"Manual override\""
+                gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"
               fi
             fi
           done
