@@ -3,7 +3,7 @@
 **Date:** 2026-03-04 (updated 2026-03-05)
 **Governing doc:** `plans/r1_master_plan.md` §3 and §10
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
-**Status:** Gate X3 STOP — H10 (bid-level search degeneracy) identified as structural cause. Payoff model revision required.
+**Status:** Gate X3 STOP — H10 (bid-level search degeneracy) analytically confirmed + `bid_bonus` fix prototyped. Calibration H2H sweep pending.
 
 > **Document role:** This is the **R1 operational execution checklist** — CLI
 > commands, gate results, artifact paths. For strategic governance (feature
@@ -319,6 +319,34 @@ mode early.
 > contribution, R1.5 will proceed with redesigned partner-semantics features
 > (see `r1_master_plan.md` §10.3). The R1 counterfactual establishes the
 > baseline that R1.5 aims to improve upon.
+
+### 3f. H10 Validation Pack — Bid-Level Degeneracy Proof + Fix (COMPLETED)
+
+**Status:** COMPLETED
+**PR:** #TBD
+**Plan:** `plans/h10_validation_pack.md`
+
+**Purpose:** Analytically prove H10 and prototype the `bid_bonus` payoff fix.
+
+**Results:**
+1. **H10 confirmed analytically:** `_compute_ev_static()` EV is monotonically
+   non-increasing in `bid_n` for all tested (mu, sigma) pairs. 100 parametric
+   cases, zero violations. `compute_best_bid(bid_level_search=True)` always
+   returns `min_legal`.
+
+2. **`bid_bonus` parameter added:** `_compute_ev_static(mu, sigma, bid_n, bid_bonus=0.0)`
+   and `compute_best_bid(..., bid_bonus=0.0)`. Backward compatible (default 0.0).
+   With `bid_bonus > 0`, EV has a non-trivial peak near `floor(mu)` — degeneracy broken.
+
+3. **Calibration range identified:** `bid_bonus=0.25` produces bids in the 3-7 range
+   (vs always-1 with bonus=0.0). Higher values (0.5, 1.0) approach `floor(mu)`.
+
+**Test coverage:** 101 parametric tests in `tests/unit/test_h10_bid_level_degeneracy.py`.
+
+**Next step:** Calibrate `bid_bonus` via H2H sweep (separate PR). Wire `bid_bonus`
+to `HybridOLSaBidder.__init__`, run H2H battery with `bid_level_search=True` and
+`bid_bonus ∈ {0.0, 0.25, 0.5, 0.75, 1.0}`. This is the decisive test for whether
+the payoff fix resolves the H2H regression.
 
 ---
 
