@@ -57,13 +57,17 @@ Aligned with `/reviewing-changes` CHECKLIST.md check IDs:
 Use `scripts/internal/set_review_status.sh`:
 
 ```bash
-# Pre-merge code review
+# Pre-merge code review (local Claude session — HEAD is correct)
 scripts/internal/set_review_status.sh pending "Review in progress"
 scripts/internal/set_review_status.sh success "Review passed — 0 blockers, N warnings"
 scripts/internal/set_review_status.sh failure "Review blocked — N blockers found"
 
-# Plan review (advisory)
-scripts/internal/set_review_status.sh success "Plan approved" "" "codex-plan-review"
+# Plan review from GitHub Actions — pass PR head SHA explicitly
+# (actions/checkout checks out merge commit, not PR head)
+scripts/internal/set_review_status.sh success "Plan approved" "" "codex-plan-review" "$PR_HEAD_SHA"
+
+# Or via environment variable
+REVIEW_STATUS_SHA="$PR_HEAD_SHA" scripts/internal/set_review_status.sh pending "Review starting"
 
 # Manual override (admin recovery for stuck pending)
 scripts/internal/set_review_status.sh success "Manual override"
