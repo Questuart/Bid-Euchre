@@ -3,6 +3,7 @@
 **Date frozen:** 2026-03-06
 **Commit:** `73b3ef0` (post-rung-relabel, PR #555)
 **Status:** R1 CONCLUDED — preserved as historical trick-target rung
+**gate_status:** X3 STOP (primary delta -0.348 net_eppd)
 
 ---
 
