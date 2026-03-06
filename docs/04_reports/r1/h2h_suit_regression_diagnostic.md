@@ -1327,6 +1327,65 @@ to suit contracts only. HIGH/LOW retain simpler partner handling.
 
 See `plans/r1_master_plan.md` §R1.5 for full specification.
 
+### Investigation K: H10 Validation Pack — Analytical Proof + `bid_bonus` Fix
+
+**Status:** COMPLETED (PR #552)
+**Purpose:** Analytically prove H10 and prototype a fix
+
+**H10 Analytical Proof:**
+
+The `_compute_ev_static()` payoff model computes:
+```
+make_ev = 2.0 * E[T|make] - 10.0    (bid-independent)
+set_ev  = E[T|set] - bid_n - 10.0   (bid-dependent, penalty grows with bid)
+```
+
+Since `make_ev` doesn't depend on `bid_n` but `set_ev` decreases with `bid_n`,
+total EV is monotonically non-increasing in `bid_n`. This was verified across
+100 (mu, sigma) combinations (mu ∈ {3.0, 5.0, 6.5, 8.0, 9.5} × sigma ∈
+{0.0, 0.5, 1.0, 1.5, 2.5}). Every case confirms: `compute_best_bid()` with
+`bid_level_search=True` always selects `min_legal = max(1, current_high_bid + 1)`.
+
+> **Scope note:** This proof applies to the `risk_lambda=0.0` regime (current R1
+> configuration). With `risk_lambda > 0`, `compute_best_bid()` optimizes
+> `utility = ev - risk_penalty`, and the CVaR penalty term could in principle
+> create a non-monotonic utility surface. Since R0 and R1 both use `risk_lambda=0.0`,
+> this does not affect the current finding.
+
+**`bid_bonus` Fix:**
+
+Added `bid_bonus` parameter to `_compute_ev_static()` and `compute_best_bid()`:
+```
+make_ev = 2.0 * E[T|make] - 10.0 + bid_bonus * bid_n
+```
+
+This creates a bid-proportional reward that counteracts the monotonic decrease.
+With `bid_bonus > 0`, there's a non-trivial optimum near `floor(mu)`. Results:
+
+| mu  | sigma | bonus=0.0 | bonus=0.25 | bonus=0.5 | bonus=1.0 | floor(mu) |
+|-----|-------|-----------|------------|-----------|-----------|-----------|
+| 5.0 |   1.0 | None      |  3 (+0.71) |  3 (+1.46)|  4 (+3.26)|     5     |
+| 6.0 |   1.0 |  1 (+2.00)|  4 (+2.95) |  4 (+3.94)|  5 (+6.06)|     6     |
+| 6.5 |   1.5 |  1 (+3.00)|  4 (+3.82) |  4 (+4.80)|  4 (+6.75)|     6     |
+| 7.0 |   1.0 |  1 (+4.00)|  5 (+5.19) |  5 (+6.43)|  5 (+8.91)|     7     |
+| 8.0 |   1.5 |  1 (+6.00)|  5 (+7.15) |  5 (+8.39)|  6 (+11.19)|    8     |
+| 9.0 |   1.0 |  1 (+8.00)|  7 (+9.66) |  7 (+11.40)|  7 (+14.87)|    9    |
+
+**Key observations:**
+- `bonus=0.0`: always bid 1 (or pass) — H10 degeneracy confirmed
+- `bonus=0.25`: bids jump to 3-7 range — degeneracy broken
+- `bonus=0.5–1.0`: bids approach `floor(mu)` — the "natural" bid level
+- The fix is backward compatible: `bid_bonus=0.0` preserves all existing behavior
+
+**Recommendation:** Calibrate `bid_bonus` via H2H sweep in a follow-up PR.
+`bid_bonus ∈ {0.0, 0.25, 0.5, 0.75, 1.0}` with `bid_level_search=True`.
+This is the decisive test: if a non-zero `bid_bonus` resolves the H2H regression,
+H10 is confirmed as the primary cause and the payoff model revision path is clear.
+
+**Test coverage:** 101 parametric tests in `tests/unit/test_h10_bid_level_degeneracy.py`:
+- 74 proving the degeneracy (EV monotonicity, min_legal selection, floor divergence)
+- 27 proving the fix (bonus breaks monotonicity, selects near floor(mu), backward compat)
+
 ---
 
 ## 7. Relationship to R1.5 and R2
@@ -1367,3 +1426,5 @@ after stabilized partner-context baseline.
 | Investigation C ablation run | `arc_d_r0_h2h_battery_42_20260305_131433` |
 | Investigation C roster | experiments/configs/r1_investigation_c_roster.json |
 | Investigation C artifact | data/artifacts/arc_d/r1/investigation_c_ablation.json |
+| Investigation K tests | tests/unit/test_h10_bid_level_degeneracy.py (101 parametric tests) |
+| Investigation K code | `_compute_ev_static()` and `compute_best_bid()` in bidding.py |

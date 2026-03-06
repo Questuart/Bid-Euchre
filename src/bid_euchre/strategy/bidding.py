@@ -830,6 +830,7 @@ def compute_best_bid(
     bid_level_search: bool = True,
     risk_lambda: float = 0.0,
     seed: int = 42,
+    bid_bonus: float = 0.0,
 ) -> tuple[int, float] | None:
     """Find the best bid level for a single contract.
 
@@ -847,6 +848,10 @@ def compute_best_bid(
             evaluate floor(mu) only (v1 behavior).
         risk_lambda: CVaR risk penalty weight (0.0 = no penalty).
         seed: RNG seed for CVaR Monte Carlo draws.
+        bid_bonus: Bid-proportional bonus added to make payoff (0.0 = no bonus,
+            preserving v1 behavior). Positive values reward higher bids,
+            counteracting the structural degeneracy where EV is always
+            monotonically decreasing in bid level.
 
     Returns:
         (bid_n, utility) for the best legal level with utility > -pass_threshold,
@@ -869,7 +874,7 @@ def compute_best_bid(
     best_utility = None
 
     for n in search_range:
-        ev = _compute_ev_static(mu, sigma, n)
+        ev = _compute_ev_static(mu, sigma, n, bid_bonus)
         penalty = _compute_risk_penalty_static(mu, sigma, n, risk_lambda, seed)
         utility = ev - penalty
 
@@ -908,14 +913,16 @@ _CVAR_TAIL = 0.05
 # See also: compute_ev_vectorized in nb56, analysis/sweep.py
 
 
-def _compute_ev_static(mu: float, sigma: float, bid_n: int) -> float:
+def _compute_ev_static(
+    mu: float, sigma: float, bid_n: int, bid_bonus: float = 0.0
+) -> float:
     """Compute expected net-differential value using Gaussian model.
 
     Identical to HybridOLSaBidder._compute_ev but as a module-level function.
     """
     if sigma == 0.0:
         if mu >= bid_n:
-            return 2.0 * mu - 10.0
+            return 2.0 * mu - 10.0 + bid_bonus * bid_n
         else:
             return mu - bid_n - 10.0
 
@@ -937,7 +944,7 @@ def _compute_ev_static(mu: float, sigma: float, bid_n: int) -> float:
     else:
         e_tricks_set = mu
 
-    make_ev = 2.0 * e_tricks_make - 10.0
+    make_ev = 2.0 * e_tricks_make - 10.0 + bid_bonus * bid_n
     set_ev = e_tricks_set - bid_n - 10.0
 
     return p_make * make_ev + p_set * set_ev
