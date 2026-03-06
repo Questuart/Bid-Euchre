@@ -394,8 +394,8 @@ degeneracy of always selecting the minimum legal bid was not flagged.
 
 **Fix required:** The payoff model must be revised so that bid level affects the
 make payoff, or the auction mechanism must be changed. This is a structural
-prerequisite — feature engineering (R1.5) and hyperparameter tuning cannot fix
-a degenerate auction.
+prerequisite — objective alignment (R1.5) and feature engineering (R1.6) and
+hyperparameter tuning cannot fix a degenerate auction.
 
 ### H1 vs H3: How to Distinguish
 
@@ -1319,8 +1319,9 @@ The current binary `partner_suit_match` conflates all three cases as "1". This i
 a design flaw that limits the feature's predictive value and may contribute to the
 model learning a noisy signal that destabilizes under distribution shift.
 
-**Resolution:** Formal R1.5 rung added to the master plan. R1.5 will replace the
-coarse partner representation with suit-aware interaction features:
+**Resolution:** Formal R1.6 rung added to the master plan for partner-semantics
+redesign. R1.5 is the objective-alignment rung (separate concern). R1.6 will
+replace the coarse partner representation with suit-aware interaction features:
 - `partner_level_same_suit` — exact-match trump support
 - `partner_level_same_color_offsuit` — same-color secondary support
 - `partner_level_off_color` — off-color alternative support
@@ -1329,7 +1330,7 @@ coarse partner representation with suit-aware interaction features:
 These are candidate-contract-relative (computed per suit being evaluated) and apply
 to suit contracts only. HIGH/LOW retain simpler partner handling.
 
-See `plans/r1_master_plan.md` §R1.5 for full specification.
+See `plans/r1_master_plan.md` §10.3a for full R1.6 specification.
 
 ### Investigation K: H10 Validation Pack — Analytical Proof + `bid_bonus` Fix
 
@@ -1505,30 +1506,38 @@ PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
 
 ---
 
-## 7. Relationship to R1.5 and R2
+## 7. Relationship to R1.5, R1.6, and R2
 
-**Rung sequencing (updated 2026-03-06):**
+**Rung definitions (formalized 2026-03-06):**
 
-Investigation L shifts the priority ordering. The decision layer is now the
-primary bottleneck, ahead of partner-semantics redesign.
+Investigation L confirms the decision layer as a major bottleneck. The informal
+"decision-layer rung" referenced in earlier iterations is now formally defined as
+**R1.5** in the Arc D ladder.
 
-- **R1 (current):** Retrain-first baseline with coarse partner features. H10
-  confirmed analytically; `bid_bonus` probe confirms decision layer is a major
-  control point. R1 cycle concludes with this finding.
-- **Next rung (decision-layer):** Build an objective-aligned bid policy —
-  either points-based decision layer, calibrated downstream policy, or
-  end-to-end bid-level model. This addresses the structural mismatch between
-  training objective (tricks) and evaluation metric (points). Takes priority
-  over feature-layer changes.
-- **R1.5 (partner-semantics):** Richer suit-aware partner features. Scope
-  unchanged, but deprioritized relative to decision-layer work. The residual
+- **R1 (concluded):** Trick-target rung with coarse partner features. H10 confirmed
+  analytically; `bid_bonus` probe confirms decision layer is a major control point.
+  R1 is preserved as a historical result — the H2H regression is real and informative.
+- **R1.5 (objective-alignment):** Replace trick prediction + hand-coded utility with
+  direct action-value / E[points] modeling. Addresses the structural mismatch between
+  training objective (tricks) and evaluation metric (points). Implementation spec in
+  plans/r1_5_training_plan.md (to be created in follow-up implementation-spec PR).
+- **R1.6 (partner-semantics):** Richer suit-aware partner features
+  (partner_level_same_suit, etc.). Scope unchanged from the original R1.5 definition,
+  but renumbered. Deprioritized relative to objective-alignment work. The residual
   suit deficit at bonus=0.25 may partially be addressable here.
-- **R2 (opponent context):** Deferred until decision layer and partner
-  semantics are stabilized.
+- **R2 (opponent context):** Deferred until R1.5 objective and R1.6 partner semantics
+  are stabilized.
 
-The pre-registered R2 context-feature protocol (plans/r2_follow_ups.md §F1)
-is reframed: partner redesign is R1.5 scope, R2 focuses on opponent context.
-Decision-layer work is a new rung inserted before R1.5 in priority order.
+### Program Decision
+
+1. **R1 is preserved as-is.** The H2H regression is a valid finding under the
+   trick-target architecture and should not be rewritten away.
+2. **R1.5 is the next rung.** It addresses the objective mismatch diagnosed by H10
+   and confirmed by Investigation L.
+3. **R1.6 follows R1.5.** Richer partner semantics are tested against the R1.5
+   objective, isolating the value of better features from the value of a better target.
+4. **`bid_bonus` is a diagnostic probe only.** It confirmed the bottleneck but is not
+   the architectural answer.
 
 ---
 

@@ -295,8 +295,9 @@ All HITL dependencies are now resolved:
 `check_config_membership()`, `check_notebook_gate()`, and `check_git_sha_consistency()`.
 
 The Arc D gate runner (PR-I2) wraps `compute_eligibility()` as an adapter,
-adding Arc D-specific Tier 2 gates on top. **No external blockers remain** --
-all infrastructure PRs can begin immediately.
+adding Arc D-specific Tier 2 gates on top. **No external HITL blockers remain** --
+all infrastructure PRs through R1 can begin immediately. R1.5 execution is
+blocked on its implementation-spec PR (plans/r1_5_training_plan.md, TBD).
 
 ### What Can Start Now
 
@@ -900,8 +901,11 @@ Wave 10 (after all rungs):
 P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R1.5a -> R1.5b -> R2b -> R3b -> R4b -> R5b -> F
 ```
 
-**No external blockers remain.** All HITL dependencies (#370, #372, #374, #375,
-#376) are merged. The only constraints are inter-PR dependencies within Arc D.
+**No external HITL blockers remain.** All HITL dependencies (#370, #372, #374,
+#375, #376) are merged. The only constraints are inter-PR dependencies within
+Arc D. Note: R1.5 execution is blocked on its implementation-spec PR
+(plans/r1_5_training_plan.md, TBD) — the rung relabeling is complete but
+the modeling contract is not yet specified.
 
 **Off critical path (can develop in parallel):**
 PR-I2, PR-I3, PR-I4, PR-R2a, PR-R3a, PR-R4a, PR-R5a -- all code-only PRs that
@@ -1187,8 +1191,9 @@ introduced at that rung:
 | Rung | Attribution question | Decomposition required |
 |------|---------------------|----------------------|
 | R1 | Coarse partner context + auction data shift | data-source effect vs partner-feature effect |
-| R1.5 | Richer partner semantics vs coarse partner | R1.5 feature effect vs R1 baseline (same data) |
-| R2 | Opponent context on top of stabilized partner | opponent-feature effect vs R1.5 partner baseline |
+| R1.5 | Objective alignment vs R1 trick-target baseline | objective-change effect (same features, different target) |
+| R1.6 | Richer partner semantics vs R1.5 (same objective) | R1.6 feature effect vs R1.5 baseline (same objective) |
+| R2 | Opponent context on top of stabilized partner | opponent-feature effect vs R1.6 partner baseline |
 | R3+ | Additional context families | Same pattern: isolate new family from existing |
 
 ### Scope Boundary

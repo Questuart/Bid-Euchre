@@ -10,12 +10,13 @@
 > design, protocols, failure modes), see `r1_master_plan.md`. For the R0–R5
 > ladder roadmap (wave structure, PR sequencing), see `arc_d_execution_plan.md`.
 
-> **Rung boundary note:** This plan covers R1 execution only. R1 must complete
-> its retrain-first baseline cycle before any R1.5 execution begins. R1.5 is a
-> formally defined subsequent rung for partner-semantics redesign — see
-> `r1_master_plan.md` §10.3. R1.5 scope is independent of R1 outcome: if R1
-> passes, R1.5 tests richer partner semantics; if R1 fails, R1.5 is elevated
-> in priority but its scope does not change.
+> **Rung boundary note:** This plan covers R1 execution only. R1 is complete.
+> The H2H regression is the honest result under the trick-target architecture.
+> R1.5 is a formally defined subsequent rung for **objective alignment** (NOT
+> partner-semantics) — see `r1_master_plan.md` §10.3. R1.6 is the
+> partner-semantics rung — see `r1_master_plan.md` §10.3a. R1.5 execution
+> uses a separate plan (plans/r1_5_training_plan.md, to be created in
+> follow-up implementation-spec PR).
 
 ---
 
@@ -315,10 +316,11 @@ identical with and without partner features), investigate before proceeding
 to H2H batteries. This catches the "features selected but unused" failure
 mode early.
 
-> **R1.5 context:** Regardless of whether R1 partner features show positive
-> contribution, R1.5 will proceed with redesigned partner-semantics features
-> (see `r1_master_plan.md` §10.3). The R1 counterfactual establishes the
-> baseline that R1.5 aims to improve upon.
+> **R1.5 context:** R1.5 is the objective-alignment rung (direct action-value
+> modeling). It replaces trick prediction + hand-coded utility with E[points]
+> modeling. Partner-semantics redesign is R1.6. See `r1_master_plan.md` §10.3
+> for R1.5 definition and §10.3a for R1.6. R1.5 execution details in
+> plans/r1_5_training_plan.md (to be created in follow-up implementation-spec PR).
 
 ### 3f. H10 Validation Pack — Bid-Level Degeneracy Proof + Fix (COMPLETED)
 
@@ -372,6 +374,29 @@ layer as the next rung, ahead of further feature engineering.
 
 **Important:** `bid_bonus` is a diagnostic probe only, not a production fix.
 It injects synthetic utility not grounded in game scoring rules.
+
+---
+
+## Post-R1 Transition
+
+R1 is CONCLUDED. Steps 4–12 below were designed for the trick-target objective.
+They are **SUPERSEDED** by R1.5 (objective-alignment) and should NOT be executed
+under this plan.
+
+### What Happens Next
+
+1. R1.5 implementation-spec PR: defines the action-value dataset schema, model
+   contract, and evaluation protocol. Creates plans/r1_5_training_plan.md
+   (does not exist yet — to be created in that PR).
+2. R1.5 execution: train action-value model, evaluate via ranking/regret + H2H.
+3. R1.6: richer partner semantics on top of R1.5 objective (separate plan).
+
+### Why Not Continue R1 Steps
+
+The R1 experiment sequence assumed trick prediction → bid utility → gameplay.
+Investigation L (PR #554) showed this chain breaks at the utility step. Running
+Steps 7–12 (threshold/lambda tuning, oracle re-analysis, ablation, gate) on a
+trick-target model would optimize the wrong thing. The correct path is R1.5.
 
 ---
 
@@ -724,18 +749,20 @@ table covering RETAIN/ADOPT combinations for threshold, lambda, and normalizer).
 
 ---
 
-## R1.5 / R2 Context-Feature Protocol (Pre-Registered)
+## R1.5 / R1.6 / R2 Context-Feature Protocol (Pre-Registered)
 
-**Partner semantics:** `plans/r1_master_plan.md` §10.3 (R1.5 rung definition)
+**Objective alignment:** plans/r1_5_training_plan.md (to be created in
+follow-up implementation-spec PR — does not exist yet)
+**Partner semantics:** `plans/r1_master_plan.md` §10.3a (R1.6 rung definition)
 **High/low confirmation:** `plans/r2_follow_ups.md` §F1
 
-**Rung sequencing:** R1.5 (partner-semantics redesign) precedes R2 (opponent
-context). Partner feature redesign items that were previously scoped as R2 are
-now R1.5 scope. R2 adds opponent context only, after partner semantics are
-stabilized.
+**Rung sequencing:** R1.5 (objective-alignment) precedes R1.6
+(partner-semantics redesign), which precedes R2 (opponent context). R1.5
+replaces the training target; R1.6 adds richer partner features; R2 adds
+opponent context. Each rung isolates exactly one change.
 
-R1.5 will replace coarse partner features with candidate-contract-relative
-relation-aware features (§10.3.1). R2 will run rebalanced training (≥10k
-hands/contract), full context pool forward selection (R1.5 partner + R2
+R1.6 will replace coarse partner features with candidate-contract-relative
+relation-aware features (§10.3a.1). R2 will run rebalanced training (≥10k
+hands/contract), full context pool forward selection (R1.6 partner + R2
 opponent), and either ablation (if features selected) or forced-inclusion
 sensitivity (if not). See the full protocol in the respective plan docs.

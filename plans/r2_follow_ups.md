@@ -3,15 +3,16 @@
 **Date created:** 2026-03-05 (updated 2026-03-05)
 **Source:** R1 training and evaluation sessions
 **Governing doc:** TBD (R2 master plan, when created)
-**Rung context:** `plans/r1_master_plan.md` §10 defines the R1 -> R1.5 -> R2 ladder
+**Rung context:** `plans/r1_master_plan.md` §10 defines the R1 → R1.5 → R1.6 → R2 ladder
 
-Items discovered during R1 execution that should be addressed at R1.5 or R2.
-Ordered by discovery date; will be prioritized when R1.5/R2 planning begins.
+Items discovered during R1 execution that should be addressed at R1.5, R1.6, or R2.
+Ordered by discovery date; will be prioritized when R1.5/R1.6/R2 planning begins.
 
-> **Rung boundary clarification (2026-03-05):** R1.5 is now a formally defined
-> rung for partner-semantics redesign. R2 scope is narrowed to **opponent
-> context only**, added after partner semantics are stabilized at R1.5.
-> Partner-related follow-ups below are marked with their target rung (R1.5 or R2).
+> **Rung boundary clarification (2026-03-06):** R1.5 is now a formally defined
+> rung for **objective alignment** (direct points-aware action-value modeling).
+> R1.6 is the partner-semantics redesign rung. R2 scope is narrowed to
+> **opponent context only**, added after R1.6 stabilizes.
+> Partner-related follow-ups below are marked with their target rung (R1.6 or R2).
 > See `r1_master_plan.md` §10 for full rung definitions.
 
 ---
@@ -21,7 +22,7 @@ Ordered by discovery date; will be prioritized when R1.5/R2 planning begins.
 | # | Follow-Up | Origin | Priority | Target Rung | Notes |
 |---|-----------|--------|----------|-------------|-------|
 | F1 | Context-feature confirmation for high/low | R1 Step 3c | High | R2 | Sample-size confound; requires rebalanced data (opponent context adds data volume) |
-| F2 | Partner-semantics redesign (relation-aware features) | R1 regression investigation | High | **R1.5** | Replaces coarse partner features; see `r1_master_plan.md` §10.3 |
+| F2 | Partner-semantics redesign (relation-aware features) | R1 regression investigation | High | **R1.6** | Replaces coarse partner features; see `r1_master_plan.md` §10.3a |
 
 ---
 
@@ -78,7 +79,7 @@ If forward selection still rejects `partner_bid_level`/`partner_passed` for high
 even with ≥10k hands:
 
 1. Train model with forced inclusion of all 3 R1 partner features for high/low
-   (or the R1.5 partner-semantics features if R1.5 precedes R2 confirmation)
+   (or the R1.6 partner-semantics features if R1.6 precedes R2 confirmation)
 2. Compare held-out R² vs standard-selected model
 3. Run 3-seed H2H (forced vs selected) at QUICK
 
@@ -91,13 +92,13 @@ Keep a context feature only if **all three conditions** hold:
 
 ---
 
-## F2: Partner-Semantics Redesign (R1.5 Scope)
+## F2: Partner-Semantics Redesign (R1.6 Scope)
 
 **Origin:** R1 regression investigation (2026-03-05) — H7 weight instability
 and H6 sparse partner signal identified as contributing factors to suit
 regression.
-**Target rung:** R1.5
-**Governing definition:** `plans/r1_master_plan.md` §10.3
+**Target rung:** R1.6
+**Governing definition:** `plans/r1_master_plan.md` §10.3a
 
 ### Problem
 
@@ -112,20 +113,20 @@ The R1 partner features (`partner_bid_level`, `partner_passed`,
 ### Solution
 
 Replace with candidate-contract-relative features that capture suit
-relationships. See `r1_master_plan.md` §10.3.1 for the full feature
+relationships. See `r1_master_plan.md` §10.3a.1 for the full feature
 specification: `partner_level_same_suit`, `partner_level_same_color_offsuit`,
 `partner_level_off_color`, `partner_passed`.
 
 ### Relationship to R2
 
-R1.5 stabilizes partner semantics **before** R2 adds opponent context. This
+R1.6 stabilizes partner semantics **before** R2 adds opponent context. This
 prevents conflating partner redesign with opponent signal in R2 attribution.
-R2 should NOT revisit partner feature design unless R1.5 results specifically
+R2 should NOT revisit partner feature design unless R1.6 results specifically
 indicate a remaining partner-semantics gap.
 
 ### Feature-Effect Testing Requirement
 
-R1.5 must include feature-effect testing per the standing requirement
+R1.6 must include feature-effect testing per the standing requirement
 (`r1_master_plan.md` §10.5): counterfactual feature-off inference, ablation
 deltas, slice analysis on feature-active hands, decision-shift audit, and
 instrument-labeled reporting.
