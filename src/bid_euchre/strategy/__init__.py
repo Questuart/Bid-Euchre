@@ -22,6 +22,7 @@ from .baselines import (
 
 # Bidding policies
 from .bidding import (
+    ActionValueBidder,
     AlwaysPassBidder,
     ArtifactBidder,
     BidAction,
@@ -37,6 +38,7 @@ from .bidding import (
     StrictHellRaiser,
     StrictRaiserBidder,  # backward-compat alias
     compute_best_bid,
+    enumerate_legal_actions,
 )
 
 # Greedy strategies
@@ -56,6 +58,7 @@ __all__ = [
     "Strategy",
     "card_value_for_dump",
     # Bidding
+    "ActionValueBidder",
     "BidAction",
     "BiddingObservation",
     "BiddingPolicy",
@@ -71,6 +74,7 @@ __all__ = [
     "StrictHellRaiser",
     "StrictRaiserBidder",
     "compute_best_bid",
+    "enumerate_legal_actions",
     # Baselines
     "BasicStrategy",
     "RandomLegalStrategy",

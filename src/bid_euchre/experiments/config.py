@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from ..strategy import (
+    ActionValueBidder,
     AlwaysHighestLegalStrategy,
     AlwaysLowestLegalStrategy,
     AlwaysPassBidder,
@@ -55,6 +56,7 @@ BIDDING_POLICY_REGISTRY: dict[str, type] = {
     "FixedBidder": FixedBidder,
     "OLSaBidder": OLSaBidder,
     "HybridOLSaBidder": HybridOLSaBidder,
+    "ActionValueBidder": ActionValueBidder,
 }
 
 STRATEGY_REQUIRED_PARAMS: dict[str, list[str]] = {
@@ -66,6 +68,7 @@ BIDDING_REQUIRED_PARAMS: dict[str, list[str]] = {
     "FixedBidder": ["n", "contract"],
     "OLSaBidder": ["artifact_path"],
     "HybridOLSaBidder": ["artifact_path"],
+    "ActionValueBidder": ["artifact_path"],
 }
 
 
