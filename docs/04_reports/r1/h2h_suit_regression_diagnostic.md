@@ -1155,8 +1155,12 @@ The original H7 causal chain (weight instability) was confirmed as a real mechan
 but NOT the primary cause. Two-stage training (PR #548/#549) stabilized base weights
 but produced identical regression (delta = -0.348). The structural cause is H10:
 
-1. `compute_best_bid()` with `bid_level_search=True` always selects the minimum
-   legal bid level because `make_payoff = 2t - 10` is independent of bid level.
+1. `compute_best_bid()` with `bid_level_search=True` and `risk_lambda=0.0` selects
+   the minimum legal bid in the stochastic case (sigma > 0) because EV is strictly
+   decreasing in bid level — `make_payoff = 2t - 10` is bid-independent while
+   `set_penalty` grows with bid. (In the degenerate sigma=0 case, EV is flat across
+   all made bids and the tiebreaker prefers higher bids — but sigma=0 never occurs
+   in practice with OLS residual variance.)
 2. In R0, all 4 seats bid (~96%), so the winning bid reaches 3-4 (looks normal).
 3. R1 partner features cause some seats to pass (bid rate ~49%), reducing auction
    competition. Winning bids drop to 1-2.
@@ -1341,16 +1345,23 @@ set_ev  = E[T|set] - bid_n - 10.0   (bid-dependent, penalty grows with bid)
 ```
 
 Since `make_ev` doesn't depend on `bid_n` but `set_ev` decreases with `bid_n`,
-total EV is monotonically non-increasing in `bid_n`. This was verified across
-100 (mu, sigma) combinations (mu ∈ {3.0, 5.0, 6.5, 8.0, 9.5} × sigma ∈
-{0.0, 0.5, 1.0, 1.5, 2.5}). Every case confirms: `compute_best_bid()` with
-`bid_level_search=True` always selects `min_legal = max(1, current_high_bid + 1)`.
+total EV is monotonically non-increasing in `bid_n`. For sigma > 0 (the regime
+relevant to all OLS models), EV is strictly decreasing and `compute_best_bid()`
+selects `min_legal`. For the degenerate sigma=0 case, EV is flat across all made
+bids and the code's tiebreaker (line 884: prefer higher bid on equal utility)
+selects the highest made bid, not min_legal. This edge case never occurs with
+OLS residual variance but is noted for completeness.
 
-> **Scope note:** This proof applies to the `risk_lambda=0.0` regime (current R1
-> configuration). With `risk_lambda > 0`, `compute_best_bid()` optimizes
-> `utility = ev - risk_penalty`, and the CVaR penalty term could in principle
-> create a non-monotonic utility surface. Since R0 and R1 both use `risk_lambda=0.0`,
-> this does not affect the current finding.
+Verified across 100 (mu, sigma) combinations (mu ∈ {3.0, 5.0, 6.5, 8.0, 9.5} ×
+sigma ∈ {0.0, 0.5, 1.0, 1.5, 2.5}). EV monotonicity confirmed in all cases.
+Min_legal selection confirmed for all sigma > 0 cases.
+
+> **Scope note:** This proof covers the `risk_lambda=0.0` regime (current R0 and
+> R1 configuration). `compute_best_bid()` optimizes `utility = ev - risk_penalty`
+> (bidding.py:879), not raw EV. With `risk_lambda > 0`, the CVaR penalty term
+> could in principle modify the utility surface. Since R0 and R1 both use
+> `risk_lambda=0.0` (penalty is zero), the EV-only proof is sufficient for
+> interpreting all current H2H results.
 
 **`bid_bonus` Fix:**
 
