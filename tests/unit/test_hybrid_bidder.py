@@ -776,3 +776,41 @@ def test_zero_partner_features_ablation_choose_bid(tmp_path: Path):
         f"Normal bid with transcript ({action_normal.n} {action_normal.contract}) "
         f"should differ from ablated ({action_ablated.n} {action_ablated.contract})"
     )
+
+
+def test_bid_bonus_wiring(tmp_path: Path):
+    """bid_bonus param flows from HybridOLSaBidder through to compute_best_bid."""
+    # Use high bias so mu is large enough to bid (empty hand → mu = bias).
+    # suit_bias=7.0 with sigma=sqrt(2.5)≈1.58 → should bid.
+    # With bid_level_search=True and bid_bonus=0.0, bid_n = min_legal (=1)
+    # due to H10 degeneracy. With bid_bonus=1.0, bid_n near floor(mu).
+    path = _make_artifact(
+        tmp_path,
+        suit_bias=7.0,
+        high_bias=7.0,
+        low_bias=7.0,
+    )
+    obs = BiddingObservation(
+        hand=[],
+        seat=0,
+        dealer_seat=3,
+        current_high_bid=0,
+        auction_transcript=(),
+    )
+
+    bidder_no_bonus = HybridOLSaBidder(path, bid_level_search=True, bid_bonus=0.0)
+    action_no = bidder_no_bonus.choose_bid(obs)
+    # H10: with bonus=0, bid_level_search always picks min_legal
+    assert action_no.n == 1, f"Expected bid 1 with bonus=0, got {action_no.n}"
+
+    bidder_with_bonus = HybridOLSaBidder(path, bid_level_search=True, bid_bonus=1.0)
+    action_yes = bidder_with_bonus.choose_bid(obs)
+    # With bonus=1.0, should bid higher (near floor(mu))
+    assert action_yes.n > 1, f"Expected bid > 1 with bonus=1.0, got {action_yes.n}"
+
+
+def test_bid_bonus_default_zero(tmp_path: Path):
+    """bid_bonus defaults to 0.0 — backward compatible."""
+    path = _make_artifact(tmp_path)
+    bidder = HybridOLSaBidder(path)
+    assert bidder.bid_bonus == 0.0
