@@ -232,6 +232,14 @@ position; deviations require HITL approval.
 ### 4.2 Class Design
 
 ```python
+def predict_ols(model_dict: dict, features: np.ndarray) -> float:
+    """Dot-product prediction from a per-model artifact dict.
+
+    Each model_dict has: {"coefficients": [...], "feature_names": [...], ...}
+    """
+    return np.dot(model_dict["coefficients"], features)
+
+
 class ActionValueBidder(BiddingPolicy):
     """
     Action-value bidder: selects the legal action with highest
@@ -243,14 +251,17 @@ class ActionValueBidder(BiddingPolicy):
 
     def __init__(self, artifact_path: str):
         artifact = load_artifact(artifact_path)
+        models = artifact["models"]  # nested under "models" key
         self.models = {
-            "suit": artifact["suit_model"],
-            "high": artifact["high_model"],
-            "low": artifact["low_model"],
+            "suit": models["suit"],
+            "high": models["high"],
+            "low": models["low"],
         }
-        self.pass_model = artifact["pass_model"]
-        self.feature_names = artifact["feature_names"]
-        self.context_features = artifact.get("context_features", [])
+        self.pass_model = models["pass"]
+        # feature_names are per-model: models["suit"]["feature_names"], etc.
+        self.context_features = artifact.get("metadata", {}).get(
+            "context_features", []
+        )
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         legal = enumerate_legal_actions(obs)
@@ -261,14 +272,15 @@ class ActionValueBidder(BiddingPolicy):
 
         for action in legal:
             if action.is_pass():
-                value = self.pass_model.predict(state_features)
+                # pass model: state-only features, no bid_n/bid_n_sq
+                value = predict_ols(self.pass_model, state_features)
             else:
                 contract_type, trump = action.to_contract_tuple()
                 family = contract_type  # "suit", "high", or "low"
                 features = extract_action_features(
                     obs, family, action.n
                 )  # 54 columns
-                value = self.models[family].predict(features)
+                value = predict_ols(self.models[family], features)
 
             if value > best_value:
                 best_value = value
