@@ -1,4 +1,5 @@
 {
+  "schema": "h2h_roster_v1",
   "description": "H2H roster for bid_bonus causal probe sweep. Tests whether breaking bid-level search degeneracy (H10) resolves the R1 H2H regression. bid_bonus is a DIAGNOSTIC PROBE ONLY — not a production fix.",
   "bidders": [
     {

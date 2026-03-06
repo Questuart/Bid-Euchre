@@ -3,7 +3,7 @@
 **Date:** 2026-03-04 (updated 2026-03-06)
 **Governing doc:** `plans/r1_master_plan.md` §3 and §10
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
-**Status:** Decision-layer hypothesis CONFIRMED. `bid_bonus=0.25` reverses R1→R0 regression (+0.407 net_eppd, CI [0.19, 0.62]). Next: principled points-based decision layer.
+**Status:** Decision layer confirmed as major bottleneck. `bid_bonus=0.25` reverses overall R1→R0 delta (+0.407 net_eppd, CI [0.19, 0.62]), though suit-specific deficit persists (-0.456). Next: objective-aligned decision layer rung.
 
 > **Document role:** This is the **R1 operational execution checklist** — CLI
 > commands, gate results, artifact paths. For strategic governance (feature
@@ -364,10 +364,11 @@ R1 full at bid_bonus ∈ {0.0, 0.25, 0.5, 0.75, 1.0} + R0 baseline.
 - **bonus=0.50:** +0.120 vs R0 (CI [-0.12, +0.37]) — not significant
 - **bonus=0.75+:** ~+0.11 vs R0, not significant, overbidding starts
 
-**Conclusion:** Decision-layer hypothesis CONFIRMED. R1 model has superior
-prediction quality but was crippled by min_legal bid selection. Even a crude
-correction (bid_bonus=0.25) reverses the regression. This motivates building
-a principled points-based decision layer.
+**Conclusion:** Decision layer confirmed as major bottleneck. R1 model has
+superior prediction quality but was constrained by min_legal bid selection.
+bid_bonus=0.25 reverses the overall R1→R0 delta, though the suit-specific
+deficit persists (-0.456). This motivates an objective-aligned decision
+layer as the next rung, ahead of further feature engineering.
 
 **Important:** `bid_bonus` is a diagnostic probe only, not a production fix.
 It injects synthetic utility not grounded in game scoring rules.

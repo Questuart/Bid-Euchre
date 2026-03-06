@@ -1446,9 +1446,11 @@ use `bid_level_search=True`, `risk_lambda=0.0`. QUICK mode: 36 matchups ×
 
 **Key findings:**
 
-1. **Decision-layer hypothesis CONFIRMED.** `bid_bonus=0.25` reverses the
-   R1→R0 regression from -0.348 to +0.407 net_eppd — a swing of +0.755.
+1. **Decision layer is a major bottleneck.** `bid_bonus=0.25` reverses the
+   *overall* R1→R0 delta from -0.348 to +0.407 net_eppd — a swing of +0.755.
    The CI excludes zero in both directions, confirming this is a real effect.
+   However, the suit-specific delta remains negative (-0.456) at this setting,
+   so the decision layer does not fully explain the original suit regression.
 
 2. **Non-monotonic response.** bid_bonus=0.25 is the sweet spot. Higher
    values (0.50+) still beat R0 on point estimate but lose significance
@@ -1468,12 +1470,15 @@ use `bid_level_search=True`, `risk_lambda=0.0`. QUICK mode: 36 matchups ×
    for suit and wins only 39.8% of auctions. At bonus=0.25, average bid
    rises to 3.95 and auction win rate jumps to 68.2%.
 
-**Interpretation:** The R1 model has superior prediction quality (R² 0.22→0.63)
-but was crippled by the decision layer forcing min_legal bids. The probe
-demonstrates that even a crude correction (+0.25×bid_n) is sufficient to
-unlock the model's potential. This motivates building a principled
-points-based decision layer that replaces `_compute_ev_static()` with a
-function calibrated on actual game outcomes.
+**Interpretation:** The decision layer is a major control point: changing it
+reverses the overall R1→R0 delta despite leaving the suit-specific deficit
+partially unresolved. The R1 model has superior prediction quality
+(R² 0.22→0.63) but was constrained by the decision layer forcing min_legal
+bids. The residual suit deficit at bonus=0.25 suggests an additional
+suit-specific factor beyond bid-level selection (possibly contract-selection
+dynamics or suit-specific model calibration). This motivates building a
+principled objective-aligned decision layer as the next rung, rather than
+further feature engineering.
 
 **What bid_bonus is NOT:** A production bidding rule. It adds utility that
 doesn't exist in the game's scoring rules (the game doesn't reward higher
@@ -1502,21 +1507,28 @@ PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
 
 ## 7. Relationship to R1.5 and R2
 
-**Rung sequencing (updated 2026-03-05):**
-- **R1:** Retrain-first baseline with current coarse partner features. Gate-critical
-  H2H/comparator rerun. Investigation C partner-off counterfactual. Minimal rescue
-  fallback if needed.
-- **R1.5:** Richer partner-context semantics only (suit-aware features above).
-  Freeze everything else for attribution clarity. Isolates partner-context gains.
-- **R2:** Opponent context, added after partner-context semantics are stabilized.
+**Rung sequencing (updated 2026-03-06):**
 
-R1.5 is committed regardless of R1 retrain outcome. If R1 passes cleanly, R1.5
-still runs to measure the incremental value of richer partner semantics. If R1
-fails, R1.5 has higher urgency but unchanged scope.
+Investigation L shifts the priority ordering. The decision layer is now the
+primary bottleneck, ahead of partner-semantics redesign.
+
+- **R1 (current):** Retrain-first baseline with coarse partner features. H10
+  confirmed analytically; `bid_bonus` probe confirms decision layer is a major
+  control point. R1 cycle concludes with this finding.
+- **Next rung (decision-layer):** Build an objective-aligned bid policy —
+  either points-based decision layer, calibrated downstream policy, or
+  end-to-end bid-level model. This addresses the structural mismatch between
+  training objective (tricks) and evaluation metric (points). Takes priority
+  over feature-layer changes.
+- **R1.5 (partner-semantics):** Richer suit-aware partner features. Scope
+  unchanged, but deprioritized relative to decision-layer work. The residual
+  suit deficit at bonus=0.25 may partially be addressable here.
+- **R2 (opponent context):** Deferred until decision layer and partner
+  semantics are stabilized.
 
 The pre-registered R2 context-feature protocol (plans/r2_follow_ups.md §F1)
-is reframed: partner redesign is now R1.5 scope, R2 focuses on opponent context
-after stabilized partner-context baseline.
+is reframed: partner redesign is R1.5 scope, R2 focuses on opponent context.
+Decision-layer work is a new rung inserted before R1.5 in priority order.
 
 ---
 
