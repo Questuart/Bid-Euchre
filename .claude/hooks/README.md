@@ -77,6 +77,24 @@ Then restart your Claude session in that directory.
 - This text is injected into Claude's conversation context on the next turn
 - The directive instructs Claude to invoke the skill without waiting for user input
 
+### `post-plan-review.sh` (PostToolUse)
+
+**Trigger:** After any Write tool call
+
+**Purpose:** Auto-invokes `/reviewing-plans` skill after plan file creation
+
+**Behavior:**
+1. Extracts `tool_input.file_path` from the Write tool's JSON input
+2. Checks if the path matches `*/plans/*.md` (excludes `TEMPLATE.md`)
+3. If yes: emits `additionalContext` directive triggering `/reviewing-plans`
+4. The skill reviews the plan against repo conventions and flags implementation risks
+
+**Configuration:** Registered in `.claude/settings.json` under `PostToolUse` with matcher `"Write"`.
+
+**Review checks:** 10 convention checks (P1-P10) covering code-first planning, determinism, scope,
+testing strategy, and template completeness. 5 risk flags (R1-R5) for circular imports, stale data,
+missing exports, scope creep, and gate semantics. See `.claude/skills/reviewing-plans/SKILL.md`.
+
 ## Helper Script
 
 ### `../scripts/claude-worktree.sh`
@@ -107,33 +125,16 @@ claude-work  # Uses auto-generated timestamp branch
 
 ## Configuration
 
-Hooks are registered in `.claude/settings.local.json`:
+Hooks are registered across two files:
 
-```json
-"hooks": {
-  "SessionStart": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-reminder.sh",
-          "statusMessage": "Checking worktree status..."
-        }
-      ]
-    }
-  ],
-  "UserPromptSubmit": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-guard.sh"
-        }
-      ]
-    }
-  ]
-}
-```
+**`.claude/settings.json`** (committed, shared):
+- `SessionStart` → `compact-context.sh`
+- `PostToolUse` (Write) → `post-plan-review.sh`
+
+**`.claude/settings.local.json`** (gitignored, per-machine):
+- `SessionStart` → `worktree-reminder.sh`
+- `UserPromptSubmit` → `worktree-guard.sh`
+- `PostToolUse` (Bash) → `post-pr-review.sh`
 
 ## Limitations
 

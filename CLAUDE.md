@@ -31,6 +31,11 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 - When the user asks for a "plan", produce ONLY a written plan document — do NOT begin implementation.
 - Always ask clarifying questions about scope before starting multi-PR plans.
 - Save plans as markdown files in a `plans/` directory.
+- Do not use EnterPlanMode as a substitute for file-based planning — always write plans as markdown files. Users may still invoke `/plan` for interactive exploration.
+- For canonical multi-step plans (multi-PR, rung-level): save to `plans/<name>.md`
+- For session-scoped plans (single PR, bugfix, small feature): save to `plans/sessions/YYYY-MM-DD_<slug>.md`
+- Every plan file should include an `## Outcome` section (filled after implementation) linking to resulting PR(s) or noting abandonment.
+- A PostToolUse hook auto-triggers `/reviewing-plans` after every plan file creation — see `.claude/hooks/post-plan-review.sh`.
 
 ### Planning Rules
 
