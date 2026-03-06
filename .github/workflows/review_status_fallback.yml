@@ -1,0 +1,46 @@
+name: Review Status Fallback
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Hourly
+
+jobs:
+  check-stuck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Find stuck PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+
+          # Find open PRs where reviewing-changes has been pending > 1 hour
+          gh api "repos/${REPO}/pulls" --jq '.[] | select(.state == "open") | .number' | while read -r PR_NUM; do
+            HEAD_SHA=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefOid -q .headRefOid)
+
+            # Get the reviewing-changes status
+            STATUS=$(gh api "repos/${REPO}/commits/${HEAD_SHA}/status" \
+              --jq '.statuses[] | select(.context == "reviewing-changes") | .state' 2>/dev/null || echo "missing")
+            CREATED=$(gh api "repos/${REPO}/commits/${HEAD_SHA}/status" \
+              --jq '.statuses[] | select(.context == "reviewing-changes") | .created_at' 2>/dev/null || echo "")
+
+            if [ "$STATUS" = "pending" ] && [ -n "$CREATED" ]; then
+              AGE_SECONDS=$(( $(date +%s) - $(date -d "$CREATED" +%s) ))
+              if [ "$AGE_SECONDS" -gt 3600 ]; then
+                echo "PR #${PR_NUM}: reviewing-changes stuck pending for ${AGE_SECONDS}s"
+                gh pr comment "$PR_NUM" --repo "$REPO" --body "$(cat <<'COMMENT'
+          **Review status fallback:** `reviewing-changes` has been `pending` for >1 hour.
+
+          The Claude session may have ended before completing review. To unblock:
+
+          1. Re-run `/reviewing-changes` in a new Claude Code session, **or**
+          2. Manually set the status:
+             ```bash
+             scripts/internal/set_review_status.sh success "Manual override"
+             ```
+          COMMENT
+          )"
+              fi
+            fi
+          done
