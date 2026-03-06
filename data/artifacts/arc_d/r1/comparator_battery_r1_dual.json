@@ -1,0 +1,58 @@
+{
+  "schema": "arc_d_comparator_v1",
+  "seed": 42,
+  "n_per": 5000,
+  "gate_status": "PASS",
+  "bidders": {
+    "hybrid_olsa_full_r1": {
+      "net_eppd": 2.1026,
+      "eppd": 4.8066,
+      "bid_rate": 0.7514,
+      "make_rate": 0.998402981101943,
+      "cvar_5": null,
+      "net_cvar_5": null
+    },
+    "hybrid_olsa_r1": {
+      "net_eppd": 2.1082,
+      "eppd": 4.8444,
+      "bid_rate": 0.7584,
+      "make_rate": 0.9984177215189873,
+      "cvar_5": null,
+      "net_cvar_5": null
+    },
+    "modeloespecifico_r1": {
+      "net_eppd": -10.4944,
+      "eppd": -6.3806,
+      "bid_rate": 1.0,
+      "make_rate": 0.1294,
+      "cvar_5": null,
+      "net_cvar_5": null
+    },
+    "hybrid_olsa_full_r0": {
+      "net_eppd": 2.1708,
+      "eppd": 6.0842,
+      "bid_rate": 1.0,
+      "make_rate": 0.9992,
+      "cvar_5": null,
+      "net_cvar_5": null
+    },
+    "hybrid_olsa_r0": {
+      "net_eppd": 2.1432,
+      "eppd": 6.069,
+      "bid_rate": 0.9996,
+      "make_rate": 0.9995998399359743,
+      "cvar_5": null,
+      "net_cvar_5": null
+    },
+    "modeloespecifico_r0": {
+      "net_eppd": 1.988,
+      "eppd": 5.7234,
+      "bid_rate": 1.0,
+      "make_rate": 0.9372,
+      "cvar_5": null,
+      "net_cvar_5": null
+    }
+  },
+  "mode": "dual_seat",
+  "batch_id": "auction_comparator_r1_dual_42_20260306_180739"
+}

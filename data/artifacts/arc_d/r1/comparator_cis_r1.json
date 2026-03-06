@@ -1,0 +1,256 @@
+{
+  "schema": "comparator_cis_v1",
+  "generated_at": "2026-03-06T18:00:00+00:00",
+  "seed": 42,
+  "n_bootstrap": 10000,
+  "mode": "dual_seat",
+  "batch_manifest": "batch_manifest_auction_comparator_r1_dual_42_20260306_180739.json",
+  "ranked_order": [
+    "hybrid_olsa_full_r0",
+    "hybrid_olsa_r0",
+    "hybrid_olsa_r1",
+    "hybrid_olsa_full_r1",
+    "modeloespecifico_r0",
+    "modeloespecifico_r1"
+  ],
+  "bidders": {
+    "hybrid_olsa_full_r1": {
+      "deals_total": 5000,
+      "hands_with_bids": 3757,
+      "bid_rate": 0.7514,
+      "make_rate": 0.998402981101943,
+      "eppd": 4.8066,
+      "net_eppd": 2.1026,
+      "cvar_5": 3.2245989304812834,
+      "net_cvar_5": -3.4598930481283423,
+      "net_eppd_ci": [
+        2.1026,
+        2.0234,
+        2.1848
+      ],
+      "eppd_ci": [
+        4.8066,
+        4.7212,
+        4.8908
+      ],
+      "cvar_5_ci": [
+        3.2245989304812834,
+        3.021390374331551,
+        3.406417112299465
+      ],
+      "net_cvar_5_ci": [
+        -3.4598930481283423,
+        -3.802139037433155,
+        -3.144385026737968
+      ]
+    },
+    "hybrid_olsa_r1": {
+      "deals_total": 5000,
+      "hands_with_bids": 3792,
+      "bid_rate": 0.7584,
+      "make_rate": 0.9984177215189873,
+      "eppd": 4.8444,
+      "net_eppd": 2.1082,
+      "cvar_5": 3.1746031746031744,
+      "net_cvar_5": -3.560846560846561,
+      "net_eppd_ci": [
+        2.1082,
+        2.028395,
+        2.189605
+      ],
+      "eppd_ci": [
+        4.8444,
+        4.7602,
+        4.928805
+      ],
+      "cvar_5_ci": [
+        3.1746031746031744,
+        2.9682539682539684,
+        3.365079365079365
+      ],
+      "net_cvar_5_ci": [
+        -3.560846560846561,
+        -3.9153439153439153,
+        -3.2275132275132274
+      ]
+    },
+    "modeloespecifico_r1": {
+      "deals_total": 5000,
+      "hands_with_bids": 5000,
+      "bid_rate": 1.0,
+      "make_rate": 0.1294,
+      "eppd": -6.3806,
+      "net_eppd": -10.4944,
+      "cvar_5": -10.0,
+      "net_cvar_5": -16.216,
+      "net_eppd_ci": [
+        -10.4944,
+        -10.672,
+        -10.3144
+      ],
+      "eppd_ci": [
+        -6.3806,
+        -6.534409999999999,
+        -6.223595
+      ],
+      "cvar_5_ci": [
+        -10.0,
+        -10.0,
+        -10.0
+      ],
+      "net_cvar_5_ci": [
+        -16.216,
+        -16.368,
+        -16.048
+      ]
+    },
+    "hybrid_olsa_full_r0": {
+      "deals_total": 5000,
+      "hands_with_bids": 5000,
+      "bid_rate": 1.0,
+      "make_rate": 0.9992,
+      "eppd": 6.0842,
+      "net_eppd": 2.1708,
+      "cvar_5": 2.796,
+      "net_cvar_5": -4.36,
+      "net_eppd_ci": [
+        2.1708,
+        2.0828,
+        2.259
+      ],
+      "eppd_ci": [
+        6.0842,
+        6.0402,
+        6.1282
+      ],
+      "cvar_5_ci": [
+        2.796,
+        2.7,
+        2.928
+      ],
+      "net_cvar_5_ci": [
+        -4.36,
+        -4.504099999999998,
+        -4.116
+      ]
+    },
+    "hybrid_olsa_r0": {
+      "deals_total": 5000,
+      "hands_with_bids": 4998,
+      "bid_rate": 0.9996,
+      "make_rate": 0.9995998399359743,
+      "eppd": 6.069,
+      "net_eppd": 2.1432,
+      "cvar_5": 2.8273092369477912,
+      "net_cvar_5": -4.321285140562249,
+      "net_eppd_ci": [
+        2.1432,
+        2.0559950000000002,
+        2.2294
+      ],
+      "eppd_ci": [
+        6.069,
+        6.0249950000000005,
+        6.1124
+      ],
+      "cvar_5_ci": [
+        2.8273092369477912,
+        2.751004016064257,
+        2.927710843373494
+      ],
+      "net_cvar_5_ci": [
+        -4.321285140562249,
+        -4.449799196787149,
+        -4.128514056224899
+      ]
+    },
+    "modeloespecifico_r0": {
+      "deals_total": 5000,
+      "hands_with_bids": 5000,
+      "bid_rate": 1.0,
+      "make_rate": 0.9372,
+      "eppd": 5.7234,
+      "net_eppd": 1.988,
+      "cvar_5": -5.144,
+      "net_cvar_5": -11.192,
+      "net_eppd_ci": [
+        1.988,
+        1.868,
+        2.1064049999999996
+      ],
+      "eppd_ci": [
+        5.7234,
+        5.637795000000001,
+        5.8058
+      ],
+      "cvar_5_ci": [
+        -5.144,
+        -5.312,
+        -4.984
+      ],
+      "net_cvar_5_ci": [
+        -11.192,
+        -11.252,
+        -11.136
+      ]
+    }
+  },
+  "pairwise_significance": [
+    {
+      "bidder_a": "hybrid_olsa_full_r0",
+      "bidder_b": "hybrid_olsa_r0",
+      "net_eppd_diff": 0.027599999999999625,
+      "p_value": 0.6557
+    },
+    {
+      "bidder_a": "hybrid_olsa_r0",
+      "bidder_b": "hybrid_olsa_r1",
+      "net_eppd_diff": 0.03500000000000014,
+      "p_value": 0.5649
+    },
+    {
+      "bidder_a": "hybrid_olsa_r1",
+      "bidder_b": "hybrid_olsa_full_r1",
+      "net_eppd_diff": 0.005600000000000271,
+      "p_value": 0.9248
+    },
+    {
+      "bidder_a": "hybrid_olsa_full_r1",
+      "bidder_b": "modeloespecifico_r0",
+      "net_eppd_diff": 0.11459999999999981,
+      "p_value": 0.117
+    },
+    {
+      "bidder_a": "modeloespecifico_r0",
+      "bidder_b": "modeloespecifico_r1",
+      "net_eppd_diff": 12.4824,
+      "p_value": 0.0
+    }
+  ],
+  "run_directories": {
+    "hybrid_olsa_full_r1": [
+      "auction_comparator_r1_dual_hybrid_olsa_full_r1_team0_42_20260306_100514",
+      "auction_comparator_r1_dual_hybrid_olsa_full_r1_team1_42_20260306_100533"
+    ],
+    "hybrid_olsa_r1": [
+      "auction_comparator_r1_dual_hybrid_olsa_r1_team0_42_20260306_100550",
+      "auction_comparator_r1_dual_hybrid_olsa_r1_team1_42_20260306_100605"
+    ],
+    "modeloespecifico_r1": [
+      "auction_comparator_r1_dual_modeloespecifico_r1_team0_42_20260306_100620",
+      "auction_comparator_r1_dual_modeloespecifico_r1_team1_42_20260306_100624"
+    ],
+    "hybrid_olsa_full_r0": [
+      "auction_comparator_r1_dual_hybrid_olsa_full_r0_team0_42_20260306_100629",
+      "auction_comparator_r1_dual_hybrid_olsa_full_r0_team1_42_20260306_100644"
+    ],
+    "hybrid_olsa_r0": [
+      "auction_comparator_r1_dual_hybrid_olsa_r0_team0_42_20260306_100659",
+      "auction_comparator_r1_dual_hybrid_olsa_r0_team1_42_20260306_100714"
+    ],
+    "modeloespecifico_r0": [
+      "auction_comparator_r1_dual_modeloespecifico_r0_team0_42_20260306_100729",
+      "auction_comparator_r1_dual_modeloespecifico_r0_team1_42_20260306_100734"
+    ]
+  }
+}
