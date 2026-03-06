@@ -1,0 +1,54 @@
+name: Governance
+
+on:
+  pull_request:
+    branches: [main]
+    # No paths-ignore — runs on ALL PRs including plan/docs-only
+
+concurrency:
+  group: governance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR metadata check
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          BODY_LENGTH=$(echo "$PR_BODY" | wc -c)
+          if [ "$BODY_LENGTH" -lt 20 ]; then
+            echo "::warning::PR description is very short. Use the PR template from .github/pull_request_template.md"
+          fi
+
+      - name: Plan file lint
+        run: |
+          PLAN_FILES=$(git diff --name-only origin/main...HEAD -- 'plans/*.md' 'plans/**/*.md' 2>/dev/null || true)
+          if [ -n "$PLAN_FILES" ]; then
+            echo "Plan files changed:"
+            echo "$PLAN_FILES"
+            FAIL=0
+            for f in $PLAN_FILES; do
+              if [ -f "$f" ]; then
+                echo "  Checking: $f"
+                if ! grep -q "^## Goal" "$f"; then
+                  echo "::warning file=$f::Missing '## Goal' section"
+                fi
+                if ! grep -q "^## Outcome" "$f"; then
+                  echo "::warning file=$f::Missing '## Outcome' section"
+                fi
+              fi
+            done
+          else
+            echo "No plan files changed — skipping plan lint"
+          fi
+
+      - name: Governance passed
+        run: echo "All governance checks passed"
