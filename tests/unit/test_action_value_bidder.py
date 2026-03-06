@@ -407,14 +407,14 @@ class TestActionValueBidder:
         with pytest.raises(ValueError, match="pass model feature_names mismatch"):
             ActionValueBidder(artifact_path=path)
 
-    def test_accepts_artifact_without_feature_names(self):
-        """Artifacts without feature_names load without error (backward compat)."""
+    def test_rejects_artifact_without_feature_names(self):
+        """action_value_olsa_v1 requires feature_names — no legacy compat."""
         artifact = _make_mock_artifact()
         for model in artifact["models"].values():
             del model["feature_names"]
         path = self._write_artifact(artifact)
-        bidder = ActionValueBidder(artifact_path=path)
-        assert "suit" in bidder.models
+        with pytest.raises(ValueError, match="missing required 'feature_names'"):
+            ActionValueBidder(artifact_path=path)
 
 
 # ── Pass proxy encoding ───────────────────────────────────

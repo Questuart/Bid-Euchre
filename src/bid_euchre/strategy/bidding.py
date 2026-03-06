@@ -1522,25 +1522,30 @@ class ActionValueBidder(BiddingPolicy):
 
         # Validate feature_names match expected runtime feature order.
         # OLS is a dot product — mismatched feature order silently mispredicts.
+        # feature_names is REQUIRED for action_value_olsa_v1 (no legacy surface).
         expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
         for family in ("suit", "high", "low"):
             model = self.models[family]
-            if "feature_names" in model:
-                if list(model["feature_names"]) != expected_bid_features:
-                    raise ValueError(
-                        f"Artifact {family} model feature_names mismatch. "
-                        f"Expected {len(expected_bid_features)} features: "
-                        f"{expected_bid_features[:3]}...{expected_bid_features[-2:]}, "
-                        f"got {list(model['feature_names'])[:3]}..."
-                        f"{list(model['feature_names'])[-2:]}"
-                    )
-        if "feature_names" in self.pass_model:
-            if list(self.pass_model["feature_names"]) != STATE_FEATURE_NAMES:
+            if "feature_names" not in model:
                 raise ValueError(
-                    f"Artifact pass model feature_names mismatch. "
-                    f"Expected {len(STATE_FEATURE_NAMES)} state-only features, "
-                    f"got {len(self.pass_model['feature_names'])} features."
+                    f"Artifact {family} model missing required 'feature_names'"
                 )
+            if list(model["feature_names"]) != expected_bid_features:
+                raise ValueError(
+                    f"Artifact {family} model feature_names mismatch. "
+                    f"Expected {len(expected_bid_features)} features: "
+                    f"{expected_bid_features[:3]}...{expected_bid_features[-2:]}, "
+                    f"got {list(model['feature_names'])[:3]}..."
+                    f"{list(model['feature_names'])[-2:]}"
+                )
+        if "feature_names" not in self.pass_model:
+            raise ValueError("Artifact pass model missing required 'feature_names'")
+        if list(self.pass_model["feature_names"]) != STATE_FEATURE_NAMES:
+            raise ValueError(
+                f"Artifact pass model feature_names mismatch. "
+                f"Expected {len(STATE_FEATURE_NAMES)} state-only features, "
+                f"got {len(self.pass_model['feature_names'])} features."
+            )
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
