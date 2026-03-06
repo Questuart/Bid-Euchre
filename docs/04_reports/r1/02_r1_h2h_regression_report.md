@@ -49,17 +49,6 @@ frozen in the baseline statement. No new H2H runs were performed for this
 closeout — the existing evidence is sufficient and re-running would not change
 the diagnosis.
 
-## Self-Play Sanity
-
-R1 self-play win rates showed a downward shift from R0 levels. This is
-consistent with R1's increased bidding aggression (better trick predictions
-lead to higher confidence, triggering more bids at minimum legal level due to
-H10). More bids at minimum level means more set opportunities, reducing
-self-play win rate.
-
-Self-play win rate is not a quality signal for R1 — it reflects the interaction
-between improved prediction and degenerate bid-level selection.
-
 ## Rung-over-Rung Deltas
 
 ### Primary: R1 Full vs R0 Full
