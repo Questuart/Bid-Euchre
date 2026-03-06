@@ -22,7 +22,7 @@ For current project state, consult `r1_master_plan.md` first.
 
 Applies 31 review decisions from `plans/archive/arc_d_gap_analysis.md`. Key changes:
 
-- **20 PRs** (was 16): added PR-P0 (net_eppd switch), PR-I4 (reporting), PR-R1.5a, PR-R1.5b
+- **22 PRs** (was 16): added PR-P0 (net_eppd switch), PR-I4 (reporting), PR-R1.5a/b (objective-alignment), PR-R1.6a/b (partner-semantics)
 - **Primary metric:** `net_eppd` (was `eppd`) — net point differential per deal
 - **Dual-arm design:** OLSa_Full (promotional) + OLSa (attribution) at every rung
 - **Always-advance gate:** PROMOTED / ADVANCED / HALT (was blocking PROMOTE/REJECT)
@@ -46,7 +46,7 @@ context-aware risk-adjusted EV bidder, progressively incorporating bidding
 context from auction transcripts.
 
 **What this document is:**
-- A complete, decision-final execution plan decomposed into 20 PRs
+- A complete, decision-final execution plan decomposed into 22 PRs
 - Every PR is implementable without further product decisions
 - All governance rules are embedded as requirements for execution agents
 
@@ -295,8 +295,9 @@ All HITL dependencies are now resolved:
 `check_config_membership()`, `check_notebook_gate()`, and `check_git_sha_consistency()`.
 
 The Arc D gate runner (PR-I2) wraps `compute_eligibility()` as an adapter,
-adding Arc D-specific Tier 2 gates on top. **No external blockers remain** --
-all infrastructure PRs can begin immediately.
+adding Arc D-specific Tier 2 gates on top. **No external HITL blockers remain** --
+all infrastructure PRs through R1 can begin immediately. R1.5 execution is
+blocked on its implementation-spec PR (plans/r1_5_training_plan.md, TBD).
 
 ### What Can Start Now
 
@@ -541,17 +542,70 @@ with documented rationale.
 
 ---
 
-### Phase R1.5 -- Partner-Semantics Enrichment (Added 2026-03-05)
+### Phase R1.5 -- Objective Alignment (Relabeled 2026-03-06)
 
-> **Status: PLANNED** — Contingency rung. Blocked until R1 regression resolved.
+> **Status: PLANNED** — Next rung after R1. Blocked on implementation-spec PR
+> (`plans/r1_5_training_plan.md`, to be created in follow-up PR).
+
+**Objective:** Replace trick prediction + hand-coded utility with direct
+action-value modeling (E[points | state, bid_n, contract]). Address the
+structural mismatch between training objective (tricks) and evaluation
+metric (points) diagnosed by H10 and confirmed by Investigation L.
+
+**Non-goals:** No partner feature changes (coarse R1 set frozen). No opponent
+context. Partner features and hand features are held constant — only the
+training target and decision formula change.
+
+**Why this rung exists:**
+- R1 proved that R² improvement on tricks_won does not guarantee gameplay
+  improvement (H2H regression despite +0.40 R² gain).
+- Investigation L confirmed the decision layer as a major bottleneck.
+- H10 showed analytically that `_compute_ev_static()` EV is monotonically
+  non-increasing in bid_n for sigma>0, making `compute_best_bid(bid_level_search=True)`
+  always pick min_legal.
+- Moving to direct action-value modeling eliminates the tricks→utility→points
+  chain where the mismatch occurs.
+
+**Intent-level outline (6 steps):**
+1. Define the action set (pass + legal bid levels × contracts)
+2. Build counterfactual action-value data (all legal actions per state)
+3. Train a first supervised action-value model
+4. Add risk treatment (preserve current risk-aware philosophy)
+5. Evaluate (ranking/regret + calibration + H2H)
+6. Decide promotion (gameplay-facing metrics only)
+
+**Statistical guardrails (intent-level):**
+- Deal/state-level splits (no action-row leakage)
+- Ranking quality: top-action accuracy, regret vs best simulated action
+- Counterfactual coverage diagnostics
+- H2H as final promotion gate
+
+**Model family note:** Preserve simplicity and interpretability as default.
+Whether OLS remains adequate is an open question for the implementation-spec
+PR — direct action-value modeling over legal bids is a materially different
+supervised problem from per-contract trick regression.
+
+**Explicit deferral:** Dataset schema, artifact contract, and model family
+decision are deferred to the R1.5 implementation-spec PR
+(`plans/r1_5_training_plan.md`, to be created in follow-up PR).
+
+**Expected outputs:** Artifact pattern TBD in implementation-spec PR.
+
+**Promotion:** H2H as primary gate. Ranking/regret metrics as secondary.
+
+---
+
+### Phase R1.6 -- Partner-Semantics Enrichment (Renumbered from R1.5, 2026-03-06)
+
+> **Status: PLANNED** — After R1.5 stabilizes.
 
 **Objective:** Replace the coarse contract-family-level partner representation
 with suit-aware interaction features that capture Euchre's bower and color
-dynamics. Isolate the value of richer partner semantics before R2 adds opponent
-context.
+dynamics. Isolate the value of richer partner semantics from the objective
+change (R1.5).
 
 **Non-goals:** No opponent context. No training method changes (Ridge, two-stage)
-unless R1 retrain fails. `risk_lambda = 0`.
+unless R1.5 baseline requires them. No objective changes (R1.5 objective frozen).
 
 **Why this rung exists:**
 - The current `partner_suit_match` treats all suit bids as equivalent. In Euchre,
@@ -559,19 +613,20 @@ unless R1 retrain fails. `risk_lambda = 0`.
   implications (bower sharing, void coverage).
 - R1 regression investigation showed partner features dominate the fit (+0.374 R²)
   but are too coarse to capture the actual game dynamics.
-- Giving partner semantics their own rung isolates the effect from future opponent
-  context (R2), enabling clean rung-to-rung attribution.
+- Giving partner semantics their own rung isolates the effect from both the
+  objective change (R1.5) and future opponent context (R2), enabling clean
+  rung-to-rung attribution.
 
 **Rung sequencing:**
-- R1.5 executes AFTER R1 retrain-first baseline completes (regardless of R1 outcome).
-- If R1 passes cleanly, R1.5 measures incremental value of richer semantics.
-- If R1 fails, R1.5 has higher urgency but unchanged scope.
-- R1.5 is committed regardless of R1 outcome.
+- R1.6 executes AFTER R1.5 objective-alignment stabilizes.
+- R1.6 measures the incremental value of richer partner semantics on top of
+  the R1.5 objective.
+- R1.5 objective/decision framework is frozen at R1.6. Only partner features change.
 
 **Required inputs:**
-- R1 incumbent artifact (promoted, advanced, or rescued)
-- Canonical auction-context dataset from PR-R1a (same dataset as R1 — freeze
-  data source for attribution clarity)
+- R1.5 incumbent artifact (promoted or advanced)
+- Canonical auction-context dataset (may need regeneration if R1.5 changes
+  the feature extraction pipeline)
 - Split: `three_way`, seed=42
 
 **Partner-semantics features (suit contracts only):**
@@ -597,7 +652,7 @@ evaluated (C, D, H, S), not once globally per hand.
   different suit.
 
 **OLSa arm:**
-- Starting features: R1's locked base (3/2/2 + any R1 partner features retained)
+- Starting features: R1.5's feature set (locked base + any R1.5 partner features retained)
 - Candidate pool: 3 new suit-aware partner features (replacing `partner_suit_match`
   for suit contracts)
 - Feature budget: suit:10, high:5, low:5
@@ -607,7 +662,7 @@ evaluated (C, D, H, S), not once globally per hand.
 - Candidate pool: all 39 hand + 4 suit-aware partner features
 - Feature budget: none (threshold-only stopping)
 
-**Stabilization methods (if R1 retrain still regresses):**
+**Stabilization methods (if R1.6 regresses):**
 
 Screen at QUICK scale, ordered by implementation complexity:
 1. **Redesign only** — new suit-aware features with standard OLS
@@ -621,29 +676,29 @@ Screen at QUICK scale, ordered by implementation complexity:
 - One FULL gate-critical confirmation round on the winner
 
 **Feature-effect testing (required per §7.5):**
-R1.5 report must answer: "What is the incremental value of richer partner
+R1.6 report must answer: "What is the incremental value of richer partner
 semantics over coarse partner context?" using all 5 required evidence types
 from §7.5.
 
-**Expected outputs:** Same artifact pattern as R1, with `r1.5` suffix.
+**Expected outputs:** Same artifact pattern as R1, with `r1.6` suffix.
 
-**Promotion:** Same gate as R1 — improvement over R1 incumbent.
+**Promotion:** Same gate as R1 — improvement over R1.5 incumbent.
 
 ---
 
 ### Phase R2 -- Opponent Bidding Context
 
 **Objective:** Add opponent bid context features. Train model with
-partner + opponent context cumulated. R2 executes AFTER R1.5 stabilizes
+partner + opponent context cumulated. R2 executes AFTER R1.6 stabilizes
 the partner-context baseline — opponent context is added on top of
 richer partner semantics, not alongside coarse partner features.
 
-**Non-goals:** No full transcript analysis. No partner redesign (done in R1.5).
+**Non-goals:** No full transcript analysis. No partner redesign (done in R1.6).
 `risk_lambda = 0`.
 
 **Required inputs:**
-- R1.5 incumbent artifact (promoted or advanced)
-- Canonical auction-context dataset (may need regeneration if R1.5 changes
+- R1.6 incumbent artifact (promoted or advanced)
+- Canonical auction-context dataset (may need regeneration if R1.6 changes
   the feature extraction pipeline)
 - Split: `three_way`, seed=42
 
@@ -812,7 +867,7 @@ For each pair (rejected_A, rejected_B) across all rungs:
 
 ---
 
-## §5) PR Decomposition (20 PRs)
+## §5) PR Decomposition (22 PRs)
 
 Every PR has exactly one concept. R1-R4 are each split into a feature/infra
 PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
@@ -828,8 +883,10 @@ PR (code-only, `*a` suffix) and a training+eval PR (`*b` suffix).
 | PR-R0b | R0 | R0 baseline: train both arms, freeze, 3-seed eval, auto-promote, write bundle + R0 comparator battery + comparator script updates | New: eval configs, registry doc. Modified: run_auction_comparator.py (--bidder-class, --output-format json, net_eppd). Artifacts: frozen models + evals + comparator_battery_r0.json |
 | PR-R1a | R1 | Partner context infra: `BiddingObservation.auction_history` + feature extraction + canonical auction-context dataset (generated with HybridOLSaBidder R0) | Modified: observation, data collector. New: context feature extractor + tests. Produces canonical auction dataset for R1+ |
 | PR-R1b | R1 | R1 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Feature selection + train + eval + gate for both arms. Depends on PR-I2 + PR-R0b + PR-R1a |
-| PR-R1.5a | R1.5 | Suit-aware partner feature extraction (partner_level_same_suit, partner_level_same_color_offsuit, partner_level_off_color) | Modified: auction_context.py. New: suit-relation features + tests. HIGH/LOW unchanged. |
-| PR-R1.5b | R1.5 | R1.5 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Same pattern as R1b. Attribution: richer semantics vs coarse partner context. |
+| PR-R1.5a | R1.5 | Objective-alignment infra: action-value dataset schema + model contract | New: dataset generator, model class, artifact schema. Details in `plans/r1_5_training_plan.md` (TBD). |
+| PR-R1.5b | R1.5 | R1.5 training + eval + promotion (action-value model vs R1 trick-target baseline) | Train action-value model, evaluate via ranking/regret + H2H. Attribution: objective change (tricks → points). |
+| PR-R1.6a | R1.6 | Suit-aware partner feature extraction (partner_level_same_suit, partner_level_same_color_offsuit, partner_level_off_color) | Modified: auction_context.py. New: suit-relation features + tests. HIGH/LOW unchanged. |
+| PR-R1.6b | R1.6 | R1.6 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Same pattern as R1b. Attribution: richer semantics vs coarse partner context (R1.5 objective frozen). |
 | PR-R2a | R2 | Opponent bid context feature extraction | New: opponent context features + tests |
 | PR-R2b | R2 | R2 dual-arm training + eval + promotion + feature-effect attribution (§7.5) | Same pattern as R1b. Attribution: opponent context vs stabilized partner baseline. |
 | PR-R3a | R3 | Full transcript context feature extraction | New: transcript context features + tests |
@@ -871,42 +928,51 @@ Wave 4 (after R0b promoted + R1a + I2):
   [R1b] R1 dual-arm training + eval + promotion (requires R1a's auction-context dataset)
   [R3a] Full transcript features (after R2a merged)
 
-Wave 4.5 (after R1b, parallel with R1.5a):
-  [R1.5a] Suit-aware partner feature extraction (code-only)
+Wave 4.5 (after R1b):
+  [R1.5a] Objective-alignment infra (action-value dataset + model contract)
 
-Wave 5 (after R1b + R1.5a):
-  [R1.5b] R1.5 dual-arm training + eval + promotion
+Wave 5 (after R1.5a):
+  [R1.5b] R1.5 training + eval + promotion (action-value model)
   [R4a] Seat awareness features (after R3a merged)
 
-Wave 6 (after R1.5b + R2a):
+Wave 5.5 (after R1.5b, parallel with R1.6a):
+  [R1.6a] Suit-aware partner feature extraction (code-only)
+
+Wave 6 (after R1.5b + R1.6a):
+  [R1.6b] R1.6 dual-arm training + eval + promotion
+
+Wave 7 (after R1.6b + R2a):
   [R2b] R2 dual-arm training + eval + promotion
 
-Wave 7 (after R2b + R3a):
+Wave 8 (after R2b + R3a):
   [R3b] R3 dual-arm training + eval + promotion
 
-Wave 8 (after R3b + R4a):
+Wave 9 (after R3b + R4a):
   [R4b] R4 dual-arm training + eval + promotion
 
-Wave 9 (after R4b + R5a):
+Wave 10 (after R4b + R5a):
   [R5b] R5 dual-arm training + eval + promotion (independent lambda per arm)
 
-Wave 10 (after all rungs):
+Wave 11 (after all rungs):
   [F] Consolidation report + arc dashboard
 ```
 
 ### Critical Path
 
 ```
-P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R1.5a -> R1.5b -> R2b -> R3b -> R4b -> R5b -> F
+P0 -> I1 -> R0a -> R0b -> R1a -> R1b -> R1.5a -> R1.5b -> R1.6a -> R1.6b -> R2b -> R3b -> R4b -> R5b -> F
 ```
 
-**No external blockers remain.** All HITL dependencies (#370, #372, #374, #375,
-#376) are merged. The only constraints are inter-PR dependencies within Arc D.
+**No external HITL blockers remain.** All HITL dependencies (#370, #372, #374,
+#375, #376) are merged. The only constraints are inter-PR dependencies within
+Arc D. Note: R1.5 execution is blocked on its implementation-spec PR
+(plans/r1_5_training_plan.md, TBD) — the rung relabeling is complete but
+the modeling contract is not yet specified.
 
 **Off critical path (can develop in parallel):**
 PR-I2, PR-I3, PR-I4, PR-R2a, PR-R3a, PR-R4a, PR-R5a -- all code-only PRs that
 add features or architecture without running promotions.
-PR-R1.5a can be developed in parallel with R1b execution (code-only).
+PR-R1.6a can be developed in parallel with R1.5 execution (code-only).
 
 ### Parallel-Safe Summary
 
@@ -919,13 +985,15 @@ Wave 2:  [I2] [I3] [I4] [R0a] [R5a]                   <- parallel, no external b
 Wave 3:  [R0b] [R2a]                                   <- after R0a
 Wave 3+: [R1a]                                         <- after R0b promotes (E2)
 Wave 4:  [R1b] [R3a]                                   <- after R0b + R1a + I2
-Wave 4.5:[R1.5a]                                       <- after R1a (code-only, parallel w/ R1b)
-Wave 5:  [R1.5b] [R4a]                                 <- after R1b + R1.5a / R3a
-Wave 6:  [R2b]                                         <- after R1.5b + R2a
-Wave 7:  [R3b]                                         <- after R2b + R3a
-Wave 8:  [R4b]                                         <- after R3b + R4a
-Wave 9:  [R5b]                                         <- after R4b + R5a
-Wave 10: [F]                                           <- after all
+Wave 4.5:[R1.5a]                                       <- after R1b (objective-alignment infra)
+Wave 5:  [R1.5b] [R4a]                                 <- after R1.5a / R3a
+Wave 5.5:[R1.6a]                                       <- after R1.5b (code-only, parallel w/ R1.6b prep)
+Wave 6:  [R1.6b]                                       <- after R1.5b + R1.6a
+Wave 7:  [R2b]                                         <- after R1.6b + R2a
+Wave 8:  [R3b]                                         <- after R2b + R3a
+Wave 9:  [R4b]                                         <- after R3b + R4a
+Wave 10: [R5b]                                         <- after R4b + R5a
+Wave 11: [F]                                           <- after all
 ```
 
 ---
@@ -1187,8 +1255,9 @@ introduced at that rung:
 | Rung | Attribution question | Decomposition required |
 |------|---------------------|----------------------|
 | R1 | Coarse partner context + auction data shift | data-source effect vs partner-feature effect |
-| R1.5 | Richer partner semantics vs coarse partner | R1.5 feature effect vs R1 baseline (same data) |
-| R2 | Opponent context on top of stabilized partner | opponent-feature effect vs R1.5 partner baseline |
+| R1.5 | Objective alignment vs R1 trick-target baseline | objective-change effect (same features, different target) |
+| R1.6 | Richer partner semantics vs R1.5 (same objective) | R1.6 feature effect vs R1.5 baseline (same objective) |
+| R2 | Opponent context on top of stabilized partner | opponent-feature effect vs R1.6 partner baseline |
 | R3+ | Additional context families | Same pattern: isolate new family from existing |
 
 ### Scope Boundary
@@ -2289,4 +2358,4 @@ Pre-Flight Checklist (verify before opening any Arc D PR):
 - [ ] Schema doc path explicitly referenced with validation contract
 - [ ] Promotion delta uses `max(0.180, 1.5*SE)` form
 - [ ] Required 10-section document structure present (§1-§10)
-- [ ] 20 PRs in §5, 20 PRs in wave graph, 20 PRs in critical path
+- [ ] 22 PRs in §5, 22 PRs in wave graph, 22 PRs in critical path

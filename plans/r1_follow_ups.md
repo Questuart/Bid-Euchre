@@ -27,7 +27,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P7 | Rung-to-rung report pipeline | No (deferrable) | MANUAL at R1 | Step 12a: written manually from artifacts. Automation deferred to R2+. |
 | P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
 | P9 | Extract notebook-only gate results to artifacts | No (deferrable) | — | nb55 oracle gate result has no committed JSON; see notebook boundary audit |
-| P10 | Context-feature confirmation for high/low | No (deferrable) | DEFERRED to R2 | Sample-size confound; partner redesign at R1.5, high/low confirmation at R2. See `docs/04_reports/r1/partner_feature_selection_diagnostic.md` |
+| P10 | Context-feature confirmation for high/low | No (deferrable) | DEFERRED to R1.6 | Sample-size confound; partner redesign at R1.6, high/low confirmation at R1.6 or R2 depending on data availability. See `docs/04_reports/r1/partner_feature_selection_diagnostic.md` |
 
 **Disposition values:** DONE / DEFERRED (with rationale + target rung) / NOT APPLICABLE (with evidence)
 
@@ -36,7 +36,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 ## Priority 1: HIGH/LOW Feature Enrichment
 
 > **Historical note (2026-03-05):** This section was written before the R1 locked
-> base expansion (PR #529) and R1/R1.5/R2 ladder formalization. The R1 approach
+> base expansion (PR #529) and R1/R1.5/R1.6/R2 ladder formalization. The R1 approach
 > settled on expanding the locked base from 3/1/1 to 3/2/2 using **existing** features
 > (`quick_tricks` + `offsuit_aces`/`offsuit_tens_count`), NOT new hand-crafted features.
 > The 3-arm ablation below was superseded by the 4-arm multi-class ablation in
@@ -98,12 +98,12 @@ analysis Option B (unified regression), master plan §Stream 6
 
 The Arc D rung ladder adds context features incrementally:
 - **R1:** Coarse partner context (`partner_bid_level`, `partner_passed`,
-  `partner_suit_match`)
-- **R1.5:** Richer partner-context semantics (candidate-contract-relative
-  features — see `r1_master_plan.md` §10.3)
+  `partner_suit_match`) — concluded as historical trick-target rung
+- **R1.5:** Objective alignment (direct action-value / E[points] modeling)
+- **R1.6:** Richer partner-context semantics (candidate-contract-relative
+  features — see `r1_master_plan.md` §10.3a)
 - **R2:** Opponent context (`opponent_max_bid`, `opponent_bid_count`,
-  `opponent_suit_signal`, `opponent_aggression`) — after partner semantics
-  stabilized at R1.5
+  `opponent_suit_signal`, `opponent_aggression`) — after R1.6 stabilizes
 - **R3+:** Full transcript, seat awareness, etc.
 
 Independently, the unified cross-contract model ("OneModelIsAllItTakes") replaces

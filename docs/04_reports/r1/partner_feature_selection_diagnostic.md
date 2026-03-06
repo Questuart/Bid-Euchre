@@ -144,9 +144,10 @@ consistent cross-validated improvement — harder to achieve with small samples.
 - Even with only `partner_suit_match`, high/low models are substantially better
 - Gate X2 passed for both arms (delta > +0.40)
 
-**R1.5/R2:** Partner-semantics redesign happens at R1.5 (suit-aware features replacing
-coarse contract-family features). High/low confirmation with rebalanced data at R2.
-See `plans/r1_follow_ups.md` item P10 and `plans/r2_follow_ups.md` F1 for the
+**R1.6/R2:** Partner-semantics redesign happens at R1.6 (suit-aware features replacing
+coarse partner_suit_match). R1.5 is the objective-alignment rung. High/low confirmation
+with rebalanced data at R1.6 or R2 depending on data availability. See
+`plans/r1_follow_ups.md` item P10 and `plans/r2_follow_ups.md` F1 for the
 pre-registered protocol.
 
 ## 7. Provenance

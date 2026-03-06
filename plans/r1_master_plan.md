@@ -1,7 +1,7 @@
 # R1 Readiness: Cleanup, Archival & Training Plan Scope
 
 **Date:** 2026-03-03
-**Status:** IN EXECUTION — Gate X3 STOP, regression investigation in progress
+**Status:** R1 CONCLUDED — preserved as historical trick-target rung. R1.5 (objective-alignment) is next.
 **Scope:** Pre-R1 cleanup (plan archival, untracked files, MASTER_PLAN update),
 R1 follow-ups delta analysis, and full scope outline for `r1_training_plan.md`.
 **Governs:** Transition from R0 v2 freeze to R1 execution (C2).
@@ -1711,28 +1711,39 @@ are available.
 
 ---
 
-## 10. Rung Ladder: R1, R1.5, R2 Definitions
+## 10. Rung Ladder: R1, R1.5, R1.6, R2 Definitions
 
 ### 10.1 Rung Sequencing Overview
 
 The Arc D ladder proceeds through rungs that each isolate one category of
-change for clean attribution. The three next rungs are:
+change for clean attribution. The next rungs are:
 
 | Rung | Scope | What Changes | What Is Frozen |
 |------|-------|-------------|----------------|
-| **R1** | Retrain-first baseline + current partner features | Locked base expansion (3/2/2), 3 coarse partner features, auction-context data | Feature extraction code, partner feature definitions, hand features |
-| **R1.5** | Richer partner-context semantics | Partner feature family redesigned (relation-aware, candidate-contract-relative) | Hand features, model architecture, opponent context (none yet), locked base |
-| **R2** | Opponent context | Opponent context features added | Partner semantics (stabilized at R1.5), hand features, locked base |
+| **R1** | Trick-target + coarse partner (concluded) | Locked base expansion (3/2/2), 3 coarse partner features, auction-context data. H2H regression documented. | Feature extraction code, partner feature definitions, hand features |
+| **R1.5** | Objective alignment | Replace trick prediction + hand-coded utility with direct action-value / E[points] modeling. Details TBD in implementation-spec PR. | Partner features (coarse R1 set), hand features |
+| **R1.6** | Partner semantics | Partner feature family redesigned (relation-aware, candidate-contract-relative, suit-aware) | R1.5 objective/decision framework, hand features, locked base |
+| **R2** | Opponent context | Opponent context features added | Partner semantics (stabilized at R1.6), R1.5 objective, hand features, locked base |
 
-**Key invariant:** Each rung adds exactly one category of change. R1.5 exists
-to isolate partner-context semantic improvements from R2's opponent-context
-additions. Without R1.5, partner redesign and opponent context would be
-conflated in R2, destroying attribution clarity.
+**Key invariant:** Each rung adds exactly one category of change. The rung
+structure ensures clean attribution:
 
-### 10.2 R1 Scope (Current Rung)
+| Transition | What It Measures |
+|------------|-----------------|
+| R1 → R1.5 | Objective change (tricks → points) |
+| R1.5 → R1.6 | Partner-semantics change |
+| R1.6 → R2 | Opponent-context change |
 
-R1 runs a **strict retrain-first baseline** on the current spec before any
-R1.5 work begins. The R1 cycle includes:
+Without this separation, objective changes and feature changes would be
+conflated, destroying attribution clarity.
+
+### 10.2 R1 Scope (Concluded)
+
+R1 concluded as a historical rung. The H2H regression is a real result under
+the trick-target architecture and is preserved as-is. No further trick-target
+tuning will be done under R1.
+
+R1 ran a **strict retrain-first baseline** on the current spec. The R1 cycle included:
 
 1. **Retrain-first baseline:** Retrain both arms with the current 3 partner
    features after fixing any identified bugs (H7 weight instability, etc.)
@@ -1745,38 +1756,77 @@ R1.5 work begins. The R1 cycle includes:
 
 **R1 completion criteria:** Either R1 passes its promotion gate (retrained
 model recovers), or R1 produces a documented failure analysis that motivates
-R1.5. In both cases, R1.5 proceeds as the next rung.
+R1.5. R1 concluded via the second path — Investigation L (PR #554) confirmed
+the decision layer as a major bottleneck. R1.5 (objective-alignment) is next.
 
-### 10.3 R1.5 Definition — Partner-Semantics Rung
+### 10.3 R1.5 Definition — Objective-Alignment Rung
+
+**Purpose:** Move from trick prediction + hand-coded utility to direct
+action-value modeling (E[points | state, bid_n, contract]). This addresses the
+structural mismatch between training objective (tricks_won) and evaluation
+metric (points_per_deal) that Investigation L (PR #554) confirmed as the major
+bottleneck.
+
+**What changes at R1.5:**
+- Training target: tricks_won → direct action-value / E[points]
+- Decision formula: hand-coded utility → model-derived action values
+- Evaluation metrics: add ranking quality, regret, and calibration alongside
+  existing net_eppd / H2H
+
+**What remains frozen at R1.5:**
+- Partner features (coarse R1 set: `partner_bid_level`, `partner_passed`,
+  `partner_suit_match`)
+- Hand features (39 features from `hand_eval.py`)
+- Locked base features (3/2/2 from R1)
+- No opponent context (deferred to R2)
+- Scoring, rules, simulation engine
+
+**Intent-level outline (6 steps):**
+1. Define the action set (pass + legal bid levels × contracts)
+2. Build counterfactual action-value data (all legal actions per state)
+3. Train a first supervised action-value model
+4. Add risk treatment (preserve current risk-aware philosophy)
+5. Evaluate (ranking/regret + calibration + H2H)
+6. Decide promotion (gameplay-facing metrics only)
+
+**Statistical guardrails (intent-level):**
+- Deal/state-level splits (no action-row leakage)
+- Ranking quality: top-action accuracy, regret vs best simulated action
+- Counterfactual coverage diagnostics
+- H2H as final promotion gate
+
+**Model family note:** Preserve simplicity and interpretability as default.
+Whether OLS remains adequate is an open question for the R1.5 implementation-
+spec PR — direct action-value modeling over legal bids is a materially
+different supervised problem from per-contract trick regression.
+
+**Explicit deferral:** Dataset schema, artifact contract, and model family
+decision are deferred to the R1.5 implementation-spec PR
+(plans/r1_5_training_plan.md, to be created in that PR).
+
+### 10.3a R1.6 Definition — Partner-Semantics Rung
 
 **Purpose:** Replace the coarse suit-level partner representation with richer
 relation-aware features that capture Euchre-specific partner signal, while
-freezing all other moving parts for attribution clarity.
+freezing all other moving parts (including the R1.5 objective/decision
+framework) for attribution clarity.
 
-**Why R1.5 exists regardless of R1 outcome:**
-- If R1 succeeds: R1.5 tests whether richer partner semantics provide
-  additional lift beyond the coarse features
-- If R1 fails: R1.5 is elevated in priority because the coarse partner
-  features may be the failure mechanism (H6 sparse signal, overly blunt
-  suit-match representation)
-- In either case, R1.5 scope remains the same — isolate partner-context
-  semantic gains before R2 adds opponent context
-
-**What changes at R1.5:**
+**What changes at R1.6:**
 - Partner feature family replaced with candidate-contract-relative features
-  (see §10.3.1)
+  (see §10.3a.1)
 - Forward selection re-run with the new partner feature pool
 - All partner features are for suit contracts only; HIGH/LOW retain their
   simpler partner handling unless explicitly extended later
 
-**What remains frozen at R1.5:**
+**What remains frozen at R1.6:**
+- R1.5 objective/decision framework (action-value modeling)
 - Hand features (39 features from `hand_eval.py`)
 - Locked base features (3/2/2 from R1)
-- Model architecture (separate per-contract OLS, not unified)
+- Model architecture (unless R1.5 changes it)
 - No opponent context (deferred to R2)
 - Scoring, rules, simulation engine
 
-#### 10.3.1 Planned R1.5 Partner-Semantics Features (Suit Contracts Only)
+#### 10.3a.1 Planned R1.6 Partner-Semantics Features (Suit Contracts Only)
 
 These are **candidate-contract-relative** features. They are computed
 separately for each suit being evaluated (C, D, H, S), not once globally per
@@ -1809,10 +1859,10 @@ hand. They replace the current coarse partner features (`partner_bid_level`,
 flag that collapses all same-color support into one bit. It cannot distinguish
 between a partner who bid 7 in the exact candidate suit (strong direct support)
 vs a partner who bid 5 in the same-color offsuit (moderate indirect support).
-The R1.5 feature family provides three graded channels that capture the
+The R1.6 feature family provides three graded channels that capture the
 Euchre-specific structure of suit relationships (bowers, color families).
 
-#### 10.3.2 R1.5 Experiment Outline
+#### 10.3a.2 R1.6 Experiment Outline
 
 **Scale policy:**
 1. QUICK screen of semantics variants (partner feature combinations)
@@ -1820,14 +1870,14 @@ Euchre-specific structure of suit relationships (bowers, color families).
 3. One FULL confirmation round on the winner
 
 **Gating expectations:**
-- Gate X2 equivalent: suit R² must not regress from R1 baseline
-- Gate X3 equivalent: QUICK H2H delta vs R1 incumbent must not be < -0.05
+- Gate X2 equivalent: suit R² must not regress from R1.5 baseline
+- Gate X3 equivalent: QUICK H2H delta vs R1.5 incumbent must not be < -0.05
 - Partner-off counterfactual must show measurable decision shift (not null)
 - Feature-effect testing (§10.5) is mandatory
 
-#### 10.3.3 R1.5 Stabilization Methods (If Needed)
+#### 10.3a.3 R1.6 Stabilization Methods (If Needed)
 
-If R1.5 partner features show instability (weight sign flips across seeds,
+If R1.6 partner features show instability (weight sign flips across seeds,
 high coefficient variance), the following methods are available in priority
 order:
 
@@ -1841,23 +1891,25 @@ order:
    (e.g., R1 weights). Last resort due to implementation complexity and
    risk of suppressing genuine signal.
 
-### 10.4 R2 Scope — Opponent Context After Stabilized Partner Context
+### 10.4 R2 Scope — Opponent Context After Stabilized Partner Semantics
 
 R2 adds opponent context features **after** partner-context semantics have been
-isolated and stabilized at R1.5. R2 does NOT revisit partner feature design.
+isolated and stabilized at R1.6. R2 does NOT revisit partner feature design or
+the objective/decision framework.
 
 **What changes at R2:**
 - Opponent context features added (e.g., `opponent_max_bid`,
   `opponent_bid_count`, `opponent_suit_signal`, `opponent_aggression`)
-- Forward selection re-run with expanded context pool (partner R1.5 + opponent)
+- Forward selection re-run with expanded context pool (partner R1.6 + opponent)
 - Potentially rebalanced training data (≥10k hands per contract family, per F1)
 
 **What remains frozen at R2:**
-- Partner feature definitions (from R1.5)
-- Hand features, locked base, model architecture
+- Partner feature definitions (from R1.6)
+- R1.5 objective/decision framework
+- Hand features, locked base
 
 **Key constraint:** Partner redesign and opponent context must NOT arrive in the
-same rung. R1.5 ensures partner semantics are stable before R2 adds the
+same rung. R1.6 ensures partner semantics are stable before R2 adds the
 opponent dimension.
 
 ### 10.5 Standing Requirement: Feature-Effect Testing (All Rungs)
@@ -1885,6 +1937,33 @@ catches this before the promotion gate.
 mandatory. Slice analysis and decision-shift audit are strongly recommended
 and mandatory if the counterfactual shows ambiguous results.
 
+**R1.5 adaptation:** At R1.5, the feature-effect tests are complemented by
+ranking/regret/calibration metrics (see §10.3). The counterfactual
+feature-off test is reframed as a counterfactual objective-off test: compare
+action-value objective (R1.5) vs trick-target objective (R1) on the same
+evaluation set to measure the value of the objective change itself.
+
+### 10.6 Modeling Philosophy
+
+The R1 regression established several principles that govern future rungs:
+
+1. **Prediction quality (R²) is not sufficient for promotion.** R1 achieved
+   improved suit R² but regressed on H2H gameplay metrics. R² is a necessary
+   sanity check, not a promotion criterion.
+2. **The deployed objective is points-per-deal under risk.** Models are
+   evaluated on net_eppd (and gameplay-adjacent metrics like make_rate,
+   bid_rate), not on prediction accuracy alone.
+3. **Trick prediction is now treated as an intermediate representation, not
+   the final objective.** R1.5 addresses this by modeling action values
+   directly in points space.
+4. **Future rungs must reduce mismatch between training target and promotion
+   metric.** Any new rung that introduces a training target must justify
+   that the target is aligned with the promotion metric or provide explicit
+   evidence that the mismatch is bounded.
+5. **The R1 regression proved that R² improvement does not guarantee gameplay
+   improvement.** This finding is preserved as a standing reference for all
+   future rung evaluations.
+
 ---
 
 ## 11. Documentation Hygiene
@@ -1901,7 +1980,7 @@ by active files in `plans/` or no longer needed for execution.
   - Why it is stale
   - Which active file supersedes it
   - Whether it remains historically useful
-- **Goal:** Reduce competing plan narratives and keep the active R1/R1.5/R2
+- **Goal:** Reduce competing plan narratives and keep the active R1/R1.5/R1.6/R2
   story centralized in `plans/`.
 
 **Current candidates for archive review:**
@@ -1917,7 +1996,8 @@ Each concept should have exactly one authoritative location:
 |---------|---------------------|
 | R1 feature design | `r1_master_plan.md` §3.2 |
 | R1 operational steps | `r1_training_plan.md` |
-| Rung ladder (R1→R1.5→R2) | `r1_master_plan.md` §10 |
+| Rung ladder (R1→R1.5→R1.6→R2) | `r1_master_plan.md` §10 |
+| R1.6 partner feature design | `r1_master_plan.md` §10.3a |
 | Promotion gate thresholds | `r1_master_plan.md` §3.7 |
 | R0–R5 wave structure / PR sequencing | `arc_d_execution_plan.md` §4–§6 |
 | Artifact schema | `arc_d_execution_plan.md` §2 |
