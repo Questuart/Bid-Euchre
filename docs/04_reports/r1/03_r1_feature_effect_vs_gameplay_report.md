@@ -129,7 +129,7 @@ GluttonStrategy-opponent reference:
 | 5 | modeloespecifico_r0 | +1.988 | [+1.868, +2.106] | R0 |
 | 6 | modeloespecifico_r1 | -10.494 | [-10.672, -10.314] | R1 |
 
-All pairwise differences between ranks 1-4 are non-significant (p > 0.5).
+All adjacent pairwise differences between ranks 1-4 are non-significant (p > 0.5).
 The R1 OLSa variants are statistically indistinguishable from R0 in this
 GluttonStrategy-opponent comparator, consistent with the H2H finding that the
 regression is moderate and primarily suit-specific.
