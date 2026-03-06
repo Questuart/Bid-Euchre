@@ -1,11 +1,11 @@
 # R1 H2H Suit Regression Diagnostic
 
 **Date:** 2026-03-05
-**Status:** INVESTIGATION COMPLETE — Root cause confirmed: H7 (weight instability)
+**Status:** INVESTIGATION ONGOING — H7 contributing, H10 (bid-level search degeneracy) identified as structural cause
 **Blocking:** Gate X3 (STOP), Steps 6–12 of R1 training plan
-**gate_status:** X3 STOP — primary delta -0.348, suit delta -0.76
-**Root cause:** H7 (weight instability) — CONFIRMED by Investigation C ablation
-**Decisive test result:** Investigation C (zero-out ablation) shows partner features are net-positive (+1.3 eppd); regression comes from depressed base weights
+**gate_status:** X3 STOP — primary delta -0.348 (persists after two-stage remediation)
+**Root cause:** H10 (bid-level search degeneracy) — structural; H7 (weight instability) contributing but not primary
+**Decisive test result:** Two-stage training (PRs #548/#549) preserved base weights but did NOT fix regression. ME_R1 (hand-coded weights, no OLS) regresses by -9.5 eppd — proves problem is upstream of weight fitting. `compute_best_bid()` always selects minimum legal bid level because payoff `2t - 10` is bid-independent.
 **Provenance:** H2H battery run `arc_d_r0_h2h_battery_42_20260304_210528`, seed 42, 2k deals/matchup
 **Ablation run:** `arc_d_r0_h2h_battery_42_20260305_131433`, seed 42, 2k deals/matchup
 
@@ -342,6 +342,60 @@ quasi-randomly (only one seat bids in bidless runs).
   fraction of the total +0.40 improvement
 
 **Test:** See Investigation I.
+
+### H10: Bid-Level Search Degeneracy (Structural)
+
+**Claim:** `compute_best_bid()` with `bid_level_search=True` always selects the
+minimum legal bid level because the payoff function for making a contract
+(`net = 2t - 10`) is independent of bid level. Higher bids only increase the set
+penalty (`net = t - bid - 10`). This creates a degenerate auction where every seat
+bids `current_high + 1` or passes — nobody voluntarily bids above the minimum.
+
+**Mechanism:**
+- For any predicted mu and sigma, the EV curve is monotonically decreasing in bid
+  level: bid=1 always has the highest (or tied-highest) expected utility
+- With 4 seats in a single auction round, max winning bid = 4 (each seat bids +1)
+- R0 masks this: all 4 seats bid (~96% rate), winning bid = 3-4, looks normal
+- R1 exposes this: partner features cause 1-2 seats to pass, winning bid drops to
+  1-2, declaring team bids at artificially low levels
+- The regression is not from bad predictions — it's from the auction mechanism
+  rewarding "always bid 1" and partner features reducing the number of competing
+  bidders
+
+**Evidence (2026-03-05 two-stage retrain + H2H battery):**
+- Two-stage training preserved R0 base weights: suit R² = 0.596 (vs joint 0.618),
+  Gate X2 PASS (+0.38 vs R0). But H2H delta = -0.348, identical to joint R1.
+- ME_R1 (hand-coded partner weights, no OLS at all) regresses by -9.475 eppd.
+  This rules out weight fitting as the cause.
+- R1_full individual bid rate: 49.3%. R0_full: 95.9%.
+- R1 team passes 26.7% of hands; R0 passes 0.1%.
+- Self-play mean bid level: R1_full = 2.00, R0_full = 3.76, R1_constrained = 1.25.
+- EV table confirms: for mu ∈ [1, 8], bid=1 always maximizes utility at sigma=1.32.
+
+**Relationship to other hypotheses:**
+- **Subsumes H7:** Weight instability was real but not the primary cause. Even with
+  stable weights (two-stage), the regression persists.
+- **Subsumes H8:** "R² doesn't imply better bidding" is correct, but the mechanism
+  is more specific — bid-level search makes bid level a pure function of auction
+  competition, not prediction quality.
+- **Connects to H1:** Partner features change who bids, which changes bid levels,
+  which changes outcomes. This is a game-theoretic distribution shift, not a
+  statistical one.
+
+**Structural status:** This is not a bug in `compute_best_bid()` — the function
+correctly maximizes expected utility. The issue is that the payoff function doesn't
+reward higher bids, so the auction degenerates. Present in R0 (masked by 4-way
+competition) and R1 (exposed by asymmetric passing).
+
+**Known prior documentation:** The pass-threshold decision report
+(`docs/04_reports/r0/11_pass_threshold_decision.md`) documented that bid-level
+search causes ~96% bid rate and "resolves the pass-threshold problem." The
+degeneracy of always selecting the minimum legal bid was not flagged.
+
+**Fix required:** The payoff model must be revised so that bid level affects the
+make payoff, or the auction mechanism must be changed. This is a structural
+prerequisite — feature engineering (R1.5) and hyperparameter tuning cannot fix
+a degenerate auction.
 
 ### H1 vs H3: How to Distinguish
 
@@ -1090,30 +1144,44 @@ is confounded (H3) and destabilizes the base model (H7).
 | H4: Feature fragility | PLAUSIBLE | Full arm weight (12.85) explains full > constrained gap |
 | **H5: Implementation bug** | **ELIMINATED** | Investigation F: all 5 checks clean |
 | **H6: Training sparsity** | **CONTRIBUTING** | Investigation G: 71% zeros for partner_bid_level |
-| **H7: Weight instability** | **CONFIRMED (ROOT CAUSE)** | Investigation H: bias Δ=-8.77, locked weights -28 to -78%. Investigation C: ablation confirms base weights are depressed — R1 model never bids suit without partner signal |
+| **H7: Weight instability** | **CONFIRMED (CONTRIBUTING)** | Investigation H + C confirmed mechanism, but two-stage fix did not resolve regression — H7 is real but not primary |
 | **H8: Overbidding** | **WEAKENED** | Investigation B: R1 bids LOWER (1.80 vs 3.74) |
 | **H9: Data artifact** | **WEAKENED** | Investigation I: variance higher, data effect only 12% |
+| **H10: Bid-level search degeneracy** | **CONFIRMED (STRUCTURAL)** | Two-stage remediation failed (delta unchanged at -0.348); ME_R1 regresses -9.5 (no OLS); EV monotonically decreasing in bid level |
 
-**Confirmed causal chain:**
-1. Locked base expands from 3/1/1 to 3/2/2. OLS re-estimates all weights jointly.
-2. Partner features enter OLS and dominate fit (+0.374 R², 85% of improvement).
-3. OLS redistributes weight: intercept collapses +2.75 → -6.02, locked base
-   weights drop 28-78%.
-4. At inference, the depressed base weights produce systematically low mu
-   predictions. Even with partner features adding positive signal, the net
-   prediction is lower than R0.
-5. **Without partner features (ablation), R1 never bids suit at all.** With
-   partner features, R1 bids at reduced rate (40% vs R0's 60%), causing
-   the -0.76 suit regression.
-6. Partner features are **masking** the weight instability problem, not causing it.
+**Revised causal chain (2026-03-05):**
 
-**Root cause declaration:** H7 (weight instability) is confirmed. The regression
-originates from OLS weight redistribution during retraining with the expanded
-3/2/2 locked base + partner features. The remedy must stabilize base weights.
+The original H7 causal chain (weight instability) was confirmed as a real mechanism
+but NOT the primary cause. Two-stage training (PR #548/#549) stabilized base weights
+but produced identical regression (delta = -0.348). The structural cause is H10:
+
+1. `compute_best_bid()` with `bid_level_search=True` always selects the minimum
+   legal bid level because `make_payoff = 2t - 10` is independent of bid level.
+2. In R0, all 4 seats bid (~96%), so the winning bid reaches 3-4 (looks normal).
+3. R1 partner features cause some seats to pass (bid rate ~49%), reducing auction
+   competition. Winning bids drop to 1-2.
+4. The regression comes from the asymmetry: R1 passes more, lets R0 declare at
+   low levels where set penalty is minimal.
+5. H7 (weight instability) amplifies this by depressing base predictions, but
+   fixing H7 alone does not resolve the regression.
+6. ME_R1 (hand-coded weights, no OLS) shows the same pattern at -9.5 eppd,
+   confirming the problem is upstream of weight fitting.
+
+**Root cause declaration (revised):** H10 (bid-level search degeneracy) is the
+structural cause. The `compute_best_bid()` payoff model must be revised before
+partner features can show their value in H2H play. H7 is a real contributing
+factor but not primary.
 
 ---
 
 ## 5. Decision Framework
+
+> **2026-03-05 update:** The recommended remediation options below were based on H7
+> as root cause. Two-stage training (Option 1) was implemented in PRs #548/#549 and
+> tested: it did NOT fix the regression (delta unchanged at -0.348). The structural
+> cause is now identified as H10 (bid-level search degeneracy). Remediation must
+> address the payoff model in `compute_best_bid()` before further feature or weight
+> work can show impact. See H10 hypothesis for details.
 
 Based on Investigation C results: **partner features are net-positive** (+1.3 eppd).
 The regression is caused by base weight instability during OLS retraining, not by
