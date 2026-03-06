@@ -1,0 +1,65 @@
+{
+  "description": "H2H roster for bid_bonus causal probe sweep. Tests whether breaking bid-level search degeneracy (H10) resolves the R1 H2H regression. bid_bonus is a DIAGNOSTIC PROBE ONLY — not a production fix.",
+  "bidders": [
+    {
+      "name": "r1_full_bonus_0.00",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "bid_bonus": 0.0
+      }
+    },
+    {
+      "name": "r1_full_bonus_0.25",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "bid_bonus": 0.25
+      }
+    },
+    {
+      "name": "r1_full_bonus_0.50",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "bid_bonus": 0.5
+      }
+    },
+    {
+      "name": "r1_full_bonus_0.75",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "bid_bonus": 0.75
+      }
+    },
+    {
+      "name": "r1_full_bonus_1.00",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r1/hybrid_r1_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "bid_bonus": 1.0
+      }
+    },
+    {
+      "name": "r0_full_baseline",
+      "class_name": "HybridOLSaBidder",
+      "params": {
+        "artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        "bid_level_search": true,
+        "risk_lambda": 0.0,
+        "bid_bonus": 0.0
+      }
+    }
+  ]
+}

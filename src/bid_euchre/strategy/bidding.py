@@ -1022,11 +1022,13 @@ class HybridOLSaBidder(BiddingPolicy):
         pass_threshold: float = 0.0,
         name: str = "hybrid_olsa",
         zero_partner_features: bool = False,
+        bid_bonus: float = 0.0,
     ):
         super().__init__(name)
         self.bid_level_search = bool(bid_level_search)
         self.pass_threshold = float(pass_threshold)
         self.zero_partner_features = bool(zero_partner_features)
+        self.bid_bonus = float(bid_bonus)
 
         with open(artifact_path) as f:
             artifact = json.load(f)
@@ -1281,6 +1283,7 @@ class HybridOLSaBidder(BiddingPolicy):
                     bid_level_search=self.bid_level_search,
                     risk_lambda=self.risk_lambda,
                     seed=self._CVAR_SEED,
+                    bid_bonus=self.bid_bonus,
                 )
 
                 if result is None:

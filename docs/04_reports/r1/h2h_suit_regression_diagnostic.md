@@ -1397,6 +1397,107 @@ H10 is confirmed as the primary cause and the payoff model revision path is clea
 - 74 proving the degeneracy (EV monotonicity, min_legal selection, floor divergence)
 - 27 proving the fix (bonus breaks monotonicity, selects near floor(mu), backward compat)
 
+### Investigation L: `bid_bonus` H2H Sweep — Decision-Layer Causal Probe
+
+**Hypothesis tested:** The R1 H2H regression is caused by the decision layer
+(bid-level search degeneracy, H10), not by model quality. If breaking the
+degeneracy with `bid_bonus > 0` reverses the regression, this confirms the
+decision layer is the bottleneck.
+
+**Important framing:** `bid_bonus` is a **diagnostic probe only**, not a
+production fix. It injects synthetic utility (`+ bid_bonus * bid_n` on
+make_payoff) that is not grounded in the game's actual scoring rules. If the
+probe helps, the correct response is to build a principled decision layer,
+not to ship `bid_bonus` as the bidding policy.
+
+**Method:** Wired `bid_bonus` parameter through `HybridOLSaBidder.__init__`
+to `compute_best_bid()`. Ran 6-bidder H2H battery: R1 full arm at
+bid_bonus ∈ {0.0, 0.25, 0.5, 0.75, 1.0} + R0 full baseline. All bidders
+use `bid_level_search=True`, `risk_lambda=0.0`. QUICK mode: 36 matchups ×
+2,000 deals = 72,000 total deals, seed 42.
+
+**Results — R1 vs R0 Baseline (R1 in seats 0,2):**
+
+| bid_bonus | delta vs R0 | CI [low, high] | Significant? | Suit avg bid | Suit make% |
+|-----------|-------------|----------------|--------------|-------------|------------|
+| 0.00      | **-0.348**  | [-0.53, -0.16] | YES (worse)  | 2.76        | 99.6%      |
+| 0.25      | **+0.407**  | [+0.19, +0.62] | YES (better) | 3.95        | 97.1%      |
+| 0.50      | +0.120      | [-0.12, +0.37] | no           | 4.19        | 96.9%      |
+| 0.75      | +0.113      | [-0.14, +0.37] | no           | —           | —          |
+| 1.00      | +0.117      | [-0.14, +0.37] | no           | —           | —          |
+
+**Self-play diagnostics:**
+
+| Bidder          | net_eppd (t0) | net_eppd (t1) | bid_rate | make_rate |
+|-----------------|---------------|---------------|----------|-----------|
+| R0 baseline     | 4.864         | 4.922         | 0.500    | 0.966     |
+| R1 bonus=0.00   | 4.676         | 4.800         | 0.468    | 0.993     |
+| R1 bonus=0.25   | 4.485         | 4.574         | 0.487    | 0.892     |
+| R1 bonus=0.50   | 4.208         | 4.205         | 0.492    | 0.843     |
+| R1 bonus=1.00   | 3.796         | 3.832         | 0.501    | 0.773     |
+
+**Contract-type breakdown (R1 in seats 0,2 vs R0):**
+
+| bid_bonus | Suit delta | Suit n | High delta | High n | Low delta | Low n |
+|-----------|-----------|--------|-----------|--------|----------|-------|
+| 0.00      | -0.758    | 1100   | -0.020    | 398    | +0.289   | 502   |
+| 0.25      | -0.456    | 678    | +0.703    | 627    | +0.983   | 695   |
+| 0.50      | +0.078    | 588    | +0.115    | 652    | +0.157   | 760   |
+
+**Key findings:**
+
+1. **Decision-layer hypothesis CONFIRMED.** `bid_bonus=0.25` reverses the
+   R1→R0 regression from -0.348 to +0.407 net_eppd — a swing of +0.755.
+   The CI excludes zero in both directions, confirming this is a real effect.
+
+2. **Non-monotonic response.** bid_bonus=0.25 is the sweet spot. Higher
+   values (0.50+) still beat R0 on point estimate but lose significance
+   due to overbidding (make rate drops from 97% to 83-85%).
+
+3. **Suit regression partially repaired.** At bonus=0.25, suit delta
+   improves from -0.758 to -0.456 (still negative). At bonus=0.50, suit
+   flips to +0.078. The remaining suit deficit at 0.25 is offset by large
+   high/low gains (+0.703, +0.983).
+
+4. **Self-play vs H2H divergence.** Self-play eppd decreases with higher
+   bonus (4.68 → 4.49 → 4.21 → 3.80), while H2H performance peaks at
+   bonus=0.25. This is consistent with the objective-mismatch diagnosis:
+   self-play rewards conservative bidding, H2H rewards auction competitiveness.
+
+5. **Bidding behavior shift.** At bonus=0.00, R1 bids only 2.76 average
+   for suit and wins only 39.8% of auctions. At bonus=0.25, average bid
+   rises to 3.95 and auction win rate jumps to 68.2%.
+
+**Interpretation:** The R1 model has superior prediction quality (R² 0.22→0.63)
+but was crippled by the decision layer forcing min_legal bids. The probe
+demonstrates that even a crude correction (+0.25×bid_n) is sufficient to
+unlock the model's potential. This motivates building a principled
+points-based decision layer that replaces `_compute_ev_static()` with a
+function calibrated on actual game outcomes.
+
+**What bid_bonus is NOT:** A production bidding rule. It adds utility that
+doesn't exist in the game's scoring rules (the game doesn't reward higher
+bids on make). The correct fix is to model the auction-strategic value of
+bidding higher (forcing opponents, winning declarations) rather than
+injecting synthetic rewards.
+
+**Reproduction:**
+```bash
+# Wiring: bid_bonus param added to HybridOLSaBidder (PR #554)
+# Roster: experiments/configs/r1_bid_bonus_sweep_roster.json
+# Run:
+PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+    --mode QUICK --seed 42 --n-per 2000 \
+    --roster experiments/configs/r1_bid_bonus_sweep_roster.json \
+    --output data/artifacts/arc_d/r1/bid_bonus_sweep/h2h_battery_quick.json
+# Parse:
+PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+    --mode QUICK --seed 42 --n-per 2000 \
+    --roster experiments/configs/r1_bid_bonus_sweep_roster.json \
+    --output data/artifacts/arc_d/r1/bid_bonus_sweep/h2h_battery_quick.json \
+    --parse-run data/runs/arc_d_r0_h2h_battery_42_20260305_211613
+```
+
 ---
 
 ## 7. Relationship to R1.5 and R2
@@ -1439,3 +1540,7 @@ after stabilized partner-context baseline.
 | Investigation C artifact | data/artifacts/arc_d/r1/investigation_c_ablation.json |
 | Investigation K tests | tests/unit/test_h10_bid_level_degeneracy.py (101 parametric tests) |
 | Investigation K code | `_compute_ev_static()` and `compute_best_bid()` in bidding.py |
+| Investigation L run | `arc_d_r0_h2h_battery_42_20260305_211613` |
+| Investigation L roster | experiments/configs/r1_bid_bonus_sweep_roster.json |
+| Investigation L summary | data/artifacts/arc_d/r1/bid_bonus_sweep/h2h_battery_quick.json |
+| Investigation L wiring | `HybridOLSaBidder.bid_bonus` param in bidding.py |

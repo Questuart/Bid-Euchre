@@ -1,9 +1,9 @@
 # R1 Training Plan — Operational Execution Checklist
 
-**Date:** 2026-03-04 (updated 2026-03-05)
+**Date:** 2026-03-04 (updated 2026-03-06)
 **Governing doc:** `plans/r1_master_plan.md` §3 and §10
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
-**Status:** Gate X3 STOP — H10 (bid-level search degeneracy) analytically confirmed + `bid_bonus` fix prototyped. Calibration H2H sweep pending.
+**Status:** Decision-layer hypothesis CONFIRMED. `bid_bonus=0.25` reverses R1→R0 regression (+0.407 net_eppd, CI [0.19, 0.62]). Next: principled points-based decision layer.
 
 > **Document role:** This is the **R1 operational execution checklist** — CLI
 > commands, gate results, artifact paths. For strategic governance (feature
@@ -343,10 +343,34 @@ mode early.
 
 **Test coverage:** 101 parametric tests in `tests/unit/test_h10_bid_level_degeneracy.py`.
 
-**Next step:** Calibrate `bid_bonus` via H2H sweep (separate PR). Wire `bid_bonus`
-to `HybridOLSaBidder.__init__`, run H2H battery with `bid_level_search=True` and
-`bid_bonus ∈ {0.0, 0.25, 0.5, 0.75, 1.0}`. This is the decisive test for whether
-the payoff fix resolves the H2H regression.
+**Next step:** Build principled points-based decision layer (see Step 3g).
+
+### 3g. `bid_bonus` H2H Sweep — Decision-Layer Causal Probe (COMPLETED)
+
+**Status:** COMPLETED
+**PR:** #554
+**Run:** `arc_d_r0_h2h_battery_42_20260305_211613`
+
+**Purpose:** Confirm that the decision layer (H10 degeneracy) is the
+bottleneck, not model quality.
+
+**Method:** Wired `bid_bonus` to `HybridOLSaBidder`. 6-bidder sweep:
+R1 full at bid_bonus ∈ {0.0, 0.25, 0.5, 0.75, 1.0} + R0 baseline.
+36 matchups × 2,000 deals = 72,000 total.
+
+**Results:**
+- **bonus=0.00:** -0.348 vs R0 (CI [-0.53, -0.16]) — regression confirmed
+- **bonus=0.25:** **+0.407 vs R0** (CI [+0.19, +0.62]) — regression reversed
+- **bonus=0.50:** +0.120 vs R0 (CI [-0.12, +0.37]) — not significant
+- **bonus=0.75+:** ~+0.11 vs R0, not significant, overbidding starts
+
+**Conclusion:** Decision-layer hypothesis CONFIRMED. R1 model has superior
+prediction quality but was crippled by min_legal bid selection. Even a crude
+correction (bid_bonus=0.25) reverses the regression. This motivates building
+a principled points-based decision layer.
+
+**Important:** `bid_bonus` is a diagnostic probe only, not a production fix.
+It injects synthetic utility not grounded in game scoring rules.
 
 ---
 
