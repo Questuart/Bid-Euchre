@@ -99,6 +99,22 @@ class BidAction:
             raise ValueError(f"Unknown contract: {self.contract}")
 
 
+def enumerate_legal_actions(obs: "BiddingObservation") -> List[BidAction]:
+    """Enumerate all legal bidding actions for the current auction state.
+
+    Returns actions in canonical order: PASS first, then ascending by
+    (bid_level, contract) where contract order follows obs.allowed_contracts.
+
+    Used by both ActionValueBidder.choose_bid() and the counterfactual
+    dataset generator to ensure consistent action enumeration.
+    """
+    actions: List[BidAction] = [BidAction.pass_bid()]
+    for n in range(obs.current_high_bid + 1, 11):
+        for contract in obs.allowed_contracts:
+            actions.append(BidAction.bid(n, contract))
+    return actions
+
+
 @dataclass(frozen=True)
 class BiddingObservation:
     """
@@ -1307,3 +1323,215 @@ class HybridOLSaBidder(BiddingPolicy):
             return BidAction.pass_bid()
 
         return BidAction.bid(best_bid_n, best_contract)
+
+
+# ===========================
+#  Action-Value Bidding (R1.5)
+# ===========================
+
+# Canonical ordered list of the 39 hand feature names (matches get_hand_features() dict order).
+_HAND_FEATURE_NAMES: List[str] = [
+    "bowers",
+    "trump_count",
+    "offsuit_aces",
+    "offsuit_non_ace_count",
+    "hand_value",
+    "trump_rb_count",
+    "trump_lb_count",
+    "trump_ace_count",
+    "trump_king_count",
+    "trump_queen_count",
+    "trump_ten_count",
+    "highest_trump_rank",
+    "second_highest_trump_rank",
+    "third_highest_trump_rank",
+    "trump_power_sum",
+    "trump_duplicate_pairs",
+    "offsuit_king_count_total",
+    "offsuit_queen_count_total",
+    "offsuit_suits_with_ace",
+    "offsuit_suits_with_double_ace",
+    "offsuit_suits_with_ace_and_king",
+    "void_count",
+    "max_suit_len",
+    "second_suit_len",
+    "third_suit_len",
+    "fourth_suit_len",
+    "num_singletons",
+    "num_doubletons",
+    "offsuit_tens_count",
+    "offsuit_length_3plus_count",
+    "offsuit_best_rank_sum",
+    "offsuit_secondbest_rank_sum",
+    "double_ten_jack_count",
+    "high_card_count",
+    "low_card_count",
+    "trump_count_x_void_count",
+    "trump_count_x_offsuit_ace",
+    "losing_tricks_count",
+    "quick_tricks",
+]
+
+# State feature names: 39 hand + 3 partner + 10 positional/legality = 52
+STATE_FEATURE_NAMES: List[str] = (
+    _HAND_FEATURE_NAMES
+    + ["partner_bid_level", "partner_passed", "partner_suit_match"]
+    + ["current_high_bid"]
+    + ["is_high", "is_low"]
+    + ["trump_C", "trump_D", "trump_H", "trump_S"]
+    + ["seat_rel_1", "seat_rel_2", "seat_rel_3"]
+)
+
+# Action feature names appended to state for per-contract models
+ACTION_FEATURE_NAMES: List[str] = ["bid_n", "bid_n_sq"]
+
+
+def extract_state_features(
+    obs: BiddingObservation,
+    contract_family: str,
+    trump_suit: Optional[str],
+) -> np.ndarray:
+    """Extract the 52-element state feature vector for a candidate action.
+
+    Args:
+        obs: Current bidding observation.
+        contract_family: One of "suit", "high", "low", or "none".
+            "none" is used for pass actions (no contract context).
+        trump_suit: Trump suit letter for suit contracts, None otherwise.
+
+    Returns:
+        np.ndarray of shape (52,) with features in STATE_FEATURE_NAMES order.
+    """
+    from ..features.auction_context import extract_partner_features
+    from ..features.hand_eval import get_hand_features
+
+    # Hand features (39): use "high" as proxy for "none" (no trump dependency)
+    hand_contract = contract_family if contract_family != "none" else "high"
+    hand_feats = get_hand_features(obs.hand, hand_contract, trump_suit)
+    hand_arr = np.array(
+        [float(hand_feats[k]) for k in _HAND_FEATURE_NAMES], dtype=np.float64
+    )
+
+    # Partner features (3)
+    partner_family = contract_family if contract_family != "none" else None
+    partner_feats = extract_partner_features(
+        obs.seat, obs.auction_transcript, partner_family
+    )
+    partner_arr = np.array(
+        [
+            float(partner_feats["partner_bid_level"]),
+            float(partner_feats["partner_passed"]),
+            float(partner_feats["partner_suit_match"]),
+        ],
+        dtype=np.float64,
+    )
+
+    # Positional / legality features (10)
+    current_high_bid = float(obs.current_high_bid)
+
+    # Contract indicators: "none" state → both 0
+    is_high = 1.0 if contract_family == "high" else 0.0
+    is_low = 1.0 if contract_family == "low" else 0.0
+
+    # Trump dummies: suit contracts get one-hot; high/low/none → all zeros
+    trump_c = 1.0 if trump_suit == "C" else 0.0
+    trump_d = 1.0 if trump_suit == "D" else 0.0
+    trump_h = 1.0 if trump_suit == "H" else 0.0
+    trump_s = 1.0 if trump_suit == "S" else 0.0
+
+    # Seat relative to dealer (one-hot, dealer=reference → 3 dummies)
+    relative_seat = (obs.seat - obs.dealer_seat) % 4
+    seat_rel_1 = 1.0 if relative_seat == 1 else 0.0
+    seat_rel_2 = 1.0 if relative_seat == 2 else 0.0
+    seat_rel_3 = 1.0 if relative_seat == 3 else 0.0
+
+    positional_arr = np.array(
+        [
+            current_high_bid,
+            is_high,
+            is_low,
+            trump_c,
+            trump_d,
+            trump_h,
+            trump_s,
+            seat_rel_1,
+            seat_rel_2,
+            seat_rel_3,
+        ],
+        dtype=np.float64,
+    )
+
+    return np.concatenate([hand_arr, partner_arr, positional_arr])
+
+
+def extract_action_features(bid_n: int) -> np.ndarray:
+    """Extract the 2-element action feature vector: [bid_n, bid_n^2]."""
+    return np.array([float(bid_n), float(bid_n * bid_n)], dtype=np.float64)
+
+
+def predict_ols(model_dict: dict, features: np.ndarray) -> float:
+    """Dot-product prediction from an action_value_olsa_v1 model dict.
+
+    Each model_dict has "coefficients" (array) and optional "intercept" (float).
+    """
+    coefficients = np.asarray(model_dict["coefficients"], dtype=np.float64)
+    intercept = float(model_dict.get("intercept", 0.0))
+    return float(np.dot(coefficients, features) + intercept)
+
+
+class ActionValueBidder(BiddingPolicy):
+    """Action-value bidder: selects the legal action with highest
+    predicted E[net_points].
+
+    Uses per-contract OLS models (suit, high, low) plus a separate
+    pass model. No hand-coded utility, no Gaussian EV, no sigma.
+
+    Artifact schema: action_value_olsa_v1
+    """
+
+    def __init__(self, artifact_path: str, name: str = "action_value"):
+        super().__init__(name=name)
+
+        with open(artifact_path) as f:
+            artifact = json.load(f)
+
+        schema = artifact.get("schema_version")
+        if schema != "action_value_olsa_v1":
+            raise ValueError(
+                f"Expected schema_version 'action_value_olsa_v1', got '{schema}'"
+            )
+
+        models = artifact["models"]
+        self.models = {
+            "suit": models["suit"],
+            "high": models["high"],
+            "low": models["low"],
+        }
+        self.pass_model = models["pass"]
+        self.context_features = artifact.get("metadata", {}).get("context_features", [])
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        """Select the legal action with highest predicted E[net_points]."""
+        legal = enumerate_legal_actions(obs)
+
+        best_value = float("-inf")
+        best_action = BidAction.pass_bid()
+
+        for action in legal:
+            if action.is_pass():
+                # Pass model: state-only features with "none" contract encoding
+                state = extract_state_features(obs, "none", None)
+                value = predict_ols(self.pass_model, state)
+            else:
+                contract_type, trump_suit = action.to_contract_tuple()
+                family = contract_type  # "suit", "high", or "low"
+                state = extract_state_features(obs, family, trump_suit)
+                action_feats = extract_action_features(action.n)
+                features = np.concatenate([state, action_feats])
+                value = predict_ols(self.models[family], features)
+
+            if value > best_value:
+                best_value = value
+                best_action = action
+
+        return best_action
