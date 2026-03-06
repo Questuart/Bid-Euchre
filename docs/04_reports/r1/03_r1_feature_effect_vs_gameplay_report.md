@@ -3,6 +3,7 @@
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R1 (partner context under trick-target objective)
 **Status:** Prediction-gameplay disconnect diagnosed across three layers
+**gate_status:** X3 STOP (training R^2 +0.40, gameplay -0.348 net_eppd)
 **Date:** 2026-03-06
 **Baseline:** [r1_baseline_statement.md](r1_baseline_statement.md)
 

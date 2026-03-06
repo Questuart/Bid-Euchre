@@ -3,6 +3,7 @@
 **Arc:** D (OLSa-Hybrid Bidder)
 **Rung:** R1 (partner context under trick-target objective)
 **Status:** Gameplay regression documented; root cause diagnosed
+**gate_status:** X3 STOP (suit regression -0.76, CI [-0.99, -0.53])
 **Date:** 2026-03-06
 **Baseline:** [r1_baseline_statement.md](r1_baseline_statement.md)
 
