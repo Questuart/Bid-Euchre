@@ -42,13 +42,17 @@ MODE_DEALS = {"SMOKE": 500, "QUICK": 2500, "FULL": 50000}
 def _deterministic_dealer(seed: int, deal_id: int) -> int:
     """Derive a deterministic dealer position for (seed, deal_id).
 
-    Uses the same RNG construction as sim.deals._deal_rng so that the
-    dealer is reproducible and independent of the deal's card shuffle.
+    Uses the SAME formula as play_single_hand() in auction mode with deal_seed:
+        dealer_rng = random.Random(deal_seed + deal_id)
+        dealer_index = dealer_rng.randrange(4)
+
+    This is intentionally different from sim.deals._deal_rng (which uses
+    seed * 1_000_003 + deal_id for card shuffles). The engine derives
+    dealers separately from deals.
     """
     import random
 
-    combined = int(seed) * 1_000_003 + int(deal_id)
-    return random.Random(combined).randrange(4)
+    return random.Random(seed + deal_id).randrange(4)
 
 
 def _bidding_order(dealer: int) -> list[int]:
@@ -225,12 +229,27 @@ def _play_tricks(
     contract_type: str,
     trump_suit: str | None,
 ) -> tuple[int, int]:
-    """Play out 10 tricks with GluttonStrategy. Returns (t0, t1)."""
+    """Play out 10 tricks with GluttonStrategy, matching the engine lifecycle.
+
+    Calls on_hand_start() and observe_play() to ensure the strategy has
+    correct contract state and card tracking (void inference, seen counts).
+    Returns (t0, t1).
+    """
     from bid_euchre.core.rules import get_legal_indices, trick_winner
 
     # Deep copy hands since play_tricks mutates them
     play_hands = [list(h) for h in hands]
     strategy = GluttonStrategy()
+
+    # Call on_hand_start() — GluttonStrategy uses this to reset _seen_counts,
+    # _void_suits_by_seat, and set _contract_type / _trump_suit.
+    # The engine calls it once per unique strategy instance; we have one.
+    strategy.on_hand_start(
+        starting_hand=list(play_hands[initial_leader]),
+        contract_type=contract_type,
+        trump_suit=trump_suit,
+        player_index=initial_leader,
+    )
 
     team_tricks = {0: 0, 1: 0}
     leader = initial_leader
@@ -254,6 +273,15 @@ def _play_tricks(
 
             card = hand.pop(card_index)
             plays.append((player, card))
+
+            # Call observe_play() — tracks seen cards and infers voids
+            strategy.observe_play(
+                player_index=player,
+                card=card,
+                trick_plays=list(plays),
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
 
         winner = trick_winner(plays, contract_type=contract_type, trump_suit=trump_suit)
         if winner in (0, 2):

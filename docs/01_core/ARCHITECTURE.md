@@ -199,6 +199,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 |---------|---------|
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
+| `scripts/internal/generate_action_value_dataset.py` | Counterfactual action-value dataset generator (R1.5) |
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
 | `scripts/internal/generate_auction_context_dataset.py` | Auction-context dataset generator (R1 partner features) |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |

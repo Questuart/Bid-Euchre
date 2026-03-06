@@ -72,8 +72,8 @@ def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
             # Skip run-relative paths (not repo-root paths)
             if ref.startswith(run_relative_prefixes):
                 continue
-            # Skip data/runs/ paths (gitignored generated outputs)
-            if ref.startswith("data/runs/"):
+            # Skip data/runs/ and data/artifacts/ paths (gitignored generated outputs)
+            if ref.startswith(("data/runs/", "data/artifacts/")):
                 continue
             # Skip src/bid_euchre/ submodule-relative shorthand paths
             first_segment = ref.split("/")[0]
