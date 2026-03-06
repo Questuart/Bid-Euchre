@@ -323,7 +323,7 @@ mode early.
 ### 3f. H10 Validation Pack — Bid-Level Degeneracy Proof + Fix (COMPLETED)
 
 **Status:** COMPLETED
-**PR:** #TBD
+**PR:** #552
 **Plan:** `plans/h10_validation_pack.md`
 
 **Purpose:** Analytically prove H10 and prototype the `bid_bonus` payoff fix.

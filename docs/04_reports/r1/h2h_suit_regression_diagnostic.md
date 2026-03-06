@@ -1329,7 +1329,7 @@ See `plans/r1_master_plan.md` §R1.5 for full specification.
 
 ### Investigation K: H10 Validation Pack — Analytical Proof + `bid_bonus` Fix
 
-**Status:** COMPLETED (PR #TBD)
+**Status:** COMPLETED (PR #552)
 **Purpose:** Analytically prove H10 and prototype a fix
 
 **H10 Analytical Proof:**
@@ -1345,6 +1345,12 @@ total EV is monotonically non-increasing in `bid_n`. This was verified across
 100 (mu, sigma) combinations (mu ∈ {3.0, 5.0, 6.5, 8.0, 9.5} × sigma ∈
 {0.0, 0.5, 1.0, 1.5, 2.5}). Every case confirms: `compute_best_bid()` with
 `bid_level_search=True` always selects `min_legal = max(1, current_high_bid + 1)`.
+
+> **Scope note:** This proof applies to the `risk_lambda=0.0` regime (current R1
+> configuration). With `risk_lambda > 0`, `compute_best_bid()` optimizes
+> `utility = ev - risk_penalty`, and the CVaR penalty term could in principle
+> create a non-monotonic utility surface. Since R0 and R1 both use `risk_lambda=0.0`,
+> this does not affect the current finding.
 
 **`bid_bonus` Fix:**
 
