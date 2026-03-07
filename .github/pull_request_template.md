@@ -46,6 +46,11 @@
 (paste output here)
 ```
 
+## Codex Review
+- [ ] Codex auto-review received (or N/A if not yet enabled)
+- [ ] Blocking Codex comments addressed
+- [ ] Non-blocking Codex findings captured as follow-up issues (if any)
+
 ## Checklist
 - [ ] No generated artifacts committed (`data/runs`, `data/reports`)
 - [ ] If behavior changed, tests updated/added to lock it
