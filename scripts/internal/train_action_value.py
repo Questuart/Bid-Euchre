@@ -23,14 +23,10 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from bid_euchre.core.time import utc_now_iso
 from bid_euchre.models.train_olsa import _compute_metrics, _fit_ols
