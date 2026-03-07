@@ -129,7 +129,40 @@ If `set_review_status.sh` is not available, skip status publishing and note in r
 Do NOT arm auto-merge (`gh pr merge --auto`). During rollout, merge happens
 manually after Codex pre-merge review is visible on the PR.
 
-### Step 3: Generate Review Report
+### Step 3: Request Codex review
+
+Post a comment on the PR to trigger Codex review with focused instructions:
+
+```bash
+gh pr comment <PR_NUMBER> --body "@codex review
+
+Focus on these repo-specific checks:
+- Unseeded randomness (random.Random() without seed, global random.* in src/)
+- Falsy numeric guards (x = x or fallback on metrics — 0.0 is falsy)
+- Import boundary violations (src/ importing from experiments/ or tests/)
+- Missing test coverage for behavior changes in src/
+- Merge artifacts (conflict markers, TODO-remove, large commented-out blocks)
+
+See AGENTS.md at the repo root for full review guidance."
+```
+
+Then poll for the Codex response (up to 3 minutes, checking every 30 seconds):
+
+```bash
+# Poll for chatgpt-codex-connector comment
+gh pr view <PR_NUMBER> --json comments \
+  --jq '.comments[] | select(.author.login == "chatgpt-codex-connector") | .body'
+```
+
+Record the Codex review result:
+- **COMPLETE** — Codex responded. Include a summary of its findings in the report.
+- **PENDING** — Codex did not respond within 3 minutes. Note in report; human should check before merging.
+- **NOT AVAILABLE** — `gh pr comment` failed or PR doesn't exist.
+
+If Codex reports blocking findings, include them in the WARN section of the review
+report (Codex findings are advisory, not merge-blocking from our side).
+
+### Step 4: Generate Review Report
 
 Output the review report to chat in this format:
 
@@ -152,13 +185,20 @@ Output the review report to chat in this format:
 |----|------|---------|----------|
 (table rows, or "No warnings.")
 
+### Codex Review
+- Status: COMPLETE / PENDING / NOT AVAILABLE
+- Summary: [1-3 sentence summary of Codex findings, or "No issues found" / "Awaiting response"]
+- Findings: [List any specific Codex findings, or "None"]
+
 ### Status
 - make check: PASSED / FAILED
 - Commit status: `success` / `failure` / `not published`
-- Codex review: PENDING / COMPLETE / NOT AVAILABLE
+- Codex review: COMPLETE / PENDING / NOT AVAILABLE
 
-### Verdict: READY FOR CODEX/HUMAN REVIEW / NEEDS ATTENTION
-READY if zero BLOCKs and make check passes. Merge after Codex review is visible.
+### Verdict: READY TO MERGE / NEEDS ATTENTION
+READY if zero BLOCKs, make check passes, and Codex review is COMPLETE with no blocking findings.
+NEEDS ATTENTION if any BLOCKs, make check fails, or Codex reported blocking issues.
+If Codex is PENDING, note that human should verify Codex review before merging.
 ```
 
 ## Phase 4 — Follow-up Issue Creation
