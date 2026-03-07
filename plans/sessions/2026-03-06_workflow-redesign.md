@@ -17,7 +17,7 @@ All review findings are recorded as follow-up issues (not commits on the origina
 | Role | Agent | Scope |
 |------|-------|-------|
 | Plan authoring | Claude | Writes plan files, opens plan PRs |
-| Plan review | Codex (GitHub-native) | Auto-reviews plan PRs via GitHub integration |
+| Plan review | Codex (GitHub-native) | Auto-reviews plan PRs via GitHub integration (assumption — validate with one plan-only PR) |
 | Code authoring | Claude | Implements from approved plan, opens code PRs |
 | Pre-merge review | Claude (local) | Runs `/reviewing-changes`, publishes GitHub commit status |
 | Pre-merge advisory | Codex (GitHub-native) | Auto-reviews code PRs via GitHub integration |
@@ -206,7 +206,12 @@ gh label create "fix:process"       --color "c5def5" --description "Follow-up fi
 
 - Connect ChatGPT/Codex to your GitHub account
 - Enable Codex automatic PR review for this repo (or for your PRs)
-- Confirm one test PR actually receives Codex review automatically
+- Confirm one **code** PR actually receives Codex review automatically
+- Confirm one **plan-only** (markdown-only) PR receives Codex review automatically
+  - **Rollout assumption:** Codex auto-reviewing plan PRs is unproven. OpenAI docs
+    describe PR/code review generally but do not guarantee markdown-only coverage.
+    If plan-only PRs do not trigger Codex review, plan review remains human-only
+    (with local `/reviewing-plans` as a pre-flight check).
 
 ### 3. Verify Actions Permissions
 
