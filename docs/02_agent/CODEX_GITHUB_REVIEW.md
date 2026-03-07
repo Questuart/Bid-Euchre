@@ -92,3 +92,5 @@ The PR template includes a `## Codex Review` section with three checkboxes:
   that needs validation
 - Codex review quality and relevance may vary — treat as supplementary
   to `/reviewing-changes`, not a replacement
+- Codex review latency is unknown — it may take several minutes after PR
+  creation before a review appears
