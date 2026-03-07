@@ -45,7 +45,7 @@ After Codex is proven reliable:
 
 ## Claude Behavior (Merge Protocol)
 
-When Claude opens a PR through the `/shipping-changes` workflow:
+After Claude creates a PR (via `gh pr create`):
 
 1. `/reviewing-changes` runs automatically (PostToolUse hook)
 2. `/reviewing-changes` publishes `reviewing-changes` commit status
