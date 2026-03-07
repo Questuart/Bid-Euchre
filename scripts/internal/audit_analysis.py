@@ -97,12 +97,8 @@ def get_follow_up_issues() -> list[dict]:
     return json.loads(result.stdout)
 
 
-def get_corrective_prs(follow_up_issues: list[dict]) -> list[dict]:
-    """Find PRs that reference follow-up issues (corrective PRs)."""
-    issue_numbers = {issue["number"] for issue in follow_up_issues}
-    if not issue_numbers:
-        return []
-
+def get_corrective_prs() -> list[dict]:
+    """Find PRs with the follow-up label (corrective PRs)."""
     cmd = [
         "gh",
         "pr",
@@ -116,7 +112,7 @@ def get_corrective_prs(follow_up_issues: list[dict]) -> list[dict]:
         "--limit",
         "200",
         "--json",
-        "number,title,state,labels,url",
+        "number,title,state,labels,url,body",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return json.loads(result.stdout)
@@ -131,6 +127,17 @@ def extract_source_pr(title: str) -> int | None:
 
     match = re.search(r"PR #(\d+)", title)
     return int(match.group(1)) if match else None
+
+
+def extract_referenced_issues(text: str) -> set[int]:
+    """Extract issue/PR numbers referenced in text.
+
+    Looks for patterns like 'Fixes #NNN', 'Closes #NNN', 'Resolves #NNN',
+    or plain '#NNN' references.
+    """
+    import re
+
+    return {int(m) for m in re.findall(r"#(\d+)", text)}
 
 
 def build_audit_trail(
@@ -164,10 +171,25 @@ def build_audit_trail(
                 }
             )
 
-    # Link corrective PRs (by follow-up label)
+    # Build follow-up issue number → source PR mapping
+    followup_to_source: dict[int, int] = {}
+    for issue in follow_up_issues:
+        source = extract_source_pr(issue["title"])
+        if source:
+            followup_to_source[issue["number"]] = source
+
+    # Link corrective PRs to source PRs via:
+    # 1. Title regex (PR #NNN in corrective PR title)
+    # 2. Body references to follow-up issues (#NNN → source PR)
     for pr in corrective_prs:
-        # Try to find the source PR from the corrective PR title
         source = extract_source_pr(pr["title"])
+        if not source:
+            # Check if the PR body references any follow-up issues
+            refs = extract_referenced_issues(pr.get("body", ""))
+            for ref in refs:
+                if ref in followup_to_source:
+                    source = followup_to_source[ref]
+                    break
         if source and source in trail:
             trail[source]["corrective_prs"].append(
                 {
@@ -183,32 +205,41 @@ def build_audit_trail(
 
 def compute_stats(
     merged_prs: list[dict],
-    follow_up_issues: list[dict],
-    corrective_prs: list[dict],
     audit_trail: dict[int, dict],
 ) -> dict:
-    """Compute summary statistics."""
+    """Compute summary statistics scoped to the analyzed PR set.
+
+    All counts are derived from the audit trail (which only links
+    issues/PRs to the analyzed merged PRs), not from repo-wide totals.
+    """
     total = len(merged_prs)
     prs_with_followups = sum(1 for t in audit_trail.values() if t["follow_up_issues"])
     prs_with_correctives = sum(1 for t in audit_trail.values() if t["corrective_prs"])
 
-    # Category breakdown from follow-up issue labels
-    categories: Counter[str] = Counter()
-    for issue in follow_up_issues:
-        for label in issue.get("labels", []):
-            name = label["name"]
-            if name.startswith(FIX_LABEL_PREFIX):
-                categories[name] += 1
+    # Collect only issues/PRs linked to the analyzed set
+    linked_issues = [
+        issue for t in audit_trail.values() for issue in t["follow_up_issues"]
+    ]
+    linked_correctives = [
+        pr for t in audit_trail.values() for pr in t["corrective_prs"]
+    ]
 
-    # Follow-up issue states
+    # Category breakdown from linked follow-up issue labels
+    categories: Counter[str] = Counter()
+    for issue in linked_issues:
+        for label_name in issue.get("labels", []):
+            if isinstance(label_name, str) and label_name.startswith(FIX_LABEL_PREFIX):
+                categories[label_name] += 1
+
+    # Follow-up issue states (scoped)
     issue_states: Counter[str] = Counter()
-    for issue in follow_up_issues:
+    for issue in linked_issues:
         issue_states[issue["state"]] += 1
 
     return {
         "merged_pr_count": total,
-        "follow_up_issue_count": len(follow_up_issues),
-        "corrective_pr_count": len(corrective_prs),
+        "follow_up_issue_count": len(linked_issues),
+        "corrective_pr_count": len(linked_correctives),
         "prs_with_followups": prs_with_followups,
         "prs_with_correctives": prs_with_correctives,
         "follow_up_rate": prs_with_followups / total if total else 0,
@@ -308,9 +339,9 @@ def main() -> None:
     # Gather data
     merged_prs = get_merged_prs(args.limit, args.since)
     follow_up_issues = get_follow_up_issues()
-    corrective_prs = get_corrective_prs(follow_up_issues)
+    corrective_prs = get_corrective_prs()
     audit_trail = build_audit_trail(merged_prs, follow_up_issues, corrective_prs)
-    stats = compute_stats(merged_prs, follow_up_issues, corrective_prs, audit_trail)
+    stats = compute_stats(merged_prs, audit_trail)
 
     if args.format == "json":
         output = {
