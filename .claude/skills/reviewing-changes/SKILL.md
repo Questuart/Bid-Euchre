@@ -1,6 +1,6 @@
 ---
 name: reviewing-changes
-description: Reviews changed code for quality, repo conventions, and correctness after PR creation. Publishes a GitHub commit status, creates follow-up issues for warnings, and arms auto-merge when clean. Triggered automatically by PostToolUse hook after gh pr create.
+description: Reviews changed code for quality, repo conventions, and correctness after PR creation. Publishes a GitHub commit status and creates follow-up issues for warnings. Triggered automatically by PostToolUse hook after gh pr create.
 ---
 
 # /reviewing-changes — Post-PR Code Review & Handoff
@@ -110,23 +110,24 @@ If it fails:
 3. If fixed: stage, commit as `"fix: resolve make check failures from /reviewing-changes"`, push
 4. If still failing after 3 attempts: note as FAILED in report
 
-### Step 2: Publish commit status and arm auto-merge
+### Step 2: Publish commit status
 
 Based on findings from Phases 1-2 and make check result:
 
 **If zero BLOCKs and make check passes:**
 ```bash
 scripts/internal/set_review_status.sh success "Review passed — 0 blockers, N warnings"
-gh pr merge --auto --squash
 ```
 
 **If any BLOCKs or make check fails:**
 ```bash
 scripts/internal/set_review_status.sh failure "Review blocked — N blockers found"
 ```
-Do NOT arm auto-merge. List blockers in report.
 
 If `set_review_status.sh` is not available, skip status publishing and note in report.
+
+Do NOT arm auto-merge (`gh pr merge --auto`). During rollout, merge happens
+manually after Codex pre-merge review is visible on the PR.
 
 ### Step 3: Generate Review Report
 
@@ -154,10 +155,10 @@ Output the review report to chat in this format:
 ### Status
 - make check: PASSED / FAILED
 - Commit status: `success` / `failure` / `not published`
-- Auto-merge: ARMED / NOT ARMED
+- Codex review: PENDING / COMPLETE / NOT AVAILABLE
 
-### Verdict: READY TO MERGE / NEEDS ATTENTION
-READY if zero BLOCKs and make check passes.
+### Verdict: READY FOR CODEX/HUMAN REVIEW / NEEDS ATTENTION
+READY if zero BLOCKs and make check passes. Merge after Codex review is visible.
 ```
 
 ## Phase 4 — Follow-up Issue Creation

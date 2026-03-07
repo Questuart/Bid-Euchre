@@ -40,8 +40,8 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Branch: `[branch]` → PR #[number]
 - make check: [PASSED / FAILED]
 - Commit status: [`success` / `failure` / `not published`]
-- Auto-merge: [ARMED / NOT ARMED]
-- Verdict: [READY TO MERGE / NEEDS ATTENTION]
+- Codex review: [PENDING / COMPLETE / NOT AVAILABLE]
+- Verdict: [READY FOR CODEX/HUMAN REVIEW / NEEDS ATTENTION]
 
 ### Context for Next Agent
 [2-3 sentences: What this PR does, any gotchas from the review,
