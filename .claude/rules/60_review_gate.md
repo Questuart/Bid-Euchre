@@ -4,15 +4,30 @@
 
 ## Operating Model
 
-Claude is the default authoring agent. Codex is the default reviewing agent.
-GitHub is the system of record for merge gates, review artifacts, and post-merge audit.
+Claude is the default authoring agent. GitHub is the system of record for merge gates
+and review artifacts. `reviewing-changes` is the only formal automated gate controlled
+by this repo.
+
+Codex is a GitHub-native pre-merge reviewer — it reviews PRs automatically via GitHub's
+built-in integration (not via custom API workflows). Codex review is advisory during
+rollout: merge happens only after Codex review is visible on the PR, but Codex does not
+control a required status check.
 
 ## Status Contexts
 
 | Context | Publisher | Required by branch protection? | Purpose |
 |---------|-----------|-------------------------------|---------|
 | `reviewing-changes` | Claude (local, via `/reviewing-changes` skill) | Yes | Pre-merge code review gate |
-| `codex-plan-review` | Codex (GHA, via `plan_review.yml`) | No (advisory) | Plan review signal for human approver |
+
+## Merge Protocol (Rollout)
+
+1. Claude opens PR, `/reviewing-changes` runs automatically
+2. `reviewing-changes` publishes commit status (`success` or `failure`)
+3. Codex auto-reviews the PR (GitHub-native, no API key needed)
+4. Human verifies Codex review is visible, addresses any blocking comments
+5. Human merges manually (no auto-merge during rollout)
+
+Auto-merge may be restored after Codex auto-review is proven reliable on 3-5 real PRs.
 
 ## Severity Definitions
 
@@ -61,13 +76,6 @@ Use `scripts/internal/set_review_status.sh`:
 scripts/internal/set_review_status.sh pending "Review in progress"
 scripts/internal/set_review_status.sh success "Review passed — 0 blockers, N warnings"
 scripts/internal/set_review_status.sh failure "Review blocked — N blockers found"
-
-# Plan review from GitHub Actions — pass PR head SHA explicitly
-# (actions/checkout checks out merge commit, not PR head)
-scripts/internal/set_review_status.sh success "Plan approved" "" "codex-plan-review" "$PR_HEAD_SHA"
-
-# Or via environment variable
-REVIEW_STATUS_SHA="$PR_HEAD_SHA" scripts/internal/set_review_status.sh pending "Review starting"
 
 # Manual override (admin recovery for stuck pending)
 scripts/internal/set_review_status.sh success "Manual override"
