@@ -67,6 +67,7 @@ Shell scripts:
 ### `scripts/internal/`
 **Research and internal tooling.** Not part of the canonical workflow.
 
+- `audit_analysis.py` — Review pipeline audit (follow-up rates, corrective PRs, per-PR trail)
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
@@ -197,6 +198,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 
 | Command | Purpose |
 |---------|---------|
+| `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
 | `scripts/internal/generate_action_value_dataset.py` | Counterfactual action-value dataset generator (R1.5) |
