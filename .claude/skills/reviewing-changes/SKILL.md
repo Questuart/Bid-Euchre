@@ -214,7 +214,7 @@ Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
 1. **PR review comments** (inline, on specific lines) — this is the primary channel:
    ```bash
    # Check for inline review comments from Codex
-   gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/comments \
+   gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/comments --paginate \
      --jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | {path: .path, line: .line, body: .body}]'
    ```
 
@@ -272,7 +272,7 @@ the raw response body in the report for human review.
 
 Record the Codex review result:
 - **COMPLETE** — Codex responded. Include parsed findings in the report.
-- **PENDING** — Codex did not respond within 5 minutes. Note in report; human should check before merging.
+- **PENDING** — Codex did not respond within 10 minutes. Note in report; human should check before merging.
 - **NOT AVAILABLE** — `gh pr comment` failed or PR doesn't exist.
 
 **Observe-only:** Codex findings are informational in this phase. They do NOT
