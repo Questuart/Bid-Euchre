@@ -34,6 +34,8 @@ docs/04_reports/
     22_v1_v2_delta_review.md        (v1→v2 delta review)
     23_phase0_to_r0_progression.md  (Phase 0→R0 progression)
     archive/                        (superseded revisions)
+  r1_5/                    Arc D R1.5 rung (objective-alignment)
+    01_offline_gate_x3_report.md  (Gate X3 offline ranking evaluation)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -65,6 +67,12 @@ Superseded revisions in `r0/archive/`.
 
 Working copies of per-rung reports are generated to `data/reports/arc_d/` (gitignored).
 Use `--snapshot` flag with dashboard script to update the committed snapshot.
+
+### R1.5: Objective-Alignment
+
+| Report | Date | Summary |
+|--------|------|---------|
+| [r1_5/01_offline_gate_x3_report.md](r1_5/01_offline_gate_x3_report.md) | 2026-03-08 | Gate X3 offline ranking: failed (oracle noise from single rollouts), model has signal, proceed to gameplay |
 
 ### Phase 0: Bidless
 

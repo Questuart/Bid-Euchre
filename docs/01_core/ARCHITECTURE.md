@@ -69,6 +69,7 @@ Shell scripts:
 
 - `audit_analysis.py` — Review pipeline audit (follow-up rates, corrective PRs, per-PR trail)
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
+- `evaluate_gate_x3.py` — R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle)
 - `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
 - `generate_auction_context_dataset.py` — Auction-context dataset generator (R1 partner features)
@@ -200,6 +201,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 |---------|---------|
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
+| `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
 | `scripts/internal/generate_action_value_dataset.py` | Counterfactual action-value dataset generator (R1.5) |
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
