@@ -207,7 +207,7 @@ See AGENTS.md 'Plan Audit' section for full guidance."
 
 Record the timestamp when the `@codex review` comment was posted.
 
-Then poll for the Codex response (up to 5 minutes, checking every 30 seconds).
+Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
 
 **Important:** Codex responds via **two channels** — check both:
 
