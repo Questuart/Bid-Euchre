@@ -48,6 +48,58 @@ When reviewing PRs, prioritize these checks in order:
 10. **Data policy** — `data/runs/`, `data/reports/`, `data/models/` must never
     be committed. Only `data/fixtures/` is allowed.
 
+## Review Output Format
+
+When reporting review findings, use this structured format so that findings
+can be parsed consistently by both humans and automated tooling.
+
+### Severity Scale
+
+| Severity | Meaning | Maps to | Action |
+|----------|---------|---------|--------|
+| **CRITICAL** | Correctness issue that would cause bugs or data corruption | BLOCK checks (C1, C2, X3, N1, N2) | Must fix before merge |
+| **WARNING** | Non-blocking issue worth fixing or tracking | WARN checks (C3, C4, T1, X1, X2, N3) | Follow-up issue post-merge |
+| **NIT** | Style, readability, or minor improvement | — | Note only, no action required |
+
+### Response Template
+
+```markdown
+## Codex Review
+
+### Summary
+- Files reviewed: N (M library, K test, J notebook, ...)
+- Findings: X CRITICAL, Y WARNING, Z NIT
+
+### Findings
+
+| Severity | File | Line | Check | Finding |
+|----------|------|------|-------|---------|
+| CRITICAL | src/bid_euchre/strategy/foo.py | 42 | C1 | `random.Random()` without seed — use `random.Random(seed)` |
+| WARNING | src/bid_euchre/strategy/foo.py | 87 | C4 | Function `compute_ev` is 63 lines — consider extracting helper |
+| NIT | src/bid_euchre/strategy/foo.py | 3 | — | Unused import `os` |
+
+(If no issues found, write "No findings." instead of the table.)
+
+### Checks Performed
+- [x] C1: Unseeded randomness
+- [x] C2: Falsy numeric guards
+- [x] C4: Import boundary violations
+- [x] X3: Merge artifacts
+- [x] T1: Missing test coverage
+- [ ] N1: Contract-type faceting — no notebooks changed
+- [ ] N3: Statistical claims — no notebooks changed
+```
+
+### Important Notes for Reviewers
+
+- **Always include the Checks Performed section**, even when no issues are
+  found. This tells us what was checked vs. what was skipped.
+- **Use the check IDs** (C1, C2, C3, C4, T1, X1, X2, X3, N1, N2, N3) from
+  the Review Focus Areas section above when a finding maps to a known check.
+  Use `—` for findings that don't map to a specific check.
+- **Include file paths and line numbers** so findings can be located quickly.
+- **Be specific in findings** — describe what's wrong and suggest a fix.
+
 ## File Layout
 
 - `src/bid_euchre/` — Library code (rules, simulation, strategies, features)

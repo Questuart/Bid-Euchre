@@ -43,20 +43,28 @@ After Codex is proven reliable:
 - Set `enforce_admins=false`
 - Consider re-enabling auto-merge in `/reviewing-changes`
 
-## Claude Behavior (Merge Protocol)
+## Claude Behavior (Merge Protocol — Observe Phase)
 
 After Claude creates a PR (via `gh pr create`):
 
 1. `/reviewing-changes` runs automatically (PostToolUse hook)
 2. `/reviewing-changes` publishes `reviewing-changes` commit status
-3. `/reviewing-changes` posts `@codex review` comment with review instructions
-4. `/reviewing-changes` polls for Codex response (up to 3 minutes)
-5. Codex findings are included in the review report
-6. Human verifies review report, addresses any blocking findings
-7. Human merges manually
+3. `/reviewing-changes` posts `@codex review` comment with PR-aware context
+   and structured format request (severity scale, check IDs, Checks Performed)
+4. `/reviewing-changes` polls for Codex response (up to 5 minutes)
+5. `/reviewing-changes` logs Codex response metadata (latency, format compliance,
+   parseability, finding counts, checks reported)
+6. Codex findings are included in the review report (observe-only — no auto-fix)
+7. Human verifies review report, addresses any blocking findings
+8. Human merges manually
+
+**Observe-only:** In this phase, Codex findings do not affect commit status
+or merge eligibility. They are logged to build a dataset for validating
+format compliance and finding accuracy before enabling automated action.
 
 Codex review instructions reference `AGENTS.md` at the repo root, which
-describes the project and prioritized review checks.
+defines the project context, prioritized review checks, and the structured
+output format Codex should use.
 
 ### Handling Codex Findings
 
