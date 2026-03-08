@@ -9,17 +9,20 @@
 
 The 3-seed self-play screen **passed all three sub-gates**. The ActionValueBidder
 is functional and produces balanced self-play outcomes. However, the behavioral
-profile reveals a pattern not anticipated by the design spec: the bidder **never
-passes** (0.0% pass rate across all 30,000 auction decisions) and every hand is
-bid at exactly level 4 (the minimum when all 4 players bid once each).
+profile reveals a pattern not anticipated by the design spec: the bidder **almost
+never passes** (2 passes across 30,000 auction decisions, 0.007% pass rate) and
+nearly every hand is bid at level 4 (the minimum when all 4 players bid once
+each). Two hands across seeds 43 and 44 include a mid-auction pass, ending at
+bid=3.
 
-This is the inverse of the over-passing concern from Gate X3 (39.2% offline pass
-rate). The discrepancy arises because the offline evaluation measures pass
-preference from `current_high_bid=0` (the "what should I bid fresh?" question),
-while gameplay involves sequential escalation where each player always finds some
-bid more valuable than passing at their turn.
+This is the inverse of the over-passing concern from Gate X3, where the model's
+top action was pass in 39.2% of offline states (vs the oracle's 26.5%). The
+discrepancy arises because the offline evaluation evaluates all legal actions from
+`current_high_bid=0` in a single step, while gameplay involves a sequential
+auction where each player faces progressively restricted action spaces and almost
+always finds some bid more valuable than passing.
 
-**Decision:** Proceed to Step 6 (H2H battery). The zero-pass behavior is not
+**Decision:** Proceed to Step 6 (H2H battery). The near-zero pass rate is not
 catastrophic but will likely produce weak H2H performance against opponents that
 bid higher on strong hands.
 
@@ -51,7 +54,7 @@ done
 | Sub-gate | Threshold | Seed 42 | Seed 43 | Seed 44 | Verdict |
 |----------|-----------|---------|---------|---------|---------|
 | Self-play WR | [40%, 60%] | 49.9% | 51.1% | 50.9% | **PASS** |
-| Pass rate | < 70% | 0.0% | 0.0% | 0.0% | **PASS** |
+| Pass rate | < 70% | 0.00% | 0.01% | 0.01% | **PASS** |
 | Mean eppd | >= 0 | 4.761 | 4.777 | 4.750 | **PASS** |
 
 ### Detailed Metrics
@@ -68,23 +71,27 @@ done
 | Make rate | 92.8% | 93.4% | 92.5% | 92.9% |
 | Avg bid level | 4.0 | 4.0 | 4.0 | 4.0 |
 | Tie rate | 21.2% | 20.0% | 20.1% | 20.4% |
-| Pass rate | 0.0% | 0.0% | 0.0% | 0.0% |
+| Pass rate | 0.00% | 0.01% | 0.01% | 0.007% |
 
 ## 3. Behavioral Analysis
 
 ### Auction Dynamics
 
-Every hand follows the same pattern:
+Each auction has exactly 4 actions (one per seat). The dominant pattern
+(99.96% of hands) is escalating bids:
 1. First bidder bids 1 (some contract) — model predicts positive EV
 2. Second bidder bids 2 (some contract) — still positive for many contracts
 3. Third bidder bids 3 (some contract) — still positive
-4. Fourth bidder bids 4 (some contract) — still positive
-5. All remaining players pass (would need bid 5+, which exceeds EV)
+4. Fourth bidder bids 4 (some contract) — still positive, wins the auction
 
-**Zero passes in round 1.** The model always finds some contract where predicted
-`net_points` exceeds the pass model's prediction. This is consistent with the
-Gate X3 finding that the pass model has very low R^2 (0.044) — it can't reliably
-identify when passing is truly better.
+In 2 out of 7,502 hands with auctions (seeds 43 and 44), one player passes
+mid-auction instead of bidding, resulting in a final bid of 3. Example (seed
+43, hand 1256): seat 2 bids 1 (suit-C), seat 3 **passes**, seat 0 bids 2
+(high), seat 1 bids 3 (suit-H).
+
+The near-zero pass rate is consistent with the Gate X3 finding that the pass
+model has very low R^2 (0.044) — the model almost always predicts some bid
+contract as higher-value than passing.
 
 ### Contract Type Distribution (Seed 42)
 
@@ -98,23 +105,29 @@ This mix is plausible. Suit contracts dominate because trump/bower advantages
 provide more control. Low contracts appear frequently because low-card hands
 have a natural advantage when counting from 10 upward.
 
-### Over-Passing vs Never-Passing: Reconciliation
+### Over-Passing vs Near-Zero Passing: Reconciliation
 
-The Gate X3 report documented 39.2% offline pass rate (model picks pass as
-best action) vs the oracle's 26.5%. In gameplay, the pass rate is 0.0%.
+The Gate X3 report documented the **model's** family choice rate for pass as
+39.2% (vs the oracle's 26.5%). That is, when the model evaluates all ~61 legal
+actions from `current_high_bid=0` and picks the highest-predicted-value action,
+it selects pass in 39.2% of states. Yet in gameplay, the pass rate is 0.007%.
 
-This is not contradictory:
-- **Offline (X3):** Evaluates ALL legal actions from `current_high_bid=0`.
-  The pass model's prediction beats all 60 bid predictions in 39.2% of states.
+This is not contradictory — it reflects a difference in evaluation context:
+- **Offline (X3):** Each state is evaluated in isolation at `current_high_bid=0`
+  with the full menu of 61 actions. The model's argmax is pass in 39.2% of
+  these independent evaluations.
 - **Gameplay:** The auction is sequential. The first bidder faces
-  `current_high_bid=0` and evaluates all actions — but the argmax is always
-  a low-level bid (bid=1), not pass. The 39.2% offline pass rate included
-  states where pass beat all bids **at the oracle's single-rollout outcome**,
-  not at the model's prediction.
+  `current_high_bid=0` and picks a low-level bid (bid=1), not pass. Subsequent
+  bidders face `current_high_bid >= 1` with a restricted action set, and they
+  too prefer bidding over passing. The 39.2% offline rate counted states where
+  pass was globally best across all 61 options, but in gameplay each player
+  only needs pass to beat the progressively smaller set of remaining bids.
 
-The key insight: the model's predicted value for low-level bids (1-3) is
-almost always positive, making them preferred over pass. The offline pass rate
-measured oracle behavior, not model behavior.
+The key insight: the offline evaluation is a single-step argmax over the full
+action space, while gameplay is a multi-step sequential auction where each
+player's action restricts the next player's options. The model's predicted
+value for low-level bids (1-3) is almost always positive, making them preferred
+over pass when the action space starts wide.
 
 ## 4. Risk Assessment for H2H
 
@@ -129,10 +142,11 @@ on strong hands), the ActionValueBidder will:
 
 ### Concern: Undifferentiated Hands
 
-The model treats all hands equally in the auction — every hand bids, every
-hand ends at 4. It cannot identify "premium" hands worth bidding higher on
-vs "marginal" hands worth passing. This is the cross-model calibration problem
-from Gate X3 manifesting in gameplay.
+The model treats nearly all hands identically in the auction — almost every
+seat bids, and the winning bid is almost always 4. It cannot identify
+"premium" hands worth bidding higher on vs "marginal" hands worth passing.
+This is the cross-model calibration problem from Gate X3 manifesting in
+gameplay.
 
 ### Expected H2H Outcome
 
@@ -168,21 +182,21 @@ done
 
 # Inspect auction behavior from hand logs
 python3 -c "
-import json, sys
+import json, glob
 from collections import Counter
 
 for seed in [42, 43, 44]:
-    import glob
     dirs = glob.glob(f'data/runs/r1_5_self_play_{seed}_*')
     if not dirs: continue
     logfiles = glob.glob(f'{dirs[0]}/logs/*.jsonl')
     if not logfiles: continue
     with open(logfiles[0]) as f:
         hands = [json.loads(line) for line in f]
-    pass_count = sum(1 for h in hands for e in h.get('auction_transcript', [])
-                     if e.get('action') == 'pass')
-    bid_count = sum(1 for h in hands for e in h.get('auction_transcript', [])
-                    if e.get('action') == 'BID')
-    print(f'Seed {seed}: {bid_count} bids, {pass_count} passes')
+    actions = Counter(e.get('action') for h in hands
+                      for e in h.get('auction_transcript', []))
+    total = sum(actions.values())
+    passes = actions.get('PASS', 0)
+    bids = actions.get('BID', 0)
+    print(f'Seed {seed}: {bids} bids, {passes} passes ({passes/total*100:.2f}%)')
 "
 ```
