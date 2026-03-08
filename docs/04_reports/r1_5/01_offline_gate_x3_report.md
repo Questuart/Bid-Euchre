@@ -266,10 +266,11 @@ catastrophic-behavior screen clears.
 
 | Item | Value |
 |------|-------|
-| gate_status | N/A (gate mis-specified; not used for promotion decision) |
+| gate_status | FAILED (X3-rank, X3-regret, X3-cal all below threshold; adjudicated non-blocking due to oracle specification mismatch — see §4) |
 | Artifact | data/runs/action_value_quick_42/action_value_full.json |
 | Dataset | data/runs/action_value_quick_42/datasets/action_value.parquet |
-| Git SHA | c141973 |
+| Analysis script | scripts/internal/evaluate_gate_x3.py |
+| analysis_base_sha | a20b177 (HEAD of main at time of analysis) |
 | Seed | 42 |
 | n_deals | 2,500 (QUICK) |
 | Test split | 250 deals, 1,000 states, 47,344 rows |
@@ -289,6 +290,9 @@ uv run python scripts/internal/train_action_value.py \
     --output-dir data/runs/action_value_quick_42 \
     --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-# Gate X3 evaluation was run as inline analysis (not a committed script).
-# See this report for methodology and results.
+# Gate X3 offline evaluation
+uv run python scripts/internal/evaluate_gate_x3.py \
+    --seed 42 \
+    --dataset data/runs/action_value_quick_42/datasets/action_value.parquet \
+    --artifact data/runs/action_value_quick_42/action_value_full.json
 ```
