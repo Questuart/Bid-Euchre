@@ -29,7 +29,16 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Follow-up issues: [N created] (or "none needed")
   - [issue URL] — [category]
   - ...
-- Codex review: [COMPLETE — summary of findings / PENDING — check PR before merge / NOT AVAILABLE]
+
+### Codex Review Metadata
+- Status: [COMPLETE / PENDING / NOT AVAILABLE]
+- Responded: [yes/no]
+- Latency: [N seconds / timeout]
+- Format compliant: [yes/no]
+- Findings parseable: [yes/no]
+- Finding counts: [CRITICAL: N, WARNING: N, NIT: N / unparseable]
+- Checks reported: [list of check IDs / missing]
+- Summary: [1-3 sentence summary of Codex findings, or "Awaiting response"]
 
 ### Needs Human Decision
 - [Each BLOCK item with context on why it needs judgment]

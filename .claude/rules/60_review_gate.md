@@ -19,16 +19,22 @@ control a required status check.
 |---------|-----------|-------------------------------|---------|
 | `reviewing-changes` | Claude (local, via `/reviewing-changes` skill) | Yes | Pre-merge code review gate |
 
-## Merge Protocol (Rollout)
+## Merge Protocol (Observe Phase)
 
 1. Claude opens PR, `/reviewing-changes` runs automatically
 2. `reviewing-changes` publishes commit status (`success` or `failure`)
-3. `reviewing-changes` posts `@codex review` comment to trigger Codex
-4. `reviewing-changes` polls for Codex response (up to 3 min) and includes findings in report
-5. Human verifies Codex review, addresses any blocking comments
-6. Human merges manually (no auto-merge during rollout)
+3. `reviewing-changes` posts `@codex review` with PR-aware context and structured format request
+4. `reviewing-changes` polls for Codex response (up to 5 min) and logs response metadata
+5. Codex findings are reported for human review (observe-only — no auto-fix of Codex findings)
+6. Human verifies review report + Codex review, addresses any blocking findings
+7. Human merges manually (no auto-merge during observe phase)
 
-Auto-merge may be restored after Codex auto-review is proven reliable on 3-5 real PRs.
+**Codex observe-only phase:** Codex findings do not affect commit status or merge
+eligibility. They are logged and reported so we can measure format compliance,
+parse success, and finding accuracy before enabling automated action on Codex output.
+
+Auto-merge is gated on promotion criteria in `docs/04_reports/codex_validation/`.
+See `plans/sessions/2026-03-08_codex-review-quality.md` for the rollout plan.
 
 ## Severity Definitions
 

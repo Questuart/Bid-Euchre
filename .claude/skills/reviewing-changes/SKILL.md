@@ -129,24 +129,85 @@ If `set_review_status.sh` is not available, skip status publishing and note in r
 Do NOT arm auto-merge (`gh pr merge --auto`). During rollout, merge happens
 manually after Codex pre-merge review is visible on the PR.
 
-### Step 3: Request Codex review
+### Step 3: Request Codex review (observe-only)
 
-Post a comment on the PR to trigger Codex review with focused instructions:
+Post a comment on the PR to trigger Codex review with a **review-mode-specific
+prompt**. Determine the review mode from the file classification in Phase 0 Step 4:
+
+| Changed files include | Review mode |
+|----------------------|-------------|
+| `docs/04_reports/**`, gate/promotion reports | `report-audit` |
+| `plans/**` | `plan-audit` |
+| Everything else (default) | `standard` |
+
+If a PR has mixed file types, use the most restrictive mode that applies.
+
+**Standard mode prompt:**
 
 ```bash
 gh pr comment <PR_NUMBER> --body "@codex review
 
-Focus on these repo-specific checks:
-- Unseeded randomness (random.Random() without seed, global random.* in src/)
-- Falsy numeric guards (x = x or fallback on metrics — 0.0 is falsy)
-- Import boundary violations (src/ importing from experiments/ or tests/)
-- Missing test coverage for behavior changes in src/
-- Merge artifacts (conflict markers, TODO-remove, large commented-out blocks)
+**Review mode:** standard
+**PR scope:** M files changed (K library, J test, ...)
+**Risk level:** [Low/Medium/High from PR body, or inferred from file categories]
 
-See AGENTS.md at the repo root for full review guidance."
+Report findings using the structured format in AGENTS.md.
+Use severity levels: CRITICAL, WARNING, NIT.
+Include file path, line number, and check ID for each finding.
+Always include the Checks Performed section, even if no issues found.
+
+See AGENTS.md at the repo root for the full checklist and output format."
 ```
 
-Then poll for the Codex response (up to 3 minutes, checking every 30 seconds):
+**Report-audit mode prompt:**
+
+```bash
+gh pr comment <PR_NUMBER> --body "@codex review
+
+**Review mode:** report-audit
+**PR scope:** M files changed (report/docs files)
+
+Review this as a methodology/provenance audit, not a prose-only docs review.
+
+Required checks:
+1. Verify any provenance SHA or run ID against repo history (R1)
+2. Flag published metrics not reproducible from a committed script/notebook (R2)
+3. Distinguish formal gate result from override/adjudication (R3)
+4. Cross-check claims against the governing plan referenced in the PR body (R4)
+5. Verify referenced artifact paths exist or have repro instructions (R5)
+
+Use severity levels: CRITICAL, WARNING, NIT.
+Include file path, line number, and check ID for each finding.
+Always include the Checks Performed section.
+
+See AGENTS.md 'Report Audit' section for full guidance."
+```
+
+**Plan-audit mode prompt:**
+
+```bash
+gh pr comment <PR_NUMBER> --body "@codex review
+
+**Review mode:** plan-audit
+**PR scope:** M files changed (plan files)
+
+Review this plan for implementation readiness:
+1. Verify referenced file paths exist (new files exempt)
+2. Check scope — single concept or justified multi-PR chain
+3. Verify testing strategy is identified
+4. Flag import boundary violations (src/ importing experiments/ or tests/)
+5. Check for missing exports if new public functions are planned
+
+Use severity levels: CRITICAL, WARNING, NIT.
+Include file path, line number, and check ID for each finding.
+Always include the Checks Performed section.
+
+See AGENTS.md 'Plan Audit' section for full guidance."
+```
+
+Record the timestamp when the `@codex review` comment was posted.
+
+Then poll for the Codex response (up to 5 minutes, checking every 30 seconds):
 
 ```bash
 # Poll for chatgpt-codex-connector comment
@@ -154,15 +215,38 @@ gh pr view <PR_NUMBER> --json comments \
   --jq '.comments[] | select(.author.login == "chatgpt-codex-connector") | .body'
 ```
 
+### Step 4: Log Codex response metadata
+
+After polling completes (response received or timeout), log these fields
+in the review report's Codex Review section:
+
+| Field | Value |
+|-------|-------|
+| `codex_responded` | yes / no |
+| `codex_latency_seconds` | seconds from `@codex review` comment to response (or `timeout`) |
+| `codex_format_compliant` | yes / no — response contains Summary + Findings table + Checks Performed |
+| `codex_findings_parseable` | yes / no — file paths, line numbers, and severity tags are extractable |
+| `codex_finding_counts` | CRITICAL: N, WARNING: N, NIT: N (or `unparseable`) |
+| `codex_checks_reported` | list of check IDs from Checks Performed (or `missing`) |
+
+**Format compliance check:** Look for these structural markers:
+- `### Summary` with `Findings:` line containing severity counts
+- `### Findings` with a markdown table containing Severity/File/Line/Check/Finding columns
+- `### Checks Performed` with checkbox items
+
+If the response lacks structure, set `codex_format_compliant: no` and include
+the raw response body in the report for human review.
+
 Record the Codex review result:
-- **COMPLETE** — Codex responded. Include a summary of its findings in the report.
-- **PENDING** — Codex did not respond within 3 minutes. Note in report; human should check before merging.
+- **COMPLETE** — Codex responded. Include parsed findings in the report.
+- **PENDING** — Codex did not respond within 5 minutes. Note in report; human should check before merging.
 - **NOT AVAILABLE** — `gh pr comment` failed or PR doesn't exist.
 
-If Codex reports blocking findings, include them in the WARN section of the review
-report (Codex findings are advisory, not merge-blocking from our side).
+**Observe-only:** Codex findings are informational in this phase. They do NOT
+affect commit status, merge eligibility, or follow-up issue creation. They are
+reported for human review only. Do NOT auto-fix Codex findings.
 
-### Step 4: Generate Review Report
+### Step 5: Generate Review Report
 
 Output the review report to chat in this format:
 
@@ -187,8 +271,18 @@ Output the review report to chat in this format:
 
 ### Codex Review
 - Status: COMPLETE / PENDING / NOT AVAILABLE
+- Responded: yes / no
+- Latency: N seconds / timeout
+- Format compliant: yes / no
+- Findings parseable: yes / no
+- Finding counts: CRITICAL: N, WARNING: N, NIT: N (or "unparseable")
+- Checks reported: [list of check IDs] (or "missing")
 - Summary: [1-3 sentence summary of Codex findings, or "No issues found" / "Awaiting response"]
-- Findings: [List any specific Codex findings, or "None"]
+- Codex findings (if parseable):
+
+| Severity | File | Line | Check | Finding |
+|----------|------|------|-------|---------|
+(parsed table rows from Codex response, or "No findings" / "Response not parseable — see raw output below")
 
 ### Status
 - make check: PASSED / FAILED
@@ -196,9 +290,10 @@ Output the review report to chat in this format:
 - Codex review: COMPLETE / PENDING / NOT AVAILABLE
 
 ### Verdict: READY TO MERGE / NEEDS ATTENTION
-READY if zero BLOCKs, make check passes, and Codex review is COMPLETE with no blocking findings.
-NEEDS ATTENTION if any BLOCKs, make check fails, or Codex reported blocking issues.
-If Codex is PENDING, note that human should verify Codex review before merging.
+READY if zero BLOCKs and make check passes.
+NEEDS ATTENTION if any BLOCKs or make check fails.
+Codex findings are observe-only — they do not affect the verdict.
+Note Codex format compliance for validation tracking.
 ```
 
 ## Phase 4 — Follow-up Issue Creation

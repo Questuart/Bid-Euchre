@@ -43,20 +43,28 @@ After Codex is proven reliable:
 - Set `enforce_admins=false`
 - Consider re-enabling auto-merge in `/reviewing-changes`
 
-## Claude Behavior (Merge Protocol)
+## Claude Behavior (Merge Protocol — Observe Phase)
 
 After Claude creates a PR (via `gh pr create`):
 
 1. `/reviewing-changes` runs automatically (PostToolUse hook)
 2. `/reviewing-changes` publishes `reviewing-changes` commit status
-3. `/reviewing-changes` posts `@codex review` comment with review instructions
-4. `/reviewing-changes` polls for Codex response (up to 3 minutes)
-5. Codex findings are included in the review report
-6. Human verifies review report, addresses any blocking findings
-7. Human merges manually
+3. `/reviewing-changes` posts `@codex review` comment with PR-aware context
+   and structured format request (severity scale, check IDs, Checks Performed)
+4. `/reviewing-changes` polls for Codex response (up to 5 minutes)
+5. `/reviewing-changes` logs Codex response metadata (latency, format compliance,
+   parseability, finding counts, checks reported)
+6. Codex findings are included in the review report (observe-only — no auto-fix)
+7. Human verifies review report, addresses any blocking findings
+8. Human merges manually
+
+**Observe-only:** In this phase, Codex findings do not affect commit status
+or merge eligibility. They are logged to build a dataset for validating
+format compliance and finding accuracy before enabling automated action.
 
 Codex review instructions reference `AGENTS.md` at the repo root, which
-describes the project and prioritized review checks.
+defines the project context, prioritized review checks, and the structured
+output format Codex should use.
 
 ### Handling Codex Findings
 
@@ -86,6 +94,27 @@ The PR template includes a `## Codex Review` section with three checkboxes:
 | `reviewing-changes` | Commit status | Yes (branch protection) | Claude (local) |
 | Codex review | PR review | No (advisory) | Codex (GitHub-native) |
 | Human approval | PR review | Yes (rollout only) | Human |
+
+## Review Modes
+
+PRs are classified by review mode based on changed file types. The
+`/reviewing-changes` skill selects the appropriate `@codex review` prompt
+automatically.
+
+| Review Mode | Trigger | Focus |
+|-------------|---------|-------|
+| `standard` | Code PRs (default) | Code correctness, tests, conventions, determinism |
+| `report-audit` | PRs touching `docs/04_reports/**`, gate/promotion reports | Provenance, reproducibility, gate semantics, plan consistency |
+| `plan-audit` | PRs touching `plans/**` | Scope, real paths, execution risk, testing strategy |
+
+**Report-audit mode** treats docs that publish technical results as reviewable
+artifacts, not "docs-only" PRs. It checks provenance SHAs, reproducibility
+from committed scripts, and gate result accuracy.
+
+For high-risk report PRs (promotion decisions, gate evaluations), consider
+supplementing GitHub Codex with a deeper desktop audit. GitHub Codex provides
+first-pass advisory review; desktop review can verify provenance against
+actual git history and cross-check methodology.
 
 ## Limitations
 
