@@ -280,6 +280,165 @@ def evaluate_pairwise(test_df: pd.DataFrame) -> dict:
     }
 
 
+def evaluate_pairwise_slices(test_df: pd.DataFrame) -> dict:
+    """Pairwise accuracy on harder slices: close pairs and within-top-k."""
+    states = test_df.groupby(["deal_id", "focal_seat"])
+
+    # Close-pair slices
+    close_1_conc, close_1_disc = 0, 0
+    close_2_conc, close_2_disc = 0, 0
+
+    # Within-top-k slices
+    top3_conc, top3_disc = 0, 0
+    top5_conc, top5_disc = 0, 0
+
+    for (_deal_id, _seat), group in states:
+        idx = group.index.tolist()
+        net_pts = group["net_points"]
+        mod_pred = group["model_pred"]
+
+        # Close-pair pairwise
+        for i, j in combinations(range(len(idx)), 2):
+            a, b = idx[i], idx[j]
+            emp_diff = net_pts.loc[a] - net_pts.loc[b]
+            mod_diff = mod_pred.loc[a] - mod_pred.loc[b]
+            abs_emp = abs(emp_diff)
+
+            if emp_diff != 0:
+                concordant = (emp_diff > 0 and mod_diff > 0) or (
+                    emp_diff < 0 and mod_diff < 0
+                )
+                if abs_emp <= 1:
+                    if concordant:
+                        close_1_conc += 1
+                    else:
+                        close_1_disc += 1
+                if abs_emp <= 2:
+                    if concordant:
+                        close_2_conc += 1
+                    else:
+                        close_2_disc += 1
+
+        # Within-top-k pairwise (by empirical ranking)
+        top_indices = group.nlargest(5, "net_points").index.tolist()
+        for k_limit, (conc_ref, disc_ref) in [
+            (3, ("top3", None)),
+            (5, ("top5", None)),
+        ]:
+            subset = top_indices[:k_limit]
+            for i, j in combinations(range(len(subset)), 2):
+                a, b = subset[i], subset[j]
+                emp_diff = net_pts.loc[a] - net_pts.loc[b]
+                mod_diff = mod_pred.loc[a] - mod_pred.loc[b]
+                if emp_diff != 0:
+                    concordant = (emp_diff > 0 and mod_diff > 0) or (
+                        emp_diff < 0 and mod_diff < 0
+                    )
+                    if k_limit == 3:
+                        if concordant:
+                            top3_conc += 1
+                        else:
+                            top3_disc += 1
+                    else:
+                        if concordant:
+                            top5_conc += 1
+                        else:
+                            top5_disc += 1
+
+    def _acc(c: int, d: int) -> float:
+        return float(c / (c + d)) if (c + d) > 0 else 0.0
+
+    return {
+        "close_1": {
+            "accuracy": _acc(close_1_conc, close_1_disc),
+            "n": close_1_conc + close_1_disc,
+        },
+        "close_2": {
+            "accuracy": _acc(close_2_conc, close_2_disc),
+            "n": close_2_conc + close_2_disc,
+        },
+        "within_top3": {
+            "accuracy": _acc(top3_conc, top3_disc),
+            "n": top3_conc + top3_disc,
+        },
+        "within_top5": {
+            "accuracy": _acc(top5_conc, top5_disc),
+            "n": top5_conc + top5_disc,
+        },
+    }
+
+
+def evaluate_within_family_correlation(test_df: pd.DataFrame) -> dict:
+    """Per-family correlation and R² between predictions and outcomes."""
+    results = {}
+    for fam in ["suit", "high", "low"]:
+        fam_df = test_df[
+            (test_df["contract_family"] == fam) & (test_df["action_type"] == "bid")
+        ]
+        if len(fam_df) < 2:
+            continue
+        corr = float(np.corrcoef(fam_df["net_points"], fam_df["model_pred"])[0, 1])
+        results[fam] = {"correlation": corr, "r_squared": corr**2}
+
+    pass_df = test_df[test_df["action_type"] == "pass"]
+    if len(pass_df) >= 2:
+        corr = float(np.corrcoef(pass_df["net_points"], pass_df["model_pred"])[0, 1])
+        results["pass"] = {"correlation": corr, "r_squared": corr**2}
+
+    return results
+
+
+def evaluate_population_oracle(
+    full_df: pd.DataFrame, test_df: pd.DataFrame, seed: int
+) -> dict:
+    """Compare single-rollout oracle against population-mean oracle.
+
+    Uses training split population means per (contract_family, bid_n) to check
+    how often the single-rollout oracle agrees with a smoothed baseline.
+    This is a diagnostic of oracle unreliability, NOT a ceiling on model accuracy.
+    """
+    # Reproduce train split
+    unique_deals = full_df["deal_id"].unique()
+    rng = np.random.RandomState(seed)
+    rng.shuffle(unique_deals)
+    n = len(unique_deals)
+    train_ids = set(unique_deals[: int(n * 0.8)])
+    train_df = full_df[full_df["deal_id"].isin(train_ids)]
+
+    # Population means by coarse action key
+    pop_means = (
+        train_df.groupby(["contract_family", "bid_n"])["net_points"].mean().to_dict()
+    )
+
+    states = test_df.groupby(["deal_id", "focal_seat"])
+    agreements = []
+
+    for (_deal_id, _seat), group in states:
+        # Single-rollout oracle
+        oracle_idx = group["net_points"].idxmax()
+        oracle_key = (
+            group.loc[oracle_idx, "contract_family"],
+            group.loc[oracle_idx, "bid_n"],
+        )
+
+        # Population oracle (best action by training set average)
+        best_pop_val = -999.0
+        best_pop_key = None
+        for _, row in group.iterrows():
+            key = (row["contract_family"], row["bid_n"])
+            pop_val = pop_means.get(key, -999.0)
+            if pop_val > best_pop_val:
+                best_pop_val = pop_val
+                best_pop_key = key
+
+        agreements.append(oracle_key == best_pop_key)
+
+    return {
+        "agreement": float(np.mean(agreements)),
+        "note": "Diagnostic of oracle unreliability, NOT a ceiling on model accuracy",
+    }
+
+
 def evaluate_topk(test_df: pd.DataFrame) -> dict:
     """Top-K accuracy for K=1,3,5,10."""
     states = test_df.groupby(["deal_id", "focal_seat"])
@@ -438,6 +597,28 @@ def main() -> None:
     print(f"  Discordant: {pairwise['discordant']:,}")
     print(f"  Tied: {pairwise['tied']:,}")
     print(f"  Accuracy (excl ties): {pairwise['accuracy']:.4f}")
+
+    print()
+    print("=== Pairwise Accuracy — Hard Slices ===")
+    slices = evaluate_pairwise_slices(test_df)
+    for name, data in slices.items():
+        print(
+            f"  {name}: {data['accuracy']:.4f} ({data['accuracy'] * 100:.1f}%) [n={data['n']:,}]"
+        )
+
+    print()
+    print("=== Within-Family Correlation (test set) ===")
+    corr_results = evaluate_within_family_correlation(test_df)
+    for fam, data in corr_results.items():
+        print(f"  {fam}: corr={data['correlation']:.4f}, R²={data['r_squared']:.4f}")
+
+    print()
+    print("=== Population-Oracle Consistency ===")
+    pop_oracle = evaluate_population_oracle(df, test_df, args.seed)
+    print(
+        f"  Single-rollout vs population-mean agreement: {pop_oracle['agreement']:.4f}"
+    )
+    print(f"  Note: {pop_oracle['note']}")
 
     print()
     print("=== Top-K Accuracy ===")

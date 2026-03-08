@@ -266,7 +266,8 @@ catastrophic-behavior screen clears.
 
 | Item | Value |
 |------|-------|
-| gate_status | FAILED (X3-rank, X3-regret, X3-cal all below threshold; adjudicated non-blocking due to oracle specification mismatch — see §4) |
+| gate_status | ADVANCED (X3 sub-gates failed but adjudicated non-blocking; see §4) |
+| x3_formal_result | FAILED (X3-rank 26.6% < 40%, X3-regret 4.015 > 1.5, X3-cal gap 4.96 > 2.0) |
 | Artifact | data/runs/action_value_quick_42/action_value_full.json |
 | Dataset | data/runs/action_value_quick_42/datasets/action_value.parquet |
 | Analysis script | scripts/internal/evaluate_gate_x3.py |
