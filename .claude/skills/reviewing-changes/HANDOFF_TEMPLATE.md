@@ -29,6 +29,7 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Follow-up issues: [N created] (or "none needed")
   - [issue URL] — [category]
   - ...
+- Codex review: [COMPLETE — summary of findings / PENDING — check PR before merge / NOT AVAILABLE]
 
 ### Needs Human Decision
 - [Each BLOCK item with context on why it needs judgment]

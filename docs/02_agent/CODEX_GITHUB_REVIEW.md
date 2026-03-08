@@ -49,11 +49,14 @@ After Claude creates a PR (via `gh pr create`):
 
 1. `/reviewing-changes` runs automatically (PostToolUse hook)
 2. `/reviewing-changes` publishes `reviewing-changes` commit status
-3. If `reviewing-changes` passes: PR is "READY FOR CODEX/HUMAN REVIEW"
-4. Claude waits — does **not** merge immediately
-5. Human verifies Codex review is visible on the PR
-6. Human addresses any blocking Codex comments (or delegates to Claude)
+3. `/reviewing-changes` posts `@codex review` comment with review instructions
+4. `/reviewing-changes` polls for Codex response (up to 3 minutes)
+5. Codex findings are included in the review report
+6. Human verifies review report, addresses any blocking findings
 7. Human merges manually
+
+Codex review instructions reference `AGENTS.md` at the repo root, which
+describes the project and prioritized review checks.
 
 ### Handling Codex Findings
 
@@ -92,3 +95,5 @@ The PR template includes a `## Codex Review` section with three checkboxes:
   that needs validation
 - Codex review quality and relevance may vary — treat as supplementary
   to `/reviewing-changes`, not a replacement
+- Codex review latency is unknown — it may take several minutes after PR
+  creation before a review appears

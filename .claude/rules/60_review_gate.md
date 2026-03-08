@@ -23,9 +23,10 @@ control a required status check.
 
 1. Claude opens PR, `/reviewing-changes` runs automatically
 2. `reviewing-changes` publishes commit status (`success` or `failure`)
-3. Codex auto-reviews the PR (GitHub-native, no API key needed)
-4. Human verifies Codex review is visible, addresses any blocking comments
-5. Human merges manually (no auto-merge during rollout)
+3. `reviewing-changes` posts `@codex review` comment to trigger Codex
+4. `reviewing-changes` polls for Codex response (up to 3 min) and includes findings in report
+5. Human verifies Codex review, addresses any blocking comments
+6. Human merges manually (no auto-merge during rollout)
 
 Auto-merge may be restored after Codex auto-review is proven reliable on 3-5 real PRs.
 
