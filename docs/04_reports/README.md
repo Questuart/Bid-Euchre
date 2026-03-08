@@ -35,7 +35,16 @@ docs/04_reports/
     23_phase0_to_r0_progression.md  (Phase 0→R0 progression)
     archive/                        (superseded revisions)
   r1_5/                    Arc D R1.5 rung (objective-alignment)
-    01_offline_gate_x3_report.md  (Gate X3 offline ranking evaluation)
+    00_step0_foundations.md        (Step 0: infrastructure + ActionValueBidder)
+    00_step1_dataset_generator.md  (Step 1: counterfactual dataset generator)
+    00_step2_training_pipeline.md  (Step 2: training pipeline + Gate X2)
+    01_offline_gate_x3_report.md   (Step 3: Gate X3 offline ranking evaluation)
+    02_gameplay_screen_report.md   (Step 5: 3-seed self-play screen)
+    03_h2h_battery_quick.md        (Step 6: H2H battery QUICK — pending)
+    04_risk_treatment.md           (Step 7: risk treatment design — pending)
+    05_h2h_battery_full.md         (Step 8: H2H battery FULL — pending)
+    06_ablation.md                 (Step 9: ablation — pending)
+    07_promotion_decision.md       (Step 10: promotion decision — pending)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -72,7 +81,16 @@ Use `--snapshot` flag with dashboard script to update the committed snapshot.
 
 | Report | Date | Summary |
 |--------|------|---------|
-| [r1_5/01_offline_gate_x3_report.md](r1_5/01_offline_gate_x3_report.md) | 2026-03-08 | Gate X3 offline ranking: failed (oracle noise from single rollouts), model has signal, proceed to gameplay |
+| [r1_5/00_step0_foundations.md](r1_5/00_step0_foundations.md) | 2026-03-07 | Step 0: ActionValueBidder infrastructure, enumerate_legal_actions, feature extraction |
+| [r1_5/00_step1_dataset_generator.md](r1_5/00_step1_dataset_generator.md) | 2026-03-07 | Step 1: counterfactual dataset generator, Gate X1 passed, single-rollout design |
+| [r1_5/00_step2_training_pipeline.md](r1_5/00_step2_training_pipeline.md) | 2026-03-08 | Step 2: per-contract OLS training, Gate X2 passed (suit R^2=0.565, pass R^2=0.046) |
+| [r1_5/01_offline_gate_x3_report.md](r1_5/01_offline_gate_x3_report.md) | 2026-03-08 | Step 3: Gate X3 offline ranking — failed (oracle noise), model has signal, proceed to gameplay |
+| [r1_5/02_gameplay_screen_report.md](r1_5/02_gameplay_screen_report.md) | 2026-03-08 | Step 5: 3-seed self-play screen — passed, 0% pass rate (never passes), all bids at level 4 |
+| [r1_5/03_h2h_battery_quick.md](r1_5/03_h2h_battery_quick.md) | _pending_ | Step 6: H2H battery QUICK — Gate X4 |
+| [r1_5/04_risk_treatment.md](r1_5/04_risk_treatment.md) | _pending_ | Step 7: risk treatment design |
+| [r1_5/05_h2h_battery_full.md](r1_5/05_h2h_battery_full.md) | _pending_ | Step 8: H2H battery FULL + promotion gate |
+| [r1_5/06_ablation.md](r1_5/06_ablation.md) | _pending_ | Step 9: ablation (constrained vs full, R1.5 vs R1 vs R0) |
+| [r1_5/07_promotion_decision.md](r1_5/07_promotion_decision.md) | _pending_ | Step 10: promotion decision |
 
 ### Phase 0: Bidless
 
