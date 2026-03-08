@@ -618,6 +618,12 @@ PROMOTION_REGISTRY_PREFIXES = [
 # Explicit allowlist for additional registry files outside the prefix dirs.
 PROMOTION_REGISTRY_ALLOWLIST: set[str] = set()
 
+# Subdirectories under PROMOTION_REGISTRY_PREFIXES that are NOT promotion docs
+# (e.g., Codex validation results are observational, not gate evidence).
+PROMOTION_REGISTRY_EXCLUDE_DIRS = [
+    "docs/04_reports/codex_validation/",
+]
+
 GATE_EVIDENCE_PATTERNS = [
     "batch_gate.json",
     "notebook_gate.json",
@@ -644,6 +650,9 @@ def check_registry_requires_gate_reference(
         # Check if under registry prefixes or in allowlist
         in_registry = any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES)
         if not in_registry and p not in PROMOTION_REGISTRY_ALLOWLIST:
+            continue
+        # Skip excluded subdirectories (non-promotion docs)
+        if any(is_under(p, excl) for excl in PROMOTION_REGISTRY_EXCLUDE_DIRS):
             continue
 
         abs_path = repo_root / p
@@ -765,6 +774,7 @@ def check_canonical_runs_registry_consistency(
             any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES)
             or p in PROMOTION_REGISTRY_ALLOWLIST
         )
+        and not any(is_under(p, excl) for excl in PROMOTION_REGISTRY_EXCLUDE_DIRS)
     ]
 
     code_registry_changed = CODE_REGISTRY_PATH in changed

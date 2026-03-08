@@ -32,12 +32,13 @@ The user can `/copy` this into a new Claude Code session to resume work.
 
 ### Codex Review Metadata
 - Status: [COMPLETE / PENDING / NOT AVAILABLE]
+- Response channel: [inline_review / comment / none]
 - Responded: [yes/no]
 - Latency: [N seconds / timeout]
 - Format compliant: [yes/no]
 - Findings parseable: [yes/no]
 - Finding counts: [CRITICAL: N, WARNING: N, NIT: N / unparseable]
-- Checks reported: [list of check IDs / missing]
+- Checks reported: [list of check IDs / none]
 - Summary: [1-3 sentence summary of Codex findings, or "Awaiting response"]
 
 ### Needs Human Decision

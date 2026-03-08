@@ -207,13 +207,33 @@ See AGENTS.md 'Plan Audit' section for full guidance."
 
 Record the timestamp when the `@codex review` comment was posted.
 
-Then poll for the Codex response (up to 5 minutes, checking every 30 seconds):
+Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
 
-```bash
-# Poll for chatgpt-codex-connector comment
-gh pr view <PR_NUMBER> --json comments \
-  --jq '.comments[] | select(.author.login == "chatgpt-codex-connector") | .body'
-```
+**Important:** Codex responds via **two channels** — check both:
+
+1. **PR review comments** (inline, on specific lines) — this is the primary channel:
+   ```bash
+   # Check for inline review comments from Codex
+   gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/comments --paginate \
+     --jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | {path: .path, line: .line, body: .body}]'
+   ```
+
+2. **PR reviews** (top-level review body):
+   ```bash
+   # Check for PR review from Codex
+   gh pr view <PR_NUMBER> --json reviews \
+     --jq '.reviews[] | select(.author.login == "chatgpt-codex-connector") | .body'
+   ```
+
+3. **Regular comments** (fallback — used for setup messages or errors):
+   ```bash
+   gh pr view <PR_NUMBER> --json comments \
+     --jq '.comments[] | select(.author.login == "chatgpt-codex-connector") | .body'
+   ```
+
+A Codex review is **COMPLETE** when either channel 1 or 2 returns content.
+Channel 1 (inline comments) contains the actual findings; channel 2 is typically
+a summary header.
 
 ### Step 4: Log Codex response metadata
 
@@ -223,23 +243,36 @@ in the review report's Codex Review section:
 | Field | Value |
 |-------|-------|
 | `codex_responded` | yes / no |
+| `codex_response_channel` | `inline_review` / `comment` / `none` |
 | `codex_latency_seconds` | seconds from `@codex review` comment to response (or `timeout`) |
-| `codex_format_compliant` | yes / no — response contains Summary + Findings table + Checks Performed |
+| `codex_format_compliant` | yes / no — findings use severity tags and check IDs |
 | `codex_findings_parseable` | yes / no — file paths, line numbers, and severity tags are extractable |
 | `codex_finding_counts` | CRITICAL: N, WARNING: N, NIT: N (or `unparseable`) |
-| `codex_checks_reported` | list of check IDs from Checks Performed (or `missing`) |
+| `codex_checks_reported` | list of check IDs found in findings (or `none`) |
 
-**Format compliance check:** Look for these structural markers:
-- `### Summary` with `Findings:` line containing severity counts
-- `### Findings` with a markdown table containing Severity/File/Line/Check/Finding columns
-- `### Checks Performed` with checkbox items
+**Format compliance check:** Codex may use either format:
 
-If the response lacks structure, set `codex_format_compliant: no` and include
+1. **Our requested format** (table in AGENTS.md):
+   - `### Summary` with severity counts
+   - `### Findings` table with Severity/File/Line/Check/Finding columns
+   - `### Checks Performed` checklist
+
+2. **Codex native format** (inline review comments):
+   - `[CRITICAL][C1]` or `[WARNING][T1]` severity+check tags in comment title
+   - File path and line number from the inline comment metadata
+   - `P0`/`P1`/`P2` priority badges
+
+Both formats are parseable. For native format, extract:
+- Severity from `[CRITICAL]`/`[WARNING]`/`[NIT]` tags (or map P0→CRITICAL, P1→CRITICAL, P2→WARNING)
+- Check ID from `[C1]`/`[C2]`/`[X3]` etc.
+- File and line from the inline comment's `path` and `line` fields
+
+If the response uses neither format, set `codex_format_compliant: no` and include
 the raw response body in the report for human review.
 
 Record the Codex review result:
 - **COMPLETE** — Codex responded. Include parsed findings in the report.
-- **PENDING** — Codex did not respond within 5 minutes. Note in report; human should check before merging.
+- **PENDING** — Codex did not respond within 10 minutes. Note in report; human should check before merging.
 - **NOT AVAILABLE** — `gh pr comment` failed or PR doesn't exist.
 
 **Observe-only:** Codex findings are informational in this phase. They do NOT
@@ -271,18 +304,19 @@ Output the review report to chat in this format:
 
 ### Codex Review
 - Status: COMPLETE / PENDING / NOT AVAILABLE
+- Response channel: inline_review / comment / none
 - Responded: yes / no
 - Latency: N seconds / timeout
 - Format compliant: yes / no
 - Findings parseable: yes / no
 - Finding counts: CRITICAL: N, WARNING: N, NIT: N (or "unparseable")
-- Checks reported: [list of check IDs] (or "missing")
+- Checks reported: [list of check IDs] (or "none")
 - Summary: [1-3 sentence summary of Codex findings, or "No issues found" / "Awaiting response"]
 - Codex findings (if parseable):
 
 | Severity | File | Line | Check | Finding |
 |----------|------|------|-------|---------|
-(parsed table rows from Codex response, or "No findings" / "Response not parseable — see raw output below")
+(parsed from inline review comments or table format — include all Codex findings here)
 
 ### Status
 - make check: PASSED / FAILED
