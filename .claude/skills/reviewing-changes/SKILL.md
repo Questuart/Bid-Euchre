@@ -131,21 +131,78 @@ manually after Codex pre-merge review is visible on the PR.
 
 ### Step 3: Request Codex review (observe-only)
 
-Post a comment on the PR to trigger Codex review with PR-aware context.
-Use the file classification from Phase 0 Step 4 to describe the PR scope:
+Post a comment on the PR to trigger Codex review with a **review-mode-specific
+prompt**. Determine the review mode from the file classification in Phase 0 Step 4:
+
+| Changed files include | Review mode |
+|----------------------|-------------|
+| `docs/04_reports/**`, gate/promotion reports | `report-audit` |
+| `plans/**` | `plan-audit` |
+| Everything else (default) | `standard` |
+
+If a PR has mixed file types, use the most restrictive mode that applies.
+
+**Standard mode prompt:**
 
 ```bash
 gh pr comment <PR_NUMBER> --body "@codex review
 
+**Review mode:** standard
 **PR scope:** M files changed (K library, J test, ...)
 **Risk level:** [Low/Medium/High from PR body, or inferred from file categories]
 
-Report findings using the structured format in AGENTS.md:
-- Use severity levels: CRITICAL, WARNING, NIT
-- Include file path, line number, and check ID for each finding
-- Always include the Checks Performed section, even if no issues found
+Report findings using the structured format in AGENTS.md.
+Use severity levels: CRITICAL, WARNING, NIT.
+Include file path, line number, and check ID for each finding.
+Always include the Checks Performed section, even if no issues found.
 
 See AGENTS.md at the repo root for the full checklist and output format."
+```
+
+**Report-audit mode prompt:**
+
+```bash
+gh pr comment <PR_NUMBER> --body "@codex review
+
+**Review mode:** report-audit
+**PR scope:** M files changed (report/docs files)
+
+Review this as a methodology/provenance audit, not a prose-only docs review.
+
+Required checks:
+1. Verify any provenance SHA or run ID against repo history (R1)
+2. Flag published metrics not reproducible from a committed script/notebook (R2)
+3. Distinguish formal gate result from override/adjudication (R3)
+4. Cross-check claims against the governing plan referenced in the PR body (R4)
+5. Verify referenced artifact paths exist or have repro instructions (R5)
+
+Use severity levels: CRITICAL, WARNING, NIT.
+Include file path, line number, and check ID for each finding.
+Always include the Checks Performed section.
+
+See AGENTS.md 'Report Audit' section for full guidance."
+```
+
+**Plan-audit mode prompt:**
+
+```bash
+gh pr comment <PR_NUMBER> --body "@codex review
+
+**Review mode:** plan-audit
+**PR scope:** M files changed (plan files)
+
+Review this plan for implementation readiness:
+1. Verify referenced file paths exist (new files exempt)
+2. Check scope — single concept or justified multi-PR chain
+3. Verify testing strategy is identified
+4. Flag import boundary violations (src/ importing experiments/ or tests/)
+5. Check for missing exports if new public functions are planned
+
+Use severity levels: CRITICAL, WARNING, NIT.
+Include file path, line number, and check ID for each finding.
+Always include the Checks Performed section.
+
+See AGENTS.md 'Plan Audit' section for full guidance."
 ```
 
 Record the timestamp when the `@codex review` comment was posted.

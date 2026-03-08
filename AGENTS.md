@@ -48,6 +48,40 @@ When reviewing PRs, prioritize these checks in order:
 10. **Data policy** — `data/runs/`, `data/reports/`, `data/models/` must never
     be committed. Only `data/fixtures/` is allowed.
 
+## Review Modes
+
+PRs are classified by review mode based on changed file types. Each mode
+applies different checks. Codex should use the mode that matches the PR.
+
+### Standard (default)
+
+Applies to: code PRs (`src/`, `tests/`, `scripts/`, `experiments/`)
+
+Use the checks listed in "Review Focus Areas" above. Focus on code
+correctness, test coverage, conventions, and determinism.
+
+### Report Audit
+
+Applies to: PRs touching `docs/04_reports/**`, gate/promotion reports,
+measurement integrity reviews, or any docs that publish technical results.
+
+These are **reviewable artifacts**, not "docs-only" PRs. Apply these checks:
+
+| ID | Check | Severity |
+|----|-------|----------|
+| R1 | **Provenance SHA verification** — any commit SHA or run ID cited in the report must exist in the repo history. Flag unverifiable provenance. | CRITICAL |
+| R2 | **Reproducibility** — published metrics must trace to a committed script, notebook, or artifact with a repro command. Flag metrics with no committed generating source. | CRITICAL |
+| R3 | **Gate result accuracy** — distinguish formal gate pass/fail from override or adjudication. Do not allow "N/A" to hide a fail. | WARNING |
+| R4 | **Plan consistency** — cross-check report claims against the governing plan referenced in the PR body. Flag contradictions. | WARNING |
+| R5 | **Artifact completeness** — if the report references data files, configs, or model artifacts, verify the paths exist or are explicitly noted as gitignored with repro instructions. | WARNING |
+
+### Plan Audit
+
+Applies to: PRs touching `plans/**`
+
+Use the checks from `/reviewing-plans` (P1-P10, R1-R5). Focus on scope,
+real paths, execution risk, and testing strategy.
+
 ## Review Output Format
 
 When reporting review findings, use this structured format so that findings

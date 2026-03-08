@@ -50,6 +50,15 @@
 (paste output here)
 ```
 
+## Report Provenance (required for PRs touching `docs/04_reports/`)
+<!-- Delete this section if not a report PR -->
+- Analysis script/notebook path:
+- Artifact path (if any):
+- Provenance SHA:
+- Formal gate result:
+- Override/adjudication rationale (if any):
+- Repro command:
+
 ## Codex Review
 - [ ] Codex auto-review received (or N/A if not yet enabled)
 - [ ] Blocking Codex comments addressed

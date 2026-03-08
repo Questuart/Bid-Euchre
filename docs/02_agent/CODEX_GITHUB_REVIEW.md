@@ -95,6 +95,27 @@ The PR template includes a `## Codex Review` section with three checkboxes:
 | Codex review | PR review | No (advisory) | Codex (GitHub-native) |
 | Human approval | PR review | Yes (rollout only) | Human |
 
+## Review Modes
+
+PRs are classified by review mode based on changed file types. The
+`/reviewing-changes` skill selects the appropriate `@codex review` prompt
+automatically.
+
+| Review Mode | Trigger | Focus |
+|-------------|---------|-------|
+| `standard` | Code PRs (default) | Code correctness, tests, conventions, determinism |
+| `report-audit` | PRs touching `docs/04_reports/**`, gate/promotion reports | Provenance, reproducibility, gate semantics, plan consistency |
+| `plan-audit` | PRs touching `plans/**` | Scope, real paths, execution risk, testing strategy |
+
+**Report-audit mode** treats docs that publish technical results as reviewable
+artifacts, not "docs-only" PRs. It checks provenance SHAs, reproducibility
+from committed scripts, and gate result accuracy.
+
+For high-risk report PRs (promotion decisions, gate evaluations), consider
+supplementing GitHub Codex with a deeper desktop audit. GitHub Codex provides
+first-pass advisory review; desktop review can verify provenance against
+actual git history and cross-check methodology.
+
 ## Limitations
 
 - Codex does not expose a stable commit status context — it cannot be added
