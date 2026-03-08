@@ -63,6 +63,7 @@ uv run python scripts/internal/generate_action_value_dataset.py \
 
 | Item | Value |
 |------|-------|
+| gate_status | PASSED (Gate X1 — dataset sanity) |
 | PRs | #564, #565 |
 | Merged | 2026-03-07 |
 | Continuation artifact | `data/artifacts/arc_d/r0/hybrid_r0_full.json` |

@@ -55,6 +55,7 @@ replacing the tricks-based prediction + hand-coded utility pipeline from R0/R1.
 
 | Item | Value |
 |------|-------|
+| gate_status | N/A (infrastructure only — validated by unit tests) |
 | PR | #560 |
 | Merged | 2026-03-07 |
 | Base SHA | `73b3ef0` |

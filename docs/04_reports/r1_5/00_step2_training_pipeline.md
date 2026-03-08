@@ -82,6 +82,7 @@ uv run python scripts/internal/train_action_value.py \
 
 | Item | Value |
 |------|-------|
+| gate_status | PASSED (Gate X2 — training adequacy) |
 | PR | #567 |
 | Merged | 2026-03-08 |
 | Training dataset | `data/runs/action_value_quick_42/datasets/action_value.parquet` |
