@@ -200,6 +200,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | Command | Purpose |
 |---------|---------|
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
+| `scripts/internal/deterministic_prechecks.py` | Fast deterministic code checks (merge markers, RNG, imports) |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
@@ -207,9 +208,12 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
 | `scripts/internal/generate_auction_context_dataset.py` | Auction-context dataset generator (R1 partner features) |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
+| `scripts/internal/github_pr_state.py` | GitHub CLI wrappers for PR metadata and CI status |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
 | `scripts/internal/generate_rung_charts.py` | Rung report chart generation from eval data + model artifacts |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
+| `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
+| `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |
 | `scripts/internal/calibrate_arc_d_thresholds.py` | Arc D gate threshold calibration from H2H null signal |
 | `scripts/internal/run_arc_d_gate.py` | Arc D promotion gate runner |
 | `scripts/internal/run_arc_d_h2h_battery.py` | H2H all-vs-all battery runner (competitive validation) |
