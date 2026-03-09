@@ -18,8 +18,8 @@ During rollout, the loop stops at `ready_to_merge` — it does not auto-merge.
 | `scripts/internal/review_driver.py` | Main orchestrator (state transitions, dispatch) |
 | `scripts/internal/deterministic_prechecks.py` | Fast local checks (merge markers, RNG, imports) |
 | `scripts/internal/github_pr_state.py` | GitHub CLI wrappers (CI status, PR metadata) |
-| codex_review_adapter.py (PR 2) | Codex CLI invocation + output parsing |
-| claude_fix_adapter.py (PR 2) | Fix application from Codex findings |
+| `scripts/internal/codex_review_adapter.py` | Codex CLI invocation + output parsing |
+| `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings |
 
 ### State Machine
 
@@ -60,6 +60,39 @@ independently. Checks include:
 - Falsy numeric guard `x = x or fallback` (P1, library only)
 - Import boundary violations (P1, library only)
 - Convention patterns: `== None`, `== True`, `breakpoint()` (P2)
+
+### Codex CLI Adapter
+
+Invokes `npx @openai/codex review --base main` with a mode-specific prompt.
+Parses two output formats:
+
+1. Standard: `[P1] file:line — message (C1)`
+2. Alternative: `[CRITICAL][C1] file:line — message`
+
+Findings are normalized into `CodexFinding` dataclass with severity, file,
+line, category, check_id, and message. Results saved to
+`round_N/codex_review.json`.
+
+Retry logic: up to 3 attempts before `stopped_review_failure`.
+Stagnation detection: same findings hash on consecutive rounds →
+`stopped_no_progress`.
+
+### Claude Fix Adapter
+
+Applies deterministic, pattern-based fixes only:
+
+| Pattern | Auto-fix | Reason |
+|---------|----------|--------|
+| `== None` | Yes → `is None` | Safe mechanical replacement |
+| `!= None` | Yes → `is not None` | Safe mechanical replacement |
+| `== True` | Yes → `if x:` | Safe for simple cases |
+| `== False` | Yes → `if not x:` | Safe for simple cases |
+| `breakpoint()` | Yes → remove line | Always safe to remove |
+| C1 (unseeded RNG) | No — skip | Requires domain context |
+| C2 (falsy guard) | No — skip | Requires semantic understanding |
+
+Skipped findings are recorded with reason in `round_N/fix_summary.json`
+and `round_N/claude_fix_summary.md`.
 
 ## Usage
 
