@@ -52,10 +52,23 @@ enabling a clear promotion or advancement decision.
 
 ### Reproduction
 
+The roster file (`data/artifacts/arc_d/r1_5/h2h_roster_r1_5.json`) is gitignored.
+To recreate it, see the roster definition in
+[`experiments/configs/r1_5_h2h_battery_quick.yaml`](../../../experiments/configs/r1_5_h2h_battery_quick.yaml)
+(bidding_policies section) or use the inline roster from the committed config.
+
 ```bash
+# Run FULL battery (requires local roster artifact)
 PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
     --roster data/artifacts/arc_d/r1_5/h2h_roster_r1_5.json \
-    --seed 42 --n-per 50000 --mode FULL
+    --seed 42 --n-per 50000 --mode FULL \
+    --output data/artifacts/arc_d/r1_5/h2h_battery_full.json
+
+# Parse results from existing run directory
+PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
+    --parse-run data/runs/arc_d_r0_h2h_battery_42_20260308_173038 \
+    --seed 42 --mode FULL \
+    --output data/artifacts/arc_d/r1_5/h2h_battery_full.json
 ```
 
 ## 3. Gate X4 Results (FULL)
@@ -177,11 +190,21 @@ The suit regression (-0.142) is the primary target for v2. Potential approaches:
 
 See [04_risk_treatment.md](04_risk_treatment.md) section 3 for trigger conditions.
 
-### Caveats
+### Caveats and Plan Deviations
 
-- Models trained on QUICK data (not retrained at FULL scale)
+- **FULL retraining deferred:** Models trained on QUICK data (not retrained at
+  FULL scale as specified in plan Step 4). Rationale: model quality already
+  validated at QUICK; retraining deferred to v2 cycle. See
+  [04_risk_treatment.md](04_risk_treatment.md) section 2.4.
+- **Comparator battery deferred:** Plan Step 8 specifies "H2H Battery (FULL) +
+  Comparator." The comparator battery (single-seat against GluttonStrategy) was
+  not run for v1. The H2H battery alone is sufficient for the ADVANCED decision
+  since CI_low < 0.180 regardless.
+- **Risk treatment skipped:** Plan Step 7 (v2 risk treatment) was skipped since
+  delta > 0.0. This means Step 8 evaluates v1 (risk-neutral), not the
+  risk-treated v2 specified in the plan.
 - Single seed (42) — cross-seed validation deferred
-- 3-bidder roster — broader comparator battery deferred
+- 3-bidder roster — broader roster deferred to v2
 
 ## 7. Arc Context
 
@@ -192,7 +215,7 @@ See [04_risk_treatment.md](04_risk_treatment.md) section 3 for trigger condition
 | 5 | DONE | Self-play screen (all gates PASSED) |
 | 6 | DONE | X4 QUICK H2H (+0.165) |
 | 7 | SKIPPED | Risk treatment (delta > 0.0) |
-| **8** | **DONE** | **FULL H2H: +0.152, CI [+0.124, +0.180]** |
+| **8** | **DONE (H2H only)** | **FULL H2H: +0.152, CI [+0.124, +0.180]. Comparator battery deferred** |
 | 9 | DONE | Ablation (see below) |
 | 10 | DONE | Promotion decision: ADVANCED |
 
