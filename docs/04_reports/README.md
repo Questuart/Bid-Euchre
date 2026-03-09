@@ -40,11 +40,11 @@ docs/04_reports/
     00_step2_training_pipeline.md  (Step 2: training pipeline + Gate X2)
     01_offline_gate_x3_report.md   (Step 3: Gate X3 offline ranking evaluation)
     02_gameplay_screen_report.md   (Step 5: 3-seed self-play screen)
-    03_h2h_battery_quick.md        (Step 6: H2H battery QUICK — pending)
-    04_risk_treatment.md           (Step 7: risk treatment design — pending)
-    05_h2h_battery_full.md         (Step 8: H2H battery FULL — pending)
-    06_ablation.md                 (Step 9: ablation — pending)
-    07_promotion_decision.md       (Step 10: promotion decision — pending)
+    03_h2h_battery_quick.md        (Step 6: H2H battery QUICK — Gate X4 PASS)
+    04_risk_treatment.md           (Step 7: risk treatment — SKIPPED)
+    05_h2h_battery_full.md         (Step 8: H2H battery FULL — ADVANCED)
+    06_ablation.md                 (Step 9: ablation — suit regression confirmed)
+    07_promotion_decision.md       (Step 10: promotion decision — ADVANCED)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -86,11 +86,11 @@ Use `--snapshot` flag with dashboard script to update the committed snapshot.
 | [r1_5/00_step2_training_pipeline.md](r1_5/00_step2_training_pipeline.md) | 2026-03-08 | Step 2: per-contract OLS training, Gate X2 passed (suit R^2=0.565, pass R^2=0.046) |
 | [r1_5/01_offline_gate_x3_report.md](r1_5/01_offline_gate_x3_report.md) | 2026-03-08 | Step 3: Gate X3 offline ranking — failed (oracle noise), model has signal, proceed to gameplay |
 | [r1_5/02_gameplay_screen_report.md](r1_5/02_gameplay_screen_report.md) | 2026-03-08 | Step 5: 3-seed self-play screen — passed, 0% pass rate (never passes), all bids at level 4 |
-| [r1_5/03_h2h_battery_quick.md](r1_5/03_h2h_battery_quick.md) | _pending_ | Step 6: H2H battery QUICK — Gate X4 |
-| [r1_5/04_risk_treatment.md](r1_5/04_risk_treatment.md) | _pending_ | Step 7: risk treatment design |
-| [r1_5/05_h2h_battery_full.md](r1_5/05_h2h_battery_full.md) | _pending_ | Step 8: H2H battery FULL + promotion gate |
-| [r1_5/06_ablation.md](r1_5/06_ablation.md) | _pending_ | Step 9: ablation (constrained vs full, R1.5 vs R1 vs R0) |
-| [r1_5/07_promotion_decision.md](r1_5/07_promotion_decision.md) | _pending_ | Step 10: promotion decision |
+| [r1_5/03_h2h_battery_quick.md](r1_5/03_h2h_battery_quick.md) | 2026-03-08 | Step 6: H2H battery QUICK — Gate X4 PASS (+0.165 net_eppd) |
+| [r1_5/04_risk_treatment.md](r1_5/04_risk_treatment.md) | 2026-03-08 | Step 7: risk treatment — SKIPPED (delta > 0.0, proceed to FULL) |
+| [r1_5/05_h2h_battery_full.md](r1_5/05_h2h_battery_full.md) | 2026-03-08 | Step 8: H2H battery FULL — +0.152 net_eppd, ADVANCED (CI_low +0.124 < 0.180) |
+| [r1_5/06_ablation.md](r1_5/06_ablation.md) | 2026-03-08 | Step 9: ablation — suit regression -0.142, high/low gains +0.43/+0.49 |
+| [r1_5/07_promotion_decision.md](r1_5/07_promotion_decision.md) | 2026-03-08 | Step 10: promotion decision — ADVANCED (v1 shows signal, suit deficit blocks promotion) |
 
 ### Phase 0: Bidless
 

@@ -1,4 +1,4 @@
-experiment_name: arc_d_r0_h2h_battery
+experiment_name: arc_d_r1_5_h2h_battery_quick
 parameters:
   seed: 42
   n_per: 2500
