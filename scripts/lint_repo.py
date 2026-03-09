@@ -644,8 +644,8 @@ def check_registry_requires_gate_reference(
         # Only check .md files
         if not p.endswith(".md"):
             continue
-        # Skip README.md (index/navigation only)
-        if Path(p).name == "README.md":
+        # Skip README.md (index/navigation) and AGENTS.md (review guidance)
+        if Path(p).name in {"README.md", "AGENTS.md"}:
             continue
         # Check if under registry prefixes or in allowlist
         in_registry = any(is_under(p, prefix) for prefix in PROMOTION_REGISTRY_PREFIXES)
@@ -775,6 +775,7 @@ def check_canonical_runs_registry_consistency(
             or p in PROMOTION_REGISTRY_ALLOWLIST
         )
         and not any(is_under(p, excl) for excl in PROMOTION_REGISTRY_EXCLUDE_DIRS)
+        and Path(p).name not in {"README.md", "AGENTS.md"}
     ]
 
     code_registry_changed = CODE_REGISTRY_PATH in changed
