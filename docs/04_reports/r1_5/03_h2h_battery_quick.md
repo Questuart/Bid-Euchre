@@ -153,11 +153,11 @@ both rotation CIs are consistent in direction.
 
 | Item | Value |
 |------|-------|
-| gate_status | PASSED (Gate X4: pooled delta +0.165, CI_low +0.004 excludes zero) |
+| gate_status | PASSED (Gate X4: both rotation deltas positive; AV v1 vs HO_full R0 +0.176 CI [+0.004, +0.350], +0.155 CI [-0.020, +0.328]; mean +0.165 exceeds -0.10 threshold) |
 | Roster | `data/artifacts/arc_d/r1_5/h2h_roster_r1_5.json` |
 | Summary | `data/artifacts/arc_d/r1_5/h2h_battery_quick.json` |
 | Config | `data/artifacts/arc_d/r1_5/h2h_battery_quick_config.yaml` |
 | Run dir | `data/runs/arc_d_r0_h2h_battery_42_20260308_155937` |
 | Seed | 42 |
 | n_per | 2,500 |
-| analysis_base_sha | (HEAD of main at time of H2H run) |
+| analysis_base_sha | c15f7dd |
