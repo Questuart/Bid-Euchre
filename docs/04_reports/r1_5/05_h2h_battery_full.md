@@ -7,12 +7,22 @@
 
 ## Executive Summary
 
-The FULL H2H battery (50,000 deals × 9 matchups) confirms ActionValueBidder v1
+The FULL H2H battery (50,000 deals x 9 matchups) confirms ActionValueBidder v1
 outperforms both R0 baselines with a primary delta of **+0.152 net_eppd** vs
 hybrid_olsa_full R0. However, the 95% CI [+0.124, +0.180] does not clear the
-promotion delta floor of 0.180 (CI_low = +0.124). Contract-type analysis reveals
-large gains in high (+0.430) and low (+0.495), offset by a suit regression
-(-0.142).
+promotion delta floor of 0.180 (CI_low = +0.124).
+
+**Per-contract-type deltas (AV v1 vs HO_full R0):**
+
+| Contract | Delta | CI | Significant |
+|----------|-------|----|-------------|
+| **Suit** | **-0.142** | **[-0.180, -0.105]** | **Yes (regression)** |
+| **High** | **+0.430** | **[+0.359, +0.501]** | **Yes** |
+| **Low** | **+0.495** | **[+0.444, +0.546]** | **Yes** |
+
+Large gains in high (+0.430) and low (+0.495) are offset by a suit regression
+(-0.142). The suit deficit alone accounts for the gap between the observed
+delta and the promotion threshold.
 
 **Verdict: ADVANCED** — v1 shows real, statistically significant improvement
 but falls short of promotion. The suit-contract deficit is the primary blocker.

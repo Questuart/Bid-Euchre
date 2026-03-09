@@ -194,6 +194,7 @@ plots/
 *.docx
 docs/_build/
 docs/build/
+docs/04_reports/qa/
 
 # Local configuration
 config.local.*
