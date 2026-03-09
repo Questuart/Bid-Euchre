@@ -44,39 +44,48 @@ You are reviewing code changes on the current branch before merge. Follow each p
 
 6. If no changed files: report "Nothing to review" and stop.
 
-## Phase 1 — Finding Collection (Read-Only)
+## Phase 1 — Automated Finding Collection
 
-Read each changed `.py` file (library and test). Scan for the patterns below but **do NOT edit any files**. Record each match as a finding for the Phase 2 report.
+Run deterministic prechecks on the diff. This module detects convention patterns
+(breakpoint, == None, == True, debug prints, type() ==) and correctness issues
+(C1 unseeded RNG, C2 falsy guards, X3 merge markers/TODO/comment blocks,
+import boundary violations). Do NOT edit any files.
 
-### Patterns to Flag
+```bash
+uv run python -c "
+import sys; sys.path.insert(0, 'scripts/internal')
+from deterministic_prechecks import check_diff
+import json
+findings = check_diff()
+print(json.dumps([f.to_dict() for f in findings], indent=2))
+"
+```
 
-| Pattern | Category | Severity |
-|---------|----------|----------|
-| `print(f"DEBUG` / `print(">>>` / `breakpoint()` | `fix:convention` | WARN |
-| `if x == True:` / `if x == False:` | `fix:convention` | WARN |
-| `if x == None:` / `if x != None:` | `fix:convention` | WARN |
-| `type(x) == T` | `fix:convention` | WARN |
-| Redundant `else:` after `return`/`raise` | `fix:convention` | WARN |
-| Redundant `pass` in non-empty body | `fix:convention` | WARN |
+Record each finding for the Phase 2 report:
+- **P0** findings → BLOCK severity
+- **P1** findings → BLOCK severity (C1, C2, X3 violations)
+- **P2** findings → WARN severity (convention patterns)
 
-These patterns were previously auto-fixed. They are now recorded as WARN findings
-and addressed in follow-up issues post-merge.
+If the command fails (e.g., module not found), fall back to manual file scanning
+for the patterns listed in [CHECKLIST.md](CHECKLIST.md).
 
-## Phase 2 — Convention & Correctness Review
+## Phase 2 — Manual Review (Checks Not Covered by Prechecks)
 
-Check each changed file against the rule matrix below. Full definitions with code examples are in [CHECKLIST.md](CHECKLIST.md).
+Phase 1 already covers C1, C2, and X3 checks automatically. This phase adds
+checks that require code comprehension or semantic understanding.
 
-### BLOCK (must fix before merging)
+Full definitions with code examples are in [CHECKLIST.md](CHECKLIST.md).
 
-These are correctness or convention violations that would cause problems:
+### BLOCK (must fix before merging) — Manual checks only
 
 | ID | Scope | What to Check | Category |
 |----|-------|---------------|----------|
-| **C1** | Library (`src/`) | Unseeded `random.Random()` or new global RNG state (`random.choice`, `random.shuffle` without local RNG) | `fix:bug` |
-| **C2** | Library (`src/`) | `x = x or fallback` on numeric metric — `0.0` is falsy, silently replaces valid zeros | `fix:bug` |
 | **N1** | Notebooks | Aggregation/visualization without `contract_type` facet (or explicit justification for pooling) | `fix:process` |
 | **N2** | Notebooks | Matchup summary table collapsing team0/team1 into a single row | `fix:process` |
-| **X3** | Any | Merge conflict markers (`<<<<<<<`), `TODO: remove before merge`, large commented-out blocks (>10 lines) | `fix:process` |
+
+C1, C2, and X3 are detected automatically by Phase 1 prechecks — do not
+duplicate them here. If Phase 1 reported any P0/P1 findings for these checks,
+include them in the BLOCK section of the report.
 
 ### WARN (recommend fixing, non-blocking)
 
@@ -89,12 +98,15 @@ These are correctness or convention violations that would cause problems:
 | **X1** | Cross-cut | Changes span 3+ unrelated modules (possible scope drift) | `fix:process` |
 | **X2** | Cross-cut | Core/scoring/logging changed without corresponding doc update | `fix:docs` |
 
+Redundant `else:` after `return`/`raise` and redundant `pass` in non-empty body
+are also WARN-level convention issues — flag them if spotted during manual review.
+
 ### How to Check
 
 For each changed file:
 1. Read the file content
-2. Apply the relevant checks based on file category
-3. For each finding, record: check ID, file path, line number(s), description, category
+2. Apply the relevant manual checks based on file category (N1/N2 for notebooks, C3/C4 for library, etc.)
+3. Combine with Phase 1 automated findings for the complete report
 
 ## Phase 3 — Validation & Status
 

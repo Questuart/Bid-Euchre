@@ -84,6 +84,21 @@ if x == True:
 breakpoint()
 """
 
+DEBUG_PRINTS = """\
+def process():
+    print(f"DEBUG: value is {x}")
+    print(">>> entering loop")
+    print("normal output")
+"""
+
+TYPE_COMPARISON = """\
+def check(x):
+    if type(x) == int:
+        return True
+    if isinstance(x, str):
+        return False
+"""
+
 CLEAN_CODE = """\
 import random
 
@@ -232,3 +247,48 @@ class TestCommentedCodeSkip:
         findings = check_file("src/foo.py", code, is_library=True)
         c2 = [f for f in findings if f.check_id == "C2"]
         assert len(c2) == 0
+
+
+class TestDebugPrints:
+    """Test detection of debug print statements."""
+
+    def test_detects_debug_fstring(self) -> None:
+        findings = check_file("src/foo.py", DEBUG_PRINTS)
+        debug = [f for f in findings if "debug print" in f.message.lower()]
+        assert len(debug) >= 1
+
+    def test_detects_chevron_print(self) -> None:
+        findings = check_file("src/foo.py", DEBUG_PRINTS)
+        debug = [f for f in findings if "debug print" in f.message.lower()]
+        assert len(debug) >= 2
+
+    def test_normal_print_not_flagged(self) -> None:
+        code = 'print("normal output")\n'
+        findings = check_file("src/foo.py", code)
+        debug = [f for f in findings if "debug print" in f.message.lower()]
+        assert len(debug) == 0
+
+    def test_debug_prints_are_p2(self) -> None:
+        findings = check_file("src/foo.py", DEBUG_PRINTS)
+        debug = [f for f in findings if "debug print" in f.message.lower()]
+        assert all(f.severity == "P2" for f in debug)
+
+
+class TestTypeComparison:
+    """Test detection of type() == instead of isinstance()."""
+
+    def test_detects_type_comparison(self) -> None:
+        findings = check_file("src/foo.py", TYPE_COMPARISON)
+        type_check = [f for f in findings if "isinstance" in f.message.lower()]
+        assert len(type_check) == 1
+
+    def test_isinstance_not_flagged(self) -> None:
+        code = "if isinstance(x, int):\n    pass\n"
+        findings = check_file("src/foo.py", code)
+        type_check = [f for f in findings if "isinstance" in f.message.lower()]
+        assert len(type_check) == 0
+
+    def test_type_comparison_is_p2(self) -> None:
+        findings = check_file("src/foo.py", TYPE_COMPARISON)
+        type_check = [f for f in findings if "isinstance" in f.message.lower()]
+        assert all(f.severity == "P2" for f in type_check)
