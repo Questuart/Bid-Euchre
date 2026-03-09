@@ -78,6 +78,15 @@ _SEVERITY_MAP = {
     "NIT": "P2",
 }
 
+# Patterns that indicate a genuinely clean review (no findings expected)
+_CLEAN_REVIEW_PATTERNS = re.compile(
+    r"(?i)"
+    r"(?:no\s+(?:issues?|findings?|problems?)\s+found)"
+    r"|(?:(?:changes?\s+)?look(?:s)?\s+good)"
+    r"|(?:0\s+findings)"
+    r"|(?:lgtm)"
+)
+
 
 @dataclass
 class CodexFinding:
@@ -289,6 +298,28 @@ def invoke_codex_cli(
             )
 
         findings = parse_codex_output(result.stdout)
+
+        # Fail-safe: if zero findings parsed from non-trivial output
+        # and no recognizable "clean review" signal, treat as unparseable.
+        # This prevents format drift from silently bypassing review.
+        if not findings and result.stdout.strip():
+            if not _CLEAN_REVIEW_PATTERNS.search(result.stdout):
+                logger.warning(
+                    "Codex CLI returned output (%.1fs, %d chars) but no findings "
+                    "were parsed and no clean-review signal detected — treating "
+                    "as unparseable",
+                    elapsed,
+                    len(result.stdout),
+                )
+                return CodexReviewResult(
+                    success=False,
+                    findings=[],
+                    raw_output=result.stdout,
+                    latency_seconds=elapsed,
+                    error="Unparseable output: no findings matched and no clean-review signal",
+                    exit_code=0,
+                )
+
         logger.info(
             "Codex CLI completed (%.1fs): %d findings",
             elapsed,

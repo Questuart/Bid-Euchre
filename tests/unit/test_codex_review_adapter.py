@@ -11,6 +11,7 @@ sys.path.insert(
 )
 
 from codex_review_adapter import (
+    _CLEAN_REVIEW_PATTERNS,
     CodexFinding,
     CodexReviewResult,
     get_blocking_findings,
@@ -62,6 +63,16 @@ DUPLICATE_OUTPUT = """\
 [P1] src/foo.py:10 — Same issue
 [P1] src/foo.py:10 — Same issue
 [P1] src/foo.py:10 — Same issue
+"""
+
+UNPARSEABLE_OUTPUT = """\
+I've reviewed the changes and here are my thoughts:
+
+The code looks generally well-structured. There are some concerns about
+error handling in the main module that could be improved. The test coverage
+seems adequate but could benefit from additional edge cases.
+
+Overall this is a solid contribution.
 """
 
 
@@ -245,3 +256,29 @@ class TestCodexReviewResult:
         d = result.to_dict()
         assert d["success"] is False
         assert d["error"] == "Timeout after 300s"
+
+
+class TestCleanReviewDetection:
+    """Test fail-safe: unparseable output must not be treated as clean."""
+
+    def test_clean_output_matches_pattern(self):
+        """Known clean-review phrases should be recognized."""
+        assert _CLEAN_REVIEW_PATTERNS.search(CLEAN_OUTPUT) is not None
+
+    def test_unparseable_output_no_match(self):
+        """Prose output without clean-review signal should NOT match."""
+        assert _CLEAN_REVIEW_PATTERNS.search(UNPARSEABLE_OUTPUT) is None
+
+    def test_unparseable_yields_no_findings(self):
+        """Unparseable output should produce zero parsed findings."""
+        findings = parse_codex_output(UNPARSEABLE_OUTPUT)
+        assert len(findings) == 0
+
+    def test_lgtm_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("LGTM") is not None
+
+    def test_zero_findings_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Review complete. 0 findings.") is not None
+
+    def test_no_problems_found_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No problems found.") is not None
