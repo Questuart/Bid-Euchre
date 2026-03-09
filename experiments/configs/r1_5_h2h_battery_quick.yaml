@@ -1,0 +1,102 @@
+experiment_name: arc_d_r0_h2h_battery
+parameters:
+  seed: 42
+  n_per: 2500
+  log_level: hand
+  mode: head_to_head_matrix
+  pair_deals: true
+strategies:
+- name: glutton
+  class_name: GluttonStrategy
+bidding_policies:
+- name: action_value_v1
+  class_name: ActionValueBidder
+  params:
+    artifact_path: data/artifacts/arc_d/r1_5/action_value_full.json
+- name: hybrid_olsa_full_r0
+  class_name: HybridOLSaBidder
+  params:
+    artifact_path: data/artifacts/arc_d/r0/hybrid_r0_full.json
+    bid_level_search: true
+    risk_lambda: 0.0
+- name: hybrid_olsa_r0
+  class_name: HybridOLSaBidder
+  params:
+    artifact_path: data/artifacts/arc_d/r0/hybrid_r0.json
+    bid_level_search: true
+    risk_lambda: 0.0
+matchups:
+- matchup_id: action_value_v1_self_play
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - action_value_v1
+  - action_value_v1
+  - action_value_v1
+  - action_value_v1
+- matchup_id: action_value_v1_vs_hybrid_olsa_full_r0
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - action_value_v1
+  - hybrid_olsa_full_r0
+  - action_value_v1
+  - hybrid_olsa_full_r0
+- matchup_id: hybrid_olsa_full_r0_vs_action_value_v1
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - hybrid_olsa_full_r0
+  - action_value_v1
+  - hybrid_olsa_full_r0
+  - action_value_v1
+- matchup_id: action_value_v1_vs_hybrid_olsa_r0
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - action_value_v1
+  - hybrid_olsa_r0
+  - action_value_v1
+  - hybrid_olsa_r0
+- matchup_id: hybrid_olsa_r0_vs_action_value_v1
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - hybrid_olsa_r0
+  - action_value_v1
+  - hybrid_olsa_r0
+  - action_value_v1
+- matchup_id: hybrid_olsa_full_r0_self_play
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - hybrid_olsa_full_r0
+  - hybrid_olsa_full_r0
+  - hybrid_olsa_full_r0
+  - hybrid_olsa_full_r0
+- matchup_id: hybrid_olsa_full_r0_vs_hybrid_olsa_r0
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - hybrid_olsa_full_r0
+  - hybrid_olsa_r0
+  - hybrid_olsa_full_r0
+  - hybrid_olsa_r0
+- matchup_id: hybrid_olsa_r0_vs_hybrid_olsa_full_r0
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - hybrid_olsa_r0
+  - hybrid_olsa_full_r0
+  - hybrid_olsa_r0
+  - hybrid_olsa_full_r0
+- matchup_id: hybrid_olsa_r0_self_play
+  team0: glutton
+  team1: glutton
+  seat_bidding_policies:
+  - hybrid_olsa_r0
+  - hybrid_olsa_r0
+  - hybrid_olsa_r0
+  - hybrid_olsa_r0
+scenarios:
+- contract_type: null
