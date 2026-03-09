@@ -202,6 +202,9 @@ secrets.*
 .env.local
 CLAUDE.local.md
 
+# Autonomous review loop runtime state
+.claude/runtime/
+
 # =============================================================================
 # Backup and temporary files
 # =============================================================================
