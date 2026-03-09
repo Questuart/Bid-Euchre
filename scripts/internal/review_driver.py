@@ -224,16 +224,17 @@ def _step_waiting_for_codex(
 ) -> ReviewLoopState:
     """WAITING_FOR_CODEX → APPLYING_FIXES or READY_TO_MERGE.
 
-    Stub: Codex CLI adapter is in PR 2. For now, transitions to
-    READY_TO_MERGE (no findings).
+    Stub: Codex CLI adapter is in PR 2. Fails safe by stopping
+    with STOPPED_REVIEW_FAILURE rather than advancing to READY_TO_MERGE.
     """
-    # PR 2 will replace this with actual Codex CLI invocation
-    logger.info(
-        "PR #%d: Codex review stub — no adapter yet, marking ready",
+    # Fail safe: no adapter = no review = cannot advance
+    logger.warning(
+        "PR #%d: Codex review adapter not yet implemented — stopping",
         loop_state.pr_number,
     )
-    loop_state.transition(ReviewState.READY_TO_MERGE)
+    loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
     loop_state.last_codex_status = "stub_no_adapter"
+    loop_state.stop_reason = "Codex CLI adapter not yet implemented (PR 2)"
     save_state(loop_state, base_dir)
     return loop_state
 
@@ -314,7 +315,26 @@ def main() -> int:
             logger.error("--branch required for new review loops")
             return 1
 
-        mode = ReviewMode(args.mode) if args.mode else ReviewMode.STANDARD
+        if args.mode:
+            mode = ReviewMode(args.mode)
+        else:
+            # Auto-detect from changed files
+            import subprocess
+
+            diff_result = subprocess.run(
+                ["git", "diff", "--name-only", "origin/main...HEAD"],
+                capture_output=True,
+                text=True,
+            )
+            if diff_result.returncode == 0:
+                changed = [
+                    f.strip()
+                    for f in diff_result.stdout.strip().split("\n")
+                    if f.strip()
+                ]
+                mode = classify_review_mode(changed)
+            else:
+                mode = ReviewMode.STANDARD
         loop_state = initialize_state(
             args.pr,
             args.branch,

@@ -238,7 +238,16 @@ def check_diff(
         cwd=repo_root,
     )
     if result.returncode != 0:
-        return []
+        return [
+            Finding(
+                severity="P0",
+                file="<git>",
+                line=0,
+                category="process",
+                check_id="X3",
+                message=f"git diff failed (rc={result.returncode}): {result.stderr.strip()[:200]}",
+            )
+        ]
 
     changed_files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
     all_findings: list[Finding] = []
