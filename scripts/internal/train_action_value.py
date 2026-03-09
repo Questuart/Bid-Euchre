@@ -1,18 +1,29 @@
 """
 R1.5 action-value OLS training pipeline.
 
-Trains per-contract OLS models on counterfactual net_points data and
+Trains per-contract OLS models on counterfactual action-value data and
 produces action_value_olsa_v1 artifacts for ActionValueBidder.
 
 Four models:
-  suit:  net_points ~ 52 state features + bid_n + bid_n_sq
-  high:  net_points ~ 52 state features + bid_n + bid_n_sq
-  low:   net_points ~ 52 state features + bid_n + bid_n_sq
-  pass:  net_points ~ 52 state features (no action features)
+  suit:  target ~ state features + bid_n + bid_n_sq
+  high:  target ~ state features + bid_n + bid_n_sq
+  low:   target ~ state features + bid_n + bid_n_sq
+  pass:  target ~ state features (no action features)
+
+Ablation parameters:
+  --feature-set: "full" (52 state features) or "r0" (39 R0 hand features only)
+  --target: "net_points" (default) or "tricks_won"
 
 CLI usage:
     uv run python scripts/internal/train_action_value.py \\
         --seed 42 \\
+        --dataset data/runs/action_value_smoke_42/datasets/action_value.parquet \\
+        --output-dir data/runs/action_value_smoke_42 \\
+        --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
+
+    # R0-only features ablation:
+    uv run python scripts/internal/train_action_value.py \\
+        --seed 42 --feature-set r0 \\
         --dataset data/runs/action_value_smoke_42/datasets/action_value.parquet \\
         --output-dir data/runs/action_value_smoke_42 \\
         --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
@@ -46,6 +57,17 @@ METADATA_COLS = [
 
 TARGET_COL = "net_points"
 
+# Number of R0 hand features (first 39 entries in STATE_FEATURE_NAMES)
+_N_R0_HAND_FEATURES = 39
+
+# Named feature sets for ablation experiments
+FEATURE_SETS: dict[str, list[str]] = {
+    "full": list(STATE_FEATURE_NAMES),  # 52 state features
+    "r0": list(STATE_FEATURE_NAMES[:_N_R0_HAND_FEATURES]),  # 39 R0 hand features only
+}
+
+VALID_TARGETS = ("net_points", "tricks_won")
+
 # Gate X2 R² thresholds per contract family
 GATE_X2_THRESHOLDS = {
     "suit": 0.05,
@@ -58,12 +80,26 @@ GATE_X2_THRESHOLDS = {
 # ── Data Loading ─────────────────────────────────────────────
 
 
-def load_dataset(parquet_path: str) -> pd.DataFrame:
-    """Load and validate the action-value parquet dataset."""
+def load_dataset(
+    parquet_path: str,
+    target_col: str = TARGET_COL,
+    state_feature_names: list[str] | None = None,
+) -> pd.DataFrame:
+    """Load and validate the action-value parquet dataset.
+
+    Args:
+        parquet_path: Path to the parquet file.
+        target_col: Target column name (must exist in dataset).
+        state_feature_names: State feature names to validate. Defaults to
+            full STATE_FEATURE_NAMES.
+    """
+    if state_feature_names is None:
+        state_feature_names = STATE_FEATURE_NAMES
+
     df = pd.read_parquet(parquet_path)
 
     # Validate required columns
-    required = set(METADATA_COLS) | set(STATE_FEATURE_NAMES) | {TARGET_COL}
+    required = set(METADATA_COLS) | set(state_feature_names) | {target_col}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Dataset missing columns: {sorted(missing)}")
@@ -113,13 +149,22 @@ def train_family_model(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
     family: str,
+    state_feature_names: list[str] | None = None,
+    target_col: str = TARGET_COL,
 ) -> dict:
     """Train OLS for one contract family (suit/high/low).
 
-    Features: 52 state + bid_n + bid_n_sq = 54 columns.
-    Target: net_points.
+    Features: state features + bid_n + bid_n_sq.
+    Target: configurable (default net_points).
+
+    Args:
+        state_feature_names: State features to use. Defaults to full
+            STATE_FEATURE_NAMES (52 columns).
+        target_col: Target column name.
     """
-    feature_names = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+    if state_feature_names is None:
+        state_feature_names = STATE_FEATURE_NAMES
+    feature_names = list(state_feature_names) + list(ACTION_FEATURE_NAMES)
 
     # Filter to this contract family
     train_sub = train_df[train_df["contract_family"] == family]
@@ -131,10 +176,10 @@ def train_family_model(
     # Build feature matrices — bid_n is already in the dataset,
     # bid_n_sq needs to be computed
     X_train = _build_feature_matrix(train_sub, feature_names)
-    y_train = train_sub[TARGET_COL].values
+    y_train = train_sub[target_col].values
 
     X_val = _build_feature_matrix(val_sub, feature_names)
-    y_val = val_sub[TARGET_COL].values
+    y_val = val_sub[target_col].values
 
     # Fit OLS
     weights, bias = _fit_ols(X_train, y_train)
@@ -157,13 +202,22 @@ def train_family_model(
 def train_pass_model(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
+    state_feature_names: list[str] | None = None,
+    target_col: str = TARGET_COL,
 ) -> dict:
     """Train OLS for pass action.
 
-    Features: 52 state columns only (no action features).
-    Target: net_points.
+    Features: state features only (no action features).
+    Target: configurable (default net_points).
+
+    Args:
+        state_feature_names: State features to use. Defaults to full
+            STATE_FEATURE_NAMES (52 columns).
+        target_col: Target column name.
     """
-    feature_names = STATE_FEATURE_NAMES
+    if state_feature_names is None:
+        state_feature_names = STATE_FEATURE_NAMES
+    feature_names = list(state_feature_names)
 
     # Filter to pass rows
     train_sub = train_df[train_df["action_type"] == "pass"]
@@ -173,10 +227,10 @@ def train_pass_model(
         raise ValueError("No training rows for pass action")
 
     X_train = _build_feature_matrix(train_sub, feature_names)
-    y_train = train_sub[TARGET_COL].values
+    y_train = train_sub[target_col].values
 
     X_val = _build_feature_matrix(val_sub, feature_names)
-    y_val = val_sub[TARGET_COL].values
+    y_val = val_sub[target_col].values
 
     # Fit OLS
     weights, bias = _fit_ols(X_train, y_train)
@@ -188,7 +242,7 @@ def train_pass_model(
     return {
         "coefficients": weights.tolist(),
         "intercept": float(bias),
-        "feature_names": list(feature_names),
+        "feature_names": feature_names,
         "r_squared": metrics["r2"],
         "mae": metrics["mae"],
         "n_train": len(train_sub),
@@ -215,16 +269,24 @@ def build_artifact(
     seed: int,
     n_deals: int,
     continuation_artifact: str,
+    feature_set: str = "full",
+    target_col: str = TARGET_COL,
 ) -> dict:
-    """Assemble the action_value_olsa_v1 artifact dict."""
+    """Assemble the action_value_olsa_v1 artifact dict.
+
+    Args:
+        feature_set: Name of the feature set used ("full" or "r0").
+        target_col: Name of the target column used for training.
+    """
     git_sha = _git_sha()
 
     return {
         "schema_version": "action_value_olsa_v1",
-        "target": "net_points",
+        "target": target_col,
         "risk_mode": "neutral",
         "continuation_policy": Path(continuation_artifact).stem,
         "action_features": list(ACTION_FEATURE_NAMES),
+        "feature_set": feature_set,
         "models": models,
         "metadata": {
             "n_deals": n_deals,
@@ -272,6 +334,17 @@ def validate_gate_x2(artifact: dict) -> None:
 # ── CLI ──────────────────────────────────────────────────────
 
 
+def _artifact_filename(feature_set: str) -> str:
+    """Compute output filename based on feature set.
+
+    "full" → "action_value_full.json" (backward compatible)
+    "r0"   → "action_value_r0_features.json"
+    """
+    if feature_set == "full":
+        return "action_value_full.json"
+    return f"action_value_{feature_set}_features.json"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Train action-value OLS models for R1.5"
@@ -297,15 +370,38 @@ def main():
         action="store_true",
         help="Skip Gate X2 validation",
     )
+    parser.add_argument(
+        "--feature-set",
+        choices=sorted(FEATURE_SETS.keys()),
+        default="full",
+        help="Feature set to use: 'full' (52 state) or 'r0' (39 hand only)",
+    )
+    parser.add_argument(
+        "--target",
+        choices=list(VALID_TARGETS),
+        default="net_points",
+        help="Target column: 'net_points' (default) or 'tricks_won'",
+    )
     args = parser.parse_args()
+
+    state_feature_names = FEATURE_SETS[args.feature_set]
+    target_col = args.target
 
     print("=== R1.5 Action-Value Training Pipeline ===")
     print(f"  Seed: {args.seed}")
     print(f"  Dataset: {args.dataset}")
+    print(
+        f"  Feature set: {args.feature_set} ({len(state_feature_names)} state features)"
+    )
+    print(f"  Target: {target_col}")
 
     # Load dataset
     print("  Loading dataset...")
-    df = load_dataset(args.dataset)
+    df = load_dataset(
+        args.dataset,
+        target_col=target_col,
+        state_feature_names=state_feature_names,
+    )
     n_deals = df["deal_id"].nunique()
     print(f"  Loaded {len(df)} rows, {n_deals} deals")
 
@@ -322,7 +418,13 @@ def main():
     models = {}
     for family in ("suit", "high", "low"):
         print(f"  Training {family} model...")
-        models[family] = train_family_model(train_df, val_df, family)
+        models[family] = train_family_model(
+            train_df,
+            val_df,
+            family,
+            state_feature_names=state_feature_names,
+            target_col=target_col,
+        )
         print(
             f"    R²={models[family]['r_squared']:.4f}, "
             f"MAE={models[family]['mae']:.3f}, "
@@ -331,7 +433,12 @@ def main():
 
     # Train pass model
     print("  Training pass model...")
-    models["pass"] = train_pass_model(train_df, val_df)
+    models["pass"] = train_pass_model(
+        train_df,
+        val_df,
+        state_feature_names=state_feature_names,
+        target_col=target_col,
+    )
     print(
         f"    R²={models['pass']['r_squared']:.4f}, "
         f"MAE={models['pass']['mae']:.3f}, "
@@ -339,7 +446,14 @@ def main():
     )
 
     # Build artifact
-    artifact = build_artifact(models, args.seed, n_deals, args.continuation_artifact)
+    artifact = build_artifact(
+        models,
+        args.seed,
+        n_deals,
+        args.continuation_artifact,
+        feature_set=args.feature_set,
+        target_col=target_col,
+    )
 
     # Validate
     if not args.skip_validation:
@@ -349,7 +463,7 @@ def main():
     # Write output
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = output_dir / "action_value_full.json"
+    artifact_path = output_dir / _artifact_filename(args.feature_set)
     artifact_path.write_text(json.dumps(artifact, indent=2))
 
     print(f"\n  Artifact: {artifact_path}")
