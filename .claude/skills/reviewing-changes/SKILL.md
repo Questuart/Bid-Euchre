@@ -145,64 +145,31 @@ If a PR has mixed file types, use the most restrictive mode that applies.
 **Standard mode prompt:**
 
 ```bash
-gh pr comment <PR_NUMBER> --body "@codex review
+gh pr comment <PR_NUMBER> --body "@codex review for P0/P1 correctness regressions, syntax breakage, merge markers, determinism violations, and import-boundary violations. Ignore stylistic nits.
 
-**Review mode:** standard
-**PR scope:** M files changed (K library, J test, ...)
-**Risk level:** [Low/Medium/High from PR body, or inferred from file categories]
+PR scope: M files changed (K library, J test, ...)
 
-Report findings using the structured format in AGENTS.md.
-Use severity levels: CRITICAL, WARNING, NIT.
-Include file path, line number, and check ID for each finding.
-Always include the Checks Performed section, even if no issues found.
-
-See AGENTS.md at the repo root for the full checklist and output format."
+See AGENTS.md at the repo root for repo-specific check IDs (C1, C2, X3, etc.)."
 ```
 
 **Report-audit mode prompt:**
 
 ```bash
-gh pr comment <PR_NUMBER> --body "@codex review
+gh pr comment <PR_NUMBER> --body "@codex review for provenance errors, irreproducible published metrics, missing generator scripts, and gate-result/adjudication mismatches. Treat each as P1.
 
-**Review mode:** report-audit
-**PR scope:** M files changed (report/docs files)
+PR scope: M files changed (report/docs files)
 
-Review this as a methodology/provenance audit, not a prose-only docs review.
-
-Required checks:
-1. Verify any provenance SHA or run ID against repo history (R1)
-2. Flag published metrics not reproducible from a committed script/notebook (R2)
-3. Distinguish formal gate result from override/adjudication (R3)
-4. Cross-check claims against the governing plan referenced in the PR body (R4)
-5. Verify referenced artifact paths exist or have repro instructions (R5)
-
-Use severity levels: CRITICAL, WARNING, NIT.
-Include file path, line number, and check ID for each finding.
-Always include the Checks Performed section.
-
-See AGENTS.md 'Report Audit' section for full guidance."
+See docs/04_reports/AGENTS.md for report-audit guidance."
 ```
 
 **Plan-audit mode prompt:**
 
 ```bash
-gh pr comment <PR_NUMBER> --body "@codex review
+gh pr comment <PR_NUMBER> --body "@codex review for nonexistent file references, contradictory rollout steps, and unenforceable or deadlocking gates. Treat each as P1.
 
-**Review mode:** plan-audit
-**PR scope:** M files changed (plan files)
+PR scope: M files changed (plan files)
 
-Review this plan for implementation readiness:
-1. Verify referenced file paths exist (new files exempt)
-2. Check scope — single concept or justified multi-PR chain
-3. Verify testing strategy is identified
-4. Flag import boundary violations (src/ importing experiments/ or tests/)
-5. Check for missing exports if new public functions are planned
-
-Use severity levels: CRITICAL, WARNING, NIT.
-Include file path, line number, and check ID for each finding.
-Always include the Checks Performed section.
-
-See AGENTS.md 'Plan Audit' section for full guidance."
+See plans/AGENTS.md for plan-audit guidance."
 ```
 
 Record the timestamp when the `@codex review` comment was posted.
