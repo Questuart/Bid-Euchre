@@ -71,7 +71,7 @@ Parses two output formats:
 
 Findings are normalized into `CodexFinding` dataclass with severity, file,
 line, category, check_id, and message. Results saved to
-`round_N/codex_review.json`.
+round_N/codex_review.json.
 
 Retry logic: up to 3 attempts before `stopped_review_failure`.
 Stagnation detection: same findings hash on consecutive rounds →
@@ -91,8 +91,8 @@ Applies deterministic, pattern-based fixes only:
 | C1 (unseeded RNG) | No — skip | Requires domain context |
 | C2 (falsy guard) | No — skip | Requires semantic understanding |
 
-Skipped findings are recorded with reason in `round_N/fix_summary.json`
-and `round_N/claude_fix_summary.md`.
+Skipped findings are recorded with reason in round_N/fix_summary.json
+and round_N/claude_fix_summary.md.
 
 ## Usage
 
