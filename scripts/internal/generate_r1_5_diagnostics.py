@@ -23,8 +23,8 @@ CLI usage:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import matplotlib
@@ -35,13 +35,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from scipy import stats  # noqa: E402
-
-# ── Project imports ──────────────────────────────────────────
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-# Import helpers from train_action_value script (not a package — use importlib)
-import importlib.util  # noqa: E402
 
 from bid_euchre.datasets.eval_dataset import build_eval_dataset  # noqa: E402
 from bid_euchre.diagnostics.model_charts import (  # noqa: E402

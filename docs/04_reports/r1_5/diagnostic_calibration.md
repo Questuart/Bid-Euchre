@@ -260,6 +260,7 @@ may be a sample-size issue.]
 - R0 artifact: `data/artifacts/arc_d/r0/hybrid_r0_full.json`
 - R0 eval data: `data/runs/arc_d_eval_r0_full_42_20260303_201732`
 - Seed: 42
+- gate_status: N/A (diagnostic report — not a promotion gate artifact; feeds into R1.5-v2 design decisions)
 - Reproduction command:
 ```bash
 uv run python scripts/internal/generate_r1_5_diagnostics.py \
