@@ -92,6 +92,12 @@ FULL battery (Step 8):
 - **Bid-level plateau:** If v1 is stuck at bid=4 due to model limitations,
   a calibrated threshold might enable higher bids on strong hands.
 
+**Post-hoc note (FULL results available):** The FULL battery confirmed a suit
+regression (-0.142) and CI_low (+0.124) below the promotion threshold. Both
+triggers (contract-type regression, CI_low < 0.180) fired. Risk treatment by
+contract type — particularly for suit contracts — is a v2 priority. See
+[05_h2h_battery_full.md](05_h2h_battery_full.md) for per-contract details.
+
 ## 4. Arc Context
 
 | Step | Status | Gate |

@@ -93,17 +93,22 @@ The near-zero pass rate is consistent with the Gate X3 finding that the pass
 model has very low R^2 (0.044) — the model almost always predicts some bid
 contract as higher-value than passing.
 
-### Contract Type Distribution (Seed 42)
+### Contract Type Distribution
 
-| Contract Type | Count | Share |
-|--------------|-------|-------|
-| Suit | 1,138 | 45.5% |
-| Low | 918 | 36.7% |
-| High | 444 | 17.8% |
+| Contract Type | Seed 42 | Seed 43 | Seed 44 |
+|--------------|---------|---------|---------|
+| Suit | 1,138 (45.5%) | [TODO: extract from artifact] | [TODO: extract from artifact] |
+| Low | 918 (36.7%) | [TODO: extract from artifact] | [TODO: extract from artifact] |
+| High | 444 (17.8%) | [TODO: extract from artifact] | [TODO: extract from artifact] |
 
 This mix is plausible. Suit contracts dominate because trump/bower advantages
 provide more control. Low contracts appear frequently because low-card hands
 have a natural advantage when counting from 10 upward.
+
+**Per-contract-type self-play deltas** are not applicable to the gameplay screen
+(self-play net_eppd should be ~0 by construction). Contract-type faceting of
+performance metrics is provided in the FULL H2H battery
+([05_h2h_battery_full.md](05_h2h_battery_full.md)).
 
 ### Over-Passing vs Near-Zero Passing: Reconciliation
 
