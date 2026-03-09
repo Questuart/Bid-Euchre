@@ -71,8 +71,9 @@ for the patterns listed in [CHECKLIST.md](CHECKLIST.md).
 
 ## Phase 2 — Manual Review (Checks Not Covered by Prechecks)
 
-Phase 1 already covers C1, C2, and X3 checks automatically. This phase adds
-checks that require code comprehension or semantic understanding.
+Phase 1 covers C1, C2, and X3 checks automatically **for Python files only**.
+This phase adds checks that require code comprehension, semantic understanding,
+or apply to non-Python files.
 
 Full definitions with code examples are in [CHECKLIST.md](CHECKLIST.md).
 
@@ -82,10 +83,12 @@ Full definitions with code examples are in [CHECKLIST.md](CHECKLIST.md).
 |----|-------|---------------|----------|
 | **N1** | Notebooks | Aggregation/visualization without `contract_type` facet (or explicit justification for pooling) | `fix:process` |
 | **N2** | Notebooks | Matchup summary table collapsing team0/team1 into a single row | `fix:process` |
+| **X3** | Non-Python files | Merge conflict markers (`<<<<<<<`), `TODO: remove before merge` in `.md`, `.yaml`, `.json`, etc. | `fix:process` |
 
-C1, C2, and X3 are detected automatically by Phase 1 prechecks — do not
-duplicate them here. If Phase 1 reported any P0/P1 findings for these checks,
-include them in the BLOCK section of the report.
+C1, C2, and X3-in-Python are detected automatically by Phase 1 prechecks — do
+not duplicate them here. However, **X3 for non-Python files must still be checked
+manually** since the prechecks module only scans `.py` files. If Phase 1 reported
+any P0/P1 findings for these checks, include them in the BLOCK section of the report.
 
 ### WARN (recommend fixing, non-blocking)
 
