@@ -35,16 +35,18 @@ docs/04_reports/
     23_phase0_to_r0_progression.md  (Phase 0→R0 progression)
     archive/                        (superseded revisions)
   r1_5/                    Arc D R1.5 rung (objective-alignment)
-    00_step0_foundations.md        (Step 0: infrastructure + ActionValueBidder)
-    00_step1_dataset_generator.md  (Step 1: counterfactual dataset generator)
-    00_step2_training_pipeline.md  (Step 2: training pipeline + Gate X2)
+    rung_closeout.md               (canonical rung closeout — ADVANCED)
+    measurement_integrity_r1_5.md  (methodology review + plan deviations)
+    05_h2h_battery_full.md         (Step 8: H2H battery FULL — ADVANCED)
+    06_ablation.md                 (Step 9: ablation — suit regression confirmed)
+    07_promotion_decision.md       (Step 10: promotion decision — ADVANCED)
     01_offline_gate_x3_report.md   (Step 3: Gate X3 offline ranking evaluation)
     02_gameplay_screen_report.md   (Step 5: 3-seed self-play screen)
     03_h2h_battery_quick.md        (Step 6: H2H battery QUICK — Gate X4 PASS)
     04_risk_treatment.md           (Step 7: risk treatment — SKIPPED)
-    05_h2h_battery_full.md         (Step 8: H2H battery FULL — ADVANCED)
-    06_ablation.md                 (Step 9: ablation — suit regression confirmed)
-    07_promotion_decision.md       (Step 10: promotion decision — ADVANCED)
+    00_step0_foundations.md        (implementation history: Step 0)
+    00_step1_dataset_generator.md  (implementation history: Step 1)
+    00_step2_training_pipeline.md  (implementation history: Step 2)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -81,16 +83,18 @@ Use `--snapshot` flag with dashboard script to update the committed snapshot.
 
 | Report | Date | Summary |
 |--------|------|---------|
-| [r1_5/00_step0_foundations.md](r1_5/00_step0_foundations.md) | 2026-03-07 | Step 0: ActionValueBidder infrastructure, enumerate_legal_actions, feature extraction |
-| [r1_5/00_step1_dataset_generator.md](r1_5/00_step1_dataset_generator.md) | 2026-03-07 | Step 1: counterfactual dataset generator, Gate X1 passed, single-rollout design |
-| [r1_5/00_step2_training_pipeline.md](r1_5/00_step2_training_pipeline.md) | 2026-03-08 | Step 2: per-contract OLS training, Gate X2 passed (suit R^2=0.565, pass R^2=0.046) |
-| [r1_5/01_offline_gate_x3_report.md](r1_5/01_offline_gate_x3_report.md) | 2026-03-08 | Step 3: Gate X3 offline ranking — failed (oracle noise), model has signal, proceed to gameplay |
-| [r1_5/02_gameplay_screen_report.md](r1_5/02_gameplay_screen_report.md) | 2026-03-08 | Step 5: 3-seed self-play screen — passed, 0% pass rate (never passes), all bids at level 4 |
-| [r1_5/03_h2h_battery_quick.md](r1_5/03_h2h_battery_quick.md) | 2026-03-08 | Step 6: H2H battery QUICK — Gate X4 PASS (+0.165 net_eppd) |
-| [r1_5/04_risk_treatment.md](r1_5/04_risk_treatment.md) | 2026-03-08 | Step 7: risk treatment — SKIPPED (delta > 0.0, proceed to FULL) |
+| **[r1_5/rung_closeout.md](r1_5/rung_closeout.md)** | **2026-03-08** | **Canonical rung closeout — ADVANCED (+0.152 net_eppd, suit -0.142 blocks promotion)** |
+| [r1_5/measurement_integrity_r1_5.md](r1_5/measurement_integrity_r1_5.md) | 2026-03-08 | Methodology review: 8 limitations (0 blockers), 3 plan deviations with cost analysis |
 | [r1_5/05_h2h_battery_full.md](r1_5/05_h2h_battery_full.md) | 2026-03-08 | Step 8: H2H battery FULL — +0.152 net_eppd, ADVANCED (CI_low +0.124 < 0.180) |
 | [r1_5/06_ablation.md](r1_5/06_ablation.md) | 2026-03-08 | Step 9: ablation — suit regression -0.142, high/low gains +0.43/+0.49 |
 | [r1_5/07_promotion_decision.md](r1_5/07_promotion_decision.md) | 2026-03-08 | Step 10: promotion decision — ADVANCED (v1 shows signal, suit deficit blocks promotion) |
+| [r1_5/01_offline_gate_x3_report.md](r1_5/01_offline_gate_x3_report.md) | 2026-03-08 | Step 3: Gate X3 offline ranking — failed (oracle noise), model has signal |
+| [r1_5/02_gameplay_screen_report.md](r1_5/02_gameplay_screen_report.md) | 2026-03-08 | Step 5: 3-seed self-play screen — passed, 0% pass rate, all bids at level 4 |
+| [r1_5/03_h2h_battery_quick.md](r1_5/03_h2h_battery_quick.md) | 2026-03-08 | Step 6: H2H battery QUICK — Gate X4 PASS (+0.165 net_eppd) |
+| [r1_5/04_risk_treatment.md](r1_5/04_risk_treatment.md) | 2026-03-08 | Step 7: risk treatment — SKIPPED (delta > 0.0, proceed to FULL) |
+| [r1_5/00_step0_foundations.md](r1_5/00_step0_foundations.md) | 2026-03-07 | Implementation history: ActionValueBidder infrastructure |
+| [r1_5/00_step1_dataset_generator.md](r1_5/00_step1_dataset_generator.md) | 2026-03-07 | Implementation history: counterfactual dataset generator, Gate X1 |
+| [r1_5/00_step2_training_pipeline.md](r1_5/00_step2_training_pipeline.md) | 2026-03-08 | Implementation history: training pipeline, Gate X2 |
 
 ### Phase 0: Bidless
 

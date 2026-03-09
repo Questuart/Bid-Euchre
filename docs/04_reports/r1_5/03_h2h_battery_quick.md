@@ -140,10 +140,27 @@ The QUICK signal is strong enough to proceed directly to FULL evaluation.
 The CI is narrow enough ([+0.004, +0.350]) to confirm a real effect, and
 both rotation CIs are consistent in direction.
 
+### Contract-Type Faceting
+
+Per-contract-type deltas were not measured at QUICK scale. The FULL battery
+(Step 8) provides the definitive per-contract breakdown:
+
+| Contract | Delta (FULL) | Significant |
+|----------|-------------|-------------|
+| Suit | -0.142 | Yes (regression) |
+| High | +0.430 | Yes |
+| Low | +0.495 | Yes |
+
+The pooled QUICK delta (+0.165) is consistent with the pooled FULL delta
+(+0.152). See [05_h2h_battery_full.md](05_h2h_battery_full.md) for the
+contract-type analysis.
+
 ### Caveats
 
 - **QUICK scale (n=2500):** CIs are wide. The FULL battery (n=50,000) will
   provide definitive statistical significance.
+- **No per-contract-type data at QUICK:** Contract-type faceting is available
+  only in the FULL battery report.
 - **Single seed:** Only seed=42 tested. Cross-seed validation at FULL scale
   will confirm robustness.
 - **3-bidder roster:** A broader roster including ModeloEspecifico and other

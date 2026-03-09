@@ -1,5 +1,7 @@
 # R1.5 Step 10: Promotion Decision
 
+> For the canonical rung summary, see [rung_closeout.md](rung_closeout.md).
+
 **Arc:** D — OLSa-Hybrid Bidder
 **Rung:** R1.5 (objective-alignment)
 **Date:** 2026-03-08
@@ -14,11 +16,22 @@ to incumbent status.
 | Gate | Result | Evidence |
 |------|--------|----------|
 | X1 (dataset) | PASS | 2,000+ deals generated, schema validated |
-| X2 (training) | PASS | Suit R²=0.587, High=0.586, Low=0.521, Pass=0.153 |
+| X2 (training) | PASS | QUICK: Suit R²=0.565, High=0.533, Low=0.514, Pass=0.046 (SMOKE was higher; QUICK is canonical) |
 | X3 (offline ranking) | ADJUDICATED ADVANCED | Top-1 accuracy below threshold due to oracle noise |
 | X4 (QUICK H2H) | PASS | +0.165 net_eppd, delta > -0.10 |
 | X4 (FULL H2H) | **ADVANCED** | +0.152 net_eppd, CI [+0.124, +0.180] |
 | Promotion gate | **FAIL** | CI_low +0.124 < delta floor 0.180 |
+
+### Per-Contract-Type Promotion Blockers
+
+| Contract | Delta | CI | Promotion Blocker? |
+|----------|-------|-----|-------------------|
+| Suit | -0.142 | [-0.180, -0.105] | **Yes** — regression; primary obstacle |
+| High | +0.430 | [+0.359, +0.501] | No — large gain |
+| Low | +0.495 | [+0.444, +0.546] | No — large gain |
+
+The suit regression alone accounts for the gap between the pooled delta (+0.152)
+and the promotion threshold (0.180).
 
 ## 2. Rationale
 
@@ -96,7 +109,7 @@ variance in predictions. Currently using QUICK-trained models.
 |------|------|--------|
 | 0 — Foundations | 2026-03-06 | PR #560 |
 | 1 — Dataset generator | 2026-03-06 | PRs #564, #565 |
-| 2 — Training pipeline | 2026-03-07 | PR #567 |
+| 2 — Training pipeline | 2026-03-08 | PR #567 |
 | 3 — Offline eval (X3) | 2026-03-07 | PR #572 (adjudicated) |
 | 5 — Gameplay screen | 2026-03-08 | PR #576 |
 | 6 — H2H QUICK (X4) | 2026-03-08 | PR #577 (+0.165) |

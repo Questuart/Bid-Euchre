@@ -1,5 +1,9 @@
 # R1.5 Step 0: Foundations
 
+> **Implementation history.** This is a step-level implementation record, not a
+> decision document. For the canonical rung summary, see
+> [rung_closeout.md](rung_closeout.md).
+
 **Arc:** D — OLSa-Hybrid Bidder
 **Rung:** R1.5 (objective-alignment)
 **Date:** 2026-03-07
