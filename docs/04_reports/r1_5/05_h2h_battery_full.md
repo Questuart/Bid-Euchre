@@ -67,6 +67,7 @@ PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
 # Parse results from existing run directory
 PYTHONPATH=src uv run python scripts/internal/run_arc_d_h2h_battery.py \
     --parse-run data/runs/arc_d_r0_h2h_battery_42_20260308_173038 \
+    --roster data/artifacts/arc_d/r1_5/h2h_roster_r1_5.json \
     --seed 42 --mode FULL \
     --output data/artifacts/arc_d/r1_5/h2h_battery_full.json
 ```
