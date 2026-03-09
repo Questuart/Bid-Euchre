@@ -270,6 +270,55 @@ split manifests, artifact freeze, notebook gates, and reviewer checklist.
 
 ---
 
+## Developer Notes
+
+### Strategy Registration Pattern
+
+When adding a new strategy to the framework, four files must be updated in
+coordination. Missing any one of them will cause either import errors or
+silent config failures:
+
+1. **Implementation** (`src/bid_euchre/strategy/<name>.py`) — The strategy
+   class itself. Must accept a `seed` parameter and use a local
+   `random.Random(seed)` instance for all stochastic decisions. Global
+   `random.*` calls violate the determinism contract and will be caught by
+   the review gate (check C1).
+
+2. **Package export** (`src/bid_euchre/strategy/__init__.py`) — Add the class
+   to the public API. Without this, YAML configs that reference the strategy
+   by name will fail at runtime with an `AttributeError`.
+
+3. **Config registration** (`src/bid_euchre/experiments/config.py`) — Register
+   the strategy name in `StrategyConfig.create_strategy()`. This is the
+   mapping between YAML string identifiers and Python classes. Forgetting
+   this step produces a `ValueError` at experiment startup.
+
+4. **YAML config** (`experiments/configs/<name>.yaml`) — Create at least one
+   config file that exercises the new strategy. This serves as both
+   documentation and a smoke-test target.
+
+### Common Pitfalls
+
+- **Circular imports in `__init__.py`**: When re-exporting modules from
+  package init files, avoid importing submodules that themselves import from
+  sibling packages. The `reporting` and `diagnostics` modules have explicit
+  import-edge constraints documented above in the Module Dependency Contract.
+
+- **NaN handling in sort operations**: Python's `sorted()` with `key=abs`
+  produces undefined behavior when NaN values are present. Always filter
+  NaN values before sorting.
+
+- **Falsy numeric guards**: The pattern `x = x or fallback` silently
+  replaces `0.0` with `fallback` because `0.0` is falsy in Python. Use
+  `x = fallback if x is None else x` instead. This is a merge-blocking
+  finding (check C2) in the review gate.
+
+- **PyArrow list columns**: When converting PyArrow list-type columns to
+  hashable values for grouping, use `tuple(sorted(x))` unconditionally
+  rather than attempting direct comparison.
+
+---
+
 ## Design Principles
 
 1. **Single source of truth**: One canonical runner (`run_experiment.py`), one report generator (`generate_report.py`)
