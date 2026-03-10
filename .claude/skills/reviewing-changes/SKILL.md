@@ -230,6 +230,40 @@ error messages. If a Codex comment matches any of these patterns (case-insensiti
 Do NOT continue polling after detecting a limit error — the review will never
 arrive. Record the error message verbatim in the report.
 
+**Step 3b: Codex CLI fallback (when GitHub Codex is unavailable)**
+
+If GitHub Codex status is `UNAVAILABLE_LIMIT`, fall back to local Codex CLI
+review. This uses a separate usage pool (ChatGPT subscription) and provides
+review coverage when the GitHub integration is unavailable.
+
+1. Invoke the Codex CLI adapter:
+   ```bash
+   uv run python -c "
+   import sys, json; sys.path.insert(0, 'scripts/internal')
+   from codex_review_adapter import invoke_codex_cli
+   result = invoke_codex_cli(mode='<review_mode>', base='main')
+   print(json.dumps(result.to_dict(), indent=2))
+   "
+   ```
+
+2. If the CLI invocation succeeds (`result.success == True`):
+   - Parse findings from the result
+   - Record as `codex_cli_fallback_used: yes`
+   - Record channel as `codex_cli` (NOT `inline_review` or `comment`)
+   - Include findings in the report under a separate **Codex CLI Fallback** section
+
+3. If the CLI invocation fails:
+   - Record as `codex_cli_fallback_used: failed`
+   - Include the error in the report
+   - Do NOT retry — proceed with the review using only precheck findings
+
+**Important:** CLI fallback findings are recorded **separately** from GitHub
+Codex findings. They use a different channel (`codex_cli`) and appear in their
+own report section. They are never treated as equivalent to GitHub Codex coverage.
+
+CLI fallback findings are **observe-only** — same as GitHub Codex findings, they
+do NOT affect commit status, merge eligibility, or follow-up issue creation.
+
 ### Step 4: Log Codex response metadata
 
 After polling completes (response received or timeout), log these fields
@@ -244,6 +278,9 @@ in the review report's Codex Review section:
 | `codex_findings_parseable` | yes / no — file paths, line numbers, and severity tags are extractable |
 | `codex_finding_counts` | CRITICAL: N, WARNING: N, NIT: N (or `unparseable`) |
 | `codex_checks_reported` | list of check IDs found in findings (or `none`) |
+| `codex_cli_fallback_used` | yes / no / failed — whether local CLI was invoked as fallback |
+| `codex_cli_latency_seconds` | seconds for CLI invocation (if fallback used) |
+| `codex_cli_finding_counts` | P0: N, P1: N, P2: N (if fallback used, or `N/A`) |
 
 **Format compliance check:** Codex may use either format:
 
@@ -314,6 +351,17 @@ Output the review report to chat in this format:
 | Severity | File | Line | Check | Finding |
 |----------|------|------|-------|---------|
 (parsed from inline review comments or table format — include all Codex findings here)
+
+### Codex CLI Fallback
+(Include this section only when CLI fallback was invoked)
+- Fallback used: yes / failed
+- Latency: N seconds
+- Finding counts: P0: N, P1: N, P2: N
+- CLI findings:
+
+| Severity | File | Line | Check | Finding |
+|----------|------|------|-------|---------|
+(parsed from local CLI output — these are separate from GitHub Codex findings)
 
 ### Status
 - make check: PASSED / FAILED
