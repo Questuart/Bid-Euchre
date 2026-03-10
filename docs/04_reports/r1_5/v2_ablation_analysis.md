@@ -316,7 +316,7 @@ architecture is unlikely to close the suit gap. Progress requires either:
 | Interaction artifact | data/runs/av_interaction_42/action_value_interaction_features.json |
 | H2H run (interaction) | data/runs/r1_5_v2_interaction_h2h_42_20260310_160346/ (9 matchups, seed=42, n=2500) |
 | Diagnostics | data/reports/arc_d/r1_5_v2/diagnostics/ (18 charts + diagnostic_summary.json) |
-| analysis_base_sha | 4bfdd77 |
+| analysis_base_sha | bb017d6 |
 
 ### Reproduction Commands
 
@@ -335,11 +335,15 @@ uv run python scripts/internal/train_action_value.py \
   --output-dir data/runs/action_value_quick_42_v2 \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-# H2H battery (ablation) — config generated locally, not committed
-# See ablation_h2h_config.yaml structure: 3 bidders (AV v1, Cell B', R0),
-# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
+# H2H battery (ablation) — requires generating a YAML config locally:
+#   matchups: 3 bidders (AV v1, Cell B', R0) × all pairs = 9 matchups
+#   Each bidder entry: strategy "action_value" with artifact_path pointing to
+#   the trained model JSON (AV v1 / Cell B') or "hybrid_olsa" for R0.
+#   Settings: paired_deals=true, n_deals=2500, seed=42
+# Config is not committed (data/runs/ is gitignored); structure matches
+# experiments/configs/quick_test.yaml format with multiple bidders.
 uv run python experiments/run_experiment.py --seed 42 \
-  --config data/runs/ablation_h2h_quick_42/ablation_h2h_config.yaml
+  --config <your_generated_ablation_h2h_config.yaml>
 
 # No-partner model (--skip-validation required: pass R²=0.005 < gate threshold)
 uv run python scripts/internal/train_action_value.py \
@@ -349,11 +353,11 @@ uv run python scripts/internal/train_action_value.py \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
   --skip-validation
 
-# H2H battery (partner ablation) — config generated locally, not committed
-# See partner_ablation_h2h_config.yaml structure: 3 bidders (AV v1, no-partner, R0),
-# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
+# H2H battery (partner ablation) — requires generating a YAML config locally:
+#   matchups: 3 bidders (AV v1, no-partner, R0) × all pairs = 9 matchups
+#   Same structure as ablation H2H above. Not committed.
 uv run python experiments/run_experiment.py --seed 42 \
-  --config data/runs/partner_ablation_h2h_quick_42/partner_ablation_h2h_config.yaml
+  --config <your_generated_partner_ablation_h2h_config.yaml>
 
 # Interaction model
 uv run python scripts/internal/train_action_value.py \
@@ -362,9 +366,9 @@ uv run python scripts/internal/train_action_value.py \
   --output-dir data/runs/av_interaction_42 \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-# H2H battery (interaction) — config generated locally, not committed
-# See interaction_h2h_config.yaml structure: 3 bidders (AV v1, interaction, R0),
-# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
+# H2H battery (interaction) — requires generating a YAML config locally:
+#   matchups: 3 bidders (AV v1, interaction, R0) × all pairs = 9 matchups
+#   Same structure as ablation H2H above. Not committed.
 uv run python experiments/run_experiment.py --seed 42 \
-  --config data/runs/interaction_h2h_quick_42/interaction_h2h_config.yaml
+  --config <your_generated_interaction_h2h_config.yaml>
 ```

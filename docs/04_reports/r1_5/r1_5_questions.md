@@ -249,4 +249,4 @@ the decision layer needs.
 | Ablation H2H run | `data/runs/r1_5_v2_ablation_h2h_42_20260309_202431/` (9 matchups, seed=42, n=2500) |
 | Option A data | Inline R² calculation on `data/runs/action_value_quick_42_v2/datasets/action_value.parquet` (collapsed to bidless format, R0 CONTRACT_FEATURES, seed=42) |
 | Dataset v2 | `data/runs/action_value_quick_42_v2/datasets/action_value.parquet` (468,388 rows, with tricks_won + focal_declared) |
-| analysis_base_sha | 113d77a |
+| analysis_base_sha | bb017d6 |
