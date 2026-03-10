@@ -12,6 +12,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from train_action_value import (
+    FEATURE_SETS,
+    METADATA_COLS,
+    VALID_TARGETS,
+    _artifact_filename,
     _build_feature_matrix,
     build_artifact,
     load_dataset,
@@ -303,3 +307,138 @@ class TestEndToEnd:
         json_str = json.dumps(artifact)
         reloaded = json.loads(json_str)
         assert reloaded["schema_version"] == "action_value_olsa_v1"
+
+
+# ── Feature Set Ablation ─────────────────────────────────────
+
+
+class TestFeatureSets:
+    def test_feature_set_r0_subset(self):
+        """R0 feature set must be a proper subset of full feature set."""
+        r0_set = set(FEATURE_SETS["r0"])
+        full_set = set(FEATURE_SETS["full"])
+        assert r0_set < full_set, "R0 features should be a proper subset of full"
+
+    def test_feature_set_r0_length(self):
+        """R0 feature set must have exactly 39 features."""
+        assert len(FEATURE_SETS["r0"]) == 39
+
+    def test_feature_set_full_length(self):
+        """Full feature set must have exactly 52 features."""
+        assert len(FEATURE_SETS["full"]) == 52
+
+    def test_feature_set_r0_matches_hand_features(self):
+        """R0 features are the first 39 entries of STATE_FEATURE_NAMES."""
+        assert FEATURE_SETS["r0"] == list(STATE_FEATURE_NAMES[:39])
+
+    def test_valid_targets(self):
+        """VALID_TARGETS includes both supported target columns."""
+        assert "net_points" in VALID_TARGETS
+        assert "tricks_won" in VALID_TARGETS
+
+
+# ── Artifact Metadata ────────────────────────────────────────
+
+
+class TestBuildArtifactAblation:
+    def test_records_feature_set_full(self):
+        """Artifact records feature_set='full' by default."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models, seed=42, n_deals=100, continuation_artifact="test.json"
+        )
+        assert artifact["feature_set"] == "full"
+
+    def test_records_feature_set_r0(self):
+        """Artifact records feature_set='r0' when specified."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=100,
+            continuation_artifact="test.json",
+            feature_set="r0",
+        )
+        assert artifact["feature_set"] == "r0"
+
+    def test_records_target_net_points(self):
+        """Artifact records target='net_points' by default."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models, seed=42, n_deals=100, continuation_artifact="test.json"
+        )
+        assert artifact["target"] == "net_points"
+
+    def test_records_target_tricks_won(self):
+        """Artifact records target='tricks_won' when specified."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=100,
+            continuation_artifact="test.json",
+            target_col="tricks_won",
+        )
+        assert artifact["target"] == "tricks_won"
+
+
+# ── Target Column Validation ─────────────────────────────────
+
+
+class TestLoadDatasetTargetValidation:
+    def test_missing_target_column_raises(self, tmp_path):
+        """Loading with a target column not in the dataset should raise."""
+        # Build a minimal valid dataframe (with all metadata + state features + net_points)
+        n_rows = 5
+        data = {col: range(n_rows) for col in METADATA_COLS}
+        for col in STATE_FEATURE_NAMES:
+            data[col] = [0.0] * n_rows
+        data["net_points"] = [1.0] * n_rows
+        df = pd.DataFrame(data)
+
+        path = tmp_path / "no_tricks.parquet"
+        df.to_parquet(path, index=False)
+
+        # Should succeed with default target
+        load_dataset(str(path))
+
+        # Should fail when requesting tricks_won (not in dataset)
+        with pytest.raises(ValueError, match="missing columns.*tricks_won"):
+            load_dataset(str(path), target_col="tricks_won")
+
+
+# ── Artifact Filename ────────────────────────────────────────
+
+
+class TestArtifactFilename:
+    def test_full_filename(self):
+        assert _artifact_filename("full") == "action_value_full.json"
+
+    def test_r0_filename(self):
+        assert _artifact_filename("r0") == "action_value_r0_features.json"
+
+
+# ── Helpers ──────────────────────────────────────────────────
+
+
+def _dummy_models() -> dict[str, dict]:
+    """Create minimal model dicts for artifact tests (no real training)."""
+    model = {
+        "coefficients": [0.0] * 54,
+        "intercept": 0.0,
+        "feature_names": list(STATE_FEATURE_NAMES) + list(ACTION_FEATURE_NAMES),
+        "r_squared": 0.5,
+        "mae": 1.0,
+        "n_train": 100,
+        "n_val": 20,
+    }
+    pass_model = {
+        "coefficients": [0.0] * 52,
+        "intercept": 0.0,
+        "feature_names": list(STATE_FEATURE_NAMES),
+        "r_squared": 0.3,
+        "mae": 1.5,
+        "n_train": 100,
+        "n_val": 20,
+    }
+    return {"suit": model, "high": model, "low": model, "pass": pass_model}

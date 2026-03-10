@@ -136,8 +136,8 @@ class TestRunPartialAuction:
 
 
 class TestSimulateCounterfactual:
-    def test_pass_returns_float(self, hands, dealer, raiser):
-        """Pass action produces a float net_points."""
+    def test_returns_tuple(self, hands, dealer, raiser):
+        """simulate_counterfactual returns a 3-tuple (net_points, tricks_won, focal_declared)."""
         focal = _bidding_order(dealer)[0]
         high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
         result = simulate_counterfactual(
@@ -149,14 +149,34 @@ class TestSimulateCounterfactual:
             transcript,
             raiser,
         )
-        assert isinstance(result, float)
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        net_points, tricks_won, focal_declared = result
+        assert isinstance(net_points, float)
+        assert isinstance(tricks_won, float)
+        assert isinstance(focal_declared, bool)
+
+    def test_pass_returns_float(self, hands, dealer, raiser):
+        """Pass action produces a float net_points."""
+        focal = _bidding_order(dealer)[0]
+        high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
+        net_points, tricks_won, focal_declared = simulate_counterfactual(
+            hands,
+            dealer,
+            focal,
+            BidAction.pass_bid(),
+            high_bid,
+            transcript,
+            raiser,
+        )
+        assert isinstance(net_points, float)
 
     def test_bid_returns_float(self, hands, dealer, raiser):
         """Bid action produces a float net_points."""
         focal = _bidding_order(dealer)[0]
         high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
         action = BidAction.bid(3, "S")
-        result = simulate_counterfactual(
+        net_points, tricks_won, focal_declared = simulate_counterfactual(
             hands,
             dealer,
             focal,
@@ -165,13 +185,13 @@ class TestSimulateCounterfactual:
             transcript,
             raiser,
         )
-        assert isinstance(result, float)
+        assert isinstance(net_points, float)
 
     def test_misdeal_returns_zero(self, hands, dealer, passer):
-        """When all pass (including forced pass), net_points=0."""
+        """When all pass (including forced pass), net_points=0, tricks_won=0, focal_declared=False."""
         focal = _bidding_order(dealer)[0]
         high_bid, transcript = run_partial_auction(hands, dealer, focal, passer)
-        result = simulate_counterfactual(
+        net_points, tricks_won, focal_declared = simulate_counterfactual(
             hands,
             dealer,
             focal,
@@ -180,14 +200,16 @@ class TestSimulateCounterfactual:
             transcript,
             passer,
         )
-        assert result == 0.0
+        assert net_points == 0.0
+        assert tricks_won == 0.0
+        assert focal_declared is False
 
-    def test_net_points_range(self, hands, dealer, raiser):
-        """net_points should be in a plausible range."""
+    def test_tricks_won_range(self, hands, dealer, raiser):
+        """tricks_won should be in [0, 10]."""
         focal = _bidding_order(dealer)[0]
         high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
         action = BidAction.bid(3, "S")
-        result = simulate_counterfactual(
+        net_points, tricks_won, focal_declared = simulate_counterfactual(
             hands,
             dealer,
             focal,
@@ -196,7 +218,67 @@ class TestSimulateCounterfactual:
             transcript,
             raiser,
         )
-        assert -20 <= result <= 20
+        assert 0 <= tricks_won <= 10
+
+    def test_net_points_range(self, hands, dealer, raiser):
+        """net_points should be in a plausible range."""
+        focal = _bidding_order(dealer)[0]
+        high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
+        action = BidAction.bid(3, "S")
+        net_points, tricks_won, focal_declared = simulate_counterfactual(
+            hands,
+            dealer,
+            focal,
+            action,
+            high_bid,
+            transcript,
+            raiser,
+        )
+        assert -20 <= net_points <= 20
+
+    def test_focal_declared_true_when_focal_bids_highest(self, hands, dealer, passer):
+        """When focal is the only bidder (others pass), focal_declared=True."""
+        focal = _bidding_order(dealer)[0]
+        high_bid, transcript = run_partial_auction(hands, dealer, focal, passer)
+        # Focal bids, all others pass → focal's team declares
+        action = BidAction.bid(4, "S")
+        net_points, tricks_won, focal_declared = simulate_counterfactual(
+            hands,
+            dealer,
+            focal,
+            action,
+            high_bid,
+            transcript,
+            passer,
+        )
+        assert focal_declared is True
+
+    def test_focal_declared_false_when_opponent_outbids(self, raiser):
+        """When opponent outbids focal, focal_declared=False."""
+        # Use raiser as continuation — later seats will outbid a low bid
+        # Test across multiple deals to find at least one where opponent outbids
+        found_opponent_declared = False
+        for deal_id in range(20):
+            hands = generate_deal(42, deal_id)
+            dealer = _deterministic_dealer(42, deal_id)
+            focal = _bidding_order(dealer)[0]
+            high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
+            # Focal passes, raiser continuation will bid
+            net_points, tricks_won, focal_declared = simulate_counterfactual(
+                hands,
+                dealer,
+                focal,
+                BidAction.pass_bid(),
+                high_bid,
+                transcript,
+                raiser,
+            )
+            if not focal_declared and net_points != 0.0:
+                found_opponent_declared = True
+                break
+        assert (
+            found_opponent_declared
+        ), "Expected at least one deal where opponent declares"
 
     def test_different_actions_different_outcomes(self, raiser):
         """Across multiple deals, pass vs bid produce different net_points."""
@@ -210,7 +292,7 @@ class TestSimulateCounterfactual:
             focal = _bidding_order(dealer)[0]
             high_bid, transcript = run_partial_auction(hands, dealer, focal, raiser)
 
-            r_pass = simulate_counterfactual(
+            r_pass, _, _ = simulate_counterfactual(
                 hands,
                 dealer,
                 focal,
@@ -219,7 +301,7 @@ class TestSimulateCounterfactual:
                 transcript,
                 raiser,
             )
-            r_bid = simulate_counterfactual(
+            r_bid, _, _ = simulate_counterfactual(
                 hands,
                 dealer,
                 focal,
@@ -282,6 +364,8 @@ class TestGenerateDataset:
             "bid_n",
             "trump_suit",
             "net_points",
+            "tricks_won",
+            "focal_declared",
         }
         assert required.issubset(set(small_df.columns))
 
@@ -296,8 +380,23 @@ class TestGenerateDataset:
         assert (counts == 1).all()
         assert len(counts) == 5 * 4  # 5 deals × 4 seats
 
+    def test_tricks_won_range(self, small_df):
+        """tricks_won should be in [0, 10] for all rows."""
+        assert small_df["tricks_won"].between(0, 10).all()
+
+    def test_focal_declared_is_boolean(self, small_df):
+        """focal_declared should contain only boolean-like values."""
+        vals = set(small_df["focal_declared"].unique())
+        assert vals.issubset({True, False, 0, 1})
+
+    def test_focal_declared_has_both_values(self, small_df):
+        """With 5 deals, we expect both True and False focal_declared values."""
+        vals = set(small_df["focal_declared"].unique())
+        assert True in vals or 1 in vals, "Expected at least one focal_declared=True"
+        assert False in vals or 0 in vals, "Expected at least one focal_declared=False"
+
     def test_no_nan(self, small_df):
-        feature_cols = STATE_FEATURE_NAMES + ["net_points"]
+        feature_cols = STATE_FEATURE_NAMES + ["net_points", "tricks_won"]
         assert small_df[feature_cols].isna().sum().sum() == 0
 
     def test_action_types(self, small_df):

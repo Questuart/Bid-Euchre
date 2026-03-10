@@ -7,7 +7,8 @@ continue the auction with a continuation policy, play out tricks with
 GluttonStrategy, and record the focal team's net_points.
 
 Output: Parquet with columns hand_id, deal_id, focal_seat, action_type,
-contract_family, bid_n, trump_suit, 52 state feature columns, net_points.
+contract_family, bid_n, trump_suit, 52 state feature columns, net_points,
+tricks_won, focal_declared.
 
 Usage:
     uv run python scripts/internal/generate_action_value_dataset.py \
@@ -301,11 +302,16 @@ def simulate_counterfactual(
     current_high_bid: int,
     transcript_so_far: list[dict],
     continuation_policy: BiddingPolicy,
-) -> float:
+) -> tuple[float, float, bool]:
     """Force focal_seat to take forced_action, complete auction + play tricks.
 
-    Returns net_points for focal_seat's team (focal_points - opponent_points).
-    Misdeal (all pass) returns 0.0.
+    Returns:
+        (net_points, tricks_won, focal_declared) where:
+        - net_points: focal team's net points (focal - opponent)
+        - tricks_won: focal team's raw tricks won
+        - focal_declared: True if focal_seat's team won the auction
+
+    Misdeal (all pass) returns (0.0, 0.0, False).
     """
     winning_bid, bidder_pos, contract_type, trump_suit, _transcript = _complete_auction(
         hands,
@@ -319,19 +325,27 @@ def simulate_counterfactual(
 
     if winning_bid is None:
         # Misdeal: all passed
-        return 0.0
+        return 0.0, 0.0, False
+
+    # Determine if focal team declared
+    focal_declared = (bidder_pos is not None) and (bidder_pos % 2 == focal_seat % 2)
 
     # Play tricks (auction winner leads)
     t0, t1 = _play_tricks(hands, bidder_pos, contract_type, trump_suit)
+
+    # Focal team's tricks won
+    tricks_won = float(t0) if focal_seat in (0, 2) else float(t1)
 
     # Compute points
     points_t0, points_t1 = compute_points(winning_bid, bidder_pos, t0, t1)
 
     # net_points for focal_seat's team
     if focal_seat in (0, 2):
-        return float(points_t0 - points_t1)
+        net_points = float(points_t0 - points_t1)
     else:
-        return float(points_t1 - points_t0)
+        net_points = float(points_t1 - points_t0)
+
+    return net_points, tricks_won, focal_declared
 
 
 def generate_dataset(
@@ -388,7 +402,7 @@ def generate_dataset(
                 state = extract_state_features(obs, contract_family, trump_suit)
 
                 # Simulate counterfactual outcome
-                net_points = simulate_counterfactual(
+                net_points, tricks_won, focal_declared = simulate_counterfactual(
                     hands,
                     dealer,
                     focal_seat,
@@ -412,6 +426,8 @@ def generate_dataset(
                 for i, fname in enumerate(STATE_FEATURE_NAMES):
                     row[fname] = state[i]
                 row["net_points"] = net_points
+                row["tricks_won"] = tricks_won
+                row["focal_declared"] = focal_declared
 
                 rows.append(row)
 
@@ -458,10 +474,22 @@ def validate_gate_x1(df: pd.DataFrame, n_deals: int) -> None:
     assert max_np <= 20, f"net_points max too high: {max_np}"
 
     # 4. No NaN in features or target
-    feature_cols = STATE_FEATURE_NAMES + ["net_points"]
+    feature_cols = STATE_FEATURE_NAMES + ["net_points", "tricks_won"]
     nan_counts = df[feature_cols].isna().sum()
     nan_cols = nan_counts[nan_counts > 0]
     assert len(nan_cols) == 0, f"NaN found in columns: {nan_cols.to_dict()}"
+
+    # 4b. tricks_won range check
+    assert df["tricks_won"].between(0, 10).all(), (
+        f"tricks_won outside [0, 10]: "
+        f"min={df['tricks_won'].min()}, max={df['tricks_won'].max()}"
+    )
+
+    # 4c. focal_declared is boolean-like
+    focal_vals = set(df["focal_declared"].unique())
+    assert focal_vals.issubset(
+        {True, False, 0, 1}
+    ), f"focal_declared has unexpected values: {focal_vals}"
 
     # 5. Row count sanity (expect ~40 actions per seat on average)
     expected_rows = n_deals * 4 * 40  # rough estimate

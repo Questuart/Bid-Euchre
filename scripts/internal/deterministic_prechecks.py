@@ -40,6 +40,8 @@ _CONVENTION_PATTERNS: list[tuple[str, str, str]] = [
     (r"!=\s*None\b", "X3", "Use 'is not None' instead of '!= None'"),
     (r"==\s*True\b", "X3", "Use 'if x:' instead of '== True'"),
     (r"==\s*False\b", "X3", "Use 'if not x:' instead of '== False'"),
+    (r'\bprint\(f?"(?:DEBUG|>>>)', "X3", "Debug print statement in code"),
+    (r"\btype\(\w+\)\s*==\s*", "X3", "Use isinstance() instead of type() =="),
 ]
 
 # Merge conflict markers
