@@ -191,7 +191,7 @@ Record the timestamp when the `@codex review` comment was posted.
 
 Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
 
-**Important:** Codex responds via **two channels** — check both:
+**Important:** Codex responds via **three channels** — check all:
 
 1. **PR review comments** (inline, on specific lines) — this is the primary channel:
    ```bash
@@ -207,15 +207,28 @@ Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
      --jq '.reviews[] | select(.author.login == "chatgpt-codex-connector") | .body'
    ```
 
-3. **Regular comments** (fallback — used for setup messages or errors):
+3. **Regular comments** (used for setup messages, errors, or usage limit notices):
    ```bash
    gh pr view <PR_NUMBER> --json comments \
      --jq '.comments[] | select(.author.login == "chatgpt-codex-connector") | .body'
    ```
 
+**Polling exit conditions:**
+
 A Codex review is **COMPLETE** when either channel 1 or 2 returns content.
 Channel 1 (inline comments) contains the actual findings; channel 2 is typically
 a summary header.
+
+**Early exit on usage limits:** On each poll cycle, also check channel 3 for
+error messages. If a Codex comment matches any of these patterns (case-insensitive),
+**stop polling immediately** and set status to `UNAVAILABLE_LIMIT`:
+
+- "reached your Codex usage limits"
+- "usage limit"
+- "temporarily unavailable"
+
+Do NOT continue polling after detecting a limit error — the review will never
+arrive. Record the error message verbatim in the report.
 
 ### Step 4: Log Codex response metadata
 
@@ -253,9 +266,10 @@ If the response uses neither format, set `codex_format_compliant: no` and includ
 the raw response body in the report for human review.
 
 Record the Codex review result:
-- **COMPLETE** — Codex responded. Include parsed findings in the report.
+- **COMPLETE** — Codex responded with review content. Include parsed findings in the report.
 - **PENDING** — Codex did not respond within 10 minutes. Note in report; human should check before merging.
 - **NOT AVAILABLE** — `gh pr comment` failed or PR doesn't exist.
+- **UNAVAILABLE_LIMIT** — Codex responded with a usage limit error. No review was performed. Record the error message.
 
 **Observe-only:** Codex findings are informational in this phase. They do NOT
 affect commit status, merge eligibility, or follow-up issue creation. They are
@@ -285,15 +299,16 @@ Output the review report to chat in this format:
 (table rows, or "No warnings.")
 
 ### Codex Review
-- Status: COMPLETE / PENDING / NOT AVAILABLE
+- Status: COMPLETE / PENDING / NOT AVAILABLE / UNAVAILABLE_LIMIT
 - Response channel: inline_review / comment / none
 - Responded: yes / no
-- Latency: N seconds / timeout
-- Format compliant: yes / no
-- Findings parseable: yes / no
-- Finding counts: CRITICAL: N, WARNING: N, NIT: N (or "unparseable")
+- Latency: N seconds / timeout / early_exit
+- Format compliant: yes / no / N/A (if unavailable)
+- Findings parseable: yes / no / N/A (if unavailable)
+- Finding counts: CRITICAL: N, WARNING: N, NIT: N (or "unparseable" / "N/A")
 - Checks reported: [list of check IDs] (or "none")
-- Summary: [1-3 sentence summary of Codex findings, or "No issues found" / "Awaiting response"]
+- Error message: [verbatim Codex error, if UNAVAILABLE_LIMIT] (omit if not applicable)
+- Summary: [1-3 sentence summary of Codex findings, or "No issues found" / "Awaiting response" / "Usage limit — no review performed"]
 - Codex findings (if parseable):
 
 | Severity | File | Line | Check | Finding |
@@ -303,7 +318,7 @@ Output the review report to chat in this format:
 ### Status
 - make check: PASSED / FAILED
 - Commit status: `success` / `failure` / `not published`
-- Codex review: COMPLETE / PENDING / NOT AVAILABLE
+- Codex review: COMPLETE / PENDING / NOT AVAILABLE / UNAVAILABLE_LIMIT
 
 ### Verdict: READY TO MERGE / NEEDS ATTENTION
 READY if zero BLOCKs and make check passes.
