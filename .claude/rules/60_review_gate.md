@@ -99,3 +99,17 @@ and branch protection blocks the PR. Recovery options:
 1. Start a new Claude session and run `/reviewing-changes` manually
 2. Admin override: `scripts/internal/set_review_status.sh success "Manual override"`
 3. Fallback workflow (`review_status_fallback.yml`) posts a comment after 1 hour
+
+## Known Issue: Docs-Only PRs and CI
+
+The CI workflow (`ci.yml`) has `paths-ignore: ['plans/**', 'docs/**', '*.md']`.
+Docs-only PRs never trigger CI, but branch protection requires the `tests` check.
+This creates a deadlock — the PR is unmergeable because the required check never
+posts a status.
+
+**Workaround:** Include a non-ignored file in the PR (e.g., `.claude/rules/`,
+`scripts/`, or a test file). If the PR is truly docs-only, include a relevant
+`.claude/` update or plan Outcome fill-in to trigger CI.
+
+**Proper fix (future):** Add a CI skip job that posts the `tests` status as
+`success` when all changed files match the `paths-ignore` patterns.
