@@ -259,6 +259,18 @@ class TestTransitionChains:
         assert state.is_terminal
         assert state.current_state == ReviewState.STOPPED_CI_FAILURE
 
+    def test_pr_open_to_stopped_ci_failure(self) -> None:
+        """Regression: pr_open must allow direct transition to stopped_ci_failure.
+
+        The review driver transitions pr_open → stopped_ci_failure when
+        deterministic prechecks find blocking issues before CI starts.
+        """
+        state = ReviewLoopState(pr_number=1, branch="b")
+        state.transition(ReviewState.PR_OPEN)
+        state.transition(ReviewState.STOPPED_CI_FAILURE)
+        assert state.is_terminal
+        assert state.current_state == ReviewState.STOPPED_CI_FAILURE
+
     def test_review_failure_stops(self) -> None:
         state = ReviewLoopState(pr_number=1, branch="b")
         state.transition(ReviewState.PR_OPEN)
