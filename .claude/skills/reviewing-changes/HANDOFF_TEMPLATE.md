@@ -40,7 +40,9 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Finding counts: [CRITICAL: N, WARNING: N, NIT: N / unparseable / N/A]
 - Checks reported: [list of check IDs / none]
 - Error message: [verbatim error if UNAVAILABLE_LIMIT, omit otherwise]
-- Summary: [1-3 sentence summary of Codex findings, or "Awaiting response" / "Usage limit — no review performed"]
+- CLI fallback used: [yes / no / failed]
+- CLI fallback findings: [P0: N, P1: N, P2: N / N/A]
+- Summary: [1-3 sentence summary of Codex findings, or "Awaiting response" / "Usage limit — CLI fallback used"]
 
 ### Needs Human Decision
 - [Each BLOCK item with context on why it needs judgment]
