@@ -215,3 +215,4 @@ See `docs/01_core/RULES.md` for complete rules specification.
 - `docs/01_core/EXPERIMENTS.md` — Experiment runner and output structure
 - `docs/01_core/REPRODUCIBILITY.md` — Seeding and determinism
 - `docs/02_agent/AGENTS.md` — Development workflow for AI agents
+# trigger CI
