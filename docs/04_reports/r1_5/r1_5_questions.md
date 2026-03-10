@@ -143,12 +143,22 @@ results are sufficient for diagnostic purposes.
 
 ## Q12: Do partner features contribute?
 
-**Status:** DEFERRED
-**Phase:** — | **Step:** —
+**Status:** ANSWERED
+**Phase:** 1 | **Step:** 7b
 
-Deferred — implicit in the feature ablation (Cell A). The R0-features cell
-excludes partner features; if Cell A matches AV v1, partner features are
-not contributing.
+**Yes — partner features are the single most valuable component of AV v1.**
+
+R² shows near-zero contribution for suit/high/low (delta < 0.005), but pass R²
+drops from 0.046 to 0.005 without partner context. In H2H gameplay:
+- AV v1 vs R0: **+0.224** pts/deal
+- No-partner vs R0: **-0.492** pts/deal (worse than R0)
+- No-partner vs AV v1: **-0.752** pts/deal
+
+Partner features don't improve *prediction accuracy* for a given action, but
+they critically improve *action selection* — particularly pass decisions. Without
+partner context, the bidder's pass model degrades to near-random.
+
+Evidence: data/runs/r1_5_v2_partner_ablation_h2h_42_20260310_130936/
 
 ---
 
