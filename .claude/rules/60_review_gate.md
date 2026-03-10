@@ -5,13 +5,15 @@
 ## Operating Model
 
 Claude is the default authoring agent. GitHub is the system of record for merge gates
-and review artifacts. `reviewing-changes` is the only formal automated gate controlled
-by this repo.
+and review artifacts. Two review systems operate in parallel:
 
-Codex is a GitHub-native pre-merge reviewer — it reviews PRs automatically via GitHub's
-built-in integration (not via custom API workflows). Codex review is advisory during
-rollout: merge happens only after Codex review is visible on the PR, but Codex does not
-control a required status check.
+1. **`/reviewing-changes` skill** — Manual pre-merge gate (publishes commit status)
+2. **Autonomous review loop** — State machine that orchestrates Codex CLI review,
+   auto-fix, and retesting cycles (`scripts/internal/review_driver.py`)
+
+Codex CLI is the primary reviewer in the autonomous loop — local, ~60s latency,
+uses ChatGPT subscription (no API billing). GitHub Codex remains as a passive
+overlay (auto-fires on PR open, not orchestrated).
 
 ## Status Contexts
 
@@ -23,18 +25,19 @@ control a required status check.
 
 1. Claude opens PR, `/reviewing-changes` runs automatically
 2. `reviewing-changes` publishes commit status (`success` or `failure`)
-3. `reviewing-changes` posts `@codex review` with PR-aware context and structured format request
-4. `reviewing-changes` polls for Codex response (up to 5 min) and logs response metadata
-5. Codex findings are reported for human review (observe-only — no auto-fix of Codex findings)
-6. Human verifies review report + Codex review, addresses any blocking findings
-7. Human merges manually (no auto-merge during observe phase)
+3. Autonomous review loop invokes Codex CLI (`codex review --base main`)
+4. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
+5. Auto-fixable findings (convention patterns) are applied and committed
+6. Non-auto-fixable findings are recorded for human review
+7. Loop iterates (max 5 rounds) until clean or stopped
+8. Human verifies review report, addresses any remaining findings
+9. Human merges manually (no auto-merge during rollout)
 
-**Codex observe-only phase:** Codex findings do not affect commit status or merge
-eligibility. They are logged and reported so we can measure format compliance,
-parse success, and finding accuracy before enabling automated action on Codex output.
+**Rollout phase:** The autonomous review loop hook is disabled by default.
+Enable after end-to-end validation passes. Auto-merge is gated on promotion
+criteria in `docs/04_reports/codex_validation/`.
 
-Auto-merge is gated on promotion criteria in `docs/04_reports/codex_validation/`.
-See `plans/sessions/2026-03-08_codex-review-quality.md` for the rollout plan.
+See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full state machine design.
 
 ## Severity Definitions
 
