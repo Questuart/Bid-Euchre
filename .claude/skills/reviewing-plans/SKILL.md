@@ -59,6 +59,11 @@ Output the review to chat in this format:
 ```markdown
 ## Plan Review: <plan-name>
 
+### Plan Outline
+- **Goal:** <1-sentence summary of what the plan aims to achieve>
+- **Approach:** <2-3 sentences describing the key steps/changes planned>
+- **Expected Result:** <1-sentence summary of the concrete deliverable or outcome>
+
 ### Convention Compliance
 | ID | Status | Finding |
 |----|--------|---------|
