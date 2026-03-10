@@ -46,7 +46,10 @@ class ReviewMode(str, enum.Enum):
 VALID_TRANSITIONS: dict[ReviewState, list[ReviewState]] = {
     ReviewState.INITIALIZED: [ReviewState.PR_OPEN],
     ReviewState.AUTHORING: [ReviewState.PR_OPEN],
-    ReviewState.PR_OPEN: [ReviewState.WAITING_FOR_CI],
+    ReviewState.PR_OPEN: [
+        ReviewState.WAITING_FOR_CI,
+        ReviewState.STOPPED_CI_FAILURE,
+    ],
     ReviewState.WAITING_FOR_CI: [
         ReviewState.WAITING_FOR_CODEX,
         ReviewState.STOPPED_CI_FAILURE,
