@@ -277,8 +277,10 @@ decision by the passer.
 This motivates the Phase 2 two-stage decomposition (Q14): separating
 declare/defend regimes should produce more unimodal within-regime targets.
 The OLS model would then predict within each regime rather than averaging
-across the bifurcation, and the decision layer would receive direct access to
-P(make) rather than inferring it from a blurred mean prediction.
+across the bifurcation. Per the governing plan
+(`plans/sessions/2026-03-09_r1-5-v2-diagnostic-plan.md`), Phase 2 splits on
+the observed declare/defend regime — not make/set — because declare/defend is
+directly observable in training data.
 
 ## 7. Implications for Phase 2
 
@@ -296,10 +298,12 @@ opposing bowers and gets set. The OLS model's between-mode prediction may cause
 more decision errors for suit than high/low because the gap between the two
 modes is wider and the transition is sharper.
 
-Phase 2 two-stage decomposition should help suit most: separating P(make|hand)
-from E[points|make/set] gives the decision layer direct access to the make/set
-probability rather than forcing it to infer make likelihood from a single EV
-that sits between the two modes.
+Phase 2 two-stage decomposition (declare/defend split per the governing plan)
+should help suit most: separating E[points|declare] from E[points|defend]
+and weighting by P(declare) gives the decision layer regime-specific
+predictions rather than a single EV that averages across the bifurcation.
+Whether a further make/set sub-split within the declaring regime is needed
+is an open question (Q16) to be evaluated during Phase 2 diagnostics.
 
 ### 7.2 Model Architecture
 

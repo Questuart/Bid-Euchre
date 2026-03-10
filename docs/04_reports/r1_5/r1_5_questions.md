@@ -224,5 +224,10 @@ the decision layer needs.
 | Item | Value |
 |------|-------|
 | gate_status | N/A — diagnostic Q&A log, no formal gate |
-| Source reports | `docs/04_reports/r1_5/diagnostic_calibration.md`, Steps 3, 5, 6, 8, 9 |
-| analysis_base_sha | bb9260a |
+| Source reports | `docs/04_reports/r1_5/diagnostic_calibration.md`, Steps 3, 5, 6, 8, 9 in `docs/04_reports/r1_5/` |
+| Diagnostic data | data/reports/arc_d/r1_5_v2/diagnostics/diagnostic_summary.json (18 charts + JSON, gitignored) |
+| Ablation artifacts | Cell A: `data/runs/cell_a_r0_features_42/action_value_r0_features.json`, Cell B': `data/runs/action_value_quick_42_v2/action_value_full.json` |
+| Ablation H2H run | `data/runs/r1_5_v2_ablation_h2h_42_20260309_202431/` (9 matchups, seed=42, n=2500) |
+| Option A data | Inline R² calculation on `data/runs/action_value_quick_42_v2/datasets/action_value.parquet` (collapsed to bidless format, R0 CONTRACT_FEATURES, seed=42) |
+| Dataset v2 | `data/runs/action_value_quick_42_v2/datasets/action_value.parquet` (468,388 rows, with tricks_won + focal_declared) |
+| analysis_base_sha | 113d77a |
