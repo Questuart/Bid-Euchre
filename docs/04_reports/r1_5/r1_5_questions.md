@@ -66,13 +66,22 @@ P(make) from E[points|regime] fixes the suit decision quality.
 
 ## Q5: Is OLS linearity the problem, or missing features?
 
-**Status:** PLANNED (Phase 3 fallback)
+**Status:** ANSWERED
 **Phase:** 3 | **Step:** 8
 
-Deferred to Phase 3. Interaction terms (bower x trump_length, quadratic trump)
-will be tested only if the two-stage decomposition does not close the suit gap.
-The diagnostic findings suggest the problem is in the target distribution
-structure (bimodality), not the feature space.
+**No — OLS linearity is NOT the problem.**
+
+Three interaction terms tested (bowers × trump_count, trump_count², bowers²):
+- R² delta < 0.001 for all contracts (suit: -0.0001, high: +0.0001, low: +0.0004)
+- H2H: interaction vs AV v1 = +0.002 pts/deal (noise)
+- H2H: interaction vs R0 = +0.165 (identical to AV v1 vs R0)
+
+The suit regression (-0.142 net_eppd) is structural: OLS predicts the mean of
+a bimodal make/set distribution, producing suboptimal bid decisions. Feature
+engineering cannot fix this — the problem is in the target distribution, not the
+feature space.
+
+Evidence: data/runs/r1_5_v2_interaction_h2h_42_20260310_160346/
 
 ---
 

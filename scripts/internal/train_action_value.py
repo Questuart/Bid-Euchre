@@ -63,6 +63,20 @@ _N_R0_HAND_FEATURES = 39
 # Partner feature columns (positions 39-41 in STATE_FEATURE_NAMES)
 _PARTNER_FEATURE_NAMES = ["partner_bid_level", "partner_passed", "partner_suit_match"]
 
+# Interaction terms computed from existing columns (not stored in dataset).
+# Each maps to (col_a, col_b) — the feature value is col_a * col_b.
+INTERACTION_FEATURE_NAMES: list[str] = [
+    "bowers_x_trump_count",
+    "trump_count_sq",
+    "bowers_sq",
+]
+
+_INTERACTION_FORMULAS: dict[str, tuple[str, str]] = {
+    "bowers_x_trump_count": ("bowers", "trump_count"),
+    "trump_count_sq": ("trump_count", "trump_count"),
+    "bowers_sq": ("bowers", "bowers"),
+}
+
 # Named feature sets for ablation experiments
 FEATURE_SETS: dict[str, list[str]] = {
     "full": list(STATE_FEATURE_NAMES),  # 52 state features
@@ -70,6 +84,8 @@ FEATURE_SETS: dict[str, list[str]] = {
     "no-partner": list(
         STATE_FEATURE_NAMES
     ),  # 52 features, partner cols zeroed at training
+    "interaction": list(STATE_FEATURE_NAMES)
+    + INTERACTION_FEATURE_NAMES,  # 52 + 3 interaction
 }
 
 # Feature sets that require zero-masking specific columns at training time.
@@ -111,8 +127,10 @@ def load_dataset(
 
     df = pd.read_parquet(parquet_path)
 
-    # Validate required columns
-    required = set(METADATA_COLS) | set(state_feature_names) | {target_col}
+    # Validate required columns (exclude computed features — they're derived
+    # at matrix-build time, not stored in the parquet)
+    computed = set(_INTERACTION_FORMULAS) | {"bid_n_sq"}
+    required = (set(METADATA_COLS) | set(state_feature_names) | {target_col}) - computed
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Dataset missing columns: {sorted(missing)}")
@@ -264,11 +282,20 @@ def train_pass_model(
 
 
 def _build_feature_matrix(df: pd.DataFrame, feature_names: list[str]) -> np.ndarray:
-    """Extract feature matrix from dataframe, computing bid_n_sq if needed."""
+    """Extract feature matrix from dataframe, computing derived features.
+
+    Handles three types of computed features:
+    - ``bid_n_sq``: square of ``bid_n`` (action feature)
+    - Interaction terms from ``_INTERACTION_FORMULAS``: product of two columns
+    - All other names: direct column lookup
+    """
     cols = []
     for name in feature_names:
         if name == "bid_n_sq":
             cols.append(df["bid_n"].values ** 2)
+        elif name in _INTERACTION_FORMULAS:
+            col_a, col_b = _INTERACTION_FORMULAS[name]
+            cols.append(df[col_a].values * df[col_b].values)
         else:
             cols.append(df[name].values)
     return np.column_stack(cols).astype(np.float64)
@@ -387,7 +414,7 @@ def main():
         "--feature-set",
         choices=sorted(FEATURE_SETS.keys()),
         default="full",
-        help="Feature set: 'full' (52 state), 'r0' (39 hand), 'no-partner' (52 state, partner cols zeroed)",
+        help="Feature set: 'full' (52 state), 'r0' (39 hand), 'no-partner' (52 state, partner cols zeroed), 'interaction' (52 + 3 interaction terms)",
     )
     parser.add_argument(
         "--target",

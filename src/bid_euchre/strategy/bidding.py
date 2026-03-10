@@ -1385,6 +1385,21 @@ STATE_FEATURE_NAMES: List[str] = (
 # Action feature names appended to state for per-contract models
 ACTION_FEATURE_NAMES: List[str] = ["bid_n", "bid_n_sq"]
 
+# Interaction feature names computed from state features at inference time.
+# Each maps to (state_index_a, state_index_b) — product of those state elements.
+# These are only present in "interaction" feature-set artifacts.
+INTERACTION_FEATURE_NAMES: List[str] = [
+    "bowers_x_trump_count",
+    "trump_count_sq",
+    "bowers_sq",
+]
+
+_INTERACTION_INDICES: List[Tuple[int, int]] = [
+    (0, 1),  # bowers(0) * trump_count(1)
+    (1, 1),  # trump_count(1) * trump_count(1)
+    (0, 0),  # bowers(0) * bowers(0)
+]
+
 
 def extract_state_features(
     obs: BiddingObservation,
@@ -1479,6 +1494,18 @@ def extract_action_features(bid_n: int) -> np.ndarray:
     return np.array([float(bid_n), float(bid_n * bid_n)], dtype=np.float64)
 
 
+def compute_interaction_features(state: np.ndarray) -> np.ndarray:
+    """Compute interaction features from a state vector.
+
+    Returns a small array of interaction terms (products of state elements)
+    matching INTERACTION_FEATURE_NAMES order.
+    """
+    return np.array(
+        [state[a] * state[b] for a, b in _INTERACTION_INDICES],
+        dtype=np.float64,
+    )
+
+
 def predict_ols(model_dict: dict, features: np.ndarray) -> float:
     """Dot-product prediction from an action_value_olsa_v1 model dict.
 
@@ -1520,10 +1547,22 @@ class ActionValueBidder(BiddingPolicy):
         self.pass_model = models["pass"]
         self.context_features = artifact.get("metadata", {}).get("context_features", [])
 
+        # Detect interaction feature set from artifact metadata
+        feature_set = artifact.get("feature_set", "full")
+        self._has_interactions = feature_set == "interaction"
+
         # Validate feature_names match expected runtime feature order.
         # OLS is a dot product — mismatched feature order silently mispredicts.
         # feature_names is REQUIRED for action_value_olsa_v1 (no legacy surface).
-        expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+        if self._has_interactions:
+            expected_bid_features = (
+                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            )
+            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
+        else:
+            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            expected_pass_features = list(STATE_FEATURE_NAMES)
+
         for family in ("suit", "high", "low"):
             model = self.models[family]
             if "feature_names" not in model:
@@ -1540,10 +1579,10 @@ class ActionValueBidder(BiddingPolicy):
                 )
         if "feature_names" not in self.pass_model:
             raise ValueError("Artifact pass model missing required 'feature_names'")
-        if list(self.pass_model["feature_names"]) != STATE_FEATURE_NAMES:
+        if list(self.pass_model["feature_names"]) != expected_pass_features:
             raise ValueError(
                 f"Artifact pass model feature_names mismatch. "
-                f"Expected {len(STATE_FEATURE_NAMES)} state-only features, "
+                f"Expected {len(expected_pass_features)} state features, "
                 f"got {len(self.pass_model['feature_names'])} features."
             )
 
@@ -1558,11 +1597,17 @@ class ActionValueBidder(BiddingPolicy):
             if action.is_pass():
                 # Pass model: state-only features with "none" contract encoding
                 state = extract_state_features(obs, "none", None)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
                 value = predict_ols(self.pass_model, state)
             else:
                 contract_type, trump_suit = action.to_contract_tuple()
                 family = contract_type  # "suit", "high", or "low"
                 state = extract_state_features(obs, family, trump_suit)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
                 action_feats = extract_action_features(action.n)
                 features = np.concatenate([state, action_feats])
                 value = predict_ols(self.models[family], features)
