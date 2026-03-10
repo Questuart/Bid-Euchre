@@ -31,15 +31,16 @@ The user can `/copy` this into a new Claude Code session to resume work.
   - ...
 
 ### Codex Review Metadata
-- Status: [COMPLETE / PENDING / NOT AVAILABLE]
+- Status: [COMPLETE / PENDING / NOT AVAILABLE / UNAVAILABLE_LIMIT]
 - Response channel: [inline_review / comment / none]
 - Responded: [yes/no]
-- Latency: [N seconds / timeout]
-- Format compliant: [yes/no]
-- Findings parseable: [yes/no]
-- Finding counts: [CRITICAL: N, WARNING: N, NIT: N / unparseable]
+- Latency: [N seconds / timeout / early_exit]
+- Format compliant: [yes/no / N/A]
+- Findings parseable: [yes/no / N/A]
+- Finding counts: [CRITICAL: N, WARNING: N, NIT: N / unparseable / N/A]
 - Checks reported: [list of check IDs / none]
-- Summary: [1-3 sentence summary of Codex findings, or "Awaiting response"]
+- Error message: [verbatim error if UNAVAILABLE_LIMIT, omit otherwise]
+- Summary: [1-3 sentence summary of Codex findings, or "Awaiting response" / "Usage limit — no review performed"]
 
 ### Needs Human Decision
 - [Each BLOCK item with context on why it needs judgment]
@@ -51,7 +52,7 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Branch: `[branch]` → PR #[number]
 - make check: [PASSED / FAILED]
 - Commit status: [`success` / `failure` / `not published`]
-- Codex review: [PENDING / COMPLETE / NOT AVAILABLE]
+- Codex review: [PENDING / COMPLETE / NOT AVAILABLE / UNAVAILABLE_LIMIT]
 - Verdict: [READY FOR CODEX/HUMAN REVIEW / NEEDS ATTENTION]
 
 ### Context for Next Agent
