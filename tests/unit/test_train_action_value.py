@@ -12,9 +12,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from train_action_value import (
+    _INTERACTION_FORMULAS,
     _PARTNER_FEATURE_NAMES,
     _ZERO_MASK_COLUMNS,
     FEATURE_SETS,
+    INTERACTION_FEATURE_NAMES,
     METADATA_COLS,
     VALID_TARGETS,
     _artifact_filename,
@@ -30,6 +32,10 @@ from train_action_value import (
 from bid_euchre.strategy.bidding import (
     ACTION_FEATURE_NAMES,
     STATE_FEATURE_NAMES,
+    compute_interaction_features,
+)
+from bid_euchre.strategy.bidding import (
+    INTERACTION_FEATURE_NAMES as BIDDER_INTERACTION_FEATURE_NAMES,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -501,6 +507,111 @@ class TestNoPartnerFeatureSet:
         """no-partner feature set produces expected filename."""
         assert (
             _artifact_filename("no-partner") == "action_value_no-partner_features.json"
+        )
+
+
+# ── Interaction Feature Set ───────────────────────────────────
+
+
+class TestInteractionFeatureSet:
+    def test_interaction_has_55_features(self):
+        """interaction feature set = 52 state + 3 interaction terms."""
+        assert len(FEATURE_SETS["interaction"]) == 55
+
+    def test_interaction_starts_with_state_features(self):
+        """First 52 features match STATE_FEATURE_NAMES."""
+        assert FEATURE_SETS["interaction"][:52] == list(STATE_FEATURE_NAMES)
+
+    def test_interaction_names_match_bidder(self):
+        """Training and bidder interaction feature names are identical."""
+        assert INTERACTION_FEATURE_NAMES == list(BIDDER_INTERACTION_FEATURE_NAMES)
+
+    def test_interaction_formulas_cover_all_names(self):
+        """Every interaction feature name has a formula."""
+        for name in INTERACTION_FEATURE_NAMES:
+            assert name in _INTERACTION_FORMULAS
+
+    def test_build_feature_matrix_computes_interactions(self, smoke_parquet_path):
+        """_build_feature_matrix computes interaction terms from base columns."""
+        df = load_dataset(smoke_parquet_path)
+        feature_names = FEATURE_SETS["interaction"] + list(ACTION_FEATURE_NAMES)
+        X = _build_feature_matrix(df.head(10), feature_names)
+        # interaction features are at positions 52, 53, 54 (before action features)
+        bowers = df["bowers"].values[:10]
+        trump_count = df["trump_count"].values[:10]
+        np.testing.assert_array_almost_equal(X[:, 52], bowers * trump_count)
+        np.testing.assert_array_almost_equal(X[:, 53], trump_count * trump_count)
+        np.testing.assert_array_almost_equal(X[:, 54], bowers * bowers)
+
+    def test_interaction_model_trains(self, smoke_parquet_path):
+        """Training with interaction feature set produces valid model."""
+        df = load_dataset(smoke_parquet_path)
+        train_df, val_df, _ = split_by_deal(df, seed=42)
+        model = train_family_model(
+            train_df,
+            val_df,
+            "suit",
+            state_feature_names=FEATURE_SETS["interaction"],
+        )
+        # Model should have 55 + 2 = 57 features (state+interaction + action)
+        assert len(model["feature_names"]) == 57
+        assert len(model["coefficients"]) == 57
+        assert model["r_squared"] > 0  # Sanity: non-degenerate
+
+    def test_interaction_artifact_loadable(self, smoke_parquet_path):
+        """Artifact from interaction training loads in ActionValueBidder."""
+        from bid_euchre.strategy.bidding import ActionValueBidder
+
+        df = load_dataset(smoke_parquet_path)
+        train_df, val_df, _ = split_by_deal(df, seed=42)
+        models = {}
+        for family in ("suit", "high", "low"):
+            models[family] = train_family_model(
+                train_df,
+                val_df,
+                family,
+                state_feature_names=FEATURE_SETS["interaction"],
+            )
+        models["pass"] = train_pass_model(
+            train_df,
+            val_df,
+            state_feature_names=FEATURE_SETS["interaction"],
+        )
+
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=df["deal_id"].nunique(),
+            continuation_artifact="hybrid_r0_full.json",
+            feature_set="interaction",
+        )
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
+            json.dump(artifact, f)
+            f.flush()
+            bidder = ActionValueBidder(f.name)
+            assert bidder._has_interactions is True
+            assert bidder.models is not None
+
+    def test_compute_interaction_features(self):
+        """compute_interaction_features produces correct products."""
+        # state[0]=bowers=2, state[1]=trump_count=5
+        state = np.zeros(52)
+        state[0] = 2.0  # bowers
+        state[1] = 5.0  # trump_count
+        result = compute_interaction_features(state)
+        assert len(result) == 3
+        assert result[0] == 10.0  # 2 * 5
+        assert result[1] == 25.0  # 5 * 5
+        assert result[2] == 4.0  # 2 * 2
+
+    def test_artifact_filename_interaction(self):
+        """interaction feature set produces expected filename."""
+        assert (
+            _artifact_filename("interaction")
+            == "action_value_interaction_features.json"
         )
 
 

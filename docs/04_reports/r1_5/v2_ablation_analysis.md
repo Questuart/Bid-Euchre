@@ -241,8 +241,66 @@ and should not be removed.
 | Data (bidless→counterfactual) | Counterfactual *worse* for R0 (suit -0.139 R²) | Confounded with architecture | **Not an independent improvement source** |
 | Architecture (HybridOLSa→AV) | N/A | Confounded with data and objective | **Synergistic with objective** |
 | Declare/defend split | +0.01 R² (gate FAIL) | Not tested | **Insufficient** |
+| Interaction terms (3) | Delta < 0.001 for all contracts | +0.002 vs AV v1 (noise) | **No effect — Q5 answered** |
 
-## 7. Provenance
+## 7. Interaction Term Ablation (Step 8)
+
+### 7.1 Experiment Design
+
+Added 3 interaction features computed from existing hand features:
+- `bowers_x_trump_count` — bowers × trump_count
+- `trump_count_sq` — trump_count²
+- `bowers_sq` — bowers²
+
+These target bower-specific non-linearities in the suit model. Features are
+computed in the training pipeline (`_build_feature_matrix()`) and at inference
+time (`compute_interaction_features()`), without modifying `STATE_FEATURE_NAMES`
+or requiring dataset regeneration.
+
+### 7.2 R² Comparison
+
+| Contract | Full (AV v1) | Interaction | Delta |
+|----------|-------------|-------------|-------|
+| suit | 0.5653 | 0.5652 | -0.0001 |
+| high | 0.5327 | 0.5328 | +0.0001 |
+| low | 0.5139 | 0.5143 | +0.0004 |
+| pass | 0.0463 | 0.0456 | -0.0007 |
+
+All deltas < 0.001. The interaction terms provide zero additional predictive
+power. The `lstsq` fallback during training indicates the interaction features
+are near-collinear with existing features.
+
+### 7.3 H2H Gameplay Results
+
+| Comparison | Delta (pts/deal) | Interpretation |
+|-----------|-----------------|----------------|
+| interaction vs AV v1 | **+0.002** | No difference (noise) |
+| interaction vs R0 | **+0.165** | Same as AV v1 vs R0 |
+| AV v1 vs R0 | **+0.165** | Baseline reference |
+
+Run: data/runs/r1_5_v2_interaction_h2h_42_20260310_160346 (9 matchups,
+seed=42, n=2,500).
+
+### 7.4 Key Finding: Q5 Answered
+
+**OLS linearity is NOT the problem.** The interaction terms provide zero
+benefit in both offline R² and gameplay. The suit regression (-0.142 net_eppd)
+is not caused by missing non-linear feature interactions.
+
+Combined with the Phase 2 gate failure (declare/defend split +0.01 R²), this
+confirms the structural diagnosis: the bimodal net_points distribution
+(make vs set) creates a target that OLS cannot serve well regardless of feature
+engineering. The OLS prediction falls between the two modes (make ~+bid,
+set ~-bid), producing suboptimal expected-value estimates for the argmax
+decision layer.
+
+**Implication:** Further feature engineering on the current OLS + argmax
+architecture is unlikely to close the suit gap. Progress requires either:
+1. A two-stage model (P(make) × E[points|make] + P(set) × E[points|set])
+2. A fundamentally different model class (logistic regression, tree-based)
+3. Direct policy optimization bypassing the prediction → decision pipeline
+
+## 8. Provenance
 
 | Item | Value |
 |------|-------|
@@ -255,8 +313,10 @@ and should not be removed.
 | H2H run (ablation) | data/runs/r1_5_v2_ablation_h2h_42_20260309_202431/ (9 matchups, seed=42, n=2500) |
 | No-partner artifact | data/runs/av_no_partner_42/action_value_no-partner_features.json |
 | H2H run (partner) | data/runs/r1_5_v2_partner_ablation_h2h_42_20260310_130936/ (9 matchups, seed=42, n=2500) |
+| Interaction artifact | data/runs/av_interaction_42/action_value_interaction_features.json |
+| H2H run (interaction) | data/runs/r1_5_v2_interaction_h2h_42_20260310_160346/ (9 matchups, seed=42, n=2500) |
 | Diagnostics | data/reports/arc_d/r1_5_v2/diagnostics/ (18 charts + diagnostic_summary.json) |
-| analysis_base_sha | 93ce55c |
+| analysis_base_sha | bb017d6 |
 
 ### Reproduction Commands
 
@@ -275,11 +335,15 @@ uv run python scripts/internal/train_action_value.py \
   --output-dir data/runs/action_value_quick_42_v2 \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-# H2H battery (ablation) — config generated locally, not committed
-# See ablation_h2h_config.yaml structure: 3 bidders (AV v1, Cell B', R0),
-# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
+# H2H battery (ablation) — requires generating a YAML config locally:
+#   matchups: 3 bidders (AV v1, Cell B', R0) × all pairs = 9 matchups
+#   Each bidder entry: strategy "action_value" with artifact_path pointing to
+#   the trained model JSON (AV v1 / Cell B') or "hybrid_olsa" for R0.
+#   Settings: paired_deals=true, n_deals=2500, seed=42
+# Config is not committed (data/runs/ is gitignored); structure matches
+# experiments/configs/quick_test.yaml format with multiple bidders.
 uv run python experiments/run_experiment.py --seed 42 \
-  --config data/runs/ablation_h2h_quick_42/ablation_h2h_config.yaml
+  --config <your_generated_ablation_h2h_config.yaml>
 
 # No-partner model (--skip-validation required: pass R²=0.005 < gate threshold)
 uv run python scripts/internal/train_action_value.py \
@@ -289,9 +353,22 @@ uv run python scripts/internal/train_action_value.py \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
   --skip-validation
 
-# H2H battery (partner ablation) — config generated locally, not committed
-# See partner_ablation_h2h_config.yaml structure: 3 bidders (AV v1, no-partner, R0),
-# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
+# H2H battery (partner ablation) — requires generating a YAML config locally:
+#   matchups: 3 bidders (AV v1, no-partner, R0) × all pairs = 9 matchups
+#   Same structure as ablation H2H above. Not committed.
 uv run python experiments/run_experiment.py --seed 42 \
-  --config data/runs/partner_ablation_h2h_quick_42/partner_ablation_h2h_config.yaml
+  --config <your_generated_partner_ablation_h2h_config.yaml>
+
+# Interaction model
+uv run python scripts/internal/train_action_value.py \
+  --seed 42 --feature-set interaction --target net_points \
+  --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
+  --output-dir data/runs/av_interaction_42 \
+  --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
+
+# H2H battery (interaction) — requires generating a YAML config locally:
+#   matchups: 3 bidders (AV v1, interaction, R0) × all pairs = 9 matchups
+#   Same structure as ablation H2H above. Not committed.
+uv run python experiments/run_experiment.py --seed 42 \
+  --config <your_generated_interaction_h2h_config.yaml>
 ```
