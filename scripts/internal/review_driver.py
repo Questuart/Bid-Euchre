@@ -10,8 +10,9 @@ Each invocation:
 Idempotent: duplicate triggers are harmless.
 Entry point: python scripts/internal/review_driver.py --pr <N> --trigger <event>
 
-The driver skeleton handles state transitions and prechecks.
-Codex CLI invocation and fix application are in PR 2 (separate modules).
+Adapters:
+- codex_review_adapter: Codex CLI invocation + output parsing
+- claude_fix_adapter: deterministic fix application + commit
 """
 
 from __future__ import annotations
@@ -224,18 +225,88 @@ def _step_waiting_for_codex(
 ) -> ReviewLoopState:
     """WAITING_FOR_CODEX → APPLYING_FIXES or READY_TO_MERGE.
 
-    Stub: Codex CLI adapter is in PR 2. Fails safe by stopping
-    with STOPPED_REVIEW_FAILURE rather than advancing to READY_TO_MERGE.
+    Invokes Codex CLI, parses findings, and decides next transition:
+    - Blocking findings → APPLYING_FIXES
+    - No blocking findings → READY_TO_MERGE
+    - Invocation failure → retry or STOPPED_REVIEW_FAILURE
     """
-    # Fail safe: no adapter = no review = cannot advance
-    logger.warning(
-        "PR #%d: Codex review adapter not yet implemented — stopping",
-        loop_state.pr_number,
+    from codex_review_adapter import (
+        get_blocking_findings,
+        invoke_codex_cli,
+        save_review_result,
     )
-    loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
-    loop_state.last_codex_status = "stub_no_adapter"
-    loop_state.stop_reason = "Codex CLI adapter not yet implemented (PR 2)"
+    from review_state import compute_findings_hash
+
+    iteration = loop_state.iteration_count + 1
+
+    result = invoke_codex_cli(mode=loop_state.mode)
+    save_review_result(result, loop_state.pr_number, iteration, base_dir)
+
+    if not result.success:
+        loop_state.codex_retry_count += 1
+        if loop_state.codex_retry_count >= 3:
+            loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+            loop_state.last_codex_status = "failed"
+            loop_state.stop_reason = (
+                f"Codex CLI failed {loop_state.codex_retry_count} times: {result.error}"
+            )
+            save_state(loop_state, base_dir)
+            logger.warning(
+                "PR #%d: Codex CLI failed %d times — stopped",
+                loop_state.pr_number,
+                loop_state.codex_retry_count,
+            )
+        else:
+            loop_state.last_codex_status = "retry"
+            save_state(loop_state, base_dir)
+            logger.info(
+                "PR #%d: Codex CLI failed (attempt %d/%d) — will retry",
+                loop_state.pr_number,
+                loop_state.codex_retry_count,
+                3,
+            )
+        return loop_state
+
+    # Reset retry count on success
+    loop_state.codex_retry_count = 0
+    loop_state.last_codex_status = "success"
+
+    blocking = get_blocking_findings(result.findings)
+
+    if not blocking:
+        loop_state.transition(ReviewState.READY_TO_MERGE)
+        save_state(loop_state, base_dir)
+        logger.info(
+            "PR #%d: no blocking Codex findings → ready_to_merge",
+            loop_state.pr_number,
+        )
+        return loop_state
+
+    # Check for stagnation before advancing to fix round
+    findings_dicts = [f.to_dict() for f in result.findings]
+    current_hash = compute_findings_hash(findings_dicts)
+
+    if current_hash == loop_state.last_findings_hash:
+        loop_state.transition(ReviewState.STOPPED_NO_PROGRESS)
+        loop_state.stop_reason = (
+            f"Same findings hash ({current_hash}) — no progress after fixes"
+        )
+        save_state(loop_state, base_dir)
+        logger.warning(
+            "PR #%d: stagnation detected (hash=%s) — stopped",
+            loop_state.pr_number,
+            current_hash,
+        )
+        return loop_state
+
+    loop_state.last_findings_hash = current_hash
+    loop_state.transition(ReviewState.APPLYING_FIXES)
     save_state(loop_state, base_dir)
+    logger.info(
+        "PR #%d: %d blocking Codex findings → applying_fixes",
+        loop_state.pr_number,
+        len(blocking),
+    )
     return loop_state
 
 
@@ -245,14 +316,66 @@ def _step_applying_fixes(
 ) -> ReviewLoopState:
     """APPLYING_FIXES → RETESTING.
 
-    Stub: Claude fix adapter is in PR 2.
+    Loads the latest Codex findings, applies auto-fixable patterns,
+    commits, and pushes. Transitions to RETESTING on success.
     """
-    logger.info(
-        "PR #%d: fix adapter stub — no adapter yet",
-        loop_state.pr_number,
+    from claude_fix_adapter import (
+        apply_fixes,
+        commit_fixes,
+        push_fixes,
+        save_fix_summary,
     )
+
+    iteration = loop_state.iteration_count + 1
+
+    # Load findings from this round's Codex review
+    rdir = round_dir(loop_state.pr_number, iteration, base_dir)
+    codex_path = rdir / "codex_review.json"
+
+    if codex_path.exists():
+        with open(codex_path) as f:
+            review_data = json.load(f)
+        findings = review_data.get("findings", [])
+    else:
+        logger.warning(
+            "PR #%d: no codex_review.json found for round %d",
+            loop_state.pr_number,
+            iteration,
+        )
+        findings = []
+
+    # Apply auto-fixable patterns
+    summary = apply_fixes(findings)
+    save_fix_summary(summary, loop_state.pr_number, iteration, base_dir)
+
+    if summary.fixes_applied == 0:
+        # No auto-fixes possible — still transition to RETESTING
+        # (manual fixes may have been applied externally)
+        logger.info(
+            "PR #%d: no auto-fixes applied (%d skipped) — retesting anyway",
+            loop_state.pr_number,
+            summary.fixes_skipped,
+        )
+        loop_state.iteration_count = iteration
+        loop_state.transition(ReviewState.RETESTING)
+        save_state(loop_state, base_dir)
+        return loop_state
+
+    # Commit and push
+    commit_fixes(summary, loop_state.pr_number, iteration)
+    if summary.commit_sha:
+        push_fixes(loop_state.branch)
+        loop_state.last_head_sha = summary.commit_sha
+
+    loop_state.iteration_count = iteration
     loop_state.transition(ReviewState.RETESTING)
     save_state(loop_state, base_dir)
+    logger.info(
+        "PR #%d: applied %d fixes, committed %s → retesting",
+        loop_state.pr_number,
+        summary.fixes_applied,
+        summary.commit_sha or "nothing",
+    )
     return loop_state
 
 
@@ -262,14 +385,36 @@ def _step_retesting(
 ) -> ReviewLoopState:
     """RETESTING → WAITING_FOR_CI or STOPPED_CI_FAILURE.
 
-    Stub: make check integration is in PR 2.
+    Runs make check locally. On success, transitions to WAITING_FOR_CI
+    (CI will re-run on the pushed commit). On failure after 3 retries,
+    stops with STOPPED_CI_FAILURE.
     """
-    logger.info(
-        "PR #%d: retest stub — transitioning to waiting_for_ci",
-        loop_state.pr_number,
-    )
-    loop_state.transition(ReviewState.WAITING_FOR_CI)
-    save_state(loop_state, base_dir)
+    from claude_fix_adapter import run_make_check
+
+    if run_make_check():
+        loop_state.ci_retry_count = 0
+        loop_state.transition(ReviewState.WAITING_FOR_CI)
+        save_state(loop_state, base_dir)
+        logger.info("PR #%d: make check passed → waiting_for_ci", loop_state.pr_number)
+        return loop_state
+
+    loop_state.ci_retry_count += 1
+    if loop_state.ci_retry_count >= 3:
+        loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
+        loop_state.stop_reason = f"make check failed {loop_state.ci_retry_count} times"
+        save_state(loop_state, base_dir)
+        logger.warning(
+            "PR #%d: make check failed %d times — stopped",
+            loop_state.pr_number,
+            loop_state.ci_retry_count,
+        )
+    else:
+        save_state(loop_state, base_dir)
+        logger.info(
+            "PR #%d: make check failed (attempt %d/3) — will retry",
+            loop_state.pr_number,
+            loop_state.ci_retry_count,
+        )
     return loop_state
 
 
