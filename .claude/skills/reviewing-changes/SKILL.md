@@ -187,7 +187,10 @@ PR scope: M files changed (plan files)
 See plans/AGENTS.md for plan-audit guidance."
 ```
 
-Record the timestamp when the `@codex review` comment was posted.
+Record the timestamp when the `@codex review` comment was posted as
+`CODEX_REQUEST_TS` (ISO 8601 format, e.g. `2026-03-10T14:30:00Z`). This
+timestamp is used to scope channel 3 polling — see "Early exit on usage limits"
+below.
 
 Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
 
@@ -209,8 +212,11 @@ Then poll for the Codex response (up to 10 minutes, checking every 30 seconds).
 
 3. **Regular comments** (used for setup messages, errors, or usage limit notices):
    ```bash
+   # Filter to comments from Codex created AFTER the current @codex review request.
+   # This prevents stale error comments from prior review attempts triggering
+   # a false UNAVAILABLE_LIMIT on the current attempt.
    gh pr view <PR_NUMBER> --json comments \
-     --jq '.comments[] | select(.author.login == "chatgpt-codex-connector") | .body'
+     --jq '.comments[] | select(.author.login == "chatgpt-codex-connector" and .createdAt > "'"$CODEX_REQUEST_TS"'") | .body'
    ```
 
 **Polling exit conditions:**
@@ -220,8 +226,10 @@ Channel 1 (inline comments) contains the actual findings; channel 2 is typically
 a summary header.
 
 **Early exit on usage limits:** On each poll cycle, also check channel 3 for
-error messages. If a Codex comment matches any of these patterns (case-insensitive),
-**stop polling immediately** and set status to `UNAVAILABLE_LIMIT`:
+error messages. **Only check comments created after `CODEX_REQUEST_TS`** — older
+comments from prior review attempts must be ignored to avoid false early exits.
+If a Codex comment (newer than `CODEX_REQUEST_TS`) matches any of these patterns
+(case-insensitive), **stop polling immediately** and set status to `UNAVAILABLE_LIMIT`:
 
 - "reached your Codex usage limits"
 - "usage limit"
@@ -229,6 +237,11 @@ error messages. If a Codex comment matches any of these patterns (case-insensiti
 
 Do NOT continue polling after detecting a limit error — the review will never
 arrive. Record the error message verbatim in the report.
+
+**Why timestamp scoping matters:** A PR may be reviewed multiple times (e.g.,
+after pushing fixes). Without filtering by `CODEX_REQUEST_TS`, a stale usage-limit
+comment from an earlier review attempt would immediately trigger `UNAVAILABLE_LIMIT`
+on the new attempt, even if Codex has recovered capacity.
 
 **Step 3b: Codex CLI fallback (when GitHub Codex is unavailable)**
 
@@ -272,7 +285,7 @@ in the review report's Codex Review section:
 | Field | Value |
 |-------|-------|
 | `codex_responded` | yes / no |
-| `codex_response_channel` | `inline_review` / `comment` / `none` |
+| `codex_response_channel` | `inline_review` / `comment` / `codex_cli` / `none` |
 | `codex_latency_seconds` | seconds from `@codex review` comment to response (or `timeout`) |
 | `codex_format_compliant` | yes / no — findings use severity tags and check IDs |
 | `codex_findings_parseable` | yes / no — file paths, line numbers, and severity tags are extractable |
@@ -337,7 +350,7 @@ Output the review report to chat in this format:
 
 ### Codex Review
 - Status: COMPLETE / PENDING / NOT AVAILABLE / UNAVAILABLE_LIMIT
-- Response channel: inline_review / comment / none
+- Response channel: inline_review / comment / codex_cli / none
 - Responded: yes / no
 - Latency: N seconds / timeout / early_exit
 - Format compliant: yes / no / N/A (if unavailable)
