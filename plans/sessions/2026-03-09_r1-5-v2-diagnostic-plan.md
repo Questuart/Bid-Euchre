@@ -454,4 +454,39 @@ model and evaluate.
 
 ## Outcome
 
-(To be filled after implementation)
+**Phase 1: COMPLETE** — All ablation experiments run, findings documented.
+
+### Key Findings
+
+1. **Features are irrelevant** — R² delta < 0.005 between R0 (39) and full (52) feature sets
+2. **Objective alignment is critical** — Cell B' (tricks_won + AV argmax) bids 10 every hand,
+   1% make rate, -13.7 net_eppd vs AV v1. Architecture requires net_points to function.
+3. **Counterfactual data is noisier for R0** — R0 sparse OLS on counterfactual data: suit R²=0.084
+   vs 0.223 on bidless data. Data alone is not an improvement source.
+4. **Declare/defend gate FAILED** — Criterion #1: +0.01 R² (threshold >0.05). Defend R² ≈ 0
+   because focal player's hand can't predict opponent outcomes. Criteria #2/#3 moot.
+5. **R1.5 improvement is synergistic** — The +0.152 net_eppd comes from net_points + argmax +
+   counterfactual action enumeration working together. No single component is cleanly attributable.
+
+### Phase 2 Decision
+
+Phase 2 (two-stage declare/defend model) **SKIPPED** — gate criterion #1 failed, and the
+fundamental limitation (defend R² ≈ 0) makes criteria #2/#3 unlikely to pass. The productive
+decomposition is make/set within the declaring regime, not declare/defend.
+
+### Resulting PRs
+
+| PR | Content | Status |
+|----|---------|--------|
+| #588 | Diagnostic plan | Merged |
+| #589 | Dataset augmentation (focal_declared + tricks_won) | Merged |
+| #590 | Ablation infra (--feature-set + --target) | Merged |
+| #591 | Calibration diagnostics script + report template | Merged |
+| #595 | Diagnostic findings + Q&A updates | Open (pending merge) |
+| #599 | Ablation analysis report | Open (pending merge) |
+
+### Reports
+
+- `docs/04_reports/r1_5/diagnostic_calibration.md` — calibration diagnostics + training data analysis
+- `docs/04_reports/r1_5/v2_ablation_analysis.md` — R² ablation matrix + H2H decomposition + gate results
+- `docs/04_reports/r1_5/r1_5_questions.md` — Q&A log (17 questions, 8+ answered)

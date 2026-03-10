@@ -19,3 +19,8 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - Reviews code quality, conventions, generates handoff summary
 - Auto-fixes are pushed as follow-up commits to the PR branch
 - Handoff summary is designed for `/copy` into a new session
+
+## Docs-Only CI Workaround
+- Docs-only PRs (`docs/**`, `plans/**`, `*.md`) don't trigger CI due to `paths-ignore`
+- Branch protection requires the `tests` check, creating a deadlock
+- Workaround: include a `.claude/` file change to trigger CI
