@@ -180,17 +180,69 @@ Gate criteria #2 (conditional residual pattern) and #3 (small pilot) remain
 untested but are less likely to pass given the fundamental limitation that defend
 R² ≈ 0 makes the defend model worthless.
 
-## 5. Updated Effect Decomposition
+## 5. Partner Feature Ablation (Step 7b)
+
+### 5.1 Experiment Design
+
+Trained ActionValueBidder with partner features (`partner_bid_level`,
+`partner_passed`, `partner_suit_match`) zeroed out at training time. The model
+artifact retains full 54-element feature_names (loads normally), but partner
+coefficients are exactly 0.0. This isolates partner context contribution
+without confounding architecture or objective changes.
+
+### 5.2 R² Comparison
+
+| Contract | Full (AV v1) | No-Partner | Delta |
+|----------|-------------|------------|-------|
+| suit | 0.5653 | 0.5619 | -0.0034 |
+| high | 0.5327 | 0.5331 | +0.0004 |
+| low | 0.5139 | 0.5117 | -0.0022 |
+| pass | 0.0463 | 0.0054 | **-0.0409** |
+
+R² is nearly identical for suit/high/low (delta < 0.005). But the **pass model
+collapses** from 0.046 to 0.005 — partner context is the dominant signal for
+pass decisions.
+
+### 5.3 H2H Gameplay Results
+
+| Comparison | Delta (pts/deal) | Interpretation |
+|-----------|-----------------|----------------|
+| AV v1 vs R0 | **+0.224** | Full AV improvement |
+| no-partner vs R0 | **-0.492** | AV without partner features loses to R0 |
+| no-partner vs AV v1 | **-0.752** | Partner features worth ~0.75 pts/deal |
+
+Run: data/runs/r1_5_v2_partner_ablation_h2h_42_20260310_130936 (9 matchups,
+seed=42, n=2,500).
+
+### 5.4 Key Finding
+
+**Partner features are the single most valuable component of AV v1.** Despite
+R² showing near-zero contribution for suit/high/low prediction, partner
+context fundamentally changes *which actions the bidder selects* — particularly
+pass decisions. Without partner context, the bidder's pass model degrades to
+near-random, and gameplay drops below R0.
+
+This contradicts the Phase 1 conclusion that "features are irrelevant." R²
+measures prediction accuracy for a *given action*, but partner features affect
+*action selection* — knowing your partner bid changes which contracts you
+consider, not how accurately you predict their outcome.
+
+**Implication for Phase 3:** Interaction terms (Step 8) should use the full
+feature set including partner features. The partner features are essential
+and should not be removed.
+
+## 6. Updated Effect Decomposition
 
 | Factor | R² Evidence | Gameplay Evidence | Conclusion |
 |--------|------------|-------------------|------------|
-| Features (39→52) | Delta < 0.005 | Not tested (Cell A can't load in ActionValueBidder) | **Irrelevant** |
+| Features (39→52 non-partner) | Delta < 0.005 | Not tested (Cell A can't load) | **Irrelevant for prediction** |
+| Partner features (3) | Delta < 0.005 for suit/high/low, -0.041 for pass | -0.492 vs R0 without, +0.224 with | **Critical for action selection** |
 | Objective (tricks→net_pts) | R² not comparable across targets | Cell B' bids 10/hand, -13.7 net_eppd vs AV v1 | **Critical — architecture requires it** |
 | Data (bidless→counterfactual) | Counterfactual *worse* for R0 (suit -0.139 R²) | Confounded with architecture | **Not an independent improvement source** |
 | Architecture (HybridOLSa→AV) | N/A | Confounded with data and objective | **Synergistic with objective** |
 | Declare/defend split | +0.01 R² (gate FAIL) | Not tested | **Insufficient** |
 
-## 6. Provenance
+## 7. Provenance
 
 | Item | Value |
 |------|-------|
@@ -200,9 +252,11 @@ R² ≈ 0 makes the defend model worthless.
 | Cell B' artifact | data/runs/action_value_quick_42_v2/action_value_full.json |
 | Cell C artifact | data/runs/cell_c_r0_tricks_42/ (gate X2 failed on pass, ran with --skip-validation) |
 | Dataset v2 | data/runs/action_value_quick_42_v2/datasets/action_value.parquet (468,388 rows) |
-| H2H run | data/runs/r1_5_v2_ablation_h2h_42_20260309_202431/ (9 matchups, seed=42, n=2500) |
+| H2H run (ablation) | data/runs/r1_5_v2_ablation_h2h_42_20260309_202431/ (9 matchups, seed=42, n=2500) |
+| No-partner artifact | data/runs/av_no_partner_42/action_value_no-partner_features.json |
+| H2H run (partner) | data/runs/r1_5_v2_partner_ablation_h2h_42_20260310_130936/ (9 matchups, seed=42, n=2500) |
 | Diagnostics | data/reports/arc_d/r1_5_v2/diagnostics/ (18 charts + diagnostic_summary.json) |
-| analysis_base_sha | 1e773ad |
+| analysis_base_sha | 93ce55c |
 
 ### Reproduction Commands
 
@@ -221,7 +275,19 @@ uv run python scripts/internal/train_action_value.py \
   --output-dir data/runs/action_value_quick_42_v2 \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-# H2H battery
+# H2H battery (ablation)
 uv run python experiments/run_experiment.py --seed 42 \
   --config data/runs/ablation_h2h_quick_42/ablation_h2h_config.yaml
+
+# No-partner model
+uv run python scripts/internal/train_action_value.py \
+  --seed 42 --feature-set no-partner --target net_points \
+  --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
+  --output-dir data/runs/av_no_partner_42 \
+  --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
+  --skip-validation
+
+# H2H battery (partner ablation)
+uv run python experiments/run_experiment.py --seed 42 \
+  --config data/runs/partner_ablation_h2h_quick_42/partner_ablation_h2h_config.yaml
 ```

@@ -12,6 +12,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from train_action_value import (
+    _PARTNER_FEATURE_NAMES,
+    _ZERO_MASK_COLUMNS,
     FEATURE_SETS,
     METADATA_COLS,
     VALID_TARGETS,
@@ -416,6 +418,90 @@ class TestArtifactFilename:
 
     def test_r0_filename(self):
         assert _artifact_filename("r0") == "action_value_r0_features.json"
+
+
+# ── No-Partner Feature Set ───────────────────────────────────
+
+
+class TestNoPartnerFeatureSet:
+    def test_no_partner_has_52_features(self):
+        """no-partner uses full 52 state features (zero-masked at training)."""
+        assert len(FEATURE_SETS["no-partner"]) == 52
+
+    def test_no_partner_equals_full_features(self):
+        """no-partner feature list is identical to full."""
+        assert FEATURE_SETS["no-partner"] == FEATURE_SETS["full"]
+
+    def test_partner_feature_names_correct(self):
+        """_PARTNER_FEATURE_NAMES matches STATE_FEATURE_NAMES positions 39-41."""
+        assert _PARTNER_FEATURE_NAMES == [
+            "partner_bid_level",
+            "partner_passed",
+            "partner_suit_match",
+        ]
+        for name in _PARTNER_FEATURE_NAMES:
+            assert name in FEATURE_SETS["full"]
+
+    def test_zero_mask_columns_maps_no_partner(self):
+        """_ZERO_MASK_COLUMNS has 'no-partner' → partner feature names."""
+        assert "no-partner" in _ZERO_MASK_COLUMNS
+        assert _ZERO_MASK_COLUMNS["no-partner"] == _PARTNER_FEATURE_NAMES
+
+    def test_zero_mask_produces_zero_coefficients(self, smoke_parquet_path):
+        """Training with zeroed partner columns should produce ~0 coefficients."""
+        df = load_dataset(smoke_parquet_path)
+        # Zero-mask partner columns (same as --feature-set no-partner)
+        for col in _PARTNER_FEATURE_NAMES:
+            df[col] = 0.0
+
+        train_df, val_df, _ = split_by_deal(df, seed=42)
+        model = train_family_model(train_df, val_df, "suit")
+
+        # Partner feature coefficients should be exactly 0 (or very close)
+        feature_names = model["feature_names"]
+        for pname in _PARTNER_FEATURE_NAMES:
+            idx = feature_names.index(pname)
+            assert (
+                abs(model["coefficients"][idx]) < 1e-10
+            ), f"Coefficient for {pname} should be ~0, got {model['coefficients'][idx]}"
+
+    def test_no_partner_artifact_loadable(self, smoke_parquet_path):
+        """Artifact from no-partner training loads in ActionValueBidder."""
+        from bid_euchre.strategy.bidding import ActionValueBidder
+
+        df = load_dataset(smoke_parquet_path)
+        for col in _PARTNER_FEATURE_NAMES:
+            df[col] = 0.0
+
+        train_df, val_df, _ = split_by_deal(df, seed=42)
+        models = {}
+        for family in ("suit", "high", "low"):
+            models[family] = train_family_model(train_df, val_df, family)
+        models["pass"] = train_pass_model(train_df, val_df)
+
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=df["deal_id"].nunique(),
+            continuation_artifact="hybrid_r0_full.json",
+            feature_set="no-partner",
+        )
+
+        # Write and load — should not raise
+        import json
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
+            json.dump(artifact, f)
+            f.flush()
+            bidder = ActionValueBidder(f.name)
+            assert bidder.models is not None
+
+    def test_artifact_filename_no_partner(self):
+        """no-partner feature set produces expected filename."""
+        assert (
+            _artifact_filename("no-partner") == "action_value_no-partner_features.json"
+        )
 
 
 # ── Helpers ──────────────────────────────────────────────────

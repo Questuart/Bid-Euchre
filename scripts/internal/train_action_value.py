@@ -60,10 +60,23 @@ TARGET_COL = "net_points"
 # Number of R0 hand features (first 39 entries in STATE_FEATURE_NAMES)
 _N_R0_HAND_FEATURES = 39
 
+# Partner feature columns (positions 39-41 in STATE_FEATURE_NAMES)
+_PARTNER_FEATURE_NAMES = ["partner_bid_level", "partner_passed", "partner_suit_match"]
+
 # Named feature sets for ablation experiments
 FEATURE_SETS: dict[str, list[str]] = {
     "full": list(STATE_FEATURE_NAMES),  # 52 state features
     "r0": list(STATE_FEATURE_NAMES[:_N_R0_HAND_FEATURES]),  # 39 R0 hand features only
+    "no-partner": list(
+        STATE_FEATURE_NAMES
+    ),  # 52 features, partner cols zeroed at training
+}
+
+# Feature sets that require zero-masking specific columns at training time.
+# The model artifact retains all feature names (passes ActionValueBidder validation)
+# but OLS learns zero coefficients for zeroed columns.
+_ZERO_MASK_COLUMNS: dict[str, list[str]] = {
+    "no-partner": _PARTNER_FEATURE_NAMES,
 }
 
 VALID_TARGETS = ("net_points", "tricks_won")
@@ -374,7 +387,7 @@ def main():
         "--feature-set",
         choices=sorted(FEATURE_SETS.keys()),
         default="full",
-        help="Feature set to use: 'full' (52 state) or 'r0' (39 hand only)",
+        help="Feature set: 'full' (52 state), 'r0' (39 hand), 'no-partner' (52 state, partner cols zeroed)",
     )
     parser.add_argument(
         "--target",
@@ -404,6 +417,13 @@ def main():
     )
     n_deals = df["deal_id"].nunique()
     print(f"  Loaded {len(df)} rows, {n_deals} deals")
+
+    # Zero-mask columns for ablation feature sets (e.g., "no-partner")
+    mask_cols = _ZERO_MASK_COLUMNS.get(args.feature_set, [])
+    if mask_cols:
+        for col in mask_cols:
+            df[col] = 0.0
+        print(f"  Zero-masked columns: {mask_cols}")
 
     # Split
     print("  Splitting by deal_id (80/10/10)...")
