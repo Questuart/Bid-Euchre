@@ -275,11 +275,13 @@ uv run python scripts/internal/train_action_value.py \
   --output-dir data/runs/action_value_quick_42_v2 \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-# H2H battery (ablation)
+# H2H battery (ablation) — config generated locally, not committed
+# See ablation_h2h_config.yaml structure: 3 bidders (AV v1, Cell B', R0),
+# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
 uv run python experiments/run_experiment.py --seed 42 \
   --config data/runs/ablation_h2h_quick_42/ablation_h2h_config.yaml
 
-# No-partner model
+# No-partner model (--skip-validation required: pass R²=0.005 < gate threshold)
 uv run python scripts/internal/train_action_value.py \
   --seed 42 --feature-set no-partner --target net_points \
   --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
@@ -287,7 +289,9 @@ uv run python scripts/internal/train_action_value.py \
   --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
   --skip-validation
 
-# H2H battery (partner ablation)
+# H2H battery (partner ablation) — config generated locally, not committed
+# See partner_ablation_h2h_config.yaml structure: 3 bidders (AV v1, no-partner, R0),
+# 9 matchups (3 self-play + 6 cross), paired deals, n=2500
 uv run python experiments/run_experiment.py --seed 42 \
   --config data/runs/partner_ablation_h2h_quick_42/partner_ablation_h2h_config.yaml
 ```

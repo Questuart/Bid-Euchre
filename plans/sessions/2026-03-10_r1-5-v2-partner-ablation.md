@@ -46,8 +46,8 @@ zero covariance with Y and zero covariance with all other columns. `_fit_ols()`
 (in `src/bid_euchre/models/train_olsa.py:50`) will hit `LinAlgError` from the
 singular `XtX` matrix and fall back to `np.linalg.lstsq(rcond=None)`, which
 handles rank deficiency correctly. The resulting coefficients for zero columns
-are exactly 0.0, and non-zero-column coefficients are identical to the
-column-dropped regression.
+are numerically zero (< 1e-30, at floating-point noise scale), and
+non-zero-column coefficients are identical to the column-dropped regression.
 
 ### Code Changes
 
@@ -83,7 +83,8 @@ uv run python scripts/internal/train_action_value.py \
   --seed 42 --feature-set no-partner --target net_points \
   --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
   --output-dir data/runs/av_no_partner_42 \
-  --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
+  --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
+  --skip-validation  # pass R²=0.005 < gate threshold 0.02 (expected without partner context)
 ```
 
 ### H2H Config
