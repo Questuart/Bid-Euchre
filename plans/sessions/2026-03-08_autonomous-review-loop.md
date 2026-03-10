@@ -303,4 +303,13 @@ not derived from runtime state files.
 
 ## Outcome
 
-(To be filled after implementation)
+- **PR 1:** #583 — State machine infra + deterministic prechecks (merged 2026-03-09)
+  - 9 new files, 1,625 lines, 46 tests
+- **PR 2:** #586 — Codex CLI adapter + Claude fix adapter + integration (merged 2026-03-09)
+  - 5 new files, 1,705 lines, 77 total tests
+  - Added fail-safe for unparseable Codex output (P1 finding from review)
+- **Follow-up:** #587 — C4 function length warnings + Codex findings (TimeoutExpired, npx fallback)
+- **Skill integration:** #592 — deterministic_prechecks integrated into /reviewing-changes
+- **Bugfix:** #594 — pr_open → stopped_ci_failure transition table fix (found by e2e validation)
+- **E2e validation:** PR #593 (closed) — 8/8 seeded bugs detected, state machine behavior verified
+- **Evidence:** docs/04_reports/codex_validation/results_2026-03-09_e2e.md
