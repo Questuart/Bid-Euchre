@@ -216,3 +216,13 @@ Resolved: wrong loss function for an EV-based decision rule. The argmax
 decision layer requires mean predictions (EV), not quantile or robust
 estimates. Quantile regression optimizes for a different objective than
 the decision layer needs.
+
+---
+
+## Provenance
+
+| Item | Value |
+|------|-------|
+| gate_status | N/A — diagnostic Q&A log, no formal gate |
+| Source reports | `docs/04_reports/r1_5/diagnostic_calibration.md`, Steps 3, 5, 6, 8, 9 |
+| analysis_base_sha | bb9260a |
