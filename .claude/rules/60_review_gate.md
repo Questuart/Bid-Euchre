@@ -128,5 +128,7 @@ posts a status.
 `scripts/`, or a test file). If the PR is truly docs-only, include a relevant
 `.claude/` update or plan Outcome fill-in to trigger CI.
 
-**Proper fix (future):** Add a CI skip job that posts the `tests` status as
-`success` when all changed files match the `paths-ignore` patterns.
+**Proper fix (future):** Add a `ci-skip` job that always runs and posts the
+`tests` status as `success` when all changed files match `paths-ignore` patterns.
+Alternatively, use `paths-filter` action to conditionally skip test steps while
+still posting a required status.
