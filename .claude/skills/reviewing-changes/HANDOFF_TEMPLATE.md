@@ -32,7 +32,7 @@ The user can `/copy` this into a new Claude Code session to resume work.
 
 ### Codex Review Metadata
 - Status: [COMPLETE / PENDING / NOT AVAILABLE / UNAVAILABLE_LIMIT]
-- Response channel: [inline_review / comment / none]
+- Response channel: [inline_review / comment / codex_cli / none]
 - Responded: [yes/no]
 - Latency: [N seconds / timeout / early_exit]
 - Format compliant: [yes/no / N/A]
