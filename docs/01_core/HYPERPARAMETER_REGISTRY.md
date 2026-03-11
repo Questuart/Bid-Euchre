@@ -92,7 +92,7 @@ different feature sets.
 ## Cross-Rung Evolution
 
 Parameters are re-tuned at each rung because the training data, feature set, and
-model accuracy change. The R1 master plan (`plans/r1_master_plan.md`) specifies
+model accuracy change. The R1 master plan (`plans/archive/r1_master_plan.md`) specifies
 the tuning schedule for the next rung.
 
 Key expectation for R1: enriched features (partner context, positional) will shift
