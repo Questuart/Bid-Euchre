@@ -189,7 +189,7 @@ Per-contract attribution is the most informative axis — see
 
 ## Plan Deviations
 
-Three deviations from the governing plan (`plans/r1_5_training_plan.md`):
+Three deviations from the governing plan (`plans/archive/r1_5_training_plan.md`):
 
 | Deviation | Plan Spec | Actual | Rationale |
 |-----------|-----------|--------|-----------|
@@ -255,7 +255,7 @@ battery was deferred. These are documented in the plan deviations section above.
 | Gate X3 script | `scripts/internal/evaluate_gate_x3.py` |
 | Dataset generator | `scripts/internal/generate_action_value_dataset.py` |
 | Training pipeline | `scripts/internal/train_action_value.py` |
-| Governing plan | `plans/r1_5_training_plan.md` |
+| Governing plan | `plans/archive/r1_5_training_plan.md` |
 
 ## Companion Reports
 
