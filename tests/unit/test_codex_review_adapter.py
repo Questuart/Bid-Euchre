@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 # Add scripts/internal to path for imports
 sys.path.insert(
@@ -12,9 +13,13 @@ sys.path.insert(
 
 from codex_review_adapter import (
     _CLEAN_REVIEW_PATTERNS,
+    _CODEX_APP_PATH,
     CodexFinding,
     CodexReviewResult,
+    _classify_error,
+    _resolve_codex_binary,
     get_blocking_findings,
+    invoke_codex_cli,
     parse_codex_output,
 )
 
@@ -282,3 +287,150 @@ class TestCleanReviewDetection:
 
     def test_no_problems_found_matches(self):
         assert _CLEAN_REVIEW_PATTERNS.search("No problems found.") is not None
+
+
+# --- Tests for command construction (the bug that prompted this PR) ---
+
+
+class TestBinaryResolution:
+    """Test _resolve_codex_binary preference order."""
+
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/local/bin/codex")
+    def test_prefers_path_binary(self, mock_which):
+        assert _resolve_codex_binary() == ["codex"]
+
+    @patch("codex_review_adapter.shutil.which", return_value=None)
+    def test_falls_back_to_app_bundle(self, mock_which):
+        with patch.object(Path, "is_file", return_value=True):
+            result = _resolve_codex_binary()
+            assert result == [str(_CODEX_APP_PATH)]
+
+    @patch("codex_review_adapter.shutil.which", return_value=None)
+    def test_falls_back_to_npx(self, mock_which):
+        with patch.object(Path, "is_file", return_value=False):
+            assert _resolve_codex_binary() == ["npx", "@openai/codex"]
+
+
+class TestCommandConstruction:
+    """Test that invoke_codex_cli builds valid CLI commands.
+
+    The original bug was passing both --base and a positional prompt,
+    which codex-cli v0.114.0 treats as mutually exclusive. These tests
+    ensure the prompt is never included in the command.
+    """
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_no_prompt_in_review_command(self, mock_resolve, mock_run):
+        """The review command must not include a positional prompt."""
+        mock_run.return_value = Mock(returncode=0, stdout="No issues found.", stderr="")
+        invoke_codex_cli(mode="standard", base="main")
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["codex", "review", "--base", "main"]
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_mode_does_not_affect_command(self, mock_resolve, mock_run):
+        """Different modes must not change the command (prompt removed)."""
+        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        for mode in ("standard", "report-audit", "plan-audit"):
+            invoke_codex_cli(mode=mode, base="main")
+            cmd = mock_run.call_args[0][0]
+            assert cmd == ["codex", "review", "--base", "main"]
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch(
+        "codex_review_adapter._resolve_codex_binary",
+        return_value=["npx", "@openai/codex"],
+    )
+    def test_npx_fallback_command(self, mock_resolve, mock_run):
+        """When codex binary not found, falls back to npx."""
+        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        invoke_codex_cli(base="main")
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["npx", "@openai/codex", "review", "--base", "main"]
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_custom_base_branch(self, mock_resolve, mock_run):
+        """Base branch argument is correctly passed."""
+        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        invoke_codex_cli(base="develop")
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["codex", "review", "--base", "develop"]
+
+
+class TestErrorClassification:
+    """Test that CLI errors are classified correctly."""
+
+    def test_argument_conflict_is_invocation_error(self):
+        stderr = "error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'"
+        assert _classify_error(stderr) == "cli_invocation_error"
+
+    def test_unexpected_argument_is_invocation_error(self):
+        stderr = "error: unexpected argument '--foo' found"
+        assert _classify_error(stderr) == "cli_invocation_error"
+
+    def test_usage_line_is_invocation_error(self):
+        stderr = "Usage: codex review --base <BRANCH>"
+        assert _classify_error(stderr) == "cli_invocation_error"
+
+    def test_auth_failure_is_review_error(self):
+        stderr = "Error: authentication failed"
+        assert _classify_error(stderr) == "cli_review_error"
+
+    def test_network_error_is_review_error(self):
+        stderr = "Error: network timeout connecting to API"
+        assert _classify_error(stderr) == "cli_review_error"
+
+    def test_empty_stderr_is_review_error(self):
+        assert _classify_error("") == "cli_review_error"
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_error_type_in_result(self, mock_resolve, mock_run):
+        """error_type must be set on failed results."""
+        mock_run.return_value = Mock(
+            returncode=2,
+            stdout="",
+            stderr="error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'",
+        )
+        result = invoke_codex_cli(base="main")
+        assert not result.success
+        assert result.error_type == "cli_invocation_error"
+
+    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_success_has_no_error_type(self, mock_resolve, mock_run):
+        """Successful results have no error_type."""
+        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        result = invoke_codex_cli(base="main")
+        assert result.success
+        assert result.error_type is None
+
+
+class TestCodexReviewResultErrorType:
+    """Test error_type field in serialization."""
+
+    def test_error_type_in_to_dict(self):
+        result = CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output="",
+            latency_seconds=3.0,
+            error="Exit code 2",
+            exit_code=2,
+            error_type="cli_invocation_error",
+        )
+        d = result.to_dict()
+        assert d["error_type"] == "cli_invocation_error"
+
+    def test_none_error_type_in_to_dict(self):
+        result = CodexReviewResult(
+            success=True,
+            findings=[],
+            raw_output="LGTM",
+            latency_seconds=60.0,
+        )
+        d = result.to_dict()
+        assert d["error_type"] is None
