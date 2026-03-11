@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -24,6 +25,18 @@ DEFAULT_TIMEOUT_SECONDS = 300
 
 # Max retries before giving up
 MAX_RETRIES = 3
+
+# Known path for macOS Codex app bundle binary
+_CODEX_APP_PATH = Path("/Applications/Codex.app/Contents/Resources/codex")
+
+# Patterns in stderr that indicate a CLI argument/invocation error
+# (as opposed to a review-time error like auth failure or network issue)
+_CLI_ARG_ERROR_PATTERNS = [
+    "cannot be used with",
+    "unexpected argument",
+    "invalid value",
+    "usage: codex review",
+]
 
 # Mode-specific review prompts (aligned with AGENTS.md guidance)
 _PROMPTS = {
@@ -114,6 +127,7 @@ class CodexReviewResult:
     latency_seconds: float
     error: str | None = None
     exit_code: int | None = None
+    error_type: str | None = None  # "cli_invocation_error" or "cli_review_error"
 
     def to_dict(self) -> dict:
         return {
@@ -123,6 +137,7 @@ class CodexReviewResult:
             "latency_seconds": self.latency_seconds,
             "error": self.error,
             "exit_code": self.exit_code,
+            "error_type": self.error_type,
         }
 
 
@@ -237,6 +252,34 @@ def _parse_alt_format(line: str) -> CodexFinding | None:
     )
 
 
+def _resolve_codex_binary() -> list[str]:
+    """Return the command prefix for invoking Codex CLI.
+
+    Preference order:
+    1. ``codex`` in PATH (fastest — no npx overhead)
+    2. macOS app bundle binary at known path
+    3. ``npx @openai/codex`` fallback (downloads if needed)
+    """
+    if shutil.which("codex"):
+        return ["codex"]
+    if _CODEX_APP_PATH.is_file():
+        return [str(_CODEX_APP_PATH)]
+    return ["npx", "@openai/codex"]
+
+
+def _classify_error(stderr: str) -> str:
+    """Classify a CLI error as invocation vs. runtime.
+
+    Returns ``"cli_invocation_error"`` for argument parsing failures
+    (bad flags, mutually exclusive args) or ``"cli_review_error"`` for
+    runtime issues (auth, network, model errors).
+    """
+    stderr_lower = stderr.lower()
+    if any(p in stderr_lower for p in _CLI_ARG_ERROR_PATTERNS):
+        return "cli_invocation_error"
+    return "cli_review_error"
+
+
 def invoke_codex_cli(
     *,
     mode: str = "standard",
@@ -248,6 +291,9 @@ def invoke_codex_cli(
 
     Args:
         mode: Review mode ("standard", "report-audit", "plan-audit").
+            Currently logged for diagnostics only — the CLI relies on
+            repo-level AGENTS.md for review guidance rather than a
+            positional prompt (which is mutually exclusive with --base).
         base: Git base ref for the review.
         timeout: Maximum wait time in seconds.
         cwd: Working directory (defaults to cwd).
@@ -255,19 +301,14 @@ def invoke_codex_cli(
     Returns:
         CodexReviewResult with parsed findings or error info.
     """
-    prompt = _PROMPTS.get(mode, _PROMPTS["standard"])
-
-    cmd = [
-        "npx",
-        "@openai/codex",
-        "review",
-        "--base",
-        base,
-        prompt,
-    ]
+    cmd = [*_resolve_codex_binary(), "review", "--base", base]
 
     logger.info(
-        "Invoking Codex CLI (mode=%s, base=%s, timeout=%ds)", mode, base, timeout
+        "Invoking Codex CLI (mode=%s, base=%s, timeout=%ds, cmd=%s)",
+        mode,
+        base,
+        timeout,
+        cmd,
     )
     start = time.monotonic()
 
@@ -282,10 +323,12 @@ def invoke_codex_cli(
         elapsed = time.monotonic() - start
 
         if result.returncode != 0:
+            error_type = _classify_error(result.stderr)
             logger.warning(
-                "Codex CLI returned exit code %d (%.1fs): %s",
+                "Codex CLI returned exit code %d (%.1fs, %s): %s",
                 result.returncode,
                 elapsed,
+                error_type,
                 result.stderr[:200],
             )
             return CodexReviewResult(
@@ -295,6 +338,7 @@ def invoke_codex_cli(
                 latency_seconds=elapsed,
                 error=f"Exit code {result.returncode}: {result.stderr[:200]}",
                 exit_code=result.returncode,
+                error_type=error_type,
             )
 
         findings = parse_codex_output(result.stdout)
@@ -346,13 +390,13 @@ def invoke_codex_cli(
 
     except FileNotFoundError:
         elapsed = time.monotonic() - start
-        logger.error("Codex CLI not found (npx not in PATH?)")
+        logger.error("Codex CLI not found — codex not in PATH and npx unavailable")
         return CodexReviewResult(
             success=False,
             findings=[],
             raw_output="",
             latency_seconds=elapsed,
-            error="Codex CLI not found (npx not in PATH)",
+            error="Codex CLI not found (codex not in PATH, npx unavailable)",
         )
 
 

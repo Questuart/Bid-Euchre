@@ -42,7 +42,7 @@ evidence is committed under `docs/04_reports/codex_validation/`.
 
 ### Backends
 
-- **Codex CLI** (primary): `npx @openai/codex review --base main`, local,
+- **Codex CLI** (primary): `codex review --base main`, local,
   ~60s latency, uses ChatGPT subscription (no API billing)
 - **GitHub Codex** (passive overlay): Auto-fires on PR open, visible on PR
   page for humans, not orchestrated by the state machine
@@ -63,8 +63,8 @@ independently. Checks include:
 
 ### Codex CLI Adapter
 
-Invokes `npx @openai/codex review --base main` with a mode-specific prompt.
-Parses two output formats:
+Invokes `codex review --base main` (prefers installed binary, falls back to
+`npx @openai/codex`). Parses two output formats:
 
 1. Standard: `[P1] file:line — message (C1)`
 2. Alternative: `[CRITICAL][C1] file:line — message`

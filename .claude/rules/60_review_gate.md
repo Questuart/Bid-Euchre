@@ -107,7 +107,7 @@ Two independent Codex review paths exist, with separate usage pools:
 | Channel | How invoked | Usage pool | Response time | Status values |
 |---------|-------------|------------|---------------|---------------|
 | **GitHub Codex** | `@codex review` PR comment | GitHub Codex quota | ~60-254s | COMPLETE, PENDING, UNAVAILABLE_LIMIT |
-| **Codex CLI** | `npx @openai/codex review --base main` (local) | ChatGPT subscription | ~60s | COMPLETE, FAILED |
+| **Codex CLI** | `codex review --base main` (local) | ChatGPT subscription | ~60s | COMPLETE, FAILED |
 
 **Fallback behavior:** When GitHub Codex returns `UNAVAILABLE_LIMIT`, the
 `/reviewing-changes` skill automatically falls back to local Codex CLI. CLI
