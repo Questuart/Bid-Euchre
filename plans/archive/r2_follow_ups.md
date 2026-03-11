@@ -3,7 +3,7 @@
 **Date created:** 2026-03-05 (updated 2026-03-05)
 **Source:** R1 training and evaluation sessions
 **Governing doc:** TBD (R2 master plan, when created)
-**Rung context:** `plans/r1_master_plan.md` §10 defines the R1 → R1.5 → R1.6 → R2 ladder
+**Rung context:** `plans/archive/r1_master_plan.md` §10 defines the R1 → R1.5 → R1.6 → R2 ladder
 
 Items discovered during R1 execution that should be addressed at R1.5, R1.6, or R2.
 Ordered by discovery date; will be prioritized when R1.5/R1.6/R2 planning begins.
@@ -98,7 +98,7 @@ Keep a context feature only if **all three conditions** hold:
 and H6 sparse partner signal identified as contributing factors to suit
 regression.
 **Target rung:** R1.6
-**Governing definition:** `plans/r1_master_plan.md` §10.3a
+**Governing definition:** `plans/archive/r1_master_plan.md` §10.3a
 
 ### Problem
 

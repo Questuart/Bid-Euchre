@@ -131,7 +131,7 @@ This table will be appended to the diagnostic report for HITL review.
 **Purpose:** Record the validation pack results and recommended next steps
 
 Update:
-1. `plans/r1_training_plan.md` — Add Step 3f (H10 validation pack results)
+1. `plans/archive/r1_training_plan.md` — Add Step 3f (H10 validation pack results)
 2. `docs/04_reports/r1/h2h_suit_regression_diagnostic.md` — Add Investigation K section
 3. Recommend next action: calibrate `bid_bonus` via H2H sweep (future PR)
 
@@ -146,7 +146,7 @@ Update:
 | `src/bid_euchre/strategy/bidding.py` | Add `bid_bonus` param to `_compute_ev_static()` and `compute_best_bid()` |
 | `tests/unit/test_h10_bid_level_degeneracy.py` | **NEW** — analytical sweep + patched payoff tests |
 | `docs/04_reports/r1/h2h_suit_regression_diagnostic.md` | Investigation K (H10 validation pack results) |
-| `plans/r1_training_plan.md` | Step 3f (H10 validation) |
+| `plans/archive/r1_training_plan.md` | Step 3f (H10 validation) |
 
 ## Files NOT Modified
 

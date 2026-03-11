@@ -1,7 +1,7 @@
 # R1 Training Plan — Operational Execution Checklist
 
 **Date:** 2026-03-04 (updated 2026-03-06)
-**Governing doc:** `plans/r1_master_plan.md` §3 and §10
+**Governing doc:** `plans/archive/r1_master_plan.md` §3 and §10
 **Predecessor:** R0 v2 (`r0-canonical-v2` tag at `4e26d44`)
 **Status:** Decision layer confirmed as major bottleneck. `bid_bonus=0.25` reverses overall R1→R0 delta (+0.407 net_eppd, CI [0.19, 0.62]), though suit-specific deficit persists (-0.456). Next: objective-aligned decision layer rung.
 
@@ -28,7 +28,7 @@ All must pass before Step 1 begins. Verified by HITL-1 sign-off.
 |-------|----------------------|----------|--------|
 | **E1: Config pin** | `python3 -c "import json; d=json.load(open('data/artifacts/arc_d/r0/hybrid_r0_full.json')); print(d['rung_id'], d['schema_version'])"` | `r0 1` | — |
 | **E2: Schema contract** | Assertion in dataset generator validates column names, types, row counts | Passes | — |
-| **E3: Protocol registration** | `ls plans/r1_threshold_protocol.md plans/r1_lambda_protocol.md plans/r1_normalizer_trigger.md` | All 3 exist | — |
+| **E3: Protocol registration** | `ls plans/archive/r1_threshold_protocol.md plans/archive/r1_lambda_protocol.md plans/archive/r1_normalizer_trigger.md` | All 3 exist | — |
 | **E4: HITL-1 sign-off** | Human reviews pre-registered protocols and training plan | Approved | — |
 | **E5: Gate dry-run** | `uv run python scripts/internal/run_arc_d_gate.py --bundle data/artifacts/arc_d/r0/rung_bundle_r0.json --base-dir .` | Executes without crash (validates gate infrastructure works) | — |
 
@@ -326,7 +326,7 @@ mode early.
 
 **Status:** COMPLETED
 **PR:** #552
-**Plan:** `plans/h10_validation_pack.md`
+**Plan:** `plans/archive/h10_validation_pack.md`
 
 **Purpose:** Analytically prove H10 and prototype the `bid_bonus` payoff fix.
 
@@ -529,7 +529,7 @@ print('X6: no per-family net_eppd regression > 0.1')
 
 ## 7. Pass-Threshold Re-Tuning — P4 (Step 7)
 
-Execute per `plans/r1_threshold_protocol.md`.
+Execute per `plans/archive/r1_threshold_protocol.md`.
 
 **Key commands:**
 
@@ -553,7 +553,7 @@ uv run python scripts/internal/run_threshold_sweep.py \
 
 ## 8. Lambda Re-Evaluation (Step 8)
 
-Execute per `plans/r1_lambda_protocol.md`. Sequential after Step 7.
+Execute per `plans/archive/r1_lambda_protocol.md`. Sequential after Step 7.
 
 **Key commands:**
 
@@ -592,7 +592,7 @@ uv run python scripts/internal/run_arc_d_h2h_battery.py \
 uv run python notebooks/arc_d/r1/55_contract_selection_oracle.py
 
 # Check normalizer trigger (30% cs_regret threshold)
-# See plans/r1_normalizer_trigger.md for decision rule
+# See plans/archive/r1_normalizer_trigger.md for decision rule
 ```
 
 **Gate X7 — Notebook Provenance:**
@@ -606,7 +606,7 @@ uv run python notebooks/arc_d/r1/55_contract_selection_oracle.py
 **Triggered only if Step 9 shows cs_regret_share > 30%.**
 
 If triggered: write full `plans/r1_normalizer_protocol.md` before execution.
-See `plans/r1_normalizer_trigger.md` for the trigger rule.
+See `plans/archive/r1_normalizer_trigger.md` for the trigger rule.
 
 ---
 
@@ -753,7 +753,7 @@ table covering RETAIN/ADOPT combinations for threshold, lambda, and normalizer).
 
 **Objective alignment:** plans/r1_5_training_plan.md (to be created in
 follow-up implementation-spec PR — does not exist yet)
-**Partner semantics:** `plans/r1_master_plan.md` §10.3a (R1.6 rung definition)
+**Partner semantics:** `plans/archive/r1_master_plan.md` §10.3a (R1.6 rung definition)
 **High/low confirmation:** `plans/r2_follow_ups.md` §F1
 
 **Rung sequencing:** R1.5 (objective-alignment) precedes R1.6

@@ -112,7 +112,7 @@ These are R0-completed work with no further utility at top level:
 
 | File | Purpose | When |
 |------|---------|------|
-| `plans/r1_training_plan.md` | Operational execution checklist (derived from §3 below) | Before first R1 PR |
+| `plans/archive/r1_training_plan.md` | Operational execution checklist (derived from §3 below) | Before first R1 PR |
 
 ---
 
@@ -390,9 +390,9 @@ Per W1 ("pre-register calibration protocols before batteries"), protocols must b
 written and committed **before** execution begins (Step 0 in the experiment sequence).
 
 **What gets pre-registered at Step 0:**
-- `plans/r1_threshold_protocol.md` — full protocol (grid, split, SESOI, decision rule)
-- `plans/r1_lambda_protocol.md` — full protocol (grid, instruments, decision rule)
-- `plans/r1_normalizer_trigger.md` — **trigger rule only** (the 30% cs_regret threshold
+- `plans/archive/r1_threshold_protocol.md` — full protocol (grid, split, SESOI, decision rule)
+- `plans/archive/r1_lambda_protocol.md` — full protocol (grid, instruments, decision rule)
+- `plans/archive/r1_normalizer_trigger.md` — **trigger rule only** (the 30% cs_regret threshold
   and the decision to run or skip). The full normalizer protocol is written only if
   the trigger fires after Step 9 (oracle re-analysis), because the protocol details
   depend on the specific regret decomposition observed.
@@ -404,7 +404,7 @@ Each protocol follows the same template pattern established at R0 v2.
 #### 3.6.1 Pass-Threshold Protocol (P4)
 
 **Template:** `plans/archive/r0_v2_threshold_protocol.md` (v2, §2–§3)
-**Output:** `plans/r1_threshold_protocol.md`
+**Output:** `plans/archive/r1_threshold_protocol.md`
 
 | Parameter | R0 v2 Value | R1 Value | Rationale |
 |-----------|-------------|----------|-----------|
@@ -426,7 +426,7 @@ lambda, lambda blocks the gate.
 #### 3.6.2 Lambda Re-evaluation
 
 **Template:** `plans/archive/r0_v2_lambda_tuning_protocol.md` (v2 amendment §8.3)
-**Output:** `plans/r1_lambda_protocol.md`
+**Output:** `plans/archive/r1_lambda_protocol.md`
 **Infrastructure:** `scripts/internal/run_lambda_sweep.py` (default grid at line 593), `src/bid_euchre/analysis/sweep.py`
 
 | Parameter | R0 v2 Value | R1 Value | Rationale |
@@ -917,12 +917,12 @@ HITL sign-off (Task #28)
     ├── PR-cleanup: Archive 11 R0 plans + commit 2 untracked files
     │                + dirty notebook cleanup + MASTER_PLAN update
     │
-    ├── PR-R1-plan: Create plans/r1_training_plan.md
+    ├── PR-R1-plan: Create plans/archive/r1_training_plan.md
     │               (expand §3 above into concrete commands + validation gates)
     │               + Pre-register R1 protocols (Step 0):
-    │                 plans/r1_threshold_protocol.md
-    │                 plans/r1_lambda_protocol.md
-    │                 plans/r1_normalizer_trigger.md (trigger rule only)
+    │                 plans/archive/r1_threshold_protocol.md
+    │                 plans/archive/r1_lambda_protocol.md
+    │                 plans/archive/r1_normalizer_trigger.md (trigger rule only)
     │
     └── PR-R1a: Partner context infra + canonical auction dataset
         │   ├── Feature extraction (3 partner features from auction_transcript)
