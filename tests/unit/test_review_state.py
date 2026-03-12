@@ -12,14 +12,17 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from review_state import (
+    REVIEW_STATUS_MAP,
     TERMINAL_STATES,
     VALID_TRANSITIONS,
     InvalidTransitionError,
+    NormalizedFinding,
     ReviewLoopState,
     ReviewMode,
     ReviewState,
     compute_findings_hash,
     load_state,
+    review_status_to_github,
     save_state,
 )
 
@@ -278,3 +281,186 @@ class TestTransitionChains:
         state.transition(ReviewState.WAITING_FOR_CODEX)
         state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
         assert state.is_terminal
+
+
+class TestSHAIdempotency:
+    """Test SHA-based idempotency in load_state()."""
+
+    def test_load_without_head_sha_works_as_before(self, tmp_path: Path) -> None:
+        """Backward compat: load_state without head_sha always returns state."""
+        state = ReviewLoopState(pr_number=42, branch="b", initial_head_sha="abc1234")
+        save_state(state, tmp_path)
+        loaded = load_state(42, tmp_path)
+        assert loaded is not None
+        assert loaded.initial_head_sha == "abc1234"
+
+    def test_load_with_matching_head_sha_returns_state(self, tmp_path: Path) -> None:
+        """If head_sha matches initial_head_sha, state is valid."""
+        state = ReviewLoopState(
+            pr_number=42,
+            branch="b",
+            initial_head_sha="abc1234567890",
+            current_head_sha="abc1234567890",
+        )
+        save_state(state, tmp_path)
+        loaded = load_state(42, tmp_path, head_sha="abc1234567890")
+        assert loaded is not None
+
+    def test_load_with_mismatched_head_sha_returns_none(self, tmp_path: Path) -> None:
+        """If head_sha doesn't match initial or current, state is stale."""
+        state = ReviewLoopState(
+            pr_number=42,
+            branch="b",
+            initial_head_sha="abc1234567890",
+            current_head_sha="abc1234567890",
+        )
+        save_state(state, tmp_path)
+        loaded = load_state(42, tmp_path, head_sha="deadbeef12345")
+        assert loaded is None
+
+    def test_load_with_autofix_sha_returns_state(self, tmp_path: Path) -> None:
+        """If head_sha matches current_head_sha (auto-fix), state is valid."""
+        state = ReviewLoopState(
+            pr_number=42,
+            branch="b",
+            initial_head_sha="abc1234567890",
+            current_head_sha="deadbeef12345",  # auto-fix pushed new SHA
+        )
+        save_state(state, tmp_path)
+        # head_sha matches current (auto-fix SHA), not initial
+        loaded = load_state(42, tmp_path, head_sha="deadbeef12345")
+        assert loaded is not None
+
+    def test_load_no_initial_sha_ignores_check(self, tmp_path: Path) -> None:
+        """If state has no initial_head_sha, SHA check is skipped."""
+        state = ReviewLoopState(pr_number=42, branch="b")
+        assert state.initial_head_sha is None
+        save_state(state, tmp_path)
+        loaded = load_state(42, tmp_path, head_sha="anything")
+        assert loaded is not None
+
+    def test_sha_fields_roundtrip(self) -> None:
+        """New SHA fields survive serialization round-trip."""
+        state = ReviewLoopState(
+            pr_number=1,
+            branch="b",
+            initial_head_sha="abc1234567890",
+            current_head_sha="def4567890123",
+            run_id="pr_1_abc1234",
+        )
+        d = state.to_dict()
+        restored = ReviewLoopState.from_dict(d)
+        assert restored.initial_head_sha == "abc1234567890"
+        assert restored.current_head_sha == "def4567890123"
+        assert restored.run_id == "pr_1_abc1234"
+
+
+class TestNormalizedFinding:
+    """Test the NormalizedFinding dataclass."""
+
+    def test_creation(self) -> None:
+        finding = NormalizedFinding(
+            severity="P1",
+            file="src/foo.py",
+            line=42,
+            category="correctness",
+            check_id="C1",
+            message="test issue",
+            source="deterministic_precheck",
+        )
+        assert finding.severity == "P1"
+        assert finding.file == "src/foo.py"
+        assert finding.line == 42
+        assert finding.source == "deterministic_precheck"
+        assert finding.rationale is None
+
+    def test_to_dict(self) -> None:
+        finding = NormalizedFinding(
+            severity="P2",
+            file="tests/test.py",
+            line=10,
+            category="convention",
+            check_id=None,
+            message="convention issue",
+            source="codex_cli",
+            rationale="style concern",
+        )
+        d = finding.to_dict()
+        assert d["severity"] == "P2"
+        assert d["source"] == "codex_cli"
+        assert d["rationale"] == "style concern"
+        assert d["check_id"] is None
+
+    def test_from_dict(self) -> None:
+        data = {
+            "severity": "P0",
+            "file": "core.py",
+            "line": 1,
+            "category": "process",
+            "check_id": "X3",
+            "message": "merge conflict",
+            "source": "deterministic_precheck",
+        }
+        finding = NormalizedFinding.from_dict(data)
+        assert finding.severity == "P0"
+        assert finding.check_id == "X3"
+
+    def test_from_dict_maps_raw_source(self) -> None:
+        """Finding/CodexFinding use raw_source, should be mapped to source."""
+        data = {
+            "severity": "P1",
+            "file": "x.py",
+            "line": 5,
+            "category": "correctness",
+            "check_id": "C1",
+            "message": "unseeded",
+            "raw_source": "codex_cli",
+        }
+        finding = NormalizedFinding.from_dict(data)
+        assert finding.source == "codex_cli"
+
+    def test_from_dict_ignores_unknown_keys(self) -> None:
+        data = {
+            "severity": "P2",
+            "file": "x.py",
+            "line": 1,
+            "category": "convention",
+            "check_id": None,
+            "message": "test",
+            "source": "test",
+            "unknown_field": "ignored",
+        }
+        finding = NormalizedFinding.from_dict(data)
+        assert finding.message == "test"
+
+
+class TestReviewStatusMap:
+    """Test the review status mapping."""
+
+    def test_all_statuses_mapped(self) -> None:
+        expected_keys = {"pending", "in_progress", "fail", "warn", "ready"}
+        assert set(REVIEW_STATUS_MAP.keys()) == expected_keys
+
+    def test_pending_maps_to_pending(self) -> None:
+        assert review_status_to_github("pending") == "pending"
+
+    def test_in_progress_maps_to_pending(self) -> None:
+        assert review_status_to_github("in_progress") == "pending"
+
+    def test_fail_maps_to_failure(self) -> None:
+        assert review_status_to_github("fail") == "failure"
+
+    def test_warn_maps_to_success(self) -> None:
+        assert review_status_to_github("warn") == "success"
+
+    def test_ready_maps_to_success(self) -> None:
+        assert review_status_to_github("ready") == "success"
+
+    def test_unknown_defaults_to_pending(self) -> None:
+        assert review_status_to_github("unknown_status") == "pending"
+
+    def test_github_api_state_values(self) -> None:
+        """All mapped values must be valid GitHub API states."""
+        valid_github_states = {"pending", "success", "failure", "error"}
+        for value in REVIEW_STATUS_MAP.values():
+            assert value in valid_github_states
