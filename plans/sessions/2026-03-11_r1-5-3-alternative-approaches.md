@@ -1,6 +1,6 @@
 # R1.5.3: Alternative Model Approaches for Suit Regression
 
-**Date:** 2026-03-11
+**Date:** 2026-03-11 (revised)
 **Arc:** D — OLSa-Hybrid Bidder
 **Parent:** R1.5.2 diagnostic conclusions (PRs #595-#603)
 **Decision tree:** [r1_5_forward_decision_tree.md](../r1_5_forward_decision_tree.md)
@@ -9,19 +9,28 @@
 
 ## Background
 
-The R1.5-v2 diagnostic campaign conclusively identified the root cause of
-the suit regression: OLS predicts the mean of a bimodal make/set distribution,
-producing suboptimal estimates for the argmax decision layer. Six hypotheses
-were eliminated:
+The R1.5.2 diagnostic campaign eliminated six hypotheses about the suit
+regression but did not prove the mechanism. The **leading working hypothesis**
+is H12: OLS predicts the mean of a bimodal make/set target distribution,
+producing suboptimal suit bid decisions via the argmax decision layer.
 
-- Features (39->52): no effect (R^2 delta < 0.005)
-- Interaction terms (3 bower products): no effect (R^2 delta < 0.001)
-- Partner features: critical for action selection, not prediction accuracy
-- Declare/defend regime split: gate FAILED (R^2 +0.01)
-- Data source (counterfactual vs bidless): confounded with architecture
-- Objective alignment: confirmed as key driver (already adopted)
+Evidence supporting H12:
+- Bimodality confirmed: suit GMM delta_BIC = 4,081
+- OLS predictions cluster between the two modes (mean residual +0.087)
+- Suit has the best R^2 (0.557) but the worst gameplay delta (-0.142)
+- Six alternative explanations eliminated (features, linearity, interaction
+  terms, regime split, data source, partner features)
 
-The dataset confirms dramatic bimodality in declared outcomes:
+Evidence H12 **does not yet provide:**
+- Decision-level proof that between-mode predictions cause bad bids
+- Error taxonomy: is the suit loss from over-bidding, wrong contract
+  selection, wrong bid level, or a combination?
+- Whether the costly errors are concentrated near the make/set boundary
+  or spread across calibration failures
+- Whether R0 avoids these errors or simply makes different errors that
+  happen to cancel
+
+The dataset shows dramatic bimodality in declared suit outcomes:
 
 | Regime | N | Mean net_pts | Std |
 |--------|---|-------------|-----|
@@ -30,98 +39,111 @@ The dataset confirms dramatic bimodality in declared outcomes:
 
 The two modes are ~15 points apart. Within each regime, the distribution is
 unimodal and tight (set std=1.80). OLS's mean prediction falls between the
-modes, producing estimates that match neither regime.
+modes, producing estimates that match neither regime. But whether this is the
+**primary cause** of the -0.142 suit deficit, or merely a contributing factor,
+has not been tested at the decision level.
 
 ## Goal
 
-Implement and evaluate three alternative model architectures, each addressing
-the bimodal target from a different angle. All three reuse the existing
-counterfactual dataset (`data/runs/action_value_quick_42_v2/datasets/action_value.parquet`,
-468,388 rows) — no dataset regeneration required.
+Understand the mechanism of the suit regression at the decision level, then
+implement and evaluate the most appropriate model architecture to address it.
+Sequence: diagnose first, treat second, one track at a time.
 
-## Shared Infrastructure (Track 0)
+All analysis reuses the existing counterfactual dataset
+(`data/runs/action_value_quick_42_v2/datasets/action_value.parquet`, 468,388
+rows) and FULL H2H game logs (50K deals from PR #582).
 
-Before implementing any track, add common infrastructure needed by all three.
+## Step 0: Decision-Level Suit Diagnostic
 
-### Step 0a: Derive `made_contract` target column
+**Goal:** Build a suit-error taxonomy that decomposes the -0.142 net_eppd
+deficit into specific decision failure modes. This diagnostic determines
+which treatment track to pursue and sets quantitative expectations for its
+impact.
 
-**File:** `scripts/internal/train_action_value.py`
+**Data sources:**
+- FULL H2H game logs (50K deals, `data/runs/` from PR #582)
+- Counterfactual dataset (468K rows, action-value parquet)
+- Optional: small repeated-rollout subset (see below)
 
-Add target derivation in `load_dataset()`:
+### Analysis 1: Error Taxonomy
 
-```python
-# Derive binary "made" target from existing columns
-# made = focal_declared AND (tricks_won >= bid_n)
-if "focal_declared" in df.columns and "tricks_won" in df.columns:
-    df["made_contract"] = df["focal_declared"] & (df["tricks_won"] >= df["bid_n"])
-```
+Classify every suit-related hand in H2H logs where AV v1's decision differs
+from R0's decision. Categorize errors by type:
 
-This enables both Track A (classification target) and Track B (conditional
-regression target). No parquet regeneration — derived at load time from
-existing `focal_declared`, `tricks_won`, and `bid_n` columns.
+| Error Type | Definition | Example |
+|------------|-----------|---------|
+| **Over-bid suit** | AV v1 bids suit, should have passed | OLS suit EV slightly positive, but actual outcome is set |
+| **Under-bid suit** | AV v1 passes, should have bid suit | OLS suit EV slightly negative, but actually makeable |
+| **Wrong contract** | AV v1 bids suit, better option was high/low | Suit EV highest by argmax, but high/low would yield more |
+| **Wrong bid level** | AV v1 bids suit-4, different level better | Always-bid-4 leaves value on table (H13) |
+| **Correct disagreement** | AV v1 differs from R0 and AV v1 is right | AV v1 correctly identifies better action |
 
-Add `"made_contract"` to `VALID_TARGETS`:
+For each error type, compute:
+- Frequency (what fraction of suit deficit comes from this error type?)
+- Cost (average net_eppd loss per error)
+- Cumulative contribution to the -0.142 deficit
 
-```python
-VALID_TARGETS = ("net_points", "tricks_won", "made_contract")
-```
+### Analysis 2: Disagreement State Analysis
 
-### Step 0b: Add model-class extensibility to training CLI
+On hands where AV v1 and R0 disagree on suit decisions:
+- What does each bidder choose?
+- Under the counterfactual outcomes available, which side wins?
+- Are the disagreements concentrated in specific hand configurations
+  (e.g., marginal bower hands, hands near the make/set boundary)?
 
-**File:** `scripts/internal/train_action_value.py`
+### Analysis 3: Make/Set Boundary Behavior
 
-Add `--model-class` argument:
+For suit-declared hands in the counterfactual dataset:
+- Where does the OLS prediction fall relative to the make/set boundary?
+- Are costly errors concentrated near P(make) ~ 0.4-0.6 (boundary region)
+  or are they spread across the full P(make) range?
+- How does the OLS prediction correlate with actual P(make)?
 
-```python
-parser.add_argument(
-    "--model-class",
-    choices=["ols", "logistic", "gbt"],
-    default="ols",
-    help="Model class: 'ols' (linear regression), 'logistic' (classification), 'gbt' (gradient boosted trees)",
-)
-```
+This directly tests H12's mechanism: if errors are concentrated at the
+boundary, a classifier (Track A) should help. If they're spread broadly,
+the problem may be more fundamental.
 
-This gates which `train_*` function is called without changing existing OLS
-behavior.
+### Analysis 4: Bid-Level Headroom (H13)
 
-### Step 0c: Separate bidder classes for alternative models
+AV v1 bids at level 4 on ~57% of hands. Is this leaving value on the table?
 
-**File:** `src/bid_euchre/strategy/bidding.py`
+- Among hands where AV v1 bids suit-4: what's the counterfactual outcome
+  for suit-5, suit-6, etc.?
+- How often would a higher bid increase net_points?
+- What's the total headroom from bid-level optimization?
 
-The current `ActionValueBidder` hardcodes `predict_ols()` and validates
-`schema_version == "action_value_olsa_v1"` with exact feature name
-matching. Non-OLS artifacts (two-stage, GBT) will fail this validation
-at load time (see IC-1 in Implementation Caveats).
+This folds H13 into the diagnostic rather than treating it as a separate
+open question.
 
-**Resolution:** Create separate bidder classes rather than a dispatch
-mechanism. Each class handles its own artifact schema:
+### Optional: Targeted Repeated-Rollout Subset
 
-- `TwoStageBidder(BiddingPolicy)` — loads `two_stage_v1` artifacts,
-  calls `predict_two_stage()` for suit and standard OLS for high/low/pass
-- `GBTBidder(BiddingPolicy)` — loads `gbt_v1` artifacts, deserializes
-  pickled models, calls `predict_gbt()`
-- `PolicyBidder(BiddingPolicy)` — loads `pairwise_policy_v1` artifacts,
-  scores actions via dot product
+Single-rollout counterfactual outcomes are noisy. For the disagreement
+states identified in Analysis 2, a small repeated-rollout subset (e.g.,
+100-200 hands x 20 rollouts each) would give cleaner reads on whether
+the apparent suit failures are real policy errors or single-rollout luck.
 
-`ActionValueBidder` remains unchanged (no regression risk). All new
-classes must be registered in `BIDDING_POLICY_REGISTRY` and exported
-from `strategy/__init__.py`.
+This is a targeted data investment, not a full dataset regeneration.
+Decision on whether to pursue depends on how noisy the single-rollout
+disagreement analysis looks.
 
-### Step 0d: H2H evaluation config template
+### Step 0 Deliverables
 
-Create a reusable 4-bidder battery config for comparing all tracks:
+1. **Committed JSON artifact:** `data/artifacts/r1_5_3/suit_error_taxonomy.json`
+   with per-error-type frequencies, costs, and cumulative contributions
+2. **Diagnostic report:** `docs/04_reports/r1_5/suit_decision_diagnostic.md`
+3. **Gate decision:** which track to pursue based on error taxonomy results
 
-- `action_value_v1` — AV OLS baseline (existing)
-- `two_stage` — Track A model
-- `gbt` — Track B model
-- `hybrid_olsa_full_r0` — R0 baseline (existing)
+### Step 0 Gate Criteria
 
-16 matchups (4x4 including self-play), seed=42, n=2500 (QUICK).
+| Diagnostic Finding | Implied Track |
+|--------------------|--------------|
+| Errors concentrated near make/set boundary (>60% of deficit) | Track A (two-stage model) — boundary classification is the right fix |
+| Errors spread across calibration range, non-linear patterns | Track B (GBT) — nonlinear model may capture what OLS misses |
+| Errors are mostly wrong-contract (suit vs high/low), not within-suit | Re-examine contract selection mechanism, possibly new direction |
+| Errors are mostly bid-level (H13 matters significantly) | Bid-level optimization (lighter-weight fix than full model change) |
+| Single-rollout noise dominates disagreement analysis | Repeated-rollout subset needed before any treatment |
 
-**Acceptance:** Step 0 changes must pass `make check` and not break existing
-OLS training or ActionValueBidder loading.
-
-## Track A: Two-Stage Model (P(make) x E[points|regime])
+## Track A: Two-Stage Model (Primary — if Step 0 supports H12)
 
 ### Rationale
 
@@ -137,16 +159,25 @@ Each component targets a unimodal distribution. P(make) uses logistic
 regression (binary classification). The conditional expectations use OLS on
 regime-filtered subsets (made-only, set-only).
 
-**Why this should work:** The Phase 2 regression approach failed because a
-single OLS regressor can't learn the regime boundary. A dedicated classifier
-should handle the boundary much better — the made/set split is a clean binary
-target with 37%/63% class balance.
+**Why this is the best first treatment:** It is the most interpretable
+approach and directly tests H12. If the two-stage model fixes the suit
+regression, we have causal evidence that bimodal-target decomposition was
+the missing piece. If it fails, we learn that the problem is not simply
+between-mode averaging — which redirects the search.
 
-### Step A1: Train P(make) logistic classifier
+**Implementation approach:** Minimal suit-only prototype. No shared
+infrastructure, no new bidder base classes, no registry plumbing. The
+prototype should be as narrow as possible — a modified `ActionValueBidder`
+that uses `predict_two_stage()` for suit and standard `predict_ols()` for
+high/low/pass.
+
+### Step A1: Train P(make) logistic classifier (suit only)
 
 **File:** `scripts/internal/train_action_value.py`
 
-Add `train_family_classifier()` function:
+Add `train_family_classifier()` function. Derive `made_contract` target
+at load time from existing `focal_declared`, `tricks_won`, and `bid_n`
+columns — no parquet regeneration needed.
 
 ```python
 from sklearn.linear_model import LogisticRegression
@@ -191,11 +222,11 @@ def train_family_classifier(
     }
 ```
 
-### Step A2: Train conditional E[pts|regime] OLS models
+### Step A2: Train conditional E[pts|regime] OLS models (suit only)
 
 **File:** `scripts/internal/train_action_value.py`
 
-Add `train_two_stage_model()` that trains 3 sub-models per family:
+Add `train_two_stage_model()` that trains 3 sub-models for suit:
 
 ```python
 def train_two_stage_model(
@@ -230,7 +261,7 @@ def train_two_stage_model(
     }
 ```
 
-### Step A3: Add `predict_two_stage()` to bidder
+### Step A3: Add `predict_two_stage()` helper
 
 **File:** `src/bid_euchre/strategy/bidding.py`
 
@@ -238,7 +269,6 @@ def train_two_stage_model(
 def predict_two_stage(model_dict: dict, features: np.ndarray) -> float:
     """Two-stage prediction: P(make) * E[pts|make] + P(set) * E[pts|set]."""
     classifier = model_dict["classifier"]
-    # Logistic probability
     logit = np.dot(classifier["coefficients"], features) + classifier["intercept"]
     p_make = 1.0 / (1.0 + np.exp(-logit))
 
@@ -248,48 +278,67 @@ def predict_two_stage(model_dict: dict, features: np.ndarray) -> float:
     return p_make * ev_made + (1 - p_make) * ev_set
 ```
 
-### Step A4: Implement `TwoStageBidder`
+### Step A4: Minimal prototype bidder
 
-Create `TwoStageBidder(BiddingPolicy)` in `bidding.py` per Step 0c
-resolution. The bidder's `choose_bid()` follows the same enumerate-actions
-+ argmax pattern as `ActionValueBidder`, but calls `predict_two_stage()`
-for the family's model. Loads `two_stage_v1` schema artifacts with
-nested `classifier`, `made_model`, `set_model` dicts per contract family.
+Modify `ActionValueBidder` (or create a minimal subclass) to use
+`predict_two_stage()` for suit models and standard `predict_ols()` for
+high/low/pass. No new bidder classes, no registry changes — just a
+narrow prototype to test whether two-stage prediction moves the suit
+delta.
 
-### Step A5: Train + evaluate
+The schema validation in `ActionValueBidder.__init__()` will need a
+small adjustment to accept `two_stage_v1` artifacts for the suit model
+while keeping `action_value_olsa_v1` validation for other models. This
+is intentionally minimal — proper bidder class separation (IC-1) only
+happens if the prototype succeeds.
+
+### Step A5: Train + evaluate (suit only)
 
 ```bash
-# Train two-stage model
+# Train two-stage model (suit family only)
 uv run python scripts/internal/train_action_value.py \
-  --seed 42 --model-class two-stage --feature-set full --target net_points \
+  --seed 42 --model-class two-stage --family suit \
   --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
-  --output-dir data/runs/av_two_stage_42 \
-  --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
+  --output-dir data/runs/av_two_stage_suit_42
 ```
 
 **Metrics to report:**
-- P(make) accuracy and AUC per contract family
-- Conditional R^2 (E[pts|made] and E[pts|set]) — expect high (unimodal targets)
+- P(make) accuracy and AUC for suit
+- Conditional R^2 (E[pts|made] and E[pts|set]) — expect high (unimodal)
 - H2H vs AV v1 and R0 (primary: suit net_eppd delta)
 
 **Success criterion:** Suit net_eppd regression improves by > 0.05
 (from -0.142 to > -0.092).
 
-## Track B: Gradient Boosted Trees (GBT)
+### If Track A succeeds
+
+Extend to all contract families, create proper `TwoStageBidder` class,
+register in config, run FULL evaluation. This is where the shared
+infrastructure (IC-1 resolution, registry plumbing) gets built — but only
+after the approach is validated.
+
+### If Track A fails
+
+Track A failure provides important information: the two-stage decomposition
+does not fix the suit regression, meaning the problem is not simply
+between-mode prediction. Move to Track B.
+
+## Track B: Gradient Boosted Trees (Fallback)
 
 ### Rationale
 
-GBT naturally handles:
-- Non-linear feature interactions (no manual interaction terms needed)
-- Bimodal target distributions (tree splits can separate regimes)
-- Feature importance (built-in, no need for forward selection)
+GBT offers nonlinear feature boundaries that OLS cannot represent. This
+is the "does a more flexible model class fix it?" experiment.
 
-This is the "does a better model class fix it?" experiment. If GBT
-substantially improves suit prediction, the problem is OLS linearity. If not,
-the problem is deeper (decision layer, data quality, or fundamental
-unpredictability).
+**Important caveat:** A GBT regressor still learns a conditional mean
+under the same noisy single-rollout labels. It does **not** handle
+bimodality natively in the way that a classifier + conditional regression
+(Track A) does. A GBT may help because of nonlinear decision boundaries
+between hand configurations, but it is not a clean test of the
+bimodal-regime hypothesis. If Track A fails and Track B succeeds, the
+diagnosis shifts from "bimodal target" to "nonlinear feature interactions."
 
-### Step B1: Train GBT regressor
+### Step B1: Train GBT regressor (per-contract)
 
 **File:** `scripts/internal/train_action_value.py`
 
@@ -338,7 +387,6 @@ def train_family_gbt(
         "r_squared": r_squared,
         "n_train": len(train_fam),
         "n_val": len(val_fam),
-        # Serialization: pickle the model, base64-encode, store as string
         "model_bytes": _serialize_gbt(gbt),
         "feature_importances": dict(
             zip(feature_names, gbt.feature_importances_.tolist())
@@ -346,362 +394,137 @@ def train_family_gbt(
     }
 ```
 
-**Serialization note:** scikit-learn models aren't JSON-native. Options:
-1. pickle + base64 — simplest, stores in existing JSON artifact schema
-2. Coefficient extraction — not feasible for tree ensembles
-3. Separate file — .pkl alongside .json metadata
+### Step B2: Minimal prototype + evaluate
 
-Recommend option 1 for consistency with existing artifact schema. The base64
-payload is ~50KB for 200 trees.
+Same approach as Track A: narrow prototype, no shared infra. Modify
+`ActionValueBidder` to use GBT predictions for suit (or all contracts).
 
-### Step B2: Add `predict_gbt()` to bidder
-
-**File:** `src/bid_euchre/strategy/bidding.py`
-
-```python
-import base64
-import pickle
-
-def predict_gbt(model_dict: dict, features: np.ndarray) -> float:
-    """GBT prediction from deserialized model."""
-    if "_gbt_model" not in model_dict:
-        # Lazy deserialization on first call
-        model_bytes = base64.b64decode(model_dict["model_bytes"])
-        model_dict["_gbt_model"] = pickle.loads(model_bytes)  # noqa: S301
-    return float(model_dict["_gbt_model"].predict(features.reshape(1, -1))[0])
-```
-
-### Step B3: Train GBT pass model
-
-Same as `train_family_gbt()` but state-only features (no action features),
-trained on pass rows. Mirrors `train_pass_model()` structure.
-
-### Step B4: Train + evaluate
-
-```bash
-uv run python scripts/internal/train_action_value.py \
-  --seed 42 --model-class gbt --feature-set full --target net_points \
-  --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
-  --output-dir data/runs/av_gbt_42 \
-  --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
-```
-
-**Metrics to report:**
-- R^2 per contract family (expect > 0.56 for suit if non-linearity matters)
+**Metrics:**
+- R^2 per contract family (meaningful improvement over OLS 0.557 for suit?)
 - Feature importance ranking (do bower interactions rank high?)
 - H2H vs AV v1 and R0
 
-**Success criterion:** Suit R^2 > 0.60 (meaningful improvement over OLS
-0.565) AND suit net_eppd regression improves by > 0.05.
+**Success criterion:** Suit net_eppd regression improves by > 0.05.
 
-**Risk:** GBT overfitting on QUICK-scale data (468K rows, but split by
-family gives ~300K suit). Mitigate with subsample=0.8, max_depth=5, and
-GroupKFold by hand_id for validation.
+**Risk:** GBT overfitting on QUICK-scale data. Mitigate with
+subsample=0.8, max_depth=5, GroupKFold by hand_id.
 
-## Track C: Direct Policy Optimization
+### If Track B succeeds
+
+Build proper `GBTBidder`, serialization infrastructure, FULL evaluation.
+
+### If Track B fails
+
+Track B failure, combined with Track A failure, indicates that neither
+linear decomposition nor nonlinear boundaries fix the suit regression
+on these features and labels. This does **not** prove a fundamental
+prediction→decision gap — it rules out these specific model families on
+this data/label setup. Next steps would be reassessed based on cumulative
+evidence:
+- Track C (policy optimization) as a qualitatively different approach
+- Hybrid routing as a pragmatic promotion path
+- Richer features or data (R1.5.4 partner context)
+
+## Track C: Pairwise Policy Optimization (Deferred)
 
 ### Rationale
 
-Tracks A and B improve prediction to improve decisions. Track C skips
-prediction entirely and optimizes the decision directly. Instead of:
+Track C bypasses prediction entirely and optimizes action ranking directly.
+It is deferred because:
 
-```
-state -> predict E[pts] -> argmax over actions
-```
+1. **Worst for understanding.** It changes the learning objective, making
+   failures hard to interpret. If it works, we learn "ranking loss helps"
+   but not *why* — we don't know whether the improvement came from avoiding
+   bimodal prediction, from handling nonlinear feature interactions, or from
+   the ranking objective itself.
 
-Track C learns:
+2. **Amplifies label noise.** Single-rollout net_points are noisy. Pairwise
+   construction amplifies this: each deal generates multiple comparison pairs,
+   all derived from the same noisy rollout outcome. An action that looks
+   better by +0.1 in one rollout might be worse in expectation.
 
-```
-state -> score(action) -> argmax over actions
-```
+3. **Later-stage option.** Policy optimization is appropriate after
+   interpretable prediction-side fixes (Tracks A and B) have been exhausted.
+   It has the highest ceiling but the least diagnostic value.
 
-where `score()` is trained to maximize net_points of the *chosen* action,
-not to predict net_points for *all* actions.
+### Design (preserved for reference when activated)
 
-This is a contextual bandit / policy optimization approach. The key insight:
-the OLS model's suit regression may stem not from bad predictions but from
-the argmax decision layer converting slightly-off predictions into
-systematically wrong bids (the "prediction->decision gap" from Q6).
+Pairwise ranking loss on counterfactual data. For each (deal, focal_seat),
+train a linear scoring function to rank the action with highest net_points
+above alternatives. Equivalent to RankSVM with a linear kernel.
 
-### Design: Pairwise Policy Learning
+See IC-2 (pass feature asymmetry) for the zero-padding requirement.
 
-Use the counterfactual dataset's paired structure. For each (deal,
-focal_seat), we have net_points for every legal action. Train a model that,
-given state, ranks the best action highest.
+### Activation Trigger
 
-**Approach:** Pairwise ranking loss. For each deal, for each pair of actions
-(a_i, a_j) where net_points(a_i) > net_points(a_j), train the model to
-predict score(a_i) > score(a_j).
+Track C is activated only after Tracks A and B have both failed or
+produced inconclusive results, AND the diagnostic evidence suggests
+that prediction-side improvements are insufficient.
 
-This naturally handles bimodality: the model doesn't need to predict the
-*value* of each action, only the *ranking*. If suit-4 gives +3 (made) and
-suit-5 gives -5 (set), the model just needs to rank suit-4 above suit-5.
+## Hybrid Routing (Benchmark)
 
-### Step C1: Implement pairwise dataset construction
+Use AV v1 for high/low, R0 for suit. This is a **benchmark upper bound**,
+not a research success criterion.
 
-**File:** `scripts/internal/train_policy_model.py` (new file)
+Expected pooled delta: approximately the high/low gains (+0.43/+0.49)
+with no suit penalty. This tells us how much value is available if we
+could perfectly fix the suit regression without harming high/low.
 
-```python
-def build_pairwise_dataset(
-    df: pd.DataFrame,
-    state_feature_names: list[str],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build pairwise ranking dataset from counterfactual data.
-
-    For each (deal_id, focal_seat), extract all action pairs where
-    net_points differs, and create (features_better, features_worse) pairs.
-
-    Returns (X_better, X_worse, margin) arrays.
-    """
-    pairs_better = []
-    pairs_worse = []
-    margins = []
-
-    for (deal_id, seat), group in df.groupby(["deal_id", "focal_seat"]):
-        actions = group.sort_values("net_points", ascending=False)
-        n = len(actions)
-        for i in range(n):
-            for j in range(i + 1, min(i + 3, n)):  # Top-3 pairs only
-                if actions.iloc[i]["net_points"] > actions.iloc[j]["net_points"]:
-                    feat_i = _extract_features(actions.iloc[i], state_feature_names)
-                    feat_j = _extract_features(actions.iloc[j], state_feature_names)
-                    pairs_better.append(feat_i)
-                    pairs_worse.append(feat_j)
-                    margins.append(
-                        actions.iloc[i]["net_points"] - actions.iloc[j]["net_points"]
-                    )
-
-    return np.array(pairs_better), np.array(pairs_worse), np.array(margins)
-```
-
-### Step C2: Train pairwise ranking model
-
-**File:** `scripts/internal/train_policy_model.py`
-
-Use a linear scoring function with pairwise hinge loss:
-
-```python
-def train_pairwise_policy(
-    X_better: np.ndarray,
-    X_worse: np.ndarray,
-    margins: np.ndarray,
-    seed: int = 42,
-) -> dict:
-    """Train linear scoring function via pairwise ranking loss.
-
-    score(state, action) = w . features + b
-    Loss: max(0, margin_threshold - (score(better) - score(worse)))
-    """
-    # Transform to difference: X_diff = X_better - X_worse
-    # Binary classification: predict sign(diff) = 1
-    X_diff = X_better - X_worse
-    y = np.ones(len(X_diff))  # better always has label 1
-
-    clf = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=seed)
-    clf.fit(X_diff, y)
-
-    return {
-        "model_type": "pairwise_policy",
-        "coefficients": clf.coef_[0].tolist(),
-        "intercept": clf.intercept_[0],
-        "ranking_accuracy": clf.score(X_diff, y),
-    }
-```
-
-**Why logistic on differences works:** If score(x) = w.x + b, then
-score(better) > score(worse) iff w.(better - worse) > 0. Training a logistic
-classifier on the difference vectors with label=1 learns the same weights.
-This is equivalent to RankSVM with a linear kernel.
-
-### Step C3: Add `PolicyBidder` class
-
-**File:** `src/bid_euchre/strategy/bidding.py`
-
-```python
-class PolicyBidder(BiddingPolicy):
-    """Bidder that uses a learned scoring function to rank actions."""
-
-    def __init__(self, artifact_path: str, name: str = "policy"):
-        super().__init__(name=name)
-        with open(artifact_path) as f:
-            artifact = json.load(f)
-        self.model = artifact["model"]
-
-    def choose_bid(self, obs: BiddingObservation) -> BidAction:
-        legal_actions = enumerate_legal_actions(obs)
-        best_action = BidAction.pass_bid()
-        best_score = float("-inf")
-
-        for action in legal_actions:
-            if action.is_pass():
-                state = extract_state_features(obs, "none", None)
-                features = state  # No action features for pass
-            else:
-                contract_type, trump_suit = action.to_contract_tuple()
-                state = extract_state_features(obs, contract_type, trump_suit)
-                action_feats = extract_action_features(action.n)
-                features = np.concatenate([state, action_feats])
-
-            score = (
-                np.dot(self.model["coefficients"], features)
-                + self.model["intercept"]
-            )
-            if score > best_score:
-                best_score = score
-                best_action = action
-
-        return best_action
-```
-
-### Step C4: Register PolicyBidder in config
-
-**File:** `src/bid_euchre/experiments/config.py`
-
-Add to `BIDDING_POLICY_REGISTRY` (line 49) and `BIDDING_REQUIRED_PARAMS`
-(line 66) with `["artifact_path"]`. See IC-3 in Implementation Caveats.
-
-**File:** `src/bid_euchre/strategy/__init__.py`
-
-Export `PolicyBidder`.
-
-### Step C5: Train + evaluate
-
-```bash
-uv run python scripts/internal/train_policy_model.py \
-  --seed 42 --feature-set full \
-  --dataset data/runs/action_value_quick_42_v2/datasets/action_value.parquet \
-  --output-dir data/runs/av_policy_42
-```
-
-**Metrics to report:**
-- Pairwise ranking accuracy (expect > 60% — random is 50%)
-- Top-1 accuracy: how often does the model pick the action with highest net_points?
-- H2H vs AV v1 and R0
-
-**Success criterion:** H2H suit net_eppd regression improves by > 0.05.
-
-**Risk:** Pairwise dataset is large (O(n_deals x actions^2)). May need
-sampling. Top-3 pairs per deal should keep it manageable (~30K deals x
-~3 pairs = ~90K).
-
-## Evaluation Plan
-
-### Phase 1: Train all models (Steps A1-A5, B1-B4, C1-C5)
-
-All three tracks train independently on the same dataset with seed=42. No
-dataset regeneration needed.
-
-### Phase 2: QUICK H2H battery
-
-4-bidder battery (AV v1, two-stage, GBT, R0 baseline):
-- 16 matchups, seed=42, n=2500
-- Primary metric: suit net_eppd delta vs R0
-- Secondary: pooled net_eppd delta vs R0
-
-### Phase 3: Triage
-
-Based on QUICK results, decide which track(s) to advance to FULL (50K deals).
-Criteria:
-- ADVANCE if suit net_eppd delta improves by > 0.05 vs AV v1
-- HALT if no improvement
-- At most 2 tracks advance to FULL (avoid resource waste)
-
-### Phase 4: FULL evaluation (conditional)
-
-50K deals x 16 matchups for advancing track(s). Formal promotion gate:
-- CI_low for delta vs R0 must exceed delta_floor (0.180)
-- Suit regression must be < -0.05 (improved from -0.142)
-
-## Files Touched
-
-| File | Change | Track |
-|------|--------|-------|
-| `scripts/internal/train_action_value.py` | `made_contract` derivation, `--model-class` arg, `train_family_classifier()`, `train_two_stage_model()`, `train_family_gbt()`, serialization | 0, A, B |
-| `scripts/internal/train_policy_model.py` | **New file:** pairwise dataset construction, pairwise policy training | C |
-| `src/bid_euchre/strategy/bidding.py` | `TwoStageBidder`, `GBTBidder`, `PolicyBidder` classes + `predict_two_stage()`, `predict_gbt()` helpers | A, B, C |
-| `src/bid_euchre/strategy/__init__.py` | Export `TwoStageBidder`, `GBTBidder`, `PolicyBidder` | A, B, C |
-| `src/bid_euchre/experiments/config.py` | Register all 3 new bidders in `BIDDING_POLICY_REGISTRY` + `BIDDING_REQUIRED_PARAMS` | A, B, C |
-| `tests/unit/test_train_action_value.py` | Tests for classifier, two-stage, GBT training | A, B |
-| `tests/unit/test_train_policy_model.py` | Tests for pairwise dataset, policy training | C |
-| `tests/unit/test_bidding.py` | Tests for `TwoStageBidder`, `GBTBidder`, `PolicyBidder` | A, B, C |
-| `docs/04_reports/r1_5/v2_conclusion.md` | Final diagnostic summary + results | All |
+Hybrid routing delivers promotion but does not advance understanding
+of the suit mechanism. It remains available as a pragmatic fallback if
+the research direction stalls and promotion pressure becomes urgent, but
+it is explicitly marked as a fallback, not a mainline fix.
 
 ## PR Sequence
 
-| PR | Content | Dependencies |
-|----|---------|-------------|
-| PR-1 | Track 0: shared infrastructure (Steps 0a-0d) | None |
-| PR-2 | Track A: two-stage model (Steps A1-A5) | PR-1 |
-| PR-3 | Track B: GBT model (Steps B1-B4) | PR-1 |
-| PR-4 | Track C: policy model (Steps C1-C5) | PR-1 |
-| PR-5 | Evaluation: QUICK H2H battery + triage decision | PR-2, PR-3, PR-4 |
-| PR-6 | FULL evaluation (conditional on triage) | PR-5 |
+| PR | Content | Dependencies | Trigger |
+|----|---------|-------------|---------|
+| PR-1 | Step 0: Decision-level suit diagnostic | None | Immediate |
+| PR-2 | Track A: suit-only two-stage prototype | PR-1 (if diagnostic supports H12) | Step 0 gate |
+| PR-3 | Track A extension to all contracts + proper bidder class | PR-2 (if prototype succeeds) | Track A success |
+| PR-4 | Track B: GBT prototype | PR-1 (if Track A fails or inconclusive) | Track A failure |
+| PR-5 | FULL evaluation of winning track | PR-3 or PR-4 | Track success |
 
-PRs 2-4 are independent and can be developed in parallel after PR-1 merges.
+**Key difference from v1 of this plan:** PRs are sequential, not parallel.
+Each PR's existence depends on the outcome of the previous one. Track 0
+shared infrastructure is eliminated — each prototype is minimal and
+standalone. Infrastructure is built only for the winning approach.
 
 ## Implementation Caveats
 
-Three implementation issues identified during plan review that must be
-resolved in Track 0 (PR-1):
+### IC-1: Schema Validation Conflict (deferred)
 
-### IC-1: Schema Validation Conflict
+`ActionValueBidder.__init__()` hardcodes `schema_version ==
+"action_value_olsa_v1"`. Non-OLS artifacts will fail validation.
 
-`ActionValueBidder.__init__()` (line 1536) hardcodes
-`schema_version == "action_value_olsa_v1"` and validates `feature_names`
-against the exact OLS feature list. Two-stage artifacts (with nested
-`classifier`, `made_model`, `set_model`) and GBT artifacts (with
-`model_bytes`) will fail validation at load time before `choose_bid()`
-is ever called.
+**Resolution (when needed):** Create a separate bidder class for the
+winning track. This is deferred until a track succeeds — building
+`TwoStageBidder`, `GBTBidder`, and `PolicyBidder` classes upfront
+is premature when we don't know which (if any) will be needed. For
+prototyping, a minimal schema check adjustment or subclass is sufficient.
 
-**Resolution:** Create separate bidder classes per model type:
-- `TwoStageBidder(BiddingPolicy)` for Track A
-- `GBTBidder(BiddingPolicy)` for Track B
-- `PolicyBidder(BiddingPolicy)` for Track C (already planned)
+### IC-2: PolicyBidder Pass Feature Asymmetry (deferred with Track C)
 
-Each handles its own artifact schema validation. This follows the existing
-pattern where `ActionValueBidder` and `HybridOLSaBidder` are separate
-classes. The `predict_from_model()` dispatch (Step 0c) becomes unnecessary
-— remove it and keep per-class prediction methods instead.
+Pass actions use 52-dim features, bid actions use 54-dim. Zero-pad pass
+features with `bid_n=0, bid_n_sq=0` for uniform vectors. Only relevant
+if Track C is activated.
 
-### IC-2: PolicyBidder Pass Feature Asymmetry
+### IC-3: Registration Mechanism (deferred)
 
-`PolicyBidder.choose_bid()` uses state-only features (52 dims) for pass
-actions but state+action features (54 dims) for bid actions. The pairwise
-scoring function `w . features` cannot compare pass vs bid on the same
-scale when feature vectors have different lengths.
-
-**Resolution:** Pad pass features with zero-valued action features
-(`bid_n=0`, `bid_n_sq=0`) to produce a uniform 54-dim vector. This is
-the same approach `ActionValueBidder` uses — see `extract_state_features()`
-+ `extract_action_features()` in `choose_bid()`. The pairwise training
-dataset (Step C1) must also use this padding.
-
-### IC-3: Registration Mechanism
-
-The plan incorrectly references `StrategyConfig.create_strategy`. The
-actual pattern is:
-- `BIDDING_POLICY_REGISTRY` dict (line 49 of `config.py`) — maps class
-  name string to class
-- `BIDDING_REQUIRED_PARAMS` dict (line 66) — maps class name to required
-  params list
-- `BiddingPolicyConfig.create_bidding_policy()` (line 105) — instantiates
-  from registry
-
-All new bidder classes (`TwoStageBidder`, `GBTBidder`, `PolicyBidder`)
-must be added to both dictionaries with `["artifact_path"]` as required
-params, and exported from `src/bid_euchre/strategy/__init__.py`.
+The actual pattern uses `BIDDING_POLICY_REGISTRY` + `BIDDING_REQUIRED_PARAMS`
++ `BiddingPolicyConfig.create_bidding_policy()` in `config.py`. New bidder
+classes must be added to both dictionaries. Only needed for the winning
+track's production bidder class, not for prototyping.
 
 ## Risk Assessment
 
 | Risk | Mitigation |
 |------|-----------|
+| Step 0 diagnostic is inconclusive | Use optional repeated-rollout subset for cleaner signal |
+| Track A prototype too narrow to be valid | Suit is the problem contract; suit-only test directly addresses the deficit |
 | GBT overfitting on QUICK data | subsample=0.8, max_depth=5, GroupKFold by hand_id |
-| GBT serialization bloat | base64 pickle ~50KB per model, 4 models = ~200KB total |
-| Pairwise dataset too large | Top-3 pairs per deal, ~90K pairs total |
-| All tracks fail | Confirms prediction->decision gap is fundamental; next step is hybrid routing or end-to-end RL |
-| pickle security | Only load artifacts from trusted sources (same as current JSON loading) |
-| Schema validation conflict | Separate bidder classes per track (IC-1) |
-| Pass feature asymmetry | Zero-pad action features for pass (IC-2) |
+| All tracks fail | Does NOT prove fundamental limit — rules out these model families on this data. Reassess with cumulative evidence. |
+| Single-rollout noise masks real signal | Repeated-rollout subset for disagreement states |
 
 ## Outcome
 
@@ -712,9 +535,9 @@ _To be filled after evaluation._
 | Item | Value |
 |------|-------|
 | gate_status | N/A — plan document |
-| Decision tree | `plans/r1_5_forward_decision_tree.md` Phase 2 |
+| Decision tree | `plans/r1_5_forward_decision_tree.md` |
 | Governing retrospective | `docs/04_reports/r1_5/post_r1_retro.md` |
-| Hypothesis tested | H12 (bimodal target), model capacity, prediction->decision gap |
+| Hypothesis tested | H12 (working hypothesis), H13 (bid-level headroom) |
 | Seed | 42 |
 | Scale | QUICK (2,500 deals for H2H) → FULL (50k, conditional) |
 | analysis_base_sha | f74ff62 |
