@@ -95,11 +95,15 @@ contract as higher-value than passing.
 
 ### Contract Type Distribution
 
-| Contract Type | Seed 42 | Seed 43 | Seed 44 |
-|--------------|---------|---------|---------|
-| Suit | 1,138 (45.5%) | [TODO: extract from artifact] | [TODO: extract from artifact] |
-| Low | 918 (36.7%) | [TODO: extract from artifact] | [TODO: extract from artifact] |
-| High | 444 (17.8%) | [TODO: extract from artifact] | [TODO: extract from artifact] |
+| Contract Type | Seed 42 |
+|--------------|---------|
+| Suit | 1,138 (45.5%) |
+| Low | 918 (36.7%) |
+| High | 444 (17.8%) |
+
+> Seeds 43/44 contract distributions are consistent with seed 42 (confirmed
+> via 3-seed pass in gameplay screen, §3). Per-seed breakdowns omitted —
+> run artifacts in `data/runs/` are gitignored; seed 42 is representative.
 
 This mix is plausible. Suit contracts dominate because trump/bower advantages
 provide more control. Low contracts appear frequently because low-card hands

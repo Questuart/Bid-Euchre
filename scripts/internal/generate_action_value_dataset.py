@@ -53,6 +53,18 @@ def sample_opponent_hands(
     reshuffled into 2 hands of 10. The focal player's hand and partner's hand
     are unchanged across all samples.
 
+    **Known limitation:** Resampling is NOT conditioned on the partial auction
+    transcript. Resampled opponent hands may be inconsistent with the bids those
+    opponents actually made — e.g., an opponent who bid 6H likely holds strong
+    hearts, but a resample might give them a weak hand. The counterfactual
+    rollout then reuses the original auction state (current_high_bid, transcript),
+    creating a mismatch between the dealt hands and the observed bidding history.
+
+    This is an intentional simplification for R1.5.3 Phase 0. Auction-conditioned
+    sampling would require opponent belief models, which is out of scope until
+    R2 (opponent context). The multi-rollout averaging mitigates (but does not
+    eliminate) the noise from inconsistent samples.
+
     Args:
         focal_seat: The focal player's seat (0-3).
         hands: Original 4 hands [seat0, seat1, seat2, seat3].

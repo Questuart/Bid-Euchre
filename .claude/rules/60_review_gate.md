@@ -20,7 +20,14 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 
 | Context | Publisher | Required by branch protection? | Purpose |
 |---------|-----------|-------------------------------|---------|
-| `reviewing-changes` | Review loop (`review_driver.py`), initial `pending` from dispatcher | Yes | Pre-merge code review gate |
+| `reviewing-changes` | Review loop (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Post-merge code review signal |
+
+> **Note (2026-03-12):** `reviewing-changes` was demoted from required to advisory.
+> The review loop hook (`post-pr-review-loop.sh`) was never registered in settings,
+> so the status permanently stuck at `pending`, blocking all PRs. Root causes:
+> (1) missing hook registration, (2) CI status polling returns "unknown" and blocks
+> forever, (3) status publishing errors swallowed silently. Until the loop
+> infrastructure is hardened, the status is informational only.
 
 ### Status Values
 
