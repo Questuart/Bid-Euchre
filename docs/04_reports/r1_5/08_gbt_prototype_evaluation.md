@@ -365,10 +365,10 @@ non-linear models) rather than feature engineering or objective changes.
 ### Training
 
 ```bash
-uv run python scripts/internal/train_action_value_gbt.py \
+uv run python scripts/internal/train_action_value.py \
   --dataset data/runs/action_value_dataset_42/action_value_dataset.parquet \
   --output-dir data/runs/av_gbt_42 \
-  --seed 42
+  --seed 42 --model-class gbt
 ```
 
 ### H2H Battery
