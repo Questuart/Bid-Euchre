@@ -20,45 +20,28 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - ...
 
 ### Issues Encountered
-- [Any test failures, lint issues, or complications during implementation]
+- [Any complications during implementation]
 (or "None.")
 
-### Review Findings
-- Blockers: [N] ([list each with file:line and rule ID])
-- Warnings: [N] ([list each briefly])
-- Follow-up issues: [N created] (or "none needed")
-  - [issue URL] — [category]
-  - ...
-
-### Codex Review Metadata
-- Status: [COMPLETE / PENDING / NOT AVAILABLE / UNAVAILABLE_LIMIT]
-- Response channel: [inline_review / comment / codex_cli / none]
-- Responded: [yes/no]
-- Latency: [N seconds / timeout / early_exit]
-- Format compliant: [yes/no / N/A]
-- Findings parseable: [yes/no / N/A]
-- Finding counts: [CRITICAL: N, WARNING: N, NIT: N / unparseable / N/A]
-- Checks reported: [list of check IDs / none]
-- Error message: [verbatim error if UNAVAILABLE_LIMIT, omit otherwise]
-- CLI fallback used: [yes / no / failed]
-- CLI fallback findings: [P0: N, P1: N, P2: N / N/A]
-- Summary: [1-3 sentence summary of Codex findings, or "Awaiting response" / "Usage limit — CLI fallback used"]
+### Review Loop
+- Run ID: [pr_<number>_<sha[:7]>]
+- State dir: `.claude/runtime/review_loops/pr_<number>/`
+- Initial SHA: [head_sha]
+- Status: SPAWNED (async — check GitHub commit status for final result)
+- Recovery: `python scripts/internal/review_driver.py --pr <number> --trigger manual`
 
 ### Needs Human Decision
-- [Each BLOCK item with context on why it needs judgment]
-- [Each WARN item the agent couldn't resolve]
-(or "None — ready to merge.")
+- [Any items requiring judgment before merge]
+(or "None — review loop will publish final status.")
 
 ### Current State
 - Worktree: `[worktree-path]`
 - Branch: `[branch]` → PR #[number]
-- make check: [PASSED / FAILED]
-- Commit status: [`success` / `failure` / `not published`]
-- Codex review: [PENDING / COMPLETE / NOT AVAILABLE / UNAVAILABLE_LIMIT]
-- Verdict: [READY FOR CODEX/HUMAN REVIEW / NEEDS ATTENTION]
+- Commit status: `pending` (review loop in progress)
+- Verdict: DISPATCHED — review loop running asynchronously
 
 ### Context for Next Agent
-[2-3 sentences: What this PR does, any gotchas from the review,
+[2-3 sentences: What this PR does, what the review loop will check,
 what the next agent needs to know.]
 ---
 ```

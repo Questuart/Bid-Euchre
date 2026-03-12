@@ -4,13 +4,7 @@
 # This hook complements post-pr-review.sh (which triggers /reviewing-changes).
 # The review loop driver runs asynchronously in the background and manages
 # the full Codex CLI review → fix → retest cycle.
-#
-# NOTE: Currently disabled (exit 0 early) during rollout. Enable by
-# removing the early exit below once end-to-end validation is complete.
 set -euo pipefail
-
-# ROLLOUT GUARD: disabled until end-to-end validation passes
-exit 0
 
 # Read JSON input from stdin
 INPUT=$(cat)
