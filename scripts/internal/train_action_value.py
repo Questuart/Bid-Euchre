@@ -423,14 +423,37 @@ def build_artifact(
     continuation_artifact: str,
     feature_set: str = "full",
     target_col: str = TARGET_COL,
+    dataset_path: str | None = None,
+    dataset_sha256: str | None = None,
+    continuation_artifact_sha256: str | None = None,
 ) -> dict:
     """Assemble the action_value_olsa_v1 artifact dict.
 
     Args:
         feature_set: Name of the feature set used ("full" or "r0").
         target_col: Name of the target column used for training.
+        dataset_path: Path to training dataset (provenance).
+        dataset_sha256: SHA-256 of the training dataset file.
+        continuation_artifact_sha256: Content hash of the continuation artifact.
     """
     git_sha = _git_sha()
+
+    metadata: dict = {
+        "n_deals": n_deals,
+        "training_seed": seed,
+        "arm": "full",
+        "context_features": [],
+        "git_sha": git_sha,
+        "created_at_utc": utc_now_iso(),
+        "model_class": "ols",
+        "continuation_artifact_path": continuation_artifact,
+    }
+    if dataset_path is not None:
+        metadata["dataset_path"] = dataset_path
+    if dataset_sha256 is not None:
+        metadata["dataset_sha256"] = dataset_sha256
+    if continuation_artifact_sha256 is not None:
+        metadata["continuation_artifact_sha256"] = continuation_artifact_sha256
 
     return {
         "schema_version": "action_value_olsa_v1",
@@ -440,14 +463,7 @@ def build_artifact(
         "action_features": list(ACTION_FEATURE_NAMES),
         "feature_set": feature_set,
         "models": models,
-        "metadata": {
-            "n_deals": n_deals,
-            "training_seed": seed,
-            "arm": "full",
-            "context_features": [],
-            "git_sha": git_sha,
-            "created_at_utc": utc_now_iso(),
-        },
+        "metadata": metadata,
     }
 
 
@@ -460,11 +476,19 @@ def build_gbt_artifact(
     continuation_artifact: str,
     feature_set: str = "full",
     target_col: str = TARGET_COL,
+    dataset_path: str | None = None,
+    dataset_sha256: str | None = None,
+    continuation_artifact_sha256: str | None = None,
 ) -> dict:
     """Build action_value_gbt_v1 artifact: JSON metadata + joblib model files.
 
     Saves each GBT model as a .joblib file in output_dir and returns the
     artifact dict with relative file references.
+
+    Args:
+        dataset_path: Path to training dataset (provenance).
+        dataset_sha256: SHA-256 of the training dataset file.
+        continuation_artifact_sha256: Content hash of the continuation artifact.
     """
     import joblib
 
@@ -480,6 +504,23 @@ def build_gbt_artifact(
             **model_metadata[family],
         }
 
+    metadata: dict = {
+        "n_deals": n_deals,
+        "training_seed": seed,
+        "arm": "full",
+        "context_features": [],
+        "git_sha": git_sha,
+        "created_at_utc": utc_now_iso(),
+        "model_class": "gbt",
+        "continuation_artifact_path": continuation_artifact,
+    }
+    if dataset_path is not None:
+        metadata["dataset_path"] = dataset_path
+    if dataset_sha256 is not None:
+        metadata["dataset_sha256"] = dataset_sha256
+    if continuation_artifact_sha256 is not None:
+        metadata["continuation_artifact_sha256"] = continuation_artifact_sha256
+
     return {
         "schema_version": "action_value_gbt_v1",
         "target": target_col,
@@ -488,14 +529,7 @@ def build_gbt_artifact(
         "action_features": list(ACTION_FEATURE_NAMES),
         "feature_set": feature_set,
         "models": models_section,
-        "metadata": {
-            "n_deals": n_deals,
-            "training_seed": seed,
-            "arm": "full",
-            "context_features": [],
-            "git_sha": git_sha,
-            "created_at_utc": utc_now_iso(),
-        },
+        "metadata": metadata,
     }
 
 
@@ -505,6 +539,45 @@ def _git_sha() -> str:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
+
+
+def _compute_provenance_hashes(
+    dataset_path: str,
+    continuation_artifact_path: str,
+) -> tuple[str, str | None]:
+    """Compute SHA-256 hashes for dataset and continuation artifact.
+
+    Returns (dataset_sha256, continuation_content_hash).
+    The continuation hash uses content_hash() (excluding freeze fields) so
+    the hash remains stable regardless of whether the artifact is frozen.
+    """
+    from bid_euchre.models.freeze import content_hash as compute_content_hash
+    from bid_euchre.models.freeze import sha256_file
+
+    dataset_sha = sha256_file(dataset_path)
+
+    cont_sha = None
+    cont_path = Path(continuation_artifact_path)
+    if cont_path.exists() and cont_path.suffix == ".json":
+        with open(cont_path) as f:
+            cont_artifact = json.load(f)
+        cont_sha = compute_content_hash(cont_artifact)
+
+    return dataset_sha, cont_sha
+
+
+def _build_behavioral_provenance(report: dict) -> dict:
+    """Extract behavioral validation summary for artifact provenance metadata."""
+    stats = report.get("behavioral_stats", {})
+    return {
+        "passed": True,
+        "avg_bid": stats.get("avg_bid"),
+        "pass_rate": stats.get("pass_rate"),
+        "bid_10_rate": stats.get("bid_10_rate"),
+        "contract_diversity": stats.get("contract_diversity"),
+        "n_observations": stats.get("n_observations"),
+        "validated_at_utc": utc_now_iso(),
+    }
 
 
 # ── Gate X2 ──────────────────────────────────────────────────
@@ -548,10 +621,11 @@ def _artifact_filename(feature_set: str) -> str:
 VALID_MODEL_CLASSES = ("ols", "gbt")
 
 
-def _run_behavioral_validation(artifact_path: str) -> None:
+def _run_behavioral_validation(artifact_path: str) -> dict:
     """Run behavioral validation on a freshly trained artifact.
 
     Imports the validator lazily to avoid circular dependency at module level.
+    Returns the validation report dict on success.
     Raises AssertionError if the artifact fails behavioral checks.
     """
     # Import here to keep module-level imports lean (this module is also
@@ -582,6 +656,7 @@ def _run_behavioral_validation(artifact_path: str) -> None:
         )
 
     print("  Behavioral validation PASS")
+    return report
 
 
 def main():
@@ -700,6 +775,15 @@ def _train_ols_pipeline(
     n_deals: int,
 ) -> None:
     """OLS training pipeline (original behavior)."""
+    # Compute provenance hashes
+    print("  Computing provenance hashes...")
+    dataset_sha, cont_sha = _compute_provenance_hashes(
+        args.dataset, args.continuation_artifact
+    )
+    print(f"    dataset_sha256={dataset_sha[:12]}...")
+    if cont_sha:
+        print(f"    continuation_sha256={cont_sha[:12]}...")
+
     models = {}
     for family in ("suit", "high", "low"):
         print(f"  Training {family} OLS model...")
@@ -736,6 +820,9 @@ def _train_ols_pipeline(
         args.continuation_artifact,
         feature_set=args.feature_set,
         target_col=target_col,
+        dataset_path=args.dataset,
+        dataset_sha256=dataset_sha,
+        continuation_artifact_sha256=cont_sha,
     )
 
     if not args.skip_validation:
@@ -748,7 +835,16 @@ def _train_ols_pipeline(
 
     if not args.skip_validation:
         print("  Running behavioral validation...")
-        _run_behavioral_validation(str(artifact_path))
+        report = _run_behavioral_validation(str(artifact_path))
+
+        print("  Freezing artifact with provenance...")
+        from bid_euchre.models.freeze import freeze_with_provenance
+
+        provenance = {
+            "behavioral_validation": _build_behavioral_provenance(report),
+        }
+        frozen = freeze_with_provenance(str(artifact_path), provenance)
+        print(f"    artifact_sha256={frozen['artifact_sha256'][:12]}...")
 
     print(f"\n  Artifact: {artifact_path}")
     print("  Done.")
@@ -764,6 +860,15 @@ def _train_gbt_pipeline(
     n_deals: int,
 ) -> None:
     """GBT training pipeline."""
+    # Compute provenance hashes
+    print("  Computing provenance hashes...")
+    dataset_sha, cont_sha = _compute_provenance_hashes(
+        args.dataset, args.continuation_artifact
+    )
+    print(f"    dataset_sha256={dataset_sha[:12]}...")
+    if cont_sha:
+        print(f"    continuation_sha256={cont_sha[:12]}...")
+
     gbt_models = {}
     model_metadata = {}
 
@@ -810,6 +915,9 @@ def _train_gbt_pipeline(
         args.continuation_artifact,
         feature_set=args.feature_set,
         target_col=target_col,
+        dataset_path=args.dataset,
+        dataset_sha256=dataset_sha,
+        continuation_artifact_sha256=cont_sha,
     )
 
     if not args.skip_validation:
@@ -821,7 +929,16 @@ def _train_gbt_pipeline(
 
     if not args.skip_validation:
         print("  Running behavioral validation...")
-        _run_behavioral_validation(str(artifact_path))
+        report = _run_behavioral_validation(str(artifact_path))
+
+        print("  Freezing artifact with provenance...")
+        from bid_euchre.models.freeze import freeze_with_provenance
+
+        provenance = {
+            "behavioral_validation": _build_behavioral_provenance(report),
+        }
+        frozen = freeze_with_provenance(str(artifact_path), provenance)
+        print(f"    artifact_sha256={frozen['artifact_sha256'][:12]}...")
 
     print(f"\n  Artifact: {artifact_path}")
     print(f"  Model files: {output_dir}/gbt_*.joblib")
