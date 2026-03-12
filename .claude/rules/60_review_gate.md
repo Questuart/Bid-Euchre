@@ -5,11 +5,13 @@
 ## Operating Model
 
 Claude is the default authoring agent. GitHub is the system of record for merge gates
-and review artifacts. Two review systems operate in parallel:
+and review artifacts. Two systems coordinate on every PR:
 
-1. **`/reviewing-changes` skill** — Manual pre-merge gate (publishes commit status)
-2. **Autonomous review loop** — State machine that orchestrates Codex CLI review,
-   auto-fix, and retesting cycles (`scripts/internal/review_driver.py`)
+1. **`/reviewing-changes` skill** — Fast dispatcher (~5s): publishes `pending` status,
+   generates handoff summary. No file reading, no Codex polling, no follow-up issues.
+2. **Autonomous review loop** — State machine (`scripts/internal/review_driver.py`)
+   that runs asynchronously: deterministic prechecks, `make check`, Codex CLI review,
+   auto-fix, retesting, status publishing, and follow-up issue creation.
 
 Codex CLI is the primary reviewer in the autonomous loop — local, ~60s latency,
 uses ChatGPT subscription (no API billing). GitHub Codex remains as a passive
@@ -19,23 +21,34 @@ overlay (auto-fires on PR open, not orchestrated).
 
 | Context | Publisher | Required by branch protection? | Purpose |
 |---------|-----------|-------------------------------|---------|
-| `reviewing-changes` | Claude (local, via `/reviewing-changes` skill) | Yes | Pre-merge code review gate |
+| `reviewing-changes` | Review loop (`review_driver.py`), initial `pending` from dispatcher | Yes | Pre-merge code review gate |
 
-## Merge Protocol (Observe Phase)
+### Status Values
 
-1. Claude opens PR, `/reviewing-changes` runs automatically
-2. `reviewing-changes` publishes commit status (`success` or `failure`)
-3. Autonomous review loop invokes Codex CLI (`codex review --base main`)
-4. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
-5. Auto-fixable findings (convention patterns) are applied and committed
-6. Non-auto-fixable findings are recorded for human review
-7. Loop iterates (max 5 rounds) until clean or stopped
-8. Human verifies review report, addresses any remaining findings
-9. Human merges manually (no auto-merge during rollout)
+| Status | GitHub API `state` | `description` pattern | When |
+|--------|-------------------|----------------------|------|
+| PENDING | `pending` | "Review loop starting" | Dispatcher publishes immediately |
+| IN_PROGRESS | `pending` | "Codex CLI review in progress (round N)" | Each Codex invocation |
+| FAIL | `failure` | "Review blocked — N blockers" | Blocking prechecks, make check fail, loop crash |
+| WARN | `success` | "Review passed — N warnings (follow-up issues created)" | Non-blocking findings only |
+| READY | `success` | "Review passed — clean" | No findings |
 
-**Rollout phase:** The autonomous review loop hook is disabled by default.
-Enable after end-to-end validation passes. Auto-merge is gated on promotion
-criteria in `docs/04_reports/codex_validation/`.
+## Merge Protocol
+
+1. Claude opens PR
+2. `post-pr-review.sh` hook triggers `/reviewing-changes` dispatcher
+3. Dispatcher publishes `pending` status and generates handoff summary (~5s)
+4. `post-pr-review-loop.sh` hook launches `review_driver.py` asynchronously
+5. Loop runs deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
+6. Loop runs `make check-quiet`
+7. Loop invokes Codex CLI (`codex review --base main`)
+8. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
+9. Auto-fixable findings (convention patterns) are applied and committed
+10. Non-auto-fixable findings are recorded
+11. Loop iterates (max 5 rounds) until clean or stopped
+12. Loop publishes final status (`success` or `failure`)
+13. Loop creates follow-up issues for non-blocking (P2) findings
+14. Human merges when status is `success` (no auto-merge)
 
 See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full state machine design.
 
@@ -82,8 +95,10 @@ Aligned with `/reviewing-changes` CHECKLIST.md check IDs:
 Use `scripts/internal/set_review_status.sh`:
 
 ```bash
-# Pre-merge code review (local Claude session — HEAD is correct)
-scripts/internal/set_review_status.sh pending "Review in progress"
+# Initial pending (from dispatcher)
+scripts/internal/set_review_status.sh pending "Review loop starting"
+
+# Final statuses (from review loop)
 scripts/internal/set_review_status.sh success "Review passed — 0 blockers, N warnings"
 scripts/internal/set_review_status.sh failure "Review blocked — N blockers found"
 
@@ -91,14 +106,14 @@ scripts/internal/set_review_status.sh failure "Review blocked — N blockers fou
 scripts/internal/set_review_status.sh success "Manual override"
 ```
 
-## Recovery: Stuck Pending Status
+## Recovery
 
-If a Claude session crashes mid-review, `reviewing-changes` stays `pending`
-and branch protection blocks the PR. Recovery options:
+If the review loop crashes or gets stuck:
 
-1. Start a new Claude session and run `/reviewing-changes` manually
-2. Admin override: `scripts/internal/set_review_status.sh success "Manual override"`
-3. Fallback workflow (`review_status_fallback.yml`) posts a comment after 1 hour
+1. Check state: `cat .claude/runtime/review_loops/pr_<N>/state.json`
+2. Manual rerun: `python scripts/internal/review_driver.py --pr <N> --trigger manual`
+3. Admin override: `scripts/internal/set_review_status.sh success "Manual override"`
+4. Fallback workflow (`review_status_fallback.yml`) posts a comment after 1 hour
 
 ## Codex Review Channels
 
@@ -109,13 +124,12 @@ Two independent Codex review paths exist, with separate usage pools:
 | **GitHub Codex** | `@codex review` PR comment | GitHub Codex quota | ~60-254s | COMPLETE, PENDING, UNAVAILABLE_LIMIT |
 | **Codex CLI** | `codex review --base main` (local) | ChatGPT subscription | ~60s | COMPLETE, FAILED |
 
-**Fallback behavior:** When GitHub Codex returns `UNAVAILABLE_LIMIT`, the
-`/reviewing-changes` skill automatically falls back to local Codex CLI. CLI
-findings are recorded under `channel=codex_cli` and appear in a separate report
-section — they are never collapsed with GitHub Codex results.
+The autonomous review loop uses **Codex CLI** as its primary reviewer.
+GitHub Codex fires independently as a passive overlay — visible on the PR
+page for humans, not orchestrated by the loop.
 
-Both channels are **observe-only** — findings do not affect commit status,
-merge eligibility, or follow-up issue creation.
+Both channels' findings feed into the normalized finding schema (P0/P1/P2)
+and are recorded in the loop's per-round artifacts.
 
 ## Known Issue: Docs-Only PRs and CI
 

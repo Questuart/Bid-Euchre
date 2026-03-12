@@ -6,7 +6,10 @@ The autonomous review loop is a local state machine where Claude (author)
 writes/fixes code and Codex CLI (reviewer) reviews it. The loop is persisted
 to disk, resumable after restarts, and bounded (max 5 iterations).
 
-During rollout, the loop stops at `ready_to_merge` — it does not auto-merge.
+The loop is the primary review mechanism for all PRs. It runs asynchronously
+after PR creation, triggered by the `post-pr-review-loop.sh` PostToolUse hook.
+The loop stops at `ready_to_merge` — it does not auto-merge. Human merges
+when the final status is `success`.
 
 ## Architecture
 
@@ -14,12 +17,23 @@ During rollout, the loop stops at `ready_to_merge` — it does not auto-merge.
 
 | Module | Purpose |
 |--------|---------|
-| `scripts/internal/review_state.py` | State schema, persistence, state enum |
-| `scripts/internal/review_driver.py` | Main orchestrator (state transitions, dispatch) |
-| `scripts/internal/deterministic_prechecks.py` | Fast local checks (merge markers, RNG, imports) |
-| `scripts/internal/github_pr_state.py` | GitHub CLI wrappers (CI status, PR metadata) |
+| `scripts/internal/review_state.py` | State schema, persistence, state enum, SHA tracking |
+| `scripts/internal/review_driver.py` | Main orchestrator (state transitions, dispatch, status publishing, crash recovery) |
+| `scripts/internal/deterministic_prechecks.py` | Fast local checks (merge markers, RNG, imports, N1/N2/N3/X2 heuristics) |
+| `scripts/internal/github_pr_state.py` | GitHub CLI wrappers (CI status, PR metadata, status publishing) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation + output parsing |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings |
+
+### Dispatcher Integration
+
+The `/reviewing-changes` skill acts as a fast dispatcher (~5s):
+1. Publishes `pending` status immediately
+2. Generates a handoff summary for the session
+3. Does NOT read files, run checks, or poll for Codex — the loop handles all of that
+
+The dispatcher and the loop hook both fire on `gh pr create`:
+- `post-pr-review.sh` triggers `/reviewing-changes` (in-session dispatcher)
+- `post-pr-review-loop.sh` launches `review_driver.py` (async background)
 
 ### State Machine
 
@@ -49,9 +63,8 @@ evidence is committed under `docs/04_reports/codex_validation/`.
 
 ### Deterministic Prechecks
 
-Extracted from `/reviewing-changes` Phases 0-2 into a standalone module.
-Both the skill and the state machine call `deterministic_prechecks.py`
-independently. Checks include:
+Implemented in `deterministic_prechecks.py`. The loop runs these
+as its first step before invoking Codex CLI. Checks include:
 
 - Merge conflict markers (P0)
 - `TODO: remove before merge` (P1)
@@ -60,6 +73,10 @@ independently. Checks include:
 - Falsy numeric guard `x = x or fallback` (P1, library only)
 - Import boundary violations (P1, library only)
 - Convention patterns: `== None`, `== True`, `breakpoint()` (P2)
+- N1: Missing contract-type facet in notebook groupby/plot (P1, notebooks only)
+- N2: Collapsed matchup table without team breakout (P1, notebooks only)
+- N3: Inference claim without statistical test (P2, notebooks only)
+- X2: Core/scoring/logging changes without doc update (P2, diff-level)
 
 ### Codex CLI Adapter
 
@@ -94,20 +111,69 @@ Applies deterministic, pattern-based fixes only:
 Skipped findings are recorded with reason in round_N/fix_summary.json
 and round_N/claude_fix_summary.md.
 
+### Status Publishing
+
+The loop publishes GitHub commit status at key transitions:
+
+| Transition | Status | Description |
+|------------|--------|-------------|
+| Loop starts | `pending` | "Review loop starting" |
+| Codex invoked | `pending` | "Codex CLI review in progress (round N)" |
+| Clean pass | `success` | "Review passed — clean" |
+| Warnings only | `success` | "Review passed — N warnings (follow-up issues created)" |
+| Blockers found | `failure` | "Review blocked — N blockers" |
+| Loop crash | `failure` | "Review loop crashed: {error}. Rerun: ..." |
+
+### Follow-up Issues
+
+At `ready_to_merge`, the loop creates GitHub issues for non-blocking (P2)
+findings, grouped by category. Issues are labeled with `follow-up` plus
+the appropriate category label (`fix:bug`, `fix:convention`, etc.).
+
 ## Usage
 
 ```bash
-# Start a review loop for a PR
-python scripts/internal/review_driver.py --pr 42 --branch feature-branch
+# Start a review loop for a PR (normally triggered by hook)
+python scripts/internal/review_driver.py --pr 42 --branch feature-branch --trigger pr_created
 
 # Resume after CI completes
 python scripts/internal/review_driver.py --pr 42 --trigger ci_complete
+
+# Manual trigger (recovery)
+python scripts/internal/review_driver.py --pr 42 --trigger manual
 
 # Check state
 cat .claude/runtime/review_loops/pr_42/state.json
 ```
 
+## Recovery
+
+If the loop crashes or gets stuck:
+
+1. **Check state:**
+   ```bash
+   cat .claude/runtime/review_loops/pr_<N>/state.json
+   ```
+
+2. **Manual rerun:**
+   ```bash
+   python scripts/internal/review_driver.py --pr <N> --trigger manual
+   ```
+
+3. **Admin override** (skip review, unblock merge):
+   ```bash
+   scripts/internal/set_review_status.sh success "Manual override"
+   ```
+
+4. **Fallback workflow:** `review_status_fallback.yml` posts a comment after
+   1 hour if status remains `pending`.
+
+The loop's crash recovery publishes a `failure` status with a recovery
+command in the description, so the PR is never silently stuck.
+
 ## Governing Plan
 
 See `plans/archive/2026-03-08_autonomous-review-loop.md` for the full
 design, state transitions, stop conditions, and implementation sequence.
+
+Activation plan: plans/sessions/2026-03-11_autonomous-review-loop-activation.md
