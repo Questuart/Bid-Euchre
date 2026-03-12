@@ -548,7 +548,7 @@ it is explicitly marked as a fallback, not a mainline fix.
 | PR | Content | Dependencies | Status |
 |----|---------|-------------|--------|
 | PR-1 | Step 0: Decision-level suit diagnostic | None | **DONE** (PR #610) |
-| PR-2 | Step 0.5: Play-policy sanity check + plan updates | PR-1 | **DONE** (PR #TBD) |
+| PR-2 | Step 0.5: Play-policy sanity check + plan updates | PR-1 | **DONE** (PR #613) |
 | PR-3 | Track B: GBT prototype | PR-2 (if gate passes) | **NEXT** |
 | PR-4 | Track A: two-stage prototype (fallback) | PR-3 (if Track B fails) | Deprioritized |
 | PR-5 | FULL evaluation of winning track | PR-3 or PR-4 | Waiting |

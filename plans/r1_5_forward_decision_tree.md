@@ -76,7 +76,7 @@ R1.5.2 diagnostics CONCLUDED
 │        → H12 decomposition is not sufficient
 │        → Track B
 │
-├─── Track B: Gradient Boosted Trees (fallback)
+├─── Track B: Gradient Boosted Trees (primary — promoted by Step 0 gate)
 │    Method: sklearn GBT regressor, per-contract
 │    Still learns conditional mean (does NOT handle bimodality natively)
 │    Tests nonlinear feature boundaries, not regime decomposition
