@@ -1,89 +1,32 @@
-# Codex GitHub Pre-Merge Review
+# Codex Review — CLI-Only
 
-> Codex is a GitHub-native pre-merge reviewer. It auto-reviews PRs via GitHub's
-> built-in integration — no API key, no custom workflows, no scripts.
+> Codex CLI is the sole automated reviewer for all PRs. The GitHub Codex
+> plugin has been retired due to rate limiting and latency issues.
 
 ## Overview
 
-Codex review is **advisory during rollout**. It does not control a required
-status check. Merge happens manually after Codex review is visible on the PR.
+All pre-merge code review is handled by the **autonomous review loop**
+(`review_driver.py`), which invokes **Codex CLI** (`codex review --base main`)
+locally. There is no dependency on GitHub's Codex plugin.
 
-The only formal automated gate is `reviewing-changes`, published by Claude's
-local `/reviewing-changes` skill. Codex supplements this with an independent
-second opinion.
+The review loop:
+1. Runs deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
+2. Runs `make check-quiet`
+3. Invokes Codex CLI for code review
+4. Auto-fixes safe patterns (convention fixes)
+5. Iterates (max 5 rounds) until clean or stopped
+6. Publishes `reviewing-changes` commit status
+7. Enables auto-merge (squash) when review passes
 
-## Owner Setup
+## Codex CLI Details
 
-### 1. Connect Codex to GitHub
-
-1. Go to [ChatGPT](https://chat.openai.com) and connect your GitHub account
-2. Enable Codex automatic PR review for the `Questuart/Bid-Euchre` repository
-3. Verify by opening a test PR — Codex should post a review automatically
-
-### 2. Validate Coverage
-
-Confirm both PR types receive Codex review:
-
-- **Code PR** (Python changes) — expected to work
-- **Plan/docs-only PR** (markdown only) — rollout assumption, may not trigger
-  Codex review. If plan-only PRs do not trigger review, plan review remains
-  human-only (with local `/reviewing-plans` as a pre-flight check)
-
-### 3. Rollout Settings
-
-During rollout (first 3-5 PRs):
-
-- **Require 1 human approval** on all PRs
-- **`enforce_admins=true`** so even admin merges require checks
-- **No auto-merge** — merge manually after verifying Codex review is visible
-
-After Codex is proven reliable:
-
-- Drop the human approval requirement
-- Set `enforce_admins=false`
-- Consider re-enabling auto-merge in `/reviewing-changes`
-
-## Claude Behavior (Merge Protocol — Observe Phase)
-
-After Claude creates a PR (via `gh pr create`):
-
-1. `/reviewing-changes` runs automatically (PostToolUse hook)
-2. `/reviewing-changes` publishes `reviewing-changes` commit status
-3. `/reviewing-changes` posts `@codex review` comment with PR-aware context
-   and structured format request (severity scale, check IDs, Checks Performed)
-4. `/reviewing-changes` polls for Codex response (up to 5 minutes)
-5. `/reviewing-changes` logs Codex response metadata (latency, format compliance,
-   parseability, finding counts, checks reported)
-6. Codex findings are included in the review report (observe-only — no auto-fix)
-7. Human verifies review report, addresses any blocking findings
-8. Human merges manually
-
-**Observe-only:** In this phase, Codex findings do not affect commit status
-or merge eligibility. They are logged to build a dataset for validating
-format compliance and finding accuracy before enabling automated action.
-
-Codex review instructions reference `AGENTS.md` at the repo root, which
-defines the project context, prioritized review checks, and the structured
-output format Codex should use.
-
-### Handling Codex Findings
-
-| Codex Finding Type | Action |
-|-------------------|--------|
-| Blocking comment (correctness issue) | Fix before merge |
-| Non-blocking suggestion | Create follow-up issue if warranted |
-| False positive / noise | Dismiss with brief explanation |
-
-### PR Template Checklist
-
-The PR template includes a `## Codex Review` section with three checkboxes:
-
-- **Codex auto-review received** — check when Codex has posted its review
-  (mark N/A if Codex is not yet enabled)
-- **Blocking Codex comments addressed** — check after fixing or dismissing
-  all blocking findings
-- **Non-blocking findings captured** — check after creating follow-up issues
-  for any substantive non-blocking findings
+| Property | Value |
+|----------|-------|
+| Command | `codex review --base main` |
+| Binary | Installed locally or via `npx @openai/codex` |
+| Usage pool | ChatGPT subscription (no API billing) |
+| Latency | ~60s per invocation |
+| Retry policy | Up to 3 attempts before `stopped_review_failure` |
 
 ## Relationship to Other Gates
 
@@ -91,38 +34,41 @@ The PR template includes a `## Codex Review` section with three checkboxes:
 |------|------|-----------|-----------|
 | `tests` | GitHub Actions | Yes (branch protection) | CI |
 | `governance` | GitHub Actions | Yes (branch protection) | CI |
-| `reviewing-changes` | Commit status | Yes (branch protection) | Claude (local) |
-| Codex review | PR review | No (advisory) | Codex (GitHub-native) |
-| Human approval | PR review | Yes (rollout only) | Human |
+| `reviewing-changes` | Commit status | Yes (branch protection) | Review loop (`review_driver.py`) |
 
 ## Review Modes
 
-PRs are classified by review mode based on changed file types. The
-`/reviewing-changes` skill selects the appropriate `@codex review` prompt
-automatically.
+PRs are classified by review mode based on changed file types:
 
 | Review Mode | Trigger | Focus |
 |-------------|---------|-------|
 | `standard` | Code PRs (default) | Code correctness, tests, conventions, determinism |
-| `report-audit` | PRs touching `docs/04_reports/**`, gate/promotion reports | Provenance, reproducibility, gate semantics, plan consistency |
+| `report-audit` | PRs touching `docs/04_reports/**` | Provenance, reproducibility, gate semantics |
 | `plan-audit` | PRs touching `plans/**` | Scope, real paths, execution risk, testing strategy |
 
-**Report-audit mode** treats docs that publish technical results as reviewable
-artifacts, not "docs-only" PRs. It checks provenance SHAs, reproducibility
-from committed scripts, and gate result accuracy.
+## Merge Flow
 
-For high-risk report PRs (promotion decisions, gate evaluations), consider
-supplementing GitHub Codex with a deeper desktop audit. GitHub Codex provides
-first-pass advisory review; desktop review can verify provenance against
-actual git history and cross-check methodology.
+1. Claude opens PR via `gh pr create`
+2. PostToolUse hooks fire:
+   - `post-pr-review.sh` → dispatches `/reviewing-changes` (publishes initial `pending` status)
+   - `post-pr-review-loop.sh` → launches `review_driver.py` in background
+3. Review loop runs prechecks → make check → Codex CLI → auto-fix cycle
+4. On success: loop publishes `success` status and enables auto-merge
+5. GitHub merges automatically once CI + branch protection are satisfied
 
-## Limitations
+No human merge step required. If auto-merge fails (e.g., conflicts, repo
+setting disabled), the loop publishes success and the PR can be merged manually.
 
-- Codex does not expose a stable commit status context — it cannot be added
-  as a required check in branch protection
-- Codex may not review markdown-only PRs — this is a rollout assumption
-  that needs validation
-- Codex review quality and relevance may vary — treat as supplementary
-  to `/reviewing-changes`, not a replacement
-- Codex review latency is unknown — it may take several minutes after PR
-  creation before a review appears
+## Recovery
+
+See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for crash recovery procedures.
+
+## Migration from GitHub Codex Plugin
+
+The GitHub Codex plugin was previously used as a passive overlay (auto-reviewed
+PRs when opened). It has been retired because:
+- Rate limiting caused delays and unpredictable review availability
+- Latency was 60-254s vs ~60s for local CLI
+- It could not be added as a required branch protection check
+- The autonomous review loop with Codex CLI provides the same coverage
+  with better reliability and control

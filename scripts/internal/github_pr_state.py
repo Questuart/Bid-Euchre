@@ -1,10 +1,8 @@
 """GitHub PR state queries via gh CLI.
 
 Thin wrappers around `gh` commands for querying PR metadata,
-CI status, and publishing review status. Used by the review
-loop state machine.
-
-Does NOT merge PRs (rollout constraint).
+CI status, publishing review status, and enabling auto-merge.
+Used by the review loop state machine.
 """
 
 from __future__ import annotations
@@ -149,6 +147,28 @@ def publish_review_status(
 
     result = subprocess.run(
         [str(script), state, description, "", context, sha],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def enable_auto_merge(pr_number: int, *, method: str = "squash") -> bool:
+    """Enable GitHub auto-merge on a PR.
+
+    Uses `gh pr merge --auto` which queues the merge for when all
+    branch protection requirements are satisfied (CI, required statuses).
+
+    Args:
+        pr_number: PR number.
+        method: Merge method ("squash", "merge", "rebase").
+
+    Returns:
+        True if auto-merge was enabled, False otherwise.
+    """
+    flag = f"--{method}"
+    result = subprocess.run(
+        ["gh", "pr", "merge", str(pr_number), "--auto", flag],
         capture_output=True,
         text=True,
     )

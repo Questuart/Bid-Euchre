@@ -270,6 +270,8 @@ def step(
         return _step_applying_fixes(loop_state, base_dir)
     elif current == ReviewState.RETESTING:
         return _step_retesting(loop_state, base_dir)
+    elif current == ReviewState.READY_TO_MERGE:
+        return _step_ready_to_merge(loop_state, base_dir)
     else:
         logger.error(
             "PR #%d: unexpected state %s",
@@ -626,6 +628,38 @@ def _step_retesting(
             loop_state.pr_number,
             loop_state.ci_retry_count,
         )
+    return loop_state
+
+
+def _step_ready_to_merge(
+    loop_state: ReviewLoopState,
+    base_dir: Path | None,
+) -> ReviewLoopState:
+    """READY_TO_MERGE → MERGED: Enable auto-merge and transition.
+
+    Enables GitHub auto-merge (squash) on the PR. GitHub will merge
+    once all branch protection requirements (CI, required statuses)
+    are satisfied.
+    """
+    from github_pr_state import enable_auto_merge
+
+    ok = enable_auto_merge(loop_state.pr_number)
+    if ok:
+        loop_state.transition(ReviewState.MERGED)
+        save_state(loop_state, base_dir)
+        logger.info(
+            "PR #%d: auto-merge enabled → merged",
+            loop_state.pr_number,
+        )
+    else:
+        # Auto-merge not available (e.g., repo setting disabled, conflicts).
+        # Stay at READY_TO_MERGE — human can merge manually.
+        logger.warning(
+            "PR #%d: auto-merge failed — manual merge required",
+            loop_state.pr_number,
+        )
+        save_state(loop_state, base_dir)
+
     return loop_state
 
 
