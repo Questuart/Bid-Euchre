@@ -5,9 +5,11 @@ import json
 import pytest
 
 from bid_euchre.models.freeze import (
-    _content_hash,
+    content_hash,
     freeze_artifact,
+    freeze_with_provenance,
     require_frozen,
+    sha256_file,
     verify_frozen,
 )
 
@@ -119,13 +121,13 @@ class TestContentHash:
             "frozen_at": "2026-01-01T00:00:00Z",
             "artifact_sha256": "abc",
         }
-        assert _content_hash(base) == _content_hash(with_freeze)
+        assert content_hash(base) == content_hash(with_freeze)
 
     def test_detects_content_change(self):
         """Hash must differ when content changes."""
         original = {"model_type": "olsa", "contracts": {"suit": {"coef": [1, 2]}}}
         modified = {"model_type": "olsa", "contracts": {"suit": {"coef": [1, 3]}}}
-        assert _content_hash(original) != _content_hash(modified)
+        assert content_hash(original) != content_hash(modified)
 
 
 class TestRequireFrozen:
@@ -140,3 +142,87 @@ class TestRequireFrozen:
     def test_require_passes_when_frozen(self, artifact_file):
         freeze_artifact(artifact_file)
         require_frozen(artifact_file, strict=True)  # Should not raise
+
+
+class TestSha256File:
+    def test_returns_64_char_hex(self, artifact_file):
+        digest = sha256_file(artifact_file)
+        assert len(digest) == 64
+        assert all(c in "0123456789abcdef" for c in digest)
+
+    def test_same_content_same_hash(self, tmp_path):
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("hello")
+        f2.write_text("hello")
+        assert sha256_file(f1) == sha256_file(f2)
+
+    def test_different_content_different_hash(self, tmp_path):
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("hello")
+        f2.write_text("world")
+        assert sha256_file(f1) != sha256_file(f2)
+
+
+class TestFreezeWithProvenance:
+    @pytest.fixture
+    def artifact_with_metadata(self, tmp_path):
+        """Create a sample artifact with a metadata section."""
+        path = tmp_path / "artifact.json"
+        data = {
+            "schema_version": "action_value_olsa_v1",
+            "models": {"suit": {"coef": [1, 2]}},
+            "metadata": {
+                "training_seed": 42,
+                "git_sha": "abc123",
+            },
+        }
+        path.write_text(json.dumps(data, indent=2))
+        return path
+
+    def test_injects_provenance_and_freezes(self, artifact_with_metadata):
+        provenance = {
+            "behavioral_validation": {
+                "passed": True,
+                "avg_bid": 4.82,
+            }
+        }
+        result = freeze_with_provenance(artifact_with_metadata, provenance)
+        assert result["frozen_at"] is not None
+        assert result["artifact_sha256"] is not None
+        assert result["metadata"]["behavioral_validation"]["passed"] is True
+        assert result["metadata"]["behavioral_validation"]["avg_bid"] == 4.82
+
+    def test_provenance_persists_to_file(self, artifact_with_metadata):
+        provenance = {"dataset_sha256": "def456"}
+        freeze_with_provenance(artifact_with_metadata, provenance)
+        data = json.loads(artifact_with_metadata.read_text())
+        assert data["metadata"]["dataset_sha256"] == "def456"
+        assert data["frozen_at"] is not None
+
+    def test_preserves_existing_metadata(self, artifact_with_metadata):
+        provenance = {"dataset_sha256": "def456"}
+        result = freeze_with_provenance(artifact_with_metadata, provenance)
+        assert result["metadata"]["training_seed"] == 42
+        assert result["metadata"]["git_sha"] == "abc123"
+
+    def test_verifies_after_provenance_freeze(self, artifact_with_metadata):
+        provenance = {"dataset_sha256": "def456"}
+        freeze_with_provenance(artifact_with_metadata, provenance)
+        assert verify_frozen(artifact_with_metadata) is True
+
+    def test_rejects_already_frozen(self, artifact_with_metadata):
+        freeze_artifact(artifact_with_metadata)
+        with pytest.raises(ValueError, match="already frozen"):
+            freeze_with_provenance(artifact_with_metadata, {"extra": "data"})
+
+    def test_rejects_missing_metadata(self, tmp_path):
+        path = tmp_path / "no_meta.json"
+        path.write_text(json.dumps({"schema_version": 1}))
+        with pytest.raises(KeyError, match="metadata"):
+            freeze_with_provenance(path, {"extra": "data"})
+
+    def test_not_found(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            freeze_with_provenance(tmp_path / "nope.json", {})

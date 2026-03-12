@@ -639,3 +639,120 @@ def _dummy_models() -> dict[str, dict]:
         "n_val": 20,
     }
     return {"suit": model, "high": model, "low": model, "pass": pass_model}
+
+
+# ── Provenance Metadata ─────────────────────────────────────
+
+
+class TestBuildArtifactProvenance:
+    def test_model_class_ols_by_default(self):
+        """OLS artifact records model_class='ols'."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models, seed=42, n_deals=100, continuation_artifact="test.json"
+        )
+        assert artifact["metadata"]["model_class"] == "ols"
+
+    def test_continuation_artifact_path_recorded(self):
+        """Artifact records continuation_artifact_path."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=100,
+            continuation_artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        )
+        assert (
+            artifact["metadata"]["continuation_artifact_path"]
+            == "data/artifacts/arc_d/r0/hybrid_r0_full.json"
+        )
+
+    def test_dataset_provenance_included(self):
+        """Dataset path and SHA are recorded when provided."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=100,
+            continuation_artifact="test.json",
+            dataset_path="data/runs/test/action_value.parquet",
+            dataset_sha256="abc123def456",
+        )
+        assert (
+            artifact["metadata"]["dataset_path"]
+            == "data/runs/test/action_value.parquet"
+        )
+        assert artifact["metadata"]["dataset_sha256"] == "abc123def456"
+
+    def test_continuation_sha_included(self):
+        """Continuation artifact SHA is recorded when provided."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models,
+            seed=42,
+            n_deals=100,
+            continuation_artifact="test.json",
+            continuation_artifact_sha256="xyz789",
+        )
+        assert artifact["metadata"]["continuation_artifact_sha256"] == "xyz789"
+
+    def test_provenance_fields_optional(self):
+        """Provenance fields are omitted when not provided (backward compat)."""
+        models = _dummy_models()
+        artifact = build_artifact(
+            models, seed=42, n_deals=100, continuation_artifact="test.json"
+        )
+        assert "dataset_path" not in artifact["metadata"]
+        assert "dataset_sha256" not in artifact["metadata"]
+        assert "continuation_artifact_sha256" not in artifact["metadata"]
+        # But model_class and continuation_artifact_path are always present
+        assert "model_class" in artifact["metadata"]
+        assert "continuation_artifact_path" in artifact["metadata"]
+
+
+class TestBuildGbtArtifactProvenance:
+    @staticmethod
+    def _build_gbt(tmp_path, **kwargs):
+        """Helper: build a GBT artifact with joblib.dump patched out."""
+        from unittest.mock import patch
+
+        from train_action_value import build_gbt_artifact
+
+        meta = {
+            "feature_names": ["x"],
+            "r_squared": 0.5,
+            "mae": 1.0,
+            "n_train": 100,
+            "n_val": 20,
+            "feature_importances": {"x": 1.0},
+        }
+        gbt_models = {"suit": "m", "high": "m", "low": "m", "pass": "m"}
+        model_metadata = {"suit": meta, "high": meta, "low": meta, "pass": meta}
+        with patch("joblib.dump"):
+            return build_gbt_artifact(
+                gbt_models,
+                model_metadata,
+                tmp_path,
+                seed=42,
+                n_deals=100,
+                continuation_artifact="test.json",
+                **kwargs,
+            )
+
+    def test_model_class_gbt(self, tmp_path):
+        """GBT artifact records model_class='gbt'."""
+        artifact = self._build_gbt(tmp_path)
+        assert artifact["metadata"]["model_class"] == "gbt"
+        assert artifact["metadata"]["continuation_artifact_path"] == "test.json"
+
+    def test_gbt_provenance_fields(self, tmp_path):
+        """GBT artifact includes provenance when provided."""
+        artifact = self._build_gbt(
+            tmp_path,
+            dataset_path="data.parquet",
+            dataset_sha256="abc",
+            continuation_artifact_sha256="xyz",
+        )
+        assert artifact["metadata"]["dataset_path"] == "data.parquet"
+        assert artifact["metadata"]["dataset_sha256"] == "abc"
+        assert artifact["metadata"]["continuation_artifact_sha256"] == "xyz"

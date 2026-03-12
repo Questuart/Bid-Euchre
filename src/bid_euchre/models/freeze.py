@@ -3,8 +3,11 @@ Freeze and verify model artifacts for promotion-track evaluation.
 
 Provides:
 - freeze_artifact(): Set frozen_at + artifact_sha256 on an artifact file
+- freeze_with_provenance(): Inject provenance metadata and freeze in one step
 - verify_frozen(): Check that artifact is frozen and unmodified
 - require_frozen(): Gate that raises (strict=True) or warns (strict=False)
+- sha256_file(): Compute SHA-256 hex digest of a file
+- content_hash(): Compute SHA-256 of artifact JSON content (excluding freeze fields)
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from bid_euchre.core.time import utc_now_iso
 logger = logging.getLogger(__name__)
 
 
-def _sha256_file(path: str | Path) -> str:
+def sha256_file(path: str | Path) -> str:
     """Compute SHA-256 hex digest of a file."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -29,7 +32,7 @@ def _sha256_file(path: str | Path) -> str:
     return h.hexdigest()
 
 
-def _content_hash(metadata: dict) -> str:
+def content_hash(metadata: dict) -> str:
     """Compute SHA-256 of artifact content, excluding freeze-specific fields.
 
     Strips ``frozen_at`` and ``artifact_sha256`` from a copy of *metadata*,
@@ -75,16 +78,56 @@ def freeze_artifact(artifact_path: str | Path) -> dict:
     if metadata.get("frozen_at") is not None:
         raise ValueError(f"Artifact already frozen at {metadata['frozen_at']}: {path}")
 
-    content_hash = _content_hash(metadata)
+    digest = content_hash(metadata)
 
     metadata["frozen_at"] = utc_now_iso()
-    metadata["artifact_sha256"] = content_hash
+    metadata["artifact_sha256"] = digest
 
     with open(path, "w") as f:
         json.dump(metadata, f, indent=2, sort_keys=True)
 
-    logger.info("Froze artifact: %s (sha256=%s)", path, content_hash[:12])
+    logger.info("Froze artifact: %s (sha256=%s)", path, digest[:12])
     return metadata
+
+
+def freeze_with_provenance(
+    artifact_path: str | Path,
+    provenance: dict,
+) -> dict:
+    """Inject provenance metadata into an artifact and freeze it in one step.
+
+    Reads the artifact JSON, merges *provenance* into ``artifact["metadata"]``,
+    writes the updated artifact back to disk, then freezes it (sets
+    ``frozen_at`` and ``artifact_sha256``).
+
+    Args:
+        artifact_path: Path to the JSON artifact file.
+        provenance: Dict of fields to merge into the artifact's metadata section.
+
+    Returns:
+        Updated metadata dict (with frozen_at and artifact_sha256 set).
+
+    Raises:
+        FileNotFoundError: If artifact doesn't exist.
+        ValueError: If artifact is already frozen.
+        KeyError: If artifact has no "metadata" section.
+    """
+    path = Path(artifact_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Artifact not found: {path}")
+
+    with open(path) as f:
+        artifact = json.load(f)
+
+    if "metadata" not in artifact:
+        raise KeyError(f"Artifact has no 'metadata' section: {path}")
+
+    artifact["metadata"].update(provenance)
+
+    with open(path, "w") as f:
+        json.dump(artifact, f, indent=2, sort_keys=True)
+
+    return freeze_artifact(path)
 
 
 def verify_frozen(artifact_path: str | Path) -> bool:
@@ -118,7 +161,7 @@ def verify_frozen(artifact_path: str | Path) -> bool:
     if stored_hash is None:
         return False
 
-    return _content_hash(metadata) == stored_hash
+    return content_hash(metadata) == stored_hash
 
 
 def require_frozen(artifact_path: str | Path, strict: bool = True) -> None:
