@@ -1656,9 +1656,19 @@ class GBTActionValueBidder(BiddingPolicy):
 
         self.pass_gbt = joblib.load(artifact_dir / models_meta["pass"]["model_file"])
 
+        # Detect interaction feature set from artifact metadata
+        feature_set = artifact.get("feature_set", "full")
+        self._has_interactions = feature_set == "interaction"
+
         # Validate feature names match expected runtime order
-        expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
-        expected_pass_features = list(STATE_FEATURE_NAMES)
+        if self._has_interactions:
+            expected_bid_features = (
+                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            )
+            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
+        else:
+            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            expected_pass_features = list(STATE_FEATURE_NAMES)
 
         for family in ("suit", "high", "low"):
             meta = models_meta[family]
@@ -1691,11 +1701,17 @@ class GBTActionValueBidder(BiddingPolicy):
         for action in legal:
             if action.is_pass():
                 state = extract_state_features(obs, "none", None)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
                 value = float(self.pass_gbt.predict(state.reshape(1, -1))[0])
             else:
                 contract_type, trump_suit = action.to_contract_tuple()
                 family = contract_type
                 state = extract_state_features(obs, family, trump_suit)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
                 action_feats = extract_action_features(action.n)
                 features = np.concatenate([state, action_feats])
                 value = float(
