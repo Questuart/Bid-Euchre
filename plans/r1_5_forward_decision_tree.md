@@ -1,6 +1,6 @@
 # R1.5 Forward Decision Tree
 
-**Date:** 2026-03-11
+**Date:** 2026-03-11 (revised)
 **Arc:** D — OLSa-Hybrid Bidder
 **Status:** ACTIVE — governs post-R1.5.2 research direction
 **Prerequisite:** [Post-R1 Retrospective](docs/04_reports/r1_5/post_r1_retro.md)
@@ -12,16 +12,22 @@
 |------|-------|--------|
 | R1.5 | Objective-alignment (AV v1 pipeline) | ADVANCED |
 | R1.5.2 | Diagnostics (ablation, interaction terms, calibration) | CONCLUDED |
-| R1.5.3 | Alternative model approaches (3 tracks) | NEXT |
+| R1.5.3 | Decision-level diagnostic + alternative model approaches | NEXT |
 | R1.5.4 | Partner context improvements | Deferred |
 | R2 | Opponent context | Future |
 
 ## Current State
 
-R1.5.2 diagnostics are **CONCLUDED**. All "easy" hypotheses have been
-eliminated. The suit regression (-0.142 net_eppd) is the sole promotion
-blocker. The leading theory is H12: OLS predicts the mean of a bimodal
-make/set target, producing suboptimal bid decisions for suit contracts.
+R1.5.2 diagnostics are **CONCLUDED**. All prediction-level hypotheses
+have been eliminated. The suit regression (-0.142 net_eppd) is the sole
+promotion blocker. The **leading working hypothesis** is H12: OLS predicts
+the mean of a bimodal make/set target, producing suboptimal bid decisions
+for suit contracts.
+
+H12 has strong correlational evidence (bimodality BIC=4,081, OLS predicts
+between modes, suit has best R^2 but worst gameplay delta) but **no
+decision-level proof**. The mechanism by which between-mode predictions
+translate into bad bids has not been tested.
 
 **Key numbers:**
 - AV v1 pooled delta vs R0: **+0.152** net_eppd, CI [+0.124, +0.180]
@@ -34,42 +40,66 @@ make/set target, producing suboptimal bid decisions for suit contracts.
 ```
 R1.5.2 diagnostics CONCLUDED
 │
-├─── R1.5.3: Alternative Model Approaches
+├─── Step 0: Decision-Level Suit Diagnostic
 │    Plan: plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md
-│    Three tracks tested at QUICK scale, best promoted to FULL
+│    Data: existing FULL H2H logs (50K deals) + counterfactual dataset
+│    No new models — pure analysis
 │
-│    Track A: Two-Stage Model
-│    ├── Method: P(make) × E[pts|make] + P(set) × E[pts|set]
-│    ├── Tests H12 directly (bimodal target decomposition)
-│    └── Suit-only initially, extend to high/low if successful
+│    Analyses:
+│    ├── Error taxonomy: over-bid, wrong contract, wrong level, under-bid
+│    ├── AV v1 vs R0 disagreement states (which side wins?)
+│    ├── Make/set boundary concentration (where do errors cluster?)
+│    ├── H13: bid-level headroom (does always-bid-4 leave value?)
+│    └── Optional: repeated-rollout subset for noisy disagreement states
 │
-│    Track B: Gradient Boosted Trees
-│    ├── Method: LightGBM/XGBoost on same features
-│    ├── Non-linear model class (handles bimodality natively)
-│    └── Per-contract models like AV v1
-│
-│    Track C: Pairwise Policy Optimization
-│    ├── Method: Logistic regression on feature differences
-│    ├── Bypasses predict→decide pipeline entirely
-│    └── Highest ceiling, largest implementation effort
-│
-│    ├─── Any track SUCCEEDS at QUICK scale
-│    │    (suit delta > 0 vs both AV v1 and R0)
-│    │    → FULL retraining (50k deals)
-│    │    → FULL H2H battery
-│    │    → Promotion evaluation (CI_low > 0.180?)
-│    │    └── If promoted: R0 replaced, move to R1.5.4 or R2
-│    │    └── If CI still tight: combine with risk treatment, retry
+│    ├── Errors at make/set boundary (>60% of deficit)
+│    │   → Track A: Two-Stage Model (suit-only prototype)
 │    │
-│    └─── All tracks FAIL
-│         → Prediction→decision gap is fundamental at OLS+ level
-│         → Fallback: Hybrid Routing
+│    ├── Errors spread, nonlinear patterns
+│    │   → Track B: GBT (nonlinear boundaries)
+│    │
+│    ├── Errors mostly wrong-contract (suit vs high/low)
+│    │   → New direction (contract selection mechanism)
+│    │
+│    └── Single-rollout noise dominates
+│        → Repeated-rollout subset before any treatment
 │
-├─── Fallback: Hybrid Routing (available at any point)
-│    Use AV v1 for high/low, R0 for suit
-│    Expected pooled delta: high/low gains with no suit penalty
-│    Delivers promotion but does not advance suit understanding
-│    Trigger: promotion pressure is urgent AND no architectural fix found
+├─── Track A: Two-Stage Model (primary, if Step 0 supports H12)
+│    Method: P(make) × E[pts|make] + P(set) × E[pts|set]
+│    Implementation: minimal suit-only prototype, no shared infra
+│    Most interpretable, directly tests H12
+│
+│    ├── SUCCEEDS (suit delta > -0.092, improvement > 0.05)
+│    │   → Extend to all contracts
+│    │   → Proper bidder class + registration
+│    │   → FULL evaluation → promotion gate
+│    │
+│    └── FAILS
+│        → H12 decomposition is not sufficient
+│        → Track B
+│
+├─── Track B: Gradient Boosted Trees (fallback)
+│    Method: sklearn GBT regressor, per-contract
+│    Still learns conditional mean (does NOT handle bimodality natively)
+│    Tests nonlinear feature boundaries, not regime decomposition
+│
+│    ├── SUCCEEDS
+│    │   → FULL evaluation → promotion gate
+│    │
+│    └── FAILS
+│        → Rules out these model families on this data/label setup
+│        → Does NOT prove a fundamental prediction→decision limit
+│        → Reassess: Track C, hybrid routing, richer data (R1.5.4)
+│
+├─── Track C: Pairwise Policy Optimization (deferred)
+│    Worst for understanding: changes learning objective, amplifies
+│    single-rollout noise, failures hard to interpret
+│    Activated only after interpretable prediction-side fixes exhausted
+│
+├─── Hybrid Routing (benchmark, not mainline fix)
+│    AV v1 for high/low, R0 for suit
+│    Upper bound on achievable delta without suit fix
+│    Fallback if research stalls AND promotion pressure urgent
 │
 └─── Rung Ladder (future)
      R1.5.4 (partner-context) — richer partner signal for suit
@@ -80,26 +110,41 @@ R1.5.2 diagnostics CONCLUDED
 
 | Phase | Trigger | Plan File | Estimated Effort |
 |-------|---------|-----------|-----------------|
-| **R1.5.3: Alternative Approaches** | Immediate (current) | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` | 6 PRs, ~1 day per track |
-| **Fallback: Hybrid Routing** | Promotion pressure + no fix | Not yet planned (straightforward) | 1 PR |
-| **R1.5.4: Partner Context** | R1.5.3 FAILS or deferred | Not yet planned | New sub-rung |
+| **Step 0: Suit Diagnostic** | Immediate | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` | 1 PR (analysis) |
+| **Track A: Two-Stage** | Step 0 supports H12 | Same plan | 1-2 PRs (prototype → extension) |
+| **Track B: GBT** | Track A fails | Same plan | 1 PR (prototype) |
+| **Track C: Pairwise** | A and B fail | Same plan | 1 PR (deferred) |
+| **FULL Evaluation** | Any track succeeds | Same plan | 1 PR |
+| **Hybrid Routing** | Promotion pressure + no fix | Not yet planned | 1 PR |
+| **R1.5.4: Partner Context** | R1.5.3 exhausted | Not yet planned | New sub-rung |
 
 ## Key Principles
 
-1. **Narrow before broad.** Track A tests the single leading hypothesis
-   (H12) with minimal change surface (suit head only). Tracks B and C
-   broaden to alternative architectures if Track A is inconclusive.
+1. **Diagnose before treating.** Step 0 builds decision-level understanding
+   before any model architecture work. This prevents building the wrong fix
+   (the mistake that caused R1's regression).
 
-2. **Pre-registered outcomes.** Each track has explicit success/failure
-   definitions. No post-hoc reinterpretation.
+2. **One track at a time.** Sequential prototyping, not parallel
+   infrastructure. Each track's existence depends on the previous one's
+   outcome. Infrastructure is built only for the winning approach.
 
-3. **Causal cleanliness over promotion speed.** A clean negative result
-   (H12 refuted) is more valuable than a messy positive result (hybrid
-   routing promotes but doesn't explain).
+3. **H12 is a working hypothesis, not a proven cause.** The plan is
+   structured to test H12 cleanly (Track A) while preserving alternatives
+   if it's wrong. Language should say "leading mechanism" or "working
+   hypothesis," not "conclusively identified root cause."
 
-4. **Fallback always available.** Hybrid routing can deliver promotion
-   at any point if the research direction stalls and the pragmatic need
-   becomes urgent.
+4. **Interpretable fixes first.** Track A (two-stage decomposition) and
+   Track B (GBT) are interpretable — if they work, we learn something
+   about the mechanism. Track C (policy optimization) is deferred because
+   it changes the learning objective, making failures hard to diagnose.
+
+5. **Failure is not proof of impossibility.** If Tracks A and B both fail,
+   that rules out those model families on this data and label setup. It
+   does not prove a fundamental prediction→decision limit.
+
+6. **Hybrid routing is a benchmark, not a goal.** It measures the
+   achievable delta if suit were perfectly fixed. It remains available as
+   a pragmatic fallback but is not a research success criterion.
 
 ## Archived Plans
 

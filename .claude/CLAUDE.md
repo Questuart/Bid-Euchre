@@ -25,3 +25,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - Branch protection requires the `tests` check, creating a deadlock
 - Workaround: include a `.claude/` file change to trigger CI
 # trigger CI: fix-archive-overreach
+# trigger CI
