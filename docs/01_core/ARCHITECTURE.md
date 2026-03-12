@@ -228,6 +228,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/train_action_value.py` | Action-value OLS training pipeline (R1.5) |
 | `scripts/internal/train_unified_model.py` | Unified cross-contract OLS training (Track F OneModel) |
 | `scripts/internal/update_arc_registry.py` | Arc D registry updater (MODEL_ARC_RUNS.md) |
+| `scripts/internal/validate_action_value_artifact.py` | Behavioral validation gate for action-value artifacts |
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |
 
 ### Research tooling (canonical path)

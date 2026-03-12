@@ -1517,6 +1517,96 @@ def predict_ols(model_dict: dict, features: np.ndarray) -> float:
     return float(np.dot(coefficients, features) + intercept)
 
 
+# ── Load-time behavioral sanity checks ───────────────────
+
+# These are lightweight checks (~1ms) that catch catastrophically broken
+# artifacts at load time. They use a single synthetic observation and verify
+# that bid-10 is NOT the argmax for every contract family. A pathological
+# artifact (R²=0.18, "always bids 10") fails this immediately.
+#
+# Full behavioral validation (multi-hand, statistics) is in
+# scripts/internal/validate_action_value_artifact.py.
+
+_SANITY_CHECK_HAND = [
+    Card(rank="T", suit="C"),
+    Card(rank="T", suit="D"),
+    Card(rank="T", suit="H"),
+    Card(rank="T", suit="S"),
+    Card(rank="J", suit="C"),
+    Card(rank="Q", suit="D"),
+    Card(rank="Q", suit="H"),
+    Card(rank="Q", suit="S"),
+    Card(rank="K", suit="C"),
+    Card(rank="J", suit="S"),
+]
+
+_SANITY_CHECK_OBS = BiddingObservation(
+    hand=_SANITY_CHECK_HAND,
+    seat=1,
+    dealer_seat=0,
+    current_high_bid=0,
+    allowed_contracts=("C", "D", "H", "S", "HIGH", "LOW"),
+    auction_transcript=(),
+)
+
+
+def _check_ols_predictions_sane(models: dict[str, dict], pass_model: dict) -> None:
+    """Quick sanity check that OLS predictions aren't degenerate.
+
+    Checks that bid-10 is NOT predicted as optimal for every suit on a
+    weak synthetic hand. A valid model should not predict bid-10 as best
+    for a hand with no bowers and weak trump.
+
+    Raises ValueError if the check fails.
+    """
+    bid_10_best_count = 0
+
+    for family in ("suit", "high", "low"):
+        trump = "H" if family == "suit" else None
+        state = extract_state_features(_SANITY_CHECK_OBS, family, trump)
+        # Compare bid-10 value vs bid-1 value
+        feats_10 = np.concatenate([state, extract_action_features(10)])
+        feats_1 = np.concatenate([state, extract_action_features(1)])
+        val_10 = predict_ols(models[family], feats_10)
+        val_1 = predict_ols(models[family], feats_1)
+        if val_10 > val_1:
+            bid_10_best_count += 1
+
+    if bid_10_best_count == 3:
+        raise ValueError(
+            "Behavioral sanity check FAILED: bid-10 is predicted as better than "
+            "bid-1 for ALL contract families on a weak hand. This indicates a "
+            "pathological artifact (e.g., wrong target, stale model with low R²). "
+            "Use skip_behavioral_check=True to bypass this check for testing."
+        )
+
+
+def _check_gbt_predictions_sane(gbt_models: dict[str, object]) -> None:
+    """Quick sanity check that GBT predictions aren't degenerate.
+
+    Same logic as _check_ols_predictions_sane but for GBT models.
+    """
+    bid_10_best_count = 0
+
+    for family in ("suit", "high", "low"):
+        trump = "H" if family == "suit" else None
+        state = extract_state_features(_SANITY_CHECK_OBS, family, trump)
+        feats_10 = np.concatenate([state, extract_action_features(10)])
+        feats_1 = np.concatenate([state, extract_action_features(1)])
+        val_10 = float(gbt_models[family].predict(feats_10.reshape(1, -1))[0])
+        val_1 = float(gbt_models[family].predict(feats_1.reshape(1, -1))[0])
+        if val_10 > val_1:
+            bid_10_best_count += 1
+
+    if bid_10_best_count == 3:
+        raise ValueError(
+            "Behavioral sanity check FAILED: bid-10 is predicted as better than "
+            "bid-1 for ALL contract families on a weak hand. This indicates a "
+            "pathological artifact. "
+            "Use skip_behavioral_check=True to bypass this check for testing."
+        )
+
+
 class ActionValueBidder(BiddingPolicy):
     """Action-value bidder: selects the legal action with highest
     predicted E[net_points].
@@ -1527,7 +1617,12 @@ class ActionValueBidder(BiddingPolicy):
     Artifact schema: action_value_olsa_v1
     """
 
-    def __init__(self, artifact_path: str, name: str = "action_value"):
+    def __init__(
+        self,
+        artifact_path: str,
+        name: str = "action_value",
+        skip_behavioral_check: bool = False,
+    ):
         super().__init__(name=name)
 
         with open(artifact_path) as f:
@@ -1587,6 +1682,9 @@ class ActionValueBidder(BiddingPolicy):
                 f"got {len(self.pass_model['feature_names'])} features."
             )
 
+        if not skip_behavioral_check:
+            _check_ols_predictions_sane(self.models, self.pass_model)
+
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
         legal = enumerate_legal_actions(obs)
@@ -1630,7 +1728,12 @@ class GBTActionValueBidder(BiddingPolicy):
     Artifact schema: action_value_gbt_v1
     """
 
-    def __init__(self, artifact_path: str, name: str = "gbt_action_value"):
+    def __init__(
+        self,
+        artifact_path: str,
+        name: str = "gbt_action_value",
+        skip_behavioral_check: bool = False,
+    ):
         super().__init__(name=name)
 
         import joblib
@@ -1690,6 +1793,9 @@ class GBTActionValueBidder(BiddingPolicy):
                 f"Expected {len(expected_pass_features)} state features, "
                 f"got {len(models_meta['pass']['feature_names'])} features."
             )
+
+        if not skip_behavioral_check:
+            _check_gbt_predictions_sane(self.gbt_models)
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
