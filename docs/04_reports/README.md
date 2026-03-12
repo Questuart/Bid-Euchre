@@ -47,6 +47,7 @@ docs/04_reports/
     00_step0_foundations.md        (implementation history: Step 0)
     00_step1_dataset_generator.md  (implementation history: Step 1)
     00_step2_training_pipeline.md  (implementation history: Step 2)
+    08_gbt_prototype_evaluation.md (R1.5.3 Track B: GBT prototype evaluation)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -95,6 +96,7 @@ Use `--snapshot` flag with dashboard script to update the committed snapshot.
 | [r1_5/00_step0_foundations.md](r1_5/00_step0_foundations.md) | 2026-03-07 | Implementation history: ActionValueBidder infrastructure |
 | [r1_5/00_step1_dataset_generator.md](r1_5/00_step1_dataset_generator.md) | 2026-03-07 | Implementation history: counterfactual dataset generator, Gate X1 |
 | [r1_5/00_step2_training_pipeline.md](r1_5/00_step2_training_pipeline.md) | 2026-03-08 | Implementation history: training pipeline, Gate X2 |
+| [r1_5/08_gbt_prototype_evaluation.md](r1_5/08_gbt_prototype_evaluation.md) | 2026-03-11 | R1.5.3 Track B: GBT prototype — +1.1 net_eppd, suit regression resolved, PROTOTYPE VALIDATED |
 
 ### Phase 0: Bidless
 
