@@ -4,11 +4,14 @@ Experiment Configuration System
 This module provides classes and functions for configuring and managing experiments.
 """
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 from ..strategy import (
     ActionValueBidder,
@@ -75,6 +78,26 @@ BIDDING_REQUIRED_PARAMS: dict[str, list[str]] = {
 }
 
 
+def _log_artifact_provenance(bidder_name: str, artifact_path: str) -> None:
+    """Log artifact provenance and warn if not frozen.
+
+    Called at bidding policy creation time for artifact-backed bidders.
+    Does not block — unfrozen artifacts are valid during development.
+    """
+    from ..models.freeze import verify_frozen
+
+    frozen = verify_frozen(artifact_path)
+    if frozen:
+        logger.info("Artifact for %s is frozen: %s", bidder_name, artifact_path)
+    else:
+        logger.warning(
+            "Artifact for %s is NOT frozen: %s (OK for development, "
+            "not for promotion)",
+            bidder_name,
+            artifact_path,
+        )
+
+
 @dataclass
 class StrategyConfig:
     """Configuration for a single strategy."""
@@ -106,7 +129,11 @@ class BiddingPolicyConfig:
     params: Dict[str, Any] = field(default_factory=dict)
 
     def create_bidding_policy(self) -> BiddingPolicy:
-        """Create a bidding policy instance from this configuration."""
+        """Create a bidding policy instance from this configuration.
+
+        For artifact-backed bidders (those requiring ``artifact_path``),
+        logs artifact provenance and warns if the artifact is not frozen.
+        """
         cls = BIDDING_POLICY_REGISTRY.get(self.class_name)
         if cls is None:
             raise ValueError(
@@ -116,6 +143,12 @@ class BiddingPolicyConfig:
         for param in BIDDING_REQUIRED_PARAMS.get(self.class_name, []):
             if not self.params.get(param):
                 raise ValueError(f"{self.class_name} requires '{param}' parameter")
+
+        # Log artifact provenance for artifact-backed bidders
+        artifact_path = self.params.get("artifact_path")
+        if artifact_path is not None:
+            _log_artifact_provenance(self.name, artifact_path)
+
         return cls(name=self.name, **self.params)
 
 

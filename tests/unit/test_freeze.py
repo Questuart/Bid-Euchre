@@ -6,6 +6,7 @@ import pytest
 
 from bid_euchre.models.freeze import (
     content_hash,
+    extract_artifact_provenance,
     freeze_artifact,
     freeze_with_provenance,
     require_frozen,
@@ -226,3 +227,70 @@ class TestFreezeWithProvenance:
     def test_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             freeze_with_provenance(tmp_path / "nope.json", {})
+
+
+class TestExtractArtifactProvenance:
+    def test_extracts_from_frozen_artifact(self, tmp_path):
+        path = tmp_path / "artifact.json"
+        data = {
+            "schema_version": "action_value_olsa_v1",
+            "target": "net_points",
+            "models": {
+                "suit": {"r_squared": 0.557},
+                "high": {"r_squared": 0.533},
+                "low": {"r_squared": 0.514},
+                "pass": {"r_squared": 0.046},
+            },
+            "metadata": {
+                "model_class": "ols",
+                "training_seed": 42,
+                "dataset_sha256": "abc123def456ghi789",
+                "continuation_artifact_sha256": "xyz789abc012def345",
+            },
+        }
+        path.write_text(json.dumps(data, indent=2))
+        freeze_artifact(path)
+
+        prov = extract_artifact_provenance(path)
+        assert prov["frozen"] is True
+        assert prov["schema_version"] == "action_value_olsa_v1"
+        assert prov["target"] == "net_points"
+        assert prov["model_class"] == "ols"
+        assert prov["training_seed"] == 42
+        assert prov["artifact_sha256"] is not None
+        assert len(prov["artifact_sha256"]) == 12
+        assert prov["dataset_sha256"] == "abc123def456"
+        assert prov["continuation_artifact_sha256"] == "xyz789abc012"
+        assert prov["r_squared"]["suit"] == 0.557
+
+    def test_extracts_from_unfrozen_artifact(self, tmp_path):
+        path = tmp_path / "artifact.json"
+        data = {
+            "schema_version": "action_value_gbt_v1",
+            "target": "net_points",
+            "models": {"suit": {"r_squared": 0.6}},
+            "metadata": {"model_class": "gbt", "training_seed": 99},
+        }
+        path.write_text(json.dumps(data))
+        prov = extract_artifact_provenance(path)
+        assert prov["frozen"] is False
+        assert prov["model_class"] == "gbt"
+        assert "artifact_sha256" not in prov
+
+    def test_handles_nonexistent_file(self, tmp_path):
+        prov = extract_artifact_provenance(tmp_path / "nope.json")
+        assert prov["frozen"] is False
+        assert "error" in prov
+
+    def test_handles_missing_metadata(self, tmp_path):
+        path = tmp_path / "minimal.json"
+        path.write_text(json.dumps({"schema_version": 1}))
+        prov = extract_artifact_provenance(path)
+        assert prov["model_class"] is None
+        assert prov["training_seed"] is None
+
+    def test_handles_corrupt_json(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text("not json")
+        prov = extract_artifact_provenance(path)
+        assert "error" in prov
