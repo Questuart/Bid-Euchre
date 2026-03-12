@@ -291,4 +291,19 @@ Add a report provenance template section to experiment reports:
 
 ## Outcome
 
-_To be filled after implementation._
+**Status:** IMPLEMENTED — 3 PRs created, review loops running.
+
+| PR | Branch | Title | Acceptance Criteria |
+|----|--------|-------|---------------------|
+| #617 | `artifact-governance` | Behavioral validation gate | AC 1, 2, 5 |
+| #619 | `artifact-provenance` | Provenance metadata & freeze-with-provenance | AC 3 |
+| #620 | `artifact-verification` | Experiment-time & report-time verification | AC 4 |
+
+**Merge order:** #617 → #619 → #620 (bottom-up stack).
+
+**Test coverage:**
+- `test_validate_action_value_artifact.py` — 20 tests (structural, R² floors, behavioral gates, negative controls)
+- `test_freeze.py` — 34 tests (freeze, verify, content hash, provenance, sha256_file, freeze_with_provenance, extract_provenance)
+- `test_train_action_value.py` — 7 new tests (provenance hashes, model_class, GBT provenance)
+
+All three PRs pass `make check-quiet`.
