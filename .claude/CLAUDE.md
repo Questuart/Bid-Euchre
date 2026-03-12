@@ -26,3 +26,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - Workaround: include a `.claude/` file change to trigger CI
 # trigger CI: fix-archive-overreach
 # trigger CI
+# trigger CI: play-policy-sanity-check

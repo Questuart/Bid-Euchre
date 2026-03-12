@@ -1,6 +1,6 @@
 # R1.5 Forward Decision Tree
 
-**Date:** 2026-03-11 (revised)
+**Date:** 2026-03-12 (revised)
 **Arc:** D — OLSa-Hybrid Bidder
 **Status:** ACTIVE — governs post-R1.5.2 research direction
 **Prerequisite:** [Post-R1 Retrospective](docs/04_reports/r1_5/post_r1_retro.md)
@@ -12,22 +12,31 @@
 |------|-------|--------|
 | R1.5 | Objective-alignment (AV v1 pipeline) | ADVANCED |
 | R1.5.2 | Diagnostics (ablation, interaction terms, calibration) | CONCLUDED |
-| R1.5.3 | Decision-level diagnostic + alternative model approaches | NEXT |
+| R1.5.3 | Decision-level diagnostic + alternative model approaches | ACTIVE (Step 0 complete) |
 | R1.5.4 | Partner context improvements | Deferred |
 | R2 | Opponent context | Future |
 
 ## Current State
 
-R1.5.2 diagnostics are **CONCLUDED**. All prediction-level hypotheses
-have been eliminated. The suit regression (-0.142 net_eppd) is the sole
-promotion blocker. The **leading working hypothesis** is H12: OLS predicts
-the mean of a bimodal make/set target, producing suboptimal bid decisions
-for suit contracts.
+R1.5.3 **Step 0 is COMPLETE** (PR #610). The decision-level suit diagnostic
+decomposed the -0.142 suit deficit into error types and determined the gate
+decision: **Track B (GBT) or further investigation**.
 
-H12 has strong correlational evidence (bimodality BIC=4,081, OLS predicts
-between modes, suit has best R^2 but worst gameplay delta) but **no
-decision-level proof**. The mechanism by which between-mode predictions
-translate into bad bids has not been tested.
+**Step 0 key findings:**
+- Boundary errors = 28.5% of deficit (< 60% Track A threshold)
+- Clear-set region dominates at 43.0% of absolute residual
+- Wrong contract: 26.5% of suit hands would be better as high/low
+- H13 answered: bid-level optimization irrelevant (2.3% improvable)
+- AV v1 suit made rate 96.5% vs R0 98.0% (nearly identical bidding frequency)
+
+**Gate decision:** Errors spread across calibration range, not concentrated
+at boundary. Track A (two-stage) is NOT the primary fix. Track B (GBT) or
+alternative nonlinear approach is recommended.
+
+**Play-policy sanity check: PASS.** Glutton significantly outperforms Greedy
+across all seeds, directions, and scenarios (mean +0.20 tricks, p<0.0001).
+Suit scenarios show the strongest Glutton advantage (+0.23 to +0.31), ruling
+out Glutton as a suit-specific confounder. Labels are adequate for Track B.
 
 **Key numbers:**
 - AV v1 pooled delta vs R0: **+0.152** net_eppd, CI [+0.124, +0.180]
@@ -40,34 +49,23 @@ translate into bad bids has not been tested.
 ```
 R1.5.2 diagnostics CONCLUDED
 │
-├─── Step 0: Decision-Level Suit Diagnostic
-│    Plan: plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md
-│    Data: existing FULL H2H logs (50K deals) + counterfactual dataset
-│    No new models — pure analysis
+├─── Step 0: Decision-Level Suit Diagnostic ✓ COMPLETE (PR #610)
+│    Gate decision: Track B — errors spread across calibration range
+│    Boundary = 28.5% (<60%), clear-set = 43.0%, wrong-contract = 26.5%
+│    H13 answered: bid-level headroom irrelevant (2.3%)
 │
-│    Analyses:
-│    ├── Error taxonomy: over-bid, wrong contract, wrong level, under-bid
-│    ├── AV v1 vs R0 disagreement states (which side wins?)
-│    ├── Make/set boundary concentration (where do errors cluster?)
-│    ├── H13: bid-level headroom (does always-bid-4 leave value?)
-│    └── Optional: repeated-rollout subset for noisy disagreement states
+├─── Step 0.5: Play-Policy Sanity Check ✓ PASS
+│    play_policy_gate.py: Glutton vs Greedy, 3 seeds × 20K hands
+│    Result: PASS all 6 directions (mean adv +0.19 to +0.21, all p<0.0001)
+│    Suit scenarios: strongest Glutton advantage (+0.23 to +0.31)
+│    Conclusion: Glutton labels are adequate. Proceed to Track B.
 │
-│    ├── Errors at make/set boundary (>60% of deficit)
-│    │   → Track A: Two-Stage Model (suit-only prototype)
-│    │
-│    ├── Errors spread, nonlinear patterns
-│    │   → Track B: GBT (nonlinear boundaries)
-│    │
-│    ├── Errors mostly wrong-contract (suit vs high/low)
-│    │   → New direction (contract selection mechanism)
-│    │
-│    └── Single-rollout noise dominates
-│        → Repeated-rollout subset before any treatment
-│
-├─── Track A: Two-Stage Model (primary, if Step 0 supports H12)
+├─── Track A: Two-Stage Model (deprioritized by Step 0 gate)
 │    Method: P(make) × E[pts|make] + P(set) × E[pts|set]
 │    Implementation: minimal suit-only prototype, no shared infra
 │    Most interpretable, directly tests H12
+│    Step 0 showed boundary errors = only 28.5% — Track A addresses the
+│    wrong failure mode. Preserved as fallback if Track B fails.
 │
 │    ├── SUCCEEDS (suit delta > -0.092, improvement > 0.05)
 │    │   → Extend to all contracts
@@ -78,7 +76,7 @@ R1.5.2 diagnostics CONCLUDED
 │        → H12 decomposition is not sufficient
 │        → Track B
 │
-├─── Track B: Gradient Boosted Trees (fallback)
+├─── Track B: Gradient Boosted Trees (primary — promoted by Step 0 gate)
 │    Method: sklearn GBT regressor, per-contract
 │    Still learns conditional mean (does NOT handle bimodality natively)
 │    Tests nonlinear feature boundaries, not regime decomposition
@@ -108,12 +106,13 @@ R1.5.2 diagnostics CONCLUDED
 
 ## Phase Sequencing
 
-| Phase | Trigger | Plan File | Estimated Effort |
-|-------|---------|-----------|-----------------|
-| **Step 0: Suit Diagnostic** | Immediate | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` | 1 PR (analysis) |
-| **Track A: Two-Stage** | Step 0 supports H12 | Same plan | 1-2 PRs (prototype → extension) |
-| **Track B: GBT** | Track A fails | Same plan | 1 PR (prototype) |
-| **Track C: Pairwise** | A and B fail | Same plan | 1 PR (deferred) |
+| Phase | Trigger | Plan File | Status |
+|-------|---------|-----------|--------|
+| **Step 0: Suit Diagnostic** | Immediate | `plans/sessions/2026-03-12_r1-5-3-step0-suit-diagnostic.md` | COMPLETE (PR #610) |
+| **Step 0.5: Play-Policy Check** | Step 0 complete | Same plan (below) | PASS |
+| **Track B: GBT** | Step 0 gate + Step 0.5 PASS | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` | NEXT |
+| **Track A: Two-Stage** | Track B fails (fallback) | Same plan | Deprioritized |
+| **Track C: Pairwise** | A and B fail | Same plan | Deferred |
 | **FULL Evaluation** | Any track succeeds | Same plan | 1 PR |
 | **Hybrid Routing** | Promotion pressure + no fix | Not yet planned | 1 PR |
 | **R1.5.4: Partner Context** | R1.5.3 exhausted | Not yet planned | New sub-rung |
@@ -170,4 +169,4 @@ The following plans governed earlier phases and are preserved in
 |------|-------|
 | gate_status | N/A — decision tree, not a gate artifact |
 | Governing retrospective | `docs/04_reports/r1_5/post_r1_retro.md` |
-| analysis_base_sha | f74ff62 |
+| analysis_base_sha | 4a2b5b5 |
