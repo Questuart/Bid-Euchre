@@ -19,6 +19,7 @@ from ..strategy import (
     BasicStrategy,
     BiddingPolicy,
     FixedBidder,
+    GBTActionValueBidder,
     GluttonIsolatedStrategy,
     GluttonStrategy,
     GreedyStrategy,
@@ -57,6 +58,7 @@ BIDDING_POLICY_REGISTRY: dict[str, type] = {
     "OLSaBidder": OLSaBidder,
     "HybridOLSaBidder": HybridOLSaBidder,
     "ActionValueBidder": ActionValueBidder,
+    "GBTActionValueBidder": GBTActionValueBidder,
 }
 
 STRATEGY_REQUIRED_PARAMS: dict[str, list[str]] = {
@@ -69,6 +71,7 @@ BIDDING_REQUIRED_PARAMS: dict[str, list[str]] = {
     "OLSaBidder": ["artifact_path"],
     "HybridOLSaBidder": ["artifact_path"],
     "ActionValueBidder": ["artifact_path"],
+    "GBTActionValueBidder": ["artifact_path"],
 }
 
 
