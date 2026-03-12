@@ -76,6 +76,9 @@ def get_pr_head_sha(pr_number: int) -> str:
 def get_ci_status(pr_number: int) -> str:
     """Get the CI status of a PR.
 
+    Excludes the ``reviewing-changes`` commit status to avoid circular
+    dependency (the review loop publishes that status itself).
+
     Returns:
         "success", "failure", "pending", or "unknown"
     """
@@ -86,7 +89,7 @@ def get_ci_status(pr_number: int) -> str:
             "checks",
             str(pr_number),
             "--json",
-            "name,state,conclusion",
+            "name,state",
         ],
         capture_output=True,
         text=True,
@@ -95,17 +98,12 @@ def get_ci_status(pr_number: int) -> str:
         return "unknown"
 
     checks = json.loads(result.stdout)
+    # Filter out the review loop's own status to avoid circular dependency
+    checks = [c for c in checks if c.get("name") != "reviewing-changes"]
     if not checks:
         return "pending"
 
-    states = []
-    for check in checks:
-        conclusion = check.get("conclusion", "")
-        state = check.get("state", "")
-        if state == "COMPLETED":
-            states.append(conclusion)
-        else:
-            states.append("PENDING")
+    states = [c.get("state", "PENDING") for c in checks]
 
     if any(s == "FAILURE" for s in states):
         return "failure"
