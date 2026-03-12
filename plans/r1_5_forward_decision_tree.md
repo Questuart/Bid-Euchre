@@ -38,6 +38,11 @@ across all seeds, directions, and scenarios (mean +0.20 tricks, p<0.0001).
 Suit scenarios show the strongest Glutton advantage (+0.23 to +0.31), ruling
 out Glutton as a suit-specific confounder. Labels are adequate for Track B.
 
+**E1 confound audit: STABLE.** Bidder rankings identical under both play
+policies (Spearman ρ=1.0, 4 bidders, seed 42, n=2000). Deltas are mixed-sign
+— Glutton does not uniformly inflate bidder performance. Confound is cosmetic;
+no label retraining needed before Track B.
+
 **Key numbers:**
 - AV v1 pooled delta vs R0: **+0.152** net_eppd, CI [+0.124, +0.180]
 - Suit deficit: **-0.142**, CI [-0.180, -0.105]
@@ -59,6 +64,12 @@ R1.5.2 diagnostics CONCLUDED
 │    Result: PASS all 6 directions (mean adv +0.19 to +0.21, all p<0.0001)
 │    Suit scenarios: strongest Glutton advantage (+0.23 to +0.31)
 │    Conclusion: Glutton labels are adequate. Proceed to Track B.
+│
+├─── Step 0.5b: E1 Play-Policy Confound Audit ✓ STABLE
+│    Deconfounding question: do bidder rankings change under Greedy play?
+│    Smoke: Spearman ρ=1.0 on 4 bidders, zero ranking inversions
+│    Deltas mixed-sign (Glutton doesn't uniformly inflate)
+│    Conclusion: Confound is cosmetic. No label retraining needed.
 │
 ├─── Track A: Two-Stage Model (deprioritized by Step 0 gate)
 │    Method: P(make) × E[pts|make] + P(set) × E[pts|set]
@@ -110,7 +121,8 @@ R1.5.2 diagnostics CONCLUDED
 |-------|---------|-----------|--------|
 | **Step 0: Suit Diagnostic** | Immediate | `plans/sessions/2026-03-12_r1-5-3-step0-suit-diagnostic.md` | COMPLETE (PR #610) |
 | **Step 0.5: Play-Policy Check** | Step 0 complete | Same plan (below) | PASS |
-| **Track B: GBT** | Step 0 gate + Step 0.5 PASS | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` | NEXT |
+| **Step 0.5b: E1 Confound Audit** | Step 0.5 PASS | `plans/sessions/2026-03-12_e1-play-policy-confound-audit.md` | STABLE |
+| **Track B: GBT** | Step 0 gate + Step 0.5 PASS + Step 0.5b STABLE | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` | NEXT |
 | **Track A: Two-Stage** | Track B fails (fallback) | Same plan | Deprioritized |
 | **Track C: Pairwise** | A and B fail | Same plan | Deferred |
 | **FULL Evaluation** | Any track succeeds | Same plan | 1 PR |

@@ -79,6 +79,7 @@ Shell scripts:
 - `calibrate_arc_d_thresholds.py` — Arc D gate threshold calibration from H2H null signal
 - `run_arc_d_gate.py` — Arc D promotion gate runner
 - `run_arc_d_h2h_battery.py` — H2H all-vs-all battery runner (competitive validation)
+- `run_play_confound_audit.py` — E1 play-policy confound audit (ranking comparison)
 - `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_lambda_sweep.py` — Simulation-based risk_lambda tuning sweep
 - `run_normalizer_offline_screen.py` — Normalizer go/no-go offline screening pipeline
@@ -220,6 +221,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/calibrate_arc_d_thresholds.py` | Arc D gate threshold calibration from H2H null signal |
 | `scripts/internal/run_arc_d_gate.py` | Arc D promotion gate runner |
 | `scripts/internal/run_arc_d_h2h_battery.py` | H2H all-vs-all battery runner (competitive validation) |
+| `scripts/internal/run_play_confound_audit.py` | E1 play-policy confound audit (ranking comparison) |
 | `scripts/internal/run_auction_comparator.py` | Auction comparator orchestrator |
 | `scripts/internal/run_lambda_sweep.py` | Simulation-based risk_lambda tuning sweep |
 | `scripts/internal/run_normalizer_offline_screen.py` | Normalizer go/no-go offline screening pipeline |

@@ -33,6 +33,7 @@ _compute_team_points = _battery_mod._compute_team_points
 _bootstrap_ci = _battery_mod._bootstrap_ci
 DEFAULT_ROSTER = _battery_mod.DEFAULT_ROSTER
 KEY_BIDDERS = _battery_mod.KEY_BIDDERS
+PLAY_STRATEGY_MAP = _battery_mod.PLAY_STRATEGY_MAP
 
 
 # ---------------------------------------------------------------------------
@@ -722,3 +723,66 @@ class TestParseRunResults:
         # 5% of 20 = 1 value, ceil(1.0)=1. Bottom 1 delta is -20.
         # delta for the set hand: t0_pts=-10, t1_pts=10, delta=-10-10=-20
         assert cell["cvar_5"] == -20.0
+
+
+# ---------------------------------------------------------------------------
+# Tests: play_strategy parameterization
+# ---------------------------------------------------------------------------
+
+
+class TestPlayStrategyParam:
+    """Tests for --play-strategy and --roster-names CLI features."""
+
+    def test_play_strategy_map_contains_defaults(self):
+        """PLAY_STRATEGY_MAP has glutton and greedy."""
+        assert "glutton" in PLAY_STRATEGY_MAP
+        assert "greedy" in PLAY_STRATEGY_MAP
+        assert PLAY_STRATEGY_MAP["glutton"] == "GluttonStrategy"
+        assert PLAY_STRATEGY_MAP["greedy"] == "GreedyStrategy"
+
+    def test_generate_matchups_default_glutton(self):
+        """Default play_strategy_name is glutton (backward compat)."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        for m in matchups:
+            assert m["team0"] == "glutton"
+            assert m["team1"] == "glutton"
+
+    def test_generate_matchups_greedy(self):
+        """play_strategy_name='greedy' propagates to team0/team1."""
+        matchups = generate_matchups(_SMALL_ROSTER, play_strategy_name="greedy")
+        for m in matchups:
+            assert m["team0"] == "greedy"
+            assert m["team1"] == "greedy"
+
+    def test_generate_matchups_count_unchanged_by_strategy(self):
+        """Matchup count is independent of play strategy."""
+        m_glutton = generate_matchups(_SMALL_ROSTER, play_strategy_name="glutton")
+        m_greedy = generate_matchups(_SMALL_ROSTER, play_strategy_name="greedy")
+        assert len(m_glutton) == len(m_greedy) == 9
+
+    def test_generate_h2h_config_greedy_strategy(self):
+        """Config strategies section uses greedy when requested."""
+        matchups = generate_matchups(_SMALL_ROSTER, play_strategy_name="greedy")
+        config = generate_h2h_config(
+            _SMALL_ROSTER, matchups, seed=42, n_per=100, play_strategy_name="greedy"
+        )
+        assert len(config["strategies"]) == 1
+        assert config["strategies"][0]["name"] == "greedy"
+        assert config["strategies"][0]["class_name"] == "GreedyStrategy"
+
+    def test_generate_h2h_config_default_glutton(self):
+        """Config defaults to GluttonStrategy (backward compat)."""
+        matchups = generate_matchups(_SMALL_ROSTER)
+        config = generate_h2h_config(_SMALL_ROSTER, matchups, seed=42, n_per=100)
+        assert config["strategies"][0]["name"] == "glutton"
+        assert config["strategies"][0]["class_name"] == "GluttonStrategy"
+
+    def test_config_matchups_use_play_strategy(self):
+        """Matchup team0/team1 in config reflect the play strategy."""
+        matchups = generate_matchups(_SMALL_ROSTER, play_strategy_name="greedy")
+        config = generate_h2h_config(
+            _SMALL_ROSTER, matchups, seed=42, n_per=100, play_strategy_name="greedy"
+        )
+        for m in config["matchups"]:
+            assert m["team0"] == "greedy"
+            assert m["team1"] == "greedy"
