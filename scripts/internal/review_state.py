@@ -10,10 +10,13 @@ from __future__ import annotations
 import enum
 import hashlib
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("review_state")
 
 
 class ReviewState(str, enum.Enum):
@@ -81,6 +84,57 @@ TERMINAL_STATES = frozenset(
     s for s, targets in VALID_TRANSITIONS.items() if not targets
 )
 
+# Maps loop status labels to GitHub commit status API state values.
+# GitHub only supports 4 states: pending, success, failure, error.
+REVIEW_STATUS_MAP: dict[str, str] = {
+    "pending": "pending",  # Loop started
+    "in_progress": "pending",  # Mapped to pending for GitHub API
+    "fail": "failure",  # Blocking findings
+    "warn": "success",  # Non-blocking follow-ups only
+    "ready": "success",  # Clean pass
+}
+
+
+def review_status_to_github(status: str) -> str:
+    """Map a review loop status label to a GitHub commit status API state.
+
+    Args:
+        status: One of "pending", "in_progress", "fail", "warn", "ready".
+
+    Returns:
+        GitHub API state: "pending", "success", or "failure".
+    """
+    return REVIEW_STATUS_MAP.get(status, "pending")
+
+
+@dataclass
+class NormalizedFinding:
+    """Unified finding schema used by prechecks, Codex CLI, and follow-up issues.
+
+    Both ``deterministic_prechecks.Finding`` and ``codex_review_adapter.CodexFinding``
+    can be converted to this schema via their ``to_dict()`` methods.
+    """
+
+    severity: str  # "P0", "P1", "P2"
+    file: str  # relative path
+    line: int  # 1-indexed
+    category: str  # "correctness", "convention", "process", "test"
+    check_id: str | None  # "C1", "C2", "N1", etc.
+    message: str
+    source: str  # "deterministic_precheck", "codex_cli"
+    rationale: str | None = None  # Why this is flagged (for handoff clarity)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> NormalizedFinding:
+        """Create from a dict, ignoring unknown keys."""
+        # Map raw_source to source if present (for Finding/CodexFinding compat)
+        if "raw_source" in data and "source" not in data:
+            data = {**data, "source": data["raw_source"]}
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
 
 @dataclass
 class ReviewLoopState:
@@ -101,6 +155,10 @@ class ReviewLoopState:
     stop_reason: str | None = None
     codex_retry_count: int = 0
     ci_retry_count: int = 0
+    # SHA tracking for idempotency
+    initial_head_sha: str | None = None  # SHA when loop started
+    current_head_sha: str | None = None  # tracks pushes (auto-fix commits)
+    run_id: str | None = None  # unique ID: f"pr_{pr_number}_{head_sha[:7]}"
 
     @property
     def current_state(self) -> ReviewState:
@@ -166,13 +224,43 @@ def round_dir(pr_number: int, iteration: int, base: Path | None = None) -> Path:
     return state_dir(pr_number, base) / f"round_{iteration}"
 
 
-def load_state(pr_number: int, base: Path | None = None) -> ReviewLoopState | None:
-    """Load persisted state from disk. Returns None if no state file exists."""
+def load_state(
+    pr_number: int,
+    base: Path | None = None,
+    *,
+    head_sha: str | None = None,
+) -> ReviewLoopState | None:
+    """Load persisted state from disk.
+
+    Args:
+        pr_number: PR number to load state for.
+        base: Override for state persistence directory.
+        head_sha: If provided, check for stale state. Returns None if
+            the loaded state's initial_head_sha doesn't match and the
+            head_sha isn't a known auto-fix SHA (current_head_sha).
+
+    Returns:
+        ReviewLoopState if found and not stale, None otherwise.
+    """
     path = state_dir(pr_number, base) / "state.json"
     if not path.exists():
         return None
     with open(path) as f:
-        return ReviewLoopState.from_dict(json.load(f))
+        state = ReviewLoopState.from_dict(json.load(f))
+
+    # SHA-based idempotency check
+    if head_sha is not None and state.initial_head_sha is not None:
+        if head_sha != state.initial_head_sha and head_sha != state.current_head_sha:
+            logger.info(
+                "PR #%d: head SHA changed %s -> %s (current_head: %s) -- stale",
+                pr_number,
+                state.initial_head_sha[:7],
+                head_sha[:7],
+                (state.current_head_sha or "none")[:7],
+            )
+            return None
+
+    return state
 
 
 def save_state(loop_state: ReviewLoopState, base: Path | None = None) -> Path:

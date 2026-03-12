@@ -38,14 +38,28 @@ _CLI_ARG_ERROR_PATTERNS = [
     "usage: codex review",
 ]
 
-# Mode-specific review prompts (aligned with AGENTS.md guidance)
+# Mode-specific review prompts (aligned with AGENTS.md guidance).
+#
+# NOTE: Codex CLI currently ignores these prompts because --base and a
+# positional prompt argument are mutually exclusive (codex-cli v0.114.0+).
+# The prompt text is logged for diagnostics only. The CLI relies on
+# repo-level AGENTS.md for review guidance. This tightening takes effect
+# if/when Codex CLI adds --prompt flag support.
 _PROMPTS = {
     "standard": (
-        "Review for P0/P1 correctness regressions, syntax breakage, "
-        "merge markers, determinism violations, and import-boundary "
-        "violations. Ignore stylistic nits. "
-        "See AGENTS.md at the repo root for repo-specific check IDs "
-        "(C1, C2, X3, etc.)."
+        "Review for these specific issues, reporting each as [P0], [P1], or [P2] "
+        "with format: [severity] file:line -- message (check_id)\n\n"
+        "P0/P1 (blocking):\n"
+        "- C1: Unseeded random.Random() or global random.* calls\n"
+        "- C2: Falsy numeric guard (x = x or fallback where 0.0 is valid)\n"
+        "- X3: Merge markers, TODO-remove, large commented-out blocks\n"
+        "P2 (non-blocking):\n"
+        "- C3: Gate check ordering (most-restrictive first)\n"
+        "- C4: Functions >50 lines or nesting >4\n"
+        "- T1: Behavior change without test change\n"
+        "- X1: Changes span 3+ unrelated modules\n\n"
+        "If no issues found, respond with: 'No issues found.'\n"
+        "Do not include stylistic nits or formatting suggestions."
     ),
     "report-audit": (
         "Review for provenance errors, irreproducible published metrics, "
