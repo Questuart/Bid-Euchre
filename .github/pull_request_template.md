@@ -59,10 +59,10 @@
 - Override/adjudication rationale (if any):
 - Repro command:
 
-## Codex Review
-- [ ] Codex auto-review received (or N/A if not yet enabled)
-- [ ] Blocking Codex comments addressed
-- [ ] Non-blocking Codex findings captured as follow-up issues (if any)
+## Review Loop
+- [ ] Autonomous review loop completed (Codex CLI)
+- [ ] Blocking findings addressed
+- [ ] Non-blocking findings captured as follow-up issues (if any)
 
 ## Checklist
 - [ ] No generated artifacts committed (`data/runs`, `data/reports`)

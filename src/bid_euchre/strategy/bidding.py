@@ -9,6 +9,7 @@ import json
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -1611,6 +1612,111 @@ class ActionValueBidder(BiddingPolicy):
                 action_feats = extract_action_features(action.n)
                 features = np.concatenate([state, action_feats])
                 value = predict_ols(self.models[family], features)
+
+            if value > best_value:
+                best_value = value
+                best_action = action
+
+        return best_action
+
+
+class GBTActionValueBidder(BiddingPolicy):
+    """Action-value bidder using Gradient Boosted Tree regressors.
+
+    Uses per-contract GBT models (suit, high, low) plus a separate
+    pass model. Structurally identical to ActionValueBidder but uses
+    sklearn GBT predict() instead of OLS dot-product.
+
+    Artifact schema: action_value_gbt_v1
+    """
+
+    def __init__(self, artifact_path: str, name: str = "gbt_action_value"):
+        super().__init__(name=name)
+
+        import joblib
+
+        artifact_dir = Path(artifact_path).parent
+
+        with open(artifact_path) as f:
+            artifact = json.load(f)
+
+        schema = artifact.get("schema_version")
+        if schema != "action_value_gbt_v1":
+            raise ValueError(
+                f"Expected schema_version 'action_value_gbt_v1', got '{schema}'"
+            )
+
+        models_meta = artifact["models"]
+
+        # Load sklearn GBT model objects from .joblib files
+        self.gbt_models = {}
+        for family in ("suit", "high", "low"):
+            model_path = artifact_dir / models_meta[family]["model_file"]
+            self.gbt_models[family] = joblib.load(model_path)
+
+        self.pass_gbt = joblib.load(artifact_dir / models_meta["pass"]["model_file"])
+
+        # Detect interaction feature set from artifact metadata
+        feature_set = artifact.get("feature_set", "full")
+        self._has_interactions = feature_set == "interaction"
+
+        # Validate feature names match expected runtime order
+        if self._has_interactions:
+            expected_bid_features = (
+                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            )
+            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
+        else:
+            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            expected_pass_features = list(STATE_FEATURE_NAMES)
+
+        for family in ("suit", "high", "low"):
+            meta = models_meta[family]
+            if "feature_names" not in meta:
+                raise ValueError(
+                    f"Artifact {family} model missing required 'feature_names'"
+                )
+            if list(meta["feature_names"]) != expected_bid_features:
+                raise ValueError(
+                    f"Artifact {family} model feature_names mismatch. "
+                    f"Expected {len(expected_bid_features)} features, "
+                    f"got {len(meta['feature_names'])} features."
+                )
+        if "feature_names" not in models_meta["pass"]:
+            raise ValueError("Artifact pass model missing required 'feature_names'")
+        if list(models_meta["pass"]["feature_names"]) != expected_pass_features:
+            raise ValueError(
+                f"Artifact pass model feature_names mismatch. "
+                f"Expected {len(expected_pass_features)} state features, "
+                f"got {len(models_meta['pass']['feature_names'])} features."
+            )
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        """Select the legal action with highest predicted E[net_points]."""
+        legal = enumerate_legal_actions(obs)
+
+        best_value = float("-inf")
+        best_action = BidAction.pass_bid()
+
+        for action in legal:
+            if action.is_pass():
+                state = extract_state_features(obs, "none", None)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
+                value = float(self.pass_gbt.predict(state.reshape(1, -1))[0])
+            else:
+                contract_type, trump_suit = action.to_contract_tuple()
+                family = contract_type
+                state = extract_state_features(obs, family, trump_suit)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
+                action_feats = extract_action_features(action.n)
+                features = np.concatenate([state, action_feats])
+                value = float(
+                    self.gbt_models[family].predict(features.reshape(1, -1))[0]
+                )
 
             if value > best_value:
                 best_value = value

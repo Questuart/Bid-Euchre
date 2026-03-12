@@ -1,8 +1,10 @@
 """
-R1.5 action-value OLS training pipeline.
+R1.5 action-value training pipeline.
 
-Trains per-contract OLS models on counterfactual action-value data and
-produces action_value_olsa_v1 artifacts for ActionValueBidder.
+Trains per-contract models on counterfactual action-value data.
+Supports two model classes:
+  - OLS (default): produces action_value_olsa_v1 artifacts for ActionValueBidder
+  - GBT: produces action_value_gbt_v1 artifacts for GBTActionValueBidder
 
 Four models:
   suit:  target ~ state features + bid_n + bid_n_sq
@@ -13,6 +15,7 @@ Four models:
 Ablation parameters:
   --feature-set: "full" (52 state features) or "r0" (39 R0 hand features only)
   --target: "net_points" (default) or "tricks_won"
+  --model-class: "ols" (default) or "gbt"
 
 CLI usage:
     uv run python scripts/internal/train_action_value.py \\
@@ -21,9 +24,9 @@ CLI usage:
         --output-dir data/runs/action_value_smoke_42 \\
         --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
 
-    # R0-only features ablation:
+    # GBT model:
     uv run python scripts/internal/train_action_value.py \\
-        --seed 42 --feature-set r0 \\
+        --seed 42 --model-class gbt \\
         --dataset data/runs/action_value_smoke_42/datasets/action_value.parquet \\
         --output-dir data/runs/action_value_smoke_42 \\
         --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
@@ -301,6 +304,115 @@ def _build_feature_matrix(df: pd.DataFrame, feature_names: list[str]) -> np.ndar
     return np.column_stack(cols).astype(np.float64)
 
 
+# ── GBT Training ────────────────────────────────────────────
+
+
+def train_family_gbt(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    family: str,
+    state_feature_names: list[str] | None = None,
+    target_col: str = TARGET_COL,
+    seed: int = 42,
+) -> tuple[object, dict]:
+    """Train GBT regressor for one contract family (suit/high/low).
+
+    Returns (gbt_model, metadata_dict) where gbt_model is the fitted
+    sklearn GradientBoostingRegressor and metadata_dict contains metrics
+    and feature info for the artifact JSON.
+    """
+    from sklearn.ensemble import GradientBoostingRegressor
+
+    if state_feature_names is None:
+        state_feature_names = STATE_FEATURE_NAMES
+    feature_names = list(state_feature_names) + list(ACTION_FEATURE_NAMES)
+
+    train_sub = train_df[train_df["contract_family"] == family]
+    val_sub = val_df[val_df["contract_family"] == family]
+
+    if len(train_sub) == 0:
+        raise ValueError(f"No training rows for family '{family}'")
+
+    X_train = _build_feature_matrix(train_sub, feature_names)
+    y_train = train_sub[target_col].values
+    X_val = _build_feature_matrix(val_sub, feature_names)
+    y_val = val_sub[target_col].values
+
+    gbt = GradientBoostingRegressor(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.1,
+        subsample=0.8,
+        random_state=seed,
+    )
+    gbt.fit(X_train, y_train)
+
+    y_pred_val = gbt.predict(X_val)
+    metrics = _compute_metrics(y_val, y_pred_val)
+
+    metadata = {
+        "feature_names": feature_names,
+        "r_squared": metrics["r2"],
+        "mae": metrics["mae"],
+        "n_train": len(train_sub),
+        "n_val": len(val_sub),
+        "feature_importances": dict(
+            zip(feature_names, gbt.feature_importances_.tolist())
+        ),
+    }
+    return gbt, metadata
+
+
+def train_pass_gbt(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    state_feature_names: list[str] | None = None,
+    target_col: str = TARGET_COL,
+    seed: int = 42,
+) -> tuple[object, dict]:
+    """Train GBT regressor for pass action (state features only)."""
+    from sklearn.ensemble import GradientBoostingRegressor
+
+    if state_feature_names is None:
+        state_feature_names = STATE_FEATURE_NAMES
+    feature_names = list(state_feature_names)
+
+    train_sub = train_df[train_df["action_type"] == "pass"]
+    val_sub = val_df[val_df["action_type"] == "pass"]
+
+    if len(train_sub) == 0:
+        raise ValueError("No training rows for pass action")
+
+    X_train = _build_feature_matrix(train_sub, feature_names)
+    y_train = train_sub[target_col].values
+    X_val = _build_feature_matrix(val_sub, feature_names)
+    y_val = val_sub[target_col].values
+
+    gbt = GradientBoostingRegressor(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.1,
+        subsample=0.8,
+        random_state=seed,
+    )
+    gbt.fit(X_train, y_train)
+
+    y_pred_val = gbt.predict(X_val)
+    metrics = _compute_metrics(y_val, y_pred_val)
+
+    metadata = {
+        "feature_names": feature_names,
+        "r_squared": metrics["r2"],
+        "mae": metrics["mae"],
+        "n_train": len(train_sub),
+        "n_val": len(val_sub),
+        "feature_importances": dict(
+            zip(feature_names, gbt.feature_importances_.tolist())
+        ),
+    }
+    return gbt, metadata
+
+
 # ── Artifact ─────────────────────────────────────────────────
 
 
@@ -328,6 +440,54 @@ def build_artifact(
         "action_features": list(ACTION_FEATURE_NAMES),
         "feature_set": feature_set,
         "models": models,
+        "metadata": {
+            "n_deals": n_deals,
+            "training_seed": seed,
+            "arm": "full",
+            "context_features": [],
+            "git_sha": git_sha,
+            "created_at_utc": utc_now_iso(),
+        },
+    }
+
+
+def build_gbt_artifact(
+    gbt_models: dict[str, object],
+    model_metadata: dict[str, dict],
+    output_dir: Path,
+    seed: int,
+    n_deals: int,
+    continuation_artifact: str,
+    feature_set: str = "full",
+    target_col: str = TARGET_COL,
+) -> dict:
+    """Build action_value_gbt_v1 artifact: JSON metadata + joblib model files.
+
+    Saves each GBT model as a .joblib file in output_dir and returns the
+    artifact dict with relative file references.
+    """
+    import joblib
+
+    git_sha = _git_sha()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    models_section = {}
+    for family, gbt_model in gbt_models.items():
+        model_file = f"gbt_{family}.joblib"
+        joblib.dump(gbt_model, output_dir / model_file)
+        models_section[family] = {
+            "model_file": model_file,
+            **model_metadata[family],
+        }
+
+    return {
+        "schema_version": "action_value_gbt_v1",
+        "target": target_col,
+        "risk_mode": "neutral",
+        "continuation_policy": Path(continuation_artifact).stem,
+        "action_features": list(ACTION_FEATURE_NAMES),
+        "feature_set": feature_set,
+        "models": models_section,
         "metadata": {
             "n_deals": n_deals,
             "training_seed": seed,
@@ -385,10 +545,11 @@ def _artifact_filename(feature_set: str) -> str:
     return f"action_value_{feature_set}_features.json"
 
 
+VALID_MODEL_CLASSES = ("ols", "gbt")
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Train action-value OLS models for R1.5"
-    )
+    parser = argparse.ArgumentParser(description="Train action-value models for R1.5")
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument(
         "--dataset",
@@ -422,10 +583,17 @@ def main():
         default="net_points",
         help="Target column: 'net_points' (default) or 'tricks_won'",
     )
+    parser.add_argument(
+        "--model-class",
+        choices=list(VALID_MODEL_CLASSES),
+        default="ols",
+        help="Model class: 'ols' (default) or 'gbt' (gradient boosted trees)",
+    )
     args = parser.parse_args()
 
     state_feature_names = FEATURE_SETS[args.feature_set]
     target_col = args.target
+    model_class = args.model_class
 
     print("=== R1.5 Action-Value Training Pipeline ===")
     print(f"  Seed: {args.seed}")
@@ -434,6 +602,7 @@ def main():
         f"  Feature set: {args.feature_set} ({len(state_feature_names)} state features)"
     )
     print(f"  Target: {target_col}")
+    print(f"  Model class: {model_class}")
 
     # Load dataset
     print("  Loading dataset...")
@@ -461,10 +630,43 @@ def main():
         f"Test: {len(test_df)} rows"
     )
 
-    # Train per-family models
+    output_dir = Path(args.output_dir)
+
+    if model_class == "gbt":
+        _train_gbt_pipeline(
+            train_df,
+            val_df,
+            state_feature_names,
+            target_col,
+            output_dir,
+            args,
+            n_deals,
+        )
+    else:
+        _train_ols_pipeline(
+            train_df,
+            val_df,
+            state_feature_names,
+            target_col,
+            output_dir,
+            args,
+            n_deals,
+        )
+
+
+def _train_ols_pipeline(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    state_feature_names: list[str],
+    target_col: str,
+    output_dir: Path,
+    args: argparse.Namespace,
+    n_deals: int,
+) -> None:
+    """OLS training pipeline (original behavior)."""
     models = {}
     for family in ("suit", "high", "low"):
-        print(f"  Training {family} model...")
+        print(f"  Training {family} OLS model...")
         models[family] = train_family_model(
             train_df,
             val_df,
@@ -478,8 +680,7 @@ def main():
             f"n_train={models[family]['n_train']}"
         )
 
-    # Train pass model
-    print("  Training pass model...")
+    print("  Training pass OLS model...")
     models["pass"] = train_pass_model(
         train_df,
         val_df,
@@ -492,7 +693,6 @@ def main():
         f"n_train={models['pass']['n_train']}"
     )
 
-    # Build artifact
     artifact = build_artifact(
         models,
         args.seed,
@@ -502,18 +702,85 @@ def main():
         target_col=target_col,
     )
 
-    # Validate
     if not args.skip_validation:
         print("  Running Gate X2 validation...")
         validate_gate_x2(artifact)
 
-    # Write output
-    output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = output_dir / _artifact_filename(args.feature_set)
     artifact_path.write_text(json.dumps(artifact, indent=2))
 
     print(f"\n  Artifact: {artifact_path}")
+    print("  Done.")
+
+
+def _train_gbt_pipeline(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    state_feature_names: list[str],
+    target_col: str,
+    output_dir: Path,
+    args: argparse.Namespace,
+    n_deals: int,
+) -> None:
+    """GBT training pipeline."""
+    gbt_models = {}
+    model_metadata = {}
+
+    for family in ("suit", "high", "low"):
+        print(f"  Training {family} GBT model...")
+        gbt_model, meta = train_family_gbt(
+            train_df,
+            val_df,
+            family,
+            state_feature_names=state_feature_names,
+            target_col=target_col,
+            seed=args.seed,
+        )
+        gbt_models[family] = gbt_model
+        model_metadata[family] = meta
+        print(
+            f"    R²={meta['r_squared']:.4f}, "
+            f"MAE={meta['mae']:.3f}, "
+            f"n_train={meta['n_train']}"
+        )
+
+    print("  Training pass GBT model...")
+    pass_model, pass_meta = train_pass_gbt(
+        train_df,
+        val_df,
+        state_feature_names=state_feature_names,
+        target_col=target_col,
+        seed=args.seed,
+    )
+    gbt_models["pass"] = pass_model
+    model_metadata["pass"] = pass_meta
+    print(
+        f"    R²={pass_meta['r_squared']:.4f}, "
+        f"MAE={pass_meta['mae']:.3f}, "
+        f"n_train={pass_meta['n_train']}"
+    )
+
+    artifact = build_gbt_artifact(
+        gbt_models,
+        model_metadata,
+        output_dir,
+        args.seed,
+        n_deals,
+        args.continuation_artifact,
+        feature_set=args.feature_set,
+        target_col=target_col,
+    )
+
+    if not args.skip_validation:
+        print("  Running Gate X2 validation...")
+        validate_gate_x2(artifact)
+
+    artifact_path = output_dir / "action_value_gbt.json"
+    artifact_path.write_text(json.dumps(artifact, indent=2))
+
+    print(f"\n  Artifact: {artifact_path}")
+    print(f"  Model files: {output_dir}/gbt_*.joblib")
     print("  Done.")
 
 

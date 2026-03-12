@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import random
 import sys
 import time
 from pathlib import Path
@@ -40,6 +41,47 @@ from bid_euchre.strategy.bidding import (
 MODE_DEALS = {"SMOKE": 500, "QUICK": 2500, "FULL": 50000}
 
 
+def sample_opponent_hands(
+    focal_seat: int,
+    hands: list,
+    n_samples: int,
+    rng: random.Random,
+) -> list[list[list]]:
+    """Sample opponent hand configurations, keeping focal + partner hands fixed.
+
+    For each sample, the 20 opponent cards (from the two non-partner seats) are
+    reshuffled into 2 hands of 10. The focal player's hand and partner's hand
+    are unchanged across all samples.
+
+    Args:
+        focal_seat: The focal player's seat (0-3).
+        hands: Original 4 hands [seat0, seat1, seat2, seat3].
+        n_samples: Number of opponent configurations to generate.
+        rng: Seeded RNG for deterministic shuffling.
+
+    Returns:
+        List of n_samples hand configurations, each a list of 4 hands.
+    """
+    partner_seat = (focal_seat + 2) % 4
+    opp_seats = sorted(s for s in range(4) if s != focal_seat and s != partner_seat)
+
+    # Pool all opponent cards (20 cards from 2 opponents)
+    opp_pool = list(hands[opp_seats[0]]) + list(hands[opp_seats[1]])
+
+    configs = []
+    for _ in range(n_samples):
+        shuffled = list(opp_pool)
+        rng.shuffle(shuffled)
+        new_hands = [None, None, None, None]
+        new_hands[focal_seat] = list(hands[focal_seat])
+        new_hands[partner_seat] = list(hands[partner_seat])
+        new_hands[opp_seats[0]] = shuffled[:10]
+        new_hands[opp_seats[1]] = shuffled[10:]
+        configs.append(new_hands)
+
+    return configs
+
+
 def _deterministic_dealer(seed: int, deal_id: int) -> int:
     """Derive a deterministic dealer position for (seed, deal_id).
 
@@ -51,8 +93,6 @@ def _deterministic_dealer(seed: int, deal_id: int) -> int:
     seed * 1_000_003 + deal_id for card shuffles). The engine derives
     dealers separately from deals.
     """
-    import random
-
     return random.Random(seed + deal_id).randrange(4)
 
 
@@ -353,22 +393,29 @@ def generate_dataset(
     n_deals: int,
     continuation_policy: BiddingPolicy,
     progress: bool = True,
+    n_opponent_samples: int = 1,
 ) -> pd.DataFrame:
     """Generate the full counterfactual action-value dataset.
 
     For each (deal, focal_seat), enumerates all legal actions, forces each one,
     and records the resulting net_points.
+
+    When n_opponent_samples > 1, opponent hands are resampled while keeping
+    focal + partner hands fixed.  Labels become the mean across samples.
+    Metadata columns ``std_net_points`` and ``n_samples`` are added.
     """
     rows: list[dict] = []
     hand_id = 0
     t0 = time.time()
+    multi = n_opponent_samples > 1
 
     for deal_id in range(n_deals):
         hands = generate_deal(seed, deal_id)
         dealer = _deterministic_dealer(seed, deal_id)
 
         for focal_seat in range(4):
-            # Run partial auction up to focal_seat
+            # Run partial auction up to focal_seat (uses ORIGINAL hands
+            # so that features reflect the actual deal configuration)
             current_high_bid, transcript = run_partial_auction(
                 hands, dealer, focal_seat, continuation_policy
             )
@@ -385,6 +432,13 @@ def generate_dataset(
             # Enumerate legal actions
             legal = enumerate_legal_actions(obs)
 
+            # Pre-generate opponent configurations if multi-sample
+            if multi:
+                sample_rng = random.Random(seed + deal_id * 10000 + focal_seat)
+                opp_configs = sample_opponent_hands(
+                    focal_seat, hands, n_opponent_samples, sample_rng
+                )
+
             for action in legal:
                 # Determine contract family and trump for feature extraction
                 if action.is_pass():
@@ -398,19 +452,48 @@ def generate_dataset(
                     action_type = "bid"
                     bid_n = action.n
 
-                # Extract state features (52 columns)
+                # Extract state features (52 columns) — from ORIGINAL hands
                 state = extract_state_features(obs, contract_family, trump_suit)
 
-                # Simulate counterfactual outcome
-                net_points, tricks_won, focal_declared = simulate_counterfactual(
-                    hands,
-                    dealer,
-                    focal_seat,
-                    action,
-                    current_high_bid,
-                    transcript,
-                    continuation_policy,
-                )
+                if multi:
+                    # Multi-sample: run counterfactual on each opponent config
+                    np_vals = []
+                    tw_vals = []
+                    fd_vals = []
+                    for config_hands in opp_configs:
+                        np_i, tw_i, fd_i = simulate_counterfactual(
+                            config_hands,
+                            dealer,
+                            focal_seat,
+                            action,
+                            current_high_bid,
+                            transcript,
+                            continuation_policy,
+                        )
+                        np_vals.append(np_i)
+                        tw_vals.append(tw_i)
+                        fd_vals.append(fd_i)
+
+                    net_points = sum(np_vals) / len(np_vals)
+                    tricks_won = sum(tw_vals) / len(tw_vals)
+                    focal_declared = sum(fd_vals) / len(fd_vals) > 0.5
+
+                    # Variance metadata
+                    mean_np = net_points
+                    std_np = (
+                        sum((x - mean_np) ** 2 for x in np_vals) / len(np_vals)
+                    ) ** 0.5
+                else:
+                    # Single-sample: existing behavior
+                    net_points, tricks_won, focal_declared = simulate_counterfactual(
+                        hands,
+                        dealer,
+                        focal_seat,
+                        action,
+                        current_high_bid,
+                        transcript,
+                        continuation_policy,
+                    )
 
                 # Build row
                 row = {
@@ -428,6 +511,10 @@ def generate_dataset(
                 row["net_points"] = net_points
                 row["tricks_won"] = tricks_won
                 row["focal_declared"] = focal_declared
+
+                if multi:
+                    row["std_net_points"] = std_np
+                    row["n_samples"] = n_opponent_samples
 
                 rows.append(row)
 
@@ -544,15 +631,23 @@ def main():
         "--output-dir", required=True, help="Output directory for dataset"
     )
     parser.add_argument(
+        "--n-opponent-samples",
+        type=int,
+        default=1,
+        help="Number of opponent hand resamples per action (default 1 = original behavior)",
+    )
+    parser.add_argument(
         "--skip-validation", action="store_true", help="Skip Gate X1 validation"
     )
     args = parser.parse_args()
 
     n_deals = args.n_deals if args.n_deals is not None else MODE_DEALS[args.mode]
+    n_opp = args.n_opponent_samples
 
     print("=== R1.5 Counterfactual Action-Value Dataset Generator ===")
     print(f"  Seed: {args.seed}")
     print(f"  Mode: {args.mode} ({n_deals} deals)")
+    print(f"  Opponent samples: {n_opp}")
     print(f"  Continuation: {args.continuation_artifact}")
 
     # Load continuation policy
@@ -560,8 +655,17 @@ def main():
     continuation = load_continuation_policy(args.continuation_artifact)
 
     # Generate dataset
-    print(f"  Generating dataset ({n_deals} deals × 4 seats × ~40 actions)...")
-    df = generate_dataset(args.seed, n_deals, continuation)
+    sim_equiv = n_deals * n_opp
+    print(
+        f"  Generating dataset ({n_deals} deals × 4 seats × ~40 actions × {n_opp} samples)..."
+    )
+    print(f"  Simulation equivalents: ~{sim_equiv * 4 * 40:,}")
+    df = generate_dataset(
+        args.seed,
+        n_deals,
+        continuation,
+        n_opponent_samples=n_opp,
+    )
 
     print(f"  Total rows: {len(df)}")
     print(f"  Columns: {len(df.columns)}")
