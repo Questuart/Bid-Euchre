@@ -323,6 +323,23 @@ def _config_sha(config_dict):
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
+def _extract_roster_provenance(roster):
+    """Extract artifact provenance for each bidder in the roster.
+
+    Returns a dict mapping bidder name to its provenance summary.
+    Only includes bidders that have an artifact_path parameter.
+    """
+    from bid_euchre.models.freeze import extract_artifact_provenance
+
+    provenance = {}
+    for bidder in roster:
+        params = bidder.get("params", {})
+        artifact_path = params.get("artifact_path")
+        if artifact_path:
+            provenance[bidder["name"]] = extract_artifact_provenance(artifact_path)
+    return provenance
+
+
 def generate_summary(
     mode,
     seed,
@@ -396,6 +413,9 @@ def generate_summary(
             "matchup_id": mid,
         }
 
+    # Extract per-bidder artifact provenance
+    artifact_provenance = _extract_roster_provenance(roster)
+
     return {
         "schema": "h2h_battery_v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -408,6 +428,7 @@ def generate_summary(
         "provenance": {
             "script": "scripts/internal/run_arc_d_h2h_battery.py",
             "git_sha": _get_git_sha(),
+            "artifacts": artifact_provenance,
         },
     }
 

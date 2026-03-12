@@ -183,6 +183,58 @@ def require_frozen(artifact_path: str | Path, strict: bool = True) -> None:
             warnings.warn(msg, UserWarning, stacklevel=2)
 
 
+def extract_artifact_provenance(artifact_path: str | Path) -> dict:
+    """Extract provenance summary from an artifact JSON file.
+
+    Returns a dict with key provenance fields for reporting:
+    artifact_path, artifact_sha256, frozen, model_class, target,
+    training_seed, schema_version, r_squared (per family).
+
+    Handles missing fields gracefully (returns None for absent keys).
+    """
+    path = Path(artifact_path)
+    result: dict = {"artifact_path": str(path), "frozen": False}
+
+    if not path.exists():
+        result["error"] = "file not found"
+        return result
+
+    try:
+        with open(path) as f:
+            artifact = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        result["error"] = str(e)
+        return result
+
+    result["schema_version"] = artifact.get("schema_version")
+    result["target"] = artifact.get("target")
+    result["frozen"] = artifact.get("frozen_at") is not None
+
+    sha = artifact.get("artifact_sha256")
+    if sha:
+        result["artifact_sha256"] = sha[:12]
+
+    meta = artifact.get("metadata", {})
+    result["model_class"] = meta.get("model_class")
+    result["training_seed"] = meta.get("training_seed")
+    result["dataset_sha256"] = (meta.get("dataset_sha256") or "")[:12] or None
+    result["continuation_artifact_sha256"] = (
+        meta.get("continuation_artifact_sha256") or ""
+    )[:12] or None
+
+    # Per-family R² from models section
+    models = artifact.get("models", {})
+    r2 = {}
+    for family in ("suit", "high", "low", "pass"):
+        model = models.get(family, {})
+        if "r_squared" in model:
+            r2[family] = round(model["r_squared"], 4)
+    if r2:
+        result["r_squared"] = r2
+
+    return result
+
+
 # CLI for manual freeze operations
 if __name__ == "__main__":
     import argparse
