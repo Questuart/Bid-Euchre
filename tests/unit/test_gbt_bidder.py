@@ -295,3 +295,57 @@ class TestGBTActionValueBidder:
 
         assert "GBTActionValueBidder" in BIDDING_POLICY_REGISTRY
         assert BIDDING_REQUIRED_PARAMS["GBTActionValueBidder"] == ["artifact_path"]
+
+
+# ── Artifact Governance ─────────────────────────────────
+
+
+class TestGBTArtifactGovernance:
+    def test_quarantined_artifact_rejected(self, trained_gbt_artifact):
+        """Quarantined GBT artifacts should raise ValueError on load."""
+        with open(trained_gbt_artifact) as f:
+            artifact = json.load(f)
+
+        artifact["status"] = "quarantined"
+
+        artifact_path = Path(trained_gbt_artifact)
+        bad_path = artifact_path.parent / "quarantined_gbt.json"
+        bad_path.write_text(json.dumps(artifact))
+
+        with pytest.raises(ValueError, match="quarantined"):
+            GBTActionValueBidder(str(bad_path))
+
+    def test_active_artifact_accepted(self, trained_gbt_artifact):
+        """Explicit 'active' status should load normally."""
+        with open(trained_gbt_artifact) as f:
+            artifact = json.load(f)
+
+        artifact["status"] = "active"
+
+        artifact_path = Path(trained_gbt_artifact)
+        ok_path = artifact_path.parent / "active_gbt.json"
+        ok_path.write_text(json.dumps(artifact))
+
+        bidder = GBTActionValueBidder(str(ok_path))
+        assert bidder is not None
+
+    def test_low_r2_logs_warning(self, trained_gbt_artifact, caplog):
+        """Low R² triggers a warning log but still loads."""
+        import logging
+
+        with open(trained_gbt_artifact) as f:
+            artifact = json.load(f)
+
+        # Set low R² on suit model
+        artifact["models"]["suit"]["r_squared"] = 0.18
+
+        artifact_path = Path(trained_gbt_artifact)
+        warn_path = artifact_path.parent / "low_r2_gbt.json"
+        warn_path.write_text(json.dumps(artifact))
+
+        with caplog.at_level(logging.WARNING, logger="bid_euchre.strategy.bidding"):
+            bidder = GBTActionValueBidder(str(warn_path))
+
+        assert bidder is not None
+        assert any("Low R²" in msg for msg in caplog.messages)
+        assert any("suit" in msg for msg in caplog.messages)

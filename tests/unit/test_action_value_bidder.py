@@ -459,3 +459,76 @@ class TestPassProxyEncoding:
 
         assert none_features[is_high_idx] == 0.0
         assert high_features[is_high_idx] == 1.0
+
+
+# ── Artifact Governance ─────────────────────────────────
+
+
+class TestArtifactGovernance:
+    def test_quarantined_artifact_rejected(self, tmp_path):
+        """Quarantined artifacts should raise ValueError on load."""
+        artifact = _make_mock_artifact()
+        artifact["status"] = "quarantined"
+
+        path = tmp_path / "quarantined.json"
+        path.write_text(json.dumps(artifact))
+
+        with pytest.raises(ValueError, match="quarantined"):
+            ActionValueBidder(str(path))
+
+    def test_active_artifact_accepted(self, tmp_path):
+        """Explicit 'active' status should load normally."""
+        artifact = _make_mock_artifact()
+        artifact["status"] = "active"
+
+        path = tmp_path / "active.json"
+        path.write_text(json.dumps(artifact))
+
+        # Should not raise
+        bidder = ActionValueBidder(str(path))
+        assert bidder is not None
+
+    def test_no_status_field_accepted(self, tmp_path):
+        """Missing status field defaults to 'active' (backward compatible)."""
+        artifact = _make_mock_artifact()
+        assert "status" not in artifact  # default mock has no status
+
+        path = tmp_path / "no_status.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = ActionValueBidder(str(path))
+        assert bidder is not None
+
+    def test_low_r2_logs_warning(self, tmp_path, caplog):
+        """Low R² triggers a warning log but still loads."""
+        import logging
+
+        artifact = _make_mock_artifact()
+        # Set low R² on suit model
+        artifact["models"]["suit"]["r_squared"] = 0.18
+
+        path = tmp_path / "low_r2.json"
+        path.write_text(json.dumps(artifact))
+
+        with caplog.at_level(logging.WARNING, logger="bid_euchre.strategy.bidding"):
+            bidder = ActionValueBidder(str(path))
+
+        assert bidder is not None
+        assert any("Low R²" in msg for msg in caplog.messages)
+        assert any("suit" in msg for msg in caplog.messages)
+
+    def test_high_r2_no_warning(self, tmp_path, caplog):
+        """R² above threshold should not trigger warning."""
+        import logging
+
+        artifact = _make_mock_artifact()
+        for family in ("suit", "high", "low"):
+            artifact["models"][family]["r_squared"] = 0.55
+
+        path = tmp_path / "good_r2.json"
+        path.write_text(json.dumps(artifact))
+
+        with caplog.at_level(logging.WARNING, logger="bid_euchre.strategy.bidding"):
+            ActionValueBidder(str(path))
+
+        assert not any("Low R²" in msg for msg in caplog.messages)

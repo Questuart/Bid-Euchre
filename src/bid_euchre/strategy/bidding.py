@@ -6,6 +6,7 @@ where players bid simultaneously for the right to choose contract and trump.
 """
 
 import json
+import logging
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -17,6 +18,13 @@ from scipy.stats import norm
 
 from ..core.cards import Card
 from ..models.bidding_artifact import load_artifact
+
+logger = logging.getLogger(__name__)
+
+# R² threshold for load-time quality warning. Artifacts with any bid-contract
+# model below this threshold trigger a warning — catches wrong-target or stale
+# artifacts before gameplay. The stale artifact incident had R²=0.183.
+_R2_WARNING_THRESHOLD = 0.30
 
 
 @dataclass(frozen=True)
@@ -1634,7 +1642,27 @@ class ActionValueBidder(BiddingPolicy):
                 f"Expected schema_version 'action_value_olsa_v1', got '{schema}'"
             )
 
+        # Reject quarantined artifacts
+        status = artifact.get("status", "active")
+        if status == "quarantined":
+            raise ValueError(
+                f"Artifact is quarantined (status='quarantined'): {artifact_path}"
+            )
+
         models = artifact["models"]
+
+        # R² quality warning — catches wrong-target or stale artifacts
+        for family in ("suit", "high", "low"):
+            r2 = models[family].get("r_squared")
+            if r2 is not None and r2 < _R2_WARNING_THRESHOLD:
+                logger.warning(
+                    "Low R² for %s model: %.4f < %.2f — possible wrong-target "
+                    "or stale artifact: %s",
+                    family,
+                    r2,
+                    _R2_WARNING_THRESHOLD,
+                    artifact_path,
+                )
         self.models = {
             "suit": models["suit"],
             "high": models["high"],
@@ -1749,7 +1777,27 @@ class GBTActionValueBidder(BiddingPolicy):
                 f"Expected schema_version 'action_value_gbt_v1', got '{schema}'"
             )
 
+        # Reject quarantined artifacts
+        status = artifact.get("status", "active")
+        if status == "quarantined":
+            raise ValueError(
+                f"Artifact is quarantined (status='quarantined'): {artifact_path}"
+            )
+
         models_meta = artifact["models"]
+
+        # R² quality warning — catches wrong-target or stale artifacts
+        for family in ("suit", "high", "low"):
+            r2 = models_meta[family].get("r_squared")
+            if r2 is not None and r2 < _R2_WARNING_THRESHOLD:
+                logger.warning(
+                    "Low R² for %s model: %.4f < %.2f — possible wrong-target "
+                    "or stale artifact: %s",
+                    family,
+                    r2,
+                    _R2_WARNING_THRESHOLD,
+                    artifact_path,
+                )
 
         # Load sklearn GBT model objects from .joblib files
         self.gbt_models = {}
