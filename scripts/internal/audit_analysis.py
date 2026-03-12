@@ -20,7 +20,6 @@ from collections import Counter
 from datetime import datetime
 
 REPO = "Questuart/Bid-Euchre"
-REVIEW_CONTEXT = "reviewing-changes"
 FOLLOW_UP_LABEL = "follow-up"
 FIX_LABEL_PREFIX = "fix:"
 
@@ -57,23 +56,6 @@ def get_merged_prs(limit: int, since: str | None = None) -> list[dict]:
     if since:
         prs = [pr for pr in prs if pr.get("mergedAt", "") >= since]
     return prs
-
-
-def get_review_status(pr: dict) -> str | None:
-    """Get the reviewing-changes commit status for a PR's merge commit."""
-    number = pr["number"]
-    try:
-        pr_detail = gh_api(f"/repos/{REPO}/pulls/{number}")
-        merge_sha = pr_detail.get("merge_commit_sha")
-        if not merge_sha:
-            return None
-        statuses = gh_api(f"/repos/{REPO}/commits/{merge_sha}/statuses")
-        for status in statuses:
-            if status.get("context") == REVIEW_CONTEXT:
-                return status["state"]
-    except (subprocess.CalledProcessError, KeyError):
-        pass
-    return None
 
 
 def get_follow_up_issues() -> list[dict]:

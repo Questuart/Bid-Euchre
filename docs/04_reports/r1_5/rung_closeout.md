@@ -280,7 +280,7 @@ as implementation history. They are not decision documents.
 | Item | Value |
 |------|-------|
 | gate_status | ADVANCED — delta +0.152 significant, CI_low +0.124 below delta floor 0.180 |
-| Incumbent | hybrid_olsa_full R0 (`hybrid_r0_full.json`, SHA 5436b759...) |
+| Incumbent | hybrid_olsa_full R0 (`hybrid_r0_full.json`, SHA `5436b759f525466976244766dee8d98472dcfe243ac1d4542885e6cd0e6dcbc7`) |
 | Challenger | ActionValueBidder v1 (`action_value_full.json`) |
 | Gate thresholds | delta_floor=0.180, regression=-0.184 (from R0 calibration) |
 | Eval seed | 42 |
