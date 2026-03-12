@@ -1,10 +1,10 @@
 # R1.5.3: Alternative Model Approaches for Suit Regression
 
-**Date:** 2026-03-11 (revised)
+**Date:** 2026-03-12 (revised)
 **Arc:** D — OLSa-Hybrid Bidder
 **Parent:** R1.5.2 diagnostic conclusions (PRs #595-#603)
 **Decision tree:** [r1_5_forward_decision_tree.md](../r1_5_forward_decision_tree.md)
-**Status:** PLANNED
+**Status:** ACTIVE (Step 0 complete, Step 0.5 next)
 **Blocking question:** Can we close the suit regression (-0.142 net_eppd) with a different model architecture?
 
 ## Background
@@ -143,7 +143,75 @@ disagreement analysis looks.
 | Errors are mostly bid-level (H13 matters significantly) | Bid-level optimization (lighter-weight fix than full model change) |
 | Single-rollout noise dominates disagreement analysis | Repeated-rollout subset needed before any treatment |
 
-## Track A: Two-Stage Model (Primary — if Step 0 supports H12)
+### Step 0 Result (PR #610)
+
+**Gate decision: Track B (GBT) or further investigation.**
+
+- Boundary errors = 28.5% of deficit (< 60% Track A threshold)
+- Clear-set region dominates at 43.0% of absolute residual
+- Wrong contract: 26.5% (< 30% new-direction threshold)
+- H13 answered: bid-level headroom irrelevant (2.3% improvable)
+- Under-bid analysis: 62.7% noise-dominated (not actionable without repeated rollouts)
+
+Track A is deprioritized — boundary is not where errors concentrate.
+Track B is the primary next step, with a play-policy sanity check first.
+
+## Step 0.5: Play-Policy Sanity Check
+
+**Goal:** Confirm that GluttonStrategy (used to generate counterfactual
+labels) is not systematically biasing suit outcomes before investing in
+model architecture changes.
+
+**Motivation:** The counterfactual dataset (`action_value.parquet`) uses
+GluttonStrategy for all trick play during rollout. If Glutton introduces
+systematic label bias — particularly for suit contracts — then model
+improvements would be addressing a data problem with architecture changes.
+
+**Prior probability: LOW.** GluttonStrategy is contract-agnostic (same play
+logic for suit/high/low). High (+0.430) and low (+0.495) contracts show
+strong improvement under the same Glutton-generated labels. If Glutton
+were the primary confounder, all contract types would regress, not just suit.
+The suit regression is more naturally explained by H12 (OLS on bimodal target).
+
+**Method:** Run the existing `play_policy_gate.py`:
+
+```bash
+uv run python scripts/internal/play_policy_gate.py \
+  --seeds 42,43,44 \
+  --n-per 20000 \
+  --seed 42
+```
+
+**Gate logic:**
+- **PASS** (CI lower > 0): Glutton significantly better than Greedy.
+  Labels are adequate. Proceed to Track B.
+- **WARN** (CI crosses 0): Inconclusive. Note in decision tree but
+  proceed to Track B — the weak prior plus high/low success argues
+  against Glutton as primary confounder.
+- **FAIL** (CI upper < 0): Greedy significantly better. STOP.
+  Investigate label generation before model changes. Design targeted
+  policy-sensitivity experiment (Phase 2 below).
+
+**If FAIL — Phase 2 (designed only on demand):**
+A controlled label audit would compare counterfactual net_points under
+Glutton vs Greedy vs RandomLegal for a fixed set of deals. This requires
+making play policy configurable in `generate_action_value_dataset.py`
+(currently hardcoded). Scope and design to be determined if triggered.
+
+**Deliverable:** Gate verdict logged in the decision tree. No separate
+report unless FAIL.
+
+### Step 0.5 Result
+
+**Gate: PASS.** Glutton significantly outperforms Greedy across all 3 seeds,
+both directions, and all 6 scenarios. Mean advantage: +0.20 tricks
+(CI well above zero, all p < 0.0001). Suit scenarios show the **strongest**
+Glutton advantage (+0.23 to +0.31 tricks), ruling out Glutton as a
+suit-specific label confounder.
+
+Play-policy confound hypothesis rejected. Proceed to Track B.
+
+## Track A: Two-Stage Model (Deprioritized — Step 0 gate did not support)
 
 ### Rationale
 
@@ -477,18 +545,18 @@ it is explicitly marked as a fallback, not a mainline fix.
 
 ## PR Sequence
 
-| PR | Content | Dependencies | Trigger |
-|----|---------|-------------|---------|
-| PR-1 | Step 0: Decision-level suit diagnostic | None | Immediate |
-| PR-2 | Track A: suit-only two-stage prototype | PR-1 (if diagnostic supports H12) | Step 0 gate |
-| PR-3 | Track A extension to all contracts + proper bidder class | PR-2 (if prototype succeeds) | Track A success |
-| PR-4 | Track B: GBT prototype | PR-1 (if Track A fails or inconclusive) | Track A failure |
-| PR-5 | FULL evaluation of winning track | PR-3 or PR-4 | Track success |
+| PR | Content | Dependencies | Status |
+|----|---------|-------------|--------|
+| PR-1 | Step 0: Decision-level suit diagnostic | None | **DONE** (PR #610) |
+| PR-2 | Step 0.5: Play-policy sanity check + plan updates | PR-1 | **DONE** (PR #TBD) |
+| PR-3 | Track B: GBT prototype | PR-2 (if gate passes) | **NEXT** |
+| PR-4 | Track A: two-stage prototype (fallback) | PR-3 (if Track B fails) | Deprioritized |
+| PR-5 | FULL evaluation of winning track | PR-3 or PR-4 | Waiting |
 
-**Key difference from v1 of this plan:** PRs are sequential, not parallel.
-Each PR's existence depends on the outcome of the previous one. Track 0
-shared infrastructure is eliminated — each prototype is minimal and
-standalone. Infrastructure is built only for the winning approach.
+**Revised from original plan:** Step 0 gate deprioritized Track A (boundary
+errors = 28.5%, below 60% threshold). Track B is now the primary next step.
+Step 0.5 (play-policy check) added as a lightweight pre-Track-B sanity gate.
+PRs remain sequential — each depends on the previous outcome.
 
 ## Implementation Caveats
 
@@ -540,4 +608,4 @@ _To be filled after evaluation._
 | Hypothesis tested | H12 (working hypothesis), H13 (bid-level headroom) |
 | Seed | 42 |
 | Scale | QUICK (2,500 deals for H2H) → FULL (50k, conditional) |
-| analysis_base_sha | f74ff62 |
+| analysis_base_sha | 4a2b5b5 |
