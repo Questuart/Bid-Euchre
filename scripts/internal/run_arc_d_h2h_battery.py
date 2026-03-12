@@ -89,13 +89,19 @@ DEFAULT_ROSTER = [
 # Key bidders always included in FULL subset
 KEY_BIDDERS = {"hybrid_olsa", "hybrid_olsa_full", "olsa", "olsa_full"}
 
+# Map short play-strategy names to class names for the experiment config
+PLAY_STRATEGY_MAP = {
+    "glutton": "GluttonStrategy",
+    "greedy": "GreedyStrategy",
+}
+
 
 # ---------------------------------------------------------------------------
 # Matchup generation
 # ---------------------------------------------------------------------------
 
 
-def generate_matchups(roster):
+def generate_matchups(roster, play_strategy_name="glutton"):
     """Generate all-vs-all matchups from a bidder roster.
 
     For N bidders, produces:
@@ -107,6 +113,8 @@ def generate_matchups(roster):
     ----------
     roster : list[dict]
         Bidder roster entries with at minimum a ``name`` key.
+    play_strategy_name : str
+        Name of the play strategy for team0/team1 fields (default: "glutton").
 
     Returns
     -------
@@ -135,8 +143,8 @@ def generate_matchups(roster):
                             a_name,
                             a_name,
                         ],
-                        "team0": "glutton",
-                        "team1": "glutton",
+                        "team0": play_strategy_name,
+                        "team1": play_strategy_name,
                     }
                 )
             else:
@@ -152,8 +160,8 @@ def generate_matchups(roster):
                             a_name,
                             b_name,
                         ],
-                        "team0": "glutton",
-                        "team1": "glutton",
+                        "team0": play_strategy_name,
+                        "team1": play_strategy_name,
                     }
                 )
                 # Rotation 2: b as seats 0,2
@@ -168,15 +176,15 @@ def generate_matchups(roster):
                             b_name,
                             a_name,
                         ],
-                        "team0": "glutton",
-                        "team1": "glutton",
+                        "team0": play_strategy_name,
+                        "team1": play_strategy_name,
                     }
                 )
 
     return matchups
 
 
-def generate_h2h_config(roster, matchups, seed, n_per):
+def generate_h2h_config(roster, matchups, seed, n_per, play_strategy_name="glutton"):
     """Generate a YAML-serializable config dict for H2H battery.
 
     Parameters
@@ -189,6 +197,9 @@ def generate_h2h_config(roster, matchups, seed, n_per):
         RNG seed.
     n_per : int
         Deals per matchup.
+    play_strategy_name : str
+        Short name of the play strategy (default: "glutton").
+        Must be a key in ``PLAY_STRATEGY_MAP``.
 
     Returns
     -------
@@ -224,7 +235,12 @@ def generate_h2h_config(roster, matchups, seed, n_per):
             "mode": "head_to_head_matrix",
             "pair_deals": True,
         },
-        "strategies": [{"name": "glutton", "class_name": "GluttonStrategy"}],
+        "strategies": [
+            {
+                "name": play_strategy_name,
+                "class_name": PLAY_STRATEGY_MAP[play_strategy_name],
+            }
+        ],
         "bidding_policies": bidding_policies,
         "matchups": yaml_matchups,
         "scenarios": [{"contract_type": None}],
@@ -725,6 +741,20 @@ def main():
         default=None,
         help="Path to existing run directory to parse into summary",
     )
+    parser.add_argument(
+        "--play-strategy",
+        default="glutton",
+        choices=sorted(PLAY_STRATEGY_MAP.keys()),
+        help="Play strategy for trick play (default: glutton)",
+    )
+    parser.add_argument(
+        "--roster-names",
+        default=None,
+        help=(
+            "Comma-separated bidder names to filter from DEFAULT_ROSTER "
+            "(e.g., 'hybrid_olsa_full,modeloespecifico,stricthellraiser')"
+        ),
+    )
     args = parser.parse_args()
 
     # Resolve n_per default
@@ -752,8 +782,24 @@ def main():
     else:
         roster = DEFAULT_ROSTER
 
+    # Filter roster by name if --roster-names provided
+    if args.roster_names:
+        requested = [n.strip() for n in args.roster_names.split(",")]
+        roster_by_name = {r["name"]: r for r in roster}
+        missing = [n for n in requested if n not in roster_by_name]
+        if missing:
+            print(
+                f"ERROR: Unknown bidder names: {missing}. "
+                f"Available: {sorted(roster_by_name.keys())}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        roster = [roster_by_name[n] for n in requested]
+
+    play_strategy = args.play_strategy
+
     # Generate all matchups
-    all_matchups = generate_matchups(roster)
+    all_matchups = generate_matchups(roster, play_strategy_name=play_strategy)
 
     # For FULL mode, optionally filter to subset
     if args.mode == "FULL" and args.quick_summary:
@@ -775,7 +821,9 @@ def main():
         matchups = all_matchups
 
     # Generate experiment config
-    config = generate_h2h_config(roster, matchups, args.seed, args.n_per)
+    config = generate_h2h_config(
+        roster, matchups, args.seed, args.n_per, play_strategy_name=play_strategy
+    )
 
     # Write YAML config (skip when parsing existing run to avoid overwriting)
     output_path = Path(args.output)
