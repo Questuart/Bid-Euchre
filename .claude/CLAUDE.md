@@ -28,3 +28,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 # trigger CI
 # trigger CI: play-policy-sanity-check
 # trigger CI: model-alternatives-log
+# trigger CI: gbt-report-repro-fix
