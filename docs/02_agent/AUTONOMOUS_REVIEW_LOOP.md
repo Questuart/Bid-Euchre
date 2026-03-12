@@ -6,10 +6,10 @@ The autonomous review loop is a local state machine where Claude (author)
 writes/fixes code and Codex CLI (reviewer) reviews it. The loop is persisted
 to disk, resumable after restarts, and bounded (max 5 iterations).
 
-The loop is the primary review mechanism for all PRs. It runs asynchronously
+The loop is the sole review mechanism for all PRs. It runs asynchronously
 after PR creation, triggered by the `post-pr-review-loop.sh` PostToolUse hook.
-The loop stops at `ready_to_merge` — it does not auto-merge. Human merges
-when the final status is `success`.
+When the loop reaches `ready_to_merge`, it enables GitHub auto-merge (squash)
+and transitions to `merged`. GitHub merges once CI + branch protection pass.
 
 ## Architecture
 
@@ -42,10 +42,10 @@ initialized → pr_open → waiting_for_ci → waiting_for_codex
                                               ↓
                                          applying_fixes → retesting → waiting_for_ci
                                               ↓
-                                         ready_to_merge → merged
+                                         ready_to_merge → merged (auto-merge enabled)
 ```
 
-Terminal (stop) states: `stopped_max_iterations`, `stopped_no_progress`,
+Terminal (stop) states: `merged`, `stopped_max_iterations`, `stopped_no_progress`,
 `stopped_ci_failure`, `stopped_review_failure`.
 
 ### Runtime Artifacts
@@ -54,12 +54,10 @@ State files and per-round artifacts are stored under
 `.claude/runtime/review_loops/pr_<N>/` (gitignored). Durable validation
 evidence is committed under `docs/04_reports/codex_validation/`.
 
-### Backends
+### Review Backend
 
-- **Codex CLI** (primary): `codex review --base main`, local,
+- **Codex CLI** (sole reviewer): `codex review --base main`, local,
   ~60s latency, uses ChatGPT subscription (no API billing)
-- **GitHub Codex** (passive overlay): Auto-fires on PR open, visible on PR
-  page for humans, not orchestrated by the state machine
 
 ### Deterministic Prechecks
 
@@ -122,6 +120,7 @@ The loop publishes GitHub commit status at key transitions:
 | Clean pass | `success` | "Review passed — clean" |
 | Warnings only | `success` | "Review passed — N warnings (follow-up issues created)" |
 | Blockers found | `failure` | "Review blocked — N blockers" |
+| Auto-merge enabled | `success` | (status already published at ready_to_merge) |
 | Loop crash | `failure` | "Review loop crashed: {error}. Rerun: ..." |
 
 ### Follow-up Issues
