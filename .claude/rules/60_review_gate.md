@@ -11,11 +11,10 @@ and review artifacts. Two systems coordinate on every PR:
    generates handoff summary. No file reading, no Codex polling, no follow-up issues.
 2. **Autonomous review loop** — State machine (`scripts/internal/review_driver.py`)
    that runs asynchronously: deterministic prechecks, `make check`, Codex CLI review,
-   auto-fix, retesting, status publishing, and follow-up issue creation.
+   auto-fix, retesting, status publishing, auto-merge, and follow-up issue creation.
 
-Codex CLI is the primary reviewer in the autonomous loop — local, ~60s latency,
-uses ChatGPT subscription (no API billing). GitHub Codex remains as a passive
-overlay (auto-fires on PR open, not orchestrated).
+Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscription
+(no API billing). The GitHub Codex plugin has been retired.
 
 ## Status Contexts
 
@@ -48,7 +47,7 @@ overlay (auto-fires on PR open, not orchestrated).
 11. Loop iterates (max 5 rounds) until clean or stopped
 12. Loop publishes final status (`success` or `failure`)
 13. Loop creates follow-up issues for non-blocking (P2) findings
-14. Human merges when status is `success` (no auto-merge)
+14. Loop enables auto-merge (squash) — GitHub merges when CI + branch protection pass
 
 See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full state machine design.
 
@@ -115,21 +114,18 @@ If the review loop crashes or gets stuck:
 3. Admin override: `scripts/internal/set_review_status.sh success "Manual override"`
 4. Fallback workflow (`review_status_fallback.yml`) posts a comment after 1 hour
 
-## Codex Review Channels
+## Codex Review
 
-Two independent Codex review paths exist, with separate usage pools:
+Codex CLI is the sole reviewer, invoked locally by the autonomous review loop:
 
-| Channel | How invoked | Usage pool | Response time | Status values |
-|---------|-------------|------------|---------------|---------------|
-| **GitHub Codex** | `@codex review` PR comment | GitHub Codex quota | ~60-254s | COMPLETE, PENDING, UNAVAILABLE_LIMIT |
-| **Codex CLI** | `codex review --base main` (local) | ChatGPT subscription | ~60s | COMPLETE, FAILED |
+| Property | Value |
+|----------|-------|
+| Command | `codex review --base main` |
+| Usage pool | ChatGPT subscription (no API billing) |
+| Response time | ~60s |
+| Retry policy | Up to 3 attempts |
 
-The autonomous review loop uses **Codex CLI** as its primary reviewer.
-GitHub Codex fires independently as a passive overlay — visible on the PR
-page for humans, not orchestrated by the loop.
-
-Both channels' findings feed into the normalized finding schema (P0/P1/P2)
-and are recorded in the loop's per-round artifacts.
+Findings are normalized into the P0/P1/P2 schema and recorded in per-round artifacts.
 
 ## Known Issue: Docs-Only PRs and CI
 

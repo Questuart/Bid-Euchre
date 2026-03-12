@@ -27,3 +27,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 # trigger CI: fix-archive-overreach
 # trigger CI
 # trigger CI: play-policy-sanity-check
+# trigger CI: model-alternatives-log
