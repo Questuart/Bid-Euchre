@@ -22,20 +22,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-# ── Imports from bid_euchre ──────────────────────────────────
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from bid_euchre.core.time import utc_now_iso  # noqa: E402
-from bid_euchre.datasets.eval_dataset import build_eval_dataset  # noqa: E402
-from bid_euchre.strategy.bidding import (  # noqa: E402
-    predict_ols,
-)
+from bid_euchre.core.time import utc_now_iso
+from bid_euchre.datasets.eval_dataset import build_eval_dataset
+from bid_euchre.strategy.bidding import predict_ols
 
 logger = logging.getLogger(__name__)
 
