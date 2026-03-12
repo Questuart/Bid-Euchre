@@ -16,6 +16,7 @@ from generate_action_value_dataset import (
     _play_tricks,
     generate_dataset,
     run_partial_auction,
+    sample_opponent_hands,
     simulate_counterfactual,
     validate_gate_x1,
 )
@@ -456,3 +457,197 @@ class TestGateX1:
         df_no_pass = df[df["action_type"] != "pass"].copy()
         with pytest.raises(AssertionError, match="pass"):
             validate_gate_x1(df_no_pass, n_deals=5)
+
+
+# ── Opponent Hand Resampling ─────────────────────────────────
+
+
+class TestSampleOpponentHands:
+    def test_focal_and_partner_preserved(self, hands):
+        """Focal and partner hands must be identical across all samples."""
+        import random as rng_mod
+
+        for focal_seat in range(4):
+            partner_seat = (focal_seat + 2) % 4
+            configs = sample_opponent_hands(
+                focal_seat, hands, n_samples=5, rng=rng_mod.Random(42)
+            )
+            for config in configs:
+                assert config[focal_seat] == hands[focal_seat]
+                assert config[partner_seat] == hands[partner_seat]
+
+    def test_opponent_hands_vary(self, hands):
+        """Opponent hands should differ across samples (with high probability)."""
+        import random as rng_mod
+
+        configs = sample_opponent_hands(
+            focal_seat=0, hands=hands, n_samples=10, rng=rng_mod.Random(42)
+        )
+        opp_seat = 1
+        # Collect all opponent hand configurations as sorted tuples for comparison
+        opp_hands = [tuple(sorted(str(c) for c in cfg[opp_seat])) for cfg in configs]
+        # At least 2 distinct configurations out of 10
+        assert len(set(opp_hands)) >= 2, "Opponent hands did not vary across samples"
+
+    def test_card_count_preserved(self, hands):
+        """Each config should have 4 hands of 10 cards = 40 total."""
+        import random as rng_mod
+
+        configs = sample_opponent_hands(
+            focal_seat=0, hands=hands, n_samples=5, rng=rng_mod.Random(42)
+        )
+        for config in configs:
+            assert len(config) == 4
+            for h in config:
+                assert len(h) == 10
+
+    def test_determinism(self, hands):
+        """Same seed produces same samples."""
+        import random as rng_mod
+
+        configs1 = sample_opponent_hands(
+            focal_seat=0, hands=hands, n_samples=3, rng=rng_mod.Random(99)
+        )
+        configs2 = sample_opponent_hands(
+            focal_seat=0, hands=hands, n_samples=3, rng=rng_mod.Random(99)
+        )
+        for c1, c2 in zip(configs1, configs2):
+            for seat in range(4):
+                assert c1[seat] == c2[seat]
+
+    def test_all_cards_from_original_pool(self, hands):
+        """Resampled opponent cards must come from the original opponent pool."""
+        import random as rng_mod
+
+        focal_seat = 0
+        opp_seats = [1, 3]
+        original_pool = sorted(
+            str(c) for c in hands[opp_seats[0]] + hands[opp_seats[1]]
+        )
+
+        configs = sample_opponent_hands(
+            focal_seat, hands, n_samples=5, rng=rng_mod.Random(42)
+        )
+        for config in configs:
+            resampled_pool = sorted(
+                str(c) for c in config[opp_seats[0]] + config[opp_seats[1]]
+            )
+            assert resampled_pool == original_pool
+
+
+# ── Multi-Rollout Dataset Generation ─────────────────────────
+
+
+class TestMultiRolloutDataset:
+    @pytest.fixture
+    def single_df(self, raiser):
+        """N=1 dataset (existing behavior)."""
+        return generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            n_opponent_samples=1,
+        )
+
+    @pytest.fixture
+    def multi_df(self, raiser):
+        """N=5 dataset (multi-rollout)."""
+        return generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            n_opponent_samples=5,
+        )
+
+    def test_n1_matches_original(self, raiser):
+        """N=1 with explicit parameter matches default behavior exactly."""
+        df_default = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+        )
+        df_n1 = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            n_opponent_samples=1,
+        )
+        pd.testing.assert_frame_equal(df_default, df_n1)
+
+    def test_multi_has_metadata_columns(self, multi_df):
+        """Multi-sample dataset includes std_net_points and n_samples."""
+        assert "std_net_points" in multi_df.columns
+        assert "n_samples" in multi_df.columns
+        assert (multi_df["n_samples"] == 5).all()
+
+    def test_single_lacks_metadata_columns(self, single_df):
+        """Single-sample dataset does NOT include metadata columns."""
+        assert "std_net_points" not in single_df.columns
+        assert "n_samples" not in single_df.columns
+
+    def test_same_row_count(self, single_df, multi_df):
+        """Single and multi datasets should have the same number of rows."""
+        assert len(single_df) == len(multi_df)
+
+    def test_same_features(self, single_df, multi_df):
+        """Features should be identical (extracted from original hands)."""
+        for fname in STATE_FEATURE_NAMES:
+            np.testing.assert_array_equal(
+                single_df[fname].values,
+                multi_df[fname].values,
+                err_msg=f"Feature {fname} differs between N=1 and N=5",
+            )
+
+    def test_suit_labels_differ(self, single_df, multi_df):
+        """Multi-sample suit labels should differ from single-sample."""
+        suit_mask = single_df["contract_family"] == "suit"
+        if suit_mask.sum() == 0:
+            pytest.skip("No suit actions in test dataset")
+
+        single_suit = single_df.loc[suit_mask, "net_points"].values
+        multi_suit = multi_df.loc[suit_mask, "net_points"].values
+        # With 3 deals and 5 samples, at least some suit labels should differ
+        assert not np.allclose(
+            single_suit, multi_suit
+        ), "Multi-sample suit labels are identical to single-sample"
+
+    def test_std_net_points_positive_for_some_suits(self, multi_df):
+        """At least some suit actions should have std_net_points > 0."""
+        suit_mask = multi_df["contract_family"] == "suit"
+        if suit_mask.sum() == 0:
+            pytest.skip("No suit actions in test dataset")
+        suit_stds = multi_df.loc[suit_mask, "std_net_points"]
+        assert (suit_stds > 0).any(), "No suit actions have label variance"
+
+    def test_multi_determinism(self, raiser):
+        """Same seed + n_opponent_samples produces identical results."""
+        df1 = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            n_opponent_samples=5,
+        )
+        df2 = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            n_opponent_samples=5,
+        )
+        pd.testing.assert_frame_equal(df1, df2)
+
+    def test_gate_x1_passes_multi(self, raiser):
+        """Gate X1 should pass on multi-sample dataset."""
+        df = generate_dataset(
+            seed=42,
+            n_deals=10,
+            continuation_policy=raiser,
+            progress=False,
+            n_opponent_samples=5,
+        )
+        validate_gate_x1(df, n_deals=10)
