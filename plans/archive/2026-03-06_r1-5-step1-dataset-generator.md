@@ -176,4 +176,8 @@ Built into the script and also tested in unit tests:
 
 ## Outcome
 
-_To be filled after implementation._
+COMPLETE. PRs #564 + #565 merged 2026-03-07.
+
+- Counterfactual dataset generator (`scripts/internal/generate_action_value_dataset.py`)
+- 26 unit tests, engine-aligned dealer/lifecycle
+- Gate X1 validation built in

@@ -146,7 +146,7 @@ If the normalizer is evaluated but does not meet adoption criteria:
 | R0 v2 screen report | `docs/04_reports/r0/13_normalizer_offline_screen.md` |
 | R0 v2 screen artifact | `normalizer_offline_screen_v1.json` (NO_GO_DEFER_R1) |
 | R0 v2 normalizer protocol | `plans/archive/r0_v2_normalizer_protocol.md` |
-| ADOPT cascade spec | `plans/r1_master_plan.md` §3.6.3 |
+| ADOPT cascade spec | `plans/archive/r1_master_plan.md` §3.6.3 |
 
 ---
 

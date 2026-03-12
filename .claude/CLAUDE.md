@@ -24,4 +24,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - Docs-only PRs (`docs/**`, `plans/**`, `*.md`) don't trigger CI due to `paths-ignore`
 - Branch protection requires the `tests` check, creating a deadlock
 - Workaround: include a `.claude/` file change to trigger CI
-# trigger CI
+# trigger CI: archive-completed-plans

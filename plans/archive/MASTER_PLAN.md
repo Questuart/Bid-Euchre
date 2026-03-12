@@ -421,7 +421,7 @@ or work sequentially — no dependencies between them.
 - New training data, model, bundle, gate
 - Effort: multiple PRs
 - Sub-plan: `plans/arc_d_execution_plan.md` (Wave 3+)
-- **Gap:** Create `plans/r1_training_plan.md` before starting — concrete commands,
+- **Gap:** Create `plans/archive/r1_training_plan.md` before starting — concrete commands,
   validation gates, file paths. Must include threshold re-tuning step (see §Hyperparameter Registry).
 
 ### Phase D: R1 Reports (blocked on C2 only — B4 complete)
@@ -456,7 +456,7 @@ or work sequentially — no dependencies between them.
 
 **Plans to create (when triggered):**
 - ~~`plans/calibrator_implementation.md`~~ — N/A (B1 skipped, Path B selected)
-- `plans/r1_training_plan.md` — before starting R1 training cycle (C2)
+- `plans/archive/r1_training_plan.md` — before starting R1 training cycle (C2)
 
 ---
 
@@ -597,7 +597,7 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 
 ### Phase C (UNBLOCKED — B3 complete)
 - [x] C1: PR-N7 merged (dual-track + archetype + scatter = C6) — #481
-- [ ] C2-a: R1 training plan created (`plans/r1_training_plan.md`)
+- [ ] C2-a: R1 training plan created (`plans/archive/r1_training_plan.md`)
 - [ ] C2-b: R1 training data generated
 - [ ] C2-c: R1 model trained (dual-arm)
 - [ ] C2-d: R1 bundle + gate created

@@ -3,7 +3,7 @@
 **Date:** 2026-03-01
 **Source:** Master plan execution sessions (A1 oracle analysis, B0 threshold sweep,
 contract selection analysis, comparator overhaul)
-**Governing doc:** `plans/r1_master_plan.md` (supersedes archived `plans/archive/MASTER_PLAN.md` §Stream 6)
+**Governing doc:** `plans/archive/r1_master_plan.md` (supersedes archived `plans/archive/MASTER_PLAN.md` §Stream 6)
 
 Items are ordered by expected impact on R1 model quality, with experimental
 designs where applicable.
@@ -446,7 +446,7 @@ explanations are confounded: (A) genuinely redundant features for no-trump, or
 
 ### R2 Pre-Registered Protocol
 
-See `plans/r1_training_plan.md` §R2 Context-Feature Protocol for the full
+See `plans/archive/r1_training_plan.md` §R2 Context-Feature Protocol for the full
 4-step decision framework (train → check → ablate or force-include → adopt rule).
 
 ### Acceptance Criteria

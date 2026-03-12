@@ -199,4 +199,8 @@ uv run python scripts/internal/train_action_value.py \
 
 ## Outcome
 
-_To be filled after implementation._
+COMPLETE. PR #567 merged 2026-03-07.
+
+- Training pipeline (`scripts/internal/train_action_value.py`)
+- 29 unit tests, Gate X2 validation built in
+- Feature sets: full (52), r0 (39), no-partner, interaction

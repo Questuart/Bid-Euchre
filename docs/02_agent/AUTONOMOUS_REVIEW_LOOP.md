@@ -109,5 +109,5 @@ cat .claude/runtime/review_loops/pr_42/state.json
 
 ## Governing Plan
 
-See `plans/sessions/2026-03-08_autonomous-review-loop.md` for the full
+See `plans/archive/2026-03-08_autonomous-review-loop.md` for the full
 design, state transitions, stop conditions, and implementation sequence.

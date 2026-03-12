@@ -636,7 +636,7 @@ dataset (~400k rows) validates the pipeline before committing to FULL.
 |--------|-----------|
 | R1 baseline statement | `docs/04_reports/r1/r1_baseline_statement.md` (commit `73b3ef0`) |
 | R1 closeout reports | `docs/04_reports/r1/01_*.md`, `02_*.md`, `03_*.md` (concurrent PR) |
-| R1 master plan | `plans/r1_master_plan.md` |
+| R1 master plan | `plans/archive/r1_master_plan.md` |
 | H10 validation | PR #552 |
 | bid_bonus sweep | PR #554 |
 | Rung relabel | PR #555 |
