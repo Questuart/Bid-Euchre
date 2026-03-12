@@ -548,6 +548,42 @@ def _artifact_filename(feature_set: str) -> str:
 VALID_MODEL_CLASSES = ("ols", "gbt")
 
 
+def _run_behavioral_validation(artifact_path: str) -> None:
+    """Run behavioral validation on a freshly trained artifact.
+
+    Imports the validator lazily to avoid circular dependency at module level.
+    Raises AssertionError if the artifact fails behavioral checks.
+    """
+    # Import here to keep module-level imports lean (this module is also
+    # imported by tests that don't need the validator).
+    from validate_action_value_artifact import validate_artifact
+
+    passed, report = validate_artifact(artifact_path)
+
+    stats = report.get("behavioral_stats", {})
+    print(
+        f"    avg_bid={stats.get('avg_bid', '?'):.2f}, "
+        f"pass_rate={stats.get('pass_rate', '?'):.3f}, "
+        f"bid_10_rate={stats.get('bid_10_rate', '?'):.3f}, "
+        f"contract_diversity={stats.get('contract_diversity', '?')}, "
+        f"bid_level_std={stats.get('bid_level_std', '?'):.3f}"
+    )
+
+    if not passed:
+        failures = []
+        for section in ("structural", "quality", "behavioral"):
+            section_data = report.get(section, {})
+            for failure in section_data.get("failures", []):
+                failures.append(f"{failure['name']}: {failure['detail']}")
+        failure_msg = "\n    ".join(failures)
+        raise AssertionError(
+            f"Behavioral validation FAILED:\n    {failure_msg}\n"
+            "Use --skip-validation to bypass."
+        )
+
+    print("  Behavioral validation PASS")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train action-value models for R1.5")
     parser.add_argument("--seed", type=int, required=True)
@@ -710,6 +746,10 @@ def _train_ols_pipeline(
     artifact_path = output_dir / _artifact_filename(args.feature_set)
     artifact_path.write_text(json.dumps(artifact, indent=2))
 
+    if not args.skip_validation:
+        print("  Running behavioral validation...")
+        _run_behavioral_validation(str(artifact_path))
+
     print(f"\n  Artifact: {artifact_path}")
     print("  Done.")
 
@@ -778,6 +818,10 @@ def _train_gbt_pipeline(
 
     artifact_path = output_dir / "action_value_gbt.json"
     artifact_path.write_text(json.dumps(artifact, indent=2))
+
+    if not args.skip_validation:
+        print("  Running behavioral validation...")
+        _run_behavioral_validation(str(artifact_path))
 
     print(f"\n  Artifact: {artifact_path}")
     print(f"  Model files: {output_dir}/gbt_*.joblib")
