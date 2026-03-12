@@ -208,7 +208,7 @@ def extract_artifact_provenance(artifact_path: str | Path) -> dict:
 
     result["schema_version"] = artifact.get("schema_version")
     result["target"] = artifact.get("target")
-    result["frozen"] = artifact.get("frozen_at") is not None
+    result["frozen"] = verify_frozen(artifact_path)
 
     sha = artifact.get("artifact_sha256")
     if sha:
