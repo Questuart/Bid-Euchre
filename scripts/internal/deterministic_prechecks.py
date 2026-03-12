@@ -61,6 +61,36 @@ _COMMENT_BLOCK_RE = re.compile(r"((?:^[ \t]*#[^\n]*\n){11,})", re.MULTILINE)
 # Falsy numeric guard: x = x or fallback (C2)
 _FALSY_GUARD_RE = re.compile(r"\b(\w+)\s*=\s*\1\s+or\s+(?:\d+\.?\d*|default_\w+)")
 
+# --- N1: Missing contract-type facet (notebooks only) ---
+# Matches groupby(...) followed by aggregation/plot methods on the same line
+_N1_GROUPBY_RE = re.compile(
+    r"\.groupby\([^)]*\)\s*(?:\[[^\]]*\])?\s*\." r"(?:mean|sum|plot|bar|box)\b"
+)
+# Terms that indicate contract-type faceting is present
+_N1_EXEMPT_RE = re.compile(r"\bcontract_type\b|\bct\b")
+
+# --- N2: Collapsed matchup table (notebooks only) ---
+# Matches .groupby('matchup') or .groupby("matchup") without 'team' in the expression
+_N2_COLLAPSED_RE = re.compile(r"""\.groupby\(\s*['"]matchup['"]\s*\)""")
+
+# --- N3: Inference claim without statistical test (notebooks only) ---
+_N3_CLAIM_RE = re.compile(
+    r"\b(outperform(?:s|ed)?|better\s+than|significant(?:ly)?|superior)\b",
+    re.IGNORECASE,
+)
+_N3_STATS_RE = re.compile(
+    r"\b(p_value|p-value|ttest|t_test|f_oneway|bootstrap|confidence.interval|CI)\b",
+    re.IGNORECASE,
+)
+
+# --- X2: Undocumented contract change (diff-level) ---
+_X2_CONTRACT_PATHS = (
+    "src/bid_euchre/core/rules.py",
+    "src/bid_euchre/scoring.py",
+)
+_X2_CONTRACT_PREFIX = "src/bid_euchre/logging/"
+_X2_DOC_PREFIX = "docs/01_core/"
+
 
 def check_file(
     file_path: str,
@@ -193,6 +223,62 @@ def check_file(
                     )
                 )
 
+    # --- Notebook-only checks (N1, N2, N3) ---
+    is_notebook = "notebooks/" in file_path
+
+    if is_notebook:
+        # N1: Missing contract-type facet in groupby/plot
+        for i, line in enumerate(lines, 1):
+            if _N1_GROUPBY_RE.search(line):
+                # Check ±3 lines for contract_type or ct
+                window_start = max(0, i - 1 - 3)  # i is 1-indexed
+                window_end = min(len(lines), i - 1 + 4)  # +3 after current
+                window = "\n".join(lines[window_start:window_end])
+                if not _N1_EXEMPT_RE.search(window):
+                    findings.append(
+                        Finding(
+                            severity="P2",
+                            file=file_path,
+                            line=i,
+                            category="process",
+                            check_id="N1",
+                            message="Missing contract-type facet in groupby/plot",
+                        )
+                    )
+
+        # N2: Collapsed matchup table (groupby matchup without team)
+        for i, line in enumerate(lines, 1):
+            if _N2_COLLAPSED_RE.search(line) and "team" not in line:
+                findings.append(
+                    Finding(
+                        severity="P2",
+                        file=file_path,
+                        line=i,
+                        category="process",
+                        check_id="N2",
+                        message="Collapsed matchup table — groupby('matchup') without team",
+                    )
+                )
+
+        # N3: Inference claim without statistical test
+        for i, line in enumerate(lines, 1):
+            if _N3_CLAIM_RE.search(line):
+                # Check ±10 lines for stats patterns
+                window_start = max(0, i - 1 - 10)
+                window_end = min(len(lines), i - 1 + 11)
+                window = "\n".join(lines[window_start:window_end])
+                if not _N3_STATS_RE.search(window):
+                    findings.append(
+                        Finding(
+                            severity="P2",
+                            file=file_path,
+                            line=i,
+                            category="process",
+                            check_id="N3",
+                            message="Inference claim without statistical test nearby",
+                        )
+                    )
+
     # --- Convention checks (P2 — non-blocking) ---
     for i, line in enumerate(lines, 1):
         if line.strip().startswith("#"):
@@ -270,11 +356,48 @@ def check_diff(
             check_file(file_path, content, is_library=is_library, mode=mode)
         )
 
+    # X2: Undocumented contract change (diff-level)
+    all_findings.extend(_check_undocumented_contract_change(changed_files))
+
     # Plan-audit mode: check referenced file paths exist
     if mode == "plan-audit":
         all_findings.extend(_check_plan_paths(changed_files, repo_root))
 
     return all_findings
+
+
+def _check_undocumented_contract_change(
+    changed_files: list[str],
+) -> list[Finding]:
+    """X2: Flag changes to core rules/scoring/logging without doc updates."""
+    contract_files = [
+        f
+        for f in changed_files
+        if f in _X2_CONTRACT_PATHS or f.startswith(_X2_CONTRACT_PREFIX)
+    ]
+    if not contract_files:
+        return []
+
+    has_doc_update = any(
+        f.startswith(_X2_DOC_PREFIX) and f.endswith(".md") for f in changed_files
+    )
+    if has_doc_update:
+        return []
+
+    return [
+        Finding(
+            severity="P2",
+            file=cf,
+            line=0,
+            category="process",
+            check_id="X2",
+            message=(
+                "Contract file changed without docs/01_core/ update — "
+                "add documentation or confirm no contract change"
+            ),
+        )
+        for cf in contract_files
+    ]
 
 
 def _check_plan_paths(changed_files: list[str], repo_root: Path) -> list[Finding]:

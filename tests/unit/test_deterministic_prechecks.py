@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "intern
 
 from deterministic_prechecks import (
     Finding,
+    _check_undocumented_contract_change,
     check_file,
     get_blocking_findings,
 )
@@ -292,3 +293,213 @@ class TestTypeComparison:
         findings = check_file("src/foo.py", TYPE_COMPARISON)
         type_check = [f for f in findings if "isinstance" in f.message.lower()]
         assert all(f.severity == "P2" for f in type_check)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures: N1/N2/N3/X2 check snippets
+# ---------------------------------------------------------------------------
+
+N1_MISSING_FACET = """\
+import pandas as pd
+
+df = pd.read_parquet("data.parquet")
+result = df.groupby('strategy')['tricks_won'].mean()
+result.plot(kind='bar')
+"""
+
+N1_WITH_FACET = """\
+import pandas as pd
+
+df = pd.read_parquet("data.parquet")
+for ct in df.contract_type.unique():
+    sub = df[df.contract_type == ct]
+    result = sub.groupby('strategy')['tricks_won'].mean()
+    result.plot(kind='bar')
+"""
+
+N2_COLLAPSED = """\
+summary = df.groupby('matchup').agg({'tricks_won': 'mean'})
+"""
+
+N2_WITH_TEAM = """\
+summary = df.groupby(['matchup', 'team']).agg({'tricks_won': 'mean'})
+"""
+
+N3_CLAIM_NO_STATS = """\
+# Analysis results
+# Strategy A significantly outperforms Strategy B
+# This confirms it is superior
+result = compare(a, b)
+"""
+
+N3_CLAIM_WITH_STATS = """\
+# Analysis results
+from scipy.stats import ttest_ind
+t_stat, p_value = ttest_ind(a_scores, b_scores)
+assert p_value < 0.05
+# Strategy A significantly outperforms Strategy B
+result = compare(a, b)
+"""
+
+
+# ---------------------------------------------------------------------------
+# N1 tests — Missing contract-type facet
+# ---------------------------------------------------------------------------
+
+
+class TestN1MissingFacet:
+    """N1: groupby/plot without contract_type in notebooks."""
+
+    def test_detects_missing_facet_in_notebook(self) -> None:
+        findings = check_file("notebooks/arc_d/r0/analysis.py", N1_MISSING_FACET)
+        n1 = [f for f in findings if f.check_id == "N1"]
+        assert len(n1) >= 1
+        assert n1[0].severity == "P2"
+
+    def test_no_finding_when_facet_present(self) -> None:
+        findings = check_file("notebooks/arc_d/r0/analysis.py", N1_WITH_FACET)
+        n1 = [f for f in findings if f.check_id == "N1"]
+        assert len(n1) == 0
+
+    def test_no_finding_outside_notebooks(self) -> None:
+        findings = check_file("scripts/analysis.py", N1_MISSING_FACET)
+        n1 = [f for f in findings if f.check_id == "N1"]
+        assert len(n1) == 0
+
+    def test_exempt_with_ct_abbreviation(self) -> None:
+        code = """\
+for ct in df.contract_type.unique():
+    sub = df[df.contract_type == ct]
+    result = sub.groupby('strategy')['tricks_won'].mean()
+"""
+        findings = check_file("notebooks/arc_d/analysis.py", code)
+        n1 = [f for f in findings if f.check_id == "N1"]
+        assert len(n1) == 0
+
+
+# ---------------------------------------------------------------------------
+# N2 tests — Collapsed matchup table
+# ---------------------------------------------------------------------------
+
+
+class TestN2CollapsedMatchup:
+    """N2: groupby('matchup') without team in notebooks."""
+
+    def test_detects_collapsed_matchup(self) -> None:
+        findings = check_file("notebooks/arc_d/r0/analysis.py", N2_COLLAPSED)
+        n2 = [f for f in findings if f.check_id == "N2"]
+        assert len(n2) == 1
+        assert n2[0].severity == "P2"
+
+    def test_no_finding_with_team(self) -> None:
+        findings = check_file("notebooks/arc_d/r0/analysis.py", N2_WITH_TEAM)
+        n2 = [f for f in findings if f.check_id == "N2"]
+        assert len(n2) == 0
+
+    def test_no_finding_outside_notebooks(self) -> None:
+        findings = check_file("scripts/analysis.py", N2_COLLAPSED)
+        n2 = [f for f in findings if f.check_id == "N2"]
+        assert len(n2) == 0
+
+    def test_no_finding_with_team_in_line(self) -> None:
+        """Ensure 'team' anywhere on the line exempts it."""
+        code = """summary = df.groupby('matchup').apply(lambda x: x.team.nunique())\n"""
+        findings = check_file("notebooks/analysis.py", code)
+        n2 = [f for f in findings if f.check_id == "N2"]
+        assert len(n2) == 0
+
+
+# ---------------------------------------------------------------------------
+# N3 tests — Inference claim without statistical test
+# ---------------------------------------------------------------------------
+
+
+class TestN3InferenceClaim:
+    """N3: inference language without stats patterns in notebooks."""
+
+    def test_detects_claim_without_stats(self) -> None:
+        findings = check_file("notebooks/arc_d/r0/analysis.py", N3_CLAIM_NO_STATS)
+        n3 = [f for f in findings if f.check_id == "N3"]
+        assert len(n3) >= 1
+        assert n3[0].severity == "P2"
+
+    def test_no_finding_with_stats_nearby(self) -> None:
+        findings = check_file("notebooks/arc_d/r0/analysis.py", N3_CLAIM_WITH_STATS)
+        n3 = [f for f in findings if f.check_id == "N3"]
+        assert len(n3) == 0
+
+    def test_no_finding_outside_notebooks(self) -> None:
+        findings = check_file("scripts/analysis.py", N3_CLAIM_NO_STATS)
+        n3 = [f for f in findings if f.check_id == "N3"]
+        assert len(n3) == 0
+
+    def test_detects_better_than(self) -> None:
+        code = "# Model X is better than Model Y\nresult = 42\n"
+        findings = check_file("notebooks/analysis.py", code)
+        n3 = [f for f in findings if f.check_id == "N3"]
+        assert len(n3) >= 1
+
+    def test_exempt_with_bootstrap(self) -> None:
+        code = """\
+# Run bootstrap analysis
+ci = bootstrap(data, n=10000)
+# Model X is better than Model Y
+result = 42
+"""
+        findings = check_file("notebooks/analysis.py", code)
+        n3 = [f for f in findings if f.check_id == "N3"]
+        assert len(n3) == 0
+
+
+# ---------------------------------------------------------------------------
+# X2 tests — Undocumented contract change
+# ---------------------------------------------------------------------------
+
+
+class TestX2UndocumentedContractChange:
+    """X2: contract file changes without docs/01_core/ update."""
+
+    def test_detects_rules_without_docs(self) -> None:
+        changed = ["src/bid_euchre/core/rules.py", "tests/unit/test_rules.py"]
+        findings = _check_undocumented_contract_change(changed)
+        x2 = [f for f in findings if f.check_id == "X2"]
+        assert len(x2) == 1
+        assert x2[0].file == "src/bid_euchre/core/rules.py"
+        assert x2[0].severity == "P2"
+
+    def test_no_finding_with_docs(self) -> None:
+        changed = [
+            "src/bid_euchre/core/rules.py",
+            "docs/01_core/RULES.md",
+        ]
+        findings = _check_undocumented_contract_change(changed)
+        x2 = [f for f in findings if f.check_id == "X2"]
+        assert len(x2) == 0
+
+    def test_detects_scoring_without_docs(self) -> None:
+        changed = ["src/bid_euchre/scoring.py"]
+        findings = _check_undocumented_contract_change(changed)
+        x2 = [f for f in findings if f.check_id == "X2"]
+        assert len(x2) == 1
+
+    def test_detects_logging_without_docs(self) -> None:
+        changed = ["src/bid_euchre/logging/game_log.py"]
+        findings = _check_undocumented_contract_change(changed)
+        x2 = [f for f in findings if f.check_id == "X2"]
+        assert len(x2) == 1
+
+    def test_no_finding_for_unrelated_files(self) -> None:
+        changed = ["src/bid_euchre/strategy/bidding.py"]
+        findings = _check_undocumented_contract_change(changed)
+        x2 = [f for f in findings if f.check_id == "X2"]
+        assert len(x2) == 0
+
+    def test_multiple_contract_files_flagged(self) -> None:
+        changed = [
+            "src/bid_euchre/core/rules.py",
+            "src/bid_euchre/scoring.py",
+            "src/bid_euchre/logging/writer.py",
+        ]
+        findings = _check_undocumented_contract_change(changed)
+        x2 = [f for f in findings if f.check_id == "X2"]
+        assert len(x2) == 3
