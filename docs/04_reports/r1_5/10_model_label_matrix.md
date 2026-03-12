@@ -194,6 +194,7 @@ All three gates PASS.
 
 | Item | Value |
 |------|-------|
+| gate_status | ALL PASS (G1: CI_low +0.977 > 0, G2: suit +0.945 > -0.092, G3: suit > 0) |
 | Seed | 42 |
 | N deals (dataset) | 2,500 per dataset |
 | N deals (H2H) | 2,500 per matchup |
