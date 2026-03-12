@@ -441,7 +441,7 @@ def build_artifact(
     metadata: dict = {
         "n_deals": n_deals,
         "training_seed": seed,
-        "arm": "full",
+        "arm": feature_set,
         "context_features": [],
         "git_sha": git_sha,
         "created_at_utc": utc_now_iso(),
@@ -507,7 +507,7 @@ def build_gbt_artifact(
     metadata: dict = {
         "n_deals": n_deals,
         "training_seed": seed,
-        "arm": "full",
+        "arm": feature_set,
         "context_features": [],
         "git_sha": git_sha,
         "created_at_utc": utc_now_iso(),
