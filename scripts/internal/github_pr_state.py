@@ -107,7 +107,7 @@ def get_ci_status(pr_number: int) -> str:
 
     if any(s == "FAILURE" for s in states):
         return "failure"
-    if any(s == "PENDING" for s in states):
+    if any(s in ("PENDING", "IN_PROGRESS") for s in states):
         return "pending"
     if all(s == "SUCCESS" for s in states):
         return "success"

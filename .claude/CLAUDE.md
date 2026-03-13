@@ -31,3 +31,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 # trigger CI: gbt-report-repro-fix
 # trigger CI: phase0-multi-rollout-diagnostic
 # trigger CI: r1-5-arc-retrospective
+# trigger CI: review-loop-smoke-test
