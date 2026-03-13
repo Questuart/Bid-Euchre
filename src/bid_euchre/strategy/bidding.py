@@ -1381,15 +1381,63 @@ _HAND_FEATURE_NAMES: List[str] = [
     "quick_tricks",
 ]
 
+# Positional feature names (fixed across all schema versions)
+_POSITIONAL_FEATURE_NAMES: List[str] = [
+    "current_high_bid",
+    "is_high",
+    "is_low",
+    "trump_C",
+    "trump_D",
+    "trump_H",
+    "trump_S",
+    "seat_rel_1",
+    "seat_rel_2",
+    "seat_rel_3",
+]
+
 # State feature names: 39 hand + 3 partner + 10 positional/legality = 52
+# This is the v7 canonical default. Artifact-driven extraction may use different
+# partner features (e.g., v8 suit-relative channels), but hand and positional
+# features are fixed across versions.
 STATE_FEATURE_NAMES: List[str] = (
     _HAND_FEATURE_NAMES
     + ["partner_bid_level", "partner_passed", "partner_suit_match"]
-    + ["current_high_bid"]
-    + ["is_high", "is_low"]
-    + ["trump_C", "trump_D", "trump_H", "trump_S"]
-    + ["seat_rel_1", "seat_rel_2", "seat_rel_3"]
+    + _POSITIONAL_FEATURE_NAMES
 )
+
+
+def _infer_partner_features(feature_names: List[str]) -> List[str]:
+    """Extract the partner feature subset from a full feature list.
+
+    Partner features sit between hand features (39) and positional features (10).
+    The hand and positional blocks are fixed across schema versions; only the
+    partner block varies (v7: 3 features, v8: 4 features).
+
+    Args:
+        feature_names: Full ordered feature list from an artifact model.
+
+    Returns:
+        The partner feature names (the slice between hand and positional blocks).
+
+    Raises:
+        ValueError: If positional anchor 'current_high_bid' is not found or
+            the inferred partner features are empty.
+    """
+    hand_end = len(_HAND_FEATURE_NAMES)  # 39
+    if "current_high_bid" not in feature_names:
+        raise ValueError(
+            f"Cannot infer partner features: 'current_high_bid' not found "
+            f"in feature_names (got {len(feature_names)} features)"
+        )
+    positional_start = feature_names.index("current_high_bid")
+    partner_names = feature_names[hand_end:positional_start]
+    if not partner_names:
+        raise ValueError(
+            f"Inferred empty partner feature block from feature_names "
+            f"(hand_end={hand_end}, positional_start={positional_start})"
+        )
+    return partner_names
+
 
 # Action feature names appended to state for per-contract models
 ACTION_FEATURE_NAMES: List[str] = ["bid_n", "bid_n_sq"]
@@ -1414,17 +1462,23 @@ def extract_state_features(
     obs: BiddingObservation,
     contract_family: str,
     trump_suit: Optional[str],
+    partner_feature_names: Optional[List[str]] = None,
 ) -> np.ndarray:
-    """Extract the 52-element state feature vector for a candidate action.
+    """Extract the state feature vector for a candidate action.
 
     Args:
         obs: Current bidding observation.
         contract_family: One of "suit", "high", "low", or "none".
             "none" is used for pass actions (no contract context).
         trump_suit: Trump suit letter for suit contracts, None otherwise.
+        partner_feature_names: Ordered list of partner feature names to extract.
+            If None, uses v7 defaults (partner_bid_level, partner_passed,
+            partner_suit_match). Artifact-driven bidders pass their artifact's
+            partner feature names here to support schema evolution.
 
     Returns:
-        np.ndarray of shape (52,) with features in STATE_FEATURE_NAMES order.
+        np.ndarray with features in order: hand (39) + partner (N) + positional (10).
+        Default shape is (52,) for v7 schema.
 
     Note on pass ("none") encoding:
         get_hand_features() requires a contract_type; there is no contract-neutral
@@ -1436,8 +1490,14 @@ def extract_state_features(
         generator uses the same extract_state_features("none", None) call, so the
         pass model trains and infers on identically-encoded features.
     """
-    from ..features.auction_context import extract_partner_features
+    from ..features.auction_context import (
+        PARTNER_FEATURE_NAMES,
+        extract_partner_features,
+    )
     from ..features.hand_eval import get_hand_features
+
+    if partner_feature_names is None:
+        partner_feature_names = PARTNER_FEATURE_NAMES
 
     # Hand features (39): "high" proxy for "none" — see docstring note above.
     hand_contract = contract_family if contract_family != "none" else "high"
@@ -1446,17 +1506,13 @@ def extract_state_features(
         [float(hand_feats[k]) for k in _HAND_FEATURE_NAMES], dtype=np.float64
     )
 
-    # Partner features (3)
+    # Partner features (variable count depending on schema version)
     partner_family = contract_family if contract_family != "none" else None
     partner_feats = extract_partner_features(
         obs.seat, obs.auction_transcript, partner_family
     )
     partner_arr = np.array(
-        [
-            float(partner_feats["partner_bid_level"]),
-            float(partner_feats["partner_passed"]),
-            float(partner_feats["partner_suit_match"]),
-        ],
+        [float(partner_feats[k]) for k in partner_feature_names],
         dtype=np.float64,
     )
 
@@ -1558,7 +1614,89 @@ _SANITY_CHECK_OBS = BiddingObservation(
 )
 
 
-def _check_ols_predictions_sane(models: dict[str, dict], pass_model: dict) -> None:
+def _validate_artifact_features(
+    model_feature_names: List[str],
+    has_interactions: bool,
+) -> List[str]:
+    """Validate and infer partner features from an artifact model's feature_names.
+
+    Shared validation logic for all action-value bidder classes. Checks that
+    the artifact's feature_names have the expected structure:
+        hand (39) + partner (N) + positional (10) [+ interaction (3)] + action (2)
+
+    Returns the inferred partner feature names.
+
+    Raises:
+        ValueError: If feature_names don't match the expected structure.
+    """
+    # Strip action features from the end to get state features
+    n_action = len(ACTION_FEATURE_NAMES)
+    if has_interactions:
+        n_interaction = len(INTERACTION_FEATURE_NAMES)
+        state_plus_interaction = model_feature_names[:-(n_action)]
+        state_names = state_plus_interaction[:-(n_interaction)]
+    else:
+        state_names = model_feature_names[:-(n_action)]
+
+    partner_names = _infer_partner_features(state_names)
+
+    # Rebuild expected full feature list and validate
+    expected_state = (
+        list(_HAND_FEATURE_NAMES)
+        + list(partner_names)
+        + list(_POSITIONAL_FEATURE_NAMES)
+    )
+    if has_interactions:
+        expected_full = (
+            expected_state + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
+        )
+    else:
+        expected_full = expected_state + ACTION_FEATURE_NAMES
+
+    if list(model_feature_names) != expected_full:
+        raise ValueError(
+            f"Artifact feature_names structural mismatch. "
+            f"Expected {len(expected_full)} features "
+            f"(39 hand + {len(partner_names)} partner + 10 positional"
+            f"{' + 3 interaction' if has_interactions else ''} + 2 action), "
+            f"got {len(model_feature_names)} features."
+        )
+
+    return list(partner_names)
+
+
+def _validate_pass_model_features(
+    pass_feature_names: List[str],
+    partner_feature_names: List[str],
+    has_interactions: bool,
+) -> None:
+    """Validate pass model feature_names against inferred partner features.
+
+    Pass models use state features only (no action features).
+    """
+    expected_state = (
+        list(_HAND_FEATURE_NAMES)
+        + list(partner_feature_names)
+        + list(_POSITIONAL_FEATURE_NAMES)
+    )
+    if has_interactions:
+        expected = expected_state + INTERACTION_FEATURE_NAMES
+    else:
+        expected = expected_state
+
+    if list(pass_feature_names) != expected:
+        raise ValueError(
+            f"Artifact pass model feature_names mismatch. "
+            f"Expected {len(expected)} state features, "
+            f"got {len(pass_feature_names)} features."
+        )
+
+
+def _check_ols_predictions_sane(
+    models: dict[str, dict],
+    pass_model: dict,
+    partner_feature_names: Optional[List[str]] = None,
+) -> None:
     """Quick sanity check that OLS predictions aren't degenerate.
 
     Checks that bid-10 is NOT predicted as optimal for every suit on a
@@ -1571,7 +1709,12 @@ def _check_ols_predictions_sane(models: dict[str, dict], pass_model: dict) -> No
 
     for family in ("suit", "high", "low"):
         trump = "H" if family == "suit" else None
-        state = extract_state_features(_SANITY_CHECK_OBS, family, trump)
+        state = extract_state_features(
+            _SANITY_CHECK_OBS,
+            family,
+            trump,
+            partner_feature_names=partner_feature_names,
+        )
         # Compare bid-10 value vs bid-1 value
         feats_10 = np.concatenate([state, extract_action_features(10)])
         feats_1 = np.concatenate([state, extract_action_features(1)])
@@ -1589,7 +1732,10 @@ def _check_ols_predictions_sane(models: dict[str, dict], pass_model: dict) -> No
         )
 
 
-def _check_gbt_predictions_sane(gbt_models: dict[str, object]) -> None:
+def _check_gbt_predictions_sane(
+    gbt_models: dict[str, object],
+    partner_feature_names: Optional[List[str]] = None,
+) -> None:
     """Quick sanity check that GBT predictions aren't degenerate.
 
     Same logic as _check_ols_predictions_sane but for GBT models.
@@ -1598,7 +1744,12 @@ def _check_gbt_predictions_sane(gbt_models: dict[str, object]) -> None:
 
     for family in ("suit", "high", "low"):
         trump = "H" if family == "suit" else None
-        state = extract_state_features(_SANITY_CHECK_OBS, family, trump)
+        state = extract_state_features(
+            _SANITY_CHECK_OBS,
+            family,
+            trump,
+            partner_feature_names=partner_feature_names,
+        )
         feats_10 = np.concatenate([state, extract_action_features(10)])
         feats_1 = np.concatenate([state, extract_action_features(1)])
         val_10 = float(gbt_models[family].predict(feats_10.reshape(1, -1))[0])
@@ -1675,43 +1826,43 @@ class ActionValueBidder(BiddingPolicy):
         feature_set = artifact.get("feature_set", "full")
         self._has_interactions = feature_set == "interaction"
 
-        # Validate feature_names match expected runtime feature order.
-        # OLS is a dot product — mismatched feature order silently mispredicts.
-        # feature_names is REQUIRED for action_value_olsa_v1 (no legacy surface).
-        if self._has_interactions:
-            expected_bid_features = (
-                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
-            )
-            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
-        else:
-            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
-            expected_pass_features = list(STATE_FEATURE_NAMES)
-
+        # Artifact-driven feature validation: infer partner features from the
+        # artifact's stored feature_names rather than the global STATE_FEATURE_NAMES.
+        # This enables v7/v8 schema coexistence in H2H batteries.
         for family in ("suit", "high", "low"):
             model = self.models[family]
             if "feature_names" not in model:
                 raise ValueError(
                     f"Artifact {family} model missing required 'feature_names'"
                 )
-            if list(model["feature_names"]) != expected_bid_features:
+        # Use suit model as reference for partner feature inference
+        self._partner_feature_names = _validate_artifact_features(
+            list(self.models["suit"]["feature_names"]),
+            self._has_interactions,
+        )
+        # Validate remaining models have consistent feature_names
+        for family in ("high", "low"):
+            partner_check = _validate_artifact_features(
+                list(self.models[family]["feature_names"]),
+                self._has_interactions,
+            )
+            if partner_check != self._partner_feature_names:
                 raise ValueError(
-                    f"Artifact {family} model feature_names mismatch. "
-                    f"Expected {len(expected_bid_features)} features: "
-                    f"{expected_bid_features[:3]}...{expected_bid_features[-2:]}, "
-                    f"got {list(model['feature_names'])[:3]}..."
-                    f"{list(model['feature_names'])[-2:]}"
+                    f"Artifact {family} model has different partner features than suit: "
+                    f"{partner_check} vs {self._partner_feature_names}"
                 )
         if "feature_names" not in self.pass_model:
             raise ValueError("Artifact pass model missing required 'feature_names'")
-        if list(self.pass_model["feature_names"]) != expected_pass_features:
-            raise ValueError(
-                f"Artifact pass model feature_names mismatch. "
-                f"Expected {len(expected_pass_features)} state features, "
-                f"got {len(self.pass_model['feature_names'])} features."
-            )
+        _validate_pass_model_features(
+            list(self.pass_model["feature_names"]),
+            self._partner_feature_names,
+            self._has_interactions,
+        )
 
         if not skip_behavioral_check:
-            _check_ols_predictions_sane(self.models, self.pass_model)
+            _check_ols_predictions_sane(
+                self.models, self.pass_model, self._partner_feature_names
+            )
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
@@ -1723,7 +1874,12 @@ class ActionValueBidder(BiddingPolicy):
         for action in legal:
             if action.is_pass():
                 # Pass model: state-only features with "none" contract encoding
-                state = extract_state_features(obs, "none", None)
+                state = extract_state_features(
+                    obs,
+                    "none",
+                    None,
+                    partner_feature_names=self._partner_feature_names,
+                )
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
@@ -1731,7 +1887,12 @@ class ActionValueBidder(BiddingPolicy):
             else:
                 contract_type, trump_suit = action.to_contract_tuple()
                 family = contract_type  # "suit", "high", or "low"
-                state = extract_state_features(obs, family, trump_suit)
+                state = extract_state_features(
+                    obs,
+                    family,
+                    trump_suit,
+                    partner_feature_names=self._partner_feature_names,
+                )
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
@@ -1811,39 +1972,37 @@ class GBTActionValueBidder(BiddingPolicy):
         feature_set = artifact.get("feature_set", "full")
         self._has_interactions = feature_set == "interaction"
 
-        # Validate feature names match expected runtime order
-        if self._has_interactions:
-            expected_bid_features = (
-                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
-            )
-            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
-        else:
-            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
-            expected_pass_features = list(STATE_FEATURE_NAMES)
-
+        # Artifact-driven feature validation (same pattern as ActionValueBidder)
         for family in ("suit", "high", "low"):
             meta = models_meta[family]
             if "feature_names" not in meta:
                 raise ValueError(
                     f"Artifact {family} model missing required 'feature_names'"
                 )
-            if list(meta["feature_names"]) != expected_bid_features:
+        self._partner_feature_names = _validate_artifact_features(
+            list(models_meta["suit"]["feature_names"]),
+            self._has_interactions,
+        )
+        for family in ("high", "low"):
+            partner_check = _validate_artifact_features(
+                list(models_meta[family]["feature_names"]),
+                self._has_interactions,
+            )
+            if partner_check != self._partner_feature_names:
                 raise ValueError(
-                    f"Artifact {family} model feature_names mismatch. "
-                    f"Expected {len(expected_bid_features)} features, "
-                    f"got {len(meta['feature_names'])} features."
+                    f"Artifact {family} model has different partner features than suit: "
+                    f"{partner_check} vs {self._partner_feature_names}"
                 )
         if "feature_names" not in models_meta["pass"]:
             raise ValueError("Artifact pass model missing required 'feature_names'")
-        if list(models_meta["pass"]["feature_names"]) != expected_pass_features:
-            raise ValueError(
-                f"Artifact pass model feature_names mismatch. "
-                f"Expected {len(expected_pass_features)} state features, "
-                f"got {len(models_meta['pass']['feature_names'])} features."
-            )
+        _validate_pass_model_features(
+            list(models_meta["pass"]["feature_names"]),
+            self._partner_feature_names,
+            self._has_interactions,
+        )
 
         if not skip_behavioral_check:
-            _check_gbt_predictions_sane(self.gbt_models)
+            _check_gbt_predictions_sane(self.gbt_models, self._partner_feature_names)
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
@@ -1854,7 +2013,12 @@ class GBTActionValueBidder(BiddingPolicy):
 
         for action in legal:
             if action.is_pass():
-                state = extract_state_features(obs, "none", None)
+                state = extract_state_features(
+                    obs,
+                    "none",
+                    None,
+                    partner_feature_names=self._partner_feature_names,
+                )
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
@@ -1862,7 +2026,12 @@ class GBTActionValueBidder(BiddingPolicy):
             else:
                 contract_type, trump_suit = action.to_contract_tuple()
                 family = contract_type
-                state = extract_state_features(obs, family, trump_suit)
+                state = extract_state_features(
+                    obs,
+                    family,
+                    trump_suit,
+                    partner_feature_names=self._partner_feature_names,
+                )
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
@@ -1959,50 +2128,37 @@ class TwoStageActionValueBidder(BiddingPolicy):
         feature_set = artifact.get("feature_set", "full")
         self._has_interactions = feature_set == "interaction"
 
-        # Validate feature_names for high/low/pass (same as ActionValueBidder)
-        if self._has_interactions:
-            expected_bid_features = (
-                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
-            )
-            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
-        else:
-            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
-            expected_pass_features = list(STATE_FEATURE_NAMES)
-
+        # Artifact-driven feature validation
+        # Two-stage suit model stores feature_names at top level of suit result
+        suit_feature_names = suit.get("feature_names")
+        if suit_feature_names is None:
+            raise ValueError("Artifact suit model missing required 'feature_names'")
+        self._partner_feature_names = _validate_artifact_features(
+            list(suit_feature_names),
+            self._has_interactions,
+        )
         for family in ("high", "low"):
             model = self.models[family]
             if "feature_names" not in model:
                 raise ValueError(
                     f"Artifact {family} model missing required 'feature_names'"
                 )
-            if list(model["feature_names"]) != expected_bid_features:
-                raise ValueError(
-                    f"Artifact {family} model feature_names mismatch. "
-                    f"Expected {len(expected_bid_features)} features: "
-                    f"{expected_bid_features[:3]}...{expected_bid_features[-2:]}, "
-                    f"got {list(model['feature_names'])[:3]}..."
-                    f"{list(model['feature_names'])[-2:]}"
-                )
-
-        # Validate suit model feature_names (stored at top level of suit result)
-        suit_feature_names = suit.get("feature_names")
-        if suit_feature_names is None:
-            raise ValueError("Artifact suit model missing required 'feature_names'")
-        if list(suit_feature_names) != expected_bid_features:
-            raise ValueError(
-                f"Artifact suit model feature_names mismatch. "
-                f"Expected {len(expected_bid_features)} features, "
-                f"got {len(suit_feature_names)} features."
+            partner_check = _validate_artifact_features(
+                list(model["feature_names"]),
+                self._has_interactions,
             )
-
+            if partner_check != self._partner_feature_names:
+                raise ValueError(
+                    f"Artifact {family} model has different partner features than suit: "
+                    f"{partner_check} vs {self._partner_feature_names}"
+                )
         if "feature_names" not in self.pass_model:
             raise ValueError("Artifact pass model missing required 'feature_names'")
-        if list(self.pass_model["feature_names"]) != expected_pass_features:
-            raise ValueError(
-                f"Artifact pass model feature_names mismatch. "
-                f"Expected {len(expected_pass_features)} state features, "
-                f"got {len(self.pass_model['feature_names'])} features."
-            )
+        _validate_pass_model_features(
+            list(self.pass_model["feature_names"]),
+            self._partner_feature_names,
+            self._has_interactions,
+        )
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
@@ -2014,7 +2170,12 @@ class TwoStageActionValueBidder(BiddingPolicy):
         for action in legal:
             if action.is_pass():
                 # Pass model: state-only features with "none" contract encoding
-                state = extract_state_features(obs, "none", None)
+                state = extract_state_features(
+                    obs,
+                    "none",
+                    None,
+                    partner_feature_names=self._partner_feature_names,
+                )
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
@@ -2022,7 +2183,12 @@ class TwoStageActionValueBidder(BiddingPolicy):
             else:
                 contract_type, trump_suit = action.to_contract_tuple()
                 family = contract_type  # "suit", "high", or "low"
-                state = extract_state_features(obs, family, trump_suit)
+                state = extract_state_features(
+                    obs,
+                    family,
+                    trump_suit,
+                    partner_feature_names=self._partner_feature_names,
+                )
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])

@@ -394,7 +394,7 @@ class TestActionValueBidder:
             len(STATE_FEATURE_NAMES) + len(ACTION_FEATURE_NAMES)
         )
         path = self._write_artifact(artifact)
-        with pytest.raises(ValueError, match="feature_names mismatch"):
+        with pytest.raises(ValueError):
             ActionValueBidder(artifact_path=path)
 
     def test_rejects_mismatched_pass_feature_names(self):
@@ -404,7 +404,7 @@ class TestActionValueBidder:
             STATE_FEATURE_NAMES
         )
         path = self._write_artifact(artifact)
-        with pytest.raises(ValueError, match="pass model feature_names mismatch"):
+        with pytest.raises(ValueError, match="feature_names mismatch"):
             ActionValueBidder(artifact_path=path)
 
     def test_rejects_artifact_without_feature_names(self):

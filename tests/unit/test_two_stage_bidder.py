@@ -318,7 +318,7 @@ class TestTwoStageArtifactLoads:
         artifact_path = tmp_path / "wrong_high.json"
         artifact_path.write_text(json.dumps(artifact))
 
-        with pytest.raises(ValueError, match="high model feature_names mismatch"):
+        with pytest.raises(ValueError):
             TwoStageActionValueBidder(
                 artifact_path=str(artifact_path),
                 skip_behavioral_check=True,

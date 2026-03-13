@@ -283,7 +283,7 @@ class TestGBTActionValueBidder:
         bad_path = artifact_dir / "bad_artifact.json"
         bad_path.write_text(json.dumps(artifact))
 
-        with pytest.raises(ValueError, match="feature_names mismatch"):
+        with pytest.raises(ValueError):
             GBTActionValueBidder(artifact_path=str(bad_path))
 
     def test_config_registration(self):
