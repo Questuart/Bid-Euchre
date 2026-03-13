@@ -38,6 +38,7 @@ from .bidding import (
     RanktheTank,
     StrictHellRaiser,
     StrictRaiserBidder,  # backward-compat alias
+    TwoStageActionValueBidder,
     compute_best_bid,
     enumerate_legal_actions,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "ArtifactBidder",
     "FixedBidder",
     "GBTActionValueBidder",
+    "TwoStageActionValueBidder",
     "HeuristicSuitBidder",
     "HighLowHeuristicBidder",
     "HybridOLSaBidder",

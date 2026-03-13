@@ -33,6 +33,7 @@ from ..strategy import (
     RanktheTank,
     Strategy,
     StrictHellRaiser,
+    TwoStageActionValueBidder,
 )
 from ..strategy.artifact_strategy import ArtifactGreedyStrategy
 from .teacher_roster import load_teacher_roster
@@ -62,6 +63,7 @@ BIDDING_POLICY_REGISTRY: dict[str, type] = {
     "HybridOLSaBidder": HybridOLSaBidder,
     "ActionValueBidder": ActionValueBidder,
     "GBTActionValueBidder": GBTActionValueBidder,
+    "TwoStageActionValueBidder": TwoStageActionValueBidder,
 }
 
 STRATEGY_REQUIRED_PARAMS: dict[str, list[str]] = {
@@ -75,6 +77,7 @@ BIDDING_REQUIRED_PARAMS: dict[str, list[str]] = {
     "HybridOLSaBidder": ["artifact_path"],
     "ActionValueBidder": ["artifact_path"],
     "GBTActionValueBidder": ["artifact_path"],
+    "TwoStageActionValueBidder": ["artifact_path"],
 }
 
 
@@ -91,8 +94,7 @@ def _log_artifact_provenance(bidder_name: str, artifact_path: str) -> None:
         logger.info("Artifact for %s is frozen: %s", bidder_name, artifact_path)
     else:
         logger.warning(
-            "Artifact for %s is NOT frozen: %s (OK for development, "
-            "not for promotion)",
+            "Artifact for %s is NOT frozen: %s (OK for development, not for promotion)",
             bidder_name,
             artifact_path,
         )
