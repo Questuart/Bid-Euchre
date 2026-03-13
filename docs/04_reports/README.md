@@ -48,6 +48,9 @@ docs/04_reports/
     00_step1_dataset_generator.md  (implementation history: Step 1)
     00_step2_training_pipeline.md  (implementation history: Step 2)
     08_gbt_prototype_evaluation.md (R1.5.3 Track B: GBT prototype evaluation)
+    09_multi_rollout_diagnostic.md (R1.5.3 Phase 0: H14 multi-rollout label test)
+    10_model_label_matrix.md  (R1.5.3 Phase 1A: 2×2 model×label H2H)
+    11_r1_5_arc_retrospective.md  (comprehensive R1.5 arc retrospective)
   model_arc_d_dashboard.md  Cross-rung progression dashboard
 ```
 
@@ -97,6 +100,9 @@ Use `--snapshot` flag with dashboard script to update the committed snapshot.
 | [r1_5/00_step1_dataset_generator.md](r1_5/00_step1_dataset_generator.md) | 2026-03-07 | Implementation history: counterfactual dataset generator, Gate X1 |
 | [r1_5/00_step2_training_pipeline.md](r1_5/00_step2_training_pipeline.md) | 2026-03-08 | Implementation history: training pipeline, Gate X2 |
 | [r1_5/08_gbt_prototype_evaluation.md](r1_5/08_gbt_prototype_evaluation.md) | 2026-03-11 | R1.5.3 Track B: GBT prototype — +1.1 net_eppd, suit regression resolved, PROTOTYPE VALIDATED |
+| [r1_5/09_multi_rollout_diagnostic.md](r1_5/09_multi_rollout_diagnostic.md) | 2026-03-12 | R1.5.3 Phase 0: H14 CONFIRMED — multi-rollout labels improve OLS suit R² by +0.121 |
+| [r1_5/10_model_label_matrix.md](r1_5/10_model_label_matrix.md) | 2026-03-12 | R1.5.3 Phase 1A: H15 CONFIRMED — model capacity 35× more important than label quality |
+| **[r1_5/11_r1_5_arc_retrospective.md](r1_5/11_r1_5_arc_retrospective.md)** | **2026-03-12** | **Comprehensive R1.5 arc retrospective — 16 experiments, 14 hypotheses, objective alignment → GBT** |
 
 ### Phase 0: Bidless
 
