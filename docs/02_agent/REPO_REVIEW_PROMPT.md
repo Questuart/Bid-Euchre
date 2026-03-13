@@ -1,7 +1,7 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Version:** 3.5 (Drift-Resilient, Discovery-Driven)
-**Last Updated:** February 2026
+**Version:** 3.6 (Drift-Resilient, Discovery-Driven)
+**Last Updated:** March 2026
 
 ---
 
@@ -159,7 +159,7 @@ uv run python -c "from bid_euchre.validation.promotion import check_artifacts_fr
 # Verify reporting (chart generators)
 uv run python -c "from bid_euchre.reporting.charts import generate_contract_faceted_charts; print('charts OK')"
 
-# Verify logging and utils
+# Verify logging and time
 uv run python -c "from bid_euchre.logging.game_logger import GameLogger; print('logging OK')"
 uv run python -c "from bid_euchre.core.time import utc_now_iso; print('time OK')"
 
@@ -922,12 +922,16 @@ bid-euchre/
 │   ├── validation/              # Schema validation, promotion gates
 │   ├── analysis/                # Statistical analysis, paired comparisons
 │   ├── experiments/             # Config system, batch metadata
+│   ├── utils/                   # (empty — cleanup candidate)
 │   └── scoring.py               # Top-level scoring module
 │   # (verify via: ls -d src/bid_euchre/*/ | grep -v __pycache__)
 ├── experiments/                 # Experiment configs + runner
 │   ├── run_experiment.py        # THE canonical runner
 │   ├── configs/                 # YAML experiment definitions
 │   ├── suites/                  # Suite definitions
+│   ├── baselines/               # Teacher roster definitions
+│   ├── comparisons/             # H2H comparison runner
+│   ├── training/                # Training operational docs
 │   └── _deprecated/             # Frozen (legacy, do not modify)
 │   # (verify via: ls experiments/configs/*.yaml | wc -l)
 ├── scripts/                     # Blessed tooling entrypoints
@@ -938,7 +942,8 @@ bid-euchre/
 │   ├── unit/                    # Fast, isolated tests
 │   ├── integration/             # Multi-component tests
 │   ├── property/                # Property-based tests (Hypothesis)
-│   └── performance/             # Benchmarks
+│   ├── performance/             # Benchmarks
+│   └── fixtures/                # Test fixtures (arc_d/ artifacts)
 │   # (verify via: find tests -name "test_*.py" | wc -l)
 ├── notebooks/                   # Interactive analysis
 │   ├── arc_d/                   # Arc D evaluation notebooks (r0/, r1/, ...)
@@ -991,6 +996,11 @@ bid-euchre/
 | **R0 Eval & Reporting** | #397–416 | Eval redesign, comparator battery, R0 baseline lock | JSONL eval parser, comparator battery, R0 promotion, report upgrade |
 | **R0 Notebooks** | #417–438 | Notebook templates, instantiation, review fixes | 5 notebook templates, 9 review-fix PRs, formal reports, auction health |
 | **R0→R1 Transition** | #439–446 | H2H battery, ablation, gate calibration | OLSaBidder dual-format, H2H battery runner, threshold calibration |
+| **R0 Finalization** | #447–489 | Reports, comparator overhaul, pass-threshold, dual-track | R0 canonical v2 frozen, comparator v6, gate threshold calibration |
+| **R1 Training** | #490–554 | Partner features, R1 pipeline, gate X3 eval | R1 CONCLUDED — decision layer = bottleneck, suit regression structural |
+| **R1.5 Action-Value** | #555–582 | Action-value bidder, counterfactual datasets, FULL H2H | R1.5 v1 ADVANCED — CI_low +0.124 < delta floor, suit deficit structural |
+| **R1.5.2 Diagnostics** | #583–612 | Ablation, declare/defend, interaction terms, review infra | All hypotheses eliminated, OLS×bimodal confirmed, review loop built |
+| **R1.5.3 Alternatives** | #613–632 | GBT bidder, two-stage OLS, review loop activation, retrospective | GBT +1.1 vs R0, H15 CONFIRMED (capacity >> labels), artifact-driven features |
 
 **Current state:** Derive via:
 

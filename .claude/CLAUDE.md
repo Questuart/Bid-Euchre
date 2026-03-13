@@ -33,3 +33,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 # trigger CI: r1-5-arc-retrospective
 # trigger CI: review-loop-smoke-test
 # trigger CI: r1-5-3-closeout
+# trigger CI: review-cleanup-2026-03-13
