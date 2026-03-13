@@ -1877,3 +1877,170 @@ class GBTActionValueBidder(BiddingPolicy):
                 best_action = action
 
         return best_action
+
+
+def predict_logistic(model_dict: dict, features: np.ndarray) -> float:
+    """Sigmoid prediction from a logistic model dict.
+
+    Each model_dict has "coefficients" (array) and "intercept" (float).
+    Returns P(positive class) = 1 / (1 + exp(-(features @ coef + intercept))).
+    """
+    coefficients = np.asarray(model_dict["coefficients"], dtype=np.float64)
+    intercept = float(model_dict.get("intercept", 0.0))
+    logit = float(np.dot(coefficients, features) + intercept)
+    # Clip logit to avoid overflow in exp
+    logit = max(min(logit, 500.0), -500.0)
+    return 1.0 / (1.0 + math.exp(-logit))
+
+
+class TwoStageActionValueBidder(BiddingPolicy):
+    """Two-stage action-value bidder with explicit make/set decomposition.
+
+    For suit bids: uses P(make) logistic + conditional payoff OLS models.
+    For high/low/pass: uses standard OLS (same as ActionValueBidder).
+
+    Artifact schema: two_stage_action_value_v1
+    """
+
+    def __init__(
+        self,
+        artifact_path: str,
+        name: str = "two_stage_action_value",
+        skip_behavioral_check: bool = False,
+    ):
+        super().__init__(name=name)
+
+        with open(artifact_path) as f:
+            artifact = json.load(f)
+
+        schema = artifact.get("schema_version")
+        if schema != "two_stage_action_value_v1":
+            raise ValueError(
+                f"Expected schema_version 'two_stage_action_value_v1', got '{schema}'"
+            )
+
+        # Reject quarantined artifacts
+        status = artifact.get("status", "active")
+        if status == "quarantined":
+            raise ValueError(
+                f"Artifact is quarantined (status='quarantined'): {artifact_path}"
+            )
+
+        models = artifact["models"]
+
+        # Suit model: three-component structure
+        suit = models["suit"]
+        self.suit_logistic = suit["logistic"]
+        self.suit_make_model = suit["make_model"]
+        self.suit_set_model = suit["set_model"]
+
+        # R² quality warning for high/low
+        for family in ("high", "low"):
+            r2 = models[family].get("r_squared")
+            if r2 is not None and r2 < _R2_WARNING_THRESHOLD:
+                logger.warning(
+                    "Low R² for %s model: %.4f < %.2f — possible wrong-target "
+                    "or stale artifact: %s",
+                    family,
+                    r2,
+                    _R2_WARNING_THRESHOLD,
+                    artifact_path,
+                )
+
+        # High/low use standard OLS format
+        self.models = {
+            "high": models["high"],
+            "low": models["low"],
+        }
+        self.pass_model = models["pass"]
+        self.context_features = artifact.get("metadata", {}).get("context_features", [])
+
+        # Detect interaction feature set from artifact metadata
+        feature_set = artifact.get("feature_set", "full")
+        self._has_interactions = feature_set == "interaction"
+
+        # Validate feature_names for high/low/pass (same as ActionValueBidder)
+        if self._has_interactions:
+            expected_bid_features = (
+                STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            )
+            expected_pass_features = STATE_FEATURE_NAMES + INTERACTION_FEATURE_NAMES
+        else:
+            expected_bid_features = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
+            expected_pass_features = list(STATE_FEATURE_NAMES)
+
+        for family in ("high", "low"):
+            model = self.models[family]
+            if "feature_names" not in model:
+                raise ValueError(
+                    f"Artifact {family} model missing required 'feature_names'"
+                )
+            if list(model["feature_names"]) != expected_bid_features:
+                raise ValueError(
+                    f"Artifact {family} model feature_names mismatch. "
+                    f"Expected {len(expected_bid_features)} features: "
+                    f"{expected_bid_features[:3]}...{expected_bid_features[-2:]}, "
+                    f"got {list(model['feature_names'])[:3]}..."
+                    f"{list(model['feature_names'])[-2:]}"
+                )
+
+        # Validate suit model feature_names (stored at top level of suit result)
+        suit_feature_names = suit.get("feature_names")
+        if suit_feature_names is None:
+            raise ValueError("Artifact suit model missing required 'feature_names'")
+        if list(suit_feature_names) != expected_bid_features:
+            raise ValueError(
+                f"Artifact suit model feature_names mismatch. "
+                f"Expected {len(expected_bid_features)} features, "
+                f"got {len(suit_feature_names)} features."
+            )
+
+        if "feature_names" not in self.pass_model:
+            raise ValueError("Artifact pass model missing required 'feature_names'")
+        if list(self.pass_model["feature_names"]) != expected_pass_features:
+            raise ValueError(
+                f"Artifact pass model feature_names mismatch. "
+                f"Expected {len(expected_pass_features)} state features, "
+                f"got {len(self.pass_model['feature_names'])} features."
+            )
+
+    def choose_bid(self, obs: BiddingObservation) -> BidAction:
+        """Select the legal action with highest predicted E[net_points]."""
+        legal = enumerate_legal_actions(obs)
+
+        best_value = float("-inf")
+        best_action = BidAction.pass_bid()
+
+        for action in legal:
+            if action.is_pass():
+                # Pass model: state-only features with "none" contract encoding
+                state = extract_state_features(obs, "none", None)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
+                value = predict_ols(self.pass_model, state)
+            else:
+                contract_type, trump_suit = action.to_contract_tuple()
+                family = contract_type  # "suit", "high", or "low"
+                state = extract_state_features(obs, family, trump_suit)
+                if self._has_interactions:
+                    interactions = compute_interaction_features(state)
+                    state = np.concatenate([state, interactions])
+                action_feats = extract_action_features(action.n)
+                features = np.concatenate([state, action_feats])
+
+                if family == "suit":
+                    # Two-stage: P(make)*E[pts|make] + (1-P(make))*E[pts|set]
+                    p_make = predict_logistic(self.suit_logistic, features)
+                    e_make = predict_ols(self.suit_make_model, features)
+                    e_set = predict_ols(self.suit_set_model, features)
+                    value = p_make * e_make + (1.0 - p_make) * e_set
+                else:
+                    # High/low: standard OLS
+                    value = predict_ols(self.models[family], features)
+
+            if value > best_value:
+                best_value = value
+                best_action = action
+
+        return best_action

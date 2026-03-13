@@ -2,9 +2,10 @@
 R1.5 action-value training pipeline.
 
 Trains per-contract models on counterfactual action-value data.
-Supports two model classes:
+Supports three model classes:
   - OLS (default): produces action_value_olsa_v1 artifacts for ActionValueBidder
   - GBT: produces action_value_gbt_v1 artifacts for GBTActionValueBidder
+  - Two-stage: produces two_stage_action_value_v1 artifacts for TwoStageActionValueBidder
 
 Four models:
   suit:  target ~ state features + bid_n + bid_n_sq
@@ -15,7 +16,13 @@ Four models:
 Ablation parameters:
   --feature-set: "full" (52 state features) or "r0" (39 R0 hand features only)
   --target: "net_points" (default) or "tricks_won"
-  --model-class: "ols" (default) or "gbt"
+  --model-class: "ols" (default), "gbt", or "two-stage"
+
+The two-stage model decomposes suit predictions:
+  - P(make) via logistic regression
+  - Conditional E[pts|make] and E[pts|set] via separate OLS models
+  - Composite: P(make)*E[pts|make] + (1-P(make))*E[pts|set]
+  High/low/pass use standard OLS (same as ActionValueBidder).
 
 CLI usage:
     uv run python scripts/internal/train_action_value.py \\
@@ -27,6 +34,13 @@ CLI usage:
     # GBT model:
     uv run python scripts/internal/train_action_value.py \\
         --seed 42 --model-class gbt \\
+        --dataset data/runs/action_value_smoke_42/datasets/action_value.parquet \\
+        --output-dir data/runs/action_value_smoke_42 \\
+        --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
+
+    # Two-stage model:
+    uv run python scripts/internal/train_action_value.py \\
+        --seed 42 --model-class two-stage \\
         --dataset data/runs/action_value_smoke_42/datasets/action_value.parquet \\
         --output-dir data/runs/action_value_smoke_42 \\
         --continuation-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json
@@ -413,6 +427,175 @@ def train_pass_gbt(
     return gbt, metadata
 
 
+# ── Two-Stage Training ───────────────────────────────────────
+
+
+def train_two_stage_suit_model(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    state_feature_names: list[str] | None = None,
+    target_col: str = TARGET_COL,
+) -> dict:
+    """Train two-stage suit model: P(make) logistic + conditional payoff OLS.
+
+    Stage 1: Logistic regression on made_bid = (net_points >= 2*bid_n - 10)
+    Stage 2: Separate OLS for make/set subsets
+    Composite: P(make)*E[pts|make] + (1-P(make))*E[pts|set]
+
+    Args:
+        train_df: Training data (all families — will be filtered to suit).
+        val_df: Validation data (all families — will be filtered to suit).
+        state_feature_names: State features to use.
+        target_col: Target column name.
+
+    Returns:
+        Dict with logistic, make_model, set_model, and composite metrics.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+
+    if state_feature_names is None:
+        state_feature_names = STATE_FEATURE_NAMES
+    feature_names = list(state_feature_names) + list(ACTION_FEATURE_NAMES)
+
+    # Filter to suit family
+    train_sub = train_df[train_df["contract_family"] == "suit"]
+    val_sub = val_df[val_df["contract_family"] == "suit"]
+
+    if len(train_sub) == 0:
+        raise ValueError("No training rows for family 'suit'")
+
+    # Derive made_bid binary target: net_points >= 2*bid_n - 10
+    train_made = train_sub[target_col].values >= 2 * train_sub["bid_n"].values - 10
+    val_made = val_sub[target_col].values >= 2 * val_sub["bid_n"].values - 10
+
+    # Build feature matrices
+    X_train = _build_feature_matrix(train_sub, feature_names)
+    y_train = train_sub[target_col].values
+    X_val = _build_feature_matrix(val_sub, feature_names)
+    y_val = val_sub[target_col].values
+
+    # Stage 1: Logistic regression on P(make)
+    lr = LogisticRegression(max_iter=5000, solver="lbfgs")
+    lr.fit(X_train, train_made.astype(int))
+    p_make_val = lr.predict_proba(X_val)[:, 1]
+    auc = float(roc_auc_score(val_made.astype(int), p_make_val))
+
+    # Stage 2: Separate OLS for make/set subsets
+    make_mask = train_made
+    set_mask = ~train_made
+
+    X_train_make = X_train[make_mask]
+    y_train_make = y_train[make_mask]
+    X_train_set = X_train[set_mask]
+    y_train_set = y_train[set_mask]
+
+    w_make, b_make = _fit_ols(X_train_make, y_train_make)
+    w_set, b_set = _fit_ols(X_train_set, y_train_set)
+
+    # Per-regime validation metrics
+    make_metrics = (
+        _compute_metrics(y_val[val_made], X_val[val_made] @ w_make + b_make)
+        if val_made.sum() > 0
+        else {"r2": float("nan"), "mae": float("nan")}
+    )
+    set_metrics = (
+        _compute_metrics(y_val[~val_made], X_val[~val_made] @ w_set + b_set)
+        if (~val_made).sum() > 0
+        else {"r2": float("nan"), "mae": float("nan")}
+    )
+
+    # Composite prediction on ALL validation rows using logistic probabilities
+    e_make_val = X_val @ w_make + b_make
+    e_set_val = X_val @ w_set + b_set
+    y_pred_composite = p_make_val * e_make_val + (1 - p_make_val) * e_set_val
+    composite_metrics = _compute_metrics(y_val, y_pred_composite)
+
+    return {
+        "logistic": {
+            "coefficients": lr.coef_[0].tolist(),
+            "intercept": float(lr.intercept_[0]),
+            "auc": auc,
+        },
+        "make_model": {
+            "coefficients": w_make.tolist(),
+            "intercept": float(b_make),
+            "r_squared": float(make_metrics["r2"]),
+            "mae": float(make_metrics["mae"]),
+            "n_train": int(make_mask.sum()),
+        },
+        "set_model": {
+            "coefficients": w_set.tolist(),
+            "intercept": float(b_set),
+            "r_squared": float(set_metrics["r2"]),
+            "mae": float(set_metrics["mae"]),
+            "n_train": int(set_mask.sum()),
+        },
+        "feature_names": feature_names,
+        "composite_r_squared": float(composite_metrics["r2"]),
+        "composite_mae": float(composite_metrics["mae"]),
+        "auc": auc,
+        "make_rate": float(train_made.mean()),
+        "n_train": len(train_sub),
+        "n_val": len(val_sub),
+    }
+
+
+def build_two_stage_artifact(
+    suit_result: dict,
+    high_model: dict,
+    low_model: dict,
+    pass_model: dict,
+    seed: int,
+    n_deals: int,
+    continuation_artifact: str,
+    feature_set: str = "full",
+    target_col: str = TARGET_COL,
+    dataset_path: str | None = None,
+    dataset_sha256: str | None = None,
+    continuation_artifact_sha256: str | None = None,
+) -> dict:
+    """Assemble the two_stage_action_value_v1 artifact dict.
+
+    Suit model uses three-component structure (logistic + make_model + set_model).
+    High/low/pass use standard OLS format (same as action_value_olsa_v1).
+    """
+    git_sha = _git_sha()
+
+    metadata: dict = {
+        "n_deals": n_deals,
+        "training_seed": seed,
+        "arm": feature_set,
+        "context_features": [],
+        "git_sha": git_sha,
+        "created_at_utc": utc_now_iso(),
+        "model_class": "two-stage",
+        "continuation_artifact_path": continuation_artifact,
+    }
+    if dataset_path is not None:
+        metadata["dataset_path"] = dataset_path
+    if dataset_sha256 is not None:
+        metadata["dataset_sha256"] = dataset_sha256
+    if continuation_artifact_sha256 is not None:
+        metadata["continuation_artifact_sha256"] = continuation_artifact_sha256
+
+    return {
+        "schema_version": "two_stage_action_value_v1",
+        "target": target_col,
+        "risk_mode": "neutral",
+        "continuation_policy": Path(continuation_artifact).stem,
+        "action_features": list(ACTION_FEATURE_NAMES),
+        "feature_set": feature_set,
+        "models": {
+            "suit": suit_result,
+            "high": high_model,
+            "low": low_model,
+            "pass": pass_model,
+        },
+        "metadata": metadata,
+    }
+
+
 # ── Artifact ─────────────────────────────────────────────────
 
 
@@ -618,7 +801,7 @@ def _artifact_filename(feature_set: str) -> str:
     return f"action_value_{feature_set}_features.json"
 
 
-VALID_MODEL_CLASSES = ("ols", "gbt")
+VALID_MODEL_CLASSES = ("ols", "gbt", "two-stage")
 
 
 def _run_behavioral_validation(artifact_path: str) -> dict:
@@ -698,7 +881,7 @@ def main():
         "--model-class",
         choices=list(VALID_MODEL_CLASSES),
         default="ols",
-        help="Model class: 'ols' (default) or 'gbt' (gradient boosted trees)",
+        help="Model class: 'ols' (default), 'gbt' (gradient boosted trees), or 'two-stage' (logistic + conditional OLS for suit)",
     )
     args = parser.parse_args()
 
@@ -745,6 +928,16 @@ def main():
 
     if model_class == "gbt":
         _train_gbt_pipeline(
+            train_df,
+            val_df,
+            state_feature_names,
+            target_col,
+            output_dir,
+            args,
+            n_deals,
+        )
+    elif model_class == "two-stage":
+        _train_two_stage_pipeline(
             train_df,
             val_df,
             state_feature_names,
@@ -942,6 +1135,143 @@ def _train_gbt_pipeline(
 
     print(f"\n  Artifact: {artifact_path}")
     print(f"  Model files: {output_dir}/gbt_*.joblib")
+    print("  Done.")
+
+
+def _train_two_stage_pipeline(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    state_feature_names: list[str],
+    target_col: str,
+    output_dir: Path,
+    args: argparse.Namespace,
+    n_deals: int,
+) -> None:
+    """Two-stage training pipeline: P(make) logistic + conditional OLS for suit."""
+    # Compute provenance hashes
+    print("  Computing provenance hashes...")
+    dataset_sha, cont_sha = _compute_provenance_hashes(
+        args.dataset, args.continuation_artifact
+    )
+    print(f"    dataset_sha256={dataset_sha[:12]}...")
+    if cont_sha:
+        print(f"    continuation_sha256={cont_sha[:12]}...")
+
+    # Train suit model with two-stage decomposition
+    print("  Training suit two-stage model...")
+    suit_result = train_two_stage_suit_model(
+        train_df,
+        val_df,
+        state_feature_names=state_feature_names,
+        target_col=target_col,
+    )
+    print(
+        f"    P(make) AUC={suit_result['auc']:.4f}, "
+        f"composite R²={suit_result['composite_r_squared']:.4f}, "
+        f"composite MAE={suit_result['composite_mae']:.3f}"
+    )
+    print(
+        f"    make_rate={suit_result['make_rate']:.3f}, "
+        f"make R²={suit_result['make_model']['r_squared']:.4f}, "
+        f"set R²={suit_result['set_model']['r_squared']:.4f}"
+    )
+
+    if suit_result["auc"] < 0.70:
+        print(
+            f"  WARNING: P(make) AUC={suit_result['auc']:.4f} < 0.70 — "
+            "logistic stage may be weak"
+        )
+
+    # Train high/low with standard OLS
+    models_ols = {}
+    for family in ("high", "low"):
+        print(f"  Training {family} OLS model...")
+        models_ols[family] = train_family_model(
+            train_df,
+            val_df,
+            family,
+            state_feature_names=state_feature_names,
+            target_col=target_col,
+        )
+        print(
+            f"    R²={models_ols[family]['r_squared']:.4f}, "
+            f"MAE={models_ols[family]['mae']:.3f}, "
+            f"n_train={models_ols[family]['n_train']}"
+        )
+
+    # Train pass with standard OLS
+    print("  Training pass OLS model...")
+    pass_model = train_pass_model(
+        train_df,
+        val_df,
+        state_feature_names=state_feature_names,
+        target_col=target_col,
+    )
+    print(
+        f"    R²={pass_model['r_squared']:.4f}, "
+        f"MAE={pass_model['mae']:.3f}, "
+        f"n_train={pass_model['n_train']}"
+    )
+
+    artifact = build_two_stage_artifact(
+        suit_result,
+        models_ols["high"],
+        models_ols["low"],
+        pass_model,
+        args.seed,
+        n_deals,
+        args.continuation_artifact,
+        feature_set=args.feature_set,
+        target_col=target_col,
+        dataset_path=args.dataset,
+        dataset_sha256=dataset_sha,
+        continuation_artifact_sha256=cont_sha,
+    )
+
+    # Gate X2 for high/low/pass (suit uses composite R² instead)
+    if not args.skip_validation:
+        print("  Running Gate X2 validation (high/low/pass)...")
+        for family in ("high", "low"):
+            r2 = models_ols[family]["r_squared"]
+            threshold = GATE_X2_THRESHOLDS[family]
+            assert r2 > threshold, f"Gate X2 FAIL: {family} R²={r2:.4f} <= {threshold}"
+        r2_pass = pass_model["r_squared"]
+        threshold_pass = GATE_X2_THRESHOLDS["pass"]
+        assert (
+            r2_pass > threshold_pass
+        ), f"Gate X2 FAIL: pass R²={r2_pass:.4f} <= {threshold_pass}"
+        # Suit uses composite R² with same threshold
+        r2_suit = suit_result["composite_r_squared"]
+        threshold_suit = GATE_X2_THRESHOLDS["suit"]
+        assert (
+            r2_suit > threshold_suit
+        ), f"Gate X2 FAIL: suit composite R²={r2_suit:.4f} <= {threshold_suit}"
+        print(
+            f"  Gate X2 PASS: "
+            f"suit composite R²={r2_suit:.4f}, "
+            f"high R²={models_ols['high']['r_squared']:.4f}, "
+            f"low R²={models_ols['low']['r_squared']:.4f}, "
+            f"pass R²={pass_model['r_squared']:.4f}"
+        )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = output_dir / "action_value_two_stage.json"
+    artifact_path.write_text(json.dumps(artifact, indent=2))
+
+    if not args.skip_validation:
+        print("  Running behavioral validation...")
+        report = _run_behavioral_validation(str(artifact_path))
+
+        print("  Freezing artifact with provenance...")
+        from bid_euchre.models.freeze import freeze_with_provenance
+
+        provenance = {
+            "behavioral_validation": _build_behavioral_provenance(report),
+        }
+        frozen = freeze_with_provenance(str(artifact_path), provenance)
+        print(f"    artifact_sha256={frozen['artifact_sha256'][:12]}...")
+
+    print(f"\n  Artifact: {artifact_path}")
     print("  Done.")
 
 
