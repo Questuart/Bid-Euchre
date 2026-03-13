@@ -28,11 +28,14 @@ if [[ "$COMMAND" == *"gh pr create"* ]] && [[ "$EXIT_CODE" == "0" ]]; then
     fi
     touch "$SENTINEL"
 
-    # Launch driver in background (one step per invocation)
-    python scripts/internal/review_driver.py \
+    # Launch driver in background (loops until terminal, 15min max)
+    LOGDIR=".claude/runtime/review_loops/pr_${PR_NUM}"
+    mkdir -p "$LOGDIR"
+    PYTHONPATH=scripts/internal python scripts/internal/review_driver.py \
       --pr "$PR_NUM" \
       --branch "$BRANCH" \
-      --trigger pr_created &
+      --trigger pr_created \
+      > "$LOGDIR/driver.log" 2>&1 &
   fi
 fi
 
