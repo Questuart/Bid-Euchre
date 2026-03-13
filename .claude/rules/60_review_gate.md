@@ -22,12 +22,13 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 |---------|-----------|-------------------------------|---------|
 | `reviewing-changes` | Review loop (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Post-merge code review signal |
 
-> **Note (2026-03-12):** `reviewing-changes` was demoted from required to advisory.
-> The review loop hook (`post-pr-review-loop.sh`) was never registered in settings,
-> so the status permanently stuck at `pending`, blocking all PRs. Root causes:
-> (1) missing hook registration, (2) CI status polling returns "unknown" and blocks
-> forever, (3) status publishing errors swallowed silently. Until the loop
-> infrastructure is hardened, the status is informational only.
+> **Note (2026-03-12):** `reviewing-changes` was demoted from required to advisory
+> after the review loop hook was found to be unregistered (PR #624).
+>
+> **Fix (2026-03-13):** Hook registration added to `.claude/settings.json` and
+> driver converted from single-step to looping execution (15min timeout, 30s CI
+> polling). The status remains advisory — it should now progress from `pending`
+> to `success`/`failure` automatically, but is not required for merge.
 
 ### Status Values
 

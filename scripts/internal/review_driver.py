@@ -1,13 +1,12 @@
 """Review loop driver — main orchestrator for the autonomous review loop.
 
-Each invocation:
+Runs as a background process launched by post-pr-review-loop.sh:
 1. Loads state from disk (or initializes if new)
-2. If terminal state → no-op
-3. Advances one step (bounded progress)
-4. Saves state and round artifacts
-5. Exits
+2. Loops: advance one step, sleep when polling, until terminal or timeout
+3. Saves state and round artifacts after each step
+4. Maximum runtime: 15 minutes
 
-Idempotent: duplicate triggers are harmless.
+Idempotent: duplicate triggers are harmless (sentinel file in hook).
 Entry point: python scripts/internal/review_driver.py --pr <N> --trigger <event>
 
 Adapters:
@@ -22,6 +21,7 @@ import json
 import logging
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from review_state import (
@@ -748,32 +748,66 @@ def main() -> int:
             loop_state.run_id or "unknown",
         )
 
-    # Advance one step (with crash recovery)
-    try:
-        loop_state = step(loop_state)
-    except Exception as e:
-        logger.exception("PR #%d: unhandled error", loop_state.pr_number)
-        # Best-effort: publish failure status
-        try:
-            _publish_status(
+    # States where we should poll with a delay (waiting for external events)
+    _POLLING_STATES = {ReviewState.WAITING_FOR_CI}
+
+    # Loop until terminal state or timeout (15 minutes max)
+    max_runtime_s = 900
+    poll_interval_s = 30
+    start_time = time.monotonic()
+
+    while not loop_state.is_terminal:
+        elapsed = time.monotonic() - start_time
+        if elapsed > max_runtime_s:
+            logger.warning(
+                "PR #%d: runtime limit reached (%.0fs) — exiting. "
+                "Rerun: python scripts/internal/review_driver.py "
+                "--pr %d --trigger manual",
                 loop_state.pr_number,
-                "failure",
-                (
-                    f"Review crashed: {type(e).__name__}. "
-                    f"Rerun: python scripts/internal/review_driver.py "
-                    f"--pr {loop_state.pr_number} --trigger manual"
-                ),
+                elapsed,
+                loop_state.pr_number,
             )
-        except Exception:
-            pass  # Best effort
-        loop_state.stop_reason = f"Unhandled exception: {e}"
-        # Try to transition to terminal state
+            break
+
+        prev_state = loop_state.current_state
+
         try:
-            loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
-        except Exception:
-            loop_state.state = ReviewState.STOPPED_REVIEW_FAILURE.value
-        save_state(loop_state)
-        return 1
+            loop_state = step(loop_state)
+        except Exception as e:
+            logger.exception("PR #%d: unhandled error", loop_state.pr_number)
+            try:
+                _publish_status(
+                    loop_state.pr_number,
+                    "failure",
+                    (
+                        f"Review crashed: {type(e).__name__}. "
+                        f"Rerun: python scripts/internal/review_driver.py "
+                        f"--pr {loop_state.pr_number} --trigger manual"
+                    ),
+                )
+            except Exception:
+                pass
+            loop_state.stop_reason = f"Unhandled exception: {e}"
+            try:
+                loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+            except Exception:
+                loop_state.state = ReviewState.STOPPED_REVIEW_FAILURE.value
+            save_state(loop_state)
+            return 1
+
+        # If we didn't advance (stuck in a polling state), sleep before retry
+        if loop_state.current_state == prev_state:
+            if loop_state.current_state in _POLLING_STATES:
+                logger.info(
+                    "PR #%d: polling %s — sleeping %ds",
+                    loop_state.pr_number,
+                    loop_state.current_state.value,
+                    poll_interval_s,
+                )
+                time.sleep(poll_interval_s)
+            else:
+                # Non-polling state that didn't advance — avoid tight loop
+                time.sleep(5)
 
     # Report final state
     logger.info(
