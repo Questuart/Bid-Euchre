@@ -5,10 +5,10 @@
 | Field | Value |
 |-------|-------|
 | **Arc** | D (OLSa-Hybrid Bidder) |
-| **Rung** | R1.5 (objective-alignment) |
-| **Date** | 2026-03-08 |
+| **Rung** | R1.5 through R1.5.3 (objective-alignment → model-architecture) |
+| **Date** | 2026-03-08 (R1.5 v1); updated 2026-03-13 (R1.5.3) |
 | **Reviewer** | Claude (automated closeout review) |
-| **gate_status** | ADVANCED |
+| **gate_status** | ADVANCED (R1.5 v1); R1.5.3 PENDING |
 
 ## Evaluation Batteries
 
@@ -100,21 +100,64 @@ or justify pooling.
 | 00_step2_training_pipeline.md | Per-contract R² in Gate X2 table |
 | 07_promotion_decision.md | Per-contract deltas in section 4 (next steps) |
 
+## R1.5.3 Addendum (2026-03-13)
+
+### Additional Evaluation Batteries
+
+| Battery | Purpose | Script Path | Deal Count | Seed | Version |
+|---------|---------|-------------|------------|------|---------|
+| GBT H2H QUICK | GBT prototype screening | scripts/internal/run_arc_d_h2h_battery.py | 2,500/matchup | 42 | v1 |
+| 2×2 Model×Label H2H | H15 decomposition | scripts/internal/run_arc_d_h2h_battery.py | 2,500/matchup | 42 | v1 |
+| Two-stage H2H QUICK | H16 evaluation | scripts/internal/run_arc_d_h2h_battery.py | 2,000/matchup | 42 | v1 |
+| GBT H2H FULL | Production validation | scripts/internal/run_arc_d_h2h_battery.py | 50,000/matchup | 42,123,456 | v1 |
+
+### Additional Methodology Limitations (R1.5.3)
+
+| ID | Description | Category | Notes |
+|----|-------------|----------|-------|
+| L9 | GBT interpretability loss | (a) | GBT provides feature importances but not signed coefficients. Decision boundaries are implicit in tree structure. Two-stage OLS serves as interpretable reference. |
+| L10 | GBT hyperparameters untuned | (b) | Default sklearn `GradientBoostingRegressor` parameters. Grid search (n_estimators, max_depth, learning_rate) deferred. QUICK results (+1.1 net_eppd) suggest defaults are already effective. |
+| L11 | GBT tail risk (CVaR₅) | (a) | CVaR₅ = -6.63 vs R0's -0.71. Higher variance from aggressive selective bidding. Accepted as tradeoff — the +1.1 net_eppd expected-value advantage compensates. |
+| L12 | Multi-rollout datasets at SMOKE scale only | (b) | N=5 and N=20 datasets generated at 500 deals (SMOKE). R² improvement verified but gameplay evaluation used QUICK-scale separately. No FULL-scale multi-rollout data exists. |
+
+### L10 Deferral Cost Analysis
+
+| Dimension | Cost |
+|-----------|------|
+| **Fix-now** | 1-2 PRs for grid search infrastructure + training runs. ~4-8 hours compute for hyperparameter sweep. |
+| **Fix-later** | Same cost. No compounding — hyperparameter tuning is independent of other changes. If R1.6 adds features, tuning should be redone anyway. |
+| **Never-fix** | Default parameters may leave performance on the table. However, +1.1 net_eppd at QUICK with defaults is already 6× the R1.5 v1 OLS result. Diminishing returns likely. |
+
+**Decision:** Deferred. If GBT FULL validation passes with defaults, tuning
+is a P1 optimization for R1.6 or later. If FULL shows QUICK→FULL shrinkage
+narrowing the gap, tuning becomes P0.
+
+### R1.5.3 Contract-Type Faceting Compliance
+
+| Report | Faceting Status |
+|--------|-----------------|
+| 08_gbt_prototype_evaluation.md | Faceted: per-contract deltas in summary and section 3 |
+| 09_multi_rollout_diagnostic.md | Faceted: per-contract R² in section 3 |
+| 10_model_label_matrix.md | Faceted: per-contract H2H in section 4 |
+| 11_two_stage_evaluation.md | Pooled + suit deltas reported; high/low available |
+| 13_r1_5_3_promotion_decision.md | Faceted: per-contract tables in sections 2.1, 2.4 |
+
 ## Blockers
 
 None. All items are category (a) inherent or (b) deferrable. No (c)-class
 blockers exist.
 
 The ADVANCED decision does not require resolution of (b) items. For a future
-PROMOTED decision (v2), PD-1 (FULL retraining) and PD-3 (comparator battery)
-should be resolved, and L3 (single seed) should be addressed.
+PROMOTED decision, PD-1 (FULL retraining) and PD-3 (comparator battery)
+should be resolved, L3 (single seed) is being addressed in the GBT FULL
+battery (3 seeds), and L10 (GBT tuning) should be evaluated.
 
 ## Sign-off
 
-- [x] All evaluation batteries listed
+- [x] All evaluation batteries listed (including R1.5.3 addendum)
 - [x] All known limitations classified (a/b/c)
 - [x] All (b) items have deferral cost descriptions (three-dimensional)
 - [x] No (c) items remain unresolved
 - [x] Rigor firewall applied (05_rigor.md blockers are category (c))
 - [x] Plan deviations formally documented with cost analysis
-- [x] Contract-type faceting compliance checked across suite
+- [x] Contract-type faceting compliance checked across suite (including R1.5.3)
