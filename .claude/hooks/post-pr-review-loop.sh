@@ -31,7 +31,7 @@ if [[ "$COMMAND" == *"gh pr create"* ]] && [[ "$EXIT_CODE" == "0" ]]; then
     # Launch driver in background (loops until terminal, 15min max)
     LOGDIR=".claude/runtime/review_loops/pr_${PR_NUM}"
     mkdir -p "$LOGDIR"
-    PYTHONPATH=scripts/internal python scripts/internal/review_driver.py \
+    PYTHONPATH=scripts/internal uv run python scripts/internal/review_driver.py \
       --pr "$PR_NUM" \
       --branch "$BRANCH" \
       --trigger pr_created \
