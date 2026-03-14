@@ -180,8 +180,8 @@ This repo prioritizes technical correctness over convenience. Key requirements:
 - **No visual-only validation:** Statistical tests must accompany visual inspection
 - **Fail-fast gates:** Use assert-style sanity checks in notebooks and pipelines
 
-See `.claude/rules/05_rigor.md` for complete standards.
-See `.claude/rules/35_integrity.md` for methodology deferral analysis requirements.
+See `.claude/rules/deferred/05_rigor.md` for complete standards.
+See `.claude/rules/deferred/35_integrity.md` for methodology deferral analysis requirements.
 
 ### Worktree-Only Workflow
 All code changes MUST happen in dedicated git worktrees, never on `main` in the shared checkout. Pre-commit hooks enforce this policy. See `.claude/CLAUDE.md` for detailed workflow.
