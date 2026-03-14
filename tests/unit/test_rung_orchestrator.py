@@ -23,6 +23,7 @@ from bid_euchre.arc_d_v2.advance_check import (
     find_best_in_lineage,
     generate_advance_check,
 )
+from bid_euchre.arc_d_v2.config import AnchorModel, Roster, RosterModel
 from bid_euchre.arc_d_v2.orchestration import (
     STEP_DESCRIPTIONS,
     STEP_FUNCTIONS,
@@ -965,24 +966,25 @@ from bid_euchre.arc_d_v2.orchestration import generate_h2h_roster
 
 class TestGenerateH2HRoster:
     def _mock_roster(self):
-        return {
-            "models": {
-                "gbt_av": {
-                    "class_name": "GBTActionValueBidder",
-                    "trainable": True,
-                },
-                "modeloespecifico": {
-                    "class_name": "ModeloEspecifico",
-                    "trainable": False,
-                    "params": {},
-                },
-            },
-            "anchor": {
-                "name": "anchor_hybrid_r0_full",
-                "class_name": "HybridOLSaBidder",
-                "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
-            },
-        }
+        return Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                ),
+                RosterModel(
+                    name="modeloespecifico",
+                    class_name="ModeloEspecifico",
+                    trainable=False,
+                ),
+            ],
+            anchor=AnchorModel(
+                name="anchor_hybrid_r0_full",
+                class_name="HybridOLSaBidder",
+                artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+            ),
+        )
 
     def test_generates_correct_format(self, tmp_path):
         """Roster entries have name, class_name, and optional params."""
@@ -1037,23 +1039,25 @@ from bid_euchre.arc_d_v2.orchestration import generate_comparator_config
 
 class TestGenerateComparatorConfig:
     def _mock_roster(self):
-        return {
-            "models": {
-                "gbt_av": {
-                    "class_name": "GBTActionValueBidder",
-                    "trainable": True,
-                },
-                "modeloespecifico": {
-                    "class_name": "ModeloEspecifico",
-                    "trainable": False,
-                },
-            },
-            "anchor": {
-                "name": "anchor_hybrid_r0_full",
-                "class_name": "HybridOLSaBidder",
-                "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
-            },
-        }
+        return Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                ),
+                RosterModel(
+                    name="modeloespecifico",
+                    class_name="ModeloEspecifico",
+                    trainable=False,
+                ),
+            ],
+            anchor=AnchorModel(
+                name="anchor_hybrid_r0_full",
+                class_name="HybridOLSaBidder",
+                artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+            ),
+        )
 
     def test_generates_valid_yaml_structure(self, tmp_path):
         """Config has required keys for run_auction_comparator.py."""
@@ -1123,15 +1127,16 @@ class TestStep4CommandConstruction:
         art.parent.mkdir(parents=True)
         art.write_text("{}")
 
-        roster = {
-            "models": {
-                "gbt_av": {
-                    "class_name": "GBTActionValueBidder",
-                    "trainable": True,
-                },
-            },
-            "anchor": {},
-        }
+        roster = Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                ),
+            ],
+            anchor=AnchorModel(name="", artifact="", class_name=""),
+        )
 
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
@@ -1164,7 +1169,7 @@ class TestStep4CommandConstruction:
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
 
-        roster = {"models": {}, "anchor": {}}
+        roster = Roster()
         state = RunState.create_fresh("r0", "smoke", [42])
 
         with (
@@ -1191,15 +1196,16 @@ class TestStep5CommandConstruction:
         art.parent.mkdir(parents=True)
         art.write_text("{}")
 
-        roster = {
-            "models": {
-                "gbt_av": {
-                    "class_name": "GBTActionValueBidder",
-                    "trainable": True,
-                },
-            },
-            "anchor": {},
-        }
+        roster = Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                ),
+            ],
+            anchor=AnchorModel(name="", artifact="", class_name=""),
+        )
 
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
@@ -1231,7 +1237,7 @@ class TestStep5CommandConstruction:
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
 
-        roster = {"models": {}, "anchor": {}}
+        roster = Roster()
         state = RunState.create_fresh("r0", "smoke", [42])
 
         with (
