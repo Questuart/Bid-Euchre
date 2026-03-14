@@ -635,3 +635,32 @@ wins unconditionally.
 
 Archived plans are useful for understanding historical decisions and rationale.
 They are not valid execution contracts.
+
+---
+
+## 13) Post-Merge Comprehensive Review
+
+After every PR merge, a comprehensive review agent is spawned to review
+the merged code on main. This is a safety net that catches issues pre-merge
+review may miss:
+
+- **Correctness:** C1/C2 checks, logic bugs, edge cases, SHAP/numeric handling
+- **Contract compliance:** Does the code match the governing plan's specs?
+- **Architecture:** Package boundary violations, import direction, dual-path risks
+- **Test coverage:** Missing tests, unrealistic fixtures, untested edge cases
+- **Integration:** Conflicts with other recently merged PRs
+
+**Findings are reported as:**
+
+| Severity | Action |
+|----------|--------|
+| CRITICAL | Fix PR created immediately |
+| WARNING | Follow-up issue created |
+| NIT | Noted in review, no action required |
+
+**Implementation:** The PostToolUse hook `.claude/hooks/post-merge-review.sh`
+triggers after a successful `gh pr merge` command. It emits `additionalContext`
+instructing Claude to spawn a background Explore agent for the review.
+
+This workflow was established after post-merge review of PR #655 caught a
+CRITICAL SHAP value indexing bug that pre-merge review missed.

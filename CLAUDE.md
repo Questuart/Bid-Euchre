@@ -193,6 +193,13 @@ All code changes MUST happen in dedicated git worktrees, never on `main` in the 
 - Use the PR template from `.github/pull_request_template.md`
 - After `reviewing-changes` passes, wait for Codex pre-merge review before merging (see `docs/02_agent/CODEX_GITHUB_REVIEW.md`)
 
+### Post-Merge Review
+- After every `gh pr merge`, a PostToolUse hook triggers a comprehensive review
+- A background Explore agent reviews merged code for correctness, contract compliance,
+  architecture, and test coverage
+- CRITICAL findings trigger immediate fix PRs
+- This is a safety net — pre-merge review catches most issues, post-merge catches the rest
+
 ## Game Rules Summary
 
 - **Deck:** Double-deck (40 cards), ranks 10-A, 4 suits × 2 copies
