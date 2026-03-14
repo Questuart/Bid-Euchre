@@ -14,7 +14,9 @@ Four models:
   pass:  target ~ state features (no action features)
 
 Ablation parameters:
-  --feature-set: "full" (52 state features) or "r0" (39 R0 hand features only)
+  --feature-set: "full" (52 state features), "r0" (39 R0 hand features only),
+                 or "constrained" (per-contract locked features)
+  --selection: "none" (default) or "forward" (forward feature selection)
   --target: "net_points" (default) or "tricks_won"
   --model-class: "ols" (default), "gbt", or "two-stage"
 
@@ -94,8 +96,19 @@ _INTERACTION_FORMULAS: dict[str, tuple[str, str]] = {
     "bowers_sq": ("bowers", "bowers"),
 }
 
-# Named feature sets for ablation experiments
-FEATURE_SETS: dict[str, list[str]] = {
+# Per-contract locked features for the constrained feature set.
+# These are the minimal features relevant to each contract family,
+# enabling cross-lineage comparability with OLSa R0.
+CONSTRAINED_FEATURES: dict[str, list[str]] = {
+    "suit": ["bowers", "trump_count", "offsuit_aces"],
+    "high": ["offsuit_aces", "quick_tricks"],
+    "low": ["offsuit_tens_count", "quick_tricks"],
+}
+
+# Named feature sets for ablation experiments.
+# Most entries are flat lists. "constrained" is a dict[str, list[str]]
+# mapping contract_family -> features.
+FEATURE_SETS: dict[str, list[str] | dict[str, list[str]]] = {
     "full": list(STATE_FEATURE_NAMES),  # 52 state features
     "r0": list(STATE_FEATURE_NAMES[:_N_R0_HAND_FEATURES]),  # 39 R0 hand features only
     "no-partner": list(
@@ -103,7 +116,33 @@ FEATURE_SETS: dict[str, list[str]] = {
     ),  # 52 features, partner cols zeroed at training
     "interaction": list(STATE_FEATURE_NAMES)
     + INTERACTION_FEATURE_NAMES,  # 52 + 3 interaction
+    "constrained": CONSTRAINED_FEATURES,  # per-contract locked features
 }
+
+
+def resolve_feature_names(
+    feature_set: str,
+    family: str,
+) -> list[str]:
+    """Resolve the state feature list for a given feature set and contract family.
+
+    For flat feature sets (full, r0, etc.), returns the list as-is.
+    For per-contract feature sets (constrained), returns the family-specific list.
+
+    Args:
+        feature_set: Name of the feature set (key in FEATURE_SETS).
+        family: Contract family ("suit", "high", "low", or "pass").
+
+    Returns:
+        The resolved list of state feature names.
+    """
+    entry = FEATURE_SETS[feature_set]
+    if isinstance(entry, dict):
+        # Per-contract feature set — pass uses suit features as fallback
+        effective_family = family if family in entry else "suit"
+        return list(entry[effective_family])
+    return list(entry)
+
 
 # Feature sets that require zero-masking specific columns at training time.
 # The model artifact retains all feature names (passes ActionValueBidder validation)
@@ -113,6 +152,8 @@ _ZERO_MASK_COLUMNS: dict[str, list[str]] = {
 }
 
 VALID_TARGETS = ("net_points", "tricks_won")
+
+VALID_SELECTIONS = ("none", "forward")
 
 # Gate X2 R² thresholds per contract family
 GATE_X2_THRESHOLDS = {
@@ -316,6 +357,47 @@ def _build_feature_matrix(df: pd.DataFrame, feature_names: list[str]) -> np.ndar
         else:
             cols.append(df[name].values)
     return np.column_stack(cols).astype(np.float64)
+
+
+# ── Forward Selection ──────────────────────────────────────
+
+
+def run_forward_selection(
+    train_df: pd.DataFrame,
+    feature_names: list[str],
+    target_col: str,
+    seed: int,
+    cv_folds: int = 5,
+) -> tuple[list[str], dict]:
+    """Run forward feature selection on a training subset.
+
+    Uses GroupKFold by hand_id to prevent leakage across folds.
+
+    Args:
+        train_df: Training dataframe (already filtered to relevant subset).
+        feature_names: Candidate feature names.
+        target_col: Target column name.
+        seed: Random seed for reproducibility.
+        cv_folds: Number of CV folds.
+
+    Returns:
+        (selected_feature_names, selection_log)
+    """
+    from bid_euchre.models.feature_selection import forward_select
+
+    X = _build_feature_matrix(train_df, feature_names)
+    y = train_df[target_col].values
+    groups = train_df["hand_id"].values
+
+    selected_names, selection_log = forward_select(
+        X_train=X,
+        y_train=y,
+        candidate_names=list(feature_names),
+        groups=groups,
+        cv_folds=cv_folds,
+        seed=seed,
+    )
+    return selected_names, selection_log
 
 
 # ── GBT Training ────────────────────────────────────────────
@@ -883,27 +965,55 @@ def main():
         default="ols",
         help="Model class: 'ols' (default), 'gbt' (gradient boosted trees), or 'two-stage' (logistic + conditional OLS for suit)",
     )
+    parser.add_argument(
+        "--selection",
+        choices=list(VALID_SELECTIONS),
+        default="none",
+        help=(
+            "Feature selection: 'none' (default, use all features in --feature-set) "
+            "or 'forward' (stepwise forward selection with GroupKFold by hand_id). "
+            "Not compatible with --model-class gbt."
+        ),
+    )
     args = parser.parse_args()
 
-    state_feature_names = FEATURE_SETS[args.feature_set]
+    # Validate: forward selection is not compatible with GBT
+    if args.selection == "forward" and args.model_class == "gbt":
+        parser.error(
+            "--selection forward is not compatible with --model-class gbt. "
+            "GBT handles feature selection internally via tree splits."
+        )
+
+    feature_set_entry = FEATURE_SETS[args.feature_set]
     target_col = args.target
     model_class = args.model_class
+    is_per_contract = isinstance(feature_set_entry, dict)
+
+    # For per-contract feature sets, compute the union of all features for
+    # dataset validation, but resolve per-family at training time.
+    if is_per_contract:
+        all_features_union = sorted(set().union(*feature_set_entry.values()))
+        feature_count_desc = ", ".join(
+            f"{k}: {len(v)}" for k, v in feature_set_entry.items()
+        )
+    else:
+        all_features_union = list(feature_set_entry)
+        feature_count_desc = f"{len(feature_set_entry)} state features"
 
     print("=== R1.5 Action-Value Training Pipeline ===")
     print(f"  Seed: {args.seed}")
     print(f"  Dataset: {args.dataset}")
-    print(
-        f"  Feature set: {args.feature_set} ({len(state_feature_names)} state features)"
-    )
+    print(f"  Feature set: {args.feature_set} ({feature_count_desc})")
     print(f"  Target: {target_col}")
     print(f"  Model class: {model_class}")
+    print(f"  Selection: {args.selection}")
 
-    # Load dataset
+    # Load dataset — validate that all features used exist in the parquet
     print("  Loading dataset...")
     df = load_dataset(
         args.dataset,
         target_col=target_col,
-        state_feature_names=state_feature_names,
+        state_feature_names=all_features_union,
     )
     n_deals = df["deal_id"].nunique()
     print(f"  Loaded {len(df)} rows, {n_deals} deals")
@@ -927,6 +1037,11 @@ def main():
     output_dir = Path(args.output_dir)
 
     if model_class == "gbt":
+        state_feature_names = (
+            resolve_feature_names(args.feature_set, "suit")
+            if is_per_contract
+            else list(feature_set_entry)
+        )
         _train_gbt_pipeline(
             train_df,
             val_df,
@@ -940,7 +1055,7 @@ def main():
         _train_two_stage_pipeline(
             train_df,
             val_df,
-            state_feature_names,
+            feature_set_entry if is_per_contract else list(feature_set_entry),
             target_col,
             output_dir,
             args,
@@ -950,7 +1065,7 @@ def main():
         _train_ols_pipeline(
             train_df,
             val_df,
-            state_feature_names,
+            feature_set_entry if is_per_contract else list(feature_set_entry),
             target_col,
             output_dir,
             args,
@@ -961,13 +1076,22 @@ def main():
 def _train_ols_pipeline(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
-    state_feature_names: list[str],
+    state_feature_names: list[str] | dict[str, list[str]],
     target_col: str,
     output_dir: Path,
     args: argparse.Namespace,
     n_deals: int,
 ) -> None:
-    """OLS training pipeline (original behavior)."""
+    """OLS training pipeline (original behavior).
+
+    Args:
+        state_feature_names: Either a flat list of state features (for uniform
+            feature sets) or a dict mapping contract_family -> feature list
+            (for per-contract feature sets like "constrained").
+    """
+    is_per_contract = isinstance(state_feature_names, dict)
+    selection = getattr(args, "selection", "none")
+
     # Compute provenance hashes
     print("  Computing provenance hashes...")
     dataset_sha, cont_sha = _compute_provenance_hashes(
@@ -977,14 +1101,39 @@ def _train_ols_pipeline(
     if cont_sha:
         print(f"    continuation_sha256={cont_sha[:12]}...")
 
+    selection_logs: dict[str, dict] = {}
     models = {}
     for family in ("suit", "high", "low"):
+        family_features = (
+            resolve_feature_names(args.feature_set, family)
+            if is_per_contract
+            else list(state_feature_names)
+        )
+
+        # Forward selection: reduce feature set before training
+        if selection == "forward":
+            print(f"  Running forward selection for {family}...")
+            train_sub = train_df[train_df["contract_family"] == family]
+            all_features = list(family_features) + list(ACTION_FEATURE_NAMES)
+            selected, sel_log = run_forward_selection(
+                train_sub, all_features, target_col, seed=args.seed
+            )
+            selection_logs[family] = sel_log
+            # Split selected back into state vs action features
+            action_set = set(ACTION_FEATURE_NAMES)
+            family_features = [f for f in selected if f not in action_set]
+            print(
+                f"    Selected {len(selected)} features "
+                f"(state: {len(family_features)}, "
+                f"R²={sel_log['final_r2']})"
+            )
+
         print(f"  Training {family} OLS model...")
         models[family] = train_family_model(
             train_df,
             val_df,
             family,
-            state_feature_names=state_feature_names,
+            state_feature_names=family_features,
             target_col=target_col,
         )
         print(
@@ -993,11 +1142,28 @@ def _train_ols_pipeline(
             f"n_train={models[family]['n_train']}"
         )
 
+    # Pass model: use suit features for per-contract sets
+    pass_features = (
+        resolve_feature_names(args.feature_set, "pass")
+        if is_per_contract
+        else list(state_feature_names)
+    )
+
+    if selection == "forward":
+        print("  Running forward selection for pass...")
+        train_pass_sub = train_df[train_df["action_type"] == "pass"]
+        selected, sel_log = run_forward_selection(
+            train_pass_sub, list(pass_features), target_col, seed=args.seed
+        )
+        selection_logs["pass"] = sel_log
+        pass_features = selected
+        print(f"    Selected {len(selected)} features (R²={sel_log['final_r2']})")
+
     print("  Training pass OLS model...")
     models["pass"] = train_pass_model(
         train_df,
         val_df,
-        state_feature_names=state_feature_names,
+        state_feature_names=pass_features,
         target_col=target_col,
     )
     print(
@@ -1017,6 +1183,11 @@ def _train_ols_pipeline(
         dataset_sha256=dataset_sha,
         continuation_artifact_sha256=cont_sha,
     )
+
+    # Record selection metadata
+    if selection != "none":
+        artifact["metadata"]["selection"] = selection
+        artifact["metadata"]["selection_logs"] = selection_logs
 
     if not args.skip_validation:
         print("  Running Gate X2 validation...")
@@ -1141,13 +1312,20 @@ def _train_gbt_pipeline(
 def _train_two_stage_pipeline(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
-    state_feature_names: list[str],
+    state_feature_names: list[str] | dict[str, list[str]],
     target_col: str,
     output_dir: Path,
     args: argparse.Namespace,
     n_deals: int,
 ) -> None:
-    """Two-stage training pipeline: P(make) logistic + conditional OLS for suit."""
+    """Two-stage training pipeline: P(make) logistic + conditional OLS for suit.
+
+    Args:
+        state_feature_names: Either a flat list or a per-contract dict.
+    """
+    is_per_contract = isinstance(state_feature_names, dict)
+    selection = getattr(args, "selection", "none")
+
     # Compute provenance hashes
     print("  Computing provenance hashes...")
     dataset_sha, cont_sha = _compute_provenance_hashes(
@@ -1157,12 +1335,65 @@ def _train_two_stage_pipeline(
     if cont_sha:
         print(f"    continuation_sha256={cont_sha[:12]}...")
 
+    selection_logs: dict[str, dict] = {}
+
+    # Resolve suit features
+    suit_features = (
+        resolve_feature_names(args.feature_set, "suit")
+        if is_per_contract
+        else list(state_feature_names)
+    )
+
+    # Forward selection for two-stage suit: run separately on each sub-model
+    if selection == "forward":
+        print("  Running forward selection for suit two-stage sub-models...")
+        train_suit = train_df[train_df["contract_family"] == "suit"]
+        all_suit_features = list(suit_features) + list(ACTION_FEATURE_NAMES)
+
+        # P(make) logistic — use same candidate features
+        selected_logistic, log_logistic = run_forward_selection(
+            train_suit, all_suit_features, target_col, seed=args.seed
+        )
+        # E[pts|make] OLS
+        made_mask = train_suit[target_col].values >= 2 * train_suit["bid_n"].values - 10
+        if made_mask.sum() > 0:
+            train_make = train_suit[made_mask]
+            selected_make, log_make = run_forward_selection(
+                train_make, all_suit_features, target_col, seed=args.seed
+            )
+        else:
+            selected_make, log_make = all_suit_features, {"steps": [], "final_r2": None}
+        # E[pts|set] OLS
+        if (~made_mask).sum() > 0:
+            train_set = train_suit[~made_mask]
+            selected_set, log_set = run_forward_selection(
+                train_set, all_suit_features, target_col, seed=args.seed
+            )
+        else:
+            selected_set, log_set = all_suit_features, {"steps": [], "final_r2": None}
+
+        selection_logs["suit_logistic"] = log_logistic
+        selection_logs["suit_make"] = log_make
+        selection_logs["suit_set"] = log_set
+
+        # Use union of all selected features for the suit two-stage model
+        # (the model uses all features; selection is informational for now)
+        action_set = set(ACTION_FEATURE_NAMES)
+        all_selected = set(selected_logistic) | set(selected_make) | set(selected_set)
+        suit_features = [
+            f for f in all_suit_features if f in all_selected and f not in action_set
+        ]
+        print(
+            f"    Suit two-stage: logistic={len(selected_logistic)}, "
+            f"make={len(selected_make)}, set={len(selected_set)} features"
+        )
+
     # Train suit model with two-stage decomposition
     print("  Training suit two-stage model...")
     suit_result = train_two_stage_suit_model(
         train_df,
         val_df,
-        state_feature_names=state_feature_names,
+        state_feature_names=suit_features,
         target_col=target_col,
     )
     print(
@@ -1185,12 +1416,34 @@ def _train_two_stage_pipeline(
     # Train high/low with standard OLS
     models_ols = {}
     for family in ("high", "low"):
+        family_features = (
+            resolve_feature_names(args.feature_set, family)
+            if is_per_contract
+            else list(state_feature_names)
+        )
+
+        if selection == "forward":
+            print(f"  Running forward selection for {family}...")
+            train_sub = train_df[train_df["contract_family"] == family]
+            all_features = list(family_features) + list(ACTION_FEATURE_NAMES)
+            selected, sel_log = run_forward_selection(
+                train_sub, all_features, target_col, seed=args.seed
+            )
+            selection_logs[family] = sel_log
+            action_set = set(ACTION_FEATURE_NAMES)
+            family_features = [f for f in selected if f not in action_set]
+            print(
+                f"    Selected {len(selected)} features "
+                f"(state: {len(family_features)}, "
+                f"R²={sel_log['final_r2']})"
+            )
+
         print(f"  Training {family} OLS model...")
         models_ols[family] = train_family_model(
             train_df,
             val_df,
             family,
-            state_feature_names=state_feature_names,
+            state_feature_names=family_features,
             target_col=target_col,
         )
         print(
@@ -1200,11 +1453,27 @@ def _train_two_stage_pipeline(
         )
 
     # Train pass with standard OLS
+    pass_features = (
+        resolve_feature_names(args.feature_set, "pass")
+        if is_per_contract
+        else list(state_feature_names)
+    )
+
+    if selection == "forward":
+        print("  Running forward selection for pass...")
+        train_pass_sub = train_df[train_df["action_type"] == "pass"]
+        selected, sel_log = run_forward_selection(
+            train_pass_sub, list(pass_features), target_col, seed=args.seed
+        )
+        selection_logs["pass"] = sel_log
+        pass_features = selected
+        print(f"    Selected {len(selected)} features (R²={sel_log['final_r2']})")
+
     print("  Training pass OLS model...")
     pass_model = train_pass_model(
         train_df,
         val_df,
-        state_feature_names=state_feature_names,
+        state_feature_names=pass_features,
         target_col=target_col,
     )
     print(
@@ -1227,6 +1496,11 @@ def _train_two_stage_pipeline(
         dataset_sha256=dataset_sha,
         continuation_artifact_sha256=cont_sha,
     )
+
+    # Record selection metadata
+    if selection != "none":
+        artifact["metadata"]["selection"] = selection
+        artifact["metadata"]["selection_logs"] = selection_logs
 
     # Gate X2 for high/low/pass (suit uses composite R² instead)
     if not args.skip_validation:
