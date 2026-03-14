@@ -67,9 +67,21 @@ def _safe_round(val, decimals=4):
 def generate_comparator_rankings(comparator_cis: dict) -> pd.DataFrame:
     """Generate comparator_rankings.csv from comparator CIs JSON.
 
-    One row per (model, facet), facet in {suit, high, low, pooled}.
-    Currently comparator CIs are pooled-only; per-contract faceting is
-    a placeholder for future per-contract comparator runs.
+    The plan (section 12.1, Step 5 addendum) requires one row per
+    (model, facet) where facet in {suit, high, low, pooled}.
+
+    Currently ``extract_comparator_cis.py`` produces pooled-only metrics.
+    Per-contract faceting requires that script to group JSONL hand_end
+    records by contract_type before computing bootstrap CIs -- the raw
+    data supports this but the extraction pipeline has not been updated.
+
+    When per-contract data becomes available in the comparator CIs JSON
+    (keyed under ``bidders_by_contract`` or similar), this function
+    should be updated to emit per-facet rows with per-facet ranks.
+
+    TODO(per-contract-comparator): Update extract_comparator_cis.py to
+    emit per-contract metrics, then update this function to produce
+    suit/high/low/pooled rows.  See lineage_plan.md section 12.1.
 
     Columns: model, facet, net_eppd, ci_low, ci_high, bid_rate,
              make_rate, net_cvar_5, rank
@@ -78,6 +90,37 @@ def generate_comparator_rankings(comparator_cis: dict) -> pd.DataFrame:
     ranked_order = comparator_cis.get("ranked_order", sorted(bidders.keys()))
 
     rows = []
+
+    # Per-contract facets: emit if per-contract data is available
+    bidders_by_contract = comparator_cis.get("bidders_by_contract", {})
+    for facet in ["suit", "high", "low"]:
+        facet_data = bidders_by_contract.get(facet, {})
+        if not facet_data:
+            continue
+        facet_ranked = sorted(
+            facet_data.items(),
+            key=lambda item: item[1].get("net_eppd", 0),
+            reverse=True,
+        )
+        for rank_idx, (name, b) in enumerate(facet_ranked, 1):
+            ci = b.get("net_eppd_ci", [b.get("net_eppd", 0), None, None])
+            ci_low = ci[1] if len(ci) > 1 else None
+            ci_high = ci[2] if len(ci) > 2 else None
+            rows.append(
+                {
+                    "model": name,
+                    "facet": facet,
+                    "net_eppd": _safe_round(b.get("net_eppd")),
+                    "ci_low": _safe_round(ci_low),
+                    "ci_high": _safe_round(ci_high),
+                    "bid_rate": _safe_round(b.get("bid_rate")),
+                    "make_rate": _safe_round(b.get("make_rate")),
+                    "net_cvar_5": _safe_round(b.get("net_cvar_5")),
+                    "rank": rank_idx,
+                }
+            )
+
+    # Pooled facet (always available)
     for rank_idx, name in enumerate(ranked_order, 1):
         b = bidders[name]
         ci = b.get("net_eppd_ci", [b["net_eppd"], None, None])
@@ -215,14 +258,32 @@ def generate_behavior_by_contract(
 ) -> pd.DataFrame:
     """Generate behavior_by_contract.csv — faceted behavioral metrics.
 
-    Currently comparator CIs are pooled-only. This generates pooled rows
-    as a placeholder; per-contract faceting requires per-contract comparator
-    data in future runs.
+    Per-contract faceting requires per-contract comparator data from
+    ``extract_comparator_cis.py`` (see TODO in generate_comparator_rankings).
+    When available, per-contract rows are emitted from
+    ``bidders_by_contract``.  Otherwise only pooled rows are generated.
 
     Columns: model, contract, net_eppd, bid_rate, make_rate, source
     """
     rows = []
     if comparator_cis:
+        # Per-contract rows if available
+        bidders_by_contract = comparator_cis.get("bidders_by_contract", {})
+        for contract in ["suit", "high", "low"]:
+            contract_data = bidders_by_contract.get(contract, {})
+            for name, b in contract_data.items():
+                rows.append(
+                    {
+                        "model": name,
+                        "contract": contract,
+                        "net_eppd": _safe_round(b.get("net_eppd")),
+                        "bid_rate": _safe_round(b.get("bid_rate")),
+                        "make_rate": _safe_round(b.get("make_rate")),
+                        "source": "comparator",
+                    }
+                )
+
+        # Pooled rows (always available)
         for name, b in comparator_cis.get("bidders", {}).items():
             rows.append(
                 {
