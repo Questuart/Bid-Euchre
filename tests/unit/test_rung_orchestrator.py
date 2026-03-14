@@ -1,0 +1,873 @@
+"""Unit tests for rung orchestrator state management, advance check, and CLI.
+
+All tests are fixture-based — no real experiment runs or subprocess calls.
+Uses tmp_path for state files and mock CSV fixtures for advance check.
+"""
+
+from __future__ import annotations
+
+import csv
+import importlib.util
+import json
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+# ---------------------------------------------------------------------------
+# Import scripts via importlib (scripts/internal/ has no __init__.py)
+# ---------------------------------------------------------------------------
+
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts" / "internal"
+
+
+def _load_script(name: str):
+    """Load a script module from scripts/internal/.
+
+    Registers the module in sys.modules so dataclass introspection works.
+    """
+    script_path = _SCRIPTS_DIR / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, script_path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+rung_state = _load_script("rung_state")
+RunState = rung_state.RunState
+StepState = rung_state.StepState
+STEPS = rung_state.STEPS
+DAG_DOWNSTREAM = rung_state.DAG_DOWNSTREAM
+MODEL_SCOPED_STEPS = rung_state.MODEL_SCOPED_STEPS
+
+advance_check_mod = _load_script("generate_advance_check")
+evaluate_hypothesis = advance_check_mod.evaluate_hypothesis
+check_sufficiency = advance_check_mod.check_sufficiency
+check_canaries = advance_check_mod.check_canaries
+compute_decision = advance_check_mod.compute_decision
+generate_advance_check = advance_check_mod.generate_advance_check
+find_best_in_lineage = advance_check_mod.find_best_in_lineage
+
+run_rung_mod = _load_script("run_rung")
+handle_rerun = run_rung_mod.handle_rerun
+compute_fingerprint = run_rung_mod.compute_fingerprint
+
+
+# ============================================================================
+# State Management Tests
+# ============================================================================
+
+
+class TestRunStateCreateFresh:
+    def test_create_fresh_basic(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        assert state.rung == "r0"
+        assert state.mode == "smoke"
+        assert state.seeds == [42]
+        assert state.current_step == "0"
+        assert state.step_status == "not_started"
+        assert state.blocker is None
+        assert len(state.steps) == len(STEPS)
+        assert "42" in state.per_seed
+
+    def test_create_fresh_multi_seed(self):
+        state = RunState.create_fresh("r0", "full", [42, 123, 456])
+        assert state.seeds == [42, 123, 456]
+        assert "42" in state.per_seed
+        assert "123" in state.per_seed
+        assert "456" in state.per_seed
+        for seed_key in state.per_seed:
+            assert len(state.per_seed[seed_key]) == len(STEPS)
+
+    def test_all_steps_start_pending(self):
+        state = RunState.create_fresh("r0", "quick", [42])
+        for step_id, step_data in state.steps.items():
+            assert step_data["status"] == "pending", f"Step {step_id} not pending"
+
+
+class TestRunStateSaveLoad:
+    def test_round_trip(self, tmp_path):
+        state = RunState.create_fresh("r0", "quick", [42])
+        state.blocker = "test blocker"
+        path = tmp_path / "state.json"
+        state.save(path)
+
+        loaded = RunState.load(path)
+        assert loaded.rung == "r0"
+        assert loaded.mode == "quick"
+        assert loaded.seeds == [42]
+        assert loaded.blocker == "test blocker"
+        assert len(loaded.steps) == len(STEPS)
+
+    def test_save_creates_parent_dirs(self, tmp_path):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        path = tmp_path / "deep" / "nested" / "state.json"
+        state.save(path)
+        assert path.exists()
+
+    def test_load_preserves_step_status(self, tmp_path):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_complete("0")
+        state.mark_step_started("1")
+        path = tmp_path / "state.json"
+        state.save(path)
+
+        loaded = RunState.load(path)
+        assert loaded.steps["0"]["status"] == "complete"
+        assert loaded.steps["1"]["status"] == "running"
+        assert loaded.steps["2"]["status"] == "pending"
+
+
+class TestRunStateStepOperations:
+    def test_mark_step_started(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_started("1", seed=42)
+        assert state.current_step == "1"
+        assert state.step_status == "running"
+        assert state.steps["1"]["status"] == "running"
+        assert state.per_seed["42"]["1"]["status"] == "running"
+
+    def test_mark_step_complete(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        fp = {"seed": 42, "mode": "smoke"}
+        state.mark_step_complete("1", seed=42, fingerprint=fp)
+        assert state.steps["1"]["status"] == "complete"
+        assert state.steps["1"]["fingerprint"] == fp
+        assert state.per_seed["42"]["1"]["status"] == "complete"
+
+    def test_mark_step_failed_retryable(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_failed("2", "OOM error", retryable=True, seed=42)
+        assert state.steps["2"]["status"] == "failed"
+        assert state.steps["2"]["error"] == "OOM error"
+        assert state.blocker is None  # retryable doesn't set blocker
+
+    def test_mark_step_failed_blocking(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_failed("2", "Missing data", retryable=False)
+        assert state.blocker == "Missing data"
+
+    def test_mark_step_skipped(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_skipped("3b", "Script not found")
+        assert state.steps["3b"]["status"] == "skipped"
+        assert state.steps["3b"]["error"] == "Script not found"
+
+    def test_step_is_complete(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        assert not state.step_is_complete("1")
+        state.mark_step_complete("1")
+        assert state.step_is_complete("1")
+
+    def test_step_is_complete_per_seed(self):
+        state = RunState.create_fresh("r0", "full", [42, 123])
+        assert not state.step_is_complete("1", seed=42)
+        state.mark_step_complete("1", seed=42)
+        assert state.step_is_complete("1", seed=42)
+        assert not state.step_is_complete("1", seed=123)
+
+
+class TestRunStateModelTracking:
+    def test_model_status_default(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        assert state.model_status(42, "2", "gbt_av") == "pending"
+
+    def test_update_model(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.update_model("2", "gbt_av", 42, "running")
+        assert state.model_status(42, "2", "gbt_av") == "running"
+
+        state.update_model("2", "gbt_av", 42, "complete")
+        assert state.model_status(42, "2", "gbt_av") == "complete"
+
+    def test_update_model_failed(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.update_model("2", "ols_av", 42, "failed", error="OOM")
+        status = state.model_status(42, "2", "ols_av")
+        assert status == "failed"
+        model_data = state.per_seed["42"]["2"]["models"]["ols_av"]
+        assert model_data["error"] == "OOM"
+
+    def test_model_status_multi_seed(self):
+        state = RunState.create_fresh("r0", "full", [42, 123])
+        state.update_model("2", "gbt_av", 42, "complete")
+        state.update_model("2", "gbt_av", 123, "running")
+        assert state.model_status(42, "2", "gbt_av") == "complete"
+        assert state.model_status(123, "2", "gbt_av") == "running"
+
+
+class TestRunStateReset:
+    def test_reset_step(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_complete("2")
+        state.reset_step("2")
+        assert state.steps["2"]["status"] == "pending"
+
+    def test_reset_model(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.update_model("2", "gbt_av", 42, "complete")
+        state.reset_model("2", "gbt_av")
+        # The per-seed model should be reset
+        seed_model = state.per_seed["42"]["2"]["models"].get("gbt_av", {})
+        assert seed_model.get("status") == "pending"
+        # The step status should revert to pending since model was reset
+        assert state.steps["2"]["status"] == "pending"
+
+    def test_reset_for_mode(self):
+        state = RunState.create_fresh("r0", "quick", [42])
+        state.mark_step_complete("0")
+        state.mark_step_complete("1")
+        state.mark_step_complete("2")
+
+        state.reset_for_mode("full", [42, 123, 456])
+        assert state.mode == "full"
+        assert state.seeds == [42, 123, 456]
+        assert state.steps["0"]["status"] == "pending"
+        assert state.steps["1"]["status"] == "pending"
+        assert state.steps["2"]["status"] == "pending"
+        assert "42" in state.per_seed
+        assert "123" in state.per_seed
+        assert "456" in state.per_seed
+
+
+class TestRunStateSummary:
+    def test_summary_contains_key_info(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state.mark_step_complete("0")
+        state.mark_step_failed("1", "Test error")
+        summary = state.summary()
+        assert "Rung: r0" in summary
+        assert "Mode: smoke" in summary
+        assert "[x] Step 0:" in summary
+        assert "[!] Step 1:" in summary
+        assert "Test error" in summary
+
+
+class TestRunStateFingerprint:
+    def test_get_set_fingerprint(self):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        assert state.get_step_fingerprint("1") is None
+        fp = {"seed": 42, "mode": "smoke"}
+        state.mark_step_complete("1", fingerprint=fp)
+        assert state.get_step_fingerprint("1") == fp
+
+    def test_fingerprint_per_seed(self):
+        state = RunState.create_fresh("r0", "full", [42, 123])
+        fp42 = {"seed": 42}
+        fp123 = {"seed": 123}
+        state.mark_step_complete("1", seed=42, fingerprint=fp42)
+        state.mark_step_complete("1", seed=123, fingerprint=fp123)
+        assert state.get_step_fingerprint("1", seed=42) == fp42
+        assert state.get_step_fingerprint("1", seed=123) == fp123
+
+
+# ============================================================================
+# Rerun Tests
+# ============================================================================
+
+
+class TestRerun:
+    def test_rerun_from_step_2_holistic(self, tmp_path):
+        """Rerun from step 2 resets 2 and all downstream."""
+        state = RunState.create_fresh("r0", "smoke", [42])
+        # Mark several steps complete
+        for step in STEPS:
+            state.mark_step_complete(step)
+        state_path = tmp_path / "plans" / "arc_d_v2" / "r0" / "state.json"
+
+        with patch.object(run_rung_mod, "_state_path", return_value=state_path):
+            handle_rerun(state, "2")
+
+        # Step 2 and downstream should be reset
+        expected_reset = {"2"} | set(DAG_DOWNSTREAM["2"])
+        for step in STEPS:
+            if step in expected_reset:
+                assert (
+                    state.steps[step]["status"] == "pending"
+                ), f"Step {step} should be pending"
+            else:
+                assert (
+                    state.steps[step]["status"] == "complete"
+                ), f"Step {step} should still be complete"
+
+    def test_rerun_model_scoped(self, tmp_path):
+        """Rerun with --models flag scopes reset to model-scoped steps."""
+        state = RunState.create_fresh("r0", "smoke", [42])
+        # Set up model status
+        state.update_model("2", "gbt_av", 42, "complete")
+        state.update_model("2", "ols_av", 42, "complete")
+        state.mark_step_complete("2")
+        for step in ["3", "3b", "4", "5", "6", "7", "8"]:
+            state.mark_step_complete(step)
+        state_path = tmp_path / "plans" / "arc_d_v2" / "r0" / "state.json"
+
+        with patch.object(run_rung_mod, "_state_path", return_value=state_path):
+            handle_rerun(state, "2", models=["gbt_av"])
+
+        # Step 2: gbt_av should be reset, ols_av should stay
+        # Model-scoped steps (2, 3, 3b) should have model-level reset
+        # Holistic steps (4+) should be fully reset
+        assert state.steps["4"]["status"] == "pending"
+        assert state.steps["5"]["status"] == "pending"
+        assert state.steps["6"]["status"] == "pending"
+
+    def test_rerun_sets_supersession(self, tmp_path):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state_path = tmp_path / "plans" / "arc_d_v2" / "r0" / "state.json"
+
+        with patch.object(run_rung_mod, "_state_path", return_value=state_path):
+            handle_rerun(state, "4", models=["gbt_av"])
+
+        assert state.supersession is not None
+        assert state.supersession["from_step"] == "4"
+        assert state.supersession["models"] == ["gbt_av"]
+
+    def test_rerun_step_0_resets_everything(self, tmp_path):
+        state = RunState.create_fresh("r0", "smoke", [42])
+        for step in STEPS:
+            state.mark_step_complete(step)
+        state_path = tmp_path / "plans" / "arc_d_v2" / "r0" / "state.json"
+
+        with patch.object(run_rung_mod, "_state_path", return_value=state_path):
+            handle_rerun(state, "0")
+
+        # All downstream of 0 (everything except 9, but 9 isn't in 0's downstream... check)
+        for step in ["0"] + DAG_DOWNSTREAM["0"]:
+            assert state.steps[step]["status"] == "pending"
+
+
+# ============================================================================
+# DAG Downstream Tests
+# ============================================================================
+
+
+class TestDAGDownstream:
+    def test_all_steps_have_downstream_entry(self):
+        for step in STEPS:
+            assert step in DAG_DOWNSTREAM, f"Step {step} missing from DAG_DOWNSTREAM"
+
+    def test_step_9_has_no_downstream(self):
+        assert DAG_DOWNSTREAM["9"] == []
+
+    def test_step_0_reaches_most_steps(self):
+        assert len(DAG_DOWNSTREAM["0"]) >= 8
+
+    def test_no_self_reference(self):
+        for step, downstream in DAG_DOWNSTREAM.items():
+            assert step not in downstream, f"Step {step} references itself"
+
+    def test_model_scoped_steps(self):
+        assert MODEL_SCOPED_STEPS == {"2", "3", "3b"}
+
+
+# ============================================================================
+# Advance Check Tests
+# ============================================================================
+
+
+def _write_csv(path: Path, headers: list[str], rows: list[list]) -> None:
+    """Helper to write a CSV fixture."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+
+
+class TestHypothesisEvaluation:
+    def test_simple_value_check(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [["gbt_av", "pooled", "1.5"]],
+        )
+        hyp = {
+            "id": "H1",
+            "description": "test",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "gbt_av", "facet": "pooled"},
+            "computation": "value",
+            "expected_bound": {"op": ">", "value": 1.0},
+            "surprise_if": {"op": "<", "value": 0.0},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is True
+        assert result["observed"] == 1.5
+        assert result["surprise_hit"] is False
+
+    def test_delta_computation(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "suit", "2.5"],
+                ["anchor_hybrid_r0_full", "suit", "1.0"],
+            ],
+        )
+        hyp = {
+            "id": "H1",
+            "description": "test delta",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "gbt_av", "facet": "suit"},
+            "anchor_filter": {"model": "anchor_hybrid_r0_full", "facet": "suit"},
+            "computation": "value - anchor_value",
+            "expected_bound": {"op": ">", "value": 0.5},
+            "surprise_if": {"op": "<", "value": 0.0},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is True
+        assert result["observed"] == 1.5
+        assert result["surprise_hit"] is False
+
+    def test_failing_hypothesis(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "pooled", "0.2"],
+                ["anchor", "pooled", "0.5"],
+            ],
+        )
+        hyp = {
+            "id": "H2",
+            "description": "test fail",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "gbt_av", "facet": "pooled"},
+            "anchor_filter": {"model": "anchor", "facet": "pooled"},
+            "computation": "value - anchor_value",
+            "expected_bound": {"op": ">", "value": 0.0},
+            "surprise_if": {"op": "<", "value": -0.5},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is False
+        assert result["observed"] == pytest.approx(-0.3)
+        assert result["surprise_hit"] is False  # -0.3 > -0.5
+
+    def test_surprise_hit(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "suit", "0.1"],
+                ["anchor", "suit", "1.5"],
+            ],
+        )
+        hyp = {
+            "id": "H3",
+            "description": "test surprise",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "gbt_av", "facet": "suit"},
+            "anchor_filter": {"model": "anchor", "facet": "suit"},
+            "computation": "value - anchor_value",
+            "expected_bound": {"op": ">", "value": 0.0},
+            "surprise_if": {"op": "<", "value": -1.0},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is False
+        assert result["surprise_hit"] is True  # -1.4 < -1.0
+
+    def test_missing_table(self, tmp_path):
+        hyp = {
+            "id": "H1",
+            "description": "test missing",
+            "source_table": "nonexistent.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "x"},
+            "computation": "value",
+            "expected_bound": {"op": ">", "value": 0},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["error"] is not None
+        assert result["pass"] is False
+
+
+class TestSufficiencyChecks:
+    def test_all_tables_present(self, tmp_path):
+        for name in [
+            "model_performance.csv",
+            "data_sanity.csv",
+            "comparator_rankings.csv",
+            "h2h_matrix.csv",
+        ]:
+            _write_csv(
+                tmp_path / name,
+                ["model", "status", "net_eppd"],
+                [["gbt_av", "PASS", "1.0"]],
+            )
+        checks = check_sufficiency(tmp_path, "r0")
+        table_check = next(c for c in checks if c["id"] == "all_tables_generated")
+        assert table_check["pass"] is True
+        assert table_check["value"] == "4/4"
+
+    def test_missing_tables(self, tmp_path):
+        # Create only one table
+        _write_csv(
+            tmp_path / "model_performance.csv",
+            ["model"],
+            [["gbt_av"]],
+        )
+        checks = check_sufficiency(tmp_path, "r0")
+        table_check = next(c for c in checks if c["id"] == "all_tables_generated")
+        assert table_check["pass"] is False
+
+    def test_data_sanity_all_pass(self, tmp_path):
+        _write_csv(
+            tmp_path / "data_sanity.csv",
+            ["check", "status"],
+            [["seat_balance", "PASS"], ["hand_count", "PASS"]],
+        )
+        checks = check_sufficiency(tmp_path, "r0")
+        sanity = next(c for c in checks if c["id"] == "data_sanity")
+        assert sanity["pass"] is True
+        assert sanity["value"] == "2/2 pass"
+
+    def test_data_sanity_with_failure(self, tmp_path):
+        _write_csv(
+            tmp_path / "data_sanity.csv",
+            ["check", "status"],
+            [["seat_balance", "PASS"], ["hand_count", "FAIL"]],
+        )
+        checks = check_sufficiency(tmp_path, "r0")
+        sanity = next(c for c in checks if c["id"] == "data_sanity")
+        assert sanity["pass"] is False
+
+
+class TestCanaryChecks:
+    def test_default_canaries_pass(self, tmp_path):
+        checks = check_canaries(tmp_path, "quick")
+        for c in checks:
+            assert c["level"] == "WARNING"
+            # Most default to pass when data is missing
+            assert c["pass"] is True
+
+    def test_c3_magnitude_violation(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [["extreme_model", "pooled", "7.5"]],
+        )
+        checks = check_canaries(tmp_path, "quick")
+        c3 = next(c for c in checks if c["id"] == "C3_magnitude_historical")
+        assert c3["pass"] is False
+
+    def test_c4_differentiation(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["m1", "pooled", "1.0"],
+                ["m2", "pooled", "1.0"],
+            ],
+        )
+        checks = check_canaries(tmp_path, "quick")
+        c4 = next(c for c in checks if c["id"] == "C4_model_differentiation")
+        assert c4["pass"] is False  # Only 1 distinct value, need >= 3
+
+
+class TestDecisionRules:
+    def test_all_pass_proceed(self):
+        hyp = [{"id": "H1", "pass": True, "surprise_hit": False}]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PROCEED"
+        assert "All checks pass" in reason
+
+    def test_surprise_investigate(self):
+        hyp = [{"id": "H1", "pass": False, "surprise_hit": True}]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "INVESTIGATE"
+
+    def test_data_sanity_pause(self):
+        hyp = [{"id": "H1", "pass": True, "surprise_hit": False}]
+        suff = [{"id": "data_sanity", "pass": False}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PAUSE"
+
+    def test_blocked_models_pause(self):
+        hyp = [{"id": "H1", "pass": True, "surprise_hit": False}]
+        suff = [{"id": "no_blocked_models", "pass": False}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PAUSE"
+
+    def test_hypothesis_failure_investigate(self):
+        hyp = [{"id": "H1", "pass": False, "surprise_hit": False, "error": None}]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "INVESTIGATE"
+
+    def test_hypothesis_error_investigate(self):
+        hyp = [
+            {"id": "H1", "pass": False, "surprise_hit": False, "error": "Missing table"}
+        ]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "INVESTIGATE"
+        assert "Could not evaluate" in reason
+
+    def test_canary_warnings_still_proceed(self):
+        hyp = [{"id": "H1", "pass": True, "surprise_hit": False}]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": False}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PROCEED"
+        assert "canary warning" in reason
+
+
+class TestBestInLineage:
+    def test_finds_best(self, tmp_path):
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "pooled", "1.82"],
+                ["ols_av", "pooled", "0.95"],
+                ["gbt_av", "suit", "2.5"],
+            ],
+        )
+        best = find_best_in_lineage(tmp_path)
+        assert best is not None
+        assert best["model"] == "gbt_av"
+        assert best["pooled_net_eppd"] == 1.82
+
+    def test_no_rankings(self, tmp_path):
+        best = find_best_in_lineage(tmp_path)
+        assert best is None
+
+
+class TestAdvanceCheckIntegration:
+    def test_full_advance_check(self, tmp_path):
+        """Integration test: generate a full advance check from fixtures."""
+        # Create hypotheses
+        hyp = {
+            "schema_version": "hypotheses_v1",
+            "rung": "r0",
+            "hypotheses": [
+                {
+                    "id": "H1",
+                    "description": "GBT beats anchor on pooled",
+                    "source_table": "comparator_rankings.csv",
+                    "source_column": "net_eppd",
+                    "source_filter": {"model": "gbt_av", "facet": "pooled"},
+                    "anchor_filter": {"model": "anchor", "facet": "pooled"},
+                    "computation": "value - anchor_value",
+                    "expected_bound": {"op": ">", "value": 0.3},
+                    "surprise_if": {"op": "<", "value": 0.0},
+                },
+            ],
+        }
+        hyp_path = tmp_path / "hypotheses.json"
+        hyp_path.write_text(json.dumps(hyp))
+
+        # Create tables
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        _write_csv(
+            tables_dir / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "pooled", "1.5"],
+                ["anchor", "pooled", "0.8"],
+                ["gbt_av", "suit", "2.0"],
+            ],
+        )
+        _write_csv(
+            tables_dir / "model_performance.csv",
+            ["model", "contract_type", "r2"],
+            [["gbt_av", "suit", "0.65"]],
+        )
+        _write_csv(
+            tables_dir / "data_sanity.csv",
+            ["check", "status"],
+            [["seat_balance", "PASS"]],
+        )
+        _write_csv(
+            tables_dir / "h2h_matrix.csv",
+            ["challenger", "opponent", "win_rate"],
+            [["gbt_av", "anchor", "0.55"]],
+        )
+
+        result = generate_advance_check(hyp_path, tables_dir, "quick", "r0")
+
+        assert result["schema_version"] == "advance_check_v1"
+        assert result["rung"] == "r0"
+        assert result["mode"] == "quick"
+        assert result["advance_decision"] == "PROCEED"
+        assert len(result["hypothesis_checks"]) == 1
+        assert result["hypothesis_checks"][0]["pass"] is True
+        assert result["best_in_lineage"]["model"] == "gbt_av"
+
+
+# ============================================================================
+# Fingerprint Tests
+# ============================================================================
+
+
+class TestFingerprint:
+    def test_compute_fingerprint_basic(self):
+        fp = compute_fingerprint("1", None, 42, "r0", "smoke")
+        assert fp["seed"] == 42
+        assert fp["mode"] == "smoke"
+        assert fp["step"] == "1"
+
+    def test_compute_fingerprint_with_model(self):
+        fp = compute_fingerprint("2", "gbt_av", 42, "r0", "quick")
+        assert fp["model"] == "gbt_av"
+
+    def test_fingerprint_changes_with_seed(self):
+        fp1 = compute_fingerprint("1", None, 42, "r0", "smoke")
+        fp2 = compute_fingerprint("1", None, 123, "r0", "smoke")
+        assert fp1["seed"] != fp2["seed"]
+
+
+# ============================================================================
+# CLI Dry-Run Test
+# ============================================================================
+
+
+class TestDryRun:
+    def test_dry_run_with_preconditions(self, tmp_path):
+        """Dry-run should check preconditions without executing."""
+        # Set up plan dir
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "plan.md").write_text("# Test plan")
+        (plan_dir / "hypotheses.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "hypotheses_v1",
+                    "rung": "r0",
+                    "hypotheses": [],
+                }
+            )
+        )
+
+        # Patch _plans_dir and _state_path
+        with (
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            state = RunState.create_fresh("r0", "smoke", [42])
+            ok = run_rung_mod.execute_step_0(state, dry_run=True)
+            assert ok is True
+            assert state.steps["0"]["status"] == "complete"
+
+    def test_dry_run_fails_without_plan(self, tmp_path):
+        """Dry-run should fail if plan.md is missing."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+        # No plan.md or hypotheses.json
+
+        with (
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+        ):
+            state = RunState.create_fresh("r0", "smoke", [42])
+            ok = run_rung_mod.execute_step_0(state, dry_run=True)
+            assert ok is False
+            assert state.steps["0"]["status"] == "failed"
+
+
+# ============================================================================
+# Status Print Test
+# ============================================================================
+
+
+class TestStatusPrint:
+    def test_status_creates_fresh_state(self, tmp_path, capsys):
+        """--status should create fresh state if none exists."""
+        state_path = tmp_path / "state.json"
+
+        with patch.object(run_rung_mod, "_state_path", return_value=state_path):
+            run_rung_mod.print_status("r0")
+
+        captured = capsys.readouterr()
+        assert "Rung: r0" in captured.out
+        assert state_path.exists()
+
+    def test_status_loads_existing(self, tmp_path, capsys):
+        state = RunState.create_fresh("r0", "quick", [42])
+        state.mark_step_complete("0")
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        with patch.object(run_rung_mod, "_state_path", return_value=state_path):
+            run_rung_mod.print_status("r0")
+
+        captured = capsys.readouterr()
+        assert "Mode: quick" in captured.out
+        assert "[x] Step 0:" in captured.out
+
+
+# ============================================================================
+# H2H Resume Test
+# ============================================================================
+
+
+class TestH2HResume:
+    def test_partial_completion_no_duplicate(self, tmp_path):
+        """Simulate Step 4 partial completion then resume.
+
+        The orchestrator should skip seeds that already completed.
+        """
+        state = RunState.create_fresh("r0", "full", [42, 123, 456])
+        # Mark seed 42 as complete for step 4
+        state.mark_step_complete("4", seed=42)
+
+        # Verify seed 42 is complete
+        assert state.step_is_complete("4", seed=42)
+        assert not state.step_is_complete("4", seed=123)
+        assert not state.step_is_complete("4", seed=456)
+
+        # The orchestrator's run_step checks step_is_complete per seed
+        # and skips completed ones — verify the logic
+        completed_seeds = [
+            s for s in state.seeds if state.step_is_complete("4", seed=s)
+        ]
+        remaining_seeds = [
+            s for s in state.seeds if not state.step_is_complete("4", seed=s)
+        ]
+        assert completed_seeds == [42]
+        assert remaining_seeds == [123, 456]
+
+
+# ============================================================================
+# Steps Constants Tests
+# ============================================================================
+
+
+class TestStepsConstants:
+    def test_steps_list(self):
+        assert STEPS == ["0", "1", "2", "3", "3b", "4", "5", "6", "7", "8", "9"]
+
+    def test_step_descriptions_complete(self):
+        for step in STEPS:
+            assert (
+                step in run_rung_mod.STEP_DESCRIPTIONS
+            ), f"Step {step} missing description"
+
+    def test_step_functions_complete(self):
+        for step in STEPS:
+            assert step in run_rung_mod.STEP_FUNCTIONS, f"Step {step} missing function"

@@ -1,31 +1,32 @@
-# R0* Rung Plan
+# Arc D v2 — R0 Rung Plan
 
-**Governing plan:** `plans/arc_d_v2/lineage_plan.md`
-**Rung:** R0* (hand-only context, action-value framework)
-**Status:** PENDING (awaiting Phase 0 completion)
+**Status:** DRAFT
+**Lineage:** arc_d_v2
+**Rung:** r0 (baseline regeneration)
 
----
+## 1. Objective
 
-## Overview
+Regenerate the R0 baseline under the new canonical lineage contract.
+All models in the roster receive the same hand-only context bundle
+and are evaluated with identical methodology.
 
-R0* is the first rung of the Arc D v2 lineage. It evaluates all roster models
-on hand-only features (39 hand features, v7 schema) using the action-value
-framework with net_points target.
+## 2. Model Roster
 
-See `lineage_plan.md` §4.1 for the full definition of what R0* means.
+See `plans/arc_d_v2/roster.json` for the canonical roster.
 
-## Context Bundle
+## 3. Context Bundle
 
-- **Features:** 39 hand features (v7 schema)
-- **Feature set:** `r0` (hand-only, no partner/opponent context)
-- **Schema version:** v7
+R0 context: hand-only (39 hand features + 13 bid/state features = 52 state features).
+No partner or opponent context at R0.
 
-## Hypotheses
+## 4. Hypotheses
 
-See `lineage_plan.md` §10.3 for the R0* hypothesis table.
-Machine-readable version: `hypotheses.json` (created at Step 0).
+See `plans/arc_d_v2/r0/hypotheses.json` for the machine-readable hypothesis set.
 
-## Execution
+## 5. Execution
 
-Follow `lineage_plan.md` §9 (Rung Execution Runbook) exactly.
-Track progress in `checkpoints.md`.
+Managed by `scripts/internal/run_rung.py --rung r0`.
+
+## Outcome
+
+_To be filled after execution._
