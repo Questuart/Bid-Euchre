@@ -1,4 +1,4 @@
-"""Tests for canonical rung table generation (generate_rung_tables.py).
+"""Tests for canonical rung table generation.
 
 Covers:
 - CSV schema validation for all 11 canonical tables
@@ -17,34 +17,21 @@ import pytest
 # Resolve fixture directory
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 
-# Import table generators — these are scripts, not library code, so we
-# import them via their module path.
-import importlib.util
-
-_spec = importlib.util.spec_from_file_location(
-    "generate_rung_tables",
-    Path(__file__).resolve().parents[2]
-    / "scripts"
-    / "internal"
-    / "generate_rung_tables.py",
+from bid_euchre.arc_d_v2.tables import (
+    generate_all_tables,
+    generate_artifact_inventory,
+    generate_behavior_by_contract,
+    generate_behavior_summary,
+    generate_comparator_rankings,
+    generate_cross_rung_deltas,
+    generate_data_sanity,
+    generate_dataset_provenance,
+    generate_h2h_delta_matrix,
+    generate_hypothesis_outcomes,
+    generate_model_performance,
+    generate_rung_model_spec,
+    generate_sanity_bounds_check,
 )
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-
-generate_all_tables = _mod.generate_all_tables
-generate_comparator_rankings = _mod.generate_comparator_rankings
-generate_h2h_delta_matrix = _mod.generate_h2h_delta_matrix
-generate_model_performance = _mod.generate_model_performance
-generate_behavior_summary = _mod.generate_behavior_summary
-generate_behavior_by_contract = _mod.generate_behavior_by_contract
-generate_sanity_bounds_check = _mod.generate_sanity_bounds_check
-generate_hypothesis_outcomes = _mod.generate_hypothesis_outcomes
-generate_rung_model_spec = _mod.generate_rung_model_spec
-generate_cross_rung_deltas = _mod.generate_cross_rung_deltas
-generate_dataset_provenance = _mod.generate_dataset_provenance
-generate_artifact_inventory = _mod.generate_artifact_inventory
-generate_data_sanity = _mod.generate_data_sanity
-
 
 # ──────────────────────────────────────────────
 #  Helpers
@@ -202,7 +189,6 @@ class TestComparatorRankings:
 
     def test_row_count_pooled_only(self, comparator_cis):
         df = generate_comparator_rankings(comparator_cis)
-        # One pooled row per bidder (no per-contract data in fixture)
         n_bidders = len(comparator_cis["bidders"])
         assert len(df) == n_bidders
         assert (df["facet"] == "pooled").all()
@@ -235,10 +221,8 @@ class TestComparatorRankings:
         }
         df = generate_comparator_rankings(enriched)
         n_bidders = len(comparator_cis["bidders"])
-        # Should have pooled rows + suit rows
         assert len(df) == n_bidders + 2
         assert set(df["facet"].unique()) == {"pooled", "suit"}
-        # Suit rows should be ranked by net_eppd descending
         suit_rows = df[df["facet"] == "suit"]
         assert suit_rows.iloc[0]["model"] == "gbt_av"
         assert suit_rows.iloc[0]["rank"] == 1
@@ -269,7 +253,6 @@ class TestModelPerformance:
 
     def test_r2_dtype(self, training_artifacts):
         df = generate_model_performance(training_artifacts)
-        # r_squared should be numeric
         assert df["r_squared"].dtype in ("float64", "float32")
 
 
@@ -297,7 +280,6 @@ class TestSanityBoundsCheck:
 
     def test_all_pass(self, comparator_cis, training_artifacts):
         df = generate_sanity_bounds_check(comparator_cis, training_artifacts)
-        # All fixture data should pass sanity checks
         assert (df["status"] == "PASS").all()
 
 
@@ -356,12 +338,10 @@ class TestFullPipeline:
         output_dir = tmp_path / "tables"
         generated = generate_all_tables(FIXTURES_DIR, output_dir)
 
-        # Should generate all 12 tables
         assert (
             len(generated) >= 11
         ), f"Generated only {len(generated)} tables: {generated}"
 
-        # Verify each generated CSV exists and is non-empty
         for csv_name in generated:
             csv_path = output_dir / csv_name
             assert csv_path.exists(), f"Missing: {csv_path}"
@@ -375,7 +355,7 @@ class TestFullPipeline:
         for table_name, expected_cols in EXPECTED_SCHEMAS.items():
             csv_path = output_dir / f"{table_name}.csv"
             if not csv_path.exists():
-                continue  # Some tables may be optional
+                continue
             df = pd.read_csv(csv_path)
             assert list(df.columns) == expected_cols, (
                 f"{table_name}.csv columns mismatch: "

@@ -1,4 +1,4 @@
-"""Tests for rung report generation (generate_rung_report.py).
+"""Tests for rung report generation.
 
 Covers:
 - Report generates deterministically from fixture CSVs
@@ -8,37 +8,14 @@ Covers:
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 
-# Import the scripts as modules
-_tables_spec = importlib.util.spec_from_file_location(
-    "generate_rung_tables",
-    Path(__file__).resolve().parents[2]
-    / "scripts"
-    / "internal"
-    / "generate_rung_tables.py",
-)
-_tables_mod = importlib.util.module_from_spec(_tables_spec)
-_tables_spec.loader.exec_module(_tables_mod)
-
-_report_spec = importlib.util.spec_from_file_location(
-    "generate_rung_report",
-    Path(__file__).resolve().parents[2]
-    / "scripts"
-    / "internal"
-    / "generate_rung_report.py",
-)
-_report_mod = importlib.util.module_from_spec(_report_spec)
-_report_spec.loader.exec_module(_report_mod)
-
-generate_all_tables = _tables_mod.generate_all_tables
-generate_report = _report_mod.generate_report
-
+from bid_euchre.arc_d_v2.report import generate_report
+from bid_euchre.arc_d_v2.tables import generate_all_tables
 
 REQUIRED_SECTIONS = [
     "## 1. Data Sanity",
@@ -80,7 +57,6 @@ class TestReportGeneration:
 
     def test_contains_model_data(self, report_dir):
         content = generate_report(report_dir)
-        # Should contain model names from fixtures
         assert "gbt_av" in content or "gbt" in content
         assert "selected_ols_av" in content or "ols" in content
 
@@ -93,8 +69,6 @@ class TestReportGeneration:
     def test_missing_charts_produce_placeholders(self, report_dir):
         """Missing chart PNGs produce placeholders, not crashes."""
         content = generate_report(report_dir)
-        # Charts don't exist in our test, so placeholders should appear
-        # (we check that the report renders without error)
         assert "not yet generated" in content or "![" in content
 
 
@@ -109,5 +83,4 @@ class TestReportWithEmptyTables:
 
         content = generate_report(report_dir)
         assert "# Rung Results Report" in content
-        # Should have placeholders for missing tables
         assert "not yet generated" in content

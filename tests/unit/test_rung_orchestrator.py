@@ -1,59 +1,39 @@
 """Unit tests for rung orchestrator state management, advance check, and CLI.
 
-All tests are fixture-based — no real experiment runs or subprocess calls.
+All tests are fixture-based -- no real experiment runs or subprocess calls.
 Uses tmp_path for state files and mock CSV fixtures for advance check.
 """
 
 from __future__ import annotations
 
 import csv
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Import scripts via importlib (scripts/internal/ has no __init__.py)
-# ---------------------------------------------------------------------------
-
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts" / "internal"
-
-
-def _load_script(name: str):
-    """Load a script module from scripts/internal/.
-
-    Registers the module in sys.modules so dataclass introspection works.
-    """
-    script_path = _SCRIPTS_DIR / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(name, script_path)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-rung_state = _load_script("rung_state")
-RunState = rung_state.RunState
-StepState = rung_state.StepState
-STEPS = rung_state.STEPS
-DAG_DOWNSTREAM = rung_state.DAG_DOWNSTREAM
-MODEL_SCOPED_STEPS = rung_state.MODEL_SCOPED_STEPS
-
-advance_check_mod = _load_script("generate_advance_check")
-evaluate_hypothesis = advance_check_mod.evaluate_hypothesis
-check_sufficiency = advance_check_mod.check_sufficiency
-check_canaries = advance_check_mod.check_canaries
-compute_decision = advance_check_mod.compute_decision
-generate_advance_check = advance_check_mod.generate_advance_check
-find_best_in_lineage = advance_check_mod.find_best_in_lineage
-
-run_rung_mod = _load_script("run_rung")
-handle_rerun = run_rung_mod.handle_rerun
-compute_fingerprint = run_rung_mod.compute_fingerprint
-
+from bid_euchre.arc_d_v2 import orchestration as run_rung_mod
+from bid_euchre.arc_d_v2.advance_check import (
+    check_canaries,
+    check_sufficiency,
+    compute_decision,
+    evaluate_hypothesis,
+    find_best_in_lineage,
+    generate_advance_check,
+)
+from bid_euchre.arc_d_v2.orchestration import (
+    STEP_DESCRIPTIONS,
+    STEP_FUNCTIONS,
+    compute_fingerprint,
+    handle_rerun,
+)
+from bid_euchre.arc_d_v2.schemas import (
+    DAG_DOWNSTREAM,
+    MODEL_SCOPED_STEPS,
+    STEPS,
+    RunState,
+)
 
 # ============================================================================
 # State Management Tests
@@ -306,8 +286,6 @@ class TestRerun:
         with patch.object(run_rung_mod, "_state_path", return_value=state_path):
             handle_rerun(state, "2", models=["gbt_av"])
 
-        # Step 2: gbt_av should be reset, ols_av should stay
-        # Model-scoped steps (2, 3, 3b) should have model-level reset
         # Holistic steps (4+) should be fully reset
         assert state.steps["4"]["status"] == "pending"
         assert state.steps["5"]["status"] == "pending"
@@ -333,7 +311,6 @@ class TestRerun:
         with patch.object(run_rung_mod, "_state_path", return_value=state_path):
             handle_rerun(state, "0")
 
-        # All downstream of 0 (everything except 9, but 9 isn't in 0's downstream... check)
         for step in ["0"] + DAG_DOWNSTREAM["0"]:
             assert state.steps[step]["status"] == "pending"
 
@@ -544,7 +521,6 @@ class TestCanaryChecks:
         checks = check_canaries(tmp_path, "quick")
         for c in checks:
             assert c["level"] == "WARNING"
-            # Most default to pass when data is missing
             assert c["pass"] is True
 
     def test_c3_magnitude_violation(self, tmp_path):
@@ -568,7 +544,7 @@ class TestCanaryChecks:
         )
         checks = check_canaries(tmp_path, "quick")
         c4 = next(c for c in checks if c["id"] == "C4_model_differentiation")
-        assert c4["pass"] is False  # Only 1 distinct value, need >= 3
+        assert c4["pass"] is False
 
 
 class TestDecisionRules:
@@ -651,7 +627,6 @@ class TestBestInLineage:
 class TestAdvanceCheckIntegration:
     def test_full_advance_check(self, tmp_path):
         """Integration test: generate a full advance check from fixtures."""
-        # Create hypotheses
         hyp = {
             "schema_version": "hypotheses_v1",
             "rung": "r0",
@@ -672,7 +647,6 @@ class TestAdvanceCheckIntegration:
         hyp_path = tmp_path / "hypotheses.json"
         hyp_path.write_text(json.dumps(hyp))
 
-        # Create tables
         tables_dir = tmp_path / "tables"
         tables_dir.mkdir()
         _write_csv(
@@ -741,7 +715,6 @@ class TestFingerprint:
 class TestDryRun:
     def test_dry_run_with_preconditions(self, tmp_path):
         """Dry-run should check preconditions without executing."""
-        # Set up plan dir
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
         (plan_dir / "plan.md").write_text("# Test plan")
@@ -755,7 +728,6 @@ class TestDryRun:
             )
         )
 
-        # Patch _plans_dir and _state_path
         with (
             patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
             patch.object(
@@ -774,7 +746,6 @@ class TestDryRun:
         """Dry-run should fail if plan.md is missing."""
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
-        # No plan.md or hypotheses.json
 
         with (
             patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
@@ -828,21 +799,13 @@ class TestStatusPrint:
 
 class TestH2HResume:
     def test_partial_completion_no_duplicate(self, tmp_path):
-        """Simulate Step 4 partial completion then resume.
-
-        The orchestrator should skip seeds that already completed.
-        """
         state = RunState.create_fresh("r0", "full", [42, 123, 456])
-        # Mark seed 42 as complete for step 4
         state.mark_step_complete("4", seed=42)
 
-        # Verify seed 42 is complete
         assert state.step_is_complete("4", seed=42)
         assert not state.step_is_complete("4", seed=123)
         assert not state.step_is_complete("4", seed=456)
 
-        # The orchestrator's run_step checks step_is_complete per seed
-        # and skips completed ones — verify the logic
         completed_seeds = [
             s for s in state.seeds if state.step_is_complete("4", seed=s)
         ]
@@ -864,10 +827,8 @@ class TestStepsConstants:
 
     def test_step_descriptions_complete(self):
         for step in STEPS:
-            assert (
-                step in run_rung_mod.STEP_DESCRIPTIONS
-            ), f"Step {step} missing description"
+            assert step in STEP_DESCRIPTIONS, f"Step {step} missing description"
 
     def test_step_functions_complete(self):
         for step in STEPS:
-            assert step in run_rung_mod.STEP_FUNCTIONS, f"Step {step} missing function"
+            assert step in STEP_FUNCTIONS, f"Step {step} missing function"

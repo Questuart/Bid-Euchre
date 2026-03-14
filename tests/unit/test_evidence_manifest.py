@@ -1,33 +1,24 @@
-"""Tests for evidence manifest generation (generate_evidence_manifest.py).
+"""Tests for evidence manifest generation.
 
 Covers:
-- Manifest JSON has all required fields from §14 schema
+- Manifest JSON has all required fields from section 14 schema
 - Markdown manifest renders correctly
 - Manifest includes roster, artifacts, tables, charts
 """
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 
-_spec = importlib.util.spec_from_file_location(
-    "generate_evidence_manifest",
-    Path(__file__).resolve().parents[2]
-    / "scripts"
-    / "internal"
-    / "generate_evidence_manifest.py",
+from bid_euchre.arc_d_v2.manifest import (
+    generate_evidence_manifest,
+    render_manifest_markdown,
 )
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-
-generate_evidence_manifest = _mod.generate_evidence_manifest
-render_manifest_markdown = _mod.render_manifest_markdown
-
+from bid_euchre.arc_d_v2.tables import generate_all_tables
 
 # Required top-level fields in the evidence manifest
 REQUIRED_MANIFEST_FIELDS = [
@@ -51,22 +42,10 @@ class TestEvidenceManifest:
     @pytest.fixture
     def manifest_with_tables(self, tmp_path):
         """Generate a manifest with tables directory populated."""
-        # First generate tables from fixtures
-        tables_spec = importlib.util.spec_from_file_location(
-            "generate_rung_tables",
-            Path(__file__).resolve().parents[2]
-            / "scripts"
-            / "internal"
-            / "generate_rung_tables.py",
-        )
-        tables_mod = importlib.util.module_from_spec(tables_spec)
-        tables_spec.loader.exec_module(tables_mod)
-
         report_dir = tmp_path / "report"
         tables_dir = report_dir / "tables"
-        tables_mod.generate_all_tables(FIXTURES_DIR, tables_dir)
+        generate_all_tables(FIXTURES_DIR, tables_dir)
 
-        # Generate manifest
         return generate_evidence_manifest(
             rung_dir=FIXTURES_DIR,
             report_dir=report_dir,
