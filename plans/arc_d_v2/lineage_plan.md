@@ -1046,14 +1046,9 @@ uv run python scripts/internal/extract_comparator_cis.py \
 
 **Comparator config generation:**
 
-The comparator YAML config is generated from the lineage roster before Step 5 execution:
-
-```bash
-# Generate comparator config from roster (run by orchestrator at Step 5 start)
-uv run python scripts/internal/generate_comparator_config.py \
-  --roster plans/arc_d_v2/roster.json \
-  --output data/runs/arc_d_v2/<rung>/comparator_config.yaml
-```
+The comparator YAML config is generated internally by the orchestrator's
+`generate_comparator_config()` function (in `src/bid_euchre/arc_d_v2/orchestration.py`)
+from the lineage roster before Step 5 execution. No standalone script is needed.
 
 The generated YAML follows the schema expected by `run_auction_comparator.py --config`:
 
@@ -1070,10 +1065,6 @@ mode: single-seat
 n_per: <MODE_DEALS>
 seed: <SEED>
 ```
-
-If `generate_comparator_config.py` does not exist yet (Phase 0), the orchestrator
-generates the YAML directly from the roster JSON using a simple template. The
-standalone script is a Phase 0 deliverable.
 
 **Comparator aggregation contract:** Comparator rankings are canonical only
 when emitted at both pooled AND contract-type levels. `generate_rung_tables.py`
@@ -1769,15 +1760,26 @@ companion to the hypothesis table in plan.md.
   "hypotheses": [
     {
       "id": "H1",
-      "description": "GBT outperforms all OLS variants on suit",
-      "metric": "gbt_suit_delta_vs_anchor",
-      "source_table": "comparator_rankings.csv",
+      "description": "GBT outperforms anchor on suit contract delta (H2H)",
+      "metric": "suit_delta_vs_anchor",
+      "source_table": "h2h_delta_matrix.csv",
       "source_column": "net_eppd",
-      "source_filter": {"model": "gbt_av", "facet": "suit"},
-      "anchor_filter": {"model": "anchor_hybrid_r0_full", "facet": "suit"},
-      "computation": "value - anchor_value",
+      "source_filter": {"challenger": "gbt_av", "opponent": "anchor_hybrid_r0_full", "facet": "suit"},
+      "computation": "value",
       "expected_bound": {"op": ">", "value": 0.5},
       "surprise_if": {"op": "<", "value": 0.0}
+    },
+    {
+      "id": "H5",
+      "description": "GBT suit R-squared exceeds selected OLS suit R-squared",
+      "metric": "suit_r2_advantage",
+      "source_table": "model_performance.csv",
+      "source_column": "r2",
+      "source_filter": {"model": "gbt_av", "contract_type": "suit"},
+      "comparator_filter": {"model": "selected_ols_av", "contract_type": "suit"},
+      "computation": "value - comparator_value",
+      "expected_bound": {"op": ">", "value": 0.0},
+      "surprise_if": {"op": "<", "value": -0.05}
     }
   ]
 }
@@ -2321,12 +2323,13 @@ Which script produces which artifact:
 | `generate_evidence_manifest.py` | All of the above | `evidence_manifest.json`, `00_manifest.md` | — |
 | `run_rung.py` | Rung ID, mode, seeds, state.json | state.json updates, orchestrates all steps | — |
 | `generate_advance_check.py` | hypotheses.json, tables/*.csv | `advance_check_<mode>.json` | Step 8 |
-| `generate_comparator_config.py` | roster.json, anchor artifact path | `comparator_config.yaml` | Step 5 |
 
 **Note:** `generate_rung_tables.py`, `generate_interpretability.py`,
-`generate_rung_report.py`, `generate_evidence_manifest.py`, and
-`generate_comparator_config.py` do not currently exist and must be created
-as part of the infrastructure work (§23 Phase 0).
+`generate_rung_report.py`, and `generate_evidence_manifest.py`
+do not currently exist and must be created as part of the infrastructure
+work (§23 Phase 0). Comparator config generation is handled internally by the
+orchestrator's `generate_comparator_config()` function in
+`src/bid_euchre/arc_d_v2/orchestration.py`.
 
 ## 20. Lineage Amendment Process
 
