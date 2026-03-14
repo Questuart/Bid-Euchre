@@ -248,9 +248,9 @@ code change (~10 lines) and preserves exact cross-lineage comparability.
 | Rung | Type | What Changes | Total State Features | Schema | Key Question |
 |------|------|-------------|---------------------|--------|--------------|
 | R0* | Features | Hand-only (39 hand) | 39 | v7 | What does each model extract from hand information alone? |
-| R1 | Features | +6 partner (3 suit-relative, 2 contract-type, 1 pass) | 45 | v8 | Does partner signal help? Which models use it? |
-| R2 | Features | +12 opponent (6 per opponent × 2, left/right split) | 57 | v9 | Does opponent signal help? Which models use it? |
-| R3 | **Action Space** | +Moon & Loner bids (engine expansion) | 57 + action features | v10 | Do models learn when moon/loner is worth the risk? |
+| R1 | Features | +6 partner (3 suit-relative, 2 contract-type, 1 pass) +2 position (LA-1) | 47 | v8 | Does partner signal help? Which models use it? |
+| R2 | Features | +12 opponent (6 per opponent × 2, left/right split) | 59 | v9 | Does opponent signal help? Which models use it? |
+| R3 | **Action Space** | +Moon & Loner bids (engine expansion) | 59 + action features | v10 | Do models learn when moon/loner is worth the risk? |
 | R4+ | Features | Card inference from auction (TBD) | TBD | TBD | Can models infer opponent holdings from bids? |
 
 ### 6.1 R1 Partner Feature Contract (v2 Suit-Relative Channels)
@@ -289,8 +289,16 @@ H ↔ D (red), S ↔ C (black).
 suit-relative channels read 0 since no-trump bids have no suit to map. The
 contract-type channels make no-trump bids visible.
 
-At R1, all models use `--feature-set full` (39 hand + 6 partner = 45 state features
-+ action terms). The constrained arm adds these 6 partner features to its locked set.
+Additionally, R1 adds **2 auction position features** (Amendment LA-1):
+
+| Feature | Type | Definition |
+|---------|------|-----------|
+| `auction_position` | int (0-3) | Position in bidding order: 0=first (left of dealer), 3=last (dealer). Computed as `(seat - dealer_seat - 1) % 4`. |
+| `is_dealer` | int (0\|1) | 1 if observer is the dealer. Critical at R3 for moon/loner takeover privilege. |
+
+At R1, all models use `--feature-set full` (39 hand + 6 partner + 2 position = 47 state
+features + action terms). The constrained arm adds these 6 partner features and 2 position
+features to its locked set.
 
 ### 6.2 R2 Opponent Feature Contract (Suit-Relative, Left/Right Split)
 
@@ -303,7 +311,7 @@ Implemented in `src/bid_euchre/features/auction_context.py` as
 Each opponent gets the same 6-feature template as partner (3 suit-relative +
 2 contract-type + 1 pass), split by position.
 
-**Left opponent** (seat (observer + 1) % 4 — bids *after* you in rotation):
+**Left opponent** (seat (observer + 1) % 4 — geometric left):
 
 | Feature | Type | Channel | Semantics |
 |---------|------|---------|-----------|
@@ -314,7 +322,7 @@ Each opponent gets the same 6-feature template as partner (3 suit-relative +
 | `opp_left_level_low` | int (0–10) | Contract-type | Opponent has ten/low concentration |
 | `opp_left_passed` | int (0\|1) | Auction state | Weakness signal |
 
-**Right opponent** (seat (observer - 1) % 4 — bids *before* you in rotation):
+**Right opponent** (seat (observer - 1) % 4 — geometric right):
 
 | Feature | Type | Channel | Semantics |
 |---------|------|---------|-----------|
@@ -325,12 +333,15 @@ Each opponent gets the same 6-feature template as partner (3 suit-relative +
 | `opp_right_level_low` | int (0–10) | Contract-type | Opponent has ten/low concentration |
 | `opp_right_passed` | int (0\|1) | Auction state | Weakness signal |
 
-**Left vs right distinction:** Left opponent bids *after* you — their signal
-represents future competitive pressure. Right opponent bids *before* you —
-their signal is past information you can react to. If GBT feature importances
-show left ≈ right, a future amendment could pool (reducing 12 → 6 features).
+**Left vs right distinction:** Left opponent is at seat `(observer + 1) % 4` —
+geometric left. Right opponent is at seat `(observer - 1) % 4` — geometric right.
+The auction-order relationship between observer and opponents depends on the dealer
+position: geometric-left usually bids after the observer, but when the observer is
+the dealer, geometric-left bids first. The `auction_position` feature (LA-1) lets
+models learn this interaction. If GBT feature importances show left ≈ right, a
+future amendment could pool (reducing 12 → 6 features).
 
-At R2, all models use `--feature-set full` (39 hand + 6 partner + 12 opponent = 57
+At R2, all models use `--feature-set full` (39 hand + 6 partner + 2 position + 12 opponent = 59
 state features + action terms). The constrained arm adds the 12 opponent features
 to its locked set.
 
@@ -342,10 +353,11 @@ Every auction participant gets the same 6-feature template:
 | Player | Features | Semantics |
 |--------|----------|-----------|
 | Partner (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Support signal |
-| Left opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Competition signal (bids after you) |
-| Right opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Information signal (bids before you) |
+| Left opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Competition signal |
+| Right opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Information signal |
+| Position (observer) | auction_position + is_dealer = 2 | Auction order context (LA-1) |
 
-Total auction context: 18 features (6 × 3 players). Combined with 39 hand = 57 at R2.
+Total auction context: 20 features (6 × 3 players + 2 position). Combined with 39 hand = 59 at R2.
 
 **Channel decomposition per player:**
 ```
@@ -1416,7 +1428,7 @@ markdown second.
 | `selection` | string | Feature selection: "all", "forward", "locked", "—" |
 | `dataset_id` | string | Training dataset run ID, or "—" for heuristics |
 | `feature_set` | string | Feature set used (e.g., "r0 (all 39)", "constrained (3/2/2)") |
-| `context_bundle` | string | Context level (e.g., "hand-only (39)", "hand+partner (45)") |
+| `context_bundle` | string | Context level (e.g., "hand-only (39)", "hand+partner+position (47)") |
 | `continuation` | string | Continuation policy artifact name |
 | `seeds` | string | Comma-separated seed list |
 | `status` | string | "canonical", "excluded", "experimental" |
@@ -1476,7 +1488,7 @@ Required at every rung.
 | Check | Expected | Observed | Status |
 |-------|----------|----------|--------|
 | total_rows | >= N * actions_per_deal | ... | PASS/FAIL |
-| feature_count | 39 (R0*) or 45 (R1) or 57 (R2) | ... | PASS/FAIL |
+| feature_count | 39 (R0*) or 47 (R1) or 59 (R2) | ... | PASS/FAIL |
 | nan_features | 0 | ... | PASS/FAIL |
 | suit_fraction | ~0.4 | ... | PASS/FAIL |
 | high_fraction | ~0.3 | ... | PASS/FAIL |
@@ -2590,15 +2602,17 @@ If a rung must be rerun (e.g., data issue discovered, script bug):
    in `auction_context.py` — 6 features as defined in §6.1:
    `partner_level_same_suit`, `partner_level_same_color`, `partner_level_off_color`,
    `partner_level_high`, `partner_level_low`, `partner_passed`
-2. Update `--feature-set full` for R1: `r0` → `full` (39 hand + 6 partner = 45 features)
-3. Regenerate training data with v8 schema (partner features in dataset)
-4. Extend constrained-arm locked feature mapping: add 6 partner features
-5. Add unit tests for partner feature extraction + schema-count validation
-6. Continuation artifact remains fixed: frozen anchor `hybrid_r0_full.json` (§4.1)
-7. Run SMOKE before QUICK
-8. Execute runbook at QUICK, then FULL
-9. Update `cross_rung_deltas.csv` and cross-rung progression charts
-10. Compare all models' response to partner information — this is the clean
+2. Implement auction position extraction (`auction_position`, `is_dealer`) in
+   `auction_context.py` (Amendment LA-1)
+3. Update `--feature-set full` for R1: `r0` → `full` (39 hand + 6 partner + 2 position = 47 features)
+4. Regenerate training data with v8 schema (partner + position features in dataset)
+5. Extend constrained-arm locked feature mapping: add 6 partner features + 2 position features
+6. Add unit tests for partner + position feature extraction + schema-count validation
+7. Continuation artifact remains fixed: frozen anchor `hybrid_r0_full.json` (§4.1)
+8. Run SMOKE before QUICK
+9. Execute runbook at QUICK, then FULL
+10. Update `cross_rung_deltas.csv` and cross-rung progression charts
+11. Compare all models' response to partner information — this is the clean
     ablation (same continuation policy, same objective, only context changes)
 
 ### Phase 3: R2 Execution (Opponent Context)
@@ -2610,14 +2624,14 @@ If a rung must be rerun (e.g., data issue discovered, script bug):
 3. Each opponent gets the same 6-feature template as partner:
    `opp_{left|right}_level_{same_suit|same_color|off_color|high|low}`,
    `opp_{left|right}_passed`
-4. Update `--feature-set full` for R2: 45 → 57 features (v9 schema)
+4. Update `--feature-set full` for R2: 47 → 59 features (v9 schema)
 5. Add `"r2"` feature set to `train_action_value.py` `FEATURE_SETS` if needed,
    or verify `full` auto-discovers the 12 new features
 6. Extend constrained-arm locked feature mapping: add all 12 opponent
    features to the locked set (6 per opponent position)
 7. Add unit tests:
    - `extract_opponent_features()` with known auction transcripts
-   - Feature count assertion: 39 hand + 6 partner + 12 opponent = 57
+   - Feature count assertion: 39 hand + 6 partner + 2 position + 12 opponent = 59
    - Left/right assignment correctness for all 4 seat positions
    - Edge case: opponent passed (all level channels = 0, passed = 1)
    - Edge case: opponent bid multiple times (use highest level per channel)
