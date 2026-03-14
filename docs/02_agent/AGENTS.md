@@ -619,3 +619,19 @@ small features, isolated PRs), the existing session plan convention applies:
 Session plans are independent. They do not require a governing plan,
 sub-plan registry, or checkpoint file. Use them for bounded, single-session
 work.
+
+### 12.8 Archived Plans
+
+Plans in `plans/archive/` and plans marked with `Status: ARCHIVED` are
+**reference-only**. Agents must not:
+
+- Resume work described in archived plans
+- Execute commands from archived plans (scripts, flags, configs may have changed)
+- Treat archived plans as governing documents for current work
+
+If an archived plan conflicts with an active governing plan (listed in
+`CLAUDE.md` "Active Governing Plans" table), the active governing plan
+wins unconditionally.
+
+Archived plans are useful for understanding historical decisions and rationale.
+They are not valid execution contracts.
