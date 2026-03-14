@@ -1064,9 +1064,6 @@ class TestGenerateComparatorConfig:
         art = tmp_path / "gbt_av" / "artifact.json"
         art.parent.mkdir(parents=True)
         art.write_text("{}")
-        anchor_path = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
-        anchor_path.mkdir(parents=True)
-        (anchor_path / "hybrid_r0_full.json").write_text("{}")
 
         roster = self._mock_roster()
         with (
@@ -1112,6 +1109,29 @@ class TestGenerateComparatorConfig:
 
         names = [p["name"] for p in config["bidding_policies"]]
         assert "gbt_av" not in names
+        assert "modeloespecifico" in names
+
+    def test_excludes_anchor_per_la2(self, tmp_path):
+        """Comparator config excludes anchor model per LA-2 policy."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+        # Create anchor artifact (should still be excluded)
+        anchor_path = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        anchor_path.mkdir(parents=True)
+        (anchor_path / "hybrid_r0_full.json").write_text("{}")
+
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            config = generate_comparator_config("r0", "smoke", 42, 100, tmp_path)
+
+        names = [p["name"] for p in config["bidding_policies"]]
+        assert "anchor_hybrid_r0_full" not in names
+        # But roster models should still be present
+        assert "gbt_av" in names
         assert "modeloespecifico" in names
 
 
@@ -1350,3 +1370,109 @@ class TestStep2SkipValidation:
         assert ok is True
         assert len(captured_cmds) == 1
         assert "--skip-validation" not in captured_cmds[0]
+
+
+# ============================================================================
+# Anchor Compatibility Tests (LA-2)
+# ============================================================================
+
+
+from bid_euchre.arc_d_v2.orchestration import check_anchor_compatibility
+
+
+class TestCheckAnchorCompatibility:
+    def test_returns_false_for_missing_file(self, tmp_path):
+        """Non-existent artifact path returns False."""
+        result = check_anchor_compatibility(tmp_path / "nonexistent.json")
+        assert result is False
+
+    def test_returns_false_for_invalid_artifact(self, tmp_path):
+        """Invalid JSON artifact returns False."""
+        bad_artifact = tmp_path / "bad_artifact.json"
+        bad_artifact.write_text("{}")
+        result = check_anchor_compatibility(bad_artifact)
+        assert result is False
+
+    def test_returns_false_for_wrong_artifact_type(self, tmp_path):
+        """Artifact with wrong type returns False."""
+        bad_artifact = tmp_path / "wrong_type.json"
+        bad_artifact.write_text(json.dumps({"artifact_type": "wrong_type"}))
+        result = check_anchor_compatibility(bad_artifact)
+        assert result is False
+
+    def test_anchor_loads_through_hybrid_olsa(self):
+        """Verify the frozen anchor can be loaded and predict via HybridOLSaBidder.
+
+        This test requires the actual anchor artifact to be present on disk
+        (gitignored). It is skipped in CI where the artifact is unavailable.
+        """
+        anchor_path = Path("data/artifacts/arc_d/r0/hybrid_r0_full.json")
+        if not anchor_path.exists():
+            pytest.skip("Anchor artifact not available (gitignored)")
+
+        result = check_anchor_compatibility(anchor_path)
+        assert result is True
+
+
+class TestH2HRosterIncludesAnchor:
+    """Verify H2H roster includes anchor while comparator excludes it (LA-2)."""
+
+    def _mock_roster(self):
+        return Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                ),
+            ],
+            anchor=AnchorModel(
+                name="anchor_hybrid_r0_full",
+                class_name="HybridOLSaBidder",
+                artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+            ),
+        )
+
+    def test_h2h_includes_anchor_comparator_excludes(self, tmp_path):
+        """H2H roster includes anchor; comparator config excludes it per LA-2."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+        anchor_path = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        anchor_path.mkdir(parents=True)
+        (anchor_path / "hybrid_r0_full.json").write_text("{}")
+
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            h2h_entries = generate_h2h_roster("r0", "smoke", 42, tmp_path)
+            comp_config = generate_comparator_config("r0", "smoke", 42, 100, tmp_path)
+
+        h2h_names = [e["name"] for e in h2h_entries]
+        comp_names = [p["name"] for p in comp_config["bidding_policies"]]
+
+        # H2H includes anchor
+        assert "anchor_hybrid_r0_full" in h2h_names
+        # Comparator excludes anchor
+        assert "anchor_hybrid_r0_full" not in comp_names
+
+    def test_h2h_anchor_uses_hybrid_olsa_class(self, tmp_path):
+        """Anchor entry in H2H roster uses HybridOLSaBidder class name."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+        anchor_path = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        anchor_path.mkdir(parents=True)
+        (anchor_path / "hybrid_r0_full.json").write_text("{}")
+
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            entries = generate_h2h_roster("r0", "smoke", 42, tmp_path)
+
+        anchor = next(e for e in entries if e["name"] == "anchor_hybrid_r0_full")
+        assert anchor["class_name"] == "HybridOLSaBidder"

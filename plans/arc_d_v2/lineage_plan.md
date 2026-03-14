@@ -125,6 +125,10 @@ Purpose:
 - Every model at every rung reports delta vs anchor
 - Never retrained, never replaced
 
+**Compatibility policy (Amendment LA-2):** The anchor is loaded ONLY through
+`HybridOLSaBidder` (its native class). It participates in H2H and cross-rung
+deltas but NOT in the comparator battery. See `plans/arc_d_v2/amendments.md` LA-2.
+
 Additionally, track **best-in-lineage** (the model with highest pooled net_eppd across
 completed rungs) for local progress comparison. Best-in-lineage updates automatically
 when a new rung completes; no ceremony required.
