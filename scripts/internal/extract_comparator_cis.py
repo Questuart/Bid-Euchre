@@ -229,13 +229,19 @@ def _load_manifest_runs(manifest_path, bidder_names, runs_dir):
     return result
 
 
-def _validate_batch_coherence(seat_run_dirs, bidder_name, strict=True):
+def _validate_batch_coherence(
+    seat_run_dirs, bidder_name, strict=True, single_seat=False
+):
     """Validate that all seat runs in a batch share consistent metadata.
 
     Checks: seed, config_sha256, n_per (within ±1 for uneven seat splits),
     and cardinality.
     If strict (manifest mode): sys.exit(1) on mismatch.
     If not strict (legacy mode): stderr warning only.
+
+    When ``single_seat=True``, the config_sha256 check is skipped because
+    each seat gets its own per-seat config YAML (different experiment_name
+    and seat_bidding_policies), making the SHA intentionally different.
     """
     seeds = []
     n_pers = []
@@ -264,20 +270,23 @@ def _validate_batch_coherence(seat_run_dirs, bidder_name, strict=True):
             f"Batch coherence violation for {bidder_name}: mixed seeds {set(seeds)}"
         )
 
-    # config_sha256: in strict mode, require all seats to have it and match
-    non_null_shas = [s for s in config_shas if s]
-    if non_null_shas:
-        if len(non_null_shas) < len(config_shas) and strict:
-            _report(
-                f"Batch coherence violation for {bidder_name}: "
-                f"{len(config_shas) - len(non_null_shas)} of {len(config_shas)} "
-                f"seats missing config_sha256"
-            )
-        if len(set(non_null_shas)) > 1:
-            _report(
-                f"Batch coherence violation for {bidder_name}: "
-                f"mixed config_sha256 {set(non_null_shas)}"
-            )
+    # config_sha256: skip in single-seat mode where each seat intentionally
+    # gets a distinct per-seat config (different experiment_name and
+    # seat_bidding_policies).
+    if not single_seat:
+        non_null_shas = [s for s in config_shas if s]
+        if non_null_shas:
+            if len(non_null_shas) < len(config_shas) and strict:
+                _report(
+                    f"Batch coherence violation for {bidder_name}: "
+                    f"{len(config_shas) - len(non_null_shas)} of {len(config_shas)} "
+                    f"seats missing config_sha256"
+                )
+            if len(set(non_null_shas)) > 1:
+                _report(
+                    f"Batch coherence violation for {bidder_name}: "
+                    f"mixed config_sha256 {set(non_null_shas)}"
+                )
 
     # n_per: allow ±1 variance for uneven seat splits (n_per % 4 != 0)
     valid_n_pers = [n for n in n_pers if n is not None]
@@ -429,7 +438,12 @@ def main():
                     seat_run_dirs.append((seat, candidates[-1]))
 
             # Validate batch coherence
-            _validate_batch_coherence(seat_run_dirs, name, strict=use_strict_coherence)
+            _validate_batch_coherence(
+                seat_run_dirs,
+                name,
+                strict=use_strict_coherence,
+                single_seat=args.single_seat,
+            )
 
             run_directories[name] = []
             for seat, run_dir in seat_run_dirs:
