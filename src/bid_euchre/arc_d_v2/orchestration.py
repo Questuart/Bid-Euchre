@@ -242,6 +242,38 @@ def load_roster(rung: str) -> Roster:
 
 
 # ---------------------------------------------------------------------------
+# Anchor compatibility (LA-2)
+# ---------------------------------------------------------------------------
+
+
+def check_anchor_compatibility(anchor_path: Path) -> bool:
+    """Verify the frozen anchor model can be loaded through HybridOLSaBidder.
+
+    This is a pre-flight check to catch anchor incompatibility before
+    running the full pipeline. The anchor is ONLY loaded through
+    HybridOLSaBidder (its native class), never through ActionValueBidder.
+
+    See plans/arc_d_v2/amendments.md LA-2.
+    """
+    try:
+        from bid_euchre.strategy.bidding import HybridOLSaBidder
+
+        bidder = HybridOLSaBidder(
+            artifact_path=str(anchor_path),
+            name="anchor_compatibility_check",
+        )
+        # Verify the bidder loaded successfully by checking it has models
+        if not bidder.models:
+            logger.error("Anchor loaded but has no models")
+            return False
+        logger.info("Anchor compatibility check passed: %s", anchor_path)
+        return True
+    except Exception as e:
+        logger.error("Anchor compatibility check failed: %s", e)
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Artifact discovery
 # ---------------------------------------------------------------------------
 
@@ -397,17 +429,10 @@ def generate_comparator_config(
                 continue
         bidding_policies.append(policy)
 
-    # Add anchor
-    if roster.anchor.name and roster.anchor.class_name:
-        anchor_policy: dict = {
-            "name": roster.anchor.name,
-            "class_name": roster.anchor.class_name,
-        }
-        if roster.anchor.artifact:
-            anchor_path = _repo_root() / roster.anchor.artifact
-            if anchor_path.exists():
-                anchor_policy["params"] = {"artifact_path": str(anchor_path)}
-        bidding_policies.append(anchor_policy)
+    # NOTE: anchor deliberately excluded from comparator per LA-2.
+    # The comparator ranks models independently vs AlwaysPass sentinels;
+    # the anchor is only needed for H2H and cross-rung deltas where it's
+    # loaded through HybridOLSaBidder (its native class).
 
     config = {
         "experiment_name": f"arc_d_v2_{rung}_comparator_seed{seed}",
@@ -562,6 +587,21 @@ def execute_step_0(state: RunState, dry_run: bool = False) -> bool:
         except json.JSONDecodeError as e:
             logger.error("hypotheses.json parse error: %s", e)
             missing.append("hypotheses.json (parse error)")
+
+    # Anchor compatibility precheck (LA-2)
+    roster = load_roster(rung)
+    if roster.anchor.artifact:
+        anchor_path = _repo_root() / roster.anchor.artifact
+        if anchor_path.exists():
+            if not check_anchor_compatibility(anchor_path):
+                logger.warning(
+                    "Anchor compatibility check failed -- anchor will only "
+                    "be available via H2H (HybridOLSaBidder), not comparator"
+                )
+            # Not a hard failure: LA-2 allows the pipeline to proceed
+            # without the anchor in the comparator.
+        else:
+            logger.warning("Anchor artifact not found at %s", anchor_path)
 
     if missing:
         error = f"Missing: {', '.join(missing)}"

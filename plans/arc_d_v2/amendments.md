@@ -8,6 +8,7 @@
 ## Amendment Log
 
 ### LA-1 — [Auction Position Features at R1+](#lineage-amendment-la-1)
+### LA-2 — [Anchor Compatibility Policy](#lineage-amendment-la-2)
 
 ---
 
@@ -49,3 +50,51 @@ The plan's §6.2 claims "left opponent bids after you" — this is only true for
 - `--feature-set full` at R1+ automatically includes all features, so no FEATURE_SETS changes needed
 
 **Approved by:** [human reviewer — to be filled]
+
+---
+
+## Lineage Amendment LA-2
+
+**Date:** 2026-03-14
+**Type:** evaluation_contract
+**Effective from:** R0*
+**Change:** Define anchor model compatibility policy. Separate anchor roles across evaluation modes.
+
+**Rationale:**
+The frozen anchor (`hybrid_r0_full`) serves two roles:
+1. Historical reference for cross-lineage comparison
+2. Live executable participant in evaluation batteries
+
+These roles have different compatibility requirements. The anchor was trained on the
+legacy OLSa feature schema (tricks_won target, no `current_high_bid` positional feature).
+R0* action-value models use a different schema (net_points target, 39 hand + 2 action
+features). Loading the anchor through the ActionValueBidder runtime path fails because
+the feature inference assumes modern positional features.
+
+**Policy decisions:**
+
+| Evaluation Mode | Anchor Required? | Loading Path | Rationale |
+|----------------|-----------------|-------------|-----------|
+| H2H battery | **Yes** | HybridOLSaBidder (native) | Direct competitive comparison, anchor's own bidder class |
+| Cross-rung deltas | **Yes** | Via H2H results | Longitudinal tracking across rungs |
+| Comparator battery | **No** | N/A | Comparator ranks models independently vs AlwaysPass sentinels; anchor not needed for this |
+
+**Anchor compatibility contract:**
+- The anchor is ONLY loaded through `HybridOLSaBidder` -- never through `ActionValueBidder`
+- H2H roster entries for the anchor use `class_name: HybridOLSaBidder` with `artifact_path`
+- Comparator roster does NOT include the anchor
+- If a future runtime change breaks `HybridOLSaBidder` loading, that is a blocker
+
+**Impact on reports:**
+- Comparator rankings table (S12.1): current roster only, no anchor row
+- H2H delta table (S12.2): includes anchor (loaded via its own bidder class)
+- Cross-rung deltas (S12.8): anchor deltas from H2H results
+- This separation keeps the evidence contract clean -- each evaluation mode uses
+  the appropriate loading mechanism
+
+**Impact on orchestrator:**
+- `generate_comparator_config()` excludes the anchor from bidding_policies
+- `generate_h2h_roster()` includes the anchor with `class_name: HybridOLSaBidder`
+- Anchor compatibility precheck added to `check_anchor_compatibility()` utility
+
+**Approved by:** [human reviewer]
