@@ -19,6 +19,7 @@ Submodules:
 - `models/` — Model training/inference
 - `diagnostics/` — Visualization and analysis tools
 - `validation/` — Schema validation
+- `arc_d_v2/` — Arc D v2 lineage: typed schemas, paths, configuration (orchestration and reporting scripts import from here)
 - `reporting/`, `logging/`, `analysis/` — Supporting utilities
 - `scoring.py` — Top-level scoring module (compute_points)
 
@@ -65,7 +66,9 @@ Shell scripts:
 - `run_r0b.sh` — R0 baseline lock reproduction commands (Arc D Wave 3)
 
 ### `scripts/internal/`
-**Research and internal tooling.** Not part of the canonical workflow.
+**Research and internal tooling.** Not part of the canonical experiment workflow.
+Arc D v2 lineage scripts (orchestrator, reporting) are canonical execution tools
+that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 
 - `audit_analysis.py` — Review pipeline audit (follow-up rates, corrective PRs, per-PR trail)
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation

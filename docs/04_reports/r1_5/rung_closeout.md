@@ -177,7 +177,7 @@ R1.6 extends partner features with suit-relative channels:
 
 Schema: v7 (52 features) to v8 (53 features). PR #631 (artifact-driven feature
 extraction) enables v7/v8 coexistence.
-Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
+Plan: `plans/archive/v1_sessions/2026-03-13_r1-6-partner-semantics.md`
 
 ## Timeline
 
@@ -208,8 +208,8 @@ Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
 | OLS FULL H2H battery | `data/artifacts/arc_d/r1_5/h2h_battery_full.json` |
 | Dataset generator | `scripts/internal/generate_action_value_dataset.py` |
 | Training pipeline | `scripts/internal/train_action_value.py` |
-| Governing plan | `plans/r1_5_training_plan.md` |
-| R1.5.3 plan | `plans/sessions/2026-03-12_r1-5-3-forward-plan-v2.md` |
+| Governing plan | `plans/archive/v1_root/r1_5_training_plan.md` |
+| R1.5.3 plan | `plans/archive/v1_sessions/2026-03-12_r1-5-3-forward-plan-v2.md` |
 
 ## Companion Reports
 
