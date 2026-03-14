@@ -20,6 +20,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from bid_euchre.arc_d_v2.lifecycle import list_runs
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +62,29 @@ def _inventory_dir(directory: Path, suffix: str) -> list[dict]:
                 "size_bytes": p.stat().st_size,
             }
         )
+    return entries
+
+
+def _get_lifecycle_status(rung_dir: Path) -> list[dict]:
+    """Collect lifecycle status for all run subdirectories in a rung dir.
+
+    Returns a list of dicts with run_id, status, superseded_by, and
+    supersedes fields for inclusion in the evidence manifest.
+    """
+    entries: list[dict] = []
+    for run_path, art_status in list_runs(rung_dir):
+        entry: dict = {"run_id": run_path.name}
+        if art_status is None:
+            entry["status"] = "active"
+        else:
+            entry["status"] = art_status.status
+            if art_status.superseded_by:
+                entry["superseded_by"] = art_status.superseded_by
+            if art_status.supersedes:
+                entry["supersedes"] = art_status.supersedes
+            if art_status.quarantine_reason:
+                entry["quarantine_reason"] = art_status.quarantine_reason
+        entries.append(entry)
     return entries
 
 
@@ -157,6 +182,9 @@ def generate_evidence_manifest(
         if plan_file.exists():
             governing_plan = str(plan_file)
 
+    # Lifecycle status for the rung directory
+    lifecycle_status = _get_lifecycle_status(rung_dir)
+
     manifest = {
         "schema_version": "arc_d_evidence_manifest_v1",
         "lineage_id": lineage_id,
@@ -169,6 +197,7 @@ def generate_evidence_manifest(
         "seeds": seeds,
         "mode": mode,
         "run_ids": run_ids,
+        "lifecycle": lifecycle_status,
         "artifacts": artifact_inventory,
         "tables": table_inventory,
         "charts": chart_inventory,
@@ -219,6 +248,26 @@ def render_manifest_markdown(manifest: dict) -> str:
                 f"| {entry.get('class_name', '')} "
                 f"| {entry.get('trainable', False)} "
                 f"| {entry.get('status', '')} |"
+            )
+        lines.append("")
+
+    # Lifecycle status
+    lifecycle = manifest.get("lifecycle", [])
+    if lifecycle:
+        lines.extend(
+            [
+                "## Lifecycle Status",
+                "",
+                "| Run | Status | Superseded By |",
+                "|-----|--------|---------------|",
+            ]
+        )
+        for entry in lifecycle:
+            sup_by = entry.get("superseded_by", "")
+            lines.append(
+                f"| `{entry.get('run_id', '')}` "
+                f"| {entry.get('status', '')} "
+                f"| {sup_by or '-'} |"
             )
         lines.append("")
 
