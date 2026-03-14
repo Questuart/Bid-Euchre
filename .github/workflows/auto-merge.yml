@@ -5,6 +5,10 @@ on:
     branches: [main]
     types: [opened, reopened]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   enable-auto-merge:
     # Only auto-merge PRs from the repo owner (not external contributors)
@@ -15,3 +19,4 @@ jobs:
         run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
