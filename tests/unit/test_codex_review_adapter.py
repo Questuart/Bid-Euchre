@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -434,3 +435,73 @@ class TestCodexReviewResultErrorType:
         )
         d = result.to_dict()
         assert d["error_type"] is None
+
+
+class TestEnvVarLauncher:
+    """Test CODEX_REVIEW_CMD env var configurable launcher."""
+
+    def test_env_var_takes_priority(self):
+        """CODEX_REVIEW_CMD overrides all other resolution paths."""
+        with patch.dict(os.environ, {"CODEX_REVIEW_CMD": "my-codex"}):
+            result = _resolve_codex_binary()
+            assert result == ["my-codex"]
+
+    def test_env_var_multi_word_split(self):
+        """Multi-word commands are split by whitespace."""
+        with patch.dict(
+            os.environ,
+            {"CODEX_REVIEW_CMD": "docker exec codex-container codex"},
+        ):
+            result = _resolve_codex_binary()
+            assert result == ["docker", "exec", "codex-container", "codex"]
+
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/local/bin/codex")
+    def test_env_var_overrides_path_binary(self, mock_which):
+        """Env var wins even when codex is in PATH."""
+        with patch.dict(os.environ, {"CODEX_REVIEW_CMD": "custom-codex"}):
+            result = _resolve_codex_binary()
+            assert result == ["custom-codex"]
+
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/local/bin/codex")
+    def test_empty_env_var_falls_through(self, mock_which):
+        """Empty env var is ignored, falls through to PATH binary."""
+        with patch.dict(os.environ, {"CODEX_REVIEW_CMD": ""}):
+            result = _resolve_codex_binary()
+            assert result == ["codex"]
+
+    @patch("codex_review_adapter.shutil.which", return_value="/usr/local/bin/codex")
+    def test_whitespace_only_env_var_falls_through(self, mock_which):
+        """Whitespace-only env var is ignored, falls through to PATH binary."""
+        with patch.dict(os.environ, {"CODEX_REVIEW_CMD": "   "}):
+            result = _resolve_codex_binary()
+            assert result == ["codex"]
+
+    @patch("codex_review_adapter.shutil.which", return_value=None)
+    def test_unset_env_var_uses_existing_chain(self, mock_which):
+        """When env var is not set, existing preference chain applies."""
+        env = os.environ.copy()
+        env.pop("CODEX_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(Path, "is_file", return_value=False):
+                result = _resolve_codex_binary()
+                assert result == ["npx", "@openai/codex"]
+
+    @patch("codex_review_adapter.subprocess.run")
+    def test_env_var_in_invoke_command(self, mock_run):
+        """Env-configured command appears in invoke_codex_cli() command."""
+        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        with patch.dict(
+            os.environ,
+            {"CODEX_REVIEW_CMD": "docker exec codex-container codex"},
+        ):
+            invoke_codex_cli(base="main")
+            cmd = mock_run.call_args[0][0]
+            assert cmd == [
+                "docker",
+                "exec",
+                "codex-container",
+                "codex",
+                "review",
+                "--base",
+                "main",
+            ]
