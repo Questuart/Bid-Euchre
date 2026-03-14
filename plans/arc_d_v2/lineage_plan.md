@@ -2254,6 +2254,38 @@ WARNING findings are tracked as follow-up issues. This workflow was
 established after post-merge review caught a SHAP value indexing bug
 that pre-merge review missed.
 
+#### 17.5.7 Timeout Detection and Recovery
+
+The orchestrator writes a heartbeat file (`plans/arc_d_v2/<rung>/heartbeat`)
+every 60 seconds during execution. If the heartbeat becomes stale (>5 minutes
+old), the orchestrator is considered dead.
+
+**Detection:**
+- `run_rung.py --rung <rung> --check-alive` returns exit code 0 (alive) or 1 (stale/dead)
+- External watchdogs, hooks, or humans can check this
+
+**Recovery:**
+- The orchestrator is idempotent: `state.json` + fingerprinting enables safe respawn
+- Re-running `run_rung.py --rung <rung> --mode <mode>` after a stall picks up
+  from the last completed step
+- Partial step outputs are detected via `state.json` step status (`partial`, `in_progress`)
+
+**Per-step timeout limits:**
+
+| Step | Default Timeout | Rationale |
+|------|----------------|-----------|
+| 1 (dataset) | 30 min | SMOKE is fast; FULL is larger |
+| 2 (training) | 2 hours | All 6 models x 3 contracts |
+| 3 (offline eval) | 1 hour | Table generation |
+| 3b (interpretability) | 30 min | SHAP can be memory-intensive |
+| 4 (H2H battery) | 1 hour | 81 matchups at SMOKE/QUICK |
+| 5 (comparator) | 1 hour | All models vs sentinels |
+| 6-8 (reports/checks) | 1 hour | Aggregation and rendering |
+
+**Anti-pattern:** Do not silently restart a stalled orchestrator without
+checking `state.json`. Always resume via the normal CLI -- the state model
+handles the rest.
+
 ## 18. Run Naming Contract
 
 All run IDs follow this pattern:

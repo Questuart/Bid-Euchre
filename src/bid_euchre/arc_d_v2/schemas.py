@@ -127,6 +127,33 @@ class StepState:
 
 
 @dataclass
+class TimeoutPolicy:
+    """Per-step timeout limits and heartbeat configuration.
+
+    Timeouts are in seconds.  ``step_overrides`` maps step IDs to
+    step-specific timeout limits; any step not listed falls back to
+    ``default``.
+    """
+
+    default: int = 3600  # 1 hour
+    step_overrides: dict[str, int] = field(
+        default_factory=lambda: {
+            "1": 1800,  # Dataset gen: 30 min (SMOKE), may be longer for FULL
+            "2": 7200,  # Training: 2 hours (all models)
+            "4": 3600,  # H2H battery: 1 hour
+            "5": 3600,  # Comparator: 1 hour
+            "3b": 1800,  # SHAP: 30 min
+        }
+    )
+    heartbeat_interval: int = 60  # Write heartbeat every 60s
+    stale_threshold: int = 300  # Consider dead after 5min no heartbeat
+
+    def get_timeout(self, step: str) -> int:
+        """Return the timeout for a given step (override or default)."""
+        return self.step_overrides.get(step, self.default)
+
+
+@dataclass
 class RunState:
     """Full execution state for a rung run.
 
@@ -148,6 +175,7 @@ class RunState:
     blocker: str | None = None
     active_investigation: str | None = None
     supersession: dict | None = None
+    timeout_policy: TimeoutPolicy = field(default_factory=TimeoutPolicy)
     steps: dict[str, dict] = field(default_factory=dict)
     per_seed: dict[str, dict] = field(default_factory=dict)
     last_updated: str = ""
@@ -157,6 +185,19 @@ class RunState:
     def load(cls, path: Path) -> RunState:
         """Load state from JSON file."""
         data = json.loads(path.read_text())
+
+        # Reconstruct timeout policy (graceful default for older state files)
+        tp_data = data.get("timeout_policy")
+        if tp_data is not None:
+            timeout_policy = TimeoutPolicy(
+                default=tp_data.get("default", 3600),
+                step_overrides=tp_data.get("step_overrides", {}),
+                heartbeat_interval=tp_data.get("heartbeat_interval", 60),
+                stale_threshold=tp_data.get("stale_threshold", 300),
+            )
+        else:
+            timeout_policy = TimeoutPolicy()
+
         # Reconstruct step states
         state = cls(
             schema_version=data.get("schema_version", SCHEMA_VERSION),
@@ -171,6 +212,7 @@ class RunState:
             blocker=data.get("blocker"),
             active_investigation=data.get("active_investigation"),
             supersession=data.get("supersession"),
+            timeout_policy=timeout_policy,
             steps=data.get("steps", {}),
             per_seed=data.get("per_seed", {}),
             last_updated=data.get("last_updated", ""),

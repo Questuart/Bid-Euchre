@@ -23,6 +23,10 @@ from bid_euchre.arc_d_v2.schemas import (
     STEPS,
     RunState,
 )
+from bid_euchre.arc_d_v2.heartbeat import (
+    clear_heartbeat,
+    write_heartbeat,
+)
 from bid_euchre.core.time import utc_now_iso
 
 logger = logging.getLogger("run_rung")
@@ -1076,6 +1080,8 @@ def run_step(state: RunState, step: str, dry_run: bool = False) -> bool:
     desc = STEP_DESCRIPTIONS.get(step, step)
     logger.info("=== Step %s: %s ===", step, desc)
 
+    write_heartbeat(state.rung)  # Signal we're alive before step
+
     if step in PER_SEED_STEPS:
         for seed in state.seeds:
             if state.step_is_complete(step, seed):
@@ -1083,6 +1089,7 @@ def run_step(state: RunState, step: str, dry_run: bool = False) -> bool:
                 continue
             fn = STEP_FUNCTIONS[step]
             ok = fn(state, seed, dry_run=dry_run)
+            write_heartbeat(state.rung)  # Signal after each seed
             if not ok:
                 return False
         if not dry_run:
@@ -1092,8 +1099,11 @@ def run_step(state: RunState, step: str, dry_run: bool = False) -> bool:
     else:
         fn = STEP_FUNCTIONS[step]
         if step == "0":
-            return fn(state, dry_run=dry_run)
-        return fn(state, dry_run=dry_run)
+            result = fn(state, dry_run=dry_run)
+        else:
+            result = fn(state, dry_run=dry_run)
+        write_heartbeat(state.rung)  # Signal after step completes
+        return result
 
 
 def run_steps(
@@ -1105,7 +1115,9 @@ def run_steps(
 ) -> bool:
     """Run a range of steps."""
     if single_step:
-        return run_step(state, single_step, dry_run)
+        result = run_step(state, single_step, dry_run)
+        clear_heartbeat(state.rung)  # Normal completion
+        return result
 
     start_idx = STEPS.index(from_step) if from_step else 0
     end_idx = STEPS.index(to_step) + 1 if to_step else len(STEPS)
@@ -1120,6 +1132,7 @@ def run_steps(
             logger.error("Step %s failed, stopping", step)
             return False
 
+    clear_heartbeat(state.rung)  # Normal completion
     return True
 
 
@@ -1192,6 +1205,7 @@ def run_all(state: RunState, dry_run: bool = False) -> bool:
     state.save(_state_path(rung))
 
     ok = run_steps(state, dry_run=dry_run)
+    clear_heartbeat(rung)  # Normal completion of full pipeline
     return ok
 
 
