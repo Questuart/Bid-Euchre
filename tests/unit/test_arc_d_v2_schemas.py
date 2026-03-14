@@ -23,12 +23,10 @@ from bid_euchre.arc_d_v2.schemas import (
     AdvanceCheck,
     BestInLineage,
     CheckResult,
-    Fingerprint,
     HypothesesFile,
     Hypothesis,
     HypothesisBound,
     HypothesisCheckResult,
-    ModelStatus,
     NextAction,
     RunState,
 )
@@ -156,7 +154,11 @@ class TestPaths:
 
 
 class TestRunState:
-    """Test RunState creation, save, and load roundtrip."""
+    """Test RunState creation, save, and load roundtrip.
+
+    Note: The canonical RunState (merged from rung_state.py) uses string keys
+    for per_seed and dict-based step storage (not typed SeedStepStatus).
+    """
 
     def test_create_fresh(self):
         state = RunState.create_fresh("r2.0", "quick", [42])
@@ -164,39 +166,28 @@ class TestRunState:
         assert state.mode == "quick"
         assert state.seeds == [42]
         assert state.current_step == "0"
-        assert state.step_status == "pending"
-        assert 42 in state.per_seed
-        assert set(state.per_seed[42].keys()) == {"1", "2", "3", "3b", "4", "5"}
-        for step_status in state.per_seed[42].values():
-            assert step_status.status == "pending"
-        assert set(state.aggregation.keys()) == {"6", "7", "8", "9"}
+        assert state.step_status == "not_started"
+        assert "42" in state.per_seed
+        # All steps should be in per_seed (operational RunState tracks all steps)
+        from bid_euchre.arc_d_v2.schemas import STEPS
+
+        assert set(state.per_seed["42"].keys()) == set(STEPS)
+        for step_data in state.per_seed["42"].values():
+            assert step_data["status"] == "pending"
 
     def test_create_fresh_multi_seed(self):
         state = RunState.create_fresh("r2.0", "full", [42, 123, 456])
         assert state.seeds == [42, 123, 456]
-        assert set(state.per_seed.keys()) == {42, 123, 456}
+        assert set(state.per_seed.keys()) == {"42", "123", "456"}
 
     def test_save_load_roundtrip(self, tmp_path: Path):
         state = RunState.create_fresh("r2.0", "quick", [42])
         state.current_step = "2"
         state.step_status = "in_progress"
         state.status_detail = "Training models"
-        state.last_updated = "2026-03-13T10:00:00Z"
 
-        # Set a model status
-        state.per_seed[42]["2"].status = "in_progress"
-        state.per_seed[42]["2"].models["gbt_full"] = ModelStatus(
-            status="complete",
-            output="artifacts/gbt_full/artifact.json",
-            detail="R2=0.45",
-        )
-
-        # Set a fingerprint
-        state.fingerprints["seed_42"] = Fingerprint(
-            roster_hash="abc123",
-            seed=42,
-            mode="quick",
-        )
+        # Use the operational API to set model status
+        state.update_model("2", "gbt_full", 42, "complete")
 
         path = tmp_path / "state.json"
         state.save(path)
@@ -207,16 +198,7 @@ class TestRunState:
         assert loaded.current_step == "2"
         assert loaded.step_status == "in_progress"
         assert loaded.status_detail == "Training models"
-        assert loaded.last_updated == "2026-03-13T10:00:00Z"
-        assert loaded.per_seed[42]["2"].status == "in_progress"
-
-        model = loaded.per_seed[42]["2"].models["gbt_full"]
-        assert model.status == "complete"
-        assert model.output == "artifacts/gbt_full/artifact.json"
-
-        fp = loaded.fingerprints["seed_42"]
-        assert fp.roster_hash == "abc123"
-        assert fp.seed == 42
+        assert loaded.model_status(42, "2", "gbt_full") == "complete"
 
     def test_save_load_with_blocker(self, tmp_path: Path):
         state = RunState.create_fresh("r2.0", "smoke", [42])
@@ -238,12 +220,11 @@ class TestRunState:
 
     def test_per_seed_tracking(self):
         state = RunState.create_fresh("r2.0", "quick", [42, 123])
-        # Update one seed step
-        state.per_seed[42]["1"].status = "complete"
-        state.per_seed[42]["1"].outputs = ["datasets/action_value.parquet"]
+        # Use the operational API to update
+        state.mark_step_complete("1", seed=42)
         # Other seed untouched
-        assert state.per_seed[123]["1"].status == "pending"
-        assert state.per_seed[42]["1"].status == "complete"
+        assert state.per_seed["123"]["1"]["status"] == "pending"
+        assert state.per_seed["42"]["1"]["status"] == "complete"
 
 
 # =============================================================================

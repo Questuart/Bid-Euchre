@@ -1,10 +1,7 @@
 """Smoke test: full reporting pipeline on fixture data.
 
 Runs the complete pipeline:
-  generate_rung_tables.py -> tables/*.csv
-  generate_rung_charts.py -> charts/*.png + chart_data/*.csv
-  generate_evidence_manifest.py -> evidence_manifest.json + 00_manifest.md
-  generate_rung_report.py -> 01_results.md
+  tables -> charts -> manifest -> report
 
 Verifies all outputs exist and are non-empty.
 """
@@ -12,14 +9,22 @@ Verifies all outputs exist and are non-empty.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
+
+from bid_euchre.arc_d_v2.manifest import (
+    generate_evidence_manifest,
+    render_manifest_markdown,
+)
+from bid_euchre.arc_d_v2.report import generate_report
+from bid_euchre.arc_d_v2.tables import generate_all_tables
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "internal"
 
 
 def _import_script(name: str):
-    """Import a script as a module."""
+    """Import a script as a module (used only for chart generator which has not been migrated)."""
     spec = importlib.util.spec_from_file_location(
         name,
         SCRIPTS_DIR / f"{name}.py",
@@ -38,8 +43,7 @@ class TestFullPipelineSmoke:
         chart_data_dir = report_dir / "chart_data"
 
         # Step 1: Generate tables
-        tables_mod = _import_script("generate_rung_tables")
-        generated_tables = tables_mod.generate_all_tables(
+        generated_tables = generate_all_tables(
             FIXTURES_DIR,
             tables_dir,
         )
@@ -53,7 +57,7 @@ class TestFullPipelineSmoke:
             assert csv_path.exists(), f"Table missing: {csv_name}"
             assert csv_path.stat().st_size > 0, f"Table empty: {csv_name}"
 
-        # Step 2: Generate charts
+        # Step 2: Generate charts (still uses script -- not migrated)
         charts_mod = _import_script("generate_rung_charts")
         generated_charts = charts_mod.generate_all_charts(
             tables_dir=tables_dir,
@@ -61,27 +65,23 @@ class TestFullPipelineSmoke:
             chart_data_dir=chart_data_dir,
         )
 
-        # Should generate at least the table-dependent charts
         assert (
             len(generated_charts) >= 5
         ), f"Expected >= 5 charts, got {len(generated_charts)}: {generated_charts}"
 
-        # Verify chart PNGs exist and are non-empty
         for png_name in generated_charts:
             png_path = charts_dir / png_name
             assert png_path.exists(), f"Chart missing: {png_name}"
             assert png_path.stat().st_size > 0, f"Chart empty: {png_name}"
 
         # Step 3: Generate evidence manifest
-        manifest_mod = _import_script("generate_evidence_manifest")
-        manifest = manifest_mod.generate_evidence_manifest(
+        manifest = generate_evidence_manifest(
             rung_dir=FIXTURES_DIR,
             report_dir=report_dir,
             rung_id="r0",
             lineage_id="arc_d_v2",
         )
 
-        # Verify manifest fields
         assert manifest["schema_version"] == "arc_d_evidence_manifest_v1"
         assert manifest["lineage_id"] == "arc_d_v2"
         assert manifest["rung_id"] == "r0"
@@ -90,21 +90,18 @@ class TestFullPipelineSmoke:
         assert len(manifest["charts"]) > 0
 
         # Write manifest files
-        import json
-
         manifest_json_path = report_dir / "evidence_manifest.json"
         manifest_json_path.write_text(json.dumps(manifest, indent=2) + "\n")
         assert manifest_json_path.exists()
 
         manifest_md_path = report_dir / "00_manifest.md"
-        md_content = manifest_mod.render_manifest_markdown(manifest)
+        md_content = render_manifest_markdown(manifest)
         manifest_md_path.write_text(md_content)
         assert manifest_md_path.exists()
         assert manifest_md_path.stat().st_size > 0
 
         # Step 4: Generate report
-        report_mod = _import_script("generate_rung_report")
-        report_content = report_mod.generate_report(report_dir)
+        report_content = generate_report(report_dir)
 
         report_path = report_dir / "01_results.md"
         report_path.write_text(report_content)
@@ -112,7 +109,6 @@ class TestFullPipelineSmoke:
         assert report_path.stat().st_size > 0
         assert "# Rung Results Report" in report_content
 
-        # Verify all required sections present
         for section in [
             "## 1. Data Sanity",
             "## 2. Offline Model Performance",
@@ -126,8 +122,7 @@ class TestFullPipelineSmoke:
     def test_table_names_expected(self, tmp_path):
         """Verify the specific table names generated."""
         tables_dir = tmp_path / "tables"
-        tables_mod = _import_script("generate_rung_tables")
-        generated = tables_mod.generate_all_tables(FIXTURES_DIR, tables_dir)
+        generated = generate_all_tables(FIXTURES_DIR, tables_dir)
 
         expected_tables = [
             "comparator_rankings.csv",
