@@ -31,13 +31,13 @@ experiments/
 
 **Option 1: Use Unified Runner** (Preferred)
 ```bash
-PYTHONPATH=src python experiments/run_experiment.py \
+uv run python experiments/run_experiment.py \
   --config experiments/configs/strategy_comparison.yaml
 ```
 
 **Option 2: Run Specific Script**
 ```bash
-PYTHONPATH=src python experiments/comparisons/run_head_to_head.py
+uv run python experiments/comparisons/run_head_to_head.py
 ```
 
 **Option 3: Find in Registry**

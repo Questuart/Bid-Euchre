@@ -7,6 +7,8 @@
 | Make code changes (AI/human) | [02_agent/AGENTS.md](02_agent/AGENTS.md) |
 | Understand game rules | [01_core/RULES.md](01_core/RULES.md) |
 | Run experiments | [../experiments/README.md](../experiments/README.md) |
+| Run tests / validate | [TESTING_STRATEGY.md](TESTING_STRATEGY.md) |
+| Check coding conventions | [STYLEGUIDE.md](STYLEGUIDE.md) |
 | See known issues | [03_TODO/CODEBASE_CONSISTENCY.md](03_TODO/CODEBASE_CONSISTENCY.md) |
 | Train models | [01_core/BIDDING_MODEL.md](01_core/BIDDING_MODEL.md) |
 

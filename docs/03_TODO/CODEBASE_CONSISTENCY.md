@@ -92,7 +92,7 @@ _All previous top-3 items resolved (see Done/Archived). Next priorities should b
 - **Log derived scoring fields:** e.g., declaring/defending tricks/points (derivable but useful).
 - **Recommended breakouts:** overtricks, set margin, volatility by contract (METRICS.md “strongly recommended”).
 - **Minimum sample thresholds:** consistently flag low-sample groups (e.g., N < 30).
-- **STYLEGUIDE.md / TESTING_STRATEGY.md:** still absent; add when there's bandwidth (docs-only work).
+- ~~**STYLEGUIDE.md / TESTING_STRATEGY.md:**~~ Resolved — added in PR #665 (`docs/STYLEGUIDE.md`, `docs/TESTING_STRATEGY.md`).
 - **Replace timing-based scalability test** with deterministic complexity invariant (memory/iterations).
 
 ---

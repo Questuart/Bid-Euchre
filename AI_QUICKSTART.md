@@ -21,6 +21,8 @@ make help     # See all available targets
 | Any code changes | [docs/02_agent/AGENTS.md](docs/02_agent/AGENTS.md) |
 | Understanding game rules | [docs/01_core/RULES.md](docs/01_core/RULES.md) |
 | Running experiments | [experiments/README.md](experiments/README.md) |
+| Running tests / validation | [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) |
+| Coding conventions | [docs/STYLEGUIDE.md](docs/STYLEGUIDE.md) |
 | Generating plots | [docs/plotting_style_guide.md](docs/plotting_style_guide.md) |
 | Adding strategies | [src/bid_euchre/strategy/](src/bid_euchre/strategy/) |
 | Training models | [docs/01_core/BIDDING_MODEL.md](docs/01_core/BIDDING_MODEL.md) |
