@@ -32,7 +32,8 @@ experiments/
 **Option 1: Use Unified Runner** (Preferred)
 ```bash
 uv run python experiments/run_experiment.py \
-  --config experiments/configs/strategy_comparison.yaml
+  --config experiments/configs/strategy_comparison.yaml \
+  --seed 42
 ```
 
 **Option 2: Run Specific Script**
