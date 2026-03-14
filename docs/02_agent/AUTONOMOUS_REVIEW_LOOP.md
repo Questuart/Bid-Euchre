@@ -20,6 +20,7 @@ and transitions to `merged`. GitHub merges once CI + branch protection pass.
 | `scripts/internal/review_state.py` | State schema, persistence, state enum, SHA tracking |
 | `scripts/internal/review_driver.py` | Main orchestrator (state transitions, dispatch, status publishing, crash recovery) |
 | `scripts/internal/deterministic_prechecks.py` | Fast local checks (merge markers, RNG, imports, N1/N2/N3/X2 heuristics) |
+| `scripts/internal/confidence_scorer.py` | Confidence-based filtering of P2 findings (diff-aware, heuristic) |
 | `scripts/internal/github_pr_state.py` | GitHub CLI wrappers (CI status, PR metadata, status publishing) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation + output parsing |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings |
@@ -38,12 +39,18 @@ The dispatcher and the loop hook both fire on `gh pr create`:
 ### State Machine
 
 ```
-initialized → pr_open → waiting_for_ci → waiting_for_codex
-                                              ↓
-                                         applying_fixes → retesting → waiting_for_ci
-                                              ↓
-                                         ready_to_merge → merged (auto-merge enabled)
+initialized → pr_open → waiting_for_ci → waiting_for_codex → scoring_findings
+                                                                   ↓
+                                              applying_fixes → retesting → waiting_for_ci
+                                                                   ↓
+                                              ready_to_merge → merged (auto-merge enabled)
 ```
+
+The `scoring_findings` state runs confidence-based filtering on P2 findings
+before deciding whether to apply fixes or proceed to merge. Low-confidence
+P2 findings (e.g., findings on unmodified lines, convention checks in test
+code) are filtered out. P0/P1 findings always pass through unfiltered.
+Scoring results are saved to the round directory as confidence_scoring.json for audit.
 
 Terminal (stop) states: `merged`, `stopped_max_iterations`, `stopped_no_progress`,
 `stopped_ci_failure`, `stopped_review_failure`.
@@ -91,6 +98,30 @@ round_N/codex_review.json.
 Retry logic: up to 3 attempts before `stopped_review_failure`.
 Stagnation detection: same findings hash on consecutive rounds →
 `stopped_no_progress`.
+
+### Confidence Scorer
+
+After Codex review, the `scoring_findings` state runs heuristic-based
+confidence scoring on all P2 findings to filter false positives.
+
+**Design decisions:**
+- Deterministic heuristics only (no LLM calls) — fast and reproducible
+- P0/P1 findings are never filtered — only P2 goes through scoring
+- Default confidence threshold: 75 (out of 100)
+
+**Scoring heuristics (penalty from default score of 80):**
+
+| Heuristic | Penalty | Rationale |
+|-----------|---------|-----------|
+| Finding on unmodified line | -40 | Pre-existing issue, not introduced by this PR |
+| Convention check in test code (C4, X3) | -20 | Lower priority in test files |
+| C4 in known-complex file | -25 | Expected complexity in orchestration files |
+| N3 inference-without-test | -15 | High false positive rate from regex matching |
+| X2 with docs/01_core/ also modified | -30 | Docs update present, likely a false positive |
+
+Penalties stack. Confidence is clamped to [0, 100]. Findings below threshold
+are excluded from blocking/follow-up processing but recorded in the audit
+report (confidence_scoring.json in the round directory).
 
 ### Claude Fix Adapter
 
