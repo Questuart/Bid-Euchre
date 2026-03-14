@@ -29,6 +29,8 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 
 - Always create a **plan** before implementing. Never start coding without an explicit written plan unless the user says otherwise.
 - When the user asks for a "plan", produce ONLY a written plan document — do NOT begin implementation.
+- When asked to discuss, analyze, or explore, stay in discussion mode — do not start writing code unless explicitly asked.
+- Before claiming data, files, or APIs don't exist, verify with Grep and Read. Never assume absence — always check the actual codebase.
 - Always ask clarifying questions about scope before starting multi-PR plans.
 - Save plans as markdown files in a `plans/` directory.
 - Do not use EnterPlanMode as a substitute for file-based planning — always write plans as markdown files. Users may still invoke `/plan` for interactive exploration.
@@ -42,6 +44,8 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 - When creating plans, read the actual source code and API signatures first — never guess.
 - Plans must reference real file paths, real function names, and real parameter signatures from the codebase.
 - If the user provides their own plan structure, adopt it rather than proposing an alternative.
+- Before presenting a plan, verify ALL outstanding items (DoD, blockers, open work items) against the plan document. Never skip items that are explicitly listed.
+- After drafting a plan, self-audit for internal contradictions (e.g., mandating something in one section while exempting it in another) and verify all file paths and output paths against the actual repo before presenting.
 
 ## Python
 
