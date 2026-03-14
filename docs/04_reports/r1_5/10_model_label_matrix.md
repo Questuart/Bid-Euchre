@@ -4,7 +4,7 @@
 **Arc:** D — OLSa-Hybrid Bidder
 **Rung:** R1.5.3 (model-architecture exploration)
 **Predecessor:** `09_multi_rollout_diagnostic.md` (H14 CONFIRMED), `08_gbt_prototype_evaluation.md` (GBT QUICK)
-**Plan:** `plans/sessions/2026-03-12_r1-5-3-forward-plan-v2.md`, Phase 1A
+**Plan:** `plans/archive/v1_sessions/2026-03-12_r1-5-3-forward-plan-v2.md`, Phase 1A
 
 ## 1. Goal
 

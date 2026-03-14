@@ -350,7 +350,7 @@ prescribed remedy addressed only the minority of the problem.
 ### 5.2 Decision: Path B + B0 Threshold Tuning
 
 **Selected:** Path B (skip calibrator) + Path C sidecar (threshold tuning).
-Decision made 2026-03-01; see `plans/archive/MASTER_PLAN.md` Phase B.
+Decision made 2026-03-01; see `plans/archive/pre_v1/MASTER_PLAN.md` Phase B.
 
 **Path B — Skip calibrator, finalize R0, address in R1:**
 - Calibrator addresses only 17% of regret → disproportionate effort
@@ -360,7 +360,7 @@ Decision made 2026-03-01; see `plans/archive/MASTER_PLAN.md` Phase B.
 **B0 — Pass-threshold tuning (added as pre-registered protocol):**
 - A pre-registered sweep of the pass threshold `t` (where `utility <= -t → pass`)
   on the existing oracle data, split 60/40 by deal_id
-- Protocol: `plans/archive/r0_pass_threshold_protocol.md` (v1)
+- Protocol: `plans/archive/pre_v1/r0_pass_threshold_protocol.md` (v1)
 - Quick analysis (~1 notebook), doesn't require new models
 - If meaningful improvement found (SESOI = 0.05 net_diff), threshold is adopted
   as an R0 hyperparameter before report finalization

@@ -172,7 +172,7 @@ command in the description, so the PR is never silently stuck.
 
 ## Governing Plan
 
-See `plans/archive/2026-03-08_autonomous-review-loop.md` for the full
+See `plans/archive/pre_v1/2026-03-08_autonomous-review-loop.md` for the full
 design, state transitions, stop conditions, and implementation sequence.
 
 Activation plan: plans/sessions/2026-03-11_autonomous-review-loop-activation.md

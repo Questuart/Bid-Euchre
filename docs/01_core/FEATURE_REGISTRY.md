@@ -154,4 +154,4 @@ partner's contract choice) and potentially positional features. These are planne
 but not yet implemented. The feature count will increase and the schema version
 will bump accordingly.
 
-See `plans/archive/r1_master_plan.md` for the R1 feature enrichment roadmap.
+See `plans/archive/pre_v1/r1_master_plan.md` for the R1 feature enrichment roadmap.

@@ -209,7 +209,7 @@ R1.6 extends partner features from 3 → 4 with suit-relative channels:
 Schema: v7 (52 features) → v8 (53 features). PR #631 (artifact-driven feature
 extraction) enables v7/v8 coexistence in H2H batteries.
 
-Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
+Plan: `plans/archive/v1_sessions/2026-03-13_r1-6-partner-semantics.md`
 
 ## 6. Timeline (R1.5.3)
 
@@ -235,7 +235,7 @@ Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
 | Two-stage report | [11_two_stage_evaluation.md](11_two_stage_evaluation.md) |
 | GBT prototype report | [08_gbt_prototype_evaluation.md](08_gbt_prototype_evaluation.md) |
 | Arc retrospective | [11_r1_5_arc_retrospective.md](11_r1_5_arc_retrospective.md) |
-| R1.6 plan | `plans/sessions/2026-03-13_r1-6-partner-semantics.md` |
+| R1.6 plan | `plans/archive/v1_sessions/2026-03-13_r1-6-partner-semantics.md` |
 | PR #631 (schema infra) | artifact-driven feature extraction |
-| Governing plan | `plans/sessions/2026-03-12_r1-5-3-forward-plan-v2.md` |
+| Governing plan | `plans/archive/v1_sessions/2026-03-12_r1-5-3-forward-plan-v2.md` |
 | analysis_base_sha | 078cecc |
