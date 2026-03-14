@@ -590,7 +590,7 @@ plans/arc_d_v2/
   sub_plan_registry.md          # Index of all sub-plans across all rungs
   <rung>/
     plan.md                     # Rung-level plan (hypotheses, context bundle)
-    checkpoints.md              # Step-by-step progress log (agent state file)
+    checkpoints.md              # Step-by-step progress log (human-readable progress log)
     sub/                        # Sub-plans for implementation-heavy steps
       <YYYY-MM-DD>_<slug>.md    # Each follows plans/_templates/sub_plan.md
 ```
@@ -1016,11 +1016,13 @@ The comparator runner (`run_auction_comparator.py`) is **config-driven**, not
 roster-driven. It takes a YAML config with `bidding_policies` and evaluates each
 policy against `AlwaysPassBidder` sentinels in single-seat mode.
 
+Per Amendment LA-2, the anchor is excluded from the comparator battery.
+Anchor comparison is via H2H (Step 4) only.
+
 **Commands:**
 ```bash
 # Step 5a: Generate comparator YAML config from roster
-# This config lists all 6 primary roster models as bidding_policies.
-# The anchor (hybrid_r0_full) is included via --olsa-artifact.
+# This config lists all roster models (primary + legacy baselines) as bidding_policies.
 # Each bidder is evaluated independently against AlwaysPass sentinels.
 
 # Run comparator for each roster model (single-seat mode)
@@ -1029,9 +1031,6 @@ uv run python scripts/internal/run_auction_comparator.py \
   --seed 42 \
   --single-seat \
   --n-per <MODE_DEALS> \
-  --olsa-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
-  --bidder-class HybridOLSaBidder \
-  --bidder-name anchor_hybrid_r0_full \
   --output data/runs/arc_d_v2/<rung>/comparator/comparator_report.json
 
 # Step 5b: Extract bootstrap CIs from JSONL game logs
@@ -1053,7 +1052,6 @@ The comparator YAML config is generated from the lineage roster before Step 5 ex
 # Generate comparator config from roster (run by orchestrator at Step 5 start)
 uv run python scripts/internal/generate_comparator_config.py \
   --roster plans/arc_d_v2/roster.json \
-  --anchor-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
   --output data/runs/arc_d_v2/<rung>/comparator_config.yaml
 ```
 
@@ -1067,14 +1065,11 @@ bidding_policies:
   - name: selected_ols_av
     class: ActionValueBidder
     artifact: data/runs/arc_d_v2/<rung>/artifacts/selected_ols/artifact.json
-  # ... one entry per trainable roster model
+  # ... one entry per roster model (anchor excluded per LA-2)
 mode: single-seat
 n_per: <MODE_DEALS>
 seed: <SEED>
 ```
-
-The anchor model is added separately via `--olsa-artifact` on the comparator command line,
-not in the YAML config. This matches the existing `run_auction_comparator.py` interface.
 
 If `generate_comparator_config.py` does not exist yet (Phase 0), the orchestrator
 generates the YAML directly from the roster JSON using a simple template. The
