@@ -4,7 +4,7 @@
 **Rung:** R1.5.3 (model-architecture exploration)
 **Date:** 2026-03-13
 **Predecessor:** [08_gbt_prototype_evaluation.md](08_gbt_prototype_evaluation.md) (GBT QUICK — PROTOTYPE VALIDATED)
-**Plan:** `plans/sessions/2026-03-12_r1-5-3-forward-plan-v2.md`, Phase 2
+**Plan:** `plans/archive/v1_sessions/2026-03-12_r1-5-3-forward-plan-v2.md`, Phase 2
 
 ## 1. Goal
 

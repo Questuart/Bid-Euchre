@@ -278,7 +278,7 @@ This motivates the Phase 2 two-stage decomposition (Q14): separating
 declare/defend regimes should produce more unimodal within-regime targets.
 The OLS model would then predict within each regime rather than averaging
 across the bifurcation. Per the governing plan
-(`plans/sessions/2026-03-09_r1-5-v2-diagnostic-plan.md`), Phase 2 splits on
+(`plans/archive/v1_sessions/2026-03-09_r1-5-v2-diagnostic-plan.md`), Phase 2 splits on
 the observed declare/defend regime — not make/set — because declare/defend is
 directly observable in training data.
 
