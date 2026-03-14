@@ -212,6 +212,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/blind_strategy_comparison.py` | Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind) |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings (auto-fix + commit) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation and output parsing (review findings extraction) |
+| `scripts/internal/confidence_scorer.py` | Deterministic confidence scoring for P2 review findings (heuristic filtering) |
 | `scripts/internal/deterministic_prechecks.py` | Fast deterministic code checks (merge markers, RNG, imports) |
 | `scripts/internal/evaluate_diagnostic_tricks.py` | Diagnostic Ridge evaluation |
 | `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |

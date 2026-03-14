@@ -50,7 +50,7 @@ The `scoring_findings` state runs confidence-based filtering on P2 findings
 before deciding whether to apply fixes or proceed to merge. Low-confidence
 P2 findings (e.g., findings on unmodified lines, convention checks in test
 code) are filtered out. P0/P1 findings always pass through unfiltered.
-Scoring results are saved to `round_N/confidence_scoring.json` for audit.
+Scoring results are saved to the round directory as confidence_scoring.json for audit.
 
 Terminal (stop) states: `merged`, `stopped_max_iterations`, `stopped_no_progress`,
 `stopped_ci_failure`, `stopped_review_failure`.
@@ -121,7 +121,7 @@ confidence scoring on all P2 findings to filter false positives.
 
 Penalties stack. Confidence is clamped to [0, 100]. Findings below threshold
 are excluded from blocking/follow-up processing but recorded in the audit
-report at `round_N/confidence_scoring.json`.
+report (confidence_scoring.json in the round directory).
 
 ### Claude Fix Adapter
 
