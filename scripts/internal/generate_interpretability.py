@@ -130,6 +130,49 @@ def _get_feature_names(artifact: dict, family: str) -> list[str]:
 # ── SHAP analysis ───────────────────────────────────────────
 
 
+def normalize_shap_values(shap_values):
+    """Normalize SHAP values to 2D (n_samples, n_features).
+
+    TreeExplainer returns variable shapes:
+    - Regression: 2D (n_samples, n_features) — pass through
+    - Binary classification: list of 2D arrays — take positive class
+    - Single feature: 1D (n_samples,) — reshape to (n_samples, 1)
+    - Multi-output: 3D (n_samples, n_features, n_outputs) — take first output
+    """
+    if isinstance(shap_values, list):
+        shap_values = np.array(shap_values[-1])
+    if not isinstance(shap_values, np.ndarray):
+        shap_values = np.array(shap_values)
+    if shap_values.ndim == 1:
+        shap_values = shap_values.reshape(-1, 1)
+    elif shap_values.ndim == 3:
+        shap_values = shap_values[:, :, 0]
+    elif shap_values.ndim not in (1, 2):
+        raise ValueError(f"Unexpected SHAP values shape: {shap_values.shape}")
+    return shap_values
+
+
+def normalize_shap_interaction_values(interaction_values):
+    """Normalize SHAP interaction values to 3D (n_samples, n_features, n_features).
+
+    TreeExplainer.shap_interaction_values() can return:
+    - 3D (n_samples, n_features, n_features) — pass through
+    - List of 3D arrays (binary classification) — take positive class
+    - 4D (n_samples, n_features, n_features, n_outputs) — take first output
+    """
+    if isinstance(interaction_values, list):
+        interaction_values = np.array(interaction_values[-1])
+    if not isinstance(interaction_values, np.ndarray):
+        interaction_values = np.array(interaction_values)
+    if interaction_values.ndim == 4:
+        interaction_values = interaction_values[:, :, :, 0]
+    elif interaction_values.ndim != 3:
+        raise ValueError(
+            f"Unexpected SHAP interaction values shape: {interaction_values.shape}"
+        )
+    return interaction_values
+
+
 def generate_shap_analysis(
     artifact_info: dict,
     eval_df: pd.DataFrame,
@@ -202,7 +245,7 @@ def generate_shap_analysis(
         # TreeExplainer
         try:
             explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X)
+            shap_values = normalize_shap_values(explainer.shap_values(X))
         except Exception as e:
             logger.warning("SHAP failed for %s/%s: %s", model_name, family, e)
             continue
@@ -243,8 +286,8 @@ def generate_shap_analysis(
         # Interactions (top 3 pairs by absolute interaction strength)
         # Use SHAP interaction values if available, otherwise approximate
         try:
-            interaction_values = explainer.shap_interaction_values(
-                X[: min(500, len(X))]
+            interaction_values = normalize_shap_interaction_values(
+                explainer.shap_interaction_values(X[: min(500, len(X))])
             )
             n_features = interaction_values.shape[2]
             # Sum absolute interaction strengths across samples
