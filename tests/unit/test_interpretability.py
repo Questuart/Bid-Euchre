@@ -335,6 +335,108 @@ def _import_generate_interpretability_charts():
     return mod
 
 
+# ── SHAP value normalization tests ─────────────────────────
+
+
+class TestNormalizeShapValues:
+    """Tests for normalize_shap_values handling variable TreeExplainer output shapes."""
+
+    def test_2d_passthrough(self):
+        """2D regression output (n_samples, n_features) passes through unchanged."""
+        mod = _import_generate_interpretability()
+        vals = np.random.RandomState(42).randn(10, 5)
+        result = mod.normalize_shap_values(vals)
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, vals)
+
+    def test_list_takes_last_element(self):
+        """List of arrays (binary classification) takes the last (positive class)."""
+        mod = _import_generate_interpretability()
+        neg = np.zeros((10, 5))
+        pos = np.ones((10, 5))
+        result = mod.normalize_shap_values([neg, pos])
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, pos)
+
+    def test_1d_reshaped_to_column(self):
+        """1D array (single feature) is reshaped to (n_samples, 1)."""
+        mod = _import_generate_interpretability()
+        vals = np.array([1.0, 2.0, 3.0])
+        result = mod.normalize_shap_values(vals)
+        assert result.shape == (3, 1)
+        np.testing.assert_array_equal(result.ravel(), vals)
+
+    def test_3d_takes_first_output(self):
+        """3D array (multi-output) takes first output slice."""
+        mod = _import_generate_interpretability()
+        vals = np.random.RandomState(42).randn(10, 5, 3)
+        result = mod.normalize_shap_values(vals)
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, vals[:, :, 0])
+
+    def test_list_binary_classification_selects_positive(self):
+        """Binary classification list: negative class zeros, positive class ones."""
+        mod = _import_generate_interpretability()
+        neg = np.zeros((5, 3))
+        pos = np.full((5, 3), 0.42)
+        result = mod.normalize_shap_values([neg, pos])
+        assert result.shape == (5, 3)
+        np.testing.assert_allclose(result, 0.42)
+
+    def test_4d_raises_value_error(self):
+        """4D array raises ValueError (unexpected shape)."""
+        mod = _import_generate_interpretability()
+        vals = np.zeros((2, 3, 4, 5))
+        with pytest.raises(ValueError, match="Unexpected SHAP values shape"):
+            mod.normalize_shap_values(vals)
+
+    def test_list_of_single_array(self):
+        """List with single element (single-class) takes that element."""
+        mod = _import_generate_interpretability()
+        arr = np.ones((8, 4))
+        result = mod.normalize_shap_values([arr])
+        assert result.shape == (8, 4)
+        np.testing.assert_array_equal(result, arr)
+
+
+class TestNormalizeShapInteractionValues:
+    """Tests for normalize_shap_interaction_values."""
+
+    def test_3d_passthrough(self):
+        """3D interaction values (n_samples, n_features, n_features) pass through."""
+        mod = _import_generate_interpretability()
+        vals = np.random.RandomState(42).randn(10, 5, 5)
+        result = mod.normalize_shap_interaction_values(vals)
+        assert result.shape == (10, 5, 5)
+        np.testing.assert_array_equal(result, vals)
+
+    def test_list_takes_last_element(self):
+        """List of 3D arrays (binary classification) takes the last."""
+        mod = _import_generate_interpretability()
+        neg = np.zeros((10, 5, 5))
+        pos = np.ones((10, 5, 5))
+        result = mod.normalize_shap_interaction_values([neg, pos])
+        assert result.shape == (10, 5, 5)
+        np.testing.assert_array_equal(result, pos)
+
+    def test_4d_takes_first_output(self):
+        """4D array (multi-output) takes first output slice."""
+        mod = _import_generate_interpretability()
+        vals = np.random.RandomState(42).randn(10, 5, 5, 3)
+        result = mod.normalize_shap_interaction_values(vals)
+        assert result.shape == (10, 5, 5)
+        np.testing.assert_array_equal(result, vals[:, :, :, 0])
+
+    def test_2d_raises_value_error(self):
+        """2D array raises ValueError (unexpected shape for interactions)."""
+        mod = _import_generate_interpretability()
+        vals = np.zeros((10, 5))
+        with pytest.raises(
+            ValueError, match="Unexpected SHAP interaction values shape"
+        ):
+            mod.normalize_shap_interaction_values(vals)
+
+
 # ── SHAP analysis tests ────────────────────────────────────
 
 
