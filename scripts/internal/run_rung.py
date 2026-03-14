@@ -912,18 +912,21 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
 
     report_dir = _repo_root() / "docs" / "04_reports" / "arc_d_v2" / rung / "canonical"
 
-    # 7a: Charts (existing script)
+    # 7a: Charts (CSV-first chart generator)
     chart_script = _repo_root() / "scripts" / "internal" / "generate_rung_charts.py"
+    tables_dir = report_dir / "tables"
     if chart_script.exists():
         cmd = [
             "uv",
             "run",
             "python",
             str(chart_script),
-            "--rung",
-            rung,
+            "--tables-dir",
+            str(tables_dir),
             "--output-dir",
             str(report_dir / "charts"),
+            "--chart-data-dir",
+            str(report_dir / "chart_data"),
         ]
         if not dry_run:
             ok, error = run_subprocess(cmd, "7", rung, "charts")
@@ -932,7 +935,7 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
         else:
             logger.info("Step 7: would run charts: %s", " ".join(cmd))
     else:
-        logger.warning("Step 7: generate_rung_charts.py may need --eval-dir (PR 3a)")
+        logger.warning("Step 7: generate_rung_charts.py not found")
 
     # 7b: Report generation (PR 3a dependency)
     report_script = _repo_root() / "scripts" / "internal" / "generate_rung_report.py"

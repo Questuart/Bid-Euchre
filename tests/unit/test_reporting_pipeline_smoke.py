@@ -2,7 +2,7 @@
 
 Runs the complete pipeline:
   generate_rung_tables.py -> tables/*.csv
-  generate_rung_charts_v2.py -> charts/*.png + chart_data/*.csv
+  generate_rung_charts.py -> charts/*.png + chart_data/*.csv
   generate_evidence_manifest.py -> evidence_manifest.json + 00_manifest.md
   generate_rung_report.py -> 01_results.md
 
@@ -54,7 +54,7 @@ class TestFullPipelineSmoke:
             assert csv_path.stat().st_size > 0, f"Table empty: {csv_name}"
 
         # Step 2: Generate charts
-        charts_mod = _import_script("generate_rung_charts_v2")
+        charts_mod = _import_script("generate_rung_charts")
         generated_charts = charts_mod.generate_all_charts(
             tables_dir=tables_dir,
             output_dir=charts_dir,

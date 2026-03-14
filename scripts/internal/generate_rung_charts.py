@@ -1,219 +1,42 @@
-#!/usr/bin/env python3
-"""Generate rung report charts from eval data and model artifacts.
+#!/usr/bin/env python
+"""Generate rung report charts from canonical CSV tables.
 
-Produces 11 chart PNGs that the Arc D rung report generator embeds inline
-when ``chart_dir`` is provided.
+CSV-first chart generation for Arc D v2 reports. Reads from tables/*.csv
+and produces PNGs to charts/ plus source data to chart_data/.
 
 Usage:
-    uv run python scripts/internal/generate_rung_charts.py \
-      --rung r0 \
-      --eval-dir data/runs/arc_d_eval_r0_42_20260303_201729 \
-      --bundle data/artifacts/arc_d/r0/rung_bundle_r0.json \
-      --output-dir data/reports/arc_d/r0/charts/
+    uv run python scripts/internal/generate_rung_charts.py \\
+        --tables-dir /tmp/rung_report/tables \\
+        --output-dir /tmp/rung_report/charts \\
+        --chart-data-dir /tmp/rung_report/chart_data
 
-Charts produced (matching filenames expected by ``arc_d_report.py``):
-  1. seat_balance_boxplot.png    — hand_value by seat
-  2. hand_value_by_contract.png  — hand_value by contract type
-  3. tricks_won_histogram.png    — outcome distribution by contract
-  4. cdf_by_contract.png         — CDF of hand_value by contract
-  5. auction_health.png          — contract selection, bid dist, auction length
-  6. bidder_performance.png      — make rate, calibration, overbid
-  7. coefficient_heatmap.png     — standardized coefficients by contract
-  8. pred_vs_actual_scatter.png  — prediction diagnostics (3-panel)
-  9. residual_distribution.png   — residual histogram (alias for panel 2 of #8)
- 10. dual_arm_comparison.png     — metric comparison across arms
- 11. calibration_curve.png       — prediction calibration curve
+Charts produced (Tier 1 + Tier 2 from §12.12):
+  1.  comparator_ranking_bars.png    — from comparator_rankings.csv
+  2.  delta_bars_by_contract.png     — from h2h_delta_matrix.csv
+  3.  h2h_heatmap.png               — from h2h_delta_matrix.csv
+  4.  tail_risk_panel.png            — from comparator_rankings.csv
+  5.  bid_behavior_panel.png         — from behavior_by_contract.csv
+  6.  contract_mix_bars.png          — from behavior_summary.csv
+  7.  r2_by_contract.png             — from model_performance.csv
+  8.  mae_by_contract.png            — from model_performance.csv
+  9.  outcome_distributions.png      — from chart_data/outcome_distributions.csv
+  10. seat_balance.png               — from chart_data/seat_balance.csv
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import sys
 from pathlib import Path
 
 import matplotlib
 
-matplotlib.use("Agg")  # Non-interactive backend for script use
+matplotlib.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
-
-
-# ──────────────────────────────────────────────
-#  Data loading helpers
-# ──────────────────────────────────────────────
-
-
-def _load_eval_df(eval_dir: Path) -> pd.DataFrame:
-    """Load eval DataFrame from JSONL logs in the eval run directory."""
-    from bid_euchre.datasets.eval_dataset import build_eval_dataset
-
-    log_dir = eval_dir / "logs"
-    if not log_dir.exists():
-        logger.error("Log directory not found: %s", log_dir)
-        sys.exit(1)
-
-    jsonl_files = sorted(log_dir.glob("*.jsonl"))
-    if not jsonl_files:
-        logger.error("No JSONL files in: %s", log_dir)
-        sys.exit(1)
-
-    if len(jsonl_files) > 1:
-        logger.warning(
-            "Multiple JSONL files found in %s; using first: %s",
-            log_dir,
-            jsonl_files[0].name,
-        )
-    log_path = jsonl_files[0]
-    logger.info("Loading eval data from: %s", log_path)
-    return build_eval_dataset(log_path)
-
-
-def _load_model_artifact(artifact_path: Path) -> dict | None:
-    """Load a model artifact JSON, returning None on failure."""
-    if not artifact_path.exists():
-        logger.warning("Model artifact not found: %s", artifact_path)
-        return None
-    try:
-        with open(artifact_path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning("Failed to load model artifact %s: %s", artifact_path, e)
-        return None
-
-
-def _extract_coefs_by_contract(model_data: dict) -> dict:
-    """Extract coefficient dict from model artifact for heatmap."""
-    payoff = model_data.get("payoff_model", {})
-    coefs_by_contract = {}
-    for contract, model in payoff.items():
-        fnames = model.get("feature_names", [])
-        weights = model.get("weights", [])
-        if fnames and weights:
-            coefs_by_contract[contract] = dict(zip(fnames, weights))
-    return coefs_by_contract
-
-
-def _compute_predictions(
-    model_data: dict, eval_df: pd.DataFrame
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute model predictions on eval data.
-
-    Returns (y_true, y_pred, contract_types) arrays.
-    """
-    payoff = model_data.get("payoff_model", {})
-    all_y: list[float] = []
-    all_pred: list[float] = []
-    all_contracts: list[str] = []
-
-    for contract, model in sorted(payoff.items()):
-        fnames = model.get("feature_names", [])
-        weights = np.array(model.get("weights", []))
-        bias = model.get("bias", 0.0)
-
-        if not fnames or len(weights) == 0:
-            continue
-
-        feat_cols = [f"feat_{fn}" for fn in fnames]
-        subset = eval_df[eval_df["contract_type"] == contract]
-        missing = [c for c in feat_cols if c not in subset.columns]
-        if missing or len(subset) == 0:
-            continue
-
-        X = subset[feat_cols].values.astype(np.float64)
-        y = subset["tricks_won"].values.astype(np.float64)
-        y_pred = X @ weights + bias
-
-        all_y.extend(y.tolist())
-        all_pred.extend(y_pred.tolist())
-        all_contracts.extend([contract] * len(y))
-
-    return (
-        np.array(all_y),
-        np.array(all_pred),
-        np.array(all_contracts),
-    )
-
-
-def _build_dual_arm_metrics(
-    bundle: dict, eval_df: pd.DataFrame, base_dir: Path
-) -> dict[str, dict]:
-    """Build metrics dict for dual-arm comparison chart."""
-    metrics_dict: dict[str, dict] = {}
-
-    for arm_name, arm_label in [("olsa", "OLSa"), ("olsa_full", "OLSa_Full")]:
-        arm = bundle.get(arm_name, {})
-        artifact_path = arm.get("artifact_path")
-        if not artifact_path:
-            continue
-
-        model_data = _load_model_artifact(base_dir / artifact_path)
-        if model_data is None:
-            continue
-
-        y_true, y_pred, contract_types = _compute_predictions(model_data, eval_df)
-        if len(y_true) == 0:
-            continue
-
-        # Overall R2
-        ss_res = np.sum((y_true - y_pred) ** 2)
-        ss_tot = np.sum((y_true - y_true.mean()) ** 2)
-        overall_r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("nan")
-        overall_mae = np.mean(np.abs(y_true - y_pred))
-
-        # Per-contract R2
-        r2_by_contract = {}
-        for ct in sorted(set(contract_types)):
-            mask = contract_types == ct
-            y_ct = y_true[mask]
-            p_ct = y_pred[mask]
-            ss_r = np.sum((y_ct - p_ct) ** 2)
-            ss_t = np.sum((y_ct - y_ct.mean()) ** 2)
-            r2_by_contract[ct] = 1 - ss_r / ss_t if ss_t > 0 else float("nan")
-
-        # Get eval metrics if available
-        eval_path = arm.get("eval_seed42")
-        eval_metrics: dict = {}
-        if eval_path:
-            em = _load_model_artifact(base_dir / eval_path)
-            if em:
-                eval_metrics = em
-
-        arm_dict: dict = {
-            "overall_r2": overall_r2,
-            "overall_mae": overall_mae,
-            "r2_by_contract": r2_by_contract,
-        }
-        # Add eval metrics if available
-        for key in (
-            "net_expected_points_per_deal",
-            "make_rate",
-            "bid_rate",
-            "expected_points_per_deal",
-        ):
-            val = eval_metrics.get(key)
-            if val is not None:
-                # Use short aliases
-                alias_map = {
-                    "net_expected_points_per_deal": "net_eppd",
-                    "expected_points_per_deal": "eppd",
-                    "make_rate": "make_rate",
-                    "bid_rate": "bid_rate",
-                }
-                arm_dict[alias_map.get(key, key)] = val
-
-        metrics_dict[arm_label] = arm_dict
-
-    return metrics_dict
-
-
-# ──────────────────────────────────────────────
-#  Chart generation functions
-# ──────────────────────────────────────────────
 
 
 def _save_chart(fig: plt.Figure, output_dir: Path, name: str, dpi: int = 150) -> None:
@@ -224,196 +47,460 @@ def _save_chart(fig: plt.Figure, output_dir: Path, name: str, dpi: int = 150) ->
     logger.info("Saved: %s", path)
 
 
-def generate_charts(
-    eval_df: pd.DataFrame,
-    bundle: dict,
-    base_dir: Path,
+def _read_csv_safe(path: Path) -> pd.DataFrame | None:
+    """Read CSV, returning None if missing or empty."""
+    if not path.exists():
+        logger.warning("CSV not found: %s", path)
+        return None
+    try:
+        df = pd.read_csv(path)
+        return df if len(df) > 0 else None
+    except Exception as e:
+        logger.warning("Failed to read %s: %s", path, e)
+        return None
+
+
+# ──────────────────────────────────────────────
+#  Chart generators
+# ──────────────────────────────────────────────
+
+
+def generate_comparator_ranking_bars(
+    tables_dir: Path,
     output_dir: Path,
-    *,
-    charts: list[str] | None = None,
+    dpi: int = 150,
+) -> bool:
+    """Horizontal bar chart of comparator rankings (pooled net_eppd)."""
+    df = _read_csv_safe(tables_dir / "comparator_rankings.csv")
+    if df is None:
+        return False
+
+    pooled = df[df["facet"] == "pooled"].sort_values("net_eppd", ascending=True)
+    if len(pooled) == 0:
+        return False
+
+    fig, ax = plt.subplots(figsize=(8, max(3, len(pooled) * 0.5 + 1)))
+    ax.barh(pooled["model"], pooled["net_eppd"], color="#4C72B0")
+
+    # Add CI error bars if available
+    if "ci_low" in pooled.columns and "ci_high" in pooled.columns:
+        ci_low = pooled["net_eppd"] - pooled["ci_low"]
+        ci_high = pooled["ci_high"] - pooled["net_eppd"]
+        xerr = np.array(
+            [
+                np.maximum(ci_low.values, 0),
+                np.maximum(ci_high.values, 0),
+            ]
+        )
+        ax.errorbar(
+            pooled["net_eppd"],
+            pooled["model"],
+            xerr=xerr,
+            fmt="none",
+            ecolor="black",
+            capsize=3,
+        )
+
+    ax.set_xlabel("Net EPPD (pooled)")
+    ax.set_title("Comparator Rankings")
+    ax.axvline(x=0, color="gray", linestyle="--", linewidth=0.5)
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "comparator_ranking_bars.png", dpi)
+    return True
+
+
+def generate_delta_bars_by_contract(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Bar chart of H2H deltas, grouped by model pair."""
+    df = _read_csv_safe(tables_dir / "h2h_delta_matrix.csv")
+    if df is None:
+        return False
+
+    # Filter out self-play
+    cross = df[df["model_a"] != df["model_b"]].copy()
+    if len(cross) == 0:
+        return False
+
+    cross["label"] = cross["model_a"] + " vs " + cross["model_b"]
+
+    fig, ax = plt.subplots(figsize=(10, max(3, len(cross) * 0.4 + 1)))
+    ax.barh(cross["label"], cross["net_eppd_delta"], color="#4C72B0")
+
+    # Add CI error bars
+    if "ci_low" in cross.columns and "ci_high" in cross.columns:
+        ci_low = cross["net_eppd_delta"] - cross["ci_low"]
+        ci_high = cross["ci_high"] - cross["net_eppd_delta"]
+        xerr = np.array(
+            [
+                np.maximum(ci_low.values, 0),
+                np.maximum(ci_high.values, 0),
+            ]
+        )
+        ax.errorbar(
+            cross["net_eppd_delta"],
+            cross["label"],
+            xerr=xerr,
+            fmt="none",
+            ecolor="black",
+            capsize=3,
+        )
+
+    ax.set_xlabel("Net EPPD Delta (A - B)")
+    ax.set_title("H2H Delta Bars")
+    ax.axvline(x=0, color="gray", linestyle="--", linewidth=0.5)
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "delta_bars_by_contract.png", dpi)
+    return True
+
+
+def generate_h2h_heatmap(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Heatmap of H2H delta matrix."""
+    df = _read_csv_safe(tables_dir / "h2h_delta_matrix.csv")
+    if df is None:
+        return False
+
+    # Build pivot table
+    models = sorted(set(df["model_a"].tolist() + df["model_b"].tolist()))
+    matrix = pd.DataFrame(0.0, index=models, columns=models)
+
+    for _, row in df.iterrows():
+        a = row["model_a"]
+        b = row["model_b"]
+        delta = row.get("net_eppd_delta")
+        if delta is not None and pd.notna(delta):
+            matrix.loc[a, b] = delta
+
+    fig, ax = plt.subplots(figsize=(max(6, len(models) + 1), max(5, len(models))))
+    im = ax.imshow(
+        matrix.values,
+        cmap="RdBu_r",
+        aspect="auto",
+        vmin=-max(abs(matrix.values.min()), abs(matrix.values.max())),
+        vmax=max(abs(matrix.values.min()), abs(matrix.values.max())),
+    )
+
+    ax.set_xticks(range(len(models)))
+    ax.set_yticks(range(len(models)))
+    ax.set_xticklabels(models, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(models, fontsize=8)
+
+    # Annotate cells
+    for i in range(len(models)):
+        for j in range(len(models)):
+            val = matrix.values[i, j]
+            if val != 0:
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=7)
+
+    plt.colorbar(im, ax=ax, label="Net EPPD Delta")
+    ax.set_title("H2H Delta Matrix")
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "h2h_heatmap.png", dpi)
+    return True
+
+
+def generate_tail_risk_panel(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Bar chart of CVaR-5 for comparator rankings."""
+    df = _read_csv_safe(tables_dir / "comparator_rankings.csv")
+    if df is None:
+        return False
+
+    pooled = df[df["facet"] == "pooled"].sort_values("net_eppd", ascending=False)
+    if len(pooled) == 0 or "net_cvar_5" not in pooled.columns:
+        return False
+
+    fig, ax = plt.subplots(figsize=(8, max(3, len(pooled) * 0.5 + 1)))
+    ax.barh(pooled["model"], pooled["net_cvar_5"], color="#C44E52")
+    ax.set_xlabel("Net CVaR-5% (pooled)")
+    ax.set_title("Tail Risk: CVaR-5% by Model")
+    ax.axvline(x=0, color="gray", linestyle="--", linewidth=0.5)
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "tail_risk_panel.png", dpi)
+    return True
+
+
+def generate_bid_behavior_panel(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Multi-panel behavior chart (bid_rate, make_rate by contract)."""
+    df = _read_csv_safe(tables_dir / "behavior_by_contract.csv")
+    if df is None:
+        return False
+
+    models = df["model"].unique()
+    fig, axes = plt.subplots(1, 2, figsize=(12, max(3, len(models) * 0.5 + 1)))
+
+    # Bid rate panel
+    ax = axes[0]
+    for model in models:
+        sub = df[df["model"] == model]
+        ax.barh(model, sub["bid_rate"].iloc[0] if len(sub) > 0 else 0)
+    ax.set_xlabel("Bid Rate")
+    ax.set_title("Bid Rate by Model")
+
+    # Make rate panel
+    ax = axes[1]
+    for model in models:
+        sub = df[df["model"] == model]
+        ax.barh(model, sub["make_rate"].iloc[0] if len(sub) > 0 else 0)
+    ax.set_xlabel("Make Rate")
+    ax.set_title("Make Rate by Model")
+
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "bid_behavior_panel.png", dpi)
+    return True
+
+
+def generate_contract_mix_bars(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Bar chart of contract mix from behavior summary."""
+    df = _read_csv_safe(tables_dir / "behavior_summary.csv")
+    if df is None:
+        return False
+
+    # Use comparator-sourced data
+    comp = df[df["source"] == "comparator"]
+    if len(comp) == 0:
+        comp = df
+
+    fig, ax = plt.subplots(figsize=(8, max(3, len(comp) * 0.5 + 1)))
+    ax.barh(comp["model"], comp["bid_rate"], color="#55A868", label="bid_rate")
+    ax.set_xlabel("Bid Rate")
+    ax.set_title("Contract Mix / Bid Rate Summary")
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "contract_mix_bars.png", dpi)
+    return True
+
+
+def generate_r2_by_contract(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Grouped bar chart of R² by contract and model."""
+    df = _read_csv_safe(tables_dir / "model_performance.csv")
+    if df is None:
+        return False
+
+    models = df["model"].unique()
+    contracts = sorted(df["contract"].unique())
+
+    x = np.arange(len(contracts))
+    width = 0.8 / max(len(models), 1)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, model in enumerate(models):
+        sub = df[df["model"] == model]
+        r2_vals = []
+        for c in contracts:
+            csub = sub[sub["contract"] == c]
+            r2_vals.append(csub["r_squared"].iloc[0] if len(csub) > 0 else 0)
+        offset = (i - len(models) / 2 + 0.5) * width
+        ax.bar(x + offset, r2_vals, width, label=model)
+
+    ax.set_xlabel("Contract")
+    ax.set_ylabel("R²")
+    ax.set_title("R² by Contract and Model")
+    ax.set_xticks(x)
+    ax.set_xticklabels(contracts)
+    ax.legend()
+    ax.set_ylim(0, 1)
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "r2_by_contract.png", dpi)
+    return True
+
+
+def generate_mae_by_contract(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Grouped bar chart of MAE by contract and model."""
+    df = _read_csv_safe(tables_dir / "model_performance.csv")
+    if df is None:
+        return False
+
+    models = df["model"].unique()
+    contracts = sorted(df["contract"].unique())
+
+    x = np.arange(len(contracts))
+    width = 0.8 / max(len(models), 1)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, model in enumerate(models):
+        sub = df[df["model"] == model]
+        mae_vals = []
+        for c in contracts:
+            csub = sub[sub["contract"] == c]
+            mae_vals.append(csub["mae"].iloc[0] if len(csub) > 0 else 0)
+        offset = (i - len(models) / 2 + 0.5) * width
+        ax.bar(x + offset, mae_vals, width, label=model)
+
+    ax.set_xlabel("Contract")
+    ax.set_ylabel("MAE")
+    ax.set_title("MAE by Contract and Model")
+    ax.set_xticks(x)
+    ax.set_xticklabels(contracts)
+    ax.legend()
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "mae_by_contract.png", dpi)
+    return True
+
+
+def generate_outcome_distributions(
+    chart_data_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Outcome distribution chart from chart_data CSV."""
+    df = _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
+    if df is None:
+        return False
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    if "contract" in df.columns and "value" in df.columns:
+        for contract in sorted(df["contract"].unique()):
+            sub = df[df["contract"] == contract]
+            ax.hist(sub["value"], bins=20, alpha=0.5, label=contract, density=True)
+        ax.legend()
+    else:
+        ax.hist(df.iloc[:, 0], bins=20, alpha=0.7)
+
+    ax.set_xlabel("Outcome Value")
+    ax.set_ylabel("Density")
+    ax.set_title("Outcome Distributions")
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "outcome_distributions.png", dpi)
+    return True
+
+
+def generate_seat_balance(
+    chart_data_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Seat balance chart from chart_data CSV."""
+    df = _read_csv_safe(chart_data_dir / "seat_balance.csv")
+    if df is None:
+        return False
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    if "seat" in df.columns and "value" in df.columns:
+        seats = sorted(df["seat"].unique())
+        data = [df[df["seat"] == s]["value"].values for s in seats]
+        ax.boxplot(data, labels=[f"Seat {s}" for s in seats])
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            "Insufficient data for seat balance chart",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+
+    ax.set_ylabel("Value")
+    ax.set_title("Seat Balance")
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "seat_balance.png", dpi)
+    return True
+
+
+def generate_all_charts(
+    tables_dir: Path,
+    output_dir: Path,
+    chart_data_dir: Path | None = None,
     dpi: int = 150,
 ) -> list[str]:
-    """Generate all rung report charts.
+    """Generate all rung report charts from canonical CSVs.
 
     Args:
-        eval_df: Per-seat evaluation DataFrame from build_eval_dataset.
-        bundle: Loaded rung bundle dict.
-        base_dir: Base directory for resolving artifact paths.
-        output_dir: Directory to write PNG files.
-        charts: Optional list of specific chart names to generate.
-            If None, generates all charts.
+        tables_dir: Path to CSV tables.
+        output_dir: Path to write PNG charts.
+        chart_data_dir: Path to chart data CSVs (optional).
         dpi: DPI for saved figures.
 
     Returns:
         List of generated chart filenames.
     """
-    from bid_euchre.diagnostics.auction_charts import (
-        plot_auction_health,
-        plot_bidder_performance,
-    )
-    from bid_euchre.diagnostics.charts import (
-        plot_cdf,
-        plot_coefficient_heatmap,
-        plot_hand_value_by_contract,
-        plot_hand_value_by_seat,
-        plot_outcome_distributions,
-    )
-    from bid_euchre.diagnostics.model_charts import (
-        plot_calibration_curve,
-        plot_dual_arm_comparison,
-        plot_model_diagnostics,
-    )
-
     output_dir.mkdir(parents=True, exist_ok=True)
-    generated: list[str] = []
+    if chart_data_dir:
+        chart_data_dir.mkdir(parents=True, exist_ok=True)
 
-    def _should_generate(name: str) -> bool:
-        return charts is None or name in charts
+    generated = []
 
-    # --- Charts that only need eval_df ---
+    chart_generators = [
+        (
+            "comparator_ranking_bars.png",
+            lambda: generate_comparator_ranking_bars(tables_dir, output_dir, dpi),
+        ),
+        (
+            "delta_bars_by_contract.png",
+            lambda: generate_delta_bars_by_contract(tables_dir, output_dir, dpi),
+        ),
+        ("h2h_heatmap.png", lambda: generate_h2h_heatmap(tables_dir, output_dir, dpi)),
+        (
+            "tail_risk_panel.png",
+            lambda: generate_tail_risk_panel(tables_dir, output_dir, dpi),
+        ),
+        (
+            "bid_behavior_panel.png",
+            lambda: generate_bid_behavior_panel(tables_dir, output_dir, dpi),
+        ),
+        (
+            "contract_mix_bars.png",
+            lambda: generate_contract_mix_bars(tables_dir, output_dir, dpi),
+        ),
+        (
+            "r2_by_contract.png",
+            lambda: generate_r2_by_contract(tables_dir, output_dir, dpi),
+        ),
+        (
+            "mae_by_contract.png",
+            lambda: generate_mae_by_contract(tables_dir, output_dir, dpi),
+        ),
+    ]
 
-    # 1. Seat balance boxplot
-    if _should_generate("seat_balance_boxplot"):
+    for chart_name, gen_fn in chart_generators:
         try:
-            fig = plot_hand_value_by_seat(eval_df)
-            _save_chart(fig, output_dir, "seat_balance_boxplot.png", dpi)
-            generated.append("seat_balance_boxplot.png")
+            if gen_fn():
+                generated.append(chart_name)
         except Exception as e:
-            logger.warning("Failed to generate seat_balance_boxplot: %s", e)
+            logger.warning("Failed to generate %s: %s", chart_name, e)
 
-    # 2. Hand value by contract
-    if _should_generate("hand_value_by_contract"):
-        try:
-            fig = plot_hand_value_by_contract(eval_df)
-            _save_chart(fig, output_dir, "hand_value_by_contract.png", dpi)
-            generated.append("hand_value_by_contract.png")
-        except Exception as e:
-            logger.warning("Failed to generate hand_value_by_contract: %s", e)
-
-    # 3. Tricks won histogram
-    if _should_generate("tricks_won_histogram"):
-        try:
-            fig = plot_outcome_distributions(eval_df)
-            _save_chart(fig, output_dir, "tricks_won_histogram.png", dpi)
-            generated.append("tricks_won_histogram.png")
-        except Exception as e:
-            logger.warning("Failed to generate tricks_won_histogram: %s", e)
-
-    # 4. CDF by contract
-    if _should_generate("cdf_by_contract"):
-        try:
-            fig = plot_cdf(
-                eval_df,
-                column="feat_hand_value",
-                group_by="contract_type",
-                title="Hand Value CDF by Contract Type",
-            )
-            _save_chart(fig, output_dir, "cdf_by_contract.png", dpi)
-            generated.append("cdf_by_contract.png")
-        except Exception as e:
-            logger.warning("Failed to generate cdf_by_contract: %s", e)
-
-    # 5. Auction health
-    if _should_generate("auction_health"):
-        try:
-            fig = plot_auction_health(eval_df)
-            _save_chart(fig, output_dir, "auction_health.png", dpi)
-            generated.append("auction_health.png")
-        except Exception as e:
-            logger.warning("Failed to generate auction_health: %s", e)
-
-    # 6. Bidder performance
-    if _should_generate("bidder_performance"):
-        try:
-            fig = plot_bidder_performance(eval_df)
-            _save_chart(fig, output_dir, "bidder_performance.png", dpi)
-            generated.append("bidder_performance.png")
-        except Exception as e:
-            logger.warning("Failed to generate bidder_performance: %s", e)
-
-    # --- Charts that need model artifacts ---
-
-    # Use OLSa_Full (promotional arm) as primary for coefficient/prediction charts
-    primary_arm = "olsa_full"
-    primary_artifact_path = bundle.get(primary_arm, {}).get("artifact_path")
-    primary_model = None
-    if primary_artifact_path:
-        primary_model = _load_model_artifact(base_dir / primary_artifact_path)
-
-    # 7. Coefficient heatmap
-    if _should_generate("coefficient_heatmap") and primary_model:
-        try:
-            coefs = _extract_coefs_by_contract(primary_model)
-            if coefs:
-                fig = plot_coefficient_heatmap(
-                    coefs, title="Coefficient Heatmap: OLSa_Full"
-                )
-                _save_chart(fig, output_dir, "coefficient_heatmap.png", dpi)
-                generated.append("coefficient_heatmap.png")
-        except Exception as e:
-            logger.warning("Failed to generate coefficient_heatmap: %s", e)
-
-    # 8. Pred vs actual scatter (from plot_model_diagnostics panel 1)
-    if _should_generate("pred_vs_actual_scatter") and primary_model:
-        try:
-            y_true, y_pred, ct = _compute_predictions(primary_model, eval_df)
-            if len(y_true) > 0:
-                fig = plot_model_diagnostics(
-                    y_true, y_pred, ct, title="Model Diagnostics: OLSa_Full"
-                )
-                _save_chart(fig, output_dir, "pred_vs_actual_scatter.png", dpi)
-                generated.append("pred_vs_actual_scatter.png")
-        except Exception as e:
-            logger.warning("Failed to generate pred_vs_actual_scatter: %s", e)
-
-    # 9. Residual distribution (separate figure for residuals only)
-    if _should_generate("residual_distribution") and primary_model:
-        try:
-            y_true, y_pred, ct = _compute_predictions(primary_model, eval_df)
-            if len(y_true) > 0:
-                residuals = y_true - y_pred
-                fig, ax = plt.subplots(figsize=(8, 5))
-                for contract in sorted(set(ct)):
-                    mask = ct == contract
-                    ax.hist(
-                        residuals[mask],
-                        bins=30,
-                        alpha=0.5,
-                        label=contract,
-                        density=True,
-                    )
-                ax.set_xlabel("Residual (actual - predicted)")
-                ax.set_ylabel("Density")
-                ax.set_title("Residual Distribution by Contract Type")
-                ax.legend()
-                _save_chart(fig, output_dir, "residual_distribution.png", dpi)
-                generated.append("residual_distribution.png")
-        except Exception as e:
-            logger.warning("Failed to generate residual_distribution: %s", e)
-
-    # 10. Dual arm comparison
-    if _should_generate("dual_arm_comparison"):
-        try:
-            metrics = _build_dual_arm_metrics(bundle, eval_df, base_dir)
-            if metrics:
-                fig = plot_dual_arm_comparison(metrics)
-                _save_chart(fig, output_dir, "dual_arm_comparison.png", dpi)
-                generated.append("dual_arm_comparison.png")
-        except Exception as e:
-            logger.warning("Failed to generate dual_arm_comparison: %s", e)
-
-    # 11. Calibration curve
-    if _should_generate("calibration_curve") and primary_model:
-        try:
-            y_true, y_pred, ct = _compute_predictions(primary_model, eval_df)
-            if len(y_true) > 0:
-                fig = plot_calibration_curve(
-                    y_true, y_pred, ct, title="Calibration Curve: OLSa_Full"
-                )
-                _save_chart(fig, output_dir, "calibration_curve.png", dpi)
-                generated.append("calibration_curve.png")
-        except Exception as e:
-            logger.warning("Failed to generate calibration_curve: %s", e)
+    # Chart-data-dependent charts
+    if chart_data_dir:
+        chart_data_generators = [
+            (
+                "outcome_distributions.png",
+                lambda: generate_outcome_distributions(chart_data_dir, output_dir, dpi),
+            ),
+            (
+                "seat_balance.png",
+                lambda: generate_seat_balance(chart_data_dir, output_dir, dpi),
+            ),
+        ]
+        for chart_name, gen_fn in chart_data_generators:
+            try:
+                if gen_fn():
+                    generated.append(chart_name)
+            except Exception as e:
+                logger.warning("Failed to generate %s: %s", chart_name, e)
 
     return generated
 
@@ -425,24 +512,13 @@ def generate_charts(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate rung report charts from eval data and model artifacts."
+        description="Generate rung report charts from canonical CSV tables."
     )
     parser.add_argument(
-        "--rung",
-        required=True,
-        help="Rung identifier (e.g., r0, r1)",
-    )
-    parser.add_argument(
-        "--eval-dir",
+        "--tables-dir",
         required=True,
         type=Path,
-        help="Path to eval run directory containing logs/*.jsonl",
-    )
-    parser.add_argument(
-        "--bundle",
-        required=True,
-        type=Path,
-        help="Path to rung_bundle_r{N}.json",
+        help="Path to CSV tables directory",
     )
     parser.add_argument(
         "--output-dir",
@@ -451,10 +527,10 @@ def main() -> None:
         help="Directory to write chart PNGs",
     )
     parser.add_argument(
-        "--chart",
-        action="append",
-        dest="charts",
-        help="Generate only specific chart(s). Can be repeated.",
+        "--chart-data-dir",
+        default=None,
+        type=Path,
+        help="Directory for chart source CSVs (optional)",
     )
     parser.add_argument(
         "--dpi",
@@ -476,47 +552,12 @@ def main() -> None:
         format="%(levelname)s: %(message)s",
     )
 
-    # Load bundle
-    if not args.bundle.exists():
-        logger.error("Bundle not found: %s", args.bundle)
-        sys.exit(1)
-
-    with open(args.bundle) as f:
-        bundle = json.load(f)
-
-    # Determine base_dir for resolving artifact paths
-    # Bundle paths are repo-root-relative, so base_dir should be repo root
-    # Convention: bundle is at data/artifacts/arc_d/r{N}/rung_bundle_r{N}.json
-    # so repo root is 5 levels up
-    base_dir = args.bundle.resolve().parent
-    while base_dir != base_dir.parent:
-        if (base_dir / "pyproject.toml").exists():
-            break
-        base_dir = base_dir.parent
-    else:
-        # Fallback: use CWD
-        base_dir = Path.cwd()
-
-    logger.info("Rung: %s (used in chart titles)", args.rung)
-    logger.info("Eval dir: %s", args.eval_dir)
-    logger.info("Bundle: %s", args.bundle)
-    logger.info("Base dir: %s", base_dir)
-    logger.info("Output dir: %s", args.output_dir)
-
-    # Load eval data
-    eval_df = _load_eval_df(args.eval_dir)
-    logger.info("Loaded %d rows from eval data", len(eval_df))
-
-    # Generate charts
-    generated = generate_charts(
-        eval_df,
-        bundle,
-        base_dir,
-        args.output_dir,
-        charts=args.charts,
+    generated = generate_all_charts(
+        tables_dir=args.tables_dir,
+        output_dir=args.output_dir,
+        chart_data_dir=args.chart_data_dir,
         dpi=args.dpi,
     )
-
     logger.info("Generated %d charts: %s", len(generated), ", ".join(generated))
 
 

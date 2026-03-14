@@ -200,15 +200,48 @@ class TestComparatorRankings:
         df = generate_comparator_rankings(comparator_cis)
         assert list(df.columns) == EXPECTED_SCHEMAS["comparator_rankings"]
 
-    def test_row_count(self, comparator_cis):
+    def test_row_count_pooled_only(self, comparator_cis):
         df = generate_comparator_rankings(comparator_cis)
-        # One pooled row per bidder
+        # One pooled row per bidder (no per-contract data in fixture)
         n_bidders = len(comparator_cis["bidders"])
         assert len(df) == n_bidders
+        assert (df["facet"] == "pooled").all()
 
     def test_ranking_order(self, comparator_cis):
         df = generate_comparator_rankings(comparator_cis)
-        assert df["rank"].tolist() == list(range(1, len(df) + 1))
+        pooled = df[df["facet"] == "pooled"]
+        assert pooled["rank"].tolist() == list(range(1, len(pooled) + 1))
+
+    def test_per_contract_faceting(self, comparator_cis):
+        """When bidders_by_contract is present, per-facet rows are emitted."""
+        enriched = dict(comparator_cis)
+        enriched["bidders_by_contract"] = {
+            "suit": {
+                "gbt_av": {
+                    "net_eppd": 2.5,
+                    "net_eppd_ci": [2.5, 2.0, 3.0],
+                    "bid_rate": 0.50,
+                    "make_rate": 0.70,
+                    "net_cvar_5": -2.0,
+                },
+                "selected_ols_av": {
+                    "net_eppd": 1.8,
+                    "net_eppd_ci": [1.8, 1.3, 2.3],
+                    "bid_rate": 0.40,
+                    "make_rate": 0.60,
+                    "net_cvar_5": -3.0,
+                },
+            },
+        }
+        df = generate_comparator_rankings(enriched)
+        n_bidders = len(comparator_cis["bidders"])
+        # Should have pooled rows + suit rows
+        assert len(df) == n_bidders + 2
+        assert set(df["facet"].unique()) == {"pooled", "suit"}
+        # Suit rows should be ranked by net_eppd descending
+        suit_rows = df[df["facet"] == "suit"]
+        assert suit_rows.iloc[0]["model"] == "gbt_av"
+        assert suit_rows.iloc[0]["rank"] == 1
 
 
 class TestH2HDeltaMatrix:
