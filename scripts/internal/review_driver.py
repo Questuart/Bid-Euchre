@@ -267,6 +267,8 @@ def step(
         return _step_waiting_for_ci(loop_state, base_dir)
     elif current == ReviewState.WAITING_FOR_CODEX:
         return _step_waiting_for_codex(loop_state, base_dir)
+    elif current == ReviewState.SCORING_FINDINGS:
+        return _step_scoring_findings(loop_state, base_dir)
     elif current == ReviewState.APPLYING_FIXES:
         return _step_applying_fixes(loop_state, base_dir)
     elif current == ReviewState.RETESTING:
@@ -573,19 +575,12 @@ def _step_waiting_for_codex(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
 ) -> ReviewLoopState:
-    """WAITING_FOR_CODEX → APPLYING_FIXES or READY_TO_MERGE.
+    """WAITING_FOR_CODEX → SCORING_FINDINGS or STOPPED_REVIEW_FAILURE.
 
-    Invokes Codex CLI, parses findings, and decides next transition:
-    - Blocking findings → APPLYING_FIXES
-    - No blocking findings → READY_TO_MERGE
-    - Invocation failure → retry or STOPPED_REVIEW_FAILURE
+    Invokes Codex CLI, parses findings, and transitions to SCORING_FINDINGS
+    for confidence-based filtering. On invocation failure, retries or stops.
     """
-    from codex_review_adapter import (
-        get_blocking_findings,
-        invoke_codex_cli,
-        save_review_result,
-    )
-    from review_state import compute_findings_hash
+    from codex_review_adapter import invoke_codex_cli, save_review_result
 
     iteration = loop_state.iteration_count + 1
 
@@ -632,14 +627,95 @@ def _step_waiting_for_codex(
     loop_state.codex_retry_count = 0
     loop_state.last_codex_status = "success"
 
-    blocking = get_blocking_findings(result.findings)
+    # Transition to SCORING_FINDINGS for confidence-based P2 filtering
+    loop_state.transition(ReviewState.SCORING_FINDINGS)
+    save_state(loop_state, base_dir)
+    logger.info(
+        "PR #%d: Codex review complete (%d findings) → scoring_findings",
+        loop_state.pr_number,
+        len(result.findings),
+    )
+    return loop_state
+
+
+def _step_scoring_findings(
+    loop_state: ReviewLoopState,
+    base_dir: Path | None,
+) -> ReviewLoopState:
+    """SCORING_FINDINGS → APPLYING_FIXES or READY_TO_MERGE.
+
+    Loads Codex findings, runs confidence scoring to filter low-confidence
+    P2 findings, then decides next transition:
+    - Blocking findings remain → APPLYING_FIXES
+    - No blocking findings → READY_TO_MERGE (with follow-up issues for P2s)
+    """
+    from codex_review_adapter import CodexFinding, get_blocking_findings
+    from confidence_scorer import save_scoring_report, score_findings
+    from review_state import compute_findings_hash
+
+    iteration = loop_state.iteration_count + 1
+
+    # Load findings from this round's Codex review
+    rdir = round_dir(loop_state.pr_number, iteration, base_dir)
+    codex_path = rdir / "codex_review.json"
+
+    if codex_path.exists():
+        with open(codex_path) as f:
+            review_data = json.load(f)
+        raw_findings = review_data.get("findings", [])
+    else:
+        logger.warning(
+            "PR #%d: no codex_review.json found for round %d",
+            loop_state.pr_number,
+            iteration,
+        )
+        raw_findings = []
+
+    # Get PR diff for diff-aware scoring
+    diff_result = subprocess.run(
+        ["git", "diff", "origin/main...HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    pr_diff = diff_result.stdout if diff_result.returncode == 0 else ""
+
+    # Run confidence scoring
+    filtered_findings, scored = score_findings(raw_findings, pr_diff)
+
+    # Save scoring report for audit trail
+    save_scoring_report(scored, rdir / "confidence_scoring.json")
+
+    filtered_count = sum(1 for s in scored if s.filtered)
+    if filtered_count > 0:
+        logger.info(
+            "PR #%d: confidence scoring filtered %d/%d P2 findings",
+            loop_state.pr_number,
+            filtered_count,
+            len(scored),
+        )
+
+    # Reconstruct CodexFinding objects from filtered dicts for blocking check
+    codex_findings = []
+    for fd in filtered_findings:
+        codex_findings.append(
+            CodexFinding(
+                severity=fd.get("severity", "P2"),
+                file=fd.get("file", ""),
+                line=fd.get("line", 0),
+                category=fd.get("category", "convention"),
+                check_id=fd.get("check_id"),
+                message=fd.get("message", ""),
+                raw_source=fd.get("raw_source", "codex_cli"),
+            )
+        )
+
+    blocking = get_blocking_findings(codex_findings)
 
     if not blocking:
-        # Create follow-up issues for P2 findings before transitioning
-        all_findings_dicts = [f.to_dict() for f in result.findings]
-        p2_count = sum(1 for f in all_findings_dicts if f.get("severity") == "P2")
+        # Create follow-up issues for remaining P2 findings
+        p2_count = sum(1 for f in filtered_findings if f.get("severity") == "P2")
         follow_up_urls = _create_follow_up_issues(
-            loop_state.pr_number, all_findings_dicts
+            loop_state.pr_number, filtered_findings
         )
 
         # Publish success status with finding summary
@@ -648,20 +724,24 @@ def _step_waiting_for_codex(
                 f"Review passed -- {p2_count} warnings "
                 f"({len(follow_up_urls)} follow-up issues created)"
             )
+            if filtered_count > 0:
+                desc += f", {filtered_count} low-confidence filtered"
         else:
             desc = "Review passed -- clean"
-        _publish_status(loop_state.pr_number, "success", desc)
+            if filtered_count > 0:
+                desc += f" ({filtered_count} low-confidence filtered)"
+        _publish_status(loop_state.pr_number, "success", desc[:140])
 
         loop_state.transition(ReviewState.READY_TO_MERGE)
         save_state(loop_state, base_dir)
         logger.info(
-            "PR #%d: no blocking Codex findings -> ready_to_merge",
+            "PR #%d: no blocking findings after scoring -> ready_to_merge",
             loop_state.pr_number,
         )
         return loop_state
 
     # Check for stagnation before advancing to fix round
-    findings_dicts = [f.to_dict() for f in result.findings]
+    findings_dicts = [f.to_dict() for f in codex_findings]
     current_hash = compute_findings_hash(findings_dicts)
 
     if current_hash == loop_state.last_findings_hash:
@@ -686,7 +766,7 @@ def _step_waiting_for_codex(
     loop_state.transition(ReviewState.APPLYING_FIXES)
     save_state(loop_state, base_dir)
     logger.info(
-        "PR #%d: %d blocking Codex findings → applying_fixes",
+        "PR #%d: %d blocking findings after scoring → applying_fixes",
         loop_state.pr_number,
         len(blocking),
     )
