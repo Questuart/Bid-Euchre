@@ -1,4 +1,4 @@
-"""Tests for github_pr_state.py — PR metadata, body retrieval, changed files."""
+"""Tests for github_pr_state.py — PR metadata, body retrieval, changed files, comment upsert."""
 
 from __future__ import annotations
 
@@ -13,10 +13,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from github_pr_state import (
+    REVIEW_COMMENT_MARKER,
     PRMetadata,
     get_pr_body,
     get_pr_changed_files,
     get_pr_metadata,
+    upsert_review_comment,
 )
 
 
@@ -172,3 +174,134 @@ class TestGetPRChangedFiles:
         mock_run.return_value = Mock(returncode=0, stdout="")
         files = get_pr_changed_files(1)
         assert files == []
+
+
+# ---------------------------------------------------------------------------
+# upsert_review_comment tests
+# ---------------------------------------------------------------------------
+
+
+class TestUpsertReviewComment:
+    """Test upsert_review_comment create/update behavior."""
+
+    @patch("github_pr_state.subprocess.run")
+    def test_creates_new_comment_when_none_exists(self, mock_run: Mock) -> None:
+        """When no existing comment is found, create a new one."""
+        # First call: list comments (returns empty)
+        # Second call: create comment
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout=""),  # list comments — empty
+            Mock(returncode=0, stdout=""),  # create comment — success
+        ]
+
+        body = "## Review Loop -- Blocked\nSome details"
+        result = upsert_review_comment(42, body)
+
+        assert result is True
+        # The create call should use gh pr comment
+        create_call = mock_run.call_args_list[1]
+        cmd = create_call[0][0]
+        assert cmd[0] == "gh"
+        assert cmd[1] == "pr"
+        assert cmd[2] == "comment"
+        assert "42" in cmd
+        # Body should include the marker
+        body_arg = cmd[cmd.index("--body") + 1]
+        assert REVIEW_COMMENT_MARKER in body_arg
+
+    @patch("github_pr_state.subprocess.run")
+    def test_updates_existing_comment(self, mock_run: Mock) -> None:
+        """When existing comment with marker is found, update it."""
+        # First call: list comment IDs
+        # Second call: get comment body (has marker)
+        # Third call: update comment
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="12345\n67890\n"),  # list IDs
+            Mock(
+                returncode=0,
+                stdout=f"{REVIEW_COMMENT_MARKER}\nold body",
+            ),  # get body of ID 12345 — has marker
+            Mock(returncode=0, stdout=""),  # update — success
+        ]
+
+        body = "## Review Loop -- Passed\nNew details"
+        result = upsert_review_comment(42, body)
+
+        assert result is True
+        # The update call should be a PATCH
+        update_call = mock_run.call_args_list[2]
+        cmd = update_call[0][0]
+        assert "--method" in cmd
+        assert "PATCH" in cmd
+
+    @patch("github_pr_state.subprocess.run")
+    def test_marker_prepended_if_missing(self, mock_run: Mock) -> None:
+        """Body gets marker prepended if not already present."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout=""),  # list — empty
+            Mock(returncode=0, stdout=""),  # create — success
+        ]
+
+        body = "## Review Loop -- Blocked"
+        upsert_review_comment(42, body)
+
+        create_call = mock_run.call_args_list[1]
+        cmd = create_call[0][0]
+        body_arg = cmd[cmd.index("--body") + 1]
+        assert body_arg.startswith(REVIEW_COMMENT_MARKER)
+
+    @patch("github_pr_state.subprocess.run")
+    def test_marker_not_duplicated_if_present(self, mock_run: Mock) -> None:
+        """If body already contains marker, don't add it again."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout=""),  # list — empty
+            Mock(returncode=0, stdout=""),  # create — success
+        ]
+
+        body = f"{REVIEW_COMMENT_MARKER}\n## Review Loop -- Blocked"
+        upsert_review_comment(42, body)
+
+        create_call = mock_run.call_args_list[1]
+        cmd = create_call[0][0]
+        body_arg = cmd[cmd.index("--body") + 1]
+        # Should appear exactly once
+        assert body_arg.count(REVIEW_COMMENT_MARKER) == 1
+
+    @patch("github_pr_state.subprocess.run")
+    def test_returns_false_on_create_failure(self, mock_run: Mock) -> None:
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout=""),  # list — empty
+            Mock(returncode=1, stderr="permission denied"),  # create — fail
+        ]
+
+        result = upsert_review_comment(42, "body")
+        assert result is False
+
+    @patch("github_pr_state.subprocess.run")
+    def test_returns_false_on_update_failure(self, mock_run: Mock) -> None:
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="111\n"),  # list IDs
+            Mock(
+                returncode=0,
+                stdout=f"{REVIEW_COMMENT_MARKER}\nold",
+            ),  # body has marker
+            Mock(returncode=1, stderr="update failed"),  # update — fail
+        ]
+
+        result = upsert_review_comment(42, "new body")
+        assert result is False
+
+    @patch("github_pr_state.subprocess.run")
+    def test_skips_non_matching_comments(self, mock_run: Mock) -> None:
+        """Comments without marker are skipped; creates new if none match."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="111\n222\n"),  # list IDs
+            Mock(returncode=0, stdout="regular comment body"),  # ID 111 — no marker
+            Mock(returncode=0, stdout="another comment"),  # ID 222 — no marker
+            Mock(returncode=0, stdout=""),  # create — success
+        ]
+
+        result = upsert_review_comment(42, "body")
+        assert result is True
+        # Should have made 4 calls: list, get 111, get 222, create
+        assert mock_run.call_count == 4

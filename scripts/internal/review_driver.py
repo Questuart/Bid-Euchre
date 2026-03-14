@@ -250,6 +250,7 @@ def step(
         )
         loop_state.transition(ReviewState.STOPPED_MAX_ITERATIONS)
         loop_state.stop_reason = f"Hit max iterations ({loop_state.max_iterations})"
+        _post_review_comment(loop_state, [], "blocked")
         save_state(loop_state, base_dir)
         logger.warning(
             "PR #%d: stopped -- max iterations (%d)",
@@ -460,6 +461,211 @@ def validate_plan(
     return plan_path, findings
 
 
+def _parse_plan_files(plan_path: str, repo_root: Path) -> list[str]:
+    """Read a plan file and extract declared file paths from ``## Files``.
+
+    Each line in the ``## Files`` section is expected to start with ``- ``
+    and may contain a backtick-quoted path (e.g., `` `scripts/internal/foo.py` ``)
+    or a plain path before the first `` — `` or `` - `` delimiter.
+
+    Args:
+        plan_path: Relative path to the plan file (from repo root).
+        repo_root: Repository root directory.
+
+    Returns:
+        List of declared file paths (relative to repo root).
+    """
+    full_path = repo_root / plan_path
+    if not full_path.exists():
+        return []
+
+    content = full_path.read_text()
+
+    # Find ## Files section (up to next ## heading or end)
+    files_match = re.search(
+        r"^## Files\s*\n(.*?)(?=^## |\Z)",
+        content,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not files_match:
+        return []
+
+    section = files_match.group(1)
+    declared: list[str] = []
+
+    for line in section.strip().split("\n"):
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        line = line[2:].strip()
+
+        # Try backtick-quoted path first
+        backtick_match = re.search(r"`([^`]+)`", line)
+        if backtick_match:
+            declared.append(backtick_match.group(1))
+            continue
+
+        # Try plain path (before any em-dash or description separator)
+        # Split on " — " or " - " to separate path from description
+        path_part = re.split(r"\s+[—-]\s+", line, maxsplit=1)[0].strip()
+        if path_part and "/" in path_part:
+            declared.append(path_part)
+
+    return declared
+
+
+def check_scope_drift(
+    changed_files: list[str],
+    declared_files: list[str],
+) -> list[dict]:
+    """Compare PR changed files against plan-declared files.
+
+    Files that appear in the PR diff but are not listed in the plan's
+    ``## Files`` section are reported as P2 (non-blocking) scope-drift
+    findings.
+
+    Args:
+        changed_files: Files changed in the PR (from git/GitHub).
+        declared_files: Files declared in the plan's ``## Files`` section.
+
+    Returns:
+        List of P2 finding dicts for undeclared files.
+    """
+    if not declared_files:
+        # No declared files = no scope contract to check against
+        return []
+
+    declared_set = set(declared_files)
+    findings: list[dict] = []
+
+    for f in sorted(set(changed_files) - declared_set):
+        findings.append(
+            {
+                "severity": "P2",
+                "file": f,
+                "line": 0,
+                "category": "process",
+                "check_id": "SD1",
+                "message": f"File not declared in plan: {f}",
+                "raw_source": "scope_drift",
+            }
+        )
+
+    return findings
+
+
+def _format_review_comment(
+    loop_state: ReviewLoopState,
+    all_findings: list[dict],
+    status: str,
+) -> str:
+    """Build a structured markdown comment for the PR.
+
+    Args:
+        loop_state: Current review loop state.
+        all_findings: All findings (blocking + warnings) to include.
+        status: "blocked" or "passed".
+
+    Returns:
+        Markdown body for the PR comment (includes the dedup marker).
+    """
+    from github_pr_state import REVIEW_COMMENT_MARKER
+
+    if status == "blocked":
+        header = "## Review Loop -- Blocked"
+    else:
+        header = "## Review Loop -- Passed"
+
+    lines = [
+        REVIEW_COMMENT_MARKER,
+        header,
+        "",
+    ]
+
+    # Head SHA for traceability
+    sha = loop_state.current_head_sha or loop_state.initial_head_sha or "unknown"
+    lines.append(f"**Head SHA:** `{sha}`")
+    lines.append(f"**State:** `{loop_state.current_state.value}`")
+    if loop_state.stop_reason:
+        lines.append(f"**Reason:** {loop_state.stop_reason}")
+    lines.append("")
+
+    # Separate blocking vs warning findings
+    blockers = [f for f in all_findings if f.get("severity") in ("P0", "P1")]
+    warnings = [f for f in all_findings if f.get("severity") == "P2"]
+
+    if blockers:
+        lines.append("### Blocking Findings")
+        lines.append("")
+        lines.append("| ID | Severity | File | Message |")
+        lines.append("|----|----------|------|---------|")
+        for f in blockers:
+            lines.append(
+                f"| {f.get('check_id', '-')} "
+                f"| {f.get('severity', '-')} "
+                f"| {f.get('file', '-')} "
+                f"| {f.get('message', '-')} |"
+            )
+        lines.append("")
+
+    if warnings:
+        lines.append("### Warnings")
+        lines.append("")
+        lines.append("| ID | File | Message |")
+        lines.append("|----|------|---------|")
+        for f in warnings:
+            lines.append(
+                f"| {f.get('check_id', '-')} "
+                f"| {f.get('file', '-')} "
+                f"| {f.get('message', '-')} |"
+            )
+        lines.append("")
+
+    if not blockers and not warnings:
+        lines.append("No findings.")
+        lines.append("")
+
+    # Recovery command
+    lines.append("### Recovery")
+    lines.append("")
+    lines.append("```bash")
+    lines.append(
+        f"python scripts/internal/review_driver.py "
+        f"--pr {loop_state.pr_number} --trigger manual"
+    )
+    lines.append("```")
+    lines.append("")
+    lines.append(
+        f"*Auto-generated by review loop (iteration "
+        f"{loop_state.iteration_count}/{loop_state.max_iterations}).*"
+    )
+
+    return "\n".join(lines)
+
+
+def _post_review_comment(
+    loop_state: ReviewLoopState,
+    all_findings: list[dict],
+    status: str,
+) -> None:
+    """Post a structured review comment to the PR.
+
+    Logs errors but does not raise on failure.
+
+    Args:
+        loop_state: Current review loop state.
+        all_findings: All findings to include in the comment.
+        status: "blocked" or "passed".
+    """
+    try:
+        from github_pr_state import upsert_review_comment
+
+        body = _format_review_comment(loop_state, all_findings, status)
+        upsert_review_comment(loop_state.pr_number, body)
+    except Exception:
+        logger.exception("PR #%d: failed to post review comment", loop_state.pr_number)
+
+
 def _step_pr_open(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
@@ -472,6 +678,27 @@ def _step_pr_open(
     if plan_path:
         loop_state.plan_path = plan_path
 
+    # 0b. Scope-drift check (only if we have a valid plan path)
+    scope_drift_findings: list[dict] = []
+    if plan_path:
+        try:
+            from github_pr_state import get_pr_changed_files
+
+            changed_files = get_pr_changed_files(loop_state.pr_number)
+            declared_files = _parse_plan_files(plan_path, Path.cwd())
+            scope_drift_findings = check_scope_drift(changed_files, declared_files)
+            if scope_drift_findings:
+                logger.info(
+                    "PR #%d: scope drift detected — %d undeclared files",
+                    loop_state.pr_number,
+                    len(scope_drift_findings),
+                )
+        except Exception:
+            logger.warning(
+                "PR #%d: scope-drift check failed — skipping",
+                loop_state.pr_number,
+            )
+
     # 1. Run deterministic prechecks
     findings = check_diff(mode=loop_state.mode)
     blocking = get_blocking_findings(findings)
@@ -480,10 +707,12 @@ def _step_pr_open(
     # Plan findings with P1 severity count as blocking
     plan_blocking = [f for f in plan_findings if f.get("severity") in ("P0", "P1")]
 
-    # Save all precheck + plan validation results for this round
+    # Save all precheck + plan validation + scope-drift results for this round
     rdir = round_dir(loop_state.pr_number, loop_state.iteration_count + 1, base_dir)
     rdir.mkdir(parents=True, exist_ok=True)
-    all_findings_dicts = [f.to_dict() for f in findings] + plan_findings
+    all_findings_dicts = (
+        [f.to_dict() for f in findings] + plan_findings + scope_drift_findings
+    )
     with open(rdir / "prechecks.json", "w") as f:
         json.dump(all_findings_dicts, f, indent=2)
 
@@ -499,6 +728,7 @@ def _step_pr_open(
         loop_state.stop_reason = (
             f"Blocking precheck/plan failures: {len(all_blocking)} findings"
         )
+        _post_review_comment(loop_state, all_findings_dicts, "blocked")
         save_state(loop_state, base_dir)
         logger.warning(
             "PR #%d: blocking prechecks (%d findings) -- stopped",
@@ -514,6 +744,7 @@ def _step_pr_open(
         _publish_status(loop_state.pr_number, "failure", "make check failed")
         loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
         loop_state.stop_reason = "make check failed in initial validation"
+        _post_review_comment(loop_state, all_findings_dicts, "blocked")
         save_state(loop_state, base_dir)
         logger.warning(
             "PR #%d: make check failed -- stopped",
@@ -548,6 +779,7 @@ def _step_waiting_for_ci(
         _publish_status(loop_state.pr_number, "failure", "CI failed")
         loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
         loop_state.stop_reason = "CI failed"
+        _post_review_comment(loop_state, [], "blocked")
         save_state(loop_state, base_dir)
         logger.warning("PR #%d: CI failed -- stopped", loop_state.pr_number)
         return loop_state
@@ -606,6 +838,7 @@ def _step_waiting_for_codex(
             loop_state.stop_reason = (
                 f"Codex CLI failed {loop_state.codex_retry_count} times: {result.error}"
             )
+            _post_review_comment(loop_state, [], "blocked")
             save_state(loop_state, base_dir)
             logger.warning(
                 "PR #%d: Codex CLI failed %d times -- stopped",
@@ -733,6 +966,7 @@ def _step_scoring_findings(
         _publish_status(loop_state.pr_number, "success", desc[:140])
 
         loop_state.transition(ReviewState.READY_TO_MERGE)
+        _post_review_comment(loop_state, filtered_findings, "passed")
         save_state(loop_state, base_dir)
         logger.info(
             "PR #%d: no blocking findings after scoring -> ready_to_merge",
@@ -754,6 +988,7 @@ def _step_scoring_findings(
         loop_state.stop_reason = (
             f"Same findings hash ({current_hash}) -- no progress after fixes"
         )
+        _post_review_comment(loop_state, findings_dicts, "blocked")
         save_state(loop_state, base_dir)
         logger.warning(
             "PR #%d: stagnation detected (hash=%s) -- stopped",
@@ -871,6 +1106,7 @@ def _step_retesting(
         )
         loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
         loop_state.stop_reason = f"make check failed {loop_state.ci_retry_count} times"
+        _post_review_comment(loop_state, [], "blocked")
         save_state(loop_state, base_dir)
         logger.warning(
             "PR #%d: make check failed %d times -- stopped",

@@ -1,15 +1,22 @@
 """GitHub PR state queries via gh CLI.
 
 Thin wrappers around `gh` commands for querying PR metadata,
-CI status, publishing review status, and enabling auto-merge.
+CI status, publishing review status, enabling auto-merge,
+and managing machine-owned PR comments.
 Used by the review loop state machine.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from dataclasses import dataclass
+
+logger = logging.getLogger("github_pr_state")
+
+# HTML comment marker for deduplication of machine-owned PR comments.
+REVIEW_COMMENT_MARKER = "<!-- review-loop-comment -->"
 
 
 @dataclass
@@ -234,3 +241,131 @@ def enable_auto_merge(pr_number: int, *, method: str = "squash") -> bool:
         text=True,
     )
     return result.returncode == 0
+
+
+def _find_review_comment_id(pr_number: int) -> int | None:
+    """Search for an existing machine-owned review comment on a PR.
+
+    Looks for a comment containing the ``REVIEW_COMMENT_MARKER`` HTML
+    comment tag.
+
+    Args:
+        pr_number: PR number.
+
+    Returns:
+        Comment node ID (integer) if found, None otherwise.
+    """
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
+            "--jq",
+            ".[].id",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        logger.warning(
+            "PR #%d: failed to list comments: %s", pr_number, result.stderr[:200]
+        )
+        return None
+
+    comment_ids = [
+        int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()
+    ]
+    if not comment_ids:
+        return None
+
+    # Check each comment for our marker
+    for cid in comment_ids:
+        body_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{{owner}}/{{repo}}/issues/comments/{cid}",
+                "--jq",
+                ".body",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if body_result.returncode == 0 and REVIEW_COMMENT_MARKER in body_result.stdout:
+            return cid
+
+    return None
+
+
+def upsert_review_comment(pr_number: int, body: str) -> bool:
+    """Create or update a single machine-owned PR comment.
+
+    Uses ``REVIEW_COMMENT_MARKER`` (an HTML comment tag) for deduplication.
+    If a comment with the marker already exists, it is updated in place.
+    Otherwise a new comment is created.
+
+    The marker is prepended to the body automatically if not already present.
+
+    Args:
+        pr_number: PR number.
+        body: Full markdown body for the comment.
+
+    Returns:
+        True if the comment was created or updated successfully.
+    """
+    # Ensure marker is present
+    if REVIEW_COMMENT_MARKER not in body:
+        body = f"{REVIEW_COMMENT_MARKER}\n{body}"
+
+    existing_id = _find_review_comment_id(pr_number)
+
+    if existing_id is not None:
+        # Update existing comment
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{{owner}}/{{repo}}/issues/comments/{existing_id}",
+                "--method",
+                "PATCH",
+                "--field",
+                f"body={body}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            logger.info(
+                "PR #%d: updated review comment (id=%d)", pr_number, existing_id
+            )
+            return True
+        logger.warning(
+            "PR #%d: failed to update comment %d: %s",
+            pr_number,
+            existing_id,
+            result.stderr[:200],
+        )
+        return False
+
+    # Create new comment
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "comment",
+            str(pr_number),
+            "--body",
+            body,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        logger.info("PR #%d: created review comment", pr_number)
+        return True
+    logger.warning(
+        "PR #%d: failed to create comment: %s",
+        pr_number,
+        result.stderr[:200],
+    )
+    return False
