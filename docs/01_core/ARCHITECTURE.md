@@ -74,6 +74,7 @@ that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `evaluate_gate_x3.py` — R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle)
 - `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
+- `generate_advance_check.py` — Arc D v2 advance check generator (hypothesis + sufficiency + canary evaluation)
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
 - `generate_auction_context_dataset.py` — Auction-context dataset generator (R1 partner features)
 - `generate_batch_report.py` — Batch report + eligibility gate
@@ -86,7 +87,9 @@ that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 - `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_lambda_sweep.py` — Simulation-based risk_lambda tuning sweep
 - `run_normalizer_offline_screen.py` — Normalizer go/no-go offline screening pipeline
+- `run_rung.py` — Arc D v2 rung orchestrator (9-step runbook execution, multi-seed, QUICK/FULL pipeline)
 - `run_threshold_sweep.py` — Grid search over pass_threshold values (R1 threshold tuning)
+- `rung_state.py` — Rung orchestrator state management (RunState persistence, step/model tracking)
 - `train_unified_model.py` — Unified cross-contract OLS training (Track F OneModel)
 - `update_arc_registry.py` — Arc D registry updater (MODEL_ARC_RUNS.md)
 - `validate_arc_d_rung_contract.py` — Arc D rung bundle validator
@@ -212,6 +215,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/evaluate_gate_x3.py` | R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle) |
 | `scripts/internal/extract_comparator_cis.py` | Bootstrap CIs for comparator battery metrics |
 | `scripts/internal/generate_action_value_dataset.py` | Counterfactual action-value dataset generator (R1.5) |
+| `scripts/internal/generate_advance_check.py` | Arc D v2 advance check generator (hypothesis + sufficiency + canary evaluation) |
 | `scripts/internal/generate_arc_dashboard.py` | Cross-rung Arc D progression dashboard |
 | `scripts/internal/generate_auction_context_dataset.py` | Auction-context dataset generator (R1 partner features) |
 | `scripts/internal/generate_batch_report.py` | Batch report + eligibility gate |
@@ -226,6 +230,8 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
 | `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |
+| `scripts/internal/rung_state.py` | Rung orchestrator state management (RunState persistence, step/model tracking) |
+| `scripts/internal/run_rung.py` | Arc D v2 rung orchestrator (9-step runbook execution, multi-seed, QUICK/FULL pipeline) |
 | `scripts/internal/calibrate_arc_d_thresholds.py` | Arc D gate threshold calibration from H2H null signal |
 | `scripts/internal/run_arc_d_gate.py` | Arc D promotion gate runner |
 | `scripts/internal/run_arc_d_h2h_battery.py` | H2H all-vs-all battery runner (competitive validation) |
