@@ -830,11 +830,15 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
 def _collect_training_artifacts(
     state: RunState, seed: int, rung_artifacts_dir: Path
 ) -> None:
-    """Copy training artifact JSONs into the rung artifacts directory.
+    """Copy training artifact JSONs (and companion files) into the rung artifacts directory.
 
     Searches each trainable model's output dir for JSON artifacts and
     copies them as ``training_artifact_<model_name>.json`` so that
     ``generate_rung_tables.py`` can find them via its glob pattern.
+
+    For GBT models, the JSON artifact references ``.joblib`` files by
+    relative path.  These companion files are also copied so that the
+    ``GBTActionValueBidder`` can load them from the artifact directory.
     """
     import shutil
 
@@ -854,6 +858,14 @@ def _collect_training_artifacts(
             shutil.copy2(json_file, dest)
             logger.info("Step 3: Copied %s -> %s", json_file.name, dest.name)
             break  # Take first JSON artifact per model
+
+        # Copy companion .joblib files (GBT models store sklearn objects externally)
+        for joblib_file in sorted(output_dir.glob("*.joblib")):
+            dest = rung_artifacts_dir / joblib_file.name
+            shutil.copy2(joblib_file, dest)
+            logger.info(
+                "Step 3: Copied companion %s -> %s", joblib_file.name, dest.name
+            )
 
 
 def execute_step_3(state: RunState, seed: int, dry_run: bool = False) -> bool:
@@ -1154,6 +1166,16 @@ def execute_step_5(state: RunState, seed: int, dry_run: bool = False) -> bool:
         state.save(_state_path(rung))
         return False
 
+    # Discover the batch manifest written by run_auction_comparator.py.
+    # The manifest filename includes a timestamp, so we glob for the latest
+    # manifest matching the experiment name and seed.
+    experiment_name = comparator_config.get(
+        "experiment_name", f"arc_d_v2_{rung}_comparator_seed{seed}"
+    )
+    manifest_pattern = f"batch_manifest_{experiment_name}_{seed}_*.json"
+    manifest_candidates = sorted(runs_dir.glob(manifest_pattern))
+    manifest_path = str(manifest_candidates[-1]) if manifest_candidates else None
+
     # CI extraction needs --battery-file to locate the comparator output
     n_bootstrap = {"smoke": 1000, "quick": 5000, "full": 10000}.get(state.mode, 1000)
     cmd_cis = [
@@ -1176,6 +1198,8 @@ def execute_step_5(state: RunState, seed: int, dry_run: bool = False) -> bool:
         "--single-seat",
         "--force",
     ]
+    if manifest_path:
+        cmd_cis.extend(["--manifest", manifest_path])
 
     ok, error = run_subprocess(cmd_cis, "5", rung, f"cis_seed_{seed}")
     if ok:
@@ -1208,6 +1232,7 @@ def execute_step_6(state: RunState, dry_run: bool = False) -> bool:
         )
         return True
 
+    rung_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
     output_dir = (
         _repo_root()
         / "docs"
@@ -1217,19 +1242,14 @@ def execute_step_6(state: RunState, dry_run: bool = False) -> bool:
         / "canonical"
         / "tables"
     )
-    seeds_str = ",".join(str(s) for s in state.seeds)
 
     cmd = [
         "uv",
         "run",
         "python",
         str(script),
-        "--rung",
-        rung,
-        "--mode",
-        state.mode,
-        "--seeds",
-        seeds_str,
+        "--rung-dir",
+        str(rung_dir),
         "--output-dir",
         str(output_dir),
     ]
@@ -1292,11 +1312,7 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
             "run",
             "python",
             str(report_script),
-            "--rung",
-            rung,
-            "--mode",
-            state.mode,
-            "--output-dir",
+            "--report-dir",
             str(report_dir),
         ]
         if not dry_run:
@@ -1312,16 +1328,19 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
     manifest_script = (
         _repo_root() / "scripts" / "internal" / "generate_evidence_manifest.py"
     )
+    rung_artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
     if manifest_script.exists():
         cmd = [
             "uv",
             "run",
             "python",
             str(manifest_script),
-            "--rung",
+            "--rung-dir",
+            str(rung_artifacts_dir),
+            "--report-dir",
+            str(report_dir),
+            "--rung-id",
             rung,
-            "--output",
-            str(report_dir / ".." / "evidence_manifest.json"),
         ]
         if not dry_run:
             ok, error = run_subprocess(cmd, "7", rung, "manifest")
