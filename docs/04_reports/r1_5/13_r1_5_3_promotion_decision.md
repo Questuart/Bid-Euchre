@@ -7,19 +7,19 @@
 **Date:** 2026-03-13
 **Predecessor:** [07_promotion_decision.md](07_promotion_decision.md) (R1.5 v1 OLS — ADVANCED)
 
-## Decision: <!-- PENDING — fill after GBT FULL results -->
+## Decision: PROMOTED
 
-GBTActionValueBidder v1 is **<!-- PROMOTED / ADVANCED -->** <!-- based on FULL
-validation results -->.
+GBTActionValueBidder v1 is **PROMOTED** to incumbent status, replacing
+hybrid_olsa_full R0. All promotion gates pass across 3 independent seeds.
 
 ### Decision Criteria
 
 | Criterion | Threshold | Result | Status |
 |-----------|-----------|--------|--------|
-| Pooled CI_low vs R0 | > 0.180 | <!-- CI_low from FULL --> | <!-- PASS/FAIL --> |
-| Suit delta vs R0 | > 0.0 | <!-- suit delta from FULL --> | <!-- PASS/FAIL --> |
-| No seed reversals | 0/3 seeds negative | <!-- seed stability --> | <!-- PASS/FAIL --> |
-| Pooled point estimate > 0 | > 0.0 | <!-- point estimate --> | <!-- PASS/FAIL --> |
+| Pooled CI_low vs R0 | > 0.180 | CI_low > +0.50 (all seeds) | **PASS** |
+| Suit delta vs R0 | > 0.0 | +0.827 (3-seed mean) | **PASS** |
+| No seed reversals | 0/3 seeds negative | 3/3 positive (+0.557, +0.595, +0.558) | **PASS** |
+| Pooled point estimate > 0 | > 0.0 | +0.570 (3-seed mean) | **PASS** |
 
 ## 1. Executive Summary
 
@@ -31,7 +31,7 @@ R1.5.3 systematically explored three paths to resolve the OLS suit regression
 | **GBT prototype** | Gradient-boosted trees on N=1 labels | +1.1 net_eppd vs R0 (QUICK) | **PROTOTYPE VALIDATED** |
 | **2×2 model×label matrix** | OLS vs GBT × N=1 vs N=20 | Model capacity >> labels (35×) | **H15 CONFIRMED** |
 | **Two-stage OLS (H16)** | P(make) × E[pts|make] + (1−P) × E[pts|set] | +0.124 vs OLS, −0.750 vs GBT | **PARTIAL — cannot close gap** |
-| **GBT FULL validation** | 3-seed, 50K deals, 9 matchups | <!-- PENDING --> | <!-- PENDING --> |
+| **GBT FULL validation** | 3-seed, 50K deals, 9 matchups | +0.570 pooled, suit +0.827, all gates PASS | **PROMOTED** |
 
 **Key conclusion:** GBT resolves the structural suit regression that OLS could
 not address through any feature engineering, label improvement, or architectural
@@ -106,39 +106,34 @@ structure automatically from data.
 
 ### 2.4 GBT FULL Validation (Phase 2)
 
-<!-- PENDING: Fill from 12_gbt_full_validation.md when available -->
+Source: [12_gbt_full_validation.md](12_gbt_full_validation.md)
 
-**Setup:** 3-seed (42, 123, 456) × 50,000 deals × 9 matchups (3-bidder roster:
-GBT AV v1, OLS AV v1, Hybrid R0).
+**Setup:** 3-seed (42, 123, 456) × 50,000 deals × 9 matchups. Total: 1,350,000
+hands.
 
-**Success gates:**
-- Pooled CI_low > 0.180 (delta floor from R0 calibration)
-- Suit delta > 0 (regression resolved)
-- No seed reversals (all 3 seeds show positive pooled delta)
+**Symmetrized deltas (GBT vs Hybrid R0):**
 
-<!--
-**Results:**
+| Contract | Seed 42 | Seed 123 | Seed 456 | 3-Seed Mean |
+|----------|---------|----------|----------|-------------|
+| **Suit** | **+0.843** | **+0.818** | **+0.819** | **+0.827** |
+| **High** | **+0.404** | **+0.258** | **+0.336** | **+0.333** |
+| **Low** | -0.027 | -0.008 | -0.089 | -0.041 |
+| **Pooled** | **+0.595** | **+0.557** | **+0.558** | **+0.570** |
 
-| Metric | Value | Gate |
-|--------|-------|------|
-| Pooled delta | | |
-| Pooled CI | | |
-| Suit delta | | |
-| Suit CI | | |
-| High delta | | |
-| Low delta | | |
-| Seed 42 pooled | | |
-| Seed 123 pooled | | |
-| Seed 456 pooled | | |
+**Gate results:**
 
-**Behavioral stability:**
+| Gate | Criterion | Result | Status |
+|------|-----------|--------|--------|
+| G1 | Pooled CI_low > 0.180 | All 3 seeds: CI_low > +0.50 | **PASS** |
+| G2 | Suit delta > 0 | +0.818 to +0.843 | **PASS** |
+| G3 | No seed reversals | 3/3 positive | **PASS** |
 
-| Metric | Seed 42 | Seed 123 | Seed 456 | Stable? |
-|--------|---------|----------|----------|---------|
-| Pass rate | | | | |
-| Make rate | | | | |
-| Avg bid | | | | |
--->
+**QUICK→FULL shrinkage:** 47% pooled (+1.067 → +0.570). Larger than OLS's 8%
+(R1.5 v1) due to QUICK-trained model at FULL scale. Despite shrinkage, CI_low
+(+0.50+) is 2.8× the delta floor.
+
+**Cross-seed stability:** Pooled delta CV = 3.7%, suit delta CV = 1.6%.
+Excellent consistency across independent seeds.
 
 ## 3. Hypothesis Ledger Update
 
@@ -191,8 +186,8 @@ probability), but it is not competitive for gameplay.
 
 ### What R1.5.3 Established
 
-1. **GBT as the AV architecture** — conclusive evidence across QUICK and (FULL
-   pending) evaluations
+1. **GBT as the AV architecture** — conclusive evidence across QUICK and FULL
+   evaluations (3-seed, 1.35M hands)
 2. **Partner features remain critical** — the most valuable AV component for
    action selection (H3, H10)
 3. **Single-rollout labels are sufficient** — N=1 GBT vs N=20 GBT: +0.044
@@ -226,14 +221,14 @@ Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
 | Phase 0 — Multi-rollout (H14) | 2026-03-12 | R² +0.121, CONFIRMED | [09_multi_rollout_diagnostic.md](09_multi_rollout_diagnostic.md) |
 | Phase 1A — 2×2 matrix (H15) | 2026-03-12 | Model >> labels, CONFIRMED | [10_model_label_matrix.md](10_model_label_matrix.md) |
 | Two-stage OLS (H16) | 2026-03-12 | +0.124, -0.750 vs GBT, PARTIAL | [11_two_stage_evaluation.md](11_two_stage_evaluation.md) |
-| GBT FULL validation | 2026-03-13 | <!-- PENDING --> | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
-| Promotion decision | 2026-03-13 | <!-- PENDING --> | This document |
+| GBT FULL validation | 2026-03-13 | +0.570 pooled, all gates PASS | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
+| Promotion decision | 2026-03-13 | **PROMOTED** | This document |
 
 ## 7. Provenance
 
 | Item | Value |
 |------|-------|
-| gate_status | <!-- PENDING --> |
+| gate_status | PROMOTED — all 3 gates pass across 3 seeds, +0.570 pooled net_eppd |
 | Predecessor decision | ADVANCED (R1.5 v1, 07_promotion_decision.md) |
 | GBT FULL report | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
 | 2×2 matrix report | [10_model_label_matrix.md](10_model_label_matrix.md) |
@@ -243,4 +238,4 @@ Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
 | R1.6 plan | `plans/sessions/2026-03-13_r1-6-partner-semantics.md` |
 | PR #631 (schema infra) | artifact-driven feature extraction |
 | Governing plan | `plans/sessions/2026-03-12_r1-5-3-forward-plan-v2.md` |
-| analysis_base_sha | 1d14737 |
+| analysis_base_sha | 078cecc |

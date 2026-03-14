@@ -11,4 +11,5 @@ cat <<'CONTEXT'
 4. **Seed required**: Experiments need `--seed <int>` for determinism
 5. **Data policy**: Never commit `data/runs/`, `data/reports/`, `data/models/`
 6. **One concept per PR**: Use the PR template from `.github/pull_request_template.md`
+7. **Docs-only CI**: `.claude/CLAUDE.md` trigger comments are caught by `*.md` paths-ignore — use non-md file changes to trigger CI
 CONTEXT
