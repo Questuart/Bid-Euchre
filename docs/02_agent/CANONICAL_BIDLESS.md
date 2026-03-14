@@ -153,7 +153,7 @@ data/runs/<run_id>/
 After running an experiment, generate reports with sanity tests:
 
 ```bash
-uv run pythonscripts/generate_report.py \
+uv run python scripts/generate_report.py \
   --run-dir data/runs/<run_id>
 ```
 

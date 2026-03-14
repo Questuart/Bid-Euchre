@@ -109,14 +109,14 @@ Run the baseline comparison suite:
 
 ```bash
 # Full suite with roster-driven baseline selection
-uv run pythonscripts/run_suite.py --suite experiments/suites/bid_eval_tiny.yaml
+uv run python scripts/run_suite.py --suite experiments/suites/bid_eval_tiny.yaml
 ```
 
 Validate roster integrity:
 
 ```bash
 # Check schema, imports, and artifact paths
-uv run pythonscripts/validate_teacher_roster.py experiments/baselines/teacher_roster_v1.yaml
+uv run python scripts/validate_teacher_roster.py experiments/baselines/teacher_roster_v1.yaml
 ```
 
 View available baselines:

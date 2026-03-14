@@ -56,7 +56,7 @@ Baseline is not:
 **How to run**:
 
 ```bash
-uv run pythonscripts/run_suite.py \
+uv run python scripts/run_suite.py \
   --suite experiments/suites/baseline_full.yaml
 ```
 
@@ -222,7 +222,7 @@ uv run pythonexperiments/run_experiment.py \
 Starting in PR #20, `baseline_tiny` will be runnable via the suite runner:
 
 ```bash
-uv run pythonscripts/run_suite.py \
+uv run python scripts/run_suite.py \
   --suite experiments/suites/baseline_tiny.yaml
 ```
 

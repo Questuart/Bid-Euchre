@@ -10,7 +10,8 @@ This directory contains documents tracking work that needs to be done but isn't 
 
 ### Active
 - **CODEBASE_CONSISTENCY.md** — Remaining "Later" items: dual outcome tracking, card instance IDs, separate strategy IDs, team-randomized comparator, strategy-centric metrics, terminology standardization
-- REPO_REVIEW_2026-02-26.md — Latest review (from PR #449)
+
+Historical reviews are archived in `docs/archive/reviews/`.
 
 ### Completed
 - **CODEBASE_CONSISTENCY items 1-3** (2026-02-18): auction_transcript (schema v7), redeal_flag (schema v6), made_bid (schema v6) — all wired in PRs #361/#362

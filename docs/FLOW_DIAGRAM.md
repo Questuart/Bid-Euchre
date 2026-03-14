@@ -90,7 +90,7 @@ flowchart TB
 
     subgraph Analysis["Analysis Layer"]
         direction TB
-        Notebooks["notebooks/phase0_bidless/*.ipynb<br/>(interactive exploration)"]
+        Notebooks["notebooks/arc_d/**/*.py<br/>(Jupytext-paired analysis)"]
         Reports["Generated reports"]
     end
 
