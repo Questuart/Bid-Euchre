@@ -1,0 +1,78 @@
+{
+  "schema_version": "action_value_gbt_v1",
+  "target": "net_points",
+  "risk_mode": "neutral",
+  "continuation_policy": "hybrid_r0_full",
+  "action_features": ["bid_n", "bid_n_sq"],
+  "feature_set": "r0",
+  "models": {
+    "suit": {
+      "model_file": "gbt_suit.joblib",
+      "feature_names": ["trump_count", "bowers", "offsuit_non_ace_count", "bid_n", "bid_n_sq"],
+      "r_squared": 0.712,
+      "mae": 1.12,
+      "n_train": 800,
+      "n_val": 100,
+      "feature_importances": {
+        "trump_count": 0.35,
+        "bowers": 0.25,
+        "offsuit_non_ace_count": 0.10,
+        "bid_n": 0.20,
+        "bid_n_sq": 0.10
+      }
+    },
+    "high": {
+      "model_file": "gbt_high.joblib",
+      "feature_names": ["aces", "offsuit_non_ace_count", "hand_value", "bid_n", "bid_n_sq"],
+      "r_squared": 0.689,
+      "mae": 1.28,
+      "n_train": 600,
+      "n_val": 75,
+      "feature_importances": {
+        "aces": 0.30,
+        "offsuit_non_ace_count": 0.15,
+        "hand_value": 0.25,
+        "bid_n": 0.18,
+        "bid_n_sq": 0.12
+      }
+    },
+    "low": {
+      "model_file": "gbt_low.joblib",
+      "feature_names": ["low_cards", "offsuit_non_ace_count", "hand_value", "bid_n", "bid_n_sq"],
+      "r_squared": 0.645,
+      "mae": 1.41,
+      "n_train": 500,
+      "n_val": 63,
+      "feature_importances": {
+        "low_cards": 0.28,
+        "offsuit_non_ace_count": 0.18,
+        "hand_value": 0.22,
+        "bid_n": 0.20,
+        "bid_n_sq": 0.12
+      }
+    },
+    "pass": {
+      "model_file": "gbt_pass.joblib",
+      "feature_names": ["trump_count", "bowers", "hand_value"],
+      "r_squared": 0.092,
+      "mae": 2.01,
+      "n_train": 2000,
+      "n_val": 250,
+      "feature_importances": {
+        "trump_count": 0.40,
+        "bowers": 0.35,
+        "hand_value": 0.25
+      }
+    }
+  },
+  "metadata": {
+    "n_deals": 100,
+    "training_seed": 42,
+    "arm": "r0",
+    "context_features": [],
+    "git_sha": "fixture_sha_000",
+    "created_at_utc": "2026-01-15T12:00:00+00:00",
+    "model_class": "gbt",
+    "continuation_artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "schema_version": "action_value_olsa_v1",
+  "target": "net_points",
+  "risk_mode": "neutral",
+  "continuation_policy": "hybrid_r0_full",
+  "action_features": ["bid_n", "bid_n_sq"],
+  "feature_set": "r0",
+  "models": {
+    "suit": {
+      "coefficients": [0.5, 0.3, -0.1, 0.2, 0.15],
+      "intercept": 1.23,
+      "feature_names": ["trump_count", "bowers", "offsuit_non_ace_count", "bid_n", "bid_n_sq"],
+      "r_squared": 0.565,
+      "mae": 1.45,
+      "n_train": 800,
+      "n_val": 100
+    },
+    "high": {
+      "coefficients": [0.4, -0.2, 0.35, 0.1, 0.08],
+      "intercept": 2.10,
+      "feature_names": ["aces", "offsuit_non_ace_count", "hand_value", "bid_n", "bid_n_sq"],
+      "r_squared": 0.533,
+      "mae": 1.62,
+      "n_train": 600,
+      "n_val": 75
+    },
+    "low": {
+      "coefficients": [0.6, 0.25, -0.15, 0.12, 0.06],
+      "intercept": 1.89,
+      "feature_names": ["low_cards", "offsuit_non_ace_count", "hand_value", "bid_n", "bid_n_sq"],
+      "r_squared": 0.514,
+      "mae": 1.78,
+      "n_train": 500,
+      "n_val": 63
+    },
+    "pass": {
+      "coefficients": [0.1, -0.05, 0.08],
+      "intercept": 0.45,
+      "feature_names": ["trump_count", "bowers", "hand_value"],
+      "r_squared": 0.046,
+      "mae": 2.34,
+      "n_train": 2000,
+      "n_val": 250
+    }
+  },
+  "metadata": {
+    "n_deals": 100,
+    "training_seed": 42,
+    "arm": "r0",
+    "context_features": [],
+    "git_sha": "fixture_sha_000",
+    "created_at_utc": "2026-01-15T12:00:00+00:00",
+    "model_class": "ols",
+    "continuation_artifact_path": "data/artifacts/arc_d/r0/hybrid_r0_full.json"
+  }
+}

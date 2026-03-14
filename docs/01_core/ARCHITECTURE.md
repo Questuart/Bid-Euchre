@@ -219,6 +219,10 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_r1_5_diagnostics.py` | R1.5-v2 calibration diagnostics (cross-rung analysis + bimodality tests) |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
 | `scripts/internal/generate_rung_charts.py` | Rung report chart generation from eval data + model artifacts |
+| `scripts/internal/generate_rung_charts_v2.py` | CSV-first rung chart generation for Arc D v2 reports |
+| `scripts/internal/generate_rung_tables.py` | Canonical CSV table generation for Arc D v2 rung reports |
+| `scripts/internal/generate_rung_report.py` | Markdown rung report renderer from CSV tables and chart PNGs |
+| `scripts/internal/generate_evidence_manifest.py` | Evidence manifest generator (JSON + markdown) for Arc D v2 |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
 | `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |

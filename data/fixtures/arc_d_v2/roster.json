@@ -1,0 +1,51 @@
+{
+  "schema_version": "roster_v1",
+  "lineage_id": "arc_d_v2",
+  "models": [
+    {
+      "name": "modeloespecifico",
+      "class_name": "ModeloEspecifico",
+      "trainable": false,
+      "category": "heuristic"
+    },
+    {
+      "name": "gbt_av",
+      "class_name": "GBTActionValueBidder",
+      "trainable": true,
+      "model_class": "gbt",
+      "feature_set": "r0",
+      "selection": "none",
+      "params": {
+        "artifact_path": "data/fixtures/arc_d_v2/training_artifact_gbt.json"
+      }
+    },
+    {
+      "name": "selected_ols_av",
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "model_class": "ols",
+      "feature_set": "r0",
+      "selection": "forward",
+      "params": {
+        "artifact_path": "data/fixtures/arc_d_v2/training_artifact_ols.json"
+      }
+    },
+    {
+      "name": "stricthellraiser",
+      "class_name": "StrictHellRaiser",
+      "trainable": false,
+      "category": "legacy_baseline"
+    },
+    {
+      "name": "rankthetank",
+      "class_name": "RanktheTank",
+      "trainable": false,
+      "category": "legacy_baseline"
+    }
+  ],
+  "anchor": {
+    "name": "anchor_hybrid_r0_full",
+    "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+    "class_name": "HybridOLSaBidder"
+  }
+}
