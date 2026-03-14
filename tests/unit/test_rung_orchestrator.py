@@ -895,3 +895,356 @@ class TestClearHeartbeat:
         """Clearing a non-existent heartbeat should not raise."""
         with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
             clear_heartbeat("r0")  # Should not raise
+
+
+# ============================================================================
+# Artifact Discovery Tests
+# ============================================================================
+
+
+from bid_euchre.arc_d_v2.orchestration import find_trained_artifact
+
+
+class TestFindTrainedArtifact:
+    def test_pattern1_artifacts_dir_subdirectory(self, tmp_path):
+        """Find artifact at <artifacts_dir>/<model>/artifact.json."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+        result = find_trained_artifact("gbt_av", "r0", "smoke", 42, tmp_path)
+        assert result == art
+
+    def test_pattern2_flat_naming(self, tmp_path):
+        """Find artifact at <artifacts_dir>/training_artifact_<model>.json."""
+        art = tmp_path / "training_artifact_gbt_av.json"
+        art.write_text("{}")
+        result = find_trained_artifact("gbt_av", "r0", "smoke", 42, tmp_path)
+        assert result == art
+
+    def test_pattern3_training_output_dir(self, tmp_path):
+        """Find artifact in data/runs/av_<model>_<rung>_<mode>_<seed>/."""
+        runs_dir = tmp_path / "data" / "runs"
+        art_dir = runs_dir / "av_gbt_av_r0_smoke_42"
+        art_dir.mkdir(parents=True)
+        art = art_dir / "artifact.json"
+        art.write_text("{}")
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            result = find_trained_artifact("gbt_av", "r0", "smoke", 42)
+        assert result == art
+
+    def test_returns_none_when_missing(self, tmp_path):
+        """Return None when no artifact is found anywhere."""
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            result = find_trained_artifact("gbt_av", "r0", "smoke", 42)
+        assert result is None
+
+    def test_pattern_priority(self, tmp_path):
+        """Artifacts_dir patterns take priority over data/runs patterns."""
+        # Create both pattern 1 (should win) and pattern 3
+        art1 = tmp_path / "gbt_av" / "artifact.json"
+        art1.parent.mkdir(parents=True)
+        art1.write_text('{"source": "pattern1"}')
+
+        runs_dir = tmp_path / "data" / "runs"
+        art3_dir = runs_dir / "av_gbt_av_r0_smoke_42"
+        art3_dir.mkdir(parents=True)
+        (art3_dir / "artifact.json").write_text('{"source": "pattern3"}')
+
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            result = find_trained_artifact("gbt_av", "r0", "smoke", 42, tmp_path)
+        assert result == art1
+
+
+# ============================================================================
+# H2H Roster Generation Tests
+# ============================================================================
+
+
+from bid_euchre.arc_d_v2.orchestration import generate_h2h_roster
+
+
+class TestGenerateH2HRoster:
+    def _mock_roster(self):
+        return {
+            "models": {
+                "gbt_av": {
+                    "class_name": "GBTActionValueBidder",
+                    "trainable": True,
+                },
+                "modeloespecifico": {
+                    "class_name": "ModeloEspecifico",
+                    "trainable": False,
+                    "params": {},
+                },
+            },
+            "anchor": {
+                "name": "anchor_hybrid_r0_full",
+                "class_name": "HybridOLSaBidder",
+                "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+            },
+        }
+
+    def test_generates_correct_format(self, tmp_path):
+        """Roster entries have name, class_name, and optional params."""
+        # Create trained artifact for gbt_av
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+        # Create anchor artifact
+        anchor_path = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        anchor_path.mkdir(parents=True)
+        (anchor_path / "hybrid_r0_full.json").write_text("{}")
+
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            entries = generate_h2h_roster("r0", "smoke", 42, tmp_path)
+
+        assert len(entries) == 3  # gbt_av + modeloespecifico + anchor
+        names = [e["name"] for e in entries]
+        assert "gbt_av" in names
+        assert "modeloespecifico" in names
+        assert "anchor_hybrid_r0_full" in names
+
+        gbt = next(e for e in entries if e["name"] == "gbt_av")
+        assert gbt["class_name"] == "GBTActionValueBidder"
+        assert "artifact_path" in gbt["params"]
+
+    def test_skips_trainable_without_artifact(self, tmp_path):
+        """Trainable models without artifacts are excluded."""
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            entries = generate_h2h_roster("r0", "smoke", 42, tmp_path)
+
+        names = [e["name"] for e in entries]
+        # gbt_av should be skipped (no artifact), but modeloespecifico should remain
+        assert "gbt_av" not in names
+        assert "modeloespecifico" in names
+
+
+# ============================================================================
+# Comparator Config Generation Tests
+# ============================================================================
+
+
+from bid_euchre.arc_d_v2.orchestration import generate_comparator_config
+
+
+class TestGenerateComparatorConfig:
+    def _mock_roster(self):
+        return {
+            "models": {
+                "gbt_av": {
+                    "class_name": "GBTActionValueBidder",
+                    "trainable": True,
+                },
+                "modeloespecifico": {
+                    "class_name": "ModeloEspecifico",
+                    "trainable": False,
+                },
+            },
+            "anchor": {
+                "name": "anchor_hybrid_r0_full",
+                "class_name": "HybridOLSaBidder",
+                "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+            },
+        }
+
+    def test_generates_valid_yaml_structure(self, tmp_path):
+        """Config has required keys for run_auction_comparator.py."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+        anchor_path = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        anchor_path.mkdir(parents=True)
+        (anchor_path / "hybrid_r0_full.json").write_text("{}")
+
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            config = generate_comparator_config("r0", "smoke", 42, 100, tmp_path)
+
+        assert "experiment_name" in config
+        assert "bidding_policies" in config
+        assert "strategies" in config
+        assert "scenarios" in config
+        assert "parameters" in config
+        assert config["parameters"]["seed"] == 42
+        assert config["parameters"]["n_per"] == 100
+        assert config["parameters"]["play_strategy"] == "glutton"
+
+    def test_bidding_policies_have_correct_structure(self, tmp_path):
+        """Each bidding policy has name and class_name."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            config = generate_comparator_config("r0", "smoke", 42, 100, tmp_path)
+
+        for policy in config["bidding_policies"]:
+            assert "name" in policy
+            assert "class_name" in policy
+
+    def test_skips_trainable_without_artifact(self, tmp_path):
+        """Trainable models without artifacts are excluded from config."""
+        roster = self._mock_roster()
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            config = generate_comparator_config("r0", "smoke", 42, 100, tmp_path)
+
+        names = [p["name"] for p in config["bidding_policies"]]
+        assert "gbt_av" not in names
+        assert "modeloespecifico" in names
+
+
+# ============================================================================
+# Step 4/5 Integration Tests (dry-run, verifying command construction)
+# ============================================================================
+
+
+class TestStep4CommandConstruction:
+    def test_step4_uses_roster_flag(self, tmp_path):
+        """Step 4 should pass --roster to h2h battery script."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+
+        roster = {
+            "models": {
+                "gbt_av": {
+                    "class_name": "GBTActionValueBidder",
+                    "trainable": True,
+                },
+            },
+            "anchor": {},
+        }
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "smoke", [42])
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "find_trained_artifact",
+                return_value=art,
+            ),
+        ):
+            ok = run_rung_mod.execute_step_4(state, 42, dry_run=True)
+
+        assert ok is True
+        # In dry_run, the step completes without error
+        assert state.steps["4"]["status"] == "complete"
+
+    def test_step4_smoke_maps_to_quick(self, tmp_path):
+        """Step 4 with smoke mode should use QUICK for H2H."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        roster = {"models": {}, "anchor": {}}
+        state = RunState.create_fresh("r0", "smoke", [42])
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+        ):
+            # Empty roster should fail with clear error
+            ok = run_rung_mod.execute_step_4(state, 42, dry_run=False)
+
+        assert ok is False
+        assert "No bidders" in (state.steps["4"].get("error") or "")
+
+
+class TestStep5CommandConstruction:
+    def test_step5_uses_config_flag(self, tmp_path):
+        """Step 5 should pass --config (not --mode) to comparator."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+
+        roster = {
+            "models": {
+                "gbt_av": {
+                    "class_name": "GBTActionValueBidder",
+                    "trainable": True,
+                },
+            },
+            "anchor": {},
+        }
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "smoke", [42])
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "find_trained_artifact",
+                return_value=art,
+            ),
+        ):
+            ok = run_rung_mod.execute_step_5(state, 42, dry_run=True)
+
+        assert ok is True
+        assert state.steps["5"]["status"] == "complete"
+
+    def test_step5_empty_roster_fails(self, tmp_path):
+        """Step 5 with no bidders should fail with clear error."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        roster = {"models": {}, "anchor": {}}
+        state = RunState.create_fresh("r0", "smoke", [42])
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+        ):
+            ok = run_rung_mod.execute_step_5(state, 42, dry_run=False)
+
+        assert ok is False
+        assert "No bidders" in (state.steps["5"].get("error") or "")

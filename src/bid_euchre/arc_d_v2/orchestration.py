@@ -17,15 +17,17 @@ import subprocess
 import time
 from pathlib import Path
 
+import yaml
+
+from bid_euchre.arc_d_v2.heartbeat import (
+    clear_heartbeat,
+    write_heartbeat,
+)
 from bid_euchre.arc_d_v2.schemas import (
     DAG_DOWNSTREAM,
     MODEL_SCOPED_STEPS,
     STEPS,
     RunState,
-)
-from bid_euchre.arc_d_v2.heartbeat import (
-    clear_heartbeat,
-    write_heartbeat,
 )
 from bid_euchre.core.time import utc_now_iso
 
@@ -235,6 +237,214 @@ def get_trainable_models(roster: dict) -> list[dict]:
             model["name"] = name
             models.append(model)
     return models
+
+
+def get_all_active_models(roster: dict) -> list[dict]:
+    """Get all active (non-excluded) models from roster."""
+    models = []
+    for name, spec in roster.get("models", {}).items():
+        if spec.get("status") == "excluded":
+            continue
+        model = dict(spec)
+        model["name"] = name
+        models.append(model)
+    return models
+
+
+# ---------------------------------------------------------------------------
+# Artifact discovery
+# ---------------------------------------------------------------------------
+
+
+def find_trained_artifact(
+    model_name: str,
+    rung: str,
+    mode: str,
+    seed: int,
+    artifacts_dir: Path | None = None,
+) -> Path | None:
+    """Find the trained artifact JSON for a model.
+
+    Searches in order:
+    1. Aggregated dir: <artifacts_dir>/<model_name>/artifact.json
+    2. Aggregated dir: <artifacts_dir>/training_artifact_<model_name>.json
+    3. Training output: data/runs/av_<model_name>_<rung>_<mode>_<seed>/artifact.json
+    4. Rung run dir: data/runs/arc_d_v2/<rung>/**/artifacts/<model_name>/*.json
+    """
+    root = _repo_root()
+
+    # Pattern 1: subdirectory under artifacts_dir
+    if artifacts_dir is not None:
+        p1 = artifacts_dir / model_name / "artifact.json"
+        if p1.exists():
+            return p1
+
+        # Pattern 2: flat naming under artifacts_dir
+        p2 = artifacts_dir / f"training_artifact_{model_name}.json"
+        if p2.exists():
+            return p2
+
+    # Pattern 3: training output dir (exact match)
+    runs_dir = root / "data" / "runs"
+    p3 = runs_dir / f"av_{model_name}_{rung}_{mode}_{seed}" / "artifact.json"
+    if p3.exists():
+        return p3
+
+    # Pattern 3b: training output dir (glob for timestamp variants)
+    candidates = sorted(
+        runs_dir.glob(f"av_{model_name}_{rung}_{mode}_{seed}*/artifact.json")
+    )
+    if candidates:
+        return candidates[-1]  # Latest
+
+    # Pattern 4: check the rung run dir
+    rung_run = runs_dir / "arc_d_v2" / rung
+    if rung_run.exists():
+        for pattern in [
+            f"**/artifacts/{model_name}/*.json",
+            f"**/{model_name}/artifact.json",
+            f"**/training_artifact_{model_name}.json",
+        ]:
+            hits = sorted(rung_run.glob(pattern))
+            if hits:
+                return hits[-1]
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Roster/config generation for H2H and Comparator
+# ---------------------------------------------------------------------------
+
+
+def generate_h2h_roster(
+    rung: str,
+    mode: str,
+    seed: int,
+    artifacts_dir: Path | None = None,
+) -> list[dict]:
+    """Generate H2H-compatible roster JSON from lineage roster + trained artifacts.
+
+    The H2H script expects a list of dicts:
+    [
+        {"name": "gbt_av", "class_name": "GBTActionValueBidder",
+         "params": {"artifact_path": "data/runs/.../artifact.json"}},
+        {"name": "modeloespecifico", "class_name": "ModeloEspecifico"},
+        ...
+    ]
+    """
+    roster = load_roster(rung)
+    all_models = get_all_active_models(roster)
+    entries: list[dict] = []
+
+    for model in all_models:
+        entry: dict = {"name": model["name"], "class_name": model["class_name"]}
+
+        if model.get("trainable", True):
+            # Find the trained artifact for this model + seed
+            artifact_path = find_trained_artifact(
+                model["name"], rung, mode, seed, artifacts_dir
+            )
+            if artifact_path is not None and artifact_path.exists():
+                entry["params"] = {"artifact_path": str(artifact_path)}
+            else:
+                logger.warning(
+                    "No artifact found for %s seed %d, skipping from H2H roster",
+                    model["name"],
+                    seed,
+                )
+                continue
+        else:
+            # Non-trainable model: use params from roster spec if present
+            params = model.get("params")
+            if params:
+                entry["params"] = dict(params)
+
+        entries.append(entry)
+
+    # Add anchor model if defined
+    anchor = roster.get("anchor", {})
+    anchor_name = anchor.get("name")
+    anchor_class = anchor.get("class_name")
+    anchor_artifact = anchor.get("artifact")
+    if anchor_name and anchor_class:
+        anchor_entry: dict = {"name": anchor_name, "class_name": anchor_class}
+        if anchor_artifact:
+            anchor_path = _repo_root() / anchor_artifact
+            if anchor_path.exists():
+                anchor_entry["params"] = {"artifact_path": str(anchor_path)}
+            else:
+                logger.warning("Anchor artifact not found at %s", anchor_path)
+        entries.append(anchor_entry)
+
+    return entries
+
+
+def generate_comparator_config(
+    rung: str,
+    mode: str,
+    seed: int,
+    n_per: int,
+    artifacts_dir: Path | None = None,
+) -> dict:
+    """Generate comparator YAML config from lineage roster.
+
+    The comparator script expects a YAML with:
+    - experiment_name
+    - bidding_policies (list of {name, class_name, params})
+    - strategies
+    - scenarios
+    - parameters (n_per, log_level, etc.)
+    """
+    roster = load_roster(rung)
+    all_models = get_all_active_models(roster)
+
+    bidding_policies: list[dict] = []
+    for model in all_models:
+        policy: dict = {"name": model["name"], "class_name": model["class_name"]}
+        if model.get("trainable", True):
+            artifact_path = find_trained_artifact(
+                model["name"], rung, mode, seed, artifacts_dir
+            )
+            if artifact_path is not None and artifact_path.exists():
+                policy["params"] = {"artifact_path": str(artifact_path)}
+            else:
+                logger.warning(
+                    "No artifact for %s, skipping from comparator", model["name"]
+                )
+                continue
+        else:
+            params = model.get("params")
+            if params:
+                policy["params"] = dict(params)
+        bidding_policies.append(policy)
+
+    # Add anchor
+    anchor = roster.get("anchor", {})
+    anchor_name = anchor.get("name")
+    anchor_class = anchor.get("class_name")
+    anchor_artifact = anchor.get("artifact")
+    if anchor_name and anchor_class:
+        anchor_policy: dict = {"name": anchor_name, "class_name": anchor_class}
+        if anchor_artifact:
+            anchor_path = _repo_root() / anchor_artifact
+            if anchor_path.exists():
+                anchor_policy["params"] = {"artifact_path": str(anchor_path)}
+        bidding_policies.append(anchor_policy)
+
+    config = {
+        "experiment_name": f"arc_d_v2_{rung}_comparator_seed{seed}",
+        "bidding_policies": bidding_policies,
+        "strategies": [{"name": "glutton", "class_name": "GluttonStrategy"}],
+        "scenarios": [{"contract_type": None}],
+        "parameters": {
+            "seed": seed,
+            "n_per": n_per,
+            "log_level": "hand",
+            "play_strategy": "glutton",
+        },
+    }
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -697,14 +907,20 @@ def execute_step_3b(state: RunState, seed: int, dry_run: bool = False) -> bool:
 
 
 def execute_step_4(state: RunState, seed: int, dry_run: bool = False) -> bool:
-    """Step 4: H2H battery."""
+    """Step 4: H2H battery.
+
+    Generates a roster JSON from the lineage roster + trained artifacts,
+    then passes it to ``run_arc_d_h2h_battery.py --roster``.
+    H2H only supports QUICK/FULL modes; smoke maps to QUICK.
+    """
     rung = state.rung
-    mode = state.mode.upper()
+    # H2H script only accepts QUICK/FULL; map smoke -> QUICK
+    mode_for_h2h = "QUICK" if state.mode == "smoke" else state.mode.upper()
 
     _append_log(rung, {"event": "step_start", "step": "4", "seed": seed})
     state.mark_step_started("4", seed)
 
-    n_per = {"smoke": 100, "quick": 2000, "full": 10000}.get(state.mode, 100)
+    n_per = {"smoke": 50, "quick": 2500, "full": 10000}.get(state.mode, 50)
     output = (
         _repo_root()
         / "data"
@@ -714,19 +930,45 @@ def execute_step_4(state: RunState, seed: int, dry_run: bool = False) -> bool:
         / f"h2h_battery_{state.mode}_{seed}.json"
     )
 
+    # Generate roster from lineage + trained artifacts
+    artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
+    roster_entries = generate_h2h_roster(rung, state.mode, seed, artifacts_dir)
+
+    if not roster_entries:
+        error = "No bidders available for H2H roster (no trained artifacts found)"
+        logger.error("Step 4: %s", error)
+        state.mark_step_failed("4", error, seed=seed)
+        _append_log(
+            rung,
+            {"event": "step_failed", "step": "4", "seed": seed, "error": error},
+        )
+        state.save(_state_path(rung))
+        return False
+
+    # Write roster to log dir
+    roster_path = _step_log_dir(rung) / f"h2h_roster_seed_{seed}.json"
+    roster_path.write_text(json.dumps(roster_entries, indent=2) + "\n")
+    logger.info(
+        "Step 4: Generated H2H roster with %d bidders at %s",
+        len(roster_entries),
+        roster_path,
+    )
+
     cmd = [
         "uv",
         "run",
         "python",
         "scripts/internal/run_arc_d_h2h_battery.py",
         "--mode",
-        mode,
+        mode_for_h2h,
         "--seed",
         str(seed),
         "--n-per",
         str(n_per),
         "--output",
         str(output),
+        "--roster",
+        str(roster_path),
     ]
 
     if dry_run:
@@ -749,25 +991,69 @@ def execute_step_4(state: RunState, seed: int, dry_run: bool = False) -> bool:
 
 
 def execute_step_5(state: RunState, seed: int, dry_run: bool = False) -> bool:
-    """Step 5: Comparator battery + CI extraction."""
+    """Step 5: Comparator battery + CI extraction.
+
+    Generates a YAML config from the lineage roster + trained artifacts,
+    then passes it to ``run_auction_comparator.py --config --single-seat``.
+    After the comparator run, extracts bootstrap CIs.
+    """
     rung = state.rung
-    mode = state.mode.upper()
 
     _append_log(rung, {"event": "step_start", "step": "5", "seed": seed})
     state.mark_step_started("5", seed)
 
     artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     runs_dir = _repo_root() / "data" / "runs"
+
+    n_per = {"smoke": 50, "quick": 2500, "full": 5000}.get(state.mode, 50)
+
+    # Generate comparator config from lineage roster
+    comparator_config = generate_comparator_config(
+        rung, state.mode, seed, n_per, artifacts_dir
+    )
+
+    if not comparator_config.get("bidding_policies"):
+        error = "No bidders available for comparator (no trained artifacts found)"
+        logger.error("Step 5: %s", error)
+        state.mark_step_failed("5", error, seed=seed)
+        _append_log(
+            rung,
+            {"event": "step_failed", "step": "5", "seed": seed, "error": error},
+        )
+        state.save(_state_path(rung))
+        return False
+
+    # Write config to log dir
+    config_path = _step_log_dir(rung) / f"comparator_config_seed_{seed}.yaml"
+    with open(config_path, "w") as f:
+        yaml.dump(comparator_config, f, default_flow_style=False, sort_keys=False)
+    logger.info(
+        "Step 5: Generated comparator config with %d bidders at %s",
+        len(comparator_config["bidding_policies"]),
+        config_path,
+    )
+
+    # Comparator output path
+    battery_filename = f"comparator_battery_{rung}_{seed}.json"
+    battery_output = artifacts_dir / battery_filename
 
     cmd_comparator = [
         "uv",
         "run",
         "python",
         "scripts/internal/run_auction_comparator.py",
-        "--mode",
-        mode,
+        "--config",
+        str(config_path),
         "--seed",
         str(seed),
+        "--single-seat",
+        "--n-per",
+        str(n_per),
+        "--output-format",
+        "json",
+        "--output",
+        str(battery_output),
     ]
 
     if dry_run:
@@ -779,8 +1065,15 @@ def execute_step_5(state: RunState, seed: int, dry_run: bool = False) -> bool:
     ok, error = run_subprocess(cmd_comparator, "5", rung, f"comparator_seed_{seed}")
     if not ok:
         state.mark_step_failed("5", f"Comparator failed: {error}", seed=seed)
+        _append_log(
+            rung,
+            {"event": "step_failed", "step": "5", "seed": seed, "error": error[:200]},
+        )
+        state.save(_state_path(rung))
         return False
 
+    # CI extraction needs --battery-file to locate the comparator output
+    n_bootstrap = {"smoke": 1000, "quick": 5000, "full": 10000}.get(state.mode, 1000)
     cmd_cis = [
         "uv",
         "run",
@@ -793,9 +1086,13 @@ def execute_step_5(state: RunState, seed: int, dry_run: bool = False) -> bool:
         "--seed",
         str(seed),
         "--n-bootstrap",
-        "10000",
+        str(n_bootstrap),
         "--output",
         str(artifacts_dir / f"comparator_cis_{rung}_{seed}.json"),
+        "--battery-file",
+        battery_filename,
+        "--single-seat",
+        "--force",
     ]
 
     ok, error = run_subprocess(cmd_cis, "5", rung, f"cis_seed_{seed}")
