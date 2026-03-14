@@ -32,6 +32,10 @@ Check each item. Use Glob/Grep/Read to verify against actual repo state.
 | P8 | Experiment plans specify sample size and success criteria | Check for N=, threshold, CI requirements | `05_rigor.md` |
 | P9 | Template completeness: Goal, Plan/Steps, Files, Outcome | Check for required section headers | New convention |
 | P10 | Notebook changes note jupytext sync requirement | Check if plan touches `notebooks/` | `45_notebook_boundary.md` |
+| P11 | Research plans state testable hypotheses with expected bounds | Check for measurable success/failure criteria (thresholds, CIs, effect sizes) — not just "improve X" | `PLAN_REVIEW_RUBRIC.md` §1 |
+| P12 | Multi-step plans isolate one variable per step | Check that each step/rung changes one factor (architecture, objective, data, or evaluation) — flag confounded comparisons | `PLAN_REVIEW_RUBRIC.md` §5 |
+| P13 | Report-producing plans specify artifact provenance | Check that claims trace to committed artifacts (JSON/CSV) with run IDs and generating scripts — not just notebook outputs | `PLAN_REVIEW_RUBRIC.md` §3, `45_notebook_boundary.md` |
+| P14 | Multi-mode plans define per-tier evidence contracts | Check that SMOKE/QUICK/FULL tiers each specify what evidence is produced and what decisions each tier supports | `PLAN_REVIEW_RUBRIC.md` §12 |
 
 **Scoring:**
 - **PASS** — check satisfied
@@ -90,5 +94,7 @@ NEEDS ATTENTION = any FLAG or critical WARN found.
 - **Read-only review.** Do not edit the plan file or any other file.
 - **Verify against disk.** Always Glob/Read to check claims — don't trust path references without verification.
 - **New files are exempt from P1.** If the plan says "Create `foo.py`", don't flag it as missing.
-- **SKIP generously.** If a check category doesn't apply (e.g., no experiments → skip P3/P8), mark SKIP and move on.
+- **SKIP generously.** If a check category doesn't apply (e.g., no experiments → skip P3/P8, single-step plan → skip P12), mark SKIP and move on.
+- **P11–P14 are research-plan checks.** SKIP all four for pure code/bugfix/refactor plans. They apply when the plan involves experiments, multi-rung evaluation, or report generation.
 - **Don't expand scope.** Review only what the plan describes. Don't suggest additional features or improvements.
+- **For governing plans**, recommend the full rubric review from `docs/02_agent/PLAN_REVIEW_RUBRIC.md` in addition to this tactical checklist.
