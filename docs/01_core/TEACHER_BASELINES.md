@@ -17,13 +17,13 @@
 ```bash
 make bid-train-teachers
 ```
-*Proof*: `uv run pythonscripts/train_bidder.py --help` shows `--teacher {strict_raiser,heuristics,fiveheadfred}` option
+*Proof*: `uv run python scripts/train_bidder.py --help` shows `--teacher {strict_raiser,heuristics,fiveheadfred}` option
 
 **Run bid_eval_tiny** → evaluates using suite `experiments/suites/bid_eval_tiny.yaml`:
 ```bash
 make bid-eval-tiny
 ```
-*Proof*: `uv run pythonscripts/run_suite.py --help` shows `--suite` option for YAML configs
+*Proof*: `uv run python scripts/run_suite.py --help` shows `--suite` option for YAML configs
 
 **Complete loop** (train + eval):
 ```bash

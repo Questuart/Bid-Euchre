@@ -152,21 +152,21 @@ Train each baseline teacher into a bidding artifact using `scripts/train_bidder.
 
 ```bash
 # Train strict_raiser teacher (default)
-uv run pythonscripts/train_bidder.py \
+uv run python scripts/train_bidder.py \
   --teacher strict_raiser \
   --contract S \
   --output data/artifacts/bidding_strict_raiser_S.json \
   --seed 42
 
 # Train rankthetank teacher
-uv run pythonscripts/train_bidder.py \
+uv run python scripts/train_bidder.py \
   --teacher heuristics \
   --contract S \
   --output data/artifacts/bidding_rankthetank_S.json \
   --seed 42
 
 # Train fiveheadfred teacher
-uv run pythonscripts/train_bidder.py \
+uv run python scripts/train_bidder.py \
   --teacher fiveheadfred \
   --contract S \
   --output data/artifacts/bidding_fiveheadfred_S.json \
@@ -181,7 +181,7 @@ Evaluate trained artifacts using the `bid_eval_tiny` suite:
 
 ```bash
 # Run evaluation on a single artifact
-uv run pythonscripts/run_suite.py \
+uv run python scripts/run_suite.py \
   --suite experiments/suites/bid_eval_tiny.yaml \
   --seed 42 \
   --n-per 20

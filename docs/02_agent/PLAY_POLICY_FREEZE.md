@@ -11,7 +11,7 @@ establishes whether glutton is reliably better than greedy before freezing.
 ### Fresh runs (recommended)
 
 ```bash
-uv run pythonscripts/play_policy_gate.py \
+uv run python scripts/play_policy_gate.py \
   --seeds 42,43,44 \
   --n-per 20000
 ```
@@ -19,7 +19,7 @@ uv run pythonscripts/play_policy_gate.py \
 ### Using existing runs
 
 ```bash
-uv run pythonscripts/play_policy_gate.py \
+uv run python scripts/play_policy_gate.py \
   --skip-run \
   --run-ids 2026-02-04_run1,2026-02-04_run2,2026-02-04_run3
 ```

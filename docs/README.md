@@ -102,30 +102,33 @@ uv run python scripts/generate_report.py --run-dir data/runs/<run_id>
 ```
 bid-euchre/
 ├── src/bid_euchre/           # Core package
-│   ├── core/                  # Game mechanics (cards, rules)
-│   ├── strategy/              # AI strategy implementations
-│   ├── features/              # Hand evaluation features
-│   ├── sim/                   # Simulation engines
-│   └── experiments/           # Configuration system
-├── experiments/               # Research scripts & configs
-├── tests/                     # Comprehensive test suite
+│   ├── core/                  # Game mechanics (cards, rules, trick resolution)
+│   ├── strategy/              # AI strategy implementations (bidding + play)
+│   ├── features/              # Hand evaluation + auction context features
+│   ├── models/                # Model training and inference (OLSa, GBT)
+│   ├── sim/                   # Simulation engines + deal generation
+│   ├── datasets/              # Dataset collectors (bidding, bidless, action-value)
+│   ├── analysis/              # Statistical analysis (bootstrap, paired comparisons)
+│   ├── validation/            # Promotion gates + schema validation
+│   ├── diagnostics/           # Visualization and health checks
+│   ├── reporting/             # Report generation + evaluator
+│   ├── logging/               # JSONL game logging (schema v7)
+│   └── experiments/           # Configuration system (YAML → dataclasses)
+├── experiments/               # Configs, suites, and canonical runner
+├── scripts/                   # Blessed tooling (suite runner, comparator, etc.)
+├── notebooks/                 # Jupytext-paired analysis notebooks
+├── tests/                     # Unit, integration, performance, property tests
 └── data/                      # Fixtures + generated runs (do not commit runs)
 ```
 
-## 🤖 Available Strategies
+## 🤖 Strategy Architecture
 
-- **BasicStrategy**: Simple rule-based strategy
-- **GreedyStrategy**: One-trick lookahead optimization
+Strategies combine a **bidding policy** and a **play policy**:
 
-### Custom Strategies
-```python
-from bid_euchre.strategy import Strategy
+- **Play policies**: `GluttonStrategy` (greedy trick-taking, production default), `GreedyStrategy`, `RandomStrategy`
+- **Bidding policies**: `HybridOLSaBiddingPolicy` (OLS-based, R0 incumbent), `ActionValueBidder` (GBT-based, R1.5.3 PROMOTED), `StrictRaiserBidder`, `FiveHeadFred`, and others
 
-class MyStrategy(Strategy):
-    def choose_card(self, hand, plays_so_far, contract_type, trump_suit, player_index):
-        # Your AI logic here
-        return card_index
-```
+See `src/bid_euchre/strategy/` for all implementations and `experiments/configs/` for YAML-driven configuration.
 
 ## 📊 Experiment Configuration
 
