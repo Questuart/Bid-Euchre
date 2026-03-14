@@ -86,11 +86,11 @@ See `docs/01_core/REPRODUCIBILITY.md` for the full determinism contract includin
 - Fail-fast assertions are preferred over silent bad data
 - Statistical tests must accompany visual inspection (not visual-only)
 
-See `.claude/rules/05_rigor.md` for complete standards.
+See `.claude/rules/deferred/05_rigor.md` for complete standards.
 
 ## References
 
 - `.claude/rules/15_testing_tiers.md` — Two-tier policy (authoritative)
-- `.claude/rules/05_rigor.md` — Statistical rigor standards
+- `.claude/rules/deferred/05_rigor.md` — Statistical rigor standards
 - `docs/01_core/REPRODUCIBILITY.md` — Determinism contract
 - `docs/02_agent/AI_BOUNDARIES.md` — Agent validation requirements

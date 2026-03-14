@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -270,10 +271,16 @@ def _resolve_codex_binary() -> list[str]:
     """Return the command prefix for invoking Codex CLI.
 
     Preference order:
-    1. ``codex`` in PATH (fastest — no npx overhead)
-    2. macOS app bundle binary at known path
-    3. ``npx @openai/codex`` fallback (downloads if needed)
+    1. ``CODEX_REVIEW_CMD`` env var (custom launcher, e.g. Docker wrapper)
+    2. ``codex`` in PATH (fastest — no npx overhead)
+    3. macOS app bundle binary at known path
+    4. ``npx @openai/codex`` fallback (downloads if needed)
     """
+    custom_cmd = os.environ.get("CODEX_REVIEW_CMD", "").strip()
+    if custom_cmd:
+        parts = custom_cmd.split()
+        logger.info("Using custom Codex launcher from CODEX_REVIEW_CMD: %s", parts)
+        return parts
     if shutil.which("codex"):
         return ["codex"]
     if _CODEX_APP_PATH.is_file():

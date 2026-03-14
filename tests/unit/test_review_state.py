@@ -233,6 +233,7 @@ class TestTransitionChains:
         state.transition(ReviewState.PR_OPEN)
         state.transition(ReviewState.WAITING_FOR_CI)
         state.transition(ReviewState.WAITING_FOR_CODEX)
+        state.transition(ReviewState.SCORING_FINDINGS)
         state.transition(ReviewState.READY_TO_MERGE)
         assert state.current_state == ReviewState.READY_TO_MERGE
         assert not state.is_terminal  # Can still transition to MERGED
@@ -245,10 +246,12 @@ class TestTransitionChains:
         state.transition(ReviewState.PR_OPEN)
         state.transition(ReviewState.WAITING_FOR_CI)
         state.transition(ReviewState.WAITING_FOR_CODEX)
+        state.transition(ReviewState.SCORING_FINDINGS)
         state.transition(ReviewState.APPLYING_FIXES)
         state.transition(ReviewState.RETESTING)
         state.transition(ReviewState.WAITING_FOR_CI)
         state.transition(ReviewState.WAITING_FOR_CODEX)
+        state.transition(ReviewState.SCORING_FINDINGS)
         state.transition(ReviewState.READY_TO_MERGE)
         assert state.current_state == ReviewState.READY_TO_MERGE
         state.transition(ReviewState.MERGED)

@@ -27,6 +27,7 @@ class ReviewState(str, enum.Enum):
     PR_OPEN = "pr_open"
     WAITING_FOR_CI = "waiting_for_ci"
     WAITING_FOR_CODEX = "waiting_for_codex"
+    SCORING_FINDINGS = "scoring_findings"
     APPLYING_FIXES = "applying_fixes"
     RETESTING = "retesting"
     READY_TO_MERGE = "ready_to_merge"
@@ -58,9 +59,12 @@ VALID_TRANSITIONS: dict[ReviewState, list[ReviewState]] = {
         ReviewState.STOPPED_CI_FAILURE,
     ],
     ReviewState.WAITING_FOR_CODEX: [
+        ReviewState.SCORING_FINDINGS,
+        ReviewState.STOPPED_REVIEW_FAILURE,
+    ],
+    ReviewState.SCORING_FINDINGS: [
         ReviewState.APPLYING_FIXES,
         ReviewState.READY_TO_MERGE,
-        ReviewState.STOPPED_REVIEW_FAILURE,
     ],
     ReviewState.APPLYING_FIXES: [
         ReviewState.RETESTING,

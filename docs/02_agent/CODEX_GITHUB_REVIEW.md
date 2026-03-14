@@ -27,6 +27,14 @@ The review loop:
 | Usage pool | ChatGPT subscription (no API billing) |
 | Latency | ~60s per invocation |
 | Retry policy | Up to 3 attempts before `stopped_review_failure` |
+| Custom launcher | `CODEX_REVIEW_CMD` env var (optional) |
+
+## PR Comments
+
+The review loop posts structured PR comments on terminal states (not just
+commit statuses). Comments use an HTML marker for idempotent upsert and
+include the stop reason, findings table, and a recovery command. See
+`docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for details.
 
 ## Relationship to Other Gates
 
