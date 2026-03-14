@@ -324,6 +324,72 @@ def _check_block_commands(
             )
 
 
+def check_active_governing_plans(claude_md: Path, repo_root: Path) -> list[str]:
+    """Verify the Active Governing Plans table in CLAUDE.md.
+
+    Checks:
+    1. Every initiative path in the table points to a file that exists on disk.
+    2. No duplicate initiative names (each initiative listed at most once).
+    """
+    errors = []
+    if not claude_md.exists():
+        return [f"CLAUDE.md not found at {claude_md}"]
+
+    text = claude_md.read_text(encoding="utf-8")
+
+    # Find the "Active Governing Plans" section and parse the table
+    section_re = re.compile(r"^## Active Governing Plans\s*\n", re.MULTILINE)
+    match = section_re.search(text)
+    if not match:
+        return ["CLAUDE.md: missing '## Active Governing Plans' section"]
+
+    # Parse table rows after the header: | Initiative | Governing Plan | Status |
+    # Skip the header row and separator row, then extract data rows
+    table_re = re.compile(r"^\| ([^|]+)\| `([^`]+)` \| (\w+) \|$", re.MULTILINE)
+    initiatives_seen: dict[str, int] = {}
+    section_text = text[match.start() :]
+    # Stop at the next H2 or end of file
+    next_h2 = re.search(r"\n## ", section_text[1:])
+    if next_h2:
+        section_text = section_text[: next_h2.start() + 1]
+
+    row_count = 0
+    for row_match in table_re.finditer(section_text):
+        initiative = row_match.group(1).strip()
+        plan_path = row_match.group(2).strip()
+
+        # Skip header/separator rows
+        if initiative.startswith("-") or initiative == "Initiative":
+            continue
+
+        row_count += 1
+        line_offset = (
+            text[: match.start()].count("\n")
+            + section_text[: row_match.start()].count("\n")
+            + 1
+        )
+
+        # Check for duplicate initiative names
+        if initiative in initiatives_seen:
+            errors.append(
+                f"CLAUDE.md:{line_offset}: duplicate initiative "
+                f"'{initiative}' (first at line {initiatives_seen[initiative]})"
+            )
+        else:
+            initiatives_seen[initiative] = line_offset
+
+        # Check that the governing plan file exists
+        if not (repo_root / plan_path).exists():
+            errors.append(
+                f"CLAUDE.md:{line_offset}: governing plan not found: `{plan_path}`"
+            )
+
+    if row_count == 0:
+        errors.append("CLAUDE.md: Active Governing Plans table has no entries")
+
+    return errors
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     docs_dir = repo_root / "docs"
@@ -355,6 +421,11 @@ def main() -> int:
     print("Checking command contracts in docs/...")
     contract_errors = check_command_contracts(docs_dir, repo_root)
     all_errors.extend(contract_errors)
+
+    print("Checking active governing plans...")
+    claude_md = repo_root / "CLAUDE.md"
+    plan_errors = check_active_governing_plans(claude_md, repo_root)
+    all_errors.extend(plan_errors)
 
     if all_errors:
         print(f"\nDocs freshness check FAILED ({len(all_errors)} issues):\n")
