@@ -248,9 +248,9 @@ code change (~10 lines) and preserves exact cross-lineage comparability.
 | Rung | Type | What Changes | Total State Features | Schema | Key Question |
 |------|------|-------------|---------------------|--------|--------------|
 | R0* | Features | Hand-only (39 hand) | 39 | v7 | What does each model extract from hand information alone? |
-| R1 | Features | +6 partner (3 suit-relative, 2 contract-type, 1 pass) | 45 | v8 | Does partner signal help? Which models use it? |
-| R2 | Features | +12 opponent (6 per opponent × 2, left/right split) | 57 | v9 | Does opponent signal help? Which models use it? |
-| R3 | **Action Space** | +Moon & Loner bids (engine expansion) | 57 + action features | v10 | Do models learn when moon/loner is worth the risk? |
+| R1 | Features | +6 partner (3 suit-relative, 2 contract-type, 1 pass) +2 position (LA-1) | 47 | v8 | Does partner signal help? Which models use it? |
+| R2 | Features | +12 opponent (6 per opponent × 2, left/right split) | 59 | v9 | Does opponent signal help? Which models use it? |
+| R3 | **Action Space** | +Moon & Loner bids (engine expansion) | 59 + action features | v10 | Do models learn when moon/loner is worth the risk? |
 | R4+ | Features | Card inference from auction (TBD) | TBD | TBD | Can models infer opponent holdings from bids? |
 
 ### 6.1 R1 Partner Feature Contract (v2 Suit-Relative Channels)
@@ -289,8 +289,16 @@ H ↔ D (red), S ↔ C (black).
 suit-relative channels read 0 since no-trump bids have no suit to map. The
 contract-type channels make no-trump bids visible.
 
-At R1, all models use `--feature-set full` (39 hand + 6 partner = 45 state features
-+ action terms). The constrained arm adds these 6 partner features to its locked set.
+Additionally, R1 adds **2 auction position features** (Amendment LA-1):
+
+| Feature | Type | Definition |
+|---------|------|-----------|
+| `auction_position` | int (0-3) | Position in bidding order: 0=first (left of dealer), 3=last (dealer). Computed as `(seat - dealer_seat - 1) % 4`. |
+| `is_dealer` | int (0\|1) | 1 if observer is the dealer. Critical at R3 for moon/loner takeover privilege. |
+
+At R1, all models use `--feature-set full` (39 hand + 6 partner + 2 position = 47 state
+features + action terms). The constrained arm adds these 6 partner features and 2 position
+features to its locked set.
 
 ### 6.2 R2 Opponent Feature Contract (Suit-Relative, Left/Right Split)
 
@@ -303,7 +311,7 @@ Implemented in `src/bid_euchre/features/auction_context.py` as
 Each opponent gets the same 6-feature template as partner (3 suit-relative +
 2 contract-type + 1 pass), split by position.
 
-**Left opponent** (seat (observer + 1) % 4 — bids *after* you in rotation):
+**Left opponent** (seat (observer + 1) % 4 — geometric left):
 
 | Feature | Type | Channel | Semantics |
 |---------|------|---------|-----------|
@@ -314,7 +322,7 @@ Each opponent gets the same 6-feature template as partner (3 suit-relative +
 | `opp_left_level_low` | int (0–10) | Contract-type | Opponent has ten/low concentration |
 | `opp_left_passed` | int (0\|1) | Auction state | Weakness signal |
 
-**Right opponent** (seat (observer - 1) % 4 — bids *before* you in rotation):
+**Right opponent** (seat (observer - 1) % 4 — geometric right):
 
 | Feature | Type | Channel | Semantics |
 |---------|------|---------|-----------|
@@ -325,12 +333,15 @@ Each opponent gets the same 6-feature template as partner (3 suit-relative +
 | `opp_right_level_low` | int (0–10) | Contract-type | Opponent has ten/low concentration |
 | `opp_right_passed` | int (0\|1) | Auction state | Weakness signal |
 
-**Left vs right distinction:** Left opponent bids *after* you — their signal
-represents future competitive pressure. Right opponent bids *before* you —
-their signal is past information you can react to. If GBT feature importances
-show left ≈ right, a future amendment could pool (reducing 12 → 6 features).
+**Left vs right distinction:** Left opponent is at seat `(observer + 1) % 4` —
+geometric left. Right opponent is at seat `(observer - 1) % 4` — geometric right.
+The auction-order relationship between observer and opponents depends on the dealer
+position: geometric-left usually bids after the observer, but when the observer is
+the dealer, geometric-left bids first. The `auction_position` feature (LA-1) lets
+models learn this interaction. If GBT feature importances show left ≈ right, a
+future amendment could pool (reducing 12 → 6 features).
 
-At R2, all models use `--feature-set full` (39 hand + 6 partner + 12 opponent = 57
+At R2, all models use `--feature-set full` (39 hand + 6 partner + 2 position + 12 opponent = 59
 state features + action terms). The constrained arm adds the 12 opponent features
 to its locked set.
 
@@ -342,10 +353,11 @@ Every auction participant gets the same 6-feature template:
 | Player | Features | Semantics |
 |--------|----------|-----------|
 | Partner (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Support signal |
-| Left opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Competition signal (bids after you) |
-| Right opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Information signal (bids before you) |
+| Left opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Competition signal |
+| Right opponent (1 player) | 3 suit-relative + 2 contract-type + 1 pass = 6 | Information signal |
+| Position (observer) | auction_position + is_dealer = 2 | Auction order context (LA-1) |
 
-Total auction context: 18 features (6 × 3 players). Combined with 39 hand = 57 at R2.
+Total auction context: 20 features (6 × 3 players + 2 position). Combined with 39 hand = 59 at R2.
 
 **Channel decomposition per player:**
 ```
@@ -620,7 +632,7 @@ one requires agent judgment.
 |--------|---------|-------------|-----------------|
 | `00_manifest.md` | What was run | **Fully automated** from `evidence_manifest.json` | No — metadata only |
 | `01_results.md` | What happened | **Mostly automated** from CSVs + charts | Light — check rendering |
-| `02_decision.md` | What it means | **Agent-synthesized** from hypotheses + results | No — `advance_check.json` gates; human review is asynchronous |
+| `02_decision.md` | What it means | **Agent-synthesized** from hypotheses + results | No — `advance_check_<mode>.json` gates; human review is asynchronous |
 
 ### 8.2 `00_manifest.md` — What Was Run
 
@@ -1029,9 +1041,40 @@ uv run python scripts/internal/extract_comparator_cis.py \
   --output data/runs/arc_d_v2/<rung>/comparator/comparator_cis.json
 ```
 
-**Infrastructure note:** The comparator config YAML must list all 6 primary
-roster models as `bidding_policies` entries. A template YAML is created in
-Phase 0 (§23, item 6). The `--olsa-artifact` flag adds the anchor to the roster.
+**Comparator config generation:**
+
+The comparator YAML config is generated from the lineage roster before Step 5 execution:
+
+```bash
+# Generate comparator config from roster (run by orchestrator at Step 5 start)
+uv run python scripts/internal/generate_comparator_config.py \
+  --roster plans/arc_d_v2/roster.json \
+  --anchor-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
+  --output data/runs/arc_d_v2/<rung>/comparator_config.yaml
+```
+
+The generated YAML follows the schema expected by `run_auction_comparator.py --config`:
+
+```yaml
+bidding_policies:
+  - name: gbt_av
+    class: GBTActionValueBidder
+    artifact: data/runs/arc_d_v2/<rung>/artifacts/gbt/artifact.json
+  - name: selected_ols_av
+    class: ActionValueBidder
+    artifact: data/runs/arc_d_v2/<rung>/artifacts/selected_ols/artifact.json
+  # ... one entry per trainable roster model
+mode: single-seat
+n_per: <MODE_DEALS>
+seed: <SEED>
+```
+
+The anchor model is added separately via `--olsa-artifact` on the comparator command line,
+not in the YAML config. This matches the existing `run_auction_comparator.py` interface.
+
+If `generate_comparator_config.py` does not exist yet (Phase 0), the orchestrator
+generates the YAML directly from the roster JSON using a simple template. The
+standalone script is a Phase 0 deliverable.
 
 **Comparator aggregation contract:** Comparator rankings are canonical only
 when emitted at both pooled AND contract-type levels. `generate_rung_tables.py`
@@ -1138,14 +1181,14 @@ Then: agent synthesizes `02_decision.md` from hypotheses + results.
    - QUICK sufficiency conditions (if QUICK mode)
    - Sanity bounds (from `tables/sanity_bounds_check.csv`)
    - Canary checks (domain plausibility, WARNING-level)
-2. Read `advance_check.json` — the orchestrator uses this to decide PROCEED / INVESTIGATE / PAUSE
+2. Read `advance_check_<mode>.json` — the orchestrator uses this to decide PROCEED / INVESTIGATE / PAUSE
 3. Update best-in-lineage if a model surpasses current best
 4. Update `checkpoints.md` with final status
 5. Agent writes `02_decision.md` with: hypothesis outcomes, surprises, key
    findings, model rankings, risks carried forward, retrospective, next rung
    recommendation
 
-**advance_check.json** is the gate. `02_decision.md` is retrospective
+**`advance_check_<mode>.json`** is the gate. `02_decision.md` is retrospective
 documentation.
 
 **Advance rules:**
@@ -1159,24 +1202,46 @@ documentation.
 - `wait_duration` — advances after N hours unless human intervenes
 - `wait_for_signal` — waits for explicit human approval
 
-**Gate:** `advance_check.json` (machine-readable). Human review of
+**Gate:** `advance_check_<mode>.json` (machine-readable). Human review of
 `02_decision.md` is asynchronous and non-blocking.
 
 ### Step 9: Archive & Advance
 
-**Actions:**
-1. Commit all evidence artifacts
-2. Tag the rung: `arc_d_v2_<rung>_complete`
-3. Update MEMORY.md with rung summary
-4. Begin Step 0 for next rung
+**Precondition:** Step 8 `advance_check_<mode>.json` must exist with `advance_decision` field.
+
+**Actions (conditional on Step 8 outcome):**
+
+**If PROCEED:**
+1. Agent writes `02_decision.md` (non-blocking retrospective documentation)
+2. Commit all evidence artifacts
+3. Tag the rung: `arc_d_v2_<rung>_complete`
+4. Update MEMORY.md with rung summary
+5. Begin Step 0 for next rung
+
+**If INVESTIGATE:**
+1. Agent writes `02_decision.md` with investigation notes
+2. Log the surprise in `qa_log.md` as status `open`
+3. Create an exploratory analysis note in `exploratory/`
+4. Do NOT advance to the next rung
+5. Re-evaluate after investigation: update `advance_check_<mode>.json` and re-run Step 8
+
+**If PAUSE:**
+1. Agent writes `02_decision.md` documenting the failure
+2. Mark rung as `PAUSED` in `state.json`
+3. Do NOT advance to the next rung
+4. Human review required to resume
+
+The orchestrator reads `advance_decision` from `advance_check_<mode>.json` and only
+executes the PROCEED path automatically. INVESTIGATE and PAUSE halt the
+autonomous loop.
 
 ### 9.5 QUICK→FULL Transition Protocol
 
 The rung execution cycle is:
 - Step 0 runs once per rung (plan and hypothesize)
 - Steps 1–7 run at QUICK scale (2,500 deals, seed 42)
-- After Step 7: run `generate_advance_check.py` to produce `advance_check.json`
-- Evaluate QUICK sufficiency (all checks in advance_check.json pass)
+- After Step 7: run `generate_advance_check.py` to produce `advance_check_quick.json`
+- Evaluate QUICK sufficiency (all checks in `advance_check_quick.json` pass)
 - If QUICK sufficient: Steps 1–7 re-run at FULL scale (50,000 deals, seeds 42, 123, 456)
 - Steps 8–9 run once on aggregated FULL outputs
 - Agent writes `02_decision.md` after advance decision is made (non-blocking)
@@ -1214,7 +1279,7 @@ Every artifact the pipeline produces exists in two forms:
    - `tables/*.csv` — 11 canonical CSVs
    - `chart_data/*.csv` — chart source data
    - `evidence_manifest.json` — structural provenance
-   - `advance_check.json` — boolean gate conditions
+   - `advance_check_<mode>.json` — boolean gate conditions
    - `hypotheses.json` — machine-readable hypothesis bounds
 
 2. **Human layer** (markdown/PNG) — what the agent synthesizes for human
@@ -1416,7 +1481,7 @@ markdown second.
 | `selection` | string | Feature selection: "all", "forward", "locked", "—" |
 | `dataset_id` | string | Training dataset run ID, or "—" for heuristics |
 | `feature_set` | string | Feature set used (e.g., "r0 (all 39)", "constrained (3/2/2)") |
-| `context_bundle` | string | Context level (e.g., "hand-only (39)", "hand+partner (45)") |
+| `context_bundle` | string | Context level (e.g., "hand-only (39)", "hand+partner+position (47)") |
 | `continuation` | string | Continuation policy artifact name |
 | `seeds` | string | Comma-separated seed list |
 | `status` | string | "canonical", "excluded", "experimental" |
@@ -1476,7 +1541,7 @@ Required at every rung.
 | Check | Expected | Observed | Status |
 |-------|----------|----------|--------|
 | total_rows | >= N * actions_per_deal | ... | PASS/FAIL |
-| feature_count | 39 (R0*) or 45 (R1) or 57 (R2) | ... | PASS/FAIL |
+| feature_count | 39 (R0*) or 47 (R1) or 59 (R2) | ... | PASS/FAIL |
 | nan_features | 0 | ... | PASS/FAIL |
 | suit_fraction | ~0.4 | ... | PASS/FAIL |
 | high_fraction | ~0.3 | ... | PASS/FAIL |
@@ -1719,7 +1784,7 @@ companion to the hypothesis table in plan.md.
 }
 ```
 
-#### advance_check.json
+#### advance_check_\<mode\>.json
 
 Per-rung, per-mode file at `data/runs/arc_d_v2/<rung>/advance_check_<mode>.json`.
 
@@ -1790,33 +1855,75 @@ Per-rung file at `plans/arc_d_v2/<rung>/state.json`. Tracks execution progress.
 {
   "schema_version": "rung_state_v1",
   "rung": "r0",
-  "mode": "quick",
-  "seeds": [42],
-  "current_step": 4,
+  "mode": "full",
+  "seeds": [42, 123, 456],
+  "current_step": "4",
   "step_status": "in_progress",
-  "status_detail": "H2H battery running",
+  "status_detail": "Seed 42 complete, seed 123 step 4 in progress",
   "retries": 0,
   "max_retries": 3,
   "blocker": null,
   "active_investigation": null,
   "supersession": null,
-  "steps": {
-    "1": {"status": "complete", "outputs": ["datasets/action_value.parquet"]},
-    "2": {"status": "complete", "outputs": ["artifacts/gbt/artifact.json", "..."]},
-    "3": {"status": "complete", "outputs": ["tables/model_performance.csv"]},
-    "3b": {"status": "complete", "outputs": ["chart_data/shap_values.csv"]},
-    "4": {"status": "in_progress", "outputs": [], "detail": "running"},
-    "5": {"status": "pending"},
+  "per_seed": {
+    "42": {
+      "1": {"status": "complete", "outputs": ["seed_42/datasets/action_value.parquet"]},
+      "2": {
+        "status": "complete",
+        "models": {
+          "gbt_av": {"status": "complete", "output": "seed_42/artifacts/gbt/artifact.json"},
+          "selected_ols_av": {"status": "complete", "output": "seed_42/artifacts/selected_ols/artifact.json"},
+          "full_ols_av": {"status": "complete", "output": "seed_42/artifacts/full_ols/artifact.json"},
+          "constrained_ols_av": {"status": "complete", "output": "seed_42/artifacts/constrained_ols/artifact.json"},
+          "selected_two_stage_av": {"status": "complete", "output": "seed_42/artifacts/selected_two_stage/artifact.json"}
+        }
+      },
+      "3": {"status": "complete"},
+      "3b": {"status": "complete"},
+      "4": {"status": "complete"},
+      "5": {"status": "complete"}
+    },
+    "123": {
+      "1": {"status": "complete"},
+      "2": {"status": "partial", "models": {"gbt_av": {"status": "complete"}, "selected_ols_av": {"status": "in_progress"}}},
+      "3": {"status": "pending"},
+      "3b": {"status": "pending"},
+      "4": {"status": "pending"},
+      "5": {"status": "pending"}
+    },
+    "456": {
+      "1": {"status": "pending"},
+      "2": {"status": "pending"},
+      "3": {"status": "pending"},
+      "3b": {"status": "pending"},
+      "4": {"status": "pending"},
+      "5": {"status": "pending"}
+    }
+  },
+  "aggregation": {
     "6": {"status": "pending"},
     "7": {"status": "pending"},
-    "8": {"status": "pending"}
+    "8": {"status": "pending"},
+    "9": {"status": "pending"}
   },
+  "fingerprints": {},
   "last_updated": "ISO8601"
 }
 ```
 
-Step statuses: `pending`, `in_progress`, `complete`, `partial` (some outputs
-exist), `failed_retryable`, `failed_blocking`, `skipped`.
+**State structure for multi-seed FULL mode:**
+- `per_seed`: Steps 1-5 are tracked independently per seed. Each seed has its own
+  step status map. Step 2 additionally tracks per-model status within each seed.
+- `aggregation`: Steps 6-9 run once on aggregated data (not per-seed). They are
+  tracked at the top level.
+- `fingerprints`: Per-step provenance hashes for idempotency checks (roster hash,
+  seed, mode, script mtime). Used to detect stale outputs on resume.
+
+**For QUICK mode (single seed):** `per_seed` has one entry (seed 42). The structure
+is identical but with only one seed key.
+
+**Step statuses:** `pending`, `in_progress`, `complete`, `partial` (some sub-items
+complete), `failed_retryable`, `failed_blocking`, `skipped`.
 
 ## 15. Canonical Metrics Contract
 
@@ -2165,11 +2272,13 @@ Which script produces which artifact:
 | `generate_rung_report.py` | `tables/*.csv`, `charts/*.png` | `01_results.md` | — |
 | `generate_evidence_manifest.py` | All of the above | `evidence_manifest.json`, `00_manifest.md` | — |
 | `run_rung.py` | Rung ID, mode, seeds, state.json | state.json updates, orchestrates all steps | — |
-| `generate_advance_check.py` | hypotheses.json, tables/*.csv | advance_check.json | Step 8 |
+| `generate_advance_check.py` | hypotheses.json, tables/*.csv | `advance_check_<mode>.json` | Step 8 |
+| `generate_comparator_config.py` | roster.json, anchor artifact path | `comparator_config.yaml` | Step 5 |
 
 **Note:** `generate_rung_tables.py`, `generate_interpretability.py`,
-`generate_rung_report.py`, and `generate_evidence_manifest.py` do not currently
-exist and must be created as part of the infrastructure work (§23 Phase 0).
+`generate_rung_report.py`, `generate_evidence_manifest.py`, and
+`generate_comparator_config.py` do not currently exist and must be created
+as part of the infrastructure work (§23 Phase 0).
 
 ## 20. Lineage Amendment Process
 
@@ -2216,7 +2325,7 @@ plans/
   r2_follow_ups.md                       # v1 lineage — STALE
   archive/                               # 66 files (pre-R1.5 era, already archived)
   sessions/                              # 25 files (R1.5-era session plans)
-    2026-03-13_canonical-lineage-rebuild-proposal.md   # v1 of this plan — SUPERSEDED
+    2026-03-13_canonical-lineage-rebuild-proposal.md   # v1 of this plan — SUPERSEDED (untracked; archive on merge)
     2026-03-13_r1-6-partner-semantics.md               # v1 lineage — STALE
     ...
     TEMPLATE.md
@@ -2256,7 +2365,7 @@ plans/
       2026-03-06_*.md
       2026-03-08_*.md
       ...
-      2026-03-13_canonical-lineage-rebuild-proposal.md
+      2026-03-13_canonical-lineage-rebuild-proposal.md  # Move from sessions/ on merge
       2026-03-13_r1-6-partner-semantics.md
     pre_v1/                              # Existing archive/ contents, reorganized
       BIDDING_DEVELOPMENT_PLAN.md
@@ -2285,6 +2394,12 @@ plans/
 6. **Templates live in `plans/_templates/`.** These are repo-wide templates
    for governing plans, sub-plans, registries, and checkpoints. They are not
    specific to any initiative.
+7. **v1 proposal (`2026-03-13_canonical-lineage-rebuild-proposal.md`)** is
+   currently untracked on main. On merge, move it to
+   `plans/archive/v1_sessions/` and replace with a redirect stub in
+   `plans/sessions/` pointing to the archive location. The v2 plan
+   (`2026-03-13_canonical-lineage-rebuild-v2.md`) already has a redirect
+   stub pointing to `plans/arc_d_v2/lineage_plan.md`.
 
 ### 21.4 Impact on CLAUDE.md and Memory
 
@@ -2590,15 +2705,17 @@ If a rung must be rerun (e.g., data issue discovered, script bug):
    in `auction_context.py` — 6 features as defined in §6.1:
    `partner_level_same_suit`, `partner_level_same_color`, `partner_level_off_color`,
    `partner_level_high`, `partner_level_low`, `partner_passed`
-2. Update `--feature-set full` for R1: `r0` → `full` (39 hand + 6 partner = 45 features)
-3. Regenerate training data with v8 schema (partner features in dataset)
-4. Extend constrained-arm locked feature mapping: add 6 partner features
-5. Add unit tests for partner feature extraction + schema-count validation
-6. Continuation artifact remains fixed: frozen anchor `hybrid_r0_full.json` (§4.1)
-7. Run SMOKE before QUICK
-8. Execute runbook at QUICK, then FULL
-9. Update `cross_rung_deltas.csv` and cross-rung progression charts
-10. Compare all models' response to partner information — this is the clean
+2. Implement auction position extraction (`auction_position`, `is_dealer`) in
+   `auction_context.py` (Amendment LA-1)
+3. Update `--feature-set full` for R1: `r0` → `full` (39 hand + 6 partner + 2 position = 47 features)
+4. Regenerate training data with v8 schema (partner + position features in dataset)
+5. Extend constrained-arm locked feature mapping: add 6 partner features + 2 position features
+6. Add unit tests for partner + position feature extraction + schema-count validation
+7. Continuation artifact remains fixed: frozen anchor `hybrid_r0_full.json` (§4.1)
+8. Run SMOKE before QUICK
+9. Execute runbook at QUICK, then FULL
+10. Update `cross_rung_deltas.csv` and cross-rung progression charts
+11. Compare all models' response to partner information — this is the clean
     ablation (same continuation policy, same objective, only context changes)
 
 ### Phase 3: R2 Execution (Opponent Context)
@@ -2610,14 +2727,14 @@ If a rung must be rerun (e.g., data issue discovered, script bug):
 3. Each opponent gets the same 6-feature template as partner:
    `opp_{left|right}_level_{same_suit|same_color|off_color|high|low}`,
    `opp_{left|right}_passed`
-4. Update `--feature-set full` for R2: 45 → 57 features (v9 schema)
+4. Update `--feature-set full` for R2: 47 → 59 features (v9 schema)
 5. Add `"r2"` feature set to `train_action_value.py` `FEATURE_SETS` if needed,
    or verify `full` auto-discovers the 12 new features
 6. Extend constrained-arm locked feature mapping: add all 12 opponent
    features to the locked set (6 per opponent position)
 7. Add unit tests:
    - `extract_opponent_features()` with known auction transcripts
-   - Feature count assertion: 39 hand + 6 partner + 12 opponent = 57
+   - Feature count assertion: 39 hand + 6 partner + 2 position + 12 opponent = 59
    - Left/right assignment correctness for all 4 seat positions
    - Edge case: opponent passed (all level channels = 0, passed = 1)
    - Edge case: opponent bid multiple times (use highest level per channel)
