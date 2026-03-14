@@ -601,7 +601,22 @@ def execute_step_0(state: RunState, dry_run: bool = False) -> bool:
             # Not a hard failure: LA-2 allows the pipeline to proceed
             # without the anchor in the comparator.
         else:
-            logger.warning("Anchor artifact not found at %s", anchor_path)
+            # The anchor artifact doubles as the continuation policy for
+            # dataset generation (Step 1) and training (Step 2).  If the
+            # roster contains trainable models, downstream steps will fail
+            # without it, so treat a missing anchor as a blocking error.
+            if roster.trainable_models():
+                missing.append(
+                    f"anchor artifact ({anchor_path}) — required for "
+                    "continuation training. Provision from a completed R0 "
+                    "run or frozen artifact store."
+                )
+                logger.error(
+                    "Anchor artifact required for continuation training: %s",
+                    anchor_path,
+                )
+            else:
+                logger.warning("Anchor artifact not found at %s", anchor_path)
 
     if missing:
         error = f"Missing: {', '.join(missing)}"

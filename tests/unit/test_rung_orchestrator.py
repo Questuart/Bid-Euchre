@@ -764,6 +764,142 @@ class TestDryRun:
 
 
 # ============================================================================
+# Anchor Preflight Tests
+# ============================================================================
+
+
+class TestAnchorPreflight:
+    """Step 0 must block when anchor artifact is missing and roster has trainable models."""
+
+    def _setup_plan_files(self, plan_dir: Path) -> None:
+        """Create the minimal plan files required by Step 0."""
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / "plan.md").write_text("# Test plan")
+        (plan_dir / "hypotheses.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "hypotheses_v1",
+                    "rung": "r0",
+                    "hypotheses": [],
+                }
+            )
+        )
+
+    def _write_roster(
+        self, tmp_path: Path, *, trainable: bool, anchor_artifact: str
+    ) -> None:
+        """Write a roster.json with optional trainable model and anchor."""
+        models = []
+        if trainable:
+            models.append(
+                {
+                    "name": "test_model",
+                    "class": "ActionValueBidder",
+                    "trainable": True,
+                    "model_class": "ols",
+                    "feature_set": "r0",
+                }
+            )
+        roster_dir = tmp_path / "plans" / "arc_d_v2"
+        roster_dir.mkdir(parents=True, exist_ok=True)
+        (roster_dir / "roster.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "roster_v1",
+                    "lineage_id": "arc_d_v2",
+                    "models": models,
+                    "anchor": {
+                        "name": "anchor_hybrid_r0_full",
+                        "artifact": anchor_artifact,
+                        "class": "HybridOLSaBidder",
+                    },
+                }
+            )
+        )
+
+    def test_step0_fails_when_anchor_missing_and_trainable(self, tmp_path):
+        """Step 0 should fail when anchor artifact is configured, file is
+        missing, and roster has trainable models."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        self._setup_plan_files(plan_dir)
+        self._write_roster(
+            tmp_path,
+            trainable=True,
+            anchor_artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        )
+        # Do NOT create the anchor file — it should be missing
+
+        with (
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod, "_state_path", return_value=plan_dir / "state.json"
+            ),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            state = RunState.create_fresh("r0", "smoke", [42])
+            ok = run_rung_mod.execute_step_0(state, dry_run=True)
+            assert ok is False
+            assert state.steps["0"]["status"] == "failed"
+            # Verify the error message mentions the anchor
+            assert "anchor" in state.steps["0"].get("error", "").lower()
+
+    def test_step0_passes_when_anchor_exists(self, tmp_path):
+        """Step 0 should pass when the anchor artifact file exists."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        self._setup_plan_files(plan_dir)
+        self._write_roster(
+            tmp_path,
+            trainable=True,
+            anchor_artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        )
+        # Create the anchor file so it exists
+        anchor_path = (
+            tmp_path / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
+        )
+        anchor_path.parent.mkdir(parents=True)
+        anchor_path.write_text("{}")
+
+        with (
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod, "_state_path", return_value=plan_dir / "state.json"
+            ),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            # Mock the anchor compatibility check to avoid loading a real model
+            patch.object(run_rung_mod, "check_anchor_compatibility", return_value=True),
+        ):
+            state = RunState.create_fresh("r0", "smoke", [42])
+            ok = run_rung_mod.execute_step_0(state, dry_run=True)
+            assert ok is True
+            assert state.steps["0"]["status"] == "complete"
+
+    def test_step0_warns_when_anchor_missing_no_trainable(self, tmp_path):
+        """Step 0 should only warn (not fail) when anchor is missing but no
+        trainable models need it for continuation."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        self._setup_plan_files(plan_dir)
+        self._write_roster(
+            tmp_path,
+            trainable=False,
+            anchor_artifact="data/artifacts/arc_d/r0/hybrid_r0_full.json",
+        )
+        # Do NOT create the anchor file
+
+        with (
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod, "_state_path", return_value=plan_dir / "state.json"
+            ),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+        ):
+            state = RunState.create_fresh("r0", "smoke", [42])
+            ok = run_rung_mod.execute_step_0(state, dry_run=True)
+            # Should pass — only a warning, not a blocking error
+            assert ok is True
+            assert state.steps["0"]["status"] == "complete"
+
+
+# ============================================================================
 # Status Print Test
 # ============================================================================
 
