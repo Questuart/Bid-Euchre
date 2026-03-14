@@ -36,6 +36,7 @@ Check each item. Use Glob/Grep/Read to verify against actual repo state.
 | P12 | Multi-step plans isolate one variable per step | Check that each step/rung changes one factor (architecture, objective, data, or evaluation) — flag confounded comparisons | `PLAN_REVIEW_RUBRIC.md` §5 |
 | P13 | Report-producing plans specify artifact provenance | Check that claims trace to committed artifacts (JSON/CSV) with run IDs and generating scripts — not just notebook outputs | `PLAN_REVIEW_RUBRIC.md` §3, `45_notebook_boundary.md` |
 | P14 | Multi-mode plans define per-tier evidence contracts | Check that SMOKE/QUICK/FULL tiers each specify what evidence is produced and what decisions each tier supports | `PLAN_REVIEW_RUBRIC.md` §12 |
+| P15 | Multi-step plans annotate step dependencies | Check that plans with 4+ artifact-producing steps declare what each step requires and produces — flag steps that consume another step's output without noting the dependency | `PLAN_REVIEW_RUBRIC.md` §2 |
 
 **Scoring:**
 - **PASS** — check satisfied
@@ -96,5 +97,6 @@ NEEDS ATTENTION = any FLAG or critical WARN found.
 - **New files are exempt from P1.** If the plan says "Create `foo.py`", don't flag it as missing.
 - **SKIP generously.** If a check category doesn't apply (e.g., no experiments → skip P3/P8, single-step plan → skip P12), mark SKIP and move on.
 - **P11–P14 are research-plan checks.** SKIP all four for pure code/bugfix/refactor plans. They apply when the plan involves experiments, multi-rung evaluation, or report generation.
+- **P15 applies to any plan with 4+ artifact-producing steps.** SKIP for plans with fewer steps or where all steps are legitimately linear (each step's input is the prior step's output). The check targets plans that serialize independent work without noting it — not plans that are inherently sequential.
 - **Don't expand scope.** Review only what the plan describes. Don't suggest additional features or improvements.
 - **For governing plans**, recommend the full rubric review from `docs/02_agent/PLAN_REVIEW_RUBRIC.md` in addition to this tactical checklist.

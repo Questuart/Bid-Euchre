@@ -79,6 +79,7 @@ Suggested thresholds:
 - Are commands, inputs, outputs, schemas, directories, and artifact contracts concrete?
 - Are sample sizes, seeds, validation checks, and rerun rules explicit?
 - Is there a clear fallback or blocking rule when required infrastructure is not yet implemented?
+- For plans with multiple artifact-producing steps: are dependencies between steps annotated (what each step requires and produces), so an agent can identify independent work and avoid unnecessary serialization?
 
 ### 3. Reporting traceability — 10%
 - Can every major claim trace to a table/chart ID?
