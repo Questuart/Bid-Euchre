@@ -23,6 +23,10 @@ This doc is the **operational guide**. Before working in this repo, also review:
 - `AI_BOUNDARIES.md` - What AI agents can/cannot do
 - `REVIEW_CHECKLIST.md` - Pre-PR checklist and quality standards
 
+**Cross-cutting references (docs/):**
+- `TESTING_STRATEGY.md` - Test layers, commands, and two-tier policy
+- `STYLEGUIDE.md` - Coding conventions, placement rules, and hard constraints
+
 **Implementation tracking:**
 - `docs/03_TODO/CODEBASE_CONSISTENCY.md` - Known gaps between docs and code
 
