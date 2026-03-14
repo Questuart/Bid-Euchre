@@ -301,6 +301,19 @@ def two_gbt_artifacts(tmp_path: Path, synthetic_eval_df: pd.DataFrame) -> list[d
     return results
 
 
+# ── Availability checks ─────────────────────────────────────
+
+
+def _shap_available() -> bool:
+    """Check if the shap package is importable."""
+    try:
+        import shap  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 # ── Import helper ───────────────────────────────────────────
 
 # The scripts live outside src/ so we import via path manipulation in tests.
@@ -335,9 +348,75 @@ def _import_generate_interpretability_charts():
     return mod
 
 
+# ── SHAP shape normalization tests ──────────────────────────
+
+
+class TestNormalizeShapValues:
+    """Tests for normalize_shap_values shape handling."""
+
+    def test_2d_passthrough(self):
+        """2D array passes through unchanged."""
+        mod = _import_generate_interpretability()
+        arr = np.random.RandomState(42).rand(10, 5)
+        result = mod.normalize_shap_values(arr)
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, arr)
+
+    def test_list_of_2d_takes_last(self):
+        """List of 2D arrays (binary classification) takes the last element."""
+        mod = _import_generate_interpretability()
+        rng = np.random.RandomState(42)
+        class0 = rng.rand(10, 5)
+        class1 = rng.rand(10, 5)
+        result = mod.normalize_shap_values([class0, class1])
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, class1)
+
+    def test_1d_reshaped(self):
+        """1D array (single feature) is reshaped to (n, 1)."""
+        mod = _import_generate_interpretability()
+        arr = np.random.RandomState(42).rand(10)
+        result = mod.normalize_shap_values(arr)
+        assert result.shape == (10, 1)
+        np.testing.assert_array_equal(result[:, 0], arr)
+
+    def test_3d_takes_first_output(self):
+        """3D array (multi-output) takes first output slice."""
+        mod = _import_generate_interpretability()
+        arr = np.random.RandomState(42).rand(10, 5, 3)
+        result = mod.normalize_shap_values(arr)
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, arr[:, :, 0])
+
+    def test_list_of_single_array(self):
+        """List with one element (single-class edge case)."""
+        mod = _import_generate_interpretability()
+        arr = np.random.RandomState(42).rand(10, 5)
+        result = mod.normalize_shap_values([arr])
+        assert result.shape == (10, 5)
+        np.testing.assert_array_equal(result, arr)
+
+    def test_invalid_ndim_raises(self):
+        """0D or 4D+ arrays raise ValueError."""
+        mod = _import_generate_interpretability()
+        with pytest.raises(ValueError, match="Cannot normalize"):
+            mod.normalize_shap_values(np.array(1.0))
+
+    def test_4d_raises(self):
+        """4D array raises ValueError."""
+        mod = _import_generate_interpretability()
+        arr = np.random.RandomState(42).rand(2, 3, 4, 5)
+        with pytest.raises(ValueError, match="Cannot normalize"):
+            mod.normalize_shap_values(arr)
+
+
 # ── SHAP analysis tests ────────────────────────────────────
 
 
+@pytest.mark.skipif(
+    not _shap_available(),
+    reason="shap not installed",
+)
 class TestShapAnalysis:
     """Tests for SHAP-based feature analysis."""
 
@@ -750,6 +829,7 @@ class TestArtifactDiscovery:
 class TestEndToEnd:
     """Integration-style tests for the full pipeline."""
 
+    @pytest.mark.skipif(not _shap_available(), reason="shap not installed")
     def test_run_produces_csvs(
         self,
         tmp_path: Path,
@@ -875,3 +955,61 @@ class TestChartGeneration:
 
         assert "shap_summary.png" in generated
         assert (output_dir / "shap_summary.png").exists()
+
+    def test_shap_interactions_chart(self, tmp_path: Path):
+        """SHAP interactions heatmap chart generates without error."""
+        mod = _import_generate_interpretability_charts()
+
+        interactions_df = pd.DataFrame(
+            [
+                {
+                    "model": "m1",
+                    "contract": "suit",
+                    "feature_1": "trump_count",
+                    "feature_2": "bower_count",
+                    "interaction_strength": 0.15,
+                },
+                {
+                    "model": "m1",
+                    "contract": "suit",
+                    "feature_1": "trump_count",
+                    "feature_2": "ace_count",
+                    "interaction_strength": 0.08,
+                },
+                {
+                    "model": "m1",
+                    "contract": "suit",
+                    "feature_1": "bower_count",
+                    "feature_2": "ace_count",
+                    "interaction_strength": 0.05,
+                },
+            ]
+        )
+        mod.generate_shap_interactions_chart(interactions_df, tmp_path)
+        assert (tmp_path / "shap_interactions.png").exists()
+
+    def test_run_charts_includes_interactions(self, tmp_path: Path):
+        """Full chart run picks up shap_interactions.csv and generates PNG."""
+        mod = _import_generate_interpretability_charts()
+
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        interactions_df = pd.DataFrame(
+            [
+                {
+                    "model": "m1",
+                    "contract": "suit",
+                    "feature_1": "f1",
+                    "feature_2": "f2",
+                    "interaction_strength": 0.1,
+                },
+            ]
+        )
+        interactions_df.to_csv(chart_data_dir / "shap_interactions.csv", index=False)
+
+        output_dir = tmp_path / "charts"
+        generated = mod.run(chart_data_dir, output_dir)
+
+        assert "shap_interactions.png" in generated
+        assert (output_dir / "shap_interactions.png").exists()

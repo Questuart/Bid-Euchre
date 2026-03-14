@@ -127,6 +127,50 @@ def _get_feature_names(artifact: dict, family: str) -> list[str]:
     return []
 
 
+# ── SHAP shape normalization ───────────────────────────────
+
+
+def normalize_shap_values(shap_values: Any) -> np.ndarray:
+    """Normalize SHAP values to 2D array (n_samples, n_features).
+
+    ``shap.TreeExplainer.shap_values()`` returns variable shapes depending
+    on model type and sklearn version:
+
+    - **Regression:** 2D ``(n_samples, n_features)`` — the common case.
+    - **Binary classification:** list of two 2D arrays ``[class0, class1]``;
+      we take the positive-class (last) array.
+    - **Multi-output:** 3D ``(n_samples, n_features, n_outputs)``; we take
+      the first output slice.
+    - **Single feature edge case:** 1D ``(n_samples,)``; reshaped to
+      ``(n_samples, 1)``.
+
+    Returns:
+        2D numpy array of shape ``(n_samples, n_features)``.
+
+    Raises:
+        ValueError: If the shape cannot be normalized (e.g. 0-d or >3-d).
+    """
+    # Handle list-of-arrays (binary/multi-class classification)
+    if isinstance(shap_values, list):
+        shap_values = np.array(shap_values[-1])
+
+    shap_values = np.asarray(shap_values)
+
+    if shap_values.ndim == 2:
+        return shap_values
+    elif shap_values.ndim == 1:
+        # Single feature edge case
+        return shap_values.reshape(-1, 1)
+    elif shap_values.ndim == 3:
+        # Multi-output: take first output
+        return shap_values[:, :, 0]
+    else:
+        raise ValueError(
+            f"Cannot normalize SHAP values with {shap_values.ndim} dimensions "
+            f"(shape={shap_values.shape}); expected 1-3 dimensions"
+        )
+
+
 # ── SHAP analysis ───────────────────────────────────────────
 
 
@@ -202,7 +246,8 @@ def generate_shap_analysis(
         # TreeExplainer
         try:
             explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X)
+            raw_shap = explainer.shap_values(X)
+            shap_values = normalize_shap_values(raw_shap)
         except Exception as e:
             logger.warning("SHAP failed for %s/%s: %s", model_name, family, e)
             continue
@@ -246,6 +291,10 @@ def generate_shap_analysis(
             interaction_values = explainer.shap_interaction_values(
                 X[: min(500, len(X))]
             )
+            # Normalize list output (classification models)
+            if isinstance(interaction_values, list):
+                interaction_values = np.array(interaction_values[-1])
+            interaction_values = np.asarray(interaction_values)
             n_features = interaction_values.shape[2]
             # Sum absolute interaction strengths across samples
             mean_interactions = np.abs(interaction_values).mean(axis=0)

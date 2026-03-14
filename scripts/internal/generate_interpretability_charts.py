@@ -11,6 +11,7 @@ CLI:
 Charts produced:
   - shap_summary.png          — horizontal bar of mean |SHAP| per feature, faceted by contract
   - shap_dependence_top5.png  — scatter plots of top-5 features vs SHAP values
+  - shap_interactions.png     — heatmap of pairwise SHAP interaction strengths
   - selection_path.png        — line chart of R² vs features added
   - decision_agreement.png    — bar chart of pairwise agreement rates
   - disagreement_outcomes.png — bar chart of who wins in disagreements
@@ -115,6 +116,78 @@ def generate_shap_dependence(dependence_df: pd.DataFrame, output_dir: Path) -> N
     # Combine into single output
     if contracts:
         _save_chart(fig, output_dir, "shap_dependence_top5.png")
+
+
+def generate_shap_interactions_chart(
+    interactions_df: pd.DataFrame, output_dir: Path
+) -> None:
+    """Heatmap of pairwise SHAP interaction strengths, faceted by contract.
+
+    Each cell shows the mean absolute interaction strength between two features.
+    Only the top feature pairs (those present in the CSV) are shown.
+    """
+    contracts = sorted(interactions_df["contract"].unique())
+    n_contracts = len(contracts)
+    if n_contracts == 0:
+        return
+
+    fig, axes = plt.subplots(
+        1,
+        n_contracts,
+        figsize=(6 * n_contracts, 5),
+        squeeze=False,
+    )
+
+    for col_idx, contract in enumerate(contracts):
+        ax = axes[0, col_idx]
+        cdf = interactions_df[interactions_df["contract"] == contract]
+        if cdf.empty:
+            ax.set_title(f"{contract} (no data)")
+            ax.axis("off")
+            continue
+
+        # Collect all unique features mentioned in pairs
+        all_features = sorted(
+            set(cdf["feature_1"].tolist() + cdf["feature_2"].tolist())
+        )
+        n_feat = len(all_features)
+        feat_to_idx = {f: i for i, f in enumerate(all_features)}
+
+        # Build symmetric matrix
+        matrix = np.zeros((n_feat, n_feat))
+        for _, row in cdf.iterrows():
+            i = feat_to_idx[row["feature_1"]]
+            j = feat_to_idx[row["feature_2"]]
+            matrix[i, j] = row["interaction_strength"]
+            matrix[j, i] = row["interaction_strength"]
+
+        im = ax.imshow(matrix, cmap="YlOrRd", aspect="auto")
+        ax.set_xticks(range(n_feat))
+        ax.set_yticks(range(n_feat))
+        ax.set_xticklabels(all_features, rotation=45, ha="right", fontsize=7)
+        ax.set_yticklabels(all_features, fontsize=7)
+        ax.set_title(f"{contract}")
+
+        # Annotate cells with values
+        for i in range(n_feat):
+            for j in range(n_feat):
+                val = matrix[i, j]
+                if val > 0:
+                    ax.text(
+                        j,
+                        i,
+                        f"{val:.3f}",
+                        ha="center",
+                        va="center",
+                        fontsize=6,
+                        color="black" if val < matrix.max() * 0.7 else "white",
+                    )
+
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    fig.suptitle("SHAP Feature Interaction Strengths", fontsize=14, y=1.02)
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "shap_interactions.png")
 
 
 def generate_selection_path_chart(selection_df: pd.DataFrame, output_dir: Path) -> None:
@@ -281,6 +354,12 @@ def run(chart_data_dir: Path, output_dir: Path) -> list[str]:
     if dep_df is not None:
         generate_shap_dependence(dep_df, output_dir)
         generated.append("shap_dependence_top5.png")
+
+    # SHAP interactions
+    interactions_df = _read_csv_safe(chart_data_dir / "shap_interactions.csv")
+    if interactions_df is not None:
+        generate_shap_interactions_chart(interactions_df, output_dir)
+        generated.append("shap_interactions.png")
 
     # Selection paths
     sel_df = _read_csv_safe(chart_data_dir / "selection_paths.csv")
