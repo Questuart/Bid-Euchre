@@ -169,11 +169,20 @@ def _create_follow_up_issues(
 def classify_review_mode(changed_files: list[str]) -> ReviewMode:
     """Determine review mode from the set of changed files.
 
-    Most restrictive mode wins if mixed file types.
+    Code files always trigger STANDARD mode. Plan/report-only PRs
+    get specialized audit modes.
     """
+    has_code = any(
+        f.endswith(".py")
+        and (f.startswith("src/") or f.startswith("scripts/") or f.startswith("tests/"))
+        for f in changed_files
+    )
     has_reports = any(f.startswith("docs/04_reports/") for f in changed_files)
     has_plans = any(f.startswith("plans/") for f in changed_files)
 
+    # Code files always get standard review (most comprehensive)
+    if has_code:
+        return ReviewMode.STANDARD
     if has_reports:
         return ReviewMode.REPORT_AUDIT
     if has_plans:
@@ -918,6 +927,12 @@ def _step_scoring_findings(
     # Save scoring report for audit trail
     save_scoring_report(scored, rdir / "confidence_scoring.json")
 
+    # Save filtered findings for downstream fix stage (ensures
+    # _step_applying_fixes uses scored findings, not raw Codex output)
+    filtered_path = rdir / "codex_review_filtered.json"
+    with open(filtered_path, "w") as f:
+        json.dump({"findings": filtered_findings}, f, indent=2)
+
     filtered_count = sum(1 for s in scored if s.filtered)
     if filtered_count > 0:
         logger.info(
@@ -1026,17 +1041,25 @@ def _step_applying_fixes(
 
     iteration = loop_state.iteration_count + 1
 
-    # Load findings from this round's Codex review
+    # Prefer scored/filtered findings over raw Codex output.
+    # _step_scoring_findings saves codex_review_filtered.json after
+    # confidence scoring; fall back to raw codex_review.json for
+    # backward compatibility with rounds that pre-date scoring.
     rdir = round_dir(loop_state.pr_number, iteration, base_dir)
+    filtered_path = rdir / "codex_review_filtered.json"
     codex_path = rdir / "codex_review.json"
 
-    if codex_path.exists():
+    if filtered_path.exists():
+        with open(filtered_path) as f:
+            review_data = json.load(f)
+        findings = review_data.get("findings", [])
+    elif codex_path.exists():
         with open(codex_path) as f:
             review_data = json.load(f)
         findings = review_data.get("findings", [])
     else:
         logger.warning(
-            "PR #%d: no codex_review.json found for round %d",
+            "PR #%d: no findings file found for round %d",
             loop_state.pr_number,
             iteration,
         )
