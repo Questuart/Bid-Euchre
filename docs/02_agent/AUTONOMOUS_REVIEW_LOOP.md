@@ -83,10 +83,23 @@ as its first step before invoking Codex CLI. Checks include:
 - N3: Inference claim without statistical test (P2, notebooks only)
 - X2: Core/scoring/logging changes without doc update (P2, diff-level)
 
+### Plan Validation
+
+Plan validation checks run in `_step_pr_open()` before deterministic
+prechecks. They verify that PRs reference a governing or session plan and
+that the declared plan file exists with content. Checks:
+
+- **PV1:** Plan reference present in PR description (P2 — non-blocking)
+- **PV2:** Referenced plan file exists on disk (P1 — blocking)
+- **PV3:** Plan file has non-trivial content (P2 — non-blocking)
+- **SD1:** Scope drift — files changed but not declared in plan (P2 — non-blocking)
+
+Plan validation is advisory for doc/plan-only PRs and enforced for code PRs.
+
 ### Codex CLI Adapter
 
-Invokes `codex review --base main` (prefers installed binary, falls back to
-`npx @openai/codex`). Parses two output formats:
+Invokes `codex review --base main` with a configurable binary resolution
+chain. Parses two output formats:
 
 1. Standard: `[P1] file:line — message (C1)`
 2. Alternative: `[CRITICAL][C1] file:line — message`
@@ -94,6 +107,23 @@ Invokes `codex review --base main` (prefers installed binary, falls back to
 Findings are normalized into `CodexFinding` dataclass with severity, file,
 line, category, check_id, and message. Results saved to
 round_N/codex_review.json.
+
+**Binary preference order:**
+
+1. `CODEX_REVIEW_CMD` env var (custom launcher, split by whitespace)
+2. `codex` in PATH (fastest — no npx overhead)
+3. macOS app bundle at /Applications/Codex.app/Contents/Resources/codex
+4. `npx @openai/codex` fallback (downloads if needed)
+
+The `CODEX_REVIEW_CMD` env var allows running Codex in alternative
+environments (e.g., Docker containers, remote hosts). Example:
+
+```bash
+CODEX_REVIEW_CMD="docker exec codex codex" python scripts/internal/review_driver.py --pr 42 --trigger manual
+```
+
+If set but empty or whitespace-only, the env var is ignored and the
+existing preference chain applies.
 
 Retry logic: up to 3 attempts before `stopped_review_failure`.
 Stagnation detection: same findings hash on consecutive rounds →
@@ -159,6 +189,19 @@ The loop publishes GitHub commit status at key transitions:
 At `ready_to_merge`, the loop creates GitHub issues for non-blocking (P2)
 findings, grouped by category. Issues are labeled with `follow-up` plus
 the appropriate category label (`fix:bug`, `fix:convention`, etc.).
+
+### Blocker PR Comments
+
+On terminal states, the review loop posts a structured PR comment
+summarizing the outcome. Comments use a `<!-- review-loop-comment -->`
+HTML marker for idempotent upsert (existing comment is updated rather
+than duplicated on rerun).
+
+Comment contents:
+- **Status header** — pass/fail with emoji indicator
+- **Stop reason** — why the loop terminated (e.g., blockers found, max iterations)
+- **Findings table** — severity, file, check ID, and message for each finding
+- **Recovery command** — exact command to rerun the review loop manually
 
 ## Usage
 
