@@ -2237,6 +2237,23 @@ For this lineage specifically:
 - **Fundamental design changes** (e.g., "add a new model family"): Requires
   human approval. Proposed via `qa_log.md` -> `design_decisions.md` -> amendment.
 
+#### 17.5.6 Post-Merge Review
+
+Every PR merged to main as part of Arc D v2 receives a comprehensive
+post-merge review via a spawned background agent. This review checks:
+
+1. **Correctness** — C1/C2 violations, logic bugs, numeric edge cases
+2. **Plan compliance** — Does the implementation match the governing plan's
+   specifications (table schemas, chart specs, step contracts)?
+3. **Package boundary** — Does `src/bid_euchre/arc_d_v2/` remain the canonical
+   location for domain logic? Do scripts remain thin wrappers?
+4. **Integration** — Does the merged code work correctly with other recent merges?
+
+If CRITICAL findings are discovered, a fix PR is created immediately.
+WARNING findings are tracked as follow-up issues. This workflow was
+established after post-merge review caught a SHAP value indexing bug
+that pre-merge review missed.
+
 ## 18. Run Naming Contract
 
 All run IDs follow this pattern:

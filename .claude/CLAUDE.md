@@ -20,6 +20,13 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - Auto-fixes are pushed as follow-up commits to the PR branch
 - Handoff summary is designed for `/copy` into a new session
 
+## Post-Merge Review
+- After every `gh pr merge`, a PostToolUse hook triggers a comprehensive review
+- A background Explore agent reviews merged code for correctness, contract compliance,
+  architecture, and test coverage
+- CRITICAL findings trigger immediate fix PRs
+- This is a safety net — pre-merge review catches most issues, post-merge catches the rest
+
 ## Docs-Only CI (Resolved)
 - CI now uses `dorny/paths-filter` instead of `paths-ignore` (PR #635)
 - The `tests` job always triggers and posts a status
