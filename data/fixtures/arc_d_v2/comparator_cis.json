@@ -1,0 +1,66 @@
+{
+  "schema": "comparator_cis_v1",
+  "generated_at": "2026-01-15T12:00:00+00:00",
+  "seed": 42,
+  "n_bootstrap": 1000,
+  "batch_manifest": null,
+  "ranked_order": ["gbt_av", "selected_ols_av", "modeloespecifico"],
+  "bidders": {
+    "gbt_av": {
+      "deals_total": 50,
+      "hands_with_bids": 22,
+      "bid_rate": 0.44,
+      "make_rate": 0.68,
+      "eppd": 4.123,
+      "net_eppd": 2.170,
+      "cvar_5": -1.5,
+      "net_cvar_5": -3.2,
+      "net_eppd_ci": [2.170, 1.890, 2.450],
+      "eppd_ci": [4.123, 3.800, 4.446],
+      "cvar_5_ci": [-1.5, -2.1, -0.9],
+      "net_cvar_5_ci": [-3.2, -4.0, -2.4]
+    },
+    "selected_ols_av": {
+      "deals_total": 50,
+      "hands_with_bids": 19,
+      "bid_rate": 0.38,
+      "make_rate": 0.63,
+      "eppd": 3.567,
+      "net_eppd": 1.604,
+      "cvar_5": -1.8,
+      "net_cvar_5": -3.8,
+      "net_eppd_ci": [1.604, 1.312, 1.896],
+      "eppd_ci": [3.567, 3.211, 3.923],
+      "cvar_5_ci": [-1.8, -2.5, -1.1],
+      "net_cvar_5_ci": [-3.8, -4.7, -2.9]
+    },
+    "modeloespecifico": {
+      "deals_total": 50,
+      "hands_with_bids": 17,
+      "bid_rate": 0.34,
+      "make_rate": 0.53,
+      "eppd": 2.890,
+      "net_eppd": 0.085,
+      "cvar_5": -2.3,
+      "net_cvar_5": -4.5,
+      "net_eppd_ci": [0.085, -0.201, 0.371],
+      "eppd_ci": [2.890, 2.534, 3.246],
+      "cvar_5_ci": [-2.3, -3.1, -1.5],
+      "net_cvar_5_ci": [-4.5, -5.4, -3.6]
+    }
+  },
+  "pairwise_significance": [
+    {
+      "bidder_a": "gbt_av",
+      "bidder_b": "selected_ols_av",
+      "net_eppd_diff": 0.566,
+      "p_value": 0.012
+    },
+    {
+      "bidder_a": "selected_ols_av",
+      "bidder_b": "modeloespecifico",
+      "net_eppd_diff": 1.519,
+      "p_value": 0.001
+    }
+  ]
+}
