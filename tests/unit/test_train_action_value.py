@@ -30,8 +30,13 @@ from train_action_value import (
 )
 
 from bid_euchre.strategy.bidding import (
+    _HAND_FEATURE_NAMES,
+    _POSITIONAL_FEATURE_NAMES,
     ACTION_FEATURE_NAMES,
     STATE_FEATURE_NAMES,
+    _infer_partner_features,
+    _validate_artifact_features,
+    _validate_pass_model_features,
     compute_interaction_features,
 )
 from bid_euchre.strategy.bidding import (
@@ -756,3 +761,119 @@ class TestBuildGbtArtifactProvenance:
         assert artifact["metadata"]["dataset_path"] == "data.parquet"
         assert artifact["metadata"]["dataset_sha256"] == "abc"
         assert artifact["metadata"]["continuation_artifact_sha256"] == "xyz"
+
+
+class TestR0HandOnlyFeatureInference:
+    """Tests for R0 hand-only models with no positional or partner features."""
+
+    def test_infer_partner_features_r0_returns_empty(self):
+        """R0 hand-only feature list (no positional anchor) returns empty partner list."""
+        r0_features = list(_HAND_FEATURE_NAMES)  # 39 hand features only
+        result = _infer_partner_features(r0_features)
+        assert result == []
+
+    def test_infer_partner_features_full_returns_partners(self):
+        """Full feature list with positional anchor returns partner features."""
+        partner = ["partner_bid_level", "partner_passed", "partner_suit_match"]
+        full_features = (
+            list(_HAND_FEATURE_NAMES) + partner + list(_POSITIONAL_FEATURE_NAMES)
+        )
+        result = _infer_partner_features(full_features)
+        assert result == partner
+
+    def test_infer_partner_features_no_partner_with_positional(self):
+        """Feature list with positional but no partner returns empty list."""
+        features = list(_HAND_FEATURE_NAMES) + list(_POSITIONAL_FEATURE_NAMES)
+        result = _infer_partner_features(features)
+        assert result == []
+
+    def test_validate_artifact_features_r0(self):
+        """R0 artifact (39 hand + 2 action) validates successfully."""
+        r0_model_features = list(_HAND_FEATURE_NAMES) + list(ACTION_FEATURE_NAMES)
+        partner_names, has_positional = _validate_artifact_features(
+            r0_model_features, has_interactions=False
+        )
+        assert partner_names == []
+        assert has_positional is False
+
+    def test_validate_artifact_features_full(self):
+        """Full artifact (39 hand + 3 partner + 10 positional + 2 action) validates."""
+        partner = ["partner_bid_level", "partner_passed", "partner_suit_match"]
+        full_features = (
+            list(_HAND_FEATURE_NAMES)
+            + partner
+            + list(_POSITIONAL_FEATURE_NAMES)
+            + list(ACTION_FEATURE_NAMES)
+        )
+        partner_names, has_positional = _validate_artifact_features(
+            full_features, has_interactions=False
+        )
+        assert partner_names == partner
+        assert has_positional is True
+
+    def test_validate_artifact_features_r0_wrong_features_raises(self):
+        """R0 artifact with wrong hand features raises ValueError."""
+        bad_features = ["wrong_feature"] + list(ACTION_FEATURE_NAMES)
+        with pytest.raises(ValueError, match="structural mismatch"):
+            _validate_artifact_features(bad_features, has_interactions=False)
+
+    def test_validate_pass_model_r0(self):
+        """R0 pass model (39 hand only, no action features) validates."""
+        r0_pass_features = list(_HAND_FEATURE_NAMES)
+        # Should not raise
+        _validate_pass_model_features(
+            r0_pass_features,
+            partner_feature_names=[],
+            has_interactions=False,
+            has_positional=False,
+        )
+
+    def test_validate_pass_model_full(self):
+        """Full pass model (39 hand + 3 partner + 10 positional) validates."""
+        partner = ["partner_bid_level", "partner_passed", "partner_suit_match"]
+        full_pass_features = (
+            list(_HAND_FEATURE_NAMES) + partner + list(_POSITIONAL_FEATURE_NAMES)
+        )
+        _validate_pass_model_features(
+            full_pass_features,
+            partner_feature_names=partner,
+            has_interactions=False,
+            has_positional=True,
+        )
+
+    def test_validate_pass_model_r0_with_positional_raises(self):
+        """R0 pass model with positional features but has_positional=False raises."""
+        bad_features = list(_HAND_FEATURE_NAMES) + list(_POSITIONAL_FEATURE_NAMES)
+        with pytest.raises(ValueError, match="mismatch"):
+            _validate_pass_model_features(
+                bad_features,
+                partner_feature_names=[],
+                has_interactions=False,
+                has_positional=False,
+            )
+
+    def test_validate_artifact_features_r0_selected_subset(self):
+        """Forward-selected R0 artifact with 3 hand features validates."""
+        subset = ["bowers", "trump_count", "offsuit_aces"]
+        model_features = subset + list(ACTION_FEATURE_NAMES)
+        partner_names, has_positional = _validate_artifact_features(
+            model_features, has_interactions=False
+        )
+        assert partner_names == []
+        assert has_positional is False
+
+    def test_validate_pass_model_r0_selected_subset(self):
+        """Forward-selected R0 pass model with 2 hand features validates."""
+        subset = ["bowers", "quick_tricks"]
+        _validate_pass_model_features(
+            subset,
+            partner_feature_names=[],
+            has_interactions=False,
+            has_positional=False,
+        )
+
+    def test_validate_artifact_features_r0_unknown_feature_raises(self):
+        """R0 artifact with unknown feature (not in hand set) raises."""
+        bad_features = ["bowers", "UNKNOWN_FEATURE"] + list(ACTION_FEATURE_NAMES)
+        with pytest.raises(ValueError, match="unknown state features"):
+            _validate_artifact_features(bad_features, has_interactions=False)
