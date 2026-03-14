@@ -45,7 +45,7 @@ Classify each limitation into one of three categories:
 
 ### Rigor Firewall
 
-Blockers identified by `.claude/rules/05_rigor.md` are **always category (c)**:
+Blockers identified by `.claude/rules/deferred/05_rigor.md` are **always category (c)**:
 
 - Inadequate sample size (below documented thresholds)
 - Missing confidence intervals on key metrics

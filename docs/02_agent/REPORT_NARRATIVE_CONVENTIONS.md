@@ -95,7 +95,7 @@ section at the end.
 
 ### Sample Size Flags
 
-Flag when sample size falls below thresholds from `.claude/rules/05_rigor.md`:
+Flag when sample size falls below thresholds from `.claude/rules/deferred/05_rigor.md`:
 
 ```markdown
 - **Sample size warning:** HIGH contracts have only 261 deals, below the
