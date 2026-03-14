@@ -3,11 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [ "main" ]
-    paths-ignore:
-      - 'plans/**'
-      - 'docs/**'
-      - '*.md'
-      - 'LICENSE'
+    # No paths-ignore — always trigger so the required `tests` check
+    # posts a status. Docs/plans-only PRs skip heavy steps via paths-filter.
   push:
     branches: [ "main" ]
 
@@ -20,45 +17,81 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Detect code changes
+        id: changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'scripts/**'
+              - 'tests/**'
+              - 'experiments/**'
+              - 'notebooks/**'
+              - 'Makefile'
+              - 'pyproject.toml'
+              - '.github/workflows/ci.yml'
+
+      # For pushes to main, always run. For PRs, only run if code changed.
+      # When skipped, the job still posts a green `tests` status.
+
+      - name: Skip notice
+        if: github.event_name == 'pull_request' && steps.changes.outputs.code != 'true'
+        run: echo "::notice::Docs/plans-only PR — skipping tests"
+
       - name: Checkout
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install uv
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         uses: astral-sh/setup-uv@v5
 
       - name: Install package + dev deps
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: uv sync --frozen --all-extras
 
       - name: Repo linter
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make repo-lint
 
       - name: Validate configs
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: uv run python scripts/validate_configs.py
 
       - name: Docs freshness
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make docs-check
 
       - name: Ruff (lint)
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make lint
 
       - name: Notebook hygiene
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make notebook-check
 
       - name: Execute notebooks (smoke)
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make notebook-run
 
       - name: Tests (fast)
+        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make test
 
       - name: Promotion gate
-        if: contains(github.event.pull_request.labels.*.name, 'promotion')
+        if: |
+          (github.event_name == 'push' || steps.changes.outputs.code == 'true') &&
+          contains(github.event.pull_request.labels.*.name, 'promotion')
         env:
           ARTIFACT_DIR: ${{ vars.ARTIFACT_DIR || '' }}
           ROLLUP_JSON: ${{ vars.ROLLUP_JSON || '' }}

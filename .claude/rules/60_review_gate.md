@@ -137,16 +137,7 @@ Findings are normalized into the P0/P1/P2 schema and recorded in per-round artif
 
 ## Known Issue: Docs-Only PRs and CI
 
-The CI workflow (`ci.yml`) has `paths-ignore: ['plans/**', 'docs/**', '*.md']`.
-Docs-only PRs never trigger CI, but branch protection requires the `tests` check.
-This creates a deadlock — the PR is unmergeable because the required check never
-posts a status.
-
-**Workaround:** Include a non-ignored file in the PR (e.g., `.claude/rules/`,
-`scripts/`, or a test file). If the PR is truly docs-only, include a relevant
-`.claude/` update or plan Outcome fill-in to trigger CI.
-
-**Proper fix (future):** Add a `ci-skip` job that always runs and posts the
-`tests` status as `success` when all changed files match `paths-ignore` patterns.
-Alternatively, use `paths-filter` action to conditionally skip test steps while
-still posting a required status.
+**Resolved (PR #635):** The CI workflow now uses `dorny/paths-filter` instead of
+`paths-ignore`. The `tests` job always triggers and posts a status. For docs/plans-only
+PRs, heavy steps (checkout, install, lint, test) are skipped via per-step `if` conditions,
+so the job completes in seconds with a green status. No more deadlock.
