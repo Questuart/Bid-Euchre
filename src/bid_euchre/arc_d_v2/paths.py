@@ -136,6 +136,11 @@ def evidence_manifest_path(rung: str) -> Path:
 # ── Step logs ────────────────────────────────────────────────────────────────
 
 
+def rung_heartbeat(rung: str) -> Path:
+    """Heartbeat file: ``plans/arc_d_v2/<rung>/heartbeat``."""
+    return rung_plan_dir(rung) / "heartbeat"
+
+
 def step_log_path(rung: str, step: str, detail: str = "") -> Path:
     """Per-step subprocess log in the rung plan directory."""
     suffix = f"_{detail}" if detail else ""

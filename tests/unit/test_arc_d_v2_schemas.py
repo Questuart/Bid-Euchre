@@ -29,6 +29,7 @@ from bid_euchre.arc_d_v2.schemas import (
     HypothesisCheckResult,
     NextAction,
     RunState,
+    TimeoutPolicy,
 )
 
 # =============================================================================
@@ -598,3 +599,101 @@ class TestConstants:
             assert "seeds" in spec, f"{mode_name} missing seeds"
             assert isinstance(spec["deals"], int)
             assert isinstance(spec["seeds"], list)
+
+
+# =============================================================================
+# TimeoutPolicy tests
+# =============================================================================
+
+
+class TestTimeoutPolicy:
+    """Test TimeoutPolicy defaults and step override lookup."""
+
+    def test_defaults(self):
+        tp = TimeoutPolicy()
+        assert tp.default == 3600
+        assert tp.heartbeat_interval == 60
+        assert tp.stale_threshold == 300
+
+    def test_step_overrides_present(self):
+        tp = TimeoutPolicy()
+        assert tp.step_overrides["1"] == 1800
+        assert tp.step_overrides["2"] == 7200
+        assert tp.step_overrides["4"] == 3600
+        assert tp.step_overrides["5"] == 3600
+        assert tp.step_overrides["3b"] == 1800
+
+    def test_get_timeout_override(self):
+        tp = TimeoutPolicy()
+        assert tp.get_timeout("2") == 7200
+        assert tp.get_timeout("3b") == 1800
+
+    def test_get_timeout_default_fallback(self):
+        tp = TimeoutPolicy()
+        # Steps not in overrides should return the default
+        assert tp.get_timeout("0") == 3600
+        assert tp.get_timeout("3") == 3600
+        assert tp.get_timeout("6") == 3600
+        assert tp.get_timeout("9") == 3600
+
+    def test_custom_policy(self):
+        tp = TimeoutPolicy(
+            default=600,
+            step_overrides={"1": 120},
+            heartbeat_interval=30,
+            stale_threshold=120,
+        )
+        assert tp.get_timeout("1") == 120
+        assert tp.get_timeout("2") == 600
+        assert tp.heartbeat_interval == 30
+        assert tp.stale_threshold == 120
+
+    def test_runstate_has_timeout_policy(self):
+        state = RunState.create_fresh("r2.0", "quick", [42])
+        assert isinstance(state.timeout_policy, TimeoutPolicy)
+        assert state.timeout_policy.default == 3600
+
+    def test_timeout_policy_roundtrip(self, tmp_path: Path):
+        state = RunState.create_fresh("r2.0", "quick", [42])
+        state.timeout_policy = TimeoutPolicy(
+            default=1200,
+            step_overrides={"1": 300},
+            heartbeat_interval=30,
+            stale_threshold=120,
+        )
+        path = tmp_path / "state.json"
+        state.save(path)
+
+        loaded = RunState.load(path)
+        assert loaded.timeout_policy.default == 1200
+        assert loaded.timeout_policy.step_overrides == {"1": 300}
+        assert loaded.timeout_policy.heartbeat_interval == 30
+        assert loaded.timeout_policy.stale_threshold == 120
+
+    def test_timeout_policy_missing_from_json(self, tmp_path: Path):
+        """Loading a state.json without timeout_policy should use defaults."""
+        state = RunState.create_fresh("r2.0", "quick", [42])
+        path = tmp_path / "state.json"
+        state.save(path)
+
+        # Remove timeout_policy from the JSON
+        data = json.loads(path.read_text())
+        data.pop("timeout_policy", None)
+        path.write_text(json.dumps(data, indent=2))
+
+        loaded = RunState.load(path)
+        assert isinstance(loaded.timeout_policy, TimeoutPolicy)
+        assert loaded.timeout_policy.default == 3600
+
+
+# =============================================================================
+# Heartbeat path test
+# =============================================================================
+
+
+class TestHeartbeatPath:
+    """Test heartbeat path construction."""
+
+    def test_rung_heartbeat_path(self):
+        assert paths.rung_heartbeat("r0") == Path("plans/arc_d_v2/r0/heartbeat")
+        assert paths.rung_heartbeat("r2.0") == Path("plans/arc_d_v2/r2.0/heartbeat")

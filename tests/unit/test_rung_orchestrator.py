@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -832,3 +833,65 @@ class TestStepsConstants:
     def test_step_functions_complete(self):
         for step in STEPS:
             assert step in STEP_FUNCTIONS, f"Step {step} missing function"
+
+
+# ============================================================================
+# Heartbeat Tests
+# ============================================================================
+
+from bid_euchre.arc_d_v2 import paths as arc_paths
+from bid_euchre.arc_d_v2.heartbeat import (
+    check_heartbeat,
+    clear_heartbeat,
+    write_heartbeat,
+)
+
+
+class TestWriteHeartbeat:
+    def test_write_creates_file(self, tmp_path):
+        with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
+            write_heartbeat("r0")
+            hb_path = tmp_path / "r0" / "heartbeat"
+            assert hb_path.exists()
+            ts = float(hb_path.read_text().strip())
+            # Should be within the last few seconds
+            assert time.time() - ts < 5
+
+
+class TestCheckHeartbeatFresh:
+    def test_fresh_heartbeat_returns_true(self, tmp_path):
+        with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
+            write_heartbeat("r0")
+            assert check_heartbeat("r0") is True
+
+
+class TestCheckHeartbeatStale:
+    def test_stale_heartbeat_returns_false(self, tmp_path):
+        with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
+            hb_path = tmp_path / "r0" / "heartbeat"
+            hb_path.parent.mkdir(parents=True, exist_ok=True)
+            # Write a timestamp from 10 minutes ago
+            old_ts = time.time() - 600
+            hb_path.write_text(f"{old_ts}\n")
+            assert check_heartbeat("r0", max_stale_seconds=300) is False
+
+
+class TestCheckHeartbeatMissing:
+    def test_missing_heartbeat_returns_false(self, tmp_path):
+        with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
+            assert check_heartbeat("r0") is False
+
+
+class TestClearHeartbeat:
+    def test_clear_removes_file(self, tmp_path):
+        with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
+            write_heartbeat("r0")
+            hb_path = tmp_path / "r0" / "heartbeat"
+            assert hb_path.exists()
+            clear_heartbeat("r0")
+            assert not hb_path.exists()
+
+    def test_clear_noop_when_missing(self, tmp_path):
+        """Clearing a non-existent heartbeat should not raise."""
+        with patch.object(arc_paths, "PLANS_ROOT", tmp_path):
+            clear_heartbeat("r0")  # Should not raise

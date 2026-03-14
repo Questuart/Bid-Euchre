@@ -329,6 +329,11 @@ Before ending a session, an agent MUST:
 The next agent reads `checkpoints.md` and resumes from the recorded state.
 No conversation history is required.
 
+**Timeout detection:** Long-running orchestrator agents write a heartbeat
+file every 60 seconds. Check with `run_rung.py --rung <rung> --check-alive`.
+If stale (>5 min), the agent has died and should be respawned -- `state.json`
+enables idempotent resume.
+
 ### When to Create a Sub-Plan
 
 Create a sub-plan when a governing plan step requires significant

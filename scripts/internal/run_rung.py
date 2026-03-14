@@ -8,6 +8,7 @@ CLI:
     uv run python scripts/internal/run_rung.py --rung r0 --mode quick --seeds 42
     uv run python scripts/internal/run_rung.py --rung r0 --mode all
     uv run python scripts/internal/run_rung.py --rung r0 --status
+    uv run python scripts/internal/run_rung.py --rung r0 --check-alive
     uv run python scripts/internal/run_rung.py --rung r0 --rerun --from-step 2 --models gbt_av
 """
 
@@ -28,6 +29,9 @@ from bid_euchre.arc_d_v2.orchestration import (
 from bid_euchre.arc_d_v2.schemas import (
     STEPS,
     RunState,
+)
+from bid_euchre.arc_d_v2.heartbeat import (
+    check_heartbeat,
 )
 
 logger = logging.getLogger("run_rung")
@@ -88,6 +92,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Check preconditions without executing",
     )
+    parser.add_argument(
+        "--check-alive",
+        action="store_true",
+        help="Check if orchestrator is running (via heartbeat). "
+        "Exit 0 if alive, 1 if stale/dead.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -102,6 +112,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         print_status(args.rung)
         return 0
+
+    # Check-alive mode
+    if args.check_alive:
+        alive = check_heartbeat(args.rung)
+        if alive:
+            print(f"Orchestrator for {args.rung} is alive")
+            return 0
+        else:
+            print(f"Orchestrator for {args.rung} is NOT running or stale (>5min)")
+            return 1
 
     # Parse seeds
     if args.seeds:
