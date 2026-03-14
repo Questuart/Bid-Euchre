@@ -984,6 +984,20 @@ def main():
             "GBT handles feature selection internally via tree splits."
         )
 
+    # Validate: constrained feature set is not compatible with GBT.
+    # Constrained features are per-contract-family (different features for
+    # suit/high/low).  GBT trains per-family models just like OLS, but the
+    # GBT pipeline resolves features once (not per-family), so constrained
+    # would silently use suit features for all families.  Rather than adding
+    # per-family resolution to GBT (which gains nothing — GBT handles feature
+    # importance internally via tree splits), reject the combination.
+    if args.feature_set == "constrained" and args.model_class == "gbt":
+        parser.error(
+            "--feature-set constrained is not compatible with --model-class gbt. "
+            "GBT handles feature importance internally via tree splits; "
+            "use --feature-set r0 or --feature-set full instead."
+        )
+
     feature_set_entry = FEATURE_SETS[args.feature_set]
     target_col = args.target
     model_class = args.model_class
@@ -1344,48 +1358,32 @@ def _train_two_stage_pipeline(
         else list(state_feature_names)
     )
 
-    # Forward selection for two-stage suit: run separately on each sub-model
+    # Forward selection for two-stage suit.
+    #
+    # Simplification: we run forward selection ONCE on the combined
+    # net_points target for the full suit subset, then use the selected
+    # features for all three sub-models (logistic, make OLS, set OLS).
+    # True per-sub-model selection (binary target for logistic, separate
+    # targets for make/set OLS) would require a different scoring function
+    # for the logistic stage and separate feature sets per sub-model —
+    # deferred to a follow-up if needed.
     if selection == "forward":
-        print("  Running forward selection for suit two-stage sub-models...")
+        print("  Running forward selection for suit two-stage (combined)...")
         train_suit = train_df[train_df["contract_family"] == "suit"]
         all_suit_features = list(suit_features) + list(ACTION_FEATURE_NAMES)
 
-        # P(make) logistic — use same candidate features
-        selected_logistic, log_logistic = run_forward_selection(
+        selected_suit, sel_log_suit = run_forward_selection(
             train_suit, all_suit_features, target_col, seed=args.seed
         )
-        # E[pts|make] OLS
-        made_mask = train_suit[target_col].values >= 2 * train_suit["bid_n"].values - 10
-        if made_mask.sum() > 0:
-            train_make = train_suit[made_mask]
-            selected_make, log_make = run_forward_selection(
-                train_make, all_suit_features, target_col, seed=args.seed
-            )
-        else:
-            selected_make, log_make = all_suit_features, {"steps": [], "final_r2": None}
-        # E[pts|set] OLS
-        if (~made_mask).sum() > 0:
-            train_set = train_suit[~made_mask]
-            selected_set, log_set = run_forward_selection(
-                train_set, all_suit_features, target_col, seed=args.seed
-            )
-        else:
-            selected_set, log_set = all_suit_features, {"steps": [], "final_r2": None}
+        selection_logs["suit"] = sel_log_suit
 
-        selection_logs["suit_logistic"] = log_logistic
-        selection_logs["suit_make"] = log_make
-        selection_logs["suit_set"] = log_set
-
-        # Use union of all selected features for the suit two-stage model
-        # (the model uses all features; selection is informational for now)
+        # Use selected features for all sub-models
         action_set = set(ACTION_FEATURE_NAMES)
-        all_selected = set(selected_logistic) | set(selected_make) | set(selected_set)
-        suit_features = [
-            f for f in all_suit_features if f in all_selected and f not in action_set
-        ]
+        suit_features = [f for f in selected_suit if f not in action_set]
         print(
-            f"    Suit two-stage: logistic={len(selected_logistic)}, "
-            f"make={len(selected_make)}, set={len(selected_set)} features"
+            f"    Selected {len(selected_suit)} features "
+            f"(state: {len(suit_features)}, "
+            f"R²={sel_log_suit['final_r2']})"
         )
 
     # Train suit model with two-stage decomposition
