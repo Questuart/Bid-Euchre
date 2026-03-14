@@ -35,3 +35,4 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 # trigger CI: r1-5-3-closeout
 # trigger CI: review-cleanup-2026-03-13
 # trigger CI: repo-review-2026-03-13
+# trigger CI: gbt-full-validation-report
