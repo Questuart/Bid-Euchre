@@ -151,8 +151,8 @@ ValueError: shapes (57,) and (54,) not aligned: 57 (dim 0) != 54 (dim 0)
 ### I005 — LOW: 2 stale script references in active reports
 
 **Location:**
-1. `docs/04_reports/codex_validation/results_2026-03-08.md` → references `scripts/internal/codex_test_fixture.py` (does not exist)
-2. `docs/04_reports/r0/20_measurement_integrity_r0.md` → references `scripts/internal/run_arc_d_eval.py` (does not exist)
+1. `docs/04_reports/codex_validation/results_2026-03-08.md` → references scripts/internal/codex_test_fixture.py (does not exist)
+2. `docs/04_reports/r0/20_measurement_integrity_r0.md` → references scripts/internal/run_arc_d_eval.py (does not exist)
 
 **Recommendation:** Remove or update these references. Both are in historical reports — update to plain text per the docs-check convention for deleted scripts.
 
