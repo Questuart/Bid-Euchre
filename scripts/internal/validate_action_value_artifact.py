@@ -34,7 +34,11 @@ from pathlib import Path
 
 from bid_euchre.sim.hooks import BiddingDecisionEvent, SimulationHooks
 from bid_euchre.sim.simulation import simulate_many_hands
-from bid_euchre.strategy.bidding import ActionValueBidder, GBTActionValueBidder
+from bid_euchre.strategy.bidding import (
+    ActionValueBidder,
+    GBTActionValueBidder,
+    TwoStageActionValueBidder,
+)
 
 # ── Thresholds ──────────────────────────────────────────────
 # Intentionally loose: catch pathological artifacts, not quality regressions.
@@ -60,6 +64,8 @@ def load_bidder(artifact_path: str) -> object:
         return GBTActionValueBidder(artifact_path)
     elif schema == "action_value_olsa_v1":
         return ActionValueBidder(artifact_path)
+    elif schema == "two_stage_action_value_v1":
+        return TwoStageActionValueBidder(artifact_path)
     else:
         raise ValueError(f"Unknown artifact schema: {schema!r}")
 
