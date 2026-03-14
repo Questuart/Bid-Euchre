@@ -1170,7 +1170,16 @@ def handle_rerun(
     from_step: str,
     models: list[str] | None = None,
 ) -> None:
-    """Reset a step and all its downstream dependencies for rerun."""
+    """Reset a step and all its downstream dependencies for rerun.
+
+    Lifecycle integration point: when full lifecycle management is wired up,
+    this function should additionally:
+      1. Call ``lifecycle.generate_run_id()`` to create a new run ID
+      2. Call ``lifecycle.supersede_run()`` to mark the old run and create
+         a rerun manifest linking old -> new
+      3. Record affected_models and affected_steps on the RerunManifest
+    See ``bid_euchre.arc_d_v2.lifecycle`` for the API.
+    """
     affected = [from_step] + DAG_DOWNSTREAM[from_step]
     logger.info("Rerun from step %s: resetting steps %s", from_step, affected)
 

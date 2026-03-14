@@ -227,6 +227,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_rung_tables.py` | Canonical CSV table generation for Arc D v2 rung reports |
 | `scripts/internal/generate_rung_report.py` | Markdown rung report renderer from CSV tables and chart PNGs |
 | `scripts/internal/generate_evidence_manifest.py` | Evidence manifest generator (JSON + markdown) for Arc D v2 |
+| `scripts/internal/manage_artifacts.py` | Artifact lifecycle CLI (status, supersession, quarantine, prune) |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
 | `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |
