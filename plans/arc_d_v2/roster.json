@@ -1,0 +1,53 @@
+{
+  "schema_version": "roster_v1",
+  "description": "Arc D v2 lineage roster — 6 primary models + anchor",
+  "models": {
+    "modeloespecifico": {
+      "class_name": "ModeloEspecifico",
+      "trainable": false,
+      "family": "heuristic",
+      "params": {}
+    },
+    "selected_two_stage_av": {
+      "class_name": "TwoStageActionValueBidder",
+      "trainable": true,
+      "family": "two-stage",
+      "model_class": "two_stage",
+      "feature_set": "forward_select"
+    },
+    "gbt_av": {
+      "class_name": "GBTActionValueBidder",
+      "trainable": true,
+      "family": "GBT",
+      "model_class": "gbt",
+      "feature_set": "full"
+    },
+    "constrained_ols_av": {
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "family": "OLS",
+      "model_class": "ols",
+      "feature_set": "constrained"
+    },
+    "selected_ols_av": {
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "family": "OLS",
+      "model_class": "ols",
+      "feature_set": "forward_select"
+    },
+    "full_ols_av": {
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "family": "OLS",
+      "model_class": "ols",
+      "feature_set": "full"
+    }
+  },
+  "anchor": {
+    "name": "anchor_hybrid_r0_full",
+    "class_name": "HybridOLSaBidder",
+    "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+    "description": "Frozen R0 hybrid OLSa (full arm) — lineage baseline"
+  }
+}

@@ -18,6 +18,9 @@ import argparse
 import logging
 import sys
 
+from bid_euchre.arc_d_v2.heartbeat import (
+    check_heartbeat,
+)
 from bid_euchre.arc_d_v2.orchestration import (
     MODE_SEEDS,
     _state_path,
@@ -29,9 +32,6 @@ from bid_euchre.arc_d_v2.orchestration import (
 from bid_euchre.arc_d_v2.schemas import (
     STEPS,
     RunState,
-)
-from bid_euchre.arc_d_v2.heartbeat import (
-    check_heartbeat,
 )
 
 logger = logging.getLogger("run_rung")
