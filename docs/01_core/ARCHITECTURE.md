@@ -71,6 +71,7 @@ Arc D v2 lineage scripts (orchestrator, reporting) are canonical execution tools
 that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 
 - `audit_analysis.py` — Review pipeline audit (follow-up rates, corrective PRs, per-PR trail)
+- `blind_strategy_comparison.py` — Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind)
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `evaluate_gate_x3.py` — R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle)
 - `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
@@ -208,6 +209,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 |---------|---------|
 | `scripts/internal/analyze_phase1a_matrix.py` | Phase 1A 2×2 model×label matrix H2H analysis (effect decomposition) |
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
+| `scripts/internal/blind_strategy_comparison.py` | Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind) |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings (auto-fix + commit) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation and output parsing (review findings extraction) |
 | `scripts/internal/deterministic_prechecks.py` | Fast deterministic code checks (merge markers, RNG, imports) |
