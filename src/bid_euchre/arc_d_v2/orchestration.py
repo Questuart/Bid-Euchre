@@ -830,11 +830,15 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
 def _collect_training_artifacts(
     state: RunState, seed: int, rung_artifacts_dir: Path
 ) -> None:
-    """Copy training artifact JSONs into the rung artifacts directory.
+    """Copy training artifact JSONs and model files into the rung artifacts directory.
 
     Searches each trainable model's output dir for JSON artifacts and
     copies them as ``training_artifact_<model_name>.json`` so that
     ``generate_rung_tables.py`` can find them via its glob pattern.
+
+    Also copies ``.joblib`` files (GBT model weights) so that SHAP
+    analysis (Step 3b) and any artifact-dir-based model loading can
+    find them adjacent to the JSON artifact.
     """
     import shutil
 
@@ -854,6 +858,11 @@ def _collect_training_artifacts(
             shutil.copy2(json_file, dest)
             logger.info("Step 3: Copied %s -> %s", json_file.name, dest.name)
             break  # Take first JSON artifact per model
+        # Copy .joblib model files (GBT weights) for SHAP / artifact-dir loading
+        for joblib_file in sorted(output_dir.glob("*.joblib")):
+            dest = rung_artifacts_dir / joblib_file.name
+            shutil.copy2(joblib_file, dest)
+            logger.info("Step 3: Copied %s -> %s", joblib_file.name, dest.name)
 
 
 def execute_step_3(state: RunState, seed: int, dry_run: bool = False) -> bool:
@@ -1174,6 +1183,7 @@ def execute_step_5(state: RunState, seed: int, dry_run: bool = False) -> bool:
         "--battery-file",
         battery_filename,
         "--single-seat",
+        "--allow-legacy-seat-discovery",
         "--force",
     ]
 
