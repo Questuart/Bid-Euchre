@@ -632,7 +632,7 @@ one requires agent judgment.
 |--------|---------|-------------|-----------------|
 | `00_manifest.md` | What was run | **Fully automated** from `evidence_manifest.json` | No — metadata only |
 | `01_results.md` | What happened | **Mostly automated** from CSVs + charts | Light — check rendering |
-| `02_decision.md` | What it means | **Agent-synthesized** from hypotheses + results | No — `advance_check.json` gates; human review is asynchronous |
+| `02_decision.md` | What it means | **Agent-synthesized** from hypotheses + results | No — `advance_check_<mode>.json` gates; human review is asynchronous |
 
 ### 8.2 `00_manifest.md` — What Was Run
 
@@ -1041,9 +1041,40 @@ uv run python scripts/internal/extract_comparator_cis.py \
   --output data/runs/arc_d_v2/<rung>/comparator/comparator_cis.json
 ```
 
-**Infrastructure note:** The comparator config YAML must list all 6 primary
-roster models as `bidding_policies` entries. A template YAML is created in
-Phase 0 (§23, item 6). The `--olsa-artifact` flag adds the anchor to the roster.
+**Comparator config generation:**
+
+The comparator YAML config is generated from the lineage roster before Step 5 execution:
+
+```bash
+# Generate comparator config from roster (run by orchestrator at Step 5 start)
+uv run python scripts/internal/generate_comparator_config.py \
+  --roster plans/arc_d_v2/roster.json \
+  --anchor-artifact data/artifacts/arc_d/r0/hybrid_r0_full.json \
+  --output data/runs/arc_d_v2/<rung>/comparator_config.yaml
+```
+
+The generated YAML follows the schema expected by `run_auction_comparator.py --config`:
+
+```yaml
+bidding_policies:
+  - name: gbt_av
+    class: GBTActionValueBidder
+    artifact: data/runs/arc_d_v2/<rung>/artifacts/gbt/artifact.json
+  - name: selected_ols_av
+    class: ActionValueBidder
+    artifact: data/runs/arc_d_v2/<rung>/artifacts/selected_ols/artifact.json
+  # ... one entry per trainable roster model
+mode: single-seat
+n_per: <MODE_DEALS>
+seed: <SEED>
+```
+
+The anchor model is added separately via `--olsa-artifact` on the comparator command line,
+not in the YAML config. This matches the existing `run_auction_comparator.py` interface.
+
+If `generate_comparator_config.py` does not exist yet (Phase 0), the orchestrator
+generates the YAML directly from the roster JSON using a simple template. The
+standalone script is a Phase 0 deliverable.
 
 **Comparator aggregation contract:** Comparator rankings are canonical only
 when emitted at both pooled AND contract-type levels. `generate_rung_tables.py`
@@ -1150,14 +1181,14 @@ Then: agent synthesizes `02_decision.md` from hypotheses + results.
    - QUICK sufficiency conditions (if QUICK mode)
    - Sanity bounds (from `tables/sanity_bounds_check.csv`)
    - Canary checks (domain plausibility, WARNING-level)
-2. Read `advance_check.json` — the orchestrator uses this to decide PROCEED / INVESTIGATE / PAUSE
+2. Read `advance_check_<mode>.json` — the orchestrator uses this to decide PROCEED / INVESTIGATE / PAUSE
 3. Update best-in-lineage if a model surpasses current best
 4. Update `checkpoints.md` with final status
 5. Agent writes `02_decision.md` with: hypothesis outcomes, surprises, key
    findings, model rankings, risks carried forward, retrospective, next rung
    recommendation
 
-**advance_check.json** is the gate. `02_decision.md` is retrospective
+**`advance_check_<mode>.json`** is the gate. `02_decision.md` is retrospective
 documentation.
 
 **Advance rules:**
@@ -1171,24 +1202,46 @@ documentation.
 - `wait_duration` — advances after N hours unless human intervenes
 - `wait_for_signal` — waits for explicit human approval
 
-**Gate:** `advance_check.json` (machine-readable). Human review of
+**Gate:** `advance_check_<mode>.json` (machine-readable). Human review of
 `02_decision.md` is asynchronous and non-blocking.
 
 ### Step 9: Archive & Advance
 
-**Actions:**
-1. Commit all evidence artifacts
-2. Tag the rung: `arc_d_v2_<rung>_complete`
-3. Update MEMORY.md with rung summary
-4. Begin Step 0 for next rung
+**Precondition:** Step 8 `advance_check_<mode>.json` must exist with `advance_decision` field.
+
+**Actions (conditional on Step 8 outcome):**
+
+**If PROCEED:**
+1. Agent writes `02_decision.md` (non-blocking retrospective documentation)
+2. Commit all evidence artifacts
+3. Tag the rung: `arc_d_v2_<rung>_complete`
+4. Update MEMORY.md with rung summary
+5. Begin Step 0 for next rung
+
+**If INVESTIGATE:**
+1. Agent writes `02_decision.md` with investigation notes
+2. Log the surprise in `qa_log.md` as status `open`
+3. Create an exploratory analysis note in `exploratory/`
+4. Do NOT advance to the next rung
+5. Re-evaluate after investigation: update `advance_check_<mode>.json` and re-run Step 8
+
+**If PAUSE:**
+1. Agent writes `02_decision.md` documenting the failure
+2. Mark rung as `PAUSED` in `state.json`
+3. Do NOT advance to the next rung
+4. Human review required to resume
+
+The orchestrator reads `advance_decision` from `advance_check_<mode>.json` and only
+executes the PROCEED path automatically. INVESTIGATE and PAUSE halt the
+autonomous loop.
 
 ### 9.5 QUICK→FULL Transition Protocol
 
 The rung execution cycle is:
 - Step 0 runs once per rung (plan and hypothesize)
 - Steps 1–7 run at QUICK scale (2,500 deals, seed 42)
-- After Step 7: run `generate_advance_check.py` to produce `advance_check.json`
-- Evaluate QUICK sufficiency (all checks in advance_check.json pass)
+- After Step 7: run `generate_advance_check.py` to produce `advance_check_quick.json`
+- Evaluate QUICK sufficiency (all checks in `advance_check_quick.json` pass)
 - If QUICK sufficient: Steps 1–7 re-run at FULL scale (50,000 deals, seeds 42, 123, 456)
 - Steps 8–9 run once on aggregated FULL outputs
 - Agent writes `02_decision.md` after advance decision is made (non-blocking)
@@ -1226,7 +1279,7 @@ Every artifact the pipeline produces exists in two forms:
    - `tables/*.csv` — 11 canonical CSVs
    - `chart_data/*.csv` — chart source data
    - `evidence_manifest.json` — structural provenance
-   - `advance_check.json` — boolean gate conditions
+   - `advance_check_<mode>.json` — boolean gate conditions
    - `hypotheses.json` — machine-readable hypothesis bounds
 
 2. **Human layer** (markdown/PNG) — what the agent synthesizes for human
@@ -1731,7 +1784,7 @@ companion to the hypothesis table in plan.md.
 }
 ```
 
-#### advance_check.json
+#### advance_check_\<mode\>.json
 
 Per-rung, per-mode file at `data/runs/arc_d_v2/<rung>/advance_check_<mode>.json`.
 
@@ -1802,33 +1855,75 @@ Per-rung file at `plans/arc_d_v2/<rung>/state.json`. Tracks execution progress.
 {
   "schema_version": "rung_state_v1",
   "rung": "r0",
-  "mode": "quick",
-  "seeds": [42],
-  "current_step": 4,
+  "mode": "full",
+  "seeds": [42, 123, 456],
+  "current_step": "4",
   "step_status": "in_progress",
-  "status_detail": "H2H battery running",
+  "status_detail": "Seed 42 complete, seed 123 step 4 in progress",
   "retries": 0,
   "max_retries": 3,
   "blocker": null,
   "active_investigation": null,
   "supersession": null,
-  "steps": {
-    "1": {"status": "complete", "outputs": ["datasets/action_value.parquet"]},
-    "2": {"status": "complete", "outputs": ["artifacts/gbt/artifact.json", "..."]},
-    "3": {"status": "complete", "outputs": ["tables/model_performance.csv"]},
-    "3b": {"status": "complete", "outputs": ["chart_data/shap_values.csv"]},
-    "4": {"status": "in_progress", "outputs": [], "detail": "running"},
-    "5": {"status": "pending"},
+  "per_seed": {
+    "42": {
+      "1": {"status": "complete", "outputs": ["seed_42/datasets/action_value.parquet"]},
+      "2": {
+        "status": "complete",
+        "models": {
+          "gbt_av": {"status": "complete", "output": "seed_42/artifacts/gbt/artifact.json"},
+          "selected_ols_av": {"status": "complete", "output": "seed_42/artifacts/selected_ols/artifact.json"},
+          "full_ols_av": {"status": "complete", "output": "seed_42/artifacts/full_ols/artifact.json"},
+          "constrained_ols_av": {"status": "complete", "output": "seed_42/artifacts/constrained_ols/artifact.json"},
+          "selected_two_stage_av": {"status": "complete", "output": "seed_42/artifacts/selected_two_stage/artifact.json"}
+        }
+      },
+      "3": {"status": "complete"},
+      "3b": {"status": "complete"},
+      "4": {"status": "complete"},
+      "5": {"status": "complete"}
+    },
+    "123": {
+      "1": {"status": "complete"},
+      "2": {"status": "partial", "models": {"gbt_av": {"status": "complete"}, "selected_ols_av": {"status": "in_progress"}}},
+      "3": {"status": "pending"},
+      "3b": {"status": "pending"},
+      "4": {"status": "pending"},
+      "5": {"status": "pending"}
+    },
+    "456": {
+      "1": {"status": "pending"},
+      "2": {"status": "pending"},
+      "3": {"status": "pending"},
+      "3b": {"status": "pending"},
+      "4": {"status": "pending"},
+      "5": {"status": "pending"}
+    }
+  },
+  "aggregation": {
     "6": {"status": "pending"},
     "7": {"status": "pending"},
-    "8": {"status": "pending"}
+    "8": {"status": "pending"},
+    "9": {"status": "pending"}
   },
+  "fingerprints": {},
   "last_updated": "ISO8601"
 }
 ```
 
-Step statuses: `pending`, `in_progress`, `complete`, `partial` (some outputs
-exist), `failed_retryable`, `failed_blocking`, `skipped`.
+**State structure for multi-seed FULL mode:**
+- `per_seed`: Steps 1-5 are tracked independently per seed. Each seed has its own
+  step status map. Step 2 additionally tracks per-model status within each seed.
+- `aggregation`: Steps 6-9 run once on aggregated data (not per-seed). They are
+  tracked at the top level.
+- `fingerprints`: Per-step provenance hashes for idempotency checks (roster hash,
+  seed, mode, script mtime). Used to detect stale outputs on resume.
+
+**For QUICK mode (single seed):** `per_seed` has one entry (seed 42). The structure
+is identical but with only one seed key.
+
+**Step statuses:** `pending`, `in_progress`, `complete`, `partial` (some sub-items
+complete), `failed_retryable`, `failed_blocking`, `skipped`.
 
 ## 15. Canonical Metrics Contract
 
@@ -2177,11 +2272,13 @@ Which script produces which artifact:
 | `generate_rung_report.py` | `tables/*.csv`, `charts/*.png` | `01_results.md` | — |
 | `generate_evidence_manifest.py` | All of the above | `evidence_manifest.json`, `00_manifest.md` | — |
 | `run_rung.py` | Rung ID, mode, seeds, state.json | state.json updates, orchestrates all steps | — |
-| `generate_advance_check.py` | hypotheses.json, tables/*.csv | advance_check.json | Step 8 |
+| `generate_advance_check.py` | hypotheses.json, tables/*.csv | `advance_check_<mode>.json` | Step 8 |
+| `generate_comparator_config.py` | roster.json, anchor artifact path | `comparator_config.yaml` | Step 5 |
 
 **Note:** `generate_rung_tables.py`, `generate_interpretability.py`,
-`generate_rung_report.py`, and `generate_evidence_manifest.py` do not currently
-exist and must be created as part of the infrastructure work (§23 Phase 0).
+`generate_rung_report.py`, `generate_evidence_manifest.py`, and
+`generate_comparator_config.py` do not currently exist and must be created
+as part of the infrastructure work (§23 Phase 0).
 
 ## 20. Lineage Amendment Process
 
@@ -2228,7 +2325,7 @@ plans/
   r2_follow_ups.md                       # v1 lineage — STALE
   archive/                               # 66 files (pre-R1.5 era, already archived)
   sessions/                              # 25 files (R1.5-era session plans)
-    2026-03-13_canonical-lineage-rebuild-proposal.md   # v1 of this plan — SUPERSEDED
+    2026-03-13_canonical-lineage-rebuild-proposal.md   # v1 of this plan — SUPERSEDED (untracked; archive on merge)
     2026-03-13_r1-6-partner-semantics.md               # v1 lineage — STALE
     ...
     TEMPLATE.md
@@ -2268,7 +2365,7 @@ plans/
       2026-03-06_*.md
       2026-03-08_*.md
       ...
-      2026-03-13_canonical-lineage-rebuild-proposal.md
+      2026-03-13_canonical-lineage-rebuild-proposal.md  # Move from sessions/ on merge
       2026-03-13_r1-6-partner-semantics.md
     pre_v1/                              # Existing archive/ contents, reorganized
       BIDDING_DEVELOPMENT_PLAN.md
@@ -2297,6 +2394,12 @@ plans/
 6. **Templates live in `plans/_templates/`.** These are repo-wide templates
    for governing plans, sub-plans, registries, and checkpoints. They are not
    specific to any initiative.
+7. **v1 proposal (`2026-03-13_canonical-lineage-rebuild-proposal.md`)** is
+   currently untracked on main. On merge, move it to
+   `plans/archive/v1_sessions/` and replace with a redirect stub in
+   `plans/sessions/` pointing to the archive location. The v2 plan
+   (`2026-03-13_canonical-lineage-rebuild-v2.md`) already has a redirect
+   stub pointing to `plans/arc_d_v2/lineage_plan.md`.
 
 ### 21.4 Impact on CLAUDE.md and Memory
 
