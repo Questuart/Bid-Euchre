@@ -1696,6 +1696,7 @@ def _check_ols_predictions_sane(
     models: dict[str, dict],
     pass_model: dict,
     partner_feature_names: Optional[List[str]] = None,
+    has_interactions: bool = False,
 ) -> None:
     """Quick sanity check that OLS predictions aren't degenerate.
 
@@ -1716,8 +1717,16 @@ def _check_ols_predictions_sane(
             partner_feature_names=partner_feature_names,
         )
         # Compare bid-10 value vs bid-1 value
-        feats_10 = np.concatenate([state, extract_action_features(10)])
-        feats_1 = np.concatenate([state, extract_action_features(1)])
+        parts_10 = [state]
+        parts_1 = [state]
+        if has_interactions:
+            interactions = compute_interaction_features(state)
+            parts_10.append(interactions)
+            parts_1.append(interactions)
+        parts_10.append(extract_action_features(10))
+        parts_1.append(extract_action_features(1))
+        feats_10 = np.concatenate(parts_10)
+        feats_1 = np.concatenate(parts_1)
         val_10 = predict_ols(models[family], feats_10)
         val_1 = predict_ols(models[family], feats_1)
         if val_10 > val_1:
@@ -1861,7 +1870,10 @@ class ActionValueBidder(BiddingPolicy):
 
         if not skip_behavioral_check:
             _check_ols_predictions_sane(
-                self.models, self.pass_model, self._partner_feature_names
+                self.models,
+                self.pass_model,
+                self._partner_feature_names,
+                has_interactions=self._has_interactions,
             )
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:

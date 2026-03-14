@@ -22,7 +22,7 @@
 | Lambda sweep | Risk parameter sensitivity | scripts/internal/run_lambda_sweep.py | Simulation-based | 42 | v2 |
 | Normalizer screen | Feature normalization impact | scripts/internal/run_normalizer_offline_screen.py | Offline | 42 | v1 |
 | C33 ablation | Search vs wrapper effect decomposition | experiments/configs/arc_d_r0_c33_ablation.yaml | 90,000 (3 arms x 30k) | 42 | v2 |
-| Eval dataset | Per-rung evaluation data (3-seed) | scripts/internal/run_arc_d_eval.py | 50,000 x 3 seeds | 42/43/44 | v2 |
+| Eval dataset | Per-rung evaluation data (3-seed) | run_arc_d_eval.py (removed) | 50,000 x 3 seeds | 42/43/44 | v2 |
 | Pass-threshold sweep | Threshold sensitivity analysis | notebook 56 | 10,000 | 42 | v2 |
 | Contract selection oracle | Oracle regret decomposition | notebook 55 | 40,000 (QUICK) | 42 | v2 |
 | OneModel comparison | Single-model vs per-contract comparison | notebook 60 | 5,000 | 42 | v1 |
