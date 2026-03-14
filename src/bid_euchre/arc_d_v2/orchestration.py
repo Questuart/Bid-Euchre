@@ -19,6 +19,7 @@ from pathlib import Path
 
 import yaml
 
+from bid_euchre.arc_d_v2.config import Roster, RosterModel
 from bid_euchre.arc_d_v2.heartbeat import (
     clear_heartbeat,
     write_heartbeat,
@@ -199,8 +200,10 @@ def fingerprint_matches(state: RunState, step: str, seed: int, **kwargs) -> bool
 # ---------------------------------------------------------------------------
 
 
-def load_roster(rung: str) -> dict:
+def load_roster(rung: str) -> Roster:
     """Load lineage roster with optional rung overlay.
+
+    Uses the canonical ``Roster.load()`` from ``config.py`` (list format).
 
     Roster file: plans/arc_d_v2/roster.json (lineage-level)
     Overlay file: plans/arc_d_v2/<rung>/roster_overlay.json (optional)
@@ -208,47 +211,34 @@ def load_roster(rung: str) -> dict:
     roster_path = _repo_root() / "plans" / "arc_d_v2" / "roster.json"
     if not roster_path.exists():
         logger.warning("No lineage roster found at %s", roster_path)
-        return {"models": {}}
+        return Roster()
 
-    roster = json.loads(roster_path.read_text())
+    roster = Roster.load(roster_path)
 
     overlay_path = _plans_dir(rung) / "roster_overlay.json"
     if overlay_path.exists():
         overlay = json.loads(overlay_path.read_text())
         for name in overlay.get("exclude", []):
-            if name in roster.get("models", {}):
-                roster["models"][name]["status"] = "excluded"
+            for m in roster.models:
+                if m.name == name:
+                    m.status = "excluded"
         for entry in overlay.get("add", []):
-            name = entry.get("name", entry.get("id"))
+            name = entry.get("name", entry.get("id", ""))
             if name:
-                roster["models"][name] = entry
+                roster.models.append(
+                    RosterModel(
+                        name=name,
+                        class_name=entry.get("class", entry.get("class_name", "")),
+                        trainable=entry.get("trainable", True),
+                        model_class=entry.get("model_class", ""),
+                        feature_set=entry.get("feature_set", ""),
+                        selection=entry.get("selection", "none"),
+                        category=entry.get("category", ""),
+                        status=entry.get("status", "active"),
+                    )
+                )
 
     return roster
-
-
-def get_trainable_models(roster: dict) -> list[dict]:
-    """Get list of trainable models from roster."""
-    models = []
-    for name, spec in roster.get("models", {}).items():
-        if spec.get("status") == "excluded":
-            continue
-        if spec.get("trainable", True):
-            model = dict(spec)
-            model["name"] = name
-            models.append(model)
-    return models
-
-
-def get_all_active_models(roster: dict) -> list[dict]:
-    """Get all active (non-excluded) models from roster."""
-    models = []
-    for name, spec in roster.get("models", {}).items():
-        if spec.get("status") == "excluded":
-            continue
-        model = dict(spec)
-        model["name"] = name
-        models.append(model)
-    return models
 
 
 # ---------------------------------------------------------------------------
@@ -334,43 +324,36 @@ def generate_h2h_roster(
     ]
     """
     roster = load_roster(rung)
-    all_models = get_all_active_models(roster)
     entries: list[dict] = []
 
-    for model in all_models:
-        entry: dict = {"name": model["name"], "class_name": model["class_name"]}
+    for model in roster.all_active_models():
+        entry: dict = {"name": model.name, "class_name": model.class_name}
 
-        if model.get("trainable", True):
+        if model.trainable:
             # Find the trained artifact for this model + seed
             artifact_path = find_trained_artifact(
-                model["name"], rung, mode, seed, artifacts_dir
+                model.name, rung, mode, seed, artifacts_dir
             )
             if artifact_path is not None and artifact_path.exists():
                 entry["params"] = {"artifact_path": str(artifact_path)}
             else:
                 logger.warning(
                     "No artifact found for %s seed %d, skipping from H2H roster",
-                    model["name"],
+                    model.name,
                     seed,
                 )
                 continue
-        else:
-            # Non-trainable model: use params from roster spec if present
-            params = model.get("params")
-            if params:
-                entry["params"] = dict(params)
 
         entries.append(entry)
 
     # Add anchor model if defined
-    anchor = roster.get("anchor", {})
-    anchor_name = anchor.get("name")
-    anchor_class = anchor.get("class_name")
-    anchor_artifact = anchor.get("artifact")
-    if anchor_name and anchor_class:
-        anchor_entry: dict = {"name": anchor_name, "class_name": anchor_class}
-        if anchor_artifact:
-            anchor_path = _repo_root() / anchor_artifact
+    if roster.anchor.name and roster.anchor.class_name:
+        anchor_entry: dict = {
+            "name": roster.anchor.name,
+            "class_name": roster.anchor.class_name,
+        }
+        if roster.anchor.artifact:
+            anchor_path = _repo_root() / roster.anchor.artifact
             if anchor_path.exists():
                 anchor_entry["params"] = {"artifact_path": str(anchor_path)}
             else:
@@ -397,37 +380,31 @@ def generate_comparator_config(
     - parameters (n_per, log_level, etc.)
     """
     roster = load_roster(rung)
-    all_models = get_all_active_models(roster)
 
     bidding_policies: list[dict] = []
-    for model in all_models:
-        policy: dict = {"name": model["name"], "class_name": model["class_name"]}
-        if model.get("trainable", True):
+    for model in roster.all_active_models():
+        policy: dict = {"name": model.name, "class_name": model.class_name}
+        if model.trainable:
             artifact_path = find_trained_artifact(
-                model["name"], rung, mode, seed, artifacts_dir
+                model.name, rung, mode, seed, artifacts_dir
             )
             if artifact_path is not None and artifact_path.exists():
                 policy["params"] = {"artifact_path": str(artifact_path)}
             else:
                 logger.warning(
-                    "No artifact for %s, skipping from comparator", model["name"]
+                    "No artifact for %s, skipping from comparator", model.name
                 )
                 continue
-        else:
-            params = model.get("params")
-            if params:
-                policy["params"] = dict(params)
         bidding_policies.append(policy)
 
     # Add anchor
-    anchor = roster.get("anchor", {})
-    anchor_name = anchor.get("name")
-    anchor_class = anchor.get("class_name")
-    anchor_artifact = anchor.get("artifact")
-    if anchor_name and anchor_class:
-        anchor_policy: dict = {"name": anchor_name, "class_name": anchor_class}
-        if anchor_artifact:
-            anchor_path = _repo_root() / anchor_artifact
+    if roster.anchor.name and roster.anchor.class_name:
+        anchor_policy: dict = {
+            "name": roster.anchor.name,
+            "class_name": roster.anchor.class_name,
+        }
+        if roster.anchor.artifact:
+            anchor_path = _repo_root() / roster.anchor.artifact
             if anchor_path.exists():
                 anchor_policy["params"] = {"artifact_path": str(anchor_path)}
         bidding_policies.append(anchor_policy)
@@ -675,7 +652,7 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
     """Step 2: Train all roster models for one seed."""
     rung = state.rung
     roster = load_roster(rung)
-    trainable = get_trainable_models(roster)
+    trainable = roster.trainable_models()
 
     _append_log(rung, {"event": "step_start", "step": "2", "seed": seed})
     state.mark_step_started("2", seed)
@@ -688,9 +665,25 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
     dataset_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
     dataset_path = dataset_dir / "datasets" / "action_value.parquet"
 
+    # Locate continuation artifact (same logic as step 1)
+    continuation = (
+        _repo_root()
+        / "data"
+        / "artifacts"
+        / "arc_d"
+        / rung
+        / f"hybrid_{rung}_full.json"
+    )
+    if not continuation.exists():
+        alt = (
+            _repo_root() / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
+        )
+        if alt.exists():
+            continuation = alt
+
     all_ok = True
     for model in trainable:
-        model_name = model["name"]
+        model_name = model.name
 
         if state.model_status(seed, "2", model_name) == "complete":
             if fingerprint_matches(
@@ -725,19 +718,21 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
             str(dataset_path),
             "--output-dir",
             str(output_dir),
+            "--continuation-artifact",
+            str(continuation),
         ]
 
-        model_class = model.get("model_class", "ols")
+        model_class = model.model_class or "ols"
         if model_class != "ols":
             cmd.extend(["--model-class", model_class])
 
-        feature_set = model.get("feature_set", "full")
+        feature_set = model.feature_set or "full"
         if feature_set != "full":
             cmd.extend(["--feature-set", feature_set])
 
-        continuation = model.get("continuation_artifact")
-        if continuation:
-            cmd.extend(["--continuation-artifact", str(_repo_root() / continuation)])
+        selection = model.selection or "none"
+        if selection != "none":
+            cmd.extend(["--selection", selection])
 
         if dry_run:
             logger.info("Step 2: would train %s: %s", model_name, " ".join(cmd))
