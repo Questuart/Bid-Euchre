@@ -1,291 +1,246 @@
-# R1.5 Rung Closeout — Objective-Alignment
+# R1.5 Rung Closeout — Objective-Alignment through Model-Architecture
 
 **Arc:** D (OLSa-Hybrid Bidder)
-**Rung:** R1.5 (objective-alignment)
-**Decision:** ADVANCED (not promoted)
-**gate_status:** ADVANCED — CI_low +0.124 < delta floor 0.180
-**Date:** 2026-03-08
+**Rung:** R1.5 through R1.5.3
+**Decision:** PROMOTED
+**gate_status:** PROMOTED — GBT AV v1 replaces hybrid_olsa_full R0 as incumbent
+**Date:** 2026-03-13 (R1.5.3 PROMOTED); 2026-03-08 (R1.5 v1 ADVANCED)
 **Methodology Review:** [measurement_integrity_r1_5.md](measurement_integrity_r1_5.md)
 
-> **Naming convention:** R1.5 introduces a new bidder architecture. The following
-> names appear across reports and artifacts:
+> **Naming convention:** R1.5 introduces the action-value bidder architecture.
+> R1.5.3 replaces the OLS model with GBT.
 >
 > | Name | Referent | Artifact |
 > |------|----------|----------|
-> | ActionValueBidder | Python class for direct net_points argmax bidder | `src/bid_euchre/strategy/bidding.py` |
-> | AV v1 | ActionValueBidder first iteration (QUICK-trained, risk-neutral) | `action_value_full.json` |
-> | HO_full R0 | hybrid_olsa_full R0 — incumbent best (promotional arm) | `hybrid_r0_full.json` |
-> | HO R0 | hybrid_olsa R0 — incumbent constrained (attribution arm) | `hybrid_r0.json` |
-> | HO_full R1 | hybrid_olsa_full R1 — R1 partner-context variant (STOP) | `hybrid_r1_full.json` |
->
-> Self-play and offline sections use class names; H2H and comparator sections use
-> short names (AV v1, HO_full R0, etc.).
+> | AV v1 (OLS) | ActionValueBidder — OLS per-contract models, argmax | `action_value_full.json` |
+> | **GBT AV v1** | **GBTActionValueBidder — GBT per-contract models, argmax** | **`action_value_gbt.json`** |
+> | HO_full R0 | hybrid_olsa_full R0 — former incumbent | `hybrid_r0_full.json` |
+> | HO R0 | hybrid_olsa R0 — former constrained arm | `hybrid_r0.json` |
 
 ## Executive Summary
 
 R1.5 replaced the R0/R1 tricks-based prediction + Gaussian EV utility pipeline
-with direct `net_points` prediction via per-contract OLS models and argmax
-decision. This addresses the core R1 diagnosis: the objective mismatch
-(train `tricks_won`, decide via hand-coded utility, evaluate on `points_per_deal`)
-was the primary bottleneck, not partner features or model capacity.
+with direct `net_points` prediction via per-contract models and argmax decision.
+R1.5 v1 (OLS) showed the approach was sound (+0.152 pooled) but a structural
+suit regression (-0.142) blocked promotion. R1.5.2 exhausted feature-based
+fixes. R1.5.3 resolved the suit regression by replacing OLS with gradient-boosted
+trees (GBT), which capture the bimodal make/set decision boundary that linear
+models cannot represent.
 
-**Primary result (FULL H2H, 50,000 deals):**
+**Definitive result (GBT FULL H2H, 3 seeds x 50,000 deals):**
 
-| Comparison | Delta (net_eppd) | 95% CI | Significant |
-|------------|------------------|--------|-------------|
-| AV v1 vs HO_full R0 (pooled) | **+0.152** | **[+0.124, +0.180]** | **Yes** |
-| AV v1 vs HO R0 (pooled) | +0.182 | [+0.155, +0.210] | Yes |
-| HO_full R0 vs HO R0 | +0.028 | [+0.002, +0.055] | Yes |
+| Contract | 3-Seed Mean | Range | Significant |
+|----------|-------------|-------|-------------|
+| **Suit** | **+0.827** | +0.818 to +0.843 | **Yes** — regression resolved |
+| **High** | **+0.333** | +0.258 to +0.404 | **Yes** |
+| **Low** | -0.041 | -0.089 to -0.008 | No — parity with R0 |
+| **Pooled** | **+0.570** | +0.557 to +0.595 | **Yes** |
 
-**Per-contract-type deltas (AV v1 vs HO_full R0):**
+All promotion gates pass: CI_low > +0.50 (threshold: 0.180), suit delta > 0,
+no seed reversals (3/3 positive). Cross-seed CV: 3.7% pooled, 1.6% suit.
 
-| Contract | Delta (net_eppd) | 95% CI | Significant |
-|----------|------------------|--------|-------------|
-| **Suit** | **-0.142** | **[-0.180, -0.105]** | **Yes (regression)** |
-| **High** | **+0.430** | **[+0.359, +0.501]** | **Yes** |
-| **Low** | **+0.495** | **[+0.444, +0.546]** | **Yes** |
+**Verdict:** GBT AV v1 is PROMOTED to incumbent, replacing hybrid_olsa_full R0.
 
-**Verdict:** AV v1 is significantly better than both R0 incumbents overall, but
-the suit-contract regression (-0.142) prevents CI_low from clearing the 0.180
-promotion threshold. Decision: ADVANCED to v2 development; R0 hybrid_olsa_full
-remains the incumbent bidder.
+## R1.5 Arc Progression
 
-## What Changed (R0/R1 to R1.5)
+| Sub-rung | Model | Pooled vs R0 | Suit vs R0 | Decision |
+|----------|-------|-------------|------------|----------|
+| **R1.5 v1** | OLS | +0.152 | **-0.142** | ADVANCED — suit regression blocks |
+| **R1.5.2** | (diagnostics) | — | — | Features exhausted, bimodal target identified |
+| **R1.5.3** | GBT | **+0.570** | **+0.827** | **PROMOTED** — suit resolved |
 
-| Layer | R0/R1 | R1.5 | Impact |
-|-------|-------|------|--------|
-| **Objective** | Predict `tricks_won` | Predict `net_points` | Core change — bypasses objective mismatch |
-| **Decision** | Gaussian EV + sigma + risk_lambda | Argmax over per-contract predictions | Eliminates H10 degeneracy (EV non-increasing in bid_n) |
-| **Features** | 39 hand features | 52-column state features (hand + position + legality + partner + action encoding) | Richer representation |
-| **Architecture** | Single model per contract → `_compute_ev_static()` | 4 per-contract OLS models (suit, high, low, pass) → argmax | Simpler inference |
-| **Training data** | Bidless dataset (outcome observation) | Counterfactual dataset (forced-action rollouts) | Direct action-value labels |
-| **Risk** | risk_lambda, sigma parameters | None (risk-neutral) | Consistent with Track D RETAIN lambda=0.0 |
+### What Each Phase Contributed
 
-## Gate Results
+**R1.5 v1 (OLS, Mar 6-8):** Proved objective alignment works. Reversed R1's
+-0.348 regression to +0.152. Unlocked high (+0.430) and low (+0.495).
+Identified suit regression as sole blocker.
+
+**R1.5.2 (diagnostics, Mar 9-10):** Six ablation experiments eliminated all
+feature-based hypotheses. Partner features are critical for action selection
+(not prediction). Bimodal suit target identified as structural OLS limitation.
+
+**R1.5.3 (GBT, Mar 11-13):** GBT prototype validated at QUICK (+1.067).
+2x2 model x label matrix proved model capacity >> label quality (35x).
+Two-stage OLS partial (+0.124 but -0.750 vs GBT). GBT FULL validation:
++0.570 pooled, all gates pass across 3 seeds.
+
+## What Changed (R0 to R1.5.3)
+
+| Layer | R0 | R1.5.3 (GBT) | Impact |
+|-------|-----|-------------|--------|
+| **Objective** | `tricks_won` | `net_points` | Eliminates objective mismatch |
+| **Decision** | Gaussian EV + sigma + risk_lambda | Argmax over GBT predictions | Eliminates H10 degeneracy |
+| **Model** | Per-contract OLSa | Per-contract GBT (100 trees, depth 3) | Captures bimodal make/set boundary |
+| **Features** | 39 hand features | 52-column state (hand + position + partner + action) | Richer representation |
+| **Training data** | Bidless (outcome observation) | Counterfactual (forced-action rollouts) | Direct action-value labels |
+| **Risk** | risk_lambda, sigma | None (risk-neutral) | Consistent with Track D RETAIN lambda=0.0 |
+
+## Gate Results (Final — R1.5.3 GBT)
 
 | Gate | Criterion | Result | Evidence |
 |------|-----------|--------|----------|
-| X1 (dataset) | Schema valid, 2000+ deals | **PASS** | [00_step1_dataset_generator.md](00_step1_dataset_generator.md) |
-| X2 (training) | R² > thresholds per contract | **PASS** | QUICK: suit=0.565, high=0.533, low=0.514, pass=0.046 |
-| X3 (offline ranking) | Top-1 accuracy >= 40% | **FAILED** (adjudicated ADVANCED) | 26.6% top-1; oracle noise from single-rollout labels |
-| X4 QUICK | Delta > -0.10 | **PASS** | +0.165 net_eppd |
-| X4 FULL | CI_low > 0.180 (promotion) | **FAIL** | CI_low = +0.124 |
-| X4 FULL | CI_low > -0.10, point estimate > 0 (advancement) | **PASS** | Point estimate = +0.152, CI_low = +0.124 |
+| G1 | Pooled CI_low > 0.180 | **PASS** — CI_low > +0.50 (all seeds) | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
+| G2 | Suit delta > 0 | **PASS** — +0.827 (3-seed mean) | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
+| G3 | No seed reversals | **PASS** — 3/3 positive | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
 
-### Gate X3 Adjudication
+### Historical Gates (R1.5 v1 OLS)
 
-The offline ranking gate was mis-specified: it assumed an oracle built from
-averaged continuation rollouts, but the dataset generator produces a single
-rollout per action. With ~47 actions per state and bimodal make/set outcomes
-(net_points std = 8.1), single-rollout top-1 agreement is not a meaningful
-metric. Robust alternatives showed the model has real signal: 84.6% pairwise
-accuracy (all pairs), 67.6% regret reduction vs random, positive mean outcome
-(+0.44) for model-chosen actions. See
-[01_offline_gate_x3_report.md](01_offline_gate_x3_report.md) for full analysis.
+| Gate | Result | Notes |
+|------|--------|-------|
+| X1-X2 | PASS | Dataset and training validated |
+| X3 | Adjudicated ADVANCED | Oracle noise; robust alternatives show signal |
+| X4 QUICK | PASS | +0.165 |
+| X4 FULL | ADVANCED (not promoted) | CI_low +0.124 < 0.180 |
 
 ## H2H Evidence
 
-### FULL Battery (Definitive)
+### GBT FULL Battery (Definitive — R1.5.3)
 
-50,000 deals, seed 42, 3-bidder roster, 9 matchups (3 self-play + 6 cross).
+3 seeds (42, 123, 456) x 50,000 deals x 9 matchups = 1,350,000 total hands.
 
-**Symmetrized deltas:**
+**GBT vs Hybrid R0 symmetrized deltas:**
 
-| Comparison | Delta | CI_low | CI_high | Significant |
-|------------|-------|--------|---------|-------------|
-| **AV v1 vs HO_full R0** | **+0.152** | **+0.124** | **+0.180** | **Yes** |
-| AV v1 vs HO R0 | +0.182 | +0.155 | +0.210 | Yes |
-| HO_full R0 vs HO R0 | +0.028 | +0.002 | +0.055 | Yes |
+| Contract | Seed 42 | Seed 123 | Seed 456 | Mean |
+|----------|---------|----------|----------|------|
+| Suit | +0.843 | +0.818 | +0.819 | +0.827 |
+| High | +0.404 | +0.258 | +0.336 | +0.333 |
+| Low | -0.027 | -0.008 | -0.089 | -0.041 |
+| Pooled | +0.595 | +0.557 | +0.558 | +0.570 |
 
-**Per-contract-type deltas (AV v1 vs HO_full R0):**
+Source: [12_gbt_full_validation.md](12_gbt_full_validation.md)
 
-| Contract | Delta | CI | Significant |
-|----------|-------|----|-------------|
-| Suit | -0.142 | [-0.180, -0.105] | Yes (regression) |
-| High | +0.430 | [+0.359, +0.501] | Yes |
-| Low | +0.495 | [+0.444, +0.546] | Yes |
+### OLS FULL Battery (Historical — R1.5 v1)
+
+50,000 deals, seed 42, 3-bidder roster.
+
+| Comparison | Pooled | Suit | High | Low |
+|------------|--------|------|------|-----|
+| OLS AV v1 vs HO_full R0 | +0.152 | -0.142 | +0.430 | +0.495 |
 
 Source: [05_h2h_battery_full.md](05_h2h_battery_full.md)
 
-### QUICK Battery (Screening)
+### QUICK to FULL Shrinkage
 
-2,500 deals, seed 42, same roster. Primary delta: +0.165 net_eppd.
-QUICK-to-FULL shrinkage: 8% (+0.165 to +0.152). Behavioral metrics stable.
-Source: [03_h2h_battery_quick.md](03_h2h_battery_quick.md)
+| Model | QUICK | FULL (mean) | Shrinkage |
+|-------|-------|-------------|-----------|
+| OLS AV v1 | +0.165 | +0.152 | 8% |
+| GBT AV v1 | +1.067 | +0.570 | 47% |
+
+GBT's larger shrinkage reflects QUICK-trained model evaluated at FULL scale.
+Despite 47% shrinkage, CI_low (+0.50+) remains 2.8x the promotion threshold.
 
 ### Behavioral Profile
 
-| Metric | AV v1 | HO_full R0 |
-|--------|-------|------------|
-| Bid rate (cross-matchup) | 56-57% | 43-44% |
-| Make rate (self-play) | 94.6% | 96.8% |
-| Bid level | 4 (always) | Variable (4-7+) |
-| Pass rate | ~0% | ~43-44% |
+| Metric | GBT AV v1 | OLS AV v1 | HO_full R0 |
+|--------|-----------|-----------|------------|
+| Bid rate (cross) | ~68% | ~57% | ~32% |
+| Make rate (self-play) | 84.6% | 94.6% | 96.7% |
+| Pass rate | ~32% | ~0% | ~5.7% |
+| Self-play eppd | 4.16 | 4.82 | 4.89 |
+| CVaR5 (self-play) | -6.84 | -1.80 | -0.74 |
 
-AV v1 uses a "quantity over quality" strategy: bid on nearly every hand at
-minimum level (bid=4), accepting low set risk (-4 points) while R0 is more
-selective but bids higher on strong hands. This is a genuine strategic
-innovation discovered from the data, not a hand-coded heuristic.
+GBT discovered selective, aggressive bidding: pass on ~32% of hands, bid
+higher when bidding (avg 5.44 vs OLS's fixed 4). Both are valid strategies
+discovered from data, but GBT's captures more value.
 
-## R1.5 vs R1 Comparison
+## Rung-over-Rung Progression vs R0 Full
 
-R1.5 was designed to address the R1 diagnosis: the decision-layer bottleneck
-(H10 degeneracy) and objective mismatch (tricks_won vs points_per_deal) were
-the primary causes of R1's regression. The following table compares R1 and R1.5
-outcomes against the shared R0 baseline.
+| Metric | R1 | R1.5 v1 (OLS) | R1.5.3 (GBT) | Direction |
+|--------|-----|---------------|-------------|-----------|
+| Overall | -0.348 | +0.152 | **+0.570** | Steady improvement |
+| Suit | -0.76 | -0.142 | **+0.827** | Regression resolved |
+| High | ~0 | +0.430 | +0.333 | R1.5 unlocked, GBT stable |
+| Low | ~0 | +0.495 | -0.041 | R1.5 unlocked, parity at GBT |
 
-### Rung-over-Rung Deltas vs R0 Full (Canonical Baseline)
+## Key Hypotheses Resolved
 
-| Metric | R1 vs R0_full | R1.5 vs R0_full | Direction |
-|--------|---------------|-----------------|-----------|
-| Overall net_eppd | -0.348 | **+0.152** | Reversed (improvement) |
-| Suit net_eppd | -0.76 | **-0.142** | Improved but still regressed |
-| High net_eppd | ~0 (CI spans 0) | **+0.430** | New gain |
-| Low net_eppd | ~0 (CI spans 0) | **+0.495** | New gain |
+| ID | Hypothesis | Status | Rung |
+|----|-----------|--------|------|
+| H1 | Objective mismatch was main R1 failure | CONFIRMED | R1.5 |
+| H12 | Bimodal suit target causes OLS regression | SUPPORTED | R1.5.2 |
+| H15 | Model capacity >> label quality | CONFIRMED (35x) | R1.5.3 |
+| H16 | Two-stage OLS closes GBT gap | PARTIAL (-0.750 behind) | R1.5.3 |
 
-### What R1.5 Fixed
+See [11_r1_5_arc_retrospective.md](11_r1_5_arc_retrospective.md) for full
+hypothesis ledger (H1-H16).
 
-1. **Objective mismatch resolved.** R1 trained on `tricks_won` but was evaluated
-   on `points_per_deal`. R1.5 trains directly on `net_points`, eliminating the
-   translation gap. The R1 closeout diagnosis is confirmed: objective alignment
-   was the key fix.
+## Next Steps (R1.6)
 
-2. **Decision-layer bottleneck bypassed.** R1's `_compute_ev_static()` produced
-   EV monotonically non-increasing in bid_n (H10), causing `compute_best_bid()`
-   to always pick minimum legal. R1.5's argmax over predicted net_points has no
-   such degeneracy.
+R1.6 extends partner features with suit-relative channels:
 
-3. **High/low contracts unlocked.** R1 showed no significant change in high/low
-   contracts. R1.5 shows large, significant gains (+0.43/+0.49). The simpler
-   scoring structure of no-trump contracts (no bowers, no trump suit) is
-   well-served by linear OLS models.
+| Feature | Description |
+|---------|-------------|
+| `partner_level_same_suit` | Partner bid level when bidding same suit |
+| `partner_level_same_color` | Partner bid level when bidding same-color offsuit |
+| `partner_level_off_color` | Partner bid level when bidding off-color offsuit |
+| `partner_passed` | Partner passed (unchanged) |
 
-### What Persists
-
-1. **Suit regression.** R1 regressed -0.76 in suit; R1.5 regresses -0.142.
-   The magnitude is much smaller (5.3x reduction), but the direction persists.
-   Bower interactions and trump effects create non-linearities that OLS cannot
-   capture. This is a model-capacity limitation, not an objective-alignment issue.
-
-2. **Single-seed evaluation.** Both R1 and R1.5 FULL evaluations used seed=42
-   only. Cross-seed validation is deferred.
-
-## Ablation
-
-The 3-bidder roster enables two attribution axes:
-
-| Component | Estimate | Method |
-|-----------|----------|--------|
-| Total R1.5 vs R0_full | +0.152 | Direct H2H |
-| Partner features (R0_full vs R0) | +0.028 | Direct H2H |
-| Objective + decision layer | +0.152 | Confounded (both changed R0→R1.5) |
-
-The objective change and decision layer cannot be separated without an
-intermediate bidder. The dominant attribution is the objective/decision change:
-+0.152 from architecture vs +0.028 from features.
-
-Per-contract attribution is the most informative axis — see
-[06_ablation.md](06_ablation.md).
-
-## Plan Deviations
-
-Three deviations from the governing plan (`plans/r1_5_training_plan.md`):
-
-| Deviation | Plan Spec | Actual | Rationale |
-|-----------|-----------|--------|-----------|
-| FULL retraining | Step 4: retrain at FULL (50k deals) | Deferred — QUICK-trained models used for FULL H2H | Model quality validated at QUICK; retraining deferred to v2 |
-| Step 7 skip | Step 7: v2 risk treatment | Skipped — delta > 0.0 | Risk-neutral v1 already positive; risk treatment available for v2 |
-| Comparator battery | Step 8: H2H + comparator | H2H only | CI_low < 0.180 regardless; comparator deferred to v2 |
-
-These deviations are formally documented in
-[measurement_integrity_r1_5.md](measurement_integrity_r1_5.md).
-
-## Recommended Next Steps (R1.5-v2)
-
-### Priority 1: Suit-Contract Improvement
-
-The -0.142 suit deficit is the critical promotion blocker. Options:
-
-1. **Non-linear suit model:** Replace OLS with piecewise linear or interaction
-   terms for suit contracts (bower x trump features)
-2. **Hybrid routing:** Use AV v1 for high/low decisions, R0 HybridOLSa for
-   suit contracts — directly eliminates the regression
-3. **Contract-conditional features:** Add suit-specific features to the
-   action-value model
-
-### Priority 2: Risk Treatment (deferred from Step 7)
-
-If the suit deficit is resolved, revisit risk treatment:
-- Pass threshold for marginal hands
-- CVaR penalty for high-variance bids
-
-### Priority 3: FULL Retraining
-
-Retrain action-value models on FULL dataset (50k deals) to reduce prediction
-variance. Currently using QUICK-trained models.
+Schema: v7 (52 features) to v8 (53 features). PR #631 (artifact-driven feature
+extraction) enables v7/v8 coexistence.
+Plan: `plans/sessions/2026-03-13_r1-6-partner-semantics.md`
 
 ## Timeline
 
 | Step | Date | Result | Report |
 |------|------|--------|--------|
-| 0 — Foundations | 2026-03-06 | PR #560 | [00_step0_foundations.md](00_step0_foundations.md) |
-| 1 — Dataset generator | 2026-03-06 | PRs #564, #565 | [00_step1_dataset_generator.md](00_step1_dataset_generator.md) |
-| 2 — Training pipeline | 2026-03-08 | PR #567 | [00_step2_training_pipeline.md](00_step2_training_pipeline.md) |
-| 3 — Offline eval (X3) | 2026-03-07 | Adjudicated ADVANCED | [01_offline_gate_x3_report.md](01_offline_gate_x3_report.md) |
-| 5 — Gameplay screen | 2026-03-08 | PASSED | [02_gameplay_screen_report.md](02_gameplay_screen_report.md) |
-| 6 — H2H QUICK (X4) | 2026-03-08 | +0.165 | [03_h2h_battery_quick.md](03_h2h_battery_quick.md) |
-| 7 — Risk treatment | 2026-03-08 | SKIPPED | [04_risk_treatment.md](04_risk_treatment.md) |
-| 8 — H2H FULL | 2026-03-08 | +0.152 (ADVANCED) | [05_h2h_battery_full.md](05_h2h_battery_full.md) |
-| 9 — Ablation | 2026-03-08 | Suit regression confirmed | [06_ablation.md](06_ablation.md) |
+| **R1.5 v1** | | | |
+| 0-2 — Infrastructure | 2026-03-06-08 | PRs #560-#567 | [00_step0_foundations.md](00_step0_foundations.md) et al. |
+| 3 — Offline eval | 2026-03-07 | Adjudicated ADVANCED | [01_offline_gate_x3_report.md](01_offline_gate_x3_report.md) |
+| 5-8 — H2H batteries | 2026-03-08 | +0.152 (ADVANCED) | [05_h2h_battery_full.md](05_h2h_battery_full.md) |
 | 10 — Promotion decision | 2026-03-08 | ADVANCED | [07_promotion_decision.md](07_promotion_decision.md) |
-
-Step 4 (FULL retraining) was deferred. Step 7 was skipped. Step 8 comparator
-battery was deferred. These are documented in the plan deviations section above.
+| **R1.5.2** | | | |
+| Ablation campaign | 2026-03-09-10 | Features exhausted | [v2_ablation_analysis.md](v2_ablation_analysis.md) |
+| **R1.5.3** | | | |
+| Error taxonomy | 2026-03-11 | Boundary=28.5% | [suit_decision_diagnostic.md](suit_decision_diagnostic.md) |
+| GBT prototype | 2026-03-11 | +1.067 QUICK | [08_gbt_prototype_evaluation.md](08_gbt_prototype_evaluation.md) |
+| 2x2 matrix (H15) | 2026-03-12 | Model >> labels | [10_model_label_matrix.md](10_model_label_matrix.md) |
+| Two-stage (H16) | 2026-03-12 | PARTIAL | [11_two_stage_evaluation.md](11_two_stage_evaluation.md) |
+| GBT FULL validation | 2026-03-13 | All gates PASS | [12_gbt_full_validation.md](12_gbt_full_validation.md) |
+| **Promotion decision** | **2026-03-13** | **PROMOTED** | [13_r1_5_3_promotion_decision.md](13_r1_5_3_promotion_decision.md) |
 
 ## Artifact Manifest
 
 | Artifact | Path |
 |----------|------|
-| AV v1 model | `data/artifacts/arc_d/r1_5/action_value_full.json` |
-| Training dataset | `data/runs/action_value_quick_42/datasets/action_value.parquet` |
-| FULL H2H battery | `data/artifacts/arc_d/r1_5/h2h_battery_full.json` |
-| QUICK H2H battery | `data/artifacts/arc_d/r1_5/h2h_battery_quick.json` |
-| H2H roster | `data/artifacts/arc_d/r1_5/h2h_roster_r1_5.json` |
-| Self-play config | `experiments/configs/r1_5_self_play.yaml` |
-| Gate X3 script | `scripts/internal/evaluate_gate_x3.py` |
+| **GBT AV v1 model (incumbent)** | **`data/artifacts/arc_d/r1_5/action_value_gbt.json`** |
+| OLS AV v1 model (historical) | `data/artifacts/arc_d/r1_5/action_value_full.json` |
+| GBT FULL battery config | `data/runs/gbt_full_validation/h2h_battery_full_config.yaml` |
+| OLS FULL H2H battery | `data/artifacts/arc_d/r1_5/h2h_battery_full.json` |
 | Dataset generator | `scripts/internal/generate_action_value_dataset.py` |
 | Training pipeline | `scripts/internal/train_action_value.py` |
 | Governing plan | `plans/r1_5_training_plan.md` |
+| R1.5.3 plan | `plans/sessions/2026-03-12_r1-5-3-forward-plan-v2.md` |
 
 ## Companion Reports
 
-- [05_h2h_battery_full.md](05_h2h_battery_full.md) — FULL H2H battery (definitive evidence)
-- [06_ablation.md](06_ablation.md) — Contract-type attribution
-- [01_offline_gate_x3_report.md](01_offline_gate_x3_report.md) — Gate X3 analysis + oracle noise
-- [02_gameplay_screen_report.md](02_gameplay_screen_report.md) — Self-play behavioral profile
-- [04_risk_treatment.md](04_risk_treatment.md) — Risk treatment skip rationale
-- [measurement_integrity_r1_5.md](measurement_integrity_r1_5.md) — Methodology review + plan deviations
+### R1.5.3 (Promotion)
+- [13_r1_5_3_promotion_decision.md](13_r1_5_3_promotion_decision.md) — **Promotion decision — PROMOTED**
+- [12_gbt_full_validation.md](12_gbt_full_validation.md) — GBT FULL H2H (3-seed, definitive)
+- [08_gbt_prototype_evaluation.md](08_gbt_prototype_evaluation.md) — GBT prototype (QUICK)
+- [10_model_label_matrix.md](10_model_label_matrix.md) — H15: model >> labels (2x2 matrix)
+- [11_two_stage_evaluation.md](11_two_stage_evaluation.md) — H16: two-stage OLS (PARTIAL)
+- [11_r1_5_arc_retrospective.md](11_r1_5_arc_retrospective.md) — Full arc retrospective
 
-### Implementation History (Step Reports)
+### R1.5 v1 (ADVANCED — historical)
+- [07_promotion_decision.md](07_promotion_decision.md) — OLS promotion decision — ADVANCED
+- [05_h2h_battery_full.md](05_h2h_battery_full.md) — OLS FULL H2H
+- [06_ablation.md](06_ablation.md) — Per-contract attribution
+- [v2_ablation_analysis.md](v2_ablation_analysis.md) — R1.5.2 diagnostic campaign
 
-The following reports document the infrastructure build-out and are preserved
-as implementation history. They are not decision documents.
-
-- [00_step0_foundations.md](00_step0_foundations.md) — ActionValueBidder infrastructure
-- [00_step1_dataset_generator.md](00_step1_dataset_generator.md) — Counterfactual dataset generator
-- [00_step2_training_pipeline.md](00_step2_training_pipeline.md) — Training pipeline + Gate X2
+### Methodology
+- [measurement_integrity_r1_5.md](measurement_integrity_r1_5.md) — Full methodology review
 
 ## Provenance
 
 | Item | Value |
 |------|-------|
-| gate_status | ADVANCED — delta +0.152 significant, CI_low +0.124 below delta floor 0.180 |
-| Incumbent | hybrid_olsa_full R0 (`hybrid_r0_full.json`, SHA `5436b759f525466976244766dee8d98472dcfe243ac1d4542885e6cd0e6dcbc7`) |
-| Challenger | ActionValueBidder v1 (`action_value_full.json`) |
+| gate_status | PROMOTED — all 3 gates pass, +0.570 pooled net_eppd (3-seed) |
+| New incumbent | GBT AV v1 (`action_value_gbt.json`, SHA `9dd2bfca704fa7f3c6071ea925fd5abe7a1260b752f884648edbb30592773a1f`) |
+| Former incumbent | hybrid_olsa_full R0 (`hybrid_r0_full.json`, SHA `5436b759f525466976244766dee8d98472dcfe243ac1d4542885e6cd0e6dcbc7`) |
 | Gate thresholds | delta_floor=0.180, regression=-0.184 (from R0 calibration) |
-| Eval seed | 42 |
-| FULL n_per | 50,000 |
-| QUICK n_per | 2,500 |
-| analysis_base_sha | c15f7dd |
+| Eval seeds | 42, 123, 456 |
+| FULL n_per | 50,000 per matchup per seed |
+| Total hands evaluated | 1,350,000 |
+| analysis_base_sha | b53d31b |
 | R1 closeout | `docs/04_reports/r1/01_r1_outcome_summary.md` |
 | R0 promotion | `docs/04_reports/r0/01_r0_promotion_report.md` |
