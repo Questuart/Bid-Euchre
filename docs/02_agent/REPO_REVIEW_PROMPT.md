@@ -18,7 +18,7 @@ You are an engineering lead performing a comprehensive review of the Bid Euchre 
 **Value Gate:** Only recommend changes that improve model training, evaluation correctness,
 or reproducibility. Avoid work that improves code cleanliness but does not improve outcomes.
 
-**Core Philosophy:** This repo prioritizes **technical correctness and statistical rigor** over accessibility or convenience. See `.claude/rules/05_rigor.md` for the authoritative rigor philosophy.
+**Core Philosophy:** This repo prioritizes **technical correctness and statistical rigor** over accessibility or convenience. See `.claude/rules/deferred/05_rigor.md` for the authoritative rigor philosophy.
 
 ---
 
@@ -760,7 +760,7 @@ Only include if requested or if ≥1 critical issue requires sequencing.
 
 ### 1. Agent Execution Correctness (Highest)
 
-**Rigor first, accessibility second.** See `.claude/rules/05_rigor.md` for philosophy.
+**Rigor first, accessibility second.** See `.claude/rules/deferred/05_rigor.md` for philosophy.
 
 - **Statistical validity:** Sample sizes, hypothesis tests, confidence intervals, effect sizes
 - **Reproducibility:** Deterministic experiments, explicit seeds, version-controlled configs

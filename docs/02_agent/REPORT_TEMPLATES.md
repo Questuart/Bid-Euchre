@@ -168,7 +168,7 @@ breakout makes this asymmetry visible.
 
 ### Limitation Categories
 
-Per `.claude/rules/35_integrity.md`:
+Per `.claude/rules/deferred/35_integrity.md`:
 
 - **(a) Accepted limitation** — inherent to design, documented, no action needed
 - **(b) Deferred limitation** — fixable but deferred; requires cost analysis
