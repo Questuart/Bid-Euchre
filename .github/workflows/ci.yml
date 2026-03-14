@@ -9,7 +9,7 @@ on:
     branches: [ "main" ]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Detect code changes
+      - name: Detect changes
         id: changes
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
@@ -28,66 +28,154 @@ jobs:
               - 'scripts/**'
               - 'tests/**'
               - 'experiments/**'
-              - 'notebooks/**'
               - 'Makefile'
               - 'pyproject.toml'
               - '.github/workflows/ci.yml'
+            notebooks:
+              - 'notebooks/**'
+              - 'src/bid_euchre/diagnostics/**'
+              - 'src/bid_euchre/reporting/**'
+            arc_d_v2:
+              - 'src/bid_euchre/arc_d_v2/**'
+              - 'scripts/internal/run_rung.py'
+              - 'scripts/internal/rung_state.py'
+              - 'scripts/internal/generate_advance_check.py'
+              - 'scripts/internal/generate_rung_tables.py'
+              - 'scripts/internal/generate_rung_charts*.py'
+              - 'scripts/internal/generate_evidence_manifest.py'
+              - 'scripts/internal/generate_rung_report.py'
+              - 'scripts/internal/generate_interpretability.py'
+              - 'scripts/internal/train_action_value.py'
+              - 'plans/arc_d_v2/**'
+              - 'data/fixtures/arc_d_v2/**'
 
-      # For pushes to main, always run. For PRs, only run if code changed.
-      # When skipped, the job still posts a green `tests` status.
+      # ── Lane logic ──────────────────────────────────────────────────
+      # For pushes to main: always run everything.
+      # For PRs: run lanes based on which paths changed.
+      #   - "any_code" = code OR notebooks OR arc_d_v2 (anything that needs install)
+      #   - Docs/plans-only PRs skip all heavy steps → fast green check.
+      #
+      # Condition shorthands used in steps below:
+      #   push_or_code:      github.event_name == 'push' || steps.changes.outputs.code == 'true'
+      #   push_or_any:       github.event_name == 'push' || steps.changes.outputs.code == 'true' || steps.changes.outputs.notebooks == 'true' || steps.changes.outputs.arc_d_v2 == 'true'
+      #   push_or_notebooks: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
+      #   push_or_arc_d_v2:  github.event_name == 'push' || steps.changes.outputs.arc_d_v2 == 'true'
 
       - name: Skip notice
-        if: github.event_name == 'pull_request' && steps.changes.outputs.code != 'true'
-        run: echo "::notice::Docs/plans-only PR — skipping tests"
+        if: >-
+          github.event_name == 'pull_request' &&
+          steps.changes.outputs.code != 'true' &&
+          steps.changes.outputs.notebooks != 'true' &&
+          steps.changes.outputs.arc_d_v2 != 'true'
+        run: echo "::notice::Docs/plans-only PR — skipping all heavy steps"
 
+      # ── Setup (shared across all lanes) ─────────────────────────────
       - name: Checkout
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install uv
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         uses: astral-sh/setup-uv@v5
 
       - name: Install package + dev deps
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         run: uv sync --frozen --all-extras
 
+      # ── Fast checks (always, when any code touched) ─────────────────
       - name: Repo linter
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         run: make repo-lint
 
       - name: Validate configs
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         run: uv run python scripts/validate_configs.py
 
       - name: Docs freshness
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         run: make docs-check
 
       - name: Ruff (lint)
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
+        if: >-
+          github.event_name == 'push' ||
+          steps.changes.outputs.code == 'true' ||
+          steps.changes.outputs.notebooks == 'true' ||
+          steps.changes.outputs.arc_d_v2 == 'true'
         run: make lint
 
-      - name: Notebook hygiene
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
-        run: make notebook-check
-
-      - name: Execute notebooks (smoke)
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
-        run: make notebook-run
-
+      # ── Code lane: pytest ───────────────────────────────────────────
       - name: Tests (fast)
         if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
         run: make test
 
+      # ── Notebook lane: hygiene + smoke execution ────────────────────
+      - name: Notebook hygiene
+        if: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
+        run: make notebook-check
+
+      - name: Execute notebooks (smoke)
+        if: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
+        run: make notebook-run
+
+      # ── Arc D v2 lane: schema + pipeline tests ─────────────────────
+      - name: Arc D v2 pipeline smoke
+        if: github.event_name == 'push' || steps.changes.outputs.arc_d_v2 == 'true'
+        run: |
+          # Run Arc D v2 schema tests (always present)
+          uv run python -m pytest tests/unit/test_arc_d_v2_schemas.py -v
+
+          # Run orchestrator tests if they exist (added by PR #646)
+          if [ -f tests/unit/test_rung_orchestrator.py ]; then
+            uv run python -m pytest tests/unit/test_rung_orchestrator.py -v -k "not slow"
+          fi
+
+          # Run reporting pipeline tests if they exist (added by PR #644)
+          for f in tests/unit/test_rung_tables.py \
+                   tests/unit/test_rung_report.py \
+                   tests/unit/test_evidence_manifest.py \
+                   tests/unit/test_reporting_pipeline_smoke.py; do
+            if [ -f "$f" ]; then
+              uv run python -m pytest "$f" -v
+            fi
+          done
+
+      # ── Promotion gate (label-triggered) ────────────────────────────
       - name: Promotion gate
         if: |
           (github.event_name == 'push' || steps.changes.outputs.code == 'true') &&
