@@ -1,4 +1,4 @@
-.PHONY: help sync repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync ensure-venv repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -56,7 +56,10 @@ test:
 	@echo ">>> Pytest (fast suite)"
 	PYTHONPATH=.:src $(PYTHON) -m pytest -q -m "not slow" tests/
 
-check: repo-lint lint test notebook-check docs-check
+ensure-venv:
+	@[ -d .venv ] || { echo ">>> Bootstrapping venv (fresh worktree detected)"; uv sync --all-extras; }
+
+check: ensure-venv repo-lint lint test notebook-check docs-check
 	@echo "✓ All checks passed"
 
 check-quiet:
