@@ -337,7 +337,8 @@ enables idempotent resume.
 **Agent reliability:** Spawned agents silently die when they exhaust their
 context window (~15 min or ~700KB output). Keep agent tasks small and focused
 (one concept per agent). Never combine fix + validation in one agent. See
-`.claude/rules/70_agent_reliability.md` for constraints.
+`.claude/rules/70_agent_reliability.md` for full constraints. Detection: check
+output file growth with `wc -c` at 5s intervals.
 
 ### When to Create a Sub-Plan
 

@@ -2290,6 +2290,29 @@ old), the orchestrator is considered dead.
 checking `state.json`. Always resume via the normal CLI -- the state model
 handles the rest.
 
+#### 17.5.8 Agent Reliability Constraints
+
+Spawned agents have a practical runtime limit of ~10-15 minutes before
+context window exhaustion causes silent termination. This constrains how
+autonomous orchestration work is divided.
+
+**Rules for the orchestrator and agent spawning:**
+
+1. Each orchestrator step should complete within 10 minutes at SMOKE scale
+2. If a step runs longer (H2H at FULL scale), the orchestrator uses subprocess
+   timeouts (§17.5.7) rather than relying on agent context persistence
+3. Fix agents must be scoped to ONE change — never combine fixes with validation
+4. SMOKE validation is always a separate agent from any fix agent
+5. If an agent dies mid-step, `state.json` enables idempotent resume
+
+**Impact on autonomous execution:** The orchestrator itself runs as a subprocess
+(`uv run python scripts/internal/run_rung.py`), not as agent context. This
+means orchestrator execution is NOT limited by agent context — only the agent
+that LAUNCHES the orchestrator is. The orchestrator's heartbeat mechanism
+(§17.5.7) detects stalls in the orchestrator process itself.
+
+See `.claude/rules/70_agent_reliability.md` for the full constraint catalog.
+
 ## 18. Run Naming Contract
 
 All run IDs follow this pattern:

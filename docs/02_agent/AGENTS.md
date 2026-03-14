@@ -638,7 +638,23 @@ They are not valid execution contracts.
 
 ---
 
-## 13) Post-Merge Comprehensive Review
+## 13) Agent Context Window Limits
+
+Spawned sub-agents have a practical limit of ~10-15 minutes / ~700KB output
+before silent context exhaustion. This is a platform constraint.
+
+**Mitigation:**
+- One concept per agent (never combine unrelated tasks)
+- Cap file reads (use offset/limit for large files)
+- Run validation separately from fixes
+- Detect stalls by checking output file growth
+- Recover via state.json idempotent resume
+
+See `.claude/rules/70_agent_reliability.md` for details.
+
+---
+
+## 14) Post-Merge Comprehensive Review
 
 After every PR merge, a comprehensive review agent is spawned to review
 the merged code on main. This is a safety net that catches issues pre-merge
