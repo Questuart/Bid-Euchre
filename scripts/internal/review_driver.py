@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -293,39 +294,214 @@ def _step_initialized(
     return loop_state
 
 
+# Regex for explicit plan opt-out markers (N/A, none, dash, em-dash)
+_PLAN_OPTOUT_RE = re.compile(r"^(?:N/?A|none|-)$", re.IGNORECASE)
+
+# Minimum content length (after stripping headers/comments) for a non-trivial plan
+_PLAN_MIN_CONTENT_LEN = 50
+
+
+def parse_plan_reference(pr_body: str) -> tuple[str | None, bool]:
+    """Extract plan file path from PR body's ``## Plan`` section.
+
+    Handles:
+    - Plain path: ``plans/sessions/2026-03-14_foo.md``
+    - Backtick-quoted: ```plans/sessions/2026-03-14_foo.md```
+    - Markdown link: ``[Plan](plans/sessions/2026-03-14_foo.md)``
+    - List item prefix: ``- plans/sessions/...``
+    - Explicit opt-out: ``N/A``, ``none``, ``-``
+
+    Args:
+        pr_body: Full PR description text.
+
+    Returns:
+        Tuple of (path or None, opted_out). If opted_out is True,
+        the author explicitly marked the plan as N/A.
+    """
+    # Find ## Plan section (up to next ## heading or end of body)
+    plan_match = re.search(
+        r"^## Plan\s*\n(.*?)(?=^## |\Z)",
+        pr_body,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not plan_match:
+        return None, False
+
+    section = plan_match.group(1)
+    # Strip HTML comments
+    section = re.sub(r"<!--.*?-->", "", section, flags=re.DOTALL).strip()
+
+    if not section:
+        return None, False
+
+    # Check for explicit opt-out BEFORE stripping list markers
+    # (a bare "-" is the unfilled template placeholder, not a list prefix)
+    clean_for_optout = re.sub(r"^[-*]\s*", "", section).strip()
+    if _PLAN_OPTOUT_RE.match(section) or (not clean_for_optout):
+        return None, True
+
+    # Strip leading list marker for path extraction
+    section = clean_for_optout
+
+    # Try backtick-quoted path
+    backtick_match = re.search(r"`([^`]+\.md)`", section)
+    if backtick_match:
+        return backtick_match.group(1), False
+
+    # Try markdown link
+    link_match = re.search(r"\[.*?\]\(([^)]+\.md)\)", section)
+    if link_match:
+        return link_match.group(1), False
+
+    # Try plain path (looks like a relative file path ending in .md)
+    path_match = re.search(r"((?:plans|docs)/\S+\.md)", section)
+    if path_match:
+        return path_match.group(1), False
+
+    return None, False
+
+
+def validate_plan(
+    pr_number: int,
+    *,
+    repo_root: Path | None = None,
+) -> tuple[str | None, list[dict]]:
+    """Validate the plan reference declared in a PR's body.
+
+    Checks:
+    1. Plan reference is present in the PR body (P2 if missing).
+    2. Referenced plan file exists on disk (P1 if broken reference).
+    3. Plan file has non-trivial content (P2 if empty/boilerplate).
+
+    Failures in fetching the PR body are non-blocking (logged and skipped).
+
+    Args:
+        pr_number: PR number to validate.
+        repo_root: Repository root for file existence checks.
+
+    Returns:
+        Tuple of (plan_path or None, list of finding dicts).
+    """
+    from github_pr_state import get_pr_body
+
+    if repo_root is None:
+        repo_root = Path.cwd()
+
+    findings: list[dict] = []
+
+    try:
+        body = get_pr_body(pr_number)
+    except Exception:
+        logger.warning(
+            "PR #%d: failed to fetch PR body — skipping plan validation",
+            pr_number,
+        )
+        return None, []
+
+    plan_path, opted_out = parse_plan_reference(body)
+
+    if opted_out:
+        # Explicit N/A — no finding
+        return None, []
+
+    if plan_path is None:
+        findings.append(
+            {
+                "severity": "P2",
+                "file": "<PR body>",
+                "line": 0,
+                "category": "process",
+                "check_id": "PV1",
+                "message": "No plan reference in PR body — add a plan path or N/A",
+                "raw_source": "plan_validation",
+            }
+        )
+        return None, findings
+
+    # Check if plan file exists
+    full_path = repo_root / plan_path
+    if not full_path.exists():
+        findings.append(
+            {
+                "severity": "P1",
+                "file": plan_path,
+                "line": 0,
+                "category": "process",
+                "check_id": "PV2",
+                "message": f"Plan file does not exist: {plan_path}",
+                "raw_source": "plan_validation",
+            }
+        )
+        return plan_path, findings
+
+    # Check if plan file has non-trivial content
+    content = full_path.read_text()
+    # Strip markdown headers and HTML comments to measure real content
+    stripped = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    stripped = re.sub(r"^#+\s.*$", "", stripped, flags=re.MULTILINE)
+    stripped = re.sub(r"^\*\*.*?\*\*:?", "", stripped, flags=re.MULTILINE)
+    stripped = stripped.strip()
+
+    if len(stripped) < _PLAN_MIN_CONTENT_LEN:
+        findings.append(
+            {
+                "severity": "P2",
+                "file": plan_path,
+                "line": 0,
+                "category": "process",
+                "check_id": "PV3",
+                "message": "Plan file appears to be empty or boilerplate only",
+                "raw_source": "plan_validation",
+            }
+        )
+
+    return plan_path, findings
+
+
 def _step_pr_open(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
 ) -> ReviewLoopState:
-    """PR_OPEN → WAITING_FOR_CI: Run prechecks + make check, then wait for CI."""
+    """PR_OPEN → WAITING_FOR_CI: Run plan validation + prechecks + make check."""
     from deterministic_prechecks import check_diff, get_blocking_findings
+
+    # 0. Validate plan reference (non-blocking on fetch failures)
+    plan_path, plan_findings = validate_plan(loop_state.pr_number)
+    if plan_path:
+        loop_state.plan_path = plan_path
 
     # 1. Run deterministic prechecks
     findings = check_diff(mode=loop_state.mode)
     blocking = get_blocking_findings(findings)
 
-    # Save precheck results for this round
+    # Merge plan validation findings (already dicts) with precheck Finding objects
+    # Plan findings with P1 severity count as blocking
+    plan_blocking = [f for f in plan_findings if f.get("severity") in ("P0", "P1")]
+
+    # Save all precheck + plan validation results for this round
     rdir = round_dir(loop_state.pr_number, loop_state.iteration_count + 1, base_dir)
     rdir.mkdir(parents=True, exist_ok=True)
+    all_findings_dicts = [f.to_dict() for f in findings] + plan_findings
     with open(rdir / "prechecks.json", "w") as f:
-        json.dump([f.to_dict() for f in findings], f, indent=2)
+        json.dump(all_findings_dicts, f, indent=2)
 
-    if blocking:
-        # Blocking prechecks -> stop (these are deterministic, unfixable by Codex)
+    all_blocking = list(blocking) + plan_blocking
+    if all_blocking:
+        # Blocking prechecks/plan issues -> stop
         _publish_status(
             loop_state.pr_number,
             "failure",
-            f"Blocking prechecks: {len(blocking)} findings",
+            f"Blocking prechecks: {len(all_blocking)} findings",
         )
         loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
         loop_state.stop_reason = (
-            f"Blocking deterministic precheck failures: {len(blocking)} findings"
+            f"Blocking precheck/plan failures: {len(all_blocking)} findings"
         )
         save_state(loop_state, base_dir)
         logger.warning(
             "PR #%d: blocking prechecks (%d findings) -- stopped",
             loop_state.pr_number,
-            len(blocking),
+            len(all_blocking),
         )
         return loop_state
 
