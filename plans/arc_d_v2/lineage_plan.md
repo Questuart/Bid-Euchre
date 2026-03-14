@@ -620,7 +620,7 @@ one requires agent judgment.
 |--------|---------|-------------|-----------------|
 | `00_manifest.md` | What was run | **Fully automated** from `evidence_manifest.json` | No — metadata only |
 | `01_results.md` | What happened | **Mostly automated** from CSVs + charts | Light — check rendering |
-| `02_decision.md` | What it means | **Agent-synthesized** from hypotheses + results | **Yes — human review before next rung** |
+| `02_decision.md` | What it means | **Agent-synthesized** from hypotheses + results | No — `advance_check.json` gates; human review is asynchronous |
 
 ### 8.2 `00_manifest.md` — What Was Run
 
@@ -2058,7 +2058,7 @@ Each runbook step (§9) has three components that define execution boundaries:
 - Agents execute the runbook. They do NOT modify the lineage plan.
 - If an agent believes the lineage plan is wrong, they log the concern in
   `qa_log.md` as an `open` question and continue with the plan as written.
-  The human reviews `qa_log.md` during the Step 8 decision review.
+  The human reviews `qa_log.md` asynchronously (non-blocking for advance decisions).
 - Agents may make small tactical decisions (e.g., "retry with a different
   random state after OOM") without a sub-plan. Log these in `checkpoints.md`.
 

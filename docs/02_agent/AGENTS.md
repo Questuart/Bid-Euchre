@@ -585,6 +585,13 @@ determine where to resume work.
 
 **Template:** `plans/_templates/checkpoints.md`
 
+**Relationship to `state.json`:** For governed initiatives with an orchestrator
+(e.g., Arc D v2), `state.json` is the machine-readable execution state used by
+the orchestrator for automatic step selection and resume. `checkpoints.md`
+remains the human-readable progress log updated by agents at session boundaries.
+Both are maintained; `state.json` is authoritative for orchestrator decisions,
+`checkpoints.md` is authoritative for human-readable session handoff.
+
 ### 12.6 Amendments
 
 The governing plan is immutable during execution. Changes require amendments.

@@ -250,6 +250,14 @@ When an agent starts a session:
 
 If no governing plan is active, fall back to `MEMORY.md` for context recovery.
 
+**`checkpoints.md` vs `state.json`:** For governed initiatives with an
+orchestrator (e.g., Arc D v2), `state.json` is the machine-readable execution
+state used by the orchestrator for automatic step selection and resume.
+`checkpoints.md` remains the human-readable progress log updated by agents at
+session boundaries. Both are maintained; `state.json` is authoritative for
+orchestrator decisions, `checkpoints.md` is authoritative for human-readable
+session handoff.
+
 ### Determining the Next Runnable Unit of Work
 
 An agent determines what to do next by reading the checkpoint file:
