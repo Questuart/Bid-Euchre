@@ -78,6 +78,7 @@ that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
 - `generate_auction_context_dataset.py` — Auction-context dataset generator (R1 partner features)
 - `generate_batch_report.py` — Batch report + eligibility gate
+- `generate_interpretability.py` — Interpretability artifacts (SHAP, selection paths, decision comparison) for Arc D v2
 - `generate_r4_charts.py` — One-off report chart regeneration utility
 - `play_policy_gate.py` — Play policy stability gate
 - `calibrate_arc_d_thresholds.py` — Arc D gate threshold calibration from H2H null signal
@@ -226,6 +227,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/generate_rung_tables.py` | Canonical CSV table generation for Arc D v2 rung reports |
 | `scripts/internal/generate_rung_report.py` | Markdown rung report renderer from CSV tables and chart PNGs |
 | `scripts/internal/generate_evidence_manifest.py` | Evidence manifest generator (JSON + markdown) for Arc D v2 |
+| `scripts/internal/generate_interpretability.py` | Interpretability artifacts (SHAP, selection paths, decision comparison) for Arc D v2 |
 | `scripts/internal/manage_artifacts.py` | Artifact lifecycle CLI (status, supersession, quarantine, prune) |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |

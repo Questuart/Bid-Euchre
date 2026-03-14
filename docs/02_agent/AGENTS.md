@@ -369,6 +369,22 @@ Add or update:
   - tests run
   - expected metrics impact (if any)
 
+### Post-Merge Review
+
+After a PR is merged (`gh pr merge`), a PostToolUse hook
+(`post-merge-review.sh`) triggers a comprehensive background review:
+
+- A background Explore agent reviews all changed files on `main`
+- Checks: correctness (C1/C2), contract compliance, architectural boundaries,
+  test coverage gaps, integration risks with other recent merges
+- Findings are reported as CRITICAL/WARNING/NIT severity
+- CRITICAL findings trigger immediate follow-up fix PRs
+- This is advisory — it does not block future merges
+
+This complements the pre-merge review loop (Codex CLI), which focuses on
+conventions and prechecks. Post-merge review catches correctness and
+integration issues that emerge only after code lands on `main`.
+
 ---
 
 ## 8) No-Go List (Hard Bans)

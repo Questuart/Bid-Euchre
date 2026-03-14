@@ -2237,6 +2237,21 @@ For this lineage specifically:
 - **Fundamental design changes** (e.g., "add a new model family"): Requires
   human approval. Proposed via `qa_log.md` -> `design_decisions.md` -> amendment.
 
+#### 17.5.6 Post-Merge Review
+
+After merging any PR that touches lineage code (`scripts/internal/`,
+`src/bid_euchre/`), the `post-merge-review.sh` hook triggers a background
+review. For lineage PRs specifically, the review checks:
+
+- Correctness of SHAP/interpretability code and model artifact handling
+- Contract compliance with the lineage plan (roster, metrics, rung definitions)
+- Architectural boundaries (src/ vs scripts/, no cross-boundary imports)
+- Test coverage for new behavior
+- Integration risks with concurrently merged infrastructure PRs
+
+CRITICAL findings from post-merge review should be logged in `qa_log.md`
+and addressed before the next rung step proceeds.
+
 ## 18. Run Naming Contract
 
 All run IDs follow this pattern:

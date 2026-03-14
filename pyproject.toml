@@ -32,6 +32,7 @@ dev = [
   "jupytext>=1.16.2",
   "nbstripout>=0.7.1",
   "papermill>=2.4.0",
+  "shap>=0.44.0",
 ]
 
 [tool.setuptools]
@@ -49,4 +50,3 @@ ignore = ["E501", "E402", "E712", "E741"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["bid_euchre"]
-

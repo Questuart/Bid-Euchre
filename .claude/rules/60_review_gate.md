@@ -135,6 +135,20 @@ Codex CLI is the sole reviewer, invoked locally by the autonomous review loop:
 
 Findings are normalized into the P0/P1/P2 schema and recorded in per-round artifacts.
 
+## Post-Merge Review
+
+After every `gh pr merge`, a PostToolUse hook (`post-merge-review.sh`)
+triggers a comprehensive background review of the merged code. This
+complements the pre-merge review loop:
+
+| Phase | Trigger | Reviewer | Scope |
+|-------|---------|----------|-------|
+| Pre-merge | `gh pr create` | Review loop (Codex CLI) | Convention, prechecks |
+| Post-merge | `gh pr merge` | Background Explore agent | Correctness, contracts, architecture |
+
+Post-merge review is advisory — it does not block future merges. But
+CRITICAL findings trigger immediate fix PRs.
+
 ## Known Issue: Docs-Only PRs and CI
 
 **Resolved (PR #635):** The CI workflow now uses `dorny/paths-filter` instead of
