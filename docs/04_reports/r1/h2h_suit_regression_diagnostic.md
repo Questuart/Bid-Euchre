@@ -29,8 +29,8 @@ and lays out a concrete investigation plan with reproduction commands.
 - Training pipeline: `src/bid_euchre/models/train_hybrid_olsa.py`
 - Runtime bidding: `src/bid_euchre/strategy/bidding.py` (HybridOLSaBidder)
 - Partner feature extraction: `src/bid_euchre/features/auction_context.py`
-- R1 training plan: `plans/archive/r1_training_plan.md`
-- R1 master plan: `plans/archive/r1_master_plan.md`
+- R1 training plan: `plans/archive/pre_v1/r1_training_plan.md`
+- R1 master plan: `plans/archive/pre_v1/r1_master_plan.md`
 
 **Investigation priority order:**
 
@@ -1330,7 +1330,7 @@ replace the coarse partner representation with suit-aware interaction features:
 These are candidate-contract-relative (computed per suit being evaluated) and apply
 to suit contracts only. HIGH/LOW retain simpler partner handling.
 
-See `plans/archive/r1_master_plan.md` §10.3a for full R1.6 specification.
+See `plans/archive/pre_v1/r1_master_plan.md` §10.3a for full R1.6 specification.
 
 ### Investigation K: H10 Validation Pack — Analytical Proof + `bid_bonus` Fix
 

@@ -245,7 +245,7 @@ iterations by leveraging the conventions and infrastructure already established.
 ### Automate progression reports
 
 The Phase 0→R0 progression report (#484) was manually authored. P7 in
-`plans/r1_follow_ups.md` calls for automating rung-to-rung progression reports —
+`plans/archive/v1_root/r1_follow_ups.md` calls for automating rung-to-rung progression reports —
 this should be implemented early in R1 to reduce per-rung overhead.
 
 ### Expand fail-fast gates

@@ -1,7 +1,7 @@
 # R1.5-v2 Ablation Analysis Report
 
 **Date:** 2026-03-10
-**Plan:** `plans/sessions/2026-03-09_r1-5-v2-diagnostic-plan.md` (Phase 1, Step 3)
+**Plan:** `plans/archive/v1_sessions/2026-03-09_r1-5-v2-diagnostic-plan.md` (Phase 1, Step 3)
 **Seed:** 42
 **Scale:** QUICK (2,500 deals per matchup for H2H; ~10,000 hands per contract for R²)
 
@@ -305,7 +305,7 @@ architecture is unlikely to close the suit gap. Progress requires either:
 | Item | Value |
 |------|-------|
 | gate_status | N/A — diagnostic ablation, no formal gate |
-| Plan | `plans/sessions/2026-03-09_r1-5-v2-diagnostic-plan.md` Phase 1 Step 3 |
+| Plan | `plans/archive/v1_sessions/2026-03-09_r1-5-v2-diagnostic-plan.md` Phase 1 Step 3 |
 | Cell A artifact | data/runs/cell_a_r0_features_42/action_value_r0_features.json |
 | Cell B' artifact | data/runs/action_value_quick_42_v2/action_value_full.json |
 | Cell C artifact | data/runs/cell_c_r0_tricks_42/ (gate X2 failed on pass, ran with --skip-validation) |

@@ -53,7 +53,7 @@ Controls when the bidder passes instead of bidding. The pass rule is:
 - **Tuning:** Pre-registered sweep protocol per rung.
 - **R0 result:** RETAIN t=0 (monotonic decline in net_eppd with positive t;
   attributed to model accuracy limitations at R0 feature count).
-- **R0 tuning protocol:** See archived `plans/archive/r0_pass_threshold_protocol.md`.
+- **R0 tuning protocol:** See archived `plans/archive/pre_v1/r0_pass_threshold_protocol.md`.
 - **R1+ tuning:** Re-use protocol template with updated data source and
   potentially adjusted SESOI.
 
@@ -73,7 +73,7 @@ Controls the tradeoff between expected value and prediction uncertainty.
 - **Tuning:** Manual at R0; planned automated sweep at R3+.
 - **R0 result:** RETAIN lambda=0.0 (self-play improvement of +0.884 reversed to
   -1.15 in H2H; risk aversion not justified at current model accuracy).
-- **R0 tuning protocol:** See archived `plans/archive/r0_v2_lambda_tuning_protocol.md`.
+- **R0 tuning protocol:** See archived `plans/archive/pre_v1/r0_v2_lambda_tuning_protocol.md`.
 
 ### Feature Set (F)
 
@@ -92,7 +92,7 @@ different feature sets.
 ## Cross-Rung Evolution
 
 Parameters are re-tuned at each rung because the training data, feature set, and
-model accuracy change. The R1 master plan (`plans/archive/r1_master_plan.md`) specifies
+model accuracy change. The R1 master plan (`plans/archive/pre_v1/r1_master_plan.md`) specifies
 the tuning schedule for the next rung.
 
 Key expectation for R1: enriched features (partner context, positional) will shift

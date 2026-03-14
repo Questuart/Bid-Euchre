@@ -45,7 +45,7 @@ so promotion-blocking rigor requirements are not binding.
 
 ## Plan Deviations
 
-Three formal deviations from the governing plan (`plans/r1_5_training_plan.md`):
+Three formal deviations from the governing plan (`plans/archive/v1_root/r1_5_training_plan.md`):
 
 ### PD-1: FULL Retraining Deferred
 

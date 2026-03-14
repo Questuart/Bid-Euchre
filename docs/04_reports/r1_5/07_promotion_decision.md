@@ -127,5 +127,5 @@ variance in predictions. Currently using QUICK-trained models.
 | Ablation report | [06_ablation.md](06_ablation.md) |
 | QUICK H2H report | [03_h2h_battery_quick.md](03_h2h_battery_quick.md) |
 | Risk treatment | [04_risk_treatment.md](04_risk_treatment.md) — SKIPPED |
-| Governing plan | `plans/r1_5_training_plan.md` |
+| Governing plan | `plans/archive/v1_root/r1_5_training_plan.md` |
 | analysis_base_sha | c15f7dd |
