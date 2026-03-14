@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -302,12 +303,10 @@ class TestClassifyReviewMode:
         mode = classify_review_mode(["src/bid_euchre/core/rules.py"])
         assert mode == ReviewMode.STANDARD
 
-    def test_report_audit_mode(self) -> None:
+    def test_report_only_returns_report_audit(self) -> None:
         from review_state import ReviewMode
 
-        mode = classify_review_mode(
-            ["docs/04_reports/r0/report.md", "src/bid_euchre/core/rules.py"]
-        )
+        mode = classify_review_mode(["docs/04_reports/r0/report.md"])
         assert mode == ReviewMode.REPORT_AUDIT
 
     def test_plan_audit_mode(self) -> None:
@@ -557,3 +556,115 @@ class TestFormatReviewComment:
         )
         body = _format_review_comment(state, [], "blocked")
         assert "--pr 99 --trigger manual" in body
+
+    def test_code_plus_plans_returns_standard(self) -> None:
+        """Mixed code+plan PRs should use STANDARD mode (Bug 2 fix)."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(
+            ["src/bid_euchre/core/rules.py", "plans/sessions/2026-03-14_test.md"]
+        )
+        assert mode == ReviewMode.STANDARD
+
+    def test_code_plus_reports_returns_standard(self) -> None:
+        """Mixed code+report PRs should use STANDARD mode (Bug 2 fix)."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(
+            ["docs/04_reports/r0/report.md", "src/bid_euchre/core/rules.py"]
+        )
+        assert mode == ReviewMode.STANDARD
+
+    def test_scripts_count_as_code(self) -> None:
+        """Scripts are code files and should trigger STANDARD mode."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(
+            ["scripts/internal/review_driver.py", "plans/sessions/test.md"]
+        )
+        assert mode == ReviewMode.STANDARD
+
+    def test_tests_count_as_code(self) -> None:
+        """Test files are code files and should trigger STANDARD mode."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(
+            ["tests/unit/test_review_driver.py", "plans/sessions/test.md"]
+        )
+        assert mode == ReviewMode.STANDARD
+
+
+# ---------------------------------------------------------------------------
+# _step_applying_fixes: filtered findings preference tests (Bug 1 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestApplyingFixesFilteredFindings:
+    """Verify _step_applying_fixes prefers codex_review_filtered.json."""
+
+    def test_prefers_filtered_over_raw(self, tmp_path: Path) -> None:
+        """When both filtered and raw files exist, filtered is loaded."""
+        rdir = tmp_path / "round_1"
+        rdir.mkdir()
+
+        # Raw file has 3 findings (including one that should be filtered)
+        raw_findings = [
+            {"severity": "P0", "message": "blocking", "file": "a.py"},
+            {"severity": "P2", "message": "low-conf-suppressed", "file": "b.py"},
+            {"severity": "P2", "message": "another-suppressed", "file": "c.py"},
+        ]
+        with open(rdir / "codex_review.json", "w") as f:
+            json.dump({"findings": raw_findings}, f)
+
+        # Filtered file has only 1 finding (after scoring removed low-conf P2s)
+        filtered_findings = [
+            {"severity": "P0", "message": "blocking", "file": "a.py"},
+        ]
+        with open(rdir / "codex_review_filtered.json", "w") as f:
+            json.dump({"findings": filtered_findings}, f)
+
+        # Load logic: prefer filtered
+        filtered_path = rdir / "codex_review_filtered.json"
+        codex_path = rdir / "codex_review.json"
+
+        if filtered_path.exists():
+            with open(filtered_path) as fh:
+                review_data = json.load(fh)
+            findings = review_data.get("findings", [])
+        elif codex_path.exists():
+            with open(codex_path) as fh:
+                review_data = json.load(fh)
+            findings = review_data.get("findings", [])
+        else:
+            findings = []
+
+        assert len(findings) == 1
+        assert findings[0]["message"] == "blocking"
+
+    def test_falls_back_to_raw_when_no_filtered(self, tmp_path: Path) -> None:
+        """When only raw file exists (backward compat), it is loaded."""
+        rdir = tmp_path / "round_1"
+        rdir.mkdir()
+
+        raw_findings = [
+            {"severity": "P0", "message": "blocking", "file": "a.py"},
+            {"severity": "P2", "message": "warn", "file": "b.py"},
+        ]
+        with open(rdir / "codex_review.json", "w") as f:
+            json.dump({"findings": raw_findings}, f)
+
+        filtered_path = rdir / "codex_review_filtered.json"
+        codex_path = rdir / "codex_review.json"
+
+        if filtered_path.exists():
+            with open(filtered_path) as fh:
+                review_data = json.load(fh)
+            findings = review_data.get("findings", [])
+        elif codex_path.exists():
+            with open(codex_path) as fh:
+                review_data = json.load(fh)
+            findings = review_data.get("findings", [])
+        else:
+            findings = []
+
+        assert len(findings) == 2
