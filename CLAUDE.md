@@ -334,6 +334,11 @@ file every 60 seconds. Check with `run_rung.py --rung <rung> --check-alive`.
 If stale (>5 min), the agent has died and should be respawned -- `state.json`
 enables idempotent resume.
 
+**Agent reliability:** Spawned agents silently die when they exhaust their
+context window (~15 min or ~700KB output). Keep agent tasks small and focused
+(one concept per agent). Never combine fix + validation in one agent. See
+`.claude/rules/70_agent_reliability.md` for constraints.
+
 ### When to Create a Sub-Plan
 
 Create a sub-plan when a governing plan step requires significant
