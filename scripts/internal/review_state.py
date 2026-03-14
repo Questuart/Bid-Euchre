@@ -159,6 +159,8 @@ class ReviewLoopState:
     initial_head_sha: str | None = None  # SHA when loop started
     current_head_sha: str | None = None  # tracks pushes (auto-fix commits)
     run_id: str | None = None  # unique ID: f"pr_{pr_number}_{head_sha[:7]}"
+    # Plan tracking
+    plan_path: str | None = None  # declared plan file from PR body
 
     @property
     def current_state(self) -> ReviewState:

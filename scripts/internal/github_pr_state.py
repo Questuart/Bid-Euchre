@@ -22,6 +22,7 @@ class PRMetadata:
     state: str  # "OPEN", "CLOSED", "MERGED"
     head_sha: str
     url: str
+    body: str = ""
 
 
 def get_pr_metadata(pr_number: int) -> PRMetadata:
@@ -33,7 +34,7 @@ def get_pr_metadata(pr_number: int) -> PRMetadata:
             "view",
             str(pr_number),
             "--json",
-            "number,title,headRefName,state,headRefOid,url",
+            "number,title,headRefName,state,headRefOid,url,body",
         ],
         capture_output=True,
         text=True,
@@ -49,7 +50,69 @@ def get_pr_metadata(pr_number: int) -> PRMetadata:
         state=data["state"],
         head_sha=data["headRefOid"],
         url=data["url"],
+        body=data.get("body", ""),
     )
+
+
+def get_pr_body(pr_number: int) -> str:
+    """Get the body (description) of a PR.
+
+    Args:
+        pr_number: PR number.
+
+    Returns:
+        PR body text.
+
+    Raises:
+        RuntimeError: If the gh CLI call fails.
+    """
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--json",
+            "body",
+            "--jq",
+            ".body",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to get PR #{pr_number} body: {result.stderr}")
+    return result.stdout.strip()
+
+
+def get_pr_changed_files(pr_number: int) -> list[str]:
+    """Get the list of files changed in a PR.
+
+    Args:
+        pr_number: PR number.
+
+    Returns:
+        List of relative file paths changed in the PR.
+
+    Raises:
+        RuntimeError: If the gh CLI call fails.
+    """
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "diff",
+            str(pr_number),
+            "--name-only",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to get PR #{pr_number} changed files: {result.stderr}"
+        )
+    return [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
 
 
 def get_pr_head_sha(pr_number: int) -> str:
