@@ -64,7 +64,7 @@ make lint             # Check only (no auto-fix)
 - **Edit the `.py` file**, not the `.ipynb` — Jupytext handles sync
 - **Clear outputs** before committing — `make notebook-check` validates this
 - **Force sync** when needed: `jupytext --to ipynb --output <ipynb> <py>`
-- **Decision-critical analysis** must be captured in committed artifacts (JSON, scripts), not only in notebook outputs — see `.claude/rules/45_notebook_boundary.md`
+- **Decision-critical analysis** must be captured in committed artifacts (JSON, scripts), not only in notebook outputs — see `.claude/rules/deferred/45_notebook_boundary.md`
 
 ## Data and Artifact Policy
 
