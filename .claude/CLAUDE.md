@@ -20,19 +20,8 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 - Auto-fixes are pushed as follow-up commits to the PR branch
 - Handoff summary is designed for `/copy` into a new session
 
-## Docs-Only CI Workaround
-- Docs-only PRs (`docs/**`, `plans/**`, `*.md`) don't trigger CI due to `paths-ignore`
-- Branch protection requires the `tests` check, creating a deadlock
-- Workaround: include a `.claude/` file change to trigger CI
-# trigger CI: fix-archive-overreach
-# trigger CI
-# trigger CI: play-policy-sanity-check
-# trigger CI: model-alternatives-log
-# trigger CI: gbt-report-repro-fix
-# trigger CI: phase0-multi-rollout-diagnostic
-# trigger CI: r1-5-arc-retrospective
-# trigger CI: review-loop-smoke-test
-# trigger CI: r1-5-3-closeout
-# trigger CI: review-cleanup-2026-03-13
-# trigger CI: repo-review-2026-03-13
-# trigger CI: gbt-full-validation-report
+## Docs-Only CI (Resolved)
+- CI now uses `dorny/paths-filter` instead of `paths-ignore` (PR #635)
+- The `tests` job always triggers and posts a status
+- Docs/plans-only PRs skip heavy steps via per-step `if` conditions
+- No more deadlock — no need for `# trigger CI` workarounds
