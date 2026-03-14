@@ -1254,3 +1254,99 @@ class TestStep5CommandConstruction:
 
         assert ok is False
         assert "No bidders" in (state.steps["5"].get("error") or "")
+
+
+class TestStep2SkipValidation:
+    """Step 2 should pass --skip-validation in smoke mode only."""
+
+    def _make_state_and_fixtures(self, tmp_path, mode):
+        """Create state, roster, and filesystem fixtures for step 2."""
+        roster = Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                    model_class="gbt",
+                ),
+            ],
+            anchor=AnchorModel(name="", artifact="", class_name=""),
+        )
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        # Dataset dir with parquet file
+        ds_dir = tmp_path / "data" / "runs" / f"av_r0_{mode}_42" / "datasets"
+        ds_dir.mkdir(parents=True)
+        (ds_dir / "action_value.parquet").write_bytes(b"fake")
+
+        # Anchor artifact
+        art_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        art_dir.mkdir(parents=True)
+        (art_dir / "hybrid_r0_full.json").write_text("{}")
+
+        state = RunState.create_fresh("r0", mode, [42])
+        # Mark step 1 complete so step 2 has its input
+        state.mark_step_started("1", 42)
+        state.mark_step_complete("1", 42)
+
+        return state, roster, plan_dir
+
+    def test_smoke_includes_skip_validation(self, tmp_path):
+        """In smoke mode, --skip-validation should be in the training command."""
+        state, roster, plan_dir = self._make_state_and_fixtures(tmp_path, "smoke")
+        captured_cmds = []
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "run_subprocess",
+                side_effect=lambda cmd, *a, **kw: (
+                    captured_cmds.append(cmd),
+                    (True, ""),
+                )[-1],
+            ),
+        ):
+            ok = run_rung_mod.execute_step_2(state, 42)
+
+        assert ok is True
+        assert len(captured_cmds) == 1
+        assert "--skip-validation" in captured_cmds[0]
+
+    def test_quick_excludes_skip_validation(self, tmp_path):
+        """In quick mode, --skip-validation should NOT be in the training command."""
+        state, roster, plan_dir = self._make_state_and_fixtures(tmp_path, "quick")
+        captured_cmds = []
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "run_subprocess",
+                side_effect=lambda cmd, *a, **kw: (
+                    captured_cmds.append(cmd),
+                    (True, ""),
+                )[-1],
+            ),
+        ):
+            ok = run_rung_mod.execute_step_2(state, 42)
+
+        assert ok is True
+        assert len(captured_cmds) == 1
+        assert "--skip-validation" not in captured_cmds[0]

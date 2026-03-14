@@ -734,6 +734,9 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
         if selection != "none":
             cmd.extend(["--selection", selection])
 
+        if state.mode == "smoke":
+            cmd.append("--skip-validation")
+
         if dry_run:
             logger.info("Step 2: would train %s: %s", model_name, " ".join(cmd))
             state.update_model("2", model_name, seed, "complete")
@@ -784,6 +787,35 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
     return all_ok
 
 
+def _collect_training_artifacts(
+    state: RunState, seed: int, rung_artifacts_dir: Path
+) -> None:
+    """Copy training artifact JSONs into the rung artifacts directory.
+
+    Searches each trainable model's output dir for JSON artifacts and
+    copies them as ``training_artifact_<model_name>.json`` so that
+    ``generate_rung_tables.py`` can find them via its glob pattern.
+    """
+    import shutil
+
+    roster = load_roster(state.rung)
+    for model in roster.trainable_models():
+        output_dir = (
+            _repo_root()
+            / "data"
+            / "runs"
+            / f"av_{model.name}_{state.rung}_{state.mode}_{seed}"
+        )
+        if not output_dir.exists():
+            continue
+        # Find JSON artifact (first .json file that isn't a joblib)
+        for json_file in sorted(output_dir.glob("*.json")):
+            dest = rung_artifacts_dir / f"training_artifact_{model.name}.json"
+            shutil.copy2(json_file, dest)
+            logger.info("Step 3: Copied %s -> %s", json_file.name, dest.name)
+            break  # Take first JSON artifact per model
+
+
 def execute_step_3(state: RunState, seed: int, dry_run: bool = False) -> bool:
     """Step 3: Offline eval + data sanity."""
     rung = state.rung
@@ -804,8 +836,20 @@ def execute_step_3(state: RunState, seed: int, dry_run: bool = False) -> bool:
         )
         return True
 
+    # Collect training artifacts into rung artifacts directory
+    rung_artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
+    rung_artifacts_dir.mkdir(parents=True, exist_ok=True)
+    _collect_training_artifacts(state, seed, rung_artifacts_dir)
+
+    # Also copy roster.json so the script can find it
+    roster_src = _repo_root() / "plans" / "arc_d_v2" / "roster.json"
+    if roster_src.exists():
+        import shutil
+
+        shutil.copy2(roster_src, rung_artifacts_dir / "roster.json")
+
     output_dir = (
-        _plans_dir(rung).parent.parent.parent
+        _repo_root()
         / "docs"
         / "04_reports"
         / "arc_d_v2"
@@ -818,16 +862,10 @@ def execute_step_3(state: RunState, seed: int, dry_run: bool = False) -> bool:
         "run",
         "python",
         str(script),
-        "--rung",
-        rung,
-        "--mode",
-        state.mode,
-        "--seed",
-        str(seed),
+        "--rung-dir",
+        str(rung_artifacts_dir),
         "--output-dir",
         str(output_dir),
-        "--tables",
-        "model_performance,data_sanity",
     ]
 
     if dry_run:
@@ -869,17 +907,26 @@ def execute_step_3b(state: RunState, seed: int, dry_run: bool = False) -> bool:
         )
         return True
 
+    rung_artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
+    report_dir = (
+        _repo_root()
+        / "docs"
+        / "04_reports"
+        / "arc_d_v2"
+        / rung
+        / "canonical"
+        / "tables"
+    )
+
     cmd = [
         "uv",
         "run",
         "python",
         str(script),
-        "--rung",
-        rung,
-        "--mode",
-        state.mode,
-        "--seed",
-        str(seed),
+        "--rung-dir",
+        str(rung_artifacts_dir),
+        "--report-dir",
+        str(report_dir),
     ]
 
     if dry_run:
