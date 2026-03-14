@@ -443,3 +443,179 @@ uv run python experiments/run_experiment.py --config <file.yaml> --n_per 200 --s
 - If replacing a script or workflow, move the old version into the appropriate `_deprecated/` folder.
 - Update any `_deprecated/README.md` with the reason and the replacement path.
 - Prefer “strangler” migrations: keep old path working until new path is proven with tests and seeded runs.
+
+---
+
+## 12) Governing Plan Framework
+
+Major initiatives (multi-phase research campaigns, lineage rebuilds, large
+infrastructure overhauls) are managed through a structured plan hierarchy.
+This section defines the architecture. For runtime agent behavior (discovery,
+execution loops, session handoff), see `CLAUDE.md` “Agent Execution Protocol.”
+
+### 12.1 Plan Hierarchy
+
+```
+plans/
+  _templates/                     # Reusable templates (not instances)
+    governing_plan.md
+    sub_plan.md
+    sub_plan_registry.md
+    checkpoints.md
+  AGENTS.md                       # Review guidelines for plan files
+  <initiative>/                   # One directory per major initiative
+    governing_plan.md             # The single governing document
+    amendments.md                 # Amendment log (changes at phase boundaries)
+    sub_plan_registry.md          # Index of all sub-plans across phases
+    <phase>/                      # One directory per phase/rung/milestone
+      plan.md                     # Phase-specific plan (hypotheses, details)
+      checkpoints.md              # Step-by-step progress (agent state file)
+      sub/                        # Sub-plan documents for this phase
+        YYYY-MM-DD_<slug>.md
+```
+
+### 12.2 Governing Plan
+
+Each major initiative has exactly **one governing plan**. It is the single
+source of truth for the initiative's scope, structure, and contracts.
+
+**Required content:**
+- Scope and goals
+- Phase/rung/milestone structure with dependencies
+- Step sequence template (what happens at each phase)
+- Sub-plan governance rules
+- Evidence/output contracts
+- Success criteria
+
+**Rules:**
+- The governing plan is **immutable during execution**. Changes require
+  the amendment process (logged in `amendments.md`).
+- Agents execute the plan. They do not modify it. If an agent believes
+  the plan is wrong, they log the concern and continue as written.
+- The governing plan lives at `plans/<initiative>/governing_plan.md`
+  (or `lineage_plan.md` for research lineages). CLAUDE.md must contain
+  a pointer to the active governing plan.
+
+**Template:** `plans/_templates/governing_plan.md`
+
+### 12.3 Sub-Plans
+
+Sub-plans are bounded implementation documents for work that is too complex
+for a single step but subordinate to the governing plan.
+
+**When required:**
+- The step changes >3 files
+- The step involves new code (not just running existing scripts)
+- The step has design choices not fully specified in the governing plan
+
+**Required fields (every sub-plan must declare):**
+
+| Field | Purpose |
+|-------|---------|
+| `id` | Stable identifier: `SP-<phase>-<seq>` |
+| `parent` | Governing plan section reference |
+| `status` | One of: `proposed`, `in_progress`, `blocked`, `completed`, `abandoned`, `superseded` |
+| `owner` | Agent session ID or human name |
+| `inputs` | What this sub-plan consumes (file paths, artifacts, prior outputs) |
+| `assumptions` | Conditions assumed true; if violated, escalate |
+| `dependencies` | Other sub-plans or steps that must complete first |
+| `planned changes` | Files to be modified or created |
+| `validation` | How to verify correctness |
+| `planned outputs` | Artifacts to be produced |
+| `observed outputs` | Filled during/after execution |
+| `outcome` | Final status, PR link, deviations |
+| `handoff` | Filled at session end if incomplete |
+
+**Lifecycle:**
+```
+proposed --> in_progress --> completed
+                |               |
+                v               v
+             blocked       abandoned
+                |
+                v
+           in_progress (after unblock)
+
+Any status --> superseded (when replaced)
+```
+
+**Template:** `plans/_templates/sub_plan.md`
+
+**Anti-pattern:** Do not invent ad hoc planning structures once a governing
+plan exists. All implementation work traces to either a governing plan step
+or a registered sub-plan.
+
+### 12.4 Sub-Plan Registry
+
+Each initiative maintains a sub-plan registry at
+`plans/<initiative>/sub_plan_registry.md`. This is the index of all
+sub-plans across all phases.
+
+**Required columns:** ID, title, parent section, status, owner, file path,
+created date, completed date.
+
+**Rules:**
+- Update the registry whenever a sub-plan changes status.
+- The registry is the index; the sub-plan file is the detail.
+- A future agent determines outstanding work by reading this registry.
+
+**Template:** `plans/_templates/sub_plan_registry.md`
+
+### 12.5 Checkpoints
+
+Each phase/rung maintains a checkpoint file at
+`plans/<initiative>/<phase>/checkpoints.md`.
+
+**Purpose:** Machine-readable agent state. An agent reads this file to
+determine where to resume work.
+
+**Required content:**
+- Step progress table (step name, status, date, agent, notes)
+- Active sub-plans table (linking to registry)
+- Blockers list
+- Session log (reverse chronological)
+
+**Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
+
+**Rules:**
+- An agent MUST read `checkpoints.md` before starting any work on a phase.
+- An agent MUST update `checkpoints.md` before ending its session.
+- If a step is `BLOCKED`, the notes must explain why and link to a Q&A
+  entry or sub-plan.
+
+**Template:** `plans/_templates/checkpoints.md`
+
+**Relationship to `state.json`:** For governed initiatives with an orchestrator
+(e.g., Arc D v2), `state.json` is the machine-readable execution state used by
+the orchestrator for automatic step selection and resume. `checkpoints.md`
+remains the human-readable progress log updated by agents at session boundaries.
+Both are maintained; `state.json` is authoritative for orchestrator decisions,
+`checkpoints.md` is authoritative for human-readable session handoff.
+
+### 12.6 Amendments
+
+The governing plan is immutable during execution. Changes require amendments.
+
+**Amendment types:**
+- **Phase-level adjustments** (e.g., “drop legacy baselines at R1”):
+  Logged in `plans/<initiative>/amendments.md` with rationale.
+- **Step-level clarifications** (e.g., “the flag should be X not Y”):
+  Logged in the phase's `qa_log.md`. If confirmed, applied as a targeted
+  fix to the governing plan with a commit referencing the Q&A entry.
+- **Fundamental design changes** (e.g., “add a new model family”):
+  Requires human approval. Proposed via Q&A log, then amendment.
+
+Amendments take effect at phase boundaries, never mid-phase.
+
+### 12.7 Session Plan Convention (Unchanged)
+
+For work that does NOT belong to a governed initiative (one-off bugfixes,
+small features, isolated PRs), the existing session plan convention applies:
+
+- Save to `plans/sessions/YYYY-MM-DD_<slug>.md`
+- Use the session template at `plans/sessions/TEMPLATE.md`
+- Include an `## Outcome` section filled after implementation
+
+Session plans are independent. They do not require a governing plan,
+sub-plan registry, or checkpoint file. Use them for bounded, single-session
+work.

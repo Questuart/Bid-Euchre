@@ -1,6 +1,6 @@
 # R1.5 Open Questions & Answers
 
-**Source plan:** `plans/sessions/2026-03-09_r1-5-v2-diagnostic-plan.md`
+**Source plan:** `plans/archive/v1_sessions/2026-03-09_r1-5-v2-diagnostic-plan.md`
 **Last updated:** 2026-03-09
 
 ---

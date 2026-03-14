@@ -268,6 +268,6 @@ the full phase sequencing and rung ladder.
 | R1.5 closeout | `docs/04_reports/r1_5/rung_closeout.md` |
 | R1.5.2 ablation | `docs/04_reports/r1_5/v2_ablation_analysis.md` |
 | Experiment ledger | `docs/04_reports/r1_5/appendix_experiment_ledger.md` |
-| Next experiment plan | `plans/sessions/2026-03-11_r1-5-3-alternative-approaches.md` |
-| Forward decision tree | `plans/r1_5_forward_decision_tree.md` |
+| Next experiment plan | `plans/archive/v1_sessions/2026-03-11_r1-5-3-alternative-approaches.md` |
+| Forward decision tree | `plans/archive/v1_root/r1_5_forward_decision_tree.md` |
 | analysis_base_sha | f74ff62 |
