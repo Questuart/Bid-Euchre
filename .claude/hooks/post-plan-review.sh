@@ -10,7 +10,8 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
 # Only trigger for plan files under the repo's plans/ directory
 # Exclude TEMPLATE.md to avoid triggering on template creation/edits
 if [[ "$FILE_PATH" == */plans/*.md ]] && \
-   [[ "$FILE_PATH" != *TEMPLATE.md ]]; then
+   [[ "$FILE_PATH" != *TEMPLATE.md ]] && \
+   [[ "$FILE_PATH" != *.review.md ]]; then
 
   PLAN_NAME=$(basename "$FILE_PATH" .md)
 
