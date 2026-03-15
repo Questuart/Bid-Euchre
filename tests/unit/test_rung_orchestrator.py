@@ -473,7 +473,7 @@ class TestSufficiencyChecks:
             "model_performance.csv",
             "data_sanity.csv",
             "comparator_rankings.csv",
-            "h2h_matrix.csv",
+            "h2h_delta_matrix.csv",
         ]:
             _write_csv(
                 tmp_path / name,
@@ -671,9 +671,9 @@ class TestAdvanceCheckIntegration:
             [["seat_balance", "PASS"]],
         )
         _write_csv(
-            tables_dir / "h2h_matrix.csv",
-            ["challenger", "opponent", "win_rate"],
-            [["gbt_av", "anchor", "0.55"]],
+            tables_dir / "h2h_delta_matrix.csv",
+            ["model_a", "model_b", "facet", "net_eppd_delta", "win_rate_a"],
+            [["gbt_av", "anchor", "pooled", "0.7", "0.55"]],
         )
 
         result = generate_advance_check(hyp_path, tables_dir, "quick", "r0")

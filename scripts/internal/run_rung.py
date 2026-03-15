@@ -137,9 +137,25 @@ def main(argv: list[str] | None = None) -> int:
         state = RunState.load(state_path)
         # Update mode/seeds if different
         if state.mode != args.mode and args.mode != "all":
-            logger.info("Mode changed from %s to %s", state.mode, args.mode)
+            old_mode = state.mode
+            logger.info("Mode changed from %s to %s", old_mode, args.mode)
             state.mode = args.mode
             state.seeds = seeds
+            # Invalidate steps completed at a lower mode (e.g., SMOKE→QUICK)
+            mode_rank = {"smoke": 0, "quick": 1, "full": 2}
+            if mode_rank.get(args.mode, 0) > mode_rank.get(old_mode, 0):
+                for step_id, step_state in state.steps.items():
+                    if step_state.get("status") == "complete":
+                        fp = step_state.get("fingerprint") or {}
+                        if fp.get("mode") == old_mode or not fp.get("mode"):
+                            logger.info(
+                                "  Resetting step %s (completed at %s, now %s)",
+                                step_id,
+                                old_mode,
+                                args.mode,
+                            )
+                            state.reset_step(step_id)
+                state.save(state_path)
     else:
         mode = args.mode if args.mode != "all" else "quick"
         state = RunState.create_fresh(args.rung, mode, seeds)
