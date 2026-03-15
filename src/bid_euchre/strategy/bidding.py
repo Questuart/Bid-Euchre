@@ -1732,15 +1732,23 @@ def _validate_artifact_features(
             )
     else:
         # R0/constrained/selected: state features should be a subset of
-        # known hand features (forward selection or constrained arms may
-        # use fewer than 39)
-        hand_set = set(_HAND_FEATURE_NAMES)
-        unknown = [f for f in state_names if f not in hand_set]
+        # known hand features, partner v2 features, and position features.
+        # Forward selection from the full 57-feature set may keep partner
+        # or position features while dropping all positional (legality)
+        # features, so we accept all three categories as valid.
+        from ..features.auction_context import PARTNER_FEATURE_NAMES_V2
+
+        valid_set = (
+            set(_HAND_FEATURE_NAMES)
+            | set(PARTNER_FEATURE_NAMES_V2)
+            | _POSITION_FEATURE_SET
+        )
+        unknown = [f for f in state_names if f not in valid_set]
         if unknown:
             raise ValueError(
                 f"Artifact feature_names structural mismatch. "
                 f"Non-positional model contains unknown state features "
-                f"(not in hand feature set): {unknown}"
+                f"(not in hand/partner/position feature set): {unknown}"
             )
 
         # Verify action features are at the expected positions
@@ -1797,14 +1805,24 @@ def _validate_pass_model_features(
                 f"got {len(pass_feature_names)} features."
             )
     else:
-        # R0/constrained/selected: pass features should be subset of hand
-        hand_set = set(_HAND_FEATURE_NAMES)
-        unknown = [f for f in pass_feature_names if f not in hand_set]
+        # R0/constrained/selected: pass features should be subset of
+        # known hand features, partner v2 features, and position features.
+        # Forward selection from the full feature set may keep partner
+        # or position features while dropping all positional (legality)
+        # features.
+        from ..features.auction_context import PARTNER_FEATURE_NAMES_V2
+
+        valid_set = (
+            set(_HAND_FEATURE_NAMES)
+            | set(PARTNER_FEATURE_NAMES_V2)
+            | _POSITION_FEATURE_SET
+        )
+        unknown = [f for f in pass_feature_names if f not in valid_set]
         if unknown:
             raise ValueError(
                 f"Artifact pass model feature_names mismatch. "
                 f"Non-positional pass model contains unknown features "
-                f"(not in hand feature set): {unknown}"
+                f"(not in hand/partner/position feature set): {unknown}"
             )
 
 
