@@ -35,7 +35,10 @@ def _read_csv_value(
     source_column: str,
     source_filter: dict,
 ) -> float | None:
-    """Read a single value from a CSV table, applying filters."""
+    """Read a single value from a CSV table, applying filters.
+
+    Returns the first matching row's value, or None if not found.
+    """
     csv_path = tables_dir / source_table
     if not csv_path.exists():
         return None
@@ -43,11 +46,7 @@ def _read_csv_value(
     with open(csv_path) as f:
         reader = csv.DictReader(f)
         for row in reader:
-            match = True
-            for key, val in source_filter.items():
-                if row.get(key) != str(val):
-                    match = False
-                    break
+            match = all(row.get(key) == str(val) for key, val in source_filter.items())
             if match:
                 raw = row.get(source_column)
                 if raw is None:
@@ -56,6 +55,47 @@ def _read_csv_value(
                     return float(raw)
                 except (ValueError, TypeError):
                     return None
+    return None
+
+
+def _read_csv_aggregate(
+    tables_dir: Path,
+    source_table: str,
+    source_column: str,
+    source_filter: dict,
+    aggregate: str,
+) -> float | None:
+    """Read an aggregate (min/max) across all matching rows in a CSV table.
+
+    Args:
+        aggregate: "min" or "max"
+
+    Returns the aggregate value, or None if no matching rows found.
+    """
+    csv_path = tables_dir / source_table
+    if not csv_path.exists():
+        return None
+
+    values = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            match = all(row.get(key) == str(val) for key, val in source_filter.items())
+            if match:
+                raw = row.get(source_column)
+                if raw is not None:
+                    try:
+                        values.append(float(raw))
+                    except (ValueError, TypeError):
+                        pass
+
+    if not values:
+        return None
+
+    if aggregate == "min":
+        return min(values)
+    elif aggregate == "max":
+        return max(values)
     return None
 
 
@@ -84,8 +124,14 @@ def evaluate_hypothesis(hyp: dict, tables_dir: Path) -> dict:
     expected_bound = hyp.get("expected_bound", {})
     surprise_if = hyp.get("surprise_if", {})
 
-    # Read primary value
-    value = _read_csv_value(tables_dir, source_table, source_column, source_filter)
+    # Read primary value — use aggregate for min/max computations
+    aggregate_computations = {"min", "max"}
+    if computation in aggregate_computations:
+        value = _read_csv_aggregate(
+            tables_dir, source_table, source_column, source_filter, computation
+        )
+    else:
+        value = _read_csv_value(tables_dir, source_table, source_column, source_filter)
     if value is None:
         result["error"] = (
             f"Could not read {source_column} from {source_table} "

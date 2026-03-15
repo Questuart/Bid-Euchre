@@ -33,25 +33,43 @@ def _load_json(path: Path) -> dict | None:
         return json.load(f)
 
 
-def _load_json_glob(rung_dir: Path, prefix: str) -> dict | None:
-    """Load a JSON artifact, trying exact name then glob for mode/seed-suffixed variants.
+def _load_json_glob(
+    rung_dir: Path,
+    prefix: str,
+    mode: str | None = None,
+    seed: int | None = None,
+) -> dict | None:
+    """Load a JSON artifact, using deterministic naming when mode/seed are known.
 
-    The orchestrator writes mode/seed-suffixed filenames (e.g., ``h2h_battery_quick_42.json``)
-    while the table generator historically expected the bare name (``h2h_battery.json``).
-    This helper tries the bare name first, then globs for ``{prefix}_*.json`` and picks
-    the most recently modified match.
+    Resolution order:
+    1. If mode and seed given, try ``{prefix}_{mode}_{seed}.json`` (deterministic).
+    2. Try the bare ``{prefix}.json`` (legacy / symlink).
+    3. Fall back to glob ``{prefix}_*.json``, newest by mtime (last resort).
     """
+    # Deterministic path when mode/seed are known
+    if mode and seed is not None:
+        deterministic = rung_dir / f"{prefix}_{mode}_{seed}.json"
+        if deterministic.exists():
+            return _load_json(deterministic)
+
+    # Legacy bare name
     exact = rung_dir / f"{prefix}.json"
     if exact.exists():
         return _load_json(exact)
 
+    # Glob fallback (nondeterministic — warns)
     candidates = sorted(
         rung_dir.glob(f"{prefix}_*.json"),
         key=lambda p: p.stat().st_mtime,
     )
     if candidates:
         chosen = candidates[-1]
-        logger.info("Resolved %s via glob: %s", prefix, chosen.name)
+        logger.warning(
+            "Resolved %s via mtime glob (nondeterministic): %s. "
+            "Pass --mode/--seed for deterministic selection.",
+            prefix,
+            chosen.name,
+        )
         return _load_json(chosen)
 
     logger.warning("No %s artifact found in %s", prefix, rung_dir)
@@ -557,12 +575,16 @@ def generate_data_sanity(
 def generate_all_tables(
     rung_dir: Path,
     output_dir: Path,
+    mode: str | None = None,
+    seed: int | None = None,
 ) -> list[str]:
     """Generate all 11 canonical CSVs from rung directory artifacts.
 
     Args:
         rung_dir: Path to directory containing run artifacts.
         output_dir: Path to write CSV files.
+        mode: Execution mode (smoke/quick/full) for deterministic artifact selection.
+        seed: RNG seed for deterministic artifact selection.
 
     Returns:
         List of generated CSV filenames.
@@ -570,9 +592,14 @@ def generate_all_tables(
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = []
 
-    # Load available artifacts (glob for mode/seed-suffixed filenames)
-    h2h_battery = _load_json_glob(rung_dir, "h2h_battery")
-    comparator_cis = _load_json_glob(rung_dir, "comparator_cis")
+    # Load available artifacts (deterministic when mode/seed provided)
+    # H2H uses {prefix}_{mode}_{seed}.json naming
+    h2h_battery = _load_json_glob(rung_dir, "h2h_battery", mode=mode, seed=seed)
+    # Comparator CIs use {prefix}_{rung}_{seed}.json naming — extract rung from dir
+    rung_id = rung_dir.name  # e.g., "r0"
+    comparator_cis = _load_json_glob(
+        rung_dir, "comparator_cis", mode=rung_id, seed=seed
+    )
     roster = _load_json(rung_dir / "roster.json")
 
     # Load training artifacts (look for training_artifact_*.json)
