@@ -1,9 +1,14 @@
 ---
 name: reviewing-plans
-description: Reviews plan files against repo conventions, identifies implementation risks, and flags issues before coding begins. Auto-triggered by PostToolUse hook after plan file creation. Can also be invoked manually with /reviewing-plans <path>.
+description: Reviews plan files against repo conventions, identifies implementation risks, and flags issues before coding begins. DEPRECATED -- use /review-plan instead.
 ---
 
-# /reviewing-plans — Plan Quality Review
+> **Deprecated:** This skill has been superseded by `/review-plan`, which
+> provides independent review via Codex CLI with Claude failsafe. This skill
+> is retained for backward compatibility but is no longer auto-triggered.
+> Use `/review-plan [path]` instead.
+
+# /reviewing-plans -- Plan Quality Review
 
 You are reviewing a plan file before implementation begins. The plan file path is provided in the trigger context or as `$ARGUMENTS`.
 
@@ -12,7 +17,7 @@ You are reviewing a plan file before implementation begins. The plan file path i
 1. Read the plan file at the provided path.
 2. If no path provided, check the most recently modified file in `plans/sessions/` or `plans/`:
    ```bash
-   ls -t plans/sessions/*.md plans/*.md 2>/dev/null | head -1
+   ls -t plans/sessions/*.md plans/*/*.md 2>/dev/null | grep -v TEMPLATE | grep -v '.review.md' | head -1
    ```
 3. If no plan file found, stop: "No plan file found to review."
 

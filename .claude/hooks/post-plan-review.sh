@@ -1,28 +1,6 @@
 #!/bin/bash
-# PostToolUse hook — triggers /reviewing-plans after plan file creation
-set -euo pipefail
-
-INPUT=$(cat)
-
-# Extract the file path from Write tool input
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
-
-# Only trigger for plan files under the repo's plans/ directory
-# Exclude TEMPLATE.md to avoid triggering on template creation/edits
-if [[ "$FILE_PATH" == */plans/*.md ]] && \
-   [[ "$FILE_PATH" != *TEMPLATE.md ]] && \
-   [[ "$FILE_PATH" != *.review.md ]]; then
-
-  PLAN_NAME=$(basename "$FILE_PATH" .md)
-
-  cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PostToolUse",
-    "additionalContext": "A plan file '${PLAN_NAME}' was just created at ${FILE_PATH}. You MUST now invoke the /reviewing-plans skill immediately -- do not wait for the user to ask. Pass the plan file path to the reviewer."
-  }
-}
-EOF
-fi
-
+# PostToolUse hook -- DEPRECATED: plan review auto-trigger removed.
+# Plan review is now manual via /review-plan skill.
+# This file is kept as a no-op to avoid hook registration errors.
+# See: plans/sessions/2026-03-15_independent-plan-review-agent.md
 exit 0

@@ -37,7 +37,7 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 - **Governed initiatives:** Work belonging to a major initiative uses the governing plan framework. Plans live under `plans/<initiative>/`. See `docs/02_agent/AGENTS.md` section 12 for the plan hierarchy.
 - **Session-scoped work:** For standalone tasks (one-off bugfixes, small features, isolated PRs) that do NOT belong to a governed initiative, save to `plans/sessions/YYYY-MM-DD_<slug>.md`.
 - Every plan file should include an `## Outcome` section (filled after implementation) linking to resulting PR(s) or noting abandonment.
-- A PostToolUse hook auto-triggers `/reviewing-plans` after every plan file creation — see `.claude/hooks/post-plan-review.sh`.
+- Use `/review-plan [path]` for independent plan review with Codex CLI + Claude failsafe.
 
 ### Planning Rules
 
