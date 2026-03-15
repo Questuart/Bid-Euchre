@@ -1,7 +1,7 @@
 # Lineage Amendments — Arc D v2
 
 **Governing plan:** `plans/arc_d_v2/lineage_plan.md`
-**Last updated:** 2026-03-14
+**Last updated:** 2026-03-15
 
 ---
 
@@ -9,6 +9,7 @@
 
 ### LA-1 — [Auction Position Features at R1+](#lineage-amendment-la-1)
 ### LA-2 — [Anchor Compatibility Policy](#lineage-amendment-la-2)
+### LA-3 — [Hybrid Execution Path: QUICK-First Ladder](#lineage-amendment-la-3)
 
 ---
 
@@ -96,5 +97,70 @@ the feature inference assumes modern positional features.
 - `generate_comparator_config()` excludes the anchor from bidding_policies
 - `generate_h2h_roster()` includes the anchor with `class_name: HybridOLSaBidder`
 - Anchor compatibility precheck added to `check_anchor_compatibility()` utility
+
+**Approved by:** [human reviewer]
+
+---
+
+## Lineage Amendment LA-3
+
+**Date:** 2026-03-15
+**Type:** execution_order
+**Effective from:** R0*
+**Change:** Adopt Hybrid Execution Path — run QUICK-only through R0→R1→R2 before
+committing to any FULL runs. FULL is deferred, not skipped.
+
+**Rationale:**
+The governing plan §9.5 prescribes QUICK→FULL per rung before advancing to the next
+rung. In practice, this front-loads ~10-14 hours of FULL compute per rung before learning
+whether the added context (partner features at R1, opponent features at R2) actually helps.
+Running QUICK across all rungs first gives directional signal in ~2 hours total, letting
+us decide which rung(s) merit FULL investment.
+
+Additionally, the multi-seed FULL aggregation mechanism (§9.6) requires pooling per-deal
+data across seeds and bootstrapping CIs from the pooled distribution — not averaging
+per-seed summaries. This upstream aggregation is not yet implemented (see PR #690 Codex
+review). Deferring FULL until after the ladder is explored at QUICK scale avoids blocking
+on this infrastructure work.
+
+**Modified execution order:**
+
+| Step | Action | Gate |
+|------|--------|------|
+| 1 | Fix PR #690 (descope FULL merge, keep per-contract faceting) | PR merged |
+| 2 | Canonical R0 QUICK rerun | Steps 0-8 green, advance check evaluable |
+| 3 | Implement R1 (partner + position features) | Sub-plan created |
+| 4 | R1 QUICK | Steps 0-8 green |
+| 5 | Implement R2 (opponent features) | Sub-plan created |
+| 6 | R2 QUICK | Steps 0-8 green |
+| 7 | Review QUICK results across R0-R2 | Human decision point |
+| 8 | FULL backfill for selected rung(s) | Only if QUICK results warrant |
+
+**What this changes from §9.5:**
+- §9.5 says: QUICK → evaluate → FULL → advance (per rung, sequential)
+- LA-3 says: QUICK → advance (per rung) → review all → FULL backfill (selected rungs)
+
+**What this does NOT change:**
+- Each rung still runs the full 9-step pipeline at QUICK scale
+- Advance checks still gate rung transitions (PROCEED required to advance)
+- FULL is deferred, not eliminated — it remains required for publication-grade evidence
+- §9.6 multi-seed aggregation contract is unchanged (pooled bootstrap, not averaged CIs)
+- All outputs from QUICK-only runs must be labeled as `mode: quick` in artifacts
+
+**Labeling requirement:**
+All QUICK-only advance decisions must note `"evidence_tier": "quick"` in the advance
+check JSON. This prevents QUICK results from being mistaken for FULL-grade evidence
+in downstream reports or promotion decisions.
+
+**Reversal conditions:**
+- If QUICK results at any rung are ambiguous or surprising, revert to §9.5 (run FULL
+  before advancing)
+- If FULL is needed for a specific hypothesis (e.g., seed stability), run it at that
+  rung before proceeding
+
+**Impact on orchestrator:**
+- `run_rung.py --mode quick` remains the primary execution command per rung
+- `run_rung.py --mode all` (QUICK→FULL) is not used under LA-3
+- FULL backfill uses `run_rung.py --mode full` after QUICK results are reviewed
 
 **Approved by:** [human reviewer]
