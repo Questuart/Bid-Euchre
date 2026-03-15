@@ -781,7 +781,12 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
         if model_class != "ols":
             cmd.extend(["--model-class", model_class])
 
+        # Rung-aware feature set: at R1+ rungs, upgrade "r0" to "full"
+        # so models get partner/position context features.
+        # "constrained" stays locked (attribution arm, per §5.1).
         feature_set = model.feature_set or "full"
+        if feature_set == "r0" and rung != "r0":
+            feature_set = "full"
         if feature_set != "full":
             cmd.extend(["--feature-set", feature_set])
 
