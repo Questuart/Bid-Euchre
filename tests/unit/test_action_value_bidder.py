@@ -201,10 +201,10 @@ class TestPredictOls:
 
 
 class TestExtractStateFeatures:
-    def test_shape_is_57(self):
+    def test_shape_is_69(self):
         obs = _make_obs()
         features = extract_state_features(obs, "suit", "H")
-        assert features.shape == (57,)
+        assert features.shape == (69,)
 
     def test_shape_matches_feature_names(self):
         obs = _make_obs()

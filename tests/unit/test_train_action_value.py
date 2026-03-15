@@ -338,8 +338,8 @@ class TestFeatureSets:
         assert len(FEATURE_SETS["r0"]) == 39
 
     def test_feature_set_full_length(self):
-        """Full feature set must have exactly 57 features."""
-        assert len(FEATURE_SETS["full"]) == 57
+        """Full feature set must have exactly 69 features (R2)."""
+        assert len(FEATURE_SETS["full"]) == 69
 
     def test_feature_set_r0_matches_hand_features(self):
         """R0 features are the first 39 entries of STATE_FEATURE_NAMES."""
@@ -436,9 +436,9 @@ class TestArtifactFilename:
 
 
 class TestNoPartnerFeatureSet:
-    def test_no_partner_has_57_features(self):
-        """no-partner uses full 57 state features (zero-masked at training)."""
-        assert len(FEATURE_SETS["no-partner"]) == 57
+    def test_no_partner_has_69_features(self):
+        """no-partner uses full 69 state features (zero-masked at training)."""
+        assert len(FEATURE_SETS["no-partner"]) == 69
 
     def test_no_partner_equals_full_features(self):
         """no-partner feature list is identical to full."""
@@ -458,12 +458,12 @@ class TestNoPartnerFeatureSet:
             assert name in FEATURE_SETS["full"]
 
     def test_zero_mask_columns_maps_no_partner(self):
-        """_ZERO_MASK_COLUMNS has 'no-partner' → partner + position feature names."""
-        from train_action_value import _POSITION_FEATURE_NAMES
+        """_ZERO_MASK_COLUMNS has 'no-partner' → partner + position + opponent feature names."""
+        from train_action_value import _OPPONENT_FEATURE_NAMES, _POSITION_FEATURE_NAMES
 
         assert "no-partner" in _ZERO_MASK_COLUMNS
         assert _ZERO_MASK_COLUMNS["no-partner"] == (
-            _PARTNER_FEATURE_NAMES + _POSITION_FEATURE_NAMES
+            _PARTNER_FEATURE_NAMES + _POSITION_FEATURE_NAMES + _OPPONENT_FEATURE_NAMES
         )
 
     def test_zero_mask_produces_zero_coefficients(self, smoke_parquet_path):
@@ -527,12 +527,12 @@ class TestNoPartnerFeatureSet:
 
 
 class TestInteractionFeatureSet:
-    def test_interaction_has_60_features(self):
-        """interaction feature set = 57 state + 3 interaction terms."""
-        assert len(FEATURE_SETS["interaction"]) == 60
+    def test_interaction_has_72_features(self):
+        """interaction feature set = 69 state + 3 interaction terms."""
+        assert len(FEATURE_SETS["interaction"]) == 72
 
     def test_interaction_starts_with_state_features(self):
-        """First 57 features match STATE_FEATURE_NAMES."""
+        """First 69 features match STATE_FEATURE_NAMES."""
         n_state = len(STATE_FEATURE_NAMES)
         assert FEATURE_SETS["interaction"][:n_state] == list(STATE_FEATURE_NAMES)
 
