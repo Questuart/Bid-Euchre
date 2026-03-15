@@ -78,7 +78,8 @@ def evaluate_hypothesis(hyp: dict, tables_dir: Path) -> dict:
     source_table = hyp.get("source_table")
     source_column = hyp.get("source_column")
     source_filter = hyp.get("source_filter", {})
-    anchor_filter = hyp.get("anchor_filter")
+    # Support both "anchor_filter" and "comparator_filter" naming
+    ref_filter = hyp.get("comparator_filter") or hyp.get("anchor_filter")
     computation = hyp.get("computation", "value")
     expected_bound = hyp.get("expected_bound", {})
     surprise_if = hyp.get("surprise_if", {})
@@ -87,21 +88,21 @@ def evaluate_hypothesis(hyp: dict, tables_dir: Path) -> dict:
     value = _read_csv_value(tables_dir, source_table, source_column, source_filter)
     if value is None:
         result["error"] = (
-            f"Could not read {source_column} from {source_table} with filter {source_filter}"
+            f"Could not read {source_column} from {source_table} "
+            f"with filter {source_filter}"
         )
         return result
 
-    # Compute delta if anchor specified
-    if anchor_filter and computation == "value - anchor_value":
-        anchor_value = _read_csv_value(
-            tables_dir, source_table, source_column, anchor_filter
-        )
-        if anchor_value is None:
+    # Compute delta if reference filter specified
+    delta_computations = {"value - anchor_value", "value - comparator_value"}
+    if ref_filter and computation in delta_computations:
+        ref_value = _read_csv_value(tables_dir, source_table, source_column, ref_filter)
+        if ref_value is None:
             result["error"] = (
-                f"Could not read anchor from {source_table} with filter {anchor_filter}"
+                f"Could not read reference from {source_table} with filter {ref_filter}"
             )
             return result
-        observed = value - anchor_value
+        observed = value - ref_value
     else:
         observed = value
 
@@ -142,7 +143,7 @@ def check_sufficiency(tables_dir: Path, rung: str) -> list[dict]:
         "model_performance.csv",
         "data_sanity.csv",
         "comparator_rankings.csv",
-        "h2h_matrix.csv",
+        "h2h_delta_matrix.csv",
     ]
     found = sum(1 for t in expected_tables if (tables_dir / t).exists())
     checks.append(

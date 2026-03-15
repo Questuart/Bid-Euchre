@@ -33,6 +33,31 @@ def _load_json(path: Path) -> dict | None:
         return json.load(f)
 
 
+def _load_json_glob(rung_dir: Path, prefix: str) -> dict | None:
+    """Load a JSON artifact, trying exact name then glob for mode/seed-suffixed variants.
+
+    The orchestrator writes mode/seed-suffixed filenames (e.g., ``h2h_battery_quick_42.json``)
+    while the table generator historically expected the bare name (``h2h_battery.json``).
+    This helper tries the bare name first, then globs for ``{prefix}_*.json`` and picks
+    the most recently modified match.
+    """
+    exact = rung_dir / f"{prefix}.json"
+    if exact.exists():
+        return _load_json(exact)
+
+    candidates = sorted(
+        rung_dir.glob(f"{prefix}_*.json"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if candidates:
+        chosen = candidates[-1]
+        logger.info("Resolved %s via glob: %s", prefix, chosen.name)
+        return _load_json(chosen)
+
+    logger.warning("No %s artifact found in %s", prefix, rung_dir)
+    return None
+
+
 def _safe_round(val, decimals=4):
     """Round a value safely, handling None."""
     if val is None:
@@ -545,9 +570,9 @@ def generate_all_tables(
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = []
 
-    # Load available artifacts
-    h2h_battery = _load_json(rung_dir / "h2h_battery.json")
-    comparator_cis = _load_json(rung_dir / "comparator_cis.json")
+    # Load available artifacts (glob for mode/seed-suffixed filenames)
+    h2h_battery = _load_json_glob(rung_dir, "h2h_battery")
+    comparator_cis = _load_json_glob(rung_dir, "comparator_cis")
     roster = _load_json(rung_dir / "roster.json")
 
     # Load training artifacts (look for training_artifact_*.json)

@@ -1082,15 +1082,90 @@ def execute_step_4(state: RunState, seed: int, dry_run: bool = False) -> bool:
 
     if dry_run:
         logger.info("Step 4: would run: %s", " ".join(cmd))
+        logger.info("Step 4: would run experiment and parse results")
         state.mark_step_complete("4", seed)
         return True
 
+    # Phase 1: Generate config + empty summary
     ok, error = run_subprocess(cmd, "4", rung, f"seed_{seed}")
+    if not ok:
+        state.mark_step_failed("4", f"Config generation failed: {error}", seed=seed)
+        _append_log(
+            rung,
+            {"event": "step_failed", "step": "4", "seed": seed, "error": error[:200]},
+        )
+        state.save(_state_path(rung))
+        return False
+
+    # Phase 2: Run the actual H2H experiment
+    config_path = artifacts_dir / f"h2h_battery_{state.mode}_config.yaml"
+    if not config_path.exists():
+        error = f"H2H config not found at {config_path}"
+        logger.error("Step 4: %s", error)
+        state.mark_step_failed("4", error, seed=seed)
+        state.save(_state_path(rung))
+        return False
+
+    cmd_experiment = [
+        "uv",
+        "run",
+        "python",
+        "experiments/run_experiment.py",
+        "--seed",
+        str(seed),
+        "--config",
+        str(config_path),
+    ]
+    logger.info("Step 4: Running H2H experiment...")
+    ok, error = run_subprocess(cmd_experiment, "4", rung, f"experiment_seed_{seed}")
+    if not ok:
+        state.mark_step_failed("4", f"H2H experiment failed: {error}", seed=seed)
+        _append_log(
+            rung,
+            {"event": "step_failed", "step": "4", "seed": seed, "error": error[:200]},
+        )
+        state.save(_state_path(rung))
+        return False
+
+    # Phase 3: Parse results back into the battery JSON
+    runs_dir = _repo_root() / "data" / "runs"
+    run_candidates = sorted(
+        runs_dir.glob(f"arc_d_{rung}_h2h_battery_{seed}_*"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    if not run_candidates:
+        error = f"No H2H run directory found matching arc_d_{rung}_h2h_battery_{seed}_*"
+        logger.error("Step 4: %s", error)
+        state.mark_step_failed("4", error, seed=seed)
+        state.save(_state_path(rung))
+        return False
+
+    run_dir = run_candidates[-1]
+    cmd_parse = [
+        "uv",
+        "run",
+        "python",
+        "scripts/internal/run_arc_d_h2h_battery.py",
+        "--mode",
+        mode_for_h2h,
+        "--seed",
+        str(seed),
+        "--n-per",
+        str(n_per),
+        "--output",
+        str(output),
+        "--roster",
+        str(roster_path),
+        "--parse-run",
+        str(run_dir),
+    ]
+    logger.info("Step 4: Parsing H2H results from %s...", run_dir.name)
+    ok, error = run_subprocess(cmd_parse, "4", rung, f"parse_seed_{seed}")
     if ok:
         state.mark_step_complete("4", seed)
         _append_log(rung, {"event": "step_complete", "step": "4", "seed": seed})
     else:
-        state.mark_step_failed("4", error, seed=seed)
+        state.mark_step_failed("4", f"H2H parse failed: {error}", seed=seed)
         _append_log(
             rung,
             {"event": "step_failed", "step": "4", "seed": seed, "error": error[:200]},
