@@ -366,9 +366,8 @@ class TestCodexFallback:
         result = run_plan_review_loop(plan_file, base_dir=tmp_path)
 
         assert result.fallback_used is True
-        assert (
-            result.verdict == "READY"
-        )  # No findings -> READY (both failed to produce any)
+        assert result.verdict == "NOT_READY"  # Both failed → synthetic CRITICAL finding
+        assert result.total_findings == 1  # Synthetic "no review completed" finding
         assert result.iterations == 1
 
 
@@ -479,6 +478,40 @@ class TestStatePersistence:
     def test_load_nonexistent_returns_none(self, tmp_path: Path) -> None:
         result = load_plan_review_state("nonexistent_key", tmp_path)
         assert result is None
+
+    def test_resume_from_codex_reviewing_resets_to_initialized(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Resuming from CODEX_REVIEWING should not raise InvalidTransitionError.
+
+        The driver resets non-terminal states to INITIALIZED before entering
+        the loop, so a restart from any mid-loop state is safe.
+        """
+        # Pre-save state in CODEX_REVIEWING (simulates interrupted run)
+        key = "resume_test_key"
+        pre_state = PlanReviewLoopState(
+            plan_path="plans/sessions/test.md",
+            state_key=key,
+            tier="small",
+            state=PlanReviewState.CODEX_REVIEWING.value,
+            iteration_count=1,
+        )
+        save_plan_review_state(pre_state, tmp_path)
+
+        plan_file = tmp_path / "plans" / "sessions" / "test.md"
+        plan_file.parent.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text("# Test Plan\n")
+
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_codex_plan_review",
+            lambda *a, **kw: _make_result(success=True, findings=[]),
+        )
+        monkeypatch.setattr("plan_review_driver.detect_plan_tier", lambda p: "small")
+        monkeypatch.setattr("plan_review_driver.plan_state_key", lambda p: key)
+
+        # Should NOT raise InvalidTransitionError
+        result = run_plan_review_loop(plan_file, base_dir=tmp_path)
+        assert result.verdict == "READY"
 
 
 # ---------------------------------------------------------------------------

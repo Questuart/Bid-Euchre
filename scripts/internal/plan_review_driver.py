@@ -291,6 +291,17 @@ def run_plan_review_loop(
     # Step 2: Create or load state
     key = plan_state_key(plan_path)
     loop_state = load_plan_review_state(key, base_dir)
+    if loop_state is not None and not loop_state.is_terminal:
+        # Resuming from a non-terminal state. Reset to INITIALIZED so the
+        # loop can cleanly transition to CODEX_REVIEWING. Without this,
+        # restarting from states like CODEX_REVIEWING would raise
+        # InvalidTransitionError because self-transitions are not allowed.
+        logger.info(
+            "Resuming plan review from state %s — resetting to INITIALIZED",
+            loop_state.state,
+        )
+        loop_state.state = PlanReviewState.INITIALIZED.value
+        loop_state.updated_at = time.time()
     if loop_state is None or loop_state.is_terminal:
         loop_state = PlanReviewLoopState(
             plan_path=str(plan_path),
@@ -347,7 +358,24 @@ def run_plan_review_loop(
                 loop_state.transition(PlanReviewState.FINDINGS_RECEIVED)
                 all_findings.append((iteration, current_findings))
             else:
-                # Fallback also produced nothing useful -> complete with issues
+                # Both reviewers failed — this is NOT a clean review.
+                # Inject a synthetic CRITICAL finding so the verdict is NOT_READY
+                # instead of falsely reporting READY.
+                no_review_finding = PlanReviewFinding(
+                    severity="CRITICAL",
+                    category="process",
+                    file=str(plan_path),
+                    line=0,
+                    description=(
+                        "No review completed: both Codex CLI and Claude fallback "
+                        "failed to produce findings. Plan has not been reviewed."
+                    ),
+                    check_id=None,
+                    source="plan_review_driver",
+                )
+                current_findings = [no_review_finding]
+                loop_state.transition(PlanReviewState.FINDINGS_RECEIVED)
+                all_findings.append((iteration, current_findings))
                 loop_state.transition(PlanReviewState.REVIEW_COMPLETE_WITH_ISSUES)
                 loop_state.stop_reason = "Codex and Claude fallback both unavailable"
             save_plan_review_state(loop_state, base_dir)
