@@ -39,6 +39,18 @@ def main() -> None:
         help="Path to write CSV tables",
     )
     parser.add_argument(
+        "--mode",
+        choices=["smoke", "quick", "full"],
+        default=None,
+        help="Execution mode for deterministic artifact selection",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="RNG seed for deterministic artifact selection",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -52,7 +64,9 @@ def main() -> None:
         format="%(levelname)s: %(message)s",
     )
 
-    generated = generate_all_tables(args.rung_dir, args.output_dir)
+    generated = generate_all_tables(
+        args.rung_dir, args.output_dir, mode=args.mode, seed=args.seed
+    )
     logger.info("Generated %d tables: %s", len(generated), ", ".join(generated))
 
 

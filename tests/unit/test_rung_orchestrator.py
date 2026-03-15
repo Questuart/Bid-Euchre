@@ -466,6 +466,77 @@ class TestHypothesisEvaluation:
         assert result["error"] is not None
         assert result["pass"] is False
 
+    def test_min_aggregate(self, tmp_path):
+        """H6-style check: min(bid_rate) across all pooled models > 0.5."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "bid_rate"],
+            [
+                ["gbt_av", "pooled", "0.91"],
+                ["ols_av", "pooled", "1.0"],
+                ["heuristic", "pooled", "0.85"],
+            ],
+        )
+        hyp = {
+            "id": "H6",
+            "description": "all models bid > 50%",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "bid_rate",
+            "source_filter": {"facet": "pooled"},
+            "computation": "min",
+            "expected_bound": {"op": ">", "value": 0.5},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is True
+        assert result["observed"] == 0.85  # min of [0.91, 1.0, 0.85]
+
+    def test_min_aggregate_fails(self, tmp_path):
+        """Min aggregate should fail when any model is below threshold."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "bid_rate"],
+            [
+                ["gbt_av", "pooled", "0.91"],
+                ["pathological", "pooled", "0.3"],
+            ],
+        )
+        hyp = {
+            "id": "H6",
+            "description": "all models bid > 50%",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "bid_rate",
+            "source_filter": {"facet": "pooled"},
+            "computation": "min",
+            "expected_bound": {"op": ">", "value": 0.5},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is False
+        assert result["observed"] == 0.3  # pathological model
+
+    def test_comparator_filter(self, tmp_path):
+        """comparator_filter should work like anchor_filter for deltas."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["two_stage", "pooled", "1.8"],
+                ["selected_ols", "pooled", "2.2"],
+            ],
+        )
+        hyp = {
+            "id": "H8",
+            "description": "test comparator delta",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "two_stage", "facet": "pooled"},
+            "comparator_filter": {"model": "selected_ols", "facet": "pooled"},
+            "computation": "value - comparator_value",
+            "expected_bound": {"op": ">=", "value": -0.2},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path)
+        assert result["pass"] is False  # -0.4 < -0.2
+        assert abs(result["observed"] - (-0.4)) < 0.001
+
 
 class TestSufficiencyChecks:
     def test_all_tables_present(self, tmp_path):
@@ -1343,6 +1414,71 @@ class TestStep4CommandConstruction:
 
         assert ok is False
         assert "No bidders" in (state.steps["4"].get("error") or "")
+
+    def test_step4_full_execution_success(self, tmp_path):
+        """Step 4 non-dry-run should run config → experiment → parse."""
+        art = tmp_path / "gbt_av" / "artifact.json"
+        art.parent.mkdir(parents=True)
+        art.write_text("{}")
+
+        # Create the artifacts dir and config file the orchestrator expects
+        artifacts_dir = tmp_path / "data" / "artifacts" / "arc_d_v2" / "r0"
+        artifacts_dir.mkdir(parents=True)
+        config_path = artifacts_dir / "h2h_battery_quick_config.yaml"
+        config_path.write_text("run_id: test_run\n")
+
+        # Create a fake run directory for parse phase to find
+        run_dir = tmp_path / "data" / "runs" / "arc_d_r0_h2h_battery_42_20260101_000000"
+        run_dir.mkdir(parents=True)
+
+        roster = Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                ),
+            ],
+            anchor=AnchorModel(name="anchor", artifact="anchor.json", class_name="X"),
+        )
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        # Track subprocess calls to verify 3-phase execution
+        subprocess_calls = []
+
+        def mock_subprocess(cmd, step, rung, log_suffix=""):
+            subprocess_calls.append(log_suffix)
+            return True, None
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "find_trained_artifact",
+                return_value=art,
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_4(state, 42, dry_run=False)
+
+        assert ok is True
+        assert state.steps["4"]["status"] == "complete"
+        # Verify all 3 phases ran: config gen, experiment, parse
+        assert len(subprocess_calls) == 3
+        assert subprocess_calls[0] == "seed_42"  # config gen
+        assert "experiment" in subprocess_calls[1]  # experiment run
+        assert "parse" in subprocess_calls[2]  # result parse
 
 
 class TestStep5CommandConstruction:

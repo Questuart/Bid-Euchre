@@ -68,7 +68,7 @@
       "source_table": "comparator_rankings.csv",
       "source_column": "bid_rate",
       "source_filter": {"facet": "pooled"},
-      "computation": "value",
+      "computation": "min",
       "expected_bound": {"op": ">", "value": 0.5},
       "surprise_if": {"op": "<", "value": 0.2}
     },

@@ -1342,6 +1342,10 @@ def execute_step_6(state: RunState, dry_run: bool = False) -> bool:
         str(rung_dir),
         "--output-dir",
         str(output_dir),
+        "--mode",
+        state.mode,
+        "--seed",
+        str(state.seeds[0] if state.seeds else 42),
     ]
 
     if dry_run:
