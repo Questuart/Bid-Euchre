@@ -712,6 +712,41 @@ def parse_run_results(run_dir, summary, seed=42):
         cell["deals_total"] = n_deals
         cell["run_id"] = run_path.name
 
+        # Per-contract faceting: group records by contract type and compute
+        # core metrics (delta, CI, win_rate) for suit/high/low.
+        contract_groups: dict[str, list] = {}
+        for rec in records:
+            ct = rec.get("contract")
+            if ct and isinstance(ct, str) and ct in ("suit", "high", "low"):
+                contract_groups.setdefault(ct, []).append(rec)
+
+        by_contract = {}
+        for ct, ct_records in contract_groups.items():
+            ct_deltas = []
+            ct_wins = 0
+            for rec in ct_records:
+                bp = rec.get("bidder_position")
+                if bp is None:
+                    continue  # all-pass: no contract, skip
+                t0_pts, t1_pts = _compute_team_points(rec)
+                ct_deltas.append(t0_pts - t1_pts)
+                if t0_pts > t1_pts:
+                    ct_wins += 1
+            ct_n = len(ct_deltas)
+            if ct_n == 0:
+                continue
+            ct_delta = float(np.mean(ct_deltas))
+            ct_ci_low, ct_ci_high = _bootstrap_ci(ct_deltas, seed=seed)
+            by_contract[ct] = {
+                "net_eppd_delta": round(ct_delta, 6),
+                "ci_low": round(ct_ci_low, 6),
+                "ci_high": round(ct_ci_high, 6),
+                "win_rate_a": round(ct_wins / ct_n, 4),
+                "deals_total": ct_n,
+            }
+        if by_contract:
+            cell["by_contract"] = by_contract
+
     return summary
 
 

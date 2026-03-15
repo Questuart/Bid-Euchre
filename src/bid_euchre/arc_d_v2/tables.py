@@ -165,12 +165,12 @@ def generate_h2h_delta_matrix(h2h_battery: dict) -> pd.DataFrame:
         bidder_a = cell.get("bidder_a", "")
         bidder_b = cell.get("bidder_b", "")
 
-        facet = "pooled"  # H2H battery is pooled by default
+        # Pooled row (always present)
         rows.append(
             {
                 "model_a": bidder_a,
                 "model_b": bidder_b,
-                "facet": facet,
+                "facet": "pooled",
                 "net_eppd_delta": _safe_round(cell.get("net_eppd_delta")),
                 "ci_low": _safe_round(cell.get("ci_low")),
                 "ci_high": _safe_round(cell.get("ci_high")),
@@ -178,6 +178,24 @@ def generate_h2h_delta_matrix(h2h_battery: dict) -> pd.DataFrame:
                 "deals_total": cell.get("deals_total"),
             }
         )
+
+        # Per-contract rows (if by_contract data is available)
+        by_contract = cell.get("by_contract", {})
+        for ct in ("suit", "high", "low"):
+            ct_data = by_contract.get(ct)
+            if ct_data:
+                rows.append(
+                    {
+                        "model_a": bidder_a,
+                        "model_b": bidder_b,
+                        "facet": ct,
+                        "net_eppd_delta": _safe_round(ct_data.get("net_eppd_delta")),
+                        "ci_low": _safe_round(ct_data.get("ci_low")),
+                        "ci_high": _safe_round(ct_data.get("ci_high")),
+                        "win_rate_a": _safe_round(ct_data.get("win_rate_a")),
+                        "deals_total": ct_data.get("deals_total"),
+                    }
+                )
 
     return pd.DataFrame(rows)
 
@@ -572,11 +590,93 @@ def generate_data_sanity(
 # ──────────────────────────────────────────────
 
 
+def _merge_h2h_batteries(batteries: list[dict]) -> dict:
+    """Merge multiple H2H battery JSONs by averaging per-cell metrics across seeds."""
+    if len(batteries) == 1:
+        return batteries[0]
+
+    merged = dict(batteries[0])  # Copy structure from first
+    merged_cells = {}
+
+    # Collect all cells by matchup_id
+    for battery in batteries:
+        for mid, cell in battery.get("cells", {}).items():
+            merged_cells.setdefault(mid, []).append(cell)
+
+    result_cells = {}
+    for mid, cell_list in merged_cells.items():
+        base = dict(cell_list[0])
+        # Average numeric fields across seeds
+        for key in (
+            "net_eppd_delta",
+            "net_eppd_a",
+            "net_eppd_b",
+            "ci_low",
+            "ci_high",
+            "win_rate_a",
+            "abs_net_eppd_team0",
+            "abs_net_eppd_team1",
+            "cvar_5",
+            "fullgame_eppd",
+        ):
+            vals = [c.get(key) for c in cell_list if c.get(key) is not None]
+            base[key] = round(sum(vals) / len(vals), 6) if vals else None
+        # Sum deal counts
+        deal_counts = [c.get("deals_total", 0) for c in cell_list]
+        base["deals_total"] = sum(deal_counts)
+        # Merge per-contract data if present
+        all_contracts: dict[str, list[dict]] = {}
+        for c in cell_list:
+            for ct, ct_data in c.get("by_contract", {}).items():
+                all_contracts.setdefault(ct, []).append(ct_data)
+        if all_contracts:
+            merged_bc = {}
+            for ct, ct_list in all_contracts.items():
+                merged_ct: dict = {}
+                for key in ("net_eppd_delta", "ci_low", "ci_high", "win_rate_a"):
+                    vals = [d.get(key) for d in ct_list if d.get(key) is not None]
+                    merged_ct[key] = round(sum(vals) / len(vals), 6) if vals else None
+                merged_ct["deals_total"] = sum(d.get("deals_total", 0) for d in ct_list)
+                merged_bc[ct] = merged_ct
+            base["by_contract"] = merged_bc
+        result_cells[mid] = base
+
+    merged["cells"] = result_cells
+    merged["seeds_merged"] = len(batteries)
+    return merged
+
+
+def _merge_comparator_cis(cis_list: list[dict]) -> dict:
+    """Merge multiple comparator CI JSONs by averaging per-bidder metrics."""
+    if len(cis_list) == 1:
+        return cis_list[0]
+
+    merged = dict(cis_list[0])
+    # Average bidder metrics across seeds
+    all_bidders: dict[str, list[dict]] = {}
+    for cis in cis_list:
+        for name, b in cis.get("bidders", {}).items():
+            all_bidders.setdefault(name, []).append(b)
+
+    result_bidders = {}
+    for name, b_list in all_bidders.items():
+        base = dict(b_list[0])
+        for key in ("net_eppd", "eppd", "bid_rate", "make_rate"):
+            vals = [b.get(key) for b in b_list if b.get(key) is not None]
+            base[key] = round(sum(vals) / len(vals), 6) if vals else None
+        result_bidders[name] = base
+
+    merged["bidders"] = result_bidders
+    merged["seeds_merged"] = len(cis_list)
+    return merged
+
+
 def generate_all_tables(
     rung_dir: Path,
     output_dir: Path,
     mode: str | None = None,
     seed: int | None = None,
+    seeds: list[int] | None = None,
 ) -> list[str]:
     """Generate all 11 canonical CSVs from rung directory artifacts.
 
@@ -584,7 +684,9 @@ def generate_all_tables(
         rung_dir: Path to directory containing run artifacts.
         output_dir: Path to write CSV files.
         mode: Execution mode (smoke/quick/full) for deterministic artifact selection.
-        seed: RNG seed for deterministic artifact selection.
+        seed: Single RNG seed (for backward compatibility).
+        seeds: List of RNG seeds for multi-seed FULL aggregation.
+            If provided, overrides ``seed``.
 
     Returns:
         List of generated CSV filenames.
@@ -592,13 +694,24 @@ def generate_all_tables(
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = []
 
-    # Load available artifacts (deterministic when mode/seed provided)
-    # H2H uses {prefix}_{mode}_{seed}.json naming
-    h2h_battery = _load_json_glob(rung_dir, "h2h_battery", mode=mode, seed=seed)
-    # Comparator CIs use {prefix}_{rung}_{seed}.json naming — extract rung from dir
+    # Resolve seed list
+    seed_list = seeds or ([seed] if seed is not None else [None])
     rung_id = rung_dir.name  # e.g., "r0"
-    comparator_cis = _load_json_glob(
-        rung_dir, "comparator_cis", mode=rung_id, seed=seed
+
+    # Load artifacts for all seeds, then merge
+    h2h_batteries = []
+    comparator_cis_list = []
+    for s in seed_list:
+        h2h = _load_json_glob(rung_dir, "h2h_battery", mode=mode, seed=s)
+        if h2h:
+            h2h_batteries.append(h2h)
+        cis = _load_json_glob(rung_dir, "comparator_cis", mode=rung_id, seed=s)
+        if cis:
+            comparator_cis_list.append(cis)
+
+    h2h_battery = _merge_h2h_batteries(h2h_batteries) if h2h_batteries else None
+    comparator_cis = (
+        _merge_comparator_cis(comparator_cis_list) if comparator_cis_list else None
     )
     roster = _load_json(rung_dir / "roster.json")
 

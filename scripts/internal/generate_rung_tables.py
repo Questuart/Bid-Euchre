@@ -46,9 +46,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--seed",
-        type=int,
         default=None,
-        help="RNG seed for deterministic artifact selection",
+        help="RNG seed(s) for deterministic artifact selection. "
+        "Comma-separated for multi-seed FULL (e.g., '42,123,456')",
     )
     parser.add_argument(
         "--verbose",
@@ -64,8 +64,13 @@ def main() -> None:
         format="%(levelname)s: %(message)s",
     )
 
+    # Parse seed(s) — supports single int or comma-separated list
+    seeds = None
+    if args.seed:
+        seeds = [int(s.strip()) for s in args.seed.split(",")]
+
     generated = generate_all_tables(
-        args.rung_dir, args.output_dir, mode=args.mode, seed=args.seed
+        args.rung_dir, args.output_dir, mode=args.mode, seeds=seeds
     )
     logger.info("Generated %d tables: %s", len(generated), ", ".join(generated))
 
