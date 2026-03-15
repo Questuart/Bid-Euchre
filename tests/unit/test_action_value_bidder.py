@@ -99,9 +99,12 @@ def _make_mock_artifact(
         },
         "metadata": {
             "context_features": [
-                "partner_bid_level",
+                "partner_level_same_suit",
+                "partner_level_same_color",
+                "partner_level_off_color",
+                "partner_level_high",
+                "partner_level_low",
                 "partner_passed",
-                "partner_suit_match",
             ],
             "arm": "full",
         },
@@ -197,10 +200,10 @@ class TestPredictOls:
 
 
 class TestExtractStateFeatures:
-    def test_shape_is_52(self):
+    def test_shape_is_57(self):
         obs = _make_obs()
         features = extract_state_features(obs, "suit", "H")
-        assert features.shape == (52,)
+        assert features.shape == (57,)
 
     def test_shape_matches_feature_names(self):
         obs = _make_obs()
@@ -372,9 +375,12 @@ class TestActionValueBidder:
         path = self._write_artifact(_make_mock_artifact())
         bidder = ActionValueBidder(artifact_path=path)
         assert bidder.context_features == [
-            "partner_bid_level",
+            "partner_level_same_suit",
+            "partner_level_same_color",
+            "partner_level_off_color",
+            "partner_level_high",
+            "partner_level_low",
             "partner_passed",
-            "partner_suit_match",
         ]
 
     def test_choose_bid_respects_current_high_bid(self):
