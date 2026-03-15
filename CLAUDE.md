@@ -235,6 +235,7 @@ See `docs/01_core/RULES.md` for complete rules specification.
 | Initiative | Governing Plan | Status |
 |-----------|---------------|--------|
 | Arc D v2 (multi-model lineage) | `plans/arc_d_v2/lineage_plan.md` | ACTIVE |
+| Browser Game Hosting and Human Data Capture | `plans/browser_game/governing_plan.md` | PROPOSED |
 
 When starting work on a governed initiative, begin with the Agent Execution
 Protocol below.
