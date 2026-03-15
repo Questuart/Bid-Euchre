@@ -891,3 +891,64 @@ class TestR0HandOnlyFeatureInference:
         bad_features = ["bowers", "UNKNOWN_FEATURE"] + list(ACTION_FEATURE_NAMES)
         with pytest.raises(ValueError, match="unknown state features"):
             _validate_artifact_features(bad_features, has_interactions=False)
+
+    def test_validate_artifact_features_selected_with_partner_v2(self):
+        """Forward-selected model with partner v2 features but no positional validates."""
+        # Simulate forward selection keeping some hand + partner_passed (no positional)
+        selected = ["bowers", "trump_count", "partner_passed"]
+        model_features = selected + list(ACTION_FEATURE_NAMES)
+        partner_names, has_positional = _validate_artifact_features(
+            model_features, has_interactions=False
+        )
+        assert has_positional is False
+        # partner_names inferred as empty because _infer_partner_features
+        # only detects partners when positional features are present
+        assert partner_names == []
+
+    def test_validate_artifact_features_selected_with_position(self):
+        """Forward-selected model with position features but no positional validates."""
+        # Simulate forward selection keeping hand + auction_position (no positional)
+        selected = ["bowers", "trump_count", "auction_position"]
+        model_features = selected + list(ACTION_FEATURE_NAMES)
+        partner_names, has_positional = _validate_artifact_features(
+            model_features, has_interactions=False
+        )
+        assert has_positional is False
+        assert partner_names == []
+
+    def test_validate_artifact_features_selected_with_partner_and_position(self):
+        """Forward-selected model with partner v2 + position features validates."""
+        selected = [
+            "bowers",
+            "trump_count",
+            "partner_passed",
+            "partner_level_high",
+            "auction_position",
+            "is_dealer",
+        ]
+        model_features = selected + list(ACTION_FEATURE_NAMES)
+        partner_names, has_positional = _validate_artifact_features(
+            model_features, has_interactions=False
+        )
+        assert has_positional is False
+        assert partner_names == []
+
+    def test_validate_pass_model_selected_with_partner_v2(self):
+        """Forward-selected pass model with partner v2 features validates."""
+        selected = ["bowers", "trump_count", "partner_passed"]
+        _validate_pass_model_features(
+            selected,
+            partner_feature_names=[],
+            has_interactions=False,
+            has_positional=False,
+        )
+
+    def test_validate_pass_model_selected_with_position(self):
+        """Forward-selected pass model with position features validates."""
+        selected = ["bowers", "auction_position", "is_dealer"]
+        _validate_pass_model_features(
+            selected,
+            partner_feature_names=[],
+            has_interactions=False,
+            has_positional=False,
+        )
