@@ -184,7 +184,9 @@ def generate_matchups(roster, play_strategy_name="glutton"):
     return matchups
 
 
-def generate_h2h_config(roster, matchups, seed, n_per, play_strategy_name="glutton"):
+def generate_h2h_config(
+    roster, matchups, seed, n_per, play_strategy_name="glutton", rung="r0"
+):
     """Generate a YAML-serializable config dict for H2H battery.
 
     Parameters
@@ -227,7 +229,7 @@ def generate_h2h_config(roster, matchups, seed, n_per, play_strategy_name="glutt
         )
 
     config = {
-        "experiment_name": "arc_d_r0_h2h_battery",
+        "experiment_name": f"arc_d_{rung}_h2h_battery",
         "parameters": {
             "seed": seed,
             "n_per": n_per,
@@ -877,12 +879,18 @@ def main():
         matchups = all_matchups
 
     # Generate experiment config
+    output_path = Path(args.output)
+    rung = output_path.parent.name  # e.g., "r0", "r1", "r2"
     config = generate_h2h_config(
-        roster, matchups, args.seed, args.n_per, play_strategy_name=play_strategy
+        roster,
+        matchups,
+        args.seed,
+        args.n_per,
+        play_strategy_name=play_strategy,
+        rung=rung,
     )
 
     # Write YAML config (skip when parsing existing run to avoid overwriting)
-    output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not args.parse_run:
