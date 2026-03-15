@@ -12,6 +12,7 @@ import pytest
 
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy.bidding import (
+    _HAND_FEATURE_NAMES,
     ACTION_FEATURE_NAMES,
     STATE_FEATURE_NAMES,
     ActionValueBidder,
@@ -538,3 +539,150 @@ class TestArtifactGovernance:
             ActionValueBidder(str(path))
 
         assert not any("Low R²" in msg for msg in caplog.messages)
+
+
+# ── R1 forward-selected artifacts (partner features, no positional) ──
+
+
+def _make_forward_selected_features() -> list[str]:
+    """Build a forward-selected feature list: hand subset + partner feature.
+
+    Simulates what forward selection produces when it keeps some hand
+    features and a partner feature (e.g., partner_passed) but drops all
+    positional/legality features.
+    """
+    # Pick a small subset of hand features + one partner feature
+    hand_subset = list(_HAND_FEATURE_NAMES[:10])  # first 10 hand features
+    partner_subset = ["partner_passed"]
+    return hand_subset + partner_subset
+
+
+def _make_forward_selected_ols_artifact(
+    pass_bias: float = 0.0,
+    suit_bias: float = 1.0,
+    high_bias: float = 0.5,
+    low_bias: float = 0.5,
+) -> dict:
+    """Create an action_value_olsa_v1 artifact with forward-selected features.
+
+    The artifact has partner features (partner_passed) but no positional
+    features — simulating R1 forward selection that dropped all
+    positional/legality features.
+    """
+    state_names = _make_forward_selected_features()
+    n_state = len(state_names)
+    n_action = len(ACTION_FEATURE_NAMES)
+
+    def _model(with_action: bool, intercept: float) -> dict:
+        if with_action:
+            feature_names = state_names + list(ACTION_FEATURE_NAMES)
+            n_features = n_state + n_action
+        else:
+            feature_names = list(state_names)
+            n_features = n_state
+        return {
+            "coefficients": [0.0] * n_features,
+            "intercept": intercept,
+            "feature_names": feature_names,
+            "r_squared": 0.50,
+        }
+
+    return {
+        "schema_version": "action_value_olsa_v1",
+        "models": {
+            "suit": _model(True, suit_bias),
+            "high": _model(True, high_bias),
+            "low": _model(True, low_bias),
+            "pass": _model(False, pass_bias),
+        },
+        "metadata": {
+            "context_features": ["partner_passed"],
+            "arm": "full",
+        },
+    }
+
+
+class TestForwardSelectedArtifact:
+    """Test that R1 forward-selected artifacts with partner features
+    but no positional features load and run correctly."""
+
+    def test_ols_loads_with_partner_features(self, tmp_path):
+        """ActionValueBidder loads artifact with partner features, no positional."""
+        artifact = _make_forward_selected_ols_artifact()
+        path = tmp_path / "forward_selected.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = ActionValueBidder(str(path), skip_behavioral_check=True)
+        assert bidder._needs_full_state is True
+        assert bidder._has_positional is False
+
+    def test_ols_choose_bid_with_partner_features(self, tmp_path):
+        """ActionValueBidder.choose_bid works with forward-selected artifact."""
+        artifact = _make_forward_selected_ols_artifact(pass_bias=-5.0, suit_bias=2.0)
+        path = tmp_path / "forward_selected.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = ActionValueBidder(str(path), skip_behavioral_check=True)
+        obs = _make_obs(current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert isinstance(action, BidAction)
+        # Suit has highest intercept → should pick suit
+        if not action.is_pass():
+            contract_type, _ = action.to_contract_tuple()
+            assert contract_type == "suit"
+
+    def test_ols_hand_only_backward_compat(self, tmp_path):
+        """R0 hand-only artifact still uses _HAND_FEATURE_NAMES mapping."""
+        hand_subset = list(_HAND_FEATURE_NAMES[:15])
+
+        def _model(with_action: bool, intercept: float) -> dict:
+            if with_action:
+                names = hand_subset + list(ACTION_FEATURE_NAMES)
+            else:
+                names = list(hand_subset)
+            return {
+                "coefficients": [0.0] * len(names),
+                "intercept": intercept,
+                "feature_names": names,
+                "r_squared": 0.50,
+            }
+
+        artifact = {
+            "schema_version": "action_value_olsa_v1",
+            "models": {
+                "suit": _model(True, 1.0),
+                "high": _model(True, 0.5),
+                "low": _model(True, 0.5),
+                "pass": _model(False, 0.0),
+            },
+            "metadata": {"context_features": [], "arm": "constrained"},
+        }
+        path = tmp_path / "hand_only.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = ActionValueBidder(str(path), skip_behavioral_check=True)
+        assert bidder._needs_full_state is False
+        assert bidder._has_positional is False
+
+        obs = _make_obs(current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert isinstance(action, BidAction)
+
+    def test_ols_index_mapping_correct(self, tmp_path):
+        """Verify forward-selected indices point to correct STATE_FEATURE_NAMES positions."""
+        artifact = _make_forward_selected_ols_artifact()
+        path = tmp_path / "forward_selected.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = ActionValueBidder(str(path), skip_behavioral_check=True)
+
+        # The indices should map to positions in STATE_FEATURE_NAMES
+        state_name_to_idx = {n: i for i, n in enumerate(STATE_FEATURE_NAMES)}
+        expected_state = _make_forward_selected_features()
+        expected_indices = [state_name_to_idx[n] for n in expected_state]
+
+        # Suit model's hand_indices should match (state features = expected_state)
+        np.testing.assert_array_equal(
+            bidder._hand_indices["suit"],
+            expected_indices,
+        )

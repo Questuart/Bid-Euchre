@@ -8,9 +8,13 @@ import math
 import numpy as np
 import pytest
 
+from bid_euchre.core.cards import Card
 from bid_euchre.strategy.bidding import (
+    _HAND_FEATURE_NAMES,
     ACTION_FEATURE_NAMES,
     STATE_FEATURE_NAMES,
+    BidAction,
+    BiddingObservation,
     TwoStageActionValueBidder,
     predict_logistic,
     predict_ols,
@@ -386,3 +390,134 @@ class TestTwoStagePredictionPaths:
         # Manual: 52 features * 0.01 coef * 0.1 input + (-1.0) intercept
         expected = N_STATE * 0.01 * 0.1 + (-1.0)
         assert abs(value - expected) < 1e-10
+
+
+# ── R1 forward-selected two-stage artifact ─────────────────
+
+
+def _make_obs(
+    current_high_bid: int = 0,
+    seat: int = 1,
+    dealer_seat: int = 0,
+) -> BiddingObservation:
+    """Create a BiddingObservation for testing."""
+    suits = ["C", "D", "H", "S"]
+    ranks = ["T", "J", "Q", "K", "A"]
+    cards = []
+    for i, suit in enumerate(suits):
+        for rank in ranks[i : i + 3]:
+            cards.append(Card(rank=rank, suit=suit))
+            if len(cards) == 10:
+                break
+        if len(cards) == 10:
+            break
+    return BiddingObservation(
+        hand=cards,
+        seat=seat,
+        dealer_seat=dealer_seat,
+        current_high_bid=current_high_bid,
+        allowed_contracts=("C", "D", "H", "S", "HIGH", "LOW"),
+        auction_transcript=(),
+    )
+
+
+class TestTwoStageForwardSelected:
+    """Test TwoStageActionValueBidder with forward-selected artifacts
+    containing partner features but no positional features."""
+
+    def test_loads_with_partner_features(self, tmp_path):
+        """TwoStageActionValueBidder loads forward-selected artifact."""
+        hand_subset = list(_HAND_FEATURE_NAMES[:10])
+        partner_subset = ["partner_passed"]
+        state_names = hand_subset + partner_subset
+        n_state = len(state_names)
+        n_bid = n_state + N_ACTION
+
+        feature_names_bid = state_names + list(ACTION_FEATURE_NAMES)
+        feature_names_pass = list(state_names)
+
+        suit_model = {
+            "logistic": {
+                "coefficients": [0.0] * n_bid,
+                "intercept": 0.0,
+                "auc": 0.80,
+            },
+            "make_model": {
+                "coefficients": [0.0] * n_bid,
+                "intercept": 1.0,
+                "r_squared": 0.5,
+                "mae": 1.5,
+                "n_train": 100,
+            },
+            "set_model": {
+                "coefficients": [0.0] * n_bid,
+                "intercept": -2.0,
+                "r_squared": 0.4,
+                "mae": 2.0,
+                "n_train": 50,
+            },
+            "feature_names": feature_names_bid,
+            "composite_r_squared": 0.50,
+            "composite_mae": 1.8,
+            "auc": 0.80,
+            "make_rate": 0.70,
+            "n_train": 150,
+            "n_val": 30,
+        }
+
+        artifact = {
+            "schema_version": "two_stage_action_value_v1",
+            "target": "net_points",
+            "risk_mode": "neutral",
+            "continuation_policy": "hybrid_r0_full",
+            "action_features": list(ACTION_FEATURE_NAMES),
+            "feature_set": "full",
+            "models": {
+                "suit": suit_model,
+                "high": {
+                    "coefficients": [0.0] * n_bid,
+                    "intercept": 0.5,
+                    "feature_names": feature_names_bid,
+                    "r_squared": 0.45,
+                    "mae": 2.0,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+                "low": {
+                    "coefficients": [0.0] * n_bid,
+                    "intercept": 0.3,
+                    "feature_names": feature_names_bid,
+                    "r_squared": 0.40,
+                    "mae": 2.2,
+                    "n_train": 80,
+                    "n_val": 15,
+                },
+                "pass": {
+                    "coefficients": [0.0] * n_state,
+                    "intercept": -1.0,
+                    "feature_names": feature_names_pass,
+                    "r_squared": 0.05,
+                    "mae": 3.0,
+                    "n_train": 200,
+                    "n_val": 40,
+                },
+            },
+            "metadata": {
+                "context_features": ["partner_passed"],
+            },
+        }
+
+        path = tmp_path / "two_stage_forward.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = TwoStageActionValueBidder(
+            artifact_path=str(path),
+            skip_behavioral_check=True,
+        )
+        assert bidder._needs_full_state is True
+        assert bidder._has_positional is False
+
+        # Verify choose_bid works end-to-end
+        obs = _make_obs(current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert isinstance(action, BidAction)

@@ -2014,20 +2014,40 @@ class ActionValueBidder(BiddingPolicy):
         )
 
         # For R0/selected models: precompute per-family hand feature indices
-        # so choose_bid() can select the right subset from the full 39 hand features.
+        # so choose_bid() can select the right subset from the full state vector.
+        # R1 forward-selected artifacts may include partner/position features
+        # (e.g., partner_passed) that are not in _HAND_FEATURE_NAMES. When this
+        # happens, map indices against STATE_FEATURE_NAMES (57 features) and
+        # extract the full state vector at inference time.
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
+        hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:
-            hand_name_to_idx = {n: i for i, n in enumerate(_HAND_FEATURE_NAMES)}
             n_action = len(ACTION_FEATURE_NAMES)
+            # Collect all state feature names to detect non-hand features
+            all_state_names: list[str] = []
+            for family in ("suit", "high", "low"):
+                all_state_names.extend(
+                    self.models[family]["feature_names"][:-(n_action)]
+                )
+            all_state_names.extend(self.pass_model["feature_names"])
+            self._needs_full_state = any(
+                n not in hand_name_set for n in all_state_names
+            )
+
+            if self._needs_full_state:
+                name_to_idx = {n: i for i, n in enumerate(STATE_FEATURE_NAMES)}
+            else:
+                name_to_idx = {n: i for i, n in enumerate(_HAND_FEATURE_NAMES)}
+
             for family in ("suit", "high", "low"):
                 state_names = self.models[family]["feature_names"][:-(n_action)]
                 self._hand_indices[family] = np.array(
-                    [hand_name_to_idx[n] for n in state_names]
+                    [name_to_idx[n] for n in state_names]
                 )
             pass_names = list(self.pass_model["feature_names"])
-            self._hand_indices["pass"] = np.array(
-                [hand_name_to_idx[n] for n in pass_names]
-            )
+            self._hand_indices["pass"] = np.array([name_to_idx[n] for n in pass_names])
+        else:
+            self._needs_full_state = False
 
         if not skip_behavioral_check:
             _check_ols_predictions_sane(
@@ -2035,7 +2055,7 @@ class ActionValueBidder(BiddingPolicy):
                 self.pass_model,
                 self._partner_feature_names,
                 has_interactions=self._has_interactions,
-                include_positional=self._has_positional,
+                include_positional=self._has_positional or self._needs_full_state,
                 hand_indices=self._hand_indices if not self._has_positional else None,
             )
 
@@ -2049,7 +2069,7 @@ class ActionValueBidder(BiddingPolicy):
             contract_family,
             trump_suit,
             partner_feature_names=self._partner_feature_names,
-            include_positional=self._has_positional,
+            include_positional=self._has_positional or self._needs_full_state,
         )
         if not self._has_positional and family in self._hand_indices:
             state = state[self._hand_indices[family]]
@@ -2183,26 +2203,43 @@ class GBTActionValueBidder(BiddingPolicy):
             has_positional=self._has_positional,
         )
 
-        # For R0/selected models: precompute per-family hand feature indices
+        # For R0/selected models: precompute per-family hand feature indices.
+        # R1 forward-selected artifacts may include partner/position features
+        # that are not in _HAND_FEATURE_NAMES — use STATE_FEATURE_NAMES when needed.
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
+        hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:
-            hand_name_to_idx = {n: i for i, n in enumerate(_HAND_FEATURE_NAMES)}
             n_action = len(ACTION_FEATURE_NAMES)
+            all_state_names: list[str] = []
+            for family in ("suit", "high", "low"):
+                all_state_names.extend(
+                    models_meta[family]["feature_names"][:-(n_action)]
+                )
+            all_state_names.extend(models_meta["pass"]["feature_names"])
+            self._needs_full_state = any(
+                n not in hand_name_set for n in all_state_names
+            )
+
+            if self._needs_full_state:
+                name_to_idx = {n: i for i, n in enumerate(STATE_FEATURE_NAMES)}
+            else:
+                name_to_idx = {n: i for i, n in enumerate(_HAND_FEATURE_NAMES)}
+
             for family in ("suit", "high", "low"):
                 state_names = models_meta[family]["feature_names"][:-(n_action)]
                 self._hand_indices[family] = np.array(
-                    [hand_name_to_idx[n] for n in state_names]
+                    [name_to_idx[n] for n in state_names]
                 )
             pass_names = list(models_meta["pass"]["feature_names"])
-            self._hand_indices["pass"] = np.array(
-                [hand_name_to_idx[n] for n in pass_names]
-            )
+            self._hand_indices["pass"] = np.array([name_to_idx[n] for n in pass_names])
+        else:
+            self._needs_full_state = False
 
         if not skip_behavioral_check:
             _check_gbt_predictions_sane(
                 self.gbt_models,
                 self._partner_feature_names,
-                include_positional=self._has_positional,
+                include_positional=self._has_positional or self._needs_full_state,
                 hand_indices=self._hand_indices if not self._has_positional else None,
             )
 
@@ -2216,7 +2253,7 @@ class GBTActionValueBidder(BiddingPolicy):
             contract_family,
             trump_suit,
             partner_feature_names=self._partner_feature_names,
-            include_positional=self._has_positional,
+            include_positional=self._has_positional or self._needs_full_state,
         )
         if not self._has_positional and family in self._hand_indices:
             state = state[self._hand_indices[family]]
@@ -2369,25 +2406,42 @@ class TwoStageActionValueBidder(BiddingPolicy):
             has_positional=self._has_positional,
         )
 
-        # For R0/selected models: precompute per-family hand feature indices
+        # For R0/selected models: precompute per-family hand feature indices.
+        # R1 forward-selected artifacts may include partner/position features
+        # that are not in _HAND_FEATURE_NAMES — use STATE_FEATURE_NAMES when needed.
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
+        hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:
-            hand_name_to_idx = {n: i for i, n in enumerate(_HAND_FEATURE_NAMES)}
             n_action = len(ACTION_FEATURE_NAMES)
             # Suit model: feature_names at top level of suit result
+            all_state_names: list[str] = list(suit_feature_names[:-(n_action)])
+            for family in ("high", "low"):
+                all_state_names.extend(
+                    self.models[family]["feature_names"][:-(n_action)]
+                )
+            all_state_names.extend(self.pass_model["feature_names"])
+            self._needs_full_state = any(
+                n not in hand_name_set for n in all_state_names
+            )
+
+            if self._needs_full_state:
+                name_to_idx = {n: i for i, n in enumerate(STATE_FEATURE_NAMES)}
+            else:
+                name_to_idx = {n: i for i, n in enumerate(_HAND_FEATURE_NAMES)}
+
             suit_state_names = suit_feature_names[:-(n_action)]
             self._hand_indices["suit"] = np.array(
-                [hand_name_to_idx[n] for n in suit_state_names]
+                [name_to_idx[n] for n in suit_state_names]
             )
             for family in ("high", "low"):
                 state_names = self.models[family]["feature_names"][:-(n_action)]
                 self._hand_indices[family] = np.array(
-                    [hand_name_to_idx[n] for n in state_names]
+                    [name_to_idx[n] for n in state_names]
                 )
             pass_names = list(self.pass_model["feature_names"])
-            self._hand_indices["pass"] = np.array(
-                [hand_name_to_idx[n] for n in pass_names]
-            )
+            self._hand_indices["pass"] = np.array([name_to_idx[n] for n in pass_names])
+        else:
+            self._needs_full_state = False
 
     def _select_state(
         self, obs: BiddingObservation, family: str, trump_suit: Optional[str]
@@ -2399,7 +2453,7 @@ class TwoStageActionValueBidder(BiddingPolicy):
             contract_family,
             trump_suit,
             partner_feature_names=self._partner_feature_names,
-            include_positional=self._has_positional,
+            include_positional=self._has_positional or self._needs_full_state,
         )
         if not self._has_positional and family in self._hand_indices:
             state = state[self._hand_indices[family]]

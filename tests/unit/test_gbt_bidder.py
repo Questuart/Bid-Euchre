@@ -13,6 +13,8 @@ import pytest
 
 from bid_euchre.core.cards import Card
 from bid_euchre.strategy.bidding import (
+    _HAND_FEATURE_NAMES,
+    ACTION_FEATURE_NAMES,
     STATE_FEATURE_NAMES,
     BidAction,
     BiddingObservation,
@@ -349,3 +351,72 @@ class TestGBTArtifactGovernance:
         assert bidder is not None
         assert any("Low R²" in msg for msg in caplog.messages)
         assert any("suit" in msg for msg in caplog.messages)
+
+
+# ── R1 forward-selected GBT artifact ─────────────────────
+
+
+class TestGBTForwardSelected:
+    """Test that GBTActionValueBidder works with forward-selected artifacts
+    containing partner features but no positional features."""
+
+    def test_gbt_loads_with_partner_features(self, tmp_path):
+        """GBTActionValueBidder loads forward-selected artifact with partner features."""
+        import joblib
+        from sklearn.ensemble import GradientBoostingRegressor
+
+        hand_subset = list(_HAND_FEATURE_NAMES[:10])
+        partner_subset = ["partner_passed"]
+        state_names = hand_subset + partner_subset
+        n_state = len(state_names)
+        n_action = len(ACTION_FEATURE_NAMES)
+
+        # Train tiny GBT models on random data
+        rng = np.random.RandomState(42)
+        X_bid = rng.randn(20, n_state + n_action)
+        X_pass = rng.randn(20, n_state)
+        y = rng.randn(20)
+
+        models_meta = {}
+        for family in ("suit", "high", "low"):
+            model = GradientBoostingRegressor(
+                n_estimators=5, max_depth=2, random_state=42
+            )
+            model.fit(X_bid, y)
+            model_file = f"gbt_{family}.joblib"
+            joblib.dump(model, tmp_path / model_file)
+            models_meta[family] = {
+                "model_file": model_file,
+                "feature_names": state_names + list(ACTION_FEATURE_NAMES),
+                "r_squared": 0.50,
+                "feature_importances": [0.1] * (n_state + n_action),
+            }
+
+        pass_model = GradientBoostingRegressor(
+            n_estimators=5, max_depth=2, random_state=42
+        )
+        pass_model.fit(X_pass, y)
+        joblib.dump(pass_model, tmp_path / "gbt_pass.joblib")
+        models_meta["pass"] = {
+            "model_file": "gbt_pass.joblib",
+            "feature_names": list(state_names),
+            "r_squared": 0.50,
+            "feature_importances": [0.1] * n_state,
+        }
+
+        artifact = {
+            "schema_version": "action_value_gbt_v1",
+            "models": models_meta,
+            "metadata": {"context_features": ["partner_passed"]},
+        }
+        path = tmp_path / "gbt_forward.json"
+        path.write_text(json.dumps(artifact))
+
+        bidder = GBTActionValueBidder(str(path), skip_behavioral_check=True)
+        assert bidder._needs_full_state is True
+        assert bidder._has_positional is False
+
+        # Verify choose_bid works
+        obs = _make_obs(current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert isinstance(action, BidAction)
