@@ -211,6 +211,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/audit_analysis.py` | Review pipeline audit (follow-up rates, corrective PRs) |
 | `scripts/internal/blind_strategy_comparison.py` | Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind) |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings (auto-fix + commit) |
+| `scripts/internal/codex_plan_review_adapter.py` | Codex CLI plan review adapter (tier detection, plan-scoped invocation, Claude failsafe) |
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation and output parsing (review findings extraction) |
 | `scripts/internal/confidence_scorer.py` | Deterministic confidence scoring for P2 review findings (heuristic filtering) |
 | `scripts/internal/deterministic_prechecks.py` | Fast deterministic code checks (merge markers, RNG, imports) |

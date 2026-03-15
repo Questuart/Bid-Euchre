@@ -277,3 +277,129 @@ def save_state(loop_state: ReviewLoopState, base: Path | None = None) -> Path:
     with open(path, "w") as f:
         json.dump(loop_state.to_dict(), f, indent=2)
     return path
+
+
+# --- Plan Review State ---
+
+
+class PlanReviewState(str, enum.Enum):
+    """States in the plan review loop state machine."""
+
+    INITIALIZED = "initialized"
+    CODEX_REVIEWING = "codex_reviewing"
+    FINDINGS_RECEIVED = "findings_received"
+    CLAUDE_FIXING = "claude_fixing"
+    CODEX_FALLBACK = "codex_fallback"
+    CLAUDE_FALLBACK_REVIEWING = "claude_fallback_reviewing"
+    REVIEW_COMPLETE = "review_complete"
+    REVIEW_COMPLETE_WITH_ISSUES = "review_complete_with_issues"
+
+
+PLAN_REVIEW_VALID_TRANSITIONS: dict[PlanReviewState, list[PlanReviewState]] = {
+    PlanReviewState.INITIALIZED: [PlanReviewState.CODEX_REVIEWING],
+    PlanReviewState.CODEX_REVIEWING: [
+        PlanReviewState.FINDINGS_RECEIVED,
+        PlanReviewState.CODEX_FALLBACK,
+    ],
+    PlanReviewState.FINDINGS_RECEIVED: [
+        PlanReviewState.CLAUDE_FIXING,
+        PlanReviewState.REVIEW_COMPLETE,
+        PlanReviewState.REVIEW_COMPLETE_WITH_ISSUES,
+    ],
+    PlanReviewState.CLAUDE_FIXING: [
+        PlanReviewState.CODEX_REVIEWING,  # re-review after fix
+    ],
+    PlanReviewState.CODEX_FALLBACK: [
+        PlanReviewState.CLAUDE_FALLBACK_REVIEWING,
+    ],
+    PlanReviewState.CLAUDE_FALLBACK_REVIEWING: [
+        PlanReviewState.FINDINGS_RECEIVED,
+    ],
+    PlanReviewState.REVIEW_COMPLETE: [],
+    PlanReviewState.REVIEW_COMPLETE_WITH_ISSUES: [],
+}
+
+PLAN_REVIEW_TERMINAL_STATES = frozenset(
+    s for s, targets in PLAN_REVIEW_VALID_TRANSITIONS.items() if not targets
+)
+
+
+@dataclass
+class PlanReviewLoopState:
+    """Persisted state for one plan's review loop."""
+
+    plan_path: str
+    state_key: str  # hash of plan_path for directory naming
+    tier: str  # "small", "medium", "governing"
+    state: str = PlanReviewState.INITIALIZED.value
+    iteration_count: int = 0
+    max_iterations: int = 5
+    last_findings_hash: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    started_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    stop_reason: str | None = None
+
+    @property
+    def current_state(self) -> PlanReviewState:
+        return PlanReviewState(self.state)
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.current_state in PLAN_REVIEW_TERMINAL_STATES
+
+    def transition(self, new_state: PlanReviewState) -> None:
+        """Advance to a new state, validating the transition."""
+        current = self.current_state
+        if current in PLAN_REVIEW_TERMINAL_STATES:
+            raise InvalidTransitionError(
+                f"Cannot transition from terminal state {current.value}"
+            )
+        valid = set(PLAN_REVIEW_VALID_TRANSITIONS.get(current, []))
+        # Global: any non-terminal can go to terminal
+        valid |= PLAN_REVIEW_TERMINAL_STATES
+        if new_state not in valid:
+            raise InvalidTransitionError(
+                f"Invalid plan review transition: {current.value} -> {new_state.value}. "
+                f"Valid targets: {sorted(s.value for s in valid)}"
+            )
+        self.state = new_state.value
+        self.updated_at = time.time()
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PlanReviewLoopState:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+def plan_review_state_dir(state_key: str, base: Path | None = None) -> Path:
+    """Return the state directory for a plan's review loop."""
+    if base is None:
+        base = Path(".claude/runtime/plan_reviews")
+    return base / state_key
+
+
+def load_plan_review_state(
+    state_key: str, base: Path | None = None
+) -> PlanReviewLoopState | None:
+    """Load persisted plan review state from disk."""
+    path = plan_review_state_dir(state_key, base) / "state.json"
+    if not path.exists():
+        return None
+    with open(path) as f:
+        return PlanReviewLoopState.from_dict(json.load(f))
+
+
+def save_plan_review_state(
+    loop_state: PlanReviewLoopState, base: Path | None = None
+) -> Path:
+    """Save plan review state to disk, creating directories as needed."""
+    directory = plan_review_state_dir(loop_state.state_key, base)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "state.json"
+    with open(path, "w") as f:
+        json.dump(loop_state.to_dict(), f, indent=2)
+    return path
