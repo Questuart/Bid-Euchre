@@ -1405,10 +1405,29 @@ _POSITION_FEATURE_NAMES: List[str] = [
 # Known position feature names for _infer_partner_features exclusion
 _POSITION_FEATURE_SET: frozenset = frozenset(_POSITION_FEATURE_NAMES)
 
-# State feature names: 39 hand + 6 partner_v2 + 2 position + 10 positional = 57
-# This is the R1 canonical default (LA-1 amendment). Artifact-driven extraction
-# may use different partner features (v7: 3 features, v2: 6 features), but hand,
-# position, and positional features are fixed across versions.
+# Opponent feature names (R2): 12 features (6 left + 6 right)
+_OPPONENT_FEATURE_NAMES: List[str] = [
+    "opp_left_level_same_suit",
+    "opp_left_level_same_color",
+    "opp_left_level_off_color",
+    "opp_left_level_high",
+    "opp_left_level_low",
+    "opp_left_passed",
+    "opp_right_level_same_suit",
+    "opp_right_level_same_color",
+    "opp_right_level_off_color",
+    "opp_right_level_high",
+    "opp_right_level_low",
+    "opp_right_passed",
+]
+
+# Known opponent feature names for _infer_partner_features exclusion
+_OPPONENT_FEATURE_SET: frozenset = frozenset(_OPPONENT_FEATURE_NAMES)
+
+# State feature names: 39 hand + 6 partner_v2 + 2 position + 12 opponent + 10 positional = 69
+# This is the R2 canonical default. Artifact-driven extraction may use different
+# partner features (v7: 3 features, v2: 6 features) and may omit opponent features
+# (R0/R1 artifacts), but hand, position, and positional features are fixed.
 STATE_FEATURE_NAMES: List[str] = (
     _HAND_FEATURE_NAMES
     + [
@@ -1420,6 +1439,7 @@ STATE_FEATURE_NAMES: List[str] = (
         "partner_passed",
     ]
     + _POSITION_FEATURE_NAMES
+    + _OPPONENT_FEATURE_NAMES
     + _POSITIONAL_FEATURE_NAMES
 )
 
@@ -1431,8 +1451,9 @@ def _infer_partner_features(feature_names: List[str]) -> List[str]:
     The hand and positional blocks are fixed across schema versions; only the
     partner block varies (v7: 3 features, v2: 6 features).
 
-    Position features (auction_position, is_dealer) may sit between partner
-    and positional blocks — they are excluded from the returned partner list.
+    Position features (auction_position, is_dealer) and opponent features
+    (opp_left_*, opp_right_*) may sit between partner and positional blocks —
+    they are excluded from the returned partner list.
 
     If no positional features are present (R0 hand-only models), there are no
     partner features either — returns an empty list.
@@ -1442,18 +1463,17 @@ def _infer_partner_features(feature_names: List[str]) -> List[str]:
 
     Returns:
         The partner feature names (the slice between hand and positional blocks,
-        excluding position features). Empty list for R0 hand-only models.
+        excluding position and opponent features). Empty list for R0 hand-only models.
     """
     hand_end = len(_HAND_FEATURE_NAMES)  # 39
     if "current_high_bid" not in feature_names:
         # No positional features = no partner features (R0 hand-only model)
         return []
     positional_start = feature_names.index("current_high_bid")
-    # Position features sit between partner and positional blocks — exclude them
+    # Position and opponent features sit between partner and positional blocks — exclude them
+    _excluded = _POSITION_FEATURE_SET | _OPPONENT_FEATURE_SET
     partner_names = [
-        n
-        for n in feature_names[hand_end:positional_start]
-        if n not in _POSITION_FEATURE_SET
+        n for n in feature_names[hand_end:positional_start] if n not in _excluded
     ]
     # partner_names can be empty (model with positional but no partner features)
     return partner_names
@@ -1502,8 +1522,9 @@ def extract_state_features(
 
     Returns:
         np.ndarray with features in order:
-        - With positional: hand (39) + partner (N) + position (2) + positional (10).
-          Default shape is (57,) for R1 schema (v2 partner, 6 features).
+        - With positional: hand (39) + partner (N) + position (2) + opponent (12)
+          + positional (10). Default shape is (69,) for R2 schema (v2 partner,
+          6 features + 12 opponent features).
         - Without positional: hand (39) only (R0 hand-only models).
 
     Note on pass ("none") encoding:
@@ -1530,7 +1551,9 @@ def extract_state_features(
         return hand_arr
 
     from ..features.auction_context import (
+        OPPONENT_FEATURE_NAMES,
         PARTNER_FEATURE_NAMES_V2,
+        extract_opponent_features,
         extract_partner_features,
         extract_partner_features_v2,
     )
@@ -1569,6 +1592,19 @@ def extract_state_features(
         dtype=np.float64,
     )
 
+    # Opponent features (12): 6 left + 6 right (R2)
+    opp_family = contract_family if contract_family != "none" else None
+    opp_feats = extract_opponent_features(
+        obs.seat,
+        obs.auction_transcript,
+        observer_contract_type=opp_family,
+        observer_trump_suit=trump_suit,
+    )
+    opp_arr = np.array(
+        [float(opp_feats[k]) for k in OPPONENT_FEATURE_NAMES],
+        dtype=np.float64,
+    )
+
     # Positional / legality features (10)
     current_high_bid = float(obs.current_high_bid)
 
@@ -1604,7 +1640,9 @@ def extract_state_features(
         dtype=np.float64,
     )
 
-    return np.concatenate([hand_arr, partner_arr, position_arr, positional_arr])
+    return np.concatenate(
+        [hand_arr, partner_arr, position_arr, opp_arr, positional_arr]
+    )
 
 
 def extract_action_features(bid_n: int) -> np.ndarray:
@@ -1675,7 +1713,8 @@ def _validate_artifact_features(
 
     Shared validation logic for all action-value bidder classes. Checks that
     the artifact's feature_names have the expected structure:
-        hand (39) + partner (N) + positional (10) [+ interaction (3)] + action (2)
+        hand (39) + partner (N) + position (0-2) + opponent (0-12)
+        + positional (10) [+ interaction (3)] + action (2)
     or for R0/constrained/selected hand-only models:
         hand_subset (M) + action (2)  where M <= 39
 
@@ -1696,13 +1735,14 @@ def _validate_artifact_features(
     partner_names = _infer_partner_features(state_names)
     has_positional = "current_high_bid" in state_names
 
-    # Detect position features between partner and positional blocks
+    # Detect position and opponent features between partner and positional blocks
     hand_end = len(_HAND_FEATURE_NAMES)
     positional_start = (
         state_names.index("current_high_bid") if has_positional else len(state_names)
     )
     middle_names = state_names[hand_end:positional_start]
     position_names = [n for n in middle_names if n in _POSITION_FEATURE_SET]
+    opponent_names = [n for n in middle_names if n in _OPPONENT_FEATURE_SET]
 
     # Rebuild expected full feature list and validate
     if has_positional:
@@ -1711,6 +1751,7 @@ def _validate_artifact_features(
             list(_HAND_FEATURE_NAMES)
             + list(partner_names)
             + list(position_names)
+            + list(opponent_names)
             + list(_POSITIONAL_FEATURE_NAMES)
         )
         if has_interactions:
@@ -1726,29 +1767,31 @@ def _validate_artifact_features(
                 f"Expected {len(expected_full)} features "
                 f"(39 hand + {len(partner_names)} partner"
                 f"{f' + {len(position_names)} position' if position_names else ''}"
+                f"{f' + {len(opponent_names)} opponent' if opponent_names else ''}"
                 f" + 10 positional"
                 f"{' + 3 interaction' if has_interactions else ''} + 2 action), "
                 f"got {len(model_feature_names)} features."
             )
     else:
         # R0/constrained/selected: state features should be a subset of
-        # known hand features, partner v2 features, and position features.
-        # Forward selection from the full 57-feature set may keep partner
-        # or position features while dropping all positional (legality)
-        # features, so we accept all three categories as valid.
+        # known hand features, partner v2 features, position features,
+        # and opponent features. Forward selection from the full state
+        # feature set may keep any of these while dropping positional
+        # (legality) features, so we accept all categories as valid.
         from ..features.auction_context import PARTNER_FEATURE_NAMES_V2
 
         valid_set = (
             set(_HAND_FEATURE_NAMES)
             | set(PARTNER_FEATURE_NAMES_V2)
             | _POSITION_FEATURE_SET
+            | _OPPONENT_FEATURE_SET
         )
         unknown = [f for f in state_names if f not in valid_set]
         if unknown:
             raise ValueError(
                 f"Artifact feature_names structural mismatch. "
                 f"Non-positional model contains unknown state features "
-                f"(not in hand/partner/position feature set): {unknown}"
+                f"(not in hand/partner/position/opponent feature set): {unknown}"
             )
 
         # Verify action features are at the expected positions
@@ -1774,23 +1817,22 @@ def _validate_pass_model_features(
     Pass models use state features only (no action features).
     """
     if has_positional:
-        # Detect position features in pass model's feature list
+        # Detect position and opponent features in pass model's feature list
         hand_end = len(_HAND_FEATURE_NAMES)
         positional_start = (
             pass_feature_names.index("current_high_bid")
             if "current_high_bid" in pass_feature_names
             else len(pass_feature_names)
         )
-        position_names = [
-            n
-            for n in pass_feature_names[hand_end:positional_start]
-            if n in _POSITION_FEATURE_SET
-        ]
+        middle_names = pass_feature_names[hand_end:positional_start]
+        position_names = [n for n in middle_names if n in _POSITION_FEATURE_SET]
+        opponent_names = [n for n in middle_names if n in _OPPONENT_FEATURE_SET]
 
         expected_state = (
             list(_HAND_FEATURE_NAMES)
             + list(partner_feature_names)
             + list(position_names)
+            + list(opponent_names)
             + list(_POSITIONAL_FEATURE_NAMES)
         )
         if has_interactions:
@@ -1806,23 +1848,23 @@ def _validate_pass_model_features(
             )
     else:
         # R0/constrained/selected: pass features should be subset of
-        # known hand features, partner v2 features, and position features.
-        # Forward selection from the full feature set may keep partner
-        # or position features while dropping all positional (legality)
-        # features.
+        # known hand features, partner v2 features, position features,
+        # and opponent features. Forward selection from the full feature
+        # set may keep any of these while dropping positional features.
         from ..features.auction_context import PARTNER_FEATURE_NAMES_V2
 
         valid_set = (
             set(_HAND_FEATURE_NAMES)
             | set(PARTNER_FEATURE_NAMES_V2)
             | _POSITION_FEATURE_SET
+            | _OPPONENT_FEATURE_SET
         )
         unknown = [f for f in pass_feature_names if f not in valid_set]
         if unknown:
             raise ValueError(
                 f"Artifact pass model feature_names mismatch. "
                 f"Non-positional pass model contains unknown features "
-                f"(not in hand/partner/position feature set): {unknown}"
+                f"(not in hand/partner/position/opponent feature set): {unknown}"
             )
 
 
@@ -2015,10 +2057,10 @@ class ActionValueBidder(BiddingPolicy):
 
         # For R0/selected models: precompute per-family hand feature indices
         # so choose_bid() can select the right subset from the full state vector.
-        # R1 forward-selected artifacts may include partner/position features
-        # (e.g., partner_passed) that are not in _HAND_FEATURE_NAMES. When this
-        # happens, map indices against STATE_FEATURE_NAMES (57 features) and
-        # extract the full state vector at inference time.
+        # R1/R2 forward-selected artifacts may include partner/position/opponent
+        # features (e.g., partner_passed) that are not in _HAND_FEATURE_NAMES.
+        # When this happens, map indices against STATE_FEATURE_NAMES (69 features)
+        # and extract the full state vector at inference time.
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
         hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:

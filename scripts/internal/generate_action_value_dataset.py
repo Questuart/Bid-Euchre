@@ -7,7 +7,7 @@ continue the auction with a continuation policy, play out tricks with
 GluttonStrategy, and record the focal team's net_points.
 
 Output: Parquet with columns hand_id, deal_id, focal_seat, action_type,
-contract_family, bid_n, trump_suit, 57 state feature columns, net_points,
+contract_family, bid_n, trump_suit, 69 state feature columns, net_points,
 tricks_won, focal_declared.
 
 Usage:
@@ -464,7 +464,7 @@ def generate_dataset(
                     action_type = "bid"
                     bid_n = action.n
 
-                # Extract state features (57 columns) — from ORIGINAL hands
+                # Extract state features (69 columns) — from ORIGINAL hands
                 state = extract_state_features(obs, contract_family, trump_suit)
 
                 if multi:
@@ -517,7 +517,7 @@ def generate_dataset(
                     "bid_n": bid_n,
                     "trump_suit": trump_suit if trump_suit else "",
                 }
-                # Add 57 state features as individual columns
+                # Add 69 state features as individual columns
                 for i, fname in enumerate(STATE_FEATURE_NAMES):
                     row[fname] = state[i]
                 row["net_points"] = net_points
@@ -599,7 +599,7 @@ def validate_gate_x1(df: pd.DataFrame, n_deals: int) -> None:
         f"({expected_rows * 0.5:.0f} - {expected_rows * 1.5:.0f})"
     )
 
-    # 6. 57 state feature columns present
+    # 6. 69 state feature columns present
     for fname in STATE_FEATURE_NAMES:
         assert fname in df.columns, f"Missing state feature column: {fname}"
 

@@ -14,7 +14,7 @@ Four models:
   pass:  target ~ state features (no action features)
 
 Ablation parameters:
-  --feature-set: "full" (57 state features), "r0" (39 R0 hand features only),
+  --feature-set: "full" (69 state features), "r0" (39 R0 hand features only),
                  or "constrained" (per-contract locked features)
   --selection: "none" (default) or "forward" (forward feature selection)
   --target: "net_points" (default) or "tricks_won"
@@ -92,6 +92,22 @@ _PARTNER_FEATURE_NAMES = [
 # Position feature columns (positions 45-46 in STATE_FEATURE_NAMES)
 _POSITION_FEATURE_NAMES = ["auction_position", "is_dealer"]
 
+# Opponent feature columns (positions 47-58 in STATE_FEATURE_NAMES, R2)
+_OPPONENT_FEATURE_NAMES = [
+    "opp_left_level_same_suit",
+    "opp_left_level_same_color",
+    "opp_left_level_off_color",
+    "opp_left_level_high",
+    "opp_left_level_low",
+    "opp_left_passed",
+    "opp_right_level_same_suit",
+    "opp_right_level_same_color",
+    "opp_right_level_off_color",
+    "opp_right_level_high",
+    "opp_right_level_low",
+    "opp_right_passed",
+]
+
 # Interaction terms computed from existing columns (not stored in dataset).
 # Each maps to (col_a, col_b) — the feature value is col_a * col_b.
 INTERACTION_FEATURE_NAMES: list[str] = [
@@ -119,13 +135,13 @@ CONSTRAINED_FEATURES: dict[str, list[str]] = {
 # Most entries are flat lists. "constrained" is a dict[str, list[str]]
 # mapping contract_family -> features.
 FEATURE_SETS: dict[str, list[str] | dict[str, list[str]]] = {
-    "full": list(STATE_FEATURE_NAMES),  # 57 state features (R1)
+    "full": list(STATE_FEATURE_NAMES),  # 69 state features (R2)
     "r0": list(STATE_FEATURE_NAMES[:_N_R0_HAND_FEATURES]),  # 39 R0 hand features only
     "no-partner": list(
         STATE_FEATURE_NAMES
-    ),  # 57 features, partner + position cols zeroed at training
+    ),  # 69 features, partner + position + opponent cols zeroed at training
     "interaction": list(STATE_FEATURE_NAMES)
-    + INTERACTION_FEATURE_NAMES,  # 57 + 3 interaction
+    + INTERACTION_FEATURE_NAMES,  # 69 + 3 interaction
     "constrained": CONSTRAINED_FEATURES,  # per-contract locked features
 }
 
@@ -158,7 +174,9 @@ def resolve_feature_names(
 # The model artifact retains all feature names (passes ActionValueBidder validation)
 # but OLS learns zero coefficients for zeroed columns.
 _ZERO_MASK_COLUMNS: dict[str, list[str]] = {
-    "no-partner": _PARTNER_FEATURE_NAMES + _POSITION_FEATURE_NAMES,
+    "no-partner": _PARTNER_FEATURE_NAMES
+    + _POSITION_FEATURE_NAMES
+    + _OPPONENT_FEATURE_NAMES,
 }
 
 VALID_TARGETS = ("net_points", "tricks_won")
@@ -971,7 +989,7 @@ def main():
         "--feature-set",
         choices=sorted(FEATURE_SETS.keys()),
         default="full",
-        help="Feature set: 'full' (57 state), 'r0' (39 hand), 'no-partner' (57 state, partner+position cols zeroed), 'interaction' (57 + 3 interaction terms)",
+        help="Feature set: 'full' (69 state), 'r0' (39 hand), 'no-partner' (69 state, partner+position+opponent cols zeroed), 'interaction' (69 + 3 interaction terms)",
     )
     parser.add_argument(
         "--target",
