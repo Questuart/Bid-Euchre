@@ -855,16 +855,38 @@ class TestR0HandOnlyFeatureInference:
             has_positional=True,
         )
 
-    def test_validate_pass_model_r0_with_positional_raises(self):
-        """R0 pass model with positional features but has_positional=False raises."""
-        bad_features = list(_HAND_FEATURE_NAMES) + list(_POSITIONAL_FEATURE_NAMES)
-        with pytest.raises(ValueError, match="mismatch"):
-            _validate_pass_model_features(
-                bad_features,
-                partner_feature_names=[],
-                has_interactions=False,
-                has_positional=False,
-            )
+    def test_validate_pass_model_r0_with_positional_accepted(self):
+        """Pass model with positional features but has_positional=False validates.
+
+        Forward selection may keep positional features (e.g. seat_rel_2) while
+        dropping current_high_bid, resulting in has_positional=False. All
+        positional features should be accepted in the non-positional branch.
+        """
+        features_with_positional = list(_HAND_FEATURE_NAMES) + list(
+            _POSITIONAL_FEATURE_NAMES
+        )
+        # Should not raise
+        _validate_pass_model_features(
+            features_with_positional,
+            partner_feature_names=[],
+            has_interactions=False,
+            has_positional=False,
+        )
+
+    def test_validate_pass_model_selected_positional_subset(self):
+        """Pass model with forward-selected positional subset validates.
+
+        Regression test: forward selection keeps seat_rel_2 but drops
+        current_high_bid. The validator must accept this.
+        """
+        selected = list(_HAND_FEATURE_NAMES) + ["seat_rel_2"]
+        # Should not raise
+        _validate_pass_model_features(
+            selected,
+            partner_feature_names=[],
+            has_interactions=False,
+            has_positional=False,
+        )
 
     def test_validate_artifact_features_r0_selected_subset(self):
         """Forward-selected R0 artifact with 3 hand features validates."""
@@ -891,6 +913,21 @@ class TestR0HandOnlyFeatureInference:
         bad_features = ["bowers", "UNKNOWN_FEATURE"] + list(ACTION_FEATURE_NAMES)
         with pytest.raises(ValueError, match="unknown state features"):
             _validate_artifact_features(bad_features, has_interactions=False)
+
+    def test_validate_artifact_features_selected_with_positional_subset(self):
+        """Forward-selected model with seat_rel_2 but no current_high_bid validates.
+
+        Regression test: forward selection from the full 69-feature set may
+        keep positional features (e.g. seat_rel_2) while dropping
+        current_high_bid. The validator must accept this.
+        """
+        selected = ["bowers", "trump_count", "seat_rel_2"]
+        model_features = selected + list(ACTION_FEATURE_NAMES)
+        partner_names, has_positional = _validate_artifact_features(
+            model_features, has_interactions=False
+        )
+        assert has_positional is False
+        assert partner_names == []
 
     def test_validate_artifact_features_selected_with_partner_v2(self):
         """Forward-selected model with partner v2 features but no positional validates."""
