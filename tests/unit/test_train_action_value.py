@@ -162,13 +162,13 @@ class TestBuildFeatureMatrix:
     def test_state_features_shape(self, smoke_df):
         sub = smoke_df.head(10)
         X = _build_feature_matrix(sub, STATE_FEATURE_NAMES)
-        assert X.shape == (10, 52)
+        assert X.shape == (10, len(STATE_FEATURE_NAMES))
 
     def test_bid_features_shape(self, smoke_df):
         sub = smoke_df[smoke_df["action_type"] == "bid"].head(10)
         feature_names = STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES
         X = _build_feature_matrix(sub, feature_names)
-        assert X.shape == (10, 54)
+        assert X.shape == (10, len(STATE_FEATURE_NAMES) + len(ACTION_FEATURE_NAMES))
 
     def test_bid_n_sq_computed(self, smoke_df):
         """bid_n_sq should be the square of bid_n."""
@@ -185,12 +185,13 @@ class TestBuildFeatureMatrix:
 
 class TestTrainFamilyModel:
     def test_coefficients_length(self, trained_models):
-        """Each bid model should have 54 coefficients."""
+        """Each bid model should have state + action coefficients."""
+        expected = len(STATE_FEATURE_NAMES) + len(ACTION_FEATURE_NAMES)
         for family in ("suit", "high", "low"):
             model = trained_models[family]
             assert (
-                len(model["coefficients"]) == 54
-            ), f"{family}: expected 54 coefficients, got {len(model['coefficients'])}"
+                len(model["coefficients"]) == expected
+            ), f"{family}: expected {expected} coefficients, got {len(model['coefficients'])}"
 
     def test_has_intercept(self, trained_models):
         for family in ("suit", "high", "low"):
@@ -214,8 +215,8 @@ class TestTrainFamilyModel:
 
 class TestTrainPassModel:
     def test_coefficients_length(self, trained_models):
-        """Pass model should have 52 coefficients (state only)."""
-        assert len(trained_models["pass"]["coefficients"]) == 52
+        """Pass model should have state-only coefficients."""
+        assert len(trained_models["pass"]["coefficients"]) == len(STATE_FEATURE_NAMES)
 
     def test_feature_names(self, trained_models):
         assert trained_models["pass"]["feature_names"] == list(STATE_FEATURE_NAMES)
@@ -337,8 +338,8 @@ class TestFeatureSets:
         assert len(FEATURE_SETS["r0"]) == 39
 
     def test_feature_set_full_length(self):
-        """Full feature set must have exactly 52 features."""
-        assert len(FEATURE_SETS["full"]) == 52
+        """Full feature set must have exactly 57 features."""
+        assert len(FEATURE_SETS["full"]) == 57
 
     def test_feature_set_r0_matches_hand_features(self):
         """R0 features are the first 39 entries of STATE_FEATURE_NAMES."""
@@ -435,28 +436,35 @@ class TestArtifactFilename:
 
 
 class TestNoPartnerFeatureSet:
-    def test_no_partner_has_52_features(self):
-        """no-partner uses full 52 state features (zero-masked at training)."""
-        assert len(FEATURE_SETS["no-partner"]) == 52
+    def test_no_partner_has_57_features(self):
+        """no-partner uses full 57 state features (zero-masked at training)."""
+        assert len(FEATURE_SETS["no-partner"]) == 57
 
     def test_no_partner_equals_full_features(self):
         """no-partner feature list is identical to full."""
         assert FEATURE_SETS["no-partner"] == FEATURE_SETS["full"]
 
     def test_partner_feature_names_correct(self):
-        """_PARTNER_FEATURE_NAMES matches STATE_FEATURE_NAMES positions 39-41."""
+        """_PARTNER_FEATURE_NAMES matches STATE_FEATURE_NAMES positions 39-44 (v2)."""
         assert _PARTNER_FEATURE_NAMES == [
-            "partner_bid_level",
+            "partner_level_same_suit",
+            "partner_level_same_color",
+            "partner_level_off_color",
+            "partner_level_high",
+            "partner_level_low",
             "partner_passed",
-            "partner_suit_match",
         ]
         for name in _PARTNER_FEATURE_NAMES:
             assert name in FEATURE_SETS["full"]
 
     def test_zero_mask_columns_maps_no_partner(self):
-        """_ZERO_MASK_COLUMNS has 'no-partner' → partner feature names."""
+        """_ZERO_MASK_COLUMNS has 'no-partner' → partner + position feature names."""
+        from train_action_value import _POSITION_FEATURE_NAMES
+
         assert "no-partner" in _ZERO_MASK_COLUMNS
-        assert _ZERO_MASK_COLUMNS["no-partner"] == _PARTNER_FEATURE_NAMES
+        assert _ZERO_MASK_COLUMNS["no-partner"] == (
+            _PARTNER_FEATURE_NAMES + _POSITION_FEATURE_NAMES
+        )
 
     def test_zero_mask_produces_zero_coefficients(self, smoke_parquet_path):
         """Training with zeroed partner columns should produce ~0 coefficients."""
@@ -519,13 +527,14 @@ class TestNoPartnerFeatureSet:
 
 
 class TestInteractionFeatureSet:
-    def test_interaction_has_55_features(self):
-        """interaction feature set = 52 state + 3 interaction terms."""
-        assert len(FEATURE_SETS["interaction"]) == 55
+    def test_interaction_has_60_features(self):
+        """interaction feature set = 57 state + 3 interaction terms."""
+        assert len(FEATURE_SETS["interaction"]) == 60
 
     def test_interaction_starts_with_state_features(self):
-        """First 52 features match STATE_FEATURE_NAMES."""
-        assert FEATURE_SETS["interaction"][:52] == list(STATE_FEATURE_NAMES)
+        """First 57 features match STATE_FEATURE_NAMES."""
+        n_state = len(STATE_FEATURE_NAMES)
+        assert FEATURE_SETS["interaction"][:n_state] == list(STATE_FEATURE_NAMES)
 
     def test_interaction_names_match_bidder(self):
         """Training and bidder interaction feature names are identical."""
@@ -541,12 +550,15 @@ class TestInteractionFeatureSet:
         df = load_dataset(smoke_parquet_path)
         feature_names = FEATURE_SETS["interaction"] + list(ACTION_FEATURE_NAMES)
         X = _build_feature_matrix(df.head(10), feature_names)
-        # interaction features are at positions 52, 53, 54 (before action features)
+        # interaction features are at positions N, N+1, N+2 (before action features)
+        n_state = len(STATE_FEATURE_NAMES)
         bowers = df["bowers"].values[:10]
         trump_count = df["trump_count"].values[:10]
-        np.testing.assert_array_almost_equal(X[:, 52], bowers * trump_count)
-        np.testing.assert_array_almost_equal(X[:, 53], trump_count * trump_count)
-        np.testing.assert_array_almost_equal(X[:, 54], bowers * bowers)
+        np.testing.assert_array_almost_equal(X[:, n_state], bowers * trump_count)
+        np.testing.assert_array_almost_equal(
+            X[:, n_state + 1], trump_count * trump_count
+        )
+        np.testing.assert_array_almost_equal(X[:, n_state + 2], bowers * bowers)
 
     def test_interaction_model_trains(self, smoke_parquet_path):
         """Training with interaction feature set produces valid model."""
@@ -558,9 +570,9 @@ class TestInteractionFeatureSet:
             "suit",
             state_feature_names=FEATURE_SETS["interaction"],
         )
-        # Model should have 55 + 2 = 57 features (state+interaction + action)
-        assert len(model["feature_names"]) == 57
-        assert len(model["coefficients"]) == 57
+        # Model should have 60 + 2 = 62 features (state+interaction + action)
+        assert len(model["feature_names"]) == 62
+        assert len(model["coefficients"]) == 62
         assert model["r_squared"] > 0  # Sanity: non-degenerate
 
     def test_interaction_artifact_loadable(self, smoke_parquet_path):
@@ -603,7 +615,7 @@ class TestInteractionFeatureSet:
     def test_compute_interaction_features(self):
         """compute_interaction_features produces correct products."""
         # state[0]=bowers=2, state[1]=trump_count=5
-        state = np.zeros(52)
+        state = np.zeros(len(STATE_FEATURE_NAMES))
         state[0] = 2.0  # bowers
         state[1] = 5.0  # trump_count
         result = compute_interaction_features(state)
@@ -625,8 +637,10 @@ class TestInteractionFeatureSet:
 
 def _dummy_models() -> dict[str, dict]:
     """Create minimal model dicts for artifact tests (no real training)."""
+    n_state = len(STATE_FEATURE_NAMES)
+    n_action = len(ACTION_FEATURE_NAMES)
     model = {
-        "coefficients": [0.0] * 54,
+        "coefficients": [0.0] * (n_state + n_action),
         "intercept": 0.0,
         "feature_names": list(STATE_FEATURE_NAMES) + list(ACTION_FEATURE_NAMES),
         "r_squared": 0.5,
@@ -635,7 +649,7 @@ def _dummy_models() -> dict[str, dict]:
         "n_val": 20,
     }
     pass_model = {
-        "coefficients": [0.0] * 52,
+        "coefficients": [0.0] * n_state,
         "intercept": 0.0,
         "feature_names": list(STATE_FEATURE_NAMES),
         "r_squared": 0.3,

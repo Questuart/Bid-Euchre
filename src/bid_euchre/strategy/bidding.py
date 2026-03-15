@@ -1395,13 +1395,31 @@ _POSITIONAL_FEATURE_NAMES: List[str] = [
     "seat_rel_3",
 ]
 
-# State feature names: 39 hand + 3 partner + 10 positional/legality = 52
-# This is the v7 canonical default. Artifact-driven extraction may use different
-# partner features (e.g., v8 suit-relative channels), but hand and positional
-# features are fixed across versions.
+# Position features: auction position and dealer flag (R1, LA-1)
+# These sit between partner features and positional/legality features.
+_POSITION_FEATURE_NAMES: List[str] = [
+    "auction_position",
+    "is_dealer",
+]
+
+# Known position feature names for _infer_partner_features exclusion
+_POSITION_FEATURE_SET: frozenset = frozenset(_POSITION_FEATURE_NAMES)
+
+# State feature names: 39 hand + 6 partner_v2 + 2 position + 10 positional = 57
+# This is the R1 canonical default (LA-1 amendment). Artifact-driven extraction
+# may use different partner features (v7: 3 features, v2: 6 features), but hand,
+# position, and positional features are fixed across versions.
 STATE_FEATURE_NAMES: List[str] = (
     _HAND_FEATURE_NAMES
-    + ["partner_bid_level", "partner_passed", "partner_suit_match"]
+    + [
+        "partner_level_same_suit",
+        "partner_level_same_color",
+        "partner_level_off_color",
+        "partner_level_high",
+        "partner_level_low",
+        "partner_passed",
+    ]
+    + _POSITION_FEATURE_NAMES
     + _POSITIONAL_FEATURE_NAMES
 )
 
@@ -1411,7 +1429,10 @@ def _infer_partner_features(feature_names: List[str]) -> List[str]:
 
     Partner features sit between hand features (39) and positional features (10).
     The hand and positional blocks are fixed across schema versions; only the
-    partner block varies (v7: 3 features, v8: 4 features).
+    partner block varies (v7: 3 features, v2: 6 features).
+
+    Position features (auction_position, is_dealer) may sit between partner
+    and positional blocks — they are excluded from the returned partner list.
 
     If no positional features are present (R0 hand-only models), there are no
     partner features either — returns an empty list.
@@ -1420,15 +1441,20 @@ def _infer_partner_features(feature_names: List[str]) -> List[str]:
         feature_names: Full ordered feature list from an artifact model.
 
     Returns:
-        The partner feature names (the slice between hand and positional blocks).
-        Empty list for R0 hand-only models with no positional features.
+        The partner feature names (the slice between hand and positional blocks,
+        excluding position features). Empty list for R0 hand-only models.
     """
     hand_end = len(_HAND_FEATURE_NAMES)  # 39
     if "current_high_bid" not in feature_names:
         # No positional features = no partner features (R0 hand-only model)
         return []
     positional_start = feature_names.index("current_high_bid")
-    partner_names = feature_names[hand_end:positional_start]
+    # Position features sit between partner and positional blocks — exclude them
+    partner_names = [
+        n
+        for n in feature_names[hand_end:positional_start]
+        if n not in _POSITION_FEATURE_SET
+    ]
     # partner_names can be empty (model with positional but no partner features)
     return partner_names
 
@@ -1467,17 +1493,17 @@ def extract_state_features(
             "none" is used for pass actions (no contract context).
         trump_suit: Trump suit letter for suit contracts, None otherwise.
         partner_feature_names: Ordered list of partner feature names to extract.
-            If None, uses v7 defaults (partner_bid_level, partner_passed,
-            partner_suit_match). Artifact-driven bidders pass their artifact's
-            partner feature names here to support schema evolution.
-        include_positional: Whether to include the 10 positional/legality
-            features. False for R0 hand-only models that have no positional
-            features. Defaults to True.
+            If None, uses v2 defaults (6 suit-relative features). Artifact-driven
+            bidders pass their artifact's partner feature names here to support
+            schema evolution (v7 artifacts pass 3-feature list).
+        include_positional: Whether to include the position (2) and
+            positional/legality (10) features. False for R0 hand-only models
+            that have no positional features. Defaults to True.
 
     Returns:
         np.ndarray with features in order:
-        - With positional: hand (39) + partner (N) + positional (10).
-          Default shape is (52,) for v7 schema.
+        - With positional: hand (39) + partner (N) + position (2) + positional (10).
+          Default shape is (57,) for R1 schema (v2 partner, 6 features).
         - Without positional: hand (39) only (R0 hand-only models).
 
     Note on pass ("none") encoding:
@@ -1504,20 +1530,42 @@ def extract_state_features(
         return hand_arr
 
     from ..features.auction_context import (
-        PARTNER_FEATURE_NAMES,
+        PARTNER_FEATURE_NAMES_V2,
         extract_partner_features,
+        extract_partner_features_v2,
     )
 
     if partner_feature_names is None:
-        partner_feature_names = PARTNER_FEATURE_NAMES
+        partner_feature_names = PARTNER_FEATURE_NAMES_V2
 
-    # Partner features (variable count depending on schema version)
-    partner_family = contract_family if contract_family != "none" else None
-    partner_feats = extract_partner_features(
-        obs.seat, obs.auction_transcript, partner_family
-    )
+    # Detect which partner extractor to use based on feature names.
+    # v2 features start with "partner_level_"; v7 features start with "partner_bid_".
+    _v2_names = set(PARTNER_FEATURE_NAMES_V2)
+    if set(partner_feature_names) <= _v2_names:
+        # v2 partner features (R1 default)
+        partner_family = contract_family if contract_family != "none" else None
+        partner_feats = extract_partner_features_v2(
+            obs.seat,
+            obs.auction_transcript,
+            observer_contract_type=partner_family,
+            observer_trump_suit=trump_suit,
+        )
+    else:
+        # v7 partner features (backward compat for loaded artifacts)
+        partner_family = contract_family if contract_family != "none" else None
+        partner_feats = extract_partner_features(
+            obs.seat, obs.auction_transcript, partner_family
+        )
     partner_arr = np.array(
         [float(partner_feats[k]) for k in partner_feature_names],
+        dtype=np.float64,
+    )
+
+    # Position features (2): auction_position + is_dealer
+    auction_position = float((obs.seat - obs.dealer_seat - 1) % 4)
+    is_dealer = float(int(obs.seat == obs.dealer_seat))
+    position_arr = np.array(
+        [auction_position, is_dealer],
         dtype=np.float64,
     )
 
@@ -1556,7 +1604,7 @@ def extract_state_features(
         dtype=np.float64,
     )
 
-    return np.concatenate([hand_arr, partner_arr, positional_arr])
+    return np.concatenate([hand_arr, partner_arr, position_arr, positional_arr])
 
 
 def extract_action_features(bid_n: int) -> np.ndarray:
@@ -1648,12 +1696,21 @@ def _validate_artifact_features(
     partner_names = _infer_partner_features(state_names)
     has_positional = "current_high_bid" in state_names
 
+    # Detect position features between partner and positional blocks
+    hand_end = len(_HAND_FEATURE_NAMES)
+    positional_start = (
+        state_names.index("current_high_bid") if has_positional else len(state_names)
+    )
+    middle_names = state_names[hand_end:positional_start]
+    position_names = [n for n in middle_names if n in _POSITION_FEATURE_SET]
+
     # Rebuild expected full feature list and validate
     if has_positional:
         # Standard layout: exact match required
         expected_state = (
             list(_HAND_FEATURE_NAMES)
             + list(partner_names)
+            + list(position_names)
             + list(_POSITIONAL_FEATURE_NAMES)
         )
         if has_interactions:
@@ -1667,7 +1724,9 @@ def _validate_artifact_features(
             raise ValueError(
                 f"Artifact feature_names structural mismatch. "
                 f"Expected {len(expected_full)} features "
-                f"(39 hand + {len(partner_names)} partner + 10 positional"
+                f"(39 hand + {len(partner_names)} partner"
+                f"{f' + {len(position_names)} position' if position_names else ''}"
+                f" + 10 positional"
                 f"{' + 3 interaction' if has_interactions else ''} + 2 action), "
                 f"got {len(model_feature_names)} features."
             )
@@ -1707,9 +1766,23 @@ def _validate_pass_model_features(
     Pass models use state features only (no action features).
     """
     if has_positional:
+        # Detect position features in pass model's feature list
+        hand_end = len(_HAND_FEATURE_NAMES)
+        positional_start = (
+            pass_feature_names.index("current_high_bid")
+            if "current_high_bid" in pass_feature_names
+            else len(pass_feature_names)
+        )
+        position_names = [
+            n
+            for n in pass_feature_names[hand_end:positional_start]
+            if n in _POSITION_FEATURE_SET
+        ]
+
         expected_state = (
             list(_HAND_FEATURE_NAMES)
             + list(partner_feature_names)
+            + list(position_names)
             + list(_POSITIONAL_FEATURE_NAMES)
         )
         if has_interactions:
