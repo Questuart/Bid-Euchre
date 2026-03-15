@@ -79,8 +79,11 @@ These are **reviewable artifacts**, not "docs-only" PRs. Apply these checks:
 
 Applies to: PRs touching `plans/**`
 
-Use the checks from `/reviewing-plans` (P1-P10, R1-R5). Focus on scope,
-real paths, execution risk, and testing strategy.
+Use the tiered plan review rubric from `docs/02_agent/PLAN_REVIEW_TIERS.md`.
+Classify the plan as small, medium, or governing and apply the corresponding
+checks. For quick reference, the minimum checks (small tier) are: P1 (real
+paths), P2 (real signatures), P3 (seeds), P5 (scope), P6 (testing), P9
+(template), R4 (scope creep).
 
 ## Review Output Format
 

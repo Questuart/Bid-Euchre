@@ -15,6 +15,10 @@ plans.
 - Bugfix or small feature plans
 - Plans with no experimental evaluation component
 
+**Tiered rubric system:** For automated plan review with tier detection
+(small/medium/governing), see `docs/02_agent/PLAN_REVIEW_TIERS.md`.
+The governing tier applies the full rubric from this document.
+
 ## Scoring Model
 
 Score each dimension `0–5`. Multiply by the dimension weight. Normalize to 0–100:

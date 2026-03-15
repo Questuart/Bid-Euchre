@@ -21,6 +21,21 @@ Codex: when reviewing PRs that touch this directory, apply these checks.
 - Plan scope decisions — these are the author's prerogative, not a review target.
 - Template files in `_templates/` — these contain placeholder values by design.
 
+## Tiered Plan Review
+
+Plans are reviewed at three tiers based on complexity and scope.
+See `docs/02_agent/PLAN_REVIEW_TIERS.md` for the full specification.
+
+| Tier | Scope | Checks |
+|------|-------|--------|
+| Small | <=3 files, single-PR, <80 lines | 7 convention checks (P1,P2,P3,P5,P6,P9,R4) |
+| Medium | 4-10 files, multi-PR, 80-300 lines | 15 convention + 5 risk flags |
+| Governing | Multi-rung/phase, research plans | Full 16-dimension rubric + 8 hard gates |
+
+Codex: when reviewing plan files, classify the plan tier and apply the
+appropriate depth. Default to the existing Plan Audit Checks above for
+any plan that doesn't clearly fit a tier.
+
 ## Plan Hierarchy
 
 For the governing plan framework (governing plans, sub-plans, registries,
