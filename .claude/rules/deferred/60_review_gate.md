@@ -36,7 +36,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 |--------|-------------------|----------------------|------|
 | PENDING | `pending` | "Review loop starting" | Dispatcher publishes immediately |
 | IN_PROGRESS | `pending` | "Codex CLI review in progress (round N)" | Each Codex invocation |
-| FAIL | `failure` | "Review blocked — N blockers" | Blocking prechecks, make check fail, loop crash |
+| FAIL | `failure` | "Review blocked — N blockers" | Blocking prechecks, CI failure, loop crash |
 | WARN | `success` | "Review passed — N warnings (follow-up issues created)" | Non-blocking findings only |
 | READY | `success` | "Review passed — clean" | No findings |
 
@@ -47,7 +47,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 3. Dispatcher publishes `pending` status and generates handoff summary (~5s)
 4. `post-pr-review-loop.sh` hook launches `review_driver.py` asynchronously
 5. Loop runs deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
-6. Loop runs `make check-quiet`
+6. Loop waits for GitHub CI to pass (polls `gh pr checks`)
 7. Loop invokes Codex CLI (`codex review --base main`)
 8. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
 9. Auto-fixable findings (convention patterns) are applied and committed

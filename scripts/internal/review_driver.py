@@ -679,7 +679,7 @@ def _step_pr_open(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
 ) -> ReviewLoopState:
-    """PR_OPEN → WAITING_FOR_CI: Run plan validation + prechecks + make check."""
+    """PR_OPEN → WAITING_FOR_CI: Run plan validation + prechecks."""
     from deterministic_prechecks import check_diff, get_blocking_findings
 
     # 0. Validate plan reference (non-blocking on fetch failures)
@@ -746,22 +746,11 @@ def _step_pr_open(
         )
         return loop_state
 
-    # 2. Run make check (initial validation before CI)
-    from claude_fix_adapter import run_make_check
-
-    if not run_make_check():
-        _publish_status(loop_state.pr_number, "failure", "make check failed")
-        loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
-        loop_state.stop_reason = "make check failed in initial validation"
-        _post_review_comment(loop_state, all_findings_dicts, "blocked")
-        save_state(loop_state, base_dir)
-        logger.warning(
-            "PR #%d: make check failed -- stopped",
-            loop_state.pr_number,
-        )
-        return loop_state
-
-    # 3. Prechecks + make check passed -> wait for CI (remote)
+    # 2. Prechecks passed -> wait for CI (remote)
+    # NOTE: Local `make check` was removed because the review loop runs in the
+    # main checkout (not the PR worktree), so local validation hits dirty state
+    # and stale fixtures unrelated to the PR.  GitHub CI runs on a clean checkout
+    # and is the authoritative build gate — the WAITING_FOR_CI step polls it.
     loop_state.transition(ReviewState.WAITING_FOR_CI)
     save_state(loop_state, base_dir)
     logger.info("PR #%d: pr_open -> waiting_for_ci", loop_state.pr_number)
@@ -1105,44 +1094,19 @@ def _step_retesting(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
 ) -> ReviewLoopState:
-    """RETESTING → WAITING_FOR_CI or STOPPED_CI_FAILURE.
+    """RETESTING → WAITING_FOR_CI: transition to CI polling after fixes pushed.
 
-    Runs make check locally. On success, transitions to WAITING_FOR_CI
-    (CI will re-run on the pushed commit). On failure after 3 retries,
-    stops with STOPPED_CI_FAILURE.
+    Local `make check` was removed — the review loop runs in the main checkout,
+    not the PR worktree, so local validation is unreliable.  The pushed commit
+    triggers GitHub CI which validates on a clean checkout.
     """
-    from claude_fix_adapter import run_make_check
-
-    if run_make_check():
-        loop_state.ci_retry_count = 0
-        loop_state.transition(ReviewState.WAITING_FOR_CI)
-        save_state(loop_state, base_dir)
-        logger.info("PR #%d: make check passed → waiting_for_ci", loop_state.pr_number)
-        return loop_state
-
-    loop_state.ci_retry_count += 1
-    if loop_state.ci_retry_count >= 3:
-        _publish_status(
-            loop_state.pr_number,
-            "failure",
-            f"make check failed {loop_state.ci_retry_count} times",
-        )
-        loop_state.transition(ReviewState.STOPPED_CI_FAILURE)
-        loop_state.stop_reason = f"make check failed {loop_state.ci_retry_count} times"
-        _post_review_comment(loop_state, [], "blocked")
-        save_state(loop_state, base_dir)
-        logger.warning(
-            "PR #%d: make check failed %d times -- stopped",
-            loop_state.pr_number,
-            loop_state.ci_retry_count,
-        )
-    else:
-        save_state(loop_state, base_dir)
-        logger.info(
-            "PR #%d: make check failed (attempt %d/3) — will retry",
-            loop_state.pr_number,
-            loop_state.ci_retry_count,
-        )
+    loop_state.ci_retry_count = 0
+    loop_state.transition(ReviewState.WAITING_FOR_CI)
+    save_state(loop_state, base_dir)
+    logger.info(
+        "PR #%d: retesting → waiting_for_ci (CI validates pushed fixes)",
+        loop_state.pr_number,
+    )
     return loop_state
 
 
