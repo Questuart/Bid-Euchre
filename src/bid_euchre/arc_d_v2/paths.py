@@ -1,17 +1,35 @@
 """Canonical path construction for Arc D v2 lineage.
 
 All path logic in one place.  No more string interpolation scattered across
-scripts.  Every function returns a ``pathlib.Path`` that is *repo-root-relative*
-(consistent with the rest of the codebase).
+scripts.  Every function returns an **absolute** ``pathlib.Path`` anchored at
+the repo root, so callers work correctly regardless of the process cwd
+(worktrees, subprocess spawns, etc.).
 """
 
 from pathlib import Path
 
+
+def _repo_root() -> Path:
+    """Find the repo root (directory containing .git).
+
+    Mirrors the helper in ``orchestration.py``.  We deliberately duplicate
+    rather than import to keep ``paths.py`` dependency-free.
+    """
+    p = Path(__file__).resolve()
+    while p != p.parent:
+        if (p / ".git").exists() or (p / ".git").is_file():
+            return p
+        p = p.parent
+    return Path.cwd()
+
+
+_ROOT = _repo_root()
+
 # ── Lineage root paths ──────────────────────────────────────────────────────
 
-PLANS_ROOT = Path("plans/arc_d_v2")
-REPORTS_ROOT = Path("docs/04_reports/arc_d_v2")
-RUNS_ROOT = Path("data/runs/arc_d_v2")
+PLANS_ROOT = _ROOT / "plans" / "arc_d_v2"
+REPORTS_ROOT = _ROOT / "docs" / "04_reports" / "arc_d_v2"
+RUNS_ROOT = _ROOT / "data" / "runs" / "arc_d_v2"
 
 # ── Lineage-level files ─────────────────────────────────────────────────────
 
@@ -23,7 +41,7 @@ CROSS_RUNG_DELTAS = REPORTS_ROOT / "cross_rung_deltas.csv"
 
 # ── Anchor model (fixed for the lineage) ────────────────────────────────────
 
-ANCHOR_ARTIFACT = Path("data/artifacts/arc_d/r0/hybrid_r0_full.json")
+ANCHOR_ARTIFACT = _ROOT / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
 
 
 # ── Rung-level plan paths ───────────────────────────────────────────────────
