@@ -7,7 +7,7 @@ If you change a schema, update the relevant doc and bump schema versions where a
 
 - **meta.json (schema v2):** see `docs/01_core/schemas/meta_json.md`
 - **results JSON**: Strategy performance metrics including scoring/points aggregates; see `docs/01_core/METRICS.md`
-- **JSONL game log (schema v7):** see below
+- **JSONL game log (schema v8):** see below
 
 ## JSONL Game Log Schema
 
@@ -17,7 +17,7 @@ Each `hand_end` record contains:
 
 | Field | Type | Since | Notes |
 |-------|------|-------|-------|
-| `schema_version` | int | v1 | Always present; current = 7 |
+| `schema_version` | int | v1 | Always present; current = 8 |
 | `event` | str | v1 | Always `"hand_end"` |
 | `run_id` | str | v1 | Run identifier |
 | `strategy_id` | str | v1 | Strategy name |
@@ -37,13 +37,17 @@ Each `hand_end` record contains:
 | `redeal_flag` | bool\|null | v6 | True if all players passed (all-pass redeal); null on pre-v6 logs |
 | `made_bid` | bool\|null | v6 | True if declaring team made their bid; null on pre-v6 logs |
 | `auction_transcript` | list\|null | v7 | 4-entry list `[{seat, action, tricks_bid, contract_type, trump}]`; null if no auction or pre-v7 |
+| `bid_type` | str\|null | v8 | `"regular"`, `"moon"`, or `"loner"`; null on pre-v8 logs |
+| `exchange_cards_given` | list\|null | v8 | Cards given by mooner to partner during moon exchange, each as `[suit, rank]`; null for non-moon bids or pre-v8 logs |
+| `exchange_cards_received` | list\|null | v8 | Cards received by mooner from partner during moon exchange, each as `[suit, rank]`; null for non-moon bids or pre-v8 logs |
+| `sitting_out_seat` | int\|null | v8 | Seat number (0-3) of partner sitting out during loner trick play; null for non-loner bids or pre-v8 logs |
 | `timestamp` | str | v1 | ISO-8601 timestamp |
 
 **Backward compatibility:** All versioned fields have `null` defaults. Old logs can be read safely using `.get(field)`.
 
 **Filtering note:** `redeal_flag=true` records have `t0=0, t1=0` (no play occurred). Exclude them when computing comparative metrics.
 
-**auction_transcript entry format:** Each entry is `{"seat": int, "action": "PASS"|"BID", "tricks_bid": int, "contract_type": str|null, "trump": str|null}`. PASS entries have `tricks_bid=0`, `contract_type=null`, `trump=null`. The list is always exactly 4 entries (one per seat in bid order) when bidding occurred; `null` when no auction ran (fixed-contract mode).
+**auction_transcript entry format:** Each entry is `{"seat": int, "action": "PASS"|"BID", "tricks_bid": int, "contract_type": str|null, "trump": str|null, "bid_type": str}` (v8+). PASS entries have `tricks_bid=0`, `contract_type=null`, `trump=null`. BID entries include `bid_type` (`"regular"`, `"moon"`, or `"loner"`) when using the new bidding policy interface; the old `Strategy.decide_bid` interface omits `bid_type` from transcript entries. The list is always exactly 4 entries (one per seat in bid order) when bidding occurred; `null` when no auction ran (fixed-contract mode).
 
 ## Directory Layout and Commit Policy
 

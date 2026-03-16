@@ -440,7 +440,7 @@ def simulate_moon_counterfactual(
     partner_seat = (focal_seat + 2) % 4
 
     # Perform card exchange: mooner gives 2 worst, gets partner's 2 best
-    mooner_hand, partner_hand = perform_exchange(
+    mooner_hand, partner_hand, _, _ = perform_exchange(
         list(hands[focal_seat]),
         list(hands[partner_seat]),
         contract_type,

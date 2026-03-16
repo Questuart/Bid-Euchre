@@ -73,6 +73,11 @@ def compute_points(
         else:
             return non_bid_team_tricks, bid_team_points
 
+    if bid_type != "regular":
+        raise ValueError(
+            f"Invalid bid_type: {bid_type!r}. Must be 'regular', 'moon', or 'loner'."
+        )
+
     # Regular bid scoring
     if bid_team_tricks >= winning_bid:
         # Bid made: bid team gets their tricks, non-bid team gets their tricks

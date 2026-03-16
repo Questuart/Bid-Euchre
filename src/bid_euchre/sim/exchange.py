@@ -182,7 +182,7 @@ def perform_exchange(
     partner_hand: List[Card],
     contract_type: str,
     trump_suit: Optional[str],
-) -> Tuple[List[Card], List[Card]]:
+) -> Tuple[List[Card], List[Card], List[Card], List[Card]]:
     """
     Perform 2-card exchange between mooner and partner for a moon bid.
 
@@ -196,7 +196,11 @@ def perform_exchange(
         trump_suit: Trump suit for suit contracts, None for high/low.
 
     Returns:
-        (new_mooner_hand, new_partner_hand) — both 10-card hands after exchange.
+        (new_mooner_hand, new_partner_hand, cards_given, cards_received) where:
+        - new_mooner_hand: mooner's 10-card hand after exchange
+        - new_partner_hand: partner's 10-card hand after exchange
+        - cards_given: cards the mooner gave to partner (mooner's 2 worst)
+        - cards_received: cards the mooner received from partner (partner's 2 best)
 
     Raises:
         ValueError: If hand sizes are not 10 or contract_type is invalid.
@@ -237,4 +241,4 @@ def perform_exchange(
     new_total = sorted(m_hand + p_hand, key=lambda c: (c.suit, c.rank))
     assert original_total == new_total, "Exchange created or destroyed cards"
 
-    return m_hand, p_hand
+    return m_hand, p_hand, mooner_discards, partner_gifts

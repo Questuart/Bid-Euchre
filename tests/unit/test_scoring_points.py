@@ -4,6 +4,8 @@ Unit tests for points-based scoring in Bid Euchre.
 Tests the compute_points() function with exact integer results.
 """
 
+import pytest
+
 from bid_euchre.scoring import compute_points
 
 
@@ -200,3 +202,13 @@ class TestLonerScoring:
         p0, p1 = compute_points(10, 3, 3, 7, bid_type="loner")
         assert p0 == 3
         assert p1 == -40
+
+    def test_invalid_bid_type_raises(self):
+        """Invalid bid_type string raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid bid_type"):
+            compute_points(5, 0, 6, 4, bid_type="invalid")
+
+    def test_invalid_bid_type_empty_string(self):
+        """Empty bid_type string raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid bid_type"):
+            compute_points(5, 0, 6, 4, bid_type="")

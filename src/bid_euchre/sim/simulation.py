@@ -53,6 +53,9 @@ def play_single_hand(
     Optional[str],
     Optional[List[Dict[str, Any]]],
     str,
+    Optional[List[Card]],
+    Optional[List[Card]],
+    Optional[int],
 ]:
     """
     Play one full 10-trick hand.
@@ -61,7 +64,9 @@ def play_single_hand(
     The winner of the bid chooses the contract and leads the first trick.
 
     Returns:
-        (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump, auction_transcript, bid_type)
+        (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos,
+         final_contract, final_trump, auction_transcript, bid_type,
+         exchange_cards_given, exchange_cards_received, sitting_out_seat)
     """
     # Resolve strategy-per-seat.
     if strategies is not None:
@@ -407,6 +412,7 @@ def play_single_hand(
                             "tricks_bid": bid,
                             "contract_type": ctype,
                             "trump": trump,
+                            "bid_type": "regular",
                         }
                     )
                     current_high_bid = bid
@@ -441,6 +447,9 @@ def play_single_hand(
                 None,
                 _transcript,
                 "regular",
+                None,
+                None,
+                None,
             )
 
         contract_type = final_contract
@@ -457,10 +466,17 @@ def play_single_hand(
         }
 
         # EXCHANGE PHASE: moon bids trigger a 2-card exchange with partner
+        _exchange_given: Optional[List[Card]] = None
+        _exchange_received: Optional[List[Card]] = None
         if winning_bid_action is not None and winning_bid_action.bid_type == "moon":
             mooner_seat = winning_bidder
             partner_seat = (mooner_seat + 2) % 4
-            hands[mooner_seat], hands[partner_seat] = perform_exchange(
+            (
+                hands[mooner_seat],
+                hands[partner_seat],
+                _exchange_given,
+                _exchange_received,
+            ) = perform_exchange(
                 mooner_hand=hands[mooner_seat],
                 partner_hand=hands[partner_seat],
                 contract_type=contract_type,
@@ -478,6 +494,8 @@ def play_single_hand(
         bidder_position = None
         _transcript = None  # null distinguishes "no bidding mode" from "all passed"
         _bid_type = "regular"
+        _exchange_given = None
+        _exchange_received = None
 
     # Validation (now that contract is decided)
     if contract_type == "suit" and trump_suit is None:
@@ -663,6 +681,9 @@ def play_single_hand(
         trump_suit,
         _transcript,
         _bid_type,
+        _exchange_given,
+        _exchange_received,
+        sitting_out_seat,
     )
 
 
@@ -790,6 +811,9 @@ def simulate_many_hands(
                 actual_trump,
                 auction_transcript,
                 bid_type,
+                exchange_given,
+                exchange_received,
+                sitting_out,
             ) = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
@@ -819,6 +843,9 @@ def simulate_many_hands(
                 actual_trump,
                 auction_transcript,
                 bid_type,
+                exchange_given,
+                exchange_received,
+                sitting_out,
             ) = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
@@ -865,6 +892,9 @@ def simulate_many_hands(
                 made_bid=made_bid,
                 auction_transcript=auction_transcript,
                 bid_type=bid_type,
+                exchange_cards_given=exchange_given,
+                exchange_cards_received=exchange_received,
+                sitting_out_seat=sitting_out,
             )
 
         # Fire HandEndEvent if hooks registered
