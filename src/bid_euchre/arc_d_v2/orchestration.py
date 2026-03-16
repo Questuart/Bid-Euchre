@@ -703,6 +703,10 @@ def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
     if continuation.exists():
         cmd.extend(["--continuation-artifact", str(continuation)])
 
+    # R3+ action space expansion: include moon/loner counterfactuals
+    if rung in ("r3", "r4"):
+        cmd.append("--include-moon-loner")
+
     if dry_run:
         logger.info("Step 1: would run: %s", " ".join(cmd))
         state.mark_step_complete("1", seed)
