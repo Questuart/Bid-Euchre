@@ -677,6 +677,67 @@ class TestDecisionRules:
         assert decision == "PROCEED"
         assert "canary warning" in reason
 
+    def test_skipped_not_counted_as_failure(self):
+        """Skipped hypotheses must not be counted as failures."""
+        hyp = [
+            {"id": "H1", "pass": True, "surprise_hit": False},
+            {"id": "H2", "pass": False, "skipped": True, "surprise_hit": False},
+        ]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PROCEED"
+        assert "skipped" in reason
+        assert "1 hypothesis(es) skipped" in reason
+
+    def test_skipped_not_counted_as_pass(self):
+        """All-skip scenario should still PROCEED with skip note."""
+        hyp = [
+            {"id": "H1", "pass": False, "skipped": True, "surprise_hit": False},
+            {"id": "H2", "pass": False, "skipped": True, "surprise_hit": False},
+        ]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PROCEED"
+        assert "2 hypothesis(es) skipped" in reason
+
+    def test_skip_with_real_failure(self):
+        """A real failure should still INVESTIGATE even with skips present."""
+        hyp = [
+            {"id": "H1", "pass": False, "surprise_hit": False, "error": None},
+            {"id": "H2", "pass": False, "skipped": True, "surprise_hit": False},
+        ]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "INVESTIGATE"
+        assert "H1" in reason
+        assert "1 hypothesis(es) skipped" in reason
+
+    def test_skip_with_surprise_hit(self):
+        """Surprise hits on evaluated checks still trigger INVESTIGATE with skip note."""
+        hyp = [
+            {"id": "H1", "pass": False, "surprise_hit": True},
+            {"id": "H2", "pass": False, "skipped": True, "surprise_hit": False},
+        ]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "INVESTIGATE"
+        assert "Surprise" in reason
+        assert "1 hypothesis(es) skipped" in reason
+
+    def test_no_skip_suffix_when_zero_skipped(self):
+        """When no hypotheses are skipped, reason should not mention skips."""
+        hyp = [{"id": "H1", "pass": True, "surprise_hit": False}]
+        suff = [{"id": "s1", "pass": True}]
+        canary = [{"id": "c1", "pass": True}]
+        decision, reason = compute_decision(hyp, suff, canary)
+        assert decision == "PROCEED"
+        assert "skipped" not in reason
+        assert reason == "All checks pass."
+
 
 class TestBestInLineage:
     def test_finds_best(self, tmp_path):
@@ -758,6 +819,77 @@ class TestAdvanceCheckIntegration:
         assert len(result["hypothesis_checks"]) == 1
         assert result["hypothesis_checks"][0]["pass"] is True
         assert result["best_in_lineage"]["model"] == "gbt_av"
+        assert result["skipped_checks_summary"] == []
+
+    def test_advance_check_with_skipped_hypotheses(self, tmp_path):
+        """Integration: skipped hypotheses appear in skipped_checks_summary, not failed."""
+        hyp = {
+            "schema_version": "hypotheses_v1",
+            "rung": "r0",
+            "hypotheses": [
+                {
+                    "id": "H1",
+                    "description": "GBT beats anchor on pooled",
+                    "source_table": "comparator_rankings.csv",
+                    "source_column": "net_eppd",
+                    "source_filter": {"model": "gbt_av", "facet": "pooled"},
+                    "anchor_filter": {"model": "anchor", "facet": "pooled"},
+                    "computation": "value - anchor_value",
+                    "expected_bound": {"op": ">", "value": 0.3},
+                },
+                {
+                    "id": "H8",
+                    "description": "constrained check",
+                    "source_table": "comparator_rankings.csv",
+                    "source_column": "net_eppd",
+                    "source_filter": {"model": "constrained_ols_av", "facet": "pooled"},
+                    "computation": "value",
+                    "expected_bound": {"op": ">", "value": 0.0},
+                },
+            ],
+        }
+        hyp_path = tmp_path / "hypotheses.json"
+        hyp_path.write_text(json.dumps(hyp))
+
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        _write_csv(
+            tables_dir / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "pooled", "1.5"],
+                ["anchor", "pooled", "0.8"],
+            ],
+        )
+        _write_csv(
+            tables_dir / "model_performance.csv",
+            ["model", "contract_type", "r2"],
+            [["gbt_av", "suit", "0.65"]],
+        )
+        _write_csv(
+            tables_dir / "data_sanity.csv",
+            ["check", "status"],
+            [["seat_balance", "PASS"]],
+        )
+        _write_csv(
+            tables_dir / "h2h_delta_matrix.csv",
+            ["model_a", "model_b", "facet", "net_eppd_delta", "win_rate_a"],
+            [["gbt_av", "anchor", "pooled", "0.7", "0.55"]],
+        )
+
+        active_models = {"gbt_av", "anchor"}
+        result = generate_advance_check(
+            hyp_path, tables_dir, "quick", "r0", active_models=active_models
+        )
+
+        assert result["advance_decision"] == "PROCEED"
+        assert result["skipped_checks_summary"] == ["H8"]
+        assert "H8" not in result["failed_checks_summary"]
+        assert "skipped" in result["reason"]
+        # Verify the individual check has skipped=True
+        h8 = next(h for h in result["hypothesis_checks"] if h["id"] == "H8")
+        assert h8["skipped"] is True
+        assert h8["pass"] is False
 
 
 # ============================================================================
@@ -1903,7 +2035,8 @@ class TestHypothesisSkipLogic:
         }
         active = {"gbt_av", "selected_two_stage_av", "full_ols_av", "modeloespecifico"}
         result = evaluate_hypothesis(hyp, tmp_path, active_models=active)
-        assert result["pass"] is True
+        assert result["pass"] is False
+        assert result["skipped"] is True
         assert "SKIP" in result.get("note", "")
         assert "constrained_ols_av" in result.get("note", "")
 
@@ -1929,7 +2062,8 @@ class TestHypothesisSkipLogic:
         }
         active = {"gbt_av", "selected_two_stage_av", "full_ols_av", "modeloespecifico"}
         result = evaluate_hypothesis(hyp, tmp_path, active_models=active)
-        assert result["pass"] is True
+        assert result["pass"] is False
+        assert result["skipped"] is True
         assert "SKIP" in result.get("note", "")
 
     def test_no_skip_when_all_models_active(self, tmp_path):
@@ -2029,3 +2163,140 @@ class TestExtractModelRefs:
     def test_no_filters(self):
         hyp = {"id": "H1", "description": "test"}
         assert _extract_model_refs(hyp) == set()
+
+
+# ============================================================================
+# Advance Check CLI Tests
+# ============================================================================
+
+
+class TestAdvanceCheckCLI:
+    """Tests for scripts/internal/generate_advance_check.py CLI."""
+
+    def _setup_fixtures(self, tmp_path):
+        """Create hypothesis + table fixtures for CLI testing."""
+        hyp = {
+            "schema_version": "hypotheses_v1",
+            "rung": "r0",
+            "hypotheses": [
+                {
+                    "id": "H1",
+                    "description": "GBT beats anchor",
+                    "source_table": "comparator_rankings.csv",
+                    "source_column": "net_eppd",
+                    "source_filter": {"model": "gbt_av", "facet": "pooled"},
+                    "computation": "value",
+                    "expected_bound": {"op": ">", "value": 0.0},
+                },
+                {
+                    "id": "H8",
+                    "description": "constrained check",
+                    "source_table": "comparator_rankings.csv",
+                    "source_column": "net_eppd",
+                    "source_filter": {"model": "constrained_ols_av", "facet": "pooled"},
+                    "computation": "value",
+                    "expected_bound": {"op": ">", "value": 0.0},
+                },
+            ],
+        }
+        hyp_path = tmp_path / "hypotheses.json"
+        hyp_path.write_text(json.dumps(hyp))
+
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        _write_csv(
+            tables_dir / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["gbt_av", "pooled", "1.5"],
+                ["constrained_ols_av", "pooled", "0.8"],
+            ],
+        )
+        for name in [
+            "model_performance.csv",
+            "data_sanity.csv",
+            "h2h_delta_matrix.csv",
+        ]:
+            _write_csv(
+                tables_dir / name,
+                ["model", "status"],
+                [["gbt_av", "PASS"]],
+            )
+
+        return hyp_path, tables_dir
+
+    def test_cli_passes_active_models(self, tmp_path):
+        """CLI loads roster and passes active_models to generate_advance_check."""
+        from scripts.internal.generate_advance_check import main as cli_main
+
+        hyp_path, tables_dir = self._setup_fixtures(tmp_path)
+        output_path = tmp_path / "advance_check.json"
+
+        # Mock load_roster to return a roster excluding constrained_ols_av
+        mock_roster = Roster(
+            models=[
+                RosterModel(name="gbt_av", class_name="GBT", trainable=True),
+                RosterModel(
+                    name="constrained_ols_av",
+                    class_name="OLS",
+                    trainable=True,
+                    status="excluded",
+                ),
+            ]
+        )
+        with patch(
+            "scripts.internal.generate_advance_check.load_roster",
+            return_value=mock_roster,
+        ):
+            rc = cli_main(
+                [
+                    "--hypotheses",
+                    str(hyp_path),
+                    "--tables-dir",
+                    str(tables_dir),
+                    "--output",
+                    str(output_path),
+                    "--mode",
+                    "full",
+                    "--rung",
+                    "r0",
+                ]
+            )
+
+        assert rc == 0
+        result = json.loads(output_path.read_text())
+        assert result["advance_decision"] == "PROCEED"
+        assert "H8" in result["skipped_checks_summary"]
+        assert "H8" not in result["failed_checks_summary"]
+
+    def test_cli_without_roster_falls_back(self, tmp_path):
+        """CLI falls back gracefully when load_roster raises an error."""
+        from scripts.internal.generate_advance_check import main as cli_main
+
+        hyp_path, tables_dir = self._setup_fixtures(tmp_path)
+        output_path = tmp_path / "advance_check.json"
+
+        with patch(
+            "scripts.internal.generate_advance_check.load_roster",
+            side_effect=FileNotFoundError("No roster file"),
+        ):
+            rc = cli_main(
+                [
+                    "--hypotheses",
+                    str(hyp_path),
+                    "--tables-dir",
+                    str(tables_dir),
+                    "--output",
+                    str(output_path),
+                    "--mode",
+                    "quick",
+                    "--rung",
+                    "r0",
+                ]
+            )
+
+        assert rc == 0
+        result = json.loads(output_path.read_text())
+        # Without roster, no SKIP logic applied — all hypotheses evaluated
+        assert result["skipped_checks_summary"] == []
+        assert result["advance_decision"] == "PROCEED"

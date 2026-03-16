@@ -150,7 +150,8 @@ def evaluate_hypothesis(
         model_refs = _extract_model_refs(hyp)
         excluded = model_refs - active_models
         if excluded:
-            result["pass"] = True
+            result["pass"] = False
+            result["skipped"] = True
             result["note"] = (
                 f"SKIP: model(s) {', '.join(sorted(excluded))} not in active roster"
             )
@@ -412,14 +413,30 @@ def compute_decision(
 ) -> tuple[str, str]:
     """Compute advance decision from check results.
 
+    Skipped hypotheses (``skipped=True``) are excluded from pass/fail
+    counting and surfaced in the decision reason.
+
     Returns (decision, reason).
     Decision: PROCEED | INVESTIGATE | PAUSE
     """
-    # Any surprise hit -> INVESTIGATE
-    surprise_hits = [h for h in hypothesis_checks if h.get("surprise_hit")]
+    # Partition skipped vs evaluated hypotheses
+    skipped = [h for h in hypothesis_checks if h.get("skipped")]
+    evaluated = [h for h in hypothesis_checks if not h.get("skipped")]
+    n_skipped = len(skipped)
+
+    # Build skip suffix for decision reason
+    skip_suffix = ""
+    if n_skipped > 0:
+        skip_suffix = f" {n_skipped} hypothesis(es) skipped (excluded models)."
+
+    # Any surprise hit -> INVESTIGATE (only on evaluated hypotheses)
+    surprise_hits = [h for h in evaluated if h.get("surprise_hit")]
     if surprise_hits:
         ids = [h["id"] for h in surprise_hits]
-        return "INVESTIGATE", f"Surprise threshold hit on: {', '.join(ids)}"
+        return (
+            "INVESTIGATE",
+            f"Surprise threshold hit on: {', '.join(ids)}{skip_suffix}",
+        )
 
     # Check sufficiency
     suff_failures = [s for s in sufficiency_checks if not s["pass"]]
@@ -429,29 +446,32 @@ def compute_decision(
         s["id"] == "data_sanity" and not s["pass"] for s in sufficiency_checks
     )
     if data_sanity_fail:
-        return "PAUSE", "Data sanity check failed"
+        return "PAUSE", f"Data sanity check failed{skip_suffix}"
 
     # >50% blocked models -> PAUSE
     blocked = any(
         s["id"] == "no_blocked_models" and not s["pass"] for s in sufficiency_checks
     )
     if blocked:
-        return "PAUSE", "Blocked models detected"
+        return "PAUSE", f"Blocked models detected{skip_suffix}"
 
-    # Any hypothesis failure (non-surprise)
+    # Any hypothesis failure (non-surprise) — only on evaluated hypotheses
     hyp_failures = [
-        h for h in hypothesis_checks if not h.get("pass") and h.get("error") is None
+        h for h in evaluated if not h.get("pass") and h.get("error") is None
     ]
-    hyp_errors = [h for h in hypothesis_checks if h.get("error")]
+    hyp_errors = [h for h in evaluated if h.get("error")]
 
     if hyp_errors:
         # Some hypotheses couldn't be evaluated (missing data)
         ids = [h["id"] for h in hyp_errors]
-        return "INVESTIGATE", f"Could not evaluate hypotheses: {', '.join(ids)}"
+        return (
+            "INVESTIGATE",
+            f"Could not evaluate hypotheses: {', '.join(ids)}{skip_suffix}",
+        )
 
     if hyp_failures:
         ids = [h["id"] for h in hyp_failures]
-        return "INVESTIGATE", f"Hypotheses failed: {', '.join(ids)}"
+        return "INVESTIGATE", f"Hypotheses failed: {', '.join(ids)}{skip_suffix}"
 
     # Count canary warnings
     canary_warns = [c for c in canary_checks if not c["pass"]]
@@ -459,15 +479,18 @@ def compute_decision(
 
     if suff_failures:
         ids = [s["id"] for s in suff_failures]
-        return "INVESTIGATE", f"Sufficiency checks failed: {', '.join(ids)}"
+        return (
+            "INVESTIGATE",
+            f"Sufficiency checks failed: {', '.join(ids)}{skip_suffix}",
+        )
 
     if n_warns > 0:
         return (
             "PROCEED",
-            f"All checks pass. {n_warns} canary warning(s) (non-blocking).",
+            f"All checks pass. {n_warns} canary warning(s) (non-blocking).{skip_suffix}",
         )
 
-    return "PROCEED", "All checks pass."
+    return "PROCEED", f"All checks pass.{skip_suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -578,13 +601,14 @@ def generate_advance_check(
     # Best in lineage
     best = find_best_in_lineage(tables_dir)
 
-    # Failed/warnings summary
+    # Failed/skipped/warnings summary
     failed = [
         h["id"]
         for h in hypothesis_checks
-        if not h.get("pass") and h.get("error") is None
+        if not h.get("pass") and not h.get("skipped") and h.get("error") is None
     ]
     failed += [s["id"] for s in sufficiency_checks if not s["pass"]]
+    skipped_ids = [h["id"] for h in hypothesis_checks if h.get("skipped")]
     warnings = [c["id"] for c in canary_checks if not c["pass"]]
 
     result = {
@@ -601,6 +625,7 @@ def generate_advance_check(
         "canary_checks": canary_checks,
         "best_in_lineage": best,
         "failed_checks_summary": failed,
+        "skipped_checks_summary": skipped_ids,
         "warnings_summary": warnings,
     }
 
