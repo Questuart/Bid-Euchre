@@ -53,7 +53,11 @@ class TestFullPipelineSmoke:
 
         # Verify all table CSVs exist and are non-empty
         for csv_name in generated_tables:
-            csv_path = tables_dir / csv_name
+            if csv_name.startswith("chart_data/"):
+                # chart_data CSVs are written to report_dir/chart_data/
+                csv_path = report_dir / csv_name
+            else:
+                csv_path = tables_dir / csv_name
             assert csv_path.exists(), f"Table missing: {csv_name}"
             assert csv_path.stat().st_size > 0, f"Table empty: {csv_name}"
 
