@@ -40,11 +40,17 @@ The dispatcher and the loop hook both fire on `gh pr create`:
 
 ```
 initialized → pr_open → waiting_for_ci → waiting_for_codex → scoring_findings
-                                                                   ↓
-                                              applying_fixes → retesting → waiting_for_ci
-                                                                   ↓
-                                              ready_to_merge → merged (auto-merge enabled)
+                                 ↑                                  ↓
+                                 └── retesting ← applying_fixes
+                                                      ↓
+                                 ready_to_merge → merged (auto-merge enabled)
 ```
+
+**Note:** `pr_open` runs deterministic prechecks (diff-based, no build needed)
+then transitions to `waiting_for_ci`. Local `make check` was removed because
+the review loop runs in the main checkout, not the PR worktree — GitHub CI
+validates on a clean checkout and is the authoritative build gate. Similarly,
+`retesting` (after fixes pushed) transitions directly to `waiting_for_ci`.
 
 The `scoring_findings` state runs confidence-based filtering on P2 findings
 before deciding whether to apply fixes or proceed to merge. Low-confidence
