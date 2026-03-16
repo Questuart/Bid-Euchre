@@ -83,13 +83,13 @@ cleanup() {
 trap cleanup EXIT
 
 review_loop_active() {
-    local review_state="${REPO_ROOT}/.claude/runtime/review_loops/pr_${PR_NUM}/state.json"
-    if [ -f "$review_state" ]; then
-        local phase
-        phase=$(jq -r '.phase // "unknown"' "$review_state" 2>/dev/null || echo "unknown")
-        # Active phases — the review loop is handling this PR
-        case "$phase" in
-            INIT|PRECHECKS|WAITING_CI|REVIEWING|AUTO_FIX|RETESTING|READY_TO_MERGE)
+    local review_state_file="${REPO_ROOT}/.claude/runtime/review_loops/pr_${PR_NUM}/state.json"
+    if [ -f "$review_state_file" ]; then
+        local loop_state
+        loop_state=$(jq -r '.state // "unknown"' "$review_state_file" 2>/dev/null || echo "unknown")
+        # Active states from review_state.py ReviewState enum (lowercase snake_case)
+        case "$loop_state" in
+            initialized|authoring|pr_open|waiting_for_ci|waiting_for_codex|scoring_findings|applying_fixes|retesting|ready_to_merge)
                 return 0  # active
                 ;;
         esac
@@ -158,11 +158,12 @@ while true; do
     fi
 
     FAILED=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "FAILURE")] | length' 2>/dev/null || echo "0")
-    PENDING=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "PENDING")] | length' 2>/dev/null || echo "0")
+    # Count both PENDING and IN_PROGRESS as "not yet complete" (matches github_pr_state.py)
+    NOT_COMPLETE=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "PENDING" or .state == "IN_PROGRESS")] | length' 2>/dev/null || echo "0")
+    SUCCEEDED=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "SUCCESS")] | length' 2>/dev/null || echo "0")
     TOTAL=$(echo "$CHECK_OUTPUT" | jq 'length' 2>/dev/null || echo "0")
-    PASSED=$(( TOTAL - FAILED - PENDING ))
 
-    echo "[$(date -u +%H:%M:%S)] [${ELAPSED}s] Checks: ${PASSED}/${TOTAL} passed, ${PENDING} pending, ${FAILED} failed"
+    echo "[$(date -u +%H:%M:%S)] [${ELAPSED}s] Checks: ${SUCCEEDED}/${TOTAL} succeeded, ${NOT_COMPLETE} in progress, ${FAILED} failed"
 
     # --- CI FAILED ---
     if [ "$FAILED" -gt 0 ]; then
@@ -172,8 +173,8 @@ while true; do
         exit 1
     fi
 
-    # --- ALL PASSED ---
-    if [ "$PENDING" -eq 0 ] && [ "$TOTAL" -gt 0 ]; then
+    # --- ALL PASSED (matches github_pr_state.py: all(s == "SUCCESS")) ---
+    if [ "$SUCCEEDED" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
         echo "[$(date -u +%H:%M:%S)] All ${TOTAL} checks passed!"
 
         if [ "$AUTO_MERGE" = true ]; then
