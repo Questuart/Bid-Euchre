@@ -89,6 +89,29 @@ def generate_report(report_dir: Path) -> str:
         "",
     ]
 
+    # Dashboard overview — three composite chart pages
+    dashboards = [
+        ("dashboard_competitive.png", "Competitive Dashboard"),
+        ("dashboard_health.png", "Health Dashboard"),
+        ("dashboard_model_eval.png", "Model Evaluation Dashboard"),
+    ]
+    has_dashboards = any((charts_dir / d[0]).exists() for d in dashboards)
+    if has_dashboards:
+        lines.extend(
+            [
+                "## Dashboards",
+                "",
+            ]
+        )
+        for dash_file, dash_title in dashboards:
+            if (charts_dir / dash_file).exists():
+                lines.append(f"### {dash_title}\n")
+                lines.append(f"![{dash_title}](charts/{dash_file})\n")
+            else:
+                lines.append(f"### {dash_title}\n")
+                lines.append(_chart_placeholder(dash_file))
+        lines.append("")
+
     # section 1 Data Sanity
     lines.extend(
         [

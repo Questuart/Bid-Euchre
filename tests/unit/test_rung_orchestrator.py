@@ -2300,3 +2300,159 @@ class TestAdvanceCheckCLI:
         # Without roster, no SKIP logic applied — all hypotheses evaluated
         assert result["skipped_checks_summary"] == []
         assert result["advance_decision"] == "PROCEED"
+
+
+# ============================================================================
+# Pipeline Wiring Tests (Phase 3)
+# ============================================================================
+
+
+class TestStep3bOutputPath:
+    """Verify Step 3b writes to canonical/chart_data/, not canonical/tables/chart_data/."""
+
+    def test_step_3b_output_targets_chart_data(self, tmp_path):
+        """Step 3b must pass --report-dir pointing to canonical/ so
+        generate_interpretability.py writes to canonical/chart_data/.
+        """
+        state = RunState.create_fresh("r0", "smoke", [42])
+
+        # Create required script
+        script_dir = tmp_path / "scripts" / "internal"
+        script_dir.mkdir(parents=True)
+        (script_dir / "generate_interpretability.py").write_text("# stub")
+
+        rung_artifacts_dir = tmp_path / "data" / "artifacts" / "arc_d_v2" / "r0"
+        rung_artifacts_dir.mkdir(parents=True)
+        report_dir = tmp_path / "docs" / "04_reports" / "arc_d_v2" / "r0" / "canonical"
+        report_dir.mkdir(parents=True)
+
+        captured_cmd = []
+
+        def mock_subprocess(cmd, step, rung, detail="", timeout=None):
+            captured_cmd.extend(cmd)
+            return (True, "")
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=tmp_path / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_3b(state, seed=42)
+
+        assert ok is True
+        # Verify --report-dir points to canonical, NOT canonical/tables
+        assert "--report-dir" in captured_cmd
+        report_dir_idx = captured_cmd.index("--report-dir") + 1
+        passed_report_dir = captured_cmd[report_dir_idx]
+        assert passed_report_dir.endswith(
+            "canonical"
+        ), f"Step 3b should pass report-dir=canonical, got: {passed_report_dir}"
+        assert (
+            "tables" not in passed_report_dir.split("/")[-1]
+        ), "Step 3b should NOT write to tables/chart_data"
+
+
+class TestStep7IncludesInterpretabilityCharts:
+    """Verify Step 7 invokes generate_interpretability_charts.py."""
+
+    def test_step_7_runs_interp_charts_when_available(self, tmp_path):
+        """Step 7 must invoke generate_interpretability_charts.py when
+        both the script and chart_data/ exist.
+        """
+        state = RunState.create_fresh("r0", "smoke", [42])
+
+        # Create required scripts
+        script_dir = tmp_path / "scripts" / "internal"
+        script_dir.mkdir(parents=True)
+        (script_dir / "generate_rung_charts.py").write_text("# stub")
+        (script_dir / "generate_interpretability_charts.py").write_text("# stub")
+        (script_dir / "generate_rung_report.py").write_text("# stub")
+        (script_dir / "generate_evidence_manifest.py").write_text("# stub")
+
+        # Create report_dir with chart_data
+        report_dir = tmp_path / "docs" / "04_reports" / "arc_d_v2" / "r0" / "canonical"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        # Create rung artifacts dir
+        rung_artifacts_dir = tmp_path / "data" / "artifacts" / "arc_d_v2" / "r0"
+        rung_artifacts_dir.mkdir(parents=True)
+
+        subprocess_details = []
+
+        def mock_subprocess(cmd, step, rung, detail="", timeout=None):
+            subprocess_details.append(detail)
+            return (True, "")
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=tmp_path / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_7(state)
+
+        assert ok is True
+        assert (
+            "interp_charts" in subprocess_details
+        ), f"Step 7 should run interp_charts, ran: {subprocess_details}"
+
+
+class TestEvidenceManifestIncludesChartData:
+    """Verify the evidence manifest inventories chart_data/ directory."""
+
+    def test_manifest_includes_chart_data_inventory(self, tmp_path):
+        """Manifest must include chart_data inventory when CSVs exist."""
+        from bid_euchre.arc_d_v2.manifest import generate_evidence_manifest
+
+        # Set up rung dir with required files
+        rung_dir = tmp_path / "rung_dir"
+        rung_dir.mkdir()
+        (rung_dir / "roster.json").write_text(
+            json.dumps(
+                {
+                    "anchor": {"name": "test_anchor"},
+                    "models": [
+                        {
+                            "name": "gbt_av",
+                            "class_name": "GBTActionValueBidder",
+                            "trainable": True,
+                        }
+                    ],
+                }
+            )
+        )
+
+        # Set up report dir with chart_data CSVs
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        chart_data_dir = report_dir / "chart_data"
+        chart_data_dir.mkdir(parents=True)
+        (chart_data_dir / "outcome_distributions.csv").write_text(
+            "model,contract,value\ngbt_av,suit,1.5\n"
+        )
+        (chart_data_dir / "contract_mix.csv").write_text(
+            "model,contract,deals,fraction\ngbt_av,suit,100,0.5\n"
+        )
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            rung_id="r0",
+            lineage_id="arc_d_v2",
+        )
+
+        assert "chart_data" in manifest
+        chart_data_names = [cd["name"] for cd in manifest["chart_data"]]
+        assert "outcome_distributions.csv" in chart_data_names
+        assert "contract_mix.csv" in chart_data_names
+        assert len(manifest["chart_data"]) == 2

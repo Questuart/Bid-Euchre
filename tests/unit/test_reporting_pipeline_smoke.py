@@ -78,6 +78,17 @@ class TestFullPipelineSmoke:
             assert png_path.exists(), f"Chart missing: {png_name}"
             assert png_path.stat().st_size > 0, f"Chart empty: {png_name}"
 
+        # Verify dashboard PNGs were generated
+        expected_dashboards = [
+            "dashboard_competitive.png",
+            "dashboard_health.png",
+            "dashboard_model_eval.png",
+        ]
+        for dash in expected_dashboards:
+            assert (
+                dash in generated_charts
+            ), f"Dashboard {dash} not generated. Got: {generated_charts}"
+
         # Step 3: Generate evidence manifest
         manifest = generate_evidence_manifest(
             rung_dir=FIXTURES_DIR,
@@ -114,6 +125,7 @@ class TestFullPipelineSmoke:
         assert "# Rung Results Report" in report_content
 
         for section in [
+            "## Dashboards",
             "## 1. Data Sanity",
             "## 2. Offline Model Performance",
             "## 6. Comparator Rankings",
