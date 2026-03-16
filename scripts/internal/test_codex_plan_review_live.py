@@ -6,13 +6,13 @@ to verify end-to-end functionality without mocks.
 
 Usage:
     # Smoke only (~30s) -- tests auth + single small plan review
-    uv run python scripts/internal/test_codex_plan_review_live.py --mode smoke
+    PYTHONPATH=scripts/internal uv run python scripts/internal/test_codex_plan_review_live.py --mode smoke
 
     # Quick (~2min) -- smoke + medium plan that previously timed out
-    uv run python scripts/internal/test_codex_plan_review_live.py --mode quick
+    PYTHONPATH=scripts/internal uv run python scripts/internal/test_codex_plan_review_live.py --mode quick
 
     # Full (~5min) -- quick + governing plan + simulated long session
-    uv run python scripts/internal/test_codex_plan_review_live.py --mode full
+    PYTHONPATH=scripts/internal uv run python scripts/internal/test_codex_plan_review_live.py --mode full
 
 Exit codes:
     0 = all tests passed
@@ -27,9 +27,7 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure scripts/internal is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
+# Imports assume PYTHONPATH=scripts/internal (set by caller or Makefile)
 from codex_plan_review_adapter import (
     PlanReviewResult,
     _check_codex_auth,
