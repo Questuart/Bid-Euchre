@@ -1,0 +1,206 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run targeted pytest",
+      "type": "shell",
+      "command": "uv run python -m pytest ${input:testPath} -x -q",
+      "group": {
+        "kind": "test",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run targeted pytest (verbose)",
+      "type": "shell",
+      "command": "uv run python -m pytest ${input:testPath} -x -v",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Make check-quiet",
+      "type": "shell",
+      "command": "make check-quiet",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Make check (full output)",
+      "type": "shell",
+      "command": "make check",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ruff lint",
+      "type": "shell",
+      "command": "uv run ruff check src/ tests/ scripts/ experiments/",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Ruff format check",
+      "type": "shell",
+      "command": "uv run ruff format --check src/ tests/ scripts/ experiments/",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Rung status",
+      "type": "shell",
+      "command": "for rung in r0 r1 r2 r3; do echo \"=== $rung ===\"; uv run python scripts/internal/run_rung.py --rung $rung --status 2>/dev/null || echo 'No state'; echo ''; done",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Rung status (single)",
+      "type": "shell",
+      "command": "uv run python scripts/internal/run_rung.py --rung ${input:rungName} --status",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Review loop state",
+      "type": "shell",
+      "command": "for f in .claude/runtime/review_loops/*/state.json; do [ -f \"$f\" ] && echo \"--- $f ---\" && python3 -m json.tool < \"$f\" && echo ''; done 2>/dev/null || echo 'No active review loops'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Heartbeat check",
+      "type": "shell",
+      "command": "found=0; for f in plans/*/r*/heartbeat; do [ -f \"$f\" ] && echo \"--- $f ---\" && cat \"$f\" && echo '' && found=1; done; [ $found -eq 0 ] && echo 'No heartbeats found'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Worktree list",
+      "type": "shell",
+      "command": "git worktree list",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Git status (all worktrees)",
+      "type": "shell",
+      "command": "git worktree list | while read -r wt_line; do wt_path=$(echo \"$wt_line\" | awk '{print $1}'); branch=$(echo \"$wt_line\" | awk '{print $3}'); echo \"=== $branch ($wt_path) ===\"; git -C \"$wt_path\" status --short 2>/dev/null || echo '  (inaccessible)'; echo ''; done",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Orchestrator log (tail)",
+      "type": "shell",
+      "command": "tail -30 /tmp/overnight_orchestrator.log 2>/dev/null || echo 'No orchestrator log found'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Session metadata",
+      "type": "shell",
+      "command": "for f in .claude/runtime/session_metadata/*.json; do [ -f \"$f\" ] && echo \"--- $(basename $f) ---\" && python3 -m json.tool < \"$f\" && echo ''; done 2>/dev/null || echo 'No session metadata found'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Worktree registry",
+      "type": "shell",
+      "command": "for f in .claude/runtime/worktree_registry/*.json; do [ -f \"$f\" ] && echo \"--- $(basename $f) ---\" && python3 -m json.tool < \"$f\" && echo ''; done 2>/dev/null || echo 'No worktree registry found'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testPath",
+      "type": "promptString",
+      "description": "Test file or directory path",
+      "default": "tests/unit/"
+    },
+    {
+      "id": "rungName",
+      "type": "pickString",
+      "description": "Select a rung",
+      "options": ["r0", "r1", "r2", "r3"],
+      "default": "r0"
+    }
+  ]
+}
