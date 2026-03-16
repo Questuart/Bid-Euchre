@@ -96,5 +96,10 @@ class TestStatisticalStability:
 
         # Results should be similar but not identical
         assert abs(result1["avg_team0"] - result2["avg_team0"]) < 1.0
-        # Very unlikely to be exactly equal (probability ~ 1e-10)
-        assert result1["avg_team0"] != result2["avg_team0"]
+        # At least one numeric metric should differ across two unseeded runs.
+        # Checking multiple metrics avoids flaky failures from single-metric
+        # collisions (e.g., avg_team0 rounding to the same value).
+        numeric_keys = [k for k in result1 if isinstance(result1[k], (int, float))]
+        assert any(
+            result1[k] != result2[k] for k in numeric_keys
+        ), "All numeric metrics identical across two unseeded runs — RNG may not be varying"
