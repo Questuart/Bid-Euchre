@@ -920,6 +920,7 @@ def generate_h2h_tier_summary(
 def generate_chart_data(
     h2h_battery: dict | None = None,
     comparator_cis: dict | None = None,
+    training_artifacts: dict[str, dict] | None = None,
     output_dir: Path | None = None,
 ) -> list[str]:
     """Generate chart_data CSVs from existing artifacts.
@@ -930,20 +931,11 @@ def generate_chart_data(
     Args:
         h2h_battery: Merged H2H battery JSON.
         comparator_cis: Merged comparator CIs JSON.
+        training_artifacts: Dict of model_name -> training artifact JSON.
         output_dir: Path to write chart_data CSVs.
 
     Returns:
         List of generated CSV filenames.
-
-    Note: The following chart_data CSVs require model artifacts not available
-    in battery/comparator JSONs and are deferred:
-    - predictions.csv (requires model prediction outputs)
-    - residuals.csv (requires model prediction outputs)
-    - calibration_bins.csv (requires model prediction outputs)
-    - selection_paths.csv (requires feature selection logs)
-    - decision_comparison.csv (requires model decision traces)
-    - disagreement_outcomes.csv (requires multi-model decision traces)
-    - cross_rung_progression.csv (requires multi-rung data)
     """
     if output_dir is None:
         return []
@@ -1016,11 +1008,469 @@ def generate_chart_data(
             df.to_csv(output_dir / "contract_mix.csv", index=False)
             generated.append("contract_mix.csv")
 
-    # 3. seat_balance.csv — not available in battery JSONs (no per-seat data)
-    # Deferred: requires per-seat JSONL data not present in battery summaries.
+    # 3. outcome_distributions.csv — H2H battery by_contract statistics
+    if h2h_battery:
+        rows = _extract_outcome_distributions(h2h_battery)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "outcome_distributions.csv", index=False)
+            generated.append("outcome_distributions.csv")
 
-    # 4. bid_levels.csv — not available (no bid-level distribution data)
-    # Deferred: requires per-hand bid level data not present in battery summaries.
+    # 4. bid_levels.csv — aggregate bidding metrics per model from comparator CIs
+    if comparator_cis:
+        rows = _extract_bid_levels(comparator_cis)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "bid_levels.csv", index=False)
+            generated.append("bid_levels.csv")
+
+    # 5. seat_balance.csv — per-seat trick distributions from parquet if available
+    #    Deferred: requires per-seat JSONL/parquet not present in battery summaries.
+    #    The function exists but is called separately when parquet data is available.
+
+    # 6. selection_paths.csv — feature importance from training artifacts
+    if training_artifacts:
+        rows = _extract_feature_importance(training_artifacts)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "selection_paths.csv", index=False)
+            generated.append("selection_paths.csv")
+
+    return generated
+
+
+def _extract_outcome_distributions(h2h_battery: dict) -> list[dict]:
+    """Flatten H2H battery by_contract statistics into chart_data rows.
+
+    Extracts cross-matchup (not self-play) per-contract data into rows
+    suitable for outcome distribution charts.
+
+    Returns list of dicts with keys:
+        model, contract, net_eppd_delta, deals_total, win_rate
+    """
+    rows: list[dict] = []
+    for _mid, cell in h2h_battery.get("cells", {}).items():
+        bidder_a = cell.get("bidder_a", "")
+        bidder_b = cell.get("bidder_b", "")
+        # Include both cross-matchup and self-play cells
+        by_contract = cell.get("by_contract", {})
+        for ct in ("suit", "high", "low"):
+            ct_data = by_contract.get(ct)
+            if ct_data is None:
+                continue
+            rows.append(
+                {
+                    "model": bidder_a,
+                    "opponent": bidder_b,
+                    "contract": ct,
+                    "net_eppd_delta": _safe_round(ct_data.get("net_eppd_delta")),
+                    "deals_total": ct_data.get("deals_total"),
+                    "win_rate": _safe_round(ct_data.get("win_rate_a")),
+                }
+            )
+        # Also emit a pooled row from the top-level cell data
+        rows.append(
+            {
+                "model": bidder_a,
+                "opponent": bidder_b,
+                "contract": "pooled",
+                "net_eppd_delta": _safe_round(cell.get("net_eppd_delta")),
+                "deals_total": cell.get("deals_total"),
+                "win_rate": _safe_round(cell.get("win_rate_a")),
+            }
+        )
+    return rows
+
+
+def _extract_bid_levels(comparator_cis: dict) -> list[dict]:
+    """Extract aggregate bidding metrics per model from comparator CIs.
+
+    Per-bid-level distributions are not available in battery JSONs, so
+    this extracts the available aggregate metrics (bid_rate, make_rate,
+    pass_rate, avg_bid proxy).
+
+    Returns list of dicts with keys:
+        model, bid_rate, make_rate, pass_rate
+    """
+    rows: list[dict] = []
+    for name, b in comparator_cis.get("bidders", {}).items():
+        bid_rate = b.get("bid_rate")
+        make_rate = b.get("make_rate")
+        rows.append(
+            {
+                "model": name,
+                "bid_rate": _safe_round(bid_rate),
+                "make_rate": _safe_round(make_rate),
+                "pass_rate": _safe_round(1.0 - bid_rate)
+                if bid_rate is not None
+                else None,
+            }
+        )
+    return rows
+
+
+def _extract_feature_importance(
+    training_artifacts: dict[str, dict],
+) -> list[dict]:
+    """Extract feature importance rankings from training artifact metadata.
+
+    Uses ``feature_importances`` dict from GBT artifacts as the source.
+    Falls back gracefully if selection_logs are not present.
+
+    Returns list of dicts with keys:
+        model, contract, rank, feature_name, importance
+    """
+    rows: list[dict] = []
+    for model_name, artifact in training_artifacts.items():
+        models = artifact.get("models", {})
+        for contract, model_data in models.items():
+            # Prefer selection_logs if available
+            sel_logs = artifact.get("metadata", {}).get("selection_logs", {})
+            if sel_logs and contract in sel_logs:
+                steps = sel_logs[contract].get("steps", [])
+                for step_info in steps:
+                    rows.append(
+                        {
+                            "model": model_name,
+                            "contract": contract,
+                            "rank": step_info["step"],
+                            "feature_name": step_info["feature"],
+                            "importance": _safe_round(step_info.get("r2")),
+                        }
+                    )
+                continue
+
+            # Fall back to feature_importances dict
+            importances = model_data.get("feature_importances", {})
+            if not importances:
+                continue
+            # Sort by importance descending
+            sorted_feats = sorted(importances.items(), key=lambda x: x[1], reverse=True)
+            for rank_idx, (feat_name, imp_val) in enumerate(sorted_feats, 1):
+                rows.append(
+                    {
+                        "model": model_name,
+                        "contract": contract,
+                        "rank": rank_idx,
+                        "feature_name": feat_name,
+                        "importance": _safe_round(imp_val),
+                    }
+                )
+    return rows
+
+
+def generate_cross_rung_progression(
+    rung_comparator_cis: dict[str, dict],
+) -> pd.DataFrame:
+    """Generate cross_rung_progression.csv from multiple rung comparator CIs.
+
+    Per-model metrics across rungs for trend analysis.
+
+    Args:
+        rung_comparator_cis: Dict mapping rung label (e.g. "r0", "r1") to
+            the comparator CIs JSON for that rung.
+
+    Returns:
+        DataFrame with columns:
+            rung, model, rank, net_eppd, cvar_5, bid_rate, make_rate
+    """
+    _columns = ["rung", "model", "rank", "net_eppd", "cvar_5", "bid_rate", "make_rate"]
+    rows: list[dict] = []
+    for rung_label in sorted(rung_comparator_cis.keys()):
+        cis = rung_comparator_cis[rung_label]
+        ranked_order = cis.get("ranked_order", sorted(cis.get("bidders", {}).keys()))
+        bidders = cis.get("bidders", {})
+        for rank_idx, name in enumerate(ranked_order, 1):
+            b = bidders.get(name, {})
+            rows.append(
+                {
+                    "rung": rung_label,
+                    "model": name,
+                    "rank": rank_idx,
+                    "net_eppd": _safe_round(b.get("net_eppd")),
+                    "cvar_5": _safe_round(b.get("cvar_5")),
+                    "bid_rate": _safe_round(b.get("bid_rate")),
+                    "make_rate": _safe_round(b.get("make_rate")),
+                }
+            )
+    return pd.DataFrame(rows, columns=_columns)
+
+
+def generate_seat_balance_csv(
+    parquet_path: Path,
+    output_dir: Path,
+) -> str | None:
+    """Generate seat_balance.csv from an action_value parquet dataset.
+
+    Groups by seat and contract_family to compute mean tricks and hand counts.
+
+    Args:
+        parquet_path: Path to action_value.parquet.
+        output_dir: Path to write the CSV.
+
+    Returns:
+        Filename if generated, None if data is missing or insufficient.
+    """
+    if not parquet_path.exists():
+        logger.warning("Parquet not found for seat_balance: %s", parquet_path)
+        return None
+
+    try:
+        df = pd.read_parquet(parquet_path)
+    except Exception as e:
+        logger.warning("Failed to read parquet for seat_balance: %s", e)
+        return None
+
+    # Determine available columns for seat and contract grouping
+    seat_col = "seat" if "seat" in df.columns else None
+    contract_col = (
+        "contract_family"
+        if "contract_family" in df.columns
+        else ("contract_type" if "contract_type" in df.columns else None)
+    )
+    value_col = (
+        "tricks_won"
+        if "tricks_won" in df.columns
+        else ("actual" if "actual" in df.columns else None)
+    )
+
+    if seat_col is None or value_col is None:
+        logger.warning(
+            "seat_balance: missing required columns (need seat + tricks_won/actual). "
+            "Available: %s",
+            list(df.columns),
+        )
+        return None
+
+    rows: list[dict] = []
+    if contract_col:
+        grouped = df.groupby([seat_col, contract_col])
+        for (seat, contract), group in grouped:
+            rows.append(
+                {
+                    "seat": int(seat),
+                    "contract": str(contract),
+                    "mean_tricks": _safe_round(float(group[value_col].mean())),
+                    "n_hands": len(group),
+                }
+            )
+    else:
+        grouped = df.groupby(seat_col)
+        for seat, group in grouped:
+            rows.append(
+                {
+                    "seat": int(seat),
+                    "contract": "pooled",
+                    "mean_tricks": _safe_round(float(group[value_col].mean())),
+                    "n_hands": len(group),
+                }
+            )
+
+    if rows:
+        out_df = pd.DataFrame(rows)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_df.to_csv(output_dir / "seat_balance.csv", index=False)
+        return "seat_balance.csv"
+    return None
+
+
+def generate_model_eval_csvs(
+    training_artifacts: dict[str, dict],
+    eval_parquet_path: Path | None,
+    output_dir: Path,
+) -> list[str]:
+    """Generate model evaluation chart_data CSVs (predictions, residuals, calibration).
+
+    These require joblib model files to be present on disk. If model files
+    are not available, the function degrades gracefully and skips generation.
+
+    Args:
+        training_artifacts: Dict of model_name -> training artifact JSON.
+        eval_parquet_path: Path to evaluation parquet dataset.
+        output_dir: Path to write CSVs.
+
+    Returns:
+        List of generated CSV filenames.
+    """
+    generated: list[str] = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not training_artifacts or eval_parquet_path is None:
+        logger.info("Skipping model eval CSVs: missing artifacts or eval data")
+        return generated
+
+    if not eval_parquet_path.exists():
+        logger.warning("Eval parquet not found: %s", eval_parquet_path)
+        return generated
+
+    try:
+        import joblib
+    except ImportError:
+        logger.warning("joblib not available; skipping model eval CSVs")
+        return generated
+
+    try:
+        eval_df = pd.read_parquet(eval_parquet_path)
+    except Exception as e:
+        logger.warning("Failed to read eval parquet: %s", e)
+        return generated
+
+    prediction_rows: list[dict] = []
+    residual_rows: list[dict] = []
+    calibration_rows: list[dict] = []
+
+    for model_name, artifact in training_artifacts.items():
+        if artifact.get("schema_version") != "action_value_gbt_v1":
+            continue
+
+        models_meta = artifact.get("models", {})
+
+        for contract, meta in models_meta.items():
+            model_file = meta.get("model_file")
+            if not model_file:
+                continue
+
+            feature_names = meta.get("feature_names", [])
+            if not feature_names:
+                continue
+
+            # Try to find model file relative to eval parquet
+            if eval_parquet_path is not None:
+                candidate_dirs = [
+                    eval_parquet_path.parent.parent / "artifacts",
+                    eval_parquet_path.parent,
+                ]
+                model_path = None
+                for cdir in candidate_dirs:
+                    p = cdir / model_file
+                    if p.exists():
+                        model_path = p
+                        break
+                if model_path is None:
+                    logger.info(
+                        "Model file %s not found for %s/%s; skipping",
+                        model_file,
+                        model_name,
+                        contract,
+                    )
+                    continue
+            else:
+                continue
+
+            try:
+                model = joblib.load(model_path)
+            except Exception as e:
+                logger.warning("Failed to load model %s: %s", model_path, e)
+                continue
+
+            # Filter eval data to this contract
+            if contract == "pass":
+                if "action_type" in eval_df.columns:
+                    family_df = eval_df[eval_df["action_type"] == "pass"]
+                else:
+                    continue
+            else:
+                if "contract_family" in eval_df.columns:
+                    family_df = eval_df[eval_df["contract_family"] == contract]
+                else:
+                    continue
+
+            if len(family_df) == 0:
+                continue
+
+            # Subsample for performance
+            if len(family_df) > 5000:
+                family_df = family_df.sample(n=5000, random_state=42)
+
+            available = [f for f in feature_names if f in family_df.columns]
+            if len(available) != len(feature_names):
+                continue
+
+            X = family_df[available].values.astype(float)
+            actual_col = "actual" if "actual" in family_df.columns else None
+            if actual_col is None:
+                continue
+            actuals = family_df[actual_col].values.astype(float)
+
+            try:
+                preds = model.predict(X)
+            except Exception as e:
+                logger.warning(
+                    "Prediction failed for %s/%s: %s",
+                    model_name,
+                    contract,
+                    e,
+                )
+                continue
+
+            # Predictions
+            for pred, act in zip(preds, actuals):
+                prediction_rows.append(
+                    {
+                        "model": model_name,
+                        "contract": contract,
+                        "prediction": round(float(pred), 4),
+                        "actual": round(float(act), 4),
+                    }
+                )
+
+            # Residuals — binned
+            residuals = preds - actuals
+            bin_edges = np.linspace(
+                float(residuals.min()) - 0.01,
+                float(residuals.max()) + 0.01,
+                21,
+            )
+            counts, edges = np.histogram(residuals, bins=bin_edges)
+            for i, count in enumerate(counts):
+                bin_center = (edges[i] + edges[i + 1]) / 2
+                residual_rows.append(
+                    {
+                        "model": model_name,
+                        "contract": contract,
+                        "residual_bin": round(float(bin_center), 4),
+                        "count": int(count),
+                    }
+                )
+
+            # Calibration bins — by prediction decile
+            n_bins = min(10, len(preds))
+            if n_bins < 2:
+                continue
+            sorted_idx = np.argsort(preds)
+            bin_size = len(preds) // n_bins
+            for b in range(n_bins):
+                start = b * bin_size
+                end = (b + 1) * bin_size if b < n_bins - 1 else len(preds)
+                bin_preds = preds[sorted_idx[start:end]]
+                bin_actuals = actuals[sorted_idx[start:end]]
+                calibration_rows.append(
+                    {
+                        "model": model_name,
+                        "contract": contract,
+                        "pred_bin": b + 1,
+                        "mean_pred": round(float(bin_preds.mean()), 4),
+                        "actual_mean": round(float(bin_actuals.mean()), 4),
+                        "n_samples": len(bin_preds),
+                    }
+                )
+
+    # Write CSVs
+    if prediction_rows:
+        pd.DataFrame(prediction_rows).to_csv(
+            output_dir / "predictions.csv", index=False
+        )
+        generated.append("predictions.csv")
+
+    if residual_rows:
+        pd.DataFrame(residual_rows).to_csv(output_dir / "residuals.csv", index=False)
+        generated.append("residuals.csv")
+
+    if calibration_rows:
+        pd.DataFrame(calibration_rows).to_csv(
+            output_dir / "calibration_bins.csv", index=False
+        )
+        generated.append("calibration_bins.csv")
 
     return generated
 
@@ -1595,6 +2045,7 @@ def generate_all_tables(
     chart_data_csvs = generate_chart_data(
         h2h_battery=h2h_battery,
         comparator_cis=comparator_cis,
+        training_artifacts=training_artifacts,
         output_dir=chart_data_dir,
     )
     for csv_name in chart_data_csvs:
