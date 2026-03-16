@@ -1,6 +1,9 @@
 #!/bin/bash
-# PostToolUse hook — polls CI status after git push to a PR branch.
-# Warns Claude if CI fails so the failure is caught before proceeding.
+# PostToolUse hook — launches background CI poller after git push to a PR branch.
+#
+# Replaces the previous synchronous 3-minute polling approach. Now exits in <2s
+# and launches scripts/internal/ci_poller.sh in the background to handle CI
+# monitoring and optional auto-merge.
 set -euo pipefail
 
 INPUT=$(cat)
@@ -13,66 +16,43 @@ EXIT_CODE=$(echo "$INPUT" | jq -r '.tool_response.exit_code // 0')
 if [[ "$COMMAND" == *"git push"* ]] && [[ "$EXIT_CODE" == "0" ]] \
    && [[ "$COMMAND" != *"--delete"* ]] && [[ "$COMMAND" != *" :"* ]]; then
 
-  # Determine current branch
-  BRANCH=$(git branch --show-current 2>/dev/null || true)
-  if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
-    exit 0
-  fi
-
-  # Dedupe: don't check twice for the same push in the same session
-  HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null || true)
-  SENTINEL="/tmp/.claude-push-ci-check-${BRANCH}-${HEAD_SHA}"
-  if [ -f "$SENTINEL" ]; then
-    exit 0
-  fi
-  touch "$SENTINEL"
-
-  # Wait for CI to start
-  sleep 15
-
-  # Poll CI status (up to 3 minutes, every 15 seconds)
-  MAX_POLLS=12
-  for i in $(seq 1 "$MAX_POLLS"); do
-    # Get check status for the branch
-    CHECK_OUTPUT=$(gh pr checks --json name,state 2>/dev/null || echo "")
-
-    if [ -z "$CHECK_OUTPUT" ]; then
-      # No PR exists yet or gh pr checks failed — skip
-      exit 0
+    # Determine current branch
+    BRANCH=$(git branch --show-current 2>/dev/null || true)
+    if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
+        exit 0
     fi
 
-    # Check if any check has failed
-    FAILED=$(echo "$CHECK_OUTPUT" | jq -r '[.[] | select(.state == "FAILURE")] | length' 2>/dev/null || echo "0")
-    PENDING=$(echo "$CHECK_OUTPUT" | jq -r '[.[] | select(.state == "PENDING")] | length' 2>/dev/null || echo "0")
+    # Dedupe: don't trigger twice for the same push
+    HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null || true)
+    SENTINEL="/tmp/.claude-push-ci-check-${BRANCH}-${HEAD_SHA}"
+    if [ -f "$SENTINEL" ]; then
+        exit 0
+    fi
+    touch "$SENTINEL"
 
-    if [ "$FAILED" -gt 0 ]; then
-      FAILED_NAMES=$(echo "$CHECK_OUTPUT" | jq -r '[.[] | select(.state == "FAILURE") | .name] | join(", ")' 2>/dev/null || echo "unknown")
-      cat <<EOF
+    # Check if a PR exists for this branch
+    PR_NUM=$(gh pr view --json number --jq '.number' 2>/dev/null || echo "")
+    if [ -z "$PR_NUM" ]; then
+        # No PR yet — nothing to monitor
+        exit 0
+    fi
+
+    # Locate the CI poller script
+    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    POLLER="${REPO_ROOT}/scripts/internal/ci_poller.sh"
+
+    if [ ! -f "$POLLER" ]; then
+        exit 0
+    fi
+
+    # Launch CI poller in background with auto-merge enabled
+    bash "$POLLER" --pr "$PR_NUM" --auto-merge &
+
+    cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
-    "additionalContext": "WARNING: CI FAILED on branch '${BRANCH}' after push. Failed checks: ${FAILED_NAMES}. Run 'gh pr checks' and 'gh run view <id> --log-failed' to diagnose. Fix the issue and push again."
-  }
-}
-EOF
-      exit 0
-    fi
-
-    if [ "$PENDING" -eq 0 ]; then
-      # All checks passed — no alert needed
-      exit 0
-    fi
-
-    # Still pending — wait and retry
-    sleep 15
-  done
-
-  # Timed out waiting for CI — note it but don't block
-  cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PostToolUse",
-    "additionalContext": "NOTE: CI still running on branch '${BRANCH}' after 3 minutes. Check status with 'gh pr checks' before proceeding."
+    "additionalContext": "CI has been triggered on branch '${BRANCH}' (PR #${PR_NUM}). A background CI poller is monitoring checks and will auto-merge (squash) when all pass. Status file: .claude/runtime/ci_polls/pr_${PR_NUM}/status.json — Log: .claude/runtime/ci_polls/pr_${PR_NUM}/poller.log — No action needed unless you want to check progress."
   }
 }
 EOF

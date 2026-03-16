@@ -61,7 +61,7 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-push-ci-check.sh",
-            "timeout": 210
+            "timeout": 10
           },
           {
             "type": "command",
