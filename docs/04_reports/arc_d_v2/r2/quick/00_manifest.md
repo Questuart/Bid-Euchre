@@ -3,6 +3,7 @@
 **Lineage:** arc_d_v2
 **Rung:** r2 (opponent context)
 **Evidence tier:** QUICK
+**gate_status:** QUICK-COMPLETE (directional evidence — not a promotion gate)
 **Mode:** QUICK
 **Seeds:** [42]
 **Anchor:** anchor_hybrid_r0_full

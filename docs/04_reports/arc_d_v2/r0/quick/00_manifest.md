@@ -3,6 +3,7 @@
 **Lineage:** arc_d_v2
 **Rung:** r0 (hand-only context, action-value framework)
 **Evidence tier:** QUICK
+**gate_status:** QUICK-COMPLETE (directional evidence — not a promotion gate)
 **Mode:** QUICK
 **Seeds:** [42]
 **Anchor:** anchor_hybrid_r0_full
