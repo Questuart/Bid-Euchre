@@ -702,6 +702,87 @@ def generate_data_sanity(
 
 
 # ──────────────────────────────────────────────
+#  H2H tier summary
+# ──────────────────────────────────────────────
+
+# Tier definitions for H2H opponent classification.
+# Models not in any tier are classified as "unknown".
+TIER_SMART = frozenset(
+    {
+        "full_ols_av",
+        "constrained_ols_av",
+        "selected_ols_av",
+        "selected_two_stage_av",
+    }
+)
+TIER_ANCHOR = frozenset({"anchor_hybrid_r0_full"})
+TIER_HEURISTIC = frozenset({"modeloespecifico", "stricthellraiser", "rankthetank"})
+
+
+def _classify_tier(model_name: str) -> str:
+    """Classify a model into a tier for H2H summary."""
+    if model_name in TIER_SMART:
+        return "smart"
+    if model_name in TIER_ANCHOR:
+        return "anchor"
+    if model_name in TIER_HEURISTIC:
+        return "heuristic"
+    return "unknown"
+
+
+def generate_h2h_tier_summary(
+    h2h_delta_matrix: pd.DataFrame,
+) -> pd.DataFrame:
+    """Generate h2h_tier_summary.csv from an h2h_delta_matrix DataFrame.
+
+    For each model, computes mean H2H delta and mean win rate against
+    opponents grouped by tier (smart, anchor, heuristic).
+
+    Only uses pooled-facet cross-matchup rows (excludes self-play).
+
+    Columns: model, tier, mean_delta, mean_win_rate, n_opponents
+
+    Args:
+        h2h_delta_matrix: DataFrame with h2h_delta_matrix.csv schema
+            (columns: model_a, model_b, facet, net_eppd_delta, ..., win_rate_a).
+    """
+    # Filter to pooled facet, cross-matchup only
+    df = h2h_delta_matrix[
+        (h2h_delta_matrix["facet"] == "pooled")
+        & (h2h_delta_matrix["model_a"] != h2h_delta_matrix["model_b"])
+    ].copy()
+
+    if df.empty:
+        return pd.DataFrame(
+            columns=["model", "tier", "mean_delta", "mean_win_rate", "n_opponents"]
+        )
+
+    # Classify opponent tier
+    df["opponent_tier"] = df["model_b"].apply(_classify_tier)
+
+    rows: list[dict] = []
+    for model_name in sorted(df["model_a"].unique()):
+        model_rows = df[df["model_a"] == model_name]
+        for tier in ("smart", "anchor", "heuristic"):
+            tier_rows = model_rows[model_rows["opponent_tier"] == tier]
+            if tier_rows.empty:
+                continue
+            rows.append(
+                {
+                    "model": model_name,
+                    "tier": tier,
+                    "mean_delta": _safe_round(
+                        float(tier_rows["net_eppd_delta"].mean())
+                    ),
+                    "mean_win_rate": _safe_round(float(tier_rows["win_rate_a"].mean())),
+                    "n_opponents": len(tier_rows),
+                }
+            )
+
+    return pd.DataFrame(rows)
+
+
+# ──────────────────────────────────────────────
 #  Main pipeline
 # ──────────────────────────────────────────────
 
@@ -1160,12 +1241,20 @@ def generate_all_tables(
         logger.warning("No comparator CIs found; skipping comparator_rankings.csv")
 
     # 2. h2h_delta_matrix.csv
+    h2h_matrix_df = None
     if h2h_battery:
-        df = generate_h2h_delta_matrix(h2h_battery)
-        df.to_csv(output_dir / "h2h_delta_matrix.csv", index=False)
+        h2h_matrix_df = generate_h2h_delta_matrix(h2h_battery)
+        h2h_matrix_df.to_csv(output_dir / "h2h_delta_matrix.csv", index=False)
         generated.append("h2h_delta_matrix.csv")
     else:
         logger.warning("No H2H battery found; skipping h2h_delta_matrix.csv")
+
+    # 2b. h2h_tier_summary.csv
+    if h2h_matrix_df is not None and len(h2h_matrix_df) > 0:
+        tier_df = generate_h2h_tier_summary(h2h_matrix_df)
+        if len(tier_df) > 0:
+            tier_df.to_csv(output_dir / "h2h_tier_summary.csv", index=False)
+            generated.append("h2h_tier_summary.csv")
 
     # 3. model_performance.csv
     if training_artifacts:

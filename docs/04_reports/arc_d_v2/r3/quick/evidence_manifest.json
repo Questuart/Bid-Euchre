@@ -1,0 +1,220 @@
+{
+  "schema_version": "arc_d_evidence_manifest_v1",
+  "lineage_id": "arc_d_v2",
+  "rung_id": "r3",
+  "provenance_sha": "21c6762391ee414374f5a08dfcd45a0b337e5236",
+  "governing_plan": "",
+  "plan_shas": [],
+  "anchor": "anchor_hybrid_r0_full",
+  "roster": [
+    {
+      "name": "modeloespecifico",
+      "class_name": null,
+      "trainable": false,
+      "status": "evaluated"
+    },
+    {
+      "name": "selected_two_stage_av",
+      "class_name": null,
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "gbt_av",
+      "class_name": null,
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "constrained_ols_av",
+      "class_name": null,
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "selected_ols_av",
+      "class_name": null,
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "full_ols_av",
+      "class_name": null,
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "stricthellraiser",
+      "class_name": null,
+      "trainable": false,
+      "status": "evaluated"
+    },
+    {
+      "name": "rankthetank",
+      "class_name": null,
+      "trainable": false,
+      "status": "evaluated"
+    }
+  ],
+  "seeds": [],
+  "mode": "QUICK",
+  "run_ids": [],
+  "lifecycle": [],
+  "artifacts": [
+    {
+      "name": "comparator_battery_r3_42",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/comparator_battery_r3_42.json",
+      "schema_version": "arc_d_comparator_v1"
+    },
+    {
+      "name": "comparator_cis_r3_42",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/comparator_cis_r3_42.json",
+      "schema_version": "comparator_cis_v1"
+    },
+    {
+      "name": "h2h_battery_quick_42",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/h2h_battery_quick_42.json",
+      "schema_version": "h2h_battery_v2"
+    },
+    {
+      "name": "roster",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/roster.json",
+      "schema_version": "roster_v1"
+    },
+    {
+      "name": "training_artifact_constrained_ols_av",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_constrained_ols_av.json",
+      "schema_version": "action_value_olsa_v1"
+    },
+    {
+      "name": "training_artifact_full_ols_av",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json",
+      "schema_version": "action_value_olsa_v1"
+    },
+    {
+      "name": "training_artifact_gbt_av",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json",
+      "schema_version": "action_value_gbt_v1"
+    },
+    {
+      "name": "training_artifact_selected_ols_av",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_selected_ols_av.json",
+      "schema_version": "action_value_olsa_v1"
+    },
+    {
+      "name": "training_artifact_selected_two_stage_av",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_selected_two_stage_av.json",
+      "schema_version": "two_stage_action_value_v1"
+    }
+  ],
+  "tables": [
+    {
+      "name": "artifact_inventory.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/artifact_inventory.csv",
+      "size_bytes": 1135
+    },
+    {
+      "name": "behavior_by_bid_type.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/behavior_by_bid_type.csv",
+      "size_bytes": 1133
+    },
+    {
+      "name": "behavior_by_contract.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/behavior_by_contract.csv",
+      "size_bytes": 454
+    },
+    {
+      "name": "behavior_summary.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/behavior_summary.csv",
+      "size_bytes": 1106
+    },
+    {
+      "name": "comparator_rankings.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/comparator_rankings.csv",
+      "size_bytes": 575
+    },
+    {
+      "name": "cross_rung_deltas.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/cross_rung_deltas.csv",
+      "size_bytes": 71
+    },
+    {
+      "name": "data_sanity.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/data_sanity.csv",
+      "size_bytes": 2007
+    },
+    {
+      "name": "dataset_provenance.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/dataset_provenance.csv",
+      "size_bytes": 1056
+    },
+    {
+      "name": "h2h_delta_matrix.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/h2h_delta_matrix.csv",
+      "size_bytes": 29552
+    },
+    {
+      "name": "hypothesis_outcomes.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/hypothesis_outcomes.csv",
+      "size_bytes": 48
+    },
+    {
+      "name": "model_performance.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/model_performance.csv",
+      "size_bytes": 928
+    },
+    {
+      "name": "rung_model_spec.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/rung_model_spec.csv",
+      "size_bytes": 440
+    },
+    {
+      "name": "sanity_bounds_check.csv",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/tables/sanity_bounds_check.csv",
+      "size_bytes": 1885
+    }
+  ],
+  "charts": [
+    {
+      "name": "bid_behavior_panel.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/bid_behavior_panel.png",
+      "size_bytes": 43743
+    },
+    {
+      "name": "comparator_ranking_bars.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/comparator_ranking_bars.png",
+      "size_bytes": 42261
+    },
+    {
+      "name": "contract_mix_bars.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/contract_mix_bars.png",
+      "size_bytes": 37314
+    },
+    {
+      "name": "delta_bars_by_contract.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/delta_bars_by_contract.png",
+      "size_bytes": 717564
+    },
+    {
+      "name": "h2h_heatmap.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/h2h_heatmap.png",
+      "size_bytes": 130127
+    },
+    {
+      "name": "mae_by_contract.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/mae_by_contract.png",
+      "size_bytes": 40601
+    },
+    {
+      "name": "r2_by_contract.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/r2_by_contract.png",
+      "size_bytes": 38196
+    },
+    {
+      "name": "tail_risk_panel.png",
+      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r3/quick/charts/tail_risk_panel.png",
+      "size_bytes": 39766
+    }
+  ],
+  "chart_data": []
+}
