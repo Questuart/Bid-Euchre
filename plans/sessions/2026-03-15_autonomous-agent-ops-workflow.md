@@ -11,6 +11,56 @@
 - PR-4: Add a two-layer memory system: small curated memory for stable operator facts plus a local audit index over execution logs, review artifacts, checkpoints, and manifests for searchable history.
 - PR-5: Roll out the autonomous workflow in stages, validate that it works for real tasks, add skill-promotion and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
 
+## Sequencing — Roadmap Position
+
+> **Decision date:** 2026-03-15
+> **Context:** Arc D v2 R0-R2 QUICK complete, R3 engine in progress, FULL backfill running. Browser-game initiative ACTIVE but not yet started.
+
+This plan is a **staged enabling track**, not a monolithic blocker. It should not pause Arc D and should not be deferred until after everything else. The thin slice lands right after R3 QUICK; the heavier infrastructure lands as browser-game creates real multi-agent coordination pressure.
+
+### Immediate (now, during Arc D sprint)
+
+Adopt **user-side workflow changes only** — no repo PRs required:
+- Ghostty (or equivalent) as primary terminal host
+- `tmux` for persistent sessions
+- Role-based worktrees (informal adoption of `author`/`review`/`ops` convention)
+- VS Code as audit surface for diffs, plans, and runtime artifacts
+
+These reduce operational pain immediately and require no shared-repo changes.
+
+### After R3 QUICK first stable pass → PRs 1-2
+
+Land the **lightweight workflow scaffolding**:
+- **PR-1:** Worktree/bootstrap contract, role conventions, session/task metadata
+- **PR-2:** tmux launcher, VS Code audit workspace and tasks
+
+These are low-risk (mostly tooling/docs) but change shared repo behavior, so they should not land in the middle of the active research loop.
+
+### Before browser-game backend/frontend parallelism → PRs 3-4
+
+Land the **operator CLI and memory/index layer**:
+- **PR-3:** `ops.py` CLI, health checks, recovery templates
+- **PR-4:** Curated memory, audit index, session compaction/archive
+
+These are cross-cutting and will be easier to design once Arc D runtime artifacts and operational pain points are stable. The browser-game initiative is exactly the kind of work that benefits most — it involves parallel tracks (domain engine, backend API, frontend product, replay/export, deployment) that create real multi-agent coordination pressure.
+
+### Before hosted-play becomes externally exposed → PR-5
+
+Land the **higher-autonomy safeguards**:
+- **PR-5:** Rollout validation, agent profiles, context safety, shadow snapshots
+
+This must be in place before the hosted product is operationally important or externally exposed.
+
+### Summary Sequence
+
+| Step | Trigger | Deliverables |
+|------|---------|-------------|
+| 1 | Now | User-side workflow (Ghostty, tmux, role worktrees, VS Code) |
+| 2 | R3 QUICK stable pass | PRs 1-2 (scaffold) |
+| 3 | Browser-game Phase 0/1/2 starts | Browser-game benefits from improved agent workflow |
+| 4 | Browser-game enters backend/frontend parallelism | PRs 3-4 (operator CLI, memory/index) |
+| 5 | Before hosted-play external exposure | PR-5 (rollout, safety, recovery) |
+
 ## Decisions
 
 ### Target Workflow

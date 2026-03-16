@@ -158,6 +158,22 @@ To maximize the chance of a working product in a couple of days:
 - Prefer idempotent HTTP actions over websockets
 - Treat Phase 4 exports as launch support, not a reason to delay the playable product
 
+## 6.5 Relationship to Autonomous-Ops Redesign
+
+> **Reference:** `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`
+
+The autonomous-ops redesign is **foundational infrastructure for browser-game execution** but **not a blocker**. The browser-game initiative involves more parallel tracks than Arc D (domain engine, backend API, frontend product, replay/export, deployment), which creates real multi-agent coordination pressure that the ops redesign is designed to address.
+
+**Sequencing relative to this initiative:**
+
+| Browser-game phase | Ops infrastructure available | Benefit |
+|--------------------|------------------------------|---------|
+| Phase 0-2 (foundation → backend API) | Ops PRs 1-2 (workflow scaffold, tmux, VS Code audit) | Role-based worktrees and audit surface for parallel domain + API work |
+| Phase 3 (frontend product) | Ops PRs 3-4 landing (operator CLI, health checks, memory/index) | `ops.py status` for monitoring parallel backend + frontend agents |
+| Phase 5 (deployment and launch) | Ops PR-5 (rollout, safety, recovery) | Recovery templates and context safety before external exposure |
+
+The ops PRs are not prerequisites for starting browser-game work. Phases 0-2 can proceed with the informal workflow improvements (Ghostty, tmux, role worktrees) already adopted. The heavier ops infrastructure lands progressively as coordination complexity grows.
+
 ## 7. Execution Structure
 
 ### 7.1 Phases / Milestones
