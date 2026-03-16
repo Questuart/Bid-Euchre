@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Browser Game Hosting and Human Data Capture
 
 **Governing plan:** `plans/browser_game/governing_plan.md`
-**Last updated:** 2026-03-14
+**Last updated:** 2026-03-15
 
 ---
 

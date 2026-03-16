@@ -1,7 +1,7 @@
 # Browser Game Hosting and Human Data Capture — Governing Plan
 
 **Date:** 2026-03-14
-**Status:** PROPOSED
+**Status:** ACTIVE
 **Scope:** Build a hosted async browser game for Bid Euchre that uses this repo as the rules and AI source of truth. V1 supports one human seat against three AI seats, multi-hand match scoring to `+52` or `-52`, private-link access, selectable opponent model, and default-on decision logging suitable for future training-data export.
 **Supersedes:** None
 
@@ -42,7 +42,7 @@ The following are explicitly out of scope until the hosted product works end to 
 - **Bidding interface:** `BiddingPolicy.choose_bid(obs: BiddingObservation) -> BidAction` with `BiddingObservation(hand, seat, dealer_seat, current_high_bid, auction_transcript, allowed_contracts)` from [bidding.py](../../src/bid_euchre/strategy/bidding.py).
 - **Hosted-play domain package:** The new reusable engine layer expected under `src/bid_euchre/hosted_play/`.
 - **Web app package:** The new interface layer expected under `web/`, containing the FastAPI app, templates, and static assets. This layer imports from `src/bid_euchre/` but not vice versa.
-- **Decision event:** A persisted bid or card action taken by a human or AI seat, recorded with enough context to reconstruct legal alternatives and replay the hand deterministically.
+- **Decision event:** A persisted bid or card action taken by a human or AI seat, recorded with enough context to reconstruct legal alternatives and replay the hand deterministically. Decision events are a new logging domain for hosted play — they are independent of the existing simulation JSONL logging contract defined in [DATA_CONTRACT.md](../../docs/01_core/DATA_CONTRACT.md), but share the same principle of capturing enough context for deterministic replay. The Phase 2 persistence contract (§7.4 item 4) must define the decision-event schema explicitly.
 - **Future extraction boundary:** The package seam that should allow the hosted-play domain layer to move into a separate repo later without pulling FastAPI, templates, or SQLAlchemy concerns with it.
 - **MVP cut line:** The smallest hosted product that satisfies the user’s stated goal. Features outside the MVP cut line must not block shipping.
 - **Plan review rounds:** While this plan remains `PROPOSED`, revisions may be made directly to this file. Once status changes to `ACTIVE`, the governing plan becomes immutable during execution and all changes flow through `plans/browser_game/amendments.md`.
