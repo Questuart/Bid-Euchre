@@ -24,15 +24,15 @@
 
 | Name | Schema | Path |
 |------|--------|------|
-| comparator_battery_r1_42 | arc_d_comparator_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_42.json` |
-| comparator_cis_r1_42 | comparator_cis_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_42.json` |
-| h2h_battery_quick_42 | h2h_battery_v2 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_quick_42.json` |
-| roster | roster_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/roster.json` |
-| training_artifact_constrained_ols_av | action_value_olsa_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_constrained_ols_av.json` |
-| training_artifact_full_ols_av | action_value_olsa_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_full_ols_av.json` |
-| training_artifact_gbt_av | action_value_gbt_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_gbt_av.json` |
-| training_artifact_selected_ols_av | action_value_olsa_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_selected_ols_av.json` |
-| training_artifact_selected_two_stage_av | two_stage_action_value_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_selected_two_stage_av.json` |
+| comparator_battery_r1_42 | arc_d_comparator_v1 | `data/artifacts/arc_d_v2/r1/comparator_battery_r1_42.json` |
+| comparator_cis_r1_42 | comparator_cis_v1 | `data/artifacts/arc_d_v2/r1/comparator_cis_r1_42.json` |
+| h2h_battery_quick_42 | h2h_battery_v2 | `data/artifacts/arc_d_v2/r1/h2h_battery_quick_42.json` |
+| roster | roster_v1 | `data/artifacts/arc_d_v2/r1/roster.json` |
+| training_artifact_constrained_ols_av | action_value_olsa_v1 | `data/artifacts/arc_d_v2/r1/training_artifact_constrained_ols_av.json` |
+| training_artifact_full_ols_av | action_value_olsa_v1 | `data/artifacts/arc_d_v2/r1/training_artifact_full_ols_av.json` |
+| training_artifact_gbt_av | action_value_gbt_v1 | `data/artifacts/arc_d_v2/r1/training_artifact_gbt_av.json` |
+| training_artifact_selected_ols_av | action_value_olsa_v1 | `data/artifacts/arc_d_v2/r1/training_artifact_selected_ols_av.json` |
+| training_artifact_selected_two_stage_av | two_stage_action_value_v1 | `data/artifacts/arc_d_v2/r1/training_artifact_selected_two_stage_av.json` |
 
 ## Tables
 
