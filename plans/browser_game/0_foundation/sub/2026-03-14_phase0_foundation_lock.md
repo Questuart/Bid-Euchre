@@ -101,6 +101,6 @@ _Filled after completion._
 _Filled at session end if work is incomplete._
 
 - Current state: Governing plan revised; Phase 0 still needs execution decisions locked in code/docs.
-- Next action: Inventory actual bidder artifacts, then lock the dependency stack and initial schema sketch.
-- Blockers: Artifact availability not yet verified. Dependency stack still not added to `pyproject.toml`.
+- Next action: Add package markers, then lock the initial schema sketch in the backend sub-plan.
+- Blockers: Initial schema is not yet locked in files.
 - Files with uncommitted changes: --
