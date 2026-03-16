@@ -749,7 +749,7 @@ def _merge_comparator_cis(cis_list: list[dict]) -> dict:
     # Re-rank by pooled net_eppd
     merged["ranked_order"] = sorted(
         result_bidders.keys(),
-        key=lambda n: result_bidders[n].get("net_eppd") or 0,
+        key=lambda n: v if (v := result_bidders[n].get("net_eppd")) is not None else 0,
         reverse=True,
     )
     merged["seeds_merged"] = len(cis_list)
@@ -902,7 +902,7 @@ def _per_seed_sanity_comparator(cis_list: list[dict]) -> list[dict]:
             bidders = cis.get("bidders", {})
             ranked = sorted(
                 bidders.keys(),
-                key=lambda n: bidders[n].get("net_eppd") or 0,
+                key=lambda n: v if (v := bidders[n].get("net_eppd")) is not None else 0,
                 reverse=True,
             )
         seed_rankings.append(ranked)
