@@ -1,0 +1,115 @@
+{
+  "schema_version": "hypotheses_v1",
+  "rung": "r1",
+  "hypotheses": [
+    {
+      "id": "H1",
+      "description": "Partner context improves GBT pooled H2H delta vs anchor",
+      "metric": "gbt_pooled_delta_vs_anchor",
+      "source_table": "h2h_delta_matrix.csv",
+      "source_column": "net_eppd_delta",
+      "source_filter": {"model_a": "gbt_av", "model_b": "anchor_hybrid_r0_full", "facet": "pooled"},
+      "computation": "value",
+      "expected_bound": {"op": ">", "value": 0.3},
+      "surprise_if": {"op": "<", "value": 0.0},
+      "_note": "R0 baseline: +1.061. Expect R1 >= R0 (partner info should help, not hurt)."
+    },
+    {
+      "id": "H2",
+      "description": "GBT R1 suit H2H delta exceeds R0 suit delta (partner helps suit bidding)",
+      "metric": "gbt_suit_delta_vs_anchor",
+      "source_table": "h2h_delta_matrix.csv",
+      "source_column": "net_eppd_delta",
+      "source_filter": {"model_a": "gbt_av", "model_b": "anchor_hybrid_r0_full", "facet": "suit"},
+      "computation": "value",
+      "expected_bound": {"op": ">", "value": 0.5},
+      "surprise_if": {"op": "<", "value": 0.0},
+      "_note": "R0 baseline: +0.876. Partner suit-relative channels should particularly help suit contracts."
+    },
+    {
+      "id": "H3",
+      "description": "GBT R1 suit R-squared exceeds R0 suit R-squared",
+      "metric": "gbt_suit_r2",
+      "source_table": "model_performance.csv",
+      "source_column": "r_squared",
+      "source_filter": {"model": "gbt_av", "contract": "suit"},
+      "computation": "value",
+      "expected_bound": {"op": ">", "value": 0.588},
+      "surprise_if": {"op": "<", "value": 0.55},
+      "_note": "R0 baseline: 0.588. Partner info should improve predictive accuracy."
+    },
+    {
+      "id": "H4",
+      "description": "Position features improve first-bidder accuracy (auction_position=0)",
+      "metric": "gbt_pooled_comparator",
+      "source_table": "comparator_rankings.csv",
+      "source_column": "net_eppd",
+      "source_filter": {"model": "gbt_av", "facet": "pooled"},
+      "computation": "value",
+      "expected_bound": {"op": ">", "value": 2.0},
+      "surprise_if": {"op": "<", "value": 1.5},
+      "_note": "R0 baseline: 2.201. Position context should maintain or improve comparator ranking."
+    },
+    {
+      "id": "H5",
+      "description": "Two-stage model narrows gap vs GBT with partner context",
+      "metric": "two_stage_vs_gbt_gap",
+      "source_table": "comparator_rankings.csv",
+      "source_column": "net_eppd",
+      "source_filter": {"model": "selected_two_stage_av", "facet": "pooled"},
+      "comparator_filter": {"model": "gbt_av", "facet": "pooled"},
+      "computation": "value - comparator_value",
+      "expected_bound": {"op": ">", "value": -1.0},
+      "surprise_if": {"op": "<", "value": -1.5},
+      "_note": "R0 gap: -0.322. Partner context may help two-stage more than GBT."
+    },
+    {
+      "id": "H6",
+      "description": "All models bid at least half the time (no pathological passing)",
+      "metric": "min_bid_rate",
+      "source_table": "comparator_rankings.csv",
+      "source_column": "bid_rate",
+      "source_filter": {"facet": "pooled"},
+      "computation": "min",
+      "expected_bound": {"op": ">", "value": 0.5},
+      "surprise_if": {"op": "<", "value": 0.2}
+    },
+    {
+      "id": "H7",
+      "description": "GBT H2H win rate vs anchor exceeds 50%",
+      "metric": "h2h_win_rate_vs_anchor",
+      "source_table": "h2h_delta_matrix.csv",
+      "source_column": "win_rate_a",
+      "source_filter": {"model_a": "gbt_av", "model_b": "anchor_hybrid_r0_full", "facet": "pooled"},
+      "computation": "value",
+      "expected_bound": {"op": ">", "value": 0.50},
+      "surprise_if": {"op": "<", "value": 0.45},
+      "_note": "R0 baseline: 53.2%."
+    },
+    {
+      "id": "H8",
+      "description": "Full OLS approximately equals constrained OLS (feature selection doesn't matter for OLS)",
+      "metric": "full_vs_constrained_ols",
+      "source_table": "comparator_rankings.csv",
+      "source_column": "net_eppd",
+      "source_filter": {"model": "full_ols_av", "facet": "pooled"},
+      "comparator_filter": {"model": "constrained_ols_av", "facet": "pooled"},
+      "computation": "value - comparator_value",
+      "expected_bound": {"op": ">=", "value": -0.2},
+      "surprise_if": {"op": "<", "value": -0.5},
+      "_note": "R0: full_ols (2.236) vs constrained_ols (2.198) = +0.038. Expect similar at R1."
+    },
+    {
+      "id": "H9",
+      "description": "ModeloEspecifico heuristic is worst among trained models (sanity check)",
+      "metric": "heuristic_vs_gbt",
+      "source_table": "comparator_rankings.csv",
+      "source_column": "net_eppd",
+      "source_filter": {"model": "modeloespecifico", "facet": "pooled"},
+      "comparator_filter": {"model": "gbt_av", "facet": "pooled"},
+      "computation": "value - comparator_value",
+      "expected_bound": {"op": "<", "value": 0.0},
+      "surprise_if": {"op": ">", "value": 0.5}
+    }
+  ]
+}
