@@ -375,8 +375,9 @@ def train_pass_model(
 def _build_feature_matrix(df: pd.DataFrame, feature_names: list[str]) -> np.ndarray:
     """Extract feature matrix from dataframe, computing derived features.
 
-    Handles three types of computed features:
+    Handles four types of computed features:
     - ``bid_n_sq``: square of ``bid_n`` (action feature)
+    - ``is_moon``, ``is_loner``: R3+ action features, default 0 if absent
     - Interaction terms from ``_INTERACTION_FORMULAS``: product of two columns
     - All other names: direct column lookup
     """
@@ -384,6 +385,13 @@ def _build_feature_matrix(df: pd.DataFrame, feature_names: list[str]) -> np.ndar
     for name in feature_names:
         if name == "bid_n_sq":
             cols.append(df["bid_n"].values ** 2)
+        elif name in ("is_moon", "is_loner"):
+            # R3+ action features: present in datasets generated with
+            # --include-moon-loner, default to 0 for older datasets.
+            if name in df.columns:
+                cols.append(df[name].values)
+            else:
+                cols.append(np.zeros(len(df), dtype=np.float64))
         elif name in _INTERACTION_FORMULAS:
             col_a, col_b = _INTERACTION_FORMULAS[name]
             cols.append(df[col_a].values * df[col_b].values)

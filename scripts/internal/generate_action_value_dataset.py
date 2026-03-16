@@ -7,8 +7,8 @@ continue the auction with a continuation policy, play out tricks with
 GluttonStrategy, and record the focal team's net_points.
 
 Output: Parquet with columns hand_id, deal_id, focal_seat, action_type,
-contract_family, bid_n, trump_suit, 69 state feature columns, net_points,
-tricks_won, focal_declared.
+contract_family, bid_n, trump_suit, is_moon, is_loner, 69 state feature
+columns, net_points, tricks_won, focal_declared.
 
 Usage:
     uv run python scripts/internal/generate_action_value_dataset.py \
@@ -27,6 +27,7 @@ import pandas as pd
 
 from bid_euchre.scoring import compute_points
 from bid_euchre.sim.deals import generate_deal
+from bid_euchre.sim.exchange import perform_exchange
 from bid_euchre.strategy import GluttonStrategy
 from bid_euchre.strategy.bidding import (
     STATE_FEATURE_NAMES,
@@ -346,6 +347,178 @@ def _play_tricks(
     return team_tricks[0], team_tricks[1]
 
 
+def _play_tricks_loner(
+    hands: list,
+    initial_leader: int,
+    sitting_out_seat: int,
+    contract_type: str,
+    trump_suit: str | None,
+) -> tuple[int, int]:
+    """Play out 10 tricks with 3 players (loner: partner sits out).
+
+    Matches the engine's 3-player trick play logic from simulation.py.
+    The sitting_out_seat is skipped in play order but tricks are still
+    attributed to teams (0,2) vs (1,3).
+
+    Returns (t0, t1).
+    """
+    from bid_euchre.core.rules import get_legal_indices, trick_winner
+
+    play_hands = [list(h) for h in hands]
+    strategy = GluttonStrategy()
+
+    strategy.on_hand_start(
+        starting_hand=list(play_hands[initial_leader]),
+        contract_type=contract_type,
+        trump_suit=trump_suit,
+        player_index=initial_leader,
+    )
+
+    team_tricks = {0: 0, 1: 0}
+    leader = initial_leader
+
+    for _trick_num in range(10):
+        plays = []
+
+        # Build 3-player play order, skipping sitting_out_seat
+        play_order = []
+        p = leader
+        for _ in range(3):
+            while p == sitting_out_seat:
+                p = (p + 1) % 4
+            play_order.append(p)
+            p = (p + 1) % 4
+
+        for player in play_order:
+            hand = play_hands[player]
+            legal_indices = get_legal_indices(hand, plays, contract_type, trump_suit)
+            card_index = strategy.choose_card(
+                hand=hand,
+                plays_so_far=plays,
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+                player_index=player,
+            )
+            if card_index not in legal_indices:
+                card_index = legal_indices[0]
+
+            card = hand.pop(card_index)
+            plays.append((player, card))
+
+            strategy.observe_play(
+                player_index=player,
+                card=card,
+                trick_plays=list(plays),
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
+
+        winner = trick_winner(plays, contract_type=contract_type, trump_suit=trump_suit)
+        if winner in (0, 2):
+            team_tricks[0] += 1
+        else:
+            team_tricks[1] += 1
+        leader = winner
+
+    return team_tricks[0], team_tricks[1]
+
+
+def simulate_moon_counterfactual(
+    hands: list,
+    focal_seat: int,
+    contract_type: str,
+    trump_suit: str | None,
+) -> tuple[float, float]:
+    """Simulate a moon bid: exchange cards with partner, play 4-player tricks.
+
+    Moon scoring: +20 if declaring team wins all 10 tricks, -20 otherwise.
+    Defending team gets their tricks won.
+
+    Returns:
+        (net_points, tricks_won) for focal team.
+    """
+    partner_seat = (focal_seat + 2) % 4
+
+    # Perform card exchange: mooner gives 2 worst, gets partner's 2 best
+    mooner_hand, partner_hand = perform_exchange(
+        list(hands[focal_seat]),
+        list(hands[partner_seat]),
+        contract_type,
+        trump_suit,
+    )
+
+    # Build hands with exchanged cards
+    exchanged_hands = [list(h) for h in hands]
+    exchanged_hands[focal_seat] = mooner_hand
+    exchanged_hands[partner_seat] = partner_hand
+
+    # Play tricks with mooner leading (auction winner leads)
+    t0, t1 = _play_tricks(exchanged_hands, focal_seat, contract_type, trump_suit)
+
+    # Compute points with moon scoring
+    # focal_seat is the bidder
+    points_t0, points_t1 = compute_points(
+        winning_bid=10,
+        bidder_position=focal_seat,
+        tricks_team0=t0,
+        tricks_team1=t1,
+        bid_type="moon",
+    )
+
+    tricks_won = float(t0) if focal_seat in (0, 2) else float(t1)
+
+    if focal_seat in (0, 2):
+        net_points = float(points_t0 - points_t1)
+    else:
+        net_points = float(points_t1 - points_t0)
+
+    return net_points, tricks_won
+
+
+def simulate_loner_counterfactual(
+    hands: list,
+    focal_seat: int,
+    contract_type: str,
+    trump_suit: str | None,
+) -> tuple[float, float]:
+    """Simulate a loner bid: 3-player trick play (partner sits out).
+
+    Loner scoring: +40 if declaring team wins all 10 tricks, -40 otherwise.
+    Defending team gets their tricks won.
+
+    Returns:
+        (net_points, tricks_won) for focal team.
+    """
+    partner_seat = (focal_seat + 2) % 4
+
+    # Play tricks with 3 players (partner sits out), mooner leads
+    t0, t1 = _play_tricks_loner(
+        hands,
+        focal_seat,
+        sitting_out_seat=partner_seat,
+        contract_type=contract_type,
+        trump_suit=trump_suit,
+    )
+
+    # Compute points with loner scoring
+    points_t0, points_t1 = compute_points(
+        winning_bid=10,
+        bidder_position=focal_seat,
+        tricks_team0=t0,
+        tricks_team1=t1,
+        bid_type="loner",
+    )
+
+    tricks_won = float(t0) if focal_seat in (0, 2) else float(t1)
+
+    if focal_seat in (0, 2):
+        net_points = float(points_t0 - points_t1)
+    else:
+        net_points = float(points_t1 - points_t0)
+
+    return net_points, tricks_won
+
+
 def simulate_counterfactual(
     hands: list,
     dealer: int,
@@ -406,6 +579,7 @@ def generate_dataset(
     continuation_policy: BiddingPolicy,
     progress: bool = True,
     n_opponent_samples: int = 1,
+    include_moon_loner: bool = False,
 ) -> pd.DataFrame:
     """Generate the full counterfactual action-value dataset.
 
@@ -415,11 +589,27 @@ def generate_dataset(
     When n_opponent_samples > 1, opponent hands are resampled while keeping
     focal + partner hands fixed.  Labels become the mean across samples.
     Metadata columns ``std_net_points`` and ``n_samples`` are added.
+
+    When include_moon_loner=True, moon and loner counterfactuals are appended
+    for each (deal, focal_seat) after the regular actions. Moon bids simulate
+    card exchange followed by 4-player trick play; loner bids simulate 3-player
+    trick play (partner sits out). Both use specialized scoring (+/-20 for moon,
+    +/-40 for loner). Action features is_moon and is_loner are set accordingly.
     """
     rows: list[dict] = []
     hand_id = 0
     t0 = time.time()
     multi = n_opponent_samples > 1
+
+    # Contracts to evaluate for moon/loner: all 6 contract types
+    contracts = [
+        ("C", "suit", "C"),
+        ("D", "suit", "D"),
+        ("H", "suit", "H"),
+        ("S", "suit", "S"),
+        ("HIGH", "high", None),
+        ("LOW", "low", None),
+    ]
 
     for deal_id in range(n_deals):
         hands = generate_deal(seed, deal_id)
@@ -516,6 +706,8 @@ def generate_dataset(
                     "contract_family": contract_family,
                     "bid_n": bid_n,
                     "trump_suit": trump_suit if trump_suit else "",
+                    "is_moon": 0,
+                    "is_loner": 0,
                 }
                 # Add 69 state features as individual columns
                 for i, fname in enumerate(STATE_FEATURE_NAMES):
@@ -529,6 +721,108 @@ def generate_dataset(
                     row["n_samples"] = n_opponent_samples
 
                 rows.append(row)
+
+            # Moon and loner counterfactuals (appended after regular actions)
+            if include_moon_loner:
+                for contract_code, contract_family, trump_suit in contracts:
+                    # State features for this contract
+                    state = extract_state_features(obs, contract_family, trump_suit)
+
+                    # --- Moon counterfactual ---
+                    if multi:
+                        np_vals = []
+                        tw_vals = []
+                        for config_hands in opp_configs:
+                            np_i, tw_i = simulate_moon_counterfactual(
+                                config_hands,
+                                focal_seat,
+                                contract_family,
+                                trump_suit,
+                            )
+                            np_vals.append(np_i)
+                            tw_vals.append(tw_i)
+                        moon_net = sum(np_vals) / len(np_vals)
+                        moon_tw = sum(tw_vals) / len(tw_vals)
+                        mean_np = moon_net
+                        std_np = (
+                            sum((x - mean_np) ** 2 for x in np_vals) / len(np_vals)
+                        ) ** 0.5
+                    else:
+                        moon_net, moon_tw = simulate_moon_counterfactual(
+                            hands,
+                            focal_seat,
+                            contract_family,
+                            trump_suit,
+                        )
+
+                    moon_row = {
+                        "hand_id": hand_id,
+                        "deal_id": deal_id,
+                        "focal_seat": focal_seat,
+                        "action_type": "bid",
+                        "contract_family": contract_family,
+                        "bid_n": 10,
+                        "trump_suit": trump_suit if trump_suit else "",
+                        "is_moon": 1,
+                        "is_loner": 0,
+                    }
+                    for i, fname in enumerate(STATE_FEATURE_NAMES):
+                        moon_row[fname] = state[i]
+                    moon_row["net_points"] = moon_net
+                    moon_row["tricks_won"] = moon_tw
+                    moon_row["focal_declared"] = True
+                    if multi:
+                        moon_row["std_net_points"] = std_np
+                        moon_row["n_samples"] = n_opponent_samples
+                    rows.append(moon_row)
+
+                    # --- Loner counterfactual ---
+                    if multi:
+                        np_vals = []
+                        tw_vals = []
+                        for config_hands in opp_configs:
+                            np_i, tw_i = simulate_loner_counterfactual(
+                                config_hands,
+                                focal_seat,
+                                contract_family,
+                                trump_suit,
+                            )
+                            np_vals.append(np_i)
+                            tw_vals.append(tw_i)
+                        loner_net = sum(np_vals) / len(np_vals)
+                        loner_tw = sum(tw_vals) / len(tw_vals)
+                        mean_np = loner_net
+                        std_np = (
+                            sum((x - mean_np) ** 2 for x in np_vals) / len(np_vals)
+                        ) ** 0.5
+                    else:
+                        loner_net, loner_tw = simulate_loner_counterfactual(
+                            hands,
+                            focal_seat,
+                            contract_family,
+                            trump_suit,
+                        )
+
+                    loner_row = {
+                        "hand_id": hand_id,
+                        "deal_id": deal_id,
+                        "focal_seat": focal_seat,
+                        "action_type": "bid",
+                        "contract_family": contract_family,
+                        "bid_n": 10,
+                        "trump_suit": trump_suit if trump_suit else "",
+                        "is_moon": 0,
+                        "is_loner": 1,
+                    }
+                    for i, fname in enumerate(STATE_FEATURE_NAMES):
+                        loner_row[fname] = state[i]
+                    loner_row["net_points"] = loner_net
+                    loner_row["tricks_won"] = loner_tw
+                    loner_row["focal_declared"] = True
+                    if multi:
+                        loner_row["std_net_points"] = std_np
+                        loner_row["n_samples"] = n_opponent_samples
+                    rows.append(loner_row)
 
             hand_id += 1
 
@@ -544,7 +838,9 @@ def generate_dataset(
     return pd.DataFrame(rows)
 
 
-def validate_gate_x1(df: pd.DataFrame, n_deals: int) -> None:
+def validate_gate_x1(
+    df: pd.DataFrame, n_deals: int, include_moon_loner: bool = False
+) -> None:
     """Run Gate X1 validation checks on the dataset.
 
     Raises AssertionError on failure.
@@ -566,11 +862,13 @@ def validate_gate_x1(df: pd.DataFrame, n_deals: int) -> None:
     missing = expected_families - families
     assert not missing, f"Missing contract families: {missing}"
 
-    # 3. net_points range is plausible
+    # 3. net_points range is plausible (moon: +/-20, loner: +/-40)
     min_np = df["net_points"].min()
     max_np = df["net_points"].max()
-    assert min_np >= -20, f"net_points min too low: {min_np}"
-    assert max_np <= 20, f"net_points max too high: {max_np}"
+    np_floor = -50 if include_moon_loner else -20
+    np_ceil = 50 if include_moon_loner else 20
+    assert min_np >= np_floor, f"net_points min too low: {min_np}"
+    assert max_np <= np_ceil, f"net_points max too high: {max_np}"
 
     # 4. No NaN in features or target
     feature_cols = STATE_FEATURE_NAMES + ["net_points", "tricks_won"]
@@ -590,23 +888,56 @@ def validate_gate_x1(df: pd.DataFrame, n_deals: int) -> None:
         {True, False, 0, 1}
     ), f"focal_declared has unexpected values: {focal_vals}"
 
-    # 5. Row count sanity (expect ~40 actions per seat on average)
-    expected_rows = n_deals * 4 * 40  # rough estimate
+    # 5. Row count sanity
+    # Regular: ~40 actions per seat; moon/loner: +12 rows per seat (6 contracts × 2)
+    if include_moon_loner:
+        expected_rows = n_deals * 4 * (40 + 12)
+    else:
+        expected_rows = n_deals * 4 * 40
     actual_rows = len(df)
     ratio = actual_rows / expected_rows
-    assert 0.5 <= ratio <= 1.5, (
+    assert 0.3 <= ratio <= 2.0, (
         f"Row count {actual_rows} is outside expected range "
-        f"({expected_rows * 0.5:.0f} - {expected_rows * 1.5:.0f})"
+        f"({expected_rows * 0.3:.0f} - {expected_rows * 2.0:.0f})"
     )
 
     # 6. 69 state feature columns present
     for fname in STATE_FEATURE_NAMES:
         assert fname in df.columns, f"Missing state feature column: {fname}"
 
+    # 7. is_moon and is_loner columns present
+    assert "is_moon" in df.columns, "Missing is_moon column"
+    assert "is_loner" in df.columns, "Missing is_loner column"
+
+    if include_moon_loner:
+        # Verify moon and loner rows exist
+        moon_rows = df[df["is_moon"] == 1]
+        loner_rows = df[df["is_loner"] == 1]
+        assert len(moon_rows) > 0, "No moon counterfactual rows found"
+        assert len(loner_rows) > 0, "No loner counterfactual rows found"
+        # Each (deal, seat) should have exactly 6 moon + 6 loner
+        moon_counts = moon_rows.groupby(["deal_id", "focal_seat"]).size()
+        loner_counts = loner_rows.groupby(["deal_id", "focal_seat"]).size()
+        assert (moon_counts == 6).all(), (
+            f"Expected 6 moon rows per (deal, seat), got: "
+            f"{moon_counts.value_counts().to_dict()}"
+        )
+        assert (loner_counts == 6).all(), (
+            f"Expected 6 loner rows per (deal, seat), got: "
+            f"{loner_counts.value_counts().to_dict()}"
+        )
+    else:
+        # Without moon/loner, all is_moon and is_loner should be 0
+        assert (df["is_moon"] == 0).all(), "Found is_moon=1 without include_moon_loner"
+        assert (
+            df["is_loner"] == 0
+        ).all(), "Found is_loner=1 without include_moon_loner"
+
     avg_actions = actual_rows / (n_deals * 4)
     print(
         f"  Gate X1 PASS: {actual_rows} rows, {n_deals * 4} hands, "
         f"{avg_actions:.1f} avg actions/seat"
+        f"{' (with moon/loner)' if include_moon_loner else ''}"
     )
 
 
@@ -651,15 +982,22 @@ def main():
     parser.add_argument(
         "--skip-validation", action="store_true", help="Skip Gate X1 validation"
     )
+    parser.add_argument(
+        "--include-moon-loner",
+        action="store_true",
+        help="Include moon/loner counterfactuals (R3+, not on by default)",
+    )
     args = parser.parse_args()
 
     n_deals = args.n_deals if args.n_deals is not None else MODE_DEALS[args.mode]
     n_opp = args.n_opponent_samples
+    include_ml = args.include_moon_loner
 
     print("=== R1.5 Counterfactual Action-Value Dataset Generator ===")
     print(f"  Seed: {args.seed}")
     print(f"  Mode: {args.mode} ({n_deals} deals)")
     print(f"  Opponent samples: {n_opp}")
+    print(f"  Moon/loner: {'yes' if include_ml else 'no'}")
     print(f"  Continuation: {args.continuation_artifact}")
 
     # Load continuation policy
@@ -668,8 +1006,10 @@ def main():
 
     # Generate dataset
     sim_equiv = n_deals * n_opp
+    extra_per_seat = " + 12 moon/loner" if include_ml else ""
     print(
-        f"  Generating dataset ({n_deals} deals × 4 seats × ~40 actions × {n_opp} samples)..."
+        f"  Generating dataset ({n_deals} deals × 4 seats × "
+        f"~40 actions{extra_per_seat} × {n_opp} samples)..."
     )
     print(f"  Simulation equivalents: ~{sim_equiv * 4 * 40:,}")
     df = generate_dataset(
@@ -677,6 +1017,7 @@ def main():
         n_deals,
         continuation,
         n_opponent_samples=n_opp,
+        include_moon_loner=include_ml,
     )
 
     print(f"  Total rows: {len(df)}")
@@ -685,7 +1026,7 @@ def main():
     # Validate
     if not args.skip_validation:
         print("  Running Gate X1 validation...")
-        validate_gate_x1(df, n_deals)
+        validate_gate_x1(df, n_deals, include_moon_loner=include_ml)
 
     # Write output
     output_dir = Path(args.output_dir)

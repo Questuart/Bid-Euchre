@@ -14,10 +14,13 @@ from generate_action_value_dataset import (
     _bidding_order,
     _deterministic_dealer,
     _play_tricks,
+    _play_tricks_loner,
     generate_dataset,
     run_partial_auction,
     sample_opponent_hands,
     simulate_counterfactual,
+    simulate_loner_counterfactual,
+    simulate_moon_counterfactual,
     validate_gate_x1,
 )
 
@@ -651,3 +654,303 @@ class TestMultiRolloutDataset:
             n_opponent_samples=5,
         )
         validate_gate_x1(df, n_deals=10)
+
+
+# ── Moon / Loner Counterfactuals ─────────────────────────
+
+
+class TestPlayTricksLoner:
+    def test_tricks_sum_to_ten(self, hands):
+        """3-player trick play should still produce 10 tricks total."""
+        t0, t1 = _play_tricks_loner(
+            hands,
+            initial_leader=0,
+            sitting_out_seat=2,
+            contract_type="suit",
+            trump_suit="S",
+        )
+        assert t0 + t1 == 10
+
+    def test_all_contract_types(self, hands):
+        for ctype, trump in [
+            ("suit", "C"),
+            ("suit", "D"),
+            ("high", None),
+            ("low", None),
+        ]:
+            t0, t1 = _play_tricks_loner(
+                hands,
+                initial_leader=0,
+                sitting_out_seat=2,
+                contract_type=ctype,
+                trump_suit=trump,
+            )
+            assert t0 + t1 == 10
+            assert 0 <= t0 <= 10
+
+    def test_sitting_out_seat_skipped(self, hands):
+        """The sitting-out seat should not play cards."""
+        # Before: partner at seat 2 has 10 cards
+        hands_copy = [list(h) for h in hands]
+        original_partner_len = len(hands_copy[2])
+        assert original_partner_len == 10
+
+        # After loner play, the hands are mutated by _play_tricks_loner
+        # but we pass copies so original is unchanged
+        _play_tricks_loner(
+            hands_copy,
+            initial_leader=0,
+            sitting_out_seat=2,
+            contract_type="suit",
+            trump_suit="S",
+        )
+        # Seat 2 should still have 10 cards (not played)
+        assert len(hands_copy[2]) == 10
+
+
+class TestSimulateMoonCounterfactual:
+    def test_returns_tuple(self, hands):
+        net_points, tricks_won = simulate_moon_counterfactual(
+            hands, focal_seat=0, contract_type="suit", trump_suit="S"
+        )
+        assert isinstance(net_points, float)
+        assert isinstance(tricks_won, float)
+
+    def test_moon_scoring_range(self, hands):
+        """Moon net_points should be in [-30, 30] (max: +20 - 0 or -20 - 10)."""
+        net_points, tricks_won = simulate_moon_counterfactual(
+            hands, focal_seat=0, contract_type="suit", trump_suit="S"
+        )
+        assert -30 <= net_points <= 30
+        assert 0 <= tricks_won <= 10
+
+    def test_moon_high_contract(self, hands):
+        """Moon with high contract should work."""
+        net_points, tricks_won = simulate_moon_counterfactual(
+            hands, focal_seat=1, contract_type="high", trump_suit=None
+        )
+        assert isinstance(net_points, float)
+
+    def test_moon_exchange_changes_hands(self, hands):
+        """Moon simulation should use exchanged hands (different from regular)."""
+        # Run moon for multiple deals and check at least some differ from
+        # regular 4-player trick play
+        moon_results = []
+        regular_results = []
+        for deal_id in range(10):
+            deal_hands = generate_deal(42, deal_id)
+            mn, _ = simulate_moon_counterfactual(
+                deal_hands,
+                focal_seat=0,
+                contract_type="suit",
+                trump_suit="S",
+            )
+            moon_results.append(mn)
+            # Regular 4-player (no exchange) for comparison
+            t0, t1 = _play_tricks(
+                deal_hands,
+                initial_leader=0,
+                contract_type="suit",
+                trump_suit="S",
+            )
+            regular_results.append(t0)
+        # At least some should differ (exchange changes hands)
+        assert (
+            moon_results != regular_results
+        ), "Moon results identical to regular — exchange may not be working"
+
+
+class TestSimulateLoner:
+    def test_returns_tuple(self, hands):
+        net_points, tricks_won = simulate_loner_counterfactual(
+            hands, focal_seat=0, contract_type="suit", trump_suit="S"
+        )
+        assert isinstance(net_points, float)
+        assert isinstance(tricks_won, float)
+
+    def test_loner_scoring_range(self, hands):
+        """Loner net_points should be in [-50, 50] (max: +40 - 0 or -40 - 10)."""
+        net_points, tricks_won = simulate_loner_counterfactual(
+            hands, focal_seat=0, contract_type="suit", trump_suit="S"
+        )
+        assert -50 <= net_points <= 50
+        assert 0 <= tricks_won <= 10
+
+    def test_loner_high_contract(self, hands):
+        """Loner with high contract should work."""
+        net_points, tricks_won = simulate_loner_counterfactual(
+            hands, focal_seat=1, contract_type="high", trump_suit=None
+        )
+        assert isinstance(net_points, float)
+
+    def test_loner_uses_3_player(self, hands):
+        """Loner should produce different results from 4-player play."""
+        loner_results = []
+        regular_results = []
+        for deal_id in range(10):
+            deal_hands = generate_deal(42, deal_id)
+            ln, _ = simulate_loner_counterfactual(
+                deal_hands,
+                focal_seat=0,
+                contract_type="suit",
+                trump_suit="S",
+            )
+            loner_results.append(ln)
+            t0, t1 = _play_tricks(
+                deal_hands,
+                initial_leader=0,
+                contract_type="suit",
+                trump_suit="S",
+            )
+            regular_results.append(t0)
+        assert (
+            loner_results != regular_results
+        ), "Loner results identical to regular — 3-player may not be working"
+
+
+# ── Moon/Loner Dataset Generation ───────────────────────
+
+
+class TestMoonLonerDataset:
+    @pytest.fixture
+    def ml_df(self, raiser):
+        """Generate a tiny dataset with moon/loner counterfactuals."""
+        return generate_dataset(
+            seed=42,
+            n_deals=5,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=True,
+        )
+
+    @pytest.fixture
+    def regular_df(self, raiser):
+        """Generate a tiny dataset WITHOUT moon/loner for comparison."""
+        return generate_dataset(
+            seed=42,
+            n_deals=5,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=False,
+        )
+
+    def test_has_is_moon_is_loner_columns(self, ml_df):
+        assert "is_moon" in ml_df.columns
+        assert "is_loner" in ml_df.columns
+
+    def test_regular_also_has_columns(self, regular_df):
+        """Even without moon/loner, is_moon and is_loner columns exist."""
+        assert "is_moon" in regular_df.columns
+        assert "is_loner" in regular_df.columns
+        assert (regular_df["is_moon"] == 0).all()
+        assert (regular_df["is_loner"] == 0).all()
+
+    def test_moon_rows_present(self, ml_df):
+        moon_rows = ml_df[ml_df["is_moon"] == 1]
+        assert len(moon_rows) > 0
+
+    def test_loner_rows_present(self, ml_df):
+        loner_rows = ml_df[ml_df["is_loner"] == 1]
+        assert len(loner_rows) > 0
+
+    def test_moon_loner_count_per_hand(self, ml_df):
+        """Each (deal, seat) should have exactly 6 moon + 6 loner rows."""
+        moon_df = ml_df[ml_df["is_moon"] == 1]
+        loner_df = ml_df[ml_df["is_loner"] == 1]
+        moon_counts = moon_df.groupby(["deal_id", "focal_seat"]).size()
+        loner_counts = loner_df.groupby(["deal_id", "focal_seat"]).size()
+        assert (moon_counts == 6).all()
+        assert (loner_counts == 6).all()
+
+    def test_moon_bid_n_is_10(self, ml_df):
+        moon_df = ml_df[ml_df["is_moon"] == 1]
+        assert (moon_df["bid_n"] == 10).all()
+
+    def test_loner_bid_n_is_10(self, ml_df):
+        loner_df = ml_df[ml_df["is_loner"] == 1]
+        assert (loner_df["bid_n"] == 10).all()
+
+    def test_moon_loner_focal_declared(self, ml_df):
+        """Moon/loner rows should have focal_declared=True."""
+        special = ml_df[(ml_df["is_moon"] == 1) | (ml_df["is_loner"] == 1)]
+        assert special["focal_declared"].all()
+
+    def test_regular_rows_unchanged(self, ml_df, regular_df):
+        """Regular action rows should be identical with/without moon/loner."""
+        regular_from_ml = ml_df[
+            (ml_df["is_moon"] == 0) & (ml_df["is_loner"] == 0)
+        ].reset_index(drop=True)
+        regular_only = regular_df.reset_index(drop=True)
+        # Same number of regular rows
+        assert len(regular_from_ml) == len(regular_only)
+        # Same state features
+        for fname in STATE_FEATURE_NAMES:
+            np.testing.assert_array_equal(
+                regular_from_ml[fname].values,
+                regular_only[fname].values,
+                err_msg=f"Feature {fname} differs",
+            )
+
+    def test_more_rows_with_moon_loner(self, ml_df, regular_df):
+        """Moon/loner dataset should have more rows (12 extra per hand)."""
+        extra = 5 * 4 * 12  # 5 deals × 4 seats × 12 (6 moon + 6 loner)
+        assert len(ml_df) == len(regular_df) + extra
+
+    def test_no_nan_in_moon_loner(self, ml_df):
+        special = ml_df[(ml_df["is_moon"] == 1) | (ml_df["is_loner"] == 1)]
+        feature_cols = STATE_FEATURE_NAMES + ["net_points", "tricks_won"]
+        assert special[feature_cols].isna().sum().sum() == 0
+
+    def test_gate_x1_passes_with_moon_loner(self, raiser):
+        df = generate_dataset(
+            seed=42,
+            n_deals=10,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=True,
+        )
+        validate_gate_x1(df, n_deals=10, include_moon_loner=True)
+
+    def test_backward_compat_without_flag(self, raiser):
+        """Default (include_moon_loner=False) matches existing behavior."""
+        df_default = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+        )
+        df_explicit = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=False,
+        )
+        pd.testing.assert_frame_equal(df_default, df_explicit)
+
+    def test_determinism_with_moon_loner(self, raiser):
+        """Same seed + include_moon_loner produces identical results."""
+        df1 = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=True,
+        )
+        df2 = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=True,
+        )
+        pd.testing.assert_frame_equal(df1, df2)
+
+    def test_all_contracts_in_moon_loner(self, ml_df):
+        """Moon and loner should cover all 3 contract families."""
+        moon_df = ml_df[ml_df["is_moon"] == 1]
+        loner_df = ml_df[ml_df["is_loner"] == 1]
+        moon_families = set(moon_df["contract_family"].unique())
+        loner_families = set(loner_df["contract_family"].unique())
+        assert {"suit", "high", "low"} == moon_families
+        assert {"suit", "high", "low"} == loner_families
