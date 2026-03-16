@@ -1335,11 +1335,11 @@ class TestBehaviorByContractExpanded:
 class TestChartData:
     """Tests for chart_data CSV generation."""
 
-    def test_outcome_distributions_from_h2h(self, h2h_battery, tmp_path):
-        """outcome_distributions.csv generated from H2H self-play data."""
+    def test_outcome_summary_from_h2h(self, h2h_battery, tmp_path):
+        """outcome_summary.csv generated from H2H self-play data."""
         generated = generate_chart_data(h2h_battery=h2h_battery, output_dir=tmp_path)
-        assert "outcome_distributions.csv" in generated
-        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "outcome_summary.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_summary.csv")
         assert "model" in df.columns
         assert "contract" in df.columns
         assert "value" in df.columns
@@ -1396,5 +1396,5 @@ class TestChartData:
         generated = generate_all_tables(FIXTURES_DIR, output_dir)
         chart_data_items = [g for g in generated if g.startswith("chart_data/")]
         # Fixture h2h_battery has self-play cells with fullgame_eppd,
-        # so outcome_distributions should be present
+        # so outcome_summary should be present
         assert len(chart_data_items) > 0

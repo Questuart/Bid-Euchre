@@ -19,7 +19,7 @@ Charts produced (Tier 1 + Tier 2 from §12.12):
   6.  contract_mix_bars.png          — from behavior_summary.csv
   7.  r2_by_contract.png             — from model_performance.csv
   8.  mae_by_contract.png            — from model_performance.csv
-  9.  outcome_distributions.png      — from chart_data/outcome_distributions.csv
+  9.  outcome_summary.png            — from chart_data/outcome_summary.csv
   10. seat_balance.png               — from chart_data/seat_balance.csv
 
 Dashboard pages (composite multi-panel charts):
@@ -239,29 +239,46 @@ def generate_bid_behavior_panel(
     output_dir: Path,
     dpi: int = 150,
 ) -> bool:
-    """Multi-panel behavior chart (bid_rate, make_rate by contract)."""
+    """Multi-panel behavior chart (bid_rate, make_rate by contract type).
+
+    Shows grouped bars with all contract types (suit/high/low/pooled) per model,
+    preserving the contract-type faceting required by project conventions.
+    """
     df = _read_csv_safe(tables_dir / "behavior_by_contract.csv")
     if df is None:
         return False
 
-    models = df["model"].unique()
-    fig, axes = plt.subplots(1, 2, figsize=(12, max(3, len(models) * 0.5 + 1)))
+    if "contract" not in df.columns:
+        return False
 
-    # Bid rate panel
-    ax = axes[0]
-    for model in models:
-        sub = df[df["model"] == model]
-        ax.barh(model, sub["bid_rate"].iloc[0] if len(sub) > 0 else 0)
-    ax.set_xlabel("Bid Rate")
-    ax.set_title("Bid Rate by Model")
+    models = sorted(df["model"].unique())
+    contracts = sorted(df["contract"].unique())
+    model_colors = _get_model_colors(models)
 
-    # Make rate panel
-    ax = axes[1]
-    for model in models:
-        sub = df[df["model"] == model]
-        ax.barh(model, sub["make_rate"].iloc[0] if len(sub) > 0 else 0)
-    ax.set_xlabel("Make Rate")
-    ax.set_title("Make Rate by Model")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    for panel_idx, (metric, title) in enumerate(
+        [("bid_rate", "Bid Rate by Contract"), ("make_rate", "Make Rate by Contract")]
+    ):
+        ax = axes[panel_idx]
+        if metric not in df.columns:
+            _unavailable_panel(ax, title)
+            continue
+        x = np.arange(len(contracts))
+        width = 0.8 / max(len(models), 1)
+        for i, model in enumerate(models):
+            vals = []
+            for contract in contracts:
+                sub = df[(df["model"] == model) & (df["contract"] == contract)]
+                vals.append(sub[metric].iloc[0] if len(sub) > 0 else 0)
+            offset = (i - len(models) / 2 + 0.5) * width
+            ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+        ax.set_xticks(x)
+        ax.set_xticklabels(contracts, fontsize=8)
+        ax.set_xlabel("Contract Type")
+        ax.set_ylabel(metric.replace("_", " ").title())
+        ax.set_title(title)
+        ax.legend(fontsize=7, loc="best")
 
     fig.tight_layout()
     _save_chart(fig, output_dir, "bid_behavior_panel.png", dpi)
@@ -271,22 +288,69 @@ def generate_bid_behavior_panel(
 def generate_contract_mix_bars(
     tables_dir: Path,
     output_dir: Path,
+    chart_data_dir: Path | None = None,
     dpi: int = 150,
 ) -> bool:
-    """Bar chart of contract mix from behavior summary."""
+    """Bar chart of contract mix.
+
+    Reads ``chart_data/contract_mix.csv`` when available (actual deal fractions
+    by contract type). Falls back to ``behavior_summary.csv`` bid_rate if the
+    dedicated contract_mix CSV is missing.
+    """
+    # Prefer contract_mix.csv from chart_data (actual mix fractions)
+    mix_df = (
+        _read_csv_safe(chart_data_dir / "contract_mix.csv") if chart_data_dir else None
+    )
+    if (
+        mix_df is not None
+        and "model" in mix_df.columns
+        and "fraction" in mix_df.columns
+    ):
+        models = sorted(mix_df["model"].unique())
+        contracts = sorted(mix_df["contract"].unique())
+        mix_colors = {"suit": "#C44E52", "high": "#4C72B0", "low": "#55A868"}
+
+        fig, ax = plt.subplots(figsize=(8, max(3, len(models) * 0.5 + 1)))
+        x = np.arange(len(models))
+        bottom = np.zeros(len(models))
+        for contract in contracts:
+            vals = []
+            for model in models:
+                sub = mix_df[
+                    (mix_df["model"] == model) & (mix_df["contract"] == contract)
+                ]
+                vals.append(sub["fraction"].iloc[0] if len(sub) > 0 else 0)
+            vals_arr = np.array(vals)
+            ax.barh(
+                x,
+                vals_arr,
+                left=bottom,
+                label=contract.title(),
+                color=mix_colors.get(contract, "#888888"),
+            )
+            bottom += vals_arr
+        ax.set_yticks(x)
+        ax.set_yticklabels(models, fontsize=8)
+        ax.set_xlabel("Fraction of Deals")
+        ax.set_title("Contract Mix by Model")
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        _save_chart(fig, output_dir, "contract_mix_bars.png", dpi)
+        return True
+
+    # Fallback: bid_rate from behavior_summary.csv
     df = _read_csv_safe(tables_dir / "behavior_summary.csv")
     if df is None:
         return False
 
-    # Use comparator-sourced data
-    comp = df[df["source"] == "comparator"]
+    comp = df[df["source"] == "comparator"] if "source" in df.columns else df
     if len(comp) == 0:
         comp = df
 
     fig, ax = plt.subplots(figsize=(8, max(3, len(comp) * 0.5 + 1)))
     ax.barh(comp["model"], comp["bid_rate"], color="#55A868", label="bid_rate")
     ax.set_xlabel("Bid Rate")
-    ax.set_title("Contract Mix / Bid Rate Summary")
+    ax.set_title("Bid Rate Summary (contract_mix.csv unavailable)")
     fig.tight_layout()
     _save_chart(fig, output_dir, "contract_mix_bars.png", dpi)
     return True
@@ -367,30 +431,52 @@ def generate_mae_by_contract(
     return True
 
 
-def generate_outcome_distributions(
+def generate_outcome_summary(
     chart_data_dir: Path,
     output_dir: Path,
     dpi: int = 150,
 ) -> bool:
-    """Outcome distribution chart from chart_data CSV."""
-    df = _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
+    """Grouped bar chart of outcome summary metrics from chart_data CSV.
+
+    This shows summary-level metrics (one value per model per contract facet),
+    NOT per-deal distributions. The chart uses grouped bars with honest labeling.
+    """
+    df = _read_csv_safe(chart_data_dir / "outcome_summary.csv")
     if df is None:
         return False
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    if "contract" in df.columns and "value" in df.columns:
-        for contract in sorted(df["contract"].unique()):
-            sub = df[df["contract"] == contract]
-            ax.hist(sub["value"], bins=20, alpha=0.5, label=contract, density=True)
-        ax.legend()
-    else:
-        ax.hist(df.iloc[:, 0], bins=20, alpha=0.7)
+    if (
+        "model" not in df.columns
+        or "contract" not in df.columns
+        or "value" not in df.columns
+    ):
+        return False
 
-    ax.set_xlabel("Outcome Value")
-    ax.set_ylabel("Density")
-    ax.set_title("Outcome Distributions")
+    models = sorted(df["model"].unique())
+    contracts = sorted(df["contract"].unique())
+    model_colors = _get_model_colors(models)
+
+    x = np.arange(len(contracts))
+    width = 0.8 / max(len(models), 1)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, model in enumerate(models):
+        vals = []
+        for contract in contracts:
+            sub = df[(df["model"] == model) & (df["contract"] == contract)]
+            vals.append(sub["value"].iloc[0] if len(sub) > 0 else 0)
+        offset = (i - len(models) / 2 + 0.5) * width
+        ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(contracts, fontsize=9)
+    ax.set_xlabel("Contract Type")
+    ax.set_ylabel("Metric Value")
+    ax.set_title("Outcome Summary by Model and Contract")
+    ax.legend(fontsize=8)
+    ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
     fig.tight_layout()
-    _save_chart(fig, output_dir, "outcome_distributions.png", dpi)
+    _save_chart(fig, output_dir, "outcome_summary.png", dpi)
     return True
 
 
@@ -712,55 +798,81 @@ def generate_dashboard_health(
     else:
         _unavailable_panel(ax, "Contract Mix")
 
-    # Panel 3: Outcome distributions
+    # Panel 3: Outcome summary (grouped bar chart of summary metrics)
     ax = axes[1, 0]
     outcome_df = (
-        _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
+        _read_csv_safe(chart_data_dir / "outcome_summary.csv")
         if chart_data_dir
         else None
     )
     if (
         outcome_df is not None
+        and "model" in outcome_df.columns
         and "contract" in outcome_df.columns
         and "value" in outcome_df.columns
     ):
-        for contract in sorted(outcome_df["contract"].unique()):
-            sub = outcome_df[outcome_df["contract"] == contract]
-            ax.hist(sub["value"], bins=20, alpha=0.5, label=contract, density=True)
-        ax.legend(fontsize=8)
-        ax.set_xlabel("Outcome Value", fontsize=9)
-        ax.set_ylabel("Density", fontsize=9)
-        ax.set_title("Outcome Distributions", fontsize=11)
-    else:
-        _unavailable_panel(ax, "Outcome Distributions")
-
-    # Panel 4: Bid-type breakdown
-    ax = axes[1, 1]
-    bid_type_df = _read_csv_safe(tables_dir / "behavior_by_bid_type.csv")
-    if bid_type_df is not None and "bid_type" in bid_type_df.columns:
-        models = sorted(bid_type_df["model"].unique())
-        bid_types = sorted(bid_type_df["bid_type"].unique())
+        models = sorted(outcome_df["model"].unique())
+        contracts = sorted(outcome_df["contract"].unique())
         model_colors = _get_model_colors(models)
-        x = np.arange(len(bid_types))
+        x = np.arange(len(contracts))
         width = 0.8 / max(len(models), 1)
         for i, model in enumerate(models):
             vals = []
-            for bt in bid_types:
-                sub = bid_type_df[
-                    (bid_type_df["model"] == model) & (bid_type_df["bid_type"] == bt)
+            for contract in contracts:
+                sub = outcome_df[
+                    (outcome_df["model"] == model)
+                    & (outcome_df["contract"] == contract)
                 ]
-                vals.append(
-                    sub["bid_rate"].iloc[0]
-                    if len(sub) > 0 and "bid_rate" in sub.columns
-                    else 0
-                )
+                vals.append(sub["value"].iloc[0] if len(sub) > 0 else 0)
             offset = (i - len(models) / 2 + 0.5) * width
             ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
         ax.set_xticks(x)
-        ax.set_xticklabels(bid_types, fontsize=8)
-        ax.set_ylabel("Bid Rate", fontsize=9)
-        ax.set_title("Bid-Type Breakdown", fontsize=11)
+        ax.set_xticklabels(contracts, fontsize=8)
+        ax.set_xlabel("Contract Type", fontsize=9)
+        ax.set_ylabel("Metric Value", fontsize=9)
+        ax.set_title("Outcome Summary", fontsize=11)
         ax.legend(fontsize=7, loc="best")
+        ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
+    else:
+        _unavailable_panel(ax, "Outcome Summary")
+
+    # Panel 4: Bid-type breakdown
+    # Filter to source == "comparator" to exclude h2h_self_play rows where
+    # bid_rate is NaN (self-play data lacks meaningful bid_rate).
+    ax = axes[1, 1]
+    bid_type_df = _read_csv_safe(tables_dir / "behavior_by_bid_type.csv")
+    if bid_type_df is not None and "bid_type" in bid_type_df.columns:
+        if "source" in bid_type_df.columns:
+            bid_type_df = bid_type_df[bid_type_df["source"] == "comparator"]
+        if len(bid_type_df) == 0:
+            _unavailable_panel(ax, "Bid-Type Breakdown")
+        else:
+            models = sorted(bid_type_df["model"].unique())
+            bid_types = sorted(bid_type_df["bid_type"].unique())
+            model_colors = _get_model_colors(models)
+            x = np.arange(len(bid_types))
+            width = 0.8 / max(len(models), 1)
+            for i, model in enumerate(models):
+                vals = []
+                for bt in bid_types:
+                    sub = bid_type_df[
+                        (bid_type_df["model"] == model)
+                        & (bid_type_df["bid_type"] == bt)
+                    ]
+                    val = (
+                        sub["bid_rate"].iloc[0]
+                        if len(sub) > 0 and "bid_rate" in sub.columns
+                        else 0
+                    )
+                    # Handle NaN explicitly
+                    vals.append(0 if pd.isna(val) else val)
+                offset = (i - len(models) / 2 + 0.5) * width
+                ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+            ax.set_xticks(x)
+            ax.set_xticklabels(bid_types, fontsize=8)
+            ax.set_ylabel("Bid Rate", fontsize=9)
+            ax.set_title("Bid-Type Breakdown (comparator)", fontsize=11)
+            ax.legend(fontsize=7, loc="best")
     else:
         _unavailable_panel(ax, "Bid-Type Breakdown")
 
@@ -953,7 +1065,9 @@ def generate_all_charts(
         ),
         (
             "contract_mix_bars.png",
-            lambda: generate_contract_mix_bars(tables_dir, output_dir, dpi),
+            lambda: generate_contract_mix_bars(
+                tables_dir, output_dir, chart_data_dir, dpi
+            ),
         ),
         (
             "r2_by_contract.png",
@@ -976,8 +1090,8 @@ def generate_all_charts(
     if chart_data_dir:
         chart_data_generators = [
             (
-                "outcome_distributions.png",
-                lambda: generate_outcome_distributions(chart_data_dir, output_dir, dpi),
+                "outcome_summary.png",
+                lambda: generate_outcome_summary(chart_data_dir, output_dir, dpi),
             ),
             (
                 "seat_balance.png",
