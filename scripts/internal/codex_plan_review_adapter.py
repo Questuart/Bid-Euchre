@@ -14,7 +14,9 @@ import hashlib
 import json
 import logging
 import os
+import pty
 import re
+import select
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -163,6 +165,103 @@ def plan_state_key(plan_path: Path) -> str:
     return hashlib.sha256(rel.encode()).hexdigest()[:12]
 
 
+def _run_with_pty(
+    cmd: list[str],
+    *,
+    timeout: float = 300,
+    cwd: Path | None = None,
+) -> tuple[int | None, str]:
+    """Run a command with a pseudo-TTY and capture output.
+
+    Codex CLI requires a TTY to function — ``subprocess.run(capture_output=True)``
+    provides no TTY, causing the CLI to hang. This function allocates a PTY so
+    Codex can detect a terminal and produce output normally.
+
+    Args:
+        cmd: Command and arguments.
+        timeout: Maximum wall-clock seconds before killing the process.
+        cwd: Working directory for the child process.
+
+    Returns:
+        Tuple of (return_code, captured_output). Return code is ``None``
+        if the process was killed due to timeout.
+    """
+    master_fd, slave_fd = pty.openpty()
+    proc = subprocess.Popen(
+        cmd,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+        cwd=cwd,
+    )
+    os.close(slave_fd)
+
+    output_chunks: list[str] = []
+    start = time.monotonic()
+    timed_out = False
+
+    try:
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed > timeout:
+                proc.kill()
+                timed_out = True
+                break
+
+            remaining = timeout - elapsed
+            ready, _, _ = select.select([master_fd], [], [], min(remaining, 1.0))
+            if ready:
+                try:
+                    data = os.read(master_fd, 8192)
+                    if not data:
+                        break
+                    output_chunks.append(data.decode("utf-8", errors="replace"))
+                except OSError:
+                    break
+
+            if proc.poll() is not None:
+                # Process finished — drain remaining output with retries.
+                # The PTY buffer may not be fully flushed when poll() first
+                # returns, so retry a few times with short sleeps.
+                empty_polls = 0
+                while empty_polls < 5:
+                    ready, _, _ = select.select([master_fd], [], [], 0.2)
+                    if not ready:
+                        empty_polls += 1
+                        continue
+                    empty_polls = 0
+                    try:
+                        data = os.read(master_fd, 8192)
+                        if not data:
+                            break
+                        output_chunks.append(data.decode("utf-8", errors="replace"))
+                    except OSError:
+                        break
+                break
+    finally:
+        os.close(master_fd)
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+
+    raw = "".join(output_chunks)
+    # Strip ANSI escape codes from terminal output
+    clean = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", raw)
+    clean = re.sub(r"[\x00-\x08\x0e-\x1f]", "", clean)
+    # Extract the review section from PTY output. Codex CLI emits verbose
+    # exec traces followed by a "codex" marker and the actual review text.
+    # Only the last "codex" block contains the review conclusion.
+    # Use \r?\n to handle both Unix and PTY line endings.
+    parts = re.split(r"\r?\ncodex\r?\n", clean)
+    if len(parts) > 1:
+        clean = parts[-1].strip()
+
+    if timed_out:
+        return None, clean
+    return proc.returncode, clean
+
+
 def _check_codex_auth(auth_path: Path | None = None) -> str | None:
     """Check whether Codex CLI credentials are present.
 
@@ -230,8 +329,10 @@ def invoke_codex_plan_review(
     work_dir = cwd or Path.cwd()
     start = time.monotonic()
 
-    # Pre-flight auth check
-    auth_error = _check_codex_auth()
+    # Pre-flight auth check (skip when using a custom launcher, which
+    # may supply its own credentials independently of ~/.codex/auth.json)
+    custom_cmd = os.environ.get("CODEX_REVIEW_CMD", "").strip()
+    auth_error = None if custom_cmd else _check_codex_auth()
     if auth_error:
         elapsed = time.monotonic() - start
         logger.warning("Codex auth check failed: %s", auth_error)
@@ -245,92 +346,16 @@ def invoke_codex_plan_review(
             error=auth_error,
         )
 
+    cmd = [*_resolve_codex_binary(), "review", "--base", base]
+    logger.info(
+        "Invoking Codex CLI for plan review (tier=%s, base=%s, file=%s)",
+        tier,
+        base,
+        plan_path,
+    )
+
     try:
-        cmd = [*_resolve_codex_binary(), "review", "--base", base]
-        logger.info(
-            "Invoking Codex CLI for plan review (tier=%s, base=%s, file=%s)",
-            tier,
-            base,
-            plan_path,
-        )
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=work_dir,
-        )
-        elapsed = time.monotonic() - start
-
-        if result.returncode != 0:
-            error_type = _classify_error(result.stderr)
-            logger.warning(
-                "Codex CLI plan review failed (exit %d, %.1fs, %s): %s",
-                result.returncode,
-                elapsed,
-                error_type,
-                result.stderr[:200],
-            )
-            return PlanReviewResult(
-                success=False,
-                findings=[],
-                tier=tier,
-                reviewer="codex_cli",
-                raw_output=result.stdout + result.stderr,
-                latency_seconds=elapsed,
-                error=f"Exit code {result.returncode}: {result.stderr[:200]}",
-            )
-
-        # Parse findings using the shared parser
-        codex_findings = parse_codex_output(result.stdout)
-        plan_findings = _convert_codex_findings(codex_findings, str(plan_path))
-
-        # Fail-safe: unparseable non-empty output
-        if not codex_findings and result.stdout.strip():
-            if not _CLEAN_REVIEW_PATTERNS.search(result.stdout):
-                logger.warning(
-                    "Codex CLI plan review returned unparseable output (%.1fs, %d chars)",
-                    elapsed,
-                    len(result.stdout),
-                )
-                return PlanReviewResult(
-                    success=False,
-                    findings=[],
-                    tier=tier,
-                    reviewer="codex_cli",
-                    raw_output=result.stdout,
-                    latency_seconds=elapsed,
-                    error="Unparseable output: no findings matched and no clean-review signal",
-                )
-
-        logger.info(
-            "Codex CLI plan review completed (%.1fs): %d findings",
-            elapsed,
-            len(plan_findings),
-        )
-        return PlanReviewResult(
-            success=True,
-            findings=plan_findings,
-            tier=tier,
-            reviewer="codex_cli",
-            raw_output=result.stdout,
-            latency_seconds=elapsed,
-        )
-
-    except subprocess.TimeoutExpired:
-        elapsed = time.monotonic() - start
-        logger.warning("Codex CLI plan review timed out after %.1fs", elapsed)
-        return PlanReviewResult(
-            success=False,
-            findings=[],
-            tier=tier,
-            reviewer="codex_cli",
-            raw_output="",
-            latency_seconds=elapsed,
-            error=f"Timeout after {timeout}s",
-        )
-
+        returncode, output = _run_with_pty(cmd, timeout=timeout, cwd=work_dir)
     except FileNotFoundError:
         elapsed = time.monotonic() - start
         logger.error("Codex CLI not found for plan review")
@@ -343,6 +368,75 @@ def invoke_codex_plan_review(
             latency_seconds=elapsed,
             error="Codex CLI not found (codex not in PATH, npx unavailable)",
         )
+
+    elapsed = time.monotonic() - start
+
+    if returncode is None:
+        logger.warning("Codex CLI plan review timed out after %.1fs", elapsed)
+        return PlanReviewResult(
+            success=False,
+            findings=[],
+            tier=tier,
+            reviewer="codex_cli",
+            raw_output=output,
+            latency_seconds=elapsed,
+            error=f"Timeout after {timeout}s",
+        )
+
+    if returncode != 0:
+        error_type = _classify_error(output)
+        logger.warning(
+            "Codex CLI plan review failed (exit %d, %.1fs, %s): %s",
+            returncode,
+            elapsed,
+            error_type,
+            output[:200],
+        )
+        return PlanReviewResult(
+            success=False,
+            findings=[],
+            tier=tier,
+            reviewer="codex_cli",
+            raw_output=output,
+            latency_seconds=elapsed,
+            error=f"Exit code {returncode}: {output[:200]}",
+        )
+
+    # Parse findings using the shared parser
+    codex_findings = parse_codex_output(output)
+    plan_findings = _convert_codex_findings(codex_findings, str(plan_path))
+
+    # Fail-safe: unparseable non-empty output
+    if not codex_findings and output.strip():
+        if not _CLEAN_REVIEW_PATTERNS.search(output):
+            logger.warning(
+                "Codex CLI plan review returned unparseable output (%.1fs, %d chars)",
+                elapsed,
+                len(output),
+            )
+            return PlanReviewResult(
+                success=False,
+                findings=[],
+                tier=tier,
+                reviewer="codex_cli",
+                raw_output=output,
+                latency_seconds=elapsed,
+                error="Unparseable output: no findings matched and no clean-review signal",
+            )
+
+    logger.info(
+        "Codex CLI plan review completed (%.1fs): %d findings",
+        elapsed,
+        len(plan_findings),
+    )
+    return PlanReviewResult(
+        success=True,
+        findings=plan_findings,
+        tier=tier,
+        reviewer="codex_cli",
+        raw_output=output,
+        latency_seconds=elapsed,
+    )
 
 
 def invoke_claude_failsafe(

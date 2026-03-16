@@ -54,7 +54,7 @@ The autonomous review loop is triggered by the PostToolUse hook (`post-pr-review
 It runs asynchronously and handles:
 - Deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
 - `make check-quiet`
-- Codex CLI review + auto-fix loop (max 5 iterations)
+- Codex CLI review + auto-fix loop (max 3 iterations)
 - Final status publishing (success/failure)
 - Follow-up issue creation for P2 findings
 

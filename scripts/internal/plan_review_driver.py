@@ -1,6 +1,6 @@
 """Plan review loop driver -- orchestrates iterative Codex -> fix -> re-review cycles.
 
-Entry point: run_plan_review_loop(plan_path, tier=None, max_iter=5)
+Entry point: run_plan_review_loop(plan_path, tier=None, max_iter=3)
 
 The loop:
 1. Detect tier (or use override)
@@ -264,7 +264,7 @@ def run_plan_review_loop(
     plan_path: Path,
     *,
     tier: str | None = None,
-    max_iter: int = 5,
+    max_iter: int = 3,
     base_dir: Path | None = None,
 ) -> PlanReviewLoopResult:
     """Run the plan review loop.
