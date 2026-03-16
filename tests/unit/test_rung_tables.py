@@ -18,6 +18,10 @@ import pytest
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 
 from bid_euchre.arc_d_v2.tables import (
+    TIER_ANCHOR,
+    TIER_HEURISTIC,
+    TIER_SMART,
+    _classify_tier,
     _merge_comparator_cis,
     _merge_h2h_batteries,
     _per_seed_sanity_comparator,
@@ -32,6 +36,7 @@ from bid_euchre.arc_d_v2.tables import (
     generate_data_sanity,
     generate_dataset_provenance,
     generate_h2h_delta_matrix,
+    generate_h2h_tier_summary,
     generate_hypothesis_outcomes,
     generate_model_performance,
     generate_rung_model_spec,
@@ -161,6 +166,13 @@ EXPECTED_SCHEMAS = {
         "threshold",
         "status",
         "detail",
+    ],
+    "h2h_tier_summary": [
+        "model",
+        "tier",
+        "mean_delta",
+        "mean_win_rate",
+        "n_opponents",
     ],
 }
 
@@ -335,6 +347,230 @@ class TestDataSanity:
     def test_has_checks(self, h2h_battery, comparator_cis, training_artifacts):
         df = generate_data_sanity(h2h_battery, comparator_cis, training_artifacts)
         assert len(df) > 0
+
+
+class TestH2HTierSummary:
+    """Tests for h2h_tier_summary.csv generation."""
+
+    def test_tier_classification(self):
+        """Verify tier assignment for known models."""
+        assert _classify_tier("full_ols_av") == "smart"
+        assert _classify_tier("constrained_ols_av") == "smart"
+        assert _classify_tier("selected_ols_av") == "smart"
+        assert _classify_tier("selected_two_stage_av") == "smart"
+        assert _classify_tier("anchor_hybrid_r0_full") == "anchor"
+        assert _classify_tier("modeloespecifico") == "heuristic"
+        assert _classify_tier("stricthellraiser") == "heuristic"
+        assert _classify_tier("rankthetank") == "heuristic"
+        assert _classify_tier("some_new_model") == "unknown"
+
+    def test_tier_sets_non_overlapping(self):
+        """Tier sets must not overlap."""
+        assert TIER_SMART & TIER_ANCHOR == frozenset()
+        assert TIER_SMART & TIER_HEURISTIC == frozenset()
+        assert TIER_ANCHOR & TIER_HEURISTIC == frozenset()
+
+    def test_smart_tier_mean_across_4_opponents(self):
+        """Smart tier computes mean across 4 opponent models."""
+        # Create a minimal h2h_delta_matrix with gbt_av vs 4 smart models
+        rows = []
+        smart_models = [
+            "full_ols_av",
+            "constrained_ols_av",
+            "selected_ols_av",
+            "selected_two_stage_av",
+        ]
+        deltas = [1.0, 2.0, 3.0, 4.0]
+        win_rates = [0.6, 0.7, 0.8, 0.5]
+        for model, delta, wr in zip(smart_models, deltas, win_rates):
+            rows.append(
+                {
+                    "model_a": "gbt_av",
+                    "model_b": model,
+                    "facet": "pooled",
+                    "net_eppd_delta": delta,
+                    "ci_low": delta - 0.5,
+                    "ci_high": delta + 0.5,
+                    "win_rate_a": wr,
+                    "deals_total": 2500,
+                }
+            )
+        df_matrix = pd.DataFrame(rows)
+        df = generate_h2h_tier_summary(df_matrix)
+
+        gbt_smart = df[(df["model"] == "gbt_av") & (df["tier"] == "smart")]
+        assert len(gbt_smart) == 1
+        assert gbt_smart.iloc[0]["n_opponents"] == 4
+        assert gbt_smart.iloc[0]["mean_delta"] == pytest.approx(2.5, abs=1e-3)
+        assert gbt_smart.iloc[0]["mean_win_rate"] == pytest.approx(0.65, abs=1e-3)
+
+    def test_schema(self):
+        """Output has expected columns."""
+        rows = [
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "pooled",
+                "net_eppd_delta": 1.5,
+                "ci_low": 1.0,
+                "ci_high": 2.0,
+                "win_rate_a": 0.6,
+                "deals_total": 2500,
+            },
+        ]
+        df = generate_h2h_tier_summary(pd.DataFrame(rows))
+        assert list(df.columns) == EXPECTED_SCHEMAS["h2h_tier_summary"]
+
+    def test_excludes_self_play(self):
+        """Self-play rows (model_a == model_b) are excluded."""
+        rows = [
+            {
+                "model_a": "gbt_av",
+                "model_b": "gbt_av",
+                "facet": "pooled",
+                "net_eppd_delta": 0.0,
+                "ci_low": -0.5,
+                "ci_high": 0.5,
+                "win_rate_a": 0.5,
+                "deals_total": 2500,
+            },
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "pooled",
+                "net_eppd_delta": 1.5,
+                "ci_low": 1.0,
+                "ci_high": 2.0,
+                "win_rate_a": 0.6,
+                "deals_total": 2500,
+            },
+        ]
+        df = generate_h2h_tier_summary(pd.DataFrame(rows))
+        # Only the cross-matchup row should produce output
+        assert len(df) == 1
+        assert df.iloc[0]["model"] == "gbt_av"
+        assert df.iloc[0]["tier"] == "smart"
+
+    def test_excludes_non_pooled_facets(self):
+        """Only pooled-facet rows are used for tier summary."""
+        rows = [
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "pooled",
+                "net_eppd_delta": 1.5,
+                "ci_low": 1.0,
+                "ci_high": 2.0,
+                "win_rate_a": 0.6,
+                "deals_total": 2500,
+            },
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "suit",
+                "net_eppd_delta": 2.0,
+                "ci_low": 1.5,
+                "ci_high": 2.5,
+                "win_rate_a": 0.7,
+                "deals_total": 2000,
+            },
+        ]
+        df = generate_h2h_tier_summary(pd.DataFrame(rows))
+        # Only pooled row should be used
+        assert len(df) == 1
+        assert df.iloc[0]["mean_delta"] == pytest.approx(1.5, abs=1e-3)
+
+    def test_all_models_shown(self, h2h_battery):
+        """All models from the battery appear in the tier summary."""
+        h2h_matrix = generate_h2h_delta_matrix(h2h_battery)
+        df = generate_h2h_tier_summary(h2h_matrix)
+        # Every model that has cross-matchup rows should appear
+        pooled_cross = h2h_matrix[
+            (h2h_matrix["facet"] == "pooled")
+            & (h2h_matrix["model_a"] != h2h_matrix["model_b"])
+        ]
+        expected_models = set(pooled_cross["model_a"].unique())
+        actual_models = set(df["model"].unique())
+        assert actual_models == expected_models
+
+    def test_works_with_r0_r2_data(self):
+        """R0-R2 data (no moon/loner) works correctly."""
+        # Minimal R0-style battery with no bid_type facets
+        rows = [
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "pooled",
+                "net_eppd_delta": 1.3,
+                "ci_low": 1.0,
+                "ci_high": 1.6,
+                "win_rate_a": 0.6,
+                "deals_total": 2500,
+            },
+            {
+                "model_a": "gbt_av",
+                "model_b": "anchor_hybrid_r0_full",
+                "facet": "pooled",
+                "net_eppd_delta": 1.06,
+                "ci_low": 0.8,
+                "ci_high": 1.3,
+                "win_rate_a": 0.53,
+                "deals_total": 2500,
+            },
+            {
+                "model_a": "gbt_av",
+                "model_b": "modeloespecifico",
+                "facet": "pooled",
+                "net_eppd_delta": 0.63,
+                "ci_low": 0.4,
+                "ci_high": 0.85,
+                "win_rate_a": 0.55,
+                "deals_total": 2500,
+            },
+        ]
+        df = generate_h2h_tier_summary(pd.DataFrame(rows))
+        assert len(df) == 3
+        tiers = set(df["tier"].unique())
+        assert tiers == {"smart", "anchor", "heuristic"}
+
+    def test_works_with_r3_bid_type_facets(self):
+        """R3 data with bid_type:* facets are ignored (only pooled used)."""
+        rows = [
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "pooled",
+                "net_eppd_delta": 1.5,
+                "ci_low": 1.0,
+                "ci_high": 2.0,
+                "win_rate_a": 0.6,
+                "deals_total": 2500,
+            },
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "bid_type:regular",
+                "net_eppd_delta": 1.4,
+                "ci_low": 0.9,
+                "ci_high": 1.9,
+                "win_rate_a": 0.59,
+                "deals_total": 2400,
+            },
+            {
+                "model_a": "gbt_av",
+                "model_b": "full_ols_av",
+                "facet": "bid_type:moon",
+                "net_eppd_delta": 5.0,
+                "ci_low": -5.0,
+                "ci_high": 15.0,
+                "win_rate_a": 0.7,
+                "deals_total": 10,
+            },
+        ]
+        df = generate_h2h_tier_summary(pd.DataFrame(rows))
+        # Only the pooled row should count
+        assert len(df) == 1
+        assert df.iloc[0]["mean_delta"] == pytest.approx(1.5, abs=1e-3)
 
 
 class TestFullPipeline:
