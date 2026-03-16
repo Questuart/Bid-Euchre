@@ -2114,7 +2114,9 @@ class ActionValueBidder(BiddingPolicy):
             obs,
             contract_family,
             trump_suit,
-            partner_feature_names=self._partner_feature_names,
+            partner_feature_names=(
+                None if self._needs_full_state else self._partner_feature_names
+            ),
             include_positional=self._has_positional or self._needs_full_state,
         )
         if not self._has_positional and family in self._hand_indices:
@@ -2298,7 +2300,9 @@ class GBTActionValueBidder(BiddingPolicy):
             obs,
             contract_family,
             trump_suit,
-            partner_feature_names=self._partner_feature_names,
+            partner_feature_names=(
+                None if self._needs_full_state else self._partner_feature_names
+            ),
             include_positional=self._has_positional or self._needs_full_state,
         )
         if not self._has_positional and family in self._hand_indices:
@@ -2498,7 +2502,9 @@ class TwoStageActionValueBidder(BiddingPolicy):
             obs,
             contract_family,
             trump_suit,
-            partner_feature_names=self._partner_feature_names,
+            partner_feature_names=(
+                None if self._needs_full_state else self._partner_feature_names
+            ),
             include_positional=self._has_positional or self._needs_full_state,
         )
         if not self._has_positional and family in self._hand_indices:
