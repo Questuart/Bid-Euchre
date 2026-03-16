@@ -34,16 +34,30 @@ class BidAction:
 
     Either a pass (n=0) or a bid for n tricks with a specific contract.
     For suit contracts, trump_suit must be specified.
+
+    bid_type controls the auction hierarchy:
+    - "regular": Standard bid (levels 1-10)
+    - "moon": All 10 tricks, overcalls any regular bid
+    - "loner": All 10 tricks solo (partner sits out), overcalls moon
     """
 
     n: int  # 0 = pass, 1-10 = bid amount
     contract: Optional[str] = None  # contract type or None for passes
     trump_suit: Optional[str] = None  # trump suit for "suit" contracts
+    bid_type: str = "regular"  # "regular" | "moon" | "loner"
+
+    # Numeric rank for overcall hierarchy comparisons
+    _BID_TYPE_RANK = {"regular": 0, "moon": 1, "loner": 2}
 
     def __post_init__(self):
         """Validate bid action constraints."""
         if self.n < 0 or self.n > 10:
             raise ValueError(f"Bid amount n must be 0-10, got {self.n}")
+
+        if self.bid_type not in {"regular", "moon", "loner"}:
+            raise ValueError(
+                f"bid_type must be 'regular', 'moon', or 'loner', got '{self.bid_type}'"
+            )
 
         if self.n == 0:
             # Pass: contract and trump must be None
@@ -54,6 +68,10 @@ class BidAction:
             if self.trump_suit is not None:
                 raise ValueError(
                     f"Pass (n=0) must have trump_suit=None, got {self.trump_suit}"
+                )
+            if self.bid_type != "regular":
+                raise ValueError(
+                    f"Pass (n=0) must have bid_type='regular', got '{self.bid_type}'"
                 )
         else:
             # Bid: contract must be specified and valid
@@ -71,19 +89,63 @@ class BidAction:
                     f"trump_suit must be None for v1 contracts, got {self.trump_suit}"
                 )
 
+            # Moon and loner are always level 10
+            if self.bid_type in {"moon", "loner"} and self.n != 10:
+                raise ValueError(
+                    f"{self.bid_type} bids must be level 10, got n={self.n}"
+                )
+
     @classmethod
     def pass_bid(cls) -> "BidAction":
         """Create a pass action."""
-        return cls(n=0, contract=None, trump_suit=None)
+        return cls(n=0, contract=None, trump_suit=None, bid_type="regular")
 
     @classmethod
     def bid(cls, n: int, contract: str) -> "BidAction":
-        """Create a bid action."""
-        return cls(n=n, contract=contract, trump_suit=None)
+        """Create a regular bid action."""
+        return cls(n=n, contract=contract, trump_suit=None, bid_type="regular")
+
+    @classmethod
+    def moon(cls, contract: str) -> "BidAction":
+        """Create a moon bid action (always level 10)."""
+        return cls(n=10, contract=contract, trump_suit=None, bid_type="moon")
+
+    @classmethod
+    def loner(cls, contract: str) -> "BidAction":
+        """Create a loner bid action (always level 10)."""
+        return cls(n=10, contract=contract, trump_suit=None, bid_type="loner")
 
     def is_pass(self) -> bool:
         """Return True if this is a pass."""
         return self.n == 0
+
+    def bid_rank(self) -> int:
+        """Return numeric rank for overcall comparisons.
+
+        Hierarchy: regular bids by level < moon < loner.
+        Pass returns -1 (below all bids).
+        """
+        if self.is_pass():
+            return -1
+        type_rank = self._BID_TYPE_RANK[self.bid_type]
+        if self.bid_type == "regular":
+            # Regular bids ranked by level (1-10)
+            return self.n
+        else:
+            # Moon = 11, Loner = 12 (above any regular bid including 10)
+            return 10 + type_rank
+
+    def overcalls(self, other: "BidAction") -> bool:
+        """Return True if this bid strictly overcalls the other bid.
+
+        Overcall hierarchy: regular N < regular N+1 < ... < regular 10 < moon < loner.
+        A pass never overcalls anything. A bid always overcalls a pass.
+        """
+        if self.is_pass():
+            return False
+        if other.is_pass():
+            return True
+        return self.bid_rank() > other.bid_rank()
 
     def to_contract_tuple(self) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -108,19 +170,56 @@ class BidAction:
             raise ValueError(f"Unknown contract: {self.contract}")
 
 
-def enumerate_legal_actions(obs: "BiddingObservation") -> List[BidAction]:
+def enumerate_legal_actions(
+    obs: "BiddingObservation",
+    *,
+    include_moon_loner: bool = False,
+    current_bid_type: str = "regular",
+    is_dealer: bool = False,
+) -> List[BidAction]:
     """Enumerate all legal bidding actions for the current auction state.
 
     Returns actions in canonical order: PASS first, then ascending by
     (bid_level, contract) where contract order follows obs.allowed_contracts.
+    When include_moon_loner=True, moon and loner bids are appended after
+    regular bids.
+
+    Args:
+        obs: Current bidding observation.
+        include_moon_loner: If True, include moon/loner actions when legal.
+        current_bid_type: The bid_type of the current high bid
+            ("regular", "moon", or "loner"). Only relevant when
+            include_moon_loner=True.
+        is_dealer: Whether the current player is the dealer. Dealers can
+            "take away" (match) a moon or loner bid. Only relevant when
+            include_moon_loner=True.
 
     Used by both ActionValueBidder.choose_bid() and the counterfactual
     dataset generator to ensure consistent action enumeration.
     """
     actions: List[BidAction] = [BidAction.pass_bid()]
-    for n in range(obs.current_high_bid + 1, 11):
-        for contract in obs.allowed_contracts:
-            actions.append(BidAction.bid(n, contract))
+
+    # Regular bids: only legal if current high bid is a regular bid
+    if current_bid_type == "regular":
+        for n in range(obs.current_high_bid + 1, 11):
+            for contract in obs.allowed_contracts:
+                actions.append(BidAction.bid(n, contract))
+
+    if include_moon_loner:
+        # Moon bids: legal if current high bid is regular (overcalls it)
+        # or if dealer is taking away a moon
+        if current_bid_type == "regular" or (current_bid_type == "moon" and is_dealer):
+            for contract in obs.allowed_contracts:
+                actions.append(BidAction.moon(contract))
+
+        # Loner bids: legal if current high bid is regular or moon
+        # (overcalls both), or if dealer is taking away a loner
+        if current_bid_type in {"regular", "moon"} or (
+            current_bid_type == "loner" and is_dealer
+        ):
+            for contract in obs.allowed_contracts:
+                actions.append(BidAction.loner(contract))
+
     return actions
 
 
