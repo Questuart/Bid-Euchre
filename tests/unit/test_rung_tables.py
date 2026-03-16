@@ -18,6 +18,10 @@ import pytest
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 
 from bid_euchre.arc_d_v2.tables import (
+    _merge_comparator_cis,
+    _merge_h2h_batteries,
+    _per_seed_sanity_comparator,
+    _per_seed_sanity_h2h,
     generate_all_tables,
     generate_artifact_inventory,
     generate_behavior_by_contract,
@@ -31,6 +35,7 @@ from bid_euchre.arc_d_v2.tables import (
     generate_model_performance,
     generate_rung_model_spec,
     generate_sanity_bounds_check,
+    generate_seed_sanity_table,
 )
 
 # ──────────────────────────────────────────────
@@ -361,3 +366,389 @@ class TestFullPipeline:
                 f"{table_name}.csv columns mismatch: "
                 f"got {list(df.columns)}, expected {expected_cols}"
             )
+
+
+# ──────────────────────────────────────────────
+#  Multi-seed merge tests
+# ──────────────────────────────────────────────
+
+
+def _make_h2h_battery(seed, delta_a_vs_b, deals=100):
+    """Create a minimal H2H battery fixture with one cross-matchup cell."""
+    return {
+        "schema": "h2h_battery_v2",
+        "mode": "QUICK",
+        "seed": seed,
+        "n_per": deals,
+        "roster": ["model_a", "model_b"],
+        "cells": {
+            "model_a_vs_model_b": {
+                "bidder_a": "model_a",
+                "bidder_b": "model_b",
+                "net_eppd_delta": delta_a_vs_b,
+                "net_eppd_a": delta_a_vs_b,
+                "net_eppd_b": -delta_a_vs_b,
+                "ci_low": delta_a_vs_b - 0.5,
+                "ci_high": delta_a_vs_b + 0.5,
+                "win_rate_a": 0.55,
+                "abs_net_eppd_team0": 3.0 + delta_a_vs_b / 2,
+                "abs_net_eppd_team1": 3.0 - delta_a_vs_b / 2,
+                "cvar_5": -2.0,
+                "fullgame_eppd": None,
+                "deals_total": deals,
+                "pair_deals": True,
+                "matchup_id": "model_a_vs_model_b",
+            }
+        },
+    }
+
+
+def _make_comparator_cis(seed, net_eppd_a, net_eppd_b, deals=100):
+    """Create a minimal comparator CIs fixture."""
+    return {
+        "schema": "comparator_cis_v1",
+        "seed": seed,
+        "n_bootstrap": 1000,
+        "ranked_order": ["model_a", "model_b"]
+        if net_eppd_a >= net_eppd_b
+        else ["model_b", "model_a"],
+        "bidders": {
+            "model_a": {
+                "net_eppd": net_eppd_a,
+                "eppd": net_eppd_a + 1.0,
+                "bid_rate": 0.40,
+                "make_rate": 0.65,
+                "cvar_5": -1.5,
+                "net_cvar_5": -3.0,
+                "deals_total": deals,
+                "hands_with_bids": int(deals * 0.4),
+                "net_eppd_ci": [net_eppd_a, net_eppd_a - 0.3, net_eppd_a + 0.3],
+                "eppd_ci": [
+                    net_eppd_a + 1.0,
+                    net_eppd_a + 0.7,
+                    net_eppd_a + 1.3,
+                ],
+            },
+            "model_b": {
+                "net_eppd": net_eppd_b,
+                "eppd": net_eppd_b + 1.0,
+                "bid_rate": 0.35,
+                "make_rate": 0.60,
+                "cvar_5": -2.0,
+                "net_cvar_5": -4.0,
+                "deals_total": deals,
+                "hands_with_bids": int(deals * 0.35),
+                "net_eppd_ci": [net_eppd_b, net_eppd_b - 0.3, net_eppd_b + 0.3],
+                "eppd_ci": [
+                    net_eppd_b + 1.0,
+                    net_eppd_b + 0.7,
+                    net_eppd_b + 1.3,
+                ],
+            },
+        },
+    }
+
+
+class TestMergeH2HBatteries:
+    """Tests for _merge_h2h_batteries deal-count-weighted pooling."""
+
+    def test_single_battery_passthrough(self):
+        """Single battery returns unchanged."""
+        battery = _make_h2h_battery(42, 1.0)
+        merged = _merge_h2h_batteries([battery])
+        assert merged is battery  # Exact same object
+
+    def test_weighted_pooling_equal_deals(self):
+        """With equal deal counts, weighted mean = simple average."""
+        b1 = _make_h2h_battery(42, 1.0, deals=100)
+        b2 = _make_h2h_battery(123, 2.0, deals=100)
+        merged = _merge_h2h_batteries([b1, b2])
+        cell = merged["cells"]["model_a_vs_model_b"]
+        assert cell["net_eppd_delta"] == pytest.approx(1.5, abs=1e-4)
+        assert cell["deals_total"] == 200
+        assert cell["ci_method"] == "seed_averaged"
+
+    def test_weighted_pooling_unequal_deals(self):
+        """With unequal deal counts, weighted mean differs from simple avg."""
+        b1 = _make_h2h_battery(42, 1.0, deals=100)
+        b2 = _make_h2h_battery(123, 3.0, deals=300)
+        merged = _merge_h2h_batteries([b1, b2])
+        cell = merged["cells"]["model_a_vs_model_b"]
+        # Weighted: (1.0*100 + 3.0*300) / (100+300) = 1000/400 = 2.5
+        assert cell["net_eppd_delta"] == pytest.approx(2.5, abs=1e-4)
+        # Simple average would be 2.0 -- verify it's NOT that
+        assert cell["net_eppd_delta"] != pytest.approx(2.0, abs=0.01)
+        assert cell["deals_total"] == 400
+
+    def test_ci_averaged_not_weighted(self):
+        """CIs are averaged across seeds (not deal-count-weighted)."""
+        b1 = _make_h2h_battery(42, 1.0, deals=100)
+        b2 = _make_h2h_battery(123, 3.0, deals=300)
+        merged = _merge_h2h_batteries([b1, b2])
+        cell = merged["cells"]["model_a_vs_model_b"]
+        # ci_low from b1 = 0.5 (1.0-0.5), from b2 = 2.5 (3.0-0.5)
+        # average = 1.5
+        assert cell["ci_low"] == pytest.approx(1.5, abs=1e-4)
+
+    def test_seeds_merged_count(self):
+        """Merged output records number of seeds."""
+        b1 = _make_h2h_battery(42, 1.0)
+        b2 = _make_h2h_battery(123, 1.5)
+        b3 = _make_h2h_battery(456, 2.0)
+        merged = _merge_h2h_batteries([b1, b2, b3])
+        assert merged["seeds_merged"] == 3
+
+    def test_per_contract_merge(self):
+        """Per-contract data is merged with weighted pooling."""
+        b1 = _make_h2h_battery(42, 1.0, deals=100)
+        b1["cells"]["model_a_vs_model_b"]["by_contract"] = {
+            "suit": {
+                "net_eppd_delta": 1.5,
+                "ci_low": 0.5,
+                "ci_high": 2.5,
+                "win_rate_a": 0.60,
+                "deals_total": 40,
+            }
+        }
+        b2 = _make_h2h_battery(123, 2.0, deals=100)
+        b2["cells"]["model_a_vs_model_b"]["by_contract"] = {
+            "suit": {
+                "net_eppd_delta": 2.5,
+                "ci_low": 1.5,
+                "ci_high": 3.5,
+                "win_rate_a": 0.70,
+                "deals_total": 60,
+            }
+        }
+        merged = _merge_h2h_batteries([b1, b2])
+        suit = merged["cells"]["model_a_vs_model_b"]["by_contract"]["suit"]
+        # Weighted: (1.5*40 + 2.5*60) / 100 = 210/100 = 2.1
+        assert suit["net_eppd_delta"] == pytest.approx(2.1, abs=1e-4)
+        assert suit["deals_total"] == 100
+        assert suit["ci_method"] == "seed_averaged"
+
+
+class TestMergeComparatorCIs:
+    """Tests for _merge_comparator_cis deal-count-weighted pooling."""
+
+    def test_single_cis_passthrough(self):
+        """Single CIs dict returns unchanged."""
+        cis = _make_comparator_cis(42, 2.0, 1.0)
+        merged = _merge_comparator_cis([cis])
+        assert merged is cis
+
+    def test_weighted_pooling_equal_deals(self):
+        """With equal deals, weighted = simple average."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0, deals=100)
+        c2 = _make_comparator_cis(123, 3.0, 1.5, deals=100)
+        merged = _merge_comparator_cis([c1, c2])
+        assert merged["bidders"]["model_a"]["net_eppd"] == pytest.approx(2.5, abs=1e-4)
+        assert merged["bidders"]["model_b"]["net_eppd"] == pytest.approx(1.25, abs=1e-4)
+
+    def test_weighted_pooling_unequal_deals(self):
+        """With unequal deals, weighted mean != simple average."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0, deals=100)
+        c2 = _make_comparator_cis(123, 4.0, 2.0, deals=300)
+        merged = _merge_comparator_cis([c1, c2])
+        # Weighted: (2.0*100 + 4.0*300) / 400 = 1400/400 = 3.5
+        assert merged["bidders"]["model_a"]["net_eppd"] == pytest.approx(3.5, abs=1e-4)
+        # Simple avg would be 3.0
+        assert merged["bidders"]["model_a"]["net_eppd"] != pytest.approx(3.0, abs=0.01)
+
+    def test_re_ranking(self):
+        """Merged output re-ranks by pooled net_eppd."""
+        c1 = _make_comparator_cis(42, 2.0, 3.0, deals=100)  # b > a on seed 42
+        c2 = _make_comparator_cis(123, 2.0, 3.0, deals=100)
+        merged = _merge_comparator_cis([c1, c2])
+        # model_b has higher net_eppd
+        assert merged["ranked_order"][0] == "model_b"
+        assert merged["ranked_order"][1] == "model_a"
+
+    def test_ci_method_marker(self):
+        """Merged bidders carry ci_method = 'seed_averaged'."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        c2 = _make_comparator_cis(123, 2.5, 1.2)
+        merged = _merge_comparator_cis([c1, c2])
+        for bidder in merged["bidders"].values():
+            assert bidder["ci_method"] == "seed_averaged"
+
+    def test_ci_arrays_averaged(self):
+        """CI arrays [point, low, high] are averaged element-wise."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0, deals=100)
+        c2 = _make_comparator_cis(123, 3.0, 1.5, deals=100)
+        merged = _merge_comparator_cis([c1, c2])
+        ci = merged["bidders"]["model_a"]["net_eppd_ci"]
+        # c1 ci = [2.0, 1.7, 2.3], c2 ci = [3.0, 2.7, 3.3]
+        # avg = [2.5, 2.2, 2.8]
+        assert ci[0] == pytest.approx(2.5, abs=1e-4)
+        assert ci[1] == pytest.approx(2.2, abs=1e-4)
+        assert ci[2] == pytest.approx(2.8, abs=1e-4)
+
+
+class TestPooledVsAverageCIs:
+    """Verify that pooled weighted merge produces different results than naive averaging."""
+
+    def test_h2h_weighted_differs_from_naive_avg(self):
+        """Weighted pooling with unequal deal counts differs from naive avg."""
+        b1 = _make_h2h_battery(42, 1.0, deals=50)
+        b2 = _make_h2h_battery(123, 3.0, deals=150)
+        merged = _merge_h2h_batteries([b1, b2])
+        cell = merged["cells"]["model_a_vs_model_b"]
+        # Naive avg would be 2.0, weighted = (50+450)/200 = 2.5
+        naive_avg = (1.0 + 3.0) / 2
+        assert cell["net_eppd_delta"] != pytest.approx(naive_avg, abs=0.01)
+        expected = (1.0 * 50 + 3.0 * 150) / 200
+        assert cell["net_eppd_delta"] == pytest.approx(expected, abs=1e-4)
+
+    def test_comparator_weighted_differs_from_naive_avg(self):
+        """Weighted pooling with unequal deal counts differs from naive avg."""
+        c1 = _make_comparator_cis(42, 1.0, 0.5, deals=50)
+        c2 = _make_comparator_cis(123, 3.0, 1.5, deals=150)
+        merged = _merge_comparator_cis([c1, c2])
+        naive_avg = (1.0 + 3.0) / 2
+        expected = (1.0 * 50 + 3.0 * 150) / 200
+        assert merged["bidders"]["model_a"]["net_eppd"] != pytest.approx(
+            naive_avg, abs=0.01
+        )
+        assert merged["bidders"]["model_a"]["net_eppd"] == pytest.approx(
+            expected, abs=1e-4
+        )
+
+
+# ──────────────────────────────────────────────
+#  Per-seed sanity check tests
+# ──────────────────────────────────────────────
+
+
+class TestPerSeedSanityH2H:
+    """Tests for H2H per-seed outlier and rank reversal checks."""
+
+    def test_no_warnings_single_seed(self):
+        """Single seed produces no warnings."""
+        b1 = _make_h2h_battery(42, 1.0)
+        assert _per_seed_sanity_h2h([b1]) == []
+
+    def test_no_warnings_consistent_seeds(self):
+        """Consistent seeds produce no warnings."""
+        b1 = _make_h2h_battery(42, 1.0, deals=100)
+        b2 = _make_h2h_battery(123, 1.1, deals=100)
+        b3 = _make_h2h_battery(456, 0.9, deals=100)
+        warnings = _per_seed_sanity_h2h([b1, b2, b3])
+        # Small variation shouldn't trigger outlier or rank reversal
+        rank_reversals = [w for w in warnings if w["check"] == "h2h_rank_reversal"]
+        assert len(rank_reversals) == 0
+
+    def test_rank_reversal_detected(self):
+        """Sign flip across seeds triggers rank_reversal warning."""
+        b1 = _make_h2h_battery(42, 1.0)  # model_a > model_b
+        b2 = _make_h2h_battery(123, -0.5)  # model_a < model_b
+        warnings = _per_seed_sanity_h2h([b1, b2])
+        reversals = [w for w in warnings if w["check"] == "h2h_rank_reversal"]
+        assert len(reversals) == 1
+        assert "model_a_vs_model_b" in reversals[0]["matchup_id"]
+
+    def test_outlier_detected(self):
+        """Extreme seed outlier triggers warning (uses MAD for small-n robustness)."""
+        b1 = _make_h2h_battery(42, 1.0)
+        b2 = _make_h2h_battery(123, 1.1)
+        b3 = _make_h2h_battery(456, 10.0)  # Extreme outlier
+        warnings = _per_seed_sanity_h2h([b1, b2, b3])
+        outliers = [w for w in warnings if w["check"] == "h2h_seed_outlier"]
+        assert len(outliers) >= 1
+        assert any("456" in w["detail"] for w in outliers)
+
+
+class TestPerSeedSanityComparator:
+    """Tests for comparator per-seed outlier and rank reversal checks."""
+
+    def test_no_warnings_single_seed(self):
+        """Single seed produces no warnings."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        assert _per_seed_sanity_comparator([c1]) == []
+
+    def test_rank_reversal_detected(self):
+        """Ranking flip across seeds triggers warning."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0)  # a > b
+        c2 = _make_comparator_cis(123, 0.5, 1.5)  # b > a
+        warnings = _per_seed_sanity_comparator([c1, c2])
+        reversals = [w for w in warnings if w["check"] == "comparator_rank_reversal"]
+        assert len(reversals) >= 1
+
+    def test_outlier_detected(self):
+        """Extreme seed outlier triggers warning (uses MAD for small-n robustness)."""
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        c2 = _make_comparator_cis(123, 2.1, 1.1)
+        c3 = _make_comparator_cis(456, 10.0, 1.0)  # a is extreme outlier
+        warnings = _per_seed_sanity_comparator([c1, c2, c3])
+        outliers = [w for w in warnings if w["check"] == "comparator_seed_outlier"]
+        assert len(outliers) >= 1
+        assert any("456" in w["detail"] for w in outliers)
+
+
+class TestSeedSanityTable:
+    """Tests for the combined seed_sanity table generator."""
+
+    def test_schema(self):
+        """seed_sanity.csv has expected columns."""
+        b1 = _make_h2h_battery(42, 1.0)
+        b2 = _make_h2h_battery(123, -0.5)
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        c2 = _make_comparator_cis(123, 0.5, 1.5)
+        df = generate_seed_sanity_table([b1, b2], [c1, c2])
+        assert list(df.columns) == [
+            "check",
+            "scope",
+            "matchup_or_model",
+            "detail",
+        ]
+        assert len(df) > 0
+
+    def test_empty_for_single_seed(self):
+        """Single seed produces empty table."""
+        b1 = _make_h2h_battery(42, 1.0)
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        df = generate_seed_sanity_table([b1], [c1])
+        assert len(df) == 0
+
+    def test_scopes(self):
+        """Warnings are categorized by scope (h2h / comparator)."""
+        b1 = _make_h2h_battery(42, 1.0)
+        b2 = _make_h2h_battery(123, -0.5)
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        c2 = _make_comparator_cis(123, 0.5, 1.5)
+        df = generate_seed_sanity_table([b1, b2], [c1, c2])
+        assert "h2h" in df["scope"].values
+        assert "comparator" in df["scope"].values
+
+
+class TestMultiSeedPipeline:
+    """Integration tests for multi-seed path through generate_all_tables."""
+
+    def test_multi_seed_generates_seed_sanity(self, tmp_path):
+        """When seeds=[42, 123], seed_sanity.csv is generated."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+
+        # Create two battery files with different seeds
+        b1 = _make_h2h_battery(42, 1.0)
+        b2 = _make_h2h_battery(123, -0.5)  # rank reversal
+        (rung_dir / "h2h_battery_quick_42.json").write_text(json.dumps(b1))
+        (rung_dir / "h2h_battery_quick_123.json").write_text(json.dumps(b2))
+
+        # Create comparator CIs
+        c1 = _make_comparator_cis(42, 2.0, 1.0)
+        c2 = _make_comparator_cis(123, 0.5, 1.5)
+        (rung_dir / "comparator_cis_rung_42.json").write_text(json.dumps(c1))
+        (rung_dir / "comparator_cis_rung_123.json").write_text(json.dumps(c2))
+
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(
+            rung_dir, output_dir, mode="quick", seeds=[42, 123]
+        )
+        assert "seed_sanity.csv" in generated
+
+    def test_single_seed_no_seed_sanity(self, tmp_path):
+        """When seeds=[42], seed_sanity.csv is NOT generated."""
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(FIXTURES_DIR, output_dir, seeds=[42])
+        assert "seed_sanity.csv" not in generated
