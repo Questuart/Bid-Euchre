@@ -208,6 +208,24 @@ def generate_h2h_delta_matrix(h2h_battery: dict) -> pd.DataFrame:
                     }
                 )
 
+        # Per-bid_type rows (if by_bid_type data is available)
+        by_bid_type = cell.get("by_bid_type", {})
+        for bt in ("regular", "moon", "loner"):
+            bt_data = by_bid_type.get(bt)
+            if bt_data:
+                rows.append(
+                    {
+                        "model_a": bidder_a,
+                        "model_b": bidder_b,
+                        "facet": f"bid_type:{bt}",
+                        "net_eppd_delta": _safe_round(bt_data.get("net_eppd_delta")),
+                        "ci_low": _safe_round(bt_data.get("ci_low")),
+                        "ci_high": _safe_round(bt_data.get("ci_high")),
+                        "win_rate_a": _safe_round(bt_data.get("win_rate_a")),
+                        "deals_total": bt_data.get("deals_total"),
+                    }
+                )
+
     return pd.DataFrame(rows)
 
 
@@ -319,6 +337,93 @@ def generate_behavior_by_contract(
                     "source": "comparator",
                 }
             )
+
+    return pd.DataFrame(rows)
+
+
+def generate_behavior_by_bid_type(
+    comparator_cis: dict | None = None,
+    h2h_battery: dict | None = None,
+) -> pd.DataFrame:
+    """Generate behavior_by_bid_type.csv -- faceted behavioral metrics by bid type.
+
+    Columns: model, bid_type, count, bid_rate, make_rate, mean_net_points, source
+
+    For R0-R2 data (no bid_type field): emits only "regular" rows.
+    For R3 data: emits regular + moon + loner rows with actual frequencies.
+    """
+    rows: list[dict] = []
+
+    if comparator_cis:
+        bidders = comparator_cis.get("bidders", {})
+        bidders_by_bid_type = comparator_cis.get("bidders_by_bid_type", {})
+
+        if bidders_by_bid_type:
+            # R3+ data: per-bid_type breakdowns available
+            for bt in ("regular", "moon", "loner"):
+                bt_data = bidders_by_bid_type.get(bt, {})
+                for name, b in bt_data.items():
+                    rows.append(
+                        {
+                            "model": name,
+                            "bid_type": bt,
+                            "count": b.get("hands_with_bids", 0),
+                            "bid_rate": _safe_round(b.get("bid_rate")),
+                            "make_rate": _safe_round(b.get("make_rate")),
+                            "mean_net_points": _safe_round(b.get("net_eppd")),
+                            "source": "comparator",
+                        }
+                    )
+        else:
+            # R0-R2 data: only "regular" rows
+            for name, b in bidders.items():
+                rows.append(
+                    {
+                        "model": name,
+                        "bid_type": "regular",
+                        "count": b.get("hands_with_bids", 0),
+                        "bid_rate": _safe_round(b.get("bid_rate")),
+                        "make_rate": _safe_round(b.get("make_rate")),
+                        "mean_net_points": _safe_round(b.get("net_eppd")),
+                        "source": "comparator",
+                    }
+                )
+
+    if h2h_battery:
+        for _mid, cell in h2h_battery.get("cells", {}).items():
+            if cell.get("bidder_a") != cell.get("bidder_b"):
+                continue  # Only self-play for behavior tables
+            by_bid_type = cell.get("by_bid_type", {})
+            if by_bid_type:
+                for bt in ("regular", "moon", "loner"):
+                    bt_data = by_bid_type.get(bt)
+                    if bt_data:
+                        rows.append(
+                            {
+                                "model": cell["bidder_a"],
+                                "bid_type": bt,
+                                "count": bt_data.get("deals_total", 0),
+                                "bid_rate": None,
+                                "make_rate": _safe_round(bt_data.get("win_rate_a")),
+                                "mean_net_points": _safe_round(
+                                    bt_data.get("net_eppd_delta")
+                                ),
+                                "source": "h2h_self_play",
+                            }
+                        )
+            else:
+                # No bid_type data: emit "regular" row
+                rows.append(
+                    {
+                        "model": cell["bidder_a"],
+                        "bid_type": "regular",
+                        "count": cell.get("deals_total", 0),
+                        "bid_rate": _safe_round(cell.get("bid_rate_a")),
+                        "make_rate": _safe_round(cell.get("make_rate_a")),
+                        "mean_net_points": _safe_round(cell.get("fullgame_eppd")),
+                        "source": "h2h_self_play",
+                    }
+                )
 
     return pd.DataFrame(rows)
 
@@ -685,6 +790,30 @@ def _merge_h2h_batteries(batteries: list[dict]) -> dict:
                 merged_ct["ci_method"] = "seed_averaged"
                 merged_bc[ct] = merged_ct
             base["by_contract"] = merged_bc
+
+        # Merge per-bid_type data if present
+        all_bid_types: dict[str, list[dict]] = {}
+        for c in cell_list:
+            for bt, bt_data in c.get("by_bid_type", {}).items():
+                all_bid_types.setdefault(bt, []).append(bt_data)
+        if all_bid_types:
+            merged_bt = {}
+            for bt, bt_list in all_bid_types.items():
+                bt_deals = [d.get("deals_total", 0) for d in bt_list]
+                merged_bt_entry: dict = {}
+                for key in ("net_eppd_delta", "win_rate_a"):
+                    vals = [d.get(key) for d in bt_list]
+                    wm = _weighted_mean(vals, bt_deals)
+                    merged_bt_entry[key] = round(wm, 6) if wm is not None else None
+                for key in ("ci_low", "ci_high"):
+                    vals = [d.get(key) for d in bt_list if d.get(key) is not None]
+                    merged_bt_entry[key] = (
+                        round(sum(vals) / len(vals), 6) if vals else None
+                    )
+                merged_bt_entry["deals_total"] = sum(bt_deals)
+                merged_bt_entry["ci_method"] = "seed_averaged"
+                merged_bt[bt] = merged_bt_entry
+            base["by_bid_type"] = merged_bt
         result_cells[mid] = base
 
     merged["cells"] = result_cells
@@ -1057,6 +1186,12 @@ def generate_all_tables(
     if len(df) > 0:
         df.to_csv(output_dir / "behavior_by_contract.csv", index=False)
         generated.append("behavior_by_contract.csv")
+
+    # 5b. behavior_by_bid_type.csv
+    df = generate_behavior_by_bid_type(comparator_cis, h2h_battery)
+    if len(df) > 0:
+        df.to_csv(output_dir / "behavior_by_bid_type.csv", index=False)
+        generated.append("behavior_by_bid_type.csv")
 
     # 6. sanity_bounds_check.csv
     df = generate_sanity_bounds_check(comparator_cis, training_artifacts)

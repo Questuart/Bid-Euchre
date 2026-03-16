@@ -76,7 +76,10 @@ def _parse_jsonl_points(log_path: Path) -> dict:
             if winning_bid is None or bidder_position is None:
                 continue
 
-            pts_t0, pts_t1 = compute_points(winning_bid, bidder_position, t0, t1)
+            bid_type = record.get("bid_type", "regular")
+            pts_t0, pts_t1 = compute_points(
+                winning_bid, bidder_position, t0, t1, bid_type=bid_type
+            )
 
             # Bidder team's points
             if bidder_position in (0, 2):
