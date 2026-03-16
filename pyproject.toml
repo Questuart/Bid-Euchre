@@ -51,7 +51,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.ruff]
-extend-exclude = ["data/", "experiments/_deprecated/"]
+extend-exclude = ["data/", "experiments/_deprecated/", ".claude/worktrees/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

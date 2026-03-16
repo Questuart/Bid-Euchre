@@ -14,7 +14,7 @@ The review loop:
 2. Runs `make check-quiet`
 3. Invokes Codex CLI for code review
 4. Auto-fixes safe patterns (convention fixes)
-5. Iterates (max 5 rounds) until clean or stopped
+5. Iterates (max 3 rounds) until clean or stopped
 6. Publishes `reviewing-changes` commit status
 7. Enables auto-merge (squash) when review passes
 

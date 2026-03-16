@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 # Add scripts/internal to path for imports
 sys.path.insert(
@@ -320,44 +320,44 @@ class TestCommandConstruction:
     ensure the prompt is never included in the command.
     """
 
-    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_plan_review_adapter._run_with_pty")
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_no_prompt_in_review_command(self, mock_resolve, mock_run):
+    def test_no_prompt_in_review_command(self, mock_resolve, mock_pty):
         """The review command must not include a positional prompt."""
-        mock_run.return_value = Mock(returncode=0, stdout="No issues found.", stderr="")
+        mock_pty.return_value = (0, "No issues found.")
         invoke_codex_cli(mode="standard", base="main")
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_pty.call_args[0][0]
         assert cmd == ["codex", "review", "--base", "main"]
 
-    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_plan_review_adapter._run_with_pty")
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_mode_does_not_affect_command(self, mock_resolve, mock_run):
+    def test_mode_does_not_affect_command(self, mock_resolve, mock_pty):
         """Different modes must not change the command (prompt removed)."""
-        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        mock_pty.return_value = (0, "LGTM")
         for mode in ("standard", "report-audit", "plan-audit"):
             invoke_codex_cli(mode=mode, base="main")
-            cmd = mock_run.call_args[0][0]
+            cmd = mock_pty.call_args[0][0]
             assert cmd == ["codex", "review", "--base", "main"]
 
-    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_plan_review_adapter._run_with_pty")
     @patch(
         "codex_review_adapter._resolve_codex_binary",
         return_value=["npx", "@openai/codex"],
     )
-    def test_npx_fallback_command(self, mock_resolve, mock_run):
+    def test_npx_fallback_command(self, mock_resolve, mock_pty):
         """When codex binary not found, falls back to npx."""
-        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        mock_pty.return_value = (0, "LGTM")
         invoke_codex_cli(base="main")
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_pty.call_args[0][0]
         assert cmd == ["npx", "@openai/codex", "review", "--base", "main"]
 
-    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_plan_review_adapter._run_with_pty")
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_custom_base_branch(self, mock_resolve, mock_run):
+    def test_custom_base_branch(self, mock_resolve, mock_pty):
         """Base branch argument is correctly passed."""
-        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        mock_pty.return_value = (0, "LGTM")
         invoke_codex_cli(base="develop")
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_pty.call_args[0][0]
         assert cmd == ["codex", "review", "--base", "develop"]
 
 
@@ -387,24 +387,23 @@ class TestErrorClassification:
     def test_empty_stderr_is_review_error(self):
         assert _classify_error("") == "cli_review_error"
 
-    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_plan_review_adapter._run_with_pty")
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_error_type_in_result(self, mock_resolve, mock_run):
+    def test_error_type_in_result(self, mock_resolve, mock_pty):
         """error_type must be set on failed results."""
-        mock_run.return_value = Mock(
-            returncode=2,
-            stdout="",
-            stderr="error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'",
+        mock_pty.return_value = (
+            2,
+            "error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'",
         )
         result = invoke_codex_cli(base="main")
         assert not result.success
         assert result.error_type == "cli_invocation_error"
 
-    @patch("codex_review_adapter.subprocess.run")
+    @patch("codex_plan_review_adapter._run_with_pty")
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_success_has_no_error_type(self, mock_resolve, mock_run):
+    def test_success_has_no_error_type(self, mock_resolve, mock_pty):
         """Successful results have no error_type."""
-        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        mock_pty.return_value = (0, "LGTM")
         result = invoke_codex_cli(base="main")
         assert result.success
         assert result.error_type is None
@@ -486,16 +485,16 @@ class TestEnvVarLauncher:
                 result = _resolve_codex_binary()
                 assert result == ["npx", "@openai/codex"]
 
-    @patch("codex_review_adapter.subprocess.run")
-    def test_env_var_in_invoke_command(self, mock_run):
+    @patch("codex_plan_review_adapter._run_with_pty")
+    def test_env_var_in_invoke_command(self, mock_pty):
         """Env-configured command appears in invoke_codex_cli() command."""
-        mock_run.return_value = Mock(returncode=0, stdout="LGTM", stderr="")
+        mock_pty.return_value = (0, "LGTM")
         with patch.dict(
             os.environ,
             {"CODEX_REVIEW_CMD": "docker exec codex-container codex"},
         ):
             invoke_codex_cli(base="main")
-            cmd = mock_run.call_args[0][0]
+            cmd = mock_pty.call_args[0][0]
             assert cmd == [
                 "docker",
                 "exec",

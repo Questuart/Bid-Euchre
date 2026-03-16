@@ -52,7 +52,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 8. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
 9. Auto-fixable findings (convention patterns) are applied and committed
 10. Non-auto-fixable findings are recorded
-11. Loop iterates (max 5 rounds) until clean or stopped
+11. Loop iterates (max 3 rounds) until clean or stopped
 12. Loop publishes final status (`success` or `failure`)
 13. Loop creates follow-up issues for non-blocking (P2) findings
 14. Loop enables auto-merge (squash) — GitHub merges when CI + branch protection pass

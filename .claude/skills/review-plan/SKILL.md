@@ -6,7 +6,7 @@ description: Runs independent plan review loop with Codex CLI primary reviewer a
 # /review-plan -- Independent Plan Review
 
 Reviews a plan file using the Codex CLI (primary) with Claude agent fallback.
-Runs up to 5 review iterations with automated fixes between rounds.
+Runs up to 3 review iterations with automated fixes between rounds.
 
 ## Usage
 

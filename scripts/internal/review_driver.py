@@ -194,7 +194,7 @@ def initialize_state(
     pr_number: int,
     branch: str,
     mode: ReviewMode,
-    max_iterations: int = 5,
+    max_iterations: int = 3,
     *,
     head_sha: str | None = None,
 ) -> ReviewLoopState:
@@ -1166,8 +1166,8 @@ def main() -> int:
     parser.add_argument(
         "--max-iterations",
         type=int,
-        default=5,
-        help="Maximum review iterations (default: 5)",
+        default=3,
+        help="Maximum review iterations (default: 3)",
     )
     args = parser.parse_args()
 

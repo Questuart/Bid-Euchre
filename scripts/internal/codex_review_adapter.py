@@ -14,7 +14,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -322,6 +321,8 @@ def invoke_codex_cli(
     Returns:
         CodexReviewResult with parsed findings or error info.
     """
+    from codex_plan_review_adapter import _run_with_pty
+
     cmd = [*_resolve_codex_binary(), "review", "--base", base]
 
     logger.info(
@@ -334,81 +335,7 @@ def invoke_codex_cli(
     start = time.monotonic()
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=cwd,
-        )
-        elapsed = time.monotonic() - start
-
-        if result.returncode != 0:
-            error_type = _classify_error(result.stderr)
-            logger.warning(
-                "Codex CLI returned exit code %d (%.1fs, %s): %s",
-                result.returncode,
-                elapsed,
-                error_type,
-                result.stderr[:200],
-            )
-            return CodexReviewResult(
-                success=False,
-                findings=[],
-                raw_output=result.stdout + result.stderr,
-                latency_seconds=elapsed,
-                error=f"Exit code {result.returncode}: {result.stderr[:200]}",
-                exit_code=result.returncode,
-                error_type=error_type,
-            )
-
-        findings = parse_codex_output(result.stdout)
-
-        # Fail-safe: if zero findings parsed from non-trivial output
-        # and no recognizable "clean review" signal, treat as unparseable.
-        # This prevents format drift from silently bypassing review.
-        if not findings and result.stdout.strip():
-            if not _CLEAN_REVIEW_PATTERNS.search(result.stdout):
-                logger.warning(
-                    "Codex CLI returned output (%.1fs, %d chars) but no findings "
-                    "were parsed and no clean-review signal detected — treating "
-                    "as unparseable",
-                    elapsed,
-                    len(result.stdout),
-                )
-                return CodexReviewResult(
-                    success=False,
-                    findings=[],
-                    raw_output=result.stdout,
-                    latency_seconds=elapsed,
-                    error="Unparseable output: no findings matched and no clean-review signal",
-                    exit_code=0,
-                )
-
-        logger.info(
-            "Codex CLI completed (%.1fs): %d findings",
-            elapsed,
-            len(findings),
-        )
-        return CodexReviewResult(
-            success=True,
-            findings=findings,
-            raw_output=result.stdout,
-            latency_seconds=elapsed,
-            exit_code=0,
-        )
-
-    except subprocess.TimeoutExpired:
-        elapsed = time.monotonic() - start
-        logger.warning("Codex CLI timed out after %.1fs", elapsed)
-        return CodexReviewResult(
-            success=False,
-            findings=[],
-            raw_output="",
-            latency_seconds=elapsed,
-            error=f"Timeout after {timeout}s",
-        )
-
+        returncode, output = _run_with_pty(cmd, timeout=timeout, cwd=cwd)
     except FileNotFoundError:
         elapsed = time.monotonic() - start
         logger.error("Codex CLI not found — codex not in PATH and npx unavailable")
@@ -419,6 +346,73 @@ def invoke_codex_cli(
             latency_seconds=elapsed,
             error="Codex CLI not found (codex not in PATH, npx unavailable)",
         )
+
+    elapsed = time.monotonic() - start
+
+    if returncode is None:
+        logger.warning("Codex CLI timed out after %.1fs", elapsed)
+        return CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output=output,
+            latency_seconds=elapsed,
+            error=f"Timeout after {timeout}s",
+        )
+
+    if returncode != 0:
+        error_type = _classify_error(output)
+        logger.warning(
+            "Codex CLI returned exit code %d (%.1fs, %s): %s",
+            returncode,
+            elapsed,
+            error_type,
+            output[:200],
+        )
+        return CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output=output,
+            latency_seconds=elapsed,
+            error=f"Exit code {returncode}: {output[:200]}",
+            exit_code=returncode,
+            error_type=error_type,
+        )
+
+    findings = parse_codex_output(output)
+
+    # Fail-safe: if zero findings parsed from non-trivial output
+    # and no recognizable "clean review" signal, treat as unparseable.
+    # This prevents format drift from silently bypassing review.
+    if not findings and output.strip():
+        if not _CLEAN_REVIEW_PATTERNS.search(output):
+            logger.warning(
+                "Codex CLI returned output (%.1fs, %d chars) but no findings "
+                "were parsed and no clean-review signal detected — treating "
+                "as unparseable",
+                elapsed,
+                len(output),
+            )
+            return CodexReviewResult(
+                success=False,
+                findings=[],
+                raw_output=output,
+                latency_seconds=elapsed,
+                error="Unparseable output: no findings matched and no clean-review signal",
+                exit_code=0,
+            )
+
+    logger.info(
+        "Codex CLI completed (%.1fs): %d findings",
+        elapsed,
+        len(findings),
+    )
+    return CodexReviewResult(
+        success=True,
+        findings=findings,
+        raw_output=output,
+        latency_seconds=elapsed,
+        exit_code=0,
+    )
 
 
 def get_blocking_findings(findings: list[CodexFinding]) -> list[CodexFinding]:

@@ -4,7 +4,7 @@
 
 The autonomous review loop is a local state machine where Claude (author)
 writes/fixes code and Codex CLI (reviewer) reviews it. The loop is persisted
-to disk, resumable after restarts, and bounded (max 5 iterations).
+to disk, resumable after restarts, and bounded (max 3 iterations).
 
 The loop is the sole review mechanism for all PRs. It runs asynchronously
 after PR creation, triggered by the `post-pr-review-loop.sh` PostToolUse hook.
