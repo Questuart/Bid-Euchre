@@ -27,13 +27,7 @@ class TestEndToEndSimulation:
             all_features,
             initial_leader,
             starting_hands,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
+            *_,
         ) = result
 
         # Basic validation

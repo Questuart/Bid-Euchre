@@ -115,6 +115,9 @@ class TestBiddingSequentialSemantics:
             final_trump,
             _,
             _,
+            _,
+            _,
+            _,
         ) = play_single_hand(
             contract_type=None,
             bidding_policy=policy,

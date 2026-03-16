@@ -55,7 +55,7 @@ class TestExchangeValidity:
         mooner = _make_hand_10(["AH", "KH", "QH", "JH", "TH"], fill_suit="D")
         partner = _make_hand_10(["AS", "KS", "QS", "JS", "TS"], fill_suit="C")
 
-        new_m, new_p = perform_exchange(mooner, partner, "suit", "H")
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "suit", "H")
 
         assert len(new_m) == 10
         assert len(new_p) == 10
@@ -66,7 +66,7 @@ class TestExchangeValidity:
         partner = _make_hand_10(["AS", "KS", "QS", "JS", "TS"], fill_suit="C")
 
         original = sorted(mooner + partner, key=lambda c: (c.suit, c.rank))
-        new_m, new_p = perform_exchange(mooner, partner, "suit", "H")
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "suit", "H")
         after = sorted(new_m + new_p, key=lambda c: (c.suit, c.rank))
 
         assert original == after
@@ -89,7 +89,7 @@ class TestExchangeValidity:
         mooner = _make_hand_10(["AH", "KH", "QH", "JH", "TH"], fill_suit="D")
         partner = _make_hand_10(["AS", "KS", "QS", "JS", "TS"], fill_suit="C")
 
-        new_m, new_p = perform_exchange(mooner, partner, "high", None)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "high", None)
 
         assert len(new_m) == 10
         assert len(new_p) == 10
@@ -99,7 +99,7 @@ class TestExchangeValidity:
         mooner = _make_hand_10(["AH", "KH", "QH", "JH", "TH"], fill_suit="D")
         partner = _make_hand_10(["AS", "KS", "QS", "JS", "TS"], fill_suit="C")
 
-        new_m, new_p = perform_exchange(mooner, partner, "low", None)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "low", None)
 
         assert len(new_m) == 10
         assert len(new_p) == 10
@@ -290,7 +290,7 @@ class TestBowerHandling:
         partner = _cards(["AS", "KS", "QS", "JS", "TS", "AC", "KC", "JC", "AD", "KD"])
         trump_suit = "H"
 
-        new_m, new_p = perform_exchange(mooner, partner, "suit", trump_suit)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "suit", trump_suit)
 
         # Mooner should still have both bowers
         assert Card("H", "J") in new_m  # Right bower
@@ -311,7 +311,7 @@ class TestDoubleDeckEdgeCases:
         mooner = _cards(["AH", "KH", "QH", "JH", "TH", "AC", "KC", "QC", "JC", "TC"])
         partner = _cards(["AS", "KS", "QS", "JS", "TS", "AC", "KC", "QC", "JC", "TC"])
 
-        new_m, new_p = perform_exchange(mooner, partner, "suit", "H")
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "suit", "H")
 
         assert len(new_m) == 10
         assert len(new_p) == 10
@@ -326,7 +326,7 @@ class TestDoubleDeckEdgeCases:
         mooner = _cards(["TH", "AH", "KH", "QH", "JH", "TD", "JD", "QD", "KD", "AD"])
         partner = _cards(["TH", "AS", "KS", "QS", "JS", "TS", "AC", "KC", "QC", "JC"])
 
-        new_m, new_p = perform_exchange(mooner, partner, "high", None)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "high", None)
 
         assert len(new_m) == 10
         assert len(new_p) == 10
@@ -410,7 +410,7 @@ class TestExchangeEndToEnd:
         partner = _cards(["JH", "JD", "KD", "AD", "AS", "KS", "QS", "JS", "TS", "TD"])
         trump_suit = "H"
 
-        new_m, new_p = perform_exchange(mooner, partner, "suit", trump_suit)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "suit", trump_suit)
 
         # Mooner should have gained the right bower (JH) and left bower (JD)
         assert Card("H", "J") in new_m
@@ -423,7 +423,7 @@ class TestExchangeEndToEnd:
         # Partner: has aces in spades and clubs
         partner = _cards(["AS", "KS", "QS", "JS", "TS", "AC", "KC", "QC", "JC", "TC"])
 
-        new_m, new_p = perform_exchange(mooner, partner, "high", None)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "high", None)
 
         # Mooner should have received AS and AC (the partner's aces)
         assert Card("S", "A") in new_m
@@ -436,7 +436,7 @@ class TestExchangeEndToEnd:
         # Partner: has tens
         partner = _cards(["TH", "TD", "TC", "TS", "QS", "JS", "QC", "JC", "KS", "AS"])
 
-        new_m, new_p = perform_exchange(mooner, partner, "low", None)
+        new_m, new_p, _, _ = perform_exchange(mooner, partner, "low", None)
 
         # Mooner should have received 2 tens from partner
         tens_in_mooner = [c for c in new_m if c.rank == "T"]

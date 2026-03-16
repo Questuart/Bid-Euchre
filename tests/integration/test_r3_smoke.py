@@ -137,6 +137,9 @@ class TestMoonEndToEnd:
             trump,
             transcript,
             bid_type,
+            exchange_given,
+            exchange_received,
+            sitting_out,
         ) = result
 
         # Tricks sum to 10
@@ -146,6 +149,23 @@ class TestMoonEndToEnd:
         # Contract should be suit with trump H
         assert ctype == "suit", f"Expected contract_type='suit', got '{ctype}'"
         assert trump == "H", f"Expected trump='H', got '{trump}'"
+        # Exchange cards should be populated for moon bids
+        assert (
+            exchange_given is not None
+        ), "exchange_cards_given should not be None for moon"
+        assert (
+            exchange_received is not None
+        ), "exchange_cards_received should not be None for moon"
+        assert (
+            len(exchange_given) == 2
+        ), f"Expected 2 cards given, got {len(exchange_given)}"
+        assert (
+            len(exchange_received) == 2
+        ), f"Expected 2 cards received, got {len(exchange_received)}"
+        # sitting_out should be None for moon (only loner)
+        assert (
+            sitting_out is None
+        ), f"sitting_out should be None for moon, got {sitting_out}"
 
     def test_moon_scoring_made(self):
         """When declaring team wins all 10 tricks, they get +20."""
@@ -209,7 +229,7 @@ class TestMoonEndToEnd:
             rng=rng,
         )
 
-        t0, t1, _s, _f, _l, _h, _b, _d, _bp, ctype, trump, _tr, bid_type = result
+        t0, t1, _s, _f, _l, _h, _b, _d, _bp, ctype, trump, _tr, bid_type, *_ = result
         assert t0 + t1 == 10
         assert bid_type == "moon"
 
@@ -246,7 +266,7 @@ class TestLonerEndToEnd:
             rng=rng,
         )
 
-        t0, t1, _s, _f, _l, _h, _b, _d, _bp, ctype, trump, _tr, bid_type = result
+        t0, t1, _s, _f, _l, _h, _b, _d, _bp, ctype, trump, _tr, bid_type, *_ = result
 
         assert t0 + t1 == 10, f"Expected 10 total tricks, got {t0 + t1}"
         assert bid_type == "loner", f"Expected bid_type='loner', got '{bid_type}'"

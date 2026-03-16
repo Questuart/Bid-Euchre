@@ -39,7 +39,7 @@ def test_artifact_strategy_plays_single_hand():
     strategies = [strategy, strategy, strategy, strategy]
 
     try:
-        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, _, _ = (
+        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, *_ = (
             play_single_hand(
                 contract_type=None,  # Trigger bidding
                 strategies=strategies,
@@ -76,7 +76,7 @@ def test_artifact_strategy_plays_multiple_hands():
 
     for i in range(n_hands):
         try:
-            t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, _, _ = (
+            t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, *_ = (
                 play_single_hand(
                     contract_type=None, strategies=strategies, deal_seed=42 + i
                 )
@@ -111,7 +111,7 @@ def test_artifact_strategy_different_contracts():
     ]
 
     try:
-        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, _, _ = (
+        t0, t1, _, _, leader, _, bid, dealer, bidder, contract, trump, *_ = (
             play_single_hand(contract_type=None, strategies=strategies, deal_seed=42)
         )
 
@@ -142,7 +142,7 @@ def test_artifact_strategy_vs_random():
     team1_wins = 0
 
     for i in range(50):
-        t0, t1, _, _, _, _, _, _, _, _, _, _, _ = play_single_hand(
+        t0, t1, *_ = play_single_hand(
             contract_type=None, strategies=strategies, deal_seed=100 + i
         )
 
@@ -171,7 +171,7 @@ def test_artifact_strategy_bidding_behavior():
 
     bids = []
     for i in range(100):
-        t0, t1, _, _, _, _, bid, _, _, _, _, _, _ = play_single_hand(
+        t0, t1, _, _, _, _, bid, *_ = play_single_hand(
             contract_type=None, strategies=strategies, deal_seed=200 + i
         )
         if bid is not None and bid > 0:  # Valid bid
@@ -205,7 +205,7 @@ def test_artifact_strategy_make_bid_rate():
     total_count = 0
 
     for i in range(100):
-        t0, t1, _, _, _, _, bid, dealer, bidder, _, _, _, _ = play_single_hand(
+        t0, t1, _, _, _, _, bid, dealer, bidder, *_ = play_single_hand(
             contract_type=None, strategies=strategies, deal_seed=300 + i
         )
 
@@ -240,7 +240,7 @@ def test_no_crashes_with_edge_cases():
     # Test many random seeds to hit edge cases
     for i in range(50):
         try:
-            t0, t1, _, _, _, _, _, _, _, _, _, _, _ = play_single_hand(
+            t0, t1, *_ = play_single_hand(
                 contract_type=None, strategies=strategies, deal_seed=1000 + i
             )
         except Exception as e:

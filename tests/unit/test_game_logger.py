@@ -342,3 +342,178 @@ def test_auction_transcript_bid_entry_format(tmp_path):
     assert bid_entry["tricks_bid"] == 4
     assert bid_entry["contract_type"] == "high"
     assert bid_entry["trump"] is None
+
+
+# ---------------------------------------------------------------------------
+# v8 tests — bid_type, exchange_cards_given/received, sitting_out_seat
+# ---------------------------------------------------------------------------
+
+
+def test_hand_end_record_has_v8_fields():
+    """HandEndRecord dataclass must have v8 fields defaulting to None."""
+    record = HandEndRecord(
+        schema_version=8,
+        event="hand_end",
+        run_id="test",
+        strategy_id="greedy",
+        deal_id=0,
+        seed=42,
+        contract="suit",
+        trump="H",
+        leader=0,
+        t0=6,
+        t1=4,
+        features=[{}, {}, {}, {}],
+        scores=None,
+        hands=None,
+    )
+    assert hasattr(record, "bid_type")
+    assert hasattr(record, "exchange_cards_given")
+    assert hasattr(record, "exchange_cards_received")
+    assert hasattr(record, "sitting_out_seat")
+    assert record.bid_type is None
+    assert record.exchange_cards_given is None
+    assert record.exchange_cards_received is None
+    assert record.sitting_out_seat is None
+
+
+def test_log_hand_end_writes_bid_type(tmp_path):
+    """log_hand_end writes bid_type field to JSONL output."""
+    log_path = str(tmp_path / "test_bid_type.jsonl")
+    logger = GameLogger(
+        run_id="test_bid_type", strategy_id="greedy", level=LogLevel.HAND
+    )
+    logger.open(log_path)
+    logger.log_hand_end(
+        deal_id=0,
+        seed=42,
+        contract="suit",
+        trump="H",
+        leader=0,
+        t0=10,
+        t1=0,
+        features=[{}, {}, {}, {}],
+        bid_type="moon",
+    )
+    logger.close()
+
+    records = [json.loads(line) for line in open(log_path)]
+    hand_end = next(r for r in records if r.get("event") == "hand_end")
+    assert hand_end["schema_version"] == 8
+    assert hand_end["bid_type"] == "moon"
+
+
+def test_log_hand_end_writes_exchange_cards(tmp_path):
+    """log_hand_end serializes exchange Card objects to [suit, rank] pairs."""
+    from bid_euchre.core.cards import Card
+
+    log_path = str(tmp_path / "test_exchange.jsonl")
+    logger = GameLogger(
+        run_id="test_exchange", strategy_id="greedy", level=LogLevel.HAND
+    )
+    logger.open(log_path)
+
+    cards_given = [Card("D", "T"), Card("C", "T")]
+    cards_received = [Card("H", "A"), Card("H", "K")]
+
+    logger.log_hand_end(
+        deal_id=0,
+        seed=42,
+        contract="suit",
+        trump="H",
+        leader=0,
+        t0=10,
+        t1=0,
+        features=[{}, {}, {}, {}],
+        bid_type="moon",
+        exchange_cards_given=cards_given,
+        exchange_cards_received=cards_received,
+    )
+    logger.close()
+
+    records = [json.loads(line) for line in open(log_path)]
+    hand_end = next(r for r in records if r.get("event") == "hand_end")
+    assert hand_end["exchange_cards_given"] == [["D", "T"], ["C", "T"]]
+    assert hand_end["exchange_cards_received"] == [["H", "A"], ["H", "K"]]
+
+
+def test_log_hand_end_writes_sitting_out_seat(tmp_path):
+    """log_hand_end writes sitting_out_seat field for loner bids."""
+    log_path = str(tmp_path / "test_sitting_out.jsonl")
+    logger = GameLogger(
+        run_id="test_sitting_out", strategy_id="greedy", level=LogLevel.HAND
+    )
+    logger.open(log_path)
+    logger.log_hand_end(
+        deal_id=0,
+        seed=42,
+        contract="suit",
+        trump="S",
+        leader=0,
+        t0=10,
+        t1=0,
+        features=[{}, {}, {}, {}],
+        bid_type="loner",
+        sitting_out_seat=2,
+    )
+    logger.close()
+
+    records = [json.loads(line) for line in open(log_path)]
+    hand_end = next(r for r in records if r.get("event") == "hand_end")
+    assert hand_end["sitting_out_seat"] == 2
+    assert hand_end["bid_type"] == "loner"
+
+
+def test_v8_fields_null_for_regular_bids(tmp_path):
+    """All v8 fields default to null for regular bids when not provided."""
+    log_path = str(tmp_path / "test_regular.jsonl")
+    logger = GameLogger(
+        run_id="test_regular", strategy_id="greedy", level=LogLevel.HAND
+    )
+    logger.open(log_path)
+    logger.log_hand_end(
+        deal_id=0,
+        seed=42,
+        contract="suit",
+        trump="H",
+        leader=0,
+        t0=6,
+        t1=4,
+        features=[{}, {}, {}, {}],
+    )
+    logger.close()
+
+    records = [json.loads(line) for line in open(log_path)]
+    hand_end = next(r for r in records if r.get("event") == "hand_end")
+    assert hand_end["bid_type"] is None
+    assert hand_end["exchange_cards_given"] is None
+    assert hand_end["exchange_cards_received"] is None
+    assert hand_end["sitting_out_seat"] is None
+
+
+def test_v8_bid_type_regular_explicit(tmp_path):
+    """Explicit bid_type='regular' is written correctly."""
+    log_path = str(tmp_path / "test_regular_explicit.jsonl")
+    logger = GameLogger(
+        run_id="test_reg_explicit", strategy_id="greedy", level=LogLevel.HAND
+    )
+    logger.open(log_path)
+    logger.log_hand_end(
+        deal_id=0,
+        seed=42,
+        contract="suit",
+        trump="H",
+        leader=0,
+        t0=7,
+        t1=3,
+        features=[{}, {}, {}, {}],
+        bid_type="regular",
+    )
+    logger.close()
+
+    records = [json.loads(line) for line in open(log_path)]
+    hand_end = next(r for r in records if r.get("event") == "hand_end")
+    assert hand_end["bid_type"] == "regular"
+    assert hand_end["exchange_cards_given"] is None
+    assert hand_end["exchange_cards_received"] is None
+    assert hand_end["sitting_out_seat"] is None
