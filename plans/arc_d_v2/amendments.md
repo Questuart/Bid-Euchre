@@ -10,6 +10,7 @@
 ### LA-1 — [Auction Position Features at R1+](#lineage-amendment-la-1)
 ### LA-2 — [Anchor Compatibility Policy](#lineage-amendment-la-2)
 ### LA-3 — [Hybrid Execution Path: QUICK-First Ladder](#lineage-amendment-la-3)
+### LA-4 — [FULL Roster Trimming](#lineage-amendment-la-4)
 
 ---
 
@@ -162,5 +163,28 @@ in downstream reports or promotion decisions.
 - `run_rung.py --mode quick` remains the primary execution command per rung
 - `run_rung.py --mode all` (QUICK→FULL) is not used under LA-3
 - FULL backfill uses `run_rung.py --mode full` after QUICK results are reviewed
+
+**Approved by:** [human reviewer]
+
+---
+
+## Lineage Amendment LA-4
+
+**Date:** 2026-03-15
+**Type:** roster_trimming
+**Effective from:** FULL mode, all rungs
+**Change:** Trim FULL roster from 8 to 4 models. QUICK roster unchanged.
+
+**Rationale:**
+QUICK results across R0-R2 show three OLS variants (full, constrained, selected) cluster
+within 0.06 net_eppd on comparator and are indistinguishable in H2H. H8 (full = constrained)
+confirmed at QUICK. Legacy baselines (stricthellraiser, rankthetank) add no diagnostic value
+at FULL scale. Trimming saves ~50% compute on FULL runs.
+
+**Retained models:** gbt_av, selected_two_stage_av, full_ols_av, modeloespecifico
+**Dropped models:** constrained_ols_av, selected_ols_av, stricthellraiser, rankthetank
+
+**Impact on hypotheses:** Hypotheses referencing dropped models are automatically SKIPped
+via roster-aware logic in advance_check.py. Hypothesis files remain unchanged.
 
 **Approved by:** [human reviewer]

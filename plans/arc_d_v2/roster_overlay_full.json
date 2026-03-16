@@ -1,0 +1,3 @@
+{
+  "exclude": ["constrained_ols_av", "selected_ols_av", "stricthellraiser", "rankthetank"]
+}
