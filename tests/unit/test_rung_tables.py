@@ -22,6 +22,9 @@ from bid_euchre.arc_d_v2.tables import (
     TIER_HEURISTIC,
     TIER_SMART,
     _classify_tier,
+    _extract_bid_levels,
+    _extract_feature_importance,
+    _extract_outcome_distributions,
     _merge_comparator_cis,
     _merge_h2h_batteries,
     _per_seed_sanity_comparator,
@@ -34,14 +37,17 @@ from bid_euchre.arc_d_v2.tables import (
     generate_chart_data,
     generate_comparator_rankings,
     generate_cross_rung_deltas,
+    generate_cross_rung_progression,
     generate_data_sanity,
     generate_dataset_provenance,
     generate_h2h_delta_matrix,
     generate_h2h_tier_summary,
     generate_hypothesis_outcomes,
+    generate_model_eval_csvs,
     generate_model_performance,
     generate_rung_model_spec,
     generate_sanity_bounds_check,
+    generate_seat_balance_csv,
     generate_seed_sanity_table,
 )
 
@@ -1398,3 +1404,343 @@ class TestChartData:
         # Fixture h2h_battery has self-play cells with fullgame_eppd,
         # so outcome_summary should be present
         assert len(chart_data_items) > 0
+
+    def test_outcome_distributions_from_h2h(self, h2h_battery, tmp_path):
+        """outcome_distributions.csv generated from H2H battery by_contract."""
+        # Add by_contract data to a cross-matchup cell for testing
+        h2h = dict(h2h_battery)
+        cells = dict(h2h["cells"])
+        cell = dict(cells["gbt_av_vs_selected_ols_av"])
+        cell["by_contract"] = {
+            "suit": {
+                "net_eppd_delta": 0.6,
+                "deals_total": 30,
+                "win_rate_a": 0.58,
+            },
+            "high": {
+                "net_eppd_delta": 0.3,
+                "deals_total": 15,
+                "win_rate_a": 0.52,
+            },
+        }
+        cells["gbt_av_vs_selected_ols_av"] = cell
+        h2h["cells"] = cells
+
+        generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
+        assert "outcome_distributions.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "model" in df.columns
+        assert "opponent" in df.columns
+        assert "contract" in df.columns
+        assert "net_eppd_delta" in df.columns
+        assert len(df) > 0
+
+    def test_outcome_distributions_no_by_contract(self, tmp_path):
+        """outcome_distributions still emits pooled rows from cells without by_contract."""
+        h2h = {
+            "cells": {
+                "a_vs_b": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_b",
+                    "net_eppd_delta": 0.5,
+                    "deals_total": 50,
+                    "win_rate_a": 0.55,
+                },
+            },
+        }
+        generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
+        assert "outcome_distributions.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert len(df) == 1
+        assert df.iloc[0]["contract"] == "pooled"
+
+    def test_bid_levels_from_comparator(self, comparator_cis, tmp_path):
+        """bid_levels.csv generated from comparator CIs."""
+        generated = generate_chart_data(
+            comparator_cis=comparator_cis, output_dir=tmp_path
+        )
+        assert "bid_levels.csv" in generated
+        df = pd.read_csv(tmp_path / "bid_levels.csv")
+        assert "model" in df.columns
+        assert "bid_rate" in df.columns
+        assert "make_rate" in df.columns
+        assert "pass_rate" in df.columns
+        assert len(df) == len(comparator_cis["bidders"])
+
+    def test_selection_paths_from_training_artifacts(
+        self, training_artifacts, tmp_path
+    ):
+        """selection_paths.csv generated from feature_importances in training artifacts."""
+        generated = generate_chart_data(
+            training_artifacts=training_artifacts, output_dir=tmp_path
+        )
+        assert "selection_paths.csv" in generated
+        df = pd.read_csv(tmp_path / "selection_paths.csv")
+        assert "model" in df.columns
+        assert "contract" in df.columns
+        assert "rank" in df.columns
+        assert "feature_name" in df.columns
+        assert "importance" in df.columns
+        # GBT artifact has 4 contracts with feature_importances
+        gbt_rows = df[df["model"] == "gbt"]
+        assert len(gbt_rows) > 0
+        # Check ranking is correct: rank 1 should have highest importance
+        suit_rows = gbt_rows[gbt_rows["contract"] == "suit"].sort_values("rank")
+        assert suit_rows.iloc[0]["rank"] == 1
+
+    def test_full_pipeline_with_all_chart_data(self, tmp_path):
+        """Full pipeline produces the new chart_data CSVs."""
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(FIXTURES_DIR, output_dir)
+        chart_data_items = [g for g in generated if g.startswith("chart_data/")]
+        csv_names = [item.replace("chart_data/", "") for item in chart_data_items]
+        assert "outcome_summary.csv" in csv_names
+        # Training artifacts have feature_importances, so selection_paths
+        assert "selection_paths.csv" in csv_names
+
+
+# ──────────────────────────────────────────────
+#  Cross-rung progression tests
+# ──────────────────────────────────────────────
+
+
+class TestCrossRungProgression:
+    """Tests for cross_rung_progression.csv generation."""
+
+    def test_basic_progression(self, comparator_cis):
+        """Progression across two rungs produces correct rows."""
+        rung_cis = {
+            "r0": comparator_cis,
+            "r1": comparator_cis,  # Same data for testing structure
+        }
+        df = generate_cross_rung_progression(rung_cis)
+        assert "rung" in df.columns
+        assert "model" in df.columns
+        assert "rank" in df.columns
+        assert "net_eppd" in df.columns
+        assert "bid_rate" in df.columns
+        n_bidders = len(comparator_cis["bidders"])
+        assert len(df) == 2 * n_bidders
+
+    def test_rung_ordering(self, comparator_cis):
+        """Rungs are sorted alphabetically in output."""
+        rung_cis = {
+            "r2": comparator_cis,
+            "r0": comparator_cis,
+            "r1": comparator_cis,
+        }
+        df = generate_cross_rung_progression(rung_cis)
+        rungs = df["rung"].unique().tolist()
+        assert rungs == ["r0", "r1", "r2"]
+
+    def test_empty_input(self):
+        """Empty input returns empty DataFrame."""
+        df = generate_cross_rung_progression({})
+        assert len(df) == 0
+        assert "rung" in df.columns
+
+
+# ──────────────────────────────────────────────
+#  Seat balance tests
+# ──────────────────────────────────────────────
+
+
+class TestSeatBalance:
+    """Tests for seat_balance.csv generation from parquet."""
+
+    def test_basic_seat_balance(self, tmp_path):
+        """Generates seat_balance from a parquet with seat column."""
+        df = pd.DataFrame(
+            {
+                "seat": [0, 0, 1, 1, 2, 2, 3, 3],
+                "contract_family": [
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                ],
+                "tricks_won": [5.0, 4.0, 6.0, 3.0, 5.5, 4.5, 4.5, 5.5],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        output_dir = tmp_path / "chart_data"
+        result = generate_seat_balance_csv(parquet_path, output_dir)
+        assert result == "seat_balance.csv"
+        out_df = pd.read_csv(output_dir / "seat_balance.csv")
+        assert "seat" in out_df.columns
+        assert "contract" in out_df.columns
+        assert "mean_tricks" in out_df.columns
+        assert "n_hands" in out_df.columns
+        assert len(out_df) == 8  # 4 seats * 2 contracts
+
+    def test_missing_parquet(self, tmp_path):
+        """Returns None when parquet file does not exist."""
+        result = generate_seat_balance_csv(
+            tmp_path / "nonexistent.parquet", tmp_path / "chart_data"
+        )
+        assert result is None
+
+    def test_missing_seat_column(self, tmp_path):
+        """Returns None when parquet lacks seat column."""
+        df = pd.DataFrame({"other_col": [1, 2, 3], "tricks_won": [5, 6, 7]})
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        result = generate_seat_balance_csv(parquet_path, tmp_path / "chart_data")
+        assert result is None
+
+
+# ──────────────────────────────────────────────
+#  Feature importance extraction tests
+# ──────────────────────────────────────────────
+
+
+class TestFeatureImportanceExtraction:
+    """Tests for _extract_feature_importance helper."""
+
+    def test_gbt_feature_importances(self, training_artifacts):
+        """GBT artifact with feature_importances produces ranked rows."""
+        rows = _extract_feature_importance(training_artifacts)
+        assert len(rows) > 0
+        # Check structure
+        for row in rows:
+            assert "model" in row
+            assert "contract" in row
+            assert "rank" in row
+            assert "feature_name" in row
+            assert "importance" in row
+
+    def test_ranking_order(self, training_artifacts):
+        """Features are ranked by descending importance."""
+        rows = _extract_feature_importance(training_artifacts)
+        gbt_suit = [r for r in rows if r["model"] == "gbt" and r["contract"] == "suit"]
+        assert len(gbt_suit) > 0
+        # Rank 1 should have highest importance
+        importances = [(r["rank"], r["importance"]) for r in gbt_suit]
+        importances.sort(key=lambda x: x[0])
+        for i in range(len(importances) - 1):
+            assert importances[i][1] >= importances[i + 1][1]
+
+    def test_empty_artifacts(self):
+        """Empty artifacts return empty list."""
+        assert _extract_feature_importance({}) == []
+
+
+# ──────────────────────────────────────────────
+#  Outcome distributions extraction tests
+# ──────────────────────────────────────────────
+
+
+class TestOutcomeDistributionsExtraction:
+    """Tests for _extract_outcome_distributions helper."""
+
+    def test_basic_extraction(self):
+        """Extracts pooled rows from cells without by_contract."""
+        h2h = {
+            "cells": {
+                "a_vs_b": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_b",
+                    "net_eppd_delta": 0.5,
+                    "deals_total": 50,
+                    "win_rate_a": 0.55,
+                },
+            },
+        }
+        rows = _extract_outcome_distributions(h2h)
+        assert len(rows) == 1
+        assert rows[0]["contract"] == "pooled"
+        assert rows[0]["model"] == "model_a"
+
+    def test_with_by_contract(self):
+        """Extracts per-contract + pooled rows."""
+        h2h = {
+            "cells": {
+                "a_vs_b": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_b",
+                    "net_eppd_delta": 0.5,
+                    "deals_total": 50,
+                    "win_rate_a": 0.55,
+                    "by_contract": {
+                        "suit": {
+                            "net_eppd_delta": 0.6,
+                            "deals_total": 30,
+                            "win_rate_a": 0.58,
+                        },
+                    },
+                },
+            },
+        }
+        rows = _extract_outcome_distributions(h2h)
+        assert len(rows) == 2  # 1 suit + 1 pooled
+        contracts = [r["contract"] for r in rows]
+        assert "suit" in contracts
+        assert "pooled" in contracts
+
+
+# ──────────────────────────────────────────────
+#  Bid levels extraction tests
+# ──────────────────────────────────────────────
+
+
+class TestBidLevelsExtraction:
+    """Tests for _extract_bid_levels helper."""
+
+    def test_basic_extraction(self, comparator_cis):
+        """Extracts bid/make/pass rates from comparator CIs."""
+        rows = _extract_bid_levels(comparator_cis)
+        assert len(rows) == len(comparator_cis["bidders"])
+        for row in rows:
+            assert "model" in row
+            assert "bid_rate" in row
+            assert "make_rate" in row
+            assert "pass_rate" in row
+            # pass_rate should be 1 - bid_rate
+            if row["bid_rate"] is not None and row["pass_rate"] is not None:
+                assert abs(row["bid_rate"] + row["pass_rate"] - 1.0) < 0.01
+
+    def test_empty_comparator(self):
+        """Empty bidders returns empty list."""
+        rows = _extract_bid_levels({"bidders": {}})
+        assert rows == []
+
+
+# ──────────────────────────────────────────────
+#  Model eval CSVs tests
+# ──────────────────────────────────────────────
+
+
+class TestModelEvalCsvs:
+    """Tests for generate_model_eval_csvs."""
+
+    def test_graceful_without_parquet(self, training_artifacts, tmp_path):
+        """Returns empty when eval parquet doesn't exist."""
+        result = generate_model_eval_csvs(
+            training_artifacts,
+            tmp_path / "nonexistent.parquet",
+            tmp_path / "output",
+        )
+        assert result == []
+
+    def test_graceful_without_artifacts(self, tmp_path):
+        """Returns empty when no training artifacts provided."""
+        result = generate_model_eval_csvs(
+            {},
+            tmp_path / "eval.parquet",
+            tmp_path / "output",
+        )
+        assert result == []
+
+    def test_graceful_with_none_path(self, training_artifacts, tmp_path):
+        """Returns empty when eval path is None."""
+        result = generate_model_eval_csvs(
+            training_artifacts,
+            None,
+            tmp_path / "output",
+        )
+        assert result == []
