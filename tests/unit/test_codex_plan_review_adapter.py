@@ -13,6 +13,7 @@ sys.path.insert(
 
 from codex_plan_review_adapter import (
     PlanReviewFinding,
+    _check_codex_auth,
     detect_plan_tier,
     parse_plan_findings,
     plan_state_key,
@@ -310,3 +311,39 @@ class TestPlanReviewFinding:
         restored = PlanReviewFinding.from_dict(json.loads(json_str))
         assert restored.severity == original.severity
         assert restored.check_id == original.check_id
+
+
+# --- Auth Check Tests ---
+
+
+class TestCheckCodexAuth:
+    """Test _check_codex_auth for credential presence detection."""
+
+    def test_auth_valid_chatgpt(self, tmp_path: Path) -> None:
+        """ChatGPT auth with tokens returns None (valid)."""
+        auth_file = tmp_path / "auth.json"
+        auth_file.write_text(
+            json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": "fake"}})
+        )
+        assert _check_codex_auth(auth_path=auth_file) is None
+
+    def test_auth_valid_api_key(self, tmp_path: Path) -> None:
+        """API key auth returns None (valid)."""
+        auth_file = tmp_path / "auth.json"
+        auth_file.write_text(json.dumps({"OPENAI_API_KEY": "sk-fake"}))
+        assert _check_codex_auth(auth_path=auth_file) is None
+
+    def test_auth_missing_file(self, tmp_path: Path) -> None:
+        """Missing auth file returns error string."""
+        auth_file = tmp_path / "auth.json"
+        result = _check_codex_auth(auth_path=auth_file)
+        assert result is not None
+        assert "not found" in result
+
+    def test_auth_empty_tokens(self, tmp_path: Path) -> None:
+        """Auth file with empty tokens returns error string."""
+        auth_file = tmp_path / "auth.json"
+        auth_file.write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {}}))
+        result = _check_codex_auth(auth_path=auth_file)
+        assert result is not None
+        assert "no valid credentials" in result
