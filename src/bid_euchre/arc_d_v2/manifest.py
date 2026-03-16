@@ -325,4 +325,20 @@ def render_manifest_markdown(manifest: dict) -> str:
             lines.append(f"| `{c.get('name', '')}` | {size:,} bytes |")
         lines.append("")
 
+    # Chart Data
+    chart_data = manifest.get("chart_data", [])
+    if chart_data:
+        lines.extend(
+            [
+                "## Chart Data",
+                "",
+                "| Name | Size |",
+                "|------|------|",
+            ]
+        )
+        for cd in chart_data:
+            size = cd.get("size_bytes", 0)
+            lines.append(f"| `{cd.get('name', '')}` | {size:,} bytes |")
+        lines.append("")
+
     return "\n".join(lines) + "\n"

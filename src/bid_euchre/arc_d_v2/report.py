@@ -130,7 +130,7 @@ def generate_report(report_dir: Path) -> str:
         ]
     )
     for chart_name in [
-        "pred_vs_actual_scatter.png",
+        "pred_vs_actual.png",
         "residual_distribution.png",
         "calibration_curve.png",
     ]:
@@ -145,7 +145,10 @@ def generate_report(report_dir: Path) -> str:
         ]
     )
     interp_charts = [
-        "coefficient_heatmap.png",
+        "shap_summary.png",
+        "shap_dependence_top5.png",
+        "feature_importance.png",
+        "selection_path.png",
     ]
     has_interp = False
     for chart_name in interp_charts:
@@ -153,7 +156,7 @@ def generate_report(report_dir: Path) -> str:
             lines.append(_chart_embed(charts_dir, chart_name))
             has_interp = True
     if not has_interp:
-        lines.append("*Interpretability charts not yet generated (PR 3b).*\n")
+        lines.append("*Interpretability charts not yet generated.*\n")
     lines.append("")
 
     # section 5 Cross-Model Decision Analysis (optional -- graceful skip)
@@ -161,10 +164,20 @@ def generate_report(report_dir: Path) -> str:
         [
             "## 5. Cross-Model Decision Analysis",
             "",
-            "*Decision comparison analysis not yet generated (PR 3b).*",
-            "",
         ]
     )
+    decision_charts = [
+        "decision_agreement.png",
+        "disagreement_outcomes.png",
+    ]
+    has_decision = False
+    for chart_name in decision_charts:
+        if (charts_dir / chart_name).exists():
+            lines.append(_chart_embed(charts_dir, chart_name))
+            has_decision = True
+    if not has_decision:
+        lines.append("*Decision comparison analysis not yet generated.*\n")
+    lines.append("")
 
     # section 6 Comparator Rankings
     lines.extend(
