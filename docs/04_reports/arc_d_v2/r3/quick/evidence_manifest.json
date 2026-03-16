@@ -226,8 +226,8 @@
       "size_bytes": 40601
     },
     {
-      "name": "outcome_distributions.png",
-      "path": "docs/04_reports/arc_d_v2/r3/quick/charts/outcome_distributions.png",
+      "name": "outcome_summary.png",
+      "path": "docs/04_reports/arc_d_v2/r3/quick/charts/outcome_summary.png",
       "size_bytes": 25245
     },
     {
@@ -248,8 +248,8 @@
       "size_bytes": 859
     },
     {
-      "name": "outcome_distributions.csv",
-      "path": "docs/04_reports/arc_d_v2/r3/quick/chart_data/outcome_distributions.csv",
+      "name": "outcome_summary.csv",
+      "path": "docs/04_reports/arc_d_v2/r3/quick/chart_data/outcome_summary.csv",
       "size_bytes": 1425
     }
   ]

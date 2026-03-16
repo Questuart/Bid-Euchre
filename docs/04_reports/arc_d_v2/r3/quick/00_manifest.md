@@ -66,7 +66,7 @@
 | `delta_bars_by_contract.png` | 717,564 bytes |
 | `h2h_heatmap.png` | 130,127 bytes |
 | `mae_by_contract.png` | 40,601 bytes |
-| `outcome_distributions.png` | 25,245 bytes |
+| `outcome_summary.png` | 48,772 bytes |
 | `r2_by_contract.png` | 38,196 bytes |
 | `tail_risk_panel.png` | 39,766 bytes |
 
@@ -75,4 +75,4 @@
 | Name | Size |
 |------|------|
 | `contract_mix.csv` | 859 bytes |
-| `outcome_distributions.csv` | 1,425 bytes |
+| `outcome_summary.csv` | 1,425 bytes |
