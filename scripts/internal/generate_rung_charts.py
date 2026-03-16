@@ -21,6 +21,11 @@ Charts produced (Tier 1 + Tier 2 from §12.12):
   8.  mae_by_contract.png            — from model_performance.csv
   9.  outcome_distributions.png      — from chart_data/outcome_distributions.csv
   10. seat_balance.png               — from chart_data/seat_balance.csv
+
+Dashboard pages (composite multi-panel charts):
+  11. dashboard_competitive.png      — rankings, H2H delta, heatmap, tail risk
+  12. dashboard_health.png           — bid/make rate, contract mix, outcomes, bid-type
+  13. dashboard_model_eval.png       — R², MAE, selection paths, cross-rung progression
 """
 
 from __future__ import annotations
@@ -421,6 +426,497 @@ def generate_seat_balance(
     return True
 
 
+# ──────────────────────────────────────────────
+#  Consistent color palette for models
+# ──────────────────────────────────────────────
+
+# Tableau-10 inspired palette for consistent model coloring across dashboards
+_MODEL_COLORS = [
+    "#4C72B0",
+    "#DD8452",
+    "#55A868",
+    "#C44E52",
+    "#8172B3",
+    "#937860",
+    "#DA8BC3",
+    "#8C8C8C",
+    "#CCB974",
+    "#64B5CD",
+]
+
+
+def _get_model_colors(models: list[str]) -> dict[str, str]:
+    """Return a consistent model-to-color mapping."""
+    return {
+        m: _MODEL_COLORS[i % len(_MODEL_COLORS)] for i, m in enumerate(sorted(models))
+    }
+
+
+def _unavailable_panel(ax: plt.Axes, label: str) -> None:
+    """Render a 'data not available' placeholder in an axes."""
+    ax.text(
+        0.5,
+        0.5,
+        f"{label}\n\nData not available",
+        ha="center",
+        va="center",
+        transform=ax.transAxes,
+        fontsize=11,
+        color="#888888",
+    )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+# ──────────────────────────────────────────────
+#  Dashboard: Competitive
+# ──────────────────────────────────────────────
+
+
+def generate_dashboard_competitive(
+    tables_dir: Path,
+    output_dir: Path,
+    chart_data_dir: Path | None = None,
+    dpi: int = 150,
+) -> bool:
+    """Generate the competitive dashboard (2x2 grid).
+
+    Panel 1: Comparator ranking bars with CIs
+    Panel 2: H2H delta vs anchor by contract type
+    Panel 3: H2H heatmap (model vs model win rates)
+    Panel 4: Tail risk (CVaR by model)
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle("Competitive Dashboard", fontsize=16, fontweight="bold", y=0.98)
+
+    # Panel 1: Comparator ranking bars with CIs
+    ax = axes[0, 0]
+    comp_df = _read_csv_safe(tables_dir / "comparator_rankings.csv")
+    if comp_df is not None and "facet" in comp_df.columns:
+        pooled = comp_df[comp_df["facet"] == "pooled"].sort_values(
+            "net_eppd", ascending=True
+        )
+        if len(pooled) > 0:
+            colors = _get_model_colors(pooled["model"].tolist())
+            bar_colors = [colors[m] for m in pooled["model"]]
+            ax.barh(pooled["model"], pooled["net_eppd"], color=bar_colors)
+            if "ci_low" in pooled.columns and "ci_high" in pooled.columns:
+                ci_low = pooled["net_eppd"] - pooled["ci_low"]
+                ci_high = pooled["ci_high"] - pooled["net_eppd"]
+                xerr = np.array(
+                    [np.maximum(ci_low.values, 0), np.maximum(ci_high.values, 0)]
+                )
+                ax.errorbar(
+                    pooled["net_eppd"],
+                    pooled["model"],
+                    xerr=xerr,
+                    fmt="none",
+                    ecolor="black",
+                    capsize=3,
+                )
+            ax.axvline(x=0, color="gray", linestyle="--", linewidth=0.5)
+            ax.set_xlabel("Net EPPD (pooled)", fontsize=9)
+            ax.set_title("Comparator Rankings", fontsize=11)
+        else:
+            _unavailable_panel(ax, "Comparator Rankings")
+    else:
+        _unavailable_panel(ax, "Comparator Rankings")
+
+    # Panel 2: H2H delta vs anchor by contract type
+    ax = axes[0, 1]
+    h2h_df = _read_csv_safe(tables_dir / "h2h_delta_matrix.csv")
+    if h2h_df is not None and "facet" in h2h_df.columns:
+        # Find the anchor model (often the first unique model_b, or find cross-play)
+        cross = h2h_df[h2h_df["model_a"] != h2h_df["model_b"]].copy()
+        facets = [f for f in cross["facet"].unique() if f != "pooled"]
+        if len(cross) > 0 and len(facets) > 0:
+            # Show deltas faceted by contract type
+            models_in_data = sorted(cross["model_a"].unique())
+            model_colors = _get_model_colors(models_in_data)
+            x = np.arange(len(facets))
+            width = 0.8 / max(len(models_in_data), 1)
+            for i, model in enumerate(models_in_data):
+                vals = []
+                for facet in facets:
+                    sub = cross[(cross["model_a"] == model) & (cross["facet"] == facet)]
+                    vals.append(sub["net_eppd_delta"].mean() if len(sub) > 0 else 0)
+                offset = (i - len(models_in_data) / 2 + 0.5) * width
+                ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+            ax.set_xticks(x)
+            ax.set_xticklabels(facets, fontsize=8)
+            ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
+            ax.set_ylabel("Net EPPD Delta", fontsize=9)
+            ax.set_title("H2H Delta by Contract", fontsize=11)
+            ax.legend(fontsize=7, loc="best")
+        else:
+            _unavailable_panel(ax, "H2H Delta by Contract")
+    else:
+        _unavailable_panel(ax, "H2H Delta by Contract")
+
+    # Panel 3: H2H heatmap
+    ax = axes[1, 0]
+    if h2h_df is not None:
+        pooled_h2h = (
+            h2h_df[h2h_df.get("facet", pd.Series(["pooled"])) == "pooled"]
+            if "facet" in h2h_df.columns
+            else h2h_df
+        )
+        models = sorted(
+            set(pooled_h2h["model_a"].tolist() + pooled_h2h["model_b"].tolist())
+        )
+        if len(models) > 0:
+            matrix = pd.DataFrame(0.0, index=models, columns=models)
+            for _, row in pooled_h2h.iterrows():
+                a, b = row["model_a"], row["model_b"]
+                delta = row.get("net_eppd_delta")
+                if delta is not None and pd.notna(delta):
+                    matrix.loc[a, b] = delta
+            vmax = max(abs(matrix.values.min()), abs(matrix.values.max()), 0.01)
+            im = ax.imshow(
+                matrix.values, cmap="RdBu_r", aspect="auto", vmin=-vmax, vmax=vmax
+            )
+            ax.set_xticks(range(len(models)))
+            ax.set_yticks(range(len(models)))
+            ax.set_xticklabels(models, rotation=45, ha="right", fontsize=7)
+            ax.set_yticklabels(models, fontsize=7)
+            for i in range(len(models)):
+                for j in range(len(models)):
+                    val = matrix.values[i, j]
+                    if val != 0:
+                        ax.text(
+                            j, i, f"{val:.2f}", ha="center", va="center", fontsize=6
+                        )
+            plt.colorbar(im, ax=ax, label="Net EPPD Delta", shrink=0.8)
+            ax.set_title("H2H Heatmap", fontsize=11)
+        else:
+            _unavailable_panel(ax, "H2H Heatmap")
+    else:
+        _unavailable_panel(ax, "H2H Heatmap")
+
+    # Panel 4: Tail risk (CVaR by model)
+    ax = axes[1, 1]
+    if (
+        comp_df is not None
+        and "facet" in comp_df.columns
+        and "net_cvar_5" in comp_df.columns
+    ):
+        pooled = comp_df[comp_df["facet"] == "pooled"].sort_values(
+            "net_eppd", ascending=False
+        )
+        if len(pooled) > 0:
+            colors = _get_model_colors(pooled["model"].tolist())
+            bar_colors = [colors[m] for m in pooled["model"]]
+            ax.barh(pooled["model"], pooled["net_cvar_5"], color=bar_colors)
+            ax.axvline(x=0, color="gray", linestyle="--", linewidth=0.5)
+            ax.set_xlabel("Net CVaR-5% (pooled)", fontsize=9)
+            ax.set_title("Tail Risk: CVaR-5%", fontsize=11)
+        else:
+            _unavailable_panel(ax, "Tail Risk")
+    else:
+        _unavailable_panel(ax, "Tail Risk")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_chart(fig, output_dir, "dashboard_competitive.png", dpi)
+    return True
+
+
+# ──────────────────────────────────────────────
+#  Dashboard: Health
+# ──────────────────────────────────────────────
+
+
+def generate_dashboard_health(
+    tables_dir: Path,
+    output_dir: Path,
+    chart_data_dir: Path | None = None,
+    dpi: int = 150,
+) -> bool:
+    """Generate the health dashboard (2x2 grid).
+
+    Panel 1: Bid rate / make rate by model
+    Panel 2: Contract mix by model (mix_suit/high/low columns)
+    Panel 3: Outcome distributions (if chart_data available)
+    Panel 4: Bid-type breakdown (if behavior_by_bid_type.csv has data)
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle("Health Dashboard", fontsize=16, fontweight="bold", y=0.98)
+
+    behavior_df = _read_csv_safe(tables_dir / "behavior_summary.csv")
+
+    # Panel 1: Bid rate / make rate by model
+    ax = axes[0, 0]
+    if behavior_df is not None and "bid_rate" in behavior_df.columns:
+        comp = (
+            behavior_df[behavior_df["source"] == "comparator"]
+            if "source" in behavior_df.columns
+            else behavior_df
+        )
+        if len(comp) == 0:
+            comp = behavior_df
+        models = comp["model"].tolist()
+        model_colors = _get_model_colors(models)
+        x = np.arange(len(models))
+        width = 0.35
+        bid_rates = comp["bid_rate"].values
+        make_rates = (
+            comp["make_rate"].values
+            if "make_rate" in comp.columns
+            else np.zeros(len(models))
+        )
+        ax.bar(x - width / 2, bid_rates, width, label="Bid Rate", color="#4C72B0")
+        ax.bar(x + width / 2, make_rates, width, label="Make Rate", color="#55A868")
+        ax.set_xticks(x)
+        ax.set_xticklabels(models, rotation=45, ha="right", fontsize=7)
+        ax.set_ylabel("Rate", fontsize=9)
+        ax.set_title("Bid Rate / Make Rate", fontsize=11)
+        ax.legend(fontsize=8)
+        ax.set_ylim(0, max(1.05, max(bid_rates.max(), make_rates.max()) * 1.05))
+    else:
+        _unavailable_panel(ax, "Bid Rate / Make Rate")
+
+    # Panel 2: Contract mix by model
+    ax = axes[0, 1]
+    if behavior_df is not None:
+        comp = (
+            behavior_df[behavior_df["source"] == "comparator"]
+            if "source" in behavior_df.columns
+            else behavior_df
+        )
+        if len(comp) == 0:
+            comp = behavior_df
+        mix_cols = [c for c in ["mix_suit", "mix_high", "mix_low"] if c in comp.columns]
+        if mix_cols:
+            models = comp["model"].tolist()
+            x = np.arange(len(models))
+            mix_colors = {
+                "mix_suit": "#C44E52",
+                "mix_high": "#4C72B0",
+                "mix_low": "#55A868",
+            }
+            bottom = np.zeros(len(models))
+            for col in mix_cols:
+                vals = comp[col].values
+                label = col.replace("mix_", "").title()
+                ax.bar(
+                    x,
+                    vals,
+                    bottom=bottom,
+                    label=label,
+                    color=mix_colors.get(col, "#888888"),
+                )
+                bottom += vals
+            ax.set_xticks(x)
+            ax.set_xticklabels(models, rotation=45, ha="right", fontsize=7)
+            ax.set_ylabel("Proportion", fontsize=9)
+            ax.set_title("Contract Mix", fontsize=11)
+            ax.legend(fontsize=8)
+        else:
+            _unavailable_panel(ax, "Contract Mix")
+    else:
+        _unavailable_panel(ax, "Contract Mix")
+
+    # Panel 3: Outcome distributions
+    ax = axes[1, 0]
+    outcome_df = (
+        _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
+        if chart_data_dir
+        else None
+    )
+    if (
+        outcome_df is not None
+        and "contract" in outcome_df.columns
+        and "value" in outcome_df.columns
+    ):
+        for contract in sorted(outcome_df["contract"].unique()):
+            sub = outcome_df[outcome_df["contract"] == contract]
+            ax.hist(sub["value"], bins=20, alpha=0.5, label=contract, density=True)
+        ax.legend(fontsize=8)
+        ax.set_xlabel("Outcome Value", fontsize=9)
+        ax.set_ylabel("Density", fontsize=9)
+        ax.set_title("Outcome Distributions", fontsize=11)
+    else:
+        _unavailable_panel(ax, "Outcome Distributions")
+
+    # Panel 4: Bid-type breakdown
+    ax = axes[1, 1]
+    bid_type_df = _read_csv_safe(tables_dir / "behavior_by_bid_type.csv")
+    if bid_type_df is not None and "bid_type" in bid_type_df.columns:
+        models = sorted(bid_type_df["model"].unique())
+        bid_types = sorted(bid_type_df["bid_type"].unique())
+        model_colors = _get_model_colors(models)
+        x = np.arange(len(bid_types))
+        width = 0.8 / max(len(models), 1)
+        for i, model in enumerate(models):
+            vals = []
+            for bt in bid_types:
+                sub = bid_type_df[
+                    (bid_type_df["model"] == model) & (bid_type_df["bid_type"] == bt)
+                ]
+                vals.append(
+                    sub["bid_rate"].iloc[0]
+                    if len(sub) > 0 and "bid_rate" in sub.columns
+                    else 0
+                )
+            offset = (i - len(models) / 2 + 0.5) * width
+            ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+        ax.set_xticks(x)
+        ax.set_xticklabels(bid_types, fontsize=8)
+        ax.set_ylabel("Bid Rate", fontsize=9)
+        ax.set_title("Bid-Type Breakdown", fontsize=11)
+        ax.legend(fontsize=7, loc="best")
+    else:
+        _unavailable_panel(ax, "Bid-Type Breakdown")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_chart(fig, output_dir, "dashboard_health.png", dpi)
+    return True
+
+
+# ──────────────────────────────────────────────
+#  Dashboard: Model Evaluation
+# ──────────────────────────────────────────────
+
+
+def generate_dashboard_model_eval(
+    tables_dir: Path,
+    output_dir: Path,
+    chart_data_dir: Path | None = None,
+    dpi: int = 150,
+) -> bool:
+    """Generate the model evaluation dashboard (2x2 grid).
+
+    Panel 1: R-squared by model and contract
+    Panel 2: MAE by model and contract
+    Panel 3: Feature importance (from selection_paths.csv if available)
+    Panel 4: Cross-rung progression (from cross_rung_deltas.csv if available)
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle("Model Evaluation Dashboard", fontsize=16, fontweight="bold", y=0.98)
+
+    perf_df = _read_csv_safe(tables_dir / "model_performance.csv")
+
+    # Panel 1: R-squared by model and contract
+    ax = axes[0, 0]
+    if perf_df is not None and "r_squared" in perf_df.columns:
+        models = perf_df["model"].unique()
+        contracts = sorted(perf_df["contract"].unique())
+        model_colors = _get_model_colors(list(models))
+        x = np.arange(len(contracts))
+        width = 0.8 / max(len(models), 1)
+        for i, model in enumerate(models):
+            sub = perf_df[perf_df["model"] == model]
+            r2_vals = []
+            for c in contracts:
+                csub = sub[sub["contract"] == c]
+                r2_vals.append(csub["r_squared"].iloc[0] if len(csub) > 0 else 0)
+            offset = (i - len(models) / 2 + 0.5) * width
+            ax.bar(x + offset, r2_vals, width, label=model, color=model_colors[model])
+        ax.set_xticks(x)
+        ax.set_xticklabels(contracts, fontsize=8)
+        ax.set_ylabel("R-squared", fontsize=9)
+        ax.set_title("R-squared by Contract", fontsize=11)
+        ax.legend(fontsize=7, loc="best")
+        ax.set_ylim(0, 1)
+    else:
+        _unavailable_panel(ax, "R-squared by Contract")
+
+    # Panel 2: MAE by model and contract
+    ax = axes[0, 1]
+    if perf_df is not None and "mae" in perf_df.columns:
+        models = perf_df["model"].unique()
+        contracts = sorted(perf_df["contract"].unique())
+        model_colors = _get_model_colors(list(models))
+        x = np.arange(len(contracts))
+        width = 0.8 / max(len(models), 1)
+        for i, model in enumerate(models):
+            sub = perf_df[perf_df["model"] == model]
+            mae_vals = []
+            for c in contracts:
+                csub = sub[sub["contract"] == c]
+                mae_vals.append(csub["mae"].iloc[0] if len(csub) > 0 else 0)
+            offset = (i - len(models) / 2 + 0.5) * width
+            ax.bar(x + offset, mae_vals, width, label=model, color=model_colors[model])
+        ax.set_xticks(x)
+        ax.set_xticklabels(contracts, fontsize=8)
+        ax.set_ylabel("MAE", fontsize=9)
+        ax.set_title("MAE by Contract", fontsize=11)
+        ax.legend(fontsize=7, loc="best")
+    else:
+        _unavailable_panel(ax, "MAE by Contract")
+
+    # Panel 3: Feature importance / selection paths
+    ax = axes[1, 0]
+    sel_df = (
+        _read_csv_safe(chart_data_dir / "selection_paths.csv")
+        if chart_data_dir
+        else None
+    )
+    if sel_df is not None and "step" in sel_df.columns and "oof_r2" in sel_df.columns:
+        models = sorted(sel_df["model"].unique())
+        for model in models:
+            mdf = sel_df[sel_df["model"] == model]
+            contracts = sorted(mdf["contract"].unique())
+            for contract in contracts:
+                cdf = mdf[mdf["contract"] == contract].sort_values("step")
+                ax.plot(
+                    cdf["step"],
+                    cdf["oof_r2"],
+                    marker="o",
+                    markersize=3,
+                    label=f"{model} ({contract})",
+                )
+        ax.set_xlabel("Features Added", fontsize=9)
+        ax.set_ylabel("OOF R-squared", fontsize=9)
+        ax.set_title("Selection Paths", fontsize=11)
+        ax.legend(fontsize=6, loc="lower right")
+        ax.grid(True, alpha=0.3)
+    else:
+        _unavailable_panel(ax, "Selection Paths")
+
+    # Panel 4: Cross-rung progression
+    ax = axes[1, 1]
+    cross_rung_df = _read_csv_safe(tables_dir / "cross_rung_deltas.csv")
+    if cross_rung_df is not None and "rung" in cross_rung_df.columns:
+        # Plot key metrics across rungs
+        metric_cols = [
+            c
+            for c in cross_rung_df.columns
+            if c not in ("rung", "best_model", "advance_decision")
+        ]
+        if metric_cols:
+            x = np.arange(len(cross_rung_df))
+            rungs = cross_rung_df["rung"].tolist()
+            # Pick a few key metrics to plot
+            key_metrics = [
+                c
+                for c in metric_cols
+                if "h2h" in c or "comparator" in c or "win_rate" in c
+            ][:4]
+            if not key_metrics:
+                key_metrics = metric_cols[:4]
+            for metric in key_metrics:
+                if metric in cross_rung_df.columns:
+                    vals = pd.to_numeric(cross_rung_df[metric], errors="coerce")
+                    ax.plot(x, vals, marker="o", label=metric, markersize=4)
+            ax.set_xticks(x)
+            ax.set_xticklabels(rungs, fontsize=8)
+            ax.set_xlabel("Rung", fontsize=9)
+            ax.set_ylabel("Value", fontsize=9)
+            ax.set_title("Cross-Rung Progression", fontsize=11)
+            ax.legend(fontsize=6, loc="best")
+            ax.grid(True, alpha=0.3)
+        else:
+            _unavailable_panel(ax, "Cross-Rung Progression")
+    else:
+        _unavailable_panel(ax, "Cross-Rung Progression")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    _save_chart(fig, output_dir, "dashboard_model_eval.png", dpi)
+    return True
+
+
 def generate_all_charts(
     tables_dir: Path,
     output_dir: Path,
@@ -501,6 +997,34 @@ def generate_all_charts(
                     generated.append(chart_name)
             except Exception as e:
                 logger.warning("Failed to generate %s: %s", chart_name, e)
+
+    # Dashboard charts (composite multi-panel pages)
+    dashboard_generators = [
+        (
+            "dashboard_competitive.png",
+            lambda: generate_dashboard_competitive(
+                tables_dir, output_dir, chart_data_dir, dpi
+            ),
+        ),
+        (
+            "dashboard_health.png",
+            lambda: generate_dashboard_health(
+                tables_dir, output_dir, chart_data_dir, dpi
+            ),
+        ),
+        (
+            "dashboard_model_eval.png",
+            lambda: generate_dashboard_model_eval(
+                tables_dir, output_dir, chart_data_dir, dpi
+            ),
+        ),
+    ]
+    for chart_name, gen_fn in dashboard_generators:
+        try:
+            if gen_fn():
+                generated.append(chart_name)
+        except Exception as e:
+            logger.warning("Failed to generate %s: %s", chart_name, e)
 
     return generated
 
