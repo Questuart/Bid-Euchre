@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Arc D v2
 
 **Governing plan:** `plans/arc_d_v2/lineage_plan.md`
-**Last updated:** 2026-03-14
+**Last updated:** 2026-03-15
 
 ---
 
@@ -9,14 +9,14 @@
 
 | ID | Title | Parent Section | Status | Owner | File | Created | Completed |
 |----|-------|----------------|--------|-------|------|---------|-----------|
-| SP-0-01 | R0 QUICK Orchestration Cleanup | `lineage_plan.md` §9 Step 4/5/8, §9.5 | proposed | Codex | `plans/arc_d_v2/r0/sub/2026-03-14_r0_quick_orchestration_cleanup.md` | 2026-03-14 | -- |
+| SP-0-01 | R0 QUICK Orchestration Cleanup | `lineage_plan.md` §9 Step 4/5/8, §9.5 | in_progress | Codex | `plans/arc_d_v2/r0/sub/2026-03-14_r0_quick_orchestration_cleanup.md` | 2026-03-14 | -- |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
-| proposed | 1 |
-| in_progress | 0 |
+| proposed | 0 |
+| in_progress | 1 |
 | blocked | 0 |
 | completed | 0 |
 | abandoned | 0 |

@@ -1,0 +1,7 @@
+artifact_name,path,schema_version,model_class,git_sha
+constrained_ols_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_av.json,action_value_olsa_v1,ols,4221e087d94fda9d8d026a24bbd4d733f501d103
+full_ols_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_av.json,action_value_olsa_v1,ols,4221e087d94fda9d8d026a24bbd4d733f501d103
+gbt_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_av.json,action_value_gbt_v1,gbt,4221e087d94fda9d8d026a24bbd4d733f501d103
+selected_ols_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_av.json,action_value_olsa_v1,ols,4221e087d94fda9d8d026a24bbd4d733f501d103
+selected_two_stage_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_av.json,two_stage_action_value_v1,two-stage,4221e087d94fda9d8d026a24bbd4d733f501d103
+roster,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r1/roster.json,roster_v1,,

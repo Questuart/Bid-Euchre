@@ -1,0 +1,10 @@
+id,description,pass,observed,expected_bound,surprise_hit,error
+H1,Opponent context improves GBT pooled H2H delta vs anchor,True,1.302,> 0.3,False,
+H2,GBT R2 suit R-squared exceeds R1 suit R-squared,False,0.6028,> 0.621,False,
+H3,GBT R2 comparator net_eppd maintains or improves over R1,True,2.2548,> 2.0,False,
+H4,GBT suit H2H delta vs anchor is positive,True,1.0957,> 0.0,False,
+H5,Two-stage model gap vs GBT narrows with richer context,True,-0.3792,> -1.0,False,
+H6,All models bid at least half the time,True,0.9256,> 0.5,False,
+H7,GBT H2H win rate vs anchor exceeds 45%,True,0.5716,> 0.45,False,
+H8,Full OLS approximately equals constrained OLS,True,0.0456,>= -0.2,False,
+H9,ModeloEspecifico heuristic is worst among trained models,True,-0.594,< 0.0,False,

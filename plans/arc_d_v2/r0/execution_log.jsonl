@@ -1,0 +1,67 @@
+{"event": "step_start", "step": "0", "ts": "2026-03-15T07:31:23.979826Z"}
+{"event": "step_complete", "step": "0", "ts": "2026-03-15T07:31:23.980815Z"}
+{"event": "step_start", "step": "1", "seed": 42, "ts": "2026-03-15T07:31:23.981064Z"}
+{"event": "subprocess_start", "step": "1", "cmd": "uv run python scripts/internal/generate_action_value_dataset.py --seed 42 --n-deals 2500 --mode QUICK --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42 --continuation-artifact /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/hybrid_r0_full.json", "ts": "2026-03-15T07:31:23.981422Z"}
+{"event": "subprocess_complete", "step": "1", "duration_s": 309.5, "ts": "2026-03-15T07:36:33.513801Z"}
+{"event": "step_complete", "step": "1", "seed": 42, "ts": "2026-03-15T07:36:33.514425Z"}
+{"event": "step_start", "step": "2", "seed": 42, "ts": "2026-03-15T07:36:33.516305Z"}
+{"event": "step_start", "step": "2", "seed": 42, "model": "selected_two_stage_av", "ts": "2026-03-15T07:36:33.516620Z"}
+{"event": "subprocess_start", "step": "2", "cmd": "uv run python scripts/internal/train_action_value.py --seed 42 --dataset /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_selected_two_stage_av_r0_quick_42 --continuation-artifact /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/hybrid_r0_full.json --model-class two-stage --feature-set r0 --selection forward", "ts": "2026-03-15T07:36:33.516819Z"}
+{"event": "subprocess_complete", "step": "2", "duration_s": 11.4, "ts": "2026-03-15T07:36:44.922291Z"}
+{"event": "step_complete", "step": "2", "seed": 42, "model": "selected_two_stage_av", "ts": "2026-03-15T07:36:44.922536Z"}
+{"event": "step_start", "step": "2", "seed": 42, "model": "gbt_av", "ts": "2026-03-15T07:36:44.922992Z"}
+{"event": "subprocess_start", "step": "2", "cmd": "uv run python scripts/internal/train_action_value.py --seed 42 --dataset /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_gbt_av_r0_quick_42 --continuation-artifact /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/hybrid_r0_full.json --model-class gbt --feature-set r0", "ts": "2026-03-15T07:36:44.923246Z"}
+{"event": "subprocess_complete", "step": "2", "duration_s": 116.8, "ts": "2026-03-15T07:38:41.733311Z"}
+{"event": "step_complete", "step": "2", "seed": 42, "model": "gbt_av", "ts": "2026-03-15T07:38:41.733585Z"}
+{"event": "step_start", "step": "2", "seed": 42, "model": "constrained_ols_av", "ts": "2026-03-15T07:38:41.734136Z"}
+{"event": "subprocess_start", "step": "2", "cmd": "uv run python scripts/internal/train_action_value.py --seed 42 --dataset /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_constrained_ols_av_r0_quick_42 --continuation-artifact /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/hybrid_r0_full.json --feature-set constrained", "ts": "2026-03-15T07:38:41.734384Z"}
+{"event": "subprocess_complete", "step": "2", "duration_s": 1.1, "ts": "2026-03-15T07:38:42.870553Z"}
+{"event": "step_complete", "step": "2", "seed": 42, "model": "constrained_ols_av", "ts": "2026-03-15T07:38:42.870808Z"}
+{"event": "step_start", "step": "2", "seed": 42, "model": "selected_ols_av", "ts": "2026-03-15T07:38:42.871258Z"}
+{"event": "subprocess_start", "step": "2", "cmd": "uv run python scripts/internal/train_action_value.py --seed 42 --dataset /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_selected_ols_av_r0_quick_42 --continuation-artifact /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/hybrid_r0_full.json --feature-set r0 --selection forward", "ts": "2026-03-15T07:38:42.871507Z"}
+{"event": "subprocess_complete", "step": "2", "duration_s": 11.1, "ts": "2026-03-15T07:38:53.928670Z"}
+{"event": "step_complete", "step": "2", "seed": 42, "model": "selected_ols_av", "ts": "2026-03-15T07:38:53.929340Z"}
+{"event": "step_start", "step": "2", "seed": 42, "model": "full_ols_av", "ts": "2026-03-15T07:38:53.929878Z"}
+{"event": "subprocess_start", "step": "2", "cmd": "uv run python scripts/internal/train_action_value.py --seed 42 --dataset /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_full_ols_av_r0_quick_42 --continuation-artifact /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d/r0/hybrid_r0_full.json --feature-set r0", "ts": "2026-03-15T07:38:53.930144Z"}
+{"event": "subprocess_complete", "step": "2", "duration_s": 1.3, "ts": "2026-03-15T07:38:55.260536Z"}
+{"event": "step_complete", "step": "2", "seed": 42, "model": "full_ols_av", "ts": "2026-03-15T07:38:55.260808Z"}
+{"event": "step_start", "step": "3", "seed": 42, "ts": "2026-03-15T07:38:55.261924Z"}
+{"event": "subprocess_start", "step": "3", "cmd": "uv run python /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/generate_rung_tables.py --rung-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0 --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/tables", "ts": "2026-03-15T07:38:55.269072Z"}
+{"event": "subprocess_complete", "step": "3", "duration_s": 0.6, "ts": "2026-03-15T07:38:55.888843Z"}
+{"event": "step_complete", "step": "3", "seed": 42, "ts": "2026-03-15T07:38:55.889123Z"}
+{"event": "step_start", "step": "3b", "seed": 42, "ts": "2026-03-15T07:38:55.889974Z"}
+{"event": "subprocess_start", "step": "3b", "cmd": "uv run python /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/generate_interpretability.py --rung-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0 --report-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/tables", "ts": "2026-03-15T07:38:55.890351Z"}
+{"event": "subprocess_complete", "step": "3b", "duration_s": 0.2, "ts": "2026-03-15T07:38:56.125496Z"}
+{"event": "step_complete", "step": "3b", "seed": 42, "ts": "2026-03-15T07:38:56.125776Z"}
+{"event": "step_start", "step": "4", "seed": 42, "ts": "2026-03-15T07:38:56.126630Z"}
+{"event": "subprocess_start", "step": "4", "cmd": "uv run python scripts/internal/run_arc_d_h2h_battery.py --mode QUICK --seed 42 --n-per 2500 --output /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/h2h_battery_quick_42.json --roster /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_v2/r0/logs/h2h_roster_seed_42.json", "ts": "2026-03-15T07:38:56.127717Z"}
+{"event": "subprocess_complete", "step": "4", "duration_s": 0.4, "ts": "2026-03-15T07:38:56.562849Z"}
+{"event": "subprocess_start", "step": "4", "cmd": "uv run python experiments/run_experiment.py --seed 42 --config /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/h2h_battery_quick_config.yaml", "ts": "2026-03-15T07:38:56.563304Z"}
+{"event": "subprocess_complete", "step": "4", "duration_s": 905.6, "ts": "2026-03-15T07:54:02.211712Z"}
+{"event": "subprocess_start", "step": "4", "cmd": "uv run python scripts/internal/run_arc_d_h2h_battery.py --mode QUICK --seed 42 --n-per 2500 --output /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/h2h_battery_quick_42.json --roster /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_v2/r0/logs/h2h_roster_seed_42.json --parse-run /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/arc_d_r0_h2h_battery_42_20260315_003857", "ts": "2026-03-15T07:54:02.215533Z"}
+{"event": "subprocess_complete", "step": "4", "duration_s": 40.9, "ts": "2026-03-15T07:54:43.144068Z"}
+{"event": "step_complete", "step": "4", "seed": 42, "ts": "2026-03-15T07:54:43.144507Z"}
+{"event": "step_start", "step": "5", "seed": 42, "ts": "2026-03-15T07:54:43.145399Z"}
+{"event": "subprocess_start", "step": "5", "cmd": "uv run python scripts/internal/run_auction_comparator.py --config /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_v2/r0/logs/comparator_config_seed_42.yaml --seed 42 --single-seat --n-per 2500 --output-format json --output /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/comparator_battery_r0_42.json", "ts": "2026-03-15T07:54:43.147332Z"}
+{"event": "subprocess_complete", "step": "5", "duration_s": 112.3, "ts": "2026-03-15T07:56:35.412358Z"}
+{"event": "subprocess_start", "step": "5", "cmd": "uv run python scripts/internal/extract_comparator_cis.py --artifacts-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0 --runs-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs --seed 42 --n-bootstrap 5000 --output /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/comparator_cis_r0_42.json --battery-file comparator_battery_r0_42.json --single-seat --force --manifest /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/batch_manifest_arc_d_v2_r0_comparator_seed42_42_20260315_075635.json", "ts": "2026-03-15T07:56:35.413492Z"}
+{"event": "subprocess_complete", "step": "5", "duration_s": 7.4, "ts": "2026-03-15T07:56:42.855699Z"}
+{"event": "step_complete", "step": "5", "seed": 42, "ts": "2026-03-15T07:56:42.855967Z"}
+{"event": "step_start", "step": "6", "ts": "2026-03-15T07:56:42.856803Z"}
+{"event": "subprocess_start", "step": "6", "cmd": "uv run python /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/generate_rung_tables.py --rung-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0 --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/tables --mode quick --seed 42", "ts": "2026-03-15T07:56:42.857166Z"}
+{"event": "subprocess_complete", "step": "6", "duration_s": 0.6, "ts": "2026-03-15T07:56:43.462216Z"}
+{"event": "step_complete", "step": "6", "ts": "2026-03-15T07:56:43.462495Z"}
+{"event": "step_start", "step": "7", "ts": "2026-03-15T07:56:43.463087Z"}
+{"event": "subprocess_start", "step": "7", "cmd": "uv run python /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/generate_rung_charts.py --tables-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/tables --output-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/charts --chart-data-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/chart_data", "ts": "2026-03-15T07:56:43.463401Z"}
+{"event": "subprocess_complete", "step": "7", "duration_s": 1.4, "ts": "2026-03-15T07:56:44.850924Z"}
+{"event": "subprocess_start", "step": "7", "cmd": "uv run python /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/generate_rung_report.py --report-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical", "ts": "2026-03-15T07:56:44.851419Z"}
+{"event": "subprocess_complete", "step": "7", "duration_s": 0.6, "ts": "2026-03-15T07:56:45.466389Z"}
+{"event": "subprocess_start", "step": "7", "cmd": "uv run python /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/scripts/internal/generate_evidence_manifest.py --rung-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0 --report-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical --rung-id r0", "ts": "2026-03-15T07:56:45.466944Z"}
+{"event": "subprocess_complete", "step": "7", "duration_s": 0.4, "ts": "2026-03-15T07:56:45.887813Z"}
+{"event": "step_complete", "step": "7", "ts": "2026-03-15T07:56:45.888253Z"}
+{"event": "step_start", "step": "8", "ts": "2026-03-15T07:56:45.888910Z"}
+{"event": "subprocess_start", "step": "8", "cmd": "uv run python scripts/internal/generate_advance_check.py --hypotheses /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_v2/r0/hypotheses.json --tables-dir /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/canonical/tables --output /Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/plans/arc_d_v2/r0/advance_check.json --mode quick --rung r0", "ts": "2026-03-15T07:56:45.889285Z"}
+{"event": "subprocess_complete", "step": "8", "duration_s": 0.4, "ts": "2026-03-15T07:56:46.300506Z"}
+{"event": "step_complete", "step": "8", "ts": "2026-03-15T07:56:46.300804Z"}
+{"event": "step_start", "step": "9", "ts": "2026-03-15T07:56:46.301462Z"}
+{"event": "step_complete", "step": "9", "status": "pending_narrative", "ts": "2026-03-15T07:56:46.301705Z"}

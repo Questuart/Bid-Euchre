@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/arc_d_v2/lineage_plan.md`
 **Phase/Rung:** R0* (hand-only context, action-value framework)
-**Last updated:** 2026-03-14 by QUICK execution session
+**Last updated:** 2026-03-15 by QUICK report suite session
 
 ---
 
@@ -20,7 +20,7 @@
 | Step 6: Sanity Bounds Check | COMPLETE | 2026-03-14 | QUICK | 12 canonical tables generated |
 | Step 7: Generate Reports | COMPLETE | 2026-03-14 | QUICK | Charts, report, evidence manifest |
 | Step 8: Advance Decision + Narrative | COMPLETE | 2026-03-14 | QUICK | INVESTIGATE — advance check tool has column filter bugs |
-| Step 9: Archive & Advance | PENDING | -- | -- | Decision report not yet written |
+| Step 9: Archive & Advance | COMPLETE | 2026-03-15 | QUICK report suite | Decision report written, reports re-homed to quick/ |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -96,3 +96,12 @@ already fully implemented in code:
   - Advance check: INVESTIGATE (tool bugs, not actual data issues)
 - Commands: seed 42, n_per 2500 (QUICK mode)
 - Wall time: ~25min total (data gen 5min, training 2.5min, H2H 15min, rest <3min)
+
+### 2026-03-15 — QUICK report suite
+
+- Step 9: Decision report (02_decision.md) written
+- Reports re-homed from canonical/ to quick/ with evidence_tier: quick
+- hypothesis_outcomes.csv populated from advance_check.json (9 hypotheses)
+- cross_rung_deltas.csv populated with R0 GBT metrics
+- evidence_manifest.json updated: governing_plan, seeds=[42], mode=quick
+- 00_manifest.md updated to reference quick/ paths
