@@ -25,6 +25,7 @@ Adopt **user-side workflow changes only** — no repo PRs required:
 - `tmux` for persistent sessions
 - Role-based worktrees (informal adoption of `author`/`review`/`ops` convention)
 - VS Code as audit surface for diffs, plans, and runtime artifacts
+- **Permission model redesign:** Switch from allowlist (`Bash(command:*)` per command) to denylist (`Bash(*)` + targeted deny). Add interim `rm -rf ../:*` and `rm -rf ../*:*` deny rules to protect worktree directories until lifecycle tooling lands.
 
 These reduce operational pain immediately and require no shared-repo changes.
 
@@ -55,7 +56,7 @@ This must be in place before the hosted product is operationally important or ex
 
 | Step | Trigger | Deliverables |
 |------|---------|-------------|
-| 1 | Now | User-side workflow (Ghostty, tmux, role worktrees, VS Code) |
+| 1 | Now | User-side workflow (Ghostty, tmux, role worktrees, VS Code, permission denylist redesign) |
 | 2 | R3 QUICK stable pass | PRs 1-2 (scaffold) |
 | 3 | Browser-game Phase 0/1/2 starts | Browser-game benefits from improved agent workflow |
 | 4 | Browser-game enters backend/frontend parallelism | PRs 3-4 (operator CLI, memory/index) |
@@ -74,6 +75,35 @@ This must be in place before the hosted product is operationally important or ex
 - `author`: primary implementation agent; writes code, runs targeted checks, opens PRs.
 - `review`: independent reviewer agent; inspects diffs, runs targeted validation, reviews plan/report/code changes.
 - `ops`: monitoring and orchestration agent; watches rung status, review loop state, heartbeats, failures, and artifact publication.
+
+### Worktree Lifecycle Policy
+- The system maintains exactly three default persistent role worktrees: `author`, `review`, and `ops`.
+- Any additional worktree is ephemeral and must be linked to a bounded task, plan, PR, or experiment.
+- Every worktree must have repo-local metadata: path, branch, role/class, created time, last active time, owner/session, dirty status, and cleanup state.
+- Ephemeral worktrees must carry a TTL and cleanup policy from creation time.
+- Anonymous timestamp worktrees without metadata are not part of the target design.
+
+### Permission Model Alignment
+The Claude Code permission model must evolve alongside the worktree lifecycle system. The principle: **the deny list covers catastrophic operations only; domain-specific safety comes from lifecycle tooling and hooks, not permission rules.**
+
+#### Current Permission Model (as of 2026-03-15)
+- `Bash(*)` in allow — all bash commands auto-approved by default.
+- `defaultMode: "bypassPermissions"` — everything not in deny is auto-approved.
+- Deny list covers: `rm -rf /`, `rm -rf ~`, `rm -rf /*`, `sudo`, `mkfs`, `dd`, `diskutil erase`, `shutdown`, `reboot`.
+- Git force operations (`push --force`, `reset --hard`, `branch -D`) are **not** denied — Claude's behavioral guardrails (always confirm before destructive git ops) provide the safety layer.
+- Interim worktree protection: `rm -rf ../:*` and `rm -rf ../*:*` are denied until the lifecycle system lands.
+
+#### Phased Permission Evolution
+| Phase | Worktree Protection | Mechanism |
+|-------|--------------------|-----------|
+| **Interim** (before PR-3) | `rm -rf ../:*`, `rm -rf ../*:*` hard-denied | User-level deny list |
+| **PR-3 lands** | Deny rules removed; PreToolUse hook redirects `rm -rf ../Bid-Euchre*` to `ops.py worktrees prune` | Hook-based guidance (block + suggest) |
+| **Mature state** | No worktree-specific deny rules | `ops.py` lifecycle is the guardrail; deny list contains only catastrophic ops |
+
+#### Design Constraints
+- The deny list should contain only operations that are dangerous regardless of context (system destruction, privilege escalation, power control).
+- Domain-specific safety (worktree cleanup, branch management) should be enforced through hooks and tooling that can educate, suggest alternatives, and be overridden when genuinely needed.
+- There is no "prompt" tier in Claude Code permissions — commands are either auto-approved (allow/default) or hard-blocked (deny). Behavioral guardrails (Claude confirming before destructive actions) are the middle tier.
 
 ### Planning Contract
 - Non-trivial tasks must begin with a planning phase that is logically separate from execution.
@@ -123,6 +153,7 @@ This must be in place before the hosted product is operationally important or ex
 
 ### State Model
 - Worktree state: branch, path, dirty/clean status, last activity.
+- Worktree registry state: role/class (`persistent` or `ephemeral`), task/plan/PR linkage, TTL, cleanup status, and active session ownership.
 - Session state: active role, current task, governing/session plan link, last checkpoint, and restart metadata.
 - Task state: canonical todo list, current `in_progress` item, blocked reasons, validation status, and explicit completion marker.
 - Review state: `.claude/runtime/review_loops/**`, sidecars, PR metadata.
@@ -166,6 +197,7 @@ This must be in place before the hosted product is operationally important or ex
 - `.claude/scripts/start-agent-role.sh`
 - `.claude/runtime/session_metadata/` contract and schema docs
 - `.claude/runtime/task_state/` contract and schema docs
+- `.claude/runtime/worktree_registry/` contract and schema docs
 - `scripts/internal/clean_worktrees.sh` updates if needed for role-named worktrees
 - optional `Makefile` targets for bootstrap and cleanup
 
@@ -176,8 +208,10 @@ This must be in place before the hosted product is operationally important or ex
 - Startup output must tell the agent which role it is assuming and which commands are expected in that role.
 - Bootstrap must write role/session metadata so sessions can be resumed cleanly after restart.
 - Bootstrap or role startup must initialize task-state tracking for delegated work.
+- Bootstrap must classify worktrees as persistent role worktrees or ephemeral task worktrees and write registry metadata immediately.
 - The workflow doc must define the capability matrix and approval boundaries for each role.
 - The workflow doc must define the planner/executor split for non-trivial tasks.
+- The workflow doc must define cleanup states, TTL defaults, and the quarantine/archive flow for stale worktrees.
 - The workflow doc must define how gitignored local config or tool state is copied/shared into role worktrees.
 - Main checkout remains blocked for editing by existing hooks.
 
@@ -186,6 +220,7 @@ This must be in place before the hosted product is operationally important or ex
 - A role-specific command can enter a single role worktree and start Claude.
 - Each role session can be identified and resumed from repo-local metadata without relying on terminal history.
 - Non-trivial delegated tasks create an explicit task record with plan, todo state, validation steps, and completion criteria.
+- Ephemeral worktrees are created with explicit metadata and are discoverable as cleanup candidates later.
 - Documentation clearly states the role responsibilities and the “one writer per worktree” rule.
 
 ### PR-2: Persistent Session Manager And VS Code Audit Surface
@@ -238,14 +273,20 @@ This must be in place before the hosted product is operationally important or ex
 #### Deliverables
 - `scripts/internal/ops.py`
 - supporting module(s) under `src/bid_euchre/ops/`
+- `src/bid_euchre/ops/worktrees.py`
 - `src/bid_euchre/ops/watchdogs.py`
 - recovery-template data or helpers under `src/bid_euchre/ops/recovery.py`
+- `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook that detects direct `rm -rf` on worktree directories and redirects to `ops.py worktrees prune`
 - unit tests under `tests/unit/`
 - optional `Makefile` targets like `make ops-status`
+- **Permission migration:** Remove interim `rm -rf ../:*` deny rules from user settings once the PreToolUse hook and `ops.py worktrees prune` are validated
 
 #### Commands
 - `ops.py status`
 - `ops.py worktrees`
+- `ops.py worktrees prune`
+- `ops.py worktrees quarantine`
+- `ops.py worktrees archive`
 - `ops.py reviews`
 - `ops.py rungs`
 - `ops.py failures`
@@ -258,6 +299,7 @@ This must be in place before the hosted product is operationally important or ex
 
 #### Data Sources
 - `git worktree list`
+- `.claude/runtime/worktree_registry/**`
 - `.claude/runtime/review_loops/**/state.json`
 - `.claude/runtime/plan_reviews/**/state.json`
 - `.claude/runtime/task_state/**`
@@ -273,11 +315,21 @@ This must be in place before the hosted product is operationally important or ex
 - long-running commands that exceed configured wall-time bounds
 - task sessions that remain `in_progress` without evidence of forward progress
 - abandoned dirty worktrees associated with inactive sessions
+- worktree count/age drift beyond configured limits
+- detached or metadata-missing worktrees that cannot be safely classified
 
 #### Watchdog Behavior
 - Default behavior is detect, classify, log, and recommend a bounded recovery step.
 - Auto-remediation is opt-in and limited to explicitly safe actions.
 - Watchdogs must not silently kill or mutate important processes by default.
+- Worktree cleanup defaults to dry-run reporting first; removal requires clean-state or explicit quarantine/archive handling.
+
+#### Worktree Cleanup Policy
+- Persistent role worktrees are never auto-pruned.
+- Ephemeral worktrees may be `idle`, `stale`, `quarantined`, `ready_to_remove`, or `archived`.
+- Clean ephemeral worktrees with no active session and expired TTL may be removed automatically only in explicitly enabled cleanup mode.
+- Dirty or detached worktrees must go through quarantine or archive flow before removal.
+- Cleanup output must always include the reason a worktree qualified for prune/quarantine/archive.
 
 #### Output Requirements
 - Human-readable summary by default.
@@ -286,6 +338,7 @@ This must be in place before the hosted product is operationally important or ex
 - Health output must cover stale heartbeats, stuck review loops, abandoned dirty worktrees, and missing or stale indexes.
 - Watchdog output must identify which process or session is unhealthy, why it tripped, which threshold fired, and the next bounded recovery action.
 - Recovery output must classify common failures and recommend the next bounded action instead of generic retry loops.
+- Worktree output must distinguish persistent role worktrees from ephemeral task worktrees and show cleanup candidacy clearly.
 
 #### Acceptance Criteria
 - `ops.py status` answers “what is running, what is blocked, what failed, and what needs attention next?” in one command.
@@ -294,6 +347,9 @@ This must be in place before the hosted product is operationally important or ex
 - Scheduled health checks can run unattended and produce actionable summaries without human triage first.
 - Common failure classes have deterministic recovery paths surfaced through the operator CLI.
 - Watchdogs reliably detect stalled or overlong autonomous processes without introducing unsafe default auto-kill behavior.
+- Worktree sprawl is bounded through explicit lifecycle states, safe prune flows, and visibility into stale/abandoned worktrees.
+- Direct `rm -rf` on worktree directories is intercepted by PreToolUse hook and redirected to `ops.py worktrees prune`.
+- Interim `rm -rf ../:*` deny rules can be safely removed from user permission settings after hook validation.
 
 ### PR-4: Local Audit Index
 
@@ -399,12 +455,15 @@ This must be in place before the hosted product is operationally important or ex
 - `scripts/internal/ops.py` — top-level operator CLI.
 - `src/bid_euchre/ops/__init__.py` — package root for operator helpers.
 - `src/bid_euchre/ops/status.py` — status aggregation logic.
+- `src/bid_euchre/ops/worktrees.py` — worktree registry, classification, TTL, and cleanup policy helpers.
 - `src/bid_euchre/ops/memory.py` — curated memory ingestion, validation, and query helpers.
+- `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook redirecting direct `rm -rf` on worktree dirs to `ops.py worktrees prune`.
 - `src/bid_euchre/ops/watchdogs.py` — watchdog rules for long-running process health and stall detection.
 - `src/bid_euchre/ops/recovery.py` — failure classification and bounded recovery templates.
 - `src/bid_euchre/ops/compaction.py` — session compaction and archive metadata helpers.
 - `src/bid_euchre/ops/index.py` — audit index build/query logic.
 - `tests/unit/test_ops_status.py` — CLI/status tests.
+- `tests/unit/test_ops_worktrees.py` — worktree lifecycle, prune, quarantine, and archive tests.
 - `tests/unit/test_ops_memory.py` — curated memory tests.
 - `tests/unit/test_ops_watchdogs.py` — watchdog threshold and stall-detection tests.
 - `tests/unit/test_ops_recovery.py` — recovery template tests.
@@ -423,6 +482,7 @@ This must be in place before the hosted product is operationally important or ex
 - Add tests for all new repo-local behavior.
 - Implement scheduled health checks, curated memory, and safety scanning as repo-owned capabilities.
 - Implement task-state tracking, compaction, recovery templates, shadow snapshot helpers, and watchdogs as repo-owned capabilities.
+- Implement worktree lifecycle tracking, TTL policy, and safe cleanup as repo-owned capabilities.
 - Validate the workflow through bounded pilots before making it default.
 
 ## Execution Risks
@@ -453,18 +513,22 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Mitigation: classify failures, cap retries, and surface explicit next-step guidance.
 - Watchdogs producing noisy false positives.
   - Mitigation: per-process thresholds, observe-only rollout first, and bounded actions that default to notify rather than mutate.
+- Cleanup accidentally removing valuable in-progress worktrees.
+  - Mitigation: persistent vs ephemeral classification, dry-run-first cleanup, quarantine for dirty worktrees, and no default deletion of role worktrees.
 - Added tooling without operational adoption.
   - Mitigation: staged rollout with acceptance checks after each PR.
 
 ## Verification Strategy
 - Unit tests for `ops.py` parsing and state aggregation.
 - Unit tests for role metadata and recovery logic.
+- Unit tests for worktree registry classification, TTL handling, prune eligibility, and quarantine behavior.
 - Unit tests for curated memory validation and promotion.
 - Unit tests for audit index build/query behavior.
 - Unit tests for watchdog thresholds, stale-heartbeat detection, and no-progress detection.
 - Unit tests for task-state progression and explicit completion handling.
 - Unit tests for non-lossy compaction and archive lookup.
 - Manual smoke test of role bootstrap and tmux session creation.
+- Manual smoke test of worktree prune dry-run, quarantine, and archive flows.
 - Manual smoke test of VS Code workspace opening all intended roots.
 - Manual smoke test of scheduled health checks and stuck-session detection.
 - Manual smoke test of long-running process watchdogs against intentionally stalled sessions.
