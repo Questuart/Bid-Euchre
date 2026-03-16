@@ -37,116 +37,136 @@ from bid_euchre.arc_d_v2.schemas import (
 # =============================================================================
 
 
+def _ends_with(p: Path, suffix: str) -> bool:
+    """Check that an absolute path ends with the expected repo-relative suffix."""
+    return p.is_absolute() and str(p).endswith(suffix)
+
+
 class TestPaths:
-    """Verify path construction returns expected structures."""
+    """Verify path construction returns absolute paths with expected suffixes."""
+
+    def test_all_root_paths_are_absolute(self):
+        assert paths.PLANS_ROOT.is_absolute()
+        assert paths.REPORTS_ROOT.is_absolute()
+        assert paths.RUNS_ROOT.is_absolute()
 
     def test_lineage_root_paths(self):
-        assert paths.PLANS_ROOT == Path("plans/arc_d_v2")
-        assert paths.REPORTS_ROOT == Path("docs/04_reports/arc_d_v2")
-        assert paths.RUNS_ROOT == Path("data/runs/arc_d_v2")
+        assert _ends_with(paths.PLANS_ROOT, "plans/arc_d_v2")
+        assert _ends_with(paths.REPORTS_ROOT, "docs/04_reports/arc_d_v2")
+        assert _ends_with(paths.RUNS_ROOT, "data/runs/arc_d_v2")
 
     def test_lineage_level_files(self):
-        assert paths.LINEAGE_PLAN == Path("plans/arc_d_v2/lineage_plan.md")
-        assert paths.LINEAGE_ROSTER == Path("plans/arc_d_v2/roster.json")
-        assert paths.LINEAGE_AMENDMENTS == Path("plans/arc_d_v2/amendments.md")
-        assert paths.SUB_PLAN_REGISTRY == Path("plans/arc_d_v2/sub_plan_registry.md")
-        assert paths.CROSS_RUNG_DELTAS == Path(
-            "docs/04_reports/arc_d_v2/cross_rung_deltas.csv"
+        assert _ends_with(paths.LINEAGE_PLAN, "plans/arc_d_v2/lineage_plan.md")
+        assert _ends_with(paths.LINEAGE_ROSTER, "plans/arc_d_v2/roster.json")
+        assert _ends_with(paths.LINEAGE_AMENDMENTS, "plans/arc_d_v2/amendments.md")
+        assert _ends_with(
+            paths.SUB_PLAN_REGISTRY, "plans/arc_d_v2/sub_plan_registry.md"
+        )
+        assert _ends_with(
+            paths.CROSS_RUNG_DELTAS, "docs/04_reports/arc_d_v2/cross_rung_deltas.csv"
         )
 
     def test_anchor_artifact(self):
-        assert paths.ANCHOR_ARTIFACT == Path(
-            "data/artifacts/arc_d/r0/hybrid_r0_full.json"
+        assert _ends_with(
+            paths.ANCHOR_ARTIFACT, "data/artifacts/arc_d/r0/hybrid_r0_full.json"
         )
 
     def test_rung_plan_dir(self):
-        assert paths.rung_plan_dir("r2.0") == Path("plans/arc_d_v2/r2.0")
+        assert _ends_with(paths.rung_plan_dir("r2.0"), "plans/arc_d_v2/r2.0")
 
     def test_rung_plan(self):
-        assert paths.rung_plan("r2.0") == Path("plans/arc_d_v2/r2.0/plan.md")
+        assert _ends_with(paths.rung_plan("r2.0"), "plans/arc_d_v2/r2.0/plan.md")
 
     def test_rung_hypotheses(self):
-        assert paths.rung_hypotheses("r2.0") == Path(
-            "plans/arc_d_v2/r2.0/hypotheses.json"
+        assert _ends_with(
+            paths.rung_hypotheses("r2.0"), "plans/arc_d_v2/r2.0/hypotheses.json"
         )
 
     def test_rung_checkpoints(self):
-        assert paths.rung_checkpoints("r2.0") == Path(
-            "plans/arc_d_v2/r2.0/checkpoints.md"
+        assert _ends_with(
+            paths.rung_checkpoints("r2.0"), "plans/arc_d_v2/r2.0/checkpoints.md"
         )
 
     def test_rung_state(self):
-        assert paths.rung_state("r2.0") == Path("plans/arc_d_v2/r2.0/state.json")
+        assert _ends_with(paths.rung_state("r2.0"), "plans/arc_d_v2/r2.0/state.json")
 
     def test_rung_execution_log(self):
-        assert paths.rung_execution_log("r2.0") == Path(
-            "plans/arc_d_v2/r2.0/execution_log.jsonl"
+        assert _ends_with(
+            paths.rung_execution_log("r2.0"),
+            "plans/arc_d_v2/r2.0/execution_log.jsonl",
         )
 
     def test_rung_run_dir(self):
-        assert paths.rung_run_dir("r2.0") == Path("data/runs/arc_d_v2/r2.0")
+        assert _ends_with(paths.rung_run_dir("r2.0"), "data/runs/arc_d_v2/r2.0")
 
     def test_seed_dir(self):
         result = paths.seed_dir("r2.0", "quick", 42)
-        assert result == Path("data/runs/arc_d_v2/r2.0/quick/seed_42")
+        assert _ends_with(result, "data/runs/arc_d_v2/r2.0/quick/seed_42")
 
     def test_seed_dataset(self):
         result = paths.seed_dataset("r2.0", "smoke", 42)
-        assert result == Path(
-            "data/runs/arc_d_v2/r2.0/smoke/seed_42/datasets/action_value.parquet"
+        assert _ends_with(
+            result,
+            "data/runs/arc_d_v2/r2.0/smoke/seed_42/datasets/action_value.parquet",
         )
 
     def test_seed_artifacts_dir(self):
         result = paths.seed_artifacts_dir("r2.0", "full", 123)
-        assert result == Path("data/runs/arc_d_v2/r2.0/full/seed_123/artifacts")
+        assert _ends_with(result, "data/runs/arc_d_v2/r2.0/full/seed_123/artifacts")
 
     def test_model_artifact(self):
         result = paths.model_artifact("r2.0", "quick", 42, "gbt_full")
-        assert result == Path(
-            "data/runs/arc_d_v2/r2.0/quick/seed_42/artifacts/gbt_full/artifact.json"
+        assert _ends_with(
+            result,
+            "data/runs/arc_d_v2/r2.0/quick/seed_42/artifacts/gbt_full/artifact.json",
         )
 
     def test_seed_h2h_dir(self):
         result = paths.seed_h2h_dir("r2.0", "full", 456)
-        assert result == Path("data/runs/arc_d_v2/r2.0/full/seed_456/h2h")
+        assert _ends_with(result, "data/runs/arc_d_v2/r2.0/full/seed_456/h2h")
 
     def test_seed_comparator_dir(self):
         result = paths.seed_comparator_dir("r2.0", "quick", 42)
-        assert result == Path("data/runs/arc_d_v2/r2.0/quick/seed_42/comparator")
+        assert _ends_with(result, "data/runs/arc_d_v2/r2.0/quick/seed_42/comparator")
 
     def test_rung_report_dir(self):
-        assert paths.rung_report_dir("r2.0") == Path("docs/04_reports/arc_d_v2/r2.0")
+        assert _ends_with(
+            paths.rung_report_dir("r2.0"), "docs/04_reports/arc_d_v2/r2.0"
+        )
 
     def test_rung_tables_dir(self):
-        assert paths.rung_tables_dir("r2.0") == Path(
-            "docs/04_reports/arc_d_v2/r2.0/tables"
+        assert _ends_with(
+            paths.rung_tables_dir("r2.0"), "docs/04_reports/arc_d_v2/r2.0/tables"
         )
 
     def test_rung_charts_dir(self):
-        assert paths.rung_charts_dir("r2.0") == Path(
-            "docs/04_reports/arc_d_v2/r2.0/charts"
+        assert _ends_with(
+            paths.rung_charts_dir("r2.0"), "docs/04_reports/arc_d_v2/r2.0/charts"
         )
 
     def test_rung_chart_data_dir(self):
-        assert paths.rung_chart_data_dir("r2.0") == Path(
-            "docs/04_reports/arc_d_v2/r2.0/chart_data"
+        assert _ends_with(
+            paths.rung_chart_data_dir("r2.0"),
+            "docs/04_reports/arc_d_v2/r2.0/chart_data",
         )
 
     def test_advance_check_path(self):
         result = paths.advance_check_path("r2.0", "quick")
-        assert result == Path("data/runs/arc_d_v2/r2.0/advance_check_quick.json")
+        assert _ends_with(result, "data/runs/arc_d_v2/r2.0/advance_check_quick.json")
 
     def test_evidence_manifest_path(self):
         result = paths.evidence_manifest_path("r2.0")
-        assert result == Path("docs/04_reports/arc_d_v2/r2.0/evidence_manifest.json")
+        assert _ends_with(
+            result, "docs/04_reports/arc_d_v2/r2.0/evidence_manifest.json"
+        )
 
     def test_step_log_path_no_detail(self):
         result = paths.step_log_path("r2.0", "3")
-        assert result == Path("plans/arc_d_v2/r2.0/logs/step_3.log")
+        assert _ends_with(result, "plans/arc_d_v2/r2.0/logs/step_3.log")
 
     def test_step_log_path_with_detail(self):
         result = paths.step_log_path("r2.0", "3", "gbt_full")
-        assert result == Path("plans/arc_d_v2/r2.0/logs/step_3_gbt_full.log")
+        assert _ends_with(result, "plans/arc_d_v2/r2.0/logs/step_3_gbt_full.log")
 
 
 # =============================================================================
@@ -695,5 +715,5 @@ class TestHeartbeatPath:
     """Test heartbeat path construction."""
 
     def test_rung_heartbeat_path(self):
-        assert paths.rung_heartbeat("r0") == Path("plans/arc_d_v2/r0/heartbeat")
-        assert paths.rung_heartbeat("r2.0") == Path("plans/arc_d_v2/r2.0/heartbeat")
+        assert _ends_with(paths.rung_heartbeat("r0"), "plans/arc_d_v2/r0/heartbeat")
+        assert _ends_with(paths.rung_heartbeat("r2.0"), "plans/arc_d_v2/r2.0/heartbeat")
