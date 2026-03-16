@@ -202,8 +202,19 @@ secrets.*
 .env.local
 CLAUDE.local.md
 
-# Autonomous review loop runtime state
-.claude/runtime/
+# Autonomous review loop and agent ops runtime state
+# Ignore all runtime contents, but track README.md schema docs in metadata dirs.
+# Git requires un-ignoring parent dirs before un-ignoring children.
+.claude/runtime/*
+!.claude/runtime/worktree_registry/
+.claude/runtime/worktree_registry/*
+!.claude/runtime/worktree_registry/README.md
+!.claude/runtime/session_metadata/
+.claude/runtime/session_metadata/*
+!.claude/runtime/session_metadata/README.md
+!.claude/runtime/task_state/
+.claude/runtime/task_state/*
+!.claude/runtime/task_state/README.md
 
 # =============================================================================
 # Backup and temporary files
