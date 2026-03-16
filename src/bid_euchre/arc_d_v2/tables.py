@@ -950,7 +950,10 @@ def generate_chart_data(
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = []
 
-    # 1. outcome_distributions.csv — from H2H self-play by_contract
+    # 1. outcome_summary.csv — summary metrics from H2H self-play by_contract
+    #    NOTE: This is *summary* data (one row per model per contract facet),
+    #    NOT per-deal observations. Renamed from outcome_distributions.csv to
+    #    avoid implying distributional granularity.
     if h2h_battery:
         rows = []
         for _mid, cell in h2h_battery.get("cells", {}).items():
@@ -983,8 +986,8 @@ def generate_chart_data(
                     )
         if rows:
             df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "outcome_distributions.csv", index=False)
-            generated.append("outcome_distributions.csv")
+            df.to_csv(output_dir / "outcome_summary.csv", index=False)
+            generated.append("outcome_summary.csv")
 
     # 2. contract_mix.csv — deal counts by contract from H2H self-play
     if h2h_battery:
@@ -1587,7 +1590,7 @@ def generate_all_tables(
                 len(df),
             )
 
-    # 14. chart_data CSVs (outcome_distributions, contract_mix, etc.)
+    # 14. chart_data CSVs (outcome_summary, contract_mix, etc.)
     chart_data_dir = output_dir.parent / "chart_data"
     chart_data_csvs = generate_chart_data(
         h2h_battery=h2h_battery,

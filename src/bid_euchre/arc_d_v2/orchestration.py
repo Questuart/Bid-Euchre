@@ -106,6 +106,18 @@ def _repo_root() -> Path:
     return Path.cwd()
 
 
+def _report_subdir(mode: str) -> str:
+    """Return the report subdirectory name for the given mode.
+
+    - ``"quick"`` -> ``"quick"``
+    - ``"full"``  -> ``"full"``
+    - anything else (including ``"smoke"``) -> ``"canonical"``
+    """
+    if mode in ("quick", "full"):
+        return mode
+    return "canonical"
+
+
 def _plans_dir(rung: str) -> Path:
     return _repo_root() / "plans" / "arc_d_v2" / rung
 
@@ -954,7 +966,7 @@ def execute_step_3(state: RunState, seed: int, dry_run: bool = False) -> bool:
         / "04_reports"
         / "arc_d_v2"
         / rung
-        / "canonical"
+        / _report_subdir(state.mode)
         / "tables"
     )
     cmd = [
@@ -1008,7 +1020,14 @@ def execute_step_3b(state: RunState, seed: int, dry_run: bool = False) -> bool:
         return True
 
     rung_artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
-    report_dir = _repo_root() / "docs" / "04_reports" / "arc_d_v2" / rung / "canonical"
+    report_dir = (
+        _repo_root()
+        / "docs"
+        / "04_reports"
+        / "arc_d_v2"
+        / rung
+        / _report_subdir(state.mode)
+    )
 
     cmd = [
         "uv",
@@ -1354,7 +1373,7 @@ def execute_step_6(state: RunState, dry_run: bool = False) -> bool:
         / "04_reports"
         / "arc_d_v2"
         / rung
-        / "canonical"
+        / _report_subdir(state.mode)
         / "tables"
     )
 
@@ -1396,7 +1415,14 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
     _append_log(rung, {"event": "step_start", "step": "7"})
     state.mark_step_started("7")
 
-    report_dir = _repo_root() / "docs" / "04_reports" / "arc_d_v2" / rung / "canonical"
+    report_dir = (
+        _repo_root()
+        / "docs"
+        / "04_reports"
+        / "arc_d_v2"
+        / rung
+        / _report_subdir(state.mode)
+    )
 
     # 7a: Charts
     chart_script = _repo_root() / "scripts" / "internal" / "generate_rung_charts.py"
@@ -1522,7 +1548,7 @@ def execute_step_8(state: RunState, dry_run: bool = False) -> bool:
         / "04_reports"
         / "arc_d_v2"
         / rung
-        / "canonical"
+        / _report_subdir(state.mode)
         / "tables"
     )
     output = _plans_dir(rung) / "advance_check.json"
@@ -1573,7 +1599,7 @@ def execute_step_9(state: RunState, dry_run: bool = False) -> bool:
         / "04_reports"
         / "arc_d_v2"
         / rung
-        / "canonical"
+        / _report_subdir(state.mode)
         / "04_rung_decision.md"
     )
 

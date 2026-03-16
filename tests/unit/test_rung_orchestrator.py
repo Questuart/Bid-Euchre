@@ -28,6 +28,7 @@ from bid_euchre.arc_d_v2.config import AnchorModel, Roster, RosterModel
 from bid_euchre.arc_d_v2.orchestration import (
     STEP_DESCRIPTIONS,
     STEP_FUNCTIONS,
+    _report_subdir,
     compute_fingerprint,
     handle_rerun,
     load_roster,
@@ -38,6 +39,27 @@ from bid_euchre.arc_d_v2.schemas import (
     STEPS,
     RunState,
 )
+
+# ============================================================================
+# Report Subdir Helper Tests
+# ============================================================================
+
+
+class TestReportSubdir:
+    """Test _report_subdir returns mode-appropriate directory names."""
+
+    def test_quick_mode(self):
+        assert _report_subdir("quick") == "quick"
+
+    def test_full_mode(self):
+        assert _report_subdir("full") == "full"
+
+    def test_smoke_mode_returns_canonical(self):
+        assert _report_subdir("smoke") == "canonical"
+
+    def test_unknown_mode_returns_canonical(self):
+        assert _report_subdir("something_else") == "canonical"
+
 
 # ============================================================================
 # State Management Tests
@@ -2437,7 +2459,7 @@ class TestEvidenceManifestIncludesChartData:
         (report_dir / "charts").mkdir(parents=True)
         chart_data_dir = report_dir / "chart_data"
         chart_data_dir.mkdir(parents=True)
-        (chart_data_dir / "outcome_distributions.csv").write_text(
+        (chart_data_dir / "outcome_summary.csv").write_text(
             "model,contract,value\ngbt_av,suit,1.5\n"
         )
         (chart_data_dir / "contract_mix.csv").write_text(
@@ -2453,6 +2475,6 @@ class TestEvidenceManifestIncludesChartData:
 
         assert "chart_data" in manifest
         chart_data_names = [cd["name"] for cd in manifest["chart_data"]]
-        assert "outcome_distributions.csv" in chart_data_names
+        assert "outcome_summary.csv" in chart_data_names
         assert "contract_mix.csv" in chart_data_names
         assert len(manifest["chart_data"]) == 2
