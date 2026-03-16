@@ -27,16 +27,30 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure scripts/internal is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Import sibling modules from scripts/internal/ via importlib
+_scripts_dir = str(Path(__file__).resolve().parent)
 
-from codex_plan_review_adapter import (
-    PlanReviewResult,
-    _check_codex_auth,
-    detect_plan_tier,
-    invoke_codex_plan_review,
-)
-from plan_review_driver import run_plan_review_loop
+
+def _import_sibling(module_name: str):
+    """Import a sibling module from scripts/internal/ without sys.path mutation."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        module_name, Path(_scripts_dir) / f"{module_name}.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_adapter = _import_sibling("codex_plan_review_adapter")
+_driver = _import_sibling("plan_review_driver")
+
+PlanReviewResult = _adapter.PlanReviewResult
+_check_codex_auth = _adapter._check_codex_auth
+detect_plan_tier = _adapter.detect_plan_tier
+invoke_codex_plan_review = _adapter.invoke_codex_plan_review
+run_plan_review_loop = _driver.run_plan_review_loop
 
 # --- Test Plans ---
 
