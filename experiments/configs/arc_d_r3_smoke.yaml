@@ -1,0 +1,17 @@
+# Arc D R3 SMOKE Test Configuration
+# Minimal auction-mode config for validating moon/loner end-to-end pipeline.
+# Uses GreedyStrategy for trick play; bidding is via policy in integration tests.
+
+experiment_name: arc_d_r3_smoke
+
+strategies:
+  - name: greedy
+    class_name: GreedyStrategy
+
+scenarios:
+  - contract_type: null  # Triggers auction/bidding mode (moon/loner enabled)
+
+parameters:
+  n_per: 30
+  seed: 42
+  log_level: none
