@@ -115,7 +115,7 @@ is the major bottleneck, but not the sole cause of the suit regression.
 | Feature selection logs | `data/artifacts/arc_d/r1/feature_selection_log_r1_{constrained,full}.json` |
 | H10 validation | PR #552 (101 parametric tests) |
 | bid_bonus sweep | PR #554 (6-bidder, 36 matchups) |
-| Baseline statement | `docs/04_reports/r1/r1_baseline_statement.md` |
+| Baseline statement | `docs/04_reports/arc_d_v1/r1/r1_baseline_statement.md` |
 
 ---
 

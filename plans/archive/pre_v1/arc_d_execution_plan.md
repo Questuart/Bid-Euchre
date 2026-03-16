@@ -456,7 +456,7 @@ PREREQUISITE: run_auction_comparator.py must be updated (PR-R0b scope):
 
 ### Phase R1 -- Partner Bidding Context
 
-> **Status: IN PROGRESS** — Gate X3 STOP. Regression investigation ongoing (see `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`).
+> **Status: IN PROGRESS** — Gate X3 STOP. Regression investigation ongoing (see `docs/04_reports/arc_d_v1/r1/h2h_suit_regression_diagnostic.md`).
 
 **Objective:** Add partner's bidding history features via
 `BiddingObservation.auction_history`. Extract partner context features
@@ -1288,7 +1288,7 @@ prescribe report format — only that the evidence listed above must exist.
 |----------|------|
 | Arc run registry | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/02_agent/MODEL_ARC_RUNS.md` (to be created by PR-R0b) |
 | Per-rung report | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/model_arc_<rung_id>_<date>_r1.md` |
-| Arc dashboard | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/model_arc_d_dashboard.md` |
+| Arc dashboard | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v1/model_arc_d_dashboard.md` |
 | Schema doc | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/01_core/schemas/hybrid_olsa_v1.md` (to be created by PR-I1) |
 
 ### MODEL_ARC_RUNS.md Update Protocol
@@ -1366,7 +1366,7 @@ promotion gate:
 
 **Required R1+ key (v3.2):**
 - `progression_report` (string): R1+ only — path to rung-to-rung progression report
-  (e.g., `docs/04_reports/r1/r0_to_r1_progression.md`). Enforced by bundle validator
+  (e.g., `docs/04_reports/arc_d_v1/r1/r0_to_r1_progression.md`). Enforced by bundle validator
   as an artifact existence gate. R0 bundles are exempt (no prior rung).
 
 **Optional comparator keys (v3.1):**
@@ -1748,7 +1748,7 @@ Add reporting infrastructure and semantic gate extensions for Arc D.
       divergences between arms
 
 3. Arc dashboard generator:
-   Script to regenerate docs/04_reports/model_arc_d_dashboard.md from
+   Script to regenerate docs/04_reports/arc_d_v1/model_arc_d_dashboard.md from
    all completed rung bundles. Shows cross-rung progression, attribution_gap
    trend, and feature selection evolution.
 
@@ -2000,7 +2000,7 @@ consistency.
 > **Reporting mandate (all rungs):** Every rung MUST produce:
 > (1) instantiated notebook `notebooks/arc_d/02_r{N}_eval.py` with cleared
 > outputs, (2) per-rung report at `docs/04_reports/model_arc_r{N}_<date>.md`,
-> (3) updated dashboard at `docs/04_reports/model_arc_d_dashboard.md`.
+> (3) updated dashboard at `docs/04_reports/arc_d_v1/model_arc_d_dashboard.md`.
 > Verify with: `make notebook-run-arc-d NOTEBOOK=notebooks/arc_d/02_r{N}_eval.ipynb`
 
 All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
@@ -2085,7 +2085,7 @@ All training+eval PRs (R1b, R2b, R3b, R4b, R5b) follow this 10-step template:
     d. Regenerate arc dashboard (committed):
        PYTHONPATH=src uv run python scripts/internal/generate_arc_dashboard.py \
          --artifacts-base data/artifacts/arc_d \
-         --output docs/04_reports/model_arc_d_dashboard.md
+         --output docs/04_reports/arc_d_v1/model_arc_d_dashboard.md
     e. Verify: make notebook-check
 ```
 
@@ -2236,7 +2236,7 @@ Contents:
 8. Recommendations for future arcs
 
 Update MODEL_ARC_RUNS.md with arc-level summary row.
-Regenerate arc dashboard: docs/04_reports/model_arc_d_dashboard.md
+Regenerate arc dashboard: docs/04_reports/arc_d_v1/model_arc_d_dashboard.md
 
 Verify: make repo-lint passes.
 ```

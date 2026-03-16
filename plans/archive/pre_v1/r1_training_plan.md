@@ -259,7 +259,7 @@ print('X2 PASS: Both arms suit R² not regressed')
 
 **Finding:** High/low selected only `partner_suit_match` in both arms. Confounded
 by sample size (4k high, 5.5k low vs 32k suit). Not gate-blocking; deferred to R2.
-See `docs/04_reports/r1/partner_feature_selection_diagnostic.md`.
+See `docs/04_reports/arc_d_v1/r1/partner_feature_selection_diagnostic.md`.
 
 > **Stale note:** Step 3c trained with 4 partner features including
 > `partner_bid_confidence`, which was removed in PR #538 (linearly redundant
@@ -637,7 +637,7 @@ Run at QUICK + 1 non-QUICK sanity check (guardrail §3.5).
 ### 11a. Deep-Debug (Conditional)
 
 > Blocked on same regression investigation as §3d — see
-> `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`.
+> `docs/04_reports/arc_d_v1/r1/h2h_suit_regression_diagnostic.md`.
 
 **Trigger:** Any class has Δ_partner ≤ 0.
 
@@ -655,8 +655,8 @@ Output: `data/artifacts/arc_d/r1/deep_debug_r1.json`
 **Required bundle artifact** (`progression_report` field, validated by `arc_d_bundle.py`).
 Written manually from committed artifacts; automation deferred to R2+.
 
-**Template:** `docs/04_reports/r0/23_phase0_to_r0_progression.md` (8-section format)
-**Output:** `docs/04_reports/r1/r0_to_r1_progression.md`
+**Template:** `docs/04_reports/arc_d_v1/r0/23_phase0_to_r0_progression.md` (8-section format)
+**Output:** `docs/04_reports/arc_d_v1/r1/r0_to_r1_progression.md`
 
 Sections: Executive summary, feature/architecture delta, H2H rung-over-rung results
 with CIs, comparator ranking shifts, guardrail comparison, regret decomposition shift,
@@ -709,7 +709,7 @@ table covering RETAIN/ADOPT combinations for threshold, lambda, and normalizer).
 | Comparator CIs | `data/artifacts/arc_d/r1/comparator_cis_r1_dual.json` | Step 6 |
 | Threshold sweep | `data/artifacts/arc_d/r1/threshold_sweep_r1.json` | Step 7 |
 | Lambda sweep | `data/artifacts/arc_d/r1/lambda_sweep_r1.json` | Step 8 |
-| Progression report | `docs/04_reports/r1/r0_to_r1_progression.md` | Step 12a |
+| Progression report | `docs/04_reports/arc_d_v1/r1/r0_to_r1_progression.md` | Step 12a |
 | Multi-class gate | `data/artifacts/arc_d/r1/multi_class_gate_r1.json` | Step 12b |
 
 ---

@@ -16,7 +16,7 @@ Create three formal report documents for R0 promotion closeout, completing Phase
 ## Deliverables
 
 ### D1: R0 Promotion Report
-**File:** `docs/04_reports/r0/r0_promotion_report.md` — **NEW**
+**File:** `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md` — **NEW**
 
 A narrative promotion decision document. Covers:
 
@@ -69,7 +69,7 @@ Concrete instantiation of `hybrid_olsa_v1` schema for R0 frozen artifacts. Conta
 - `data/artifacts/arc_d/r0/split_manifest_r0_{suit,high,low}.json` (splits)
 
 ### D3: Comparator Rankings
-**File:** `docs/04_reports/r0/comparator_rankings.md` — **NEW**
+**File:** `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` — **NEW**
 
 Ranked table of all comparator bidders with bootstrap 95% CIs.
 
@@ -162,7 +162,7 @@ for arm, suffix in [("olsa", ""), ("olsa_full", "_full")]:
 
 ### Step 5: Write D1 — R0 Promotion Report
 
-Create `docs/04_reports/r0/r0_promotion_report.md` with the structure from D1 above.
+Create `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md` with the structure from D1 above.
 
 **Implementation notes:**
 - Write manually (not auto-generated) — this is a curated decision document
@@ -194,7 +194,7 @@ Create `docs/01_core/schemas/olsa_r0_model_spec.md` with the structure from D2 a
 
 ### Step 7: Write D3 — Comparator Rankings
 
-Create `docs/04_reports/r0/comparator_rankings.md` using the CI data from Step 3.
+Create `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` using the CI data from Step 3.
 
 **Implementation notes:**
 - Rankings table sorted by `net_eppd` descending (modeloespecifico > hybrid_olsa > rankthetank > fiveheadfred > stricthellraiser)
@@ -219,9 +219,9 @@ Specific verifications:
 
 ```bash
 PATH=".venv/bin:$PATH" git add \
-  docs/04_reports/r0/r0_promotion_report.md \
+  docs/04_reports/arc_d_v1/r0/r0_promotion_report.md \
   docs/01_core/schemas/olsa_r0_model_spec.md \
-  docs/04_reports/r0/comparator_rankings.md \
+  docs/04_reports/arc_d_v1/r0/comparator_rankings.md \
   scripts/internal/extract_comparator_cis.py
 
 PATH=".venv/bin:$PATH" git commit -m "docs: add R0 formal reports (promotion, model spec, comparators)"
@@ -235,9 +235,9 @@ gh pr create --base main ...
 
 | File | Action | Contention Risk |
 |------|--------|-----------------|
-| `docs/04_reports/r0/r0_promotion_report.md` | NEW | None |
+| `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md` | NEW | None |
 | `docs/01_core/schemas/olsa_r0_model_spec.md` | NEW | None |
-| `docs/04_reports/r0/comparator_rankings.md` | NEW | None |
+| `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` | NEW | None |
 | `scripts/internal/extract_comparator_cis.py` | NEW | None |
 
 **All files are NEW** — zero contention risk, no merge conflicts possible.

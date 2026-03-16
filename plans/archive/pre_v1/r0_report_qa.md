@@ -127,7 +127,7 @@ Conclusions unchanged, but interpretation is cleaner. Low cost, high defensibili
 
 **Options:**
 1. **Relative links to notebook .py files** — e.g., `[Chart 3a](../../../notebooks/arc_d/r0/57_c33_ablation_deep_dive.py)`. Works on GitHub, no binary files, consistent with data policy.
-2. **Commit chart PNGs to `docs/04_reports/r0/charts/`** — embed as `![caption](charts/foo.png)`. Inline rendering on GitHub but adds binary files to git.
+2. **Commit chart PNGs to `docs/04_reports/arc_d_v1/r0/charts/`** — embed as `![caption](charts/foo.png)`. Inline rendering on GitHub but adds binary files to git.
 
 **Decision:** TBD — to be planned separately. Affects all R0 reports + report conventions for R1+.
 

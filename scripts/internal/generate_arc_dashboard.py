@@ -7,7 +7,7 @@ a Markdown dashboard with a progression table.
 Usage:
     PYTHONPATH=src python scripts/internal/generate_arc_dashboard.py \
         --artifacts-base data/artifacts/arc_d \
-        --output docs/04_reports/model_arc_d_dashboard.md
+        --output docs/04_reports/arc_d_v1/model_arc_d_dashboard.md
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def generate_dashboard(
     artifacts_base: str | Path = "data/artifacts/arc_d",
-    output_path: str | Path = "docs/04_reports/model_arc_d_dashboard.md",
+    output_path: str | Path = "docs/04_reports/arc_d_v1/model_arc_d_dashboard.md",
 ) -> str:
     """Generate cross-rung progression dashboard from completed rung bundles.
 
@@ -260,7 +260,7 @@ def main() -> None:
     generate_dashboard(args.artifacts_base, args.output)
 
     if args.snapshot:
-        snapshot_path = "docs/04_reports/model_arc_d_dashboard.md"
+        snapshot_path = "docs/04_reports/arc_d_v1/model_arc_d_dashboard.md"
         Path(snapshot_path).parent.mkdir(parents=True, exist_ok=True)
         Path(snapshot_path).write_text(Path(args.output).read_text())
         logger.info("Snapshot written to %s", snapshot_path)

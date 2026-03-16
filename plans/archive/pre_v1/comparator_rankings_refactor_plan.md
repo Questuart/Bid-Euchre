@@ -1,6 +1,6 @@
 # Comparator Rankings Report — Refactor Plan
 
-> **Goal:** Refactor `docs/04_reports/r0/comparator_rankings.md` to be
+> **Goal:** Refactor `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` to be
 > self-contained, convention-compliant, and empirically grounded.
 >
 > **Scope:** Report refactor + supporting notebook. No code changes, no
@@ -548,10 +548,10 @@ Reuse the log-parsing pattern from the H2H notebook
 
 | File | Action | What Changes |
 |------|--------|--------------|
-| `docs/04_reports/r0/comparator_rankings.md` | **Rewrite** | Full refactor per section specs above |
+| `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` | **Rewrite** | Full refactor per section specs above |
 | `notebooks/arc_d/r0/45_comparator_deep_dive.py` | **Create** | New notebook per spec above |
 | `notebooks/arc_d/r0/45_comparator_deep_dive.ipynb` | **Create** | Jupytext-paired ipynb (auto-generated) |
-| `docs/04_reports/r0/h2h_battery_analysis.md` | **Minor edit** | Update §3 comparator cross-reference to note v3 methodology |
+| `docs/04_reports/arc_d_v1/r0/h2h_battery_analysis.md` | **Minor edit** | Update §3 comparator cross-reference to note v3 methodology |
 | `docs/04_reports/README.md` | **Minor edit** | Update comparator_rankings entry with v3 date |
 
 ---
@@ -578,13 +578,13 @@ Before opening the PR:
 ### Must-read
 - `plans/comparator_rankings_review_notes.md` — the review notes driving changes
 - `plans/comparator_experiment_redesign.md` — experiment redesign + bidder fixes
-- `docs/04_reports/r0/comparator_rankings.md` — the report being refactored
+- `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` — the report being refactored
 - `src/bid_euchre/strategy/bidding.py` — all 7 bidder classes (post-fix versions)
 - `scripts/internal/extract_comparator_cis.py` — CI extraction, metric computation
 
 ### Should-read
-- `docs/04_reports/r0/c33_ablation_report.md` — reference for report quality/structure
-- `docs/04_reports/r0/h2h_battery_analysis.md` — cross-referenced report
+- `docs/04_reports/arc_d_v1/r0/c33_ablation_report.md` — reference for report quality/structure
+- `docs/04_reports/arc_d_v1/r0/h2h_battery_analysis.md` — cross-referenced report
 - `notebooks/arc_d/r0/50_r0_matchups.py` — reference for notebook patterns
 - `docs/02_agent/EXPERIMENT_REPORTS.md` — 8-section template convention
 

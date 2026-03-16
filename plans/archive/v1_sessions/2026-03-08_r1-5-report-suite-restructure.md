@@ -8,9 +8,9 @@ factual drift, and formalize plan deviations.
 
 ### Acceptance Criteria
 
-- [ ] Single canonical rung closeout document exists at `docs/04_reports/r1_5/rung_closeout.md`
-- [ ] Measurement integrity companion exists at `docs/04_reports/r1_5/measurement_integrity_r1_5.md`
-- [ ] Every report in `docs/04_reports/r1_5/` passes the faceting checklist below
+- [ ] Single canonical rung closeout document exists at `docs/04_reports/arc_d_v1/r1_5/rung_closeout.md`
+- [ ] Measurement integrity companion exists at `docs/04_reports/arc_d_v1/r1_5/measurement_integrity_r1_5.md`
+- [ ] Every report in `docs/04_reports/arc_d_v1/r1_5/` passes the faceting checklist below
 - [ ] Factual drift fixed: X2 summary corrected, step dates reconciled
 - [ ] Plan deviations (FULL retraining, Step 7, Step 8 comparator) formally documented
 - [ ] R1.5 vs R1 comparison section present in canonical closeout
@@ -31,7 +31,7 @@ just for H2H.
 ### Step 2: Fix factual drift in the current files
 
 Update the incorrect X2 summary in
-`docs/04_reports/r1_5/07_promotion_decision.md`, reconcile step dates
+`docs/04_reports/arc_d_v1/r1_5/07_promotion_decision.md`, reconcile step dates
 across the suite, and standardize what each date means: report date,
 evidence date, merge date.
 
@@ -101,18 +101,18 @@ Every R1.5 report should be revised against this rule:
 
 | Action | Path |
 |--------|------|
-| Edit | `docs/04_reports/r1_5/00_step0_foundations.md` |
-| Edit | `docs/04_reports/r1_5/00_step1_dataset_generator.md` |
-| Edit | `docs/04_reports/r1_5/00_step2_training_pipeline.md` |
-| Edit | `docs/04_reports/r1_5/01_offline_gate_x3_report.md` |
-| Edit | `docs/04_reports/r1_5/02_gameplay_screen_report.md` |
-| Edit | `docs/04_reports/r1_5/03_h2h_battery_quick.md` |
-| Edit | `docs/04_reports/r1_5/04_risk_treatment.md` |
-| Edit | `docs/04_reports/r1_5/05_h2h_battery_full.md` |
-| Edit | `docs/04_reports/r1_5/06_ablation.md` |
-| Edit | `docs/04_reports/r1_5/07_promotion_decision.md` |
-| Create | `docs/04_reports/r1_5/rung_closeout.md` |
-| Create | `docs/04_reports/r1_5/measurement_integrity_r1_5.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/00_step0_foundations.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/00_step1_dataset_generator.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/00_step2_training_pipeline.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/01_offline_gate_x3_report.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/02_gameplay_screen_report.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/03_h2h_battery_quick.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/04_risk_treatment.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/05_h2h_battery_full.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/06_ablation.md` |
+| Edit | `docs/04_reports/arc_d_v1/r1_5/07_promotion_decision.md` |
+| Create | `docs/04_reports/arc_d_v1/r1_5/rung_closeout.md` |
+| Create | `docs/04_reports/arc_d_v1/r1_5/measurement_integrity_r1_5.md` |
 | Edit | `docs/04_reports/README.md` |
 
 ---

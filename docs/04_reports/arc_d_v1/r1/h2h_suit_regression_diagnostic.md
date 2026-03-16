@@ -388,7 +388,7 @@ reward higher bids, so the auction degenerates. Present in R0 (masked by 4-way
 competition) and R1 (exposed by asymmetric passing).
 
 **Known prior documentation:** The pass-threshold decision report
-(`docs/04_reports/r0/11_pass_threshold_decision.md`) documented that bid-level
+(`docs/04_reports/arc_d_v1/r0/11_pass_threshold_decision.md`) documented that bid-level
 search causes ~96% bid rate and "resolves the pass-threshold problem." The
 degeneracy of always selecting the minimum legal bid was not flagged.
 

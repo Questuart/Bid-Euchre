@@ -1,7 +1,7 @@
 # Phase 0 Report Improvement Plan (r3 → r4)
 
 > **Working document** — interview notes from planning session 2026-02-09
-> **Source:** `docs/04_reports/phase0_bidless_20260207_r3.md`
+> **Source:** `docs/04_reports/arc_d_v1/phase0_bidless_20260207_r3.md`
 
 ---
 

@@ -1,6 +1,6 @@
 # Phase 0 Report Revision (r4) — Implementation Plan
 
-> **Goal:** Comprehensive rewrite of `docs/04_reports/phase0_bidless_20260207.md` addressing chart bugs, section reordering, narrative improvements, and per-contract visualizations. Single PR.
+> **Goal:** Comprehensive rewrite of `docs/04_reports/arc_d_v1/phase0_bidless_20260207.md` addressing chart bugs, section reordering, narrative improvements, and per-contract visualizations. Single PR.
 >
 > **Scope:** Code fixes (chart normalization), new tests, report rewrite, new charts.
 
@@ -247,8 +247,8 @@ Copy all PNGs to `docs/04_reports/assets/phase0_20260207/`, update provenance JS
 |------|--------|
 | `src/bid_euchre/reporting/charts.py` | Add `_normalize_for_diagnostics()` to feature_health + feature_outcome generators |
 | `tests/unit/test_chart_generators.py` | Add `TestChartContentValidity` class |
-| `docs/04_reports/phase0_bidless_20260207.md` | Full rewrite (sections, narrative, charts) |
-| `docs/04_reports/phase0_bidless_20260207_provenance.json` | Update with new charts and SHA |
+| `docs/04_reports/arc_d_v1/phase0_bidless_20260207.md` | Full rewrite (sections, narrative, charts) |
+| `docs/04_reports/arc_d_v1/phase0_bidless_20260207_provenance.json` | Update with new charts and SHA |
 | `docs/04_reports/assets/phase0_20260207/*.png` | Regenerated charts (3 fixed + potentially new ones) |
 | `src/bid_euchre/diagnostics/charts.py` | New `plot_coefficient_heatmap()` + `plot_hand_value_by_seat_and_contract()` |
 | `scripts/evaluate_diagnostic_tricks.py` | Add `--per-contract` output for coefficient heatmap data |

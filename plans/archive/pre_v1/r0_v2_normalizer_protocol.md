@@ -208,7 +208,7 @@ relative to v1. No further work required.
 | Adoption threshold | +0.05 net_eppd, CI excludes 0, guardrails pass |
 | Adoption rule | Both comparator AND H2H gates must pass |
 | Recascade | Mandatory if adopted (full battery re-run) |
-| Oracle analysis | PR #472, `docs/04_reports/r0/10_contract_selection_oracle.md` |
+| Oracle analysis | PR #472, `docs/04_reports/arc_d_v1/r0/10_contract_selection_oracle.md` |
 | Oracle notebook | `notebooks/arc_d/r0/55_contract_selection_oracle.py` |
 | R0 v1 contract-selection regret | 16.9% of total (3.92 utility) |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |

@@ -306,7 +306,7 @@ class TestClassifyReviewMode:
     def test_report_only_returns_report_audit(self) -> None:
         from review_state import ReviewMode
 
-        mode = classify_review_mode(["docs/04_reports/r0/report.md"])
+        mode = classify_review_mode(["docs/04_reports/arc_d_v1/r0/report.md"])
         assert mode == ReviewMode.REPORT_AUDIT
 
     def test_plan_audit_mode(self) -> None:
@@ -319,7 +319,7 @@ class TestClassifyReviewMode:
         from review_state import ReviewMode
 
         mode = classify_review_mode(
-            ["docs/04_reports/r0/report.md", "plans/sessions/test.md"]
+            ["docs/04_reports/arc_d_v1/r0/report.md", "plans/sessions/test.md"]
         )
         assert mode == ReviewMode.REPORT_AUDIT
 
@@ -571,7 +571,7 @@ class TestFormatReviewComment:
         from review_state import ReviewMode
 
         mode = classify_review_mode(
-            ["docs/04_reports/r0/report.md", "src/bid_euchre/core/rules.py"]
+            ["docs/04_reports/arc_d_v1/r0/report.md", "src/bid_euchre/core/rules.py"]
         )
         assert mode == ReviewMode.STANDARD
 

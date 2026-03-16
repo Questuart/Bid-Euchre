@@ -4,7 +4,7 @@
 **Status:** COMPLETED
 **Blocking:** R1 training plan Steps 4–12 (payoff model revision)
 **Predecessor:** PRs #550 (H10 finding), #551 (Investigation J + H10 scope correction)
-**Governing doc:** `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`
+**Governing doc:** `docs/04_reports/arc_d_v1/r1/h2h_suit_regression_diagnostic.md`
 
 ---
 
@@ -122,7 +122,7 @@ Script that produces a markdown table:
 
 This table will be appended to the diagnostic report for HITL review.
 
-**File:** (output added to `docs/04_reports/r1/h2h_suit_regression_diagnostic.md`)
+**File:** (output added to `docs/04_reports/arc_d_v1/r1/h2h_suit_regression_diagnostic.md`)
 **Dependencies:** Test 2 (needs bid_bonus parameter)
 
 ### Test 4: Update R1 Training Plan + Diagnostic Report
@@ -132,7 +132,7 @@ This table will be appended to the diagnostic report for HITL review.
 
 Update:
 1. `plans/archive/r1_training_plan.md` — Add Step 3f (H10 validation pack results)
-2. `docs/04_reports/r1/h2h_suit_regression_diagnostic.md` — Add Investigation K section
+2. `docs/04_reports/arc_d_v1/r1/h2h_suit_regression_diagnostic.md` — Add Investigation K section
 3. Recommend next action: calibrate `bid_bonus` via H2H sweep (future PR)
 
 **Dependencies:** Tests 1-3 (results needed for documentation)
@@ -145,7 +145,7 @@ Update:
 |------|--------|
 | `src/bid_euchre/strategy/bidding.py` | Add `bid_bonus` param to `_compute_ev_static()` and `compute_best_bid()` |
 | `tests/unit/test_h10_bid_level_degeneracy.py` | **NEW** — analytical sweep + patched payoff tests |
-| `docs/04_reports/r1/h2h_suit_regression_diagnostic.md` | Investigation K (H10 validation pack results) |
+| `docs/04_reports/arc_d_v1/r1/h2h_suit_regression_diagnostic.md` | Investigation K (H10 validation pack results) |
 | `plans/archive/r1_training_plan.md` | Step 3f (H10 validation) |
 
 ## Files NOT Modified

@@ -1103,7 +1103,7 @@ def main() -> None:
     parser.add_argument(
         "--report",
         type=Path,
-        default=Path("docs/04_reports/r1_5/suit_decision_diagnostic.md"),
+        default=Path("docs/04_reports/arc_d_v1/r1_5/suit_decision_diagnostic.md"),
         help="Output path for markdown report",
     )
     args = parser.parse_args()

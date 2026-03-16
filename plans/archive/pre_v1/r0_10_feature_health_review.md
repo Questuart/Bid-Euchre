@@ -1463,10 +1463,10 @@ if len(thin_strata) > 0:
 
 | Report | Source | Purpose | When |
 |--------|--------|---------|------|
-| **R0 Promotion Report** | 40_ §10, 30_ S7 | Formal gate-check summary: all semantic gate results, eval metrics for both arms, attribution gap, promotion decision with rationale. Published to `docs/04_reports/r0/`. | After all Phase 2 fixes land |
+| **R0 Promotion Report** | 40_ §10, 30_ S7 | Formal gate-check summary: all semantic gate results, eval metrics for both arms, attribution gap, promotion decision with rationale. Published to `docs/04_reports/arc_d_v1/r0/`. | After all Phase 2 fixes land |
 | **Model Spec Document** | 30_ S2, 40_ §6 | Frozen reference: OLSa and HybridOLSa R0 parameters — feature lists, per-contract weights, bias terms, sigma models, decision thresholds. Published to `docs/01_core/schemas/`. | After C34 (statsmodels tables) |
-| **Comparator Rankings** | 40_ §11 | Formal ranking: all comparator bidders by net_eppd + 5 other metrics, with bootstrap CIs and statistical significance. Published to `docs/04_reports/r0/`. | After C48 (full metrics) |
-| **H2H Matchup Report** | 50_ | Formal H2H analysis: heatmaps, dominance ordering, statistical significance of pairwise differences. Published to `docs/04_reports/r0/`. | After C50 (H2H infrastructure) — **DEFERRED** (blocked by C50) |
+| **Comparator Rankings** | 40_ §11 | Formal ranking: all comparator bidders by net_eppd + 5 other metrics, with bootstrap CIs and statistical significance. Published to `docs/04_reports/arc_d_v1/r0/`. | After C48 (full metrics) |
+| **H2H Matchup Report** | 50_ | Formal H2H analysis: heatmaps, dominance ordering, statistical significance of pairwise differences. Published to `docs/04_reports/arc_d_v1/r0/`. | After C50 (H2H infrastructure) — **DEFERRED** (blocked by C50) |
 
 ### C23 Tier Reference Normalization
 
@@ -1493,7 +1493,7 @@ The full execution plan with PR ordering, per-PR scope, and agent handoff instru
 
 ### Resolved Alignment Decisions (2026-02-25)
 
-1. **Report output path**: `docs/04_reports/r0/` (was previously under `arc_d`). Preserves continuity with existing `model_arc_r0_20260224.md`.
+1. **Report output path**: `docs/04_reports/arc_d_v1/r0/` (was previously under `arc_d`). Preserves continuity with existing `model_arc_r0_20260224.md`.
 2. **PR structure**: Notebook-centric streams (9 PRs, not 17). Each notebook owned by exactly one PR per phase. Eliminates same-file merge contention.
 3. **`points_won` semantics**: Align with `compute_points()` no-bid behavior (`scoring.py` L36-38). `points_won` is never `None`. No-bid rows use tricks-based scoring.
 4. **Issue-to-PR traceability**: Full trace matrix required. Every issue maps to exactly one owner PR per notebook (or is explicitly deferred).

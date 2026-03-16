@@ -291,7 +291,7 @@ def test_non_md_files_ignored(tmp_path: Path):
 def test_promotion_report_with_matched_integrity_file_passes(tmp_path: Path):
     """Promotion report with rung-matched measurement_integrity file passes."""
     repo_root = tmp_path
-    reports_dir = repo_root / "docs" / "04_reports" / "r0"
+    reports_dir = repo_root / "docs" / "04_reports" / "arc_d_v1" / "r0"
     reports_dir.mkdir(parents=True)
     (reports_dir / "01_r0_promotion_report.md").write_text(
         "# Promo\n", encoding="utf-8"
@@ -301,7 +301,7 @@ def test_promotion_report_with_matched_integrity_file_passes(tmp_path: Path):
     )
 
     v = check_promotion_report_requires_integrity_review(
-        ["docs/04_reports/r0/01_r0_promotion_report.md"],
+        ["docs/04_reports/arc_d_v1/r0/01_r0_promotion_report.md"],
         repo_root,
     )
     assert v == []
@@ -310,7 +310,7 @@ def test_promotion_report_with_matched_integrity_file_passes(tmp_path: Path):
 def test_promotion_report_without_numeric_prefix_passes(tmp_path: Path):
     """Promotion report without numeric prefix still works (backwards compat)."""
     repo_root = tmp_path
-    reports_dir = repo_root / "docs" / "04_reports" / "r0"
+    reports_dir = repo_root / "docs" / "04_reports" / "arc_d_v1" / "r0"
     reports_dir.mkdir(parents=True)
     (reports_dir / "r0_promotion_report.md").write_text("# Promo\n", encoding="utf-8")
     (reports_dir / "measurement_integrity_r0.md").write_text(
@@ -318,7 +318,7 @@ def test_promotion_report_without_numeric_prefix_passes(tmp_path: Path):
     )
 
     v = check_promotion_report_requires_integrity_review(
-        ["docs/04_reports/r0/r0_promotion_report.md"],
+        ["docs/04_reports/arc_d_v1/r0/r0_promotion_report.md"],
         repo_root,
     )
     assert v == []
@@ -327,14 +327,14 @@ def test_promotion_report_without_numeric_prefix_passes(tmp_path: Path):
 def test_promotion_report_without_integrity_file_fails(tmp_path: Path):
     """Promotion report without companion measurement_integrity file fails."""
     repo_root = tmp_path
-    reports_dir = repo_root / "docs" / "04_reports" / "r0"
+    reports_dir = repo_root / "docs" / "04_reports" / "arc_d_v1" / "r0"
     reports_dir.mkdir(parents=True)
     (reports_dir / "01_r0_promotion_report.md").write_text(
         "# Promo\n", encoding="utf-8"
     )
 
     v = check_promotion_report_requires_integrity_review(
-        ["docs/04_reports/r0/01_r0_promotion_report.md"],
+        ["docs/04_reports/arc_d_v1/r0/01_r0_promotion_report.md"],
         repo_root,
     )
     assert len(v) == 1
@@ -344,7 +344,7 @@ def test_promotion_report_without_integrity_file_fails(tmp_path: Path):
 def test_promotion_report_with_wrong_rung_integrity_file_fails(tmp_path: Path):
     """Promotion report with mismatched rung integrity file fails."""
     repo_root = tmp_path
-    reports_dir = repo_root / "docs" / "04_reports" / "r1"
+    reports_dir = repo_root / "docs" / "04_reports" / "arc_d_v1" / "r1"
     reports_dir.mkdir(parents=True)
     (reports_dir / "01_r1_promotion_report.md").write_text(
         "# Promo\n", encoding="utf-8"
@@ -354,7 +354,7 @@ def test_promotion_report_with_wrong_rung_integrity_file_fails(tmp_path: Path):
     )
 
     v = check_promotion_report_requires_integrity_review(
-        ["docs/04_reports/r1/01_r1_promotion_report.md"],
+        ["docs/04_reports/arc_d_v1/r1/01_r1_promotion_report.md"],
         repo_root,
     )
     assert len(v) == 1
@@ -365,7 +365,7 @@ def test_promotion_report_in_wrong_directory_fails(tmp_path: Path):
     """Promotion report with rung that doesn't match its directory fails."""
     repo_root = tmp_path
     # r0_promotion_report.md placed under r1/ directory
-    reports_dir = repo_root / "docs" / "04_reports" / "r1"
+    reports_dir = repo_root / "docs" / "04_reports" / "arc_d_v1" / "r1"
     reports_dir.mkdir(parents=True)
     (reports_dir / "01_r0_promotion_report.md").write_text(
         "# Promo\n", encoding="utf-8"
@@ -375,7 +375,7 @@ def test_promotion_report_in_wrong_directory_fails(tmp_path: Path):
     )
 
     v = check_promotion_report_requires_integrity_review(
-        ["docs/04_reports/r1/01_r0_promotion_report.md"],
+        ["docs/04_reports/arc_d_v1/r1/01_r0_promotion_report.md"],
         repo_root,
     )
     assert len(v) == 1
@@ -386,14 +386,14 @@ def test_promotion_report_in_wrong_directory_fails(tmp_path: Path):
 def test_non_promotion_report_not_checked(tmp_path: Path):
     """Non-promotion report under 04_reports is not checked."""
     repo_root = tmp_path
-    reports_dir = repo_root / "docs" / "04_reports" / "r0"
+    reports_dir = repo_root / "docs" / "04_reports" / "arc_d_v1" / "r0"
     reports_dir.mkdir(parents=True)
     (reports_dir / "03_comparator_rankings.md").write_text(
         "# Rankings\n", encoding="utf-8"
     )
 
     v = check_promotion_report_requires_integrity_review(
-        ["docs/04_reports/r0/03_comparator_rankings.md"],
+        ["docs/04_reports/arc_d_v1/r0/03_comparator_rankings.md"],
         repo_root,
     )
     assert v == []

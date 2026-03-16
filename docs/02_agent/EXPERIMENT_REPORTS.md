@@ -26,7 +26,7 @@ Reports are **NOT required** for:
 Reports live in `docs/04_reports/<rung>/` alongside the rung's other
 documentation.
 
-- **Directory:** `docs/04_reports/<rung>/` (e.g., `docs/04_reports/r0/`)
+- **Directory:** `docs/04_reports/<rung>/` (e.g., `docs/04_reports/arc_d_v1/r0/`)
 - **Naming:** `[NN_]<descriptive_name>.md` — optional numeric prefix for ordering.
   Examples: `05_c33_ablation_report.md`, `02_model_arc_r0.md`,
   `03_comparator_rankings.md`

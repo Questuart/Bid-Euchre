@@ -27,7 +27,7 @@ See `arc_d_execution_plan.md` §Phase R1 for the gate definition.
 | P7 | Rung-to-rung report pipeline | No (deferrable) | MANUAL at R1 | Step 12a: written manually from artifacts. Automation deferred to R2+. |
 | P8 | Bid-level search in HybridOLSaBidder | **Yes** | DONE | Adopted by v2 — `compute_best_bid()` in #493, verified max-utility search |
 | P9 | Extract notebook-only gate results to artifacts | No (deferrable) | — | nb55 oracle gate result has no committed JSON; see notebook boundary audit |
-| P10 | Context-feature confirmation for high/low | No (deferrable) | DEFERRED to R1.6 | Sample-size confound; partner redesign at R1.6, high/low confirmation at R1.6 or R2 depending on data availability. See `docs/04_reports/r1/partner_feature_selection_diagnostic.md` |
+| P10 | Context-feature confirmation for high/low | No (deferrable) | DEFERRED to R1.6 | Sample-size confound; partner redesign at R1.6, high/low confirmation at R1.6 or R2 depending on data availability. See `docs/04_reports/arc_d_v1/r1/partner_feature_selection_diagnostic.md` |
 
 **Disposition values:** DONE / DEFERRED (with rationale + target rung) / NOT APPLICABLE (with evidence)
 
@@ -83,8 +83,8 @@ at the cost of one extra experiment lane.
 **Why:** The R0 path is already recorded as promoted and frozen, and the 2026-03-01
 oracle decision explicitly points feature enrichment to R1; changing R0 now muddies
 rung semantics and governance (see
-[10_contract_selection_oracle.md](../docs/04_reports/r0/10_contract_selection_oracle.md),
-[model_arc_d_dashboard.md](../docs/04_reports/model_arc_d_dashboard.md)).
+[10_contract_selection_oracle.md](../docs/04_reports/arc_d_v1/r0/10_contract_selection_oracle.md),
+[model_arc_d_dashboard.md](../docs/04_reports/arc_d_v1/model_arc_d_dashboard.md)).
 
 ---
 
@@ -294,7 +294,7 @@ estimand (competitive ordering), not a methodology defect.
 
 ### What
 
-The Phase 0→R0 progression report (`docs/04_reports/r0/23_phase0_to_r0_progression.md`)
+The Phase 0→R0 progression report (`docs/04_reports/arc_d_v1/r0/23_phase0_to_r0_progression.md`)
 was manually authored. Starting at R1, `progression_report` is a required bundle
 artifact enforced by the rung bundle validator. Future rung transitions should have
 automated or semi-automated report generation.
@@ -427,7 +427,7 @@ threshold 5.3%, over-bidding 3.7%), and oracle contract mix exist nowhere in
 **Origin:** R1 Step 3c training analysis — `partner_bid_level` and `partner_passed` not
 selected for high/low by either arm (constrained or full). Confounded by suit-heavy
 training distribution (77% suit, 10% high, 13% low).
-**Diagnostic:** `docs/04_reports/r1/partner_feature_selection_diagnostic.md`
+**Diagnostic:** `docs/04_reports/arc_d_v1/r1/partner_feature_selection_diagnostic.md`
 
 ### What
 
@@ -461,7 +461,7 @@ See `plans/archive/r1_training_plan.md` §R2 Context-Feature Protocol for the fu
 
 ## R0 Process Lessons — Checklist
 
-**Source:** `docs/04_reports/r0/21_r0_retrospective.md` §5
+**Source:** `docs/04_reports/arc_d_v1/r0/21_r0_retrospective.md` §5
 **Status:** Review before starting R1 execution (C2)
 
 These are development process recommendations from the R0 retrospective. They do not

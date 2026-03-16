@@ -18,7 +18,7 @@ rungs, with no R0 exemption. R0 reporting was delivered retroactively in PR #401
 
 1. **Notebook:** `notebooks/arc_d/02_r0_baseline.py` (eval-only mode)
 2. **Rung report:** `docs/04_reports/model_arc_r0_20260222.md`
-3. **Dashboard:** `docs/04_reports/model_arc_d_dashboard.md`
+3. **Dashboard:** `docs/04_reports/arc_d_v1/model_arc_d_dashboard.md`
 
 The execution plan was updated with:
 - Universal reporting mandate preamble before R{N}b template

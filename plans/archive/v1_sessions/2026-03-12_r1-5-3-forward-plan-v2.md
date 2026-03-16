@@ -192,7 +192,7 @@ additional samples have diminishing returns. This informs FULL-scale cost.
 ### Step 0.4: Report
 
 Write diagnostic report following 8-section template:
-`docs/04_reports/r1_5/09_multi_rollout_diagnostic.md`
+`docs/04_reports/arc_d_v1/r1_5/09_multi_rollout_diagnostic.md`
 
 Must include:
 - Label distribution comparison (N=1 vs N=20 histograms)
@@ -250,7 +250,7 @@ Generate two QUICK datasets (2,500 deals each, seed=42):
 
 ### Step 1A.4: Report
 
-`docs/04_reports/r1_5/10_model_label_matrix.md`
+`docs/04_reports/arc_d_v1/r1_5/10_model_label_matrix.md`
 
 Must include:
 - 2×2 effect decomposition table (label effect, model effect, interaction)
@@ -299,7 +299,7 @@ per matchup, paired deals, 9 matchups.
 
 ### Step 1B.2: Report
 
-`docs/04_reports/r1_5/10_gbt_full_validation.md`
+`docs/04_reports/arc_d_v1/r1_5/10_gbt_full_validation.md`
 
 Must include:
 - Multi-seed stability analysis
@@ -336,7 +336,7 @@ specification. Key elements:
 - Offline eval + behavioral screen + QUICK H2H
 - Calibration diagnostics
 
-**Report:** `docs/04_reports/r1_5/11_two_stage_evaluation.md`
+**Report:** `docs/04_reports/arc_d_v1/r1_5/11_two_stage_evaluation.md`
 
 **Deliverable:** 1-2 PRs
 
@@ -358,8 +358,8 @@ If Phase 1B produced the winner: already at FULL (GBT FULL was Phase 1B).
 - No catastrophic tail risk (CVaR_5 > -10.0)
 - Multi-seed stability (3 seeds, no reversals)
 
-**Report:** `docs/04_reports/r1_5/11_full_validation.md` or
-`docs/04_reports/r1_5/12_full_validation.md` (numbering depends on path)
+**Report:** `docs/04_reports/arc_d_v1/r1_5/11_full_validation.md` or
+`docs/04_reports/arc_d_v1/r1_5/12_full_validation.md` (numbering depends on path)
 
 ---
 
@@ -370,7 +370,7 @@ If Phase 1B produced the winner: already at FULL (GBT FULL was Phase 1B).
 **Objective:** Synthesize all findings into a promotion decision with full
 traceability from diagnosis through candidate evaluation to decision.
 
-**Report:** `docs/04_reports/r1_5/12_r1_5_3_promotion_decision.md` (or 13,
+**Report:** `docs/04_reports/arc_d_v1/r1_5/12_r1_5_3_promotion_decision.md` (or 13,
 depending on path)
 
 Must include:

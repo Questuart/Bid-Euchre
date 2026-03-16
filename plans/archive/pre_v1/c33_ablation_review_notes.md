@@ -3,7 +3,7 @@
 > **Goal:** Refactor the C33 ablation report and supporting notebooks to make the
 > "selective restraint" mechanism empirically grounded rather than asserted.
 >
-> **Source report:** `docs/04_reports/r0/c33_ablation_report.md`
+> **Source report:** `docs/04_reports/arc_d_v1/r0/c33_ablation_report.md`
 > **Scope:** R0 only. Changes do not persist to other rungs.
 
 ---
@@ -24,7 +24,7 @@ The report has 8 sections:
 
 ## Deliverables
 
-### D1. Refactored ablation report (`docs/04_reports/r0/c33_ablation_report.md`)
+### D1. Refactored ablation report (`docs/04_reports/arc_d_v1/r0/c33_ablation_report.md`)
 
 The report needs structural changes. Proposed new section order:
 

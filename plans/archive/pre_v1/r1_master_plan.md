@@ -165,7 +165,7 @@ using **existing features** from `hand_eval.py` (no new features required):
 | **LOW** | `offsuit_tens_count` (1) | `offsuit_tens_count`, `quick_tricks` (2) | Tens predict low tricks; quick_tricks captures T>J>Q>K>A chain strength |
 
 **Source of truth for R0 constrained base:** `src/bid_euchre/models/train_olsa.py:32`
-(`CONTRACT_FEATURES`). Confirmed in `docs/04_reports/r0/01_r0_promotion_report.md:81`.
+(`CONTRACT_FEATURES`). Confirmed in `docs/04_reports/arc_d_v1/r0/01_r0_promotion_report.md:81`.
 
 **Design rationale:** User prioritizes human-interpretable features over maximal
 predictive power. `quick_tricks` is particularly well-suited because `_chain_quick_tricks()`
@@ -450,7 +450,7 @@ and H2H disagree again (the R0 pattern), RETAIN λ=0.0 and document.
 
 #### 3.6.3 Normalizer Re-evaluation (Conditional)
 
-**Template:** `plans/archive/r0_v2_normalizer_protocol.md` (screen spec was deleted in PR #525 — see `docs/04_reports/r0/13_normalizer_offline_screen.md` for results)
+**Template:** `plans/archive/r0_v2_normalizer_protocol.md` (screen spec was deleted in PR #525 — see `docs/04_reports/arc_d_v1/r0/13_normalizer_offline_screen.md` for results)
 **Output:** `plans/r1_normalizer_protocol.md` (only if triggered)
 **Trigger:** Oracle re-analysis (Step 9) shows contract-selection regret share >30%
 
@@ -694,7 +694,7 @@ consume these artifacts — not notebook cell outputs.
 | R1 promotion report | Gate output | Same as R0 promotion report |
 | R1 comparator rankings | Comparator battery | Same as R0 rankings |
 | R1 H2H battery analysis | H2H runner | Same as R0 H2H report |
-| R1 Gaussian EV diagnostics | Notebook S3.5 | `docs/04_reports/r1/gaussian_ev_diagnostics.md` (stub exists) |
+| R1 Gaussian EV diagnostics | Notebook S3.5 | `docs/04_reports/arc_d_v1/r1/gaussian_ev_diagnostics.md` (stub exists) |
 | R1 pass-threshold decision | P4 protocol re-run | Same as R0 threshold report |
 | R1 lambda decision | Lambda sweep re-run | Same as R0 lambda report (`12_lambda_decision.md`) |
 | R1 normalizer decision (conditional) | Normalizer screen (if triggered) | Same as R0 normalizer report (`13_normalizer_offline_screen.md`) |
@@ -767,7 +767,7 @@ Every HITL-2 decision must produce a record with these fields:
 **Date:** [ISO 8601]
 ```
 
-Decision records are stored in `docs/04_reports/r1/` alongside the corresponding
+Decision records are stored in `docs/04_reports/arc_d_v1/r1/` alongside the corresponding
 decision report (e.g., `r1_threshold_decision.md` includes the decision record
 as an appendix).
 
@@ -1006,9 +1006,9 @@ playbooks. Organized by failure category.
 
 ### Source Material
 
-- R0 retrospective: `docs/04_reports/r0/21_r0_retrospective.md`
+- R0 retrospective: `docs/04_reports/arc_d_v1/r0/21_r0_retrospective.md`
 - 28 bugfix PRs across R0 (6 required experiment reruns)
-- Measurement integrity review: `docs/04_reports/r0/20_measurement_integrity_r0.md`
+- Measurement integrity review: `docs/04_reports/arc_d_v1/r0/20_measurement_integrity_r0.md`
 - v1→v2 delta review: 3 sign reversals, 1 claim reversal
 - HITL review: 25 findings across 11 reports + 3 cross-cutting issues
 
@@ -2015,6 +2015,6 @@ update the authoritative source first, then propagate cross-references.
 | `plans/arc_d_execution_plan.md` §Phase R1 | R1 wave structure and PR sequencing |
 | `plans/r1_follow_ups.md` | R1 promotion gate checklist |
 | `plans/r2_follow_ups.md` | R2 follow-ups (opponent context scope) |
-| `docs/04_reports/r0/10_contract_selection_oracle.md` | Oracle analysis (P1/P3 baseline) |
-| `docs/04_reports/r0/11_pass_threshold_decision.md` | Threshold protocol template (P4) |
-| `docs/04_reports/r0/21_r0_retrospective.md` §5 | Process lessons W1–W6 |
+| `docs/04_reports/arc_d_v1/r0/10_contract_selection_oracle.md` | Oracle analysis (P1/P3 baseline) |
+| `docs/04_reports/arc_d_v1/r0/11_pass_threshold_decision.md` | Threshold protocol template (P4) |
+| `docs/04_reports/arc_d_v1/r0/21_r0_retrospective.md` §5 | Process lessons W1–W6 |

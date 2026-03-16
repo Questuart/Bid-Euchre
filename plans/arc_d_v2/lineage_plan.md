@@ -3,7 +3,7 @@
 **Date:** 2026-03-13
 **Status:** PROPOSED
 **Scope:** Repository reorganization, multi-model comparison framework, and canonical evidence contract for Arc D v2
-**Supersedes:** `2026-03-13_canonical-lineage-rebuild-proposal.md` (v1) and ad hoc rung/report structure used across `docs/04_reports/r0`, `docs/04_reports/r1`, `docs/04_reports/r1_5`
+**Supersedes:** `2026-03-13_canonical-lineage-rebuild-proposal.md` (v1) and ad hoc rung/report structure used across `docs/04_reports/arc_d_v1/r0`, `docs/04_reports/arc_d_v1/r1`, `docs/04_reports/arc_d_v1/r1_5`
 
 ---
 
@@ -618,10 +618,10 @@ tracking — no separate snapshot files. Changes require the amendment process
 ### 7.3 Historical Preservation
 
 Existing reports remain in place, unchanged:
-- `docs/04_reports/r0/` — status: `archived`
-- `docs/04_reports/r1/` — status: `archived`
-- `docs/04_reports/r1_5/` — status: `archived`
-- `docs/04_reports/r1_6/` — status: `archived`
+- `docs/04_reports/arc_d_v1/r0/` — status: `archived`
+- `docs/04_reports/arc_d_v1/r1/` — status: `archived`
+- `docs/04_reports/arc_d_v1/r1_5/` — status: `archived`
+- `docs/04_reports/arc_d_v1/r1_6/` — status: `archived`
 
 No existing report becomes a canonical source for the new lineage.
 

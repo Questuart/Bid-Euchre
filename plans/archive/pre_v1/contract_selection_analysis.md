@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-The OLSa and HybridOLSa bidders almost never select HIGH or LOW contracts. The R0 eval report (`docs/04_reports/r0/02_model_arc_r0.md`) shows:
+The OLSa and HybridOLSa bidders almost never select HIGH or LOW contracts. The R0 eval report (`docs/04_reports/arc_d_v1/r0/02_model_arc_r0.md`) shows:
 
 | Contract | Deals | Pct |
 |----------|-------|-----|
@@ -228,7 +228,7 @@ These must be resolved before prototyping a calibrator:
 | `experiments/configs/canonical_bidless_dataset_glutton.yaml` | Training data config, `pair_deals: true`, single-policy |
 | `experiments/run_experiment.py` | Deal pairing logic (L755–760) |
 | `src/bid_euchre/sim/deals.py` | Deterministic deal generation (`seed * 1_000_003 + deal_id`) |
-| `docs/04_reports/r0/02_model_arc_r0.md` | R0 report with contract selection frequencies |
+| `docs/04_reports/arc_d_v1/r0/02_model_arc_r0.md` | R0 report with contract selection frequencies |
 
 ## Review Log
 

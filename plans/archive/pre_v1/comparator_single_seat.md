@@ -268,9 +268,9 @@ Merge with the report improvements from `comparator_rankings_review_notes.md`:
 
 | File | Update |
 |------|--------|
-| `docs/04_reports/r0/comparator_rankings.md` | New numbers + methodology (v3) |
-| `docs/04_reports/r0/h2h_battery_analysis.md` §3 | Cross-reference only (Note 7: remove duplication) |
-| `docs/04_reports/r0/r0_promotion_report.md` | Update comparator context |
+| `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` | New numbers + methodology (v3) |
+| `docs/04_reports/arc_d_v1/r0/h2h_battery_analysis.md` §3 | Cross-reference only (Note 7: remove duplication) |
+| `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md` | Update comparator context |
 
 ---
 
@@ -344,5 +344,5 @@ doesn't depend on bidder fixes). PR-C2 must wait for all three to merge.
 | `src/bid_euchre/sim/simulation.py` | Simulation (NO changes needed with Path A) |
 | `src/bid_euchre/strategy/bidding.py` | `AlwaysPassBidder` (existing, used as sentinel) |
 | `experiments/configs/auction_comparator.yaml` | Config (document play policy) |
-| `docs/04_reports/r0/comparator_rankings.md` | Report (update with v3 data) |
+| `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` | Report (update with v3 data) |
 | `plans/comparator_rankings_review_notes.md` | Report improvements (merge into PR-C2) |

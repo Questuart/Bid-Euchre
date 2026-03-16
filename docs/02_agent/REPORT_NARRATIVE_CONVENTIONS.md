@@ -5,7 +5,7 @@ These conventions apply to all auto-generated and hand-crafted reports
 in the Bid Euchre framework.
 
 **Exemplar references:** All conventions below are demonstrated in the R0
-reports at `docs/04_reports/r0/`. When in doubt, match the R0 style.
+reports at `docs/04_reports/arc_d_v1/r0/`. When in doubt, match the R0 style.
 
 ---
 
@@ -168,7 +168,7 @@ header.
 When a report is substantially revised, archive the previous version:
 
 ```
-docs/04_reports/r0/archive/model_arc_r0_v1_20260224.md
+docs/04_reports/arc_d_v1/r0/archive/model_arc_r0_v1_20260224.md
 ```
 
 Format: `{name}_v{N}_{original_date}.md`
@@ -226,6 +226,6 @@ from bid_euchre.reporting.arc_d_report import generate_arc_d_rung_report
 df = build_eval_dataset('data/runs/.../logs/*.jsonl')
 generate_arc_d_rung_report('data/artifacts/.../rung_bundle_r0.json',
     eval_df=df, chart_dir='data/reports/.../charts/',
-    output_path='docs/04_reports/r0/02_model_arc_r0.md')
+    output_path='docs/04_reports/arc_d_v1/r0/02_model_arc_r0.md')
 "
 ```

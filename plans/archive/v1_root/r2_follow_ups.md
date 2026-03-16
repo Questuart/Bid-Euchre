@@ -29,7 +29,7 @@ Ordered by discovery date; will be prioritized when R1.5/R1.6/R2 planning begins
 ## F1: Context-Feature Confirmation for HIGH/LOW
 
 **Origin:** R1 Step 3c training analysis (2026-03-05)
-**Diagnostic:** `docs/04_reports/r1/partner_feature_selection_diagnostic.md`
+**Diagnostic:** `docs/04_reports/arc_d_v1/r1/partner_feature_selection_diagnostic.md`
 **R1 follow-up ref:** P10 in `plans/r1_follow_ups.md`
 
 ### Problem

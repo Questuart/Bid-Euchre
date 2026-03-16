@@ -40,7 +40,7 @@ The user provides:
    ```
    Read each report to use as a structural template.
    **For R0:** There is no previous rung. Use the R0 exemplar reports in
-   `docs/04_reports/r0/` as structural templates (these serve as the canonical
+   `docs/04_reports/arc_d_v1/r0/` as structural templates (these serve as the canonical
    examples for all future rungs). Skip any cross-rung comparison steps.
 
 4. Read conventions and templates:

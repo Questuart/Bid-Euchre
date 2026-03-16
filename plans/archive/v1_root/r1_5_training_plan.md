@@ -8,7 +8,7 @@
 > **Document role:** This is the **R1.5 design specification** — state definition,
 > counterfactual label generation, training pipeline, evaluation gates, and promotion
 > contract. For the R1 closeout and root-cause analysis, see
-> `docs/04_reports/r1/r1_baseline_statement.md`. For the R0-R5 ladder roadmap,
+> `docs/04_reports/arc_d_v1/r1/r1_baseline_statement.md`. For the R0-R5 ladder roadmap,
 > see `plans/arc_d_execution_plan.md`.
 
 ---
@@ -54,7 +54,7 @@ Train directly on `net_points`, eliminating the hand-coded utility layer entirel
 The bidder selects actions by comparing predicted `E[net_points | state, action]`
 across all legal actions. No `_compute_ev_static`, no Gaussian model, no sigma.
 
-**Reference:** `docs/04_reports/r1/r1_baseline_statement.md` (commit `73b3ef0`)
+**Reference:** `docs/04_reports/arc_d_v1/r1/r1_baseline_statement.md` (commit `73b3ef0`)
 
 ---
 
@@ -634,8 +634,8 @@ dataset (~400k rows) validates the pipeline before committing to FULL.
 
 | Source | Reference |
 |--------|-----------|
-| R1 baseline statement | `docs/04_reports/r1/r1_baseline_statement.md` (commit `73b3ef0`) |
-| R1 closeout reports | `docs/04_reports/r1/01_*.md`, `02_*.md`, `03_*.md` (concurrent PR) |
+| R1 baseline statement | `docs/04_reports/arc_d_v1/r1/r1_baseline_statement.md` (commit `73b3ef0`) |
+| R1 closeout reports | `docs/04_reports/arc_d_v1/r1/01_*.md`, `02_*.md`, `03_*.md` (concurrent PR) |
 | R1 master plan | `plans/archive/r1_master_plan.md` |
 | H10 validation | PR #552 |
 | bid_bonus sweep | PR #554 |

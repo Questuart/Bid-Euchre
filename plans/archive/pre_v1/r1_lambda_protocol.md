@@ -215,7 +215,7 @@ gap — a positive signal for R2 lambda viability.
 | Bootstrap | 10,000 resamples, seed=42, grouped by deal_id |
 | Grid | [0.0, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0] |
 | R0 v2 result | RETAIN λ=0.0 (self-play +0.884 reversed to −1.146 in H2H) |
-| R0 v2 report | `docs/04_reports/r0/12_lambda_decision.md` |
+| R0 v2 report | `docs/04_reports/arc_d_v1/r0/12_lambda_decision.md` |
 | Depends on | Step 7 result (pass_threshold = t*) |
 
 ---

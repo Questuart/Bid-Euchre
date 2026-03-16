@@ -178,7 +178,7 @@ Using the counterfactual dataset (suit, focal_declared):
    }
    ```
 
-2. **Diagnostic report:** `docs/04_reports/r1_5/suit_decision_diagnostic.md`
+2. **Diagnostic report:** `docs/04_reports/arc_d_v1/r1_5/suit_decision_diagnostic.md`
    - Error taxonomy table with frequencies and costs
    - Calibration curve (committed as PNG or described numerically)
    - Bid-level headroom results
@@ -210,7 +210,7 @@ After Step 0 completes, the error taxonomy determines the next track:
 - `scripts/internal/suit_decision_diagnostic.py` — Main analysis script (NEW)
 - `tests/unit/test_suit_decision_diagnostic.py` — Unit tests (NEW)
 - `data/artifacts/r1_5_3/suit_error_taxonomy.json` — Output artifact (generated, not committed)
-- `docs/04_reports/r1_5/suit_decision_diagnostic.md` — Diagnostic report (NEW)
+- `docs/04_reports/arc_d_v1/r1_5/suit_decision_diagnostic.md` — Diagnostic report (NEW)
 
 ## Validation
 
