@@ -1,8 +1,21 @@
 # Rung Results Report
 
-<!-- gate_status: QUICK-COMPLETE -->
-
 Generated from canonical CSV tables and chart PNGs.
+
+## Dashboards
+
+### Competitive Dashboard
+
+![Competitive Dashboard](charts/dashboard_competitive.png)
+
+### Health Dashboard
+
+![Health Dashboard](charts/dashboard_health.png)
+
+### Model Evaluation Dashboard
+
+![Model Evaluation Dashboard](charts/dashboard_model_eval.png)
+
 
 ## 1. Data Sanity
 
@@ -66,7 +79,7 @@ Generated from canonical CSV tables and chart PNGs.
 
 ## 3. Offline Diagnostics
 
-> [chart_name=pred_vs_actual_scatter.png] not yet generated
+> [chart_name=pred_vs_actual.png] not yet generated
 
 > [chart_name=residual_distribution.png] not yet generated
 
@@ -75,12 +88,13 @@ Generated from canonical CSV tables and chart PNGs.
 
 ## 4. Model Interpretability
 
-*Interpretability charts not yet generated (PR 3b).*
+*Interpretability charts not yet generated.*
 
 
 ## 5. Cross-Model Decision Analysis
 
-*Decision comparison analysis not yet generated (PR 3b).*
+*Decision comparison analysis not yet generated.*
+
 
 ## 6. Comparator Rankings
 
@@ -407,39 +421,39 @@ Generated from canonical CSV tables and chart PNGs.
 
 ### Pooled Behavior Summary
 
-| model | net_eppd | eppd | bid_rate | make_rate | cvar_5 | net_cvar_5 | source |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| modeloespecifico | 1.6608 | 5.6320 | 1.0000 | 0.9496 | -4.5120 | -11.1120 | comparator |
-| selected_two_stage_av | 1.8756 | 5.9316 | 1.0000 | 0.9980 | 2.3600 | -5.0320 | comparator |
-| gbt_av | 2.2548 | 5.7228 | 0.9256 | 0.9922 | 1.5130 | -5.5565 | comparator |
-| constrained_ols_av | 2.1976 | 6.0988 | 1.0000 | 1.0000 | 2.7440 | -4.5120 | comparator |
-| selected_ols_av | 2.1928 | 6.0964 | 1.0000 | 1.0000 | 2.7520 | -4.4960 | comparator |
-| full_ols_av | 2.2432 | 6.1216 | 1.0000 | 1.0000 | 2.7520 | -4.4960 | comparator |
-| stricthellraiser | 0.1096 | 4.9284 | 1.0000 | 0.9472 | -3.0000 | -11.2240 | comparator |
-| rankthetank | -9.6972 | -5.5808 | 1.0000 | 0.1476 | -9.2480 | -15.0400 | comparator |
-| modeloespecifico | 4.6906 |  | 0.4880 | 0.9287 | -3.2600 |  | h2h_self_play |
-| selected_two_stage_av | 4.6178 |  | 0.5128 | 0.9150 | -4.3640 |  | h2h_self_play |
-| gbt_av | 4.2716 |  | 0.4884 | 0.8640 | -6.8000 |  | h2h_self_play |
-| constrained_ols_av | 4.9528 |  | 0.4932 | 0.9862 | 0.4080 |  | h2h_self_play |
-| selected_ols_av | 4.9488 |  | 0.4964 | 0.9823 | 0.2840 |  | h2h_self_play |
-| full_ols_av | 4.9690 |  | 0.5008 | 0.9872 | 0.3920 |  | h2h_self_play |
-| stricthellraiser | 2.2032 |  | 0.5072 | 0.4306 | -6.0000 |  | h2h_self_play |
-| rankthetank | -1.6218 |  | 0.4756 | 0.1102 | -9.5160 |  | h2h_self_play |
-| anchor_hybrid_r0_full | 3.5846 |  | 0.4024 | 0.8539 | -5.9080 |  | h2h_self_play |
+| model | net_eppd | eppd | bid_rate | pass_rate | make_rate | cvar_5 | net_cvar_5 | mix_suit | mix_high | mix_low | source |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| modeloespecifico | 1.6608 | 5.6320 | 1.0000 | 0.0000 | 0.9496 | -4.5120 | -11.1120 | 0.9400 | 0.0280 | 0.0320 | comparator |
+| selected_two_stage_av | 1.8756 | 5.9316 | 1.0000 | 0.0000 | 0.9980 | 2.3600 | -5.0320 | 0.9572 | 0.0132 | 0.0296 | comparator |
+| gbt_av | 2.2548 | 5.7228 | 0.9256 | 0.0744 | 0.9922 | 1.5130 | -5.5565 | 0.7052 | 0.1008 | 0.1940 | comparator |
+| constrained_ols_av | 2.1976 | 6.0988 | 1.0000 | 0.0000 | 1.0000 | 2.7440 | -4.5120 | 0.7348 | 0.0860 | 0.1792 | comparator |
+| selected_ols_av | 2.1928 | 6.0964 | 1.0000 | 0.0000 | 1.0000 | 2.7520 | -4.4960 | 0.7236 | 0.0888 | 0.1876 | comparator |
+| full_ols_av | 2.2432 | 6.1216 | 1.0000 | 0.0000 | 1.0000 | 2.7520 | -4.4960 | 0.2580 | 0.1804 | 0.5616 | comparator |
+| stricthellraiser | 0.1096 | 4.9284 | 1.0000 | 0.0000 | 0.9472 | -3.0000 | -11.2240 | 1.0000 | 0.0000 | 0.0000 | comparator |
+| rankthetank | -9.6972 | -5.5808 | 1.0000 | 0.0000 | 0.1476 | -9.2480 | -15.0400 | 1.0000 | 0.0000 | 0.0000 | comparator |
+| modeloespecifico | 4.6906 |  | 0.4880 | 0.5120 | 0.9287 | -3.2600 |  | 0.9400 | 0.0280 | 0.0320 | h2h_self_play |
+| selected_two_stage_av | 4.6178 |  | 0.5128 | 0.4872 | 0.9150 | -4.3640 |  | 0.9572 | 0.0132 | 0.0296 | h2h_self_play |
+| gbt_av | 4.2716 |  | 0.4884 | 0.5116 | 0.8640 | -6.8000 |  | 0.7052 | 0.1008 | 0.1940 | h2h_self_play |
+| constrained_ols_av | 4.9528 |  | 0.4932 | 0.5068 | 0.9862 | 0.4080 |  | 0.7348 | 0.0860 | 0.1792 | h2h_self_play |
+| selected_ols_av | 4.9488 |  | 0.4964 | 0.5036 | 0.9823 | 0.2840 |  | 0.7236 | 0.0888 | 0.1876 | h2h_self_play |
+| full_ols_av | 4.9690 |  | 0.5008 | 0.4992 | 0.9872 | 0.3920 |  | 0.2580 | 0.1804 | 0.5616 | h2h_self_play |
+| stricthellraiser | 2.2032 |  | 0.5072 | 0.4928 | 0.4306 | -6.0000 |  | 1.0000 | 0.0000 | 0.0000 | h2h_self_play |
+| rankthetank | -1.6218 |  | 0.4756 | 0.5244 | 0.1102 | -9.5160 |  | 1.0000 | 0.0000 | 0.0000 | h2h_self_play |
+| anchor_hybrid_r0_full | 3.5846 |  | 0.4024 | 0.5976 | 0.8539 | -5.9080 |  | 0.7686 | 0.0976 | 0.1337 | h2h_self_play |
 
 
 ### Behavior by Contract
 
-| model | contract | net_eppd | bid_rate | make_rate | source |
-| --- | --- | --- | --- | --- | --- |
-| modeloespecifico | pooled | 1.6608 | 1.0000 | 0.9496 | comparator |
-| selected_two_stage_av | pooled | 1.8756 | 1.0000 | 0.9980 | comparator |
-| gbt_av | pooled | 2.2548 | 0.9256 | 0.9922 | comparator |
-| constrained_ols_av | pooled | 2.1976 | 1.0000 | 1.0000 | comparator |
-| selected_ols_av | pooled | 2.1928 | 1.0000 | 1.0000 | comparator |
-| full_ols_av | pooled | 2.2432 | 1.0000 | 1.0000 | comparator |
-| stricthellraiser | pooled | 0.1096 | 1.0000 | 0.9472 | comparator |
-| rankthetank | pooled | -9.6972 | 1.0000 | 0.1476 | comparator |
+| model | contract | net_eppd | bid_rate | pass_rate | make_rate | source |
+| --- | --- | --- | --- | --- | --- | --- |
+| modeloespecifico | pooled | 1.6608 | 1.0000 | 0.0000 | 0.9496 | comparator |
+| selected_two_stage_av | pooled | 1.8756 | 1.0000 | 0.0000 | 0.9980 | comparator |
+| gbt_av | pooled | 2.2548 | 0.9256 | 0.0744 | 0.9922 | comparator |
+| constrained_ols_av | pooled | 2.1976 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| selected_ols_av | pooled | 2.1928 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| full_ols_av | pooled | 2.2432 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| stricthellraiser | pooled | 0.1096 | 1.0000 | 0.0000 | 0.9472 | comparator |
+| rankthetank | pooled | -9.6972 | 1.0000 | 0.0000 | 0.1476 | comparator |
 
 
 ![bid_behavior_panel.png](charts/bid_behavior_panel.png)

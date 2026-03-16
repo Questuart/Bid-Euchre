@@ -2,8 +2,8 @@
   "schema_version": "arc_d_evidence_manifest_v1",
   "lineage_id": "arc_d_v2",
   "rung_id": "r0",
-  "provenance_sha": "2efa6828ed70da67079979e0e7db5a49956af8a7",
-  "governing_plan": "plans/arc_d_v2/lineage_plan.md",
+  "provenance_sha": "b8d211997eb644df43102d8f497df0e5ad5ef38e",
+  "governing_plan": "",
   "plan_shas": [],
   "anchor": "anchor_hybrid_r0_full",
   "roster": [
@@ -56,10 +56,8 @@
       "status": "evaluated"
     }
   ],
-  "seeds": [
-    42
-  ],
-  "mode": "quick",
+  "seeds": [],
+  "mode": "QUICK",
   "run_ids": [],
   "lifecycle": [],
   "artifacts": [
@@ -112,107 +110,147 @@
   "tables": [
     {
       "name": "artifact_inventory.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/artifact_inventory.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/artifact_inventory.csv",
       "size_bytes": 1135
     },
     {
+      "name": "behavior_by_bid_type.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/behavior_by_bid_type.csv",
+      "size_bytes": 1087
+    },
+    {
       "name": "behavior_by_contract.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/behavior_by_contract.csv",
-      "size_bytes": 454
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/behavior_by_contract.csv",
+      "size_bytes": 499
     },
     {
       "name": "behavior_summary.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/behavior_summary.csv",
-      "size_bytes": 1103
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/behavior_summary.csv",
+      "size_bytes": 1545
     },
     {
       "name": "comparator_rankings.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/comparator_rankings.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/comparator_rankings.csv",
       "size_bytes": 569
     },
     {
       "name": "cross_rung_deltas.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/cross_rung_deltas.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/cross_rung_deltas.csv",
       "size_bytes": 71
     },
     {
       "name": "data_sanity.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/data_sanity.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/data_sanity.csv",
       "size_bytes": 2013
     },
     {
       "name": "dataset_provenance.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/dataset_provenance.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/dataset_provenance.csv",
       "size_bytes": 1056
     },
     {
       "name": "h2h_delta_matrix.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/h2h_delta_matrix.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/h2h_delta_matrix.csv",
       "size_bytes": 20701
     },
     {
+      "name": "h2h_tier_summary.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/h2h_tier_summary.csv",
+      "size_bytes": 1071
+    },
+    {
       "name": "hypothesis_outcomes.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/hypothesis_outcomes.csv",
-      "size_bytes": 48
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/hypothesis_outcomes.csv",
+      "size_bytes": 834
     },
     {
       "name": "model_performance.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/model_performance.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/model_performance.csv",
       "size_bytes": 931
     },
     {
       "name": "rung_model_spec.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/rung_model_spec.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/rung_model_spec.csv",
       "size_bytes": 440
     },
     {
       "name": "sanity_bounds_check.csv",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/tables/sanity_bounds_check.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/tables/sanity_bounds_check.csv",
       "size_bytes": 1889
     }
   ],
   "charts": [
     {
       "name": "bid_behavior_panel.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/bid_behavior_panel.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/bid_behavior_panel.png",
       "size_bytes": 43740
     },
     {
       "name": "comparator_ranking_bars.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/comparator_ranking_bars.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/comparator_ranking_bars.png",
       "size_bytes": 42230
     },
     {
       "name": "contract_mix_bars.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/contract_mix_bars.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/contract_mix_bars.png",
       "size_bytes": 37313
     },
     {
+      "name": "dashboard_competitive.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/dashboard_competitive.png",
+      "size_bytes": 217457
+    },
+    {
+      "name": "dashboard_health.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/dashboard_health.png",
+      "size_bytes": 124596
+    },
+    {
+      "name": "dashboard_model_eval.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/dashboard_model_eval.png",
+      "size_bytes": 73819
+    },
+    {
       "name": "delta_bars_by_contract.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/delta_bars_by_contract.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/delta_bars_by_contract.png",
       "size_bytes": 628011
     },
     {
       "name": "h2h_heatmap.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/h2h_heatmap.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/h2h_heatmap.png",
       "size_bytes": 131083
     },
     {
       "name": "mae_by_contract.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/mae_by_contract.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/mae_by_contract.png",
       "size_bytes": 41802
     },
     {
+      "name": "outcome_distributions.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/outcome_distributions.png",
+      "size_bytes": 25184
+    },
+    {
       "name": "r2_by_contract.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/r2_by_contract.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/r2_by_contract.png",
       "size_bytes": 35844
     },
     {
       "name": "tail_risk_panel.png",
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r0/quick/charts/tail_risk_panel.png",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/charts/tail_risk_panel.png",
       "size_bytes": 39768
     }
   ],
-  "chart_data": [],
-  "evidence_tier": "quick"
+  "chart_data": [
+    {
+      "name": "contract_mix.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/chart_data/contract_mix.csv",
+      "size_bytes": 859
+    },
+    {
+      "name": "outcome_distributions.csv",
+      "path": "docs/04_reports/arc_d_v2/r0/quick/chart_data/outcome_distributions.csv",
+      "size_bytes": 1423
+    }
+  ]
 }
