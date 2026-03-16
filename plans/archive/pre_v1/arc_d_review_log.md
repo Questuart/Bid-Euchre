@@ -576,7 +576,7 @@ the same data. Neither is hand-edited.
 
 **Layer B — Arc dashboard (auto-regenerated after each promotion):**
 
-Single `docs/04_reports/model_arc_d_dashboard.md` generated from all rung
+Single `docs/04_reports/arc_d_v1/model_arc_d_dashboard.md` generated from all rung
 bundles by `generate_arc_dashboard.py`:
 
 | Chart | What it shows |
@@ -638,7 +638,7 @@ distribution check). This is consistent with Phase 0 methodology.
 5. Low contract has marginal signal → sparse 1-feature model for low
 
 **Plan reference:** `src/bid_euchre/diagnostics/semantic_gate.py` (12 checks),
-`docs/04_reports/phase0_bidless_20260207.md` (Phase 0 findings)
+`docs/04_reports/arc_d_v1/phase0_bidless_20260207.md` (Phase 0 findings)
 
 ---
 

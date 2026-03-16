@@ -84,7 +84,7 @@ outbids it when both would bid (olsa has no EV threshold).
 **Scope:** Pure writing — no data dependencies, no notebooks.
 
 **Files modified:**
-- `docs/04_reports/r0/c33_ablation_report.md`
+- `docs/04_reports/arc_d_v1/r0/c33_ablation_report.md`
 
 **Changes:**
 1. **New §3: Architecture Comparison** (D1-a) — two subsections
@@ -110,7 +110,7 @@ outbids it when both would bid (olsa has no EV threshold).
 **Files modified:**
 - `notebooks/arc_d/r0/55_c33_ablation_deep_dive.py` (NEW)
 - `notebooks/arc_d/r0/50_r0_matchups.py` (violin plot addition)
-- `docs/04_reports/r0/c33_ablation_report.md` (data sections + evidence)
+- `docs/04_reports/arc_d_v1/r0/c33_ablation_report.md` (data sections + evidence)
 
 **Changes:**
 1. **D3:** New notebook with 7 sections (detailed spec below, includes S3.5 calibration)

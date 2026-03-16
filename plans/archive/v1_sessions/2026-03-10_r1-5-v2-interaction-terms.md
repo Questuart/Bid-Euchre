@@ -179,9 +179,9 @@ trump_count are zero for high/low). High/low should show negligible R² change.
 
 ### Step 8e: Update reports
 
-- Add Section 6 to `docs/04_reports/r1_5/v2_ablation_analysis.md`: interaction
+- Add Section 6 to `docs/04_reports/arc_d_v1/r1_5/v2_ablation_analysis.md`: interaction
   term results (R², H2H, suit delta comparison)
-- Update Q5 in `docs/04_reports/r1_5/r1_5_questions.md` from PLANNED to ANSWERED
+- Update Q5 in `docs/04_reports/arc_d_v1/r1_5/r1_5_questions.md` from PLANNED to ANSWERED
 - Fill Outcome section in this plan
 
 ## Files Touched
@@ -192,8 +192,8 @@ trump_count are zero for high/low). High/low should show negligible R² change.
 | `src/bid_euchre/strategy/bidding.py` | Add `_INTERACTION_FEATURES`, `compute_interaction_features()`, update `ActionValueBidder` validation + `choose_bid()` |
 | `tests/unit/test_train_action_value.py` | Tests for interaction feature set, computed features in `_build_feature_matrix()` |
 | `tests/unit/test_bidding.py` | Tests for `compute_interaction_features()`, interaction-aware `ActionValueBidder` loading |
-| `docs/04_reports/r1_5/v2_ablation_analysis.md` | New section with results |
-| `docs/04_reports/r1_5/r1_5_questions.md` | Q5 updated |
+| `docs/04_reports/arc_d_v1/r1_5/v2_ablation_analysis.md` | New section with results |
+| `docs/04_reports/arc_d_v1/r1_5/r1_5_questions.md` | Q5 updated |
 
 ## Acceptance Criteria
 

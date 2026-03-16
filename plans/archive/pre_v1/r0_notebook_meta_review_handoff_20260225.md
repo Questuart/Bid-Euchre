@@ -34,11 +34,11 @@ Impact:
 
 Evidence:
 - New execution plan targets `docs/04_reports/arc_d/` for R0 promotion report (`plans/r0_notebook_execution_plan.md:472`).
-- Existing R0 reports and prior planning standardize under `docs/04_reports/r0/` (`plans/arc_d_reporting_overhaul.md:820,830`; existing artifacts in `docs/04_reports/r0/`).
+- Existing R0 reports and prior planning standardize under `docs/04_reports/arc_d_v1/r0/` (`plans/arc_d_reporting_overhaul.md:820,830`; existing artifacts in `docs/04_reports/arc_d_v1/r0/`).
 - Review doc formal report targets also point to `docs/04_reports/arc_d/` (`plans/r0_10_feature_health_review.md:1504-1507`).
 
 Planning implication:
-- Standardize final destination to one path before work starts (recommended: `docs/04_reports/r0/`).
+- Standardize final destination to one path before work starts (recommended: `docs/04_reports/arc_d_v1/r0/`).
 
 ---
 
@@ -97,12 +97,12 @@ Planning implication:
 
 ## Resolved Alignment Decisions (Locked for Implementation)
 
-Question: Should R0 formal outputs stay under `docs/04_reports/r0/` (existing convention) instead of creating `docs/04_reports/arc_d/`?
-Recommendation: Keep `docs/04_reports/r0/` and standardize naming there.
+Question: Should R0 formal outputs stay under `docs/04_reports/arc_d_v1/r0/` (existing convention) instead of creating `docs/04_reports/arc_d/`?
+Recommendation: Keep `docs/04_reports/arc_d_v1/r0/` and standardize naming there.
 Tradeoff: You lose arc-folder isolation but keep continuity with existing tooling and history.
 Why: The stated goal is execution-ready delivery, and path churn adds migration risk without analytical upside.
-Decision: RESOLVED — use `docs/04_reports/r0/` as canonical output path for R0 formal reports.
-Incorporation: Update both planning docs to replace `docs/04_reports/arc_d/` targets with `docs/04_reports/r0/`.
+Decision: RESOLVED — use `docs/04_reports/arc_d_v1/r0/` as canonical output path for R0 formal reports.
+Incorporation: Update both planning docs to replace `docs/04_reports/arc_d/` targets with `docs/04_reports/arc_d_v1/r0/`.
 
 Question: Do you want to collapse the 17 PRs into fewer notebook-centric PRs to reduce merge conflict risk?
 Recommendation: Yes, collapse to infra + notebook-focused streams + reports.

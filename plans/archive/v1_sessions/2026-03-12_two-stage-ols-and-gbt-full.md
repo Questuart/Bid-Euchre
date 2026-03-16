@@ -60,6 +60,6 @@ declare/defend failure (R1.5.2) does NOT rule it out — different decomposition
 **Verdict:** H16 PARTIAL — make/set decomposition helps (+0.124 vs OLS) but
 closes only 11.5% of the GBT gap. Model capacity dominates decomposition strategy.
 
-**Report:** `docs/04_reports/r1_5/11_two_stage_evaluation.md`
+**Report:** `docs/04_reports/arc_d_v1/r1_5/11_two_stage_evaluation.md`
 
 ### Track A: GBT FULL — _not started (separate PR)_

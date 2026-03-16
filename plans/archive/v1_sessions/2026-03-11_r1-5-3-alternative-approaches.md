@@ -130,7 +130,7 @@ disagreement analysis looks.
 
 1. **Committed JSON artifact:** `data/artifacts/r1_5_3/suit_error_taxonomy.json`
    with per-error-type frequencies, costs, and cumulative contributions
-2. **Diagnostic report:** `docs/04_reports/r1_5/suit_decision_diagnostic.md`
+2. **Diagnostic report:** `docs/04_reports/arc_d_v1/r1_5/suit_decision_diagnostic.md`
 3. **Gate decision:** which track to pursue based on error taxonomy results
 
 ### Step 0 Gate Criteria
@@ -604,7 +604,7 @@ _To be filled after evaluation._
 |------|-------|
 | gate_status | N/A — plan document |
 | Decision tree | `plans/r1_5_forward_decision_tree.md` |
-| Governing retrospective | `docs/04_reports/r1_5/post_r1_retro.md` |
+| Governing retrospective | `docs/04_reports/arc_d_v1/r1_5/post_r1_retro.md` |
 | Hypothesis tested | H12 (working hypothesis), H13 (bid-level headroom) |
 | Seed | 42 |
 | Scale | QUICK (2,500 deals for H2H) → FULL (50k, conditional) |

@@ -11,7 +11,7 @@ Metric definitions match src/bid_euchre/reporting/evaluator.py:
   - eppd     = sum(bidder_pts for bid-hands) / total_deals
   - CVaR-5%  = mean of worst 5% of per-hand outcomes
 
-Output: JSON file consumed by docs/04_reports/r0/03_comparator_rankings.md
+Output: JSON file consumed by docs/04_reports/arc_d_v1/r0/03_comparator_rankings.md
 
 Usage:
     PYTHONPATH=src uv run python scripts/internal/extract_comparator_cis.py \

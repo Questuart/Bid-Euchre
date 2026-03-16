@@ -445,7 +445,7 @@ break provenance expectations.
 **Corrected approach:**
 - **Keep** existing `docs/04_reports/model_arc_r0_20260222.md` as immutable
   historical snapshot (like phase0 reports).
-- **Keep** `docs/04_reports/model_arc_d_dashboard.md` as the dashboard
+- **Keep** `docs/04_reports/arc_d_v1/model_arc_d_dashboard.md` as the dashboard
   snapshot.
 - **Add** `docs/04_reports/README.md` entries for the arc_d reports.
 - **Future** generated reports go to `data/reports/arc_d/` (gitignored),

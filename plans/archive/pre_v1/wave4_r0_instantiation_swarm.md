@@ -27,7 +27,7 @@ The real remaining work is **two independent PRs** that can run in parallel.
 | Comparator battery | `data/artifacts/arc_d/r0/comparator_battery_r0.json` | EXISTS |
 | Eval run logs (OLSa) | `data/runs/arc_d_eval_r0_42_20260221_180253/` | EXISTS |
 | Eval run logs (Full) | `data/runs/arc_d_eval_r0_full_42_20260221_175607/` | EXISTS |
-| Existing R0 report | `docs/04_reports/r0/model_arc_r0_20260222.md` | EXISTS (39 lines, minimal) |
+| Existing R0 report | `docs/04_reports/arc_d_v1/r0/model_arc_r0_20260222.md` | EXISTS (39 lines, minimal) |
 
 ## Agent 1: PR-V1 — R0 Notebook Instantiation + Full Report
 
@@ -102,7 +102,7 @@ report = generate_arc_d_rung_report(
     matchup_run_dir="data/runs/arc_d_eval_r0_42_20260221_180253",
 )
 
-output = Path("docs/04_reports/r0/model_arc_r0_20260224.md")
+output = Path("docs/04_reports/arc_d_v1/r0/model_arc_r0_20260224.md")
 output.write_text(report)
 print(f"Wrote {len(report)} chars to {output}")
 ```
@@ -122,7 +122,7 @@ uv run python scripts/internal/generate_arc_dashboard.py --snapshot
 ```
 
 This is idempotent and reads all rung bundles to produce
-`docs/04_reports/model_arc_d_dashboard.md`.
+`docs/04_reports/arc_d_v1/model_arc_d_dashboard.md`.
 
 ### Step 4: Verify
 
@@ -142,8 +142,8 @@ make check  # All 5 stages pass
 | `notebooks/arc_d/20_outcome_health_r0.ipynb` | CREATE (jupytext sync) |
 | `notebooks/arc_d/30_feature_outcome_eval_r0.py` | CREATE (copy template + params) |
 | `notebooks/arc_d/30_feature_outcome_eval_r0.ipynb` | CREATE (jupytext sync) |
-| `docs/04_reports/r0/model_arc_r0_20260224.md` | CREATE (full 11-section report) |
-| `docs/04_reports/r0/model_arc_r0_20260222.md` | DELETE (superseded) |
+| `docs/04_reports/arc_d_v1/r0/model_arc_r0_20260224.md` | CREATE (full 11-section report) |
+| `docs/04_reports/arc_d_v1/r0/model_arc_r0_20260222.md` | DELETE (superseded) |
 | `scripts/internal/generate_r0_report.py` | CREATE (reproducibility script) |
 
 ---
@@ -236,7 +236,7 @@ branch: feat/arc-d-v1-r0-inst     branch: feat/arc-d-template-contracts
 
 Creates 6 notebooks + report       Adds contract tests for templates
 Touches: notebooks/arc_d/          Touches: tests/unit/
-         docs/04_reports/r0/
+         docs/04_reports/arc_d_v1/r0/
          scripts/internal/
 
 NO FILE OVERLAP ✓                  NO FILE OVERLAP ✓

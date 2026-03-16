@@ -19,7 +19,7 @@ This plan executes the 58 issues identified in the R0 notebook review. The work 
 - **Zero file overlap in Phase 1**: Each notebook is exclusively owned by one PR.
 - **`points_won` semantics aligned**: Uses `compute_points()` from `scoring.py`; never `None`.
 - **C59 distributed**: Audit/fix in each notebook-owner PR; PR-6 adds contract test only.
-- **Report path corrected**: `docs/04_reports/r0/` (was previously under `arc_d`).
+- **Report path corrected**: `docs/04_reports/arc_d_v1/r0/` (was previously under `arc_d`).
 - **F1 recursive fix**: Makefile + `run_notebooks.py` glob fix included in PR-0.
 
 ### Key Constraints
@@ -42,7 +42,7 @@ This plan executes the 58 issues identified in the R0 notebook review. The work 
 | PR-5 | 1 | 50_ all fixes: C1,C2,C7,C22,C31,C59(audit/fix) | S | PR-0 | `50_r0_matchups.{py,ipynb}` |
 | PR-6 | 1/late | C59 prefix-convention contract test (validates all notebooks) | S | PR-1..PR-5 | `test_notebook_template_contract.py` |
 | PR-7 | 2 | 25_ new notebook (C49,C39,C40,C42,C43) + extract 40_ §2/§4 | L | PR-4 | `25_auction_health.{py,ipynb}`, 40_ §2/§4 only |
-| PR-8 | 2 | Formal reports: R0 Promotion Report, Model Spec Doc, Comparator Rankings | M | PR-1..PR-7 | `docs/04_reports/r0/` |
+| PR-8 | 2 | Formal reports: R0 Promotion Report, Model Spec Doc, Comparator Rankings | M | PR-1..PR-7 | `docs/04_reports/arc_d_v1/r0/` |
 
 ---
 
@@ -421,9 +421,9 @@ Remove §2 and §4 content from 40_, replace with markdown note: "See `25_auctio
 **Depends:** PR-1 through PR-7 (Phase 2 complete)
 
 **Files:**
-- `docs/04_reports/r0/r0_promotion_report.md` — NEW
+- `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md` — NEW
 - `docs/01_core/schemas/olsa_r0_model_spec.md` — NEW
-- `docs/04_reports/r0/comparator_rankings.md` — NEW
+- `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` — NEW
 
 **Scope:**
 
@@ -602,7 +602,7 @@ Phase 2: make check-quiet
 | Worktree pre-commit | Run `uv sync --all-extras && uv pip install pre-commit` in fresh worktrees. |
 | PATH for commits | Use `PATH=".venv/bin:$PATH" git commit ...` in worktrees. |
 | `points_won` never None | Use `compute_points()` — no-bid case returns tricks. Don't guard with `if points_won is not None`. |
-| Report output path | `docs/04_reports/r0/` — not the old `arc_d` subdirectory. |
+| Report output path | `docs/04_reports/arc_d_v1/r0/` — not the old `arc_d` subdirectory. |
 
 ### PR naming convention:
 

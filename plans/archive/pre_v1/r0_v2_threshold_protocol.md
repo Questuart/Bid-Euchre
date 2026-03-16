@@ -234,7 +234,7 @@ while `lambda` controls the risk penalty on hands already in the pool.
 |------|-------|
 | Protocol version | v2 |
 | Predecessor | `plans/r0_pass_threshold_protocol.md` (v1, RETAIN) |
-| v1 decision report | `docs/04_reports/r0/11_pass_threshold_decision.md` |
+| v1 decision report | `docs/04_reports/arc_d_v1/r0/11_pass_threshold_decision.md` |
 | Dataset | `canonical_bidless_dataset_glutton_42_20260221_175752` |
 | Model artifact | `data/artifacts/arc_d/r0/hybrid_r0.json` |
 | Bidder entry point | `compute_best_bid()` (`bidding.py:788`) |

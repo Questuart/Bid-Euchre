@@ -4,7 +4,7 @@
 **Status:** REVIEWED — two review rounds complete (internal + Codex). Fixes: Step 1/2 sequencing, Phase 2 gate upgraded to conditional evidence, Cell B dropped/replaced with B' (objective isolation), cross-rung comparison scoped to pattern-only, causal identification limits documented.
 **Governs:** R1.5-v2 execution — diagnostic experiments and regime-mixture modeling
 **Prerequisites:** R1.5-v1 ADVANCED (PR #582), report restructure (PR #584)
-**Q&A source:** `docs/04_reports/qa/r1_5_questions.md`
+**Q&A source:** `docs/04_reports/arc_d_v1/qa/r1_5_questions.md`
 
 ---
 
@@ -56,7 +56,7 @@ and contract types.
    - Calls `plot_model_diagnostics()` and `plot_calibration_curve()` with
      `net_points` as the target
    - Generates per-contract residual analysis
-3. Write diagnostic report: `docs/04_reports/r1_5/diagnostic_calibration.md`
+3. Write diagnostic report: `docs/04_reports/arc_d_v1/r1_5/diagnostic_calibration.md`
 
 **Key diagnostics to produce:**
 
@@ -86,7 +86,7 @@ cross-rung comparison focuses on qualitative patterns:
 
 **Files touched:**
 - `scripts/internal/generate_r1_5_diagnostics.py` — new script (create)
-- `docs/04_reports/r1_5/diagnostic_calibration.md` — new report (create)
+- `docs/04_reports/arc_d_v1/r1_5/diagnostic_calibration.md` — new report (create)
 - `src/bid_euchre/diagnostics/model_charts.py` — may need minor extension for
   residual bimodality test (edit, if needed)
 
@@ -129,7 +129,7 @@ hypothesis, but the definitive test requires conditional analysis after Step 2.
 
 **Files touched:**
 - `scripts/internal/generate_r1_5_diagnostics.py` — extend (edit)
-- `docs/04_reports/r1_5/diagnostic_calibration.md` — extend (edit)
+- `docs/04_reports/arc_d_v1/r1_5/diagnostic_calibration.md` — extend (edit)
 
 **Estimated effort:** same PR as Step 0
 
@@ -338,12 +338,12 @@ Train the two-stage models on QUICK data, run self-play screen, then QUICK H2H.
 - Self-play screen passes (no catastrophic behavior)
 - Per-contract deltas documented with bootstrap CIs
 - Pass rate comparison: TwoStage vs AV_v1 vs R0
-- Written report: `docs/04_reports/r1_5/diagnostic_two_stage_eval.md`
+- Written report: `docs/04_reports/arc_d_v1/r1_5/diagnostic_two_stage_eval.md`
 
 **Files touched:**
 - `experiments/configs/r1_5_two_stage_self_play.yaml` — new (create)
 - `experiments/configs/r1_5_two_stage_h2h.yaml` — new (create)
-- `docs/04_reports/r1_5/diagnostic_two_stage_eval.md` — new (create)
+- `docs/04_reports/arc_d_v1/r1_5/diagnostic_two_stage_eval.md` — new (create)
 
 **Estimated effort:** 1 PR
 
@@ -433,10 +433,10 @@ model and evaluate.
 
 ## Deliverables
 
-1. **Diagnostic calibration report** (`docs/04_reports/r1_5/diagnostic_calibration.md`)
+1. **Diagnostic calibration report** (`docs/04_reports/arc_d_v1/r1_5/diagnostic_calibration.md`)
    — Cross-rung calibration comparison, residual analysis, bimodality test
 2. **R0-features ablation report** (section in calibration report or standalone)
-3. **Two-stage evaluation report** (`docs/04_reports/r1_5/diagnostic_two_stage_eval.md`)
+3. **Two-stage evaluation report** (`docs/04_reports/arc_d_v1/r1_5/diagnostic_two_stage_eval.md`)
    — If Phase 2 proceeds
 4. **Updated Q&A log** with answers from each step
 
@@ -487,6 +487,6 @@ decomposition is make/set within the declaring regime, not declare/defend.
 
 ### Reports
 
-- `docs/04_reports/r1_5/diagnostic_calibration.md` — calibration diagnostics + training data analysis
-- `docs/04_reports/r1_5/v2_ablation_analysis.md` — R² ablation matrix + H2H decomposition + gate results
-- `docs/04_reports/r1_5/r1_5_questions.md` — Q&A log (17 questions, 8+ answered)
+- `docs/04_reports/arc_d_v1/r1_5/diagnostic_calibration.md` — calibration diagnostics + training data analysis
+- `docs/04_reports/arc_d_v1/r1_5/v2_ablation_analysis.md` — R² ablation matrix + H2H decomposition + gate results
+- `docs/04_reports/arc_d_v1/r1_5/r1_5_questions.md` — Q&A log (17 questions, 8+ answered)

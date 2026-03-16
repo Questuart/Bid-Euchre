@@ -209,6 +209,6 @@ for gameplay impact.
 | H10 analytical proof | PR #552 (101 parametric tests) |
 | bid_bonus diagnostic | PR #554 (6-bidder, 36 matchups) |
 | H2H battery (Step 5) | 3-seed QUICK, 2k deals/matchup |
-| Baseline statement | `docs/04_reports/r1/r1_baseline_statement.md` |
+| Baseline statement | `docs/04_reports/arc_d_v1/r1/r1_baseline_statement.md` |
 | Comparator config | `experiments/configs/auction_comparator_r1_dual.yaml` |
 | Comparator command | `uv run python scripts/internal/run_auction_comparator.py --config experiments/configs/auction_comparator_r1_dual.yaml --dual-seat --seed 42 --n-per 5000` |

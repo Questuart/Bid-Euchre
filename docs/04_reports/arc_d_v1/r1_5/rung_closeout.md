@@ -242,5 +242,5 @@ Plan: `plans/archive/v1_sessions/2026-03-13_r1-6-partner-semantics.md`
 | FULL n_per | 50,000 per matchup per seed |
 | Total hands evaluated | 1,350,000 |
 | analysis_base_sha | b53d31b |
-| R1 closeout | `docs/04_reports/r1/01_r1_outcome_summary.md` |
-| R0 promotion | `docs/04_reports/r0/01_r0_promotion_report.md` |
+| R1 closeout | `docs/04_reports/arc_d_v1/r1/01_r1_outcome_summary.md` |
+| R0 promotion | `docs/04_reports/arc_d_v1/r0/01_r0_promotion_report.md` |

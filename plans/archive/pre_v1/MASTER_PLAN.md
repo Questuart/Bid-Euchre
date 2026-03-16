@@ -117,7 +117,7 @@ the oracle would profit. Root cause: feature poverty in HIGH/LOW models (1 featu
 
 **Decision: Path B selected** — skip calibrator, finalize R0, address in R1.
 Rationale: calibrator addresses only 17% of regret; the dominant fix (feature enrichment
-for HIGH/LOW) is already on the R1 roadmap. See `docs/04_reports/r0/10_contract_selection_oracle.md`.
+for HIGH/LOW) is already on the R1 roadmap. See `docs/04_reports/arc_d_v1/r0/10_contract_selection_oracle.md`.
 
 **B0 — Pass-Threshold Tuning (new, inserted after Step 0 result):**
 
@@ -226,7 +226,7 @@ Combined PR-N1 + PR-N2 into single PR.
   In single-seat comparator data, `bid_rate` = per-hand propensity. These are different estimands
   sharing similar names — do not conflate them in reports. See `report_narrative_overlay.md` P2-1.
 - User's per-section notes for rung report are in `report_narrative_overlay.md` P1-2
-- Econometric-style tables: borrow from `docs/04_reports/phase0/phase0_bidless_20260207.md`
+- Econometric-style tables: borrow from `docs/04_reports/arc_d_v1/phase0/phase0_bidless_20260207.md`
 
 ---
 
@@ -308,7 +308,7 @@ calibrator question arose. **Create a detailed PR-R1a sub-plan when R0 is finali
 **R1 design priorities from A1 oracle analysis:**
 See `plans/r1_follow_ups.md` for the complete prioritized list of follow-ups,
 including experimental designs, ablation protocols, deferred report items, and
-R0 process lessons (W1–W6) from `docs/04_reports/r0/21_r0_retrospective.md`.
+R0 process lessons (W1–W6) from `docs/04_reports/arc_d_v1/r0/21_r0_retrospective.md`.
 
 Summary (details + rationale in follow-ups file):
 - **HIGH/LOW feature enrichment** — #1 priority, addresses 82% of oracle regret
@@ -370,7 +370,7 @@ or work sequentially — no dependencies between them.
 
 **A1 — Contract Selection Oracle Analysis** ✓ COMPLETE (#472, 2026-03-02)
 - Deliverable: Oracle contract mix, regret distribution, Path B decision
-- Report: `docs/04_reports/r0/10_contract_selection_oracle.md`
+- Report: `docs/04_reports/arc_d_v1/r0/10_contract_selection_oracle.md`
 - Notebook: `notebooks/arc_d/r0/55_contract_selection_oracle.py`
 - Key finding: pass-threshold regret (82%) dominates contract-selection regret (17%)
 
@@ -585,7 +585,7 @@ distribution rightward (fewer false negatives → the threshold can be less aggr
 ### Phase B (B0 COMPLETE — RETAIN, B3 COMPLETE)
 - [x] B0-a: Threshold protocol pre-registered (`plans/r0_pass_threshold_protocol.md`) — #475
 - [x] B0-b: Threshold sweep notebook completed (`notebooks/arc_d/r0/56_pass_threshold_sweep.py`)
-- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/r0/11_pass_threshold_decision.md`) — no code change, t=0 optimal for R0
+- [x] B0-c: Threshold decision: **RETAIN** (`docs/04_reports/arc_d_v1/r0/11_pass_threshold_decision.md`) — no code change, t=0 optimal for R0
 - [x] B1: Calibrator decision documented — **Path B: SKIPPED** (regret decomposition shows calibrator addresses only 17%)
 - N/A B1-a: ~~Calibrator prototype~~ (skipped)
 - N/A B1-b: ~~Calibrator H2H validation~~ (skipped)

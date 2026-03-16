@@ -21,7 +21,7 @@ R0 rung report (`model_arc_r0_20260224.md`, retrieved from git history at
 | Step | Status | Notes |
 |------|--------|-------|
 | Read auto-generated report | PASS | Path resolves correctly |
-| Read companion reports | PASS | `ls docs/04_reports/r0/` lists 10 reports |
+| Read companion reports | PASS | `ls docs/04_reports/arc_d_v1/r0/` lists 10 reports |
 | Read previous rung report | **BUG** | `r{N-1}` = `r-1` does not exist for R0 |
 | Read conventions | PASS | Both `REPORT_NARRATIVE_CONVENTIONS.md` and `REPORT_TEMPLATES.md` exist |
 | Read promotion decision + bundle | PASS | Both JSON files parse correctly |

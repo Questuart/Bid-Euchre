@@ -151,7 +151,7 @@ before the promotion gate.
 | Bootstrap | 10,000 resamples, seed=42, grouped by deal_id |
 | Grid | [0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0] |
 | R0 v2 result | RETAIN t=0 (monotonic decline in net_eppd) |
-| R0 v2 report | `docs/04_reports/r0/11_pass_threshold_decision.md` |
+| R0 v2 report | `docs/04_reports/arc_d_v1/r0/11_pass_threshold_decision.md` |
 
 ---
 

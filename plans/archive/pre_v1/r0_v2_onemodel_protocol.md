@@ -363,4 +363,4 @@ model (simpler architecture, no additional calibration layer).
 |---------|------|--------|-----------|
 | v1 | 2026-03-02 | Initial protocol | Pre-registered before execution |
 | v1.1 | 2026-03-02 | Fix §3.4 artifact format to match loader expectations | Protocol specified `intercept`/`coefficients` naming and `payoff_model.unified` key, but loader expects per-contract `weights`/`bias`/`feature_names`. Now uses decomposed per-family format — no loader extension needed. |
-| v1.2 | 2026-03-03 | Execution complete: RETAIN separate models | Forward selection rejected contract indicators. Unified model delta = -0.10 (hybrid_olsa) / -0.14 (hybrid_olsa_full) vs baseline. Decision: RETAIN. Report: `docs/04_reports/r0/14_onemodel_decision.md`. |
+| v1.2 | 2026-03-03 | Execution complete: RETAIN separate models | Forward selection rejected contract indicators. Unified model delta = -0.10 (hybrid_olsa) / -0.14 (hybrid_olsa_full) vs baseline. Decision: RETAIN. Report: `docs/04_reports/arc_d_v1/r0/14_onemodel_decision.md`. |

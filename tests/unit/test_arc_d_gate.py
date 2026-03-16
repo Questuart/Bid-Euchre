@@ -100,7 +100,7 @@ def _make_bundle(**overrides) -> dict:
         "h2h_summary": "data/artifacts/arc_d/r0/h2h_battery_full.json",
         "h2h_challenger_vs_incumbent": _make_h2h_inline(),
         "gate_thresholds": "data/artifacts/arc_d/r0/gate_thresholds_r1.json",
-        "progression_report": "docs/04_reports/r1/r0_to_r1_progression.md",
+        "progression_report": "docs/04_reports/arc_d_v1/r1/r0_to_r1_progression.md",
     }
     base.update(overrides)
     # R0 bundles don't have R1+ keys

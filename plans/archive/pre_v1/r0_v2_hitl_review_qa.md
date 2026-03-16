@@ -148,7 +148,7 @@
 ### Cross-Cutting Finding: Report Numbering Scheme
 
 **Finding X-1: Adopt per-rung numbered report filenames (Option B: category gaps)**
-- Problem: 13+ report files in `docs/04_reports/r0/` have no implicit reading order or category distinction. A reader browsing the directory can't distinguish core analysis (promotion, comparator, H2H) from track decisions (lambda, threshold, normalizer) from governance (retrospective, methodology review).
+- Problem: 13+ report files in `docs/04_reports/arc_d_v1/r0/` have no implicit reading order or category distinction. A reader browsing the directory can't distinguish core analysis (promotion, comparator, H2H) from track decisions (lambda, threshold, normalizer) from governance (retrospective, methodology review).
 - Fix: Rename all reports with numbered prefixes using category gaps:
   - **Core (01-09):** Reports directly supporting the promotion decision
     - `01_r0_promotion_report.md`, `02_model_arc_r0.md`, `03_comparator_rankings.md`, `04_r0_experiment_summary.md` (restructured from h2h_battery_analysis.md), `05_c33_ablation_report.md`, `06_dual_track_analysis.md`, `07_h2h_battery_analysis.md` (new, extracted from 04)

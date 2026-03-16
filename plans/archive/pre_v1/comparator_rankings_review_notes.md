@@ -1,6 +1,6 @@
 # Comparator Rankings Report — Review Notes
 
-> **Report under review:** `docs/04_reports/r0/comparator_rankings.md`
+> **Report under review:** `docs/04_reports/arc_d_v1/r0/comparator_rankings.md`
 > **Scope:** R0 only. Notes for potential future refactoring.
 > **Status:** Running log — no modifications yet.
 

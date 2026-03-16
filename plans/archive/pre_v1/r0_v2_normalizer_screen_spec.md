@@ -47,7 +47,7 @@ or confirm deferral to R1.
 | 1 | `scripts/internal/run_normalizer_offline_screen.py` | Script |
 | 2 | `tests/unit/test_normalizer_offline_screen.py` | Tests |
 | 3 | `data/artifacts/arc_d/r0/normalizer_offline_screen_v1.json` | Artifact (gitignored) |
-| 4 | `docs/04_reports/r0/normalizer_offline_screen.md` | Report (TUI #14) |
+| 4 | `docs/04_reports/arc_d_v1/r0/normalizer_offline_screen.md` | Report (TUI #14) |
 
 ---
 
@@ -275,7 +275,7 @@ This is why the GO threshold is +0.08 (not +0.05): an offline +0.08 maps to
 
 ## 9. Report Spec (TUI #14)
 
-File: `docs/04_reports/r0/normalizer_offline_screen.md`
+File: `docs/04_reports/arc_d_v1/r0/normalizer_offline_screen.md`
 
 **Required sections:**
 1. **Executive Summary** — GO/NO_GO/NEEDS_REVIEW with 1-sentence rationale

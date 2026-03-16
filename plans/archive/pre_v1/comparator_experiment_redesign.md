@@ -334,10 +334,10 @@ and explain why they occurred. This crosswalk is optional but good practice.
 
 ### Step 6: Update downstream
 
-- `docs/04_reports/r0/comparator_rankings.md` — new numbers + methodology
+- `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` — new numbers + methodology
   (merge with Notes 1-10 report improvements)
-- `docs/04_reports/r0/h2h_battery_analysis.md` §3 — update or cross-reference
-- `docs/04_reports/r0/r0_promotion_report.md` — update comparator context
+- `docs/04_reports/arc_d_v1/r0/h2h_battery_analysis.md` §3 — update or cross-reference
+- `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md` — update comparator context
 - `notebooks/arc_d/r0/40_r0_baseline.py` §11 — update comparator charts
 
 ---
@@ -395,4 +395,4 @@ conflating it with the intrinsic measurement.
 | `src/bid_euchre/strategy/bidding.py` | `OLSaBidder`, `HybridOLSaBidder` |
 | `src/bid_euchre/scoring.py` | `compute_points` (scoring formula) |
 | `experiments/configs/auction_comparator.yaml` | Battery config |
-| `docs/04_reports/r0/comparator_rankings.md` | Report (update with new data) |
+| `docs/04_reports/arc_d_v1/r0/comparator_rankings.md` | Report (update with new data) |

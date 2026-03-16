@@ -176,8 +176,8 @@ that cite specific net_eppd values.
 
 - `make check-quiet` passes
 - `make notebook-check` passes (sync clean, outputs stripped)
-- Spot-check: `grep -r "bid_rate.*0\.986" docs/04_reports/r0/` — should reflect new value
-- Spot-check: `grep -r "1\.587" docs/04_reports/r0/` — modeloespecifico net_eppd will change
+- Spot-check: `grep -r "bid_rate.*0\.986" docs/04_reports/arc_d_v1/r0/` — should reflect new value
+- Spot-check: `grep -r "1\.587" docs/04_reports/arc_d_v1/r0/` — modeloespecifico net_eppd will change
 - Compare v4 vs v5 rankings to verify RanktheTank/ModeloEspecifico shifted as expected
 
 ## PR Strategy

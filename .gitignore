@@ -194,7 +194,7 @@ plots/
 *.docx
 docs/_build/
 docs/build/
-docs/04_reports/qa/
+docs/04_reports/arc_d_v1/qa/
 
 # Local configuration
 config.local.*

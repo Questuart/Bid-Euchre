@@ -203,7 +203,7 @@ Create the narrative exemplar that defines the standard for all future auto-gene
       decision_path='data/artifacts/arc_d/r0/promotion_decision_r0.json',
       eval_df=df,
       chart_dir='data/reports/arc_d/r0/charts/',
-      output_path='docs/04_reports/r0/model_arc_r0.md',
+      output_path='docs/04_reports/arc_d_v1/r0/model_arc_r0.md',
   )
   "
   ```
@@ -221,7 +221,7 @@ Create the narrative exemplar that defines the standard for all future auto-gene
   - **What's the decision?** PROMOTED with rationale
 - Add compact key metrics table (OLSa vs OLSa_Full side-by-side)
 - Add companion reports cross-link block
-- **File:** `docs/04_reports/r0/model_arc_r0.md`
+- **File:** `docs/04_reports/arc_d_v1/r0/model_arc_r0.md`
 
 #### P1-2: Add Section Commentary (per-section notes from review)
 

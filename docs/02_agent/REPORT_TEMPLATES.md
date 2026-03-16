@@ -4,14 +4,14 @@ Structural reference for the four recurring report types produced at each
 rung. Each template documents the section structure, required JSON artifact
 sources, and which sections need interpretation vs data extraction.
 
-**Exemplars:** R0 reports in `docs/04_reports/r0/` are the canonical examples.
+**Exemplars:** R0 reports in `docs/04_reports/arc_d_v1/r0/` are the canonical examples.
 
 ---
 
 ## 1. Promotion Report
 
 **Purpose:** Formal gate decision document for each rung.
-**Exemplar:** `docs/04_reports/r0/01_r0_promotion_report.md`
+**Exemplar:** `docs/04_reports/arc_d_v1/r0/01_r0_promotion_report.md`
 **Primary artifacts:** `promotion_decision_r{N}.json`, `rung_bundle_r{N}.json`,
   eval metric files (`eval_r{N}.json`, `eval_r{N}_s43.json`, `eval_r{N}_s44.json`)
 
@@ -52,7 +52,7 @@ olsa_arm: {arm, metrics_seed42: {net_expected_points_per_deal, ...}}
 ## 2. Comparator Rankings
 
 **Purpose:** Absolute benchmarking of all bidders via single-seat comparator.
-**Exemplar:** `docs/04_reports/r0/03_comparator_rankings.md`
+**Exemplar:** `docs/04_reports/arc_d_v1/r0/03_comparator_rankings.md`
 **Primary artifacts:** `comparator_battery_r{N}_v4.json`, `comparator_cis_r{N}_v4.json`
 
 ### Section Structure (9 sections)
@@ -95,7 +95,7 @@ olsa_arm: {arm, metrics_seed42: {net_expected_points_per_deal, ...}}
 ## 3. H2H Battery Analysis
 
 **Purpose:** Competitive ordering via head-to-head matchups.
-**Exemplar:** `docs/04_reports/r0/04_r0_experiment_summary.md`
+**Exemplar:** `docs/04_reports/arc_d_v1/r0/04_r0_experiment_summary.md`
 **Primary artifacts:** `h2h_battery_quick_v2.json`, `h2h_battery_full_v2.json`,
   `gate_thresholds_r{N+1}.json`
 
@@ -146,7 +146,7 @@ breakout makes this asymmetry visible.
 ## 4. Measurement Integrity Review
 
 **Purpose:** Methodology limitations and deferral cost analysis.
-**Exemplar:** `docs/04_reports/r0/20_measurement_integrity_r0.md`
+**Exemplar:** `docs/04_reports/arc_d_v1/r0/20_measurement_integrity_r0.md`
 **Primary artifacts:** All artifacts (cross-cutting review)
 **Template:** `docs/02_agent/MEASUREMENT_INTEGRITY_REVIEW.md`
 

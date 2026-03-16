@@ -24,7 +24,7 @@ ones).
 
 ### What's wrong with the current report?
 
-The report (`docs/04_reports/r0/c33_ablation_report.md`) presents correct
+The report (`docs/04_reports/arc_d_v1/r0/c33_ablation_report.md`) presents correct
 results but:
 1. Doesn't explain the architecture being ablated (reader must look elsewhere)
 2. Results are point estimates only — no distributional detail
@@ -69,9 +69,9 @@ Before planning, investigate these three questions (answers determine scope):
 
 3. **Intrinsic bid rate provenance:** The notes reference hybrid_olsa intrinsic
    bid rates of ~62.5% and ~82.8% from different contexts. Check:
-   - `docs/04_reports/r0/comparator_rankings.md`
-   - `docs/04_reports/r0/h2h_battery_analysis.md`
-   - `docs/04_reports/r0/r0_promotion_report.md`
+   - `docs/04_reports/arc_d_v1/r0/comparator_rankings.md`
+   - `docs/04_reports/arc_d_v1/r0/h2h_battery_analysis.md`
+   - `docs/04_reports/arc_d_v1/r0/r0_promotion_report.md`
 
    Determine which run/seed/context produced each number so the report can
    cite them accurately.
@@ -125,7 +125,7 @@ Read these files during plan development (in priority order):
 
 ### Must-read
 - `plans/c33_ablation_review_notes.md` — the review notes driving this plan
-- `docs/04_reports/r0/c33_ablation_report.md` — the report being refactored
+- `docs/04_reports/arc_d_v1/r0/c33_ablation_report.md` — the report being refactored
 - `src/bid_euchre/strategy/bidding.py` — HybridOLSaBidder and OLSaBidder classes
   (decision logic, EV formula, what gets logged)
 - `src/bid_euchre/reporting/evaluator.py` — bid_rate formula, metric computation
@@ -134,7 +134,7 @@ Read these files during plan development (in priority order):
 - `notebooks/arc_d/r0/50_r0_matchups.py` — existing matchup notebook (D2 target)
 - `notebooks/arc_d/r0/30_feature_outcome_eval.py` — example of notebook structure,
   assert gates, chart patterns to follow
-- `docs/04_reports/r0/h2h_battery_analysis.md` — bid rate numbers in context
+- `docs/04_reports/arc_d_v1/r0/h2h_battery_analysis.md` — bid rate numbers in context
 
 ### Reference
 - `CLAUDE.md` — project conventions (worktree workflow, `uv run`, ruff, etc.)

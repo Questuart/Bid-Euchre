@@ -264,10 +264,10 @@ the full phase sequencing and rung ladder.
 | gate_status | N/A — retrospective document, not a gate artifact |
 | R0 incumbent | hybrid_olsa_full R0 (`hybrid_r0_full.json`) |
 | R0 tag | `r0-canonical-v2` at commit `4e26d44` |
-| R1 closeout | `docs/04_reports/r1/01_r1_outcome_summary.md` |
-| R1.5 closeout | `docs/04_reports/r1_5/rung_closeout.md` |
-| R1.5.2 ablation | `docs/04_reports/r1_5/v2_ablation_analysis.md` |
-| Experiment ledger | `docs/04_reports/r1_5/appendix_experiment_ledger.md` |
+| R1 closeout | `docs/04_reports/arc_d_v1/r1/01_r1_outcome_summary.md` |
+| R1.5 closeout | `docs/04_reports/arc_d_v1/r1_5/rung_closeout.md` |
+| R1.5.2 ablation | `docs/04_reports/arc_d_v1/r1_5/v2_ablation_analysis.md` |
+| Experiment ledger | `docs/04_reports/arc_d_v1/r1_5/appendix_experiment_ledger.md` |
 | Next experiment plan | `plans/archive/v1_sessions/2026-03-11_r1-5-3-alternative-approaches.md` |
 | Forward decision tree | `plans/archive/v1_root/r1_5_forward_decision_tree.md` |
 | analysis_base_sha | f74ff62 |

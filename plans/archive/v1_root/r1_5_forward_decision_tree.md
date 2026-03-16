@@ -3,7 +3,7 @@
 **Date:** 2026-03-12 (revised)
 **Arc:** D — OLSa-Hybrid Bidder
 **Status:** ACTIVE — governs post-R1.5.2 research direction
-**Prerequisite:** [Post-R1 Retrospective](docs/04_reports/r1_5/post_r1_retro.md)
+**Prerequisite:** [Post-R1 Retrospective](docs/04_reports/arc_d_v1/r1_5/post_r1_retro.md)
 **Incumbent:** hybrid_olsa_full R0 (`hybrid_r0_full.json`)
 
 ## Rung Naming Convention
@@ -180,5 +180,5 @@ The following plans governed earlier phases and are preserved in
 | Item | Value |
 |------|-------|
 | gate_status | N/A — decision tree, not a gate artifact |
-| Governing retrospective | `docs/04_reports/r1_5/post_r1_retro.md` |
+| Governing retrospective | `docs/04_reports/arc_d_v1/r1_5/post_r1_retro.md` |
 | analysis_base_sha | 4a2b5b5 |

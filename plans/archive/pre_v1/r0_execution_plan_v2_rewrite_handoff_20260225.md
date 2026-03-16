@@ -15,7 +15,7 @@ Rewrite the R0 notebook planning docs to incorporate F1-F5 fixes and locked deci
 
 ## Locked Decisions (Do Not Reopen)
 
-1. Report output path is `docs/04_reports/r0/` (not `docs/04_reports/arc_d/`).
+1. Report output path is `docs/04_reports/arc_d_v1/r0/` (not `docs/04_reports/arc_d/`).
 2. PR structure is notebook-centric (17 PRs -> 9 PRs).
 3. `points_won` semantics align with `compute_points()` no-bid behavior and are never `None`.
 4. Full issue-to-PR trace matrix is required (all 58 issues covered, no gaps).
@@ -36,7 +36,7 @@ Implement v2 structure with 9 PRs:
 - PR-5 (Phase 1): `50_r0_matchups` all assigned fixes (excluding deferred infra).
 - PR-6 (Phase 1/late): C59 prefix-convention contract test updates (depends PR-1..PR-5).
 - PR-7 (Phase 2): new `25_auction_health` + extract `40_` §2/§4.
-- PR-8 (Phase 2): formal reports under `docs/04_reports/r0/` (depends PR-1..PR-7 / Phase 2 complete).
+- PR-8 (Phase 2): formal reports under `docs/04_reports/arc_d_v1/r0/` (depends PR-1..PR-7 / Phase 2 complete).
 
 Deferred items (explicitly mark as deferred):
 
@@ -57,7 +57,7 @@ Phase exit gates must include:
 
 ### F2 Fix Requirements
 
-All report paths in execution plan must point to `docs/04_reports/r0/`.
+All report paths in execution plan must point to `docs/04_reports/arc_d_v1/r0/`.
 
 ### F3 Fix Requirements
 
@@ -87,7 +87,7 @@ C32 implementation notes must specify:
 
 ## Required Targeted Edits: `plans/r0_10_feature_health_review.md`
 
-1. In Formal Report Targets, replace `docs/04_reports/arc_d/` with `docs/04_reports/r0/`.
+1. In Formal Report Targets, replace `docs/04_reports/arc_d/` with `docs/04_reports/arc_d_v1/r0/`.
 2. Add a section for resolved alignment decisions (reflecting locked decisions above).
 3. Update Dependency DAG to the 9-PR notebook-centric v2 structure.
 4. Update C32 reference snippet to use `compute_points()` contract and clarify never-`None` `points_won`.
@@ -101,7 +101,7 @@ C32 implementation notes must specify:
 2. PR-0 scope includes both Makefile and `scripts/run_notebooks.py` recursive-glob compatibility.
 3. PR-8 dependency is Phase 2 complete (or equivalent explicit dependency on PR-1..PR-7).
 4. PR-6 is sequenced after notebook fixes it validates.
-5. All report targets in both docs use `docs/04_reports/r0/`.
+5. All report targets in both docs use `docs/04_reports/arc_d_v1/r0/`.
 6. Trace matrix covers all 58 issues with no unintentional gaps.
 7. Deferred list explicitly contains C50, C33, C57.
 
@@ -138,6 +138,6 @@ Expected: matrix section present and issue coverage complete.
 ## Handoff Notes for Planning Agent
 
 1. Keep this as a planning-only rewrite; do not implement source/notebook code changes in this task.
-2. Preserve existing naming and conventions already used in `docs/04_reports/r0/`.
+2. Preserve existing naming and conventions already used in `docs/04_reports/arc_d_v1/r0/`.
 3. Avoid introducing additional PR splits that reintroduce same-file contention.
 4. If ambiguity appears, prefer consistency with locked decisions in this handoff.

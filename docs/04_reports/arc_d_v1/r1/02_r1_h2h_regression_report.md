@@ -139,5 +139,5 @@ contracts.
 | bid_bonus diagnostic | PR #554 (6-bidder, 36 matchups) |
 | Two-stage training ablation | PRs #548/#549 |
 | Investigation log | PR #551 (Investigation J) |
-| Baseline statement | `docs/04_reports/r1/r1_baseline_statement.md` |
+| Baseline statement | `docs/04_reports/arc_d_v1/r1/r1_baseline_statement.md` |
 | Training report | `data/artifacts/arc_d/r1/training_report_r1.json` |

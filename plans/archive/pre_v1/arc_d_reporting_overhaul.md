@@ -51,7 +51,7 @@ notebooks/arc_d/
 
 ### Report Output (per PR #416 convention)
 ```
-docs/04_reports/r0/
+docs/04_reports/arc_d_v1/r0/
 ├── model_arc_r0_20260222.md       # Current (39 lines) → rewrite (~400+ lines)
 └── assets/charts/                 # Chart PNGs embedded in report
 
@@ -685,8 +685,8 @@ Deliverables:
   - §6.3: Comparator landscape from `comparator_battery_r0.json` (5 bidders)
   - §6.4: Attribution gap investigation (gap = -0.1437, constrained > full)
   - §6.5: Seed sensitivity from 3-seed eval data (seeds 42/43/44)
-- Generate updated R0 report: `docs/04_reports/r0/model_arc_r0_20260222.md` → ~400+ lines
-- Embed R0 charts in `docs/04_reports/r0/assets/charts/` (per README.md convention)
+- Generate updated R0 report: `docs/04_reports/arc_d_v1/r0/model_arc_r0_20260222.md` → ~400+ lines
+- Embed R0 charts in `docs/04_reports/arc_d_v1/r0/assets/charts/` (per README.md convention)
 - Validate: report length ≥ 300 lines, ≥ 8 charts, ≥ 8 tables, statistical tests present
 
 ### Wave 5: Template Integration & Cleanup (1 PR)
@@ -817,7 +817,7 @@ The overhaul is complete when an Arc D rung report:
 
 1. **Chart style:** Should charts use a consistent style (seaborn whitegrid, consistent colormap, specific DPI)? Phase 0 uses `sns.set_theme(style="whitegrid")` + `dpi=150`. (Recommendation: yes, match Phase 0.)
 
-2. **Per-rung report naming:** Continue with `model_arc_r0_YYYYMMDD.md` pattern, or switch to `arc_d_r0_report.md`? The reports directory has been restructured to `docs/04_reports/r0/` per PR #416.
+2. **Per-rung report naming:** Continue with `model_arc_r0_YYYYMMDD.md` pattern, or switch to `arc_d_r0_report.md`? The reports directory has been restructured to `docs/04_reports/arc_d_v1/r0/` per PR #416.
 
 3. **Comparator integration depth:** Should the comparator leaderboard appear in all 3 notebooks or just notebook 3 + report? (Recommendation: notebook 2 gets a brief mention, notebook 3 gets full analysis, report gets summary table.)
 
@@ -827,7 +827,7 @@ The overhaul is complete when an Arc D rung report:
 |---------|----------|-----|
 | JSONL path incorrect (`game_log.jsonl` → `logs/<run_id>_<strategy>.jsonl`) | P1 Correctness | Fixed path pattern, added verified log inventory table |
 | Seed regeneration only covers seed 42 | P1 Correctness | Updated to `for seed in 42 43 44` loop |
-| Report output path inconsistent | P2 Correctness | Standardized on `docs/04_reports/r0/` per PR #416 |
+| Report output path inconsistent | P2 Correctness | Standardized on `docs/04_reports/arc_d_v1/r0/` per PR #416 |
 | JSONL availability stale open question | P3 Correctness | Removed from open questions; all 7 logs verified present |
 | Notebook execution integration gap | P1 Completeness | Added Jupytext pairing, Makefile glob update, `discover_notebooks()` scope |
 | Test migration under-specified | P1 Completeness | Added "Test Migration Scope" section with per-file change plans |
