@@ -3,6 +3,7 @@
 **Lineage:** arc_d_v2
 **Rung:** r2 (opponent context)
 **Evidence tier:** QUICK
+**gate_status:** QUICK-COMPLETE (directional evidence — not a promotion gate)
 **Seed:** 42
 **Date:** 2026-03-15
 **Advance decision:** INVESTIGATE (H2 failed)
