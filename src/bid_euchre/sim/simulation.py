@@ -96,6 +96,8 @@ def play_single_hand(
     dealer_index = None  # Track dealer position (0-3 or None if no bidding)
     bidder_position = None  # Track auction winner (0-3 or None)
     _transcript: Optional[List[Dict[str, Any]]] = None  # Auction transcript (schema v7)
+    winning_bid_action: Optional[BidAction] = None  # Track full winning bid
+    winning_bidder: Optional[int] = None  # Track auction winner seat
 
     if contract_type is None:
         # Determine dealer
@@ -114,8 +116,6 @@ def play_single_hand(
                     dealer_index = random.Random().randrange(4)
 
         current_high_bid = 0
-        winning_bid_action: Optional[BidAction] = None  # Track full winning bid
-        winning_bidder = None
         final_contract = None
         final_trump = None
         _transcript = []  # Accumulate per-seat bid actions (schema v7)
@@ -517,6 +517,17 @@ def play_single_hand(
                 initial_leader = random.Random().randrange(4)
     leader = initial_leader
 
+    # Determine active seats for trick play (loner bids exclude declarer's partner)
+    sitting_out_seat: Optional[int] = None
+    if (
+        winning_bid_action is not None
+        and winning_bid_action.bid_type == "loner"
+        and winning_bidder is not None
+    ):
+        # Partner sits out: partnerships are (0,2) and (1,3)
+        sitting_out_seat = (winning_bidder + 2) % 4
+    players_per_trick = 3 if sitting_out_seat is not None else 4
+
     # Fire on_hand_start hooks for strategies that implement them
     # CRITICAL: De-duplicate by instance identity to avoid calling hooks multiple times
     # when a single strategy instance is shared across seats (common in self-play)
@@ -559,9 +570,19 @@ def play_single_hand(
         plays = []
         trick_leader = leader
 
-        # Players act in order starting from leader
-        for offset in range(4):
-            player = (leader + offset) % 4
+        # Build play order for this trick (skipping sitting-out seat for loners)
+        if sitting_out_seat is not None:
+            play_order = []
+            p = leader
+            for _ in range(players_per_trick):
+                while p == sitting_out_seat:
+                    p = (p + 1) % 4
+                play_order.append(p)
+                p = (p + 1) % 4
+        else:
+            play_order = [(leader + offset) % 4 for offset in range(4)]
+
+        for player in play_order:
             hand = hands[player]
 
             # Engine-level guardrail: enforce legal plays (not just in strategies).
