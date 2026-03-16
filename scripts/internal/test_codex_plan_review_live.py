@@ -32,18 +32,28 @@ _scripts_dir = str(Path(__file__).resolve().parent)
 
 
 def _import_sibling(module_name: str):
-    """Import a sibling module from scripts/internal/ without sys.path mutation."""
+    """Import a sibling module from scripts/internal/ without sys.path mutation.
+
+    Registers the module in sys.modules so that transitive imports
+    (e.g., plan_review_driver importing codex_plan_review_adapter)
+    resolve correctly through the standard import machinery.
+    """
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
         module_name, Path(_scripts_dir) / f"{module_name}.py"
     )
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
     spec.loader.exec_module(mod)
     return mod
 
 
+# Load order matters: plan_review_driver transitively imports both
+# codex_plan_review_adapter and review_state, so they must be registered
+# in sys.modules first.
 _adapter = _import_sibling("codex_plan_review_adapter")
+_import_sibling("review_state")
 _driver = _import_sibling("plan_review_driver")
 
 PlanReviewResult = _adapter.PlanReviewResult
