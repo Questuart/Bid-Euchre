@@ -17,6 +17,7 @@ from ..scoring import compute_points
 from ..strategy import GreedyStrategy, Strategy
 from ..strategy.bidding import BidAction, BiddingObservation, BiddingPolicy
 from .deals import generate_deal, generate_initial_leader
+from .exchange import perform_exchange
 from .hooks import BiddingDecisionEvent, HandEndEvent, SimulationHooks
 
 if TYPE_CHECKING:
@@ -452,6 +453,17 @@ def play_single_hand(
             "contract": contract_type,
             "trump": trump_suit,
         }
+
+        # EXCHANGE PHASE: moon bids trigger a 2-card exchange with partner
+        if winning_bid_action is not None and winning_bid_action.bid_type == "moon":
+            mooner_seat = winning_bidder
+            partner_seat = (mooner_seat + 2) % 4
+            hands[mooner_seat], hands[partner_seat] = perform_exchange(
+                mooner_hand=hands[mooner_seat],
+                partner_hand=hands[partner_seat],
+                contract_type=contract_type,
+                trump_suit=trump_suit,
+            )
     else:
         # Contract was fixed, no bid was made
         current_high_bid = None
