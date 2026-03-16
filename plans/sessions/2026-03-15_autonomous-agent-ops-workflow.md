@@ -7,7 +7,7 @@
 ## Plan
 - PR-1: Establish the operating model, bootstrap scripts, and documentation for role-based worktrees (`author`, `review`, `ops`) using the existing Claude worktree hook system as the foundation.
 - PR-2: Add a repo-owned tmux launcher and VS Code audit workspace so autonomous sessions can be started consistently and audited from a stable editor surface.
-- PR-3: Add a lightweight operator CLI (`ops.py`) that summarizes worktree health, review-loop state, rung state, heartbeats, scheduled health checks, and latest artifacts from one command.
+- PR-3: Add a lightweight operator CLI (`ops.py`) that summarizes worktree health, review-loop state, rung state, heartbeats, watchdog status for long-running processes, scheduled health checks, and latest artifacts from one command.
 - PR-4: Add a two-layer memory system: small curated memory for stable operator facts plus a local audit index over execution logs, review artifacts, checkpoints, and manifests for searchable history.
 - PR-5: Roll out the autonomous workflow in stages, validate that it works for real tasks, add skill-promotion and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
 
@@ -39,7 +39,7 @@ These are low-risk (mostly tooling/docs) but change shared repo behavior, so the
 ### Before browser-game backend/frontend parallelism → PRs 3-4
 
 Land the **operator CLI and memory/index layer**:
-- **PR-3:** `ops.py` CLI, health checks, recovery templates
+- **PR-3:** `ops.py` CLI, health checks, watchdogs, recovery templates
 - **PR-4:** Curated memory, audit index, session compaction/archive
 
 These are cross-cutting and will be easier to design once Arc D runtime artifacts and operational pain points are stable. The browser-game initiative is exactly the kind of work that benefits most — it involves parallel tracks (domain engine, backend API, frontend product, replay/export, deployment) that create real multi-agent coordination pressure.
@@ -140,6 +140,7 @@ This must be in place before the hosted product is operationally important or ex
 ### Safety And Recoverability Model
 - Autonomous edits and shell operations should be traceable through an operation log.
 - Long-running autonomous work should create bounded shadow snapshots so bad edits can be audited and rolled back without relying on fragile terminal history.
+- Long-running autonomous processes should be covered by repo-owned watchdogs that detect stalls, exceeded wall-time, and lack of task progress before they become silent failures.
 - Every growing runtime structure must have explicit bounds: retries, reminders, snapshots, task list size, and retained archives.
 
 ### Context Safety Model
@@ -232,10 +233,12 @@ This must be in place before the hosted product is operationally important or ex
 - Provide a single operator entrypoint for current repo health.
 - Reduce manual `rg`, `cat`, and path-hunting for common status questions.
 - Provide deterministic recovery guidance when autonomous work hits common failure modes.
+- Detect and surface long-running process failures early through lightweight watchdogs rather than manual polling.
 
 #### Deliverables
 - `scripts/internal/ops.py`
 - supporting module(s) under `src/bid_euchre/ops/`
+- `src/bid_euchre/ops/watchdogs.py`
 - recovery-template data or helpers under `src/bid_euchre/ops/recovery.py`
 - unit tests under `tests/unit/`
 - optional `Makefile` targets like `make ops-status`
@@ -251,6 +254,7 @@ This must be in place before the hosted product is operationally important or ex
 - `ops.py health`
 - `ops.py schedule`
 - `ops.py recover`
+- `ops.py watchdogs`
 
 #### Data Sources
 - `git worktree list`
@@ -261,12 +265,26 @@ This must be in place before the hosted product is operationally important or ex
 - `plans/**/execution_log.jsonl`
 - heartbeat files
 - evidence/report manifests
+- process metadata and watchdog threshold configuration
+
+#### Watchdog Coverage
+- rung orchestrators with stale or missing heartbeats
+- review loops that stop changing state for too long
+- long-running commands that exceed configured wall-time bounds
+- task sessions that remain `in_progress` without evidence of forward progress
+- abandoned dirty worktrees associated with inactive sessions
+
+#### Watchdog Behavior
+- Default behavior is detect, classify, log, and recommend a bounded recovery step.
+- Auto-remediation is opt-in and limited to explicitly safe actions.
+- Watchdogs must not silently kill or mutate important processes by default.
 
 #### Output Requirements
 - Human-readable summary by default.
 - JSON output mode for agent consumption.
 - Non-zero exit when requested checks find blocking failures or stale runtime state.
 - Health output must cover stale heartbeats, stuck review loops, abandoned dirty worktrees, and missing or stale indexes.
+- Watchdog output must identify which process or session is unhealthy, why it tripped, which threshold fired, and the next bounded recovery action.
 - Recovery output must classify common failures and recommend the next bounded action instead of generic retry loops.
 
 #### Acceptance Criteria
@@ -275,6 +293,7 @@ This must be in place before the hosted product is operationally important or ex
 - Agents can use JSON mode without custom parsing hacks.
 - Scheduled health checks can run unattended and produce actionable summaries without human triage first.
 - Common failure classes have deterministic recovery paths surfaced through the operator CLI.
+- Watchdogs reliably detect stalled or overlong autonomous processes without introducing unsafe default auto-kill behavior.
 
 ### PR-4: Local Audit Index
 
@@ -381,11 +400,13 @@ This must be in place before the hosted product is operationally important or ex
 - `src/bid_euchre/ops/__init__.py` — package root for operator helpers.
 - `src/bid_euchre/ops/status.py` — status aggregation logic.
 - `src/bid_euchre/ops/memory.py` — curated memory ingestion, validation, and query helpers.
+- `src/bid_euchre/ops/watchdogs.py` — watchdog rules for long-running process health and stall detection.
 - `src/bid_euchre/ops/recovery.py` — failure classification and bounded recovery templates.
 - `src/bid_euchre/ops/compaction.py` — session compaction and archive metadata helpers.
 - `src/bid_euchre/ops/index.py` — audit index build/query logic.
 - `tests/unit/test_ops_status.py` — CLI/status tests.
 - `tests/unit/test_ops_memory.py` — curated memory tests.
+- `tests/unit/test_ops_watchdogs.py` — watchdog threshold and stall-detection tests.
 - `tests/unit/test_ops_recovery.py` — recovery template tests.
 - `tests/unit/test_ops_compaction.py` — compaction/archive tests.
 - `tests/unit/test_ops_index.py` — audit index tests.
@@ -401,7 +422,7 @@ This must be in place before the hosted product is operationally important or ex
 - Reuse existing worktree hooks instead of replacing them.
 - Add tests for all new repo-local behavior.
 - Implement scheduled health checks, curated memory, and safety scanning as repo-owned capabilities.
-- Implement task-state tracking, compaction, recovery templates, and shadow snapshot helpers as repo-owned capabilities.
+- Implement task-state tracking, compaction, recovery templates, shadow snapshot helpers, and watchdogs as repo-owned capabilities.
 - Validate the workflow through bounded pilots before making it default.
 
 ## Execution Risks
@@ -430,6 +451,8 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Mitigation: non-lossy compaction with archived context paths and touched-artifact indexes.
 - Recovery logic becoming an unbounded retry loop.
   - Mitigation: classify failures, cap retries, and surface explicit next-step guidance.
+- Watchdogs producing noisy false positives.
+  - Mitigation: per-process thresholds, observe-only rollout first, and bounded actions that default to notify rather than mutate.
 - Added tooling without operational adoption.
   - Mitigation: staged rollout with acceptance checks after each PR.
 
@@ -438,11 +461,13 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Unit tests for role metadata and recovery logic.
 - Unit tests for curated memory validation and promotion.
 - Unit tests for audit index build/query behavior.
+- Unit tests for watchdog thresholds, stale-heartbeat detection, and no-progress detection.
 - Unit tests for task-state progression and explicit completion handling.
 - Unit tests for non-lossy compaction and archive lookup.
 - Manual smoke test of role bootstrap and tmux session creation.
 - Manual smoke test of VS Code workspace opening all intended roots.
 - Manual smoke test of scheduled health checks and stuck-session detection.
+- Manual smoke test of long-running process watchdogs against intentionally stalled sessions.
 - Manual smoke test of snapshot-based rollback and recovery after an intentionally bad edit sequence.
 - Pilot tasks that exercise:
   - implementation flow
