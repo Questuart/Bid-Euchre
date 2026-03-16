@@ -281,7 +281,7 @@ def train_family_model(
 
     Args:
         state_feature_names: State features to use. Defaults to full
-            STATE_FEATURE_NAMES (57 columns).
+            STATE_FEATURE_NAMES.
         target_col: Target column name.
     """
     if state_feature_names is None:
@@ -334,7 +334,7 @@ def train_pass_model(
 
     Args:
         state_feature_names: State features to use. Defaults to full
-            STATE_FEATURE_NAMES (57 columns).
+            STATE_FEATURE_NAMES.
         target_col: Target column name.
     """
     if state_feature_names is None:
