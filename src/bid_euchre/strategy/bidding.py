@@ -1746,23 +1746,31 @@ def extract_state_features(
     )
 
 
-def extract_action_features(bid_n: int, bid_type: str = "regular") -> np.ndarray:
-    """Extract the 4-element action feature vector: [bid_n, bid_n^2, is_moon, is_loner].
+def extract_action_features(
+    bid_n: int,
+    bid_type: str = "regular",
+    *,
+    include_moon_loner: bool = True,
+) -> np.ndarray:
+    """Extract action feature vector for a bid.
 
     Args:
         bid_n: The bid level (0-10).
         bid_type: One of "regular", "moon", or "loner". Default "regular"
             for backward compatibility with R0-R2 models.
+        include_moon_loner: If True, return 4 features [bid_n, bid_n_sq,
+            is_moon, is_loner]. If False, return only 2 features
+            [bid_n, bid_n_sq] (R0-R2 backward compat).
 
     Returns:
-        np.ndarray of shape (4,): [bid_n, bid_n_sq, is_moon, is_loner].
+        np.ndarray of shape (4,) or (2,) depending on include_moon_loner.
     """
-    is_moon = 1.0 if bid_type == "moon" else 0.0
-    is_loner = 1.0 if bid_type == "loner" else 0.0
-    return np.array(
-        [float(bid_n), float(bid_n * bid_n), is_moon, is_loner],
-        dtype=np.float64,
-    )
+    base = [float(bid_n), float(bid_n * bid_n)]
+    if include_moon_loner:
+        is_moon = 1.0 if bid_type == "moon" else 0.0
+        is_loner = 1.0 if bid_type == "loner" else 0.0
+        base.extend([is_moon, is_loner])
+    return np.array(base, dtype=np.float64)
 
 
 def compute_interaction_features(state: np.ndarray) -> np.ndarray:
@@ -2034,6 +2042,7 @@ def _check_ols_predictions_sane(
     has_interactions: bool = False,
     include_positional: bool = True,
     hand_indices: Optional[dict[str, np.ndarray]] = None,
+    has_moon_loner: bool = True,
 ) -> None:
     """Quick sanity check that OLS predictions aren't degenerate.
 
@@ -2063,8 +2072,8 @@ def _check_ols_predictions_sane(
             interactions = compute_interaction_features(state)
             parts_10.append(interactions)
             parts_1.append(interactions)
-        parts_10.append(extract_action_features(10))
-        parts_1.append(extract_action_features(1))
+        parts_10.append(extract_action_features(10, include_moon_loner=has_moon_loner))
+        parts_1.append(extract_action_features(1, include_moon_loner=has_moon_loner))
         feats_10 = np.concatenate(parts_10)
         feats_1 = np.concatenate(parts_1)
         val_10 = predict_ols(models[family], feats_10)
@@ -2086,6 +2095,7 @@ def _check_gbt_predictions_sane(
     partner_feature_names: Optional[List[str]] = None,
     include_positional: bool = True,
     hand_indices: Optional[dict[str, np.ndarray]] = None,
+    has_moon_loner: bool = True,
 ) -> None:
     """Quick sanity check that GBT predictions aren't degenerate.
 
@@ -2104,8 +2114,12 @@ def _check_gbt_predictions_sane(
         )
         if hand_indices and family in hand_indices:
             state = state[hand_indices[family]]
-        feats_10 = np.concatenate([state, extract_action_features(10)])
-        feats_1 = np.concatenate([state, extract_action_features(1)])
+        feats_10 = np.concatenate(
+            [state, extract_action_features(10, include_moon_loner=has_moon_loner)]
+        )
+        feats_1 = np.concatenate(
+            [state, extract_action_features(1, include_moon_loner=has_moon_loner)]
+        )
         val_10 = float(gbt_models[family].predict(feats_10.reshape(1, -1))[0])
         val_1 = float(gbt_models[family].predict(feats_1.reshape(1, -1))[0])
         if val_10 > val_1:
@@ -2214,6 +2228,13 @@ class ActionValueBidder(BiddingPolicy):
             has_positional=self._has_positional,
         )
 
+        # Detect whether artifact uses 4 (moon/loner) or 2 (base) action features.
+        # Must be computed UNCONDITIONALLY — R3 models have positional=True AND
+        # moon/loner features.
+        self._has_moon_loner = _detect_action_feature_count(
+            list(self.models["suit"]["feature_names"])
+        ) == len(ACTION_FEATURE_NAMES)
+
         # For R0/selected models: precompute per-family hand feature indices
         # so choose_bid() can select the right subset from the full state vector.
         # R1/R2 forward-selected artifacts may include partner/position/opponent
@@ -2260,6 +2281,7 @@ class ActionValueBidder(BiddingPolicy):
                 has_interactions=self._has_interactions,
                 include_positional=self._has_positional or self._needs_full_state,
                 hand_indices=self._hand_indices if not self._has_positional else None,
+                has_moon_loner=self._has_moon_loner,
             )
 
     def _select_state(
@@ -2282,7 +2304,7 @@ class ActionValueBidder(BiddingPolicy):
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
-        legal = enumerate_legal_actions(obs)
+        legal = enumerate_legal_actions(obs, include_moon_loner=self._has_moon_loner)
 
         best_value = float("-inf")
         best_action = BidAction.pass_bid()
@@ -2302,7 +2324,11 @@ class ActionValueBidder(BiddingPolicy):
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
-                action_feats = extract_action_features(action.n, action.bid_type)
+                action_feats = extract_action_features(
+                    action.n,
+                    action.bid_type,
+                    include_moon_loner=self._has_moon_loner,
+                )
                 features = np.concatenate([state, action_feats])
                 value = predict_ols(self.models[family], features)
 
@@ -2408,6 +2434,13 @@ class GBTActionValueBidder(BiddingPolicy):
             has_positional=self._has_positional,
         )
 
+        # Detect whether artifact uses 4 (moon/loner) or 2 (base) action features.
+        # Must be computed UNCONDITIONALLY — R3 models have positional=True AND
+        # moon/loner features.
+        self._has_moon_loner = _detect_action_feature_count(
+            list(models_meta["suit"]["feature_names"])
+        ) == len(ACTION_FEATURE_NAMES)
+
         # For R0/selected models: precompute per-family hand feature indices.
         # R1 forward-selected artifacts may include partner/position features
         # that are not in _HAND_FEATURE_NAMES — use STATE_FEATURE_NAMES when needed.
@@ -2448,6 +2481,7 @@ class GBTActionValueBidder(BiddingPolicy):
                 self._partner_feature_names,
                 include_positional=self._has_positional or self._needs_full_state,
                 hand_indices=self._hand_indices if not self._has_positional else None,
+                has_moon_loner=self._has_moon_loner,
             )
 
     def _select_state(
@@ -2470,7 +2504,7 @@ class GBTActionValueBidder(BiddingPolicy):
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
-        legal = enumerate_legal_actions(obs)
+        legal = enumerate_legal_actions(obs, include_moon_loner=self._has_moon_loner)
 
         best_value = float("-inf")
         best_action = BidAction.pass_bid()
@@ -2489,7 +2523,11 @@ class GBTActionValueBidder(BiddingPolicy):
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
-                action_feats = extract_action_features(action.n, action.bid_type)
+                action_feats = extract_action_features(
+                    action.n,
+                    action.bid_type,
+                    include_moon_loner=self._has_moon_loner,
+                )
                 features = np.concatenate([state, action_feats])
                 value = float(
                     self.gbt_models[family].predict(features.reshape(1, -1))[0]
@@ -2615,6 +2653,13 @@ class TwoStageActionValueBidder(BiddingPolicy):
             has_positional=self._has_positional,
         )
 
+        # Detect whether artifact uses 4 (moon/loner) or 2 (base) action features.
+        # Must be computed UNCONDITIONALLY — R3 models have positional=True AND
+        # moon/loner features.
+        self._has_moon_loner = _detect_action_feature_count(
+            list(suit_feature_names)
+        ) == len(ACTION_FEATURE_NAMES)
+
         # For R0/selected models: precompute per-family hand feature indices.
         # R1 forward-selected artifacts may include partner/position features
         # that are not in _HAND_FEATURE_NAMES — use STATE_FEATURE_NAMES when needed.
@@ -2672,7 +2717,7 @@ class TwoStageActionValueBidder(BiddingPolicy):
 
     def choose_bid(self, obs: BiddingObservation) -> BidAction:
         """Select the legal action with highest predicted E[net_points]."""
-        legal = enumerate_legal_actions(obs)
+        legal = enumerate_legal_actions(obs, include_moon_loner=self._has_moon_loner)
 
         best_value = float("-inf")
         best_action = BidAction.pass_bid()
@@ -2692,7 +2737,11 @@ class TwoStageActionValueBidder(BiddingPolicy):
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
-                action_feats = extract_action_features(action.n, action.bid_type)
+                action_feats = extract_action_features(
+                    action.n,
+                    action.bid_type,
+                    include_moon_loner=self._has_moon_loner,
+                )
                 features = np.concatenate([state, action_feats])
 
                 if family == "suit":

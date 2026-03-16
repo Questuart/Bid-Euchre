@@ -444,21 +444,19 @@ def _compute_team_points(record):
     """Compute team-level points from a hand_end JSONL record.
 
     Returns (team0_points, team1_points).
+
+    Uses ``compute_points()`` from the scoring module to handle regular,
+    moon, and loner bid types correctly.
     """
+    from bid_euchre.scoring import compute_points
+
     t0 = record["t0"]
     t1 = record["t1"]
     winning_bid = record["winning_bid"]
     bidder_position = record["bidder_position"]
-    made_bid = record["made_bid"]
+    bid_type = record.get("bid_type", "regular")
 
-    if bidder_position in (0, 2):  # Declarer on team 0
-        team0_points = t0 if made_bid else -winning_bid
-        team1_points = t1
-    else:  # Declarer on team 1
-        team0_points = t0
-        team1_points = t1 if made_bid else -winning_bid
-
-    return (team0_points, team1_points)
+    return compute_points(winning_bid, bidder_position, t0, t1, bid_type=bid_type)
 
 
 def _bootstrap_ci(deltas, n_bootstrap=10000, ci=0.95, seed=42):
@@ -748,6 +746,41 @@ def parse_run_results(run_dir, summary, seed=42):
             }
         if by_contract:
             cell["by_contract"] = by_contract
+
+        # Per-bid_type faceting: group records by bid_type and compute
+        # core metrics (delta, CI, win_rate) for regular/moon/loner.
+        bid_type_groups: dict[str, list] = {}
+        for rec in records:
+            bt = rec.get("bid_type", "regular")
+            if bt and isinstance(bt, str) and bt in ("regular", "moon", "loner"):
+                bid_type_groups.setdefault(bt, []).append(rec)
+
+        by_bid_type = {}
+        for bt, bt_records in bid_type_groups.items():
+            bt_deltas = []
+            bt_wins = 0
+            for rec in bt_records:
+                bp = rec.get("bidder_position")
+                if bp is None:
+                    continue  # all-pass: no bid_type, skip
+                t0_pts, t1_pts = _compute_team_points(rec)
+                bt_deltas.append(t0_pts - t1_pts)
+                if t0_pts > t1_pts:
+                    bt_wins += 1
+            bt_n = len(bt_deltas)
+            if bt_n == 0:
+                continue
+            bt_delta = float(np.mean(bt_deltas))
+            bt_ci_low, bt_ci_high = _bootstrap_ci(bt_deltas, seed=seed)
+            by_bid_type[bt] = {
+                "net_eppd_delta": round(bt_delta, 6),
+                "ci_low": round(bt_ci_low, 6),
+                "ci_high": round(bt_ci_high, 6),
+                "win_rate_a": round(bt_wins / bt_n, 4),
+                "deals_total": bt_n,
+            }
+        if by_bid_type:
+            cell["by_bid_type"] = by_bid_type
 
     return summary
 

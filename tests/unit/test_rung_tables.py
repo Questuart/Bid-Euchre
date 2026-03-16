@@ -24,6 +24,7 @@ from bid_euchre.arc_d_v2.tables import (
     _per_seed_sanity_h2h,
     generate_all_tables,
     generate_artifact_inventory,
+    generate_behavior_by_bid_type,
     generate_behavior_by_contract,
     generate_behavior_summary,
     generate_comparator_rankings,
@@ -752,3 +753,204 @@ class TestMultiSeedPipeline:
         output_dir = tmp_path / "tables"
         generated = generate_all_tables(FIXTURES_DIR, output_dir, seeds=[42])
         assert "seed_sanity.csv" not in generated
+
+
+# ──────────────────────────────────────────────
+#  Bid-type faceting tests
+# ──────────────────────────────────────────────
+
+
+class TestBehaviorByBidType:
+    """Tests for the behavior_by_bid_type.csv table generation."""
+
+    def test_r0_style_only_regular_rows(self):
+        """R0-R2 data (no bidders_by_bid_type) produces only 'regular' rows."""
+        comparator = {
+            "bidders": {
+                "model_a": {
+                    "net_eppd": 1.5,
+                    "bid_rate": 0.6,
+                    "make_rate": 0.7,
+                    "hands_with_bids": 120,
+                },
+                "model_b": {
+                    "net_eppd": 0.8,
+                    "bid_rate": 0.5,
+                    "make_rate": 0.6,
+                    "hands_with_bids": 100,
+                },
+            },
+        }
+        df = generate_behavior_by_bid_type(comparator_cis=comparator)
+        assert len(df) == 2
+        assert set(df["bid_type"].unique()) == {"regular"}
+        assert set(df["model"].unique()) == {"model_a", "model_b"}
+
+    def test_r3_style_has_regular_moon_loner(self):
+        """R3 data with bidders_by_bid_type produces regular + moon + loner rows."""
+        comparator = {
+            "bidders": {
+                "gbt": {"net_eppd": 2.0, "bid_rate": 0.7, "make_rate": 0.8},
+            },
+            "bidders_by_bid_type": {
+                "regular": {
+                    "gbt": {
+                        "net_eppd": 1.8,
+                        "bid_rate": 0.6,
+                        "make_rate": 0.75,
+                        "hands_with_bids": 100,
+                    },
+                },
+                "moon": {
+                    "gbt": {
+                        "net_eppd": 5.0,
+                        "bid_rate": 0.08,
+                        "make_rate": 0.5,
+                        "hands_with_bids": 12,
+                    },
+                },
+                "loner": {
+                    "gbt": {
+                        "net_eppd": 10.0,
+                        "bid_rate": 0.02,
+                        "make_rate": 0.3,
+                        "hands_with_bids": 3,
+                    },
+                },
+            },
+        }
+        df = generate_behavior_by_bid_type(comparator_cis=comparator)
+        assert len(df) == 3
+        assert set(df["bid_type"].unique()) == {"regular", "moon", "loner"}
+
+    def test_schema_columns(self):
+        """Output has expected columns."""
+        comparator = {
+            "bidders": {
+                "model_a": {
+                    "net_eppd": 1.0,
+                    "bid_rate": 0.5,
+                    "make_rate": 0.6,
+                    "hands_with_bids": 50,
+                },
+            },
+        }
+        df = generate_behavior_by_bid_type(comparator_cis=comparator)
+        expected_cols = {
+            "model",
+            "bid_type",
+            "count",
+            "bid_rate",
+            "make_rate",
+            "mean_net_points",
+            "source",
+        }
+        assert set(df.columns) == expected_cols
+
+    def test_h2h_self_play_by_bid_type(self):
+        """H2H self-play with by_bid_type data emits per-type rows."""
+        h2h = {
+            "cells": {
+                "gbt_vs_gbt": {
+                    "bidder_a": "gbt",
+                    "bidder_b": "gbt",
+                    "deals_total": 200,
+                    "by_bid_type": {
+                        "regular": {
+                            "net_eppd_delta": 0.1,
+                            "win_rate_a": 0.5,
+                            "deals_total": 180,
+                        },
+                        "moon": {
+                            "net_eppd_delta": 2.0,
+                            "win_rate_a": 0.6,
+                            "deals_total": 20,
+                        },
+                    },
+                },
+            },
+        }
+        df = generate_behavior_by_bid_type(h2h_battery=h2h)
+        assert len(df) == 2
+        assert set(df["bid_type"].unique()) == {"regular", "moon"}
+        assert all(df["source"] == "h2h_self_play")
+
+    def test_h2h_no_bid_type_data_falls_back(self):
+        """H2H self-play without by_bid_type falls back to 'regular' row."""
+        h2h = {
+            "cells": {
+                "ols_vs_ols": {
+                    "bidder_a": "ols",
+                    "bidder_b": "ols",
+                    "deals_total": 100,
+                    "bid_rate_a": 0.5,
+                    "make_rate_a": 0.6,
+                    "fullgame_eppd": 4.5,
+                },
+            },
+        }
+        df = generate_behavior_by_bid_type(h2h_battery=h2h)
+        assert len(df) == 1
+        assert df.iloc[0]["bid_type"] == "regular"
+
+
+class TestH2HDeltaMatrixBidType:
+    """Tests that h2h_delta_matrix includes bid_type facet rows."""
+
+    def test_by_bid_type_rows_present(self):
+        """H2H battery with by_bid_type produces bid_type:* facet rows."""
+        h2h = {
+            "cells": {
+                "a_vs_b": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_b",
+                    "net_eppd_delta": 0.5,
+                    "ci_low": 0.1,
+                    "ci_high": 0.9,
+                    "win_rate_a": 0.55,
+                    "deals_total": 1000,
+                    "by_bid_type": {
+                        "regular": {
+                            "net_eppd_delta": 0.4,
+                            "ci_low": 0.05,
+                            "ci_high": 0.75,
+                            "win_rate_a": 0.54,
+                            "deals_total": 900,
+                        },
+                        "moon": {
+                            "net_eppd_delta": 2.0,
+                            "ci_low": 0.5,
+                            "ci_high": 3.5,
+                            "win_rate_a": 0.7,
+                            "deals_total": 100,
+                        },
+                    },
+                },
+            },
+        }
+        df = generate_h2h_delta_matrix(h2h)
+        # Should have: 1 pooled + 2 bid_type facets
+        assert len(df) == 3
+        facets = set(df["facet"].unique())
+        assert "pooled" in facets
+        assert "bid_type:regular" in facets
+        assert "bid_type:moon" in facets
+
+    def test_no_bid_type_no_extra_rows(self):
+        """H2H battery without by_bid_type produces only pooled row."""
+        h2h = {
+            "cells": {
+                "a_vs_b": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_b",
+                    "net_eppd_delta": 0.5,
+                    "ci_low": 0.1,
+                    "ci_high": 0.9,
+                    "win_rate_a": 0.55,
+                    "deals_total": 1000,
+                },
+            },
+        }
+        df = generate_h2h_delta_matrix(h2h)
+        assert len(df) == 1
+        assert df.iloc[0]["facet"] == "pooled"

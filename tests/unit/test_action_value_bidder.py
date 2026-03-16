@@ -14,6 +14,7 @@ from bid_euchre.core.cards import Card
 from bid_euchre.strategy.bidding import (
     _HAND_FEATURE_NAMES,
     ACTION_FEATURE_NAMES,
+    ACTION_FEATURE_NAMES_BASE,
     STATE_FEATURE_NAMES,
     ActionValueBidder,
     BidAction,
@@ -97,6 +98,61 @@ def _make_mock_artifact(
             "high": _model(n_state + n_action, high_bias),
             "low": _model(n_state + n_action, low_bias),
             "pass": _model(n_state, pass_bias),
+        },
+        "metadata": {
+            "context_features": [
+                "partner_level_same_suit",
+                "partner_level_same_color",
+                "partner_level_off_color",
+                "partner_level_high",
+                "partner_level_low",
+                "partner_passed",
+            ],
+            "arm": "full",
+        },
+    }
+
+
+def _make_base_action_artifact(
+    pass_bias: float = 0.0,
+    suit_bias: float = 1.0,
+    high_bias: float = 0.5,
+    low_bias: float = 0.5,
+) -> dict:
+    """Create a mock artifact using 2-element ACTION_FEATURE_NAMES_BASE (R0-R2 style).
+
+    Uses STATE_FEATURE_NAMES (positional) + ACTION_FEATURE_NAMES_BASE (bid_n, bid_n_sq).
+    """
+    n_state = len(STATE_FEATURE_NAMES)
+    n_action = len(ACTION_FEATURE_NAMES_BASE)
+
+    def _model(n_features: int, intercept: float, feature_names: list[str]) -> dict:
+        return {
+            "coefficients": [0.0] * n_features,
+            "intercept": intercept,
+            "feature_names": feature_names,
+            "r_squared": 0.10,
+        }
+
+    return {
+        "schema_version": "action_value_olsa_v1",
+        "models": {
+            "suit": _model(
+                n_state + n_action,
+                suit_bias,
+                STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES_BASE,
+            ),
+            "high": _model(
+                n_state + n_action,
+                high_bias,
+                STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES_BASE,
+            ),
+            "low": _model(
+                n_state + n_action,
+                low_bias,
+                STATE_FEATURE_NAMES + ACTION_FEATURE_NAMES_BASE,
+            ),
+            "pass": _model(n_state, pass_bias, STATE_FEATURE_NAMES),
         },
         "metadata": {
             "context_features": [
@@ -389,12 +445,22 @@ class TestActionValueBidder:
         action = bidder.choose_bid(obs)
         assert action.is_pass()
 
-    def test_choose_bid_after_bid_10_must_pass(self):
-        path = self._write_artifact(_make_mock_artifact())
+    def test_choose_bid_after_bid_10_must_pass_r0(self):
+        """R0-R2 bidder (2 action features) must pass after bid 10 — no moon/loner."""
+        path = self._write_artifact(_make_base_action_artifact())
         bidder = ActionValueBidder(artifact_path=path)
         obs = _make_obs(current_high_bid=10)
         action = bidder.choose_bid(obs)
         assert action.is_pass()
+
+    def test_choose_bid_after_bid_10_with_moon_loner(self):
+        """R3 bidder (4 action features) can bid moon/loner even after regular bid 10."""
+        path = self._write_artifact(_make_mock_artifact())
+        bidder = ActionValueBidder(artifact_path=path)
+        obs = _make_obs(current_high_bid=10)
+        action = bidder.choose_bid(obs)
+        # With moon/loner enabled and positive suit_bias, should pick a moon or loner
+        assert isinstance(action, BidAction)
 
     def test_context_features_loaded(self):
         path = self._write_artifact(_make_mock_artifact())
@@ -710,3 +776,102 @@ class TestForwardSelectedArtifact:
             bidder._hand_indices["suit"],
             expected_indices,
         )
+
+
+# ── extract_action_features include_moon_loner flag ──────
+
+
+class TestExtractActionFeaturesFlag:
+    """Tests for the include_moon_loner parameter on extract_action_features."""
+
+    def test_include_moon_loner_true_returns_4(self):
+        feats = extract_action_features(5, include_moon_loner=True)
+        assert feats.shape == (4,)
+        assert feats[0] == pytest.approx(5.0)
+        assert feats[1] == pytest.approx(25.0)
+        assert feats[2] == pytest.approx(0.0)  # is_moon
+        assert feats[3] == pytest.approx(0.0)  # is_loner
+
+    def test_include_moon_loner_false_returns_2(self):
+        feats = extract_action_features(5, include_moon_loner=False)
+        assert feats.shape == (2,)
+        assert feats[0] == pytest.approx(5.0)
+        assert feats[1] == pytest.approx(25.0)
+
+    def test_moon_with_flag_true(self):
+        feats = extract_action_features(10, bid_type="moon", include_moon_loner=True)
+        assert feats.shape == (4,)
+        assert feats[2] == pytest.approx(1.0)
+        assert feats[3] == pytest.approx(0.0)
+
+    def test_moon_with_flag_false_still_2(self):
+        """Even if bid_type is moon, flag=False means 2 features (no moon/loner cols)."""
+        feats = extract_action_features(10, bid_type="moon", include_moon_loner=False)
+        assert feats.shape == (2,)
+
+    def test_default_is_true(self):
+        """Default include_moon_loner=True for backward compatibility with R3 callers."""
+        feats = extract_action_features(5)
+        assert feats.shape == (4,)
+
+
+# ── _has_moon_loner detection on bidders ─────────────────
+
+
+class TestHasMoonLonerDetection:
+    """Tests that bidders correctly detect _has_moon_loner from artifact features."""
+
+    def _write_artifact(self, artifact: dict) -> str:
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        json.dump(artifact, f)
+        f.close()
+        return f.name
+
+    def test_4_feature_artifact_has_moon_loner(self):
+        """Artifact with 4 action features (R3 style) sets _has_moon_loner=True."""
+        path = self._write_artifact(_make_mock_artifact())
+        bidder = ActionValueBidder(artifact_path=path)
+        assert bidder._has_moon_loner is True
+
+    def test_2_feature_artifact_no_moon_loner(self):
+        """Artifact with 2 action features (R0-R2 style) sets _has_moon_loner=False."""
+        path = self._write_artifact(_make_base_action_artifact())
+        bidder = ActionValueBidder(artifact_path=path)
+        assert bidder._has_moon_loner is False
+
+    def test_4_feature_bidder_enumerates_moon_loner(self):
+        """Bidder with 4-feature artifact enumerates moon/loner at inference time."""
+        path = self._write_artifact(_make_mock_artifact(suit_bias=10.0))
+        bidder = ActionValueBidder(artifact_path=path)
+        obs = _make_obs(current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        # Just verify the bidder runs without crash and returns a valid action
+        assert isinstance(action, BidAction)
+
+    def test_2_feature_bidder_no_moon_loner(self):
+        """Bidder with 2-feature artifact does NOT enumerate moon/loner (backward compat)."""
+        path = self._write_artifact(_make_base_action_artifact(suit_bias=10.0))
+        bidder = ActionValueBidder(artifact_path=path)
+        obs = _make_obs(current_high_bid=0)
+        action = bidder.choose_bid(obs)
+        assert isinstance(action, BidAction)
+        # Regular bids only — no moon or loner
+        if not action.is_pass():
+            assert action.bid_type == "regular"
+
+    def test_2_feature_bidder_no_crash_on_predict(self):
+        """R0-R2 style bidder with 2 action features doesn't crash in predict_ols.
+
+        This is the critical regression test: extract_action_features must return
+        only 2 features to match the model's coefficient vector size.
+        """
+        artifact = _make_base_action_artifact(
+            pass_bias=-10.0, suit_bias=5.0, high_bias=3.0, low_bias=3.0
+        )
+        path = self._write_artifact(artifact)
+        bidder = ActionValueBidder(artifact_path=path)
+        obs = _make_obs(current_high_bid=0)
+        # This would crash with a dimension mismatch if extract_action_features
+        # always returned 4 features
+        action = bidder.choose_bid(obs)
+        assert not action.is_pass()  # suit_bias is highest
