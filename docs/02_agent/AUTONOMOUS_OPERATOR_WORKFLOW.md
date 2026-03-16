@@ -29,6 +29,8 @@ Main checkout (control plane, read-only for agents)
   |
   +-- .claude/scripts/start-role-worktree.sh   # Bootstrap
   +-- .claude/scripts/start-agent-role.sh       # Launch
+  +-- .claude/tmux/agent-ops-session.sh         # Persistent tmux session
+  +-- .claude/tmux/agent-ops-layout.conf        # tmux layout config
   +-- .claude/runtime/                          # Gitignored state
   |     +-- worktree_registry/                  # Worktree metadata
   |     +-- session_metadata/                   # Session state
@@ -97,65 +99,141 @@ user:
 
 ---
 
-## Worktree Lifecycle
+## Persistent Session Manager (tmux)
 
-### Persistent vs Ephemeral
+The tmux session provides a persistent multi-role terminal environment that
+survives disconnections and allows switching between role contexts instantly.
 
-The system distinguishes two worktree classes:
+### Starting the tmux Session
 
-| Class | Examples | TTL | Auto-prune |
-|-------|----------|-----|------------|
-| **Persistent** | `author`, `review`, `ops` | None | Never |
-| **Ephemeral** | Task worktrees, experiment worktrees | Default 72h | Yes (when clean + stale) |
+From anywhere inside the repository:
 
-Persistent role worktrees are created once and reused across sessions. They
-are updated to latest main on each bootstrap but never removed by cleanup
-flows.
-
-Ephemeral worktrees are created for bounded tasks (a specific PR, experiment,
-or investigation) and carry a TTL from creation. Once expired and clean, they
-become candidates for automated cleanup.
-
-### Cleanup States (Ephemeral)
-
-Ephemeral worktrees progress through lifecycle states:
-
-```
-active --> idle --> stale --> ready_to_remove --> (removed)
-                      |
-                      +--> quarantined --> (manual review) --> archived
+```bash
+.claude/tmux/agent-ops-session.sh
 ```
 
-| State | Condition | Action |
-|-------|-----------|--------|
-| `active` | Session is using this worktree | Protected from cleanup |
-| `idle` | No active session, TTL not expired | No action needed |
-| `stale` | TTL expired, no active session | Candidate for cleanup |
-| `quarantined` | Has uncommitted changes | Needs manual review before removal |
-| `ready_to_remove` | Clean, stale, no blockers | Safe to prune |
-| `archived` | Metadata preserved, directory removed | Terminal state |
+This creates (or attaches to) a tmux session named `bid-euchre-ops` with
+four windows:
 
-### One Writer Per Worktree
+| Window | Name | Directory | Purpose |
+|--------|------|-----------|---------|
+| 0 | `author` | `../Bid-Euchre-author` | Implementation work |
+| 1 | `review` | `../Bid-Euchre-review` | Code review and validation |
+| 2 | `ops` | `../Bid-Euchre-ops` | Monitoring and orchestration |
+| 3 | `scratch` | Main checkout | Ad-hoc inspection, control plane |
 
-Each worktree may have at most one active agent session writing to it. This
-prevents merge conflicts, race conditions, and confused state. The
-`session_id` field in the worktree registry tracks the owning session.
+Custom session name:
 
-If an agent needs to operate on a worktree that already has an active session,
-it must either:
-1. Wait for the existing session to complete
-2. Use a different worktree
-3. Escalate for manual resolution
+```bash
+.claude/tmux/agent-ops-session.sh my-session
+```
 
-### Creating Ephemeral Worktrees
+### Idempotent Behavior
 
-Ephemeral worktrees follow the existing `claude-worktree.sh` pattern for
-branch-per-PR work. The key addition is metadata: every ephemeral worktree
-should have a registry entry with `class: "ephemeral"` and a TTL.
+The script is safe to rerun:
+- If the session already exists, it attaches to it
+- If a role worktree does not exist, the window opens in the main checkout
+  with a message suggesting `start-role-worktree.sh`
 
-Future tooling (PR-3 scope) will provide `ops.py worktrees prune` for
-lifecycle-aware cleanup. Until then, cleanup is manual via
-`git worktree remove`.
+### tmux Key Bindings
+
+The layout configuration (`.claude/tmux/agent-ops-layout.conf`) provides:
+
+| Key | Action |
+|-----|--------|
+| `Alt+1` | Switch to author window |
+| `Alt+2` | Switch to review window |
+| `Alt+3` | Switch to ops window |
+| `Alt+4` | Switch to scratch window |
+| Mouse scroll | Scroll through output history |
+
+Standard tmux prefix (`Ctrl+b`) bindings also work.
+
+### Layout Configuration
+
+The layout file at `.claude/tmux/agent-ops-layout.conf` sets:
+- 50,000-line scrollback buffer
+- Mouse support enabled
+- 256-color terminal
+- Status bar showing session name and active window
+
+To reload after editing:
+
+```bash
+tmux source-file .claude/tmux/agent-ops-layout.conf
+```
+
+### Prerequisites
+
+- `tmux` must be installed (`brew install tmux` on macOS)
+- Role worktrees should be created first via `start-role-worktree.sh`
+  (the session script works without them but windows will fall back to main)
+
+---
+
+## VS Code Audit Surface
+
+The VS Code workspace provides a unified view across all role worktrees for
+auditing diffs, runtime state, and test results.
+
+### Opening the Workspace
+
+```bash
+code Bid-Euchre-agent-audit.code-workspace
+```
+
+This opens a multi-root workspace with four folders:
+
+| Folder | Path | Purpose |
+|--------|------|---------|
+| `main` | `.` (repo root) | Control plane, runtime state |
+| `author` | `../Bid-Euchre-author` | Author worktree code |
+| `review` | `../Bid-Euchre-review` | Review worktree artifacts |
+| `ops` | `../Bid-Euchre-ops` | Ops worktree state |
+
+### File Exclusions
+
+The workspace hides noisy directories from the file tree and search:
+- `.venv`, `__pycache__`, `*.pyc`
+- `data/runs`, `data/artifacts`, `data/models`, `data/reports`, `data/training`
+- `.claude/worktrees` (ephemeral agent worktrees)
+
+### VS Code Tasks
+
+The workspace includes pre-configured tasks (`.vscode/tasks.json`) accessible
+via **Terminal > Run Task** or `Ctrl+Shift+P > Tasks: Run Task`.
+
+#### Testing Tasks
+
+| Task | Command | Notes |
+|------|---------|-------|
+| **Run targeted pytest** | `uv run python -m pytest <path> -x -q` | Prompts for test path |
+| **Run targeted pytest (verbose)** | `uv run python -m pytest <path> -x -v` | Verbose output |
+| **Make check-quiet** | `make check-quiet` | Full pre-PR validation (default test task) |
+| **Make check (full output)** | `make check` | Full validation with verbose output |
+| **Ruff lint** | `uv run ruff check src/ tests/ ...` | Lint only |
+| **Ruff format check** | `uv run ruff format --check ...` | Format check only |
+
+#### Status Inspection Tasks
+
+| Task | What it shows |
+|------|---------------|
+| **Rung status** | State of all rungs (r0-r3) |
+| **Rung status (single)** | State of a selected rung (pick list) |
+| **Review loop state** | Active review loop state.json files |
+| **Heartbeat check** | Agent heartbeat files in plans/ |
+| **Worktree list** | All git worktrees |
+| **Git status (all worktrees)** | Short status for every worktree |
+| **Orchestrator log (tail)** | Last 30 lines of overnight orchestrator |
+| **Session metadata** | Active session metadata JSON files |
+| **Worktree registry** | Registered worktree metadata |
+
+### Recommended Extensions
+
+The workspace recommends:
+- **Ruff** (`charliermarsh.ruff`) — Linting and formatting
+- **Python** (`ms-python.python`) — Language support
+- **GitLens** (`eamodio.gitlens`) — Git history and blame
 
 ---
 
@@ -189,22 +267,23 @@ This:
 3. Changes to the worktree directory
 4. Execs `claude`
 
-### Bootstrap Sequence
+### Full Bootstrap Sequence
 
-For a fresh setup:
+For a fresh setup (recommended order):
 
 ```bash
 cd /path/to/Bid-Euchre                          # Main checkout
 .claude/scripts/start-role-worktree.sh           # Create all 3 worktrees
-.claude/scripts/start-agent-role.sh author       # Start author session
+.claude/tmux/agent-ops-session.sh                # Start persistent tmux session
+code Bid-Euchre-agent-audit.code-workspace       # Open VS Code audit surface
 ```
 
-For an existing setup (e.g., after restart):
+For resuming after a restart:
 
 ```bash
 cd /path/to/Bid-Euchre
 .claude/scripts/start-role-worktree.sh author    # Update to latest main
-.claude/scripts/start-agent-role.sh author       # Resume
+.claude/tmux/agent-ops-session.sh                # Reattach to existing session
 ```
 
 ---
@@ -225,11 +304,11 @@ Each active session writes metadata to
 See `.claude/runtime/session_metadata/README.md` for the full schema.
 
 Key fields:
-- `session_id` — UUID identifying this session
-- `role` — Which role this session assumes
-- `task` — Short description of current work
-- `plan_link` — Path to the governing or session plan
-- `last_checkpoint` — Free-text progress marker
+- `session_id` -- UUID identifying this session
+- `role` -- Which role this session assumes
+- `task` -- Short description of current work
+- `plan_link` -- Path to the governing or session plan
+- `last_checkpoint` -- Free-text progress marker
 
 ### Session Resume
 
@@ -255,10 +334,6 @@ Task state provides:
 - **Validation contract:** What commands to run and what "done" means
 - **Auditability:** The user can inspect task state from VS Code at any time
 
-### Schema
-
-See `.claude/runtime/task_state/README.md` for the full schema.
-
 ### When to Create a Task Record
 
 Create a task record when:
@@ -283,69 +358,6 @@ pending --> in_progress --> completed
                 |
                 +--> abandoned
 ```
-
-1. **Create:** Agent creates the task record with items, validation steps,
-   and completion criteria before starting work.
-2. **Execute:** Agent works through items sequentially, updating status as
-   each completes.
-3. **Validate:** Agent runs all validation steps.
-4. **Complete:** Agent sets status to `completed` only when all criteria are
-   met.
-
-### Blocked Tasks
-
-When a task cannot proceed:
-1. Set status to `blocked`
-2. Record the blocker in `blocked_by`
-3. Attempt the next non-dependent item if possible
-4. Escalate if all items depend on the blocker
-
-This aligns with the escalation protocol in `CLAUDE.md` "Escalating Blockers."
-
----
-
-## Planning Contract
-
-Non-trivial tasks must begin with a planning phase that is logically separate
-from execution. This is a firm convention, not a suggestion.
-
-### What Constitutes "Non-Trivial"
-
-- More than 3 files changed
-- New code (not just running existing scripts)
-- Design choices not specified in the governing plan
-- Cross-module changes
-- Changes to contracts (rules, logging, metrics, scoring)
-
-### Planning Phase
-
-The planner (which may be the same agent in planning mode) produces:
-
-1. **File plan** — Which files will be created, modified, or deleted
-2. **Task list** — Bounded, ordered list of items
-3. **Validation plan** — Which tests and checks to run
-4. **Completion criteria** — What "done" looks like
-
-The plan is recorded as either:
-- A session plan file in `plans/sessions/` (for standalone work)
-- A sub-plan under the governing plan (for initiative work)
-- A task state record in `.claude/runtime/task_state/`
-
-### Execution Phase
-
-During execution, the agent:
-- Works through the task list in order
-- Updates task state as items complete
-- May revise the plan, but only through explicit updates to the plan file
-  or task state (not ad hoc scope expansion)
-- Runs validation at checkpoints, not just at the end
-
-### Relationship to Governing Plans
-
-For work within a governed initiative (see `AGENTS.md` section 12), the
-planning contract is already enforced through the governing plan, checkpoints,
-and sub-plan registry. The task state system provides the same structure for
-standalone work that does not belong to a governed initiative.
 
 ---
 
@@ -382,47 +394,6 @@ git worktree remove ../Bid-Euchre-<name>
 git worktree prune
 ```
 
-### What Not To Do
-
-- Do not `rm -rf` worktree directories directly (interim deny rules block
-  this; future hooks will redirect to proper cleanup).
-- Do not remove persistent role worktrees.
-- Do not remove worktrees with active sessions.
-
----
-
-## Gitignored State Sharing
-
-Worktrees created by `git worktree add` share the same `.git` directory as
-the main checkout. This means:
-
-- **Shared:** Git config, hooks, branches, remotes, refs
-- **Shared:** `.claude/` directory contents at the repo root (because
-  worktrees see the same working tree files at their own paths)
-- **Not shared:** Working tree files (each worktree has its own copy)
-- **Not shared:** Unstaged changes, stashes (per-worktree)
-
-### Runtime State
-
-The `.claude/runtime/` directory is gitignored and exists only in the main
-checkout's working tree. Worktrees that need to read runtime state should
-reference the main checkout path, which is discoverable from the registry
-metadata.
-
-However, because worktrees share the same `.git` directory, scripts running
-in any worktree can locate the main checkout:
-
-```bash
-# From any worktree, find the main checkout
-MAIN_DIR="$(git worktree list | head -1 | awk '{print $1}')"
-```
-
-### CLAUDE.md and Rules
-
-The `CLAUDE.md` file and `.claude/rules/` directory are committed files, so
-they are available in every worktree automatically. Changes to these files
-in one worktree are visible in others after commit and checkout/rebase.
-
 ---
 
 ## Relationship to Existing Systems
@@ -439,15 +410,6 @@ complements it by defining:
 The two systems are compatible: an agent following the Agent Execution Protocol
 operates within a role worktree bootstrapped by this workflow.
 
-### Governing Plan Framework (AGENTS.md section 12)
-
-The governing plan framework defines the plan hierarchy for major initiatives.
-This workflow document does not replace or duplicate it. Instead:
-- Governed initiative work uses the governing plan for scope and sequencing
-- This workflow provides the session/task infrastructure underneath
-- The `plan_link` field in session and task metadata connects to governing
-  plan steps
-
 ### Autonomous Review Loop (AUTONOMOUS_REVIEW_LOOP.md)
 
 The review loop runs from the main checkout (not from role worktrees). It
@@ -457,11 +419,11 @@ automated review loop.
 
 ### Existing Worktree Scripts
 
-- `claude-worktree.sh` — Creates ephemeral worktrees for branch-per-PR work.
+- `claude-worktree.sh` -- Creates ephemeral worktrees for branch-per-PR work.
   Still valid and useful. Not replaced by role worktree scripts.
-- `worktree-guard.sh` — Blocks edits from main checkout. Still active.
-- `worktree-reminder.sh` — Reminds about worktree convention. Still active.
-- `clean_worktrees.sh` — Cleans worktrees with deleted remote branches.
+- `worktree-guard.sh` -- Blocks edits from main checkout. Still active.
+- `worktree-reminder.sh` -- Reminds about worktree convention. Still active.
+- `clean_worktrees.sh` -- Cleans worktrees with deleted remote branches.
   Complements (does not replace) the lifecycle cleanup in this workflow.
 
 ---
@@ -470,12 +432,6 @@ automated review loop.
 
 The following capabilities are planned for subsequent PRs and are documented
 here for context. They are not yet implemented.
-
-### PR-2: Persistent Sessions (tmux)
-
-- tmux session layout with windows per role
-- VS Code audit workspace spanning all worktrees
-- Deterministic session startup and resume
 
 ### PR-3: Operator CLI (ops.py)
 
