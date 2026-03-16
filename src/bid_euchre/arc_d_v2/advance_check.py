@@ -99,8 +99,38 @@ def _read_csv_aggregate(
     return None
 
 
-def evaluate_hypothesis(hyp: dict, tables_dir: Path) -> dict:
+def _extract_model_refs(hyp: dict) -> set[str]:
+    """Extract model names referenced in a hypothesis's filters.
+
+    Checks ``source_filter``, ``comparator_filter``, and ``anchor_filter``
+    for a ``"model"`` key and returns the set of referenced model names.
+    """
+    refs: set[str] = set()
+    for key in ("source_filter", "comparator_filter", "anchor_filter"):
+        filt = hyp.get(key)
+        if isinstance(filt, dict) and "model" in filt:
+            refs.add(filt["model"])
+    return refs
+
+
+def evaluate_hypothesis(
+    hyp: dict,
+    tables_dir: Path,
+    active_models: set[str] | None = None,
+) -> dict:
     """Evaluate a single hypothesis against table data.
+
+    Parameters
+    ----------
+    hyp : dict
+        Hypothesis definition from ``hypotheses.json``.
+    tables_dir : Path
+        Directory containing the CSV tables to evaluate against.
+    active_models : set[str] | None
+        When provided, any hypothesis referencing a model NOT in this set
+        is automatically SKIPped (returned as ``pass=True`` with a note).
+        This supports roster trimming (LA-4) without modifying hypothesis
+        files.
 
     Returns a hypothesis check result dict.
     """
@@ -114,6 +144,17 @@ def evaluate_hypothesis(hyp: dict, tables_dir: Path) -> dict:
         "surprise_threshold": None,
         "error": None,
     }
+
+    # Roster-aware SKIP (LA-4): if a referenced model is not active, skip
+    if active_models is not None:
+        model_refs = _extract_model_refs(hyp)
+        excluded = model_refs - active_models
+        if excluded:
+            result["pass"] = True
+            result["note"] = (
+                f"SKIP: model(s) {', '.join(sorted(excluded))} not in active roster"
+            )
+            return result
 
     source_table = hyp.get("source_table")
     source_column = hyp.get("source_column")
@@ -503,14 +544,25 @@ def generate_advance_check(
     tables_dir: Path,
     mode: str,
     rung: str,
+    active_models: set[str] | None = None,
 ) -> dict:
-    """Generate the advance check JSON."""
+    """Generate the advance check JSON.
+
+    Parameters
+    ----------
+    active_models : set[str] | None
+        When provided, hypotheses referencing models outside this set are
+        automatically SKIPped (LA-4 roster trimming).
+    """
     # Load hypotheses
     hyp_data = json.loads(hypotheses_path.read_text())
     hypotheses = hyp_data.get("hypotheses", [])
 
     # Evaluate hypotheses
-    hypothesis_checks = [evaluate_hypothesis(h, tables_dir) for h in hypotheses]
+    hypothesis_checks = [
+        evaluate_hypothesis(h, tables_dir, active_models=active_models)
+        for h in hypotheses
+    ]
 
     # Sufficiency checks
     sufficiency_checks = check_sufficiency(tables_dir, rung)

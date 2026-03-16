@@ -16,6 +16,7 @@ import pytest
 
 from bid_euchre.arc_d_v2 import orchestration as run_rung_mod
 from bid_euchre.arc_d_v2.advance_check import (
+    _extract_model_refs,
     check_canaries,
     check_sufficiency,
     compute_decision,
@@ -29,6 +30,7 @@ from bid_euchre.arc_d_v2.orchestration import (
     STEP_FUNCTIONS,
     compute_fingerprint,
     handle_rerun,
+    load_roster,
 )
 from bid_euchre.arc_d_v2.schemas import (
     DAG_DOWNSTREAM,
@@ -1748,3 +1750,282 @@ class TestH2HRosterIncludesAnchor:
 
         anchor = next(e for e in entries if e["name"] == "anchor_hybrid_r0_full")
         assert anchor["class_name"] == "HybridOLSaBidder"
+
+
+# ============================================================================
+# Roster Overlay (LA-4) Tests
+# ============================================================================
+
+
+class TestLoadRosterModeOverlay:
+    """Tests for mode-aware load_roster() with FULL roster trimming (LA-4)."""
+
+    def _setup_roster_files(self, tmp_path):
+        """Create canonical roster and FULL overlay files under tmp_path."""
+        plans_dir = tmp_path / "plans" / "arc_d_v2"
+        plans_dir.mkdir(parents=True)
+
+        roster = {
+            "schema_version": "roster_v1",
+            "lineage_id": "arc_d_v2",
+            "models": [
+                {"name": "gbt_av", "class": "GBTActionValueBidder", "trainable": True},
+                {
+                    "name": "selected_two_stage_av",
+                    "class": "TwoStageActionValueBidder",
+                    "trainable": True,
+                },
+                {
+                    "name": "full_ols_av",
+                    "class": "ActionValueBidder",
+                    "trainable": True,
+                },
+                {
+                    "name": "constrained_ols_av",
+                    "class": "ActionValueBidder",
+                    "trainable": True,
+                },
+                {
+                    "name": "selected_ols_av",
+                    "class": "ActionValueBidder",
+                    "trainable": True,
+                },
+                {
+                    "name": "modeloespecifico",
+                    "class": "ModeloEspecifico",
+                    "trainable": False,
+                    "category": "heuristic",
+                },
+                {
+                    "name": "stricthellraiser",
+                    "class": "StrictHellRaiser",
+                    "trainable": False,
+                    "category": "legacy_baseline",
+                },
+                {
+                    "name": "rankthetank",
+                    "class": "RanktheTank",
+                    "trainable": False,
+                    "category": "legacy_baseline",
+                },
+            ],
+            "anchor": {
+                "name": "anchor_hybrid_r0_full",
+                "artifact": "data/artifacts/arc_d/r0/hybrid_r0_full.json",
+                "class": "HybridOLSaBidder",
+            },
+        }
+        (plans_dir / "roster.json").write_text(json.dumps(roster))
+
+        full_overlay = {
+            "exclude": [
+                "constrained_ols_av",
+                "selected_ols_av",
+                "stricthellraiser",
+                "rankthetank",
+            ]
+        }
+        (plans_dir / "roster_overlay_full.json").write_text(json.dumps(full_overlay))
+
+        # Create rung subdir (for _plans_dir)
+        (plans_dir / "r0").mkdir()
+
+        return plans_dir
+
+    def test_load_roster_full_mode_trims_to_four(self, tmp_path):
+        """load_roster(rung, mode='full') returns only 4 active models."""
+        self._setup_roster_files(tmp_path)
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            roster = load_roster("r0", mode="full")
+        active = roster.all_active_models()
+        active_names = {m.name for m in active}
+        assert active_names == {
+            "gbt_av",
+            "selected_two_stage_av",
+            "full_ols_av",
+            "modeloespecifico",
+        }
+        assert len(active) == 4
+
+    def test_load_roster_quick_mode_returns_all(self, tmp_path):
+        """load_roster(rung, mode='quick') returns all 8 models."""
+        self._setup_roster_files(tmp_path)
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            roster = load_roster("r0", mode="quick")
+        active = roster.all_active_models()
+        assert len(active) == 8
+
+    def test_load_roster_no_mode_returns_all(self, tmp_path):
+        """load_roster(rung) with no mode returns all 8 models (backward compat)."""
+        self._setup_roster_files(tmp_path)
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            roster = load_roster("r0")
+        active = roster.all_active_models()
+        assert len(active) == 8
+
+    def test_load_roster_full_excluded_models_still_in_roster(self, tmp_path):
+        """Excluded models remain in roster.models but with status='excluded'."""
+        self._setup_roster_files(tmp_path)
+        with patch.object(run_rung_mod, "_repo_root", return_value=tmp_path):
+            roster = load_roster("r0", mode="full")
+        excluded_names = {m.name for m in roster.models if m.status == "excluded"}
+        assert excluded_names == {
+            "constrained_ols_av",
+            "selected_ols_av",
+            "stricthellraiser",
+            "rankthetank",
+        }
+
+
+# ============================================================================
+# Hypothesis SKIP with active_models Tests
+# ============================================================================
+
+
+class TestHypothesisSkipLogic:
+    """Tests for roster-aware SKIP logic in evaluate_hypothesis (LA-4)."""
+
+    def test_skip_when_source_model_excluded(self, tmp_path):
+        """Hypothesis referencing excluded model in source_filter is SKIPped."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [["constrained_ols_av", "pooled", "1.5"]],
+        )
+        hyp = {
+            "id": "H8",
+            "description": "constrained == full OLS",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "constrained_ols_av", "facet": "pooled"},
+            "computation": "value",
+            "expected_bound": {"op": ">", "value": 0.0},
+        }
+        active = {"gbt_av", "selected_two_stage_av", "full_ols_av", "modeloespecifico"}
+        result = evaluate_hypothesis(hyp, tmp_path, active_models=active)
+        assert result["pass"] is True
+        assert "SKIP" in result.get("note", "")
+        assert "constrained_ols_av" in result.get("note", "")
+
+    def test_skip_when_comparator_model_excluded(self, tmp_path):
+        """Hypothesis referencing excluded model in comparator_filter is SKIPped."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [
+                ["full_ols_av", "pooled", "1.5"],
+                ["constrained_ols_av", "pooled", "1.4"],
+            ],
+        )
+        hyp = {
+            "id": "H8",
+            "description": "full vs constrained OLS",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "full_ols_av", "facet": "pooled"},
+            "comparator_filter": {"model": "constrained_ols_av", "facet": "pooled"},
+            "computation": "value - comparator_value",
+            "expected_bound": {"op": ">=", "value": -0.2},
+        }
+        active = {"gbt_av", "selected_two_stage_av", "full_ols_av", "modeloespecifico"}
+        result = evaluate_hypothesis(hyp, tmp_path, active_models=active)
+        assert result["pass"] is True
+        assert "SKIP" in result.get("note", "")
+
+    def test_no_skip_when_all_models_active(self, tmp_path):
+        """Hypothesis with all referenced models active is evaluated normally."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [["gbt_av", "pooled", "1.5"]],
+        )
+        hyp = {
+            "id": "H1",
+            "description": "GBT comparator",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "gbt_av", "facet": "pooled"},
+            "computation": "value",
+            "expected_bound": {"op": ">", "value": 1.0},
+        }
+        active = {"gbt_av", "selected_two_stage_av", "full_ols_av", "modeloespecifico"}
+        result = evaluate_hypothesis(hyp, tmp_path, active_models=active)
+        assert result["pass"] is True
+        assert result["observed"] == 1.5
+        assert "note" not in result
+
+    def test_no_skip_when_active_models_none(self, tmp_path):
+        """When active_models is None, no SKIP logic is applied (backward compat)."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "net_eppd"],
+            [["constrained_ols_av", "pooled", "1.5"]],
+        )
+        hyp = {
+            "id": "H8",
+            "description": "constrained check",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "net_eppd",
+            "source_filter": {"model": "constrained_ols_av", "facet": "pooled"},
+            "computation": "value",
+            "expected_bound": {"op": ">", "value": 1.0},
+        }
+        result = evaluate_hypothesis(hyp, tmp_path, active_models=None)
+        assert result["pass"] is True
+        assert result["observed"] == 1.5
+        assert "note" not in result
+
+    def test_skip_with_no_model_in_filter(self, tmp_path):
+        """Hypothesis without 'model' in filter is never SKIPped."""
+        _write_csv(
+            tmp_path / "comparator_rankings.csv",
+            ["model", "facet", "bid_rate"],
+            [
+                ["gbt_av", "pooled", "0.9"],
+                ["constrained_ols_av", "pooled", "0.8"],
+            ],
+        )
+        hyp = {
+            "id": "H6",
+            "description": "all models bid > 50%",
+            "source_table": "comparator_rankings.csv",
+            "source_column": "bid_rate",
+            "source_filter": {"facet": "pooled"},
+            "computation": "min",
+            "expected_bound": {"op": ">", "value": 0.5},
+        }
+        # Even with active_models set, no model key in filter -> no skip
+        active = {"gbt_av"}
+        result = evaluate_hypothesis(hyp, tmp_path, active_models=active)
+        assert result["pass"] is True
+        assert "note" not in result
+
+
+class TestExtractModelRefs:
+    """Tests for _extract_model_refs helper."""
+
+    def test_source_filter_only(self):
+        hyp = {"source_filter": {"model": "gbt_av", "facet": "pooled"}}
+        assert _extract_model_refs(hyp) == {"gbt_av"}
+
+    def test_source_and_comparator(self):
+        hyp = {
+            "source_filter": {"model": "gbt_av"},
+            "comparator_filter": {"model": "ols_av"},
+        }
+        assert _extract_model_refs(hyp) == {"gbt_av", "ols_av"}
+
+    def test_anchor_filter(self):
+        hyp = {
+            "source_filter": {"model": "gbt_av"},
+            "anchor_filter": {"model": "anchor_hybrid"},
+        }
+        assert _extract_model_refs(hyp) == {"gbt_av", "anchor_hybrid"}
+
+    def test_no_model_key(self):
+        hyp = {"source_filter": {"facet": "pooled"}}
+        assert _extract_model_refs(hyp) == set()
+
+    def test_no_filters(self):
+        hyp = {"id": "H1", "description": "test"}
+        assert _extract_model_refs(hyp) == set()

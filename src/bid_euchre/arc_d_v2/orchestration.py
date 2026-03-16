@@ -200,13 +200,23 @@ def fingerprint_matches(state: RunState, step: str, seed: int, **kwargs) -> bool
 # ---------------------------------------------------------------------------
 
 
-def load_roster(rung: str) -> Roster:
-    """Load lineage roster with optional rung overlay.
+def load_roster(rung: str, mode: str | None = None) -> Roster:
+    """Load lineage roster with optional rung and mode overlays.
 
     Uses the canonical ``Roster.load()`` from ``config.py`` (list format).
 
     Roster file: plans/arc_d_v2/roster.json (lineage-level)
-    Overlay file: plans/arc_d_v2/<rung>/roster_overlay.json (optional)
+    Overlay file: plans/arc_d_v2/<rung>/roster_overlay.json (optional, per-rung)
+    FULL overlay: plans/arc_d_v2/roster_overlay_full.json (optional, LA-4)
+
+    Parameters
+    ----------
+    rung : str
+        Rung identifier (e.g., "r0", "r1").
+    mode : str | None
+        Execution mode ("smoke", "quick", "full"). When ``"full"``, the
+        FULL roster overlay is applied after the rung overlay to trim
+        models that are redundant at FULL scale (see LA-4).
     """
     roster_path = _repo_root() / "plans" / "arc_d_v2" / "roster.json"
     if not roster_path.exists():
@@ -215,6 +225,7 @@ def load_roster(rung: str) -> Roster:
 
     roster = Roster.load(roster_path)
 
+    # Per-rung overlay
     overlay_path = _plans_dir(rung) / "roster_overlay.json"
     if overlay_path.exists():
         overlay = json.loads(overlay_path.read_text())
@@ -237,6 +248,18 @@ def load_roster(rung: str) -> Roster:
                         status=entry.get("status", "active"),
                     )
                 )
+
+    # FULL mode overlay (LA-4: trim redundant models at FULL scale)
+    if mode == "full":
+        full_overlay_path = (
+            _repo_root() / "plans" / "arc_d_v2" / "roster_overlay_full.json"
+        )
+        if full_overlay_path.exists():
+            full_overlay = json.loads(full_overlay_path.read_text())
+            for name in full_overlay.get("exclude", []):
+                for m in roster.models:
+                    if m.name == name:
+                        m.status = "excluded"
 
     return roster
 
@@ -355,7 +378,7 @@ def generate_h2h_roster(
         ...
     ]
     """
-    roster = load_roster(rung)
+    roster = load_roster(rung, mode=mode)
     entries: list[dict] = []
 
     for model in roster.all_active_models():
@@ -411,7 +434,7 @@ def generate_comparator_config(
     - scenarios
     - parameters (n_per, log_level, etc.)
     """
-    roster = load_roster(rung)
+    roster = load_roster(rung, mode=mode)
 
     bidding_policies: list[dict] = []
     for model in roster.all_active_models():
@@ -706,7 +729,7 @@ def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
 def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
     """Step 2: Train all roster models for one seed."""
     rung = state.rung
-    roster = load_roster(rung)
+    roster = load_roster(rung, mode=state.mode)
     trainable = roster.trainable_models()
 
     _append_log(rung, {"event": "step_start", "step": "2", "seed": seed})
@@ -862,7 +885,7 @@ def _collect_training_artifacts(
     """
     import shutil
 
-    roster = load_roster(state.rung)
+    roster = load_roster(state.rung, mode=state.mode)
     for model in roster.trainable_models():
         output_dir = (
             _repo_root()
