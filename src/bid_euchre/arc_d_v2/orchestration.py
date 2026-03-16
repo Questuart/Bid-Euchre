@@ -82,6 +82,7 @@ STEP_SCRIPTS: dict[str, list[str]] = {
     "6": ["scripts/internal/generate_rung_tables.py"],
     "7": [
         "scripts/internal/generate_rung_charts.py",
+        "scripts/internal/generate_interpretability_charts.py",
         "scripts/internal/generate_rung_report.py",
         "scripts/internal/generate_evidence_manifest.py",
     ],
@@ -1007,15 +1008,7 @@ def execute_step_3b(state: RunState, seed: int, dry_run: bool = False) -> bool:
         return True
 
     rung_artifacts_dir = _repo_root() / "data" / "artifacts" / "arc_d_v2" / rung
-    report_dir = (
-        _repo_root()
-        / "docs"
-        / "04_reports"
-        / "arc_d_v2"
-        / rung
-        / "canonical"
-        / "tables"
-    )
+    report_dir = _repo_root() / "docs" / "04_reports" / "arc_d_v2" / rung / "canonical"
 
     cmd = [
         "uv",
@@ -1429,6 +1422,36 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
             logger.info("Step 7: would run charts: %s", " ".join(cmd))
     else:
         logger.warning("Step 7: generate_rung_charts.py not found")
+
+    # 7a2: Interpretability charts (from chart_data CSVs produced by step 3b)
+    interp_chart_script = (
+        _repo_root() / "scripts" / "internal" / "generate_interpretability_charts.py"
+    )
+    if interp_chart_script.exists():
+        chart_data_dir = report_dir / "chart_data"
+        if chart_data_dir.exists():
+            cmd = [
+                "uv",
+                "run",
+                "python",
+                str(interp_chart_script),
+                "--chart-data-dir",
+                str(chart_data_dir),
+                "--output-dir",
+                str(report_dir / "charts"),
+            ]
+            if not dry_run:
+                ok, error = run_subprocess(cmd, "7", rung, "interp_charts")
+                if not ok:
+                    logger.warning(
+                        "Interpretability chart generation failed: %s", error[:200]
+                    )
+            else:
+                logger.info("Step 7: would run interp charts: %s", " ".join(cmd))
+        else:
+            logger.info(
+                "Step 7: chart_data/ not found; skipping interpretability charts"
+            )
 
     # 7b: Report generation
     report_script = _repo_root() / "scripts" / "internal" / "generate_rung_report.py"
