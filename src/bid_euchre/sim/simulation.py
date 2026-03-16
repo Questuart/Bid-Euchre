@@ -113,6 +113,7 @@ def play_single_hand(
                     dealer_index = random.Random().randrange(4)
 
         current_high_bid = 0
+        winning_bid_action: Optional[BidAction] = None  # Track full winning bid
         winning_bidder = None
         final_contract = None
         final_trump = None
@@ -139,9 +140,25 @@ def play_single_hand(
                 if bidding_collector is not None:
                     bidding_collector.record_decision(obs, bid_action, deal_id)
 
+                # Determine legality using overcall hierarchy
+                is_dealer = player_idx == dealer_index
+                if bid_action.is_pass():
+                    _is_legal = True
+                elif winning_bid_action is None:
+                    _is_legal = True  # First bid is always legal
+                elif bid_action.overcalls(winning_bid_action):
+                    _is_legal = True
+                elif (
+                    is_dealer
+                    and bid_action.bid_type in {"moon", "loner"}
+                    and winning_bid_action.bid_type == bid_action.bid_type
+                ):
+                    _is_legal = True  # Dealer takeover
+                else:
+                    _is_legal = False
+
                 # Fire bidding decision event if handler registered
                 if on_bidding_decision is not None:
-                    is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
                     on_bidding_decision(
                         BiddingDecisionEvent(
                             deal_id=deal_id,
@@ -153,14 +170,26 @@ def play_single_hand(
                             current_high_bid=current_high_bid,
                             bid_amount=bid_action.n,
                             bid_contract=bid_action.contract,
-                            is_legal=is_legal,
+                            is_legal=_is_legal,
                         )
                     )
 
-                # If bid is pass or <= current high bid, treat as pass
-                is_effective_pass = (
-                    bid_action.is_pass() or bid_action.n <= current_high_bid
-                )
+                # Determine if this bid is an effective pass
+                if bid_action.is_pass():
+                    is_effective_pass = True
+                elif winning_bid_action is None:
+                    is_effective_pass = False  # First bid always accepted
+                elif bid_action.overcalls(winning_bid_action):
+                    is_effective_pass = False
+                elif (
+                    is_dealer
+                    and bid_action.bid_type in {"moon", "loner"}
+                    and winning_bid_action.bid_type == bid_action.bid_type
+                ):
+                    is_effective_pass = False  # Dealer takeover
+                else:
+                    is_effective_pass = True  # Does not overcall
+
                 if is_effective_pass:
                     _transcript.append(
                         {
@@ -182,9 +211,12 @@ def play_single_hand(
                         "tricks_bid": bid_action.n,
                         "contract_type": _ctype,
                         "trump": _trump,
+                        "bid_type": bid_action.bid_type,
                     }
                 )
                 current_high_bid = bid_action.n
+
+                winning_bid_action = bid_action
                 winning_bidder = player_idx
                 final_contract, final_trump = _ctype, _trump
         elif bidding_policy is not None:
@@ -207,9 +239,25 @@ def play_single_hand(
                 if bidding_collector is not None:
                     bidding_collector.record_decision(obs, bid_action, deal_id)
 
+                # Determine legality using overcall hierarchy
+                is_dealer = player_idx == dealer_index
+                if bid_action.is_pass():
+                    _is_legal = True
+                elif winning_bid_action is None:
+                    _is_legal = True
+                elif bid_action.overcalls(winning_bid_action):
+                    _is_legal = True
+                elif (
+                    is_dealer
+                    and bid_action.bid_type in {"moon", "loner"}
+                    and winning_bid_action.bid_type == bid_action.bid_type
+                ):
+                    _is_legal = True  # Dealer takeover
+                else:
+                    _is_legal = False
+
                 # Fire bidding decision event if handler registered
                 if on_bidding_decision is not None:
-                    is_legal = bid_action.is_pass() or bid_action.n > current_high_bid
                     on_bidding_decision(
                         BiddingDecisionEvent(
                             deal_id=deal_id,
@@ -221,14 +269,26 @@ def play_single_hand(
                             current_high_bid=current_high_bid,
                             bid_amount=bid_action.n,
                             bid_contract=bid_action.contract,
-                            is_legal=is_legal,
+                            is_legal=_is_legal,
                         )
                     )
 
-                # If bid is pass or <= current high bid, treat as pass
-                is_effective_pass = (
-                    bid_action.is_pass() or bid_action.n <= current_high_bid
-                )
+                # Determine if this bid is an effective pass
+                if bid_action.is_pass():
+                    is_effective_pass = True
+                elif winning_bid_action is None:
+                    is_effective_pass = False
+                elif bid_action.overcalls(winning_bid_action):
+                    is_effective_pass = False
+                elif (
+                    is_dealer
+                    and bid_action.bid_type in {"moon", "loner"}
+                    and winning_bid_action.bid_type == bid_action.bid_type
+                ):
+                    is_effective_pass = False  # Dealer takeover
+                else:
+                    is_effective_pass = True
+
                 if is_effective_pass:
                     _transcript.append(
                         {
@@ -250,9 +310,12 @@ def play_single_hand(
                         "tricks_bid": bid_action.n,
                         "contract_type": _ctype,
                         "trump": _trump,
+                        "bid_type": bid_action.bid_type,
                     }
                 )
                 current_high_bid = bid_action.n
+
+                winning_bid_action = bid_action
                 winning_bidder = player_idx
                 final_contract, final_trump = _ctype, _trump
         else:
