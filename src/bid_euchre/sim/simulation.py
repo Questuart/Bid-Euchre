@@ -52,6 +52,7 @@ def play_single_hand(
     str,
     Optional[str],
     Optional[List[Dict[str, Any]]],
+    str,
 ]:
     """
     Play one full 10-trick hand.
@@ -60,7 +61,7 @@ def play_single_hand(
     The winner of the bid chooses the contract and leads the first trick.
 
     Returns:
-        (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump, auction_transcript)
+        (t0, t1, scores, features, leader, hands, bid, dealer_pos, bidder_pos, final_contract, final_trump, auction_transcript, bid_type)
     """
     # Resolve strategy-per-seat.
     if strategies is not None:
@@ -439,6 +440,7 @@ def play_single_hand(
                 dummy_ctype,
                 None,
                 _transcript,
+                "regular",
             )
 
         contract_type = final_contract
@@ -464,6 +466,10 @@ def play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
             )
+        # Extract bid_type from winning bid action (if available)
+        _bid_type = (
+            winning_bid_action.bid_type if winning_bid_action is not None else "regular"
+        )
     else:
         # Contract was fixed, no bid was made
         current_high_bid = None
@@ -471,6 +477,7 @@ def play_single_hand(
         dealer_index = None
         bidder_position = None
         _transcript = None  # null distinguishes "no bidding mode" from "all passed"
+        _bid_type = "regular"
 
     # Validation (now that contract is decided)
     if contract_type == "suit" and trump_suit is None:
@@ -655,6 +662,7 @@ def play_single_hand(
         contract_type,
         trump_suit,
         _transcript,
+        _bid_type,
     )
 
 
@@ -781,6 +789,7 @@ def simulate_many_hands(
                 actual_contract,
                 actual_trump,
                 auction_transcript,
+                bid_type,
             ) = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
@@ -809,6 +818,7 @@ def simulate_many_hands(
                 actual_contract,
                 actual_trump,
                 auction_transcript,
+                bid_type,
             ) = play_single_hand(
                 contract_type=contract_type,
                 trump_suit=trump_suit,
@@ -854,6 +864,7 @@ def simulate_many_hands(
                 redeal_flag=redeal_flag,
                 made_bid=made_bid,
                 auction_transcript=auction_transcript,
+                bid_type=bid_type,
             )
 
         # Fire HandEndEvent if hooks registered
@@ -895,7 +906,9 @@ def simulate_many_hands(
             ties += 1
 
         # Compute and track points-based scoring
-        points_team0, points_team1 = compute_points(winning_bid, bidder_pos, t0, t1)
+        points_team0, points_team1 = compute_points(
+            winning_bid, bidder_pos, t0, t1, bid_type=bid_type
+        )
         total_points_team0 += points_team0
         total_points_team1 += points_team1
         dist_points_team0[points_team0] = dist_points_team0.get(points_team0, 0) + 1

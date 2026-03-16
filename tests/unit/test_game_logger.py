@@ -15,9 +15,9 @@ from bid_euchre.logging.game_logger import (
 )
 
 
-def test_schema_version_is_7():
-    """Schema version must be 7 after PR B-2 auction_transcript addition."""
-    assert SCHEMA_VERSION == 7
+def test_schema_version_is_8():
+    """Schema version must be 8 after v8 moon/loner fields addition."""
+    assert SCHEMA_VERSION == 8
 
 
 def test_hand_end_record_has_v6_fields():
@@ -65,7 +65,7 @@ def test_log_hand_end_writes_v6_fields(tmp_path):
 
     records = [json.loads(line) for line in open(log_path)]
     hand_end = next(r for r in records if r.get("event") == "hand_end")
-    assert hand_end["schema_version"] == 7
+    assert hand_end["schema_version"] == 8
     assert hand_end["redeal_flag"] is False
     assert hand_end["made_bid"] is True
 
@@ -89,7 +89,7 @@ def test_log_hand_end_null_v6_fields_when_not_provided(tmp_path):
 
     records = [json.loads(line) for line in open(log_path)]
     hand_end = next(r for r in records if r.get("event") == "hand_end")
-    assert hand_end["schema_version"] == 7
+    assert hand_end["schema_version"] == 8
     assert hand_end["redeal_flag"] is None
     assert hand_end["made_bid"] is None
 
@@ -199,7 +199,7 @@ def test_log_hand_end_writes_auction_transcript(tmp_path):
 
     records = [json.loads(line) for line in open(log_path)]
     hand_end = next(r for r in records if r.get("event") == "hand_end")
-    assert hand_end["schema_version"] == 7
+    assert hand_end["schema_version"] == 8
     assert hand_end["auction_transcript"] == transcript
 
 

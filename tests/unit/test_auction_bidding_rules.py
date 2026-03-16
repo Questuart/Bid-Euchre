@@ -50,6 +50,7 @@ class TestAuctionBiddingRules:
             final_contract,
             final_trump,
             _,
+            _,
         ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
@@ -108,6 +109,7 @@ class TestAuctionBiddingRules:
             bidder_pos,
             final_contract,
             final_trump,
+            _,
             _,
         ) = play_single_hand(
             contract_type=None,
@@ -170,6 +172,7 @@ class TestAuctionBiddingRules:
             bidder_pos,
             final_contract,
             final_trump,
+            _,
             _,
         ) = play_single_hand(
             contract_type=None,
@@ -295,6 +298,7 @@ class TestAuctionBiddingRules:
             final_contract,
             final_trump,
             _,
+            _,
         ) = play_single_hand(
             contract_type=None,
             bidding_policy=bidding_policy,
@@ -383,6 +387,7 @@ class TestAuctionBiddingRules:
                 final_contract,
                 final_trump,
                 _,
+                _,
             ) = play_single_hand(
                 contract_type=None,
                 bidding_policy=bidding_policy,
@@ -441,6 +446,7 @@ class TestAuctionBiddingRules:
             bidder_pos,
             final_contract,
             final_trump,
+            _,
             _,
         ) = play_single_hand(
             contract_type=None,
@@ -785,7 +791,7 @@ class TestAuctionMoonLonerIntegration:
         policy = MoonBidder()
         hands = self._fixed_hands()
 
-        _, _, _, _, leader, _, bid, _, bidder_pos, contract, trump, transcript = (
+        _, _, _, _, leader, _, bid, _, bidder_pos, contract, trump, transcript, _ = (
             play_single_hand(
                 contract_type=None,
                 bidding_policy=policy,
@@ -813,7 +819,7 @@ class TestAuctionMoonLonerIntegration:
         policy = LonerBidder()
         hands = self._fixed_hands()
 
-        _, _, _, _, leader, _, bid, _, bidder_pos, contract, trump, _ = (
+        _, _, _, _, leader, _, bid, _, bidder_pos, contract, trump, _, _ = (
             play_single_hand(
                 contract_type=None,
                 bidding_policy=policy,
@@ -840,7 +846,7 @@ class TestAuctionMoonLonerIntegration:
         policy = RegularAfterMoon()
         hands = self._fixed_hands()
 
-        _, _, _, _, _, _, _, _, bidder_pos, contract, trump, transcript = (
+        _, _, _, _, _, _, _, _, bidder_pos, contract, trump, transcript, _ = (
             play_single_hand(
                 contract_type=None,
                 bidding_policy=policy,
@@ -872,7 +878,7 @@ class TestAuctionMoonLonerIntegration:
         hands = self._fixed_hands()
 
         # Dealer is seat 2, LOD order: [3, 0, 1, 2]
-        _, _, _, _, _, _, _, _, bidder_pos, contract, trump, _ = play_single_hand(
+        _, _, _, _, _, _, _, _, bidder_pos, contract, trump, _, _ = play_single_hand(
             contract_type=None,
             bidding_policy=policy,
             hands=hands,
@@ -897,7 +903,7 @@ class TestAuctionMoonLonerIntegration:
         policy = DealerTakeoverLoner()
         hands = self._fixed_hands()
 
-        _, _, _, _, _, _, _, _, bidder_pos, contract, trump, _ = play_single_hand(
+        _, _, _, _, _, _, _, _, bidder_pos, contract, trump, _, _ = play_single_hand(
             contract_type=None,
             bidding_policy=policy,
             hands=hands,
@@ -921,7 +927,7 @@ class TestAuctionMoonLonerIntegration:
         policy = NonDealerMoonMatch()
         hands = self._fixed_hands()
 
-        _, _, _, _, _, _, _, _, bidder_pos, _, trump, transcript = play_single_hand(
+        _, _, _, _, _, _, _, _, bidder_pos, _, trump, transcript, _ = play_single_hand(
             contract_type=None,
             bidding_policy=policy,
             hands=hands,
@@ -949,7 +955,7 @@ class TestAuctionMoonLonerIntegration:
         policies = [MoonBidder(), PassBidder(), PassBidder(), PassBidder()]
         hands = self._fixed_hands()
 
-        _, _, _, _, _, _, bid, _, bidder_pos, contract, trump, _ = play_single_hand(
+        _, _, _, _, _, _, bid, _, bidder_pos, contract, trump, _, _ = play_single_hand(
             contract_type=None,
             bidding_policies=policies,
             hands=hands,
@@ -972,7 +978,7 @@ class TestAuctionMoonLonerIntegration:
         policy = MoonBidder()
         hands = self._fixed_hands()
 
-        *_, transcript = play_single_hand(
+        *_, transcript, _bid_type = play_single_hand(
             contract_type=None,
             bidding_policy=policy,
             hands=hands,
@@ -996,7 +1002,7 @@ class TestAuctionMoonLonerIntegration:
         policy = MoonHighBidder()
         hands = self._fixed_hands()
 
-        _, _, _, _, _, _, bid, _, bidder_pos, contract, trump, _ = play_single_hand(
+        _, _, _, _, _, _, bid, _, bidder_pos, contract, trump, _, _ = play_single_hand(
             contract_type=None,
             bidding_policy=policy,
             hands=hands,
@@ -1019,7 +1025,7 @@ class TestAuctionMoonLonerIntegration:
         policy = MoonLowBidder()
         hands = self._fixed_hands()
 
-        _, _, _, _, _, _, bid, _, bidder_pos, contract, trump, _ = play_single_hand(
+        _, _, _, _, _, _, bid, _, bidder_pos, contract, trump, _, _ = play_single_hand(
             contract_type=None,
             bidding_policy=policy,
             hands=hands,

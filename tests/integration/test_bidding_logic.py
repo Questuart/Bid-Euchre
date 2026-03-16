@@ -64,7 +64,7 @@ def test_misdeal_logic():
     # RandomLegalStrategy always returns 0 for decide_bid (default)
     strategies = [RandomLegalStrategy() for _ in range(4)]
 
-    t0, t1, scores, feats, leader, hands, bid, _, _, _, _, _ = play_single_hand(
+    t0, t1, scores, feats, leader, hands, bid, _, _, _, _, _, _ = play_single_hand(
         contract_type=None, strategies=strategies
     )
 
@@ -87,7 +87,7 @@ def test_artifact_bidder_initial_bid():
     ]
 
     # Play hand with contract_type=None to trigger bidding
-    t0, t1, _, _, leader, _, bid, _, _, _, _, _ = play_single_hand(
+    t0, t1, _, _, leader, _, bid, _, _, _, _, _, _ = play_single_hand(
         contract_type=None, strategies=strategies, initial_leader=0
     )
 
@@ -108,7 +108,7 @@ def test_bid_winner_leads():
         RandomLegalStrategy(),
     ]
 
-    t0, t1, _, _, leader, _, bid, _, _, _, _, _ = play_single_hand(
+    t0, t1, _, _, leader, _, bid, _, _, _, _, _, _ = play_single_hand(
         contract_type=None,
         strategies=strategies,
         initial_leader=1,  # make someone else dealer so Seat 0 is LOD

@@ -30,7 +30,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # v5 adds `dealer_position` and `bidder_position` to hand_end records.
 # v6 adds `redeal_flag` and `made_bid` to hand_end records.
 # v7 adds `auction_transcript` to hand_end records.
-SCHEMA_VERSION = 7
+# v8 adds `bid_type`, `exchange_cards_given`, `exchange_cards_received`,
+#    and `sitting_out_seat` to hand_end records.
+SCHEMA_VERSION = 8
 
 
 class LogLevel(Enum):
@@ -70,6 +72,16 @@ class HandEndRecord:
     made_bid: Optional[bool] = None  # True if declaring team made their bid (schema v6)
     auction_transcript: Optional[List[Dict[str, Any]]] = (
         None  # 4-entry list or null (schema v7)
+    )
+    bid_type: Optional[str] = None  # "regular" | "moon" | "loner" or null (schema v8)
+    exchange_cards_given: Optional[List[List[str]]] = (
+        None  # Cards given during moon exchange, each as [suit, rank] (schema v8)
+    )
+    exchange_cards_received: Optional[List[List[str]]] = (
+        None  # Cards received during moon exchange, each as [suit, rank] (schema v8)
+    )
+    sitting_out_seat: Optional[int] = (
+        None  # Seat number sitting out during loner (schema v8)
     )
     timestamp: str = ""
 
@@ -209,6 +221,10 @@ class GameLogger:
         redeal_flag: Optional[bool] = None,
         made_bid: Optional[bool] = None,
         auction_transcript: Optional[List[Dict[str, Any]]] = None,
+        bid_type: Optional[str] = None,
+        exchange_cards_given: Optional[List[Any]] = None,
+        exchange_cards_received: Optional[List[Any]] = None,
+        sitting_out_seat: Optional[int] = None,
     ) -> None:
         """
         Log the completion of a hand.
@@ -230,6 +246,10 @@ class GameLogger:
             redeal_flag: True if all players passed (all-pass redeal) (schema v6+)
             made_bid: True if declaring team made their bid (schema v6+)
             auction_transcript: 4-entry list of per-seat bid actions (schema v7+)
+            bid_type: "regular", "moon", or "loner" (schema v8+)
+            exchange_cards_given: Cards given during moon exchange (schema v8+)
+            exchange_cards_received: Cards received during moon exchange (schema v8+)
+            sitting_out_seat: Seat sitting out during loner (schema v8+)
         """
         if not self.is_enabled:
             return
@@ -238,6 +258,18 @@ class GameLogger:
         hands_json: Optional[List[List[List[str]]]] = None
         if hands is not None:
             hands_json = [[[card.suit, card.rank] for card in hand] for hand in hands]
+
+        # Convert exchange Card objects to [suit, rank] lists
+        exchange_given_json: Optional[List[List[str]]] = None
+        if exchange_cards_given is not None:
+            exchange_given_json = [
+                [card.suit, card.rank] for card in exchange_cards_given
+            ]
+        exchange_received_json: Optional[List[List[str]]] = None
+        if exchange_cards_received is not None:
+            exchange_received_json = [
+                [card.suit, card.rank] for card in exchange_cards_received
+            ]
 
         record = HandEndRecord(
             schema_version=SCHEMA_VERSION,
@@ -260,6 +292,10 @@ class GameLogger:
             redeal_flag=redeal_flag,
             made_bid=made_bid,
             auction_transcript=auction_transcript,
+            bid_type=bid_type,
+            exchange_cards_given=exchange_given_json,
+            exchange_cards_received=exchange_received_json,
+            sitting_out_seat=sitting_out_seat,
             timestamp=self._timestamp(),
         )
         self._write_record(asdict(record))
