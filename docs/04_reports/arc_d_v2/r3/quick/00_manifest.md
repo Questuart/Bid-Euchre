@@ -1,11 +1,14 @@
 # Rung Manifest
 
 **Lineage:** arc_d_v2
-**Rung:** r3
+**Rung:** r3 (moon/loner action space expansion)
+**Evidence tier:** QUICK
+**gate_status:** QUICK-COMPLETE (directional evidence — not a promotion gate)
 **Provenance SHA:** `21c6762391ee414374f5a08dfcd45a0b337e5236`
 **Mode:** QUICK
-**Seeds:** []
+**Seeds:** [42]
 **Anchor:** anchor_hybrid_r0_full
+**Governing plan:** `plans/arc_d_v2/lineage_plan.md`
 
 ## Model Roster
 

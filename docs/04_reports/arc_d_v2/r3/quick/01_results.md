@@ -1,5 +1,7 @@
 # Rung Results Report
 
+<!-- gate_status: QUICK-COMPLETE -->
+
 Generated from QUICK CSV tables and chart PNGs.
 
 ## 1. Data Sanity
