@@ -21,6 +21,7 @@ from pathlib import Path
 from bid_euchre.arc_d_v2.advance_check import (
     generate_advance_check,
 )
+from bid_euchre.arc_d_v2.orchestration import load_roster
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,11 +64,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: Hypotheses file not found: {args.hypotheses}", file=sys.stderr)
         return 1
 
+    # Load roster to determine active models for hypothesis SKIP logic (LA-4)
+    active_models: set[str] | None = None
+    try:
+        roster = load_roster(args.rung, mode=args.mode)
+        active_models = {m.name for m in roster.all_active_models()}
+    except Exception as exc:
+        print(
+            f"WARNING: Could not load roster for {args.rung}/{args.mode}: {exc}",
+            file=sys.stderr,
+        )
+        # Fall through with active_models=None (no SKIP logic, backward compat)
+
     result = generate_advance_check(
         args.hypotheses,
         args.tables_dir,
         args.mode,
         args.rung,
+        active_models=active_models,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
