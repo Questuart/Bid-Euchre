@@ -33,6 +33,7 @@ class TestEndToEndSimulation:
             _,
             _,
             _,
+            _,
         ) = result
 
         # Basic validation

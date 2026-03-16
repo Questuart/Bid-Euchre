@@ -85,3 +85,118 @@ class TestComputePoints:
         points_team0, points_team1 = compute_points(None, None, 10, 0)
         assert points_team0 == 10
         assert points_team1 == 0
+
+    def test_regular_bid_type_default(self):
+        """Regular bid_type (default) leaves existing logic unchanged."""
+        # Explicit "regular" should match default
+        p0, p1 = compute_points(6, 0, 8, 2, bid_type="regular")
+        assert p0 == 8
+        assert p1 == 2
+
+        p0, p1 = compute_points(6, 2, 5, 5, bid_type="regular")
+        assert p0 == -6
+        assert p1 == 5
+
+
+class TestMoonScoring:
+    """Tests for moon bid scoring (bid_type='moon')."""
+
+    def test_moon_make_team0(self):
+        """Moon make: team 0 declares and wins all 10 tricks -> +20."""
+        p0, p1 = compute_points(10, 0, 10, 0, bid_type="moon")
+        assert p0 == 20
+        assert p1 == 0
+
+    def test_moon_make_team1(self):
+        """Moon make: team 1 declares and wins all 10 tricks -> +20."""
+        p0, p1 = compute_points(10, 1, 0, 10, bid_type="moon")
+        assert p0 == 0
+        assert p1 == 20
+
+    def test_moon_fail_team0(self):
+        """Moon fail: team 0 declares but doesn't win all 10 -> -20."""
+        p0, p1 = compute_points(10, 0, 9, 1, bid_type="moon")
+        assert p0 == -20
+        assert p1 == 1
+
+    def test_moon_fail_team1(self):
+        """Moon fail: team 1 declares but doesn't win all 10 -> -20."""
+        p0, p1 = compute_points(10, 3, 3, 7, bid_type="moon")
+        assert p0 == 3
+        assert p1 == -20
+
+    def test_moon_fail_defending_gets_tricks(self):
+        """Moon fail: defending team always gets their tricks won."""
+        p0, p1 = compute_points(10, 2, 5, 5, bid_type="moon")
+        assert p0 == -20
+        assert p1 == 5
+
+    def test_moon_make_defending_zero_tricks(self):
+        """Moon make: defending team gets 0 tricks (since declaring won all 10)."""
+        p0, p1 = compute_points(10, 0, 10, 0, bid_type="moon")
+        assert p0 == 20
+        assert p1 == 0
+
+    def test_moon_bidder_seat2(self):
+        """Moon with bidder on seat 2 (team 0)."""
+        p0, p1 = compute_points(10, 2, 10, 0, bid_type="moon")
+        assert p0 == 20
+        assert p1 == 0
+
+    def test_moon_bidder_seat3(self):
+        """Moon with bidder on seat 3 (team 1)."""
+        p0, p1 = compute_points(10, 3, 2, 8, bid_type="moon")
+        assert p0 == 2
+        assert p1 == -20
+
+
+class TestLonerScoring:
+    """Tests for loner bid scoring (bid_type='loner')."""
+
+    def test_loner_make_team0(self):
+        """Loner make: team 0 declares and wins all 10 tricks -> +40."""
+        p0, p1 = compute_points(10, 0, 10, 0, bid_type="loner")
+        assert p0 == 40
+        assert p1 == 0
+
+    def test_loner_make_team1(self):
+        """Loner make: team 1 declares and wins all 10 tricks -> +40."""
+        p0, p1 = compute_points(10, 1, 0, 10, bid_type="loner")
+        assert p0 == 0
+        assert p1 == 40
+
+    def test_loner_fail_team0(self):
+        """Loner fail: team 0 declares but doesn't win all 10 -> -40."""
+        p0, p1 = compute_points(10, 0, 9, 1, bid_type="loner")
+        assert p0 == -40
+        assert p1 == 1
+
+    def test_loner_fail_team1(self):
+        """Loner fail: team 1 declares but doesn't win all 10 -> -40."""
+        p0, p1 = compute_points(10, 3, 4, 6, bid_type="loner")
+        assert p0 == 4
+        assert p1 == -40
+
+    def test_loner_fail_defending_gets_tricks(self):
+        """Loner fail: defending team always gets their tricks won."""
+        p0, p1 = compute_points(10, 2, 5, 5, bid_type="loner")
+        assert p0 == -40
+        assert p1 == 5
+
+    def test_loner_make_defending_zero_tricks(self):
+        """Loner make: defending team gets 0 tricks."""
+        p0, p1 = compute_points(10, 1, 0, 10, bid_type="loner")
+        assert p0 == 0
+        assert p1 == 40
+
+    def test_loner_bidder_seat2(self):
+        """Loner with bidder on seat 2 (team 0)."""
+        p0, p1 = compute_points(10, 2, 10, 0, bid_type="loner")
+        assert p0 == 40
+        assert p1 == 0
+
+    def test_loner_bidder_seat3(self):
+        """Loner with bidder on seat 3 (team 1)."""
+        p0, p1 = compute_points(10, 3, 3, 7, bid_type="loner")
+        assert p0 == 3
+        assert p1 == -40

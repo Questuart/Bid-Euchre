@@ -356,14 +356,39 @@ Points are awarded per hand as follows:
   - `points_declaring_team = -bid_tricks`
   - `points_defending_team = tricks_defending`
 
-### 6.4 All-pass redeal events
+### 6.4 Moon and loner bid scoring
+
+Moon and loner bids are special bid types that require winning **all 10 tricks** to make.
+The `bid_type` field on a bid action distinguishes these from regular bids.
+
+#### 6.4.1 Moon bid (`bid_type="moon"`)
+
+- **Make** (`tricks_declaring == 10`): `points_declaring_team = +20`
+- **Fail** (`tricks_declaring < 10`): `points_declaring_team = -20`
+- **Defending team** always scores `tricks_defending` (same as regular bids)
+
+#### 6.4.2 Loner bid (`bid_type="loner"`)
+
+- **Make** (`tricks_declaring == 10`): `points_declaring_team = +40`
+- **Fail** (`tricks_declaring < 10`): `points_declaring_team = -40`
+- **Defending team** always scores `tricks_defending` (same as regular bids)
+
+#### 6.4.3 Summary table
+
+| Bid type | Make condition | Make points | Fail points | Defending points |
+|----------|---------------|-------------|-------------|------------------|
+| regular  | tricks >= bid | tricks won  | -bid        | tricks won       |
+| moon     | tricks == 10  | +20         | -20         | tricks won       |
+| loner    | tricks == 10  | +40         | -40         | tricks won       |
+
+### 6.5 All-pass redeal events
 
 If the auction results in an all-pass redeal event (Section 3.5):
 - No tricks are played
 - No points are awarded
 - Declarer/contract fields are null
 
-### 6.5 Placeholder: match scoring (future)
+### 6.6 Placeholder: match scoring (future)
 
 A future experiment mode may aggregate per-hand points into a running match score (e.g., first to target points, fixed number of hands). This is intentionally out of scope for the current phase.
 
