@@ -1,0 +1,10 @@
+id,description,pass,observed,expected_bound,surprise_hit,error
+H1,Partner context improves GBT pooled H2H delta vs anchor,True,0.49,> 0.3,False,
+H2,GBT R1 suit H2H delta exceeds R0 suit delta (partner helps suit bidding),False,0.2704,> 0.5,False,
+H3,GBT R1 suit R-squared exceeds R0 suit R-squared,True,0.6208,> 0.588,False,
+H4,Position features improve first-bidder accuracy (auction_position=0),True,2.1136,> 2.0,False,
+H5,Two-stage model narrows gap vs GBT with partner context,True,-0.3412,> -1.0,False,
+H6,All models bid at least half the time (no pathological passing),True,0.852,> 0.5,False,
+H7,GBT H2H win rate vs anchor exceeds 50%,False,0.4396,> 0.5,True,
+H8,Full OLS approximately equals constrained OLS (feature selection doesn't matter for OLS),True,0.1568,>= -0.2,False,
+H9,ModeloEspecifico heuristic is worst among trained models (sanity check),True,-0.4528,< 0.0,False,
