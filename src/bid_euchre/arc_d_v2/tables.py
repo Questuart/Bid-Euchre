@@ -254,28 +254,101 @@ def generate_model_performance(
     return pd.DataFrame(rows)
 
 
+def _compute_contract_mix(
+    comparator_cis: dict | None, h2h_battery: dict | None
+) -> dict[str, dict[str, float | None]]:
+    """Compute contract-type mix fractions per model from available sources.
+
+    Uses H2H self-play by_contract deal counts when available,
+    falls back to comparator bidders_by_contract if present.
+
+    Returns:
+        dict mapping model name to {"mix_suit": float|None, "mix_high": ..., "mix_low": ...}
+    """
+    result: dict[str, dict[str, float | None]] = {}
+
+    # Prefer H2H self-play by_contract (always has deal counts per contract)
+    if h2h_battery:
+        for _mid, cell in h2h_battery.get("cells", {}).items():
+            if cell.get("bidder_a") != cell.get("bidder_b"):
+                continue  # Only self-play
+            model = cell["bidder_a"]
+            by_contract = cell.get("by_contract", {})
+            if not by_contract:
+                continue
+            total = sum(ct.get("deals_total", 0) for ct in by_contract.values())
+            if total > 0:
+                result[model] = {
+                    "mix_suit": _safe_round(
+                        by_contract.get("suit", {}).get("deals_total", 0) / total
+                    ),
+                    "mix_high": _safe_round(
+                        by_contract.get("high", {}).get("deals_total", 0) / total
+                    ),
+                    "mix_low": _safe_round(
+                        by_contract.get("low", {}).get("deals_total", 0) / total
+                    ),
+                }
+
+    # Fall back to comparator bidders_by_contract if available
+    if comparator_cis and not result:
+        bidders_by_contract = comparator_cis.get("bidders_by_contract", {})
+        if bidders_by_contract:
+            # Collect all models across contract types
+            models = set()
+            for ct_data in bidders_by_contract.values():
+                models.update(ct_data.keys())
+            for model in models:
+                counts = {}
+                for ct in ("suit", "high", "low"):
+                    ct_data = bidders_by_contract.get(ct, {}).get(model, {})
+                    counts[ct] = ct_data.get("deals_total", 0)
+                total = sum(counts.values())
+                if total > 0:
+                    result[model] = {
+                        "mix_suit": _safe_round(counts["suit"] / total),
+                        "mix_high": _safe_round(counts["high"] / total),
+                        "mix_low": _safe_round(counts["low"] / total),
+                    }
+
+    return result
+
+
 def generate_behavior_summary(
     comparator_cis: dict | None = None,
     h2h_battery: dict | None = None,
 ) -> pd.DataFrame:
     """Generate behavior_summary.csv -- pooled behavioral metrics per model.
 
-    Columns: model, net_eppd, eppd, bid_rate, make_rate, cvar_5, net_cvar_5,
-             source
+    Columns: model, net_eppd, eppd, bid_rate, pass_rate, make_rate, cvar_5,
+             net_cvar_5, mix_suit, mix_high, mix_low, source
+
+    Note: avg_bid, bid_std, bid_min, bid_max, and redeal_rate are defined in
+    the reporting contract but are not currently available in comparator_cis or
+    H2H battery artifacts. They are omitted until the source data supports them.
     """
+    contract_mix = _compute_contract_mix(comparator_cis, h2h_battery)
     rows = []
 
     if comparator_cis:
         for name, b in comparator_cis.get("bidders", {}).items():
+            bid_rate = b.get("bid_rate")
+            mix = contract_mix.get(name, {})
             rows.append(
                 {
                     "model": name,
                     "net_eppd": _safe_round(b.get("net_eppd")),
                     "eppd": _safe_round(b.get("eppd")),
-                    "bid_rate": _safe_round(b.get("bid_rate")),
+                    "bid_rate": _safe_round(bid_rate),
+                    "pass_rate": _safe_round(1.0 - bid_rate)
+                    if bid_rate is not None
+                    else None,
                     "make_rate": _safe_round(b.get("make_rate")),
                     "cvar_5": _safe_round(b.get("cvar_5")),
                     "net_cvar_5": _safe_round(b.get("net_cvar_5")),
+                    "mix_suit": mix.get("mix_suit"),
+                    "mix_high": mix.get("mix_high"),
+                    "mix_low": mix.get("mix_low"),
                     "source": "comparator",
                 }
             )
@@ -284,15 +357,24 @@ def generate_behavior_summary(
         for _mid, cell in h2h_battery.get("cells", {}).items():
             if cell.get("bidder_a") != cell.get("bidder_b"):
                 continue  # Only self-play
+            bid_rate = cell.get("bid_rate_a")
+            model = cell["bidder_a"]
+            mix = contract_mix.get(model, {})
             rows.append(
                 {
-                    "model": cell["bidder_a"],
+                    "model": model,
                     "net_eppd": _safe_round(cell.get("fullgame_eppd")),
                     "eppd": None,
-                    "bid_rate": _safe_round(cell.get("bid_rate_a")),
+                    "bid_rate": _safe_round(bid_rate),
+                    "pass_rate": _safe_round(1.0 - bid_rate)
+                    if bid_rate is not None
+                    else None,
                     "make_rate": _safe_round(cell.get("make_rate_a")),
                     "cvar_5": _safe_round(cell.get("fullgame_cvar_5")),
                     "net_cvar_5": None,
+                    "mix_suit": mix.get("mix_suit"),
+                    "mix_high": mix.get("mix_high"),
+                    "mix_low": mix.get("mix_low"),
                     "source": "h2h_self_play",
                 }
             )
@@ -305,7 +387,11 @@ def generate_behavior_by_contract(
 ) -> pd.DataFrame:
     """Generate behavior_by_contract.csv -- faceted behavioral metrics.
 
-    Columns: model, contract, net_eppd, bid_rate, make_rate, source
+    Columns: model, contract, net_eppd, bid_rate, pass_rate, make_rate, source
+
+    Note: avg_bid, bid_std, bid_min, bid_max are defined in the reporting
+    contract but are not currently available in comparator_cis per-contract
+    artifacts. They are omitted until the source data supports them.
     """
     rows = []
     if comparator_cis:
@@ -314,12 +400,16 @@ def generate_behavior_by_contract(
         for contract in ["suit", "high", "low"]:
             contract_data = bidders_by_contract.get(contract, {})
             for name, b in contract_data.items():
+                bid_rate = b.get("bid_rate")
                 rows.append(
                     {
                         "model": name,
                         "contract": contract,
                         "net_eppd": _safe_round(b.get("net_eppd")),
-                        "bid_rate": _safe_round(b.get("bid_rate")),
+                        "bid_rate": _safe_round(bid_rate),
+                        "pass_rate": _safe_round(1.0 - bid_rate)
+                        if bid_rate is not None
+                        else None,
                         "make_rate": _safe_round(b.get("make_rate")),
                         "source": "comparator",
                     }
@@ -327,12 +417,16 @@ def generate_behavior_by_contract(
 
         # Pooled rows (always available)
         for name, b in comparator_cis.get("bidders", {}).items():
+            bid_rate = b.get("bid_rate")
             rows.append(
                 {
                     "model": name,
                     "contract": "pooled",
                     "net_eppd": _safe_round(b.get("net_eppd")),
-                    "bid_rate": _safe_round(b.get("bid_rate")),
+                    "bid_rate": _safe_round(bid_rate),
+                    "pass_rate": _safe_round(1.0 - bid_rate)
+                    if bid_rate is not None
+                    else None,
                     "make_rate": _safe_round(b.get("make_rate")),
                     "source": "comparator",
                 }
@@ -482,19 +576,55 @@ def generate_sanity_bounds_check(
     return pd.DataFrame(rows)
 
 
-def generate_hypothesis_outcomes() -> pd.DataFrame:
-    """Generate hypothesis_outcomes.csv -- stub with columns.
+def generate_hypothesis_outcomes(
+    advance_check: dict | None = None,
+) -> pd.DataFrame:
+    """Generate hypothesis_outcomes.csv from advance_check data.
 
     Columns: hypothesis_id, description, status, evidence, notes
+
+    If advance_check is provided, populates from its hypothesis_checks.
+    Otherwise returns an empty DataFrame with the correct schema.
     """
+    rows: list[dict] = []
+
+    if advance_check:
+        for h in advance_check.get("hypothesis_checks", []):
+            passed = h.get("pass", False)
+            observed = h.get("observed")
+            expected_bound = h.get("expected_bound", "")
+            surprise = h.get("surprise_hit", False)
+
+            status = "PASS" if passed else "FAIL"
+            evidence = f"observed={observed}"
+            if expected_bound:
+                evidence += f", bound={expected_bound}"
+
+            notes_parts = []
+            if surprise:
+                notes_parts.append("SURPRISE")
+            if h.get("error"):
+                notes_parts.append(f"error: {h['error']}")
+
+            rows.append(
+                {
+                    "hypothesis_id": h.get("id", ""),
+                    "description": h.get("description", ""),
+                    "status": status,
+                    "evidence": evidence,
+                    "notes": "; ".join(notes_parts) if notes_parts else "",
+                }
+            )
+
     return pd.DataFrame(
+        rows,
         columns=[
             "hypothesis_id",
             "description",
             "status",
             "evidence",
             "notes",
-        ]
+        ],
     )
 
 
@@ -780,6 +910,116 @@ def generate_h2h_tier_summary(
             )
 
     return pd.DataFrame(rows)
+
+
+# ──────────────────────────────────────────────
+#  Chart data extraction
+# ──────────────────────────────────────────────
+
+
+def generate_chart_data(
+    h2h_battery: dict | None = None,
+    comparator_cis: dict | None = None,
+    output_dir: Path | None = None,
+) -> list[str]:
+    """Generate chart_data CSVs from existing artifacts.
+
+    Produces auditable source-data CSVs for chart generation (Phase 2).
+    Only creates CSVs where sufficient source data exists.
+
+    Args:
+        h2h_battery: Merged H2H battery JSON.
+        comparator_cis: Merged comparator CIs JSON.
+        output_dir: Path to write chart_data CSVs.
+
+    Returns:
+        List of generated CSV filenames.
+
+    Note: The following chart_data CSVs require model artifacts not available
+    in battery/comparator JSONs and are deferred:
+    - predictions.csv (requires model prediction outputs)
+    - residuals.csv (requires model prediction outputs)
+    - calibration_bins.csv (requires model prediction outputs)
+    - selection_paths.csv (requires feature selection logs)
+    - decision_comparison.csv (requires model decision traces)
+    - disagreement_outcomes.csv (requires multi-model decision traces)
+    - cross_rung_progression.csv (requires multi-rung data)
+    """
+    if output_dir is None:
+        return []
+    output_dir.mkdir(parents=True, exist_ok=True)
+    generated = []
+
+    # 1. outcome_distributions.csv — from H2H self-play by_contract
+    if h2h_battery:
+        rows = []
+        for _mid, cell in h2h_battery.get("cells", {}).items():
+            if cell.get("bidder_a") != cell.get("bidder_b"):
+                continue  # Self-play only
+            model = cell["bidder_a"]
+            # Pooled outcome
+            fullgame_eppd = cell.get("fullgame_eppd")
+            if fullgame_eppd is not None:
+                rows.append(
+                    {
+                        "model": model,
+                        "contract": "pooled",
+                        "value": _safe_round(fullgame_eppd),
+                        "metric": "fullgame_eppd",
+                    }
+                )
+            # Per-contract outcomes
+            by_contract = cell.get("by_contract", {})
+            for ct in ("suit", "high", "low"):
+                ct_data = by_contract.get(ct)
+                if ct_data and ct_data.get("net_eppd_delta") is not None:
+                    rows.append(
+                        {
+                            "model": model,
+                            "contract": ct,
+                            "value": _safe_round(ct_data["net_eppd_delta"]),
+                            "metric": "net_eppd_delta",
+                        }
+                    )
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "outcome_distributions.csv", index=False)
+            generated.append("outcome_distributions.csv")
+
+    # 2. contract_mix.csv — deal counts by contract from H2H self-play
+    if h2h_battery:
+        rows = []
+        for _mid, cell in h2h_battery.get("cells", {}).items():
+            if cell.get("bidder_a") != cell.get("bidder_b"):
+                continue
+            model = cell["bidder_a"]
+            by_contract = cell.get("by_contract", {})
+            if not by_contract:
+                continue
+            total = sum(ct.get("deals_total", 0) for ct in by_contract.values())
+            for ct in ("suit", "high", "low"):
+                ct_data = by_contract.get(ct, {})
+                deals = ct_data.get("deals_total", 0)
+                rows.append(
+                    {
+                        "model": model,
+                        "contract": ct,
+                        "deals": deals,
+                        "fraction": _safe_round(deals / total) if total > 0 else None,
+                    }
+                )
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "contract_mix.csv", index=False)
+            generated.append("contract_mix.csv")
+
+    # 3. seat_balance.csv — not available in battery JSONs (no per-seat data)
+    # Deferred: requires per-seat JSONL data not present in battery summaries.
+
+    # 4. bid_levels.csv — not available (no bid-level distribution data)
+    # Deferred: requires per-hand bid level data not present in battery summaries.
+
+    return generated
 
 
 # ──────────────────────────────────────────────
@@ -1288,10 +1528,24 @@ def generate_all_tables(
         df.to_csv(output_dir / "sanity_bounds_check.csv", index=False)
         generated.append("sanity_bounds_check.csv")
 
-    # 7. hypothesis_outcomes.csv (stub)
-    df = generate_hypothesis_outcomes()
-    df.to_csv(output_dir / "hypothesis_outcomes.csv", index=False)
-    generated.append("hypothesis_outcomes.csv")
+    # 7. hypothesis_outcomes.csv — populate from advance_check.json if available
+    #    Skip writing if a populated CSV already exists (e.g., from advance_check
+    #    pipeline) to avoid overwriting real data with an empty stub.
+    existing_ho = output_dir / "hypothesis_outcomes.csv"
+    advance_check = _load_json(rung_dir / "advance_check.json")
+    df = generate_hypothesis_outcomes(advance_check)
+    if len(df) > 0:
+        # We have real data — always write it
+        df.to_csv(existing_ho, index=False)
+        generated.append("hypothesis_outcomes.csv")
+    elif existing_ho.exists() and existing_ho.stat().st_size > 0:
+        # A populated CSV already exists — do not overwrite with empty stub
+        logger.info("hypothesis_outcomes.csv already populated; skipping empty stub.")
+        generated.append("hypothesis_outcomes.csv")
+    else:
+        # No data available — write empty schema stub
+        df.to_csv(existing_ho, index=False)
+        generated.append("hypothesis_outcomes.csv")
 
     # 8. rung_model_spec.csv
     df = generate_rung_model_spec(roster)
@@ -1332,5 +1586,15 @@ def generate_all_tables(
                 "Per-seed sanity: %d warnings detected. See seed_sanity.csv.",
                 len(df),
             )
+
+    # 14. chart_data CSVs (outcome_distributions, contract_mix, etc.)
+    chart_data_dir = output_dir.parent / "chart_data"
+    chart_data_csvs = generate_chart_data(
+        h2h_battery=h2h_battery,
+        comparator_cis=comparator_cis,
+        output_dir=chart_data_dir,
+    )
+    for csv_name in chart_data_csvs:
+        generated.append(f"chart_data/{csv_name}")
 
     return generated

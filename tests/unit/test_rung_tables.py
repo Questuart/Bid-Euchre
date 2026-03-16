@@ -31,6 +31,7 @@ from bid_euchre.arc_d_v2.tables import (
     generate_behavior_by_bid_type,
     generate_behavior_by_contract,
     generate_behavior_summary,
+    generate_chart_data,
     generate_comparator_rankings,
     generate_cross_rung_deltas,
     generate_data_sanity,
@@ -97,9 +98,13 @@ EXPECTED_SCHEMAS = {
         "net_eppd",
         "eppd",
         "bid_rate",
+        "pass_rate",
         "make_rate",
         "cvar_5",
         "net_cvar_5",
+        "mix_suit",
+        "mix_high",
+        "mix_low",
         "source",
     ],
     "behavior_by_contract": [
@@ -107,6 +112,7 @@ EXPECTED_SCHEMAS = {
         "contract",
         "net_eppd",
         "bid_rate",
+        "pass_rate",
         "make_rate",
         "source",
     ],
@@ -302,13 +308,62 @@ class TestSanityBoundsCheck:
 
 
 class TestHypothesisOutcomes:
-    def test_schema(self):
+    def test_schema_empty(self):
         df = generate_hypothesis_outcomes()
         assert list(df.columns) == EXPECTED_SCHEMAS["hypothesis_outcomes"]
-
-    def test_empty(self):
-        df = generate_hypothesis_outcomes()
         assert len(df) == 0
+
+    def test_schema_with_advance_check(self):
+        advance_check = {
+            "hypothesis_checks": [
+                {
+                    "id": "H1",
+                    "description": "Test hypothesis",
+                    "pass": True,
+                    "observed": 1.5,
+                    "expected_bound": "> 0.5",
+                    "surprise_hit": False,
+                    "error": None,
+                },
+                {
+                    "id": "H2",
+                    "description": "Failed hypothesis",
+                    "pass": False,
+                    "observed": -0.3,
+                    "expected_bound": ">= 0.0",
+                    "surprise_hit": True,
+                    "error": None,
+                },
+            ],
+        }
+        df = generate_hypothesis_outcomes(advance_check)
+        assert list(df.columns) == EXPECTED_SCHEMAS["hypothesis_outcomes"]
+        assert len(df) == 2
+        assert df.iloc[0]["hypothesis_id"] == "H1"
+        assert df.iloc[0]["status"] == "PASS"
+        assert "1.5" in df.iloc[0]["evidence"]
+        assert df.iloc[1]["status"] == "FAIL"
+        assert "SURPRISE" in df.iloc[1]["notes"]
+
+    def test_no_overwrite_populated_csv(self, tmp_path):
+        """generate_all_tables does not overwrite populated hypothesis_outcomes."""
+        output_dir = tmp_path / "tables"
+        output_dir.mkdir()
+
+        # Pre-populate hypothesis_outcomes.csv with real data
+        populated = output_dir / "hypothesis_outcomes.csv"
+        populated.write_text(
+            "hypothesis_id,description,status,evidence,notes\n"
+            "H1,Test,PASS,observed=1.0,\n"
+        )
+        original_size = populated.stat().st_size
+
+        # Run generate_all_tables with no advance_check available
+        generate_all_tables(FIXTURES_DIR, output_dir)
+
+        # Should NOT have been overwritten with empty stub
+        assert populated.stat().st_size >= original_size
+        assert "H1" in populated.read_text()
 
 
 class TestRungModelSpec:
@@ -585,7 +640,11 @@ class TestFullPipeline:
         ), f"Generated only {len(generated)} tables: {generated}"
 
         for csv_name in generated:
-            csv_path = output_dir / csv_name
+            if csv_name.startswith("chart_data/"):
+                # chart_data CSVs live at output_dir.parent / chart_data/
+                csv_path = output_dir.parent / csv_name
+            else:
+                csv_path = output_dir / csv_name
             assert csv_path.exists(), f"Missing: {csv_path}"
             assert csv_path.stat().st_size > 0, f"Empty: {csv_path}"
 
@@ -1190,3 +1249,152 @@ class TestH2HDeltaMatrixBidType:
         df = generate_h2h_delta_matrix(h2h)
         assert len(df) == 1
         assert df.iloc[0]["facet"] == "pooled"
+
+
+# ──────────────────────────────────────────────
+#  Expanded behavior column tests
+# ──────────────────────────────────────────────
+
+
+class TestBehaviorSummaryExpanded:
+    """Tests for expanded behavior_summary columns (pass_rate, mix_*)."""
+
+    def test_pass_rate_computed(self, comparator_cis, h2h_battery):
+        """pass_rate = 1 - bid_rate is present and correct."""
+        df = generate_behavior_summary(comparator_cis, h2h_battery)
+        assert "pass_rate" in df.columns
+        comp_rows = df[df["source"] == "comparator"]
+        for _, row in comp_rows.iterrows():
+            if row["bid_rate"] is not None and not pd.isna(row["bid_rate"]):
+                expected = round(1.0 - row["bid_rate"], 4)
+                assert row["pass_rate"] == pytest.approx(expected, abs=1e-4)
+
+    def test_mix_columns_present(self, comparator_cis, h2h_battery):
+        """mix_suit, mix_high, mix_low columns are present."""
+        df = generate_behavior_summary(comparator_cis, h2h_battery)
+        for col in ("mix_suit", "mix_high", "mix_low"):
+            assert col in df.columns
+
+    def test_mix_from_h2h_self_play(self):
+        """Contract mix computed from H2H self-play by_contract deal counts."""
+        h2h = {
+            "cells": {
+                "a_self": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_a",
+                    "fullgame_eppd": 3.5,
+                    "bid_rate_a": 0.4,
+                    "make_rate_a": 0.6,
+                    "fullgame_cvar_5": -2.0,
+                    "deals_total": 100,
+                    "by_contract": {
+                        "suit": {"deals_total": 70, "net_eppd_delta": 0.5},
+                        "high": {"deals_total": 20, "net_eppd_delta": 0.3},
+                        "low": {"deals_total": 10, "net_eppd_delta": 0.1},
+                    },
+                },
+            },
+        }
+        df = generate_behavior_summary(None, h2h)
+        row = df.iloc[0]
+        assert row["mix_suit"] == pytest.approx(0.7, abs=1e-3)
+        assert row["mix_high"] == pytest.approx(0.2, abs=1e-3)
+        assert row["mix_low"] == pytest.approx(0.1, abs=1e-3)
+
+    def test_graceful_without_contract_data(self, comparator_cis):
+        """mix_* columns are None when no by_contract data is available."""
+        df = generate_behavior_summary(comparator_cis, None)
+        for col in ("mix_suit", "mix_high", "mix_low"):
+            # All should be None since fixture comparator_cis has no
+            # bidders_by_contract and we passed no h2h_battery
+            assert df[col].isna().all()
+
+
+class TestBehaviorByContractExpanded:
+    """Tests for expanded behavior_by_contract columns (pass_rate)."""
+
+    def test_pass_rate_present(self, comparator_cis):
+        """pass_rate column is present in behavior_by_contract."""
+        df = generate_behavior_by_contract(comparator_cis)
+        assert "pass_rate" in df.columns
+
+    def test_pass_rate_computed(self, comparator_cis):
+        """pass_rate = 1 - bid_rate for all rows."""
+        df = generate_behavior_by_contract(comparator_cis)
+        for _, row in df.iterrows():
+            if row["bid_rate"] is not None and not pd.isna(row["bid_rate"]):
+                expected = round(1.0 - row["bid_rate"], 4)
+                assert row["pass_rate"] == pytest.approx(expected, abs=1e-4)
+
+
+# ──────────────────────────────────────────────
+#  Chart data extraction tests
+# ──────────────────────────────────────────────
+
+
+class TestChartData:
+    """Tests for chart_data CSV generation."""
+
+    def test_outcome_distributions_from_h2h(self, h2h_battery, tmp_path):
+        """outcome_distributions.csv generated from H2H self-play data."""
+        generated = generate_chart_data(h2h_battery=h2h_battery, output_dir=tmp_path)
+        assert "outcome_distributions.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "model" in df.columns
+        assert "contract" in df.columns
+        assert "value" in df.columns
+        assert len(df) > 0
+
+    def test_contract_mix_from_h2h(self, tmp_path):
+        """contract_mix.csv generated from H2H self-play by_contract."""
+        h2h = {
+            "cells": {
+                "a_self": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_a",
+                    "deals_total": 100,
+                    "by_contract": {
+                        "suit": {"deals_total": 60, "net_eppd_delta": 0.5},
+                        "high": {"deals_total": 25, "net_eppd_delta": 0.3},
+                        "low": {"deals_total": 15, "net_eppd_delta": 0.1},
+                    },
+                },
+            },
+        }
+        generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
+        assert "contract_mix.csv" in generated
+        df = pd.read_csv(tmp_path / "contract_mix.csv")
+        assert set(df.columns) == {"model", "contract", "deals", "fraction"}
+        assert len(df) == 3
+        suit_row = df[df["contract"] == "suit"].iloc[0]
+        assert suit_row["deals"] == 60
+        assert suit_row["fraction"] == pytest.approx(0.6, abs=1e-3)
+
+    def test_no_data_no_csvs(self, tmp_path):
+        """No chart_data CSVs generated when no source data exists."""
+        generated = generate_chart_data(output_dir=tmp_path)
+        assert len(generated) == 0
+
+    def test_graceful_without_by_contract(self, tmp_path):
+        """No contract_mix.csv when H2H has no by_contract data."""
+        h2h = {
+            "cells": {
+                "a_self": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_a",
+                    "deals_total": 100,
+                    "fullgame_eppd": 3.5,
+                },
+            },
+        }
+        generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
+        assert "contract_mix.csv" not in generated
+
+    def test_chart_data_in_full_pipeline(self, tmp_path):
+        """generate_all_tables produces chart_data CSVs."""
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(FIXTURES_DIR, output_dir)
+        chart_data_items = [g for g in generated if g.startswith("chart_data/")]
+        # Fixture h2h_battery has self-play cells with fullgame_eppd,
+        # so outcome_distributions should be present
+        assert len(chart_data_items) > 0
