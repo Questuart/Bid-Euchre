@@ -539,6 +539,7 @@ def generate_advance_check(
         "schema_version": "advance_check_v1",
         "rung": rung,
         "mode": mode,
+        "evidence_tier": mode,  # LA-3 provenance: "quick" or "full"
         "advance_decision": decision,
         "reason": reason,
         "timestamp": utc_now_iso(),
