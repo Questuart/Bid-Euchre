@@ -1,0 +1,162 @@
+{
+  "schema_version": "advance_check_v1",
+  "rung": "r1",
+  "mode": "quick",
+  "advance_decision": "INVESTIGATE",
+  "reason": "Surprise threshold hit on: H7",
+  "timestamp": "2026-03-15T20:24:50.948605Z",
+  "next_action": null,
+  "hypothesis_checks": [
+    {
+      "id": "H1",
+      "description": "Partner context improves GBT pooled H2H delta vs anchor",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.49,
+      "expected_bound": "> 0.3",
+      "surprise_threshold": "< 0.0",
+      "error": null
+    },
+    {
+      "id": "H2",
+      "description": "GBT R1 suit H2H delta exceeds R0 suit delta (partner helps suit bidding)",
+      "pass": false,
+      "surprise_hit": false,
+      "observed": 0.2704,
+      "expected_bound": "> 0.5",
+      "surprise_threshold": "< 0.0",
+      "error": null
+    },
+    {
+      "id": "H3",
+      "description": "GBT R1 suit R-squared exceeds R0 suit R-squared",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.6208,
+      "expected_bound": "> 0.588",
+      "surprise_threshold": "< 0.55",
+      "error": null
+    },
+    {
+      "id": "H4",
+      "description": "Position features improve first-bidder accuracy (auction_position=0)",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 2.1136,
+      "expected_bound": "> 2.0",
+      "surprise_threshold": "< 1.5",
+      "error": null
+    },
+    {
+      "id": "H5",
+      "description": "Two-stage model narrows gap vs GBT with partner context",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": -0.3412,
+      "expected_bound": "> -1.0",
+      "surprise_threshold": "< -1.5",
+      "error": null
+    },
+    {
+      "id": "H6",
+      "description": "All models bid at least half the time (no pathological passing)",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.852,
+      "expected_bound": "> 0.5",
+      "surprise_threshold": "< 0.2",
+      "error": null
+    },
+    {
+      "id": "H7",
+      "description": "GBT H2H win rate vs anchor exceeds 50%",
+      "pass": false,
+      "surprise_hit": true,
+      "observed": 0.4396,
+      "expected_bound": "> 0.5",
+      "surprise_threshold": "< 0.45",
+      "error": null
+    },
+    {
+      "id": "H8",
+      "description": "Full OLS approximately equals constrained OLS (feature selection doesn't matter for OLS)",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.1568,
+      "expected_bound": ">= -0.2",
+      "surprise_threshold": "< -0.5",
+      "error": null
+    },
+    {
+      "id": "H9",
+      "description": "ModeloEspecifico heuristic is worst among trained models (sanity check)",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": -0.4528,
+      "expected_bound": "< 0.0",
+      "surprise_threshold": "> 0.5",
+      "error": null
+    }
+  ],
+  "sufficiency_checks": [
+    {
+      "id": "all_tables_generated",
+      "pass": true,
+      "value": "4/4"
+    },
+    {
+      "id": "data_sanity",
+      "pass": true,
+      "value": "23/23 pass"
+    },
+    {
+      "id": "no_blocked_models",
+      "pass": true,
+      "value": "5/5"
+    }
+  ],
+  "canary_checks": [
+    {
+      "id": "C1_feature_importance_plausible",
+      "check": "Top features are reasonable (requires interpretability data)",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C2_ranking_stable_across_seeds",
+      "check": "Skipped (single-seed mode)",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C3_magnitude_historical",
+      "check": "No pooled delta > 5.0 (implausible magnitude)",
+      "pass": false,
+      "level": "WARNING"
+    },
+    {
+      "id": "C4_model_differentiation",
+      "check": "At least 3 distinct ranking positions",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C5_feature_count_matches_rung",
+      "check": "Model artifacts used expected feature count for rung",
+      "pass": true,
+      "level": "WARNING"
+    }
+  ],
+  "best_in_lineage": {
+    "model": "gbt_av",
+    "pooled_net_eppd": 2.1136,
+    "updated": true
+  },
+  "failed_checks_summary": [
+    "H2",
+    "H7"
+  ],
+  "warnings_summary": [
+    "C3_magnitude_historical"
+  ]
+}
