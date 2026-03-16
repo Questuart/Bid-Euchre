@@ -14,33 +14,41 @@
 ## Sequencing — Roadmap Position
 
 > **Decision date:** 2026-03-15
-> **Context:** Arc D v2 R0-R2 QUICK complete, R3 engine in progress, FULL backfill running. Browser-game initiative ACTIVE but not yet started.
+> **Revised:** 2026-03-16 (post-review: CI remediation, consistency cleanup, resolved design decisions)
+> **Context:** Arc D v2 QUICK ladder complete (R0-R3, 9/9 PASS on R3). FULL backfill running (R0-R2 × 3 seeds, sequential orchestrator). Browser-game initiative ACTIVE but not yet started.
 
-This plan is a **staged enabling track**, not a monolithic blocker. It should not pause Arc D and should not be deferred until after everything else. The thin slice lands right after R3 QUICK; the heavier infrastructure lands as browser-game creates real multi-agent coordination pressure.
+This plan is a **staged enabling track**, not a monolithic blocker. It should not pause Arc D and should not be deferred until after everything else. The thin slice lands after the next Arc D closeout slice (Phase 4a); the heavier infrastructure lands as browser-game creates real multi-agent coordination pressure.
 
-### Immediate (now, during Arc D sprint)
+### Compatibility with Running FULL Backfill
+
+PRs 1-2 are **low-risk** during the FULL backfill. They are almost entirely additive (new files, new packages, new docs) and do not touch any modules the orchestrator imports. PRs 3-5 involve hooks, permission changes, and cleanup/watchdog flows that could affect active agent sessions and operator behavior — these should be staged per the triggers below, not bundled with 1-2.
+
+> **Note:** "Low-risk" is not "zero-risk." The orchestrator runs from the main checkout and each `uv run python` invocation reads code from disk. Verify that any PR merged to main during FULL compute does not touch orchestrator-imported modules.
+
+### Immediate (now, during Arc D sprint) — DONE (2026-03-16)
 
 Adopt **user-side workflow changes only** — no repo PRs required:
-- Ghostty (or equivalent) as primary terminal host
-- `tmux` for persistent sessions
+- ~~Ghostty (or equivalent) as primary terminal host~~ ✅ Installed
+- ~~`tmux` for persistent sessions~~ ✅ Already installed (3.6a)
 - Role-based worktrees (informal adoption of `author`/`review`/`ops` convention)
 - VS Code as audit surface for diffs, plans, and runtime artifacts
-- **Permission model redesign:** Switch from allowlist (`Bash(command:*)` per command) to denylist (`Bash(*)` + targeted deny). Add interim `rm -rf ../:*` and `rm -rf ../*:*` deny rules to protect worktree directories until lifecycle tooling lands.
+- ~~**Permission model:**~~ ✅ Already configured — `Bash(*)` allow, `defaultMode: bypassPermissions`, interim `rm -rf ../:*` and `rm -rf ../*:*` deny rules in place.
+- ~~Worktree sprawl cleanup~~ ✅ Cleaned 37 stale worktrees (2026-03-16)
 
-These reduce operational pain immediately and require no shared-repo changes.
+> **Permission model note:** The broader permission redesign (replacing interim deny rules with hook-based lifecycle tooling) is **tracked work for PR-3**, not an ad-hoc mid-sprint change. The interim deny rules are sufficient until then.
 
-### After R3 QUICK first stable pass → PRs 1-2
+### After Phase 4a (QUICK charts reporting sweep) → PRs 1-2
 
 Land the **lightweight workflow scaffolding**:
 - **PR-1:** Worktree/bootstrap contract, role conventions, session/task metadata
 - **PR-2:** tmux launcher, VS Code audit workspace and tasks
 
-These are low-risk (mostly tooling/docs) but change shared repo behavior, so they should not land in the middle of the active research loop.
+These are low-risk (mostly tooling/docs) and additive. Sequencing them after Phase 4a keeps Arc D v2 closeout on the critical path while slotting infrastructure into the natural gap while FULL compute continues.
 
 ### Before browser-game backend/frontend parallelism → PRs 3-4
 
 Land the **operator CLI and memory/index layer**:
-- **PR-3:** `ops.py` CLI, health checks, watchdogs, recovery templates
+- **PR-3:** `ops.py` CLI, health checks, watchdogs, recovery templates, CI remediation, permission migration
 - **PR-4:** Curated memory, audit index, session compaction/archive
 
 These are cross-cutting and will be easier to design once Arc D runtime artifacts and operational pain points are stable. The browser-game initiative is exactly the kind of work that benefits most — it involves parallel tracks (domain engine, backend API, frontend product, replay/export, deployment) that create real multi-agent coordination pressure.
@@ -56,11 +64,51 @@ This must be in place before the hosted product is operationally important or ex
 
 | Step | Trigger | Deliverables |
 |------|---------|-------------|
-| 1 | Now | User-side workflow (Ghostty, tmux, role worktrees, VS Code, permission denylist redesign) |
-| 2 | R3 QUICK stable pass | PRs 1-2 (scaffold) |
-| 3 | Browser-game Phase 0/1/2 starts | Browser-game benefits from improved agent workflow |
-| 4 | Browser-game enters backend/frontend parallelism | PRs 3-4 (operator CLI, memory/index) |
-| 5 | Before hosted-play external exposure | PR-5 (rollout, safety, recovery) |
+| 0 | Now | ~~User-side workflow~~ ✅ DONE (Ghostty, tmux, permissions, worktree cleanup) |
+| 1 | After Phase 4a (QUICK charts) | PRs 1-2 (scaffold) |
+| 2 | Browser-game Phase 0/1/2 starts | Browser-game benefits from improved agent workflow |
+| 3 | Browser-game enters backend/frontend parallelism | PRs 3-4 (operator CLI, memory/index, CI remediation) |
+| 4 | Before hosted-play external exposure | PR-5 (rollout, safety, recovery) |
+
+## Resolved Design Decisions (2026-03-16)
+
+These decisions were resolved during the 2026-03-16 review session.
+
+### ops/ Package Location
+
+**Decision:** Hybrid — CLI entrypoint in `scripts/internal/ops.py`, reusable logic in `src/bid_euchre/ops/`.
+
+- `scripts/internal/ops.py` is the operator-facing entrypoint (consistent with existing `run_rung.py`, `run_suite.py` pattern).
+- `src/bid_euchre/ops/` makes parsing, classification, and tests much cleaner.
+- `src/bid_euchre/ops/` is a nested package under the existing library tree, **not** a new repo-top-level directory.
+- **Constraint:** Treat `src/bid_euchre/ops/` as internal tooling. Do not re-export it broadly or add it to the public engine API surface.
+
+### ops/ Coupling to Arc D Internals
+
+**Decision:** Prefer direct state-file reading. Narrow imports only for very stable helpers.
+
+- Parse JSON/JSONL/heartbeat files directly.
+- Import stable path/time helpers only where that avoids duplicated path logic.
+- **Do not** import orchestration, domain, or schema internals just to answer status questions.
+- **Why:** Keeps ops loosely coupled to active research code. Arc D v2 refactors should not break operator tooling.
+- **Tradeoff:** Duplicates a bit of schema knowledge, but the ops layer becomes more robust to research-code churn.
+
+### Worktree Cleanup Tooling
+
+**Decision:** The existing `scripts/internal/clean_worktrees.sh` is useful for inventory but does not solve worktree sprawl.
+
+- `clean_worktrees.sh` only targets branches whose upstream is marked `[gone]`. It does **not** handle: stale local task worktrees, `.claude/worktrees/*`, detached worktrees, or TTL-expired worktrees.
+- Real cleanup requires the lifecycle classification and prune flows designed in PR-3 (`ops.py worktrees prune`).
+- Until PR-3 lands, worktree cleanup is manual (`git worktree remove`) guided by `git worktree list` inspection.
+- **2026-03-16:** Manually cleaned 37 stale worktrees (27 timestamp, 7 clean agent/feature, 3 dirty-but-superseded). This confirms the sprawl problem is real and motivates the PR-3 lifecycle system.
+
+### Permission Model Evolution
+
+**Decision:** The broader permission redesign is tracked work for PR-3, not an ad-hoc mid-sprint change.
+
+- Interim deny rules (`rm -rf ../:*`, `rm -rf ../*:*`) are already in place and sufficient.
+- The full migration (removing deny rules, adding PreToolUse hook redirection to `ops.py worktrees prune`) lands with PR-3.
+- **Why:** Permission changes affect every Claude session. They should be deliberate and versioned, not drift in as side tweaks.
 
 ## Decisions
 
@@ -160,6 +208,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Plan-review state: `.claude/runtime/plan_reviews/**`.
 - Rung/orchestration state: `plans/**/state.json`, `execution_log.jsonl`, heartbeat files, checkpoints.
 - Artifact/report state: manifests, latest report dirs, evidence outputs.
+- CI state: per-PR check status (pending/pass/fail), failure class, retry count, last push SHA, remediation history.
 
 ### Audit Model
 - VS Code shows all checkouts and generated audit artifacts.
@@ -269,6 +318,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Reduce manual `rg`, `cat`, and path-hunting for common status questions.
 - Provide deterministic recovery guidance when autonomous work hits common failure modes.
 - Detect and surface long-running process failures early through lightweight watchdogs rather than manual polling.
+- Enable autonomous post-push CI remediation: `ops` polls CI status, classifies failures, and `author` applies bounded safe fixes without human intervention.
 
 #### Deliverables
 - `scripts/internal/ops.py`
@@ -280,6 +330,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - unit tests under `tests/unit/`
 - optional `Makefile` targets like `make ops-status`
 - **Permission migration:** Remove interim `rm -rf ../:*` deny rules from user settings once the PreToolUse hook and `ops.py worktrees prune` are validated
+- `src/bid_euchre/ops/ci.py` — CI status polling, failure classification, and remediation policy
+- `tests/unit/test_ops_ci.py` — CI failure classification and remediation policy tests
 
 #### Commands
 - `ops.py status`
@@ -296,6 +348,33 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `ops.py schedule`
 - `ops.py recover`
 - `ops.py watchdogs`
+- `ops.py ci` — poll CI status for a PR, classify failures, suggest remediation
+- `ops.py ci --pr <N>` — check specific PR
+- `ops.py ci --remediate` — apply bounded safe fixes (lint/format only by default)
+
+#### CI Failure Classes
+
+| Class | Auto-remediable? | Action |
+|-------|-----------------|--------|
+| **lint/format** | Yes | `ruff check --fix && ruff format`, re-push |
+| **deterministic test** | Yes (bounded) | Author reads failure, applies targeted fix, runs Tier 1 validation, re-pushes |
+| **missing config/artifact** | Yes (bounded) | Author adds missing file or config, validates, re-pushes |
+| **flaky/external** | No | Retry once; if still failing, escalate to human |
+| **infra/auth/tooling** | No | Log and escalate — not a code problem |
+| **risky/destructive** | No | Never auto-remediate; always escalate |
+
+#### Bounded CI Remediation Policy
+
+- `ops` polls `gh pr checks` after each push and classifies failures.
+- For auto-remediable failures (lint/format, deterministic test, missing config):
+  - `author` applies only the minimal fix in the PR worktree.
+  - `author` runs targeted validation (Tier 1) before re-pushing.
+  - Maximum 3 remediation attempts per PR. After 3, escalate.
+- For non-remediable failures (flaky, infra, risky):
+  - Log the failure class and details.
+  - Escalate immediately — do not retry or attempt workarounds.
+- Re-push must not include unrelated changes. Fix scope = failure scope.
+- All remediation actions are logged in CI state for auditability.
 
 #### Data Sources
 - `git worktree list`
@@ -317,6 +396,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - abandoned dirty worktrees associated with inactive sessions
 - worktree count/age drift beyond configured limits
 - detached or metadata-missing worktrees that cannot be safely classified
+- PRs stuck in CI pending or failure state beyond configured thresholds
+- CI remediation loops that exceed retry caps without resolution
 
 #### Watchdog Behavior
 - Default behavior is detect, classify, log, and recommend a bounded recovery step.
@@ -459,6 +540,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `src/bid_euchre/ops/memory.py` — curated memory ingestion, validation, and query helpers.
 - `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook redirecting direct `rm -rf` on worktree dirs to `ops.py worktrees prune`.
 - `src/bid_euchre/ops/watchdogs.py` — watchdog rules for long-running process health and stall detection.
+- `src/bid_euchre/ops/ci.py` — CI status polling, failure classification, remediation policy, and retry tracking.
 - `src/bid_euchre/ops/recovery.py` — failure classification and bounded recovery templates.
 - `src/bid_euchre/ops/compaction.py` — session compaction and archive metadata helpers.
 - `src/bid_euchre/ops/index.py` — audit index build/query logic.
@@ -466,6 +548,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `tests/unit/test_ops_worktrees.py` — worktree lifecycle, prune, quarantine, and archive tests.
 - `tests/unit/test_ops_memory.py` — curated memory tests.
 - `tests/unit/test_ops_watchdogs.py` — watchdog threshold and stall-detection tests.
+- `tests/unit/test_ops_ci.py` — CI failure classification, remediation policy, and retry cap tests.
 - `tests/unit/test_ops_recovery.py` — recovery template tests.
 - `tests/unit/test_ops_compaction.py` — compaction/archive tests.
 - `tests/unit/test_ops_index.py` — audit index tests.
@@ -493,6 +576,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - **Shadow snapshots (PR-5):** Filesystem snapshots for rollback of autonomous edits. Must not conflict with git state or worktree lifecycle. Consider lightweight git stash/branch-based approach before building custom snapshot tooling.
 - **Curated memory system (PR-4):** Provenance-tracked memory distinct from MEMORY.md. Risk of duplicating or conflicting with the existing auto-memory system. Must define clear boundary: curated memory stores operator-validated facts; auto-memory remains the conversation-scoped system.
 - **SQLite audit index (PR-4):** Introduces a database dependency for operational state. Must remain optional — the workflow should degrade gracefully if the index is stale or absent.
+- **CI remediation loop (PR-3):** Autonomous CI fix-and-repush could introduce scope creep or unbounded retries. Mitigated by strict failure classification, retry caps (max 3), and escalation for non-remediable classes. The `risky/destructive` class is never auto-remediated.
 
 ## Risks And Mitigations
 - Role drift between worktrees.
@@ -515,6 +599,10 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Mitigation: per-process thresholds, observe-only rollout first, and bounded actions that default to notify rather than mutate.
 - Cleanup accidentally removing valuable in-progress worktrees.
   - Mitigation: persistent vs ephemeral classification, dry-run-first cleanup, quarantine for dirty worktrees, and no default deletion of role worktrees.
+- CI remediation introducing unrelated changes or scope creep.
+  - Mitigation: fix scope = failure scope; re-push must not include unrelated changes; Tier 1 validation before each re-push.
+- CI remediation becoming an unbounded retry loop.
+  - Mitigation: max 3 attempts per PR; non-remediable classes escalate immediately; all actions logged.
 - Added tooling without operational adoption.
   - Mitigation: staged rollout with acceptance checks after each PR.
 
@@ -526,6 +614,8 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Unit tests for audit index build/query behavior.
 - Unit tests for watchdog thresholds, stale-heartbeat detection, and no-progress detection.
 - Unit tests for task-state progression and explicit completion handling.
+- Unit tests for CI failure classification across all 6 failure classes.
+- Unit tests for remediation policy (retry caps, escalation triggers, scope constraints).
 - Unit tests for non-lossy compaction and archive lookup.
 - Manual smoke test of role bootstrap and tmux session creation.
 - Manual smoke test of worktree prune dry-run, quarantine, and archive flows.
@@ -533,6 +623,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Manual smoke test of scheduled health checks and stuck-session detection.
 - Manual smoke test of long-running process watchdogs against intentionally stalled sessions.
 - Manual smoke test of snapshot-based rollback and recovery after an intentionally bad edit sequence.
+- Manual smoke test of CI remediation: introduce a lint failure, push, verify `ops.py ci` classifies it correctly and `author` auto-fixes within retry cap.
 - Pilot tasks that exercise:
   - implementation flow
   - review flow
@@ -547,5 +638,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 
 ## Outcome
 <!-- Filled after implementation -->
-- PR: deferred
-- Notes: Planning-only session. Existing Claude worktree hooks and helper scripts should be treated as implementation inputs, not replaced blindly.
+- PR: deferred (PRs 1-2 sequenced after Phase 4a; PRs 3-5 per original triggers)
+- Notes:
+  - Planning-only session (2026-03-15). Existing Claude worktree hooks and helper scripts should be treated as implementation inputs, not replaced blindly.
+  - Review session (2026-03-16): Compatibility analysis confirmed PRs 1-2 low-risk during FULL backfill. User-side setup completed (Ghostty, tmux, permissions verified, 37 stale worktrees cleaned). Four design decisions resolved. Sequencing revised: Phase 4a first, then PR-1, then PR-2. CI remediation loop added to PR-3 scope.
