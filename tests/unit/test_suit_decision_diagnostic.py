@@ -363,8 +363,9 @@ def _make_artifact(tmp_path: Path) -> Path:
     coefficients[0] = 1.5
     # trump_count (idx 1) → positive
     coefficients[1] = 0.8
-    # bid_n (last-1) → negative
-    coefficients[-2] = -2.0
+    # bid_n (first action feature) → negative
+    bid_n_idx = len(STATE_FEATURE_NAMES)  # bid_n is the first action feature
+    coefficients[bid_n_idx] = -2.0
 
     artifact = {
         "schema_version": "action_value_olsa_v1",

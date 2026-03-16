@@ -292,17 +292,41 @@ class TestExtractStateFeatures:
 class TestExtractActionFeatures:
     def test_shape(self):
         features = extract_action_features(5)
-        assert features.shape == (2,)
+        assert features.shape == (4,)
 
     def test_values(self):
         features = extract_action_features(7)
         assert features[0] == pytest.approx(7.0)
         assert features[1] == pytest.approx(49.0)
+        assert features[2] == pytest.approx(0.0)  # is_moon
+        assert features[3] == pytest.approx(0.0)  # is_loner
 
     def test_bid_1(self):
         features = extract_action_features(1)
         assert features[0] == pytest.approx(1.0)
         assert features[1] == pytest.approx(1.0)
+        assert features[2] == pytest.approx(0.0)
+        assert features[3] == pytest.approx(0.0)
+
+    def test_moon(self):
+        features = extract_action_features(10, bid_type="moon")
+        assert features[0] == pytest.approx(10.0)
+        assert features[1] == pytest.approx(100.0)
+        assert features[2] == pytest.approx(1.0)  # is_moon
+        assert features[3] == pytest.approx(0.0)  # is_loner
+
+    def test_loner(self):
+        features = extract_action_features(10, bid_type="loner")
+        assert features[0] == pytest.approx(10.0)
+        assert features[1] == pytest.approx(100.0)
+        assert features[2] == pytest.approx(0.0)  # is_moon
+        assert features[3] == pytest.approx(1.0)  # is_loner
+
+    def test_regular_default(self):
+        """Default bid_type is 'regular', producing is_moon=0, is_loner=0."""
+        features = extract_action_features(5)
+        assert features[2] == pytest.approx(0.0)
+        assert features[3] == pytest.approx(0.0)
 
 
 # ── ActionValueBidder ─────────────────────────────────────

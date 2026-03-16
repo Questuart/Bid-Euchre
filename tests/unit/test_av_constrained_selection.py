@@ -403,12 +403,12 @@ class TestConstrainedOLSIntegration:
                 target_col="net_points",
             )
 
-        # Suit: 3 state + 2 action = 5 coefficients
-        assert len(models["suit"]["coefficients"]) == 5
-        # High: 2 state + 2 action = 4 coefficients
-        assert len(models["high"]["coefficients"]) == 4
-        # Low: 2 state + 2 action = 4 coefficients
-        assert len(models["low"]["coefficients"]) == 4
+        # Suit: 3 state + 4 action = 7 coefficients
+        assert len(models["suit"]["coefficients"]) == 7
+        # High: 2 state + 4 action = 6 coefficients
+        assert len(models["high"]["coefficients"]) == 6
+        # Low: 2 state + 4 action = 6 coefficients
+        assert len(models["low"]["coefficients"]) == 6
 
 
 class TestForwardSelectionIntegration:

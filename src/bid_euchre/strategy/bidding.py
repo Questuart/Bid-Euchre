@@ -1578,8 +1578,10 @@ def _infer_partner_features(feature_names: List[str]) -> List[str]:
     return partner_names
 
 
-# Action feature names appended to state for per-contract models
-ACTION_FEATURE_NAMES: List[str] = ["bid_n", "bid_n_sq"]
+# Action feature names appended to state for per-contract models.
+# R0-R2 artifacts use the 2-element base set; R3+ artifacts include moon/loner.
+ACTION_FEATURE_NAMES_BASE: List[str] = ["bid_n", "bid_n_sq"]
+ACTION_FEATURE_NAMES: List[str] = ["bid_n", "bid_n_sq", "is_moon", "is_loner"]
 
 # Interaction feature names computed from state features at inference time.
 # Each maps to (state_index_a, state_index_b) — product of those state elements.
@@ -1744,9 +1746,23 @@ def extract_state_features(
     )
 
 
-def extract_action_features(bid_n: int) -> np.ndarray:
-    """Extract the 2-element action feature vector: [bid_n, bid_n^2]."""
-    return np.array([float(bid_n), float(bid_n * bid_n)], dtype=np.float64)
+def extract_action_features(bid_n: int, bid_type: str = "regular") -> np.ndarray:
+    """Extract the 4-element action feature vector: [bid_n, bid_n^2, is_moon, is_loner].
+
+    Args:
+        bid_n: The bid level (0-10).
+        bid_type: One of "regular", "moon", or "loner". Default "regular"
+            for backward compatibility with R0-R2 models.
+
+    Returns:
+        np.ndarray of shape (4,): [bid_n, bid_n_sq, is_moon, is_loner].
+    """
+    is_moon = 1.0 if bid_type == "moon" else 0.0
+    is_loner = 1.0 if bid_type == "loner" else 0.0
+    return np.array(
+        [float(bid_n), float(bid_n * bid_n), is_moon, is_loner],
+        dtype=np.float64,
+    )
 
 
 def compute_interaction_features(state: np.ndarray) -> np.ndarray:
@@ -1813,17 +1829,35 @@ def _validate_artifact_features(
     Shared validation logic for all action-value bidder classes. Checks that
     the artifact's feature_names have the expected structure:
         hand (39) + partner (N) + position (0-2) + opponent (0-12)
-        + positional (10) [+ interaction (3)] + action (2)
+        + positional (10) [+ interaction (3)] + action (2 or 4)
     or for R0/constrained/selected hand-only models:
-        hand_subset (M) + action (2)  where M <= 39
+        hand_subset (M) + action (2 or 4)  where M <= 39
 
     Returns a tuple of (inferred partner feature names, has_positional).
 
     Raises:
         ValueError: If feature_names don't match the expected structure.
     """
+    # Detect action feature size: R3+ artifacts have 4 (bid_n, bid_n_sq,
+    # is_moon, is_loner); R0-R2 artifacts have 2 (bid_n, bid_n_sq).
+    n_action_full = len(ACTION_FEATURE_NAMES)
+    n_action_base = len(ACTION_FEATURE_NAMES_BASE)
+    tail_full = list(model_feature_names[-n_action_full:])
+    tail_base = list(model_feature_names[-n_action_base:])
+    if tail_full == ACTION_FEATURE_NAMES:
+        n_action = n_action_full
+        action_names_used = ACTION_FEATURE_NAMES
+    elif tail_base == ACTION_FEATURE_NAMES_BASE:
+        n_action = n_action_base
+        action_names_used = ACTION_FEATURE_NAMES_BASE
+    else:
+        raise ValueError(
+            f"Artifact feature_names do not end with recognized action features. "
+            f"Expected {ACTION_FEATURE_NAMES} or {ACTION_FEATURE_NAMES_BASE}, "
+            f"got {tail_full}."
+        )
+
     # Strip action features from the end to get state features
-    n_action = len(ACTION_FEATURE_NAMES)
     if has_interactions:
         n_interaction = len(INTERACTION_FEATURE_NAMES)
         state_plus_interaction = model_feature_names[:-(n_action)]
@@ -1855,10 +1889,10 @@ def _validate_artifact_features(
         )
         if has_interactions:
             expected_full = (
-                expected_state + INTERACTION_FEATURE_NAMES + ACTION_FEATURE_NAMES
+                expected_state + INTERACTION_FEATURE_NAMES + action_names_used
             )
         else:
-            expected_full = expected_state + ACTION_FEATURE_NAMES
+            expected_full = expected_state + action_names_used
 
         if list(model_feature_names) != expected_full:
             raise ValueError(
@@ -1868,7 +1902,8 @@ def _validate_artifact_features(
                 f"{f' + {len(position_names)} position' if position_names else ''}"
                 f"{f' + {len(opponent_names)} opponent' if opponent_names else ''}"
                 f" + 10 positional"
-                f"{' + 3 interaction' if has_interactions else ''} + 2 action), "
+                f"{' + 3 interaction' if has_interactions else ''}"
+                f" + {n_action} action), "
                 f"got {len(model_feature_names)} features."
             )
     else:
@@ -1897,14 +1932,35 @@ def _validate_artifact_features(
 
         # Verify action features are at the expected positions
         actual_action = model_feature_names[-(n_action):]
-        if list(actual_action) != list(ACTION_FEATURE_NAMES):
+        if list(actual_action) != list(action_names_used):
             raise ValueError(
                 f"Artifact feature_names structural mismatch. "
-                f"Expected action features {ACTION_FEATURE_NAMES} at end, "
+                f"Expected action features {action_names_used} at end, "
                 f"got {actual_action}."
             )
 
     return list(partner_names), has_positional
+
+
+def _detect_action_feature_count(model_feature_names: List[str]) -> int:
+    """Detect whether a model uses 2 (base) or 4 (extended) action features.
+
+    Returns the number of action features at the tail of model_feature_names.
+    """
+    n_full = len(ACTION_FEATURE_NAMES)
+    n_base = len(ACTION_FEATURE_NAMES_BASE)
+    if (
+        len(model_feature_names) >= n_full
+        and list(model_feature_names[-n_full:]) == ACTION_FEATURE_NAMES
+    ):
+        return n_full
+    if (
+        len(model_feature_names) >= n_base
+        and list(model_feature_names[-n_base:]) == ACTION_FEATURE_NAMES_BASE
+    ):
+        return n_base
+    # Fallback — let validation catch mismatches
+    return n_full
 
 
 def _validate_pass_model_features(
@@ -2167,7 +2223,9 @@ class ActionValueBidder(BiddingPolicy):
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
         hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:
-            n_action = len(ACTION_FEATURE_NAMES)
+            n_action = _detect_action_feature_count(
+                list(self.models["suit"]["feature_names"])
+            )
             # Collect all state feature names to detect non-hand features
             all_state_names: list[str] = []
             for family in ("suit", "high", "low"):
@@ -2244,7 +2302,7 @@ class ActionValueBidder(BiddingPolicy):
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
-                action_feats = extract_action_features(action.n)
+                action_feats = extract_action_features(action.n, action.bid_type)
                 features = np.concatenate([state, action_feats])
                 value = predict_ols(self.models[family], features)
 
@@ -2356,7 +2414,9 @@ class GBTActionValueBidder(BiddingPolicy):
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
         hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:
-            n_action = len(ACTION_FEATURE_NAMES)
+            n_action = _detect_action_feature_count(
+                list(models_meta["suit"]["feature_names"])
+            )
             all_state_names: list[str] = []
             for family in ("suit", "high", "low"):
                 all_state_names.extend(
@@ -2429,7 +2489,7 @@ class GBTActionValueBidder(BiddingPolicy):
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
-                action_feats = extract_action_features(action.n)
+                action_feats = extract_action_features(action.n, action.bid_type)
                 features = np.concatenate([state, action_feats])
                 value = float(
                     self.gbt_models[family].predict(features.reshape(1, -1))[0]
@@ -2561,7 +2621,7 @@ class TwoStageActionValueBidder(BiddingPolicy):
         self._hand_indices: dict[str, Optional[np.ndarray]] = {}
         hand_name_set = set(_HAND_FEATURE_NAMES)
         if not self._has_positional:
-            n_action = len(ACTION_FEATURE_NAMES)
+            n_action = _detect_action_feature_count(list(suit_feature_names))
             # Suit model: feature_names at top level of suit result
             all_state_names: list[str] = list(suit_feature_names[:-(n_action)])
             for family in ("high", "low"):
@@ -2632,7 +2692,7 @@ class TwoStageActionValueBidder(BiddingPolicy):
                 if self._has_interactions:
                     interactions = compute_interaction_features(state)
                     state = np.concatenate([state, interactions])
-                action_feats = extract_action_features(action.n)
+                action_feats = extract_action_features(action.n, action.bid_type)
                 features = np.concatenate([state, action_feats])
 
                 if family == "suit":
