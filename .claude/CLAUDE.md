@@ -3,6 +3,7 @@
 Project overview, commands, architecture, and constraints are in the root CLAUDE.md.
 Domain docs live in docs/ — read them on-demand when working in relevant areas.
 Skills in .claude/skills/ provide workflow guidance — invoke with /skill-name.
+TUI task list conventions are in `.claude/rules/25_task_lists.md` — use for multi-step work.
 
 ## Compaction Instructions
 
