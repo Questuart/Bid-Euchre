@@ -6,6 +6,7 @@
 
 Before any PR (Tier 2):
 
+    git fetch origin main && git rebase origin/main   # Avoid stale-base conflicts
     make check-quiet    # Full validation, minimal output (logs to tmpfile)
     make check          # Full validation, full output
 
