@@ -235,6 +235,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/manage_artifacts.py` | Artifact lifecycle CLI (status, supersession, quarantine, prune) |
 | `scripts/internal/play_policy_gate.py` | Play policy stability gate |
 | `scripts/internal/plan_review_driver.py` | Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting) |
+| `scripts/internal/test_codex_plan_review_live.py` | Live smoke/quick/full test for Codex CLI plan review pipeline |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
 | `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |
 | `scripts/internal/rung_state.py` | Rung orchestrator state management (RunState persistence, step/model tracking) |

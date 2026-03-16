@@ -2,7 +2,8 @@
 
 Extends the code review adapter for plan file review with:
 - Tier detection (frontmatter override -> heuristic classification)
-- Path-isolated Codex invocation (temp index seeded from main)
+- Codex invocation in the provided working directory (relies on worktree workflow)
+- Pre-flight auth check for Codex CLI credentials
 - Claude failsafe (CLAUDE_REVIEW_CMD env var for testing)
 - Plan-specific finding schema (PlanReviewFinding)
 """
@@ -15,7 +16,6 @@ import logging
 import os
 import re
 import subprocess
-import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -163,6 +163,38 @@ def plan_state_key(plan_path: Path) -> str:
     return hashlib.sha256(rel.encode()).hexdigest()[:12]
 
 
+def _check_codex_auth(auth_path: Path | None = None) -> str | None:
+    """Check whether Codex CLI credentials are present.
+
+    Args:
+        auth_path: Path to the auth file. Defaults to ``~/.codex/auth.json``.
+
+    Returns:
+        ``None`` if auth looks valid, or an error message string if not.
+    """
+    if auth_path is None:
+        auth_path = Path.home() / ".codex" / "auth.json"
+
+    if not auth_path.exists():
+        return f"Codex auth file not found at {auth_path}"
+
+    try:
+        data = json.loads(auth_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return f"Cannot read Codex auth file: {exc}"
+
+    # Check for API key auth
+    if data.get("OPENAI_API_KEY"):
+        return None
+
+    # Check for ChatGPT token auth
+    tokens = data.get("tokens")
+    if isinstance(tokens, dict) and tokens:
+        return None
+
+    return "Codex auth file exists but contains no valid credentials (no API key or tokens)"
+
+
 def invoke_codex_plan_review(
     plan_path: Path,
     tier: str,
@@ -171,10 +203,11 @@ def invoke_codex_plan_review(
     timeout: int = 300,
     cwd: Path | None = None,
 ) -> PlanReviewResult:
-    """Invoke Codex CLI for plan-specific review with path isolation.
+    """Invoke Codex CLI for plan-specific review.
 
-    Creates a temp git index seeded from the base branch with only the plan
-    file staged, then invokes ``codex review --base <base>`` against it.
+    Invokes Codex CLI in the provided working directory. Relies on worktree
+    workflow -- the cwd should be a worktree with plan changes committed on
+    a branch.
 
     Args:
         plan_path: Path to the plan file (repo-relative).
@@ -196,36 +229,23 @@ def invoke_codex_plan_review(
 
     work_dir = cwd or Path.cwd()
     start = time.monotonic()
-    tmp_index = None
+
+    # Pre-flight auth check
+    auth_error = _check_codex_auth()
+    if auth_error:
+        elapsed = time.monotonic() - start
+        logger.warning("Codex auth check failed: %s", auth_error)
+        return PlanReviewResult(
+            success=False,
+            findings=[],
+            tier=tier,
+            reviewer="codex_cli",
+            raw_output="",
+            latency_seconds=elapsed,
+            error=auth_error,
+        )
 
     try:
-        # Create a temp index file seeded from the base branch
-        tmp_fd, tmp_index = tempfile.mkstemp(prefix="plan_review_idx_", suffix=".idx")
-        os.close(tmp_fd)
-
-        env = {**os.environ, "GIT_INDEX_FILE": tmp_index}
-
-        # Seed from base branch
-        subprocess.run(
-            ["git", "read-tree", base],
-            env=env,
-            cwd=work_dir,
-            capture_output=True,
-            check=True,
-            timeout=30,
-        )
-
-        # Stage only the plan file
-        subprocess.run(
-            ["git", "add", str(plan_path)],
-            env=env,
-            cwd=work_dir,
-            capture_output=True,
-            check=True,
-            timeout=30,
-        )
-
-        # Invoke Codex CLI with the isolated index
         cmd = [*_resolve_codex_binary(), "review", "--base", base]
         logger.info(
             "Invoking Codex CLI for plan review (tier=%s, base=%s, file=%s)",
@@ -240,7 +260,6 @@ def invoke_codex_plan_review(
             text=True,
             timeout=timeout,
             cwd=work_dir,
-            env=env,
         )
         elapsed = time.monotonic() - start
 
@@ -324,26 +343,6 @@ def invoke_codex_plan_review(
             latency_seconds=elapsed,
             error="Codex CLI not found (codex not in PATH, npx unavailable)",
         )
-
-    except subprocess.CalledProcessError as exc:
-        elapsed = time.monotonic() - start
-        logger.error("Git command failed during plan review setup: %s", exc)
-        return PlanReviewResult(
-            success=False,
-            findings=[],
-            tier=tier,
-            reviewer="codex_cli",
-            raw_output=str(exc),
-            latency_seconds=elapsed,
-            error=f"Git setup failed: {exc}",
-        )
-
-    finally:
-        if tmp_index and os.path.exists(tmp_index):
-            try:
-                os.unlink(tmp_index)
-            except OSError:
-                pass
 
 
 def invoke_claude_failsafe(
