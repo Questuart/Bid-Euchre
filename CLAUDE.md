@@ -56,6 +56,7 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 
 ### Pre-Commit Checklist
 
+- Run `git fetch origin main && git rebase origin/main` before opening a PR to avoid stale-base conflicts.
 - Run full `make check` (or equivalent test suite) before creating any PR.
 - Verify no uncommitted notebook changes that would trigger git diff checks.
 - Run linter (`ruff check --fix`) and formatter (`ruff format`) on all changed files.
