@@ -1,4 +1,3 @@
-
 import pytest
 
 from bid_euchre.core.cards import Card
@@ -73,7 +72,10 @@ class TestTrickWinner:
         plays = [
             (0, Card("H", "A")),  # Player 0: Ace of hearts (led suit)
             (1, Card("H", "K")),  # Player 1: King of hearts
-            (2, Card("H", "J")),  # Player 2: Jack of hearts (RIGHT bower when hearts trump)
+            (
+                2,
+                Card("H", "J"),
+            ),  # Player 2: Jack of hearts (RIGHT bower when hearts trump)
             (3, Card("S", "A")),  # Player 3: Ace of spades
         ]
 
@@ -85,7 +87,10 @@ class TestTrickWinner:
         plays = [
             (0, Card("H", "A")),  # Player 0: Ace of hearts (led suit)
             (1, Card("H", "K")),  # Player 1: King of hearts
-            (2, Card("D", "J")),  # Player 2: Jack of diamonds (LEFT bower when hearts trump)
+            (
+                2,
+                Card("D", "J"),
+            ),  # Player 2: Jack of diamonds (LEFT bower when hearts trump)
             (3, Card("S", "A")),  # Player 3: Ace of spades
         ]
 
@@ -103,6 +108,60 @@ class TestTrickWinner:
 
         winner = trick_winner(plays, "suit", "H")
         assert winner == 1  # Right bower beats left bower
+
+
+class TestTrickWinner3Cards:
+    """Test trick_winner with 3-card tricks (loner games)."""
+
+    def test_trick_winner_3_cards_suit_contract(self):
+        """Trick winner works correctly with only 3 cards played."""
+        plays = [
+            (0, Card("H", "T")),  # Player 0: 10 of hearts (led)
+            (1, Card("H", "K")),  # Player 1: King of hearts
+            (3, Card("H", "Q")),  # Player 3: Queen of hearts (player 2 sitting out)
+        ]
+        winner = trick_winner(plays, "suit", "S")
+        assert winner == 1  # King is highest heart
+
+    def test_trick_winner_3_cards_with_trump(self):
+        """Trump wins in 3-card trick."""
+        plays = [
+            (0, Card("H", "T")),  # Player 0: 10 of hearts (led)
+            (1, Card("S", "Q")),  # Player 1: Queen of spades (trump)
+            (3, Card("H", "A")),  # Player 3: Ace of hearts
+        ]
+        winner = trick_winner(plays, "suit", "S")
+        assert winner == 1  # Trump wins
+
+    def test_trick_winner_3_cards_high_contract(self):
+        """High no-trump works with 3 cards."""
+        plays = [
+            (1, Card("D", "K")),  # Player 1: King of diamonds (led)
+            (2, Card("D", "A")),  # Player 2: Ace of diamonds
+            (3, Card("S", "A")),  # Player 3: Ace of spades (offsuit)
+        ]
+        winner = trick_winner(plays, "high", None)
+        assert winner == 2  # Ace of diamonds wins
+
+    def test_trick_winner_3_cards_low_contract(self):
+        """Low no-trump works with 3 cards."""
+        plays = [
+            (0, Card("C", "A")),  # Player 0: Ace of clubs (led, lowest in low)
+            (1, Card("C", "T")),  # Player 1: 10 of clubs (highest in low)
+            (3, Card("C", "K")),  # Player 3: King of clubs
+        ]
+        winner = trick_winner(plays, "low", None)
+        assert winner == 1  # 10 is highest in low contract
+
+    def test_trick_winner_3_cards_bower_wins(self):
+        """Right bower wins in 3-card trick."""
+        plays = [
+            (0, Card("H", "A")),  # Player 0: Ace of hearts
+            (1, Card("H", "J")),  # Player 1: Right bower (hearts trump)
+            (3, Card("D", "J")),  # Player 3: Left bower
+        ]
+        winner = trick_winner(plays, "suit", "H")
+        assert winner == 1  # Right bower wins
 
 
 class TestHighestTrump:
@@ -198,7 +257,11 @@ class TestGetLegalIndices:
 
     def test_left_bower_is_trump_suit(self):
         """Left bower should be treated as trump suit for follow-suit."""
-        hand = [Card("D", "J"), Card("S", "K"), Card("C", "Q")]  # D-J is left bower when H is trump
+        hand = [
+            Card("D", "J"),
+            Card("S", "K"),
+            Card("C", "Q"),
+        ]  # D-J is left bower when H is trump
         plays_so_far = [(0, Card("H", "T"))]  # Hearts led
         legal = get_legal_indices(hand, plays_so_far, "suit", "H")
         # D-J has effective suit of Hearts (left bower), so it's the only legal play
@@ -220,7 +283,11 @@ class TestGetLegalIndices:
 
     def test_trump_led_must_follow_trump(self):
         """When trump is led, must follow with trump if possible."""
-        hand = [Card("H", "A"), Card("S", "K"), Card("D", "Q")]  # S-K is only trump (spades trump)
+        hand = [
+            Card("H", "A"),
+            Card("S", "K"),
+            Card("D", "Q"),
+        ]  # S-K is only trump (spades trump)
         plays_so_far = [(0, Card("S", "T"))]  # Spades (trump) led
         legal = get_legal_indices(hand, plays_so_far, "suit", "S")
         # Only S-K follows spades
