@@ -349,6 +349,17 @@ def generate_report(report_dir: Path) -> str:
         lines.append(_table_placeholder("sanity_bounds_check.csv"))
     lines.append("")
 
+    # Gate status footer (required by repo-linter registry-requires-gate-reference)
+    lines.extend(
+        [
+            "## Gate Status",
+            "",
+            "gate_status: See `hypothesis_outcomes` table above and "
+            "`evidence_manifest.json` for machine-readable gate evidence.",
+            "",
+        ]
+    )
+
     return "\n".join(lines)
 
 
@@ -610,6 +621,17 @@ def generate_decision_report(
         "`tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`"
     )
     lines.append("")
+
+    # Gate status footer (required by repo-linter registry-requires-gate-reference)
+    lines.extend(
+        [
+            "## Gate Status",
+            "",
+            "gate_status: See `hypothesis_outcomes` table above and "
+            "`evidence_manifest.json` for machine-readable gate evidence.",
+            "",
+        ]
+    )
 
     content = "\n".join(lines)
 

@@ -1,0 +1,324 @@
+{
+  "schema_version": "arc_d_evidence_manifest_v1",
+  "lineage_id": "arc_d_v2",
+  "rung_id": "r1",
+  "provenance_sha": "fbba88b5aedd08bd6c22f56ad1ea884e30575892",
+  "governing_plan": "plans/arc_d_v2/r1/plan.md",
+  "plan_shas": [],
+  "anchor": "",
+  "roster": [],
+  "seeds": [],
+  "mode": "QUICK",
+  "run_ids": [],
+  "lifecycle": [
+    {
+      "run_id": "chart_data",
+      "status": "active"
+    },
+    {
+      "run_id": "charts",
+      "status": "active"
+    },
+    {
+      "run_id": "tables",
+      "status": "active"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "evidence_manifest",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/evidence_manifest.json",
+      "schema_version": "arc_d_evidence_manifest_v1"
+    }
+  ],
+  "tables": [
+    {
+      "name": "artifact_inventory.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/artifact_inventory.csv",
+      "size_bytes": 1135
+    },
+    {
+      "name": "behavior_by_bid_type.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/behavior_by_bid_type.csv",
+      "size_bytes": 1097
+    },
+    {
+      "name": "behavior_by_contract.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/behavior_by_contract.csv",
+      "size_bytes": 512
+    },
+    {
+      "name": "behavior_summary.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/behavior_summary.csv",
+      "size_bytes": 1564
+    },
+    {
+      "name": "comparator_rankings.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/comparator_rankings.csv",
+      "size_bytes": 584
+    },
+    {
+      "name": "cross_rung_deltas.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/cross_rung_deltas.csv",
+      "size_bytes": 71
+    },
+    {
+      "name": "data_sanity.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/data_sanity.csv",
+      "size_bytes": 2009
+    },
+    {
+      "name": "dataset_provenance.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/dataset_provenance.csv",
+      "size_bytes": 1056
+    },
+    {
+      "name": "h2h_delta_matrix.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/h2h_delta_matrix.csv",
+      "size_bytes": 20652
+    },
+    {
+      "name": "h2h_tier_summary.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/h2h_tier_summary.csv",
+      "size_bytes": 1075
+    },
+    {
+      "name": "hypothesis_outcomes.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/hypothesis_outcomes.csv",
+      "size_bytes": 896
+    },
+    {
+      "name": "model_performance.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/model_performance.csv",
+      "size_bytes": 931
+    },
+    {
+      "name": "rung_model_spec.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/rung_model_spec.csv",
+      "size_bytes": 440
+    },
+    {
+      "name": "sanity_bounds_check.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/tables/sanity_bounds_check.csv",
+      "size_bytes": 1896
+    }
+  ],
+  "charts": [
+    {
+      "number": 1,
+      "name": "dashboard_competitive.png",
+      "title": "Competitive Dashboard",
+      "required": true,
+      "present": true,
+      "size_bytes": 297045,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/dashboard_competitive.png"
+    },
+    {
+      "number": 2,
+      "name": "dashboard_health.png",
+      "title": "Health Dashboard",
+      "required": true,
+      "present": true,
+      "size_bytes": 179997,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/dashboard_health.png"
+    },
+    {
+      "number": 3,
+      "name": "dashboard_model_eval.png",
+      "title": "Model Evaluation Dashboard",
+      "required": true,
+      "present": true,
+      "size_bytes": 84963,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/dashboard_model_eval.png"
+    },
+    {
+      "number": 4,
+      "name": "full_chart_suite/comparator_ranking_bars.png",
+      "title": "Comparator Ranking Bars",
+      "required": true,
+      "present": true,
+      "size_bytes": 42202,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/comparator_ranking_bars.png"
+    },
+    {
+      "number": 5,
+      "name": "full_chart_suite/tail_risk_panel.png",
+      "title": "Tail Risk Panel",
+      "required": true,
+      "present": true,
+      "size_bytes": 39769,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/tail_risk_panel.png"
+    },
+    {
+      "number": 6,
+      "name": "full_chart_suite/delta_bars_by_contract.png",
+      "title": "H2H Delta by Contract",
+      "required": true,
+      "present": true,
+      "size_bytes": 625322,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/delta_bars_by_contract.png"
+    },
+    {
+      "number": 7,
+      "name": "full_chart_suite/h2h_heatmap.png",
+      "title": "H2H Heatmap",
+      "required": true,
+      "present": true,
+      "size_bytes": 134376,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/h2h_heatmap.png"
+    },
+    {
+      "number": 8,
+      "name": "full_chart_suite/h2h_ranking_scatter.png",
+      "title": "H2H Ranking Scatter",
+      "required": false,
+      "present": true,
+      "size_bytes": 55682,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/h2h_ranking_scatter.png"
+    },
+    {
+      "number": 9,
+      "name": "full_chart_suite/outcome_distributions.png",
+      "title": "Outcome Distributions",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 10,
+      "name": "full_chart_suite/seat_balance.png",
+      "title": "Seat Balance",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 11,
+      "name": "full_chart_suite/contract_mix_bars.png",
+      "title": "Contract Mix",
+      "required": true,
+      "present": true,
+      "size_bytes": 38413,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/contract_mix_bars.png"
+    },
+    {
+      "number": 12,
+      "name": "full_chart_suite/bid_behavior_panel.png",
+      "title": "Bid and Make Rates",
+      "required": true,
+      "present": true,
+      "size_bytes": 50858,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/bid_behavior_panel.png"
+    },
+    {
+      "number": 13,
+      "name": "full_chart_suite/bid_level_distribution.png",
+      "title": "Bid Level Distribution",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 14,
+      "name": "full_chart_suite/r2_by_contract.png",
+      "title": "R-squared by Contract",
+      "required": true,
+      "present": true,
+      "size_bytes": 35901,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/r2_by_contract.png"
+    },
+    {
+      "number": 15,
+      "name": "full_chart_suite/mae_by_contract.png",
+      "title": "MAE by Contract",
+      "required": true,
+      "present": true,
+      "size_bytes": 36488,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/mae_by_contract.png"
+    },
+    {
+      "number": 16,
+      "name": "full_chart_suite/pred_vs_actual.png",
+      "title": "Predicted vs Actual",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 17,
+      "name": "full_chart_suite/residual_distribution.png",
+      "title": "Residual Distribution",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 18,
+      "name": "full_chart_suite/calibration_curve.png",
+      "title": "Calibration Curve",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 19,
+      "name": "full_chart_suite/selection_path.png",
+      "title": "Selection Path",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 20,
+      "name": "full_chart_suite/feature_importance.png",
+      "title": "Feature Importance",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 21,
+      "name": "full_chart_suite/decision_agreement.png",
+      "title": "Decision Agreement",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 22,
+      "name": "full_chart_suite/disagreement_outcomes.png",
+      "title": "Disagreement Outcomes",
+      "required": false,
+      "present": false,
+      "size_bytes": 0
+    },
+    {
+      "number": 23,
+      "name": "full_chart_suite/h2h_intelligence_faceted.png",
+      "title": "Intelligence-Faceted H2H",
+      "required": false,
+      "present": true,
+      "size_bytes": 56407,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/h2h_intelligence_faceted.png"
+    },
+    {
+      "name": "full_chart_suite/outcome_summary.png",
+      "title": "full_chart_suite/outcome_summary.png",
+      "present": true,
+      "size_bytes": 48555,
+      "path": "docs/04_reports/arc_d_v2/r1/quick/charts/full_chart_suite/outcome_summary.png"
+    }
+  ],
+  "chart_data": [
+    {
+      "name": "contract_mix.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/chart_data/contract_mix.csv",
+      "size_bytes": 852
+    },
+    {
+      "name": "outcome_summary.csv",
+      "path": "docs/04_reports/arc_d_v2/r1/quick/chart_data/outcome_summary.csv",
+      "size_bytes": 1418
+    }
+  ]
+}
