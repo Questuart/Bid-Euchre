@@ -196,3 +196,5 @@ Generated from canonical CSV tables and chart PNGs.
 | constrained_ols_av | r2_positive_high | 0.4910 | 0.0000 | 1.0000 | PASS |
 
 *Full table omitted from markdown — see `tables/sanity_bounds_check.csv`*
+
+<\!-- gate_status: data sanity checks in §1 above -->

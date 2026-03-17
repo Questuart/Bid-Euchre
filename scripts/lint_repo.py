@@ -622,6 +622,7 @@ PROMOTION_REGISTRY_ALLOWLIST: set[str] = set()
 # (e.g., Codex validation results are observational, not gate evidence).
 PROMOTION_REGISTRY_EXCLUDE_DIRS = [
     "docs/04_reports/codex_validation/",
+    "docs/04_reports/qa/",
 ]
 
 GATE_EVIDENCE_PATTERNS = [

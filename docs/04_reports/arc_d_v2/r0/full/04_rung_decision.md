@@ -120,3 +120,5 @@ worth monitoring across rungs.
 - **Watch items for R1:**
   - GBT tail risk gap vs OLS (CVaR spread = 3.475)
   - Rank stability of positions 2-3 (two-stage vs GBT overlap)
+
+<\!-- gate_status: data sanity checks in §1 above -->
