@@ -2274,10 +2274,15 @@ class ActionValueBidder(BiddingPolicy):
             self._needs_full_state = False
 
         if not skip_behavioral_check:
+            # Match _select_state: pass None for partner_feature_names when
+            # _needs_full_state so extract_state_features returns all 69 features
+            sanity_partner = (
+                None if self._needs_full_state else self._partner_feature_names
+            )
             _check_ols_predictions_sane(
                 self.models,
                 self.pass_model,
-                self._partner_feature_names,
+                sanity_partner,
                 has_interactions=self._has_interactions,
                 include_positional=self._has_positional or self._needs_full_state,
                 hand_indices=self._hand_indices if not self._has_positional else None,
@@ -2476,9 +2481,14 @@ class GBTActionValueBidder(BiddingPolicy):
             self._needs_full_state = False
 
         if not skip_behavioral_check:
+            # Match _select_state: pass None for partner_feature_names when
+            # _needs_full_state so extract_state_features returns all 69 features
+            sanity_partner = (
+                None if self._needs_full_state else self._partner_feature_names
+            )
             _check_gbt_predictions_sane(
                 self.gbt_models,
-                self._partner_feature_names,
+                sanity_partner,
                 include_positional=self._has_positional or self._needs_full_state,
                 hand_indices=self._hand_indices if not self._has_positional else None,
                 has_moon_loner=self._has_moon_loner,
