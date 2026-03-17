@@ -326,7 +326,7 @@ def run_plan_review_loop(
         loop_state.transition(PlanReviewState.CODEX_REVIEWING)
         save_plan_review_state(loop_state, base_dir)
 
-        result = invoke_codex_plan_review(plan_path, tier)
+        result = invoke_codex_plan_review(plan_path, tier, output_dir=base_dir)
 
         if not result.success:
             # 3b: Codex failed -> fallback
@@ -344,7 +344,9 @@ def run_plan_review_loop(
             loop_state.transition(PlanReviewState.CLAUDE_FALLBACK_REVIEWING)
             save_plan_review_state(loop_state, base_dir)
 
-            fallback_result = invoke_claude_failsafe(plan_path, tier)
+            fallback_result = invoke_claude_failsafe(
+                plan_path, tier, output_dir=base_dir
+            )
             fallback_used = True
             reviewer = "claude_failsafe"
 
