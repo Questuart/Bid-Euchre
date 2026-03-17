@@ -111,7 +111,11 @@ def _df_to_markdown(
 
 
 def _chart_embed(charts_dir: Path, chart_name: str) -> str:
-    """Return markdown image embed or placeholder for a chart."""
+    """Return markdown image embed or placeholder for a chart.
+
+    The ``chart_name`` may include the ``full_chart_suite/`` prefix for
+    standalone charts (4-23). The file is looked up relative to charts_dir.
+    """
     entry = get_chart_by_filename(chart_name)
     chart_path = charts_dir / chart_name
     if chart_path.exists():
@@ -190,8 +194,8 @@ def generate_report(report_dir: Path) -> str:
     lines.append("")
 
     # R-squared and MAE charts
-    lines.append(_chart_embed(charts_dir, "r2_by_contract.png"))
-    lines.append(_chart_embed(charts_dir, "mae_by_contract.png"))
+    lines.append(_chart_embed(charts_dir, "full_chart_suite/r2_by_contract.png"))
+    lines.append(_chart_embed(charts_dir, "full_chart_suite/mae_by_contract.png"))
     lines.append("")
 
     # section 3 Offline Diagnostics
@@ -202,10 +206,10 @@ def generate_report(report_dir: Path) -> str:
         ]
     )
     for chart_name in [
-        "pred_vs_actual.png",
-        "residual_distribution.png",
-        "calibration_curve.png",
-        "feature_importance.png",
+        "full_chart_suite/pred_vs_actual.png",
+        "full_chart_suite/residual_distribution.png",
+        "full_chart_suite/calibration_curve.png",
+        "full_chart_suite/feature_importance.png",
     ]:
         lines.append(_chart_embed(charts_dir, chart_name))
     lines.append("")
@@ -218,9 +222,9 @@ def generate_report(report_dir: Path) -> str:
         ]
     )
     interp_charts = [
-        "shap_summary.png",
-        "shap_dependence_top5.png",
-        "selection_path.png",
+        "full_chart_suite/shap_summary.png",
+        "full_chart_suite/shap_dependence_top5.png",
+        "full_chart_suite/selection_path.png",
     ]
     has_interp = False
     for chart_name in interp_charts:
@@ -239,8 +243,8 @@ def generate_report(report_dir: Path) -> str:
         ]
     )
     decision_charts = [
-        "decision_agreement.png",
-        "disagreement_outcomes.png",
+        "full_chart_suite/decision_agreement.png",
+        "full_chart_suite/disagreement_outcomes.png",
     ]
     has_decision = False
     for chart_name in decision_charts:
@@ -265,8 +269,10 @@ def generate_report(report_dir: Path) -> str:
         lines.append(_table_placeholder("comparator_rankings.csv"))
     lines.append("")
 
-    lines.append(_chart_embed(charts_dir, "comparator_ranking_bars.png"))
-    lines.append(_chart_embed(charts_dir, "tail_risk_panel.png"))
+    lines.append(
+        _chart_embed(charts_dir, "full_chart_suite/comparator_ranking_bars.png")
+    )
+    lines.append(_chart_embed(charts_dir, "full_chart_suite/tail_risk_panel.png"))
     lines.append("")
 
     # section 7 H2H Battery
@@ -277,8 +283,10 @@ def generate_report(report_dir: Path) -> str:
         ]
     )
     # Charts first, compact table excerpt below
-    lines.append(_chart_embed(charts_dir, "delta_bars_by_contract.png"))
-    lines.append(_chart_embed(charts_dir, "h2h_heatmap.png"))
+    lines.append(
+        _chart_embed(charts_dir, "full_chart_suite/delta_bars_by_contract.png")
+    )
+    lines.append(_chart_embed(charts_dir, "full_chart_suite/h2h_heatmap.png"))
     lines.append("")
 
     h2h = _read_csv_safe(tables_dir / "h2h_delta_matrix.csv")
@@ -323,8 +331,8 @@ def generate_report(report_dir: Path) -> str:
         lines.append(_table_placeholder("behavior_by_contract.csv"))
     lines.append("")
 
-    lines.append(_chart_embed(charts_dir, "bid_behavior_panel.png"))
-    lines.append(_chart_embed(charts_dir, "contract_mix_bars.png"))
+    lines.append(_chart_embed(charts_dir, "full_chart_suite/bid_behavior_panel.png"))
+    lines.append(_chart_embed(charts_dir, "full_chart_suite/contract_mix_bars.png"))
     lines.append("")
 
     # section 9 Sanity Bounds
@@ -501,10 +509,19 @@ def generate_decision_report(
     lines.append("")
     lines.append(_top_n_comparator_table(comparator))
     lines.append("")
-    lines.append(
-        "See Chart 1 (Comparator Ranking Bars) and "
-        "Chart 4 (Tail Risk Panel) for visual context."
+    comp_bars = get_chart_by_filename("full_chart_suite/comparator_ranking_bars.png")
+    comp_ref = (
+        f"Chart {comp_bars.number} ({comp_bars.title})"
+        if comp_bars
+        else "Comparator Ranking Bars"
     )
+    tail_risk = get_chart_by_filename("full_chart_suite/tail_risk_panel.png")
+    tail_ref = (
+        f"Chart {tail_risk.number} ({tail_risk.title})"
+        if tail_risk
+        else "Tail Risk Panel"
+    )
+    lines.append(f"See {comp_ref} and {tail_ref} for visual context.")
     lines.append("")
 
     # Head-to-Head Performance
@@ -512,9 +529,26 @@ def generate_decision_report(
     lines.append("")
     lines.append(_h2h_tier_summary_table(h2h_tier))
     lines.append("")
+    h2h_heatmap = get_chart_by_filename("full_chart_suite/h2h_heatmap.png")
+    h2h_heat_ref = (
+        f"Chart {h2h_heatmap.number} ({h2h_heatmap.title})"
+        if h2h_heatmap
+        else "H2H Heatmap"
+    )
+    delta_bars = get_chart_by_filename("full_chart_suite/delta_bars_by_contract.png")
+    delta_ref = (
+        f"Chart {delta_bars.number} ({delta_bars.title})"
+        if delta_bars
+        else "Delta Bars by Contract"
+    )
+    intel_h2h = get_chart_by_filename("full_chart_suite/h2h_intelligence_faceted.png")
+    intel_ref = (
+        f"Chart {intel_h2h.number} ({intel_h2h.title})"
+        if intel_h2h
+        else "Intelligence-Faceted H2H"
+    )
     lines.append(
-        "See Chart 3 (H2H Heatmap), Chart 2 (Delta Bars by Contract), "
-        "and the intelligence-faceted H2H chart for tier-level analysis."
+        f"See {h2h_heat_ref}, {delta_ref}, and {intel_ref} for tier-level analysis."
     )
     lines.append("")
 
@@ -553,15 +587,24 @@ def generate_decision_report(
         )
     lines.append("")
 
-    # Supporting Evidence
+    # Supporting Evidence — chart numbers from registry
     lines.append("## Supporting Evidence")
     lines.append("")
-    lines.append("- Chart 1: Comparator Ranking Bars")
-    lines.append("- Chart 2: Delta Bars by Contract")
-    lines.append("- Chart 3: H2H Heatmap")
-    lines.append("- Chart 4: Tail Risk Panel")
-    lines.append("- Chart 5: Bid Behavior Panel")
-    lines.append("- Chart 9: Intelligence-Faceted H2H")
+    evidence_charts = [
+        "full_chart_suite/comparator_ranking_bars.png",
+        "full_chart_suite/delta_bars_by_contract.png",
+        "full_chart_suite/h2h_heatmap.png",
+        "full_chart_suite/tail_risk_panel.png",
+        "full_chart_suite/bid_behavior_panel.png",
+        "full_chart_suite/h2h_intelligence_faceted.png",
+    ]
+    for chart_file in evidence_charts:
+        entry = get_chart_by_filename(chart_file)
+        if entry:
+            lines.append(f"- Chart {entry.number}: {entry.title}")
+        else:
+            basename = chart_file.split("/")[-1].replace(".png", "").replace("_", " ")
+            lines.append(f"- {basename}")
     lines.append(
         "- Full tables: `tables/comparator_rankings.csv`, "
         "`tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`"

@@ -922,6 +922,7 @@ def generate_chart_data(
     comparator_cis: dict | None = None,
     training_artifacts: dict[str, dict] | None = None,
     output_dir: Path | None = None,
+    parquet_paths: list[Path] | None = None,
 ) -> list[str]:
     """Generate chart_data CSVs from existing artifacts.
 
@@ -933,6 +934,8 @@ def generate_chart_data(
         comparator_cis: Merged comparator CIs JSON.
         training_artifacts: Dict of model_name -> training artifact JSON.
         output_dir: Path to write chart_data CSVs.
+        parquet_paths: Optional list of action-value parquet file paths
+            for true outcome distributions.
 
     Returns:
         List of generated CSV filenames.
@@ -1041,7 +1044,7 @@ def generate_chart_data(
 
     # 7. outcome_distributions.csv — per-deal tricks_won histogram bins
     if h2h_battery:
-        rows = _extract_outcome_distributions(h2h_battery)
+        rows = _extract_outcome_distributions(h2h_battery, parquet_paths=parquet_paths)
         if rows:
             df = pd.DataFrame(rows)
             df.to_csv(output_dir / "outcome_distributions.csv", index=False)
@@ -1179,22 +1182,36 @@ def _extract_feature_importance(
     return rows
 
 
-def _extract_outcome_distributions(h2h_battery: dict) -> list[dict]:
-    """Extract outcome distribution data from H2H battery self-play cells.
+def _extract_outcome_distributions(
+    h2h_battery: dict,
+    parquet_paths: list[Path] | None = None,
+) -> list[dict]:
+    """Extract outcome distribution data, preferring parquet when available.
 
-    Battery JSONs contain per-contract summary statistics but not raw
-    per-deal tricks_won. We synthesize histogram-shaped data from the
-    available summary metrics (deals_total, net_eppd_delta as a proxy
-    for mean tricks offset) to produce a distribution-shaped CSV.
+    **Primary path (parquet):** If ``parquet_paths`` contains existing
+    action-value parquet files, reads them and extracts true ``tricks_won``
+    histogram: groupby ``contract_family`` x ``tricks_won`` -> count.
+    Schema: model, contract, tricks_won, count, fraction, source.
 
-    If by_contract contains ``tricks_won_histogram`` bins (future
-    enhancement), those are used directly. Otherwise, falls back to
-    extracting deals_total per contract as a simple count metric.
+    **Fallback path (synthetic):** If parquet is unavailable, falls back to
+    synthesizing histogram-shaped data from H2H battery summary metrics.
+    Adds ``source="synthetic"`` so downstream consumers know the data is
+    interpolated.
 
-    Schema: model, contract, tricks_won, count, fraction
+    Args:
+        h2h_battery: Merged H2H battery JSON.
+        parquet_paths: Optional list of paths to action-value parquet files.
 
-    Returns list of dicts suitable for DataFrame construction.
+    Returns:
+        List of dicts suitable for DataFrame construction.
     """
+    # Primary path: read from parquet files
+    if parquet_paths:
+        rows = _extract_outcome_distributions_from_parquet(parquet_paths)
+        if rows:
+            return rows
+
+    # Fallback: synthetic from battery JSON
     rows: list[dict] = []
     for _mid, cell in h2h_battery.get("cells", {}).items():
         if cell.get("bidder_a") != cell.get("bidder_b"):
@@ -1224,6 +1241,7 @@ def _extract_outcome_distributions(h2h_battery: dict) -> list[dict]:
                             "fraction": _safe_round(count / total)
                             if total > 0
                             else None,
+                            "source": "synthetic",
                         }
                     )
                 continue
@@ -1242,8 +1260,99 @@ def _extract_outcome_distributions(h2h_battery: dict) -> list[dict]:
                         else 5,
                         "count": deals,
                         "fraction": 1.0,
+                        "source": "synthetic",
                     }
                 )
+
+    if rows:
+        logger.warning(
+            "Outcome distributions extracted from synthetic battery data. "
+            "For true distributions, provide action-value parquet files."
+        )
+    return rows
+
+
+def _extract_outcome_distributions_from_parquet(
+    parquet_paths: list[Path],
+) -> list[dict]:
+    """Extract true outcome distributions from action-value parquet files.
+
+    Reads parquet files containing per-deal action-value data, groups by
+    contract_family x tricks_won, and produces histogram counts.
+
+    Args:
+        parquet_paths: List of paths to action-value parquet files.
+
+    Returns:
+        List of dicts with keys: model, contract, tricks_won, count, fraction, source.
+        Empty list if no valid parquet files found.
+    """
+    frames: list[pd.DataFrame] = []
+    for path in parquet_paths:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path)
+            frames.append(df)
+        except Exception as e:
+            logger.warning("Failed to read parquet %s: %s", path, e)
+            continue
+
+    if not frames:
+        return []
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Determine contract column name (contract_family or contract_type)
+    contract_col = None
+    for candidate in ("contract_family", "contract_type", "contract"):
+        if candidate in combined.columns:
+            contract_col = candidate
+            break
+    if contract_col is None or "tricks_won" not in combined.columns:
+        logger.warning(
+            "Parquet missing required columns (contract + tricks_won). Available: %s",
+            list(combined.columns),
+        )
+        return []
+
+    # Determine model column if present
+    model_col = None
+    for candidate in ("model", "bidder", "model_name"):
+        if candidate in combined.columns:
+            model_col = candidate
+            break
+
+    rows: list[dict] = []
+    # Group by model (if present) and contract
+    if model_col:
+        group_cols = [model_col, contract_col, "tricks_won"]
+    else:
+        group_cols = [contract_col, "tricks_won"]
+
+    grouped = combined.groupby(group_cols).size().reset_index(name="count")
+
+    # Compute fractions within each model+contract group
+    fraction_group_cols = [model_col, contract_col] if model_col else [contract_col]
+    totals = grouped.groupby(fraction_group_cols)["count"].transform("sum")
+    grouped["fraction"] = grouped["count"] / totals
+
+    for _, row in grouped.iterrows():
+        entry: dict = {
+            "model": row[model_col] if model_col else "unknown",
+            "contract": row[contract_col],
+            "tricks_won": int(row["tricks_won"]),
+            "count": int(row["count"]),
+            "fraction": _safe_round(float(row["fraction"])),
+            "source": "parquet",
+        }
+        rows.append(entry)
+
+    logger.info(
+        "Extracted %d outcome distribution rows from %d parquet file(s)",
+        len(rows),
+        len(frames),
+    )
     return rows
 
 

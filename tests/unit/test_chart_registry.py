@@ -1,13 +1,16 @@
 """Tests for chart registry, numbered report headings, and manifest chart inventory.
 
 Covers:
-- Chart registry has exactly 22 entries with unique numbers and filenames
+- Chart registry has exactly 23 entries with unique numbers and filenames
+- Charts 4-23 use full_chart_suite/ prefix, charts 1-3 are plain dashboards
 - get_chart_by_number() and get_chart_by_filename() work correctly
+- get_chart_by_filename() backward-compatible basename lookup
 - Report rendering uses numbered headings (Chart N. Title)
 - Report rendering emits placeholders for missing optional charts
 - H2H table rendering uses team0/team1 labels
 - Long tables are truncated at ~12 rows
-- Manifest includes chart number and presence status
+- Manifest includes chart number and presence status (with subdirectory)
+- Decision report chart references use registry lookups
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from bid_euchre.arc_d_v2.report import (
     _chart_embed,
     _chart_placeholder,
     _df_to_markdown,
+    generate_decision_report,
     generate_report,
 )
 
@@ -43,8 +47,8 @@ FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_
 
 
 class TestChartRegistry:
-    def test_exactly_22_entries(self):
-        assert len(CHART_REGISTRY) == 22
+    def test_exactly_23_entries(self):
+        assert len(CHART_REGISTRY) == 23
 
     def test_unique_numbers(self):
         numbers = [e.number for e in CHART_REGISTRY]
@@ -54,13 +58,31 @@ class TestChartRegistry:
         filenames = [e.filename for e in CHART_REGISTRY]
         assert len(filenames) == len(set(filenames))
 
-    def test_numbers_are_1_to_22(self):
+    def test_numbers_are_1_to_23(self):
         numbers = sorted(e.number for e in CHART_REGISTRY)
-        assert numbers == list(range(1, 23))
+        assert numbers == list(range(1, 24))
 
     def test_all_filenames_end_with_png(self):
         for entry in CHART_REGISTRY:
             assert entry.filename.endswith(".png"), f"{entry.filename} is not a PNG"
+
+    def test_dashboards_plain_filenames(self):
+        """Charts 1-3 (dashboards) have plain filenames without subdirectory."""
+        for n in (1, 2, 3):
+            entry = get_chart_by_number(n)
+            assert entry is not None
+            assert (
+                "/" not in entry.filename
+            ), f"Dashboard chart {n} should not have subdirectory prefix"
+
+    def test_standalone_charts_have_suite_prefix(self):
+        """Charts 4-23 (standalone) have full_chart_suite/ prefix."""
+        for n in range(4, 24):
+            entry = get_chart_by_number(n)
+            assert entry is not None
+            assert entry.filename.startswith(
+                "full_chart_suite/"
+            ), f"Chart {n} ({entry.filename}) should have full_chart_suite/ prefix"
 
     def test_entries_are_frozen(self):
         entry = CHART_REGISTRY[0]
@@ -76,6 +98,13 @@ class TestChartRegistry:
         assert hasattr(entry, "required")
         assert hasattr(entry, "source")
 
+    def test_chart_23_is_intelligence_faceted_h2h(self):
+        """Chart 23 is the intelligence-faceted H2H chart."""
+        entry = get_chart_by_number(23)
+        assert entry is not None
+        assert entry.filename == "full_chart_suite/h2h_intelligence_faceted.png"
+        assert entry.title == "Intelligence-Faceted H2H"
+
 
 class TestGetChartByNumber:
     def test_returns_correct_entry(self):
@@ -85,11 +114,11 @@ class TestGetChartByNumber:
 
     def test_returns_none_for_invalid(self):
         assert get_chart_by_number(0) is None
-        assert get_chart_by_number(23) is None
+        assert get_chart_by_number(24) is None
         assert get_chart_by_number(-1) is None
 
     def test_all_numbers_resolve(self):
-        for n in range(1, 23):
+        for n in range(1, 24):
             entry = get_chart_by_number(n)
             assert entry is not None, f"Chart number {n} not found"
             assert entry.number == n
@@ -111,6 +140,18 @@ class TestGetChartByFilename:
             assert entry is not None
             assert entry.number == reg_entry.number
 
+    def test_backward_compatible_basename_lookup(self):
+        """Looking up by basename (without prefix) finds the entry."""
+        entry = get_chart_by_filename("comparator_ranking_bars.png")
+        assert entry is not None
+        assert entry.number == 4
+
+    def test_full_path_lookup(self):
+        """Looking up by full prefixed filename works."""
+        entry = get_chart_by_filename("full_chart_suite/comparator_ranking_bars.png")
+        assert entry is not None
+        assert entry.number == 4
+
 
 # ──────────────────────────────────────────────
 #  Report — Numbered Headings
@@ -131,12 +172,14 @@ class TestReportNumberedHeadings:
         assert "### Chart 1. Competitive Dashboard" in result
         assert "![Competitive Dashboard]" in result
 
-    def test_chart_embed_numbered_for_various_charts(self, charts_dir):
-        """Multiple chart types get their correct numbered headings."""
+    def test_chart_embed_numbered_for_suite_charts(self, charts_dir):
+        """Charts in full_chart_suite/ get correct numbered headings."""
+        suite_dir = charts_dir / "full_chart_suite"
+        suite_dir.mkdir()
         test_cases = [
-            ("r2_by_contract.png", 14, "R-squared by Contract"),
-            ("h2h_heatmap.png", 7, "H2H Heatmap"),
-            ("contract_mix_bars.png", 11, "Contract Mix"),
+            ("full_chart_suite/r2_by_contract.png", 14, "R-squared by Contract"),
+            ("full_chart_suite/h2h_heatmap.png", 7, "H2H Heatmap"),
+            ("full_chart_suite/contract_mix_bars.png", 11, "Contract Mix"),
         ]
         for filename, expected_num, expected_title in test_cases:
             (charts_dir / filename).write_bytes(b"PNG")
@@ -174,6 +217,54 @@ class TestReportPlaceholders:
         content = generate_report(report_dir)
         # Missing registered charts should get numbered placeholders
         assert "source data absent" in content or "not yet generated" in content
+
+
+# ──────────────────────────────────────────────
+#  Decision Report — Registry-based Chart References
+# ──────────────────────────────────────────────
+
+
+class TestDecisionReportChartReferences:
+    def test_chart_references_use_registry_numbers(self, tmp_path):
+        """Decision report chart references match registry numbers."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        # Write minimal hypothesis outcomes
+        pd.DataFrame(
+            {
+                "hypothesis_id": ["H1"],
+                "description": ["Test"],
+                "status": ["PASS"],
+            }
+        ).to_csv(tables_dir / "hypothesis_outcomes.csv", index=False)
+
+        content = generate_decision_report(tables_dir, charts_dir)
+
+        # Comparator ranking bars = chart 4
+        assert "Chart 4 (Comparator Ranking Bars)" in content
+        # Tail risk = chart 5
+        assert "Chart 5 (Tail Risk Panel)" in content
+        # H2H heatmap = chart 7
+        assert "Chart 7 (H2H Heatmap)" in content
+        # Delta bars = chart 6
+        assert "Chart 6 (H2H Delta by Contract)" in content
+        # Intelligence-faceted H2H = chart 23
+        assert "Chart 23 (Intelligence-Faceted H2H)" in content
+
+    def test_supporting_evidence_uses_registry_numbers(self, tmp_path):
+        """Supporting Evidence section lists registry numbers."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        content = generate_decision_report(tables_dir, charts_dir)
+        assert "Chart 4: Comparator Ranking Bars" in content
+        assert "Chart 12: Bid and Make Rates" in content
+        assert "Chart 23: Intelligence-Faceted H2H" in content
 
 
 # ──────────────────────────────────────────────
@@ -312,23 +403,25 @@ class TestLongTableTruncation:
 
 
 class TestManifestChartInventory:
-    def test_manifest_chart_inventory_has_all_22(self, tmp_path):
-        """Chart inventory includes all 22 registry entries."""
+    def test_manifest_chart_inventory_has_all_23(self, tmp_path):
+        """Chart inventory includes all 23 registry entries."""
         from bid_euchre.arc_d_v2.manifest import _inventory_chart_dir
 
         charts_dir = tmp_path / "charts"
         charts_dir.mkdir()
         # Create a few chart PNGs
         (charts_dir / "dashboard_competitive.png").write_bytes(b"PNG" * 100)
-        (charts_dir / "h2h_heatmap.png").write_bytes(b"PNG" * 50)
+        suite = charts_dir / "full_chart_suite"
+        suite.mkdir()
+        (suite / "h2h_heatmap.png").write_bytes(b"PNG" * 50)
 
         inventory = _inventory_chart_dir(charts_dir)
-        # Should have at least 22 entries (registry) + 0 extras
-        assert len(inventory) >= 22
+        # Should have at least 23 entries (registry)
+        assert len(inventory) >= 23
 
-        # Check that all 22 numbers are present
+        # Check that all 23 numbers are present
         numbers = [e.get("number") for e in inventory if "number" in e]
-        assert sorted(numbers) == list(range(1, 23))
+        assert sorted(numbers) == list(range(1, 24))
 
     def test_present_charts_have_size(self, tmp_path):
         from bid_euchre.arc_d_v2.manifest import _inventory_chart_dir
@@ -342,6 +435,23 @@ class TestManifestChartInventory:
         assert entry["present"] is True
         assert entry["size_bytes"] == 42
         assert "path" in entry
+
+    def test_suite_charts_detected_in_subdirectory(self, tmp_path):
+        """Charts in full_chart_suite/ subdirectory are detected."""
+        from bid_euchre.arc_d_v2.manifest import _inventory_chart_dir
+
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        suite = charts_dir / "full_chart_suite"
+        suite.mkdir()
+        (suite / "h2h_heatmap.png").write_bytes(b"X" * 55)
+
+        inventory = _inventory_chart_dir(charts_dir)
+        entry = next(
+            e for e in inventory if e["name"] == "full_chart_suite/h2h_heatmap.png"
+        )
+        assert entry["present"] is True
+        assert entry["size_bytes"] == 55
 
     def test_absent_charts_marked_absent(self, tmp_path):
         from bid_euchre.arc_d_v2.manifest import _inventory_chart_dir
@@ -383,7 +493,7 @@ class TestManifestChartInventory:
                 },
                 {
                     "number": 7,
-                    "name": "h2h_heatmap.png",
+                    "name": "full_chart_suite/h2h_heatmap.png",
                     "title": "H2H Heatmap",
                     "required": True,
                     "present": False,
