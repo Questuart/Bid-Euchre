@@ -1,6 +1,7 @@
 """Tests for diagnostic chart generators in generate_rung_charts.py.
 
 Covers:
+- Intelligence-faceted H2H chart generation
 - predictions scatter plot generation
 - residuals histogram generation
 - calibration curve generation
@@ -116,6 +117,91 @@ def selection_paths_csv(tmp_path):
     chart_data_dir.mkdir()
     df.to_csv(chart_data_dir / "selection_paths.csv", index=False)
     return chart_data_dir
+
+
+# ──────────────────────────────────────────────
+#  Intelligence-faceted H2H tests
+# ──────────────────────────────────────────────
+
+
+@pytest.fixture
+def h2h_tier_summary_csv(tmp_path):
+    """Create an h2h_tier_summary.csv fixture file."""
+    df = pd.DataFrame(
+        {
+            "model": [
+                "gbt_av",
+                "gbt_av",
+                "gbt_av",
+                "ols_av",
+                "ols_av",
+                "ols_av",
+            ],
+            "tier": [
+                "smart",
+                "anchor",
+                "heuristic",
+                "smart",
+                "anchor",
+                "heuristic",
+            ],
+            "mean_delta": [1.2, 0.8, 2.1, -0.3, 0.4, 1.5],
+            "mean_win_rate": [0.58, 0.55, 0.65, 0.48, 0.52, 0.60],
+            "n_opponents": [3, 1, 3, 3, 1, 3],
+        }
+    )
+    tables_dir = tmp_path / "tables"
+    tables_dir.mkdir()
+    df.to_csv(tables_dir / "h2h_tier_summary.csv", index=False)
+    return tables_dir
+
+
+class TestIntelligenceFacetedH2H:
+    """Tests for generate_intelligence_faceted_h2h."""
+
+    def test_produces_png(self, charts_mod, h2h_tier_summary_csv, tmp_path):
+        """Produces h2h_intelligence_faceted.png from valid tier summary CSV."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_intelligence_faceted_h2h(
+            h2h_tier_summary_csv, output_dir
+        )
+        assert result is True
+        png_path = output_dir / "h2h_intelligence_faceted.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when h2h_tier_summary.csv is missing."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_intelligence_faceted_h2h(tables_dir, output_dir)
+        assert result is False
+
+    def test_missing_columns_returns_false(self, charts_mod, tmp_path):
+        """Returns False when CSV lacks required columns."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        df = pd.DataFrame({"model": ["gbt"], "wrong_col": [1.0]})
+        df.to_csv(tables_dir / "h2h_tier_summary.csv", index=False)
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_intelligence_faceted_h2h(tables_dir, output_dir)
+        assert result is False
+
+    def test_wired_into_generate_all_charts(
+        self, charts_mod, h2h_tier_summary_csv, tmp_path
+    ):
+        """generate_all_charts includes intelligence-faceted H2H when data exists."""
+        charts_dir = tmp_path / "charts"
+        generated = charts_mod.generate_all_charts(
+            tables_dir=h2h_tier_summary_csv,
+            output_dir=charts_dir,
+        )
+        assert "h2h_intelligence_faceted.png" in generated
+        assert (charts_dir / "h2h_intelligence_faceted.png").exists()
 
 
 # ──────────────────────────────────────────────

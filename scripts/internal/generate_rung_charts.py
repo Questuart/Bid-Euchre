@@ -791,6 +791,83 @@ def _unavailable_panel(ax: plt.Axes, label: str) -> None:
 
 
 # ──────────────────────────────────────────────
+#  Intelligence-faceted H2H chart
+# ──────────────────────────────────────────────
+
+# Tier display colors for consistent tier coloring
+_TIER_COLORS = {
+    "smart": "#4C72B0",
+    "anchor": "#DD8452",
+    "heuristic": "#55A868",
+}
+
+
+def generate_intelligence_faceted_h2h(
+    tables_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Grouped bar chart of H2H performance faceted by intelligence tier.
+
+    Reads ``h2h_tier_summary.csv`` (columns: model, tier, mean_delta,
+    mean_win_rate, n_opponents) and produces a chart showing each model's
+    mean H2H delta grouped by opponent tier.
+
+    Output: ``h2h_intelligence_faceted.png``
+    """
+    df = _read_csv_safe(tables_dir / "h2h_tier_summary.csv")
+    if df is None:
+        return False
+
+    required_cols = {"model", "tier", "mean_delta"}
+    if not required_cols.issubset(df.columns):
+        logger.warning(
+            "h2h_tier_summary.csv missing required columns: %s",
+            required_cols - set(df.columns),
+        )
+        return False
+
+    tiers = [t for t in ("smart", "anchor", "heuristic") if t in df["tier"].values]
+    if not tiers:
+        logger.warning("No recognized tiers in h2h_tier_summary.csv")
+        return False
+
+    models = sorted(df["model"].unique())
+    model_colors = _get_model_colors(models)
+
+    x = np.arange(len(tiers))
+    width = 0.8 / max(len(models), 1)
+
+    fig, ax = plt.subplots(figsize=(10, max(4, len(models) * 0.6 + 2)))
+
+    for i, model in enumerate(models):
+        vals = []
+        for tier in tiers:
+            row = df[(df["model"] == model) & (df["tier"] == tier)]
+            vals.append(float(row["mean_delta"].iloc[0]) if len(row) > 0 else 0.0)
+        offset = (i - len(models) / 2 + 0.5) * width
+        ax.bar(
+            x + offset,
+            vals,
+            width,
+            label=model,
+            color=model_colors[model],
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"vs {t}" for t in tiers], fontsize=10)
+    ax.set_ylabel("Mean H2H Delta (net EPPD)", fontsize=10)
+    ax.set_title("H2H Performance by Opponent Intelligence Tier", fontsize=12)
+    ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
+    ax.legend(fontsize=8, loc="best")
+    ax.grid(axis="y", alpha=0.3)
+
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "h2h_intelligence_faceted.png", dpi)
+    return True
+
+
+# ──────────────────────────────────────────────
 #  Dashboard: Competitive
 # ──────────────────────────────────────────────
 
@@ -1310,6 +1387,10 @@ def generate_all_charts(
         (
             "mae_by_contract.png",
             lambda: generate_mae_by_contract(tables_dir, output_dir, dpi),
+        ),
+        (
+            "h2h_intelligence_faceted.png",
+            lambda: generate_intelligence_faceted_h2h(tables_dir, output_dir, dpi),
         ),
     ]
 
