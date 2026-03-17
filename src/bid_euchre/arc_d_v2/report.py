@@ -1,8 +1,10 @@
 """Markdown rung report generation from canonical CSV tables and chart PNGs.
 
-Reads CSVs from tables/ and PNGs from charts/ and renders a structured
-markdown report (01_results.md) with sections matching the canonical
-rung report structure.
+Reads CSVs from tables/ and PNGs from charts/ and renders structured
+markdown reports:
+
+- ``01_results.md`` — full results report with all sections
+- ``02_decision.md`` — concise decision report with advancement recommendation
 
 Extracted from ``scripts/internal/generate_rung_report.py``.
 """
@@ -340,3 +342,237 @@ def generate_report(report_dir: Path) -> str:
     lines.append("")
 
     return "\n".join(lines)
+
+
+# ──────────────────────────────────────────────
+#  Decision report (02_decision.md)
+# ──────────────────────────────────────────────
+
+
+def _extract_advancement_decision(
+    hypothesis_outcomes: pd.DataFrame | None,
+) -> str:
+    """Determine advancement decision from hypothesis outcomes.
+
+    Returns one of: ADVANCE, HOLD, HALT, PENDING.
+    """
+    if hypothesis_outcomes is None or len(hypothesis_outcomes) == 0:
+        return "PENDING"
+
+    if "status" not in hypothesis_outcomes.columns:
+        return "PENDING"
+
+    statuses = hypothesis_outcomes["status"].str.upper().tolist()
+    if not statuses:
+        return "PENDING"
+
+    n_fail = sum(1 for s in statuses if s == "FAIL")
+    n_pass = sum(1 for s in statuses if s == "PASS")
+
+    if n_fail > 0:
+        return "HALT"
+    if n_pass == len(statuses):
+        return "ADVANCE"
+    return "HOLD"
+
+
+def _top_n_comparator_table(
+    comparator: pd.DataFrame | None,
+    n: int = 3,
+) -> str:
+    """Build a concise top-N comparator table (pooled facet only)."""
+    if comparator is None:
+        return _table_placeholder("comparator_rankings.csv")
+
+    if "facet" in comparator.columns:
+        pooled = comparator[comparator["facet"] == "pooled"].copy()
+    else:
+        pooled = comparator.copy()
+
+    if len(pooled) == 0:
+        return _table_placeholder("comparator_rankings.csv (pooled)")
+
+    # Sort by net_eppd descending, take top N
+    if "net_eppd" in pooled.columns:
+        pooled = pooled.sort_values("net_eppd", ascending=False).head(n)
+    else:
+        pooled = pooled.head(n)
+
+    # Select display columns
+    display_cols = [
+        c
+        for c in ["model", "net_eppd", "ci_low", "ci_high", "rank"]
+        if c in pooled.columns
+    ]
+    if not display_cols:
+        return _table_placeholder("comparator_rankings.csv")
+
+    return _df_to_markdown(pooled[display_cols])
+
+
+def _h2h_tier_summary_table(
+    h2h_tier: pd.DataFrame | None,
+) -> str:
+    """Build a concise H2H tier summary table using team0/team1 labels."""
+    if h2h_tier is None:
+        return _table_placeholder("h2h_tier_summary.csv")
+
+    required = {"model", "tier", "mean_delta"}
+    if not required.issubset(h2h_tier.columns):
+        return _table_placeholder("h2h_tier_summary.csv")
+
+    # Rename model columns to team0-oriented labels for H2H context
+    display = h2h_tier.copy()
+    display = display.rename(columns={"model": "team0_model"})
+
+    display_cols = [
+        c
+        for c in ["team0_model", "tier", "mean_delta", "mean_win_rate", "n_opponents"]
+        if c in display.columns
+    ]
+    return _df_to_markdown(display[display_cols])
+
+
+def _hypothesis_summary_table(
+    outcomes: pd.DataFrame | None,
+) -> str:
+    """Build a concise hypothesis pass/fail summary."""
+    if outcomes is None or len(outcomes) == 0:
+        return "> No hypothesis outcomes available.\n"
+
+    display_cols = [
+        c for c in ["hypothesis_id", "description", "status"] if c in outcomes.columns
+    ]
+    if not display_cols:
+        return _table_placeholder("hypothesis_outcomes.csv")
+
+    return _df_to_markdown(outcomes[display_cols])
+
+
+def generate_decision_report(
+    tables_dir: Path,
+    charts_dir: Path,
+    chart_data_dir: Path | None = None,
+    output_path: Path | None = None,
+    rung: str = "?",
+    mode: str = "QUICK",
+) -> str:
+    """Generate the 02_decision.md report.
+
+    Produces a concise decision-focused report that synthesizes evidence
+    from tables and charts into an advancement recommendation.
+
+    Args:
+        tables_dir: Directory containing ``*.csv`` tables.
+        charts_dir: Directory containing ``*.png`` charts.
+        chart_data_dir: Directory containing chart source CSVs (optional).
+        output_path: If provided, write the report to this file.
+        rung: Rung identifier (e.g., ``"R0"``, ``"R3"``).
+        mode: Compute mode (e.g., ``"QUICK"``, ``"FULL"``).
+
+    Returns:
+        Rendered markdown decision report string.
+    """
+    # Read the key tables
+    hypothesis_outcomes = _read_csv_safe(tables_dir / "hypothesis_outcomes.csv")
+    comparator = _read_csv_safe(tables_dir / "comparator_rankings.csv")
+    h2h_tier = _read_csv_safe(tables_dir / "h2h_tier_summary.csv")
+
+    decision = _extract_advancement_decision(hypothesis_outcomes)
+
+    lines: list[str] = []
+
+    # Title
+    lines.append(f"# Rung {rung} ({mode}) — Decision Report")
+    lines.append("")
+
+    # Advancement Decision
+    lines.append("## Advancement Decision")
+    lines.append("")
+    lines.append(f"**{decision}**")
+    lines.append("")
+
+    # Evidence Summary
+    lines.append("## Evidence Summary")
+    lines.append("")
+
+    # Comparator Standing
+    lines.append("### Comparator Standing")
+    lines.append("")
+    lines.append(_top_n_comparator_table(comparator))
+    lines.append("")
+    lines.append(
+        "See Chart 1 (Comparator Ranking Bars) and "
+        "Chart 4 (Tail Risk Panel) for visual context."
+    )
+    lines.append("")
+
+    # Head-to-Head Performance
+    lines.append("### Head-to-Head Performance")
+    lines.append("")
+    lines.append(_h2h_tier_summary_table(h2h_tier))
+    lines.append("")
+    lines.append(
+        "See Chart 3 (H2H Heatmap), Chart 2 (Delta Bars by Contract), "
+        "and the intelligence-faceted H2H chart for tier-level analysis."
+    )
+    lines.append("")
+
+    # Hypothesis Outcomes
+    lines.append("### Hypothesis Outcomes")
+    lines.append("")
+    lines.append(_hypothesis_summary_table(hypothesis_outcomes))
+    lines.append("")
+
+    # Recommendation
+    lines.append("## Recommendation")
+    lines.append("")
+    if decision == "ADVANCE":
+        lines.append(
+            "All hypothesis checks passed. Evidence supports advancing "
+            "to the next rung."
+        )
+    elif decision == "HALT":
+        n_fail = 0
+        if hypothesis_outcomes is not None and "status" in hypothesis_outcomes.columns:
+            n_fail = (hypothesis_outcomes["status"].str.upper() == "FAIL").sum()
+        lines.append(
+            f"{n_fail} hypothesis check(s) failed. "
+            "Review the failing checks and address root causes before "
+            "re-running this rung."
+        )
+    elif decision == "HOLD":
+        lines.append(
+            "Some hypothesis checks have indeterminate status. "
+            "Additional evidence or manual review is needed."
+        )
+    else:
+        lines.append(
+            "Hypothesis outcomes not yet available. "
+            "Run the advance check pipeline to populate results."
+        )
+    lines.append("")
+
+    # Supporting Evidence
+    lines.append("## Supporting Evidence")
+    lines.append("")
+    lines.append("- Chart 1: Comparator Ranking Bars")
+    lines.append("- Chart 2: Delta Bars by Contract")
+    lines.append("- Chart 3: H2H Heatmap")
+    lines.append("- Chart 4: Tail Risk Panel")
+    lines.append("- Chart 5: Bid Behavior Panel")
+    lines.append("- Chart 9: Intelligence-Faceted H2H")
+    lines.append(
+        "- Full tables: `tables/comparator_rankings.csv`, "
+        "`tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`"
+    )
+    lines.append("")
+
+    content = "\n".join(lines)
+
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content)
+        logger.info("Wrote decision report: %s", output_path)
+
+    return content
