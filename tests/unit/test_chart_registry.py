@@ -2,9 +2,9 @@
 
 Covers:
 - Chart registry has exactly 23 entries with unique numbers and filenames
-- Charts 4-23 use full_chart_suite/ prefix, charts 1-3 are plain dashboards
+- Charts 4-23 have subdir="full_chart_suite", charts 1-3 have subdir=""
+- entry.filename is always a bare name (no /), entry.path includes subdir
 - get_chart_by_number() and get_chart_by_filename() work correctly
-- get_chart_by_filename() backward-compatible basename lookup
 - Report rendering uses numbered headings (Chart N. Title)
 - Report rendering emits placeholders for missing optional charts
 - H2H table rendering uses team0/team1 labels
@@ -66,23 +66,43 @@ class TestChartRegistry:
         for entry in CHART_REGISTRY:
             assert entry.filename.endswith(".png"), f"{entry.filename} is not a PNG"
 
-    def test_dashboards_plain_filenames(self):
-        """Charts 1-3 (dashboards) have plain filenames without subdirectory."""
+    def test_no_filename_contains_slash(self):
+        """All filenames are bare names without directory separators."""
+        for entry in CHART_REGISTRY:
+            assert (
+                "/" not in entry.filename
+            ), f"Chart {entry.number} filename should be bare: {entry.filename}"
+
+    def test_dashboards_have_empty_subdir(self):
+        """Charts 1-3 (dashboards) have subdir=''."""
         for n in (1, 2, 3):
             entry = get_chart_by_number(n)
             assert entry is not None
-            assert (
-                "/" not in entry.filename
-            ), f"Dashboard chart {n} should not have subdirectory prefix"
+            assert entry.subdir == "", f"Dashboard chart {n} should have empty subdir"
 
-    def test_standalone_charts_have_suite_prefix(self):
-        """Charts 4-23 (standalone) have full_chart_suite/ prefix."""
+    def test_standalone_charts_have_suite_subdir(self):
+        """Charts 4-23 (standalone) have subdir='full_chart_suite'."""
         for n in range(4, 24):
             entry = get_chart_by_number(n)
             assert entry is not None
-            assert entry.filename.startswith(
-                "full_chart_suite/"
-            ), f"Chart {n} ({entry.filename}) should have full_chart_suite/ prefix"
+            assert (
+                entry.subdir == "full_chart_suite"
+            ), f"Chart {n} should have subdir='full_chart_suite'"
+
+    def test_path_property_dashboards(self):
+        """Dashboard path equals filename (no subdir prefix)."""
+        for n in (1, 2, 3):
+            entry = get_chart_by_number(n)
+            assert entry is not None
+            assert entry.path == entry.filename
+
+    def test_path_property_standalone(self):
+        """Standalone chart path includes subdir prefix."""
+        for n in range(4, 24):
+            entry = get_chart_by_number(n)
+            assert entry is not None
+            assert entry.path == f"full_chart_suite/{entry.filename}"
+            assert entry.path.startswith("full_chart_suite/")
 
     def test_entries_are_frozen(self):
         entry = CHART_REGISTRY[0]
@@ -97,12 +117,14 @@ class TestChartRegistry:
         assert hasattr(entry, "title")
         assert hasattr(entry, "required")
         assert hasattr(entry, "source")
+        assert hasattr(entry, "subdir")
 
     def test_chart_23_is_intelligence_faceted_h2h(self):
         """Chart 23 is the intelligence-faceted H2H chart."""
         entry = get_chart_by_number(23)
         assert entry is not None
-        assert entry.filename == "full_chart_suite/h2h_intelligence_faceted.png"
+        assert entry.filename == "h2h_intelligence_faceted.png"
+        assert entry.path == "full_chart_suite/h2h_intelligence_faceted.png"
         assert entry.title == "Intelligence-Faceted H2H"
 
 
@@ -140,17 +162,16 @@ class TestGetChartByFilename:
             assert entry is not None
             assert entry.number == reg_entry.number
 
-    def test_backward_compatible_basename_lookup(self):
-        """Looking up by basename (without prefix) finds the entry."""
+    def test_bare_filename_lookup_for_standalone(self):
+        """Looking up by bare filename finds standalone charts."""
         entry = get_chart_by_filename("comparator_ranking_bars.png")
         assert entry is not None
         assert entry.number == 4
 
-    def test_full_path_lookup(self):
-        """Looking up by full prefixed filename works."""
+    def test_prefixed_path_does_not_match(self):
+        """Looking up by full path does NOT match (filename is bare only)."""
         entry = get_chart_by_filename("full_chart_suite/comparator_ranking_bars.png")
-        assert entry is not None
-        assert entry.number == 4
+        assert entry is None
 
 
 # ──────────────────────────────────────────────

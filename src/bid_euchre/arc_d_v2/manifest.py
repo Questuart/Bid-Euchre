@@ -103,26 +103,28 @@ def _inventory_chart_dir(charts_dir: Path) -> list[dict]:
     seen_filenames: set[str] = set()
 
     for chart in CHART_REGISTRY:
+        chart_path = chart.path
         entry: dict = {
             "number": chart.number,
-            "name": chart.filename,
+            "name": chart_path,
             "title": chart.title,
             "required": chart.required,
         }
-        if chart.filename in on_disk:
+        if chart_path in on_disk:
             entry["present"] = True
-            entry["size_bytes"] = on_disk[chart.filename]
-            entry["path"] = str(charts_dir / chart.filename)
+            entry["size_bytes"] = on_disk[chart_path]
+            entry["path"] = str(charts_dir / chart_path)
         else:
             entry["present"] = False
             entry["size_bytes"] = 0
         entries.append(entry)
-        seen_filenames.add(chart.filename)
+        seen_filenames.add(chart_path)
 
     # Include any extra PNGs not in the registry
     for name, size in sorted(on_disk.items()):
         if name not in seen_filenames:
-            entry_extra = get_chart_by_filename(name)
+            bare = name.rsplit("/", 1)[-1]
+            entry_extra = get_chart_by_filename(bare)
             entries.append(
                 {
                     "name": name,

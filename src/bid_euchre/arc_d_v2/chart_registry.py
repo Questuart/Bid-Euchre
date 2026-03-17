@@ -12,16 +12,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Shorthand for the standalone chart subdirectory.
+_FCS = "full_chart_suite"
+
 
 @dataclass(frozen=True)
 class ChartEntry:
     """A single chart in the registry."""
 
     number: int
-    filename: str
+    filename: str  # Bare name (stable identifier, no directory prefix)
     title: str
     required: bool
     source: str
+    subdir: str = ""  # "" for dashboards, "full_chart_suite" for standalone
+
+    @property
+    def path(self) -> str:
+        """Full relative path including subdirectory prefix."""
+        return f"{self.subdir}/{self.filename}" if self.subdir else self.filename
 
 
 CHART_REGISTRY: tuple[ChartEntry, ...] = (
@@ -48,143 +57,163 @@ CHART_REGISTRY: tuple[ChartEntry, ...] = (
     ),
     ChartEntry(
         4,
-        "full_chart_suite/comparator_ranking_bars.png",
+        "comparator_ranking_bars.png",
         "Comparator Ranking Bars",
         True,
         "tables/comparator_rankings.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         5,
-        "full_chart_suite/tail_risk_panel.png",
+        "tail_risk_panel.png",
         "Tail Risk Panel",
         True,
         "tables/comparator_rankings.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         6,
-        "full_chart_suite/delta_bars_by_contract.png",
+        "delta_bars_by_contract.png",
         "H2H Delta by Contract",
         True,
         "tables/h2h_delta_matrix.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         7,
-        "full_chart_suite/h2h_heatmap.png",
+        "h2h_heatmap.png",
         "H2H Heatmap",
         True,
         "tables/h2h_delta_matrix.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         8,
-        "full_chart_suite/h2h_ranking_scatter.png",
+        "h2h_ranking_scatter.png",
         "H2H Ranking Scatter",
         False,
         "tables/comparator_rankings.csv + h2h_tier_summary.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         9,
-        "full_chart_suite/outcome_distributions.png",
+        "outcome_distributions.png",
         "Outcome Distributions",
         False,
         "chart_data/outcome_distributions.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         10,
-        "full_chart_suite/seat_balance.png",
+        "seat_balance.png",
         "Seat Balance",
         False,
         "chart_data/seat_balance.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         11,
-        "full_chart_suite/contract_mix_bars.png",
+        "contract_mix_bars.png",
         "Contract Mix",
         True,
         "chart_data/contract_mix.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         12,
-        "full_chart_suite/bid_behavior_panel.png",
+        "bid_behavior_panel.png",
         "Bid and Make Rates",
         True,
         "tables/behavior_summary.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         13,
-        "full_chart_suite/bid_level_distribution.png",
+        "bid_level_distribution.png",
         "Bid Level Distribution",
         False,
         "chart_data/bid_levels.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         14,
-        "full_chart_suite/r2_by_contract.png",
+        "r2_by_contract.png",
         "R-squared by Contract",
         True,
         "tables/model_performance.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         15,
-        "full_chart_suite/mae_by_contract.png",
+        "mae_by_contract.png",
         "MAE by Contract",
         True,
         "tables/model_performance.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         16,
-        "full_chart_suite/pred_vs_actual.png",
+        "pred_vs_actual.png",
         "Predicted vs Actual",
         False,
         "chart_data/predictions.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         17,
-        "full_chart_suite/residual_distribution.png",
+        "residual_distribution.png",
         "Residual Distribution",
         False,
         "chart_data/residuals.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         18,
-        "full_chart_suite/calibration_curve.png",
+        "calibration_curve.png",
         "Calibration Curve",
         False,
         "chart_data/calibration_bins.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         19,
-        "full_chart_suite/selection_path.png",
+        "selection_path.png",
         "Selection Path",
         False,
         "chart_data/selection_paths.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         20,
-        "full_chart_suite/feature_importance.png",
+        "feature_importance.png",
         "Feature Importance",
         False,
         "chart_data/selection_paths.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         21,
-        "full_chart_suite/decision_agreement.png",
+        "decision_agreement.png",
         "Decision Agreement",
         False,
         "chart_data/decision_comparison.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         22,
-        "full_chart_suite/disagreement_outcomes.png",
+        "disagreement_outcomes.png",
         "Disagreement Outcomes",
         False,
         "chart_data/disagreement_outcomes.csv",
+        subdir=_FCS,
     ),
     ChartEntry(
         23,
-        "full_chart_suite/h2h_intelligence_faceted.png",
+        "h2h_intelligence_faceted.png",
         "Intelligence-Faceted H2H",
         False,
         "tables/h2h_tier_summary.csv",
+        subdir=_FCS,
     ),
 )
 
@@ -198,14 +227,8 @@ def get_chart_by_number(n: int) -> ChartEntry | None:
 
 
 def get_chart_by_filename(filename: str) -> ChartEntry | None:
-    """Look up a chart entry by its PNG filename (with or without prefix)."""
+    """Look up a chart entry by its bare PNG filename."""
     for entry in CHART_REGISTRY:
         if entry.filename == filename:
-            return entry
-    # Also match by basename for backward compatibility
-    for entry in CHART_REGISTRY:
-        if entry.filename.endswith("/" + filename) or (
-            "/" not in filename and entry.filename.split("/")[-1] == filename
-        ):
             return entry
     return None
