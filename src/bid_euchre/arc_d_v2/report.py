@@ -46,9 +46,14 @@ def _table_placeholder(table_name: str) -> str:
     return f"> [table_name={table_name}] not yet generated\n"
 
 
+def _bare_filename(chart_name: str) -> str:
+    """Extract bare filename from a chart path (strip directory prefix)."""
+    return chart_name.rsplit("/", 1)[-1]
+
+
 def _chart_placeholder(chart_name: str) -> str:
     """Return a placeholder for a missing chart."""
-    entry = get_chart_by_filename(chart_name)
+    entry = get_chart_by_filename(_bare_filename(chart_name))
     if entry is not None:
         return (
             f"### Chart {entry.number}. {entry.title}\n\n"
@@ -116,7 +121,7 @@ def _chart_embed(charts_dir: Path, chart_name: str) -> str:
     The ``chart_name`` may include the ``full_chart_suite/`` prefix for
     standalone charts (4-23). The file is looked up relative to charts_dir.
     """
-    entry = get_chart_by_filename(chart_name)
+    entry = get_chart_by_filename(_bare_filename(chart_name))
     chart_path = charts_dir / chart_name
     if chart_path.exists():
         if entry is not None:
@@ -509,13 +514,13 @@ def generate_decision_report(
     lines.append("")
     lines.append(_top_n_comparator_table(comparator))
     lines.append("")
-    comp_bars = get_chart_by_filename("full_chart_suite/comparator_ranking_bars.png")
+    comp_bars = get_chart_by_filename("comparator_ranking_bars.png")
     comp_ref = (
         f"Chart {comp_bars.number} ({comp_bars.title})"
         if comp_bars
         else "Comparator Ranking Bars"
     )
-    tail_risk = get_chart_by_filename("full_chart_suite/tail_risk_panel.png")
+    tail_risk = get_chart_by_filename("tail_risk_panel.png")
     tail_ref = (
         f"Chart {tail_risk.number} ({tail_risk.title})"
         if tail_risk
@@ -529,19 +534,19 @@ def generate_decision_report(
     lines.append("")
     lines.append(_h2h_tier_summary_table(h2h_tier))
     lines.append("")
-    h2h_heatmap = get_chart_by_filename("full_chart_suite/h2h_heatmap.png")
+    h2h_heatmap = get_chart_by_filename("h2h_heatmap.png")
     h2h_heat_ref = (
         f"Chart {h2h_heatmap.number} ({h2h_heatmap.title})"
         if h2h_heatmap
         else "H2H Heatmap"
     )
-    delta_bars = get_chart_by_filename("full_chart_suite/delta_bars_by_contract.png")
+    delta_bars = get_chart_by_filename("delta_bars_by_contract.png")
     delta_ref = (
         f"Chart {delta_bars.number} ({delta_bars.title})"
         if delta_bars
         else "Delta Bars by Contract"
     )
-    intel_h2h = get_chart_by_filename("full_chart_suite/h2h_intelligence_faceted.png")
+    intel_h2h = get_chart_by_filename("h2h_intelligence_faceted.png")
     intel_ref = (
         f"Chart {intel_h2h.number} ({intel_h2h.title})"
         if intel_h2h
@@ -591,19 +596,19 @@ def generate_decision_report(
     lines.append("## Supporting Evidence")
     lines.append("")
     evidence_charts = [
-        "full_chart_suite/comparator_ranking_bars.png",
-        "full_chart_suite/delta_bars_by_contract.png",
-        "full_chart_suite/h2h_heatmap.png",
-        "full_chart_suite/tail_risk_panel.png",
-        "full_chart_suite/bid_behavior_panel.png",
-        "full_chart_suite/h2h_intelligence_faceted.png",
+        "comparator_ranking_bars.png",
+        "delta_bars_by_contract.png",
+        "h2h_heatmap.png",
+        "tail_risk_panel.png",
+        "bid_behavior_panel.png",
+        "h2h_intelligence_faceted.png",
     ]
     for chart_file in evidence_charts:
         entry = get_chart_by_filename(chart_file)
         if entry:
             lines.append(f"- Chart {entry.number}: {entry.title}")
         else:
-            basename = chart_file.split("/")[-1].replace(".png", "").replace("_", " ")
+            basename = chart_file.replace(".png", "").replace("_", " ")
             lines.append(f"- {basename}")
     lines.append(
         "- Full tables: `tables/comparator_rankings.csv`, "
