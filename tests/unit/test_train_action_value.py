@@ -1027,3 +1027,120 @@ class TestR0HandOnlyFeatureInference:
             has_interactions=False,
             has_positional=False,
         )
+
+
+# ── Recursive Loader (v2 repair LA-5) ──────────────────────────
+
+
+class TestRecursiveLoader:
+    """Test that load_dataset uses rglob for nested directory layouts."""
+
+    def test_rglob_finds_nested_parts(self, tmp_path):
+        """load_dataset discovers part files in nested subdirectories."""
+        # Create a nested layout: root/seed_42/datasets/action_value/part_*.parquet
+        nested = tmp_path / "seed_42" / "datasets" / "action_value"
+        nested.mkdir(parents=True)
+
+        # Build a minimal valid dataframe
+        n_rows = 10
+        data = {col: range(n_rows) for col in METADATA_COLS}
+        for col in STATE_FEATURE_NAMES:
+            data[col] = [0.0] * n_rows
+        data["net_points"] = [1.0] * n_rows
+        df = pd.DataFrame(data)
+        df.to_parquet(nested / "part_000000_000004.parquet", index=False)
+        df.to_parquet(nested / "part_000005_000009.parquet", index=False)
+
+        # load_dataset with the root should find both via rglob
+        loaded = load_dataset(str(tmp_path))
+        assert len(loaded) == 20  # 10 rows x 2 files
+
+    def test_flat_directory_still_works(self, tmp_path):
+        """load_dataset still works with flat directory layout."""
+        n_rows = 5
+        data = {col: range(n_rows) for col in METADATA_COLS}
+        for col in STATE_FEATURE_NAMES:
+            data[col] = [0.0] * n_rows
+        data["net_points"] = [1.0] * n_rows
+        df = pd.DataFrame(data)
+        df.to_parquet(tmp_path / "part_000000_000004.parquet", index=False)
+
+        loaded = load_dataset(str(tmp_path))
+        assert len(loaded) == 5
+
+
+# ── Split by deal_uid (v2 repair LA-5) ──────────────────────────
+
+
+class TestSplitByDealUID:
+    """Test that split_by_deal uses deal_uid when present."""
+
+    def _make_df(self, n_deals=20, with_uid=False, multi_seed=False):
+        """Build a minimal dataset for split tests."""
+        rows = []
+        seeds = [42, 123] if multi_seed else [42]
+        for s in seeds:
+            for d in range(n_deals):
+                for seat in range(4):
+                    row = {col: 0 for col in METADATA_COLS}
+                    row["deal_id"] = d
+                    row["focal_seat"] = seat
+                    row["hand_id"] = d * 4 + seat
+                    for col in STATE_FEATURE_NAMES:
+                        row[col] = 0.0
+                    row["net_points"] = float(d + seat)
+                    if with_uid:
+                        row["dataset_seed"] = s
+                        row["deal_uid"] = f"{s}:{d}"
+                        row["hand_uid"] = f"{s}:{d * 4 + seat}"
+                    elif multi_seed:
+                        row["dataset_seed"] = s
+                    rows.append(row)
+        return pd.DataFrame(rows)
+
+    def test_uses_deal_uid_when_present(self):
+        """split_by_deal uses deal_uid column when available."""
+        df = self._make_df(with_uid=True)
+        train, val, test = split_by_deal(df, seed=42)
+        total = len(train) + len(val) + len(test)
+        assert total == len(df)
+
+        # Check no leakage by deal_uid
+        train_uids = set(train["deal_uid"].unique())
+        val_uids = set(val["deal_uid"].unique())
+        test_uids = set(test["deal_uid"].unique())
+        assert train_uids.isdisjoint(val_uids)
+        assert train_uids.isdisjoint(test_uids)
+        assert val_uids.isdisjoint(test_uids)
+
+    def test_falls_back_to_deal_id_without_uid(self):
+        """split_by_deal falls back to deal_id for single-seed without deal_uid."""
+        df = self._make_df(with_uid=False)
+        train, val, test = split_by_deal(df, seed=42)
+        total = len(train) + len(val) + len(test)
+        assert total == len(df)
+
+        # Check no leakage by deal_id
+        train_ids = set(train["deal_id"].unique())
+        val_ids = set(val["deal_id"].unique())
+        assert train_ids.isdisjoint(val_ids)
+
+    def test_raises_on_multi_seed_without_uid(self):
+        """split_by_deal raises ValueError for multi-seed without deal_uid."""
+        df = self._make_df(multi_seed=True, with_uid=False)
+        with pytest.raises(ValueError, match="Multi-seed dataset without deal_uid"):
+            split_by_deal(df, seed=42)
+
+    def test_multi_seed_with_uid_no_leakage(self):
+        """split_by_deal on multi-seed dataset with deal_uid has no leakage."""
+        df = self._make_df(n_deals=20, with_uid=True, multi_seed=True)
+        train, val, test = split_by_deal(df, seed=42)
+        total = len(train) + len(val) + len(test)
+        assert total == len(df)
+
+        # No deal_uid leakage
+        train_uids = set(train["deal_uid"].unique())
+        val_uids = set(val["deal_uid"].unique())
+        test_uids = set(test["deal_uid"].unique())
+        assert train_uids.isdisjoint(val_uids)
+        assert train_uids.isdisjoint(test_uids)

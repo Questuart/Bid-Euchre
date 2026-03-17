@@ -219,8 +219,8 @@ def load_dataset(
 
     path = Path(parquet_path)
     if path.is_dir():
-        # Directory-based loading: glob part files, sort, concatenate
-        part_files = sorted(path.glob("part_*.parquet"))
+        # Directory-based loading: rglob part files, sort, concatenate
+        part_files = sorted(path.rglob("part_*.parquet"))
         if not part_files:
             raise ValueError(f"No part_*.parquet files found in {path}")
         df = pd.concat([pd.read_parquet(p) for p in part_files], ignore_index=True)
@@ -247,14 +247,24 @@ def split_by_deal(
     train_frac: float = 0.8,
     val_frac: float = 0.1,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Three-way split by deal_id to prevent leakage.
+    """Three-way split by deal to prevent leakage.
 
-    Each deal produces ~160 rows (4 seats × ~40 actions). Splitting by deal_id
-    ensures no information from the same deal appears in train and val/test.
+    Uses deal_uid when present (multi-seed datasets). Falls back to deal_id
+    for single-seed backward compatibility.
 
     Returns (train_df, val_df, test_df).
     """
-    unique_deals = df["deal_id"].unique()
+    if "deal_uid" in df.columns:
+        deal_col = "deal_uid"
+    elif "dataset_seed" in df.columns and df["dataset_seed"].nunique() > 1:
+        raise ValueError(
+            "Multi-seed dataset without deal_uid column — "
+            "cannot safely split by deal_id alone"
+        )
+    else:
+        deal_col = "deal_id"
+
+    unique_deals = df[deal_col].unique()
     rng = np.random.RandomState(seed)
     rng.shuffle(unique_deals)
 
@@ -266,9 +276,9 @@ def split_by_deal(
     val_ids = set(unique_deals[train_end:val_end])
     test_ids = set(unique_deals[val_end:])
 
-    train_df = df[df["deal_id"].isin(train_ids)].copy()
-    val_df = df[df["deal_id"].isin(val_ids)].copy()
-    test_df = df[df["deal_id"].isin(test_ids)].copy()
+    train_df = df[df[deal_col].isin(train_ids)].copy()
+    val_df = df[df[deal_col].isin(val_ids)].copy()
+    test_df = df[df[deal_col].isin(test_ids)].copy()
 
     return train_df, val_df, test_df
 
