@@ -24,7 +24,9 @@ from bid_euchre.arc_d_v2.tables import (
     _classify_tier,
     _extract_bid_levels,
     _extract_feature_importance,
+    _extract_feature_importances_flat,
     _extract_h2h_by_contract,
+    _extract_outcome_distributions,
     _merge_comparator_cis,
     _merge_h2h_batteries,
     _per_seed_sanity_comparator,
@@ -1744,3 +1746,185 @@ class TestModelEvalCsvs:
             tmp_path / "output",
         )
         assert result == []
+
+
+# ──────────────────────────────────────────────
+#  Outcome distributions extraction tests (Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestExtractOutcomeDistributions:
+    """Tests for _extract_outcome_distributions helper."""
+
+    def test_self_play_fallback(self):
+        """Extracts fallback single-bin rows from self-play cells."""
+        h2h = {
+            "cells": {
+                "gbt_self": {
+                    "bidder_a": "gbt",
+                    "bidder_b": "gbt",
+                    "by_contract": {
+                        "suit": {"deals_total": 100, "net_eppd_delta": 0.5},
+                        "high": {"deals_total": 50, "net_eppd_delta": 0.3},
+                    },
+                },
+            },
+        }
+        rows = _extract_outcome_distributions(h2h)
+        assert len(rows) == 2
+        for row in rows:
+            assert row["model"] == "gbt"
+            assert "tricks_won" in row
+            assert "count" in row
+            assert "fraction" in row
+            assert row["count"] > 0
+
+    def test_explicit_histogram(self):
+        """Extracts explicit histogram bins when available."""
+        h2h = {
+            "cells": {
+                "gbt_self": {
+                    "bidder_a": "gbt",
+                    "bidder_b": "gbt",
+                    "by_contract": {
+                        "suit": {
+                            "deals_total": 100,
+                            "tricks_won_histogram": {
+                                "3": 10,
+                                "4": 30,
+                                "5": 40,
+                                "6": 20,
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        rows = _extract_outcome_distributions(h2h)
+        assert len(rows) == 4
+        tricks = [r["tricks_won"] for r in rows]
+        assert 3 in tricks
+        assert 6 in tricks
+        total_count = sum(r["count"] for r in rows)
+        assert total_count == 100
+
+    def test_skips_cross_matchup(self):
+        """Skips non-self-play cells."""
+        h2h = {
+            "cells": {
+                "cross": {
+                    "bidder_a": "gbt",
+                    "bidder_b": "ols",
+                    "by_contract": {
+                        "suit": {"deals_total": 100},
+                    },
+                },
+            },
+        }
+        rows = _extract_outcome_distributions(h2h)
+        assert len(rows) == 0
+
+    def test_empty_battery(self):
+        """Returns empty list for empty battery."""
+        rows = _extract_outcome_distributions({"cells": {}})
+        assert rows == []
+
+    def test_chart_data_includes_outcome_distributions(self, tmp_path):
+        """generate_chart_data produces outcome_distributions.csv."""
+        h2h = {
+            "cells": {
+                "gbt_self": {
+                    "bidder_a": "gbt",
+                    "bidder_b": "gbt",
+                    "fullgame_eppd": 3.5,
+                    "by_contract": {
+                        "suit": {"deals_total": 60, "net_eppd_delta": 0.5},
+                        "high": {"deals_total": 25, "net_eppd_delta": 0.3},
+                        "low": {"deals_total": 15, "net_eppd_delta": 0.1},
+                    },
+                },
+            },
+        }
+        generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
+        assert "outcome_distributions.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "model" in df.columns
+        assert "contract" in df.columns
+        assert "tricks_won" in df.columns
+        assert "count" in df.columns
+        assert len(df) > 0
+
+
+# ──────────────────────────────────────────────
+#  Feature importances flat extraction tests (Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestExtractFeatureImportancesFlat:
+    """Tests for _extract_feature_importances_flat helper."""
+
+    def test_extracts_from_feature_importances(self):
+        """Extracts flat feature importance rows from artifact dicts."""
+        artifacts = {
+            "gbt": {
+                "models": {
+                    "suit": {
+                        "feature_importances": {
+                            "trump_count": 0.35,
+                            "hand_strength": 0.25,
+                        },
+                    },
+                    "high": {
+                        "feature_importances": {
+                            "trump_count": 0.10,
+                        },
+                    },
+                },
+            },
+        }
+        rows = _extract_feature_importances_flat(artifacts)
+        assert len(rows) == 3
+        for row in rows:
+            assert "model" in row
+            assert "contract" in row
+            assert "feature_name" in row
+            assert "importance" in row
+            assert row["model"] == "gbt"
+
+    def test_empty_artifacts(self):
+        """Returns empty list for empty artifacts."""
+        assert _extract_feature_importances_flat({}) == []
+
+    def test_no_importances_key(self):
+        """Returns empty list when models lack feature_importances."""
+        artifacts = {
+            "gbt": {
+                "models": {
+                    "suit": {"r_squared": 0.85},
+                },
+            },
+        }
+        rows = _extract_feature_importances_flat(artifacts)
+        assert rows == []
+
+    def test_chart_data_includes_feature_importances(self, tmp_path):
+        """generate_chart_data produces feature_importances.csv."""
+        artifacts = {
+            "gbt": {
+                "models": {
+                    "suit": {
+                        "feature_importances": {
+                            "trump_count": 0.35,
+                            "hand_strength": 0.25,
+                        },
+                    },
+                },
+            },
+        }
+        generated = generate_chart_data(
+            training_artifacts=artifacts, output_dir=tmp_path
+        )
+        assert "feature_importances.csv" in generated
+        df = pd.read_csv(tmp_path / "feature_importances.csv")
+        assert set(df.columns) == {"model", "contract", "feature_name", "importance"}
+        assert len(df) == 2
