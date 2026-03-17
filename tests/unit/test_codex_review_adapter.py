@@ -80,6 +80,64 @@ seems adequate but could benefit from additional edge cases.
 Overall this is a solid contribution.
 """
 
+# --- Fixtures: Markdown table format (from AGENTS.md response template) ---
+
+TABLE_FORMAT_OUTPUT = """\
+## Codex Review
+
+### Summary
+- Files reviewed: 3 (2 library, 1 test)
+- Findings: 1 CRITICAL, 1 WARNING, 1 NIT
+
+### Findings
+
+| Severity | File | Line | Check | Finding |
+|----------|------|------|-------|---------|
+| CRITICAL | src/bid_euchre/strategy/foo.py | 42 | C1 | random.Random() without seed |
+| WARNING | src/bid_euchre/strategy/foo.py | 87 | C4 | Function compute_ev is 63 lines |
+| NIT | src/bid_euchre/strategy/foo.py | 3 | — | Unused import os |
+
+### Checks Performed
+- [x] C1: Unseeded randomness
+"""
+
+TABLE_CLEAN_OUTPUT = """\
+## Codex Review
+
+### Summary
+- Files reviewed: 2
+- Findings: 0 CRITICAL, 0 WARNING, 0 NIT
+
+No findings.
+
+### Checks Performed
+- [x] C1: Unseeded randomness
+"""
+
+TABLE_P_SEVERITY_OUTPUT = """\
+| Severity | File | Line | Check | Finding |
+|----------|------|------|-------|---------|
+| P0 | src/bid_euchre/core/rules.py | 10 | X3 | Merge conflict marker |
+| P1 | src/bid_euchre/sim/engine.py | 55 | C2 | Falsy numeric guard |
+| P2 | tests/unit/test_rules.py | 20 | - | Minor style issue |
+"""
+
+# --- Fixtures: Prose/natural-language output ---
+
+PROSE_WITH_FILES_OUTPUT = """\
+I've reviewed the changes. Here are my observations:
+
+- In src/bid_euchre/strategy/bidding.py:42, there's an unseeded random call
+  that could affect determinism.
+- The file src/bid_euchre/core/rules.py has a merge conflict marker at line 10.
+- src/bid_euchre/sim/engine.py:55 could use some minor style improvements.
+"""
+
+PROSE_NO_FILES_OUTPUT = """\
+I've reviewed the changes and everything looks good. The code is well-structured
+and follows the project conventions. No concerns about the implementation.
+"""
+
 
 class TestParseStandardFormat:
     """Test parsing of standard [P1] file:line — message format."""
@@ -180,6 +238,93 @@ class TestParseEdgeCases:
     def test_deduplicates_findings(self):
         findings = parse_codex_output(DUPLICATE_OUTPUT)
         assert len(findings) == 1
+
+
+class TestParseTableFormat:
+    """Test parsing of markdown table row format from AGENTS.md template."""
+
+    def test_parses_all_severities(self):
+        findings = parse_codex_output(TABLE_FORMAT_OUTPUT)
+        severities = {f.severity for f in findings}
+        assert severities == {"P0", "P1", "P2"}
+
+    def test_correct_finding_count(self):
+        findings = parse_codex_output(TABLE_FORMAT_OUTPUT)
+        assert len(findings) == 3
+
+    def test_critical_maps_to_p0(self):
+        findings = parse_codex_output(TABLE_FORMAT_OUTPUT)
+        p0 = [f for f in findings if f.severity == "P0"]
+        assert len(p0) == 1
+        assert p0[0].check_id == "C1"
+        assert p0[0].file == "src/bid_euchre/strategy/foo.py"
+        assert p0[0].line == 42
+
+    def test_warning_maps_to_p1(self):
+        findings = parse_codex_output(TABLE_FORMAT_OUTPUT)
+        p1 = [f for f in findings if f.severity == "P1"]
+        assert len(p1) == 1
+        assert p1[0].check_id == "C4"
+
+    def test_nit_maps_to_p2(self):
+        findings = parse_codex_output(TABLE_FORMAT_OUTPUT)
+        p2 = [f for f in findings if f.severity == "P2"]
+        assert len(p2) == 1
+        assert p2[0].check_id is None  # "—" should become None
+
+    def test_p_severity_in_table(self):
+        """Tables using P0/P1/P2 directly instead of CRITICAL/WARNING/NIT."""
+        findings = parse_codex_output(TABLE_P_SEVERITY_OUTPUT)
+        assert len(findings) == 3
+        assert findings[0].severity == "P0"
+        assert findings[1].severity == "P1"
+        assert findings[2].severity == "P2"
+
+    def test_dash_check_id_becomes_none(self):
+        """Check ID of '-' or '—' should be normalized to None."""
+        findings = parse_codex_output(TABLE_P_SEVERITY_OUTPUT)
+        nit = [f for f in findings if f.severity == "P2"]
+        assert nit[0].check_id is None
+
+
+class TestParseProseFallback:
+    """Test prose/natural-language output parsing."""
+
+    def test_extracts_findings_from_prose(self):
+        findings = parse_codex_output(PROSE_WITH_FILES_OUTPUT)
+        assert len(findings) >= 2  # At least the two clear file references
+
+    def test_prose_file_paths_extracted(self):
+        findings = parse_codex_output(PROSE_WITH_FILES_OUTPUT)
+        files = {f.file for f in findings}
+        assert "src/bid_euchre/strategy/bidding.py" in files
+        assert "src/bid_euchre/core/rules.py" in files
+
+    def test_prose_severity_inference(self):
+        findings = parse_codex_output(PROSE_WITH_FILES_OUTPUT)
+        bidding = [
+            f for f in findings if f.file == "src/bid_euchre/strategy/bidding.py"
+        ]
+        assert len(bidding) == 1
+        # "unseeded random" should infer P1
+        assert bidding[0].severity == "P1"
+
+    def test_prose_merge_conflict_is_p0(self):
+        findings = parse_codex_output(PROSE_WITH_FILES_OUTPUT)
+        rules = [f for f in findings if f.file == "src/bid_euchre/core/rules.py"]
+        assert len(rules) == 1
+        assert rules[0].severity == "P0"
+
+    def test_prose_not_used_when_structured_found(self):
+        """Prose fallback must NOT run when structured parsing succeeds."""
+        findings = parse_codex_output(STANDARD_OUTPUT)
+        # Should get exactly the 5 structured findings, not extra prose ones
+        assert len(findings) == 5
+
+    def test_prose_no_files_yields_no_findings(self):
+        """Prose without file references produces zero findings."""
+        findings = parse_codex_output(PROSE_NO_FILES_OUTPUT)
+        assert len(findings) == 0
 
 
 class TestCategorization:
@@ -287,6 +432,44 @@ class TestCleanReviewDetection:
 
     def test_no_problems_found_matches(self):
         assert _CLEAN_REVIEW_PATTERNS.search("No problems found.") is not None
+
+    def test_no_findings_without_found_matches(self):
+        """'No findings.' (without 'found') should match — AGENTS.md uses this."""
+        assert _CLEAN_REVIEW_PATTERNS.search("No findings.") is not None
+
+    def test_no_issues_without_found_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No issues.") is not None
+
+    def test_all_good_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("All good.") is not None
+
+    def test_all_clear_matches(self):
+        assert (
+            _CLEAN_REVIEW_PATTERNS.search("All clear — nothing to report.") is not None
+        )
+
+    def test_ship_it_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Ship it!") is not None
+
+    def test_approved_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Approved.") is not None
+
+    def test_nothing_to_flag_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Nothing to flag.") is not None
+
+    def test_changes_are_clean_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Changes are clean.") is not None
+
+    def test_no_concerns_matches(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No concerns.") is not None
+
+    def test_table_clean_output_detected(self):
+        """AGENTS.md table format with 'No findings.' should be clean."""
+        assert _CLEAN_REVIEW_PATTERNS.search(TABLE_CLEAN_OUTPUT) is not None
+
+    def test_prose_no_files_matches_clean(self):
+        """Positive prose without file references matches clean patterns."""
+        assert _CLEAN_REVIEW_PATTERNS.search(PROSE_NO_FILES_OUTPUT) is not None
 
 
 # --- Tests for command construction (the bug that prompted this PR) ---
