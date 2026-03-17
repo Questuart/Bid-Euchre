@@ -52,4 +52,4 @@ been generated but never committed. No code changes — documentation and report
 6. Create PR with worktree proof
 
 ## Outcome
-- PR: (pending)
+- PR: #802
