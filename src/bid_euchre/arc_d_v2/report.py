@@ -171,7 +171,6 @@ def generate_report(report_dir: Path) -> str:
     interp_charts = [
         "shap_summary.png",
         "shap_dependence_top5.png",
-        "feature_importance.png",
         "selection_path.png",
     ]
     has_interp = False
@@ -228,15 +227,20 @@ def generate_report(report_dir: Path) -> str:
             "",
         ]
     )
-    h2h = _read_csv_safe(tables_dir / "h2h_delta_matrix.csv")
-    if h2h is not None:
-        lines.append(_df_to_markdown(h2h))
-    else:
-        lines.append(_table_placeholder("h2h_delta_matrix.csv"))
-    lines.append("")
-
+    # Charts first, compact table excerpt below
     lines.append(_chart_embed(charts_dir, "delta_bars_by_contract.png"))
     lines.append(_chart_embed(charts_dir, "h2h_heatmap.png"))
+    lines.append("")
+
+    h2h = _read_csv_safe(tables_dir / "h2h_delta_matrix.csv")
+    if h2h is not None:
+        lines.append(
+            "<details><summary>Full H2H Delta Matrix (click to expand)</summary>\n"
+        )
+        lines.append(_df_to_markdown(h2h))
+        lines.append("\n</details>\n")
+    else:
+        lines.append(_table_placeholder("h2h_delta_matrix.csv"))
     lines.append("")
 
     # section 8 Behavioral Analysis

@@ -24,7 +24,7 @@ from bid_euchre.arc_d_v2.tables import (
     _classify_tier,
     _extract_bid_levels,
     _extract_feature_importance,
-    _extract_outcome_distributions,
+    _extract_h2h_by_contract,
     _merge_comparator_cis,
     _merge_h2h_batteries,
     _per_seed_sanity_comparator,
@@ -1405,8 +1405,8 @@ class TestChartData:
         # so outcome_summary should be present
         assert len(chart_data_items) > 0
 
-    def test_outcome_distributions_from_h2h(self, h2h_battery, tmp_path):
-        """outcome_distributions.csv generated from H2H battery by_contract."""
+    def test_h2h_by_contract_from_h2h(self, h2h_battery, tmp_path):
+        """h2h_by_contract.csv generated from H2H battery by_contract."""
         # Add by_contract data to a cross-matchup cell for testing
         h2h = dict(h2h_battery)
         cells = dict(h2h["cells"])
@@ -1427,16 +1427,16 @@ class TestChartData:
         h2h["cells"] = cells
 
         generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
-        assert "outcome_distributions.csv" in generated
-        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "h2h_by_contract.csv" in generated
+        df = pd.read_csv(tmp_path / "h2h_by_contract.csv")
         assert "model" in df.columns
         assert "opponent" in df.columns
         assert "contract" in df.columns
         assert "net_eppd_delta" in df.columns
         assert len(df) > 0
 
-    def test_outcome_distributions_no_by_contract(self, tmp_path):
-        """outcome_distributions still emits pooled rows from cells without by_contract."""
+    def test_h2h_by_contract_no_by_contract(self, tmp_path):
+        """h2h_by_contract still emits pooled rows from cells without by_contract."""
         h2h = {
             "cells": {
                 "a_vs_b": {
@@ -1449,8 +1449,8 @@ class TestChartData:
             },
         }
         generated = generate_chart_data(h2h_battery=h2h, output_dir=tmp_path)
-        assert "outcome_distributions.csv" in generated
-        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "h2h_by_contract.csv" in generated
+        df = pd.read_csv(tmp_path / "h2h_by_contract.csv")
         assert len(df) == 1
         assert df.iloc[0]["contract"] == "pooled"
 
@@ -1635,8 +1635,8 @@ class TestFeatureImportanceExtraction:
 # ──────────────────────────────────────────────
 
 
-class TestOutcomeDistributionsExtraction:
-    """Tests for _extract_outcome_distributions helper."""
+class TestH2hByContractExtraction:
+    """Tests for _extract_h2h_by_contract helper."""
 
     def test_basic_extraction(self):
         """Extracts pooled rows from cells without by_contract."""
@@ -1651,7 +1651,7 @@ class TestOutcomeDistributionsExtraction:
                 },
             },
         }
-        rows = _extract_outcome_distributions(h2h)
+        rows = _extract_h2h_by_contract(h2h)
         assert len(rows) == 1
         assert rows[0]["contract"] == "pooled"
         assert rows[0]["model"] == "model_a"
@@ -1676,7 +1676,7 @@ class TestOutcomeDistributionsExtraction:
                 },
             },
         }
-        rows = _extract_outcome_distributions(h2h)
+        rows = _extract_h2h_by_contract(h2h)
         assert len(rows) == 2  # 1 suit + 1 pooled
         contracts = [r["contract"] for r in rows]
         assert "suit" in contracts
