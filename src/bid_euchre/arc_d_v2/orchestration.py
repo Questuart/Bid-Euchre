@@ -1550,6 +1550,10 @@ def execute_step_7(state: RunState, dry_run: bool = False) -> bool:
             str(report_script),
             "--report-dir",
             str(report_dir),
+            "--rung",
+            rung,
+            "--mode",
+            state.mode,
         ]
         if not dry_run:
             ok, error = run_subprocess(cmd, "7", rung, "report")

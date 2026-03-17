@@ -178,11 +178,22 @@ def generate_evidence_manifest(
 
     # Load H2H for run_ids and seeds
     h2h = _load_json(rung_dir / "h2h_battery.json")
-    seeds = []
-    run_ids = []
+    seeds: list[int] = []
+    run_ids: list[str] = []
     mode = "QUICK"
     if h2h:
-        seeds.append(h2h.get("seed", 42))
+        if h2h.get("seeds_merged"):
+            # Multi-seed FULL: discover seeds from directory structure
+            for d in sorted(rung_dir.glob("seed_*")):
+                if d.is_dir():
+                    try:
+                        seeds.append(int(d.name.split("_", 1)[1]))
+                    except (ValueError, IndexError):
+                        pass
+        else:
+            seed_val = h2h.get("seed")
+            if seed_val is not None:
+                seeds.append(seed_val)
         mode = h2h.get("mode", "QUICK")
         for cell in h2h.get("cells", {}).values():
             rid = cell.get("run_id")
@@ -193,7 +204,7 @@ def generate_evidence_manifest(
     comparator = _load_json(rung_dir / "comparator_cis.json")
     if comparator:
         comp_seed = comparator.get("seed")
-        if comp_seed and comp_seed not in seeds:
+        if comp_seed is not None and comp_seed not in seeds:
             seeds.append(comp_seed)
 
     # Inventory tables

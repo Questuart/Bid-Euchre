@@ -151,3 +151,92 @@ class TestManifestMarkdown:
         md = render_manifest_markdown(manifest)
         assert "## Model Roster" in md
         assert "model_a" in md
+
+
+class TestManifestSeeds:
+    """Tests for seed discovery in evidence manifests (F3 fix)."""
+
+    def test_seeds_from_single_seed_battery(self, tmp_path):
+        """Battery with seed: 42 produces seeds=[42]."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        report_dir.mkdir()
+
+        # Write battery with single seed
+        battery = {"seed": 42, "mode": "QUICK", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            rung_id="r0",
+        )
+        assert manifest["seeds"] == [42]
+
+    def test_seeds_from_multi_seed_dirs(self, tmp_path):
+        """Battery with seeds_merged + seed_* dirs produces correct seeds."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        report_dir.mkdir()
+
+        # Write merged battery
+        battery = {"seeds_merged": 3, "mode": "FULL", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        # Create seed directories
+        for s in [42, 123, 456]:
+            (rung_dir / f"seed_{s}").mkdir()
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            rung_id="r0",
+        )
+        assert sorted(manifest["seeds"]) == [42, 123, 456]
+        assert manifest["mode"] == "FULL"
+
+    def test_seeds_empty_when_no_seed_key(self, tmp_path):
+        """Battery without seed key produces seeds=[]."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        report_dir.mkdir()
+
+        # Write battery without seed key
+        battery = {"mode": "QUICK", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            rung_id="r0",
+        )
+        assert manifest["seeds"] == []
+
+    def test_seeds_no_fabricated_default(self, tmp_path):
+        """When seed key is missing, seeds should NOT default to [42]."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        report_dir.mkdir()
+
+        # Battery without seed key — old code would produce [42]
+        battery = {"mode": "QUICK", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            rung_id="r0",
+        )
+        assert 42 not in manifest["seeds"]

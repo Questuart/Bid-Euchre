@@ -1067,6 +1067,22 @@ def generate_chart_data(
             df.to_csv(output_dir / "feature_importances.csv", index=False)
             generated.append("feature_importances.csv")
 
+    # 9. decision_comparison.csv — per-deal bid decision comparison across models
+    if parquet_paths:
+        rows = _extract_decision_comparison(parquet_paths)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "decision_comparison.csv", index=False)
+            generated.append("decision_comparison.csv")
+
+    # 10. disagreement_outcomes.csv — outcomes for deals where models disagreed
+    if parquet_paths:
+        rows = _extract_disagreement_outcomes(parquet_paths)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "disagreement_outcomes.csv", index=False)
+            generated.append("disagreement_outcomes.csv")
+
     return generated
 
 
@@ -1362,6 +1378,156 @@ def _extract_outcome_distributions_from_parquet(
         len(rows),
         len(frames),
     )
+    return rows
+
+
+def _extract_decision_comparison(
+    parquet_paths: list[Path],
+) -> list[dict]:
+    """Extract per-deal bid decision comparison across models.
+
+    Requires parquet files with bid decision columns (e.g., ``bid_decision``,
+    ``model``). If the schema lacks these columns, returns an empty list with
+    an informational log message.
+
+    Schema: model_a, model_b, contract, deal_id, decision_a, decision_b, agreed
+    """
+    frames: list[pd.DataFrame] = []
+    for path in parquet_paths:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path)
+            frames.append(df)
+        except Exception as e:
+            logger.warning("Failed to read parquet %s: %s", path, e)
+            continue
+
+    if not frames:
+        return []
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Check for required columns: need bid decision data per model per deal
+    required = {"bid_decision", "model", "deal_id"}
+    if not required.issubset(combined.columns):
+        logger.info(
+            "decision_comparison: parquet missing required columns %s. "
+            "Available: %s. Skipping.",
+            required - set(combined.columns),
+            list(combined.columns),
+        )
+        return []
+
+    # Determine contract column
+    contract_col = None
+    for candidate in ("contract_family", "contract_type", "contract"):
+        if candidate in combined.columns:
+            contract_col = candidate
+            break
+    if contract_col is None:
+        contract_col = "contract"
+        combined[contract_col] = "pooled"
+
+    # Build pairwise comparisons
+    models = sorted(combined["model"].unique())
+    rows: list[dict] = []
+    for i, model_a in enumerate(models):
+        for model_b in models[i + 1 :]:
+            df_a = combined[combined["model"] == model_a]
+            df_b = combined[combined["model"] == model_b]
+            merged = df_a.merge(
+                df_b, on=["deal_id", contract_col], suffixes=("_a", "_b")
+            )
+            for _, row in merged.iterrows():
+                rows.append(
+                    {
+                        "model_a": model_a,
+                        "model_b": model_b,
+                        "contract": row[contract_col],
+                        "deal_id": row["deal_id"],
+                        "decision_a": row["bid_decision_a"],
+                        "decision_b": row["bid_decision_b"],
+                        "agreed": row["bid_decision_a"] == row["bid_decision_b"],
+                    }
+                )
+
+    return rows
+
+
+def _extract_disagreement_outcomes(
+    parquet_paths: list[Path],
+) -> list[dict]:
+    """Extract outcomes for deals where models disagreed on bid decisions.
+
+    Requires parquet files with bid decision and tricks_won columns per model
+    per deal. If the schema lacks these columns, returns an empty list.
+
+    Schema: model_a, model_b, contract, deal_id, decision_a, decision_b,
+            tricks_won_a, tricks_won_b
+    """
+    frames: list[pd.DataFrame] = []
+    for path in parquet_paths:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path)
+            frames.append(df)
+        except Exception as e:
+            logger.warning("Failed to read parquet %s: %s", path, e)
+            continue
+
+    if not frames:
+        return []
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    # Check for required columns
+    required = {"bid_decision", "model", "deal_id", "tricks_won"}
+    if not required.issubset(combined.columns):
+        logger.info(
+            "disagreement_outcomes: parquet missing required columns %s. "
+            "Available: %s. Skipping.",
+            required - set(combined.columns),
+            list(combined.columns),
+        )
+        return []
+
+    # Determine contract column
+    contract_col = None
+    for candidate in ("contract_family", "contract_type", "contract"):
+        if candidate in combined.columns:
+            contract_col = candidate
+            break
+    if contract_col is None:
+        contract_col = "contract"
+        combined[contract_col] = "pooled"
+
+    # Build disagreement rows
+    models = sorted(combined["model"].unique())
+    rows: list[dict] = []
+    for i, model_a in enumerate(models):
+        for model_b in models[i + 1 :]:
+            df_a = combined[combined["model"] == model_a]
+            df_b = combined[combined["model"] == model_b]
+            merged = df_a.merge(
+                df_b, on=["deal_id", contract_col], suffixes=("_a", "_b")
+            )
+            disagreements = merged[merged["bid_decision_a"] != merged["bid_decision_b"]]
+            for _, row in disagreements.iterrows():
+                rows.append(
+                    {
+                        "model_a": model_a,
+                        "model_b": model_b,
+                        "contract": row[contract_col],
+                        "deal_id": row["deal_id"],
+                        "decision_a": row["bid_decision_a"],
+                        "decision_b": row["bid_decision_b"],
+                        "tricks_won_a": row["tricks_won_a"],
+                        "tricks_won_b": row["tricks_won_b"],
+                    }
+                )
+
     return rows
 
 
@@ -2305,39 +2471,38 @@ def generate_all_tables(
                 len(df),
             )
 
-    # 14. chart_data CSVs (outcome_summary, contract_mix, etc.)
+    # 14. Discover parquet files once — shared by chart_data, seat_balance,
+    #     and model eval CSV generation.
+    parquet_paths: list[Path] = []
+    for s in seed_list:
+        candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
+        if candidate.exists():
+            parquet_paths.append(candidate)
+
+    # 14a. chart_data CSVs (outcome_summary, contract_mix, etc.)
     chart_data_dir = output_dir.parent / "chart_data"
     chart_data_csvs = generate_chart_data(
         h2h_battery=h2h_battery,
         comparator_cis=comparator_cis,
         training_artifacts=training_artifacts,
         output_dir=chart_data_dir,
+        parquet_paths=parquet_paths or None,
     )
     for csv_name in chart_data_csvs:
         generated.append(f"chart_data/{csv_name}")
 
     # 15. seat_balance.csv from parquet data (graceful skip if absent)
-    for s in seed_list:
-        parquet_candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
-        if parquet_candidate.exists():
-            sb_result = generate_seat_balance_csv(parquet_candidate, chart_data_dir)
-            if sb_result and f"chart_data/{sb_result}" not in generated:
-                generated.append(f"chart_data/{sb_result}")
-            break  # Use first available seed's parquet
+    if parquet_paths:
+        sb_result = generate_seat_balance_csv(parquet_paths[0], chart_data_dir)
+        if sb_result and f"chart_data/{sb_result}" not in generated:
+            generated.append(f"chart_data/{sb_result}")
 
     # 16. model eval CSVs (predictions, residuals, calibration) from parquet + models
-    if training_artifacts:
-        eval_parquet: Path | None = None
-        for s in seed_list:
-            candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
-            if candidate.exists():
-                eval_parquet = candidate
-                break
-        if eval_parquet is not None:
-            eval_csvs = generate_model_eval_csvs(
-                training_artifacts, eval_parquet, chart_data_dir
-            )
-            for csv_name in eval_csvs:
-                generated.append(f"chart_data/{csv_name}")
+    if training_artifacts and parquet_paths:
+        eval_csvs = generate_model_eval_csvs(
+            training_artifacts, parquet_paths[0], chart_data_dir
+        )
+        for csv_name in eval_csvs:
+            generated.append(f"chart_data/{csv_name}")
 
     return generated
