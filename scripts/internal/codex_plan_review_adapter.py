@@ -169,7 +169,7 @@ def plan_state_key(plan_path: Path) -> str:
 def _run_with_pty(
     cmd: list[str],
     *,
-    timeout: float = 300,
+    timeout: float = 600,
     cwd: Path | None = None,
 ) -> tuple[int | None, str]:
     """Run a command with a pseudo-TTY and capture output.
@@ -187,6 +187,12 @@ def _run_with_pty(
         Tuple of (return_code, captured_output). Return code is ``None``
         if the process was killed due to timeout.
     """
+    logger.info(
+        "PTY start: cmd=%s, timeout=%.0fs, cwd=%s",
+        cmd[:3],
+        timeout,
+        cwd or ".",
+    )
     master_fd, slave_fd = pty.openpty()
     proc = subprocess.Popen(
         cmd,
@@ -201,6 +207,7 @@ def _run_with_pty(
     output_chunks: list[str] = []
     start = time.monotonic()
     timed_out = False
+    last_heartbeat = start
 
     try:
         while True:
@@ -209,6 +216,18 @@ def _run_with_pty(
                 proc.kill()
                 timed_out = True
                 break
+
+            # Heartbeat every 60s
+            if elapsed - (last_heartbeat - start) >= 60:
+                output_size = sum(len(c) for c in output_chunks)
+                logger.info(
+                    "PTY heartbeat: %.0fs elapsed, %d bytes captured, pid %d alive=%s",
+                    elapsed,
+                    output_size,
+                    proc.pid,
+                    proc.poll() is None,
+                )
+                last_heartbeat = time.monotonic()
 
             remaining = timeout - elapsed
             ready, _, _ = select.select([master_fd], [], [], min(remaining, 1.0))
@@ -245,6 +264,16 @@ def _run_with_pty(
         if proc.poll() is None:
             proc.kill()
         proc.wait()
+
+    elapsed = time.monotonic() - start
+    output_size = sum(len(c) for c in output_chunks)
+    logger.info(
+        "PTY done: %.1fs, rc=%s, %d bytes, timed_out=%s",
+        elapsed,
+        proc.returncode,
+        output_size,
+        timed_out,
+    )
 
     raw = "".join(output_chunks)
     # Strip ANSI escape codes from terminal output
@@ -295,13 +324,30 @@ def _check_codex_auth(auth_path: Path | None = None) -> str | None:
     return "Codex auth file exists but contains no valid credentials (no API key or tokens)"
 
 
+def _save_raw_output(output_dir: Path | None, filename: str, content: str) -> None:
+    """Write raw output to a file for diagnostics. No-op if output_dir is None."""
+    if output_dir is None or not content:
+        return
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / filename).write_text(content, encoding="utf-8")
+        logger.debug(
+            "Saved raw output to %s/%s (%d chars)", output_dir, filename, len(content)
+        )
+    except OSError as exc:
+        logger.warning(
+            "Failed to save raw output to %s/%s: %s", output_dir, filename, exc
+        )
+
+
 def invoke_codex_plan_review(
     plan_path: Path,
     tier: str,
     *,
     base: str = "main",
-    timeout: int = 300,
+    timeout: int = int(os.environ.get("CODEX_REVIEW_TIMEOUT", "600")),
     cwd: Path | None = None,
+    output_dir: Path | None = None,
 ) -> PlanReviewResult:
     """Invoke Codex CLI for plan-specific review.
 
@@ -313,8 +359,10 @@ def invoke_codex_plan_review(
         plan_path: Path to the plan file (repo-relative).
         tier: Detected plan tier ("small", "medium", "governing").
         base: Git base ref for the review.
-        timeout: Maximum wait time in seconds.
+        timeout: Maximum wait time in seconds. Override via CODEX_REVIEW_TIMEOUT env var.
         cwd: Working directory (defaults to cwd).
+        output_dir: If provided, raw Codex output is written to
+            ``<output_dir>/codex_output_raw.txt`` for diagnostics.
 
     Returns:
         PlanReviewResult with parsed findings or error info.
@@ -355,6 +403,13 @@ def invoke_codex_plan_review(
         plan_path,
     )
 
+    logger.info(
+        "Codex CLI pre-flight: cmd=%s, timeout=%ds, cwd=%s",
+        cmd[:3],
+        timeout,
+        work_dir,
+    )
+
     try:
         returncode, output = _run_with_pty(cmd, timeout=timeout, cwd=work_dir)
     except FileNotFoundError:
@@ -372,8 +427,15 @@ def invoke_codex_plan_review(
 
     elapsed = time.monotonic() - start
 
+    # Persist raw output for diagnostics
+    _save_raw_output(output_dir, "codex_output_raw.txt", output)
+
     if returncode is None:
-        logger.warning("Codex CLI plan review timed out after %.1fs", elapsed)
+        logger.warning(
+            "Codex CLI plan review timed out after %.1fs (%d chars captured)",
+            elapsed,
+            len(output),
+        )
         return PlanReviewResult(
             success=False,
             findings=[],
@@ -406,6 +468,13 @@ def invoke_codex_plan_review(
     # Parse findings using the shared parser
     codex_findings = parse_codex_output(output)
     plan_findings = _convert_codex_findings(codex_findings, str(plan_path))
+
+    logger.info(
+        "Codex CLI post-parse: %d raw findings, %d plan findings, clean_signal=%s",
+        len(codex_findings),
+        len(plan_findings),
+        bool(_CLEAN_REVIEW_PATTERNS.search(output)) if not codex_findings else "N/A",
+    )
 
     # Fail-safe: unparseable non-empty output
     if not codex_findings and output.strip():
@@ -479,7 +548,8 @@ def invoke_claude_failsafe(
     plan_path: Path,
     tier: str,
     *,
-    timeout: int = 120,
+    timeout: int = int(os.environ.get("CLAUDE_FAILSAFE_TIMEOUT", "300")),
+    output_dir: Path | None = None,
 ) -> PlanReviewResult:
     """Invoke Claude failsafe reviewer when Codex CLI is unavailable.
 
@@ -491,7 +561,9 @@ def invoke_claude_failsafe(
     Args:
         plan_path: Path to the plan file.
         tier: Detected plan tier.
-        timeout: Maximum wait time in seconds.
+        timeout: Maximum wait time in seconds. Override via CLAUDE_FAILSAFE_TIMEOUT env var.
+        output_dir: If provided, raw output is written to
+            ``<output_dir>/claude_failsafe_raw.txt`` for diagnostics.
 
     Returns:
         PlanReviewResult with findings from Claude or error info.
@@ -508,6 +580,9 @@ def invoke_claude_failsafe(
         cmd = ["claude", "--print", "-p", prompt]
     else:
         elapsed = time.monotonic() - start
+        logger.warning(
+            "Claude failsafe: no command available (CLAUDE_REVIEW_CMD unset, claude not in PATH)"
+        )
         return PlanReviewResult(
             success=False,
             findings=[],
@@ -522,8 +597,9 @@ def invoke_claude_failsafe(
         )
 
     logger.info(
-        "Invoking Claude failsafe (cmd=%s, tier=%s, file=%s)",
+        "Claude failsafe pre-flight: cmd=%s, timeout=%ds, tier=%s, file=%s",
         cmd[0],
+        timeout,
         tier,
         plan_path,
     )
@@ -536,6 +612,18 @@ def invoke_claude_failsafe(
             timeout=timeout,
         )
         elapsed = time.monotonic() - start
+        combined_output = result.stdout + result.stderr
+
+        # Persist raw output for diagnostics
+        _save_raw_output(output_dir, "claude_failsafe_raw.txt", combined_output)
+
+        logger.info(
+            "Claude failsafe post-flight: rc=%d, %.1fs, stdout=%d chars, stderr=%d chars",
+            result.returncode,
+            elapsed,
+            len(result.stdout),
+            len(result.stderr),
+        )
 
         if result.returncode != 0:
             return PlanReviewResult(
@@ -543,7 +631,7 @@ def invoke_claude_failsafe(
                 findings=[],
                 tier=tier,
                 reviewer="claude_failsafe",
-                raw_output=result.stdout + result.stderr,
+                raw_output=combined_output,
                 latency_seconds=elapsed,
                 error=f"Claude failsafe exited with code {result.returncode}",
             )
@@ -562,6 +650,7 @@ def invoke_claude_failsafe(
 
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - start
+        logger.warning("Claude failsafe timed out after %.1fs", elapsed)
         return PlanReviewResult(
             success=False,
             findings=[],
@@ -574,6 +663,7 @@ def invoke_claude_failsafe(
 
     except (FileNotFoundError, OSError) as exc:
         elapsed = time.monotonic() - start
+        logger.error("Claude failsafe command failed: %s", exc)
         return PlanReviewResult(
             success=False,
             findings=[],
