@@ -1,20 +1,21 @@
 #!/bin/bash
 # Overnight FULL Orchestrator (Sequential — safe for 16GB M3)
 #
-# Runs all 3 rungs × 3 seeds SEQUENTIALLY to avoid thermal shutdown.
-# Each run_rung.py handles Steps 1-7 end-to-end for one rung+seed.
+# Runs all 3 pre-R3 rungs SEQUENTIALLY. Each run_rung.py handles:
+#   - Step 1: dataset generation (holistic, iterates dataset seeds internally)
+#   - Steps 2-5: per-seed training/eval (iterates run seeds [42,123,456])
+#   - Steps 6-9: holistic reporting + advance check
 #
 # Usage: nohup bash scripts/internal/overnight_full_orchestrator.sh > /tmp/overnight_orchestrator.log 2>&1 &
 #
-# Estimated time: ~2-3 hours per rung × 9 runs = 18-27 hours total
-# (but run_rung.py is idempotent — safe to restart if interrupted)
+# Estimated time: ~6-9 hours total (sequential)
+# (run_rung.py is idempotent — safe to restart if interrupted)
 
 set -uo pipefail  # no -e: we want to continue on individual failures
 
 WORKTREE="/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre"
 LOG="/tmp/overnight_orchestrator.log"
 HEARTBEAT="/tmp/overnight_orchestrator_heartbeat"
-SEEDS=(42 123 456)
 RUNGS=(r0 r1 r2)
 
 cd "$WORKTREE"
@@ -27,24 +28,24 @@ heartbeat() {
     date '+%Y-%m-%d %H:%M:%S' > "$HEARTBEAT"
 }
 
-run_one() {
+run_rung() {
     local rung=$1
-    local seed=$2
-    local run_log="/tmp/full_${rung}_seed${seed}.log"
+    local run_log="/tmp/full_${rung}.log"
 
-    log "--- Starting $rung seed $seed ---"
+    log "--- Starting $rung (all seeds via MODE_SEEDS) ---"
     heartbeat
 
-    # run_rung.py is idempotent — if steps already completed, it skips them
+    # run_rung.py handles multi-seed dispatch internally.
+    # Step 1 uses MODE_DATASET_SEEDS; Steps 2-5 use MODE_SEEDS.
     uv run python scripts/internal/run_rung.py \
-        --rung "$rung" --mode full --seed "$seed" \
+        --rung "$rung" --mode full \
         > "$run_log" 2>&1
     local rc=$?
 
     if [ $rc -eq 0 ]; then
-        log "  $rung seed $seed: SUCCESS (exit code 0)"
+        log "  $rung: SUCCESS (exit code 0)"
     else
-        log "  $rung seed $seed: FAILED (exit code $rc) — see $run_log"
+        log "  $rung: FAILED (exit code $rc) — see $run_log"
     fi
 
     heartbeat
@@ -66,39 +67,36 @@ run_advance_checks() {
 }
 
 # ============================================================
-# Main execution — sequential, one at a time
+# Main execution — one rung at a time, multi-seed handled internally
 # ============================================================
 
 log "========================================="
 log "Overnight FULL Orchestrator (sequential)"
 log "Working directory: $WORKTREE"
-log "Seeds: ${SEEDS[*]}"
 log "Rungs: ${RUNGS[*]}"
-log "Total runs: $((${#SEEDS[@]} * ${#RUNGS[@]}))"
+log "Dataset seeds: 1001-1010 (10 shards × 5000 = 50000 deals)"
+log "Run seeds: 42, 123, 456 (3 train/val/test splits)"
 log "========================================="
 
 failed=0
 completed=0
-total=$((${#SEEDS[@]} * ${#RUNGS[@]}))
+total=${#RUNGS[@]}
 
-for seed in "${SEEDS[@]}"; do
-    log "=== Seed $seed ==="
-    for rung in "${RUNGS[@]}"; do
-        if run_one "$rung" "$seed"; then
-            completed=$((completed + 1))
-        else
-            failed=$((failed + 1))
-        fi
-        log "  Progress: $completed/$total completed, $failed failed"
-    done
+for rung in "${RUNGS[@]}"; do
+    if run_rung "$rung"; then
+        completed=$((completed + 1))
+    else
+        failed=$((failed + 1))
+    fi
+    log "  Progress: $completed/$total completed, $failed failed"
 done
 
 log "========================================="
 log "Sequential runs complete: $completed/$total succeeded, $failed failed"
 log "========================================="
 
-# Run advance checks if at least seed 42 completed for all rungs
-if [ $completed -ge 3 ]; then
+# Run advance checks if all rungs completed
+if [ $completed -eq $total ]; then
     log "Running advance checks..."
     run_advance_checks
 fi
@@ -107,6 +105,6 @@ log "========================================="
 log "Overnight orchestrator DONE"
 log "  Completed: $completed/$total"
 log "  Failed: $failed/$total"
-log "  Logs: /tmp/full_r{0,1,2}_seed{42,123,456}.log"
+log "  Logs: /tmp/full_r{0,1,2}.log"
 log "  Next: review advance_check_full.json, write decision reports"
 log "========================================="

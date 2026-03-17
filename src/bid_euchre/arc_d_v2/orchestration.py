@@ -45,11 +45,26 @@ MODE_SEEDS: dict[str, list[int]] = {
     "full": [42, 123, 456],
 }
 
-# Mode -> n_deals for dataset generation
+# Mode -> total deals for dataset generation (derived from shards below)
 MODE_DEALS: dict[str, int] = {
     "smoke": 25,
     "quick": 5000,
     "full": 50000,
+}
+
+# Mode -> dataset-build seeds (control WHICH deals exist in the corpus)
+# Distinct from MODE_SEEDS which control train/val/test splits.
+MODE_DATASET_SEEDS: dict[str, list[int]] = {
+    "smoke": [1001],
+    "quick": [1001],
+    "full": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010],
+}
+
+# Mode -> deals per shard (each dataset seed produces one shard)
+MODE_DEALS_PER_SHARD: dict[str, int] = {
+    "smoke": 25,
+    "quick": 5000,
+    "full": 5000,
 }
 
 # Step descriptions for logging
@@ -671,14 +686,20 @@ def execute_step_0(state: RunState, dry_run: bool = False) -> bool:
     return True
 
 
-def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
-    """Step 1: Generate training dataset."""
+def execute_step_1(state: RunState, dry_run: bool = False) -> bool:
+    """Step 1: Generate training dataset (holistic — all shards in one call).
+
+    Iterates over MODE_DATASET_SEEDS to build one shard per dataset seed.
+    Dataset seeds (1001-1010) are distinct from run seeds (42, 123, 456):
+    dataset seeds control which deals exist; run seeds control splits.
+    """
     rung = state.rung
     mode = state.mode.upper()
-    n_deals = MODE_DEALS.get(state.mode, 500)
+    dataset_seeds = MODE_DATASET_SEEDS[state.mode]
+    deals_per_shard = MODE_DEALS_PER_SHARD[state.mode]
 
-    _append_log(rung, {"event": "step_start", "step": "1", "seed": seed})
-    state.mark_step_started("1", seed)
+    _append_log(rung, {"event": "step_start", "step": "1"})
+    state.mark_step_started("1")
 
     # Fixed R0 anchor for all rungs (v2 repair contract §4.1)
     continuation = (
@@ -687,86 +708,92 @@ def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
     if not continuation.exists():
         logger.warning("R0 continuation artifact not found at %s", continuation)
 
-    if rung in ("r0", "r1", "r2"):
-        # Pre-R3: shared base dataset (v2 repair contract §4.5)
-        output_dir = (
-            _repo_root()
-            / "data"
-            / "runs"
-            / "arc_d_v2"
-            / "base_datasets"
-            / "pre_r3"
-            / state.mode
-            / f"seed_{seed}"
-        )
-    else:
-        # R3+: rung-local dataset
-        output_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
+    for ds_seed in dataset_seeds:
+        if rung in ("r0", "r1", "r2"):
+            # Pre-R3: shared base dataset (v2 repair contract §4.5)
+            output_dir = (
+                _repo_root()
+                / "data"
+                / "runs"
+                / "arc_d_v2"
+                / "base_datasets"
+                / "pre_r3"
+                / state.mode
+                / f"seed_{ds_seed}"
+            )
+        else:
+            # R3+: rung-local dataset in r3_datasets/
+            output_dir = (
+                _repo_root()
+                / "data"
+                / "runs"
+                / "arc_d_v2"
+                / "r3_datasets"
+                / state.mode
+                / f"seed_{ds_seed}"
+            )
 
-    # Pre-R3: skip generation if shared dataset already exists
-    if rung in ("r0", "r1", "r2"):
+        # Skip if parquet files already exist for this shard
         av_dir = output_dir / "datasets" / "action_value"
-        if av_dir.is_dir() and any(av_dir.glob("part_*.parquet")):
+        if av_dir.is_dir() and any(av_dir.rglob("*.parquet")):
             logger.info(
-                "Step 1: shared pre-R3 %s dataset already exists at %s, skipping",
-                state.mode,
+                "Step 1: dataset shard seed=%d already exists at %s, skipping",
+                ds_seed,
                 av_dir,
             )
-            state.mark_step_complete("1", seed)
+            continue
+
+        cmd = [
+            "uv",
+            "run",
+            "python",
+            "scripts/internal/generate_action_value_dataset.py",
+            "--seed",
+            str(ds_seed),
+            "--n-deals",
+            str(deals_per_shard),
+            "--mode",
+            mode,
+            "--output-dir",
+            str(output_dir),
+            "--dataset-seed",
+            str(ds_seed),
+        ]
+        if continuation.exists():
+            cmd.extend(["--continuation-artifact", str(continuation)])
+
+        # R3+ action space expansion: include moon/loner counterfactuals
+        if rung in ("r3", "r4"):
+            cmd.append("--include-moon-loner")
+
+        # Chunked generation to reduce peak memory
+        if state.mode in ("full", "quick"):
+            chunk = 1000 if rung in ("r3", "r4") else 5000
+            cmd.extend(["--chunk-size", str(chunk)])
+
+        if dry_run:
+            logger.info("Step 1: would run: %s", " ".join(cmd))
+            continue
+
+        ok, error = run_subprocess(cmd, "1", rung, f"seed_{ds_seed}")
+        if not ok:
+            state.mark_step_failed("1", error)
             _append_log(
                 rung,
-                {"event": "step_complete", "step": "1", "seed": seed, "reused": True},
+                {
+                    "event": "step_failed",
+                    "step": "1",
+                    "ds_seed": ds_seed,
+                    "error": error[:200],
+                },
             )
             state.save(_state_path(rung))
-            return True
+            return False
 
-    cmd = [
-        "uv",
-        "run",
-        "python",
-        "scripts/internal/generate_action_value_dataset.py",
-        "--seed",
-        str(seed),
-        "--n-deals",
-        str(n_deals),
-        "--mode",
-        mode,
-        "--output-dir",
-        str(output_dir),
-    ]
-    if continuation.exists():
-        cmd.extend(["--continuation-artifact", str(continuation)])
-
-    # R3+ action space expansion: include moon/loner counterfactuals
-    if rung in ("r3", "r4"):
-        cmd.append("--include-moon-loner")
-
-    # Chunked generation to reduce peak memory
-    if state.mode in ("full", "quick"):
-        chunk = 1000 if rung in ("r3", "r4") else 5000
-        cmd.extend(["--chunk-size", str(chunk)])
-
-    if dry_run:
-        logger.info("Step 1: would run: %s", " ".join(cmd))
-        state.mark_step_complete("1", seed)
-        return True
-
-    ok, error = run_subprocess(cmd, "1", rung, f"seed_{seed}")
-    if ok:
-        state.mark_step_complete(
-            "1",
-            seed,
-            fingerprint=compute_fingerprint("1", None, seed, rung, state.mode),
-        )
-        _append_log(rung, {"event": "step_complete", "step": "1", "seed": seed})
-    else:
-        state.mark_step_failed("1", error, seed=seed)
-        _append_log(
-            rung,
-            {"event": "step_failed", "step": "1", "seed": seed, "error": error[:200]},
-        )
+    state.mark_step_complete("1")
+    _append_log(rung, {"event": "step_complete", "step": "1"})
     state.save(_state_path(rung))
-    return ok
+    return True
 
 
 def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
@@ -797,11 +824,11 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
         # For pre-R3, use the shared root for recursive discovery
         dataset_path = dataset_root
     else:
-        dataset_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
-        # Prefer chunked directory if it exists; fall back to single file
-        chunked_dir = dataset_dir / "datasets" / "action_value"
-        single_file = dataset_dir / "datasets" / "action_value.parquet"
-        dataset_path = chunked_dir if chunked_dir.is_dir() else single_file
+        # R3+: rung-local dataset in r3_datasets/
+        dataset_root = (
+            _repo_root() / "data" / "runs" / "arc_d_v2" / "r3_datasets" / state.mode
+        )
+        dataset_path = dataset_root
 
     # Fixed R0 anchor for all rungs (v2 repair contract §4.1)
     continuation = (
@@ -1662,10 +1689,11 @@ def execute_step_9(state: RunState, dry_run: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 
 # Steps that are per-seed (run once per seed)
-PER_SEED_STEPS = {"1", "2", "3", "3b", "4", "5"}
+PER_SEED_STEPS = {"2", "3", "3b", "4", "5"}
 
 # Steps that are holistic (run once, aggregate across seeds)
-HOLISTIC_STEPS = {"0", "6", "7", "8", "9"}
+# Step 1 is holistic: it iterates over dataset-build seeds internally.
+HOLISTIC_STEPS = {"0", "1", "6", "7", "8", "9"}
 
 STEP_FUNCTIONS = {
     "0": execute_step_0,

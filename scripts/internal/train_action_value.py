@@ -451,7 +451,10 @@ def run_forward_selection(
 
     X = _build_feature_matrix(train_df, feature_names)
     y = train_df[target_col].values
-    groups = train_df["hand_id"].values
+    # Use hand_uid for grouping when available (multi-shard datasets have
+    # non-unique hand_id across shards; hand_uid = f"{dataset_seed}:{hand_id}")
+    group_col = "hand_uid" if "hand_uid" in train_df.columns else "hand_id"
+    groups = train_df[group_col].values
 
     selected_names, selection_log = forward_select(
         X_train=X,
