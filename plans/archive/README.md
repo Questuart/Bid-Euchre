@@ -9,6 +9,8 @@ This directory contains historical plans that are **reference-only**.
 | `pre_v1/` | Pre-R1.5 plans: original MASTER_PLAN, R0 protocols, wave plans, comparator designs | Before 2026-03 |
 | `v1_root/` | R1.5-era root plans: r1_5_training_plan, r1_5_forward_decision_tree, follow-ups | 2026-03 |
 | `v1_sessions/` | R1.5-era session plans: diagnostics, ablations, workflow redesigns | 2026-03 |
+| `v2_sessions/` | Arc D v2-era session plans: review loop, H2H faceting, plan review, inference fixes | 2026-03-13 to 2026-03-17 |
+| `v2_arc_d/` | Completed Arc D v2 reporting plans: compaction plan | 2026-03-16 |
 
 ## Rules
 
