@@ -128,7 +128,7 @@ uv run python scripts/compare_runs.py \
 uv run python -m pytest -m "not slow" tests/     # Fast suite
 uv run python -m pytest tests/unit/              # Unit only
 uv run python -m pytest tests/integration/       # Integration only
-uv run python -m pytest tests/unit/core/test_rules.py::test_specific  # Single test
+uv run python -m pytest tests/unit/test_rules.py::test_specific  # Single test
 ```
 
 **Note:** All commands use `uv run` which handles the virtualenv automatically. If already in an activated venv, plain `python` works too.
@@ -150,6 +150,7 @@ uv run python -m pytest tests/unit/core/test_rules.py::test_specific  # Single t
 | `reporting/` | Report generation utilities |
 | `logging/` | JSONL game logging |
 | `analysis/` | Statistical analysis (stats, paired comparisons, models) |
+| `arc_d_v2/` | Arc D v2 lineage orchestration, charts, tables, reports |
 | `validation/` | Promotion validation and schemas |
 | `scoring.py` | Top-level scoring module |
 
