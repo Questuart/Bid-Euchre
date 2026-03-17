@@ -49,7 +49,7 @@ MODE_SEEDS: dict[str, list[int]] = {
 MODE_DEALS: dict[str, int] = {
     "smoke": 500,
     "quick": 2500,
-    "full": 50000,
+    "full": 20000,
 }
 
 # Step descriptions for logging
@@ -720,6 +720,10 @@ def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
     if rung in ("r3", "r4"):
         cmd.append("--include-moon-loner")
 
+    # Full mode: use chunked generation to reduce peak memory
+    if state.mode == "full":
+        cmd.extend(["--chunk-size", "5000"])
+
     if dry_run:
         logger.info("Step 1: would run: %s", " ".join(cmd))
         state.mark_step_complete("1", seed)
@@ -758,7 +762,10 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
         return True
 
     dataset_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
-    dataset_path = dataset_dir / "datasets" / "action_value.parquet"
+    # Prefer chunked directory if it exists; fall back to single file
+    chunked_dir = dataset_dir / "datasets" / "action_value"
+    single_file = dataset_dir / "datasets" / "action_value.parquet"
+    dataset_path = chunked_dir if chunked_dir.is_dir() else single_file
 
     # Locate continuation artifact (same logic as step 1)
     continuation = (

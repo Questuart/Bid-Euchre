@@ -1,5 +1,6 @@
 """Unit tests for the R1.5 counterfactual action-value dataset generator."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "intern
 from generate_action_value_dataset import (
     _bidding_order,
     _deterministic_dealer,
+    _load_completed_chunks,
     _play_tricks,
     _play_tricks_loner,
     generate_dataset,
@@ -954,3 +956,210 @@ class TestMoonLonerDataset:
         loner_families = set(loner_df["contract_family"].unique())
         assert {"suit", "high", "low"} == moon_families
         assert {"suit", "high", "low"} == loner_families
+
+
+# ── Chunked Dataset Generation ───────────────────────────
+
+
+class TestChunkedGeneration:
+    """Tests for chunked parquet output mode."""
+
+    @pytest.fixture
+    def chunked_dir(self, tmp_path, raiser):
+        """Generate a 20-deal dataset in 5-deal chunks."""
+        output_dir = tmp_path / "action_value"
+        generate_dataset(
+            seed=42,
+            n_deals=20,
+            continuation_policy=raiser,
+            progress=False,
+            chunk_size=5,
+            output_dir=output_dir,
+        )
+        return output_dir
+
+    @pytest.fixture
+    def single_df(self, raiser):
+        """Generate the same dataset as a single DataFrame."""
+        return generate_dataset(
+            seed=42,
+            n_deals=20,
+            continuation_policy=raiser,
+            progress=False,
+        )
+
+    def test_part_files_exist(self, chunked_dir):
+        """Chunked output creates the expected part files."""
+        parts = sorted(chunked_dir.glob("part_*.parquet"))
+        assert len(parts) == 4
+        expected_names = [
+            "part_000000_000004.parquet",
+            "part_000005_000009.parquet",
+            "part_000010_000014.parquet",
+            "part_000015_000019.parquet",
+        ]
+        actual_names = [p.name for p in parts]
+        assert actual_names == expected_names
+
+    def test_manifest_exists(self, chunked_dir):
+        """Manifest file is written with correct entries."""
+        manifest_path = chunked_dir / "manifest.jsonl"
+        assert manifest_path.exists()
+        entries = []
+        with open(manifest_path) as f:
+            for line in f:
+                entries.append(json.loads(line.strip()))
+        assert len(entries) == 4
+        for entry in entries:
+            assert entry["status"] == "complete"
+            assert entry["seed"] == 42
+            assert entry["n_deals"] == 5
+            assert entry["rows"] > 0
+
+    def test_manifest_deal_ranges(self, chunked_dir):
+        """Manifest entries cover all deal ranges without gaps."""
+        manifest_path = chunked_dir / "manifest.jsonl"
+        entries = []
+        with open(manifest_path) as f:
+            for line in f:
+                entries.append(json.loads(line.strip()))
+        ranges = [(e["deal_start"], e["deal_end"]) for e in entries]
+        assert ranges == [(0, 4), (5, 9), (10, 14), (15, 19)]
+
+    def test_concatenated_equals_single(self, chunked_dir, single_df):
+        """Concatenated chunks must equal single-file output."""
+        parts = sorted(chunked_dir.glob("part_*.parquet"))
+        chunked_df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+        single_reset = single_df.reset_index(drop=True)
+        # Compare column by column for better diagnostics
+        assert set(chunked_df.columns) == set(single_reset.columns)
+        assert len(chunked_df) == len(single_reset)
+        pd.testing.assert_frame_equal(chunked_df[single_reset.columns], single_reset)
+
+    def test_hand_id_globally_unique(self, chunked_dir):
+        """hand_id must be globally unique across all chunks."""
+        parts = sorted(chunked_dir.glob("part_*.parquet"))
+        all_hand_ids = []
+        for p in parts:
+            df = pd.read_parquet(p, columns=["hand_id"])
+            all_hand_ids.extend(df["hand_id"].unique().tolist())
+        assert len(all_hand_ids) == len(set(all_hand_ids))
+
+    def test_hand_id_deterministic(self, chunked_dir):
+        """hand_id = deal_id * 4 + focal_seat."""
+        parts = sorted(chunked_dir.glob("part_*.parquet"))
+        for p in parts:
+            df = pd.read_parquet(p, columns=["hand_id", "deal_id", "focal_seat"])
+            expected = df["deal_id"] * 4 + df["focal_seat"]
+            np.testing.assert_array_equal(df["hand_id"].values, expected.values)
+
+    def test_gate_x1_passes_on_concatenated(self, chunked_dir):
+        """Gate X1 validation passes on concatenated chunks."""
+        parts = sorted(chunked_dir.glob("part_*.parquet"))
+        df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+        validate_gate_x1(df, n_deals=20)
+
+    def test_returns_none_in_chunked_mode(self, tmp_path, raiser):
+        """generate_dataset returns None when chunked."""
+        output_dir = tmp_path / "av_none_test"
+        result = generate_dataset(
+            seed=42,
+            n_deals=10,
+            continuation_policy=raiser,
+            progress=False,
+            chunk_size=5,
+            output_dir=output_dir,
+        )
+        assert result is None
+
+    def test_unchunked_returns_dataframe(self, raiser):
+        """generate_dataset returns DataFrame without chunk_size."""
+        result = generate_dataset(
+            seed=42,
+            n_deals=5,
+            continuation_policy=raiser,
+            progress=False,
+        )
+        assert isinstance(result, pd.DataFrame)
+
+
+class TestChunkedResumability:
+    """Tests for chunk resumption from manifest."""
+
+    def test_load_completed_chunks_empty(self, tmp_path):
+        """No manifest means no completed chunks."""
+        manifest = tmp_path / "manifest.jsonl"
+        assert _load_completed_chunks(manifest) == set()
+
+    def test_load_completed_chunks(self, tmp_path):
+        """Completed chunks are read from manifest."""
+        manifest = tmp_path / "manifest.jsonl"
+        entries = [
+            {"deal_start": 0, "deal_end": 4, "status": "complete"},
+            {"deal_start": 5, "deal_end": 9, "status": "complete"},
+        ]
+        with open(manifest, "w") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+        completed = _load_completed_chunks(manifest)
+        assert completed == {(0, 4), (5, 9)}
+
+    def test_resume_skips_completed(self, tmp_path, raiser):
+        """Resuming generation skips already-completed chunks."""
+        output_dir = tmp_path / "av_resume"
+
+        # First run: generate all 10 deals in 5-deal chunks
+        generate_dataset(
+            seed=42,
+            n_deals=10,
+            continuation_policy=raiser,
+            progress=False,
+            chunk_size=5,
+            output_dir=output_dir,
+        )
+
+        # Read manifest — should have 2 entries
+        manifest_path = output_dir / "manifest.jsonl"
+        with open(manifest_path) as f:
+            entries_before = f.readlines()
+        assert len(entries_before) == 2
+
+        # Run again — should skip both chunks (no new manifest entries)
+        generate_dataset(
+            seed=42,
+            n_deals=10,
+            continuation_policy=raiser,
+            progress=False,
+            chunk_size=5,
+            output_dir=output_dir,
+        )
+
+        with open(manifest_path) as f:
+            entries_after = f.readlines()
+        # Still 2 entries (no new writes)
+        assert len(entries_after) == 2
+
+
+class TestChunkedNonDivisible:
+    """Test chunked output when n_deals is not divisible by chunk_size."""
+
+    def test_partial_final_chunk(self, tmp_path, raiser):
+        """7 deals with chunk_size=5 produces 2 chunks (5 + 2)."""
+        output_dir = tmp_path / "av_partial"
+        generate_dataset(
+            seed=42,
+            n_deals=7,
+            continuation_policy=raiser,
+            progress=False,
+            chunk_size=5,
+            output_dir=output_dir,
+        )
+        parts = sorted(output_dir.glob("part_*.parquet"))
+        assert len(parts) == 2
+        # First chunk: deals 0-4, second chunk: deals 5-6
+        assert parts[0].name == "part_000000_000004.parquet"
+        assert parts[1].name == "part_000005_000006.parquet"
+
+        # Verify all 7 deals are covered
+        df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
+        assert set(df["deal_id"].unique()) == set(range(7))

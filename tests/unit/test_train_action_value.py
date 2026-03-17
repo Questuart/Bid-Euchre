@@ -130,6 +130,29 @@ class TestLoadDataset:
         with pytest.raises(ValueError, match="missing columns"):
             load_dataset(str(path))
 
+    def test_loads_directory(self, smoke_parquet_path, tmp_path):
+        """load_dataset accepts a directory with part_*.parquet files."""
+        # Split the SMOKE parquet into 2 part files
+        df = pd.read_parquet(smoke_parquet_path)
+        mid = len(df) // 2
+        part_dir = tmp_path / "action_value"
+        part_dir.mkdir()
+        df.iloc[:mid].to_parquet(part_dir / "part_000000_000249.parquet", index=False)
+        df.iloc[mid:].to_parquet(part_dir / "part_000250_000499.parquet", index=False)
+
+        loaded = load_dataset(str(part_dir))
+        assert len(loaded) == len(df)
+        # Check all required columns present
+        for col in STATE_FEATURE_NAMES:
+            assert col in loaded.columns
+
+    def test_directory_no_parts_raises(self, tmp_path):
+        """An empty directory should raise ValueError."""
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        with pytest.raises(ValueError, match="No part_"):
+            load_dataset(str(empty_dir))
+
 
 # ── Splitting ─────────────────────────────────────────────────
 
