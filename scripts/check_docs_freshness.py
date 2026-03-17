@@ -69,6 +69,9 @@ def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
             # Skip patterns with wildcards, Python module refs, URLs
             if "*" in ref or ref.startswith("http") or ref.startswith("<"):
                 continue
+            # Skip absolute paths (machine-specific, not repo-relative)
+            if ref.startswith("/"):
+                continue
             # Skip known non-path patterns
             if ref.startswith("random.") or ref.startswith("bid_euchre."):
                 continue
