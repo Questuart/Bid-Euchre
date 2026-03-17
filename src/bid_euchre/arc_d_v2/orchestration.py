@@ -47,9 +47,9 @@ MODE_SEEDS: dict[str, list[int]] = {
 
 # Mode -> n_deals for dataset generation
 MODE_DEALS: dict[str, int] = {
-    "smoke": 500,
-    "quick": 2500,
-    "full": 20000,
+    "smoke": 25,
+    "quick": 5000,
+    "full": 50000,
 }
 
 # Step descriptions for logging
@@ -680,24 +680,45 @@ def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
     _append_log(rung, {"event": "step_start", "step": "1", "seed": seed})
     state.mark_step_started("1", seed)
 
+    # Fixed R0 anchor for all rungs (v2 repair contract §4.1)
     continuation = (
-        _repo_root()
-        / "data"
-        / "artifacts"
-        / "arc_d"
-        / rung
-        / f"hybrid_{rung}_full.json"
+        _repo_root() / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
     )
     if not continuation.exists():
-        alt = (
-            _repo_root() / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
-        )
-        if alt.exists():
-            continuation = alt
-        else:
-            logger.warning("No continuation artifact found at %s", continuation)
+        logger.warning("R0 continuation artifact not found at %s", continuation)
 
-    output_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
+    if rung in ("r0", "r1", "r2"):
+        # Pre-R3: shared base dataset (v2 repair contract §4.5)
+        output_dir = (
+            _repo_root()
+            / "data"
+            / "runs"
+            / "arc_d_v2"
+            / "base_datasets"
+            / "pre_r3"
+            / state.mode
+            / f"seed_{seed}"
+        )
+    else:
+        # R3+: rung-local dataset
+        output_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
+
+    # Pre-R3: skip generation if shared dataset already exists
+    if rung in ("r0", "r1", "r2"):
+        av_dir = output_dir / "datasets" / "action_value"
+        if av_dir.is_dir() and any(av_dir.glob("part_*.parquet")):
+            logger.info(
+                "Step 1: shared pre-R3 %s dataset already exists at %s, skipping",
+                state.mode,
+                av_dir,
+            )
+            state.mark_step_complete("1", seed)
+            _append_log(
+                rung,
+                {"event": "step_complete", "step": "1", "seed": seed, "reused": True},
+            )
+            state.save(_state_path(rung))
+            return True
 
     cmd = [
         "uv",
@@ -720,9 +741,10 @@ def execute_step_1(state: RunState, seed: int, dry_run: bool = False) -> bool:
     if rung in ("r3", "r4"):
         cmd.append("--include-moon-loner")
 
-    # Full mode: use chunked generation to reduce peak memory
-    if state.mode == "full":
-        cmd.extend(["--chunk-size", "5000"])
+    # Chunked generation to reduce peak memory
+    if state.mode in ("full", "quick"):
+        chunk = 1000 if rung in ("r3", "r4") else 5000
+        cmd.extend(["--chunk-size", str(chunk)])
 
     if dry_run:
         logger.info("Step 1: would run: %s", " ".join(cmd))
@@ -761,27 +783,32 @@ def execute_step_2(state: RunState, seed: int, dry_run: bool = False) -> bool:
         state.mark_step_complete("2", seed)
         return True
 
-    dataset_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
-    # Prefer chunked directory if it exists; fall back to single file
-    chunked_dir = dataset_dir / "datasets" / "action_value"
-    single_file = dataset_dir / "datasets" / "action_value.parquet"
-    dataset_path = chunked_dir if chunked_dir.is_dir() else single_file
+    if rung in ("r0", "r1", "r2"):
+        # Pre-R3: shared base dataset root
+        dataset_root = (
+            _repo_root()
+            / "data"
+            / "runs"
+            / "arc_d_v2"
+            / "base_datasets"
+            / "pre_r3"
+            / state.mode
+        )
+        # For pre-R3, use the shared root for recursive discovery
+        dataset_path = dataset_root
+    else:
+        dataset_dir = _repo_root() / "data" / "runs" / f"av_{rung}_{state.mode}_{seed}"
+        # Prefer chunked directory if it exists; fall back to single file
+        chunked_dir = dataset_dir / "datasets" / "action_value"
+        single_file = dataset_dir / "datasets" / "action_value.parquet"
+        dataset_path = chunked_dir if chunked_dir.is_dir() else single_file
 
-    # Locate continuation artifact (same logic as step 1)
+    # Fixed R0 anchor for all rungs (v2 repair contract §4.1)
     continuation = (
-        _repo_root()
-        / "data"
-        / "artifacts"
-        / "arc_d"
-        / rung
-        / f"hybrid_{rung}_full.json"
+        _repo_root() / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
     )
     if not continuation.exists():
-        alt = (
-            _repo_root() / "data" / "artifacts" / "arc_d" / "r0" / "hybrid_r0_full.json"
-        )
-        if alt.exists():
-            continuation = alt
+        logger.warning("R0 continuation artifact not found at %s", continuation)
 
     all_ok = True
     for model in trainable:

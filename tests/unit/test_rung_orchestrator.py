@@ -2488,8 +2488,8 @@ class TestEvidenceManifestIncludesChartData:
 class TestStep1ChunkedMode:
     """Test that Step 1 command includes --chunk-size for full mode."""
 
-    def test_step_1_full_mode_includes_chunk_size(self, tmp_path):
-        """Full mode Step 1 command includes --chunk-size 5000."""
+    def test_step_1_full_mode_r0_includes_chunk_size_5000(self, tmp_path):
+        """Full mode Step 1 for r0 command includes --chunk-size 5000."""
         state = RunState.create_fresh("r0", "full", [42, 123, 456])
         state_path = tmp_path / "state.json"
         state.save(state_path)
@@ -2541,8 +2541,8 @@ class TestStep1ChunkedMode:
 
         assert "--chunk-size" not in captured_cmd
 
-    def test_step_1_quick_mode_no_chunk_size(self, tmp_path):
-        """Quick mode Step 1 command does NOT include --chunk-size."""
+    def test_step_1_quick_mode_includes_chunk_size(self, tmp_path):
+        """Quick mode Step 1 now includes --chunk-size (v2 repair LA-5)."""
         state = RunState.create_fresh("r0", "quick", [42])
         state_path = tmp_path / "state.json"
         state.save(state_path)
@@ -2564,14 +2564,43 @@ class TestStep1ChunkedMode:
 
             run_rung_mod.execute_step_1(state, seed=42)
 
-        assert "--chunk-size" not in captured_cmd
+        assert "--chunk-size" in captured_cmd
+        chunk_idx = captured_cmd.index("--chunk-size")
+        assert captured_cmd[chunk_idx + 1] == "5000"
+
+    def test_step_1_r3_full_uses_chunk_size_1000(self, tmp_path):
+        """R3 full mode uses chunk size 1000, not 5000 (v2 repair LA-5)."""
+        state = RunState.create_fresh("r3", "full", [42, 123, 456])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        assert "--chunk-size" in captured_cmd
+        chunk_idx = captured_cmd.index("--chunk-size")
+        assert captured_cmd[chunk_idx + 1] == "1000"
 
 
 class TestStep2ChunkedDatasetPath:
     """Test that Step 2 uses chunked directory when available."""
 
-    def test_step_2_prefers_chunked_dir(self, tmp_path):
-        """Step 2 uses chunked directory path when it exists."""
+    def test_step_2_pre_r3_uses_shared_dataset_root(self, tmp_path):
+        """Step 2 for pre-R3 uses shared dataset root path (v2 repair LA-5)."""
         roster = Roster(
             models=[
                 RosterModel(
@@ -2587,13 +2616,21 @@ class TestStep2ChunkedDatasetPath:
         plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
         plan_dir.mkdir(parents=True)
 
-        # Create both chunked dir and single file
-        ds_dir = tmp_path / "data" / "runs" / "av_r0_full_42" / "datasets"
-        ds_dir.mkdir(parents=True)
-        (ds_dir / "action_value.parquet").write_bytes(b"fake")
-        chunked = ds_dir / "action_value"
-        chunked.mkdir()
-        (chunked / "part_000000_004999.parquet").write_bytes(b"fake")
+        # Create shared dataset root with part files
+        shared_root = (
+            tmp_path
+            / "data"
+            / "runs"
+            / "arc_d_v2"
+            / "base_datasets"
+            / "pre_r3"
+            / "full"
+            / "seed_42"
+            / "datasets"
+            / "action_value"
+        )
+        shared_root.mkdir(parents=True)
+        (shared_root / "part_000000_004999.parquet").write_bytes(b"fake")
 
         # Continuation artifact
         art_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
@@ -2628,14 +2665,15 @@ class TestStep2ChunkedDatasetPath:
 
         assert ok is True
         assert len(captured_cmds) == 1
-        # The --dataset argument should point to the chunked directory
+        # The --dataset argument should point to the shared pre_r3 root
         cmd = captured_cmds[0]
         ds_idx = cmd.index("--dataset")
         ds_path = cmd[ds_idx + 1]
-        assert ds_path.endswith("action_value")
+        assert "pre_r3" in ds_path
+        assert "full" in ds_path
 
-    def test_step_2_falls_back_to_single_file(self, tmp_path):
-        """Step 2 falls back to single parquet when no chunked dir exists."""
+    def test_step_2_r3_uses_rung_local_chunked_dir(self, tmp_path):
+        """Step 2 for R3 uses rung-local chunked directory path."""
         roster = Roster(
             models=[
                 RosterModel(
@@ -2648,19 +2686,22 @@ class TestStep2ChunkedDatasetPath:
             anchor=AnchorModel(name="", artifact="", class_name=""),
         )
 
-        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r3"
         plan_dir.mkdir(parents=True)
 
-        # Only single file (no chunked dir)
-        ds_dir = tmp_path / "data" / "runs" / "av_r0_full_42" / "datasets"
+        # Create rung-local chunked dataset
+        ds_dir = tmp_path / "data" / "runs" / "av_r3_full_42" / "datasets"
         ds_dir.mkdir(parents=True)
-        (ds_dir / "action_value.parquet").write_bytes(b"fake")
+        chunked = ds_dir / "action_value"
+        chunked.mkdir()
+        (chunked / "part_000000_000999.parquet").write_bytes(b"fake")
 
+        # Continuation artifact
         art_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
         art_dir.mkdir(parents=True)
         (art_dir / "hybrid_r0_full.json").write_text("{}")
 
-        state = RunState.create_fresh("r0", "full", [42, 123, 456])
+        state = RunState.create_fresh("r3", "full", [42, 123, 456])
         state.mark_step_started("1", 42)
         state.mark_step_complete("1", 42)
 
@@ -2691,17 +2732,181 @@ class TestStep2ChunkedDatasetPath:
         cmd = captured_cmds[0]
         ds_idx = cmd.index("--dataset")
         ds_path = cmd[ds_idx + 1]
-        assert ds_path.endswith("action_value.parquet")
+        assert "av_r3_full_42" in ds_path
+        assert ds_path.endswith("action_value")
 
 
-class TestModeDealsFull:
-    """Test that MODE_DEALS['full'] is reduced to 20000."""
+class TestModeDeals:
+    """Test MODE_DEALS contract values (v2 repair LA-5)."""
 
     def test_full_mode_deals(self):
-        assert run_rung_mod.MODE_DEALS["full"] == 20000
+        assert run_rung_mod.MODE_DEALS["full"] == 50000
 
-    def test_smoke_mode_deals_unchanged(self):
-        assert run_rung_mod.MODE_DEALS["smoke"] == 500
+    def test_smoke_mode_deals(self):
+        assert run_rung_mod.MODE_DEALS["smoke"] == 25
 
-    def test_quick_mode_deals_unchanged(self):
-        assert run_rung_mod.MODE_DEALS["quick"] == 2500
+    def test_quick_mode_deals(self):
+        assert run_rung_mod.MODE_DEALS["quick"] == 5000
+
+
+# ============================================================================
+# V2 Repair: Fixed R0 Anchor Tests (LA-5 §4.1)
+# ============================================================================
+
+
+class TestFixedR0Anchor:
+    """Test that execute_step_1 always uses R0 continuation artifact."""
+
+    @pytest.mark.parametrize("rung", ["r0", "r1", "r2", "r3"])
+    def test_step_1_always_uses_r0_anchor(self, tmp_path, rung):
+        """Step 1 uses hybrid_r0_full.json for all rungs, not rung-local."""
+        state = RunState.create_fresh(rung, "smoke", [42])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            # Create R0 continuation artifact
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            # Also create rung-local artifact to verify it's NOT used
+            if rung != "r0":
+                rung_dir = tmp_path / "data" / "artifacts" / "arc_d" / rung
+                rung_dir.mkdir(parents=True)
+                (rung_dir / f"hybrid_{rung}_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        assert "--continuation-artifact" in captured_cmd
+        ca_idx = captured_cmd.index("--continuation-artifact")
+        ca_path = captured_cmd[ca_idx + 1]
+        assert "r0" in ca_path
+        assert "hybrid_r0_full.json" in ca_path
+        # Must NOT reference rung-local artifact
+        if rung != "r0":
+            assert f"hybrid_{rung}_full.json" not in ca_path
+
+
+# ============================================================================
+# V2 Repair: Shared Dataset Path Tests (LA-5 §4.5)
+# ============================================================================
+
+
+class TestSharedDatasetPaths:
+    """Test that pre-R3 rungs use shared dataset paths."""
+
+    @pytest.mark.parametrize("rung", ["r0", "r1", "r2"])
+    def test_step_1_pre_r3_uses_shared_path(self, tmp_path, rung):
+        """Pre-R3 Step 1 output goes to shared base_datasets/pre_r3/{mode}/seed_{seed}/."""
+        state = RunState.create_fresh(rung, "quick", [42])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        od_idx = captured_cmd.index("--output-dir")
+        od_path = captured_cmd[od_idx + 1]
+        assert "base_datasets" in od_path
+        assert "pre_r3" in od_path
+        assert "quick" in od_path
+        assert "seed_42" in od_path
+        # Should NOT contain rung-specific name
+        assert f"av_{rung}" not in od_path
+
+    def test_step_1_r3_uses_rung_local_path(self, tmp_path):
+        """R3 Step 1 output goes to rung-local av_r3_{mode}_{seed}/."""
+        state = RunState.create_fresh("r3", "quick", [42])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        od_idx = captured_cmd.index("--output-dir")
+        od_path = captured_cmd[od_idx + 1]
+        assert "av_r3_quick_42" in od_path
+        assert "base_datasets" not in od_path
+
+    def test_step_1_pre_r3_skips_if_dataset_exists(self, tmp_path):
+        """Pre-R3 Step 1 skips generation if shared dataset already has part files."""
+        state = RunState.create_fresh("r1", "quick", [42])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        # Create existing shared dataset
+        av_dir = (
+            tmp_path
+            / "data"
+            / "runs"
+            / "arc_d_v2"
+            / "base_datasets"
+            / "pre_r3"
+            / "quick"
+            / "seed_42"
+            / "datasets"
+            / "action_value"
+        )
+        av_dir.mkdir(parents=True)
+        (av_dir / "part_000000_004999.parquet").write_bytes(b"fake")
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            result = run_rung_mod.execute_step_1(state, seed=42)
+
+        assert result is True
+        # run_subprocess should NOT have been called (skipped)
+        assert len(captured_cmd) == 0
+        assert state.steps["1"]["status"] == "complete"

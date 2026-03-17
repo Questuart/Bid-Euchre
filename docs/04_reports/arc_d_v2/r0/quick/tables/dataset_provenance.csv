@@ -1,6 +1,0 @@
-dataset_name,path,n_rows,seed,sha256,model_class
-constrained_ols_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet,,42,69d7003bba2111f4b336891e5579cef9f9a07117542130e51e1f924f205d9ce1,ols
-full_ols_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet,,42,69d7003bba2111f4b336891e5579cef9f9a07117542130e51e1f924f205d9ce1,ols
-gbt_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet,,42,69d7003bba2111f4b336891e5579cef9f9a07117542130e51e1f924f205d9ce1,gbt
-selected_ols_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet,,42,69d7003bba2111f4b336891e5579cef9f9a07117542130e51e1f924f205d9ce1,ols
-selected_two_stage_av,/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/runs/av_r0_quick_42/datasets/action_value.parquet,,42,69d7003bba2111f4b336891e5579cef9f9a07117542130e51e1f924f205d9ce1,two-stage

@@ -41,7 +41,7 @@ from bid_euchre.strategy.bidding import (
 )
 
 # Mode → n_deals mapping (override with --n-deals)
-MODE_DEALS = {"SMOKE": 500, "QUICK": 2500, "FULL": 50000}
+MODE_DEALS = {"SMOKE": 25, "QUICK": 5000, "FULL": 50000}
 
 
 def sample_opponent_hands(
@@ -638,6 +638,7 @@ def generate_dataset(
     include_moon_loner: bool = False,
     chunk_size: int | None = None,
     output_dir: Path | None = None,
+    dataset_seed: int | None = None,
 ) -> pd.DataFrame | None:
     """Generate the full counterfactual action-value dataset.
 
@@ -664,6 +665,9 @@ def generate_dataset(
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.jsonl"
         completed_chunks = _load_completed_chunks(manifest_path)
+
+    # Dataset seed for global UIDs (defaults to simulation seed)
+    ds_seed = dataset_seed if dataset_seed is not None else seed
 
     rows: list[dict] = []
     t0 = time.time()
@@ -810,6 +814,9 @@ def generate_dataset(
                     "trump_suit": trump_suit if trump_suit else "",
                     "is_moon": 0,
                     "is_loner": 0,
+                    "dataset_seed": ds_seed,
+                    "deal_uid": f"{ds_seed}:{deal_id}",
+                    "hand_uid": f"{ds_seed}:{current_hand_id}",
                 }
                 # Add 69 state features as individual columns
                 for i, fname in enumerate(STATE_FEATURE_NAMES):
@@ -867,6 +874,9 @@ def generate_dataset(
                         "trump_suit": trump_suit if trump_suit else "",
                         "is_moon": 1,
                         "is_loner": 0,
+                        "dataset_seed": ds_seed,
+                        "deal_uid": f"{ds_seed}:{deal_id}",
+                        "hand_uid": f"{ds_seed}:{current_hand_id}",
                     }
                     for i, fname in enumerate(STATE_FEATURE_NAMES):
                         moon_row[fname] = state[i]
@@ -915,6 +925,9 @@ def generate_dataset(
                         "trump_suit": trump_suit if trump_suit else "",
                         "is_moon": 0,
                         "is_loner": 1,
+                        "dataset_seed": ds_seed,
+                        "deal_uid": f"{ds_seed}:{deal_id}",
+                        "hand_uid": f"{ds_seed}:{current_hand_id}",
                     }
                     for i, fname in enumerate(STATE_FEATURE_NAMES):
                         loner_row[fname] = state[i]
@@ -1132,6 +1145,12 @@ def main():
         default=None,
         help="Write parquet part files every N deals (reduces peak memory)",
     )
+    parser.add_argument(
+        "--dataset-seed",
+        type=int,
+        default=None,
+        help="Dataset-level seed for global UIDs (defaults to --seed)",
+    )
     args = parser.parse_args()
 
     n_deals = args.n_deals if args.n_deals is not None else MODE_DEALS[args.mode]
@@ -1175,6 +1194,7 @@ def main():
         include_moon_loner=include_ml,
         chunk_size=chunk_size,
         output_dir=chunked_output_dir,
+        dataset_seed=args.dataset_seed,
     )
 
     if chunk_size:

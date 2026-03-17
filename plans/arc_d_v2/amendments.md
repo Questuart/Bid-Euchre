@@ -11,6 +11,7 @@
 ### LA-2 — [Anchor Compatibility Policy](#lineage-amendment-la-2)
 ### LA-3 — [Hybrid Execution Path: QUICK-First Ladder](#lineage-amendment-la-3)
 ### LA-4 — [FULL Roster Trimming](#lineage-amendment-la-4)
+### LA-5 — [V2 Regeneration Repair Contract](#lineage-amendment-la-5)
 
 ---
 
@@ -186,5 +187,58 @@ at FULL scale. Trimming saves ~50% compute on FULL runs.
 
 **Impact on hypotheses:** Hypotheses referencing dropped models are automatically SKIPped
 via roster-aware logic in advance_check.py. Hypothesis files remain unchanged.
+
+**Approved by:** [human reviewer]
+
+---
+
+## Lineage Amendment LA-5
+
+**Date:** 2026-03-16
+**Type:** regeneration_repair
+**Effective from:** All rungs (retroactive)
+**Change:** Comprehensive regeneration repair contract fixing continuation-policy drift,
+dataset isolation, and scale thresholds.
+
+**Rationale:**
+The FULL backfill orchestrator was killed after discovering continuation-policy drift:
+R1+ datasets were generated using rung-local continuation artifacts (when they existed)
+instead of the fixed R0 anchor, violating the lineage comparability contract. All
+non-canonical QUICK outputs were archived and the regeneration pipeline was repaired.
+
+**Changes:**
+
+| Area | Before | After |
+|------|--------|-------|
+| Continuation artifact | Rung-local probe with R0 fallback | Hard-coded R0 anchor for all rungs |
+| Pre-R3 datasets | Per-rung directories (`av_r0_...`, `av_r1_...`) | Shared `base_datasets/pre_r3/{mode}/seed_{seed}/` |
+| SMOKE n_deals | 500 | 25 |
+| QUICK n_deals | 2,500 | 5,000 |
+| FULL n_deals | 20,000 | 50,000 |
+| R3 chunk size | 5,000 | 1,000 |
+| Global IDs | None | `dataset_seed`, `deal_uid`, `hand_uid` in every row |
+| Loader | `path.glob()` (flat) | `path.rglob()` (recursive, for shared dataset tree) |
+| Split key | `deal_id` only | `deal_uid` when present, fallback to `deal_id` |
+
+**Fixed-anchor enforcement (§4.1):**
+- `execute_step_1()` and `execute_step_2()` now always use
+  `data/artifacts/arc_d/r0/hybrid_r0_full.json` regardless of rung
+- The rung-local probe with fallback is removed
+
+**Shared dataset reuse (§4.5):**
+- R0, R1, R2 all share the same base dataset (same features, same deals)
+- Output path: `data/runs/arc_d_v2/base_datasets/pre_r3/{mode}/seed_{seed}/`
+- Step 1 skips generation if the shared dataset already exists (idempotent)
+- R3+ continues to use rung-local datasets (moon/loner expansion)
+
+**Global UIDs (§4.6):**
+- `dataset_seed`: identifies which simulation seed produced the row
+- `deal_uid`: `f"{dataset_seed}:{deal_id}"` — globally unique across seeds
+- `hand_uid`: `f"{dataset_seed}:{hand_id}"` — globally unique across seeds
+- `split_by_deal()` uses `deal_uid` when present for leak-free multi-seed splitting
+
+**Impact on existing data:**
+All prior QUICK outputs archived to `arc_d_v2_noncanonical_20260316/`. New canonical
+outputs will be regenerated from scratch with these fixes.
 
 **Approved by:** [human reviewer]

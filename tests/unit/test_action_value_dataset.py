@@ -1163,3 +1163,76 @@ class TestChunkedNonDivisible:
         # Verify all 7 deals are covered
         df = pd.concat([pd.read_parquet(p) for p in parts], ignore_index=True)
         assert set(df["deal_id"].unique()) == set(range(7))
+
+
+# ── Global UIDs (v2 repair LA-5 §4.6) ────────────────────────
+
+
+class TestGlobalUIDs:
+    """Test dataset_seed, deal_uid, hand_uid columns."""
+
+    @pytest.fixture
+    def uid_df(self, raiser):
+        """Generate a small dataset with default dataset_seed."""
+        return generate_dataset(
+            seed=42, n_deals=3, continuation_policy=raiser, progress=False
+        )
+
+    def test_has_uid_columns(self, uid_df):
+        """Generated rows include dataset_seed, deal_uid, hand_uid."""
+        assert "dataset_seed" in uid_df.columns
+        assert "deal_uid" in uid_df.columns
+        assert "hand_uid" in uid_df.columns
+
+    def test_dataset_seed_defaults_to_seed(self, uid_df):
+        """When dataset_seed is not specified, it defaults to the main seed."""
+        assert (uid_df["dataset_seed"] == 42).all()
+
+    def test_deal_uid_format(self, uid_df):
+        """deal_uid = f'{dataset_seed}:{deal_id}'."""
+        for _, row in uid_df.iterrows():
+            expected = f"{int(row['dataset_seed'])}:{int(row['deal_id'])}"
+            assert row["deal_uid"] == expected
+
+    def test_hand_uid_format(self, uid_df):
+        """hand_uid = f'{dataset_seed}:{hand_id}'."""
+        for _, row in uid_df.iterrows():
+            expected = f"{int(row['dataset_seed'])}:{int(row['hand_id'])}"
+            assert row["hand_uid"] == expected
+
+    def test_explicit_dataset_seed(self, raiser):
+        """Explicit dataset_seed overrides the default."""
+        df = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            dataset_seed=999,
+        )
+        assert (df["dataset_seed"] == 999).all()
+        # deal_uid uses 999, not 42
+        for _, row in df.iterrows():
+            assert row["deal_uid"].startswith("999:")
+
+    def test_moon_loner_rows_have_uids(self, raiser):
+        """Moon and loner rows also get dataset_seed, deal_uid, hand_uid."""
+        df = generate_dataset(
+            seed=42,
+            n_deals=3,
+            continuation_policy=raiser,
+            progress=False,
+            include_moon_loner=True,
+        )
+        moon_df = df[df["is_moon"] == 1]
+        loner_df = df[df["is_loner"] == 1]
+
+        assert (moon_df["dataset_seed"] == 42).all()
+        assert (loner_df["dataset_seed"] == 42).all()
+
+        for _, row in moon_df.iterrows():
+            expected_deal_uid = f"{int(row['dataset_seed'])}:{int(row['deal_id'])}"
+            assert row["deal_uid"] == expected_deal_uid
+
+        for _, row in loner_df.iterrows():
+            expected_hand_uid = f"{int(row['dataset_seed'])}:{int(row['hand_id'])}"
+            assert row["hand_uid"] == expected_hand_uid
