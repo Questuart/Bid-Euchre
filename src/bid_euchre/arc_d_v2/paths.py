@@ -31,6 +31,29 @@ PLANS_ROOT = _ROOT / "plans" / "arc_d_v2"
 REPORTS_ROOT = _ROOT / "docs" / "04_reports" / "arc_d_v2"
 RUNS_ROOT = _ROOT / "data" / "runs" / "arc_d_v2"
 
+# ── Dataset roots (dataset-build seed separation) ─────────────────────────
+
+PRE_R3_DATASETS_ROOT = RUNS_ROOT / "base_datasets" / "pre_r3"
+R3_DATASETS_ROOT = RUNS_ROOT / "r3_datasets"
+
+
+def pre_r3_dataset_root(mode: str) -> Path:
+    """Shared pre-R3 dataset root: ``data/runs/arc_d_v2/base_datasets/pre_r3/{mode}/``."""
+    return PRE_R3_DATASETS_ROOT / mode
+
+
+def r3_dataset_root(mode: str) -> Path:
+    """R3 dataset root: ``data/runs/arc_d_v2/r3_datasets/{mode}/``."""
+    return R3_DATASETS_ROOT / mode
+
+
+def dataset_root(rung: str, mode: str) -> Path:
+    """Dataset root for a rung, dispatching pre-R3 vs R3+."""
+    if rung in ("r0", "r1", "r2"):
+        return pre_r3_dataset_root(mode)
+    return r3_dataset_root(mode)
+
+
 # ── Lineage-level files ─────────────────────────────────────────────────────
 
 LINEAGE_PLAN = PLANS_ROOT / "lineage_plan.md"
