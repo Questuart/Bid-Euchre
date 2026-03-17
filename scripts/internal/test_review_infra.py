@@ -25,9 +25,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-# Ensure scripts/internal is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
+# Imports assume PYTHONPATH includes scripts/internal (set by Makefile targets)
 from codex_plan_review_adapter import (
     _check_codex_auth,
     _run_with_pty,
