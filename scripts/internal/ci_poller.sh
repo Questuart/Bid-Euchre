@@ -5,7 +5,7 @@
 # Designed to be launched by post-push-ci-check.sh hook.
 #
 # Usage:
-#   ci_poller.sh --pr <N> [--auto-merge] [--timeout <seconds>] [--interval <seconds>]
+#   ci_poller.sh --pr <N> [--repo-root <path>] [--auto-merge] [--timeout <seconds>] [--interval <seconds>]
 #
 # State:
 #   .claude/runtime/ci_polls/pr_<N>/status.json — current polling state
@@ -21,6 +21,7 @@ set -euo pipefail
 
 # Defaults
 PR_NUM=""
+REPO_ROOT=""
 AUTO_MERGE=false
 TIMEOUT=900   # 15 minutes
 INTERVAL=30   # 30 seconds
@@ -30,6 +31,7 @@ STARTUP_DELAY=15  # seconds to wait before first poll (allows review loop to cla
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --pr) PR_NUM="$2"; shift 2 ;;
+        --repo-root) REPO_ROOT="$2"; shift 2 ;;
         --auto-merge) AUTO_MERGE=true; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         --interval) INTERVAL="$2"; shift 2 ;;
@@ -44,11 +46,18 @@ if [ -z "$PR_NUM" ]; then
 fi
 
 # Locate repo root
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -n "$REPO_ROOT" ]; then
+    REPO_ROOT=$(cd "$REPO_ROOT" 2>/dev/null && pwd || echo "")
+else
+    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+fi
+
 if [ -z "$REPO_ROOT" ]; then
     echo "Error: not in a git repo" >&2
     exit 3
 fi
+
+cd "$REPO_ROOT"
 
 # State directory
 STATE_DIR="${REPO_ROOT}/.claude/runtime/ci_polls/pr_${PR_NUM}"

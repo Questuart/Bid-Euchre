@@ -7,6 +7,23 @@
 set -euo pipefail
 
 INPUT=$(cat)
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+
+git_in_project() {
+    git -C "$PROJECT_DIR" "$@"
+}
+
+gh_in_project() {
+    (
+        cd "$PROJECT_DIR"
+        gh "$@"
+    )
+}
+
+sanitize_token() {
+    printf '%s' "$1" | sed 's#[^A-Za-z0-9._-]#_#g'
+}
 
 # Only trigger for git push commands that succeeded
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
@@ -17,28 +34,29 @@ if [[ "$COMMAND" == *"git push"* ]] && [[ "$EXIT_CODE" == "0" ]] \
    && [[ "$COMMAND" != *"--delete"* ]] && [[ "$COMMAND" != *" :"* ]]; then
 
     # Determine current branch
-    BRANCH=$(git branch --show-current 2>/dev/null || true)
+    BRANCH=$(git_in_project branch --show-current 2>/dev/null || true)
     if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
         exit 0
     fi
 
     # Dedupe: don't trigger twice for the same push
-    HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null || true)
-    SENTINEL="/tmp/.claude-push-ci-check-${BRANCH}-${HEAD_SHA}"
+    HEAD_SHA=$(git_in_project rev-parse --short HEAD 2>/dev/null || true)
+    SAFE_BRANCH=$(sanitize_token "$BRANCH")
+    SENTINEL="/tmp/.claude-push-ci-check-${SAFE_BRANCH}-${HEAD_SHA}"
     if [ -f "$SENTINEL" ]; then
         exit 0
     fi
     touch "$SENTINEL"
 
     # Check if a PR exists for this branch
-    PR_NUM=$(gh pr view --json number --jq '.number' 2>/dev/null || echo "")
+    PR_NUM=$(gh_in_project pr view --json number --jq '.number' 2>/dev/null || echo "")
     if [ -z "$PR_NUM" ]; then
         # No PR yet — nothing to monitor
         exit 0
     fi
 
     # Locate the CI poller script
-    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    REPO_ROOT=$(git_in_project rev-parse --show-toplevel 2>/dev/null || echo "")
     POLLER="${REPO_ROOT}/scripts/internal/ci_poller.sh"
 
     if [ ! -f "$POLLER" ]; then
@@ -46,7 +64,10 @@ if [[ "$COMMAND" == *"git push"* ]] && [[ "$EXIT_CODE" == "0" ]] \
     fi
 
     # Launch CI poller in background with auto-merge enabled
-    bash "$POLLER" --pr "$PR_NUM" --auto-merge &
+    (
+        cd "$REPO_ROOT"
+        bash "$POLLER" --pr "$PR_NUM" --repo-root "$REPO_ROOT" --auto-merge
+    ) &
 
     cat <<EOF
 {
