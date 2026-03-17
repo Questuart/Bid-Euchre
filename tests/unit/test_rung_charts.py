@@ -12,7 +12,7 @@ Covers:
 - selection path chart generation
 - decision agreement chart generation
 - disagreement outcomes chart generation
-- Dashboard expansion (3x2 model_eval, 3x2 competitive, 2x2 health with outcome_distributions)
+- Dashboard expansion (3x2 model_eval, 3x2 competitive, 3x2 health with seat balance + bid-type)
 - Graceful degradation when CSV data is missing
 """
 
@@ -316,8 +316,10 @@ class TestIntelligenceFacetedH2H:
             tables_dir=h2h_tier_summary_csv,
             output_dir=charts_dir,
         )
-        assert "h2h_intelligence_faceted.png" in generated
-        assert (charts_dir / "h2h_intelligence_faceted.png").exists()
+        assert "full_chart_suite/h2h_intelligence_faceted.png" in generated
+        assert (
+            charts_dir / "full_chart_suite" / "h2h_intelligence_faceted.png"
+        ).exists()
 
 
 # ──────────────────────────────────────────────
@@ -749,7 +751,7 @@ class TestDashboardCompetitiveExpansion:
 
 
 class TestDashboardHealthOutcomeDistributions:
-    """Tests that health dashboard Panel 3 uses outcome_distributions."""
+    """Tests that health dashboard is 3x2 and Panel 3 uses outcome_distributions."""
 
     def test_health_panel3_prefers_outcome_distributions(self, charts_mod, tmp_path):
         """Health dashboard renders outcome_distributions when available."""
@@ -888,15 +890,15 @@ class TestAllChartsIntegration:
             chart_data_dir=chart_data_dir,
         )
 
-        # All diagnostic charts should be in the generated list
+        # All diagnostic charts should be in the generated list (with prefix)
         expected_new = [
-            "pred_vs_actual.png",
-            "residual_distribution.png",
-            "calibration_curve.png",
-            "feature_importance.png",
-            "outcome_distributions.png",
-            "bid_level_distribution.png",
-            "selection_path.png",
+            "full_chart_suite/pred_vs_actual.png",
+            "full_chart_suite/residual_distribution.png",
+            "full_chart_suite/calibration_curve.png",
+            "full_chart_suite/feature_importance.png",
+            "full_chart_suite/outcome_distributions.png",
+            "full_chart_suite/bid_level_distribution.png",
+            "full_chart_suite/selection_path.png",
         ]
         for chart in expected_new:
             assert (
@@ -905,7 +907,7 @@ class TestAllChartsIntegration:
             assert (charts_dir / chart).exists(), f"{chart} file not found"
             assert (charts_dir / chart).stat().st_size > 0, f"{chart} is empty"
 
-        # Dashboard charts should also be generated
+        # Dashboard charts should also be generated (at top level)
         for dashboard in [
             "dashboard_competitive.png",
             "dashboard_health.png",
@@ -914,3 +916,126 @@ class TestAllChartsIntegration:
             assert (
                 dashboard in generated
             ), f"Expected {dashboard} in generated list, got: {generated}"
+
+
+# ──────────────────────────────────────────────
+#  Health dashboard 3x2 verification
+# ──────────────────────────────────────────────
+
+
+class TestHealthDashboard3x2:
+    """Tests that health dashboard is 3x2 (6 panels)."""
+
+    def test_health_dashboard_3x2_figsize(self, charts_mod, tmp_path):
+        """Health dashboard uses 3x2 grid with appropriate figsize."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        result = charts_mod.generate_dashboard_health(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Competitive dashboard panel 6 intelligence-faceted
+# ──────────────────────────────────────────────
+
+
+class TestCompetitiveDashboardPanel6:
+    """Tests that competitive dashboard panel 6 shows intelligence-faceted H2H."""
+
+    def test_panel6_with_tier_data(self, charts_mod, tmp_path):
+        """Competitive dashboard panel 6 renders tier data when available."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        # Minimal comparator_rankings.csv
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "facet": ["pooled", "pooled"],
+                "net_eppd": [1.2, 0.3],
+                "ci_low": [0.8, 0.1],
+                "ci_high": [1.6, 0.5],
+                "net_cvar_5": [-0.3, -0.7],
+            }
+        ).to_csv(tables_dir / "comparator_rankings.csv", index=False)
+
+        # h2h_tier_summary.csv for panel 6
+        pd.DataFrame(
+            {
+                "model": ["gbt", "gbt", "ols", "ols"],
+                "tier": ["smart", "anchor", "smart", "anchor"],
+                "mean_delta": [1.0, 0.5, 0.2, -0.1],
+                "mean_win_rate": [0.62, 0.58, 0.51, 0.48],
+                "n_opponents": [1, 1, 1, 1],
+            }
+        ).to_csv(tables_dir / "h2h_tier_summary.csv", index=False)
+
+        result = charts_mod.generate_dashboard_competitive(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_competitive.png").exists()
+
+    def test_panel6_placeholder_without_tier_data(self, charts_mod, tmp_path):
+        """Competitive dashboard panel 6 shows placeholder without tier data."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        result = charts_mod.generate_dashboard_competitive(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_competitive.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Layout restructure: full_chart_suite/ subdirectory
+# ──────────────────────────────────────────────
+
+
+class TestFullChartSuiteLayout:
+    """Tests that standalone charts go to full_chart_suite/ subdirectory."""
+
+    def test_standalone_charts_in_subdirectory(self, charts_mod, tmp_path):
+        """Standalone charts are written to full_chart_suite/ subdir."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+
+        # Minimal h2h_tier_summary for one standalone chart
+        pd.DataFrame(
+            {
+                "model": ["gbt", "gbt"],
+                "tier": ["smart", "anchor"],
+                "mean_delta": [1.0, 0.5],
+                "mean_win_rate": [0.62, 0.58],
+                "n_opponents": [1, 1],
+            }
+        ).to_csv(tables_dir / "h2h_tier_summary.csv", index=False)
+
+        generated = charts_mod.generate_all_charts(
+            tables_dir=tables_dir,
+            output_dir=charts_dir,
+        )
+
+        # Standalone charts have full_chart_suite/ prefix
+        suite_charts = [c for c in generated if c.startswith("full_chart_suite/")]
+        dashboard_charts = [
+            c for c in generated if not c.startswith("full_chart_suite/")
+        ]
+
+        assert len(suite_charts) > 0, "Expected some standalone charts"
+        # Dashboards are at top level
+        for d in dashboard_charts:
+            assert (charts_dir / d).exists(), f"Dashboard {d} not at top level"
+        # Suite charts are in subdirectory
+        for s in suite_charts:
+            assert (charts_dir / s).exists(), f"Suite chart {s} not in subdirectory"

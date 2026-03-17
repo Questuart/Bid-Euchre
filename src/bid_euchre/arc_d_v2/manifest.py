@@ -80,16 +80,24 @@ def _get_lifecycle_status(rung_dir: Path) -> list[dict]:
 
 
 def _inventory_chart_dir(charts_dir: Path) -> list[dict]:
-    """Build chart inventory covering all 22 registry entries.
+    """Build chart inventory covering all registry entries.
 
     For each chart in CHART_REGISTRY, records presence/absence and size.
+    Charts 1-3 (dashboards) are at the top level of charts_dir.
+    Charts 4-23 (standalone) are under charts_dir/full_chart_suite/.
     Charts present on disk but not in the registry are appended at the end.
     """
-    # Build a set of filenames on disk
+    # Build a set of filenames on disk (relative to charts_dir)
     on_disk: dict[str, int] = {}
     if charts_dir.exists():
+        # Top-level PNGs (dashboards)
         for p in sorted(charts_dir.glob("*.png")):
             on_disk[p.name] = p.stat().st_size
+        # Subdirectory PNGs (full_chart_suite/)
+        suite_dir = charts_dir / "full_chart_suite"
+        if suite_dir.exists():
+            for p in sorted(suite_dir.glob("*.png")):
+                on_disk[f"full_chart_suite/{p.name}"] = p.stat().st_size
 
     entries: list[dict] = []
     seen_filenames: set[str] = set()

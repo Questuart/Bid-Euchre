@@ -1451,46 +1451,44 @@ def generate_dashboard_competitive(
     else:
         _unavailable_panel(ax, "H2H Ranking Scatter")
 
-    # Panel 6: Cross-rung progression
+    # Panel 6: Intelligence-faceted H2H (replaces cross-rung progression)
     ax = axes[2, 1]
-    cross_rung_df = _read_csv_safe(tables_dir / "cross_rung_deltas.csv")
-    cross_rung_prog = (
-        _read_csv_safe(chart_data_dir / "cross_rung_progression.csv")
-        if chart_data_dir
-        else None
-    )
-    prog_df = cross_rung_prog if cross_rung_prog is not None else cross_rung_df
-    if prog_df is not None and "rung" in prog_df.columns:
-        metric_cols = [
-            c
-            for c in prog_df.columns
-            if c not in ("rung", "best_model", "advance_decision", "model")
+    h2h_tier_df = _read_csv_safe(tables_dir / "h2h_tier_summary.csv")
+    if h2h_tier_df is not None and {"model", "tier", "mean_delta"}.issubset(
+        h2h_tier_df.columns
+    ):
+        tiers = [
+            t
+            for t in ("smart", "anchor", "heuristic")
+            if t in h2h_tier_df["tier"].values
         ]
-        if metric_cols:
-            x_vals = np.arange(len(prog_df))
-            rungs = prog_df["rung"].tolist()
-            key_metrics = [
-                c
-                for c in metric_cols
-                if "h2h" in c or "comparator" in c or "win_rate" in c or "net_eppd" in c
-            ][:4]
-            if not key_metrics:
-                key_metrics = metric_cols[:4]
-            for metric in key_metrics:
-                if metric in prog_df.columns:
-                    vals = pd.to_numeric(prog_df[metric], errors="coerce")
-                    ax.plot(x_vals, vals, marker="o", label=metric, markersize=4)
-            ax.set_xticks(x_vals)
-            ax.set_xticklabels(rungs, fontsize=8)
-            ax.set_xlabel("Rung", fontsize=9)
-            ax.set_ylabel("Value", fontsize=9)
-            ax.set_title("Cross-Rung Progression", fontsize=11)
+        if tiers:
+            models = sorted(h2h_tier_df["model"].unique())
+            model_colors = _get_model_colors(models)
+            x = np.arange(len(tiers))
+            width = 0.8 / max(len(models), 1)
+            for i, model in enumerate(models):
+                vals = []
+                for tier in tiers:
+                    row = h2h_tier_df[
+                        (h2h_tier_df["model"] == model) & (h2h_tier_df["tier"] == tier)
+                    ]
+                    vals.append(
+                        float(row["mean_delta"].iloc[0]) if len(row) > 0 else 0.0
+                    )
+                offset = (i - len(models) / 2 + 0.5) * width
+                ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+            ax.set_xticks(x)
+            ax.set_xticklabels([f"vs {t}" for t in tiers], fontsize=8)
+            ax.set_ylabel("Mean H2H Delta", fontsize=9)
+            ax.set_title("H2H by Opponent Tier", fontsize=11)
+            ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
             ax.legend(fontsize=6, loc="best")
-            ax.grid(True, alpha=0.3)
+            ax.grid(axis="y", alpha=0.3)
         else:
-            _unavailable_panel(ax, "Cross-Rung Progression")
+            _unavailable_panel(ax, "Intelligence-Faceted H2H")
     else:
-        _unavailable_panel(ax, "Cross-Rung Progression")
+        _unavailable_panel(ax, "Intelligence-Faceted H2H")
 
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     _save_chart(fig, output_dir, "dashboard_competitive.png", dpi)
@@ -1508,14 +1506,16 @@ def generate_dashboard_health(
     chart_data_dir: Path | None = None,
     dpi: int = 150,
 ) -> bool:
-    """Generate the health dashboard (2x2 grid).
+    """Generate the health dashboard (3x2 grid).
 
     Panel 1: Bid rate / make rate by model
     Panel 2: Contract mix by model (mix_suit/high/low columns)
     Panel 3: Outcome distributions (if chart_data available)
-    Panel 4: Bid-type breakdown (if behavior_by_bid_type.csv has data)
+    Panel 4: Bid-level distribution (if bid_levels.csv or behavior_by_bid_type.csv)
+    Panel 5: Seat balance (from chart_data/seat_balance.csv)
+    Panel 6: Bid-type breakdown (from tables/behavior_by_bid_type.csv)
     """
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
     fig.suptitle("Health Dashboard", fontsize=16, fontweight="bold", y=0.98)
 
     behavior_df = _read_csv_safe(tables_dir / "behavior_summary.csv")
@@ -1733,6 +1733,67 @@ def generate_dashboard_health(
         else:
             _unavailable_panel(ax, "Bid Level Distribution")
 
+    # Panel 5: Seat balance (from chart_data/seat_balance.csv)
+    ax = axes[2, 0]
+    seat_df = (
+        _read_csv_safe(chart_data_dir / "seat_balance.csv") if chart_data_dir else None
+    )
+    if seat_df is not None and "seat" in seat_df.columns:
+        value_col = None
+        if "value" in seat_df.columns:
+            value_col = "value"
+        elif "mean_tricks" in seat_df.columns:
+            value_col = "mean_tricks"
+        if value_col is not None:
+            seats = sorted(seat_df["seat"].unique())
+            data = [seat_df[seat_df["seat"] == s][value_col].values for s in seats]
+            ax.boxplot(data, labels=[f"Seat {s}" for s in seats])
+            ax.set_ylabel("Value", fontsize=9)
+            ax.set_title("Seat Balance", fontsize=11)
+        else:
+            _unavailable_panel(ax, "Seat Balance")
+    else:
+        _unavailable_panel(ax, "Seat Balance")
+
+    # Panel 6: Bid-type breakdown (from tables/behavior_by_bid_type.csv)
+    ax = axes[2, 1]
+    bid_type_panel_df = _read_csv_safe(tables_dir / "behavior_by_bid_type.csv")
+    if bid_type_panel_df is not None and "bid_type" in bid_type_panel_df.columns:
+        if "source" in bid_type_panel_df.columns:
+            bid_type_panel_df = bid_type_panel_df[
+                bid_type_panel_df["source"] == "comparator"
+            ]
+        if len(bid_type_panel_df) == 0:
+            _unavailable_panel(ax, "Bid-Type Breakdown")
+        else:
+            models = sorted(bid_type_panel_df["model"].unique())
+            bid_types = sorted(bid_type_panel_df["bid_type"].unique())
+            model_colors = _get_model_colors(models)
+            x = np.arange(len(bid_types))
+            width = 0.8 / max(len(models), 1)
+            for i, model in enumerate(models):
+                vals = []
+                for bt in bid_types:
+                    sub = bid_type_panel_df[
+                        (bid_type_panel_df["model"] == model)
+                        & (bid_type_panel_df["bid_type"] == bt)
+                    ]
+                    val = (
+                        sub["bid_rate"].iloc[0]
+                        if len(sub) > 0 and "bid_rate" in sub.columns
+                        else 0
+                    )
+                    vals.append(0 if pd.isna(val) else val)
+                offset = (i - len(models) / 2 + 0.5) * width
+                ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+            ax.set_xticks(x)
+            ax.set_xticklabels(bid_types, fontsize=8)
+            ax.set_ylabel("Bid Rate", fontsize=9)
+            ax.set_title("Bid-Type Breakdown", fontsize=11)
+            ax.legend(fontsize=6, loc="best")
+    else:
+        _unavailable_panel(ax, "Bid-Type Breakdown")
+
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     _save_chart(fig, output_dir, "dashboard_health.png", dpi)
     return True
@@ -1939,146 +2000,151 @@ def generate_all_charts(
 ) -> list[str]:
     """Generate all rung report charts from canonical CSVs.
 
+    Layout: Dashboards (charts 1-3) write to ``output_dir/``.
+    Standalone charts (4-23) write to ``output_dir/full_chart_suite/``.
+
     Args:
         tables_dir: Path to CSV tables.
-        output_dir: Path to write PNG charts.
+        output_dir: Path to write PNG charts (dashboards at top level).
         chart_data_dir: Path to chart data CSVs (optional).
         dpi: DPI for saved figures.
 
     Returns:
-        List of generated chart filenames.
+        List of generated chart filenames (standalone charts include
+        the ``full_chart_suite/`` prefix).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    suite_dir = output_dir / "full_chart_suite"
+    suite_dir.mkdir(parents=True, exist_ok=True)
     if chart_data_dir:
         chart_data_dir.mkdir(parents=True, exist_ok=True)
 
     generated = []
 
+    # Standalone charts -> full_chart_suite/ subdirectory
     chart_generators = [
         (
             "comparator_ranking_bars.png",
-            lambda: generate_comparator_ranking_bars(tables_dir, output_dir, dpi),
+            lambda: generate_comparator_ranking_bars(tables_dir, suite_dir, dpi),
         ),
         (
             "delta_bars_by_contract.png",
-            lambda: generate_delta_bars_by_contract(tables_dir, output_dir, dpi),
+            lambda: generate_delta_bars_by_contract(tables_dir, suite_dir, dpi),
         ),
-        ("h2h_heatmap.png", lambda: generate_h2h_heatmap(tables_dir, output_dir, dpi)),
+        ("h2h_heatmap.png", lambda: generate_h2h_heatmap(tables_dir, suite_dir, dpi)),
         (
             "tail_risk_panel.png",
-            lambda: generate_tail_risk_panel(tables_dir, output_dir, dpi),
+            lambda: generate_tail_risk_panel(tables_dir, suite_dir, dpi),
         ),
         (
             "bid_behavior_panel.png",
-            lambda: generate_bid_behavior_panel(tables_dir, output_dir, dpi),
+            lambda: generate_bid_behavior_panel(tables_dir, suite_dir, dpi),
         ),
         (
             "contract_mix_bars.png",
             lambda: generate_contract_mix_bars(
-                tables_dir, output_dir, chart_data_dir, dpi
+                tables_dir, suite_dir, chart_data_dir, dpi
             ),
         ),
         (
             "r2_by_contract.png",
-            lambda: generate_r2_by_contract(tables_dir, output_dir, dpi),
+            lambda: generate_r2_by_contract(tables_dir, suite_dir, dpi),
         ),
         (
             "mae_by_contract.png",
-            lambda: generate_mae_by_contract(tables_dir, output_dir, dpi),
+            lambda: generate_mae_by_contract(tables_dir, suite_dir, dpi),
         ),
         (
             "h2h_intelligence_faceted.png",
-            lambda: generate_intelligence_faceted_h2h(tables_dir, output_dir, dpi),
+            lambda: generate_intelligence_faceted_h2h(tables_dir, suite_dir, dpi),
         ),
     ]
 
     for chart_name, gen_fn in chart_generators:
         try:
             if gen_fn():
-                generated.append(chart_name)
+                generated.append(f"full_chart_suite/{chart_name}")
         except Exception as e:
             logger.warning("Failed to generate %s: %s", chart_name, e)
 
-    # Tables-dir-dependent new standalone charts
+    # Tables-dir-dependent new standalone charts -> full_chart_suite/
     tables_new_generators = [
         (
             "h2h_ranking_scatter.png",
-            lambda: generate_h2h_ranking_scatter(tables_dir, output_dir, dpi),
+            lambda: generate_h2h_ranking_scatter(tables_dir, suite_dir, dpi),
         ),
     ]
     for chart_name, gen_fn in tables_new_generators:
         try:
             if gen_fn():
-                generated.append(chart_name)
+                generated.append(f"full_chart_suite/{chart_name}")
         except Exception as e:
             logger.warning("Failed to generate %s: %s", chart_name, e)
 
-    # Chart-data-dependent charts
+    # Chart-data-dependent charts -> full_chart_suite/
     if chart_data_dir:
         chart_data_generators = [
             (
                 "outcome_summary.png",
-                lambda: generate_outcome_summary(chart_data_dir, output_dir, dpi),
+                lambda: generate_outcome_summary(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "seat_balance.png",
-                lambda: generate_seat_balance(chart_data_dir, output_dir, dpi),
+                lambda: generate_seat_balance(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "pred_vs_actual.png",
-                lambda: generate_predictions_scatter(chart_data_dir, output_dir, dpi),
+                lambda: generate_predictions_scatter(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "residual_distribution.png",
-                lambda: generate_residuals_chart(chart_data_dir, output_dir, dpi),
+                lambda: generate_residuals_chart(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "calibration_curve.png",
-                lambda: generate_calibration_curve(chart_data_dir, output_dir, dpi),
+                lambda: generate_calibration_curve(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "feature_importance.png",
                 lambda: generate_feature_importance_chart(
-                    chart_data_dir, output_dir, dpi
+                    chart_data_dir, suite_dir, dpi
                 ),
             ),
             (
                 "outcome_distributions.png",
                 lambda: generate_outcome_distributions_chart(
-                    chart_data_dir, output_dir, dpi
+                    chart_data_dir, suite_dir, dpi
                 ),
             ),
             (
                 "bid_level_distribution.png",
-                lambda: generate_bid_level_distribution(
-                    chart_data_dir, output_dir, dpi
-                ),
+                lambda: generate_bid_level_distribution(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "selection_path.png",
-                lambda: generate_selection_path_chart(chart_data_dir, output_dir, dpi),
+                lambda: generate_selection_path_chart(chart_data_dir, suite_dir, dpi),
             ),
             (
                 "decision_agreement.png",
                 lambda: generate_decision_agreement_chart(
-                    chart_data_dir, output_dir, dpi
+                    chart_data_dir, suite_dir, dpi
                 ),
             ),
             (
                 "disagreement_outcomes.png",
                 lambda: generate_disagreement_outcomes_chart(
-                    chart_data_dir, output_dir, dpi
+                    chart_data_dir, suite_dir, dpi
                 ),
             ),
         ]
         for chart_name, gen_fn in chart_data_generators:
             try:
                 if gen_fn():
-                    generated.append(chart_name)
+                    generated.append(f"full_chart_suite/{chart_name}")
             except Exception as e:
                 logger.warning("Failed to generate %s: %s", chart_name, e)
 
-    # Dashboard charts (composite multi-panel pages)
+    # Dashboard charts (composite multi-panel pages) -> top-level output_dir
     dashboard_generators = [
         (
             "dashboard_competitive.png",
