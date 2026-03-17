@@ -485,3 +485,154 @@ class TestClaudeFailsafeResolution:
                 result = invoke_claude_failsafe(plan, "small")
                 assert result.success is True
                 assert len(result.findings) == 0
+
+
+# --- Timeout and Error Path Tests ---
+
+from subprocess import TimeoutExpired
+
+from codex_plan_review_adapter import invoke_codex_plan_review
+
+
+class TestCodexPlanReviewTimeout:
+    """Test timeout and error paths in invoke_codex_plan_review."""
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(None, "partial output..."),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_timeout_returns_failure(self, mock_resolve, mock_pty, mock_auth, tmp_path):
+        """Timeout (returncode=None) produces success=False with Timeout error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "small", timeout=10)
+        assert result.success is False
+        assert "Timeout" in result.error
+        assert result.reviewer == "codex_cli"
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch("codex_plan_review_adapter._run_with_pty", return_value=(None, ""))
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_timeout_with_empty_output(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        """Timeout with no captured output still returns error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "medium", timeout=5)
+        assert result.success is False
+        assert "Timeout" in result.error
+        assert result.raw_output == ""
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty", return_value=(2, "error: bad args")
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_nonzero_exit_returns_failure(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        """Non-zero exit code produces success=False with exit code in error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "small")
+        assert result.success is False
+        assert "Exit code 2" in result.error
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(0, "Some output that doesn't match any pattern"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_unparseable_output_returns_failure(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        """Output that matches no findings and no clean signal produces error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "small")
+        assert result.success is False
+        assert "Unparseable output" in result.error
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty", return_value=(None, "partial review")
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_timeout_persists_raw_output(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        """Raw output is written to output_dir on timeout."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        out_dir = tmp_path / "state"
+        invoke_codex_plan_review(plan, "small", timeout=10, output_dir=out_dir)
+        raw_file = out_dir / "codex_output_raw.txt"
+        assert raw_file.exists()
+        assert raw_file.read_text() == "partial review"
+
+
+class TestClaudeFailsafeTimeout:
+    """Test timeout and error paths in invoke_claude_failsafe."""
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value=None)
+    def test_no_claude_in_path_returns_error(self, mock_which, tmp_path):
+        """When claude is not in PATH and no env var, returns error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            result = invoke_claude_failsafe(plan, "small")
+            assert result.success is False
+            assert "not in PATH" in result.error
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value="/usr/bin/claude")
+    def test_subprocess_timeout_returns_error(self, mock_which, tmp_path):
+        """TimeoutExpired from subprocess produces timeout error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.side_effect = TimeoutExpired(cmd=["claude"], timeout=300)
+                result = invoke_claude_failsafe(plan, "small")
+                assert result.success is False
+                assert "timed out" in result.error
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value="/usr/bin/claude")
+    def test_nonzero_exit_returns_error(self, mock_which, tmp_path):
+        """Non-zero exit from claude CLI returns error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 1
+                mock_run.return_value.stdout = "error output"
+                mock_run.return_value.stderr = "stderr"
+                result = invoke_claude_failsafe(plan, "small")
+                assert result.success is False
+                assert "exited with code 1" in result.error
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value="/usr/bin/claude")
+    def test_failsafe_persists_raw_output(self, mock_which, tmp_path):
+        """Raw output is written to output_dir on success or failure."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        out_dir = tmp_path / "state"
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = "[]"
+                mock_run.return_value.stderr = ""
+                invoke_claude_failsafe(plan, "small", output_dir=out_dir)
+                raw_file = out_dir / "claude_failsafe_raw.txt"
+                assert raw_file.exists()
