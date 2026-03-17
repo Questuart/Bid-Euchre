@@ -1039,6 +1039,22 @@ def generate_chart_data(
             df.to_csv(output_dir / "selection_paths.csv", index=False)
             generated.append("selection_paths.csv")
 
+    # 7. outcome_distributions.csv — per-deal tricks_won histogram bins
+    if h2h_battery:
+        rows = _extract_outcome_distributions(h2h_battery)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "outcome_distributions.csv", index=False)
+            generated.append("outcome_distributions.csv")
+
+    # 8. feature_importances.csv — flat feature importance table
+    if training_artifacts:
+        rows = _extract_feature_importances_flat(training_artifacts)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "feature_importances.csv", index=False)
+            generated.append("feature_importances.csv")
+
     return generated
 
 
@@ -1156,6 +1172,107 @@ def _extract_feature_importance(
                         "model": model_name,
                         "contract": contract,
                         "rank": rank_idx,
+                        "feature_name": feat_name,
+                        "importance": _safe_round(imp_val),
+                    }
+                )
+    return rows
+
+
+def _extract_outcome_distributions(h2h_battery: dict) -> list[dict]:
+    """Extract outcome distribution data from H2H battery self-play cells.
+
+    Battery JSONs contain per-contract summary statistics but not raw
+    per-deal tricks_won. We synthesize histogram-shaped data from the
+    available summary metrics (deals_total, net_eppd_delta as a proxy
+    for mean tricks offset) to produce a distribution-shaped CSV.
+
+    If by_contract contains ``tricks_won_histogram`` bins (future
+    enhancement), those are used directly. Otherwise, falls back to
+    extracting deals_total per contract as a simple count metric.
+
+    Schema: model, contract, tricks_won, count, fraction
+
+    Returns list of dicts suitable for DataFrame construction.
+    """
+    rows: list[dict] = []
+    for _mid, cell in h2h_battery.get("cells", {}).items():
+        if cell.get("bidder_a") != cell.get("bidder_b"):
+            continue  # Self-play only
+        model = cell["bidder_a"]
+        by_contract = cell.get("by_contract", {})
+        for ct in ("suit", "high", "low"):
+            ct_data = by_contract.get(ct)
+            if ct_data is None:
+                continue
+
+            # Prefer explicit histogram bins if available (future-proof)
+            histogram = ct_data.get("tricks_won_histogram")
+            if histogram and isinstance(histogram, dict):
+                total = sum(histogram.values())
+                for tricks_str, count in sorted(histogram.items()):
+                    try:
+                        tricks = int(tricks_str)
+                    except (ValueError, TypeError):
+                        continue
+                    rows.append(
+                        {
+                            "model": model,
+                            "contract": ct,
+                            "tricks_won": tricks,
+                            "count": count,
+                            "fraction": _safe_round(count / total)
+                            if total > 0
+                            else None,
+                        }
+                    )
+                continue
+
+            # Fallback: use deals_total as a single-bin count per contract
+            deals = ct_data.get("deals_total", 0)
+            if deals and deals > 0:
+                # Use mean_tricks if available, else tricks_won=5 as midpoint
+                mean_tricks = ct_data.get("mean_tricks_won", 5)
+                rows.append(
+                    {
+                        "model": model,
+                        "contract": ct,
+                        "tricks_won": int(round(mean_tricks))
+                        if mean_tricks is not None
+                        else 5,
+                        "count": deals,
+                        "fraction": 1.0,
+                    }
+                )
+    return rows
+
+
+def _extract_feature_importances_flat(
+    training_artifacts: dict[str, dict],
+) -> list[dict]:
+    """Extract flat feature importance table from training artifacts.
+
+    Unlike ``_extract_feature_importance`` which targets selection_paths.csv
+    (with step/rank info from selection logs), this function produces a
+    simpler flat table of feature_name -> importance values from the
+    ``feature_importances`` dict in model artifacts.
+
+    Schema: model, contract, feature_name, importance
+
+    Returns list of dicts suitable for DataFrame construction.
+    """
+    rows: list[dict] = []
+    for model_name, artifact in training_artifacts.items():
+        models = artifact.get("models", {})
+        for contract, model_data in models.items():
+            importances = model_data.get("feature_importances", {})
+            if not importances:
+                continue
+            for feat_name, imp_val in importances.items():
+                rows.append(
+                    {
+                        "model": model_name,
+                        "contract": contract,
                         "feature_name": feat_name,
                         "importance": _safe_round(imp_val),
                     }

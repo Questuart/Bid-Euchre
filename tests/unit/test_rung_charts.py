@@ -6,6 +6,13 @@ Covers:
 - residuals histogram generation
 - calibration curve generation
 - feature importance bar chart generation
+- h2h ranking scatter generation
+- outcome distributions chart generation
+- bid level distribution generation
+- selection path chart generation
+- decision agreement chart generation
+- disagreement outcomes chart generation
+- Dashboard expansion (3x2 model_eval, 3x2 competitive, 2x2 health with outcome_distributions)
 - Graceful degradation when CSV data is missing
 """
 
@@ -117,6 +124,115 @@ def selection_paths_csv(tmp_path):
     chart_data_dir.mkdir()
     df.to_csv(chart_data_dir / "selection_paths.csv", index=False)
     return chart_data_dir
+
+
+@pytest.fixture
+def outcome_distributions_csv(tmp_path):
+    """Create an outcome_distributions.csv fixture file."""
+    df = pd.DataFrame(
+        {
+            "model": ["gbt"] * 6 + ["ols"] * 6,
+            "contract": ["suit"] * 3 + ["high"] * 3 + ["suit"] * 3 + ["high"] * 3,
+            "tricks_won": [3, 4, 5, 3, 4, 5, 3, 4, 5, 3, 4, 5],
+            "count": [10, 30, 20, 8, 25, 15, 12, 28, 18, 10, 22, 16],
+            "fraction": [
+                0.167,
+                0.500,
+                0.333,
+                0.167,
+                0.521,
+                0.312,
+                0.207,
+                0.483,
+                0.310,
+                0.208,
+                0.458,
+                0.333,
+            ],
+        }
+    )
+    chart_data_dir = tmp_path / "chart_data"
+    chart_data_dir.mkdir()
+    df.to_csv(chart_data_dir / "outcome_distributions.csv", index=False)
+    return chart_data_dir
+
+
+@pytest.fixture
+def bid_levels_csv(tmp_path):
+    """Create a bid_levels.csv fixture file."""
+    df = pd.DataFrame(
+        {
+            "model": ["gbt", "ols"],
+            "bid_rate": [0.65, 0.55],
+            "make_rate": [0.72, 0.61],
+            "pass_rate": [0.35, 0.45],
+        }
+    )
+    chart_data_dir = tmp_path / "chart_data"
+    chart_data_dir.mkdir()
+    df.to_csv(chart_data_dir / "bid_levels.csv", index=False)
+    return chart_data_dir
+
+
+@pytest.fixture
+def decision_comparison_csv(tmp_path):
+    """Create a decision_comparison.csv fixture file."""
+    df = pd.DataFrame(
+        {
+            "model_a": ["gbt", "gbt", "ols"],
+            "model_b": ["ols", "heuristic", "heuristic"],
+            "agreement_rate": [0.72, 0.58, 0.61],
+        }
+    )
+    chart_data_dir = tmp_path / "chart_data"
+    chart_data_dir.mkdir()
+    df.to_csv(chart_data_dir / "decision_comparison.csv", index=False)
+    return chart_data_dir
+
+
+@pytest.fixture
+def disagreement_outcomes_csv(tmp_path):
+    """Create a disagreement_outcomes.csv fixture file."""
+    df = pd.DataFrame(
+        {
+            "model_a": ["gbt", "gbt"],
+            "model_b": ["ols", "heuristic"],
+            "a_better": [45, 62],
+            "b_better": [30, 28],
+            "tie": [25, 10],
+        }
+    )
+    chart_data_dir = tmp_path / "chart_data"
+    chart_data_dir.mkdir()
+    df.to_csv(chart_data_dir / "disagreement_outcomes.csv", index=False)
+    return chart_data_dir
+
+
+@pytest.fixture
+def comparator_rankings_csv(tmp_path):
+    """Create comparator_rankings.csv and h2h_tier_summary.csv fixtures."""
+    tables_dir = tmp_path / "tables"
+    tables_dir.mkdir()
+    pd.DataFrame(
+        {
+            "model": ["gbt", "ols", "heuristic"],
+            "facet": ["pooled", "pooled", "pooled"],
+            "net_eppd": [1.2, 0.3, -0.5],
+            "ci_low": [0.8, 0.1, -0.8],
+            "ci_high": [1.6, 0.5, -0.2],
+            "net_cvar_5": [-0.3, -0.7, -1.2],
+        }
+    ).to_csv(tables_dir / "comparator_rankings.csv", index=False)
+    pd.DataFrame(
+        {
+            "model": ["gbt", "gbt", "ols", "ols"],
+            "tier": ["smart", "anchor", "smart", "anchor"],
+            "mean_delta": [1.0, 0.5, 0.2, -0.1],
+            "mean_win_rate": [0.62, 0.58, 0.51, 0.48],
+            "n_opponents": [1, 1, 1, 1],
+        }
+    ).to_csv(tables_dir / "h2h_tier_summary.csv", index=False)
+    return tables_dir
 
 
 # ──────────────────────────────────────────────
@@ -345,6 +461,348 @@ class TestFeatureImportanceChart:
 
 
 # ──────────────────────────────────────────────
+#  H2H ranking scatter tests (new — Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestH2HRankingScatter:
+    """Tests for generate_h2h_ranking_scatter."""
+
+    def test_produces_png(self, charts_mod, comparator_rankings_csv, tmp_path):
+        """Produces h2h_ranking_scatter.png from fixture CSVs."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_h2h_ranking_scatter(
+            comparator_rankings_csv, output_dir
+        )
+        assert result is True
+        png_path = output_dir / "h2h_ranking_scatter.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when comparator_rankings.csv is missing."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_h2h_ranking_scatter(tables_dir, output_dir)
+        assert result is False
+
+
+# ──────────────────────────────────────────────
+#  Outcome distributions chart tests (new — Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestOutcomeDistributionsChart:
+    """Tests for generate_outcome_distributions_chart."""
+
+    def test_produces_png(self, charts_mod, outcome_distributions_csv, tmp_path):
+        """Produces outcome_distributions.png from valid CSV."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_outcome_distributions_chart(
+            outcome_distributions_csv, output_dir
+        )
+        assert result is True
+        png_path = output_dir / "outcome_distributions.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when outcome_distributions.csv is missing."""
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_outcome_distributions_chart(
+            chart_data_dir, output_dir
+        )
+        assert result is False
+
+    def test_missing_columns_returns_false(self, charts_mod, tmp_path):
+        """Returns False when CSV lacks required columns."""
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+        df = pd.DataFrame({"model": ["gbt"], "wrong_col": [1.0]})
+        df.to_csv(chart_data_dir / "outcome_distributions.csv", index=False)
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_outcome_distributions_chart(
+            chart_data_dir, output_dir
+        )
+        assert result is False
+
+
+# ──────────────────────────────────────────────
+#  Bid level distribution tests (new — Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestBidLevelDistribution:
+    """Tests for generate_bid_level_distribution."""
+
+    def test_produces_png(self, charts_mod, bid_levels_csv, tmp_path):
+        """Produces bid_level_distribution.png from valid CSV."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_bid_level_distribution(bid_levels_csv, output_dir)
+        assert result is True
+        png_path = output_dir / "bid_level_distribution.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when bid_levels.csv is missing."""
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_bid_level_distribution(chart_data_dir, output_dir)
+        assert result is False
+
+
+# ──────────────────────────────────────────────
+#  Selection path chart tests (new — Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestSelectionPathChart:
+    """Tests for generate_selection_path_chart."""
+
+    def test_produces_png(self, charts_mod, selection_paths_csv, tmp_path):
+        """Produces selection_path.png from valid CSV."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_selection_path_chart(
+            selection_paths_csv, output_dir
+        )
+        assert result is True
+        png_path = output_dir / "selection_path.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when selection_paths.csv is missing."""
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_selection_path_chart(chart_data_dir, output_dir)
+        assert result is False
+
+
+# ──────────────────────────────────────────────
+#  Decision agreement chart tests (new — Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestDecisionAgreementChart:
+    """Tests for generate_decision_agreement_chart."""
+
+    def test_produces_png(self, charts_mod, decision_comparison_csv, tmp_path):
+        """Produces decision_agreement.png from valid CSV."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_decision_agreement_chart(
+            decision_comparison_csv, output_dir
+        )
+        assert result is True
+        png_path = output_dir / "decision_agreement.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when decision_comparison.csv is missing."""
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_decision_agreement_chart(
+            chart_data_dir, output_dir
+        )
+        assert result is False
+
+
+# ──────────────────────────────────────────────
+#  Disagreement outcomes chart tests (new — Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestDisagreementOutcomesChart:
+    """Tests for generate_disagreement_outcomes_chart."""
+
+    def test_produces_png(self, charts_mod, disagreement_outcomes_csv, tmp_path):
+        """Produces disagreement_outcomes.png from valid CSV."""
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_disagreement_outcomes_chart(
+            disagreement_outcomes_csv, output_dir
+        )
+        assert result is True
+        png_path = output_dir / "disagreement_outcomes.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_missing_csv_returns_false(self, charts_mod, tmp_path):
+        """Returns False when disagreement_outcomes.csv is missing."""
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+        output_dir = tmp_path / "charts"
+        output_dir.mkdir()
+        result = charts_mod.generate_disagreement_outcomes_chart(
+            chart_data_dir, output_dir
+        )
+        assert result is False
+
+
+# ──────────────────────────────────────────────
+#  Dashboard expansion tests (Phase B)
+# ──────────────────────────────────────────────
+
+
+class TestDashboardModelEvalExpansion:
+    """Tests that dashboard_model_eval.png produces a 3x2 figure."""
+
+    def test_model_eval_3x2_with_data(self, charts_mod, tmp_path):
+        """Model eval dashboard produces 3x2 figure with chart_data."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Minimal model_performance.csv
+        pd.DataFrame(
+            {
+                "model": ["gbt", "gbt"],
+                "contract": ["suit", "high"],
+                "r_squared": [0.85, 0.72],
+                "mae": [0.42, 0.55],
+            }
+        ).to_csv(tables_dir / "model_performance.csv", index=False)
+
+        result = charts_mod.generate_dashboard_model_eval(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        png_path = charts_dir / "dashboard_model_eval.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_model_eval_3x2_empty_data(self, charts_mod, tmp_path):
+        """Model eval dashboard degrades gracefully with no data."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        result = charts_mod.generate_dashboard_model_eval(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_model_eval.png").exists()
+
+
+class TestDashboardCompetitiveExpansion:
+    """Tests that dashboard_competitive.png produces a 3x2 figure."""
+
+    def test_competitive_3x2_with_data(self, charts_mod, tmp_path):
+        """Competitive dashboard produces 3x2 figure with table data."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        # Minimal comparator_rankings.csv
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "facet": ["pooled", "pooled"],
+                "net_eppd": [1.2, 0.3],
+                "ci_low": [0.8, 0.1],
+                "ci_high": [1.6, 0.5],
+                "net_cvar_5": [-0.3, -0.7],
+            }
+        ).to_csv(tables_dir / "comparator_rankings.csv", index=False)
+
+        result = charts_mod.generate_dashboard_competitive(tables_dir, charts_dir)
+        assert result is True
+        png_path = charts_dir / "dashboard_competitive.png"
+        assert png_path.exists()
+        assert png_path.stat().st_size > 0
+
+    def test_competitive_3x2_empty_data(self, charts_mod, tmp_path):
+        """Competitive dashboard degrades gracefully with no data."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        result = charts_mod.generate_dashboard_competitive(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_competitive.png").exists()
+
+
+class TestDashboardHealthOutcomeDistributions:
+    """Tests that health dashboard Panel 3 uses outcome_distributions."""
+
+    def test_health_panel3_prefers_outcome_distributions(self, charts_mod, tmp_path):
+        """Health dashboard renders outcome_distributions when available."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Write behavior_summary.csv for panels 1 & 2
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "source": ["comparator", "comparator"],
+                "bid_rate": [0.65, 0.55],
+                "make_rate": [0.72, 0.61],
+                "mix_suit": [0.5, 0.5],
+                "mix_high": [0.3, 0.3],
+                "mix_low": [0.2, 0.2],
+            }
+        ).to_csv(tables_dir / "behavior_summary.csv", index=False)
+
+        # Write outcome_distributions.csv
+        pd.DataFrame(
+            {
+                "model": ["gbt"] * 3 + ["ols"] * 3,
+                "contract": ["suit"] * 3 + ["suit"] * 3,
+                "tricks_won": [3, 4, 5, 3, 4, 5],
+                "count": [10, 30, 20, 12, 28, 18],
+                "fraction": [0.167, 0.500, 0.333, 0.207, 0.483, 0.310],
+            }
+        ).to_csv(chart_data_dir / "outcome_distributions.csv", index=False)
+
+        result = charts_mod.generate_dashboard_health(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+    def test_health_degrades_gracefully(self, charts_mod, tmp_path):
+        """Health dashboard works with no data at all."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        result = charts_mod.generate_dashboard_health(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+
+# ──────────────────────────────────────────────
 #  Integration: generate_all_charts includes new generators
 # ──────────────────────────────────────────────
 
@@ -403,18 +861,42 @@ class TestAllChartsIntegration:
             }
         ).to_csv(chart_data_dir / "selection_paths.csv", index=False)
 
+        # Write outcome_distributions.csv fixture
+        pd.DataFrame(
+            {
+                "model": ["gbt"] * 3,
+                "contract": ["suit"] * 3,
+                "tricks_won": [3, 4, 5],
+                "count": [10, 30, 20],
+                "fraction": [0.167, 0.500, 0.333],
+            }
+        ).to_csv(chart_data_dir / "outcome_distributions.csv", index=False)
+
+        # Write bid_levels.csv fixture
+        pd.DataFrame(
+            {
+                "model": ["gbt"],
+                "bid_rate": [0.65],
+                "make_rate": [0.72],
+                "pass_rate": [0.35],
+            }
+        ).to_csv(chart_data_dir / "bid_levels.csv", index=False)
+
         generated = charts_mod.generate_all_charts(
             tables_dir=tables_dir,
             output_dir=charts_dir,
             chart_data_dir=chart_data_dir,
         )
 
-        # All 4 new diagnostic charts should be in the generated list
+        # All diagnostic charts should be in the generated list
         expected_new = [
             "pred_vs_actual.png",
             "residual_distribution.png",
             "calibration_curve.png",
             "feature_importance.png",
+            "outcome_distributions.png",
+            "bid_level_distribution.png",
+            "selection_path.png",
         ]
         for chart in expected_new:
             assert (
@@ -422,3 +904,13 @@ class TestAllChartsIntegration:
             ), f"Expected {chart} in generated list, got: {generated}"
             assert (charts_dir / chart).exists(), f"{chart} file not found"
             assert (charts_dir / chart).stat().st_size > 0, f"{chart} is empty"
+
+        # Dashboard charts should also be generated
+        for dashboard in [
+            "dashboard_competitive.png",
+            "dashboard_health.png",
+            "dashboard_model_eval.png",
+        ]:
+            assert (
+                dashboard in generated
+            ), f"Expected {dashboard} in generated list, got: {generated}"
