@@ -2478,3 +2478,230 @@ class TestEvidenceManifestIncludesChartData:
         assert "outcome_summary.csv" in chart_data_names
         assert "contract_mix.csv" in chart_data_names
         assert len(manifest["chart_data"]) == 2
+
+
+# ============================================================================
+# Chunked Dataset Generation (Step 1) Tests
+# ============================================================================
+
+
+class TestStep1ChunkedMode:
+    """Test that Step 1 command includes --chunk-size for full mode."""
+
+    def test_step_1_full_mode_includes_chunk_size(self, tmp_path):
+        """Full mode Step 1 command includes --chunk-size 5000."""
+        state = RunState.create_fresh("r0", "full", [42, 123, 456])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            # Create dummy continuation artifact
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        assert "--chunk-size" in captured_cmd
+        chunk_idx = captured_cmd.index("--chunk-size")
+        assert captured_cmd[chunk_idx + 1] == "5000"
+
+    def test_step_1_smoke_mode_no_chunk_size(self, tmp_path):
+        """Smoke mode Step 1 command does NOT include --chunk-size."""
+        state = RunState.create_fresh("r0", "smoke", [42])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        assert "--chunk-size" not in captured_cmd
+
+    def test_step_1_quick_mode_no_chunk_size(self, tmp_path):
+        """Quick mode Step 1 command does NOT include --chunk-size."""
+        state = RunState.create_fresh("r0", "quick", [42])
+        state_path = tmp_path / "state.json"
+        state.save(state_path)
+
+        captured_cmd = []
+
+        def mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return True, ""
+
+        with (
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_run),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_state_path", return_value=state_path),
+        ):
+            cont_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+            cont_dir.mkdir(parents=True)
+            (cont_dir / "hybrid_r0_full.json").write_text("{}")
+
+            run_rung_mod.execute_step_1(state, seed=42)
+
+        assert "--chunk-size" not in captured_cmd
+
+
+class TestStep2ChunkedDatasetPath:
+    """Test that Step 2 uses chunked directory when available."""
+
+    def test_step_2_prefers_chunked_dir(self, tmp_path):
+        """Step 2 uses chunked directory path when it exists."""
+        roster = Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                    model_class="gbt",
+                ),
+            ],
+            anchor=AnchorModel(name="", artifact="", class_name=""),
+        )
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        # Create both chunked dir and single file
+        ds_dir = tmp_path / "data" / "runs" / "av_r0_full_42" / "datasets"
+        ds_dir.mkdir(parents=True)
+        (ds_dir / "action_value.parquet").write_bytes(b"fake")
+        chunked = ds_dir / "action_value"
+        chunked.mkdir()
+        (chunked / "part_000000_004999.parquet").write_bytes(b"fake")
+
+        # Continuation artifact
+        art_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        art_dir.mkdir(parents=True)
+        (art_dir / "hybrid_r0_full.json").write_text("{}")
+
+        state = RunState.create_fresh("r0", "full", [42, 123, 456])
+        state.mark_step_started("1", 42)
+        state.mark_step_complete("1", 42)
+
+        captured_cmds = []
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "run_subprocess",
+                side_effect=lambda cmd, *a, **kw: (
+                    captured_cmds.append(cmd),
+                    (True, ""),
+                )[-1],
+            ),
+        ):
+            ok = run_rung_mod.execute_step_2(state, 42)
+
+        assert ok is True
+        assert len(captured_cmds) == 1
+        # The --dataset argument should point to the chunked directory
+        cmd = captured_cmds[0]
+        ds_idx = cmd.index("--dataset")
+        ds_path = cmd[ds_idx + 1]
+        assert ds_path.endswith("action_value")
+
+    def test_step_2_falls_back_to_single_file(self, tmp_path):
+        """Step 2 falls back to single parquet when no chunked dir exists."""
+        roster = Roster(
+            models=[
+                RosterModel(
+                    name="gbt_av",
+                    class_name="GBTActionValueBidder",
+                    trainable=True,
+                    model_class="gbt",
+                ),
+            ],
+            anchor=AnchorModel(name="", artifact="", class_name=""),
+        )
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        # Only single file (no chunked dir)
+        ds_dir = tmp_path / "data" / "runs" / "av_r0_full_42" / "datasets"
+        ds_dir.mkdir(parents=True)
+        (ds_dir / "action_value.parquet").write_bytes(b"fake")
+
+        art_dir = tmp_path / "data" / "artifacts" / "arc_d" / "r0"
+        art_dir.mkdir(parents=True)
+        (art_dir / "hybrid_r0_full.json").write_text("{}")
+
+        state = RunState.create_fresh("r0", "full", [42, 123, 456])
+        state.mark_step_started("1", 42)
+        state.mark_step_complete("1", 42)
+
+        captured_cmds = []
+
+        with (
+            patch.object(run_rung_mod, "load_roster", return_value=roster),
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(
+                run_rung_mod,
+                "run_subprocess",
+                side_effect=lambda cmd, *a, **kw: (
+                    captured_cmds.append(cmd),
+                    (True, ""),
+                )[-1],
+            ),
+        ):
+            ok = run_rung_mod.execute_step_2(state, 42)
+
+        assert ok is True
+        assert len(captured_cmds) == 1
+        cmd = captured_cmds[0]
+        ds_idx = cmd.index("--dataset")
+        ds_path = cmd[ds_idx + 1]
+        assert ds_path.endswith("action_value.parquet")
+
+
+class TestModeDealsFull:
+    """Test that MODE_DEALS['full'] is reduced to 20000."""
+
+    def test_full_mode_deals(self):
+        assert run_rung_mod.MODE_DEALS["full"] == 20000
+
+    def test_smoke_mode_deals_unchanged(self):
+        assert run_rung_mod.MODE_DEALS["smoke"] == 500
+
+    def test_quick_mode_deals_unchanged(self):
+        assert run_rung_mod.MODE_DEALS["quick"] == 2500

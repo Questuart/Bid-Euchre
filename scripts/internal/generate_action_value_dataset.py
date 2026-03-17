@@ -18,9 +18,11 @@ Usage:
 """
 
 import argparse
+import json
 import random
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -573,6 +575,60 @@ def simulate_counterfactual(
     return net_points, tricks_won, focal_declared
 
 
+def _load_completed_chunks(manifest_path: Path) -> set[tuple[int, int]]:
+    """Read manifest.jsonl, return set of (deal_start, deal_end) for completed chunks."""
+    completed: set[tuple[int, int]] = set()
+    if manifest_path.exists():
+        with open(manifest_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = json.loads(line)
+                if entry.get("status") == "complete":
+                    completed.add((entry["deal_start"], entry["deal_end"]))
+    return completed
+
+
+def _write_chunk(
+    rows: list[dict],
+    output_dir: Path,
+    deal_start: int,
+    deal_end: int,
+    seed: int,
+    started_at: str,
+) -> None:
+    """Write a chunk of rows as a parquet part file and append to manifest."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    part_name = f"part_{deal_start:06d}_{deal_end:06d}.parquet"
+    part_path = output_dir / part_name
+
+    df = pd.DataFrame(rows)
+    df.to_parquet(part_path, index=False)
+
+    finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    finished_dt = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+    duration_sec = (finished_dt - started_dt).total_seconds()
+
+    manifest_entry = {
+        "seed": seed,
+        "deal_start": deal_start,
+        "deal_end": deal_end,
+        "n_deals": deal_end - deal_start + 1,
+        "rows": len(rows),
+        "path": part_name,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_sec": round(duration_sec, 1),
+        "status": "complete",
+    }
+
+    manifest_path = output_dir / "manifest.jsonl"
+    with open(manifest_path, "a") as f:
+        f.write(json.dumps(manifest_entry) + "\n")
+
+
 def generate_dataset(
     seed: int,
     n_deals: int,
@@ -580,7 +636,9 @@ def generate_dataset(
     progress: bool = True,
     n_opponent_samples: int = 1,
     include_moon_loner: bool = False,
-) -> pd.DataFrame:
+    chunk_size: int | None = None,
+    output_dir: Path | None = None,
+) -> pd.DataFrame | None:
     """Generate the full counterfactual action-value dataset.
 
     For each (deal, focal_seat), enumerates all legal actions, forces each one,
@@ -595,11 +653,25 @@ def generate_dataset(
     card exchange followed by 4-player trick play; loner bids simulate 3-player
     trick play (partner sits out). Both use specialized scoring (+/-20 for moon,
     +/-40 for loner). Action features is_moon and is_loner are set accordingly.
+
+    When chunk_size is set and output_dir is provided, rows are flushed to
+    parquet part files every chunk_size deals. Returns None (data is on disk).
+    When chunk_size is None, returns the full DataFrame (existing behavior).
     """
+    chunked = chunk_size is not None and output_dir is not None
+    completed_chunks: set[tuple[int, int]] = set()
+    if chunked:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.jsonl"
+        completed_chunks = _load_completed_chunks(manifest_path)
+
     rows: list[dict] = []
-    hand_id = 0
     t0 = time.time()
     multi = n_opponent_samples > 1
+    total_rows_written = 0
+
+    # Track chunk boundaries for chunked mode
+    chunk_deal_start = 0
 
     # Contracts to evaluate for moon/loner: all 6 contract types
     contracts = [
@@ -611,11 +683,41 @@ def generate_dataset(
         ("LOW", "low", None),
     ]
 
+    chunk_started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     for deal_id in range(n_deals):
+        # Determine current chunk boundaries
+        if chunked:
+            current_chunk_start = (deal_id // chunk_size) * chunk_size
+            current_chunk_end = min(current_chunk_start + chunk_size, n_deals) - 1
+
+            # Check if this is the start of a new chunk
+            if deal_id == current_chunk_start:
+                chunk_deal_start = current_chunk_start
+                chunk_started_at = datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+
+            # Skip if this chunk is already complete (resumability)
+            if (current_chunk_start, current_chunk_end) in completed_chunks:
+                if deal_id == current_chunk_end:
+                    if progress:
+                        print(
+                            f"  [skip] Chunk deals {current_chunk_start}-"
+                            f"{current_chunk_end} already complete",
+                            file=sys.stderr,
+                        )
+                continue
+
+        # Global hand_id: deterministic from deal_id
+        hand_id = deal_id * 4
+
         hands = generate_deal(seed, deal_id)
         dealer = _deterministic_dealer(seed, deal_id)
 
         for focal_seat in range(4):
+            current_hand_id = hand_id + focal_seat
+
             # Run partial auction up to focal_seat (uses ORIGINAL hands
             # so that features reflect the actual deal configuration)
             current_high_bid, transcript = run_partial_auction(
@@ -699,7 +801,7 @@ def generate_dataset(
 
                 # Build row
                 row = {
-                    "hand_id": hand_id,
+                    "hand_id": current_hand_id,
                     "deal_id": deal_id,
                     "focal_seat": focal_seat,
                     "action_type": action_type,
@@ -756,7 +858,7 @@ def generate_dataset(
                         )
 
                     moon_row = {
-                        "hand_id": hand_id,
+                        "hand_id": current_hand_id,
                         "deal_id": deal_id,
                         "focal_seat": focal_seat,
                         "action_type": "bid",
@@ -804,7 +906,7 @@ def generate_dataset(
                         )
 
                     loner_row = {
-                        "hand_id": hand_id,
+                        "hand_id": current_hand_id,
                         "deal_id": deal_id,
                         "focal_seat": focal_seat,
                         "action_type": "bid",
@@ -824,9 +926,34 @@ def generate_dataset(
                         loner_row["n_samples"] = n_opponent_samples
                     rows.append(loner_row)
 
-            hand_id += 1
+        # Flush chunk if at chunk boundary
+        if chunked:
+            current_chunk_end = (
+                min((deal_id // chunk_size + 1) * chunk_size, n_deals) - 1
+            )
+            if deal_id == current_chunk_end and rows:
+                _write_chunk(
+                    rows,
+                    output_dir,
+                    chunk_deal_start,
+                    current_chunk_end,
+                    seed,
+                    chunk_started_at,
+                )
+                total_rows_written += len(rows)
+                if progress:
+                    elapsed = time.time() - t0
+                    rate = (deal_id + 1) / elapsed
+                    print(
+                        f"  [{deal_id + 1}/{n_deals}] chunk "
+                        f"{chunk_deal_start}-{current_chunk_end} "
+                        f"written ({len(rows)} rows), "
+                        f"{rate:.1f} deals/s, {elapsed:.1f}s elapsed",
+                        file=sys.stderr,
+                    )
+                rows = []
 
-        if progress and (deal_id + 1) % max(1, n_deals // 10) == 0:
+        elif progress and (deal_id + 1) % max(1, n_deals // 10) == 0:
             elapsed = time.time() - t0
             rate = (deal_id + 1) / elapsed
             print(
@@ -835,7 +962,19 @@ def generate_dataset(
                 file=sys.stderr,
             )
 
-    return pd.DataFrame(rows)
+    if chunked:
+        # Any remaining rows (shouldn't happen if n_deals % chunk_size == 0,
+        # but handle partial final chunk)
+        if rows:
+            final_start = (n_deals - 1) // chunk_size * chunk_size
+            final_end = n_deals - 1
+            _write_chunk(
+                rows, output_dir, final_start, final_end, seed, chunk_started_at
+            )
+            total_rows_written += len(rows)
+        return None
+    else:
+        return pd.DataFrame(rows)
 
 
 def validate_gate_x1(
@@ -987,22 +1126,37 @@ def main():
         action="store_true",
         help="Include moon/loner counterfactuals (R3+, not on by default)",
     )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=None,
+        help="Write parquet part files every N deals (reduces peak memory)",
+    )
     args = parser.parse_args()
 
     n_deals = args.n_deals if args.n_deals is not None else MODE_DEALS[args.mode]
     n_opp = args.n_opponent_samples
     include_ml = args.include_moon_loner
+    chunk_size = args.chunk_size
 
     print("=== R1.5 Counterfactual Action-Value Dataset Generator ===")
     print(f"  Seed: {args.seed}")
     print(f"  Mode: {args.mode} ({n_deals} deals)")
     print(f"  Opponent samples: {n_opp}")
     print(f"  Moon/loner: {'yes' if include_ml else 'no'}")
+    print(f"  Chunk size: {chunk_size or 'disabled (single file)'}")
     print(f"  Continuation: {args.continuation_artifact}")
 
     # Load continuation policy
     print("  Loading continuation policy...")
     continuation = load_continuation_policy(args.continuation_artifact)
+
+    # Determine output directories
+    output_dir = Path(args.output_dir)
+    datasets_dir = output_dir / "datasets"
+
+    # Chunked output dir is a subdirectory
+    chunked_output_dir = datasets_dir / "action_value" if chunk_size else None
 
     # Generate dataset
     sim_equiv = n_deals * n_opp
@@ -1012,34 +1166,52 @@ def main():
         f"~40 actions{extra_per_seat} × {n_opp} samples)..."
     )
     print(f"  Simulation equivalents: ~{sim_equiv * 4 * 40:,}")
-    df = generate_dataset(
+
+    result = generate_dataset(
         args.seed,
         n_deals,
         continuation,
         n_opponent_samples=n_opp,
         include_moon_loner=include_ml,
+        chunk_size=chunk_size,
+        output_dir=chunked_output_dir,
     )
 
-    print(f"  Total rows: {len(df)}")
-    print(f"  Columns: {len(df.columns)}")
+    if chunk_size:
+        # Chunked mode: read back and validate
+        part_files = sorted(chunked_output_dir.glob("part_*.parquet"))
+        total_rows = sum(len(pd.read_parquet(p)) for p in part_files)
+        print(f"  Total rows: {total_rows} across {len(part_files)} part files")
 
-    # Validate
-    if not args.skip_validation:
-        print("  Running Gate X1 validation...")
-        validate_gate_x1(df, n_deals, include_moon_loner=include_ml)
+        if not args.skip_validation:
+            print("  Running Gate X1 validation on concatenated chunks...")
+            df = pd.concat([pd.read_parquet(p) for p in part_files], ignore_index=True)
+            validate_gate_x1(df, n_deals, include_moon_loner=include_ml)
 
-    # Write output
-    output_dir = Path(args.output_dir)
-    datasets_dir = output_dir / "datasets"
-    datasets_dir.mkdir(parents=True, exist_ok=True)
+        print(f"\n  Output: {chunked_output_dir}/")
+        print(f"  Parts: {len(part_files)}")
+        print(f"  Rows: {total_rows}")
+        print(f"  Deals: {n_deals}")
+        print("  Done.")
+    else:
+        df = result
+        print(f"  Total rows: {len(df)}")
+        print(f"  Columns: {len(df.columns)}")
 
-    output_path = datasets_dir / "action_value.parquet"
-    df.to_parquet(output_path, index=False)
+        # Validate
+        if not args.skip_validation:
+            print("  Running Gate X1 validation...")
+            validate_gate_x1(df, n_deals, include_moon_loner=include_ml)
 
-    print(f"\n  Output: {output_path}")
-    print(f"  Rows: {len(df)}")
-    print(f"  Deals: {n_deals}")
-    print("  Done.")
+        # Write output
+        datasets_dir.mkdir(parents=True, exist_ok=True)
+        output_path = datasets_dir / "action_value.parquet"
+        df.to_parquet(output_path, index=False)
+
+        print(f"\n  Output: {output_path}")
+        print(f"  Rows: {len(df)}")
+        print(f"  Deals: {n_deals}")
+        print("  Done.")
 
 
 if __name__ == "__main__":

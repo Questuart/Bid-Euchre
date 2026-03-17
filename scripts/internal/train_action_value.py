@@ -208,7 +208,8 @@ def load_dataset(
     """Load and validate the action-value parquet dataset.
 
     Args:
-        parquet_path: Path to the parquet file.
+        parquet_path: Path to a parquet file OR a directory containing
+            ``part_*.parquet`` files (chunked output from the generator).
         target_col: Target column name (must exist in dataset).
         state_feature_names: State feature names to validate. Defaults to
             full STATE_FEATURE_NAMES.
@@ -216,7 +217,15 @@ def load_dataset(
     if state_feature_names is None:
         state_feature_names = STATE_FEATURE_NAMES
 
-    df = pd.read_parquet(parquet_path)
+    path = Path(parquet_path)
+    if path.is_dir():
+        # Directory-based loading: glob part files, sort, concatenate
+        part_files = sorted(path.glob("part_*.parquet"))
+        if not part_files:
+            raise ValueError(f"No part_*.parquet files found in {path}")
+        df = pd.concat([pd.read_parquet(p) for p in part_files], ignore_index=True)
+    else:
+        df = pd.read_parquet(parquet_path)
 
     # Validate required columns (exclude computed features — they're derived
     # at matrix-build time, not stored in the parquet)
@@ -856,11 +865,30 @@ def _compute_provenance_hashes(
     Returns (dataset_sha256, continuation_content_hash).
     The continuation hash uses content_hash() (excluding freeze fields) so
     the hash remains stable regardless of whether the artifact is frozen.
+
+    If dataset_path is a directory (chunked output), hashes the manifest.jsonl
+    file instead of hashing individual parquet files.
     """
     from bid_euchre.models.freeze import content_hash as compute_content_hash
     from bid_euchre.models.freeze import sha256_file
 
-    dataset_sha = sha256_file(dataset_path)
+    ds_path = Path(dataset_path)
+    if ds_path.is_dir():
+        manifest = ds_path / "manifest.jsonl"
+        if manifest.exists():
+            dataset_sha = sha256_file(str(manifest))
+        else:
+            # Fallback: hash all part files concatenated
+            import hashlib
+
+            h = hashlib.sha256()
+            for part in sorted(ds_path.glob("part_*.parquet")):
+                with open(part, "rb") as f:
+                    for chunk in iter(lambda: f.read(8192), b""):
+                        h.update(chunk)
+            dataset_sha = h.hexdigest()
+    else:
+        dataset_sha = sha256_file(dataset_path)
 
     cont_sha = None
     cont_path = Path(continuation_artifact_path)
@@ -976,7 +1004,7 @@ def main():
     parser.add_argument(
         "--dataset",
         required=True,
-        help="Path to action_value.parquet",
+        help="Path to action_value.parquet or directory with part_*.parquet files",
     )
     parser.add_argument(
         "--output-dir",
