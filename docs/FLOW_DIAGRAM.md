@@ -231,7 +231,7 @@ flowchart TD
     subgraph Core["Core Modules (src/bid_euchre/)"]
         direction TB
 
-        ExpConfig["experiments/config.py"]
+        ExpConfig["src/bid_euchre/experiments/config.py"]
 
         SimDeals["sim/deals.py"]
         SimEngine["sim/simulation.py"]

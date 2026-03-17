@@ -457,11 +457,7 @@ Primary PR path (gold path):
 
 Fallback (TLS/auth edge case):
 - Primary path is `gh pr create ... --body-file pr_body.md`.
-- If TLS/auth prevents creation even after remediation and retry, run:
-  `scripts/create_pr_curl.sh "<PR Title>" pr_body.md main`
-- The script must print a PR URL. If the script is missing or does not produce the URL, STOP and report (do not invent a new script).
-- If the fallback succeeds, treat it as the PR creation step above and continue with proof/cleanup.
-- Manual PR mode is not allowed unless explicitly requested by the user.
+- If TLS/auth prevents creation even after remediation and retry: STOP and report.
 - Manual PR mode is not allowed unless explicitly requested by the user.
 
 PR ID PROOF (required):
@@ -836,10 +832,7 @@ Primary PR path (gold path):
 
 Fallback (TLS/auth edge case):
 - Primary path is `gh pr create ... --body-file pr_body.md`.
-- If TLS/auth prevents creation even after remediation and retry, run:
-  `scripts/create_pr_curl.sh "<PR Title>" pr_body.md main`
-- The script must print a PR URL. If the script is missing or does not produce the URL, STOP and report (do not invent a new script).
-- If the fallback succeeds, treat it as the PR creation step above and continue with proof/cleanup.
+- If TLS/auth prevents creation even after remediation and retry: STOP and report.
 
 PR ID PROOF (required):
 - gh pr view --json number,url,headRefName --jq '{number:.number,url:.url,branch:.headRefName}'

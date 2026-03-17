@@ -168,8 +168,12 @@ header.
 When a report is substantially revised, archive the previous version:
 
 ```
-docs/04_reports/arc_d_v1/r0/archive/model_arc_r0_v1_20260224.md
+docs/04_reports/<arc>/<rung>/archive/{name}_v{N}_{original_date}.md
 ```
+
+> **Note:** The `docs/04_reports/arc_d_v1/` directory has been removed as part of
+> the v2 lineage migration. The convention above still applies to current report
+> directories (e.g., `docs/04_reports/arc_d_v2/`).
 
 Format: `{name}_v{N}_{original_date}.md`
 

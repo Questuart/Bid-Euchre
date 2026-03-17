@@ -95,6 +95,12 @@ that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 - `update_arc_registry.py` — Arc D registry updater (MODEL_ARC_RUNS.md)
 - `validate_arc_d_rung_contract.py` — Arc D rung bundle validator
 
+Shell scripts:
+- `ci_poller.sh` — Background CI poller; monitors GitHub PR checks with optional auto-merge (launched by post-push hook)
+- `clean_worktrees.sh` — Removes git worktrees and local branches whose upstream remote has been deleted (`[gone]`)
+- `overnight_full_orchestrator.sh` — Sequential overnight orchestrator for FULL-mode Arc D v2 rung runs (all rungs x seeds)
+- `set_review_status.sh` — Publishes GitHub commit statuses for the review gate (`reviewing-changes` context)
+
 Deprecation wrappers at old paths (`scripts/*.py`) forward to `scripts/internal/` with a warning.
 
 ### `tests/`
@@ -254,6 +260,10 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/update_arc_registry.py` | Arc D registry updater (MODEL_ARC_RUNS.md) |
 | `scripts/internal/validate_action_value_artifact.py` | Behavioral validation gate for action-value artifacts |
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |
+| `scripts/internal/ci_poller.sh` | Background CI poller with optional auto-merge (launched by post-push hook) |
+| `scripts/internal/clean_worktrees.sh` | Remove worktrees and branches whose upstream remote is deleted (`[gone]`) |
+| `scripts/internal/overnight_full_orchestrator.sh` | Sequential overnight orchestrator for FULL-mode Arc D v2 rung runs |
+| `scripts/internal/set_review_status.sh` | Publish GitHub commit statuses for review gate contexts |
 
 ### Research tooling (canonical path)
 
