@@ -2,24 +2,29 @@
 
 **Date:** 2026-03-17
 **Branch:** `claude/fix-codex-parsing-12cFv`
-**Scope:** `scripts/internal/codex_review_adapter.py`, tests
+**Scope:** `scripts/internal/codex_review_adapter.py`, `AGENTS.md`, tests
 
 ## Problem
 
-Codex CLI (`codex review --base main`) returns natural-language prose reviews
-instead of structured `[P1] file:line — message` findings. The parser has two
-regex formats but neither matches prose output. The fail-safe at line 385
-correctly detects this as "unparseable" (non-empty output, zero findings, no
-clean-review signal), returns `success=False`, and after 3 retries the review
-loop stops with `STOPPED_REVIEW_FAILURE`.
+Codex CLI (`codex review --base main`) returns output that the parser can't
+match, causing the review loop to fail after 3 retries with
+`STOPPED_REVIEW_FAILURE`.
 
-**Root cause:** The `_PROMPTS` dict (lines 46-71) contains formatting
-instructions but these are **never sent to Codex CLI** because `--base` and a
-positional prompt are mutually exclusive in `codex-cli v0.114.0+`. The comment
-at line 43 acknowledges this: "The CLI relies on repo-level AGENTS.md for
-review guidance." But AGENTS.md has no output format instructions for Codex.
+**Root causes (revised after plan review):**
 
-This same issue affects the plan review adapter (`codex_plan_review_adapter.py`).
+1. **Format mismatch:** `AGENTS.md` (which Codex reads) instructs a **markdown
+   table** format (`| CRITICAL | file | line | C1 | message |`), but the parser
+   only handles `[P1] file — msg` and `[CRITICAL][C1] file — msg` inline formats.
+
+2. **Clean-review gap:** `AGENTS.md` says "No findings." for clean reviews, but
+   `_CLEAN_REVIEW_PATTERNS` requires "No findings **found**" (with "found").
+
+3. **Prose fallback missing:** Codex may ignore the AGENTS.md template entirely
+   and produce free-form prose with file references that the parser can't extract.
+
+The original plan incorrectly proposed creating a `CODEX.md` file. Per
+[OpenAI docs](https://developers.openai.com/codex/guides/agents-md/), Codex CLI
+reads `AGENTS.md`, which already exists in this repo.
 
 ## Analysis
 
@@ -153,14 +158,22 @@ Add test fixtures and cases for:
 
 ## Risks
 
-- **CODEX.md format**: Need to verify Codex CLI actually reads this file. If
-  it uses a different convention (e.g., `.codex/instructions.md`), adjust path.
 - **Prose parsing false positives**: A line like "I looked at src/foo.py and it's fine"
-  could be falsely extracted as a finding. Mitigation: require both a file reference
-  AND a severity indicator (keyword or heading context).
-- **Over-broad clean detection**: Could mask real findings. Mitigation: log warnings
-  when using heuristic clean detection, save raw output for audit.
+  could be falsely extracted as a finding. Mitigation: prose parsing only runs
+  when all structured formats find zero results, and defaults to P2 (non-blocking).
+- **Over-broad clean detection**: Could mask real findings. Mitigation: raw output
+  is always saved for audit in the review loop artifacts.
 
 ## Outcome
 
-_To be filled after implementation._
+Implemented in PR (branch `claude/fix-codex-parsing-12cFv`).
+
+**Changes:**
+- `scripts/internal/codex_review_adapter.py`: Added markdown table parsing
+  (`_TABLE_ROW_RE`, `_parse_table_format`), prose fallback parsing
+  (`_PROSE_FILE_REF_RE`, `_parse_prose_finding`, `_infer_prose_severity`),
+  and expanded `_CLEAN_REVIEW_PATTERNS` to cover 9 additional phrasings.
+- `AGENTS.md`: Added inline `[P1] file:line — message` as preferred format
+  alongside existing table format.
+- `tests/unit/test_codex_review_adapter.py`: Added 20 new tests (78 total)
+  covering table parsing, prose fallback, and expanded clean detection.

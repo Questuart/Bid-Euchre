@@ -100,6 +100,11 @@ can be parsed consistently by both humans and automated tooling.
 
 ### Response Template
 
+Use **either** the table format or the inline format below. Both are
+parseable by the automated review loop.
+
+**Option A — Table format:**
+
 ```markdown
 ## Codex Review
 
@@ -115,8 +120,24 @@ can be parsed consistently by both humans and automated tooling.
 | WARNING | src/bid_euchre/strategy/foo.py | 87 | C4 | Function `compute_ev` is 63 lines — consider extracting helper |
 | NIT | src/bid_euchre/strategy/foo.py | 3 | — | Unused import `os` |
 
-(If no issues found, write "No findings." instead of the table.)
+(If no issues found, write "No issues found." instead of the table.)
+```
 
+**Option B — Inline format (preferred for concise output):**
+
+```
+[P0] src/bid_euchre/strategy/foo.py:42 — random.Random() without seed (C1)
+[P1] src/bid_euchre/strategy/foo.py:87 — Function compute_ev is 63 lines (C4)
+[P2] src/bid_euchre/strategy/foo.py:3 — Unused import os
+```
+
+Severity mapping: CRITICAL=P0, WARNING=P1, NIT=P2.
+
+If no issues found, write: "No issues found."
+
+**Checks Performed section** (include with either format):
+
+```markdown
 ### Checks Performed
 - [x] C1: Unseeded randomness
 - [x] C2: Falsy numeric guards

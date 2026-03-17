@@ -102,13 +102,63 @@ _SEVERITY_MAP = {
     "NIT": "P2",
 }
 
+# Markdown table row format from AGENTS.md response template:
+# | CRITICAL | src/foo.py | 42 | C1 | message text |
+_TABLE_ROW_RE = re.compile(
+    r"\|\s*(?P<severity>CRITICAL|WARNING|NIT|P[012])\s*\|"
+    r"\s*(?P<file>[^\s|]+\.(?:py|md|yaml|yml|json|toml|cfg|txt|ipynb))\s*\|"
+    r"\s*(?P<line>\d*)\s*\|"
+    r"\s*(?P<check_id>[A-Z]\d+|—|-)\s*\|"
+    r"\s*(?P<message>[^|]+?)\s*\|"
+)
+
+# Prose pattern: file references in natural-language text.
+# Matches lines containing a recognizable file path with optional line number,
+# used as a last resort when structured formats fail.
+_PROSE_FILE_REF_RE = re.compile(
+    r"(?P<file>(?:src|tests|scripts|experiments|notebooks)/[^\s:,`\"']+\.py)"
+    r"(?::(?P<line>\d+)|(?:\s+line\s+(?P<line2>\d+)))?"
+)
+
+# Severity keywords for prose parsing (mapped to severity levels)
+_PROSE_SEVERITY_KEYWORDS = {
+    "P0": ["critical", "merge conflict", "security", "data corruption"],
+    "P1": [
+        "bug",
+        "unseeded",
+        "random.random",
+        "falsy",
+        "import boundary",
+        "determinism",
+        "incorrect",
+        "wrong",
+        "error",
+        "broken",
+    ],
+    "P2": [
+        "style",
+        "convention",
+        "nit",
+        "minor",
+        "consider",
+        "could",
+        "readability",
+        "improvement",
+    ],
+}
+
 # Patterns that indicate a genuinely clean review (no findings expected)
 _CLEAN_REVIEW_PATTERNS = re.compile(
     r"(?i)"
-    r"(?:no\s+(?:issues?|findings?|problems?)\s+found)"
+    r"(?:no\s+(?:issues?|findings?|problems?|concerns?)(?:\s+found)?)"
     r"|(?:(?:changes?\s+)?look(?:s)?\s+good)"
     r"|(?:0\s+findings)"
     r"|(?:lgtm)"
+    r"|(?:all\s+(?:good|clear|clean))"
+    r"|(?:ship\s+it)"
+    r"|(?:approved)"
+    r"|(?:nothing\s+to\s+(?:flag|report|note))"
+    r"|(?:changes?\s+(?:are\s+)?clean)"
 )
 
 
@@ -180,9 +230,15 @@ def _categorize_finding(message: str, check_id: str | None) -> str:
 def parse_codex_output(raw_output: str) -> list[CodexFinding]:
     """Parse Codex CLI stdout into structured findings.
 
-    Handles two output formats:
+    Handles four output formats (tried in order):
     1. Standard: [P1] file:line — message (C1)
     2. Alternative: [CRITICAL][C1] file:line — message
+    3. Markdown table: | CRITICAL | file | line | C1 | message |
+    4. Prose fallback: natural-language lines containing file references
+
+    The prose fallback (4) is only used when formats 1-3 produce zero
+    findings, to avoid false extraction from prose interspersed with
+    structured output.
 
     Args:
         raw_output: Raw stdout from Codex CLI.
@@ -191,14 +247,21 @@ def parse_codex_output(raw_output: str) -> list[CodexFinding]:
         List of parsed CodexFinding objects.
     """
     findings: list[CodexFinding] = []
-    seen = set()  # Deduplicate (file, line, message)
+    seen: set[tuple[str, int, str]] = set()
 
-    for line in raw_output.split("\n"):
+    lines = raw_output.split("\n")
+
+    # Pass 1: structured formats (standard, alt, table)
+    for line in lines:
         line = line.strip()
         if not line:
             continue
 
-        finding = _parse_standard_format(line) or _parse_alt_format(line)
+        finding = (
+            _parse_standard_format(line)
+            or _parse_alt_format(line)
+            or _parse_table_format(line)
+        )
         if finding is None:
             continue
 
@@ -207,6 +270,23 @@ def parse_codex_output(raw_output: str) -> list[CodexFinding]:
             continue
         seen.add(key)
         findings.append(finding)
+
+    # Pass 2: prose fallback — only if structured parsing found nothing
+    if not findings:
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            finding = _parse_prose_finding(line)
+            if finding is None:
+                continue
+
+            key = (finding.file, finding.line, finding.message)
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(finding)
 
     return findings
 
@@ -252,6 +332,70 @@ def _parse_alt_format(line: str) -> CodexFinding | None:
     if not check_id:
         check_match = _CHECK_ID_RE.search(message)
         check_id = check_match.group(1) if check_match else None
+
+    return CodexFinding(
+        severity=severity,
+        file=file_path,
+        line=line_num,
+        category=_categorize_finding(message, check_id),
+        check_id=check_id,
+        message=message,
+    )
+
+
+def _parse_table_format(line: str) -> CodexFinding | None:
+    """Parse markdown table row: | SEVERITY | file | line | check | message |."""
+    match = _TABLE_ROW_RE.search(line)
+    if not match:
+        return None
+
+    raw_severity = match.group("severity")
+    severity = _SEVERITY_MAP.get(raw_severity, raw_severity)
+    file_path = match.group("file")
+    line_num = int(match.group("line") or 0)
+    message = match.group("message").strip()
+    raw_check = match.group("check_id")
+    check_id = raw_check if raw_check not in ("—", "-", "") else None
+
+    return CodexFinding(
+        severity=severity,
+        file=file_path,
+        line=line_num,
+        category=_categorize_finding(message, check_id),
+        check_id=check_id,
+        message=message,
+    )
+
+
+def _infer_prose_severity(text: str) -> str:
+    """Infer severity from prose context keywords. Defaults to P2."""
+    text_lower = text.lower()
+    for severity, keywords in _PROSE_SEVERITY_KEYWORDS.items():
+        if any(kw in text_lower for kw in keywords):
+            return severity
+    return "P2"
+
+
+def _parse_prose_finding(line: str) -> CodexFinding | None:
+    """Extract a finding from prose text containing a file reference.
+
+    Only matches lines with a recognizable src/tests/scripts file path.
+    Severity is inferred from surrounding keywords; defaults to P2.
+    """
+    match = _PROSE_FILE_REF_RE.search(line)
+    if not match:
+        return None
+
+    file_path = match.group("file")
+    line_num = int(match.group("line") or match.group("line2") or 0)
+
+    # Use the full line as the message, trimmed of markdown formatting
+    message = re.sub(r"^[\s*\-•]+", "", line).strip()
+    message = re.sub(r"[`]", "", message)
+
+    severity = _infer_prose_severity(line)
+    check_match = _CHECK_ID_RE.search(line)
+    check_id = check_match.group(1) if check_match else None
 
     return CodexFinding(
         severity=severity,
