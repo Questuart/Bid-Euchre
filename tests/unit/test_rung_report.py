@@ -195,9 +195,9 @@ class TestDecisionReport:
             tables_dir=tables_with_all_data,
             charts_dir=charts_dir,
         )
-        assert "Chart 1" in content
-        assert "Chart 3" in content
-        assert "Chart 4" in content
+        assert "Chart 4" in content  # Comparator Ranking Bars
+        assert "Chart 7" in content  # H2H Heatmap
+        assert "Chart 23" in content  # Intelligence-Faceted H2H
 
     def test_advance_when_all_pass(self, tables_with_all_data, charts_dir):
         """Reports ADVANCE when all hypothesis checks pass."""
