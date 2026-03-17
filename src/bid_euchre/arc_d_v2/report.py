@@ -379,12 +379,17 @@ def _extract_advancement_decision(
     if not statuses:
         return "PENDING"
 
-    n_fail = sum(1 for s in statuses if s == "FAIL")
-    n_pass = sum(1 for s in statuses if s == "PASS")
+    # Exclude SKIP hypotheses (excluded models) from the decision
+    evaluated = [s for s in statuses if s != "SKIP"]
+    if not evaluated:
+        return "PENDING"
+
+    n_fail = sum(1 for s in evaluated if s == "FAIL")
+    n_pass = sum(1 for s in evaluated if s == "PASS")
 
     if n_fail > 0:
         return "HALT"
-    if n_pass == len(statuses):
+    if n_pass == len(evaluated):
         return "ADVANCE"
     return "HOLD"
 

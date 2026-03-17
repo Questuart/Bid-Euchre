@@ -595,12 +595,21 @@ def generate_hypothesis_outcomes(
             expected_bound = h.get("expected_bound", "")
             surprise = h.get("surprise_hit", False)
 
-            status = "PASS" if passed else "FAIL"
+            if h.get("skipped"):
+                status = "SKIP"
+            elif passed:
+                status = "PASS"
+            else:
+                status = "FAIL"
             evidence = f"observed={observed}"
             if expected_bound:
                 evidence += f", bound={expected_bound}"
 
             notes_parts = []
+            if h.get("skipped"):
+                note = h.get("note", "")
+                if note:
+                    notes_parts.append(note)
             if surprise:
                 notes_parts.append("SURPRISE")
             if h.get("error"):
