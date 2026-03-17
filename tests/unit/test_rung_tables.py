@@ -23,6 +23,8 @@ from bid_euchre.arc_d_v2.tables import (
     TIER_SMART,
     _classify_tier,
     _extract_bid_levels,
+    _extract_decision_comparison,
+    _extract_disagreement_outcomes,
     _extract_feature_importance,
     _extract_feature_importances_flat,
     _extract_h2h_by_contract,
@@ -1960,3 +1962,80 @@ class TestExtractFeatureImportancesFlat:
         df = pd.read_csv(tmp_path / "feature_importances.csv")
         assert set(df.columns) == {"model", "contract", "feature_name", "importance"}
         assert len(df) == 2
+
+    def test_outcome_distributions_from_parquet(self, tmp_path):
+        """outcome_distributions.csv uses parquet data when available."""
+        parquet_path = FIXTURES_DIR / "action_value.parquet"
+        assert parquet_path.exists(), "Fixture parquet required for this test"
+        h2h = {
+            "cells": {
+                "a_self": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_a",
+                    "deals_total": 100,
+                    "by_contract": {
+                        "suit": {"deals_total": 50, "mean_tricks_won": 5},
+                    },
+                },
+            },
+        }
+        generated = generate_chart_data(
+            h2h_battery=h2h,
+            output_dir=tmp_path,
+            parquet_paths=[parquet_path],
+        )
+        assert "outcome_distributions.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "source" in df.columns
+        # Parquet path should produce source=parquet rows
+        assert (df["source"] == "parquet").all()
+        # Should have multiple tricks_won bins, not just one
+        assert df["tricks_won"].nunique() > 1
+
+    def test_outcome_distributions_synthetic_fallback(self, tmp_path):
+        """outcome_distributions.csv falls back to synthetic without parquet."""
+        h2h = {
+            "cells": {
+                "a_self": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_a",
+                    "deals_total": 100,
+                    "by_contract": {
+                        "suit": {"deals_total": 50, "mean_tricks_won": 5},
+                        "high": {"deals_total": 30, "mean_tricks_won": 6},
+                    },
+                },
+            },
+        }
+        generated = generate_chart_data(
+            h2h_battery=h2h,
+            output_dir=tmp_path,
+        )
+        assert "outcome_distributions.csv" in generated
+        df = pd.read_csv(tmp_path / "outcome_distributions.csv")
+        assert "source" in df.columns
+        assert (df["source"] == "synthetic").all()
+
+    def test_decision_comparison_graceful_skip(self):
+        """decision_comparison skips when parquet lacks bid_decision column."""
+        parquet_path = FIXTURES_DIR / "action_value.parquet"
+        assert parquet_path.exists()
+        rows = _extract_decision_comparison([parquet_path])
+        assert rows == []
+
+    def test_disagreement_outcomes_graceful_skip(self):
+        """disagreement_outcomes skips when parquet lacks bid_decision column."""
+        parquet_path = FIXTURES_DIR / "action_value.parquet"
+        assert parquet_path.exists()
+        rows = _extract_disagreement_outcomes([parquet_path])
+        assert rows == []
+
+    def test_decision_comparison_no_parquet(self):
+        """decision_comparison returns empty with no parquet files."""
+        rows = _extract_decision_comparison([])
+        assert rows == []
+
+    def test_disagreement_outcomes_no_parquet(self):
+        """disagreement_outcomes returns empty with no parquet files."""
+        rows = _extract_disagreement_outcomes([])
+        assert rows == []

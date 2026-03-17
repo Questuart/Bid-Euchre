@@ -3137,3 +3137,64 @@ class TestDatasetBuildSeedSeparation:
             seed_idx = cmd.index("--seed")
             seeds_generated.append(int(cmd[seed_idx + 1]))
         assert seeds_generated == list(range(1006, 1011))
+
+
+class TestStep7bPassesRungAndMode:
+    """Verify Step 7b passes --rung and --mode to generate_rung_report.py."""
+
+    def test_step_7b_includes_rung_and_mode_in_report_cmd(self, tmp_path):
+        """The report generation command must include --rung and --mode."""
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        # Create required scripts
+        script_dir = tmp_path / "scripts" / "internal"
+        script_dir.mkdir(parents=True)
+        (script_dir / "generate_rung_charts.py").write_text("# stub")
+        (script_dir / "generate_rung_report.py").write_text("# stub")
+        (script_dir / "generate_evidence_manifest.py").write_text("# stub")
+
+        # Create report_dir structure
+        report_dir = tmp_path / "docs" / "04_reports" / "arc_d_v2" / "r0" / "canonical"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        # Create rung artifacts dir
+        rung_artifacts_dir = tmp_path / "data" / "artifacts" / "arc_d_v2" / "r0"
+        rung_artifacts_dir.mkdir(parents=True)
+
+        captured_cmds: list[list[str]] = []
+
+        def mock_subprocess(cmd, step, rung, detail="", timeout=None):
+            captured_cmds.append(cmd)
+            return (True, "")
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=tmp_path / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_7(state)
+
+        assert ok is True
+
+        # Find the report command (the one that invokes generate_rung_report.py)
+        report_cmds = [
+            cmd for cmd in captured_cmds if "generate_rung_report.py" in str(cmd)
+        ]
+        assert (
+            len(report_cmds) >= 1
+        ), f"Expected a generate_rung_report.py command, got: {captured_cmds}"
+
+        report_cmd = report_cmds[0]
+        assert "--rung" in report_cmd, f"Missing --rung in report cmd: {report_cmd}"
+        assert "--mode" in report_cmd, f"Missing --mode in report cmd: {report_cmd}"
+
+        # Verify the values follow the flags
+        rung_idx = report_cmd.index("--rung")
+        mode_idx = report_cmd.index("--mode")
+        assert report_cmd[rung_idx + 1] == "r0"
+        assert report_cmd[mode_idx + 1] == "quick"
