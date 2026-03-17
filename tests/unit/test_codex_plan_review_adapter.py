@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 # Add scripts/internal to path for imports
 sys.path.insert(
@@ -13,8 +15,10 @@ sys.path.insert(
 
 from codex_plan_review_adapter import (
     PlanReviewFinding,
+    _build_claude_review_prompt,
     _check_codex_auth,
     detect_plan_tier,
+    invoke_claude_failsafe,
     parse_plan_findings,
     plan_state_key,
 )
@@ -347,3 +351,137 @@ class TestCheckCodexAuth:
         result = _check_codex_auth(auth_path=auth_file)
         assert result is not None
         assert "no valid credentials" in result
+
+
+# --- Claude Failsafe Tests ---
+
+
+class TestBuildClaudeReviewPrompt:
+    """Test prompt construction for Claude CLI failsafe."""
+
+    def test_prompt_includes_tier(self, tmp_path: Path) -> None:
+        plan = tmp_path / "test.md"
+        plan.write_text("# My Plan\n\nDo the thing.\n")
+        prompt = _build_claude_review_prompt(plan, "medium")
+        assert "medium-tier" in prompt
+
+    def test_prompt_includes_plan_content(self, tmp_path: Path) -> None:
+        plan = tmp_path / "test.md"
+        plan.write_text("# My Plan\n\nStep 1: do X.\n")
+        prompt = _build_claude_review_prompt(plan, "small")
+        assert "Step 1: do X" in prompt
+
+    def test_prompt_handles_unreadable_file(self) -> None:
+        plan = Path("/nonexistent/path/plan.md")
+        prompt = _build_claude_review_prompt(plan, "small")
+        assert "could not read" in prompt
+
+    def test_prompt_requests_json_output(self, tmp_path: Path) -> None:
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        prompt = _build_claude_review_prompt(plan, "small")
+        assert "JSON array" in prompt
+
+
+class TestClaudeFailsafeResolution:
+    """Test Claude failsafe resolution order: env var -> claude CLI -> error."""
+
+    def test_env_var_takes_priority(self, tmp_path: Path) -> None:
+        """CLAUDE_REVIEW_CMD is used when set."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+
+        with patch.dict(os.environ, {"CLAUDE_REVIEW_CMD": "echo"}):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = "[]"
+                mock_run.return_value.stderr = ""
+                result = invoke_claude_failsafe(plan, "small")
+                # Should invoke the env var command, not claude CLI
+                cmd = mock_run.call_args[0][0]
+                assert cmd[0] == "echo"
+                assert result.success is True
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value="/usr/bin/claude")
+    def test_auto_detects_claude_cli(self, mock_which, tmp_path: Path) -> None:
+        """When CLAUDE_REVIEW_CMD not set, auto-detects claude CLI."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = "[]"
+                mock_run.return_value.stderr = ""
+                result = invoke_claude_failsafe(plan, "small")
+                cmd = mock_run.call_args[0][0]
+                assert cmd[0] == "claude"
+                assert "--print" in cmd
+                assert "-p" in cmd
+                assert result.success is True
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value=None)
+    def test_returns_error_when_nothing_available(
+        self, mock_which, tmp_path: Path
+    ) -> None:
+        """When neither env var nor claude CLI available, returns error."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            result = invoke_claude_failsafe(plan, "small")
+            assert result.success is False
+            assert "not in PATH" in result.error
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value="/usr/bin/claude")
+    def test_parses_json_findings(self, mock_which, tmp_path: Path) -> None:
+        """Claude CLI JSON output is parsed into PlanReviewFinding objects."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+
+        findings_json = json.dumps(
+            [
+                {
+                    "severity": "WARNING",
+                    "category": "convention",
+                    "file": "test.md",
+                    "line": 5,
+                    "description": "Missing seed",
+                    "check_id": None,
+                }
+            ]
+        )
+
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = findings_json
+                mock_run.return_value.stderr = ""
+                result = invoke_claude_failsafe(plan, "small")
+                assert result.success is True
+                assert len(result.findings) == 1
+                assert result.findings[0].severity == "WARNING"
+                assert result.findings[0].description == "Missing seed"
+
+    @patch("codex_plan_review_adapter.shutil.which", return_value="/usr/bin/claude")
+    def test_handles_empty_json_array(self, mock_which, tmp_path: Path) -> None:
+        """Empty JSON array means no findings (clean review)."""
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+
+        env = os.environ.copy()
+        env.pop("CLAUDE_REVIEW_CMD", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("codex_plan_review_adapter.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = "[]"
+                mock_run.return_value.stderr = ""
+                result = invoke_claude_failsafe(plan, "small")
+                assert result.success is True
+                assert len(result.findings) == 0

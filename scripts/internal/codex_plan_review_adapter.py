@@ -17,6 +17,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -439,6 +440,41 @@ def invoke_codex_plan_review(
     )
 
 
+def _build_claude_review_prompt(plan_path: Path, tier: str) -> str:
+    """Build a structured prompt for Claude CLI plan review.
+
+    Args:
+        plan_path: Path to the plan file.
+        tier: Detected plan tier.
+
+    Returns:
+        Prompt string that instructs Claude to output JSON findings.
+    """
+    try:
+        content = plan_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        content = "(could not read plan file)"
+
+    return (
+        f"Review this {tier}-tier plan file ({plan_path}) for issues. "
+        "Output ONLY a JSON array of findings. Each finding must have these fields:\n"
+        '  "severity": "CRITICAL" | "WARNING" | "INFO"\n'
+        '  "category": "convention" | "risk" | "research" | "process"\n'
+        f'  "file": "{plan_path}"\n'
+        '  "line": <line number or 0>\n'
+        '  "description": "<what is wrong>"\n'
+        '  "check_id": null\n\n'
+        "Check for:\n"
+        "- Referenced file paths that don't exist in the repo\n"
+        "- Missing seed/config in experiment commands\n"
+        "- Contradictory or unclear steps\n"
+        "- Missing rollback/failure handling\n"
+        "- Scope too broad for a single PR\n\n"
+        "If no issues found, output: []\n\n"
+        f"Plan content:\n```\n{content}\n```"
+    )
+
+
 def invoke_claude_failsafe(
     plan_path: Path,
     tier: str,
@@ -447,9 +483,10 @@ def invoke_claude_failsafe(
 ) -> PlanReviewResult:
     """Invoke Claude failsafe reviewer when Codex CLI is unavailable.
 
-    Checks ``CLAUDE_REVIEW_CMD`` env var for a test seam. If set, runs
-    that command with plan_path and tier as arguments and parses JSON output.
-    If not set, returns a minimal result indicating no live session available.
+    Resolution order:
+    1. ``CLAUDE_REVIEW_CMD`` env var (test seam / custom command)
+    2. ``claude`` CLI in PATH (auto-detected, uses ``--print -p`` mode)
+    3. Returns failure if neither is available
 
     Args:
         plan_path: Path to the plan file.
@@ -457,12 +494,19 @@ def invoke_claude_failsafe(
         timeout: Maximum wait time in seconds.
 
     Returns:
-        PlanReviewResult with findings from Claude or a placeholder.
+        PlanReviewResult with findings from Claude or error info.
     """
     start = time.monotonic()
     claude_cmd = os.environ.get("CLAUDE_REVIEW_CMD", "").strip()
 
-    if not claude_cmd:
+    if claude_cmd:
+        # Explicit command via env var (test seam)
+        cmd = [*claude_cmd.split(), str(plan_path), tier]
+    elif shutil.which("claude"):
+        # Auto-detect claude CLI and use --print mode
+        prompt = _build_claude_review_prompt(plan_path, tier)
+        cmd = ["claude", "--print", "-p", prompt]
+    else:
         elapsed = time.monotonic() - start
         return PlanReviewResult(
             success=False,
@@ -471,18 +515,20 @@ def invoke_claude_failsafe(
             reviewer="claude_failsafe",
             raw_output="",
             latency_seconds=elapsed,
-            error="CLAUDE_REVIEW_CMD not set -- Claude failsafe requires a live session",
+            error=(
+                "No review command available: CLAUDE_REVIEW_CMD not set "
+                "and claude CLI not in PATH"
+            ),
         )
+
+    logger.info(
+        "Invoking Claude failsafe (cmd=%s, tier=%s, file=%s)",
+        cmd[0],
+        tier,
+        plan_path,
+    )
 
     try:
-        cmd = [*claude_cmd.split(), str(plan_path), tier]
-        logger.info(
-            "Invoking Claude failsafe (cmd=%s, tier=%s, file=%s)",
-            cmd,
-            tier,
-            plan_path,
-        )
-
         result = subprocess.run(
             cmd,
             capture_output=True,
