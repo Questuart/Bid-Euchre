@@ -150,7 +150,7 @@ class TestLoadDataset:
         """An empty directory should raise ValueError."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
-        with pytest.raises(ValueError, match="No part_"):
+        with pytest.raises(ValueError, match="No parquet files found"):
             load_dataset(str(empty_dir))
 
 
@@ -1067,6 +1067,22 @@ class TestRecursiveLoader:
 
         loaded = load_dataset(str(tmp_path))
         assert len(loaded) == 5
+
+    def test_non_chunked_action_value_parquet(self, tmp_path):
+        """load_dataset discovers action_value.parquet (non-chunked) via rglob."""
+        nested = tmp_path / "seed_42" / "datasets"
+        nested.mkdir(parents=True)
+
+        n_rows = 8
+        data = {col: range(n_rows) for col in METADATA_COLS}
+        for col in STATE_FEATURE_NAMES:
+            data[col] = [0.0] * n_rows
+        data["net_points"] = [1.0] * n_rows
+        df = pd.DataFrame(data)
+        df.to_parquet(nested / "action_value.parquet", index=False)
+
+        loaded = load_dataset(str(tmp_path))
+        assert len(loaded) == 8
 
 
 # ── Split by deal_uid (v2 repair LA-5) ──────────────────────────

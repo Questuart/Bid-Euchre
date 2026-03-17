@@ -219,10 +219,14 @@ def load_dataset(
 
     path = Path(parquet_path)
     if path.is_dir():
-        # Directory-based loading: rglob part files, sort, concatenate
+        # Directory-based loading: rglob for chunked part files and single
+        # action_value.parquet files (v2 repair contract §4.5)
         part_files = sorted(path.rglob("part_*.parquet"))
         if not part_files:
-            raise ValueError(f"No part_*.parquet files found in {path}")
+            # Fall back to action_value.parquet (non-chunked datasets)
+            part_files = sorted(path.rglob("action_value.parquet"))
+        if not part_files:
+            raise ValueError(f"No parquet files found in {path}")
         df = pd.concat([pd.read_parquet(p) for p in part_files], ignore_index=True)
     else:
         df = pd.read_parquet(parquet_path)
