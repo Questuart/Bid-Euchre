@@ -14,7 +14,6 @@ sys.path.insert(
 
 from codex_review_adapter import (
     _CLEAN_REVIEW_PATTERNS,
-    _CODEX_APP_PATH,
     CodexFinding,
     CodexReviewResult,
     _classify_error,
@@ -301,15 +300,9 @@ class TestBinaryResolution:
         assert _resolve_codex_binary() == ["codex"]
 
     @patch("codex_review_adapter.shutil.which", return_value=None)
-    def test_falls_back_to_app_bundle(self, mock_which):
-        with patch.object(Path, "is_file", return_value=True):
-            result = _resolve_codex_binary()
-            assert result == [str(_CODEX_APP_PATH)]
-
-    @patch("codex_review_adapter.shutil.which", return_value=None)
     def test_falls_back_to_npx(self, mock_which):
-        with patch.object(Path, "is_file", return_value=False):
-            assert _resolve_codex_binary() == ["npx", "@openai/codex"]
+        """When codex not in PATH, falls through to npx."""
+        assert _resolve_codex_binary() == ["npx", "@openai/codex"]
 
 
 class TestCommandConstruction:
@@ -481,9 +474,8 @@ class TestEnvVarLauncher:
         env = os.environ.copy()
         env.pop("CODEX_REVIEW_CMD", None)
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(Path, "is_file", return_value=False):
-                result = _resolve_codex_binary()
-                assert result == ["npx", "@openai/codex"]
+            result = _resolve_codex_binary()
+            assert result == ["npx", "@openai/codex"]
 
     @patch("codex_plan_review_adapter._run_with_pty")
     def test_env_var_in_invoke_command(self, mock_pty):

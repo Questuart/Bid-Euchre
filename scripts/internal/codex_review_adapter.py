@@ -26,9 +26,6 @@ DEFAULT_TIMEOUT_SECONDS = 300
 # Max retries before giving up
 MAX_RETRIES = 3
 
-# Known path for macOS Codex app bundle binary
-_CODEX_APP_PATH = Path("/Applications/Codex.app/Contents/Resources/codex")
-
 # Patterns in stderr that indicate a CLI argument/invocation error
 # (as opposed to a review-time error like auth failure or network issue)
 _CLI_ARG_ERROR_PATTERNS = [
@@ -272,8 +269,12 @@ def _resolve_codex_binary() -> list[str]:
     Preference order:
     1. ``CODEX_REVIEW_CMD`` env var (custom launcher, e.g. Docker wrapper)
     2. ``codex`` in PATH (fastest — no npx overhead)
-    3. macOS app bundle binary at known path
-    4. ``npx @openai/codex`` fallback (downloads if needed)
+    3. ``npx @openai/codex`` fallback (downloads if needed)
+
+    Note: The macOS Codex desktop app (``/Applications/Codex.app``) is
+    intentionally NOT used as a fallback. Its internal binary launches
+    a full Electron GUI rather than running a headless CLI review, causing
+    a 300s timeout with no useful output.
     """
     custom_cmd = os.environ.get("CODEX_REVIEW_CMD", "").strip()
     if custom_cmd:
@@ -282,8 +283,6 @@ def _resolve_codex_binary() -> list[str]:
         return parts
     if shutil.which("codex"):
         return ["codex"]
-    if _CODEX_APP_PATH.is_file():
-        return [str(_CODEX_APP_PATH)]
     return ["npx", "@openai/codex"]
 
 
