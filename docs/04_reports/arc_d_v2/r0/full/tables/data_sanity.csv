@@ -1,0 +1,24 @@
+check_name,scope,value,threshold,status,detail
+h2h_cells_populated,h2h,25.0,25.0,PASS,25/25 cells have metrics
+h2h_min_deals,h2h,30000.0,10.0,PASS,Minimum deals across cells: 30000
+comparator_bidders_present,comparator,4.0,2.0,PASS,4 bidders in comparator
+r2_positive_constrained_ols_av_suit,training,0.5706,0.0,PASS,constrained_ols_av suit R²=0.5706
+r2_positive_constrained_ols_av_high,training,0.491,0.0,PASS,constrained_ols_av high R²=0.4910
+r2_positive_constrained_ols_av_low,training,0.4609,0.0,PASS,constrained_ols_av low R²=0.4609
+r2_positive_constrained_ols_av_pass,training,-0.0238,0.0,WARN,constrained_ols_av pass R²=-0.0238
+r2_positive_full_ols_av_high,training,0.5248,0.0,PASS,full_ols_av high R²=0.5248
+r2_positive_full_ols_av_low,training,0.5092,0.0,PASS,full_ols_av low R²=0.5092
+r2_positive_full_ols_av_pass,training,0.0147,0.0,PASS,full_ols_av pass R²=0.0147
+r2_positive_full_ols_av_suit,training,0.5563,0.0,PASS,full_ols_av suit R²=0.5563
+r2_positive_gbt_av_high,training,0.5541,0.0,PASS,gbt_av high R²=0.5541
+r2_positive_gbt_av_low,training,0.5389,0.0,PASS,gbt_av low R²=0.5389
+r2_positive_gbt_av_pass,training,0.0151,0.0,PASS,gbt_av pass R²=0.0151
+r2_positive_gbt_av_suit,training,0.5885,0.0,PASS,gbt_av suit R²=0.5885
+r2_positive_selected_ols_av_suit,training,0.5596,0.0,PASS,selected_ols_av suit R²=0.5596
+r2_positive_selected_ols_av_high,training,0.5999,0.0,PASS,selected_ols_av high R²=0.5999
+r2_positive_selected_ols_av_low,training,0.4796,0.0,PASS,selected_ols_av low R²=0.4796
+r2_positive_selected_ols_av_pass,training,-0.1387,0.0,WARN,selected_ols_av pass R²=-0.1387
+r2_positive_selected_two_stage_av_high,training,0.5205,0.0,PASS,selected_two_stage_av high R²=0.5205
+r2_positive_selected_two_stage_av_low,training,0.5055,0.0,PASS,selected_two_stage_av low R²=0.5055
+r2_positive_selected_two_stage_av_pass,training,0.012,0.0,PASS,selected_two_stage_av pass R²=0.0120
+r2_positive_selected_two_stage_av_suit,training,0.0,0.0,WARN,selected_two_stage_av suit R²=0.0000

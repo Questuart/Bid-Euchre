@@ -1,0 +1,9 @@
+model,contract,net_eppd,bid_rate,pass_rate,make_rate,source
+modeloespecifico,pooled,0.78,1.0,0.0,0.9,comparator
+selected_two_stage_av,pooled,0.72,0.88,0.12,0.9545,comparator
+gbt_av,pooled,3.7,0.98,0.02,0.9796,comparator
+constrained_ols_av,pooled,1.68,1.0,0.0,1.0,comparator
+selected_ols_av,pooled,1.32,0.9,0.1,1.0,comparator
+full_ols_av,pooled,1.84,0.9,0.1,1.0,comparator
+stricthellraiser,pooled,0.14,1.0,0.0,0.92,comparator
+rankthetank,pooled,-11.3,1.0,0.0,0.06,comparator

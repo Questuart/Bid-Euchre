@@ -1,0 +1,10 @@
+hypothesis_id,description,status,evidence,notes
+H1,GBT outperforms anchor on suit contract delta (H2H),PASS,"observed=0.7268, bound=> 0.5",
+H2,GBT outperforms anchor on pooled net_eppd (H2H),PASS,"observed=0.7028, bound=> 0.3",
+H3,GBT high-contract delta is positive vs anchor (H2H),PASS,"observed=0.7159, bound=> 0.0",
+H4,GBT low-contract delta is non-negative vs anchor (H2H),PASS,"observed=0.5607, bound=>= -0.1",
+H5,GBT suit R-squared exceeds selected OLS suit R-squared,SKIP,observed=None,SKIP: model(s) selected_ols_av not in active roster
+H6,All models bid at least half the time (no pathological passing),PASS,"observed=0.9941, bound=> 0.5",
+H7,GBT H2H win rate vs anchor exceeds 50%,PASS,"observed=0.5309, bound=> 0.5",
+H8,Two-stage model does not regress vs selected OLS on pooled net_eppd,SKIP,observed=None,SKIP: model(s) selected_ols_av not in active roster
+H9,ModeloEspecifico heuristic is worst on pooled net_eppd (sanity check),PASS,"observed=-0.3216, bound=< 0.0",

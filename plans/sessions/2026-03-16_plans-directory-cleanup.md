@@ -112,5 +112,5 @@ plans/archive/     → pre_v1/ + v1_root/ + v1_sessions/ + v2_sessions/ + v2_arc
 ```
 
 ## Outcome
-<!-- Filled after implementation -->
-- PR: (pending)
+
+- PR: #770 (merged)

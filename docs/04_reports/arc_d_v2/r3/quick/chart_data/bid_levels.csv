@@ -1,0 +1,9 @@
+model,bid_rate,make_rate,pass_rate
+modeloespecifico,1.0,0.9496,0.0
+selected_two_stage_av,1.0,0.9936,0.0
+gbt_av,0.96,0.99,0.04
+constrained_ols_av,1.0,1.0,0.0
+selected_ols_av,1.0,1.0,0.0
+full_ols_av,1.0,1.0,0.0
+stricthellraiser,1.0,0.9472,0.0
+rankthetank,1.0,0.1476,0.0
