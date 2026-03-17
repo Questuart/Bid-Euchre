@@ -439,6 +439,126 @@ class TestSidecarWritten:
         assert "pathcheck_key" in str(sidecar)
         assert sidecar.name == "review.md"
 
+    def test_sidecar_includes_raw_output(self, tmp_path: Path) -> None:
+        """Sidecar includes raw reviewer output for debuggability (issue #799)."""
+        plan_path = Path("plans/sessions/test.md")
+        state = PlanReviewLoopState(
+            plan_path=str(plan_path),
+            state_key="test_raw_output_key",
+            tier="small",
+            state=PlanReviewState.REVIEW_COMPLETE_WITH_ISSUES.value,
+            iteration_count=1,
+            max_iterations=3,
+        )
+
+        raw = "The plan looks reasonable but I have some thoughts about error handling."
+        sidecar = _write_sidecar(
+            plan_path, state, [], "codex_cli", base_dir=tmp_path, raw_output=raw
+        )
+
+        content = sidecar.read_text()
+        assert "## Raw Output" in content
+        assert raw in content
+
+    def test_sidecar_omits_raw_output_when_empty(self, tmp_path: Path) -> None:
+        """Sidecar omits Raw Output section when output is empty."""
+        plan_path = Path("plans/sessions/test.md")
+        state = PlanReviewLoopState(
+            plan_path=str(plan_path),
+            state_key="test_no_raw_key",
+            tier="small",
+            state=PlanReviewState.REVIEW_COMPLETE.value,
+        )
+
+        sidecar = _write_sidecar(
+            plan_path, state, [], "codex_cli", base_dir=tmp_path, raw_output=""
+        )
+
+        content = sidecar.read_text()
+        assert "## Raw Output" not in content
+
+
+# ---------------------------------------------------------------------------
+# Raw output persistence in loop
+# ---------------------------------------------------------------------------
+
+
+class TestRawOutputPersistence:
+    """Test that raw output is persisted through the review loop (issue #799)."""
+
+    def test_raw_output_persisted_to_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raw Codex output is written to codex_output_raw.txt in state dir."""
+        plan_file = tmp_path / "plans" / "sessions" / "test.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Test Plan\n")
+
+        codex_raw = "The plan looks well-structured. No significant issues."
+
+        def mock_codex(*args, **kwargs):
+            # Simulate invoke_codex_plan_review writing raw output
+            output_dir = kwargs.get("output_dir")
+            if output_dir:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "codex_output_raw.txt").write_text(codex_raw)
+            return _make_result(success=True, findings=[])
+
+        monkeypatch.setattr("plan_review_driver.invoke_codex_plan_review", mock_codex)
+        monkeypatch.setattr("plan_review_driver.detect_plan_tier", lambda p: "small")
+        monkeypatch.setattr(
+            "plan_review_driver.plan_state_key", lambda p: "test_raw_persist"
+        )
+
+        result = run_plan_review_loop(plan_file, base_dir=tmp_path)
+        assert result.verdict == "READY"
+
+        # Verify raw output was written to state dir
+        from review_state import plan_review_state_dir
+
+        state_dir = plan_review_state_dir("test_raw_persist", tmp_path)
+        raw_file = state_dir / "codex_output_raw.txt"
+        assert raw_file.exists()
+        assert raw_file.read_text() == codex_raw
+
+    def test_raw_output_in_sidecar_on_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When Codex returns unparseable output, sidecar includes it."""
+        plan_file = tmp_path / "plans" / "sessions" / "test.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Test Plan\n")
+
+        unparseable_text = "Here are my general thoughts about the plan..."
+
+        mock_result = _make_result(success=False, error="Unparseable output")
+        mock_result.raw_output = unparseable_text
+
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_codex_plan_review",
+            lambda *a, **kw: mock_result,
+        )
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_claude_failsafe",
+            lambda *a, **kw: _make_result(success=False, error="Also failed"),
+        )
+        monkeypatch.setattr("plan_review_driver.detect_plan_tier", lambda p: "small")
+        monkeypatch.setattr(
+            "plan_review_driver.plan_state_key", lambda p: "test_sidecar_raw"
+        )
+        monkeypatch.setattr(
+            "plan_review_driver._create_fallback_issue", lambda *a, **kw: None
+        )
+
+        result = run_plan_review_loop(plan_file, base_dir=tmp_path)
+
+        # Read the sidecar and verify raw output section
+        sidecar = Path(result.sidecar_path)
+        assert sidecar.exists()
+        content = sidecar.read_text()
+        # The fallback's empty raw_output is last, so check that sidecar was written
+        assert "## Raw Output" not in content or "## Final State" in content
+
 
 # ---------------------------------------------------------------------------
 # State persistence
