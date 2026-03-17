@@ -181,6 +181,12 @@ uv run python -c "import bid_euchre.reporting.arc_d_report; print('arc_d_report 
 uv run python -c "import bid_euchre.validation.arc_d_bundle; print('arc_d_bundle OK')"
 uv run python -c "from bid_euchre.validation.arc_d_gate import normalize_eval_metrics; print('arc_d_gate OK')"
 
+# Verify Arc D v2 modules (lineage orchestration, charts, tables, reports)
+uv run python -c "import bid_euchre.arc_d_v2; print('arc_d_v2 OK')"
+uv run python -c "from bid_euchre.arc_d_v2.chart_registry import CHART_REGISTRY; print('chart_registry OK')"
+uv run python -c "from bid_euchre.arc_d_v2.tables import generate_rung_tables; print('tables OK')"
+uv run python -c "from bid_euchre.arc_d_v2.report import generate_rung_report; print('report OK')"
+
 # Dynamic: also verify any modules not listed above
 # ls -d src/bid_euchre/*/ | grep -v __pycache__
 # (check if any module directories exist that aren't covered by the imports above)
@@ -922,6 +928,7 @@ bid-euchre/
 │   ├── validation/              # Schema validation, promotion gates
 │   ├── analysis/                # Statistical analysis, paired comparisons
 │   ├── experiments/             # Config system, batch metadata
+│   ├── arc_d_v2/                # Arc D v2 lineage: orchestration, charts, tables, reports
 │   ├── utils/                   # (empty — cleanup candidate)
 │   └── scoring.py               # Top-level scoring module
 │   # (verify via: ls -d src/bid_euchre/*/ | grep -v __pycache__)
@@ -1001,6 +1008,10 @@ bid-euchre/
 | **R1.5 Action-Value** | #555–582 | Action-value bidder, counterfactual datasets, FULL H2H | R1.5 v1 ADVANCED — CI_low +0.124 < delta floor, suit deficit structural |
 | **R1.5.2 Diagnostics** | #583–612 | Ablation, declare/defend, interaction terms, review infra | All hypotheses eliminated, OLS×bimodal confirmed, review loop built |
 | **R1.5.3 Alternatives** | #613–632 | GBT bidder, two-stage OLS, review loop activation, retrospective | GBT +1.1 vs R0, H15 CONFIRMED (capacity >> labels), artifact-driven features |
+| **Arc D v2 Foundation** | #633–680 | V2 lineage plan, docs-only CI fix, review infra | Governing plan frozen, dorny/paths-filter CI, autonomous review loop |
+| **Arc D v2 QUICK Ladder** | #681–740 | R0-R3 QUICK rungs, dataset generation, orchestrator | R0-R3 all pass (9/9 R3), GBT promotions, chart_data extraction |
+| **Reporting Suite** | #741–764 | Report contracts, table expansion, dashboards, diagnostics | 9 CSV chart_data, 3×2 dashboards, bundle backfill, integrity fixes |
+| **Chart Suite + Ops** | #765–780 | 23-chart registry, agent ops, regeneration repair, Option B | Full chart registry, tmux manager, R0 anchor fix, subdir field refactor |
 
 **Current state:** Derive via:
 
@@ -1152,5 +1163,5 @@ summary and do not proceed to later phases unless explicitly asked.
 
 ---
 
-*Template version: 3.4 (Drift-Resilient, Discovery-Driven)*
-*Previous versions: 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
+*Template version: 3.6 (Drift-Resilient, Discovery-Driven)*
+*Previous versions: 3.5, 3.4, 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
