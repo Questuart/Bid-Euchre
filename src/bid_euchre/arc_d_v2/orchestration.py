@@ -1176,7 +1176,7 @@ def execute_step_4(state: RunState, seed: int, dry_run: bool = False) -> bool:
         return False
 
     # Phase 2: Run the actual H2H experiment
-    config_path = artifacts_dir / f"h2h_battery_{state.mode}_config.yaml"
+    config_path = artifacts_dir / f"h2h_battery_{mode_for_h2h.lower()}_config.yaml"
     if not config_path.exists():
         error = f"H2H config not found at {config_path}"
         logger.error("Step 4: %s", error)
