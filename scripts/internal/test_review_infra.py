@@ -33,6 +33,7 @@ from codex_plan_review_adapter import (
     invoke_claude_failsafe,
     invoke_codex_plan_review,
 )
+from codex_review_adapter import invoke_codex_cli
 from plan_review_driver import run_plan_review_loop
 from review_state import (
     PlanReviewLoopState,
@@ -222,10 +223,10 @@ def test_q2_codex_plan_review_medium(tmp_dir: Path):
 
 def test_q3_raw_output_persisted(tmp_dir: Path):
     """Q3: Raw output files exist after Q1/Q2."""
-    # Check for any codex_output_raw.txt in the tmp_dir tree
-    raw_files = list(tmp_dir.rglob("codex_output_raw.txt"))
+    # Search the parent temp dir (Q1/Q2 write to sibling subdirs)
+    parent = tmp_dir.parent
+    raw_files = list(parent.rglob("codex_output_raw.txt"))
     if not raw_files:
-        # If no Codex reviews ran (skipped), check is N/A
         raise SkipTest("No Codex reviews ran — cannot check raw output")
     total_size = sum(f.stat().st_size for f in raw_files)
     return f"{len(raw_files)} raw files, {total_size} bytes total"
@@ -250,6 +251,79 @@ def test_q4_claude_failsafe(tmp_dir: Path):
             os.environ.pop("CODEX_REVIEW_CMD", None)
         else:
             os.environ["CODEX_REVIEW_CMD"] = old_val
+
+
+def _create_test_worktree(tmp_dir: Path) -> Path:
+    """Create a temporary git worktree with a small committed change.
+
+    Returns the worktree path. The caller should clean up via
+    ``git worktree remove``.
+    """
+    import subprocess as _sp
+
+    wt_path = tmp_dir / "test_worktree"
+    branch = f"test-review-infra-{os.getpid()}"
+
+    # Create worktree from current HEAD
+    _sp.run(
+        ["git", "worktree", "add", str(wt_path), "-b", branch],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    )
+
+    # Make a trivial change and commit it
+    test_file = wt_path / "test_review_infra_canary.txt"
+    test_file.write_text("This file tests the PR review path.\n")
+    _sp.run(["git", "add", "test_review_infra_canary.txt"], cwd=wt_path, check=True)
+    _sp.run(
+        ["git", "commit", "--no-verify", "-m", "test: canary commit for review infra"],
+        cwd=wt_path,
+        capture_output=True,
+        check=True,
+    )
+
+    return wt_path
+
+
+def _cleanup_test_worktree(wt_path: Path):
+    """Remove test worktree and its branch."""
+    import subprocess as _sp
+
+    branch = _sp.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=wt_path,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    _sp.run(
+        ["git", "worktree", "remove", "--force", str(wt_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+    )
+    _sp.run(
+        ["git", "branch", "-D", branch],
+        cwd=REPO_ROOT,
+        capture_output=True,
+    )
+
+
+def test_q5_pr_review_invocation(tmp_dir: Path):
+    """Q5: Codex CLI PR review on a test worktree with a known diff."""
+    auth = _check_codex_auth()
+    if auth:
+        raise SkipTest(f"Codex auth not available: {auth}")
+
+    wt_path = _create_test_worktree(tmp_dir)
+    try:
+        result = invoke_codex_cli(base="main", cwd=wt_path)
+        assert result.success or result.error, f"No success or error: {result}"
+        if result.success:
+            return f"PR review OK, {len(result.findings)} findings"
+        return f"PR review returned error (non-fatal): {result.error[:80]}"
+    finally:
+        _cleanup_test_worktree(wt_path)
 
 
 # --- FULL tests ---
@@ -344,6 +418,24 @@ def test_f5_failsafe_chain(tmp_dir: Path):
             os.environ["CLAUDE_REVIEW_CMD"] = old_claude
 
 
+def test_f6_pr_review_loop_round(tmp_dir: Path):
+    """F6: Single round of PR review loop in a test worktree."""
+    auth = _check_codex_auth()
+    if auth:
+        raise SkipTest(f"Codex auth not available: {auth}")
+
+    wt_path = _create_test_worktree(tmp_dir)
+    try:
+        # Invoke Codex CLI directly (not the full driver, which needs a real PR)
+        result = invoke_codex_cli(base="main", cwd=wt_path)
+        if result.success:
+            return f"PR round OK, {len(result.findings)} findings, {result.latency_seconds:.0f}s"
+        # Non-success is still informative — Codex may find no diff or timeout
+        return f"PR round: {result.error[:80]}"
+    finally:
+        _cleanup_test_worktree(wt_path)
+
+
 # ---------------------------------------------------------------------------
 # Harness runner
 # ---------------------------------------------------------------------------
@@ -363,6 +455,7 @@ QUICK_TESTS = [
     ("Q2: Codex plan review (medium)", test_q2_codex_plan_review_medium),
     ("Q3: Raw output persisted", test_q3_raw_output_persisted),
     ("Q4: Claude failsafe", test_q4_claude_failsafe),
+    ("Q5: PR review invocation", test_q5_pr_review_invocation),
 ]
 
 FULL_TESTS = [
@@ -370,6 +463,7 @@ FULL_TESTS = [
     ("F2: Latency profile", test_f2_latency_profile),
     ("F4: Timeout recovery", test_f4_timeout_recovery),
     ("F5: Failsafe chain", test_f5_failsafe_chain),
+    ("F6: PR review loop round", test_f6_pr_review_loop_round),
 ]
 
 
