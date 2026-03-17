@@ -14,7 +14,17 @@ from pathlib import Path
 
 import pandas as pd
 
+from bid_euchre.arc_d_v2.chart_registry import get_chart_by_filename
+
 logger = logging.getLogger(__name__)
+
+# Column renames applied when rendering H2H tables in markdown.
+# The underlying CSV schema is unchanged — only the report-facing labels change.
+_H2H_COLUMN_RENAMES = {"model_a": "team0", "model_b": "team1"}
+
+# Tables with more than this many rows are truncated in the report.
+_TABLE_ROW_LIMIT = 12
+_TABLE_ROW_SHOW = 10
 
 
 def _read_csv_safe(path: Path) -> pd.DataFrame | None:
@@ -36,11 +46,32 @@ def _table_placeholder(table_name: str) -> str:
 
 def _chart_placeholder(chart_name: str) -> str:
     """Return a placeholder for a missing chart."""
+    entry = get_chart_by_filename(chart_name)
+    if entry is not None:
+        return (
+            f"### Chart {entry.number}. {entry.title}\n\n"
+            f"*Chart not available — source data absent.*\n"
+        )
     return f"> [chart_name={chart_name}] not yet generated\n"
 
 
-def _df_to_markdown(df: pd.DataFrame, float_format: str = "%.4f") -> str:
-    """Convert a DataFrame to a markdown table string."""
+def _df_to_markdown(
+    df: pd.DataFrame,
+    float_format: str = "%.4f",
+    *,
+    table_name: str = "",
+    column_renames: dict[str, str] | None = None,
+) -> str:
+    """Convert a DataFrame to a markdown table string.
+
+    Args:
+        df: The DataFrame to render.
+        float_format: Format string for float columns.
+        table_name: If non-empty and the table exceeds _TABLE_ROW_LIMIT rows,
+            the output is truncated with a note pointing to this CSV file.
+        column_renames: Optional column header renames for the rendered output.
+            Does NOT modify the underlying DataFrame or CSV.
+    """
     # Format float columns
     formatted = df.copy()
     for col in formatted.select_dtypes(include=["float64", "float32"]).columns:
@@ -48,24 +79,45 @@ def _df_to_markdown(df: pd.DataFrame, float_format: str = "%.4f") -> str:
             lambda x: float_format % x if pd.notna(x) else ""
         )
 
+    # Truncate long tables
+    truncated = False
+    if table_name and len(formatted) > _TABLE_ROW_LIMIT:
+        formatted = formatted.head(_TABLE_ROW_SHOW)
+        truncated = True
+
+    # Apply column renames for display
+    display_cols = list(formatted.columns)
+    if column_renames:
+        display_cols = [column_renames.get(c, c) for c in display_cols]
+
     # Build header
-    cols = list(formatted.columns)
-    header = "| " + " | ".join(cols) + " |"
-    separator = "| " + " | ".join(["---"] * len(cols)) + " |"
+    header = "| " + " | ".join(display_cols) + " |"
+    separator = "| " + " | ".join(["---"] * len(display_cols)) + " |"
 
     # Build rows
     rows = []
     for _, row in formatted.iterrows():
-        cells = [str(row[c]) if pd.notna(row[c]) else "" for c in cols]
+        cells = [str(row[c]) if pd.notna(row[c]) else "" for c in formatted.columns]
         rows.append("| " + " | ".join(cells) + " |")
 
-    return "\n".join([header, separator] + rows) + "\n"
+    parts = [header, separator] + rows
+    if truncated:
+        parts.append("")
+        parts.append(f"*Full table omitted from markdown — see `tables/{table_name}`*")
+
+    return "\n".join(parts) + "\n"
 
 
 def _chart_embed(charts_dir: Path, chart_name: str) -> str:
     """Return markdown image embed or placeholder for a chart."""
+    entry = get_chart_by_filename(chart_name)
     chart_path = charts_dir / chart_name
     if chart_path.exists():
+        if entry is not None:
+            return (
+                f"### Chart {entry.number}. {entry.title}\n\n"
+                f"![{entry.title}](charts/{chart_name})\n"
+            )
         return f"![{chart_name}](charts/{chart_name})\n"
     return _chart_placeholder(chart_name)
 
@@ -103,13 +155,8 @@ def generate_report(report_dir: Path) -> str:
                 "",
             ]
         )
-        for dash_file, dash_title in dashboards:
-            if (charts_dir / dash_file).exists():
-                lines.append(f"### {dash_title}\n")
-                lines.append(f"![{dash_title}](charts/{dash_file})\n")
-            else:
-                lines.append(f"### {dash_title}\n")
-                lines.append(_chart_placeholder(dash_file))
+        for dash_file, _dash_title in dashboards:
+            lines.append(_chart_embed(charts_dir, dash_file))
         lines.append("")
 
     # section 1 Data Sanity
@@ -121,7 +168,7 @@ def generate_report(report_dir: Path) -> str:
     )
     data_sanity = _read_csv_safe(tables_dir / "data_sanity.csv")
     if data_sanity is not None:
-        lines.append(_df_to_markdown(data_sanity))
+        lines.append(_df_to_markdown(data_sanity, table_name="data_sanity.csv"))
     else:
         lines.append(_table_placeholder("data_sanity.csv"))
     lines.append("")
@@ -135,7 +182,7 @@ def generate_report(report_dir: Path) -> str:
     )
     model_perf = _read_csv_safe(tables_dir / "model_performance.csv")
     if model_perf is not None:
-        lines.append(_df_to_markdown(model_perf))
+        lines.append(_df_to_markdown(model_perf, table_name="model_performance.csv"))
     else:
         lines.append(_table_placeholder("model_performance.csv"))
     lines.append("")
@@ -211,7 +258,7 @@ def generate_report(report_dir: Path) -> str:
     )
     comparator = _read_csv_safe(tables_dir / "comparator_rankings.csv")
     if comparator is not None:
-        lines.append(_df_to_markdown(comparator))
+        lines.append(_df_to_markdown(comparator, table_name="comparator_rankings.csv"))
     else:
         lines.append(_table_placeholder("comparator_rankings.csv"))
     lines.append("")
@@ -237,7 +284,13 @@ def generate_report(report_dir: Path) -> str:
         lines.append(
             "<details><summary>Full H2H Delta Matrix (click to expand)</summary>\n"
         )
-        lines.append(_df_to_markdown(h2h))
+        lines.append(
+            _df_to_markdown(
+                h2h,
+                table_name="h2h_delta_matrix.csv",
+                column_renames=_H2H_COLUMN_RENAMES,
+            )
+        )
         lines.append("\n</details>\n")
     else:
         lines.append(_table_placeholder("h2h_delta_matrix.csv"))
@@ -253,7 +306,7 @@ def generate_report(report_dir: Path) -> str:
     behavior = _read_csv_safe(tables_dir / "behavior_summary.csv")
     if behavior is not None:
         lines.append("### Pooled Behavior Summary\n")
-        lines.append(_df_to_markdown(behavior))
+        lines.append(_df_to_markdown(behavior, table_name="behavior_summary.csv"))
     else:
         lines.append(_table_placeholder("behavior_summary.csv"))
     lines.append("")
@@ -261,7 +314,9 @@ def generate_report(report_dir: Path) -> str:
     behavior_contract = _read_csv_safe(tables_dir / "behavior_by_contract.csv")
     if behavior_contract is not None:
         lines.append("### Behavior by Contract\n")
-        lines.append(_df_to_markdown(behavior_contract))
+        lines.append(
+            _df_to_markdown(behavior_contract, table_name="behavior_by_contract.csv")
+        )
     else:
         lines.append(_table_placeholder("behavior_by_contract.csv"))
     lines.append("")
@@ -279,7 +334,7 @@ def generate_report(report_dir: Path) -> str:
     )
     sanity = _read_csv_safe(tables_dir / "sanity_bounds_check.csv")
     if sanity is not None:
-        lines.append(_df_to_markdown(sanity))
+        lines.append(_df_to_markdown(sanity, table_name="sanity_bounds_check.csv"))
     else:
         lines.append(_table_placeholder("sanity_bounds_check.csv"))
     lines.append("")

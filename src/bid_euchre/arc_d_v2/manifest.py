@@ -14,6 +14,7 @@ import logging
 import subprocess
 from pathlib import Path
 
+from bid_euchre.arc_d_v2.chart_registry import CHART_REGISTRY, get_chart_by_filename
 from bid_euchre.arc_d_v2.lifecycle import list_runs
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,55 @@ def _get_lifecycle_status(rung_dir: Path) -> list[dict]:
             if art_status.quarantine_reason:
                 entry["quarantine_reason"] = art_status.quarantine_reason
         entries.append(entry)
+    return entries
+
+
+def _inventory_chart_dir(charts_dir: Path) -> list[dict]:
+    """Build chart inventory covering all 22 registry entries.
+
+    For each chart in CHART_REGISTRY, records presence/absence and size.
+    Charts present on disk but not in the registry are appended at the end.
+    """
+    # Build a set of filenames on disk
+    on_disk: dict[str, int] = {}
+    if charts_dir.exists():
+        for p in sorted(charts_dir.glob("*.png")):
+            on_disk[p.name] = p.stat().st_size
+
+    entries: list[dict] = []
+    seen_filenames: set[str] = set()
+
+    for chart in CHART_REGISTRY:
+        entry: dict = {
+            "number": chart.number,
+            "name": chart.filename,
+            "title": chart.title,
+            "required": chart.required,
+        }
+        if chart.filename in on_disk:
+            entry["present"] = True
+            entry["size_bytes"] = on_disk[chart.filename]
+            entry["path"] = str(charts_dir / chart.filename)
+        else:
+            entry["present"] = False
+            entry["size_bytes"] = 0
+        entries.append(entry)
+        seen_filenames.add(chart.filename)
+
+    # Include any extra PNGs not in the registry
+    for name, size in sorted(on_disk.items()):
+        if name not in seen_filenames:
+            entry_extra = get_chart_by_filename(name)
+            entries.append(
+                {
+                    "name": name,
+                    "title": entry_extra.title if entry_extra else name,
+                    "present": True,
+                    "size_bytes": size,
+                    "path": str(charts_dir / name),
+                }
+            )
+
     return entries
 
 
@@ -140,9 +190,9 @@ def generate_evidence_manifest(
     tables_dir = report_dir / "tables"
     table_inventory = _inventory_dir(tables_dir, ".csv")
 
-    # Inventory charts
+    # Inventory charts — annotate with registry number/title/status
     charts_dir = report_dir / "charts"
-    chart_inventory = _inventory_dir(charts_dir, ".png")
+    chart_inventory = _inventory_chart_dir(charts_dir)
 
     # Inventory chart data
     chart_data_dir = report_dir / "chart_data"
@@ -309,20 +359,27 @@ def render_manifest_markdown(manifest: dict) -> str:
             lines.append(f"| `{t.get('name', '')}` | {size:,} bytes |")
         lines.append("")
 
-    # Charts
+    # Charts — registry-aware inventory
     charts = manifest.get("charts", [])
     if charts:
         lines.extend(
             [
                 "## Charts",
                 "",
-                "| Name | Size |",
-                "|------|------|",
+                "| # | Title | File | Size | Status |",
+                "|---|-------|------|------|--------|",
             ]
         )
         for c in charts:
+            num = c.get("number", "")
+            title = c.get("title", "")
+            name = c.get("name", "")
             size = c.get("size_bytes", 0)
-            lines.append(f"| `{c.get('name', '')}` | {size:,} bytes |")
+            present = c.get("present", True)
+            status = "present" if present else "absent"
+            num_str = str(num) if num else "-"
+            size_str = f"{size:,} bytes" if present else "-"
+            lines.append(f"| {num_str} | {title} | `{name}` | {size_str} | {status} |")
         lines.append("")
 
     # Chart Data
