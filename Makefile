@@ -1,4 +1,4 @@
-.PHONY: help sync ensure-venv repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
+.PHONY: help sync ensure-venv repo-lint lint test check check-quiet notebook-sync notebook-check notebook-run notebook-run-full notebook-run-arc-d review-smoke review-quick review-full promotion-gate bid-train-teachers bid-eval-tiny bid-loop bidless-diagnostics docs-check
 .DEFAULT_GOAL := help
 
 PYTHON ?= uv run python
@@ -28,6 +28,9 @@ help:
 	@echo "  make notebook-run       - execute notebooks (SMOKE mode, ~10s)"
 	@echo "  make notebook-run-full  - execute notebooks (QUICK mode, ~2-5min)"
 	@echo "  make notebook-run-arc-d - execute Arc D notebooks (SMOKE mode)"
+	@echo "  make review-smoke       - SMOKE test review infrastructure (~30s)"
+	@echo "  make review-quick       - QUICK test review infrastructure (~5min, needs Codex auth)"
+	@echo "  make review-full        - FULL test review infrastructure (~15min, needs Codex auth)"
 	@echo "  make docs-check         - docs freshness gate (path refs + script list)"
 	@echo "  make promotion-gate     - promotion CI gate (requires ARTIFACT_DIR + ROLLUP_JSON)"
 	@echo ""
@@ -100,6 +103,18 @@ ifdef NOTEBOOK
 else
 	PYTHONPATH=src $(PYTHON) scripts/run_notebooks.py --mode smoke --pattern "notebooks/arc_d/**/*.ipynb"
 endif
+
+review-smoke: ## SMOKE test review infrastructure (~30s)
+	@echo ">>> Review infrastructure SMOKE test"
+	PYTHONPATH=scripts/internal $(PYTHON) scripts/internal/test_review_infra.py --mode smoke
+
+review-quick: ## QUICK test review infrastructure (~5min, needs Codex auth)
+	@echo ">>> Review infrastructure QUICK test"
+	PYTHONPATH=scripts/internal $(PYTHON) scripts/internal/test_review_infra.py --mode quick
+
+review-full: ## FULL test review infrastructure (~15min, needs Codex auth)
+	@echo ">>> Review infrastructure FULL test"
+	PYTHONPATH=scripts/internal $(PYTHON) scripts/internal/test_review_infra.py --mode full
 
 docs-check:
 	@echo ">>> Docs freshness check"
