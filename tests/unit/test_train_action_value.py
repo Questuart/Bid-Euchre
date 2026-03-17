@@ -150,7 +150,7 @@ class TestLoadDataset:
         """An empty directory should raise ValueError."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
-        with pytest.raises(ValueError, match="No part_"):
+        with pytest.raises(ValueError, match="No parquet files found"):
             load_dataset(str(empty_dir))
 
 
