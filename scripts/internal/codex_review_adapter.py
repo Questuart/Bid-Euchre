@@ -20,8 +20,10 @@ from pathlib import Path
 
 logger = logging.getLogger("codex_review_adapter")
 
-# Default timeout for Codex CLI invocation (5 minutes)
-DEFAULT_TIMEOUT_SECONDS = 300
+# Default timeout for Codex CLI invocation (10 minutes).
+# Override via CODEX_REVIEW_TIMEOUT env var. Increased from 300s after
+# observing 5/9 plan reviews and multiple PR reviews timing out at 300s.
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("CODEX_REVIEW_TIMEOUT", "600"))
 
 # Max retries before giving up
 MAX_RETRIES = 3
