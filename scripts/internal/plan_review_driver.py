@@ -181,6 +181,7 @@ def _write_sidecar(
     all_findings: list[tuple[int, list]],
     reviewer: str,
     base_dir: Path | None = None,
+    raw_output: str = "",
 ) -> Path:
     """Write the review sidecar to .claude/runtime/plan_reviews/<key>/review.md.
 
@@ -190,6 +191,7 @@ def _write_sidecar(
         all_findings: List of (iteration, findings) tuples.
         reviewer: Reviewer identifier.
         base_dir: Override for state persistence directory.
+        raw_output: Raw output from the last reviewer invocation, for debuggability.
 
     Returns:
         Path to the written sidecar file.
@@ -249,6 +251,10 @@ def _write_sidecar(
         f"## Final State\n\n"
         f"State: `{loop_state.state}`\n"
     )
+
+    # Include raw output for debuggability (especially for unparseable failures)
+    if raw_output:
+        content += f"\n## Raw Output\n\n" f"```\n{raw_output}\n```\n"
 
     sidecar_path.write_text(content, encoding="utf-8")
     logger.info("Wrote sidecar review to %s", sidecar_path)
@@ -315,6 +321,11 @@ def run_plan_review_loop(
     reviewer = "codex_cli"
     fallback_used = False
     fallback_issue_url: str | None = None
+    last_raw_output: str = ""
+
+    # Compute the output directory for raw output persistence.
+    # Previously this was base_dir (often None), causing _save_raw_output to no-op.
+    output_dir = plan_review_state_dir(key, base_dir)
 
     # Step 3: Loop
     while not loop_state.is_terminal and loop_state.iteration_count < max_iter:
@@ -326,7 +337,8 @@ def run_plan_review_loop(
         loop_state.transition(PlanReviewState.CODEX_REVIEWING)
         save_plan_review_state(loop_state, base_dir)
 
-        result = invoke_codex_plan_review(plan_path, tier, output_dir=base_dir)
+        result = invoke_codex_plan_review(plan_path, tier, output_dir=output_dir)
+        last_raw_output = result.raw_output
 
         if not result.success:
             # 3b: Codex failed -> fallback
@@ -345,10 +357,11 @@ def run_plan_review_loop(
             save_plan_review_state(loop_state, base_dir)
 
             fallback_result = invoke_claude_failsafe(
-                plan_path, tier, output_dir=base_dir
+                plan_path, tier, output_dir=output_dir
             )
             fallback_used = True
             reviewer = "claude_failsafe"
+            last_raw_output = fallback_result.raw_output
 
             # Create fallback issue
             fallback_issue_url = _create_fallback_issue(
@@ -431,9 +444,14 @@ def run_plan_review_loop(
         loop_state.stop_reason = f"Max iterations ({max_iter}) reached"
         save_plan_review_state(loop_state, base_dir)
 
-    # Step 4: Write sidecar
+    # Step 4: Write sidecar (include raw output for debuggability)
     sidecar_path = _write_sidecar(
-        plan_path, loop_state, all_findings, reviewer, base_dir
+        plan_path,
+        loop_state,
+        all_findings,
+        reviewer,
+        base_dir,
+        raw_output=last_raw_output,
     )
 
     # Step 5: Save final state

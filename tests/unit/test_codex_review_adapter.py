@@ -472,6 +472,111 @@ class TestCleanReviewDetection:
         assert _CLEAN_REVIEW_PATTERNS.search(PROSE_NO_FILES_OUTPUT) is not None
 
 
+class TestExpandedCleanPatterns:
+    """Test expanded clean-review patterns added for issue #799.
+
+    Codex CLI produces varied phrasings for clean reviews. These tests
+    cover patterns that were previously treated as "unparseable".
+    """
+
+    def test_no_significant_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No significant issues.") is not None
+
+    def test_no_major_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No major issues found.") is not None
+
+    def test_no_critical_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No critical issues.") is not None
+
+    def test_no_blocking_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No blocking issues.") is not None
+
+    def test_no_blockers(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No blockers.") is not None
+
+    def test_no_violations(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No violations found.") is not None
+
+    def test_everything_looks_good(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Everything looks good.") is not None
+
+    def test_everything_checks_out(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Everything checks out.") is not None
+
+    def test_i_found_no_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("I found no issues.") is not None
+
+    def test_found_no_issues_without_i(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Found no issues.") is not None
+
+    def test_i_dont_see_any_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("I don't see any issues.") is not None
+
+    def test_do_not_see_issues(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("I do not see issues.") is not None
+
+    def test_good_to_go(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Good to go.") is not None
+
+    def test_ready_to_merge(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Ready to merge.") is not None
+
+    def test_no_action_needed(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No action needed.") is not None
+
+    def test_no_changes_required(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No changes required.") is not None
+
+    def test_passes_all_checks(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Passes all checks.") is not None
+
+    def test_code_is_correct(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("The code is correct.") is not None
+
+    def test_plan_is_sound(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("The plan is sound.") is not None
+
+    def test_changes_are_correct(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Changes are correct.") is not None
+
+    def test_implementation_is_solid(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Implementation is solid.") is not None
+
+    def test_looks_correct(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Looks correct.") is not None
+
+    def test_nothing_stands_out(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Nothing stands out.") is not None
+
+    def test_nothing_to_add(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Nothing to add.") is not None
+
+    def test_no_problems_detected(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No problems detected.") is not None
+
+    def test_no_errors_detected(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No errors detected.") is not None
+
+    def test_satisfactory(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("satisfactory") is not None
+
+    def test_no_items_to_flag(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No items to flag.") is not None
+
+    def test_embedded_in_longer_output(self):
+        """Clean signal embedded in a longer Codex response."""
+        output = (
+            "I've reviewed the plan file against the repo conventions.\n\n"
+            "No significant issues found.\n\n"
+            "The plan follows the standard template and references valid paths."
+        )
+        assert _CLEAN_REVIEW_PATTERNS.search(output) is not None
+
+    def test_unparseable_still_rejected(self):
+        """Expanded patterns must NOT match genuinely unparseable output."""
+        assert _CLEAN_REVIEW_PATTERNS.search(UNPARSEABLE_OUTPUT) is None
+
+
 # --- Tests for command construction (the bug that prompted this PR) ---
 
 
