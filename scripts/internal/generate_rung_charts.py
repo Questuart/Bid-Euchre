@@ -717,9 +717,17 @@ def generate_seat_balance(
         return False
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    if "seat" in df.columns and "value" in df.columns:
+    # Support both legacy schema (seat, value) and current schema
+    # (seat, contract, mean_tricks, n_hands)
+    value_col = None
+    if "value" in df.columns:
+        value_col = "value"
+    elif "mean_tricks" in df.columns:
+        value_col = "mean_tricks"
+
+    if "seat" in df.columns and value_col is not None:
         seats = sorted(df["seat"].unique())
-        data = [df[df["seat"] == s]["value"].values for s in seats]
+        data = [df[df["seat"] == s][value_col].values for s in seats]
         ax.boxplot(data, labels=[f"Seat {s}" for s in seats])
     else:
         ax.text(

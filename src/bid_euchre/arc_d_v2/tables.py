@@ -1008,13 +1008,16 @@ def generate_chart_data(
             df.to_csv(output_dir / "contract_mix.csv", index=False)
             generated.append("contract_mix.csv")
 
-    # 3. outcome_distributions.csv — H2H battery by_contract statistics
+    # 3. h2h_by_contract.csv — H2H battery by_contract statistics
+    #    NOTE: This is per-matchup summary data (one row per model×opponent×contract),
+    #    NOT per-deal observations. Renamed from outcome_distributions.csv to avoid
+    #    implying distributional granularity.
     if h2h_battery:
-        rows = _extract_outcome_distributions(h2h_battery)
+        rows = _extract_h2h_by_contract(h2h_battery)
         if rows:
             df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "outcome_distributions.csv", index=False)
-            generated.append("outcome_distributions.csv")
+            df.to_csv(output_dir / "h2h_by_contract.csv", index=False)
+            generated.append("h2h_by_contract.csv")
 
     # 4. bid_levels.csv — aggregate bidding metrics per model from comparator CIs
     if comparator_cis:
@@ -1039,14 +1042,15 @@ def generate_chart_data(
     return generated
 
 
-def _extract_outcome_distributions(h2h_battery: dict) -> list[dict]:
+def _extract_h2h_by_contract(h2h_battery: dict) -> list[dict]:
     """Flatten H2H battery by_contract statistics into chart_data rows.
 
-    Extracts cross-matchup (not self-play) per-contract data into rows
-    suitable for outcome distribution charts.
+    Extracts per-matchup per-contract summary data into rows for
+    H2H analysis charts. This is summary data (one row per
+    model×opponent×contract), NOT per-deal observations.
 
     Returns list of dicts with keys:
-        model, contract, net_eppd_delta, deals_total, win_rate
+        model, opponent, contract, net_eppd_delta, deals_total, win_rate
     """
     rows: list[dict] = []
     for _mid, cell in h2h_battery.get("cells", {}).items():
@@ -1320,47 +1324,73 @@ def generate_model_eval_csvs(
     calibration_rows: list[dict] = []
 
     for model_name, artifact in training_artifacts.items():
-        if artifact.get("schema_version") != "action_value_gbt_v1":
+        schema = artifact.get("schema_version", "")
+        supported_schemas = (
+            "action_value_gbt_v1",
+            "action_value_olsa_v1",
+            "two_stage_action_value_v1",
+        )
+        if schema not in supported_schemas:
             continue
 
         models_meta = artifact.get("models", {})
 
         for contract, meta in models_meta.items():
-            model_file = meta.get("model_file")
-            if not model_file:
-                continue
-
             feature_names = meta.get("feature_names", [])
             if not feature_names:
                 continue
 
-            # Try to find model file relative to eval parquet
-            if eval_parquet_path is not None:
-                candidate_dirs = [
-                    eval_parquet_path.parent.parent / "artifacts",
-                    eval_parquet_path.parent,
-                ]
-                model_path = None
-                for cdir in candidate_dirs:
-                    p = cdir / model_file
-                    if p.exists():
-                        model_path = p
-                        break
-                if model_path is None:
-                    logger.info(
-                        "Model file %s not found for %s/%s; skipping",
-                        model_file,
-                        model_name,
-                        contract,
-                    )
-                    continue
-            else:
-                continue
+            # Load model or coefficients depending on schema
+            predict_fn = None
 
-            try:
-                model = joblib.load(model_path)
-            except Exception as e:
-                logger.warning("Failed to load model %s: %s", model_path, e)
+            if schema == "action_value_gbt_v1":
+                # GBT: load joblib model file
+                model_file = meta.get("model_file")
+                if not model_file:
+                    continue
+                if eval_parquet_path is not None:
+                    candidate_dirs = [
+                        eval_parquet_path.parent.parent / "artifacts",
+                        eval_parquet_path.parent,
+                    ]
+                    model_path = None
+                    for cdir in candidate_dirs:
+                        p = cdir / model_file
+                        if p.exists():
+                            model_path = p
+                            break
+                    if model_path is None:
+                        logger.info(
+                            "Model file %s not found for %s/%s; skipping",
+                            model_file,
+                            model_name,
+                            contract,
+                        )
+                        continue
+                else:
+                    continue
+                try:
+                    model = joblib.load(model_path)
+                    predict_fn = model.predict
+                except Exception as e:
+                    logger.warning("Failed to load model %s: %s", model_path, e)
+                    continue
+
+            elif schema in ("action_value_olsa_v1", "two_stage_action_value_v1"):
+                # OLS/two-stage: use coefficients from JSON directly
+                coefficients = meta.get("coefficients")
+                intercept = meta.get("intercept")
+                if coefficients is None or intercept is None:
+                    continue
+                coefs = np.array(coefficients, dtype=float)
+                intercept_val = float(intercept)
+
+                def _make_linear_predict(c, i):
+                    return lambda X: X @ c + i
+
+                predict_fn = _make_linear_predict(coefs, intercept_val)
+
+            if predict_fn is None:
                 continue
 
             # Filter eval data to this contract
@@ -1393,7 +1423,7 @@ def generate_model_eval_csvs(
             actuals = family_df[actual_col].values.astype(float)
 
             try:
-                preds = model.predict(X)
+                preds = predict_fn(X)
             except Exception as e:
                 logger.warning(
                     "Prediction failed for %s/%s: %s",
