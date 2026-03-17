@@ -149,6 +149,27 @@ complements the pre-merge review loop:
 Post-merge review is advisory — it does not block future merges. But
 CRITICAL findings trigger immediate fix PRs.
 
+## System Ownership
+
+Three review systems now coexist. Each owns a distinct scope — they do not
+overlap or replace each other.
+
+| System | Trigger | Scope | Where |
+|--------|---------|-------|-------|
+| **Local review loop** | `gh pr create` (PostToolUse hook) | Convention prechecks, Codex CLI review, auto-fix | `scripts/internal/review_driver.py` |
+| **Claude GitHub Action (assistant)** | `@claude` mention on issue/PR/comment | Ad-hoc tasks, questions, investigation | `.github/workflows/claude.yml` |
+| **Claude GitHub Action (review)** | PR opened/updated (code paths only) | Automated code review via plugin | `.github/workflows/claude-code-review.yml` |
+| **Post-merge review** | `gh pr merge` (PostToolUse hook) | Correctness, contracts, architecture | Background Explore agent |
+
+**Boundary rules:**
+- The local review loop and Claude GitHub Action review may both comment on the
+  same PR. Their scopes differ: local loop runs prechecks + Codex; GitHub Action
+  runs the code-review plugin.
+- Neither GitHub Action workflow modifies `review_driver.py`, status contexts,
+  or branch protection rules.
+- The `allowed_tools` list in `claude.yml` is intentionally read-only +
+  CI/PR management. It does not include `Edit`, `Write`, or `git push`.
+
 ## Known Issue: Docs-Only PRs and CI
 
 **Resolved (PR #635):** The CI workflow now uses `dorny/paths-filter` instead of
