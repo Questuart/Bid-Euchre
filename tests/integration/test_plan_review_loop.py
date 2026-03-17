@@ -399,3 +399,149 @@ class TestStateKeyCollision:
         p1.write_text("# Amendments A")
         p2.write_text("# Amendments B")
         assert plan_state_key(p1) != plan_state_key(p2)
+
+
+# --- Failure Scenario Tests ---
+
+from unittest.mock import patch
+
+
+class TestBothReviewersFail:
+    """Test behavior when both Codex and Claude failsafe fail."""
+
+    @patch("plan_review_driver._create_fallback_issue", return_value=None)
+    @patch(
+        "plan_review_driver.invoke_claude_failsafe",
+        return_value=PlanReviewResult(
+            success=False,
+            findings=[],
+            tier="small",
+            reviewer="claude_failsafe",
+            raw_output="",
+            latency_seconds=1.0,
+            error="No command available",
+        ),
+    )
+    @patch(
+        "plan_review_driver.invoke_codex_plan_review",
+        return_value=PlanReviewResult(
+            success=False,
+            findings=[],
+            tier="small",
+            reviewer="codex_cli",
+            raw_output="",
+            latency_seconds=300.0,
+            error="Timeout after 600s",
+        ),
+    )
+    def test_synthetic_critical_injected(
+        self, mock_codex, mock_claude, mock_issue, tmp_path: Path
+    ) -> None:
+        """When both fail, a synthetic CRITICAL finding is injected."""
+        plan = tmp_path / "test.md"
+        plan.write_text("<!-- review-tier: small -->\n# Plan\n")
+        result = run_plan_review_loop(plan, base_dir=tmp_path)
+        assert result.verdict == "NOT_READY"
+        assert result.total_findings == 1
+        finding = result.findings[0]
+        sev = finding.severity if hasattr(finding, "severity") else finding["severity"]
+        desc = (
+            finding.description
+            if hasattr(finding, "description")
+            else finding["description"]
+        )
+        assert sev == "CRITICAL"
+        assert "both Codex CLI and Claude fallback failed" in desc
+
+    @patch("plan_review_driver._create_fallback_issue", return_value=None)
+    @patch(
+        "plan_review_driver.invoke_claude_failsafe",
+        return_value=PlanReviewResult(
+            success=False,
+            findings=[],
+            tier="small",
+            reviewer="claude_failsafe",
+            raw_output="",
+            latency_seconds=1.0,
+            error="Timed out",
+        ),
+    )
+    @patch(
+        "plan_review_driver.invoke_codex_plan_review",
+        return_value=PlanReviewResult(
+            success=False,
+            findings=[],
+            tier="small",
+            reviewer="codex_cli",
+            raw_output="",
+            latency_seconds=600.0,
+            error="Timeout after 600s",
+        ),
+    )
+    def test_state_records_stop_reason(
+        self, mock_codex, mock_claude, mock_issue, tmp_path: Path
+    ) -> None:
+        """State file records correct stop reason when both fail."""
+        plan = tmp_path / "test.md"
+        plan.write_text("<!-- review-tier: small -->\n# Plan\n")
+        run_plan_review_loop(plan, base_dir=tmp_path)
+        state = load_plan_review_state(plan_state_key(plan), tmp_path)
+        assert state is not None
+        assert (
+            "both unavailable" in state.stop_reason.lower()
+            or "fallback" in state.stop_reason.lower()
+        )
+
+
+class TestUnparseableOutput:
+    """Test behavior when Codex returns unparseable output."""
+
+    @patch("plan_review_driver._create_fallback_issue", return_value=None)
+    @patch(
+        "plan_review_driver.invoke_claude_failsafe",
+        return_value=PlanReviewResult(
+            success=True,
+            findings=[
+                PlanReviewFinding(
+                    severity="INFO",
+                    category="convention",
+                    file="test.md",
+                    line=1,
+                    description="Fallback found an issue",
+                    check_id=None,
+                ),
+            ],
+            tier="small",
+            reviewer="claude_failsafe",
+            raw_output="[{}]",
+            latency_seconds=5.0,
+        ),
+    )
+    @patch(
+        "plan_review_driver.invoke_codex_plan_review",
+        return_value=PlanReviewResult(
+            success=False,
+            findings=[],
+            tier="small",
+            reviewer="codex_cli",
+            raw_output="gibberish output",
+            latency_seconds=100.0,
+            error="Unparseable output: no findings matched",
+        ),
+    )
+    def test_fallback_findings_used(
+        self, mock_codex, mock_claude, mock_issue, tmp_path: Path
+    ) -> None:
+        """When Codex fails with unparseable output, Claude failsafe findings are used."""
+        plan = tmp_path / "test.md"
+        plan.write_text("<!-- review-tier: small -->\n# Plan\n")
+        result = run_plan_review_loop(plan, base_dir=tmp_path)
+        assert result.fallback_used is True
+        assert result.total_findings == 1
+        finding = result.findings[0]
+        desc = (
+            finding.description
+            if hasattr(finding, "description")
+            else finding["description"]
+        )
+        assert desc == "Fallback found an issue"

@@ -679,3 +679,51 @@ class TestEnvVarLauncher:
                 "--base",
                 "main",
             ]
+
+
+# --- Timeout and Error Path Tests ---
+
+
+class TestCodexCLITimeout:
+    """Test timeout handling in invoke_codex_cli."""
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty", return_value=(None, "partial output")
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_timeout_returns_failure(self, mock_resolve, mock_pty):
+        """Timeout (returncode=None) produces success=False."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is False
+        assert "Timeout" in result.error
+
+    @patch("codex_plan_review_adapter._run_with_pty", return_value=(None, ""))
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_timeout_with_empty_output(self, mock_resolve, mock_pty):
+        """Timeout with no output still returns error."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is False
+        assert "Timeout" in result.error
+        assert result.raw_output == ""
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(2, "error: bad argument"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_nonzero_exit_returns_failure(self, mock_resolve, mock_pty):
+        """Non-zero exit code produces success=False."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is False
+        assert "Exit code 2" in result.error
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(0, "gibberish that matches nothing"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_unparseable_output_returns_failure(self, mock_resolve, mock_pty):
+        """Output matching no patterns produces error."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is False
+        assert "Unparseable" in result.error
