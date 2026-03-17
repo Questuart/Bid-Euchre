@@ -19,9 +19,9 @@ jobs:
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
@@ -43,8 +43,17 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr:*)'
-
+          # Allowed tools — scoped to read-only inspection + CI/PR management
+          allowed_tools: |
+            Bash(make check)
+            Bash(make check-quiet)
+            Bash(make lint)
+            Bash(make test)
+            Bash(uv run python -m pytest *)
+            Bash(uv run ruff check *)
+            Bash(uv run ruff format --check *)
+            Bash(gh pr *)
+            Bash(gh issue *)
+            Bash(git diff *)
+            Bash(git log *)
+            Bash(git show *)
