@@ -2051,4 +2051,28 @@ def generate_all_tables(
     for csv_name in chart_data_csvs:
         generated.append(f"chart_data/{csv_name}")
 
+    # 15. seat_balance.csv from parquet data (graceful skip if absent)
+    for s in seed_list:
+        parquet_candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
+        if parquet_candidate.exists():
+            sb_result = generate_seat_balance_csv(parquet_candidate, chart_data_dir)
+            if sb_result and f"chart_data/{sb_result}" not in generated:
+                generated.append(f"chart_data/{sb_result}")
+            break  # Use first available seed's parquet
+
+    # 16. model eval CSVs (predictions, residuals, calibration) from parquet + models
+    if training_artifacts:
+        eval_parquet: Path | None = None
+        for s in seed_list:
+            candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
+            if candidate.exists():
+                eval_parquet = candidate
+                break
+        if eval_parquet is not None:
+            eval_csvs = generate_model_eval_csvs(
+                training_artifacts, eval_parquet, chart_data_dir
+            )
+            for csv_name in eval_csvs:
+                generated.append(f"chart_data/{csv_name}")
+
     return generated

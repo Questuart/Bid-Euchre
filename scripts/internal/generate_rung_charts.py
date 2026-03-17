@@ -480,6 +480,232 @@ def generate_outcome_summary(
     return True
 
 
+def generate_predictions_scatter(
+    chart_data_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Scatter plot of predicted vs actual values, faceted by contract.
+
+    Reads chart_data/predictions.csv (columns: model, contract, prediction, actual).
+    Produces charts/pred_vs_actual.png with 45-degree reference line.
+    """
+    df = _read_csv_safe(chart_data_dir / "predictions.csv")
+    if df is None:
+        return False
+
+    required = {"model", "contract", "prediction", "actual"}
+    if not required.issubset(df.columns):
+        logger.warning(
+            "predictions.csv missing required columns: %s", required - set(df.columns)
+        )
+        return False
+
+    contracts = sorted(df["contract"].unique())
+    n_contracts = max(len(contracts), 1)
+    fig, axes = plt.subplots(
+        1, n_contracts, figsize=(5 * n_contracts, 5), squeeze=False
+    )
+
+    for idx, contract in enumerate(contracts):
+        ax = axes[0, idx]
+        cdf = df[df["contract"] == contract]
+        models = sorted(cdf["model"].unique())
+        model_colors = _get_model_colors(models)
+
+        for model in models:
+            mdf = cdf[cdf["model"] == model]
+            ax.scatter(
+                mdf["actual"],
+                mdf["prediction"],
+                alpha=0.3,
+                s=8,
+                label=model,
+                color=model_colors[model],
+            )
+
+        # 45-degree reference line
+        all_vals = pd.concat([cdf["actual"], cdf["prediction"]])
+        vmin, vmax = all_vals.min(), all_vals.max()
+        ax.plot([vmin, vmax], [vmin, vmax], "k--", linewidth=0.8, alpha=0.5)
+        ax.set_xlabel("Actual", fontsize=9)
+        ax.set_ylabel("Predicted", fontsize=9)
+        ax.set_title(f"{contract.title()}", fontsize=11)
+        ax.legend(fontsize=7, loc="best")
+        ax.set_aspect("equal", adjustable="box")
+
+    fig.suptitle("Predicted vs Actual", fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save_chart(fig, output_dir, "pred_vs_actual.png", dpi)
+    return True
+
+
+def generate_residuals_chart(
+    chart_data_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Histogram of residuals by contract type.
+
+    Reads chart_data/residuals.csv (columns: model, contract, residual_bin, count).
+    Produces charts/residual_distribution.png.
+    """
+    df = _read_csv_safe(chart_data_dir / "residuals.csv")
+    if df is None:
+        return False
+
+    required = {"model", "contract", "residual_bin", "count"}
+    if not required.issubset(df.columns):
+        logger.warning(
+            "residuals.csv missing required columns: %s", required - set(df.columns)
+        )
+        return False
+
+    contracts = sorted(df["contract"].unique())
+    n_contracts = max(len(contracts), 1)
+    fig, axes = plt.subplots(
+        1, n_contracts, figsize=(5 * n_contracts, 4), squeeze=False
+    )
+
+    for idx, contract in enumerate(contracts):
+        ax = axes[0, idx]
+        cdf = df[df["contract"] == contract]
+        models = sorted(cdf["model"].unique())
+        model_colors = _get_model_colors(models)
+
+        for model in models:
+            mdf = cdf[cdf["model"] == model].sort_values("residual_bin")
+            ax.bar(
+                mdf["residual_bin"],
+                mdf["count"],
+                width=(mdf["residual_bin"].diff().median() or 0.1) * 0.8,
+                alpha=0.6,
+                label=model,
+                color=model_colors[model],
+            )
+
+        ax.set_xlabel("Residual (Pred - Actual)", fontsize=9)
+        ax.set_ylabel("Count", fontsize=9)
+        ax.set_title(f"{contract.title()}", fontsize=11)
+        ax.axvline(x=0, color="gray", linestyle="--", linewidth=0.5)
+        ax.legend(fontsize=7, loc="best")
+
+    fig.suptitle("Residual Distribution", fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save_chart(fig, output_dir, "residual_distribution.png", dpi)
+    return True
+
+
+def generate_calibration_curve(
+    chart_data_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Calibration curve (predicted vs actual mean) with 45-degree reference line.
+
+    Reads chart_data/calibration_bins.csv
+    (columns: model, contract, pred_bin, mean_pred, actual_mean, n_samples).
+    Produces charts/calibration_curve.png.
+    """
+    df = _read_csv_safe(chart_data_dir / "calibration_bins.csv")
+    if df is None:
+        return False
+
+    required = {"model", "contract", "mean_pred", "actual_mean"}
+    if not required.issubset(df.columns):
+        logger.warning(
+            "calibration_bins.csv missing required columns: %s",
+            required - set(df.columns),
+        )
+        return False
+
+    contracts = sorted(df["contract"].unique())
+    n_contracts = max(len(contracts), 1)
+    fig, axes = plt.subplots(
+        1, n_contracts, figsize=(5 * n_contracts, 5), squeeze=False
+    )
+
+    for idx, contract in enumerate(contracts):
+        ax = axes[0, idx]
+        cdf = df[df["contract"] == contract]
+        models = sorted(cdf["model"].unique())
+        model_colors = _get_model_colors(models)
+
+        for model in models:
+            mdf = cdf[cdf["model"] == model].sort_values("mean_pred")
+            ax.plot(
+                mdf["mean_pred"],
+                mdf["actual_mean"],
+                marker="o",
+                markersize=4,
+                label=model,
+                color=model_colors[model],
+            )
+
+        # 45-degree reference line
+        all_vals = pd.concat([cdf["mean_pred"], cdf["actual_mean"]])
+        vmin, vmax = all_vals.min(), all_vals.max()
+        ax.plot([vmin, vmax], [vmin, vmax], "k--", linewidth=0.8, alpha=0.5)
+        ax.set_xlabel("Mean Predicted", fontsize=9)
+        ax.set_ylabel("Mean Actual", fontsize=9)
+        ax.set_title(f"{contract.title()}", fontsize=11)
+        ax.legend(fontsize=7, loc="best")
+
+    fig.suptitle("Calibration Curve", fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save_chart(fig, output_dir, "calibration_curve.png", dpi)
+    return True
+
+
+def generate_feature_importance_chart(
+    chart_data_dir: Path,
+    output_dir: Path,
+    dpi: int = 150,
+) -> bool:
+    """Horizontal bar chart of top 15 features by importance.
+
+    Reads chart_data/selection_paths.csv
+    (columns: model, contract, rank, feature_name, importance).
+    Produces charts/feature_importance.png.
+    """
+    df = _read_csv_safe(chart_data_dir / "selection_paths.csv")
+    if df is None:
+        return False
+
+    required = {"model", "contract", "rank", "feature_name", "importance"}
+    if not required.issubset(df.columns):
+        logger.warning(
+            "selection_paths.csv missing required columns: %s",
+            required - set(df.columns),
+        )
+        return False
+
+    # Aggregate across contracts: mean importance per feature per model
+    models = sorted(df["model"].unique())
+    n_models = max(len(models), 1)
+    fig, axes = plt.subplots(1, n_models, figsize=(6 * n_models, 6), squeeze=False)
+
+    for idx, model in enumerate(models):
+        ax = axes[0, idx]
+        mdf = df[df["model"] == model]
+
+        # Aggregate: mean importance per feature across contracts
+        agg = (
+            mdf.groupby("feature_name")["importance"].mean().sort_values(ascending=True)
+        )
+        top = agg.tail(15)
+
+        ax.barh(top.index, top.values, color="#4C72B0")
+        ax.set_xlabel("Mean Importance", fontsize=9)
+        ax.set_title(f"{model} — Top Features", fontsize=11)
+        ax.tick_params(axis="y", labelsize=7)
+
+    fig.suptitle("Feature Importance", fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    _save_chart(fig, output_dir, "feature_importance.png", dpi)
+    return True
+
+
 def generate_seat_balance(
     chart_data_dir: Path,
     output_dir: Path,
@@ -1096,6 +1322,24 @@ def generate_all_charts(
             (
                 "seat_balance.png",
                 lambda: generate_seat_balance(chart_data_dir, output_dir, dpi),
+            ),
+            (
+                "pred_vs_actual.png",
+                lambda: generate_predictions_scatter(chart_data_dir, output_dir, dpi),
+            ),
+            (
+                "residual_distribution.png",
+                lambda: generate_residuals_chart(chart_data_dir, output_dir, dpi),
+            ),
+            (
+                "calibration_curve.png",
+                lambda: generate_calibration_curve(chart_data_dir, output_dir, dpi),
+            ),
+            (
+                "feature_importance.png",
+                lambda: generate_feature_importance_chart(
+                    chart_data_dir, output_dir, dpi
+                ),
             ),
         ]
         for chart_name, gen_fn in chart_data_generators:

@@ -156,6 +156,7 @@ def generate_report(report_dir: Path) -> str:
         "pred_vs_actual.png",
         "residual_distribution.png",
         "calibration_curve.png",
+        "feature_importance.png",
     ]:
         lines.append(_chart_embed(charts_dir, chart_name))
     lines.append("")
