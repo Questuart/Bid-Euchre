@@ -420,3 +420,67 @@ class TestGBTForwardSelected:
         obs = _make_obs(current_high_bid=0)
         action = bidder.choose_bid(obs)
         assert isinstance(action, BidAction)
+
+    def test_gbt_behavioral_check_with_forward_selected(self, tmp_path):
+        """Regression test for #791: forward-selected GBT artifact with
+        _needs_full_state=True must not IndexError during behavioral check.
+
+        Prior to PR #788, the sanity check passed the wrong partner_feature_names
+        when _needs_full_state=True, causing extract_state_features to return
+        fewer features than expected by hand_indices, triggering an IndexError.
+        """
+        import joblib
+        from sklearn.ensemble import GradientBoostingRegressor
+
+        hand_subset = list(_HAND_FEATURE_NAMES[:10])
+        partner_subset = ["partner_passed"]
+        state_names = hand_subset + partner_subset
+        n_state = len(state_names)
+        n_action = len(ACTION_FEATURE_NAMES)
+
+        # Train tiny GBT models on random data
+        rng = np.random.RandomState(42)
+        X_bid = rng.randn(20, n_state + n_action)
+        X_pass = rng.randn(20, n_state)
+        y = rng.randn(20)
+
+        models_meta = {}
+        for family in ("suit", "high", "low"):
+            model = GradientBoostingRegressor(
+                n_estimators=5, max_depth=2, random_state=42
+            )
+            model.fit(X_bid, y)
+            model_file = f"gbt_{family}.joblib"
+            joblib.dump(model, tmp_path / model_file)
+            models_meta[family] = {
+                "model_file": model_file,
+                "feature_names": state_names + list(ACTION_FEATURE_NAMES),
+                "r_squared": 0.50,
+                "feature_importances": [0.1] * (n_state + n_action),
+            }
+
+        pass_model = GradientBoostingRegressor(
+            n_estimators=5, max_depth=2, random_state=42
+        )
+        pass_model.fit(X_pass, y)
+        joblib.dump(pass_model, tmp_path / "gbt_pass.joblib")
+        models_meta["pass"] = {
+            "model_file": "gbt_pass.joblib",
+            "feature_names": list(state_names),
+            "r_squared": 0.50,
+            "feature_importances": [0.1] * n_state,
+        }
+
+        artifact = {
+            "schema_version": "action_value_gbt_v1",
+            "models": models_meta,
+            "metadata": {"context_features": ["partner_passed"]},
+        }
+        path = tmp_path / "gbt_forward.json"
+        path.write_text(json.dumps(artifact))
+
+        # skip_behavioral_check=False (the default) — this is the path that
+        # used to crash with IndexError before PR #788
+        bidder = GBTActionValueBidder(str(path), skip_behavioral_check=False)
+        assert bidder._needs_full_state is True
+        assert bidder._has_positional is False

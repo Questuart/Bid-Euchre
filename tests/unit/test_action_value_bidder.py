@@ -777,6 +777,24 @@ class TestForwardSelectedArtifact:
             expected_indices,
         )
 
+    def test_ols_behavioral_check_with_forward_selected(self, tmp_path):
+        """Regression test for #791: forward-selected OLS artifact with
+        _needs_full_state=True must not IndexError during behavioral check.
+
+        Prior to PR #788, the sanity check passed the wrong partner_feature_names
+        when _needs_full_state=True, causing extract_state_features to return
+        fewer features than expected by hand_indices, triggering an IndexError.
+        """
+        artifact = _make_forward_selected_ols_artifact()
+        path = tmp_path / "forward_selected.json"
+        path.write_text(json.dumps(artifact))
+
+        # skip_behavioral_check=False (the default) — this is the path that
+        # used to crash with IndexError before PR #788
+        bidder = ActionValueBidder(str(path), skip_behavioral_check=False)
+        assert bidder._needs_full_state is True
+        assert bidder._has_positional is False
+
 
 # ── extract_action_features include_moon_loner flag ──────
 
