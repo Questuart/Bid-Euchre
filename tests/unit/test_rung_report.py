@@ -228,6 +228,28 @@ class TestDecisionReport:
         assert "**PENDING**" in content
         assert "not yet available" in content
 
+    def test_advance_when_passes_plus_skips(self, tmp_path, charts_dir):
+        """Reports ADVANCE when evaluated checks pass and skipped checks are ignored."""
+        tables_dir = _make_hypothesis_outcomes(
+            tmp_path, ["PASS", "PASS", "SKIP", "PASS", "SKIP"]
+        )
+        _make_comparator_rankings(tables_dir)
+        _make_h2h_tier_summary(tables_dir)
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+        assert "**ADVANCE**" in content
+
+    def test_pending_when_all_skipped(self, tmp_path, charts_dir):
+        """Reports PENDING when all hypothesis checks are skipped."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["SKIP", "SKIP"])
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+        assert "**PENDING**" in content
+
     def test_uses_team0_labels(self, tables_with_all_data, charts_dir):
         """Decision report uses team0/team1 labeling for H2H data."""
         content = generate_decision_report(

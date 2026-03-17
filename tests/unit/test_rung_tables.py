@@ -353,6 +353,38 @@ class TestHypothesisOutcomes:
         assert df.iloc[1]["status"] == "FAIL"
         assert "SURPRISE" in df.iloc[1]["notes"]
 
+    def test_skipped_hypothesis_status(self):
+        """Skipped hypotheses (excluded models) get status SKIP, not FAIL."""
+        advance_check = {
+            "hypothesis_checks": [
+                {
+                    "id": "H1",
+                    "description": "Passing hypothesis",
+                    "pass": True,
+                    "observed": 1.5,
+                    "expected_bound": "> 0.5",
+                    "surprise_hit": False,
+                    "error": None,
+                },
+                {
+                    "id": "H5",
+                    "description": "Skipped hypothesis",
+                    "pass": False,
+                    "observed": None,
+                    "expected_bound": None,
+                    "surprise_hit": False,
+                    "error": None,
+                    "skipped": True,
+                    "note": "SKIP: model(s) selected_ols_av not in active roster",
+                },
+            ],
+        }
+        df = generate_hypothesis_outcomes(advance_check)
+        assert len(df) == 2
+        assert df.iloc[0]["status"] == "PASS"
+        assert df.iloc[1]["status"] == "SKIP"
+        assert "selected_ols_av" in df.iloc[1]["notes"]
+
     def test_no_overwrite_populated_csv(self, tmp_path):
         """generate_all_tables does not overwrite populated hypothesis_outcomes."""
         output_dir = tmp_path / "tables"
