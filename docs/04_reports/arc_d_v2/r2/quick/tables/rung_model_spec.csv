@@ -1,0 +1,10 @@
+model,class_name,trainable,model_class,feature_set,category,artifact_path
+modeloespecifico,,False,,,heuristic,
+selected_two_stage_av,,True,two-stage,r0,,
+gbt_av,,True,gbt,r0,,
+constrained_ols_av,,True,ols,constrained,,
+selected_ols_av,,True,ols,r0,,
+full_ols_av,,True,ols,r0,,
+stricthellraiser,,False,,,legacy_baseline,
+rankthetank,,False,,,legacy_baseline,
+anchor_hybrid_r0_full,,False,,,anchor,data/artifacts/arc_d/r0/hybrid_r0_full.json

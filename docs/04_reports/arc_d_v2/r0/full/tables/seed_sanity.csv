@@ -1,0 +1,24 @@
+check,scope,matchup_or_model,detail
+h2h_seed_outlier,h2h,modeloespecifico_vs_selected_two_stage_av,Seed 42 delta=0.0989 is 3.7 MAD from median=0.1662 (MAD=0.0184)
+h2h_seed_outlier,h2h,selected_two_stage_av_vs_modeloespecifico,Seed 123 delta=-0.1608 is 60.6 MAD from median=-0.2457 (MAD=0.0014)
+h2h_seed_outlier,h2h,modeloespecifico_vs_full_ols_av,Seed 42 delta=0.9890 is 22.9 MAD from median=1.1129 (MAD=0.0054)
+h2h_seed_outlier,h2h,anchor_hybrid_r0_full_vs_modeloespecifico,Seed 42 delta=-0.4927 is 15.4 MAD from median=-0.4309 (MAD=0.0040)
+h2h_seed_outlier,h2h,selected_two_stage_av_self_play,Seed 42 delta=-0.0387 is 3.5 MAD from median=0.0215 (MAD=0.0172)
+h2h_seed_outlier,h2h,selected_two_stage_av_vs_gbt_av,Seed 42 delta=-0.9325 is 424.5 MAD from median=-0.8476 (MAD=0.0002)
+h2h_seed_outlier,h2h,selected_two_stage_av_vs_full_ols_av,Seed 42 delta=0.7536 is 9.2 MAD from median=0.8041 (MAD=0.0055)
+h2h_seed_outlier,h2h,selected_two_stage_av_vs_anchor_hybrid_r0_full,Seed 456 delta=0.2209 is 23.2 MAD from median=0.1675 (MAD=0.0023)
+h2h_seed_outlier,h2h,anchor_hybrid_r0_full_vs_selected_two_stage_av,Seed 456 delta=-0.2007 is 16.6 MAD from median=-0.2439 (MAD=0.0026)
+h2h_seed_outlier,h2h,gbt_av_self_play,Seed 42 delta=-0.0823 is 18.9 MAD from median=0.0121 (MAD=0.0050)
+h2h_seed_outlier,h2h,gbt_av_vs_full_ols_av,Seed 42 delta=1.2899 is 5.7 MAD from median=1.4176 (MAD=0.0223)
+h2h_seed_outlier,h2h,gbt_av_vs_anchor_hybrid_r0_full,Seed 42 delta=0.6573 is 3.2 MAD from median=0.7162 (MAD=0.0186)
+h2h_seed_outlier,h2h,full_ols_av_self_play,Seed 123 delta=-0.0006 is 33.5 MAD from median=-0.0710 (MAD=0.0021)
+h2h_seed_outlier,h2h,anchor_hybrid_r0_full_self_play,Seed 456 delta=0.0313 is 4.4 MAD from median=-0.0615 (MAD=0.0213)
+h2h_rank_reversal,h2h,modeloespecifico_self_play,"Sign flip across seeds: seed 42=-0.0830, seed 123=0.0286, seed 456=-0.0259"
+h2h_rank_reversal,h2h,selected_two_stage_av_self_play,"Sign flip across seeds: seed 42=-0.0387, seed 123=0.0387, seed 456=0.0215"
+h2h_rank_reversal,h2h,gbt_av_self_play,"Sign flip across seeds: seed 42=-0.0823, seed 123=0.0171, seed 456=0.0121"
+h2h_rank_reversal,h2h,anchor_hybrid_r0_full_self_play,"Sign flip across seeds: seed 42=-0.0828, seed 123=-0.0615, seed 456=0.0313"
+comparator_seed_outlier,comparator,modeloespecifico,Seed 456 net_eppd=1.6998 is 10.6 MAD from median=1.6044 (MAD=0.0090)
+comparator_seed_outlier,comparator,selected_two_stage_av,Seed 456 net_eppd=1.9876 is 3.6 MAD from median=1.9540 (MAD=0.0094)
+comparator_seed_outlier,comparator,gbt_av,Seed 456 net_eppd=2.0044 is 3.6 MAD from median=1.9390 (MAD=0.0180)
+comparator_seed_outlier,comparator,full_ols_av,Seed 123 net_eppd=2.2398 is 23.2 MAD from median=2.2956 (MAD=0.0024)
+comparator_rank_reversal,comparator,selected_two_stage_av vs gbt_av,Rank reversal: selected_two_stage_av > gbt_av on seed 42 but gbt_av > selected_two_stage_av on seed 456

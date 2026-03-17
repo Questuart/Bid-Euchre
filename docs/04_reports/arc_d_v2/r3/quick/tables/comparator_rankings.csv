@@ -1,0 +1,9 @@
+model,facet,net_eppd,ci_low,ci_high,bid_rate,make_rate,net_cvar_5,rank
+full_ols_av,pooled,2.2816,2.1592,2.4032,1.0,1.0,-4.432,1
+constrained_ols_av,pooled,2.1944,2.0728,2.3192,1.0,1.0,-4.48,2
+selected_ols_av,pooled,2.0784,1.9528,2.2048,1.0,1.0,-4.576,3
+gbt_av,pooled,1.9968,1.8616,2.128,0.96,0.99,-6.0,4
+selected_two_stage_av,pooled,1.8688,1.7364,2.002,1.0,0.9936,-5.392,5
+modeloespecifico,pooled,1.6608,1.5008,1.8188,1.0,0.9496,-11.112,6
+stricthellraiser,pooled,0.1096,-0.044,0.2648,1.0,0.9472,-11.224,7
+rankthetank,pooled,-9.6972,-9.9576,-9.4316,1.0,0.1476,-15.04,8

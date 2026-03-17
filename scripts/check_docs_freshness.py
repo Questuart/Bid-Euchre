@@ -40,6 +40,9 @@ def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
         "datasets/",
         "splits/",
         "logs/",
+        # Report-relative paths used in generated report bundles
+        "tables/",
+        "full_chart_suite/",
     )
 
     # src/bid_euchre/ submodule names — paths starting with these are
@@ -65,6 +68,9 @@ def check_path_references(docs_dir: Path, repo_root: Path) -> list[str]:
             ref = match.group(1).strip()
             # Skip patterns with wildcards, Python module refs, URLs
             if "*" in ref or ref.startswith("http") or ref.startswith("<"):
+                continue
+            # Skip absolute paths (machine-specific, not repo-relative)
+            if ref.startswith("/"):
                 continue
             # Skip known non-path patterns
             if ref.startswith("random.") or ref.startswith("bid_euchre."):

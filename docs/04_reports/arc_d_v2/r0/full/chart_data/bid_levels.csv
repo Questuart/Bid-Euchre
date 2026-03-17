@@ -1,0 +1,5 @@
+model,bid_rate,make_rate,pass_rate
+modeloespecifico,1.0,0.9467,0.0
+selected_two_stage_av,1.0,0.9953,0.0
+gbt_av,0.9941,0.9758,0.0059
+full_ols_av,1.0,0.9999,0.0
