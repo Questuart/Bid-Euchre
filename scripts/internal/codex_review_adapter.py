@@ -132,7 +132,6 @@ _PROSE_SEVERITY_KEYWORDS = {
         "determinism",
         "incorrect",
         "wrong",
-        "error",
         "broken",
     ],
     "P2": [
@@ -156,7 +155,7 @@ _CLEAN_REVIEW_PATTERNS = re.compile(
     r"|(?:lgtm)"
     r"|(?:all\s+(?:good|clear|clean))"
     r"|(?:ship\s+it)"
-    r"|(?:approved)"
+    r"|(?:(?:^|\.\s+)approved(?:\.|\s*$))"
     r"|(?:nothing\s+to\s+(?:flag|report|note))"
     r"|(?:changes?\s+(?:are\s+)?clean)"
 )
