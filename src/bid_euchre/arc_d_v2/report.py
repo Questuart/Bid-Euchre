@@ -412,10 +412,11 @@ def _extract_advancement_decision(
 
     Returns one of: ADVANCE, HOLD, HALT, PRELIMINARY, PENDING.
 
-    When *mode* is ``"QUICK"`` and hypothesis outcomes are absent or empty,
-    returns ``"PRELIMINARY"`` instead of ``"PENDING"`` to signal that a
-    data-driven triage summary should be generated.
+    When *mode* is ``"QUICK"`` (case-insensitive) and hypothesis outcomes
+    are absent or empty, returns ``"PRELIMINARY"`` instead of ``"PENDING"``
+    to signal that a data-driven triage summary should be generated.
     """
+    mode = mode.upper()
     if hypothesis_outcomes is None or len(hypothesis_outcomes) == 0:
         return "PRELIMINARY" if mode == "QUICK" else "PENDING"
 
