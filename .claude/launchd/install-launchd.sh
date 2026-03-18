@@ -50,7 +50,8 @@ done
 if [ "$UNINSTALL" = 1 ]; then
     if [ -f "$INSTALL_PATH" ]; then
         echo "Unloading agent..."
-        launchctl unload "$INSTALL_PATH" 2>/dev/null || true
+        launchctl bootout "gui/$(id -u)" "$INSTALL_PATH" 2>/dev/null \
+            || launchctl unload "$INSTALL_PATH" 2>/dev/null || true
         echo "Removing ${INSTALL_PATH}..."
         rm "$INSTALL_PATH"
         echo "Done. Agent uninstalled."
@@ -99,7 +100,8 @@ mkdir -p "$INSTALL_DIR"
 # Unload existing agent if present
 if [ -f "$INSTALL_PATH" ]; then
     echo "Unloading existing agent..."
-    launchctl unload "$INSTALL_PATH" 2>/dev/null || true
+    launchctl bootout "gui/$(id -u)" "$INSTALL_PATH" 2>/dev/null \
+        || launchctl unload "$INSTALL_PATH" 2>/dev/null || true
 fi
 
 echo "Installing to ${INSTALL_PATH}..."
@@ -113,7 +115,9 @@ if ! plutil -lint "$INSTALL_PATH" >/dev/null 2>&1; then
 fi
 
 echo "Loading agent..."
-launchctl load "$INSTALL_PATH"
+# Prefer modern bootstrap API; fall back to deprecated load for older macOS
+launchctl bootstrap "gui/$(id -u)" "$INSTALL_PATH" 2>/dev/null \
+    || launchctl load "$INSTALL_PATH"
 
 echo ""
 echo "Done! The steward session agent is now installed."
