@@ -195,9 +195,15 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 ## Architecture
 
 ### Control Surfaces
-- Terminal control surface: Ghostty + tmux for persistent autonomous sessions.
+- Terminal control surface: cmux as the default outer terminal host, with Ghostty as an acceptable fallback host, and tmux as the persistent inner session manager.
 - Editor audit surface: VS Code multi-root workspace spanning main checkout plus role worktrees.
-- Repo control surface: repo-owned scripts and tasks for bootstrap, status, resume, and cleanup.
+- Repo control surface: repo-owned scripts and tasks for bootstrap, status, resume, routing, notification, and cleanup.
+
+### Coordination Model
+- Repo-local task and routing metadata remain the system of record.
+- cmux provides the default outer workspace host, notifications, and top-level surface targeting.
+- In the initial implementation, all active lanes live inside one tmux session hosted by one cmux surface. Per-lane routing therefore targets tmux panes/windows first; cmux is the notification and outer-host layer.
+- Human-facing labels such as tmux pane titles may be used for notifications, but canonical routing must not rely on display labels alone.
 
 ### State Model
 - Worktree state: branch, path, dirty/clean status, last activity.
@@ -272,18 +278,20 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Ephemeral worktrees are created with explicit metadata and are discoverable as cleanup candidates later.
 - Documentation clearly states the role responsibilities and the “one writer per worktree” rule.
 
-### PR-2: Persistent Session Manager And VS Code Audit Surface
+### PR-2: Persistent Session Manager, cmux Host, And VS Code Audit Surface
 
 **Depends on:** PR-1 (role worktree conventions and bootstrap scripts).
-**Produces:** tmux session layout, VS Code workspace. Required by PR-5 (rollout).
+**Produces:** tmux session layout, cmux host wrapper, VS Code workspace. Required by PR-5 (rollout).
 
 #### Objectives
 - Replace fragile ad hoc terminal tabs with a deterministic, resumable session layout.
 - Make VS Code the stable audit surface across all active worktrees.
+- Establish cmux as the default outer coordination host while preserving tmux as the resumable runtime layer.
 
 #### Deliverables
 - `.claude/tmux/agent-ops-session.sh`
 - `.claude/tmux/agent-ops-layout.conf` or equivalent repo-owned layout file
+- `.claude/cmux/agent-ops-session.sh` or equivalent wrapper around the tmux session
 - `Bid-Euchre-agent-audit.code-workspace`
 - `.vscode/tasks.json`
 - docs updates in `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
@@ -291,6 +299,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 #### Requirements
 - tmux layout must create windows for `author`, `review`, `ops`, and optional `scratch`.
 - Each tmux window must start in the correct worktree.
+- The cmux wrapper must start or attach the steward tmux session cleanly and expose stable workspace/surface targets for notifications.
+- The initial cmux integration does not require one native cmux surface per lane; per-lane routing may continue to use tmux pane/window targets in the first implementation.
 - VS Code workspace must include:
   - main checkout
   - author worktree
@@ -304,7 +314,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
   - heartbeat inspection
 
 #### Acceptance Criteria
-- One repo-owned command starts the tmux session with all role windows.
+- One repo-owned command starts the tmux session with all role windows and works cleanly when launched from cmux.
 - One repo-owned workspace file opens the audit layout in VS Code.
 - The user can inspect all active role worktrees and runtime artifacts from VS Code without moving agent sessions into the VS Code terminal.
 
@@ -319,12 +329,15 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Provide deterministic recovery guidance when autonomous work hits common failure modes.
 - Detect and surface long-running process failures early through lightweight watchdogs rather than manual polling.
 - Enable autonomous post-push CI remediation: `ops` polls CI status, classifies failures, and `author` applies bounded safe fixes without human intervention.
+- Make lane-aware notifications and routing a first-class behavior: notifications should include a human-facing lane label, but routing and persistence must remain keyed to canonical metadata.
 
 #### Deliverables
 - `scripts/internal/ops.py`
 - supporting module(s) under `src/bid_euchre/ops/`
 - `src/bid_euchre/ops/worktrees.py`
 - `src/bid_euchre/ops/watchdogs.py`
+- `src/bid_euchre/ops/messages.py`
+- `src/bid_euchre/ops/notifications.py`
 - recovery-template data or helpers under `src/bid_euchre/ops/recovery.py`
 - `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook that detects direct `rm -rf` on worktree directories and redirects to `ops.py worktrees prune`
 - unit tests under `tests/unit/`
@@ -332,9 +345,13 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - **Permission migration:** Remove interim `rm -rf ../:*` deny rules from user settings once the PreToolUse hook and `ops.py worktrees prune` are validated
 - `src/bid_euchre/ops/ci.py` — CI status polling, failure classification, and remediation policy
 - `tests/unit/test_ops_ci.py` — CI failure classification and remediation policy tests
+- `tests/unit/test_ops_messages.py` — routing and message transport tests
+- `tests/unit/test_ops_notifications.py` — lane-aware notification formatting tests
 
 #### Commands
 - `ops.py status`
+- `ops.py message --to <role>`
+- `ops.py notify --to <role>`
 - `ops.py worktrees`
 - `ops.py worktrees prune`
 - `ops.py worktrees quarantine`
@@ -387,6 +404,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - heartbeat files
 - evidence/report manifests
 - process metadata and watchdog threshold configuration
+- tmux pane/window targets and cmux workspace/surface metadata when available
 
 #### Watchdog Coverage
 - rung orchestrators with stale or missing heartbeats
@@ -404,6 +422,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Auto-remediation is opt-in and limited to explicitly safe actions.
 - Watchdogs must not silently kill or mutate important processes by default.
 - Worktree cleanup defaults to dry-run reporting first; removal requires clean-state or explicit quarantine/archive handling.
+- Notification and transport helpers must distinguish canonical role/worktree identity from human-facing display labels such as tmux pane titles.
 
 #### Worktree Cleanup Policy
 - Persistent role worktrees are never auto-pruned.
@@ -420,6 +439,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Watchdog output must identify which process or session is unhealthy, why it tripped, which threshold fired, and the next bounded recovery action.
 - Recovery output must classify common failures and recommend the next bounded action instead of generic retry loops.
 - Worktree output must distinguish persistent role worktrees from ephemeral task worktrees and show cleanup candidacy clearly.
+- Notification output must include a human-facing lane label without treating that label as the canonical routing identity.
 
 #### Acceptance Criteria
 - `ops.py status` answers “what is running, what is blocked, what failed, and what needs attention next?” in one command.
@@ -429,6 +449,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Common failure classes have deterministic recovery paths surfaced through the operator CLI.
 - Watchdogs reliably detect stalled or overlong autonomous processes without introducing unsafe default auto-kill behavior.
 - Worktree sprawl is bounded through explicit lifecycle states, safe prune flows, and visibility into stale/abandoned worktrees.
+- Routing and notification events are recorded in repo-local state rather than existing only in terminal transport.
 - Direct `rm -rf` on worktree directories is intercepted by PreToolUse hook and redirected to `ops.py worktrees prune`.
 - Interim `rm -rf ../:*` deny rules can be safely removed from user permission settings after hook validation.
 
@@ -554,10 +575,10 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `tests/unit/test_ops_index.py` — audit index tests.
 
 ## User-Owned Tasks
-- Install Ghostty or confirm another terminal host.
+- Install cmux and use it as the default steward host (Ghostty remains an acceptable fallback).
 - Install and adopt tmux.
 - Decide whether to keep the current shell profile or add aliases/launchers.
-- Decide whether Ghostty becomes the default terminal or only the autonomous-agent terminal.
+- Confirm that `cmux ping`, `cmux notify`, and the Claude notification hook work from inside tmux.
 
 ## Agent-Owned Tasks
 - Implement all repo-local scripts, workspace files, tasks, docs, and CLI surfaces.
@@ -581,6 +602,10 @@ The following capabilities have no prior repo precedent and carry higher impleme
 ## Risks And Mitigations
 - Role drift between worktrees.
   - Mitigation: role-aware bootstrap, docs, and visible role banners in startup scripts.
+- cmux transport diverging from repo task state.
+  - Mitigation: treat cmux as transport and notification only; record assignments, handoffs, and escalations in repo-local metadata/logs.
+- tmux pane titles disappearing or becoming stale.
+  - Mitigation: use pane titles only for display; route by canonical role/worktree metadata and tmux targets.
 - Too much duplication with existing hooks/scripts.
   - Mitigation: wrap and extend current `.claude/scripts/claude-worktree.sh` instead of replacing it.
 - tmux or VS Code workflow becoming mandatory for all contributors.
@@ -609,6 +634,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 ## Verification Strategy
 - Unit tests for `ops.py` parsing and state aggregation.
 - Unit tests for role metadata and recovery logic.
+- Unit tests for routing and lane-aware notification formatting.
 - Unit tests for worktree registry classification, TTL handling, prune eligibility, and quarantine behavior.
 - Unit tests for curated memory validation and promotion.
 - Unit tests for audit index build/query behavior.
@@ -617,7 +643,8 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Unit tests for CI failure classification across all 6 failure classes.
 - Unit tests for remediation policy (retry caps, escalation triggers, scope constraints).
 - Unit tests for non-lossy compaction and archive lookup.
-- Manual smoke test of role bootstrap and tmux session creation.
+- Manual smoke test of role bootstrap, cmux host startup, and tmux session creation.
+- Manual smoke test that notifications can be triggered from inside tmux under cmux.
 - Manual smoke test of worktree prune dry-run, quarantine, and archive flows.
 - Manual smoke test of VS Code workspace opening all intended roots.
 - Manual smoke test of scheduled health checks and stuck-session detection.
@@ -630,9 +657,9 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - rung monitoring flow
 
 ## Success Criteria
-- The default path for autonomous work is: bootstrap role worktrees -> start tmux session -> delegate tasks to agents -> audit in VS Code.
+- The default path for autonomous work is: bootstrap role worktrees -> start tmux session inside cmux -> delegate tasks to agents -> audit in VS Code.
 - No autonomous writing occurs from the main checkout.
-- The user no longer needs to manage multiple ad hoc terminals in a shared checkout.
+- The user no longer needs to manage multiple ad hoc terminals in a shared checkout or manually relay routine notifications between agents.
 - A single repo-owned status surface answers the operational questions that currently require manual inspection.
 - Autonomous work is resumable, explicitly tracked, and recoverable without relying on implicit terminal context.
 
@@ -642,3 +669,4 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Notes:
   - Planning-only session (2026-03-15). Existing Claude worktree hooks and helper scripts should be treated as implementation inputs, not replaced blindly.
   - Review session (2026-03-16): Compatibility analysis confirmed PRs 1-2 low-risk during FULL backfill. User-side setup completed (Ghostty, tmux, permissions verified, 37 stale worktrees cleaned). Four design decisions resolved. Sequencing revised: Phase 4a first, then PR-1, then PR-2. CI remediation loop added to PR-3 scope.
+  - Setup refinement (2026-03-17): cmux is now treated as the default outer coordination host and tmux as the persistence layer. Live setup confirmed the initial topology is one cmux surface hosting one tmux session, so per-lane routing remains tmux-targeted while notifications use human-facing display labels such as pane titles.
