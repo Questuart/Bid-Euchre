@@ -338,6 +338,49 @@ class TestCodexFallback:
         assert result.reviewer == "claude_failsafe"
         assert result.fallback_issue_url == "https://github.com/test/repo/issues/99"
 
+    def test_fallback_clean_review(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Codex fails but Claude returns clean (no findings) -> READY, not NOT_READY.
+
+        Regression test for Bug 3: empty findings list (``[]``) is falsy in Python,
+        so ``success=True, findings=[]`` was incorrectly treated as "both failed."
+        """
+        plan_file = tmp_path / "plans" / "sessions" / "test.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Test Plan\n\nContent.\n")
+
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_codex_plan_review",
+            lambda *a, **kw: _make_result(success=False, error="Codex unavailable"),
+        )
+
+        # Claude succeeds with no findings (clean review)
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_claude_failsafe",
+            lambda *a, **kw: _make_result(
+                success=True,
+                findings=[],
+                reviewer="claude_failsafe",
+            ),
+        )
+        monkeypatch.setattr("plan_review_driver.detect_plan_tier", lambda p: "small")
+        monkeypatch.setattr(
+            "plan_review_driver.plan_state_key", lambda p: "test_fallback_clean_key"
+        )
+        monkeypatch.setattr(
+            "plan_review_driver._create_fallback_issue",
+            lambda *a, **kw: "https://github.com/test/repo/issues/100",
+        )
+
+        result = run_plan_review_loop(plan_file, base_dir=tmp_path)
+
+        assert result.fallback_used is True
+        assert result.verdict == "READY"
+        assert result.total_findings == 0
+        assert result.open_findings == 0
+        assert result.reviewer == "claude_failsafe"
+
     def test_codex_and_fallback_both_fail(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -730,15 +730,95 @@ def _convert_codex_findings(
     return results
 
 
+# Regex to strip markdown code fences from Claude CLI output.
+# Matches ```json ... ``` or ``` ... ``` with optional language tag.
+_CODE_FENCE_RE = re.compile(
+    r"```(?:json|JSON)?\s*\n(.*?)\n\s*```",
+    re.DOTALL,
+)
+
+# Severity mapping from Claude CLI's natural output to PlanReviewFinding schema.
+_CLAUDE_SEVERITY_MAP = {
+    "BLOCK": "CRITICAL",
+    "BLOCKING": "CRITICAL",
+    "CRITICAL": "CRITICAL",
+    "WARN": "WARNING",
+    "WARNING": "WARNING",
+    "INFO": "INFO",
+    "NIT": "INFO",
+}
+
+
+def _strip_code_fences(raw: str) -> str:
+    """Extract JSON from markdown code fences if present.
+
+    Claude CLI typically wraps JSON responses in ```json ... ``` fences.
+    Returns the inner content if fences are found, otherwise returns the
+    original string (stripped).
+    """
+    match = _CODE_FENCE_RE.search(raw)
+    if match:
+        return match.group(1).strip()
+    return raw.strip()
+
+
+def _normalize_claude_finding(item: dict) -> dict:
+    """Normalize a finding dict from Claude's actual output schema.
+
+    Claude CLI returns fields like ``severity: "BLOCK"``, ``rule:``,
+    ``message:`` instead of the canonical ``severity: "CRITICAL"``,
+    ``category:``, ``file:``, ``line:``, ``description:``, ``check_id:``.
+    This function maps Claude's schema to the expected PlanReviewFinding
+    fields so ``from_dict()`` can construct the dataclass.
+    """
+    normalized: dict = {}
+
+    # Severity: map BLOCK/WARN/etc. to CRITICAL/WARNING/INFO
+    raw_sev = str(item.get("severity", "INFO")).upper()
+    normalized["severity"] = _CLAUDE_SEVERITY_MAP.get(raw_sev, "INFO")
+
+    # Category: prefer 'category', fall back to 'rule'
+    normalized["category"] = item.get("category") or item.get("rule", "convention")
+
+    # File: prefer 'file', synthesize if missing
+    normalized["file"] = item.get("file", "(plan)")
+
+    # Line: prefer 'line', default 0
+    normalized["line"] = item.get("line", 0)
+
+    # Description: prefer 'description', fall back to 'message'
+    normalized["description"] = item.get("description") or item.get(
+        "message", "(no description)"
+    )
+
+    # Check ID: optional
+    normalized["check_id"] = item.get("check_id")
+
+    # Source: always claude_failsafe
+    normalized["source"] = item.get("source", "claude_failsafe")
+
+    return normalized
+
+
 def _parse_claude_json_output(raw_output: str) -> list[PlanReviewFinding]:
     """Parse JSON output from Claude failsafe command.
 
-    Expects a JSON array of objects matching the PlanReviewFinding schema.
+    Handles two common quirks of Claude CLI output:
+    1. JSON wrapped in markdown code fences (````` ```json ... ``` `````)
+    2. Non-canonical field names (``BLOCK``/``WARN``, ``rule``, ``message``)
+
+    Returns a list of PlanReviewFinding objects, or an empty list if the
+    output cannot be parsed as JSON.
     """
+    text = _strip_code_fences(raw_output)
+
     try:
-        data = json.loads(raw_output.strip())
+        data = json.loads(text)
     except (json.JSONDecodeError, ValueError):
-        logger.warning("Claude failsafe output is not valid JSON")
+        logger.warning(
+            "Claude failsafe output is not valid JSON (first 200 chars: %s)",
+            raw_output[:200],
+        )
         return []
 
     if not isinstance(data, list):
@@ -749,8 +829,8 @@ def _parse_claude_json_output(raw_output: str) -> list[PlanReviewFinding]:
     for item in data:
         if isinstance(item, dict):
             try:
-                item.setdefault("source", "claude_failsafe")
-                findings.append(PlanReviewFinding.from_dict(item))
+                normalized = _normalize_claude_finding(item)
+                findings.append(PlanReviewFinding.from_dict(normalized))
             except (TypeError, KeyError) as exc:
                 logger.warning("Skipping malformed finding: %s (%s)", item, exc)
     return findings

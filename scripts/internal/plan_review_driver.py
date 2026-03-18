@@ -254,7 +254,7 @@ def _write_sidecar(
 
     # Include raw output for debuggability (especially for unparseable failures)
     if raw_output:
-        content += f"\n## Raw Output\n\n" f"```\n{raw_output}\n```\n"
+        content += f"\n## Raw Output\n\n```\n{raw_output}\n```\n"
 
     sidecar_path.write_text(content, encoding="utf-8")
     logger.info("Wrote sidecar review to %s", sidecar_path)
@@ -369,13 +369,18 @@ def run_plan_review_loop(
             )
 
             if fallback_result.success and fallback_result.findings:
+                # Claude found real issues
                 current_findings = fallback_result.findings
                 loop_state.transition(PlanReviewState.FINDINGS_RECEIVED)
                 all_findings.append((iteration, current_findings))
+            elif fallback_result.success:
+                # Claude completed successfully with no findings — clean review
+                current_findings = []
+                loop_state.transition(PlanReviewState.FINDINGS_RECEIVED)
+                loop_state.transition(PlanReviewState.REVIEW_COMPLETE)
             else:
-                # Both reviewers failed — this is NOT a clean review.
-                # Inject a synthetic CRITICAL finding so the verdict is NOT_READY
-                # instead of falsely reporting READY.
+                # Both reviewers actually failed — inject synthetic CRITICAL
+                # so the verdict is NOT_READY instead of falsely reporting READY.
                 no_review_finding = PlanReviewFinding(
                     severity="CRITICAL",
                     category="process",
