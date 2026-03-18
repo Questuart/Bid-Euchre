@@ -276,6 +276,20 @@ class TestLaunchdTemplate:
             "ThrottleInterval" in content
         ), "Plist must set ThrottleInterval to prevent rapid restarts"
 
+    def test_plist_has_claude_bin_placeholder(self) -> None:
+        """Plist template must include __CLAUDE_BIN__ for install-time resolution."""
+        content = PLIST_TEMPLATE.read_text()
+        assert (
+            "__CLAUDE_BIN__" in content
+        ), "Plist must contain __CLAUDE_BIN__ placeholder resolved at install time"
+
+    def test_plist_has_launchd_path_placeholder(self) -> None:
+        """Plist PATH must be resolved at install time, not hardcoded."""
+        content = PLIST_TEMPLATE.read_text()
+        assert (
+            "__LAUNCHD_PATH__" in content
+        ), "Plist must contain __LAUNCHD_PATH__ placeholder resolved at install time"
+
 
 # ---------------------------------------------------------------------------
 # Install script tests
@@ -307,6 +321,26 @@ class TestInstallScript:
         content = INSTALL_SCRIPT.read_text()
         assert "--uninstall" in content, "Install script must support --uninstall"
 
+    def test_install_script_resolves_claude_bin(self) -> None:
+        """Installer must resolve claude binary path at install time."""
+        content = INSTALL_SCRIPT.read_text()
+        assert (
+            "command -v claude" in content
+        ), "Installer must resolve claude path via command -v at install time"
+        assert (
+            "__CLAUDE_BIN__" in content
+        ), "Installer must substitute __CLAUDE_BIN__ placeholder"
+
+    def test_install_script_resolves_path(self) -> None:
+        """Installer must capture current shell PATH for launchd."""
+        content = INSTALL_SCRIPT.read_text()
+        assert (
+            "__LAUNCHD_PATH__" in content
+        ), "Installer must substitute __LAUNCHD_PATH__ placeholder"
+        assert (
+            "LAUNCHD_PATH" in content
+        ), "Installer must build LAUNCHD_PATH from current shell environment"
+
     @pytest.mark.skipif(
         subprocess.run(["uname"], capture_output=True, text=True).stdout.strip()
         != "Darwin",
@@ -321,3 +355,20 @@ class TestInstallScript:
         )
         assert result.returncode == 0, f"Dry run failed: {result.stderr}"
         assert "Would install to" in result.stdout, "Dry run should show target path"
+
+    @pytest.mark.skipif(
+        subprocess.run(["uname"], capture_output=True, text=True).stdout.strip()
+        != "Darwin",
+        reason="macOS-only test",
+    )
+    def test_dry_run_shows_claude_bin(self) -> None:
+        """Dry run must show the resolved claude binary path."""
+        result = subprocess.run(
+            [str(INSTALL_SCRIPT), "--dry-run"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Dry run failed: {result.stderr}"
+        assert (
+            "Claude bin:" in result.stdout
+        ), "Dry run should display the resolved claude binary path"

@@ -104,7 +104,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Review loop state",
+      "label": "Review loop state (legacy)",
       "type": "shell",
       "command": "for f in .claude/runtime/review_loops/*/state.json; do [ -f \"$f\" ] && echo \"--- $f ---\" && python3 -m json.tool < \"$f\" && echo ''; done 2>/dev/null || echo 'No active review loops'",
       "group": "none",

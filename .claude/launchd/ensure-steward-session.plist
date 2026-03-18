@@ -41,7 +41,7 @@
       else
         echo "$(date): starting steward session"
         # Run in detached mode (no exec tmux attach)
-        STEWARD_DETACHED=1 __REPO_PATH__/.claude/tmux/steward-session.sh steward
+        CLAUDE_BIN="__CLAUDE_BIN__" STEWARD_DETACHED=1 __REPO_PATH__/.claude/tmux/steward-session.sh steward
         exit $?
       fi
     </string>
@@ -68,7 +68,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <string>__LAUNCHD_PATH__</string>
   </dict>
 </dict>
 </plist>
