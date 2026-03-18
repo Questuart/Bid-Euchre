@@ -60,6 +60,29 @@ ensure_review_worktree() {
     git -C "$MAIN_DIR" worktree add --detach "$REVIEW" main
 }
 
+update_last_active() {
+    # Update last_active timestamp in all steward registry files.
+    local registry_dir="$MAIN_DIR/.claude/runtime/worktree_registry"
+    [ -d "$registry_dir" ] || return 0
+    local now
+    now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    for f in "$registry_dir"/*.json; do
+        [ -f "$f" ] || continue
+        python3 -c "
+import json, sys
+try:
+    with open('$f') as fh:
+        d = json.load(fh)
+    d['last_active'] = '$now'
+    with open('$f', 'w') as fh:
+        json.dump(d, fh, indent=2)
+        fh.write('\n')
+except Exception:
+    pass
+" 2>/dev/null || true
+    done
+}
+
 # --- lane metadata ----------------------------------------------------------
 
 REGISTRY_DIR="$MAIN_DIR/.claude/runtime/worktree_registry"
@@ -135,6 +158,7 @@ if ! command -v tmux >/dev/null 2>&1; then
 fi
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
+    update_last_active
     exec caffeinate -dims tmux attach-session -t "$SESSION"
 fi
 
@@ -185,4 +209,5 @@ tmux new-window -t "$SESSION" -n author-scratch -c "$AUTHOR_SCRATCH" \
 
 tmux select-window -t "${SESSION}:dashboard"
 
+update_last_active
 exec caffeinate -dims tmux attach-session -t "$SESSION"
