@@ -369,6 +369,28 @@ class TestPreliminaryTriage:
         assert "PENDING" not in content
         assert "Rung R0" in content
 
+    def test_quick_lowercase_mode_returns_preliminary(self, tmp_path):
+        """Lowercase 'quick' (from orchestrator) also triggers PRELIMINARY."""
+        tables = tmp_path / "tables"
+        tables.mkdir()
+        charts = tmp_path / "charts"
+        charts.mkdir()
+        (tables / "hypothesis_outcomes.csv").write_text(
+            "hypothesis_id,description,status\n"
+        )
+        (tables / "comparator_rankings.csv").write_text(
+            "model,net_eppd,ci_low,ci_high,rank,facet\ngbt_av,2.0,1.8,2.2,1,pooled\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables,
+            charts_dir=charts,
+            rung="r0",
+            mode="quick",  # lowercase, as passed by orchestrator
+        )
+        assert "PRELIMINARY" in content
+        assert "PENDING" not in content
+
     def test_preliminary_includes_comparator_data(self, tmp_path):
         """PRELIMINARY triage includes top model performance from comparator data."""
         tables = tmp_path / "tables"
