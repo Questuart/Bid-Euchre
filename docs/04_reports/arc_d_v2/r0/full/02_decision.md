@@ -1,4 +1,4 @@
-# Rung R0 (FULL) — Decision Report
+# Rung r0 (full) — Decision Report
 
 ## Advancement Decision
 
@@ -55,7 +55,7 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ## Recommendation
 
-All hypothesis checks passed. Evidence supports advancing to the next rung.
+All evaluated hypothesis checks passed (2 skipped). Evidence supports advancing to the next rung.
 
 ## Supporting Evidence
 
@@ -67,4 +67,4 @@ All hypothesis checks passed. Evidence supports advancing to the next rung.
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
 
-<\!-- gate_status: data sanity checks in §1 above -->
+<!-- gate_status: data sanity checks in §1 above -->

@@ -208,4 +208,18 @@ Generated from canonical CSV tables and chart PNGs.
 
 *Full table omitted from markdown — see `tables/sanity_bounds_check.csv`*
 
-<\!-- gate_status: data sanity checks in §1 above -->
+
+## 10. Data Quality Notes
+
+- **Outcome distributions (Chart 9):** synthetic data — parquet-backed real distributions unavailable for this bundle
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+
+<!-- gate_status: data sanity checks in §1 above -->

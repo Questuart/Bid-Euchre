@@ -1,8 +1,8 @@
-# Rung ? (QUICK) — Decision Report
+# Rung r1 (quick) — Decision Report
 
 ## Advancement Decision
 
-**PENDING**
+**ADVANCE**
 
 ## Evidence Summary
 
@@ -10,9 +10,9 @@
 
 | model | net_eppd | ci_low | ci_high | rank |
 | --- | --- | --- | --- | --- |
-| full_ols_av | 2.2336 | 2.1128 | 2.3568 | 1 |
-| constrained_ols_av | 2.2040 | 2.0800 | 2.3288 | 2 |
-| selected_ols_av | 2.1952 | 2.0696 | 2.3240 | 3 |
+| full_ols_av | 2.2916 | 2.2052 | 2.3792 | 1 |
+| gbt_av | 2.0136 | 1.9132 | 2.1132 | 2 |
+| selected_two_stage_av | 1.9540 | 1.8624 | 2.0478 | 3 |
 
 
 See Chart 4 (Comparator Ranking Bars) and Chart 5 (Tail Risk Panel) for visual context.
@@ -53,12 +53,22 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ### Hypothesis Outcomes
 
-> No hypothesis outcomes available.
+| hypothesis_id | description | status |
+| --- | --- | --- |
+| H1 | Partner context improves GBT pooled H2H delta vs anchor | PASS |
+| H2 | GBT R1 suit H2H delta exceeds R0 suit delta (partner helps suit bidding) | PASS |
+| H3 | GBT R1 suit R-squared exceeds R0 suit R-squared | PASS |
+| H4 | Position features improve first-bidder accuracy (auction_position=0) | PASS |
+| H5 | Two-stage model narrows gap vs GBT with partner context | PASS |
+| H6 | All models bid at least half the time (no pathological passing) | PASS |
+| H7 | GBT H2H win rate vs anchor exceeds 50% | PASS |
+| H8 | Full OLS approximately equals constrained OLS (feature selection doesn't matter for OLS) | SKIP |
+| H9 | ModeloEspecifico heuristic is worst among trained models (sanity check) | PASS |
 
 
 ## Recommendation
 
-Hypothesis outcomes not yet available. Run the advance check pipeline to populate results.
+All evaluated hypothesis checks passed (1 skipped). Evidence supports advancing to the next rung.
 
 ## Supporting Evidence
 
@@ -70,4 +80,4 @@ Hypothesis outcomes not yet available. Run the advance check pipeline to populat
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
 
-<\!-- gate_status: data sanity checks in §1 above -->
+<!-- gate_status: data sanity checks in §1 above -->

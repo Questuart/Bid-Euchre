@@ -1,12 +1,8 @@
 model,bid_type,count,bid_rate,make_rate,mean_net_points,source
-modeloespecifico,regular,2500,1.0,0.9496,1.6608,comparator
-selected_two_stage_av,regular,2500,1.0,0.996,1.92,comparator
-gbt_av,regular,2380,0.952,0.9916,2.1836,comparator
-constrained_ols_av,regular,2500,1.0,1.0,2.204,comparator
-selected_ols_av,regular,2500,1.0,1.0,2.1952,comparator
-full_ols_av,regular,2500,1.0,1.0,2.2336,comparator
-stricthellraiser,regular,2500,1.0,0.9472,0.1096,comparator
-rankthetank,regular,2500,1.0,0.1476,-9.6972,comparator
+modeloespecifico,regular,5000,1.0,0.9468,1.6044,comparator
+selected_two_stage_av,regular,5000,1.0,0.996,1.954,comparator
+gbt_av,regular,4930,0.986,0.9807,2.0136,comparator
+full_ols_av,regular,5000,1.0,1.0,2.2916,comparator
 modeloespecifico,regular,2500,,0.4204,-0.1724,h2h_self_play
 selected_two_stage_av,regular,2500,,0.432,0.0488,h2h_self_play
 gbt_av,regular,2499,,0.4518,-0.1601,h2h_self_play

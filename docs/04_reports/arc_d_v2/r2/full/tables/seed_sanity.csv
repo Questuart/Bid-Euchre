@@ -1,18 +1,1 @@
 check,scope,matchup_or_model,detail
-h2h_seed_outlier,h2h,modeloespecifico_vs_selected_two_stage_av,Seed 42 delta=0.0510 is 160.5 MAD from median=0.1794 (MAD=0.0008)
-h2h_seed_outlier,h2h,modeloespecifico_vs_full_ols_av,Seed 42 delta=1.0162 is 18.9 MAD from median=1.0901 (MAD=0.0039)
-h2h_seed_outlier,h2h,anchor_hybrid_r0_full_vs_modeloespecifico,Seed 42 delta=-0.4927 is 15.4 MAD from median=-0.4309 (MAD=0.0040)
-h2h_seed_outlier,h2h,selected_two_stage_av_self_play,Seed 42 delta=-0.0542 is 4.3 MAD from median=0.0290 (MAD=0.0195)
-h2h_seed_outlier,h2h,anchor_hybrid_r0_full_vs_selected_two_stage_av,Seed 42 delta=-0.4125 is 5.7 MAD from median=-0.3642 (MAD=0.0084)
-h2h_seed_outlier,h2h,gbt_av_self_play,Seed 42 delta=-0.0505 is 3.7 MAD from median=0.0295 (MAD=0.0215)
-h2h_seed_outlier,h2h,gbt_av_vs_full_ols_av,Seed 42 delta=1.8263 is 4.4 MAD from median=1.8793 (MAD=0.0121)
-h2h_seed_outlier,h2h,full_ols_av_vs_gbt_av,Seed 456 delta=-1.8992 is 6.1 MAD from median=-1.8803 (MAD=0.0031)
-h2h_seed_outlier,h2h,anchor_hybrid_r0_full_self_play,Seed 456 delta=0.0313 is 4.4 MAD from median=-0.0615 (MAD=0.0213)
-h2h_rank_reversal,h2h,modeloespecifico_self_play,"Sign flip across seeds: seed 42=-0.0830, seed 123=0.0286, seed 456=-0.0259"
-h2h_rank_reversal,h2h,selected_two_stage_av_self_play,"Sign flip across seeds: seed 42=-0.0542, seed 123=0.0485, seed 456=0.0290"
-h2h_rank_reversal,h2h,gbt_av_self_play,"Sign flip across seeds: seed 42=-0.0505, seed 123=0.0510, seed 456=0.0295"
-h2h_rank_reversal,h2h,anchor_hybrid_r0_full_self_play,"Sign flip across seeds: seed 42=-0.0828, seed 123=-0.0615, seed 456=0.0313"
-comparator_seed_outlier,comparator,modeloespecifico,Seed 456 net_eppd=1.6998 is 10.6 MAD from median=1.6044 (MAD=0.0090)
-comparator_seed_outlier,comparator,selected_two_stage_av,Seed 456 net_eppd=1.9876 is 3.6 MAD from median=1.9540 (MAD=0.0094)
-comparator_seed_outlier,comparator,full_ols_av,Seed 123 net_eppd=2.2346 is 7.9 MAD from median=2.2916 (MAD=0.0072)
-comparator_rank_reversal,comparator,gbt_av vs selected_two_stage_av,Rank reversal: gbt_av > selected_two_stage_av on seed 42 but selected_two_stage_av > gbt_av on seed 123
