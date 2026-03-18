@@ -6,13 +6,13 @@ files are gitignored.
 
 ## Directories
 
-| Directory | Schema | Purpose |
-|-----------|--------|---------|
-| `worktree_registry/` | v2 | Canonical lane/worktree identity and metadata |
-| `session_metadata/` | v2 | Active and recent session state for resume and audit |
-| `task_state/` | v1 | Delegated task items, progress, and validation contracts |
-| `review_loops/` | -- | Review loop state (managed by `review_driver.py`) |
-| `plan_reviews/` | -- | Plan review state (managed by review skill) |
+| Directory | Schema | Status | Purpose |
+|-----------|--------|--------|---------|
+| `worktree_registry/` | v2 | Canonical | Lane/worktree identity and metadata |
+| `session_metadata/` | v2 | Canonical | Active and recent session state for resume and audit |
+| `task_state/` | v2 | Canonical | Delegated task items, scope, and validation contracts |
+| `review_loops/` | -- | Transitional | Local review loop state (managed by `review_driver.py`). PR review is migrating to online-first (GitHub). Do not build new dependencies on this directory. |
+| `plan_reviews/` | -- | Transitional | Local plan review state (managed by review skill). Will be simplified to in-session flow. Do not build new dependencies on this directory. |
 
 ## Schema Documentation
 
@@ -21,7 +21,7 @@ semantics, lifecycle, and migration notes.
 
 - `worktree_registry/README.md` -- v2 schema with `lane_id`, `lane_class`, transport fields
 - `session_metadata/README.md` -- v2 schema with canonical `lane_id`, optional `role` compat
-- `task_state/README.md` -- v1 schema for delegated task tracking
+- `task_state/README.md` -- v2 schema with `owner_lane`, `in_scope`, `out_of_scope`, escalation triggers
 
 ## Identity Contract
 
