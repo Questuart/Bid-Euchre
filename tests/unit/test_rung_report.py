@@ -437,7 +437,7 @@ class TestPreliminaryTriage:
         charts = tmp_path / "charts"
         charts.mkdir()
         (tables / "data_sanity.csv").write_text(
-            "check,status,detail\nbalance,PASS,ok\n"
+            "check_name,scope,value,threshold,status,detail\nbalance,overall,1.0,0.0,PASS,ok\n"
         )
 
         content = generate_decision_report(
@@ -466,3 +466,126 @@ class TestPreliminaryTriage:
         )
         assert "ADVANCE" in content
         assert "Rung R0" in content
+
+
+# ──────────────────────────────────────────────
+#  Data Quality / Sanity rendering tests
+# ──────────────────────────────────────────────
+
+
+class TestDataQualityNotes:
+    """Tests for Section 10 Data Quality Notes in generate_report()."""
+
+    @pytest.fixture
+    def base_report_dir(self, tmp_path):
+        """Minimal report directory with tables and charts dirs."""
+        report_dir = tmp_path / "report"
+        tables_dir = report_dir / "tables"
+        charts_dir = report_dir / "charts"
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        charts_dir.mkdir(parents=True, exist_ok=True)
+        return report_dir
+
+    def test_section10_appears_with_sanity_failures(self, base_report_dir):
+        """Section 10 appears when sanity_bounds_check has FAIL rows."""
+        tables_dir = base_report_dir / "tables"
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.02,0.05,0.95,FAIL\n"
+            "gbt_av,make_rate_range,0.50,0.10,1.00,PASS\n"
+        )
+        content = generate_report(base_report_dir)
+        assert "## 10. Data Quality Notes" in content
+
+    def test_section10_renders_check_name_not_unknown(self, base_report_dir):
+        """Sanity failure notes render the actual check_name, not 'unknown'."""
+        tables_dir = base_report_dir / "tables"
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.02,0.05,0.95,FAIL\n"
+        )
+        content = generate_report(base_report_dir)
+        assert "bid_rate_range" in content
+        assert "unknown" not in content.split("## 10. Data Quality Notes")[1]
+
+    def test_section10_not_present_without_issues(self, base_report_dir):
+        """Section 10 is absent when there are no data quality issues."""
+        tables_dir = base_report_dir / "tables"
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "gbt_av,bid_rate_range,0.50,0.05,0.95,PASS\n"
+        )
+        content = generate_report(base_report_dir)
+        assert "## 10. Data Quality Notes" not in content
+
+    def test_section10_with_degraded_distributions(self, base_report_dir):
+        """Section 10 appears when outcome distributions are degraded."""
+        chart_data_dir = base_report_dir / "chart_data"
+        chart_data_dir.mkdir(parents=True, exist_ok=True)
+        (chart_data_dir / "outcome_distributions.status").write_text(
+            "degraded: synthetic fallback"
+        )
+        content = generate_report(base_report_dir)
+        assert "## 10. Data Quality Notes" in content
+        assert "synthetic data" in content
+
+
+class TestDecisionReportDataSanity:
+    """Tests for the Data Sanity block in generate_decision_report()."""
+
+    @pytest.fixture
+    def charts_dir(self, tmp_path):
+        charts = tmp_path / "charts"
+        charts.mkdir(parents=True, exist_ok=True)
+        return charts
+
+    def test_data_sanity_renders_check_names(self, tmp_path, charts_dir):
+        """Data Sanity block renders actual check_name values, not 'unknown'."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
+        _make_comparator_rankings(tables_dir)
+        _make_h2h_tier_summary(tables_dir)
+        (tables_dir / "data_sanity.csv").write_text(
+            "check_name,scope,value,threshold,status,detail\n"
+            "comparator_bidders_present,comparator,1,2,FAIL,only 1 bidder\n"
+            "h2h_min_deals,h2h,5,10,FAIL,min deals below threshold\n"
+        )
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+        assert "### Data Sanity" in content
+        assert "comparator_bidders_present" in content
+        assert "h2h_min_deals" in content
+        assert "unknown" not in content.split("### Data Sanity")[1].split("##")[0]
+
+    def test_data_sanity_shows_fail_count(self, tmp_path, charts_dir):
+        """Data Sanity block shows correct failure count."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
+        _make_comparator_rankings(tables_dir)
+        _make_h2h_tier_summary(tables_dir)
+        (tables_dir / "data_sanity.csv").write_text(
+            "check_name,scope,value,threshold,status,detail\n"
+            "comparator_bidders_present,comparator,1,2,FAIL,only 1 bidder\n"
+            "h2h_min_deals,h2h,50,10,PASS,ok\n"
+        )
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+        assert "### Data Sanity" in content
+        assert "1/2 sanity checks failed" in content
+
+    def test_data_sanity_absent_when_all_pass(self, tmp_path, charts_dir):
+        """Data Sanity block is absent when all checks pass."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "PASS"])
+        _make_comparator_rankings(tables_dir)
+        _make_h2h_tier_summary(tables_dir)
+        (tables_dir / "data_sanity.csv").write_text(
+            "check_name,scope,value,threshold,status,detail\n"
+            "h2h_min_deals,h2h,50,10,PASS,ok\n"
+        )
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+        assert "### Data Sanity" not in content
