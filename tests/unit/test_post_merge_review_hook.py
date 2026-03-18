@@ -43,10 +43,16 @@ def _run_hook(
 
 
 def _make_git_repo(tmp_path: Path) -> Path:
-    """Create a minimal git repo with a merge commit."""
+    """Create a minimal git repo with an initial commit on a branch named 'main'.
+
+    The hook uses ``git diff main~1...main``, so the branch must be called
+    ``main`` regardless of the system default (which may be ``master`` in CI).
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=repo, capture_output=True, check=True
+    )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
         cwd=repo,
