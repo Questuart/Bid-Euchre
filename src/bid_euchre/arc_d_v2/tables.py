@@ -1622,7 +1622,11 @@ def generate_seat_balance_csv(
         return None
 
     # Determine available columns for seat and contract grouping
-    seat_col = "seat" if "seat" in df.columns else None
+    seat_col = (
+        "seat"
+        if "seat" in df.columns
+        else ("focal_seat" if "focal_seat" in df.columns else None)
+    )
     contract_col = (
         "contract_family"
         if "contract_family" in df.columns
@@ -1813,7 +1817,11 @@ def generate_model_eval_csvs(
                 continue
 
             X = family_df[available].values.astype(float)
-            actual_col = "actual" if "actual" in family_df.columns else None
+            actual_col = (
+                "actual"
+                if "actual" in family_df.columns
+                else ("tricks_won" if "tricks_won" in family_df.columns else None)
+            )
             if actual_col is None:
                 continue
             actuals = family_df[actual_col].values.astype(float)
