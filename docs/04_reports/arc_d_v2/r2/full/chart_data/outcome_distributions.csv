@@ -1,0 +1,16 @@
+model,contract,tricks_won,count,fraction,source
+modeloespecifico,suit,5,28248,1.0,synthetic
+modeloespecifico,high,5,837,1.0,synthetic
+modeloespecifico,low,5,915,1.0,synthetic
+selected_two_stage_av,suit,5,29011,1.0,synthetic
+selected_two_stage_av,high,5,366,1.0,synthetic
+selected_two_stage_av,low,5,623,1.0,synthetic
+gbt_av,suit,5,21884,1.0,synthetic
+gbt_av,high,5,2998,1.0,synthetic
+gbt_av,low,5,5118,1.0,synthetic
+full_ols_av,suit,5,7759,1.0,synthetic
+full_ols_av,high,5,8719,1.0,synthetic
+full_ols_av,low,5,13522,1.0,synthetic
+anchor_hybrid_r0_full,suit,5,19179,1.0,synthetic
+anchor_hybrid_r0_full,high,5,2308,1.0,synthetic
+anchor_hybrid_r0_full,low,5,3233,1.0,synthetic

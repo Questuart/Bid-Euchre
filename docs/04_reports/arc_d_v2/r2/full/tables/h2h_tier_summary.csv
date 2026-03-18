@@ -1,0 +1,14 @@
+model,tier,mean_delta,mean_win_rate,n_opponents
+anchor_hybrid_r0_full,smart,-0.3048,0.4595,2
+anchor_hybrid_r0_full,heuristic,-0.4502,0.4135,1
+full_ols_av,smart,-1.2655,0.2519,1
+full_ols_av,anchor,0.1747,0.3961,1
+full_ols_av,heuristic,-1.1054,0.254,1
+gbt_av,smart,1.5486,0.6561,2
+gbt_av,anchor,1.0119,0.5723,1
+gbt_av,heuristic,0.7879,0.602,1
+modeloespecifico,smart,0.6018,0.5103,2
+modeloespecifico,anchor,0.3998,0.4741,1
+selected_two_stage_av,smart,1.2424,0.5769,1
+selected_two_stage_av,anchor,0.3275,0.4416,1
+selected_two_stage_av,heuristic,-0.1899,0.4443,1

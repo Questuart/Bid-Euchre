@@ -1,0 +1,10 @@
+model,net_eppd,eppd,bid_rate,pass_rate,make_rate,cvar_5,net_cvar_5,mix_suit,mix_high,mix_low,source
+modeloespecifico,1.6332,5.6079,1.0,0.0,0.9467,-4.5907,-11.1533,0.9416,0.0279,0.0305,comparator
+selected_two_stage_av,1.9621,5.9676,1.0,0.0,0.9953,2.14,-5.1827,0.967,0.0122,0.0208,comparator
+gbt_av,2.0091,5.8401,0.9857,0.0143,0.9807,-0.4553,-7.1382,0.7295,0.0999,0.1706,comparator
+full_ols_av,2.275,6.1375,1.0,0.0,0.9999,2.784,-4.4307,0.2586,0.2906,0.4507,comparator
+modeloespecifico,4.678,,0.4991,0.5009,0.9331,-3.221,,0.9416,0.0279,0.0305,h2h_self_play
+selected_two_stage_av,4.6278,,0.4981,0.5019,0.9101,-4.341,,0.967,0.0122,0.0208,h2h_self_play
+gbt_av,4.1613,,0.4929,0.5071,0.8499,-6.858,,0.7295,0.0999,0.1706,h2h_self_play
+full_ols_av,4.9769,,0.4846,0.5154,0.993,0.559,,0.2586,0.2906,0.4507,h2h_self_play
+anchor_hybrid_r0_full,3.5406,,0.4092,0.5908,0.8646,-5.952,,0.7758,0.0934,0.1308,h2h_self_play
