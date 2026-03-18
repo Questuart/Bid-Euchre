@@ -1381,16 +1381,22 @@ def _extract_outcome_distributions_from_parquet(
     return rows
 
 
-def _extract_decision_comparison(
+def _load_and_merge_pairwise(
     parquet_paths: list[Path],
-) -> list[dict]:
-    """Extract per-deal bid decision comparison across models.
+    required_columns: set[str],
+    caller: str,
+) -> tuple[pd.DataFrame | None, str]:
+    """Load parquet files and produce pairwise model merges.
 
-    Requires parquet files with bid decision columns (e.g., ``bid_decision``,
-    ``model``). If the schema lacks these columns, returns an empty list with
-    an informational log message.
+    Shared helper for :func:`_extract_decision_comparison` and
+    :func:`_extract_disagreement_outcomes`.  Handles file reading, column
+    validation, contract-column detection, and pairwise model merging.
 
-    Schema: model_a, model_b, contract, deal_id, decision_a, decision_b, agreed
+    Returns:
+        ``(merged_df, contract_col)`` on success, or ``(None, "")`` if data
+        is missing or the schema lacks required columns.  ``merged_df``
+        contains one row per (model_a, model_b, deal) triple with columns
+        suffixed ``_a`` / ``_b``.
     """
     frames: list[pd.DataFrame] = []
     for path in parquet_paths:
@@ -1404,20 +1410,20 @@ def _extract_decision_comparison(
             continue
 
     if not frames:
-        return []
+        return None, ""
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Check for required columns: need bid decision data per model per deal
-    required = {"bid_decision", "model", "deal_id"}
-    if not required.issubset(combined.columns):
+    # Column check
+    base_required = {"bid_decision", "model", "deal_id"} | required_columns
+    if not base_required.issubset(combined.columns):
         logger.info(
-            "decision_comparison: parquet missing required columns %s. "
-            "Available: %s. Skipping.",
-            required - set(combined.columns),
+            "%s: parquet missing required columns %s. Available: %s. Skipping.",
+            caller,
+            base_required - set(combined.columns),
             list(combined.columns),
         )
-        return []
+        return None, ""
 
     # Determine contract column
     contract_col = None
@@ -1429,9 +1435,9 @@ def _extract_decision_comparison(
         contract_col = "contract"
         combined[contract_col] = "pooled"
 
-    # Build pairwise comparisons
+    # Build pairwise merges
     models = sorted(combined["model"].unique())
-    rows: list[dict] = []
+    merge_frames: list[pd.DataFrame] = []
     for i, model_a in enumerate(models):
         for model_b in models[i + 1 :]:
             df_a = combined[combined["model"] == model_a]
@@ -1439,20 +1445,48 @@ def _extract_decision_comparison(
             merged = df_a.merge(
                 df_b, on=["deal_id", contract_col], suffixes=("_a", "_b")
             )
-            for _, row in merged.iterrows():
-                rows.append(
-                    {
-                        "model_a": model_a,
-                        "model_b": model_b,
-                        "contract": row[contract_col],
-                        "deal_id": row["deal_id"],
-                        "decision_a": row["bid_decision_a"],
-                        "decision_b": row["bid_decision_b"],
-                        "agreed": row["bid_decision_a"] == row["bid_decision_b"],
-                    }
-                )
+            if not merged.empty:
+                merged = merged.copy()
+                merged["model_a"] = model_a
+                merged["model_b"] = model_b
+                merge_frames.append(merged)
 
-    return rows
+    if not merge_frames:
+        return None, ""
+
+    result = pd.concat(merge_frames, ignore_index=True)
+    return result, contract_col
+
+
+def _extract_decision_comparison(
+    parquet_paths: list[Path],
+) -> list[dict]:
+    """Extract per-deal bid decision comparison across models.
+
+    Requires parquet files with bid decision columns (e.g., ``bid_decision``,
+    ``model``). If the schema lacks these columns, returns an empty list with
+    an informational log message.
+
+    Schema: model_a, model_b, contract, deal_id, decision_a, decision_b, agreed
+    """
+    merged, contract_col = _load_and_merge_pairwise(
+        parquet_paths, set(), "decision_comparison"
+    )
+    if merged is None:
+        return []
+
+    return [
+        {
+            "model_a": row["model_a"],
+            "model_b": row["model_b"],
+            "contract": row[contract_col],
+            "deal_id": row["deal_id"],
+            "decision_a": row["bid_decision_a"],
+            "decision_b": row["bid_decision_b"],
+            "agreed": row["bid_decision_a"] == row["bid_decision_b"],
+        }
+        for _, row in merged.iterrows()
+    ]
 
 
 def _extract_disagreement_outcomes(
@@ -1466,69 +1500,26 @@ def _extract_disagreement_outcomes(
     Schema: model_a, model_b, contract, deal_id, decision_a, decision_b,
             tricks_won_a, tricks_won_b
     """
-    frames: list[pd.DataFrame] = []
-    for path in parquet_paths:
-        if not path.exists():
-            continue
-        try:
-            df = pd.read_parquet(path)
-            frames.append(df)
-        except Exception as e:
-            logger.warning("Failed to read parquet %s: %s", path, e)
-            continue
-
-    if not frames:
+    merged, contract_col = _load_and_merge_pairwise(
+        parquet_paths, {"tricks_won"}, "disagreement_outcomes"
+    )
+    if merged is None:
         return []
 
-    combined = pd.concat(frames, ignore_index=True)
-
-    # Check for required columns
-    required = {"bid_decision", "model", "deal_id", "tricks_won"}
-    if not required.issubset(combined.columns):
-        logger.info(
-            "disagreement_outcomes: parquet missing required columns %s. "
-            "Available: %s. Skipping.",
-            required - set(combined.columns),
-            list(combined.columns),
-        )
-        return []
-
-    # Determine contract column
-    contract_col = None
-    for candidate in ("contract_family", "contract_type", "contract"):
-        if candidate in combined.columns:
-            contract_col = candidate
-            break
-    if contract_col is None:
-        contract_col = "contract"
-        combined[contract_col] = "pooled"
-
-    # Build disagreement rows
-    models = sorted(combined["model"].unique())
-    rows: list[dict] = []
-    for i, model_a in enumerate(models):
-        for model_b in models[i + 1 :]:
-            df_a = combined[combined["model"] == model_a]
-            df_b = combined[combined["model"] == model_b]
-            merged = df_a.merge(
-                df_b, on=["deal_id", contract_col], suffixes=("_a", "_b")
-            )
-            disagreements = merged[merged["bid_decision_a"] != merged["bid_decision_b"]]
-            for _, row in disagreements.iterrows():
-                rows.append(
-                    {
-                        "model_a": model_a,
-                        "model_b": model_b,
-                        "contract": row[contract_col],
-                        "deal_id": row["deal_id"],
-                        "decision_a": row["bid_decision_a"],
-                        "decision_b": row["bid_decision_b"],
-                        "tricks_won_a": row["tricks_won_a"],
-                        "tricks_won_b": row["tricks_won_b"],
-                    }
-                )
-
-    return rows
+    disagreements = merged[merged["bid_decision_a"] != merged["bid_decision_b"]]
+    return [
+        {
+            "model_a": row["model_a"],
+            "model_b": row["model_b"],
+            "contract": row[contract_col],
+            "deal_id": row["deal_id"],
+            "decision_a": row["bid_decision_a"],
+            "decision_b": row["bid_decision_b"],
+            "tricks_won_a": row["tricks_won_a"],
+            "tricks_won_b": row["tricks_won_b"],
+        }
+        for _, row in disagreements.iterrows()
+    ]
 
 
 def _extract_feature_importances_flat(
