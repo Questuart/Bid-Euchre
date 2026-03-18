@@ -234,6 +234,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/github_pr_state.py` | GitHub CLI wrappers for PR metadata and CI status |
 | `scripts/internal/generate_r1_5_diagnostics.py` | R1.5-v2 calibration diagnostics (cross-rung analysis + bimodality tests) |
 | `scripts/internal/generate_r4_charts.py` | One-off report chart regeneration utility |
+| `scripts/internal/generate_cross_rung_tables.py` | Cross-rung progression table from per-rung comparator CIs |
 | `scripts/internal/generate_rung_charts.py` | CSV-first rung chart generation for Arc D v2 reports |
 | `scripts/internal/generate_rung_tables.py` | Canonical CSV table generation for Arc D v2 rung reports |
 | `scripts/internal/generate_rung_report.py` | Markdown rung report renderer from CSV tables and chart PNGs |

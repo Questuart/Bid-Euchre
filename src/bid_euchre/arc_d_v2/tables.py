@@ -1472,6 +1472,14 @@ def _extract_decision_comparison(
     an informational log message.
 
     Schema: model_a, model_b, contract, deal_id, decision_a, decision_b, agreed
+
+    Note: This extractor is currently dormant -- wired through
+    ``generate_chart_data()`` but non-productive on the current
+    ``action_value.parquet`` schema, which lacks ``bid_decision`` and
+    ``model`` columns.  The productive path for decision_comparison.csv
+    is ``generate_interpretability.py`` step 3b, which computes decisions
+    from loaded models.  This function would activate if the parquet
+    schema were extended.
     """
     merged, contract_col = _load_and_merge_pairwise(
         parquet_paths, set(), "decision_comparison"
@@ -1503,6 +1511,14 @@ def _extract_disagreement_outcomes(
 
     Schema: model_a, model_b, contract, deal_id, decision_a, decision_b,
             tricks_won_a, tricks_won_b
+
+    Note: This extractor is currently dormant -- wired through
+    ``generate_chart_data()`` but non-productive on the current
+    ``action_value.parquet`` schema, which lacks ``bid_decision`` and
+    ``model`` columns.  The productive path for disagreement_outcomes.csv
+    is ``generate_interpretability.py`` step 3b, which computes decisions
+    from loaded models.  This function would activate if the parquet
+    schema were extended.
     """
     merged, contract_col = _load_and_merge_pairwise(
         parquet_paths, {"tricks_won"}, "disagreement_outcomes"
