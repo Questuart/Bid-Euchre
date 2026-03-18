@@ -208,6 +208,24 @@ class TestDaemonNotifyHook:
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
+    def test_special_chars_in_sentinel_produce_valid_json(self, tmp_path: Path) -> None:
+        """Sentinel content with quotes, backslashes, tabs produces valid JSON."""
+        ci_dir = tmp_path / ".claude" / "runtime" / "ci_polls" / "pr_77"
+        ci_dir.mkdir(parents=True)
+        # Content with JSON-special characters: quotes, backslash, tab
+        (ci_dir / "FAILED").write_text(
+            'CI_FAILED: Check "lint\\format" failed\t(exit 1)\n'
+        )
+
+        result = _run_hook(tmp_path)
+        assert result.returncode == 0
+
+        # The key test: output must be valid JSON despite special chars
+        output = json.loads(result.stdout)
+        ctx = output["hookSpecificOutput"]["additionalContext"]
+        assert "PR #77" in ctx
+        assert "CI_FAILED" in ctx
+
     def test_multiple_failures_combined(self, tmp_path: Path) -> None:
         """Multiple FAILED sentinels should be combined into one output."""
         ci_dir = tmp_path / ".claude" / "runtime" / "ci_polls" / "pr_10"

@@ -47,8 +47,10 @@ for sentinel in "$RUNTIME_DIR"/ci_polls/pr_*/FAILED "$RUNTIME_DIR"/review_loops/
     # Read summary (first line only, cap at 200 chars)
     summary=$(head -1 "$sentinel" 2>/dev/null | cut -c1-200 || echo "unknown failure")
 
-    # Build message
-    MESSAGES="${MESSAGES}${daemon_label} for PR #${pr_num} FAILED: ${summary}. Log: ${daemon_dir}/$([ "$parent_dir" = "ci_polls" ] && echo "poller.log" || echo "driver.log")\n"
+    # Build message (use printf for real newlines, not literal \n)
+    log_file=$([ "$parent_dir" = "ci_polls" ] && echo "poller.log" || echo "driver.log")
+    MESSAGES="${MESSAGES}${daemon_label} for PR #${pr_num} FAILED: ${summary}. Log: ${daemon_dir}/${log_file}
+"
 
     # Rename to NOTIFIED so we only alert once
     mv "$sentinel" "${daemon_dir}/NOTIFIED" 2>/dev/null || true
@@ -56,17 +58,26 @@ done
 
 # If we found any failures, emit them as additionalContext
 if [ -n "$MESSAGES" ]; then
-    # Escape for JSON
-    JSON_MSG=$(printf '%s' "$MESSAGES" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | tr '\n' ' ')
+    FULL_MSG="WARNING — Background daemon failure(s) detected:
+${MESSAGES}Check the log files for details. You may need to re-push or manually investigate."
 
-    cat <<EOF
+    # Use jq for robust JSON encoding (handles all special chars correctly).
+    # Falls back to sed-based escaping if jq is unavailable.
+    if command -v jq >/dev/null 2>&1; then
+        jq -n --arg ctx "$FULL_MSG" \
+            '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $ctx}}'
+    else
+        # Fallback: escape \, ", tab, then collapse newlines to spaces
+        JSON_MSG=$(printf '%s' "$FULL_MSG" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g' | tr '\n' ' ')
+        cat <<ENDJSON
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
-    "additionalContext": "WARNING — Background daemon failure(s) detected:\n${JSON_MSG}\nCheck the log files for details. You may need to re-push or manually investigate."
+    "additionalContext": "${JSON_MSG}"
   }
 }
-EOF
+ENDJSON
+    fi
 fi
 
 exit 0

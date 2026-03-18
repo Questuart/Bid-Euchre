@@ -524,6 +524,17 @@ class TestStripCodeFences:
         raw = '```JSON\n[{"a": 1}]\n```'
         assert _strip_code_fences(raw) == '[{"a": 1}]'
 
+    def test_mixed_case_json_tag(self) -> None:
+        """```Json and other case variants are handled (case-insensitive)."""
+        raw = '```Json\n[{"a": 1}]\n```'
+        assert _strip_code_fences(raw) == '[{"a": 1}]'
+
+    def test_jsonc_tag_not_matched(self) -> None:
+        """```jsonc is NOT matched — only 'json' or bare fences are stripped."""
+        raw = '```jsonc\n[{"a": 1}]\n```'
+        # Falls through to raw.strip() since 'jsonc' doesn't match optional 'json'
+        assert _strip_code_fences(raw) == raw.strip()
+
 
 # --- Schema Normalization Tests ---
 
