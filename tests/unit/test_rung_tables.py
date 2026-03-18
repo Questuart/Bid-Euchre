@@ -2314,6 +2314,12 @@ class TestExtractFeatureImportancesFlat:
         }
         assert len(df) == 2
 
+        # Verify backward-compat dual-write: selection_paths.csv is also produced
+        assert "selection_paths.csv" in generated
+        assert (tmp_path / "selection_paths.csv").exists()
+        df_sel = pd.read_csv(tmp_path / "selection_paths.csv")
+        pd.testing.assert_frame_equal(df, df_sel)
+
     def test_outcome_distributions_from_parquet(self, tmp_path):
         """outcome_distributions.csv uses parquet data when available."""
         parquet_path = FIXTURES_DIR / "action_value.parquet"

@@ -237,8 +237,9 @@ class TestParsePlanFindingsReversedFormat:
     """Test that reversed-format Codex output is parsed through delegation.
 
     The plan review adapter delegates to parse_codex_output() from the code
-    review adapter, which already handles reversed format (Pass 1.5). These
-    tests confirm the delegation path works correctly for plan review (fixes #830).
+    review adapter, which handles reversed format via ``_FINDING_LINE_RE``.
+    These tests confirm the delegation path works correctly for plan review
+    (fixes #830).
     """
 
     def test_reversed_format_standard(self) -> None:
@@ -280,6 +281,14 @@ class TestParsePlanFindingsReversedFormat:
         findings = parse_plan_findings(output)
         assert len(findings) == 1
         assert "review_driver.sh" in findings[0].file
+
+    def test_reversed_format_no_line_number(self) -> None:
+        """Reversed format without :N line suffix is still parsed."""
+        output = "- [P1] Missing docs — src/bid_euchre/foo.py\n"
+        findings = parse_plan_findings(output)
+        assert len(findings) == 1
+        assert "foo.py" in findings[0].file
+        assert findings[0].line is None or findings[0].line == 0
 
 
 # --- Finding Dataclass Tests ---
