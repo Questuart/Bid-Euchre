@@ -2312,6 +2312,7 @@ def generate_all_tables(
     mode: str | None = None,
     seed: int | None = None,
     seeds: list[int] | None = None,
+    dataset_dirs: list[Path] | None = None,
 ) -> list[str]:
     """Generate all 11 canonical CSVs from rung directory artifacts.
 
@@ -2322,6 +2323,12 @@ def generate_all_tables(
         seed: Single RNG seed (for backward compatibility).
         seeds: List of RNG seeds for multi-seed FULL aggregation.
             If provided, overrides ``seed``.
+        dataset_dirs: Optional explicit paths to dataset directories containing
+            action_value.parquet files. When provided, parquet discovery uses
+            these directories instead of searching under ``rung_dir``. This is
+            needed because datasets are generated in ``data/runs/`` (e.g.
+            ``base_datasets/pre_r3/<mode>/seed_<ds_seed>/``) while rung
+            artifacts live in ``data/artifacts/arc_d_v2/<rung>/``.
 
     Returns:
         List of generated CSV filenames.
@@ -2476,11 +2483,39 @@ def generate_all_tables(
 
     # 14. Discover parquet files once — shared by chart_data, seat_balance,
     #     and model eval CSV generation.
+    #
+    # Primary path: explicit dataset_dirs (from orchestration, where datasets
+    # actually live — data/runs/arc_d_v2/base_datasets/ or r3_datasets/).
+    # Fallback: legacy path under rung_dir/seed_<s>/datasets/.
     parquet_paths: list[Path] = []
-    for s in seed_list:
-        candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
-        if candidate.exists():
-            parquet_paths.append(candidate)
+    if dataset_dirs:
+        for ds_dir in dataset_dirs:
+            # Direct parquet at dataset root
+            candidate = ds_dir / "action_value.parquet"
+            if candidate.exists():
+                parquet_paths.append(candidate)
+                continue
+            # Nested under datasets/ subdir
+            candidate = ds_dir / "datasets" / "action_value.parquet"
+            if candidate.exists():
+                parquet_paths.append(candidate)
+                continue
+            # Recursive search in datasets/action_value/ (chunked format)
+            av_dir = ds_dir / "datasets" / "action_value"
+            if av_dir.is_dir():
+                parts = sorted(av_dir.glob("*.parquet"))
+                parquet_paths.extend(parts)
+    if not parquet_paths:
+        # Fallback: legacy discovery under rung_dir
+        for s in seed_list:
+            candidate = rung_dir / f"seed_{s}" / "datasets" / "action_value.parquet"
+            if candidate.exists():
+                parquet_paths.append(candidate)
+    if parquet_paths:
+        logger.info(
+            "Discovered %d parquet file(s) for chart_data generation",
+            len(parquet_paths),
+        )
 
     # 14a. chart_data CSVs (outcome_summary, contract_mix, etc.)
     chart_data_dir = output_dir.parent / "chart_data"

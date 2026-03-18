@@ -707,6 +707,115 @@ class TestFullPipeline:
 
 
 # ──────────────────────────────────────────────
+#  Dataset dirs parquet discovery tests
+# ──────────────────────────────────────────────
+
+
+class TestDatasetDirsDiscovery:
+    """Tests for the dataset_dirs parameter in generate_all_tables."""
+
+    def test_dataset_dirs_enables_parquet_outcome_distributions(self, tmp_path):
+        """With dataset_dirs, outcome_distributions uses parquet (source=parquet)."""
+        import shutil
+
+        # Copy fixtures to rung_dir (JSON artifacts)
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        for f in FIXTURES_DIR.glob("*.json"):
+            shutil.copy2(f, rung_dir / f.name)
+
+        # Create a dataset dir with action_value.parquet
+        ds_dir = tmp_path / "datasets" / "seed_1001"
+        ds_dir.mkdir(parents=True)
+        df = pd.DataFrame(
+            {
+                "hand_id": range(100),
+                "deal_id": list(range(50)) * 2,
+                "focal_seat": [0, 1, 2, 3] * 25,
+                "action_type": ["bid"] * 80 + ["pass"] * 20,
+                "contract_family": (["suit"] * 50 + ["high"] * 30 + ["low"] * 20),
+                "bid_n": [6] * 100,
+                "trump_suit": ["H"] * 100,
+                "net_points": [2.0] * 100,
+                "tricks_won": ([5, 6, 7, 4, 8, 3, 5, 6, 7, 5] * 10),
+            }
+        )
+        parquet_path = ds_dir / "action_value.parquet"
+        df.to_parquet(parquet_path)
+
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(rung_dir, output_dir, dataset_dirs=[ds_dir])
+
+        # Check outcome_distributions was generated
+        assert "chart_data/outcome_distributions.csv" in generated
+
+        # Verify it used parquet path (source=parquet, multiple tricks_won values)
+        od_path = output_dir.parent / "chart_data" / "outcome_distributions.csv"
+        od_df = pd.read_csv(od_path)
+        assert "source" in od_df.columns
+        assert (
+            od_df["source"] == "parquet"
+        ).all(), f"Expected source=parquet but got: {od_df['source'].unique()}"
+        # Real parquet data should have multiple tricks_won values per contract
+        suit_rows = od_df[od_df["contract"] == "suit"]
+        assert (
+            len(suit_rows) > 1
+        ), f"Expected multiple histogram bins for suit, got {len(suit_rows)} rows"
+
+    def test_without_dataset_dirs_no_parquet_outcome_distributions(self, tmp_path):
+        """Without dataset_dirs and no matching legacy path, parquet CSVs not generated."""
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(FIXTURES_DIR, output_dir)
+
+        # The fixture parquet is at FIXTURES_DIR root, not under seed_<s>/datasets/,
+        # so legacy discovery won't find it. outcome_distributions may or may not
+        # be generated via the H2H synthetic fallback depending on fixture data.
+        # The key assertion: if it IS generated, it should be synthetic.
+        if "chart_data/outcome_distributions.csv" in generated:
+            od_path = output_dir.parent / "chart_data" / "outcome_distributions.csv"
+            od_df = pd.read_csv(od_path)
+            assert (od_df["source"] == "synthetic").all()
+
+    def test_dataset_dirs_nested_datasets_subdir(self, tmp_path):
+        """Discovers parquet in datasets/ subdirectory of dataset_dir."""
+        import shutil
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        for f in FIXTURES_DIR.glob("*.json"):
+            shutil.copy2(f, rung_dir / f.name)
+
+        # Parquet nested under datasets/ subdir
+        ds_dir = tmp_path / "datasets" / "seed_1001"
+        nested = ds_dir / "datasets"
+        nested.mkdir(parents=True)
+        df = pd.DataFrame(
+            {
+                "hand_id": range(50),
+                "deal_id": list(range(25)) * 2,
+                "focal_seat": [0, 1, 2, 3] * 12 + [0, 0],
+                "action_type": ["bid"] * 50,
+                "contract_family": ["suit"] * 30 + ["high"] * 20,
+                "bid_n": [6] * 50,
+                "trump_suit": ["H"] * 50,
+                "net_points": [2.0] * 50,
+                "tricks_won": ([5, 6, 7, 4, 8] * 10),
+            }
+        )
+        (nested / "action_value.parquet").parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(nested / "action_value.parquet")
+
+        output_dir = tmp_path / "tables"
+        generated = generate_all_tables(rung_dir, output_dir, dataset_dirs=[ds_dir])
+
+        assert "chart_data/outcome_distributions.csv" in generated
+        od_df = pd.read_csv(
+            output_dir.parent / "chart_data" / "outcome_distributions.csv"
+        )
+        assert (od_df["source"] == "parquet").all()
+
+
+# ──────────────────────────────────────────────
 #  Multi-seed merge tests
 # ──────────────────────────────────────────────
 
