@@ -227,6 +227,8 @@ non-canonical QUICK outputs were archived and the regeneration pipeline was repa
 
 **Shared dataset reuse (§4.5):**
 - R0, R1, R2 all share the same base dataset (same features, same deals)
+- Combined with the fixed R0 anchor, this isolates capacity vs information effects
+  (lineage plan Goal 1) — only model architecture varies across rungs
 - Output path: `data/runs/arc_d_v2/base_datasets/pre_r3/{mode}/seed_{seed}/`
 - Step 1 skips generation if the shared dataset already exists (idempotent)
 - R3+ continues to use rung-local datasets (moon/loner expansion)
