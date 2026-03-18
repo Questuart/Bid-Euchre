@@ -8,10 +8,12 @@ from pathlib import Path
 from scripts.lint_repo import (
     _has_model_artifact_schema,
     _is_gate_artifact,
+    _is_infra_path,
     _is_model_artifact,
     _is_split_manifest,
     check_artifacts_require_freeze,
     check_gate_artifacts_schema,
+    check_infra_changes_require_tests,
     check_semantic_gate_schema,
     check_split_manifest_schema,
 )
@@ -761,3 +763,158 @@ class TestArtifactSha256Check:
         )
         assert len(violations) == 1
         assert "artifact_sha256" in violations[0].message
+
+
+# -- _is_infra_path tests ---------------------------------------------------
+
+
+class TestIsInfraPath:
+    """Tests for the _is_infra_path helper."""
+
+    def test_workflow_file(self):
+        assert _is_infra_path(".github/workflows/ci.yml") is True
+
+    def test_hook_file(self):
+        assert _is_infra_path(".claude/hooks/post-push-ci-check.sh") is True
+
+    def test_scripts_internal_file(self):
+        assert _is_infra_path("scripts/internal/review_driver.py") is True
+
+    def test_makefile(self):
+        assert _is_infra_path("Makefile") is True
+
+    def test_src_file_not_infra(self):
+        assert _is_infra_path("src/bid_euchre/core/rules.py") is False
+
+    def test_top_level_scripts_not_infra(self):
+        assert _is_infra_path("scripts/lint_repo.py") is False
+
+    def test_tests_not_infra(self):
+        assert _is_infra_path("tests/unit/test_rules.py") is False
+
+    def test_claude_settings_not_infra(self):
+        assert _is_infra_path(".claude/settings.json") is False
+
+
+# -- check_infra_changes_require_tests tests ---------------------------------
+
+
+class TestCheckInfraChangesRequireTests:
+    """Tests for the check_infra_changes_require_tests lint rule."""
+
+    def test_modified_workflow_no_tests_violation(self):
+        """Modified existing workflow with no test changes -> violation."""
+        changed = [
+            ("M", ".github/workflows/ci.yml"),
+            ("M", "src/bid_euchre/core/rules.py"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert violations[0].rule == "infra-changes-require-tests"
+        assert ".github/workflows/ci.yml" in violations[0].message
+
+    def test_modified_hook_with_test_passes(self):
+        """Modified existing hook with matching test change -> pass."""
+        changed = [
+            ("M", ".claude/hooks/post-push-ci-check.sh"),
+            ("M", "tests/unit/test_post_push_ci_check_hook.py"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []
+
+    def test_new_infra_file_without_tests_passes(self):
+        """New infra file without tests -> pass (phase 1 exemption)."""
+        changed = [
+            ("A", ".github/workflows/new_workflow.yml"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []
+
+    def test_renamed_infra_file_without_tests_passes(self):
+        """Renamed infra file without tests -> pass (phase 1 exemption)."""
+        changed = [
+            ("R", ".github/workflows/renamed.yml"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []
+
+    def test_non_infra_changes_ignored(self):
+        """Non-infra file modifications without tests -> no violation."""
+        changed = [
+            ("M", "src/bid_euchre/core/rules.py"),
+            ("M", "src/bid_euchre/sim/deals.py"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []
+
+    def test_modified_makefile_no_tests_violation(self):
+        """Modified Makefile without test changes -> violation."""
+        changed = [
+            ("M", "Makefile"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert violations[0].rule == "infra-changes-require-tests"
+
+    def test_modified_scripts_internal_no_tests_violation(self):
+        """Modified scripts/internal/ file without tests -> violation."""
+        changed = [
+            ("M", "scripts/internal/review_driver.py"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert violations[0].rule == "infra-changes-require-tests"
+
+    def test_doc_only_change_in_infra_path_exempt(self):
+        """Markdown change under infra path -> no violation (doc exempt)."""
+        changed = [
+            ("M", ".claude/hooks/README.md"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []
+
+    def test_any_test_file_satisfies_gate(self):
+        """Any test file change (even unrelated) satisfies the gate."""
+        changed = [
+            ("M", ".github/workflows/ci.yml"),
+            ("A", "tests/unit/test_something_new.py"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []
+
+    def test_multiple_infra_files_one_violation(self):
+        """Multiple modified infra files produce one violation."""
+        changed = [
+            ("M", ".github/workflows/ci.yml"),
+            ("M", "scripts/internal/review_driver.py"),
+            ("M", "Makefile"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert "ci.yml" in violations[0].message
+        assert "review_driver.py" in violations[0].message
+
+    def test_mixed_add_and_modify_only_modify_triggers(self):
+        """Mixed A + M: only modified files trigger the gate."""
+        changed = [
+            ("A", ".github/workflows/new_workflow.yml"),
+            ("M", ".github/workflows/ci.yml"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        # The new file should not appear in the message
+        assert "new_workflow.yml" not in violations[0].message
+
+    def test_empty_changeset_passes(self):
+        """Empty changeset produces no violations."""
+        violations = check_infra_changes_require_tests([])
+        assert violations == []
+
+    def test_type_change_triggers_gate(self):
+        """Type-change (T) status triggers the gate like M."""
+        changed = [
+            ("T", "scripts/internal/ci_poller.sh"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert violations[0].rule == "infra-changes-require-tests"
