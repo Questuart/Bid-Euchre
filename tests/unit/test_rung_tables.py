@@ -30,6 +30,7 @@ from bid_euchre.arc_d_v2.tables import (
     _extract_feature_importances_flat,
     _extract_h2h_by_contract,
     _extract_outcome_distributions,
+    _extract_outcome_distributions_from_parquet,
     _merge_comparator_cis,
     _merge_h2h_batteries,
     _per_seed_sanity_comparator,
@@ -2507,3 +2508,108 @@ class TestBidLevelsFromParquet:
         status_path = tmp_path / "outcome_distributions.status"
         assert status_path.exists()
         assert "degraded:synthetic" in status_path.read_text()
+
+
+# ──────────────────────────────────────────────
+#  Post-merge hardening: Parquet extraction edge cases (T3, T5)
+# ──────────────────────────────────────────────
+
+
+class TestExtractOutcomeDistributionsFromParquet:
+    """Direct tests for _extract_outcome_distributions_from_parquet."""
+
+    def test_missing_contract_column_returns_empty(self, tmp_path):
+        """Returns [] when parquet has tricks_won but no contract column."""
+        df = pd.DataFrame(
+            {
+                "hand_id": range(50),
+                "tricks_won": [5, 6, 7, 4, 8] * 10,
+                "model": ["gbt"] * 50,
+                # No contract_family, contract_type, or contract column
+            }
+        )
+        parquet_path = tmp_path / "action_value.parquet"
+        df.to_parquet(parquet_path)
+
+        rows = _extract_outcome_distributions_from_parquet([parquet_path])
+        assert rows == []
+
+    def test_missing_tricks_won_returns_empty(self, tmp_path):
+        """Returns [] when parquet has contract but no tricks_won column."""
+        df = pd.DataFrame(
+            {
+                "hand_id": range(50),
+                "contract_family": ["suit"] * 30 + ["high"] * 20,
+                "model": ["gbt"] * 50,
+                # No tricks_won column
+            }
+        )
+        parquet_path = tmp_path / "action_value.parquet"
+        df.to_parquet(parquet_path)
+
+        rows = _extract_outcome_distributions_from_parquet([parquet_path])
+        assert rows == []
+
+    def test_nonexistent_file_returns_empty(self, tmp_path):
+        """Returns [] when parquet file does not exist."""
+        fake_path = tmp_path / "nonexistent.parquet"
+        rows = _extract_outcome_distributions_from_parquet([fake_path])
+        assert rows == []
+
+    def test_fraction_sums_to_one(self, tmp_path):
+        """Fractions within each (model, contract) group sum to 1.0."""
+        df = pd.DataFrame(
+            {
+                "hand_id": range(100),
+                "contract_family": ["suit"] * 50 + ["high"] * 50,
+                "tricks_won": [3, 4, 5, 6, 7] * 20,
+                "model": ["gbt"] * 100,
+            }
+        )
+        parquet_path = tmp_path / "action_value.parquet"
+        df.to_parquet(parquet_path)
+
+        rows = _extract_outcome_distributions_from_parquet([parquet_path])
+        assert len(rows) > 0
+
+        # Group by model+contract and verify fractions sum to ~1.0
+        result_df = pd.DataFrame(rows)
+        for (model, contract), group in result_df.groupby(["model", "contract"]):
+            fraction_sum = group["fraction"].sum()
+            assert (
+                abs(fraction_sum - 1.0) < 1e-6
+            ), f"Fractions for ({model}, {contract}) sum to {fraction_sum}, not 1.0"
+
+    def test_uses_bidder_column_for_model(self, tmp_path):
+        """Discovers model from 'bidder' column when 'model' is absent."""
+        df = pd.DataFrame(
+            {
+                "hand_id": range(60),
+                "contract_family": ["suit"] * 30 + ["high"] * 30,
+                "tricks_won": [4, 5, 6] * 20,
+                "bidder": ["gbt_av"] * 30 + ["ols_av"] * 30,
+            }
+        )
+        parquet_path = tmp_path / "action_value.parquet"
+        df.to_parquet(parquet_path)
+
+        rows = _extract_outcome_distributions_from_parquet([parquet_path])
+        assert len(rows) > 0
+        models = {r["model"] for r in rows}
+        assert models == {"gbt_av", "ols_av"}
+
+    def test_all_rows_have_source_parquet(self, tmp_path):
+        """All output rows have source='parquet'."""
+        df = pd.DataFrame(
+            {
+                "hand_id": range(30),
+                "contract_family": ["suit"] * 30,
+                "tricks_won": [4, 5, 6] * 10,
+                "model": ["gbt"] * 30,
+            }
+        )
+        parquet_path = tmp_path / "action_value.parquet"
+        df.to_parquet(parquet_path)
+
+        rows = _extract_outcome_distributions_from_parquet([parquet_path])
+        assert all(r["source"] == "parquet" for r in rows)
