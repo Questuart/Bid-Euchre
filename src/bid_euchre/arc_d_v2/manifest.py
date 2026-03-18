@@ -242,6 +242,24 @@ def generate_evidence_manifest(
                 except (ValueError, IndexError):
                     pass
 
+    # Fallback: extract seeds from artifact filenames if still empty.
+    # Multi-seed FULL artifacts use suffixed names (e.g.,
+    # h2h_battery_full_42.json, comparator_cis_r1_123.json) rather
+    # than a single canonical file.
+    _SEED_BEARING_PREFIXES = ("h2h_battery_", "comparator_battery_", "comparator_cis_")
+    if not seeds:
+        for f in sorted(rung_dir.glob("*.json")):
+            if not any(f.name.startswith(p) for p in _SEED_BEARING_PREFIXES):
+                continue
+            # Trailing segment after last underscore is the seed
+            tail = f.stem.rsplit("_", 1)[-1]
+            try:
+                s = int(tail)
+                if s not in seeds:
+                    seeds.append(s)
+            except ValueError:
+                pass
+
     # Mode: caller override > H2H detection > default
     resolved_mode = explicit_mode or detected_mode
 
