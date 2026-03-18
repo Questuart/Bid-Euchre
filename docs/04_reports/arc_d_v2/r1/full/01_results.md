@@ -207,3 +207,5 @@ Generated from canonical CSV tables and chart PNGs.
 | selected_ols_av | make_rate_range | 1.0000 | 0.1000 | 1.0000 | PASS |
 
 *Full table omitted from markdown — see `tables/sanity_bounds_check.csv`*
+
+<!-- gate_status: referenced via evidence_manifest.json -->
