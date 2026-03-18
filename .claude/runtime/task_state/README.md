@@ -41,6 +41,13 @@ Each delegated task writes a JSON file named `<task_id>.json`.
     "Validation fails 3+ times on same step",
     "Blocked for more than 30 minutes"
   ],
+  "progress": {
+    "last_completed_item": 1,
+    "last_artifact": "src/bid_euchre/arc_d_v2/tables.py",
+    "last_validation": "uv run pytest tests/unit/test_tables.py — passed",
+    "current_blocker": null,
+    "last_forward_progress_at": "2026-03-18T14:30:00Z"
+  },
   "completion_note": null
 }
 ```
@@ -63,13 +70,14 @@ Each delegated task writes a JSON file named `<task_id>.json`.
 | `validation_steps` | array | no | v1 | Commands to run for validation |
 | `completion_criteria` | string | no | v1 | What "done" means for this task |
 | `escalation_triggers` | array | no | v2 | Conditions under which the lane must escalate rather than continue |
+| `progress` | object/null | no | v2 | Durable progress state for drift/liveness detection (see below) |
 | `completion_note` | string/null | no | v2 | Short summary written at task completion or handoff |
 
 ### Field Semantics
 
 **`owner_lane`** is the canonical `lane_id` of the lane that owns this task.
-One lane should own one primary task at a time. If a lane discovers work
-outside its scope, it should create a follow-up, hand off to another lane,
+One lane must own one primary task at a time. If a lane discovers work
+outside its scope, it must create a follow-up, hand off to another lane,
 or escalate to `ops`.
 
 **`in_scope`** and **`out_of_scope`** define the task's boundaries. A lane is
@@ -84,6 +92,25 @@ any trigger condition is met.
 a short summary of what was done, what was left undone, and any follow-ups.
 This replaces implicit handoff information that would otherwise exist only
 in chat history.
+
+### Progress Fields
+
+The `progress` object captures durable progress state so `ops` can
+distinguish "alive and progressing" from "alive but drifting/blocked"
+without reading terminal history. All sub-fields are optional.
+
+| Sub-field | Type | Description |
+|-----------|------|-------------|
+| `last_completed_item` | int/null | ID of the last completed checklist item |
+| `last_artifact` | string/null | Path to the last meaningful file touched or created |
+| `last_validation` | string/null | Last validation command and its outcome (e.g., "pytest — passed") |
+| `current_blocker` | string/null | Description of the current blocker, or null if unblocked |
+| `last_forward_progress_at` | string/null | ISO 8601 timestamp of the last meaningful forward progress |
+
+Agents should update `progress` whenever they complete a checklist item,
+run a validation step, or encounter/clear a blocker. The
+`last_forward_progress_at` timestamp enables `ops` to detect stalled lanes
+by comparing it against a configured staleness threshold.
 
 ### Item Fields
 
@@ -139,6 +166,7 @@ v1 task files are accepted by v2 readers. Missing v2 fields are inferred:
 | `in_scope` | `[]` (unbounded -- legacy behavior) |
 | `out_of_scope` | `[]` (unbounded -- legacy behavior) |
 | `escalation_triggers` | `[]` (no automatic escalation -- legacy behavior) |
+| `progress` | null (no durable progress tracking -- legacy behavior) |
 | `completion_note` | null |
 
 Writers should produce v2 entries. v1 entries remain readable.
@@ -146,5 +174,5 @@ Writers should produce v2 entries. v1 entries remain readable.
 ## v1 Schema (Deprecated)
 
 The v1 schema did not include `owner_lane`, `goal`, `in_scope`,
-`out_of_scope`, `escalation_triggers`, or `completion_note`. See git
+`out_of_scope`, `escalation_triggers`, `progress`, or `completion_note`. See git
 history for the full v1 specification.
