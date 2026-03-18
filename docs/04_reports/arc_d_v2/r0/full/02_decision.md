@@ -66,3 +66,5 @@ All evaluated hypothesis checks passed (2 skipped). Evidence supports advancing 
 - Chart 12: Bid and Make Rates
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
+
+<!-- gate_status: data sanity checks in §1 above -->

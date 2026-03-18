@@ -392,6 +392,10 @@ def generate_report(report_dir: Path) -> str:
             lines.append(note)
         lines.append("")
 
+    # Gate status marker — required by repo linter for promotion registry docs
+    lines.append("<!-- gate_status: data sanity checks in \u00a71 above -->")
+    lines.append("")
+
     return "\n".join(lines)
 
 
@@ -756,6 +760,10 @@ def generate_decision_report(
         "- Full tables: `tables/comparator_rankings.csv`, "
         "`tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`"
     )
+    lines.append("")
+
+    # Gate status marker — required by repo linter for promotion registry docs
+    lines.append("<!-- gate_status: data sanity checks in \u00a71 above -->")
     lines.append("")
 
     content = "\n".join(lines)

@@ -206,3 +206,5 @@ Generated from canonical CSV tables and chart PNGs.
 - **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
 - **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
 - **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+
+<!-- gate_status: data sanity checks in §1 above -->
