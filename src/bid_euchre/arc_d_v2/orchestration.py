@@ -1453,6 +1453,35 @@ def execute_step_6(state: RunState, dry_run: bool = False) -> bool:
         ",".join(str(s) for s in state.seeds) if state.seeds else "42",
     ]
 
+    # Resolve actual dataset directories for parquet discovery.
+    # Datasets live in data/runs/ (not data/artifacts/), so we must
+    # pass explicit paths for chart_data CSVs that need parquet.
+    ds_seeds = MODE_DATASET_SEEDS.get(state.mode, [1001])
+    for ds_seed in ds_seeds:
+        if rung in ("r0", "r1", "r2"):
+            ds_dir = (
+                _repo_root()
+                / "data"
+                / "runs"
+                / "arc_d_v2"
+                / "base_datasets"
+                / "pre_r3"
+                / state.mode
+                / f"seed_{ds_seed}"
+            )
+        else:
+            ds_dir = (
+                _repo_root()
+                / "data"
+                / "runs"
+                / "arc_d_v2"
+                / "r3_datasets"
+                / state.mode
+                / f"seed_{ds_seed}"
+            )
+        if ds_dir.exists():
+            cmd.extend(["--dataset-dir", str(ds_dir)])
+
     if dry_run:
         logger.info("Step 6: would run: %s", " ".join(cmd))
         state.mark_step_complete("6")

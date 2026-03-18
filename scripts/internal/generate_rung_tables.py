@@ -51,6 +51,15 @@ def main() -> None:
         "Comma-separated for multi-seed FULL (e.g., '42,123,456')",
     )
     parser.add_argument(
+        "--dataset-dir",
+        type=Path,
+        action="append",
+        default=None,
+        help="Path to dataset directory containing action_value.parquet. "
+        "Can be specified multiple times for multi-shard datasets. "
+        "When provided, parquet discovery uses these instead of rung-dir.",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -70,7 +79,11 @@ def main() -> None:
         seeds = [int(s.strip()) for s in args.seed.split(",")]
 
     generated = generate_all_tables(
-        args.rung_dir, args.output_dir, mode=args.mode, seeds=seeds
+        args.rung_dir,
+        args.output_dir,
+        mode=args.mode,
+        seeds=seeds,
+        dataset_dirs=args.dataset_dir,
     )
     logger.info("Generated %d tables: %s", len(generated), ", ".join(generated))
 
