@@ -1084,3 +1084,33 @@ class TestChartGeneration:
 
         assert "feature_importance.png" in generated
         assert (output_dir / "feature_importance.png").exists()
+
+    def test_run_dispatches_flat_importance_schema(self, tmp_path: Path):
+        """run() synthesizes rank and generates chart when CSV has flat schema (no rank)."""
+        mod = _import_generate_interpretability_charts()
+
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Write CSV with flat schema: model, contract, feature_name, importance
+        # (NO rank column) — exercises the groupby().rank() synthesis branch
+        flat_df = pd.DataFrame(
+            [
+                {
+                    "model": "gbt_av",
+                    "contract": ct,
+                    "feature_name": f"f{i}",
+                    "importance": 1.0 / i,
+                }
+                for ct in ("suit", "high")
+                for i in range(1, 4)
+            ]
+        )
+        assert "rank" not in flat_df.columns
+        flat_df.to_csv(chart_data_dir / "feature_importances.csv", index=False)
+
+        output_dir = tmp_path / "charts"
+        generated = mod.run(chart_data_dir, output_dir)
+
+        assert "feature_importance.png" in generated
+        assert (output_dir / "feature_importance.png").exists()
