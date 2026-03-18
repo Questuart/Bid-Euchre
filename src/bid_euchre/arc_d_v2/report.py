@@ -364,25 +364,30 @@ def generate_report(report_dir: Path) -> str:
 
 def _extract_advancement_decision(
     hypothesis_outcomes: pd.DataFrame | None,
+    mode: str = "QUICK",
 ) -> str:
     """Determine advancement decision from hypothesis outcomes.
 
-    Returns one of: ADVANCE, HOLD, HALT, PENDING.
+    Returns one of: ADVANCE, HOLD, HALT, PRELIMINARY, PENDING.
+
+    When *mode* is ``"QUICK"`` and hypothesis outcomes are absent or empty,
+    returns ``"PRELIMINARY"`` instead of ``"PENDING"`` to signal that a
+    data-driven triage summary should be generated.
     """
     if hypothesis_outcomes is None or len(hypothesis_outcomes) == 0:
-        return "PENDING"
+        return "PRELIMINARY" if mode == "QUICK" else "PENDING"
 
     if "status" not in hypothesis_outcomes.columns:
-        return "PENDING"
+        return "PRELIMINARY" if mode == "QUICK" else "PENDING"
 
     statuses = hypothesis_outcomes["status"].str.upper().tolist()
     if not statuses:
-        return "PENDING"
+        return "PRELIMINARY" if mode == "QUICK" else "PENDING"
 
     # Exclude SKIP hypotheses (excluded models) from the decision
     evaluated = [s for s in statuses if s != "SKIP"]
     if not evaluated:
-        return "PENDING"
+        return "PRELIMINARY" if mode == "QUICK" else "PENDING"
 
     n_fail = sum(1 for s in evaluated if s == "FAIL")
     n_pass = sum(1 for s in evaluated if s == "PASS")
@@ -464,7 +469,69 @@ def _hypothesis_summary_table(
     if not display_cols:
         return _table_placeholder("hypothesis_outcomes.csv")
 
-    return _df_to_markdown(outcomes[display_cols])
+    return _df_to_markdown(outcomes[display_cols], table_name="hypothesis_outcomes.csv")
+
+
+def _build_preliminary_triage(
+    tables_dir: Path,
+    comparator: pd.DataFrame | None,
+    h2h_tier: pd.DataFrame | None,
+) -> list[str]:
+    """Build a data-driven preliminary triage for QUICK mode.
+
+    When hypothesis outcomes are absent (typical for QUICK runs that skip
+    the advance-check pipeline), this summarises available evidence so the
+    decision report is informative rather than a blank "PENDING".
+    """
+    parts: list[str] = []
+    parts.append("**PRELIMINARY — formal advance-check evidence absent**")
+    parts.append("")
+    parts.append("Data-driven triage based on available QUICK evidence:")
+    parts.append("")
+
+    # Comparator performance
+    if comparator is not None and "net_eppd" in comparator.columns:
+        if "facet" in comparator.columns:
+            pooled = comparator[comparator["facet"] == "pooled"]
+        else:
+            pooled = comparator
+        if len(pooled) > 0:
+            top = pooled.sort_values("net_eppd", ascending=False).head(3)
+            for _, row in top.iterrows():
+                model = row.get("model", "?")
+                net = row["net_eppd"]
+                parts.append(f"- **{model}** net_eppd = {net:.3f}")
+
+    # H2H win rates
+    if h2h_tier is not None and "mean_win_rate" in h2h_tier.columns:
+        best = h2h_tier.sort_values("mean_win_rate", ascending=False).head(1)
+        if len(best) > 0:
+            row = best.iloc[0]
+            parts.append(
+                f"- Best H2H win rate: **{row.get('model', '?')}** "
+                f"({row['mean_win_rate']:.1%} vs {row.get('tier', '?')} tier)"
+            )
+
+    # Data sanity
+    data_sanity = _read_csv_safe(tables_dir / "data_sanity.csv")
+    if data_sanity is not None:
+        if "status" in data_sanity.columns:
+            n_fail = (data_sanity["status"].str.upper() == "FAIL").sum()
+            if n_fail > 0:
+                parts.append(f"- Data sanity: **{n_fail} failure(s)** detected")
+            else:
+                parts.append("- Data sanity: all checks passed")
+
+    parts.append("")
+    parts.append("**Watch items / caveats:**")
+    parts.append("")
+    parts.append("- Formal hypothesis tests not yet executed")
+    parts.append("- QUICK sample sizes may be insufficient for tail analysis")
+    parts.append(
+        "- Run the advance-check pipeline (`--mode FULL`) for definitive evidence"
+    )
+
+    return parts
 
 
 def generate_decision_report(
@@ -496,7 +563,7 @@ def generate_decision_report(
     comparator = _read_csv_safe(tables_dir / "comparator_rankings.csv")
     h2h_tier = _read_csv_safe(tables_dir / "h2h_tier_summary.csv")
 
-    decision = _extract_advancement_decision(hypothesis_outcomes)
+    decision = _extract_advancement_decision(hypothesis_outcomes, mode=mode)
 
     lines: list[str] = []
 
@@ -599,6 +666,8 @@ def generate_decision_report(
             "Some hypothesis checks have indeterminate status. "
             "Additional evidence or manual review is needed."
         )
+    elif decision == "PRELIMINARY":
+        lines.extend(_build_preliminary_triage(tables_dir, comparator, h2h_tier))
     else:
         lines.append(
             "Hypothesis outcomes not yet available. "

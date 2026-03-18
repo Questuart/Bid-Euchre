@@ -240,3 +240,159 @@ class TestManifestSeeds:
             rung_id="r0",
         )
         assert 42 not in manifest["seeds"]
+
+
+class TestManifestModeOverride:
+    """Tests for explicit mode parameter overriding H2H detection."""
+
+    def test_mode_override_full(self, tmp_path):
+        """Mode parameter overrides H2H detection."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            mode="FULL",
+        )
+        assert manifest["mode"] == "FULL"
+
+    def test_mode_override_over_h2h(self, tmp_path):
+        """Explicit mode overrides H2H-detected mode."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        # H2H says QUICK, but caller says FULL
+        battery = {"seed": 42, "mode": "QUICK", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+            mode="FULL",
+        )
+        assert manifest["mode"] == "FULL"
+
+    def test_mode_defaults_to_h2h(self, tmp_path):
+        """Without explicit mode, H2H detection is used."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        battery = {"seed": 42, "mode": "FULL", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        assert manifest["mode"] == "FULL"
+
+
+class TestManifestSeedsFromDirectory:
+    """Tests for seed discovery from seed_* directories."""
+
+    def test_seeds_from_directory_fallback(self, tmp_path):
+        """Seeds discovered from seed_* directories when H2H lacks seeds."""
+        rung_dir = tmp_path / "rung"
+        (rung_dir / "seed_42").mkdir(parents=True)
+        (rung_dir / "seed_123").mkdir(parents=True)
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        assert sorted(manifest["seeds"]) == [42, 123]
+
+    def test_seeds_no_double_count(self, tmp_path):
+        """Seed dirs don't duplicate seeds already found from H2H."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        # H2H has seed 42, and there's also a seed_42 dir
+        battery = {"seed": 42, "mode": "QUICK", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+        (rung_dir / "seed_42").mkdir()
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        # Seed 42 should appear exactly once (from H2H), dir fallback shouldn't duplicate
+        assert manifest["seeds"] == [42]
+
+
+class TestManifestModelClass:
+    """Tests for model class name detection from roster."""
+
+    def test_class_fallback_fields(self, tmp_path):
+        """Model class detected from class or model_class fields."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        roster = {
+            "anchor": {"name": "anchor_model"},
+            "models": [
+                {"name": "m1", "class": "GBT", "trainable": True},
+                {"name": "m2", "model_class": "OLS", "trainable": False},
+                {"name": "m3", "trainable": True},
+            ],
+        }
+        (rung_dir / "roster.json").write_text(json.dumps(roster))
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        classes = {e["name"]: e["class_name"] for e in manifest["roster"]}
+        assert classes["m1"] == "GBT"
+        assert classes["m2"] == "OLS"
+        assert classes["m3"] == ""
+
+
+class TestManifestRepoRelativePaths:
+    """Tests for repo-relative path conversion in manifests."""
+
+    def test_markdown_renders(self, tmp_path):
+        """Manifest paths should render valid markdown."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        md = render_manifest_markdown(manifest)
+        # Structural test — real conversion happens inside a git repo
+        assert "Rung Manifest" in md

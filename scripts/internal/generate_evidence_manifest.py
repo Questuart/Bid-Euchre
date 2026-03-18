@@ -58,6 +58,11 @@ def main() -> None:
         help="Lineage identifier (default: arc_d_v2)",
     )
     parser.add_argument(
+        "--mode",
+        default=None,
+        help="Execution mode (QUICK/FULL) to override H2H detection",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -77,6 +82,7 @@ def main() -> None:
         plan_dir=args.plan_dir,
         rung_id=args.rung_id,
         lineage_id=args.lineage_id,
+        mode=args.mode,
     )
 
     # Write JSON manifest
