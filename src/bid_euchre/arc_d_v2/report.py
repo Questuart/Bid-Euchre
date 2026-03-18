@@ -572,10 +572,19 @@ def generate_decision_report(
     lines.append("## Recommendation")
     lines.append("")
     if decision == "ADVANCE":
-        lines.append(
-            "All hypothesis checks passed. Evidence supports advancing "
-            "to the next rung."
-        )
+        n_skip = 0
+        if hypothesis_outcomes is not None and "status" in hypothesis_outcomes.columns:
+            n_skip = (hypothesis_outcomes["status"].str.upper() == "SKIP").sum()
+        if n_skip > 0:
+            lines.append(
+                f"All evaluated hypothesis checks passed ({n_skip} skipped). "
+                "Evidence supports advancing to the next rung."
+            )
+        else:
+            lines.append(
+                "All hypothesis checks passed. Evidence supports advancing "
+                "to the next rung."
+            )
     elif decision == "HALT":
         n_fail = 0
         if hypothesis_outcomes is not None and "status" in hypothesis_outcomes.columns:
