@@ -977,3 +977,110 @@ class TestChartGeneration:
 
         assert "shap_summary.png" in generated
         assert (output_dir / "shap_summary.png").exists()
+
+    def test_feature_importance_chart(self, tmp_path: Path):
+        """Feature importance bar chart generates without error."""
+        mod = _import_generate_interpretability_charts()
+
+        importance_df = pd.DataFrame(
+            [
+                {
+                    "model": "gbt_av",
+                    "contract": "suit",
+                    "rank": i,
+                    "feature_name": f"f{i}",
+                    "importance": 1.0 / i,
+                }
+                for i in range(1, 6)
+            ]
+        )
+        mod.generate_feature_importance_chart(importance_df, tmp_path)
+        assert (tmp_path / "feature_importance.png").exists()
+
+    def test_run_dispatches_importance_schema(self, tmp_path: Path):
+        """run() generates feature_importance.png when CSV has rank/importance cols."""
+        mod = _import_generate_interpretability_charts()
+
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Write CSV with rank/importance schema (the actual tables.py output)
+        importance_df = pd.DataFrame(
+            [
+                {
+                    "model": "gbt_av",
+                    "contract": ct,
+                    "rank": i,
+                    "feature_name": f"f{i}",
+                    "importance": 1.0 / i,
+                }
+                for ct in ("suit", "high")
+                for i in range(1, 4)
+            ]
+        )
+        importance_df.to_csv(chart_data_dir / "selection_paths.csv", index=False)
+
+        output_dir = tmp_path / "charts"
+        generated = mod.run(chart_data_dir, output_dir)
+
+        # Should dispatch to feature_importance chart, NOT crash
+        assert "feature_importance.png" in generated
+        assert (output_dir / "feature_importance.png").exists()
+        # selection_path.png should NOT be generated (wrong schema)
+        assert "selection_path.png" not in generated
+
+    def test_run_dispatches_selection_path_schema(self, tmp_path: Path):
+        """run() generates selection_path.png when CSV has step/oof_r2 cols."""
+        mod = _import_generate_interpretability_charts()
+
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Write CSV with step/oof_r2 schema (forward-selection path data)
+        sel_df = pd.DataFrame(
+            [
+                {
+                    "model": "m1",
+                    "contract": "suit",
+                    "step": i,
+                    "feature_added": f"f{i}",
+                    "oof_r2": 0.2 + 0.1 * i,
+                    "delta_r2": 0.1,
+                }
+                for i in range(1, 4)
+            ]
+        )
+        sel_df.to_csv(chart_data_dir / "selection_paths.csv", index=False)
+
+        output_dir = tmp_path / "charts"
+        generated = mod.run(chart_data_dir, output_dir)
+
+        assert "selection_path.png" in generated
+        assert (output_dir / "selection_path.png").exists()
+
+    def test_run_prefers_feature_importances_csv(self, tmp_path: Path):
+        """run() reads feature_importances.csv when selection_paths.csv absent."""
+        mod = _import_generate_interpretability_charts()
+
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        importance_df = pd.DataFrame(
+            [
+                {
+                    "model": "gbt_av",
+                    "contract": "suit",
+                    "rank": i,
+                    "feature_name": f"f{i}",
+                    "importance": 1.0 / i,
+                }
+                for i in range(1, 4)
+            ]
+        )
+        importance_df.to_csv(chart_data_dir / "feature_importances.csv", index=False)
+
+        output_dir = tmp_path / "charts"
+        generated = mod.run(chart_data_dir, output_dir)
+
+        assert "feature_importance.png" in generated
+        assert (output_dir / "feature_importance.png").exists()

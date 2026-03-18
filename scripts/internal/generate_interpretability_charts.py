@@ -11,7 +11,8 @@ CLI:
 Charts produced:
   - shap_summary.png          — horizontal bar of mean |SHAP| per feature, faceted by contract
   - shap_dependence_top5.png  — scatter plots of top-5 features vs SHAP values
-  - selection_path.png        — line chart of R² vs features added
+  - selection_path.png        — line chart of R² vs features added (when selection_logs available)
+  - feature_importance.png    — horizontal bar of feature importance by model/contract (fallback)
   - decision_agreement.png    — bar chart of pairwise agreement rates
   - disagreement_outcomes.png — bar chart of who wins in disagreements
 """
@@ -117,8 +118,21 @@ def generate_shap_dependence(dependence_df: pd.DataFrame, output_dir: Path) -> N
         _save_chart(fig, output_dir, "shap_dependence_top5.png")
 
 
+def _has_columns(df: pd.DataFrame, required: set[str]) -> bool:
+    """Check whether *df* contains all *required* columns."""
+    return required.issubset(df.columns)
+
+
+# Column sets for the two selection_paths.csv schemas
+_SELECTION_PATH_COLS = {"model", "step", "oof_r2"}
+_FEATURE_IMPORTANCE_COLS = {"model", "contract", "rank", "feature_name", "importance"}
+
+
 def generate_selection_path_chart(selection_df: pd.DataFrame, output_dir: Path) -> None:
-    """Line chart of R² vs features added, one line per contract."""
+    """Line chart of R² vs features added, one line per contract.
+
+    Requires columns: model, contract, step, oof_r2.
+    """
     models = sorted(selection_df["model"].unique())
     n_models = len(models)
 
@@ -145,6 +159,49 @@ def generate_selection_path_chart(selection_df: pd.DataFrame, output_dir: Path) 
 
     fig.tight_layout()
     _save_chart(fig, output_dir, "selection_path.png")
+
+
+def generate_feature_importance_chart(
+    importance_df: pd.DataFrame, output_dir: Path, *, top_n: int = 15
+) -> None:
+    """Horizontal bar chart of feature importance, faceted by model and contract.
+
+    Requires columns: model, contract, rank, feature_name, importance.
+    This is the fallback chart when forward-selection path data is unavailable
+    and only static feature importances (e.g. GBT built-in) are present.
+    """
+    models = sorted(importance_df["model"].unique())
+    contracts = sorted(importance_df["contract"].unique())
+    n_cols = len(contracts)
+    n_rows = len(models)
+    if n_cols == 0 or n_rows == 0:
+        return
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(5 * n_cols, max(4, 0.4 * top_n) * n_rows),
+        squeeze=False,
+    )
+
+    for r, model in enumerate(models):
+        mdf = importance_df[importance_df["model"] == model]
+        for c, contract in enumerate(contracts):
+            ax = axes[r, c]
+            cdf = mdf[mdf["contract"] == contract].nsmallest(top_n, "rank")
+            cdf = cdf.sort_values("importance", ascending=True)
+            if cdf.empty:
+                ax.set_visible(False)
+                continue
+            ax.barh(cdf["feature_name"], cdf["importance"], color="#4575b4")
+            ax.set_xlabel("Importance")
+            if c == 0:
+                ax.set_ylabel(model)
+            ax.set_title(f"{contract}")
+
+    fig.suptitle("Feature Importance by Model and Contract", fontsize=14, y=1.02)
+    fig.tight_layout()
+    _save_chart(fig, output_dir, "feature_importance.png")
 
 
 def generate_decision_agreement_chart(
@@ -282,11 +339,29 @@ def run(chart_data_dir: Path, output_dir: Path) -> list[str]:
         generate_shap_dependence(dep_df, output_dir)
         generated.append("shap_dependence_top5.png")
 
-    # Selection paths
+    # Selection paths / feature importance
+    # tables.py may write selection_paths.csv with either:
+    #   (a) step/oof_r2 columns (forward-selection path) → line chart
+    #   (b) rank/feature_name/importance columns (static importance) → bar chart
+    # Also check feature_importances.csv (canonical name for schema b).
     sel_df = _read_csv_safe(chart_data_dir / "selection_paths.csv")
-    if sel_df is not None:
+    fi_df = _read_csv_safe(chart_data_dir / "feature_importances.csv")
+
+    if sel_df is not None and _has_columns(sel_df, _SELECTION_PATH_COLS):
         generate_selection_path_chart(sel_df, output_dir)
         generated.append("selection_path.png")
+    elif fi_df is not None and _has_columns(fi_df, _FEATURE_IMPORTANCE_COLS):
+        generate_feature_importance_chart(fi_df, output_dir)
+        generated.append("feature_importance.png")
+    elif sel_df is not None and _has_columns(sel_df, _FEATURE_IMPORTANCE_COLS):
+        # selection_paths.csv contains importance data (legacy schema mismatch)
+        generate_feature_importance_chart(sel_df, output_dir)
+        generated.append("feature_importance.png")
+    elif sel_df is not None:
+        logger.warning(
+            "selection_paths.csv has unexpected columns %s; skipping chart",
+            list(sel_df.columns),
+        )
 
     # Decision agreement
     comp_df = _read_csv_safe(chart_data_dir / "decision_comparison.csv")

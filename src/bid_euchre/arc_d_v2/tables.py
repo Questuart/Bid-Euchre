@@ -1043,11 +1043,15 @@ def generate_chart_data(
     #    Deferred: requires per-seat JSONL/parquet not present in battery summaries.
     #    The function exists but is called separately when parquet data is available.
 
-    # 6. selection_paths.csv — feature importance from training artifacts
+    # 6. feature_importances.csv — feature importance from training artifacts
+    #    Also written as selection_paths.csv for backward compatibility.
     if training_artifacts:
         rows = _extract_feature_importance(training_artifacts)
         if rows:
             df = pd.DataFrame(rows)
+            df.to_csv(output_dir / "feature_importances.csv", index=False)
+            generated.append("feature_importances.csv")
+            # Backward compat: chart generators may look for either name
             df.to_csv(output_dir / "selection_paths.csv", index=False)
             generated.append("selection_paths.csv")
 
