@@ -188,7 +188,7 @@ CHART_REGISTRY: tuple[ChartEntry, ...] = (
         "feature_importance.png",
         "Feature Importance",
         False,
-        "chart_data/selection_paths.csv",
+        "chart_data/feature_importances.csv",
         subdir=_FCS,
     ),
     ChartEntry(
