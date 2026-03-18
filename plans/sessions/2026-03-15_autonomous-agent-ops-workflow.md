@@ -363,7 +363,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook that detects direct `rm -rf` on worktree directories and redirects to `ops.py worktrees prune`
 - unit tests under `tests/unit/`
 - optional `Makefile` targets like `make ops-status`
-- **Permission migration:** Remove interim `rm -rf ../:*` deny rules from user settings once the PreToolUse hook and `ops.py worktrees prune` are validated
+- **Permission migration:** Once the PreToolUse hook and `ops.py worktrees prune` are validated: (1) replace broad `Bash(*worktree remove*)` and `Bash(*worktree prune*)` deny rules with hook-based interception, (2) audit and remove any overly broad `Bash(git worktree:*)` allow rules from `settings.local.json`, (3) remove interim `rm -rf` deny rules that are now covered by the hook
 - `src/bid_euchre/ops/ci.py` — CI status polling, failure classification, and remediation policy
 - `tests/unit/test_ops_ci.py` — CI failure classification and remediation policy tests
 - `tests/unit/test_ops_messages.py` — routing and message transport tests
@@ -490,8 +490,10 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Watchdogs reliably detect stalled or overlong autonomous processes without introducing unsafe default auto-kill behavior.
 - Worktree sprawl is bounded through explicit lifecycle states, safe prune flows, and visibility into stale/abandoned worktrees.
 - Routing and notification events are recorded in repo-local state rather than existing only in terminal transport.
-- Direct `rm -rf` on worktree directories is intercepted by PreToolUse hook and redirected to `ops.py worktrees prune`.
-- Interim `rm -rf ../:*` deny rules can be safely removed from user permission settings after hook validation.
+- Direct `git worktree remove`, `git worktree prune`, and `rm -rf` on worktree directories are intercepted by PreToolUse hook and redirected to `ops.py worktrees prune`.
+- Agents never invoke raw `git worktree remove` or `git worktree prune`; all cleanup goes through the safe `ops.py worktrees` wrapper which enforces persistent/ephemeral classification, dirty checks, and archive-before-delete.
+- Broad deny rules (`Bash(*worktree remove*steward*)`, `Bash(*worktree prune*)`) remain as a hard floor until the PreToolUse hook is validated; then the permission migration replaces them with hook-based interception.
+- Any broad `Bash(git worktree:*)` allow rules in `settings.local.json` are audited and removed as part of the migration.
 
 ### PR-4: Local Audit Index
 

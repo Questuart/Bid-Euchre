@@ -1,9 +1,19 @@
 #!/bin/bash
-# Start Claude Code in a specific role worktree.
+# COMPATIBILITY-ONLY: Launch Claude Code in a legacy three-role worktree.
+#
+# This script launches Claude in a legacy role worktree (author, review, ops).
+# It is NOT the canonical bootstrap path.
+#
+# For the canonical steward workflow, use:
+#   .claude/tmux/steward-session.sh
+#
+# See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full
+# identity model and lane documentation.
+#
 # Usage: start-agent-role.sh <role>
 #
-# Verifies the role worktree exists, sets CLAUDE_ROLE for hooks,
-# and execs claude in the worktree directory.
+# Verifies the role worktree exists, sets CLAUDE_ROLE and CLAUDE_LANE_ID
+# for hooks, and execs claude in the worktree directory.
 
 set -euo pipefail
 
@@ -15,6 +25,8 @@ VALID_ROLES="author review ops"
 # --- helpers ----------------------------------------------------------------
 
 usage() {
+    echo "COMPATIBILITY-ONLY: Launch Claude in a legacy three-role worktree."
+    echo ""
     echo "Usage: $0 <role>"
     echo ""
     echo "Roles: author, review, ops"
@@ -22,6 +34,9 @@ usage() {
     echo "Starts Claude Code in the role worktree with role-appropriate context."
     echo "The worktree must already exist. Create it with:"
     echo "  .claude/scripts/start-role-worktree.sh <role>"
+    echo ""
+    echo "For the canonical steward workflow, use instead:"
+    echo "  .claude/tmux/steward-session.sh"
 }
 
 is_valid_role() {
@@ -58,11 +73,18 @@ if [ ! -d "$WT_PATH" ]; then
     exit 1
 fi
 
-echo "Starting Claude in ${ROLE} role..."
+# Map legacy role to canonical lane_id
+case "$ROLE" in
+    author) LANE_ID="author-a" ;;
+    *)      LANE_ID="$ROLE" ;;
+esac
+
+echo "Starting Claude in ${ROLE} role (lane: ${LANE_ID})..."
 echo "  Worktree: ${WT_PATH}"
 echo "  Branch:   role/${ROLE}"
 echo ""
 
 export CLAUDE_ROLE="$ROLE"
+export CLAUDE_LANE_ID="$LANE_ID"
 cd "$WT_PATH"
 exec claude

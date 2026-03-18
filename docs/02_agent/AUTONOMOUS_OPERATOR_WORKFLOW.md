@@ -2,10 +2,10 @@
 
 ## Overview
 
-This document defines the target operating model for autonomous multi-agent
-work in the Bid Euchre repository. The model uses three persistent role
-worktrees, the main checkout as a control plane, VS Code as an audit surface,
-and tmux for persistent sessions.
+This document defines the operating model for autonomous multi-agent work in
+the Bid Euchre repository. It covers the canonical lane identity model, the
+deployed steward layout, the legacy three-role compatibility layer, and the
+runtime metadata contracts that connect them.
 
 ### Design Principles
 
@@ -14,166 +14,181 @@ and tmux for persistent sessions.
    (`worktree-guard.sh`, `worktree-reminder.sh`) enforce this.
 2. **One writer per worktree.** Each worktree has at most one active agent
    session writing to it at any time.
-3. **Roles are explicit.** Every agent session declares its role at startup.
-   The role determines capabilities, branch conventions, and default behavior.
+3. **Lanes are explicit.** Every agent session declares its lane identity at
+   startup. The lane determines capabilities, branch conventions, and default
+   behavior.
 4. **State is repo-local.** Session, task, and worktree metadata live in
    gitignored runtime directories under `.claude/runtime/`. No external
    databases or services.
 5. **Planning precedes execution.** Non-trivial tasks start with a planning
    phase that produces a bounded task list before any code is written.
 
-### Target Architecture
+---
+
+## Identity Model
+
+### Evolution
+
+The identity model has evolved through three stages:
+
+| Stage | Model | Bootstrap | Identity Field |
+|-------|-------|-----------|----------------|
+| **v1 -- Three-role** | `author`, `review`, `ops` | `start-role-worktree.sh` + `start-agent-role.sh` | `role` |
+| **v2 -- Steward** | 7 named lanes in tmux/cmux | `steward-session.sh` | `lane_id` |
+| **v3 -- Extensible** | Dynamic lane creation (future) | Orchestrator-managed | `lane_id` |
+
+PR-1 documents v1 to v2 and locks the identity contract for v3.
+
+### Canonical Lane Identity
+
+**`lane_id`** is the canonical machine identity for any lane. It is an opaque
+string, unique within a session, stable across restarts.
+
+The deployed steward layout defines these canonical lane IDs:
+
+| Lane ID | Lane Class | Worktree | Branch | Purpose |
+|---------|-----------|----------|--------|---------|
+| `ops` | `ops` | Main checkout | -- | Monitoring, orchestration |
+| `review` | `review` | `...-steward-review` | detached | Independent review |
+| `author-a` | `author` | `...-steward-author` | `codex/steward-author` | Primary implementation |
+| `author-b` | `author` | `...-steward-author-b` | `codex/steward-author-b` | Parallel implementation |
+| `author-c` | `author` | `...-steward-author-c` | `codex/steward-author-c` | Overflow implementation |
+| `author-d` | `author` | `...-steward-author-d` | `codex/steward-author-d` | Overflow implementation |
+| `author-scratch` | `scratch` | `...-steward-author-scratch` | `codex/steward-author-scratch` | Exploratory, non-production |
+
+Future generated worker IDs such as `author-001` are supported by the model
+but are not required to land in the current launcher.
+
+### Lane Classes
+
+Lane classes group lanes by functional role:
+
+| Class | Purpose | Capabilities |
+|-------|---------|-------------|
+| `ops` | Operator and monitor | Status checks, orchestration, health monitoring |
+| `review` | Independent reviewer | Read diffs, run validation, review plans/code |
+| `author` | Implementation agent | Write code, run tests, create branches, open PRs |
+| `scratch` | Exploratory work | Planning, comparisons, drafts, non-production reasoning |
+
+Lane classes are conventions, not hard permission boundaries. Claude Code
+does not support per-worktree permission tiers.
+
+### Legacy Role Compatibility
+
+The original three-role model (`author`, `review`, `ops`) remains available
+through the legacy bootstrap scripts (`start-role-worktree.sh`,
+`start-agent-role.sh`). These scripts are **compatibility-only** entrypoints
+-- they are not the canonical bootstrap path.
+
+**Mapping from legacy roles to canonical lane IDs:**
+
+| Legacy Role | Maps To | Notes |
+|-------------|---------|-------|
+| `author` | `author-a` (default) | Legacy `author` is a single-lane alias for the worker class |
+| `review` | `review` | Direct mapping |
+| `ops` | `ops` | Direct mapping |
+
+Legacy scripts write runtime metadata with both `role` (compatibility) and
+`lane_id` (canonical) fields. New code should consume `lane_id` exclusively;
+`role` will be removed in a future version.
+
+### Machine vs. Display Identity
+
+| Layer | Field | Purpose | Example |
+|-------|-------|---------|---------|
+| Machine identity | `lane_id` | Routing, coordination, metadata lookup | `author-a` |
+| Transport identity | `tmux_session`, `tmux_window`, `tmux_pane` | Terminal session targeting | `steward`, `dashboard`, `1` |
+| Display identity | `display_name` (optional) | Human-facing labels | `Author A` |
+| Compatibility | `role` (optional, transitional) | Legacy script interop | `author` |
+
+Machine identity (`lane_id`) is the sole routing key. Display names and
+tmux targets are presentation metadata and must never be used as primary
+identifiers for coordination or metadata lookup.
+
+---
+
+## Target Architecture
 
 ```
 Main checkout (control plane, read-only for agents)
   |
-  +-- .claude/scripts/start-role-worktree.sh   # Bootstrap
-  +-- .claude/scripts/start-agent-role.sh       # Launch
-  +-- .claude/tmux/agent-ops-session.sh         # Persistent tmux session
-  +-- .claude/tmux/agent-ops-layout.conf        # tmux layout config
-  +-- .claude/runtime/                          # Gitignored state
-  |     +-- worktree_registry/                  # Worktree metadata
-  |     +-- session_metadata/                   # Session state
-  |     +-- task_state/                         # Delegated task state
-  |     +-- review_loops/                       # Review loop state (existing)
-  |     +-- plan_reviews/                       # Plan review state (existing)
+  +-- .claude/tmux/steward-session.sh         # Canonical bootstrap
+  +-- .claude/scripts/start-role-worktree.sh  # Legacy compatibility
+  +-- .claude/scripts/start-agent-role.sh     # Legacy compatibility
+  +-- .claude/runtime/                        # Gitignored state
+  |     +-- worktree_registry/                # Lane/worktree metadata (v2)
+  |     +-- session_metadata/                 # Session state (v2)
+  |     +-- task_state/                       # Delegated task state (v1)
+  |     +-- review_loops/                     # Review loop state (existing)
+  |     +-- plan_reviews/                     # Plan review state (existing)
   |
-  +-- ../Bid-Euchre-author/                     # Author role worktree
-  +-- ../Bid-Euchre-review/                     # Review role worktree
-  +-- ../Bid-Euchre-ops/                        # Ops role worktree
+  +-- ../<repo>-steward-author/               # author-a lane
+  +-- ../<repo>-steward-author-b/             # author-b lane
+  +-- ../<repo>-steward-author-c/             # author-c lane
+  +-- ../<repo>-steward-author-d/             # author-d lane
+  +-- ../<repo>-steward-author-scratch/       # author-scratch lane
+  +-- ../<repo>-steward-review/               # review lane
 ```
 
----
-
-## Roles
-
-The operating model defines three persistent roles. Each role has a dedicated
-worktree, branch, and capability set. Roles are conventions enforced through
-documentation and bootstrap scripts, not through hard permission boundaries
-(Claude Code does not support per-worktree permission tiers).
-
-### Role Definitions
-
-| Role | Purpose | Primary Activities |
-|------|---------|--------------------|
-| **author** | Implementation agent | Write code, run targeted tests, create branches, open PRs |
-| **review** | Independent reviewer | Read diffs, run validation, review plans/reports/code |
-| **ops** | Operator and monitor | Check status, run health checks, orchestrate, recover |
-
-### Capability Matrix
-
-| Capability | author | review | ops |
-|------------|--------|--------|-----|
-| Edit repo files | Yes | Limited (review artifacts, delegated fixes) | Limited (orchestration config) |
-| Run targeted tests (Tier 1) | Yes | Yes | No |
-| Run full validation (`make check`) | Yes (pre-PR) | Yes (review validation) | No |
-| Create branches/worktrees | Yes | No | No |
-| Open/update PRs | Yes | No | No |
-| Review PRs | No | Yes | No |
-| Inspect runtime state | Yes (own work) | Yes (review targets) | Yes (primary duty) |
-| Run experiments | Yes | No | No |
-| Run health checks | No | No | Yes |
-| Run orchestration commands | No | No | Yes |
-| Destructive/recovery actions | Approval-gated | No | Approval-gated |
-
-### Branch Conventions
-
-| Role | Branch | Worktree Path |
-|------|--------|---------------|
-| author | `role/author` | `../Bid-Euchre-author` |
-| review | `role/review` | `../Bid-Euchre-review` |
-| ops | `role/ops` | `../Bid-Euchre-ops` |
-
-Role branches exist as persistent tracking branches. The author creates
-feature branches from `role/author` for actual PR work (following the
-existing worktree-per-PR convention from `AGENTS.md` section 2).
-
-### User Role
-
-The user does not manage day-to-day execution once a task is delegated. The
-user:
-- Audits diffs, plans, runtime state, and reports in VS Code
-- Approves destructive or recovery actions when escalated
-- Makes tool adoption, terminal preference, and workflow policy decisions
-- Remains the authority for scope changes and initiative-level decisions
+The `ops` lane runs from the main checkout itself. It does not have a
+dedicated worktree because it is read-only -- it inspects state, checks
+health, and orchestrates but does not write code.
 
 ---
 
 ## Persistent Session Manager (tmux)
 
-The tmux session provides a persistent multi-role terminal environment that
-survives disconnections and allows switching between role contexts instantly.
+The tmux session provides a persistent multi-lane terminal environment that
+survives disconnections and allows switching between lane contexts instantly.
 
-### Starting the tmux Session
+### Starting the Steward Session (Canonical)
 
-From anywhere inside the repository:
+From the main checkout:
 
 ```bash
-.claude/tmux/agent-ops-session.sh
+.claude/tmux/steward-session.sh
 ```
 
-This creates (or attaches to) a tmux session named `bid-euchre-ops` with
-four windows:
+This creates (or attaches to) a tmux session named `steward` with:
 
-| Window | Name | Directory | Purpose |
-|--------|------|-----------|---------|
-| 0 | `author` | `../Bid-Euchre-author` | Implementation work |
-| 1 | `review` | `../Bid-Euchre-review` | Code review and validation |
-| 2 | `ops` | `../Bid-Euchre-ops` | Monitoring and orchestration |
-| 3 | `scratch` | Main checkout | Ad-hoc inspection, control plane |
+| Window | Name | Panes | Purpose |
+|--------|------|-------|---------|
+| 0 | `dashboard` | 4 (author-a, author-b, review, ops) | Mission-control view |
+| 1 | `author-c` | 1 | Overflow author lane |
+| 2 | `author-d` | 1 | Overflow author lane |
+| 3 | `author-scratch` | 1 | Exploratory lane |
 
 Custom session name:
 
 ```bash
-.claude/tmux/agent-ops-session.sh my-session
+.claude/tmux/steward-session.sh my-session
 ```
 
 ### Idempotent Behavior
 
 The script is safe to rerun:
 - If the session already exists, it attaches to it
-- If a role worktree does not exist, the window opens in the main checkout
-  with a message suggesting `start-role-worktree.sh`
+- If a lane worktree does not exist, it creates it automatically
 
-### tmux Key Bindings
+### Metadata at Bootstrap
 
-The layout configuration (`.claude/tmux/agent-ops-layout.conf`) provides:
+When `steward-session.sh` creates the session, it writes a v2 worktree
+registry entry for each launched lane. This ensures all lanes are registered
+with canonical `lane_id`, `lane_class`, and tmux transport fields from the
+moment they start.
 
-| Key | Action |
-|-----|--------|
-| `Alt+1` | Switch to author window |
-| `Alt+2` | Switch to review window |
-| `Alt+3` | Switch to ops window |
-| `Alt+4` | Switch to scratch window |
-| Mouse scroll | Scroll through output history |
+### Legacy tmux Session
 
-Standard tmux prefix (`Ctrl+b`) bindings also work.
-
-### Layout Configuration
-
-The layout file at `.claude/tmux/agent-ops-layout.conf` sets:
-- 50,000-line scrollback buffer
-- Mouse support enabled
-- 256-color terminal
-- Status bar showing session name and active window
-
-To reload after editing:
-
-```bash
-tmux source-file .claude/tmux/agent-ops-layout.conf
-```
-
-### Prerequisites
-
-- `tmux` must be installed (`brew install tmux` on macOS)
-- Role worktrees should be created first via `start-role-worktree.sh`
-  (the session script works without them but windows will fall back to main)
+The legacy `agent-ops-session.sh` script created a 4-window layout (author,
+review, ops, scratch) matching the three-role model. It remains in the repo
+for reference but is not the canonical path. Use `steward-session.sh` for
+new sessions.
 
 ---
 
 ## VS Code Audit Surface
 
-The VS Code workspace provides a unified view across all role worktrees for
+The VS Code workspace provides a unified view across all lane worktrees for
 auditing diffs, runtime state, and test results.
 
 ### Opening the Workspace
@@ -182,14 +197,8 @@ auditing diffs, runtime state, and test results.
 code Bid-Euchre-agent-audit.code-workspace
 ```
 
-This opens a multi-root workspace with four folders:
-
-| Folder | Path | Purpose |
-|--------|------|---------|
-| `main` | `.` (repo root) | Control plane, runtime state |
-| `author` | `../Bid-Euchre-author` | Author worktree code |
-| `review` | `../Bid-Euchre-review` | Review worktree artifacts |
-| `ops` | `../Bid-Euchre-ops` | Ops worktree state |
+This opens a multi-root workspace with folders for the main checkout and
+all lane worktrees.
 
 ### File Exclusions
 
@@ -231,50 +240,21 @@ via **Terminal > Run Task** or `Ctrl+Shift+P > Tasks: Run Task`.
 ### Recommended Extensions
 
 The workspace recommends:
-- **Ruff** (`charliermarsh.ruff`) — Linting and formatting
-- **Python** (`ms-python.python`) — Language support
-- **GitLens** (`eamodio.gitlens`) — Git history and blame
+- **Ruff** (`charliermarsh.ruff`) -- Linting and formatting
+- **Python** (`ms-python.python`) -- Language support
+- **GitLens** (`eamodio.gitlens`) -- Git history and blame
 
 ---
 
-## Bootstrap Workflow
+## Bootstrap Workflows
 
-### Creating Role Worktrees
+### Canonical Bootstrap (Steward)
 
-From the main checkout:
-
-```bash
-# Create all three role worktrees
-.claude/scripts/start-role-worktree.sh
-
-# Create a single role worktree
-.claude/scripts/start-role-worktree.sh author
-```
-
-The script is idempotent. If a role worktree already exists, it updates it
-to latest main and refreshes the registry metadata.
-
-### Starting a Role Session
-
-```bash
-# Start Claude in the author role
-.claude/scripts/start-agent-role.sh author
-```
-
-This:
-1. Verifies the role worktree exists
-2. Sets `CLAUDE_ROLE` environment variable (readable by hooks)
-3. Changes to the worktree directory
-4. Execs `claude`
-
-### Full Bootstrap Sequence
-
-For a fresh setup (recommended order):
+The steward session is the primary bootstrap path:
 
 ```bash
 cd /path/to/Bid-Euchre                          # Main checkout
-.claude/scripts/start-role-worktree.sh           # Create all 3 worktrees
-.claude/tmux/agent-ops-session.sh                # Start persistent tmux session
+.claude/tmux/steward-session.sh                  # Start all lanes
 code Bid-Euchre-agent-audit.code-workspace       # Open VS Code audit surface
 ```
 
@@ -282,9 +262,51 @@ For resuming after a restart:
 
 ```bash
 cd /path/to/Bid-Euchre
-.claude/scripts/start-role-worktree.sh author    # Update to latest main
-.claude/tmux/agent-ops-session.sh                # Reattach to existing session
+.claude/tmux/steward-session.sh                  # Reattach to existing session
 ```
+
+### Legacy Bootstrap (Three-Role)
+
+The legacy scripts remain for backward compatibility with the three-role model:
+
+```bash
+# Create role worktrees (legacy -- creates author, review, ops)
+.claude/scripts/start-role-worktree.sh
+
+# Start Claude in a role (legacy -- launches in role worktree)
+.claude/scripts/start-agent-role.sh author
+```
+
+These scripts are **compatibility-only**. They write runtime metadata with
+both legacy `role` and canonical `lane_id` fields. New workflows should use
+`steward-session.sh`.
+
+---
+
+## Lane Capability Matrix
+
+| Capability | author | scratch | review | ops |
+|------------|--------|---------|--------|-----|
+| Edit repo files | Yes | Yes (non-production) | Limited (review artifacts) | Limited (orchestration config) |
+| Run targeted tests (Tier 1) | Yes | Yes | Yes | No |
+| Run full validation (`make check`) | Yes (pre-PR) | No | Yes (review validation) | No |
+| Create branches/worktrees | Yes | No | No | No |
+| Open/update PRs | Yes | No | No | No |
+| Review PRs | No | No | Yes | No |
+| Inspect runtime state | Yes (own work) | Yes | Yes (review targets) | Yes (primary duty) |
+| Run experiments | Yes | Yes (exploratory) | No | No |
+| Run health checks | No | No | No | Yes |
+| Run orchestration commands | No | No | No | Yes |
+| Destructive/recovery actions | Approval-gated | No | No | Approval-gated |
+
+### User Role
+
+The user does not manage day-to-day execution once a task is delegated. The
+user:
+- Audits diffs, plans, runtime state, and reports in VS Code
+- Approves destructive or recovery actions when escalated
+- Makes tool adoption, terminal preference, and workflow policy decisions
+- Remains the authority for scope changes and initiative-level decisions
 
 ---
 
@@ -293,7 +315,7 @@ cd /path/to/Bid-Euchre
 Each active session writes metadata to
 `.claude/runtime/session_metadata/<session_id>.json`. This enables:
 
-- **Resume:** Read the latest session file for a role to recover context
+- **Resume:** Read the latest session file for a lane to recover context
   without conversation history.
 - **Audit:** See which sessions are active, what they are working on, and
   where they left off.
@@ -301,11 +323,12 @@ Each active session writes metadata to
 
 ### Schema
 
-See `.claude/runtime/session_metadata/README.md` for the full schema.
+See `.claude/runtime/session_metadata/README.md` for the full v2 schema.
 
 Key fields:
 - `session_id` -- UUID identifying this session
-- `role` -- Which role this session assumes
+- `lane_id` -- Canonical lane identity (e.g., `author-a`, `review`, `ops`)
+- `role` -- Optional compatibility field (transitional, maps to legacy role)
 - `task` -- Short description of current work
 - `plan_link` -- Path to the governing or session plan
 - `last_checkpoint` -- Free-text progress marker
@@ -314,7 +337,7 @@ Key fields:
 
 To resume work after a session ends or crashes:
 
-1. Read the session metadata for the desired role
+1. Read the session metadata for the desired lane
 2. Check `last_checkpoint` for where the session left off
 3. Read the linked `plan_link` for the full task context
 4. Continue from the recorded state
@@ -340,7 +363,7 @@ Create a task record when:
 - The work involves more than 3 files
 - The work involves new code (not just running existing scripts)
 - The work involves design choices not specified in the governing plan
-- The work is delegated from one role to another
+- The work is delegated from one lane to another
 
 Do not create a task record for:
 - Running a command from the governing plan
@@ -353,10 +376,10 @@ This mirrors the sub-plan creation criteria from `AGENTS.md` section 12.3.
 
 ```
 pending --> in_progress --> completed
-                |
-                +--> blocked --> (unblocked) --> in_progress
-                |
-                +--> abandoned
+               |
+               +--> blocked --> (unblocked) --> in_progress
+               |
+               +--> abandoned
 ```
 
 ---
@@ -365,13 +388,17 @@ pending --> in_progress --> completed
 
 ### Persistent Worktrees
 
-Persistent role worktrees (`author`, `review`, `ops`) are never auto-pruned.
+Persistent lane worktrees (all steward lanes) are never auto-pruned.
 They may become stale if unused, but they remain available for the next
-session. The bootstrap script updates them to latest main on reuse.
+session. The bootstrap script updates them on reuse.
+
+See `.claude/rules/75_worktree_protection.md` for the protected worktree list
+and cleanup safety rules.
 
 ### Ephemeral Worktrees
 
-Ephemeral worktrees have a default TTL of 72 hours. After expiration:
+Ephemeral worktrees (created by `claude-worktree.sh` or spawned agents) have
+a default TTL of 72 hours. After expiration:
 
 - **Clean worktrees** (no uncommitted changes) become `ready_to_remove`
   and can be pruned automatically.
@@ -380,19 +407,18 @@ Ephemeral worktrees have a default TTL of 72 hours. After expiration:
 
 ### Current Cleanup Mechanism
 
-Until the lifecycle-aware `ops.py worktrees prune` lands (PR-3 scope),
+Until the lifecycle-aware `ops.py worktrees prune` lands (future scope),
 cleanup is manual:
 
 ```bash
 # List all worktrees
 git worktree list
 
-# Remove a specific worktree
+# Remove a specific ephemeral worktree (after safety checks)
 git worktree remove ../Bid-Euchre-<name>
-
-# Prune stale worktree references
-git worktree prune
 ```
+
+**Never remove steward worktrees.** See `.claude/rules/75_worktree_protection.md`.
 
 ---
 
@@ -403,24 +429,24 @@ git worktree prune
 The Agent Execution Protocol in `CLAUDE.md` defines how agents discover,
 execute, and hand off work within governed initiatives. This workflow document
 complements it by defining:
-- The physical infrastructure (worktrees, sessions, roles)
+- The physical infrastructure (worktrees, sessions, lanes)
 - The task state tracking for standalone work
 - The bootstrap and cleanup procedures
 
 The two systems are compatible: an agent following the Agent Execution Protocol
-operates within a role worktree bootstrapped by this workflow.
+operates within a lane worktree bootstrapped by this workflow.
 
 ### Autonomous Review Loop (AUTONOMOUS_REVIEW_LOOP.md)
 
-The review loop runs from the main checkout (not from role worktrees). It
+The review loop runs from the main checkout (not from lane worktrees). It
 is triggered by PR creation hooks and operates independently. The `review`
-role worktree is for manual or agent-driven review work, not for the
+lane worktree is for manual or agent-driven review work, not for the
 automated review loop.
 
 ### Existing Worktree Scripts
 
 - `claude-worktree.sh` -- Creates ephemeral worktrees for branch-per-PR work.
-  Still valid and useful. Not replaced by role worktree scripts.
+  Still valid and useful. Not replaced by lane worktree scripts.
 - `worktree-guard.sh` -- Blocks edits from main checkout. Still active.
 - `worktree-reminder.sh` -- Reminds about worktree convention. Still active.
 - `clean_worktrees.sh` -- Cleans worktrees with deleted remote branches.
@@ -433,7 +459,7 @@ automated review loop.
 The following capabilities are planned for subsequent PRs and are documented
 here for context. They are not yet implemented.
 
-### PR-3: Operator CLI (ops.py)
+### Operator CLI (ops.py)
 
 - Single-command status summary
 - Worktree lifecycle management (`prune`, `quarantine`, `archive`)
@@ -441,13 +467,20 @@ here for context. They are not yet implemented.
 - CI failure classification and bounded remediation
 - Recovery templates for common failure modes
 
-### PR-4: Audit Index and Memory
+### Scheduler and Event System
+
+- Durable event production/consumption
+- Queue-driven review execution
+- Scheduled health checks and remediation
+- `launchd` recovery for persistent sessions
+
+### Audit Index and Memory
 
 - SQLite-based searchable index over runtime artifacts
 - Curated memory for stable operator facts
 - Session compaction and archive
 
-### PR-5: Rollout and Safety
+### Rollout and Safety
 
 - Context safety scanning for auto-loaded content
 - Shadow snapshots for rollback
