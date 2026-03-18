@@ -314,16 +314,16 @@ user:
 
 ### One Task Per Lane
 
-Every active execution lane should own one primary task at a time. The task
+Every active execution lane must own one primary task at a time. The task
 is recorded in `.claude/runtime/task_state/<task_id>.json` using the v2
 schema (see `.claude/runtime/task_state/README.md`).
 
-Newly discovered work during execution should become:
+Newly discovered work during execution must become:
 - A follow-up item on the current task (if in scope)
 - A new task handed off to another lane
 - An escalation to `ops`
 
-It should **not** silently expand the current task's scope.
+It must **not** silently expand the current task's scope.
 
 ### Task Record as Execution Contract
 
@@ -368,11 +368,25 @@ When completing a task, a lane must:
 
 ### Progress Visibility
 
-Lanes should keep their repo-local task record aligned with the in-session
+Lanes must keep their repo-local task record aligned with the in-session
 task list they are actually following. The task record in
 `.claude/runtime/task_state/` is the durable progress signal; the in-session
 TUI task list (see `.claude/rules/25_task_lists.md`) is the ephemeral
 intra-session complement.
+
+The v2 task schema includes a `progress` object with concrete fields for
+durable progress tracking:
+
+- **`last_completed_item`** -- ID of the last completed checklist item
+- **`last_artifact`** -- path to the last meaningful file touched
+- **`last_validation`** -- last validation command and outcome
+- **`current_blocker`** -- current blocker description, or null
+- **`last_forward_progress_at`** -- ISO 8601 timestamp of last forward progress
+
+Agents should update `progress` whenever they complete a checklist item,
+run a validation step, or encounter/clear a blocker. This enables `ops` to
+distinguish "alive and progressing" from "alive but drifting/blocked"
+without reading terminal history.
 
 ---
 
