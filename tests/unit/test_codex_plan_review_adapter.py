@@ -748,15 +748,16 @@ class TestCodexPlanReviewTimeout:
         return_value=(0, "Some output that doesn't match any pattern"),
     )
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_unparseable_output_returns_failure(
+    def test_unparseable_output_returns_advisory_success(
         self, mock_resolve, mock_pty, mock_auth, tmp_path
     ):
-        """Output that matches no findings and no clean signal produces error."""
+        """Output that matches no findings and no clean signal returns advisory success."""
         plan = tmp_path / "test.md"
         plan.write_text("# Plan\n")
         result = invoke_codex_plan_review(plan, "small")
-        assert result.success is False
-        assert "Unparseable output" in result.error
+        assert result.success is True
+        assert result.parse_confidence == "unparseable"
+        assert result.findings == []
 
     @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
     @patch(
@@ -837,3 +838,72 @@ class TestClaudeFailsafeTimeout:
                 invoke_claude_failsafe(plan, "small", output_dir=out_dir)
                 raw_file = out_dir / "claude_failsafe_raw.txt"
                 assert raw_file.exists()
+
+
+# --- Parse Confidence Tests ---
+
+
+class TestPlanReviewParseConfidence:
+    """Test parse_confidence field on plan review results."""
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(0, "[P1] plan.md:10 -- Missing seed in experiment command"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_structured_findings_set_structured(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "small")
+        assert result.success is True
+        assert result.parse_confidence == "structured"
+        assert len(result.findings) > 0
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(0, "No issues found. The plan looks good."),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_clean_output_set_clean_signal(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "small")
+        assert result.success is True
+        assert result.parse_confidence == "clean_signal"
+
+    @patch("codex_plan_review_adapter._check_codex_auth", return_value=None)
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(0, "Some thoughts about the plan that match nothing"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_unparseable_set_unparseable(
+        self, mock_resolve, mock_pty, mock_auth, tmp_path
+    ):
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n")
+        result = invoke_codex_plan_review(plan, "small")
+        assert result.success is True
+        assert result.parse_confidence == "unparseable"
+
+    def test_parse_confidence_in_to_dict(self):
+        """parse_confidence appears in serialized output."""
+        from codex_plan_review_adapter import PlanReviewResult
+
+        result = PlanReviewResult(
+            success=True,
+            findings=[],
+            tier="small",
+            reviewer="codex_cli",
+            raw_output="LGTM",
+            latency_seconds=1.0,
+            parse_confidence="clean_signal",
+        )
+        d = result.to_dict()
+        assert d["parse_confidence"] == "clean_signal"

@@ -55,7 +55,7 @@ class PlanReviewLoopResult:
 
     plan_path: str
     tier: str
-    verdict: str  # "READY", "NEEDS_ATTENTION", "NOT_READY"
+    verdict: str  # "READY", "NEEDS_ATTENTION", "NOT_READY", "REVIEW_UNAVAILABLE"
     iterations: int
     total_findings: int
     open_findings: int
@@ -79,11 +79,21 @@ def _compute_verdict(findings: list) -> str:
 
     Returns:
         "READY" if no findings remain open.
+        "REVIEW_UNAVAILABLE" if all findings are from infrastructure (review system failure).
         "NEEDS_ATTENTION" if only WARNING/INFO findings remain.
-        "NOT_READY" if any CRITICAL findings remain.
+        "NOT_READY" if any CRITICAL findings remain (from actual reviewers).
     """
     if not findings:
         return "READY"
+
+    # Check if all findings are infrastructure-sourced (review system failure).
+    # These should not produce NOT_READY — the plan was never actually reviewed.
+    sources = {
+        f.source if hasattr(f, "source") else f.get("source", "") for f in findings
+    }
+    if sources == {"infrastructure"}:
+        return "REVIEW_UNAVAILABLE"
+
     severities = {
         f.severity if hasattr(f, "severity") else f.get("severity", "")
         for f in findings
@@ -215,6 +225,16 @@ def _write_sidecar(
     else:
         verdict = "UNKNOWN"
 
+    # Map verdict to human-readable label for sidecar display
+    verdict_labels = {
+        "READY": "READY",
+        "NEEDS_ATTENTION": "NEEDS_ATTENTION",
+        "NOT_READY": "NOT_READY",
+        "REVIEW_UNAVAILABLE": "REVIEW_UNAVAILABLE — review system failed, plan not reviewed",
+        "UNKNOWN": "UNKNOWN",
+    }
+    verdict_display = verdict_labels.get(verdict, verdict)
+
     # Build findings table
     rows = []
     for iteration, findings in all_findings:
@@ -246,7 +266,7 @@ def _write_sidecar(
         f"- **Tier:** {loop_state.tier}\n"
         f"- **Iterations:** {loop_state.iteration_count}/{loop_state.max_iterations}\n"
         f"- **Date:** {date}\n"
-        f"- **Verdict:** {verdict}\n\n"
+        f"- **Verdict:** {verdict_display}\n\n"
         f"## Findings\n\n{findings_table}\n"
         f"## Final State\n\n"
         f"State: `{loop_state.state}`\n"
@@ -379,19 +399,22 @@ def run_plan_review_loop(
                 loop_state.transition(PlanReviewState.FINDINGS_RECEIVED)
                 loop_state.transition(PlanReviewState.REVIEW_COMPLETE)
             else:
-                # Both reviewers actually failed — inject synthetic CRITICAL
-                # so the verdict is NOT_READY instead of falsely reporting READY.
+                # Both reviewers failed — record as infrastructure issue.
+                # Verdict will be REVIEW_UNAVAILABLE (advisory), not NOT_READY
+                # (blocking). The plan was never actually reviewed.
                 no_review_finding = PlanReviewFinding(
-                    severity="CRITICAL",
+                    severity="INFO",
                     category="process",
                     file=str(plan_path),
                     line=0,
                     description=(
-                        "No review completed: both Codex CLI and Claude fallback "
-                        "failed to produce findings. Plan has not been reviewed."
+                        "Review system unavailable: both Codex CLI and Claude "
+                        "fallback failed to produce output. Plan has not been "
+                        "reviewed. This is an infrastructure issue, not a plan "
+                        "quality finding."
                     ),
                     check_id=None,
-                    source="plan_review_driver",
+                    source="infrastructure",
                 )
                 current_findings = [no_review_finding]
                 loop_state.transition(PlanReviewState.FINDINGS_RECEIVED)

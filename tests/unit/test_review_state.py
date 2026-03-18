@@ -441,8 +441,11 @@ class TestReviewStatusMap:
     """Test the review status mapping."""
 
     def test_all_statuses_mapped(self) -> None:
-        expected_keys = {"pending", "in_progress", "fail", "warn", "ready"}
+        expected_keys = {"pending", "in_progress", "fail", "warn", "ready", "degraded"}
         assert set(REVIEW_STATUS_MAP.keys()) == expected_keys
+
+    def test_degraded_maps_to_success(self) -> None:
+        assert review_status_to_github("degraded") == "success"
 
     def test_pending_maps_to_pending(self) -> None:
         assert review_status_to_github("pending") == "pending"

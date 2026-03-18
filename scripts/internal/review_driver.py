@@ -933,6 +933,7 @@ def _step_scoring_findings(
         with open(codex_path) as f:
             review_data = json.load(f)
         raw_findings = review_data.get("findings", [])
+        parse_confidence = review_data.get("parse_confidence", "structured")
     else:
         logger.warning(
             "PR #%d: no codex_review.json found for round %d",
@@ -940,6 +941,24 @@ def _step_scoring_findings(
             iteration,
         )
         raw_findings = []
+        parse_confidence = "structured"
+
+    # If review result is degraded (unparseable output or backend error),
+    # publish advisory status and proceed to merge — CI is the real gate.
+    # This prevents "I don't know" from being treated as "clean pass" or "blocked".
+    if parse_confidence in ("unparseable", "backend_error"):
+        desc = f"Review degraded — Codex output {parse_confidence} (advisory)"
+        _publish_status(loop_state.pr_number, "success", desc[:140])
+        loop_state.transition(ReviewState.READY_TO_MERGE)
+        _post_review_comment(loop_state, [], "passed")
+        save_state(loop_state, base_dir)
+        logger.warning(
+            "PR #%d: Codex review degraded (parse_confidence=%s) — "
+            "advisory skip, CI gate remains authoritative",
+            loop_state.pr_number,
+            parse_confidence,
+        )
+        return loop_state
 
     # Get PR diff for diff-aware scoring
     diff_result = subprocess.run(

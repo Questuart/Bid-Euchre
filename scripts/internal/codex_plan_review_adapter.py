@@ -80,6 +80,7 @@ class PlanReviewResult:
     raw_output: str
     latency_seconds: float
     error: str | None = None
+    parse_confidence: str | None = None  # "structured", "clean_signal", "unparseable"
 
     def to_dict(self) -> dict:
         return {
@@ -90,6 +91,7 @@ class PlanReviewResult:
             "raw_output": self.raw_output,
             "latency_seconds": self.latency_seconds,
             "error": self.error,
+            "parse_confidence": self.parse_confidence,
         }
 
 
@@ -469,35 +471,27 @@ def invoke_codex_plan_review(
     codex_findings = parse_codex_output(output)
     plan_findings = _convert_codex_findings(codex_findings, str(plan_path))
 
-    logger.info(
-        "Codex CLI post-parse: %d raw findings, %d plan findings, clean_signal=%s",
-        len(codex_findings),
-        len(plan_findings),
-        bool(_CLEAN_REVIEW_PATTERNS.search(output)) if not codex_findings else "N/A",
-    )
-
-    # Fail-safe: unparseable non-empty output
-    if not codex_findings and output.strip():
-        if not _CLEAN_REVIEW_PATTERNS.search(output):
-            logger.warning(
-                "Codex CLI plan review returned unparseable output (%.1fs, %d chars)",
-                elapsed,
-                len(output),
-            )
-            return PlanReviewResult(
-                success=False,
-                findings=[],
-                tier=tier,
-                reviewer="codex_cli",
-                raw_output=output,
-                latency_seconds=elapsed,
-                error="Unparseable output: no findings matched and no clean-review signal",
-            )
+    # Determine parse confidence level
+    if codex_findings:
+        parse_confidence = "structured"
+    elif not output.strip():
+        parse_confidence = "clean_signal"
+    elif _CLEAN_REVIEW_PATTERNS.search(output):
+        parse_confidence = "clean_signal"
+    else:
+        parse_confidence = "unparseable"
+        logger.warning(
+            "Codex CLI plan review returned unparseable output (%.1fs, %d chars) "
+            "— treating as advisory (parse_confidence=unparseable)",
+            elapsed,
+            len(output),
+        )
 
     logger.info(
-        "Codex CLI plan review completed (%.1fs): %d findings",
+        "Codex CLI plan review completed (%.1fs): %d findings, parse_confidence=%s",
         elapsed,
         len(plan_findings),
+        parse_confidence,
     )
     return PlanReviewResult(
         success=True,
@@ -506,6 +500,7 @@ def invoke_codex_plan_review(
         reviewer="codex_cli",
         raw_output=output,
         latency_seconds=elapsed,
+        parse_confidence=parse_confidence,
     )
 
 

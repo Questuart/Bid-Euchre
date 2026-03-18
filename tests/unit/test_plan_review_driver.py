@@ -409,8 +409,10 @@ class TestCodexFallback:
         result = run_plan_review_loop(plan_file, base_dir=tmp_path)
 
         assert result.fallback_used is True
-        assert result.verdict == "NOT_READY"  # Both failed → synthetic CRITICAL finding
-        assert result.total_findings == 1  # Synthetic "no review completed" finding
+        assert (
+            result.verdict == "REVIEW_UNAVAILABLE"
+        )  # Both failed → infrastructure finding
+        assert result.total_findings == 1  # Infrastructure "review unavailable" finding
         assert result.iterations == 1
 
 
@@ -827,3 +829,106 @@ class TestPlanReviewLoopResult:
         assert d["open_findings"] == 2
         assert d["fallback_used"] is True
         assert len(d["findings"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# REVIEW_UNAVAILABLE verdict tests
+# ---------------------------------------------------------------------------
+
+
+class TestReviewUnavailableVerdict:
+    """Test that infrastructure failures produce REVIEW_UNAVAILABLE, not NOT_READY."""
+
+    def test_both_fail_verdict_is_review_unavailable(self) -> None:
+        """_compute_verdict with infrastructure source → REVIEW_UNAVAILABLE."""
+        findings = [
+            _make_finding(severity="INFO"),
+        ]
+        # Override source to "infrastructure"
+        findings[0].source = "infrastructure"
+        findings[0].to_dict.return_value["source"] = "infrastructure"
+        assert _compute_verdict(findings) == "REVIEW_UNAVAILABLE"
+
+    def test_mixed_sources_not_review_unavailable(self) -> None:
+        """Mix of infrastructure + real findings → normal verdict (not REVIEW_UNAVAILABLE)."""
+        infra = _make_finding(severity="INFO")
+        infra.source = "infrastructure"
+        infra.to_dict.return_value["source"] = "infrastructure"
+
+        real = _make_finding(severity="CRITICAL")
+        real.source = "codex_cli"
+        real.to_dict.return_value["source"] = "codex_cli"
+
+        assert _compute_verdict([infra, real]) == "NOT_READY"
+
+    def test_dict_findings_review_unavailable(self) -> None:
+        """Dict-style findings with source=infrastructure → REVIEW_UNAVAILABLE."""
+        findings = [{"severity": "INFO", "source": "infrastructure"}]
+        assert _compute_verdict(findings) == "REVIEW_UNAVAILABLE"
+
+    def test_sidecar_and_result_agree_on_review_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both sidecar text and result.verdict show REVIEW_UNAVAILABLE when both fail."""
+        plan_file = tmp_path / "plans" / "sessions" / "test.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Test Plan\n")
+
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_codex_plan_review",
+            lambda *a, **kw: _make_result(success=False, error="Codex broken"),
+        )
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_claude_failsafe",
+            lambda *a, **kw: _make_result(success=False, error="Claude broken too"),
+        )
+        monkeypatch.setattr("plan_review_driver.detect_plan_tier", lambda p: "small")
+        monkeypatch.setattr(
+            "plan_review_driver.plan_state_key", lambda p: "test_unavailable_key"
+        )
+        monkeypatch.setattr(
+            "plan_review_driver._create_fallback_issue", lambda *a, **kw: None
+        )
+
+        result = run_plan_review_loop(plan_file, base_dir=tmp_path)
+
+        # Result verdict
+        assert result.verdict == "REVIEW_UNAVAILABLE"
+
+        # Sidecar text
+        sidecar = Path(result.sidecar_path)
+        assert sidecar.exists()
+        content = sidecar.read_text()
+        assert "REVIEW_UNAVAILABLE" in content
+        assert "review system failed" in content
+
+    def test_infrastructure_finding_is_info_not_critical(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When both reviewers fail, injected finding is INFO, not CRITICAL."""
+        plan_file = tmp_path / "plans" / "sessions" / "test.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Test Plan\n")
+
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_codex_plan_review",
+            lambda *a, **kw: _make_result(success=False, error="Codex broken"),
+        )
+        monkeypatch.setattr(
+            "plan_review_driver.invoke_claude_failsafe",
+            lambda *a, **kw: _make_result(success=False, error="Claude broken too"),
+        )
+        monkeypatch.setattr("plan_review_driver.detect_plan_tier", lambda p: "small")
+        monkeypatch.setattr(
+            "plan_review_driver.plan_state_key", lambda p: "test_info_key"
+        )
+        monkeypatch.setattr(
+            "plan_review_driver._create_fallback_issue", lambda *a, **kw: None
+        )
+
+        result = run_plan_review_loop(plan_file, base_dir=tmp_path)
+
+        assert result.total_findings == 1
+        finding = result.findings[0]
+        assert finding["severity"] == "INFO"
+        assert finding["source"] == "infrastructure"
