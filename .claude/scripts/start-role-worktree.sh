@@ -1,10 +1,20 @@
 #!/bin/bash
-# Role-aware worktree bootstrap.
+# COMPATIBILITY-ONLY: Legacy three-role worktree bootstrap.
+#
+# This script creates worktrees for the original three-role model
+# (author, review, ops). It is NOT the canonical bootstrap path.
+#
+# For the canonical steward workflow, use:
+#   .claude/tmux/steward-session.sh
+#
+# See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full
+# identity model and lane documentation.
+#
 # Usage: start-role-worktree.sh [author|review|ops]
 #        No arguments creates all three role worktrees.
 #
 # Idempotent: if the worktree already exists, updates it to latest main.
-# Writes registry metadata to .claude/runtime/worktree_registry/<role>.json.
+# Writes v2 registry metadata to .claude/runtime/worktree_registry/<role>.json.
 
 set -euo pipefail
 
@@ -17,6 +27,8 @@ VALID_ROLES="author review ops"
 # --- helpers ----------------------------------------------------------------
 
 usage() {
+    echo "COMPATIBILITY-ONLY: Legacy three-role worktree bootstrap."
+    echo ""
     echo "Usage: $0 [author|review|ops]"
     echo "       No arguments creates all three role worktrees."
     echo ""
@@ -24,6 +36,9 @@ usage() {
     echo "  ${PARENT_DIR}/${REPO_NAME}-author"
     echo "  ${PARENT_DIR}/${REPO_NAME}-review"
     echo "  ${PARENT_DIR}/${REPO_NAME}-ops"
+    echo ""
+    echo "For the canonical steward workflow, use instead:"
+    echo "  .claude/tmux/steward-session.sh"
 }
 
 is_valid_role() {
@@ -40,25 +55,51 @@ now_iso() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+role_to_lane_id() {
+    case "$1" in
+        author) echo "author-a" ;;
+        *)      echo "$1" ;;
+    esac
+}
+
+role_to_lane_class() {
+    case "$1" in
+        author) echo "author" ;;
+        *)      echo "$1" ;;
+    esac
+}
+
 write_registry() {
     local role="$1"
     local wt_path="$2"
     local branch="$3"
     local created="$4"
+    local lane_id
+    lane_id="$(role_to_lane_id "$role")"
+    local lane_class
+    lane_class="$(role_to_lane_class "$role")"
 
     mkdir -p "$REGISTRY_DIR"
 
     cat > "$REGISTRY_DIR/${role}.json" <<EOJSON
 {
-  "schema_version": 1,
-  "role": "${role}",
+  "schema_version": 2,
+  "lane_id": "${lane_id}",
+  "lane_class": "${lane_class}",
   "worktree_path": "${wt_path}",
   "branch": "${branch}",
   "class": "persistent",
   "created_at": "${created}",
   "last_active": "$(now_iso)",
   "session_id": null,
-  "ttl_hours": null
+  "ttl_hours": null,
+  "display_name": null,
+  "tmux_session": null,
+  "tmux_window": null,
+  "tmux_pane": null,
+  "cmux_workspace_ref": null,
+  "cmux_surface_ref": null,
+  "legacy_role": "${role}"
 }
 EOJSON
 }

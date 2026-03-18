@@ -1,16 +1,19 @@
 #!/bin/bash
-# Bootstrap a persistent tmux session for the steward dashboard layout.
+# Canonical steward session bootstrap.
 # Usage: steward-session.sh [session-name]
 #
 # Creates (or attaches to) a tmux session with:
-#   1. dashboard       — 4-pane mission-control view
+#   1. dashboard       -- 4-pane mission-control view
 #      pane 1: author-a
 #      pane 2: author-b
 #      pane 3: review
 #      pane 4: ops
-#   2. author-c        — overflow author lane
-#   3. author-d        — overflow author lane
-#   4. author-scratch  — exploratory Claude lane
+#   2. author-c        -- overflow author lane
+#   3. author-d        -- overflow author lane
+#   4. author-scratch  -- exploratory Claude lane
+#
+# Writes v2 worktree registry metadata for each launched lane.
+# See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
 
 set -euo pipefail
 
@@ -57,6 +60,74 @@ ensure_review_worktree() {
     git -C "$MAIN_DIR" worktree add --detach "$REVIEW" main
 }
 
+# --- lane metadata ----------------------------------------------------------
+
+REGISTRY_DIR="$MAIN_DIR/.claude/runtime/worktree_registry"
+
+now_iso() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Write a v2 worktree registry entry for a steward lane.
+# Args: lane_id lane_class worktree_path branch tmux_window [tmux_pane]
+write_lane_metadata() {
+    local lane_id="$1"
+    local lane_class="$2"
+    local wt_path="$3"
+    local branch="$4"
+    local tmux_window="$5"
+    local tmux_pane="${6:-null}"
+    local now
+    now="$(now_iso)"
+
+    mkdir -p "$REGISTRY_DIR"
+
+    # Preserve created_at from existing entry if present
+    local created="$now"
+    if [ -f "$REGISTRY_DIR/${lane_id}.json" ]; then
+        local prev
+        prev="$(python3 -c "
+import json
+try:
+    d = json.load(open('${REGISTRY_DIR}/${lane_id}.json'))
+    print(d.get('created_at', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")"
+        if [ -n "$prev" ]; then
+            created="$prev"
+        fi
+    fi
+
+    # Quote tmux_pane if it's not null
+    local pane_val="null"
+    if [ "$tmux_pane" != "null" ]; then
+        pane_val="\"${tmux_pane}\""
+    fi
+
+    cat > "$REGISTRY_DIR/${lane_id}.json" <<EOJSON
+{
+  "schema_version": 2,
+  "lane_id": "${lane_id}",
+  "lane_class": "${lane_class}",
+  "worktree_path": "${wt_path}",
+  "branch": "${branch}",
+  "class": "persistent",
+  "created_at": "${created}",
+  "last_active": "${now}",
+  "session_id": null,
+  "ttl_hours": null,
+  "display_name": null,
+  "tmux_session": "${SESSION}",
+  "tmux_window": "${tmux_window}",
+  "tmux_pane": ${pane_val},
+  "cmux_workspace_ref": null,
+  "cmux_surface_ref": null,
+  "legacy_role": null
+}
+EOJSON
+}
+
 if ! command -v tmux >/dev/null 2>&1; then
     echo "Error: tmux is not installed."
     echo "Install with: brew install tmux"
@@ -73,6 +144,15 @@ ensure_worktree "$AUTHOR_C" "codex/steward-author-c"
 ensure_worktree "$AUTHOR_D" "codex/steward-author-d"
 ensure_worktree "$AUTHOR_SCRATCH" "codex/steward-author-scratch"
 ensure_review_worktree
+
+# Write v2 registry metadata for each lane
+write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-author"         "dashboard" "1"
+write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "dashboard" "2"
+write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "dashboard" "3"
+write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "dashboard" "4"
+write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"
+write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"
+write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch"
 
 tmux new-session -d -s "$SESSION" -n dashboard -c "$AUTHOR_A" \
     "$CLAUDE_BIN" --name author-a --agent steward-author-a
