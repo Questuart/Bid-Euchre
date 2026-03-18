@@ -464,12 +464,17 @@ def validate_plan(
         )
         return None, findings
 
-    # Check if plan file exists
+    # Check if plan file exists.
+    # NOTE: Demoted from P1 (blocking) to P2 (warning) because the review
+    # driver runs in the worktree where `gh pr create` was invoked, which may
+    # not have the PR branch checked out. The plan file may exist on the PR
+    # branch but not in the stale worktree. See plans/sessions/
+    # 2026-03-18_review-loop-parse-fixes.md for full analysis.
     full_path = repo_root / plan_path
     if not full_path.exists():
         findings.append(
             {
-                "severity": "P1",
+                "severity": "P2",
                 "file": plan_path,
                 "line": 0,
                 "category": "process",
