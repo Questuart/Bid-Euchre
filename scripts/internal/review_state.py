@@ -96,6 +96,7 @@ REVIEW_STATUS_MAP: dict[str, str] = {
     "fail": "failure",  # Blocking findings
     "warn": "success",  # Non-blocking follow-ups only
     "ready": "success",  # Clean pass
+    "degraded": "success",  # Review unavailable/unparseable (advisory)
 }
 
 

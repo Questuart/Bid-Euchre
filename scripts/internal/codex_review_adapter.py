@@ -37,6 +37,13 @@ _CLI_ARG_ERROR_PATTERNS = [
     "usage: codex review",
 ]
 
+# Patterns in output that indicate a retryable backend interruption
+# (as opposed to a permanent invocation error). These produce
+# parse_confidence="backend_error" instead of success=False.
+_RETRYABLE_BACKEND_RE = re.compile(
+    r"(?i)(?:interrupted|re-run\s+/review|try\s+again|please\s+wait|rate\s+limit)"
+)
+
 # Mode-specific review prompts (aligned with AGENTS.md guidance).
 #
 # NOTE: Codex CLI currently ignores these prompts because --base and a
@@ -202,6 +209,12 @@ _CLEAN_REVIEW_PATTERN_STRINGS: list[str] = [
     r"no\s+code\s+changes\s+relative\s+to",
     r"no\s+changes\s+to\s+review",
     r"nothing\s+to\s+review",
+    # --- Patterns from runtime artifact analysis (parser defang PR) ---
+    r"no\s+tracked\s+changes",
+    r"does\s+not\s+introduce\s+.{0,60}issue",
+    r"no\s+patch\s+to\s+flag",
+    r"did\s+not\s+find\s+any\s+(?:discrete|actionable).*bugs?",
+    r"no\s+(?:code|functional)\s+changes?",
 ]
 
 _CLEAN_REVIEW_PATTERNS = re.compile(
@@ -236,6 +249,9 @@ class CodexReviewResult:
     error: str | None = None
     exit_code: int | None = None
     error_type: str | None = None  # "cli_invocation_error" or "cli_review_error"
+    parse_confidence: str | None = (
+        None  # "structured", "clean_signal", "unparseable", "backend_error"
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -246,6 +262,7 @@ class CodexReviewResult:
             "error": self.error,
             "exit_code": self.exit_code,
             "error_type": self.error_type,
+            "parse_confidence": self.parse_confidence,
         }
 
 
@@ -616,6 +633,22 @@ def invoke_codex_cli(
         )
 
     if returncode != 0:
+        # Check for retryable backend interruptions before classifying as error
+        if _RETRYABLE_BACKEND_RE.search(output):
+            logger.warning(
+                "Codex CLI interrupted (exit %d, %.1fs) — treating as advisory",
+                returncode,
+                elapsed,
+            )
+            return CodexReviewResult(
+                success=True,
+                findings=[],
+                raw_output=output,
+                latency_seconds=elapsed,
+                exit_code=returncode,
+                parse_confidence="backend_error",
+            )
+
         error_type = _classify_error(output)
         logger.warning(
             "Codex CLI returned exit code %d (%.1fs, %s): %s",
@@ -636,31 +669,31 @@ def invoke_codex_cli(
 
     findings = parse_codex_output(output)
 
-    # Fail-safe: if zero findings parsed from non-trivial output
-    # and no recognizable "clean review" signal, treat as unparseable.
-    # This prevents format drift from silently bypassing review.
-    if not findings and output.strip():
-        if not _CLEAN_REVIEW_PATTERNS.search(output):
-            logger.warning(
-                "Codex CLI returned output (%.1fs, %d chars) but no findings "
-                "were parsed and no clean-review signal detected — treating "
-                "as unparseable",
-                elapsed,
-                len(output),
-            )
-            return CodexReviewResult(
-                success=False,
-                findings=[],
-                raw_output=output,
-                latency_seconds=elapsed,
-                error="Unparseable output: no findings matched and no clean-review signal",
-                exit_code=0,
-            )
+    # Determine parse confidence level
+    if findings:
+        parse_confidence = "structured"
+    elif not output.strip():
+        parse_confidence = "clean_signal"  # Empty output = nothing to review
+    elif _CLEAN_REVIEW_PATTERNS.search(output):
+        parse_confidence = "clean_signal"
+    else:
+        # Output present but no findings parsed and no clean signal.
+        # Previously this was success=False (blocking). Now advisory:
+        # the raw output is persisted for human inspection.
+        parse_confidence = "unparseable"
+        logger.warning(
+            "Codex CLI returned output (%.1fs, %d chars) but no findings "
+            "were parsed and no clean-review signal detected — treating "
+            "as advisory (parse_confidence=unparseable)",
+            elapsed,
+            len(output),
+        )
 
     logger.info(
-        "Codex CLI completed (%.1fs): %d findings",
+        "Codex CLI completed (%.1fs): %d findings, parse_confidence=%s",
         elapsed,
         len(findings),
+        parse_confidence,
     )
     return CodexReviewResult(
         success=True,
@@ -668,6 +701,7 @@ def invoke_codex_cli(
         raw_output=output,
         latency_seconds=elapsed,
         exit_code=0,
+        parse_confidence=parse_confidence,
     )
 
 

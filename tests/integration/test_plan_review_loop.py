@@ -434,14 +434,14 @@ class TestBothReviewersFail:
             error="Timeout after 600s",
         ),
     )
-    def test_synthetic_critical_injected(
+    def test_infrastructure_finding_injected(
         self, mock_codex, mock_claude, mock_issue, tmp_path: Path
     ) -> None:
-        """When both fail, a synthetic CRITICAL finding is injected."""
+        """When both fail, an INFO infrastructure finding is injected (not CRITICAL)."""
         plan = tmp_path / "test.md"
         plan.write_text("<!-- review-tier: small -->\n# Plan\n")
         result = run_plan_review_loop(plan, base_dir=tmp_path)
-        assert result.verdict == "NOT_READY"
+        assert result.verdict == "REVIEW_UNAVAILABLE"
         assert result.total_findings == 1
         finding = result.findings[0]
         sev = finding.severity if hasattr(finding, "severity") else finding["severity"]
@@ -450,7 +450,9 @@ class TestBothReviewersFail:
             if hasattr(finding, "description")
             else finding["description"]
         )
-        assert sev == "CRITICAL"
+        source = finding.source if hasattr(finding, "source") else finding["source"]
+        assert sev == "INFO"
+        assert source == "infrastructure"
         assert "both Codex CLI and Claude fallback failed" in desc
 
     @patch("plan_review_driver._create_fallback_issue", return_value=None)

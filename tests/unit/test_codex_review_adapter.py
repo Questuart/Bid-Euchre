@@ -830,11 +830,117 @@ class TestCodexCLITimeout:
         return_value=(0, "gibberish that matches nothing"),
     )
     @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
-    def test_unparseable_output_returns_failure(self, mock_resolve, mock_pty):
-        """Output matching no patterns produces error."""
+    def test_unparseable_output_returns_advisory_success(self, mock_resolve, mock_pty):
+        """Output matching no patterns returns success with parse_confidence=unparseable."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "unparseable"
+        assert result.findings == []
+
+
+# --- Parse Confidence Tests ---
+
+
+class TestParseConfidence:
+    """Test parse_confidence field is set correctly on all code paths."""
+
+    @patch("codex_plan_review_adapter._run_with_pty", return_value=(0, STANDARD_OUTPUT))
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_structured_findings_set_structured(self, mock_resolve, mock_pty):
+        """Parsed structured findings → parse_confidence=structured."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "structured"
+        assert len(result.findings) > 0
+
+    @patch("codex_plan_review_adapter._run_with_pty", return_value=(0, CLEAN_OUTPUT))
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_clean_output_set_clean_signal(self, mock_resolve, mock_pty):
+        """Clean review output → parse_confidence=clean_signal."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "clean_signal"
+        assert result.findings == []
+
+    @patch("codex_plan_review_adapter._run_with_pty", return_value=(0, ""))
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_empty_output_set_clean_signal(self, mock_resolve, mock_pty):
+        """Empty output → parse_confidence=clean_signal."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "clean_signal"
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(0, "gibberish that matches nothing"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_unparseable_output_set_unparseable(self, mock_resolve, mock_pty):
+        """Unparseable output → parse_confidence=unparseable, success=True."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "unparseable"
+        assert result.findings == []
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(1, "Review was interrupted. Please re-run /review"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_interrupted_codex_returns_backend_error(self, mock_resolve, mock_pty):
+        """Codex 'interrupted' exit-1 → success=True, parse_confidence=backend_error."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "backend_error"
+        assert result.findings == []
+        assert result.exit_code == 1
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(1, "Please try again later"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_try_again_returns_backend_error(self, mock_resolve, mock_pty):
+        """'try again' in output → backend_error, not hard failure."""
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.parse_confidence == "backend_error"
+
+    @patch(
+        "codex_plan_review_adapter._run_with_pty",
+        return_value=(2, "error: the argument '--base' cannot be used with '[PROMPT]'"),
+    )
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_real_cli_error_still_fails(self, mock_resolve, mock_pty):
+        """Non-retryable CLI errors remain success=False."""
         result = invoke_codex_cli(base="main")
         assert result.success is False
-        assert "Unparseable" in result.error
+        assert result.error_type == "cli_invocation_error"
+        assert result.parse_confidence is None
+
+    def test_parse_confidence_in_to_dict(self):
+        """parse_confidence field appears in serialization."""
+        result = CodexReviewResult(
+            success=True,
+            findings=[],
+            raw_output="LGTM",
+            latency_seconds=1.0,
+            parse_confidence="clean_signal",
+        )
+        d = result.to_dict()
+        assert d["parse_confidence"] == "clean_signal"
+
+    def test_parse_confidence_none_in_to_dict(self):
+        """parse_confidence=None when not set (error paths)."""
+        result = CodexReviewResult(
+            success=False,
+            findings=[],
+            raw_output="",
+            latency_seconds=1.0,
+            error="Timeout",
+        )
+        d = result.to_dict()
+        assert d["parse_confidence"] is None
 
 
 # =====================================================================

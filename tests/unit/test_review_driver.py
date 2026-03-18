@@ -671,3 +671,167 @@ class TestApplyingFixesFilteredFindings:
             findings = []
 
         assert len(findings) == 2
+
+
+# ---------------------------------------------------------------------------
+# Degraded review status tests (parse_confidence branching)
+# ---------------------------------------------------------------------------
+
+
+class TestDegradedReviewStatus:
+    """Test that unparseable/backend_error Codex output produces degraded status.
+
+    When Codex returns output the parser can't understand, the PR review driver
+    should publish a 'degraded' status (GitHub success with distinct description),
+    not a 'clean' status or a blocking failure.
+    """
+
+    def test_unparseable_codex_produces_degraded_transition(self, tmp_path: Path):
+        """parse_confidence=unparseable → ready_to_merge with degraded desc."""
+        from review_state import ReviewLoopState, ReviewState, round_dir, save_state
+
+        state = ReviewLoopState(
+            pr_number=999,
+            branch="test-branch",
+            state=ReviewState.SCORING_FINDINGS.value,
+            iteration_count=0,
+        )
+        save_state(state, tmp_path)
+
+        rdir = round_dir(999, 1, tmp_path)
+        rdir.mkdir(parents=True)
+        review_data = {
+            "success": True,
+            "findings": [],
+            "raw_output": "gibberish",
+            "latency_seconds": 1.0,
+            "parse_confidence": "unparseable",
+        }
+        with open(rdir / "codex_review.json", "w") as f:
+            json.dump(review_data, f)
+
+        from review_driver import _step_scoring_findings
+
+        status_calls = []
+
+        def mock_publish(pr, status, desc):
+            status_calls.append((pr, status, desc))
+
+        def mock_comment(loop_state, findings, outcome):
+            pass
+
+        with (
+            patch("review_driver._publish_status", mock_publish),
+            patch("review_driver._post_review_comment", mock_comment),
+        ):
+            result = _step_scoring_findings(state, tmp_path)
+
+        assert result.state == ReviewState.READY_TO_MERGE.value
+
+        assert len(status_calls) == 1
+        _, status, desc = status_calls[0]
+        assert status == "success"
+        assert "degraded" in desc.lower()
+        assert "unparseable" in desc.lower()
+
+    def test_backend_error_codex_produces_degraded_transition(self, tmp_path: Path):
+        """parse_confidence=backend_error → degraded status."""
+        from review_state import ReviewLoopState, ReviewState, round_dir, save_state
+
+        state = ReviewLoopState(
+            pr_number=998,
+            branch="test-branch",
+            state=ReviewState.SCORING_FINDINGS.value,
+            iteration_count=0,
+        )
+        save_state(state, tmp_path)
+
+        rdir = round_dir(998, 1, tmp_path)
+        rdir.mkdir(parents=True)
+        review_data = {
+            "success": True,
+            "findings": [],
+            "raw_output": "Review was interrupted. Please re-run /review",
+            "latency_seconds": 2.0,
+            "parse_confidence": "backend_error",
+        }
+        with open(rdir / "codex_review.json", "w") as f:
+            json.dump(review_data, f)
+
+        from review_driver import _step_scoring_findings
+
+        status_calls = []
+
+        def mock_publish(pr, status, desc):
+            status_calls.append((pr, status, desc))
+
+        def mock_comment(loop_state, findings, outcome):
+            pass
+
+        with (
+            patch("review_driver._publish_status", mock_publish),
+            patch("review_driver._post_review_comment", mock_comment),
+        ):
+            result = _step_scoring_findings(state, tmp_path)
+
+        assert result.state == ReviewState.READY_TO_MERGE.value
+        _, status, desc = status_calls[0]
+        assert status == "success"
+        assert "degraded" in desc.lower()
+        assert "backend_error" in desc.lower()
+
+    def test_structured_findings_not_degraded(self, tmp_path: Path):
+        """Normal structured findings proceed to scoring, NOT degraded path."""
+        from review_state import ReviewLoopState, ReviewState, round_dir, save_state
+
+        state = ReviewLoopState(
+            pr_number=997,
+            branch="test-branch",
+            state=ReviewState.SCORING_FINDINGS.value,
+            iteration_count=0,
+        )
+        save_state(state, tmp_path)
+
+        rdir = round_dir(997, 1, tmp_path)
+        rdir.mkdir(parents=True)
+        review_data = {
+            "success": True,
+            "findings": [
+                {
+                    "severity": "P1",
+                    "file": "src/foo.py",
+                    "line": 42,
+                    "category": "correctness",
+                    "check_id": "C1",
+                    "message": "Unseeded random",
+                    "raw_source": "codex_cli",
+                }
+            ],
+            "raw_output": "[P1] src/foo.py:42 — Unseeded random (C1)",
+            "latency_seconds": 60.0,
+            "parse_confidence": "structured",
+        }
+        with open(rdir / "codex_review.json", "w") as f:
+            json.dump(review_data, f)
+
+        from review_driver import _step_scoring_findings
+
+        status_calls = []
+
+        def mock_publish(pr, status, desc):
+            status_calls.append((pr, status, desc))
+
+        def mock_comment(loop_state, findings, outcome):
+            pass
+
+        with (
+            patch("review_driver._publish_status", mock_publish),
+            patch("review_driver._post_review_comment", mock_comment),
+        ):
+            result = _step_scoring_findings(state, tmp_path)
+
+        # Should NOT go to ready_to_merge (has blocking P1 findings)
+        assert result.state == ReviewState.APPLYING_FIXES.value
+        # Status should NOT say "degraded"
+        for _, _, desc in status_calls:
+            assert "degraded" not in desc.lower()
