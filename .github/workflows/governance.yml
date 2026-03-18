@@ -50,5 +50,23 @@ jobs:
             echo "No plan files changed — skipping plan lint"
           fi
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Infra PR metadata check (advisory)
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD 2>/dev/null || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No changed files detected — skipping infra metadata check"
+          else
+            python scripts/check_infra_pr_metadata.py \
+              --pr-body "$PR_BODY" \
+              --changed-files $CHANGED
+          fi
+
       - name: Governance passed
         run: echo "All governance checks passed"
