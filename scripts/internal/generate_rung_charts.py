@@ -1661,8 +1661,6 @@ def generate_dashboard_health(
         _unavailable_panel(ax, "Contract Mix")
 
     # Panel 3: Outcome distributions (violin+box if real, bars if synthetic)
-    # Non-canonical fallback: outcome_summary.csv is internal diagnostic only.
-    # Real distributions should come from outcome_distributions.csv.
     ax = axes[1, 0]
     dist_df = (
         _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
