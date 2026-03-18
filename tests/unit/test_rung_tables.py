@@ -1622,12 +1622,42 @@ class TestSeatBalance:
         assert result is None
 
     def test_missing_seat_column(self, tmp_path):
-        """Returns None when parquet lacks seat column."""
+        """Returns None when parquet lacks both seat and focal_seat columns."""
         df = pd.DataFrame({"other_col": [1, 2, 3], "tricks_won": [5, 6, 7]})
         parquet_path = tmp_path / "eval.parquet"
         df.to_parquet(parquet_path)
         result = generate_seat_balance_csv(parquet_path, tmp_path / "chart_data")
         assert result is None
+
+    def test_focal_seat_fallback(self, tmp_path):
+        """Uses focal_seat column when seat column is absent."""
+        df = pd.DataFrame(
+            {
+                "focal_seat": [0, 0, 1, 1, 2, 2, 3, 3],
+                "contract_family": [
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                ],
+                "tricks_won": [5.0, 4.0, 6.0, 3.0, 5.5, 4.5, 4.5, 5.5],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        output_dir = tmp_path / "chart_data"
+        result = generate_seat_balance_csv(parquet_path, output_dir)
+        assert result == "seat_balance.csv"
+        out_df = pd.read_csv(output_dir / "seat_balance.csv")
+        assert "seat" in out_df.columns
+        assert "contract" in out_df.columns
+        assert "mean_tricks" in out_df.columns
+        assert "n_hands" in out_df.columns
+        assert len(out_df) == 8  # 4 seats * 2 contracts
 
 
 # ──────────────────────────────────────────────
@@ -1780,6 +1810,111 @@ class TestModelEvalCsvs:
             tmp_path / "output",
         )
         assert result == []
+
+    def test_tricks_won_column_fallback(self, tmp_path):
+        """Produces predictions/residuals/calibration using tricks_won when actual absent.
+
+        Uses an OLS artifact (coefficients in JSON, no joblib required) to
+        verify that the tricks_won column fallback enables CSV generation
+        from action_value parquets that lack an 'actual' column.
+        """
+        import numpy as np
+
+        # Minimal OLS artifact with one feature per contract
+        ols_artifact = {
+            "schema_version": "action_value_olsa_v1",
+            "target": "tricks_won",
+            "models": {
+                "suit": {
+                    "feature_names": ["hand_value"],
+                    "coefficients": [0.5],
+                    "intercept": 2.0,
+                    "r_squared": 0.6,
+                    "mae": 1.0,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+            },
+            "metadata": {},
+        }
+        training_artifacts = {"test_ols": ols_artifact}
+
+        # Parquet with tricks_won but no 'actual' column
+        rng = np.random.RandomState(42)
+        n = 50
+        df = pd.DataFrame(
+            {
+                "hand_value": rng.uniform(0, 10, n),
+                "contract_family": ["suit"] * n,
+                "action_type": ["bid"] * n,
+                "tricks_won": rng.uniform(2, 8, n),
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+
+        output_dir = tmp_path / "chart_data"
+        result = generate_model_eval_csvs(training_artifacts, parquet_path, output_dir)
+
+        # Should produce all three CSVs
+        assert "predictions.csv" in result
+        assert "residuals.csv" in result
+        assert "calibration_bins.csv" in result
+
+        # Verify predictions CSV has correct columns
+        pred_df = pd.read_csv(output_dir / "predictions.csv")
+        assert "model" in pred_df.columns
+        assert "contract" in pred_df.columns
+        assert "prediction" in pred_df.columns
+        assert "actual" in pred_df.columns
+        assert len(pred_df) == n
+
+    def test_actual_column_preferred_over_tricks_won(self, tmp_path):
+        """When both 'actual' and 'tricks_won' exist, 'actual' is used."""
+        import numpy as np
+
+        ols_artifact = {
+            "schema_version": "action_value_olsa_v1",
+            "target": "tricks_won",
+            "models": {
+                "suit": {
+                    "feature_names": ["hand_value"],
+                    "coefficients": [0.5],
+                    "intercept": 2.0,
+                    "r_squared": 0.6,
+                    "mae": 1.0,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+            },
+            "metadata": {},
+        }
+        training_artifacts = {"test_ols": ols_artifact}
+
+        rng = np.random.RandomState(42)
+        n = 30
+        actual_values = rng.uniform(2, 8, n)
+        tricks_won_values = rng.uniform(0, 10, n)  # Different from actual
+        df = pd.DataFrame(
+            {
+                "hand_value": rng.uniform(0, 10, n),
+                "contract_family": ["suit"] * n,
+                "action_type": ["bid"] * n,
+                "actual": actual_values,
+                "tricks_won": tricks_won_values,
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+
+        output_dir = tmp_path / "chart_data"
+        result = generate_model_eval_csvs(training_artifacts, parquet_path, output_dir)
+        assert "predictions.csv" in result
+
+        pred_df = pd.read_csv(output_dir / "predictions.csv")
+        # The 'actual' column values should match the 'actual' source, not tricks_won
+        for _, row in pred_df.iterrows():
+            assert row["actual"] in [round(v, 4) for v in actual_values]
 
 
 # ──────────────────────────────────────────────
