@@ -344,6 +344,149 @@ class TestManifestSeedsFromDirectory:
         assert manifest["seeds"] == [42]
 
 
+class TestManifestSeedsFromArtifactFilenames:
+    """Tests for seed discovery from artifact filenames (F1 fix).
+
+    When canonical h2h_battery.json / comparator_cis.json are absent and
+    seed_* directories don't exist, seeds should be extracted from
+    suffixed artifact filenames like h2h_battery_full_42.json.
+    """
+
+    def test_seeds_from_h2h_battery_filenames(self, tmp_path):
+        """Seeds extracted from h2h_battery_<mode>_<seed>.json filenames."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        # Create seed-bearing artifact files (empty JSON)
+        for name in [
+            "h2h_battery_full_42.json",
+            "h2h_battery_full_123.json",
+            "h2h_battery_full_456.json",
+        ]:
+            (rung_dir / name).write_text("{}")
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        assert sorted(manifest["seeds"]) == [42, 123, 456]
+
+    def test_seeds_from_comparator_battery_filenames(self, tmp_path):
+        """Seeds extracted from comparator_battery_<rung>_<seed>.json."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        for name in [
+            "comparator_battery_r1_42.json",
+            "comparator_battery_r1_123.json",
+        ]:
+            (rung_dir / name).write_text("{}")
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        assert sorted(manifest["seeds"]) == [42, 123]
+
+    def test_seeds_from_comparator_cis_filenames(self, tmp_path):
+        """Seeds extracted from comparator_cis_<rung>_<seed>.json."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        (rung_dir / "comparator_cis_r2_42.json").write_text("{}")
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        assert manifest["seeds"] == [42]
+
+    def test_seeds_from_mixed_artifact_patterns(self, tmp_path):
+        """Seeds deduped across h2h, comparator_battery, and comparator_cis."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        for name in [
+            "h2h_battery_full_42.json",
+            "h2h_battery_full_123.json",
+            "comparator_battery_r1_42.json",
+            "comparator_battery_r1_123.json",
+            "comparator_cis_r1_42.json",
+            "comparator_cis_r1_456.json",
+        ]:
+            (rung_dir / name).write_text("{}")
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        # 42 and 123 appear in multiple files but should be deduped
+        assert sorted(manifest["seeds"]) == [42, 123, 456]
+
+    def test_non_seed_filenames_ignored(self, tmp_path):
+        """Files without seed-bearing prefixes don't contribute seeds."""
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+        (report_dir / "chart_data").mkdir(parents=True)
+
+        for name in [
+            "roster.json",
+            "advance_check.json",
+            "training_artifact_gbt_av.json",
+            "training_artifact_selected_ols_av.json",
+        ]:
+            (rung_dir / name).write_text("{}")
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        assert manifest["seeds"] == []
+
+    def test_filename_fallback_not_used_when_h2h_has_seeds(self, tmp_path):
+        """Filename fallback is skipped when H2H battery provides seeds."""
+        import json
+
+        rung_dir = tmp_path / "rung"
+        rung_dir.mkdir()
+        report_dir = tmp_path / "report"
+        (report_dir / "tables").mkdir(parents=True)
+        (report_dir / "charts").mkdir(parents=True)
+
+        # H2H battery with seed
+        battery = {"seed": 42, "mode": "QUICK", "cells": {}}
+        (rung_dir / "h2h_battery.json").write_text(json.dumps(battery))
+
+        # Also have suffixed files with different seeds
+        (rung_dir / "h2h_battery_full_99.json").write_text("{}")
+
+        manifest = generate_evidence_manifest(
+            rung_dir=rung_dir,
+            report_dir=report_dir,
+        )
+        # Should use H2H seed (42), not filename seed (99)
+        assert manifest["seeds"] == [42]
+
+
 class TestManifestModelClass:
     """Tests for model class name detection from roster."""
 
