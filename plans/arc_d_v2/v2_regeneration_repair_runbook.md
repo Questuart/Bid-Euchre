@@ -104,6 +104,11 @@ Notes:
 - Not shared:
   `r3`
 
+**Rationale:** Combined with the fixed R0 anchor (§4.1), shared pre-R3 datasets
+ensure that rung-to-rung comparisons isolate model capacity differences (Goal 1,
+lineage plan §3) — the dataset, continuation policy, and feature set are identical
+across R0/R1/R2, so the only variable is the model architecture.
+
 `r3` keeps its own mode-sized dataset builds because it adds moon/loner actions.
 `r3` still uses the fixed `r0` continuation artifact and the same dataset-build seed
 registry by mode; only the action space changes and the dataset is not shared with
