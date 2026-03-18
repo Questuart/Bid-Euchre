@@ -310,6 +310,72 @@ user:
 
 ---
 
+## Task Discipline and Lane Governance
+
+### One Task Per Lane
+
+Every active execution lane should own one primary task at a time. The task
+is recorded in `.claude/runtime/task_state/<task_id>.json` using the v2
+schema (see `.claude/runtime/task_state/README.md`).
+
+Newly discovered work during execution should become:
+- A follow-up item on the current task (if in scope)
+- A new task handed off to another lane
+- An escalation to `ops`
+
+It should **not** silently expand the current task's scope.
+
+### Task Record as Execution Contract
+
+The task record defines the lane's execution boundaries:
+- **`in_scope`** -- what this task covers
+- **`out_of_scope`** -- what this task must not do
+- **`escalation_triggers`** -- when to stop and ask rather than continue
+
+A lane is considered drifting if its changed files, validations, or reported
+progress no longer match the declared task scope.
+
+### Lane Charters
+
+Each lane class has an implicit charter derived from the capability matrix
+above. In summary:
+
+| Lane Class | Owns | Must Not Touch | Escalates When |
+|------------|------|----------------|----------------|
+| `author` | Implementation in its worktree | Other lanes' worktrees, main checkout | Scope exceeds task, validation fails repeatedly, blocked, destructive action needed |
+| `scratch` | Exploratory work, drafts | Production code, other lanes' work | Work becomes production-ready (hand off to author) |
+| `review` | Review artifacts, validation | Implementation code (except delegated fixes) | Blocking findings that need implementation |
+| `ops` | Status, orchestration, health | Implementation code | Recovery action needs approval |
+
+### Escalation Requirements
+
+Escalation is required, not optional, when:
+- Requested work exceeds the declared `in_scope`
+- Touched files move outside the lane's allowed ownership
+- Validation fails repeatedly (3+ times on the same step)
+- The lane is blocked beyond a reasonable threshold
+- Destructive or risky recovery action is needed
+- The plan or requirements become materially ambiguous
+
+### Task Completion Requirements
+
+When completing a task, a lane must:
+1. Update `status` to `completed` in the task record
+2. Record the validation outcome
+3. Write a `completion_note` summarizing what was done and any follow-ups
+4. Emit follow-ups or blockers explicitly rather than leaving them implicit
+   in chat history
+
+### Progress Visibility
+
+Lanes should keep their repo-local task record aligned with the in-session
+task list they are actually following. The task record in
+`.claude/runtime/task_state/` is the durable progress signal; the in-session
+TUI task list (see `.claude/rules/25_task_lists.md`) is the ephemeral
+intra-session complement.
+
+---
+
 ## Session Metadata
 
 Each active session writes metadata to
@@ -350,11 +416,14 @@ discovery and handoff for governed initiatives.
 ## Task State
 
 Delegated tasks are tracked in `.claude/runtime/task_state/<task_id>.json`.
+See `.claude/runtime/task_state/README.md` for the full v2 schema.
+
 Task state provides:
 
-- **Bounded scope:** A finite list of items to complete
-- **Progress tracking:** Which items are done, in progress, or blocked
-- **Validation contract:** What commands to run and what "done" means
+- **Bounded scope:** `in_scope` and `out_of_scope` define task boundaries
+- **Progress tracking:** Ordered checklist items with status
+- **Validation contract:** Commands to run and completion criteria
+- **Escalation contract:** Conditions that require stopping and escalating
 - **Auditability:** The user can inspect task state from VS Code at any time
 
 ### When to Create a Task Record
@@ -438,10 +507,19 @@ operates within a lane worktree bootstrapped by this workflow.
 
 ### Autonomous Review Loop (AUTONOMOUS_REVIEW_LOOP.md)
 
-The review loop runs from the main checkout (not from lane worktrees). It
-is triggered by PR creation hooks and operates independently. The `review`
+The local review loop runs from the main checkout (not from lane worktrees).
+It is triggered by PR creation hooks and operates independently. The `review`
 lane worktree is for manual or agent-driven review work, not for the
 automated review loop.
+
+**Transitional status:** The local review loop infrastructure
+(`.claude/runtime/review_loops/`, `.claude/runtime/plan_reviews/`) is
+transitional. PR review is migrating to an online-first model where GitHub
+is the source of truth for review state and deterministic prechecks run as
+GitHub Actions. Do not build new first-class dependencies on the local
+review loop directories. See
+`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` for the
+review architecture migration plan.
 
 ### Existing Worktree Scripts
 
