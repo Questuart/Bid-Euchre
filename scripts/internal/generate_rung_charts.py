@@ -19,7 +19,7 @@ Charts produced (Tier 1 + Tier 2 from §12.12):
   6.  contract_mix_bars.png          — from behavior_summary.csv
   7.  r2_by_contract.png             — from model_performance.csv
   8.  mae_by_contract.png            — from model_performance.csv
-  9.  outcome_summary.png            — from chart_data/outcome_summary.csv
+  9.  (removed — superseded by chart #9 outcome_distributions.png)
   10. seat_balance.png               — from chart_data/seat_balance.csv
   11. h2h_ranking_scatter.png        — from comparator_rankings + h2h_tier_summary
   12. outcome_distributions.png      — from chart_data/outcome_distributions.csv
@@ -434,55 +434,6 @@ def generate_mae_by_contract(
     ax.legend()
     fig.tight_layout()
     _save_chart(fig, output_dir, "mae_by_contract.png", dpi)
-    return True
-
-
-def generate_outcome_summary(
-    chart_data_dir: Path,
-    output_dir: Path,
-    dpi: int = 150,
-) -> bool:
-    """Grouped bar chart of outcome summary metrics from chart_data CSV.
-
-    This shows summary-level metrics (one value per model per contract facet),
-    NOT per-deal distributions. The chart uses grouped bars with honest labeling.
-    """
-    df = _read_csv_safe(chart_data_dir / "outcome_summary.csv")
-    if df is None:
-        return False
-
-    if (
-        "model" not in df.columns
-        or "contract" not in df.columns
-        or "value" not in df.columns
-    ):
-        return False
-
-    models = sorted(df["model"].unique())
-    contracts = sorted(df["contract"].unique())
-    model_colors = _get_model_colors(models)
-
-    x = np.arange(len(contracts))
-    width = 0.8 / max(len(models), 1)
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    for i, model in enumerate(models):
-        vals = []
-        for contract in contracts:
-            sub = df[(df["model"] == model) & (df["contract"] == contract)]
-            vals.append(sub["value"].iloc[0] if len(sub) > 0 else 0)
-        offset = (i - len(models) / 2 + 0.5) * width
-        ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(contracts, fontsize=9)
-    ax.set_xlabel("Contract Type")
-    ax.set_ylabel("Metric Value")
-    ax.set_title("Outcome Summary by Model and Contract")
-    ax.legend(fontsize=8)
-    ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
-    fig.tight_layout()
-    _save_chart(fig, output_dir, "outcome_summary.png", dpi)
     return True
 
 
@@ -2084,10 +2035,6 @@ def generate_all_charts(
     # Chart-data-dependent charts -> full_chart_suite/
     if chart_data_dir:
         chart_data_generators = [
-            (
-                "outcome_summary.png",
-                lambda: generate_outcome_summary(chart_data_dir, suite_dir, dpi),
-            ),
             (
                 "seat_balance.png",
                 lambda: generate_seat_balance(chart_data_dir, suite_dir, dpi),

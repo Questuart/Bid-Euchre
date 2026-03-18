@@ -380,13 +380,6 @@
       "present": true,
       "size_bytes": 56555,
       "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r1/canonical/charts/full_chart_suite/h2h_intelligence_faceted.png"
-    },
-    {
-      "name": "full_chart_suite/outcome_summary.png",
-      "title": "full_chart_suite/outcome_summary.png",
-      "present": true,
-      "size_bytes": 49026,
-      "path": "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/docs/04_reports/arc_d_v2/r1/canonical/charts/full_chart_suite/outcome_summary.png"
     }
   ],
   "chart_data": [
