@@ -2187,7 +2187,12 @@ class TestExtractFeatureImportancesFlat:
         assert rows == []
 
     def test_chart_data_includes_feature_importances(self, tmp_path):
-        """generate_chart_data produces feature_importances.csv."""
+        """generate_chart_data produces feature_importances.csv with ranked schema.
+
+        Step 6 (_extract_feature_importance) writes the ranked schema (with rank
+        column) from feature_importances dicts. Step 8 is skipped because step 6
+        already produced the file (fixes #833 — no more clobbering).
+        """
         artifacts = {
             "gbt": {
                 "models": {
@@ -2205,7 +2210,14 @@ class TestExtractFeatureImportancesFlat:
         )
         assert "feature_importances.csv" in generated
         df = pd.read_csv(tmp_path / "feature_importances.csv")
-        assert set(df.columns) == {"model", "contract", "feature_name", "importance"}
+        # Step 6 produces the ranked schema (includes rank column)
+        assert set(df.columns) == {
+            "model",
+            "contract",
+            "rank",
+            "feature_name",
+            "importance",
+        }
         assert len(df) == 2
 
     def test_outcome_distributions_from_parquet(self, tmp_path):

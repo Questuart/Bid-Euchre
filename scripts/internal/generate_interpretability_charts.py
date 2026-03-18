@@ -123,9 +123,11 @@ def _has_columns(df: pd.DataFrame, required: set[str]) -> bool:
     return required.issubset(df.columns)
 
 
-# Column sets for the two selection_paths.csv schemas
+# Column sets for the selection_paths.csv / feature_importances.csv schemas
 _SELECTION_PATH_COLS = {"model", "step", "oof_r2"}
 _FEATURE_IMPORTANCE_COLS = {"model", "contract", "rank", "feature_name", "importance"}
+# Flat schema from _extract_feature_importances_flat() — no rank column (fixes #833)
+_FLAT_IMPORTANCE_COLS = {"model", "contract", "feature_name", "importance"}
 
 
 def generate_selection_path_chart(selection_df: pd.DataFrame, output_dir: Path) -> None:
@@ -356,6 +358,17 @@ def run(chart_data_dir: Path, output_dir: Path) -> list[str]:
     elif sel_df is not None and _has_columns(sel_df, _FEATURE_IMPORTANCE_COLS):
         # selection_paths.csv contains importance data (legacy schema mismatch)
         generate_feature_importance_chart(sel_df, output_dir)
+        generated.append("feature_importance.png")
+    elif fi_df is not None and _has_columns(fi_df, _FLAT_IMPORTANCE_COLS):
+        # Flat schema from _extract_feature_importances_flat() — no rank column.
+        # Synthesize rank from importance ordering so the chart function works (fixes #833).
+        fi_ranked = fi_df.copy()
+        fi_ranked["rank"] = (
+            fi_ranked.groupby(["model", "contract"])["importance"]
+            .rank(ascending=False, method="first")
+            .astype(int)
+        )
+        generate_feature_importance_chart(fi_ranked, output_dir)
         generated.append("feature_importance.png")
     elif sel_df is not None:
         logger.warning(

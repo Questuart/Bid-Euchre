@@ -314,11 +314,15 @@ user:
 
 ### One Task Per Lane
 
-Every active execution lane must own one primary task at a time. The task
-is recorded in `.claude/runtime/task_state/<task_id>.json` using the v2
-schema (see `.claude/runtime/task_state/README.md`).
+Every active execution lane should own one primary task at a time. When a
+task record is warranted (see "When to Create a Task Record" below), it is
+recorded in `.claude/runtime/task_state/<task_id>.json` using the v2
+schema (see `.claude/runtime/task_state/README.md`). Simple work that does
+not meet the task-record creation criteria (single-file edits, running
+commands, filling in checkpoints) does not require a formal task record but
+still follows the one-task-at-a-time discipline.
 
-Newly discovered work during execution must become:
+Newly discovered work during execution should become:
 - A follow-up item on the current task (if in scope)
 - A new task handed off to another lane
 - An escalation to `ops`

@@ -1076,7 +1076,9 @@ def generate_chart_data(
                 )
 
     # 8. feature_importances.csv — flat feature importance table
-    if training_artifacts:
+    #    Only write if step 6 didn't already produce the ranked version,
+    #    to avoid clobbering the richer schema (fixes #833).
+    if training_artifacts and "feature_importances.csv" not in generated:
         rows = _extract_feature_importances_flat(training_artifacts)
         if rows:
             df = pd.DataFrame(rows)
