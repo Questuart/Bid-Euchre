@@ -80,6 +80,32 @@ All experiments require explicit seed via `--seed <int>`. Tests that exercise th
 
 See `docs/01_core/REPRODUCIBILITY.md` for the full determinism contract including deal derivation formula and paired-deal design.
 
+## Infrastructure Testing Policy
+
+Modifications to existing infrastructure files must include regression tests. The
+repo linter (`scripts/lint_repo.py`, rule `infra-changes-require-tests`) enforces
+this mechanically in CI.
+
+**Infrastructure paths:**
+- `.github/workflows/**`
+- `.claude/hooks/**`
+- `scripts/internal/**`
+- `Makefile`
+
+**What triggers the gate:**
+- Modifying an existing file under any infra path (git status `M` or `T`).
+- At least one file under `tests/` must also change in the same PR.
+
+**Exempt from the gate:**
+- Adding new infra files (phase 1 — new automation does not yet require tests).
+- Documentation-only changes (`.md`, `.txt`, `.rst`) under infra paths.
+
+**Repeat infra incidents:**
+- When fixing a recurring infra breakage, fill the `## Infra Incident` section
+  in the PR template and link a GitHub issue labeled `infra-incident`.
+- Unattended infra scripts should expose minimal machine-readable state
+  (`status.json` + append-only log) for post-mortem debugging.
+
 ## Statistical Rigor in Tests
 
 - Sample size minimums apply: >=2,000 deals for bias detection, >=50,000 for production reports
