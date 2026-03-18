@@ -79,7 +79,7 @@ _PROMPTS = {
 _FINDING_LINE_RE = re.compile(
     r"\[(?P<severity>P[012])\]\s+"
     r"(?P<file>[^\s:]+)"
-    r"(?::(?P<line>\d+))?"
+    r"(?::(?P<line>\d+)(?:-\d+)?)?"
     r"\s*[-—–]\s*"
     r"(?P<message>.+)"
 )
@@ -93,7 +93,7 @@ _ALT_SEVERITY_RE = re.compile(
     r"\[(?P<severity>CRITICAL|WARNING|NIT)\]"
     r"(?:\[(?P<check_id>[A-Z]\d+)\])?\s*"
     r"(?P<file>[^\s:]+)"
-    r"(?::(?P<line>\d+))?"
+    r"(?::(?P<line>\d+)(?:-\d+)?)?"
     r"\s*[-—–]\s*"
     r"(?P<message>.+)"
 )
@@ -108,18 +108,35 @@ _SEVERITY_MAP = {
 # | CRITICAL | src/foo.py | 42 | C1 | message text |
 _TABLE_ROW_RE = re.compile(
     r"\|\s*(?P<severity>CRITICAL|WARNING|NIT|P[012])\s*\|"
-    r"\s*(?P<file>[^\s|]+\.(?:py|md|yaml|yml|json|toml|cfg|txt|ipynb))\s*\|"
-    r"\s*(?P<line>\d*)\s*\|"
+    r"\s*(?P<file>[^\s|]+\.(?:py|md|yaml|yml|json|toml|cfg|txt|ipynb|sh))\s*\|"
+    r"\s*(?P<line>\d*)(?:-\d+)?\s*\|"
     r"\s*(?P<check_id>[A-Z]\d+|—|-)\s*\|"
     r"\s*(?P<message>[^|]+?)\s*\|"
+)
+
+# Reversed format: [P1] message text — /absolute/or/relative/path:line[-end]
+# Observed from Codex CLI v0.115.0 (e.g., PR #818). The finding message comes
+# before the dash separator, and the file path comes after.
+_REVERSED_FINDING_RE = re.compile(
+    r"[-•*]\s*"  # leading bullet
+    r"\[(?P<severity>P[012])\]\s+"
+    r"(?P<message>.+?)\s*"
+    r"[—–]\s*"  # em/en dash separator (not plain hyphen — too ambiguous)
+    r"(?P<file>/[^\s:]+|(?:src|tests|scripts|experiments|notebooks|\.claude)/[^\s:]+)"
+    r"(?::(?P<line>\d+)(?:-\d+)?)?"
 )
 
 # Prose pattern: file references in natural-language text.
 # Matches lines containing a recognizable file path with optional line number,
 # used as a last resort when structured formats fail.
+# Expanded to handle .sh/.yaml/.yml/.json/.toml/.md/.cfg/.txt extensions.
+# Absolute paths are intentionally NOT matched here (risk of false positives
+# from system paths in diagnostic context). The reversed-format regex above
+# handles absolute paths with [P1] gating.
 _PROSE_FILE_REF_RE = re.compile(
-    r"(?P<file>(?:src|tests|scripts|experiments|notebooks)/[^\s:,`\"']+\.py)"
-    r"(?::(?P<line>\d+)|(?:\s+line\s+(?P<line2>\d+)))?"
+    r"(?P<file>(?:src|tests|scripts|experiments|notebooks|\.claude)"
+    r"/[^\s:,`\"']+\.(?:py|sh|yaml|yml|json|toml|md|cfg|txt))"
+    r"(?::(?P<line>\d+)(?:-\d+)?|(?:\s+line\s+(?P<line2>\d+)))?"
 )
 
 # Severity keywords for prose parsing (mapped to severity levels)
@@ -177,6 +194,14 @@ _CLEAN_REVIEW_PATTERN_STRINGS: list[str] = [
     r"no\s+(?:errors?|problems?)\s+detected",
     r"satisfactory",
     r"no\s+(?:items?|things?)\s+to\s+(?:flag|report|address)",
+    # --- Empty-diff patterns (stale worktree — Codex sees no changes) ---
+    # Exact phrases from observed Codex output on PRs #800, #809, #820:
+    r"is\s+empty\s+in\s+this\s+worktree",
+    r"no\s+tracked\s+code\s+changes",
+    r"no\s+committed\s+changes\s+to\s+review",
+    r"no\s+code\s+changes\s+relative\s+to",
+    r"no\s+changes\s+to\s+review",
+    r"nothing\s+to\s+review",
 ]
 
 _CLEAN_REVIEW_PATTERNS = re.compile(
@@ -252,15 +277,16 @@ def _categorize_finding(message: str, check_id: str | None) -> str:
 def parse_codex_output(raw_output: str) -> list[CodexFinding]:
     """Parse Codex CLI stdout into structured findings.
 
-    Handles four output formats (tried in order):
+    Handles five output formats (tried in order):
     1. Standard: [P1] file:line — message (C1)
     2. Alternative: [CRITICAL][C1] file:line — message
     3. Markdown table: | CRITICAL | file | line | C1 | message |
-    4. Prose fallback: natural-language lines containing file references
+    4. Reversed: - [P1] message — /path/to/file:line-range
+    5. Prose fallback: natural-language lines containing file references
 
-    The prose fallback (4) is only used when formats 1-3 produce zero
-    findings, to avoid false extraction from prose interspersed with
-    structured output.
+    Pass 1 (formats 1-3) runs first. Pass 1.5 (format 4, reversed) runs
+    only if Pass 1 found nothing, to prevent ambiguity with standard format.
+    Pass 2 (format 5, prose) runs only if both Pass 1 and 1.5 found nothing.
 
     Args:
         raw_output: Raw stdout from Codex CLI.
@@ -293,7 +319,24 @@ def parse_codex_output(raw_output: str) -> list[CodexFinding]:
         seen.add(key)
         findings.append(finding)
 
-    # Pass 2: prose fallback — only if structured parsing found nothing
+    # Pass 1.5: reversed format — only if structured parsing found nothing
+    if not findings:
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            finding = _parse_reversed_format(line)
+            if finding is None:
+                continue
+
+            key = (finding.file, finding.line, finding.message)
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(finding)
+
+    # Pass 2: prose fallback — only if Passes 1 and 1.5 found nothing
     if not findings:
         for line in lines:
             line = line.strip()
@@ -396,6 +439,54 @@ def _infer_prose_severity(text: str) -> str:
         if any(kw in text_lower for kw in keywords):
             return severity
     return "P2"
+
+
+def _strip_to_relative(abs_path: str) -> str:
+    """Strip an absolute path to a repo-relative path.
+
+    Uses the current working directory as the repo root. If the path starts
+    with the cwd prefix, the prefix is removed. Otherwise returns the path
+    unchanged (best-effort).
+    """
+    cwd = os.getcwd()
+    if abs_path.startswith(cwd):
+        rel = abs_path[len(cwd) :].lstrip("/")
+        return rel if rel else abs_path
+    return abs_path
+
+
+def _parse_reversed_format(line: str) -> CodexFinding | None:
+    """Parse reversed format: - [P1] message — /path/to/file:line-range.
+
+    This format is produced by Codex CLI v0.115.0+. The finding message comes
+    before the dash separator, and the file path comes after. Line numbers may
+    be ranges (e.g., 90-95); only the start line is extracted.
+    """
+    match = _REVERSED_FINDING_RE.search(line)
+    if not match:
+        return None
+
+    severity = match.group("severity")
+    message = match.group("message").strip()
+    file_path = match.group("file")
+    line_num = int(match.group("line") or 0)
+
+    # Strip absolute paths to repo-relative
+    if file_path.startswith("/"):
+        file_path = _strip_to_relative(file_path)
+
+    # Extract check ID from message
+    check_match = _CHECK_ID_RE.search(message)
+    check_id = check_match.group(1) if check_match else None
+
+    return CodexFinding(
+        severity=severity,
+        file=file_path,
+        line=line_num,
+        category=_categorize_finding(message, check_id),
+        check_id=check_id,
+        message=message,
+    )
 
 
 def _parse_prose_finding(line: str) -> CodexFinding | None:

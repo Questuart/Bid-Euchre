@@ -225,14 +225,17 @@ class TestValidatePlan:
         assert findings[0]["check_id"] == "PV1"
 
     @patch("github_pr_state.get_pr_body")
-    def test_broken_reference_produces_p1(self, mock_body, tmp_path) -> None:
+    def test_broken_reference_produces_p2(self, mock_body, tmp_path) -> None:
+        """PV2 is P2 (non-blocking) because the review driver may run in a
+        stale worktree where the plan file doesn't exist locally even though
+        it exists on the PR branch."""
         mock_body.return_value = (
             "## Plan\nplans/sessions/nonexistent.md\n\n## Summary\n- test\n"
         )
         plan_path, findings = validate_plan(1, repo_root=tmp_path)
         assert plan_path == "plans/sessions/nonexistent.md"
         assert len(findings) == 1
-        assert findings[0]["severity"] == "P1"
+        assert findings[0]["severity"] == "P2"
         assert findings[0]["check_id"] == "PV2"
 
     @patch("github_pr_state.get_pr_body")

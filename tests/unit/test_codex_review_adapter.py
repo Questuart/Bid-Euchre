@@ -17,7 +17,10 @@ from codex_review_adapter import (
     CodexFinding,
     CodexReviewResult,
     _classify_error,
+    _parse_reversed_format,
+    _parse_standard_format,
     _resolve_codex_binary,
+    _strip_to_relative,
     get_blocking_findings,
     invoke_codex_cli,
     parse_codex_output,
@@ -832,3 +835,306 @@ class TestCodexCLITimeout:
         result = invoke_codex_cli(base="main")
         assert result.success is False
         assert "Unparseable" in result.error
+
+
+# =====================================================================
+# Tests for empty-diff / stale-worktree detection (RC1 fix)
+# =====================================================================
+
+# Real Codex output captured from PR #800 (stale worktree, empty diff)
+_RC1_FIXTURE_PR800 = (
+    "`git diff 13ba62ee796891736b44b4bd5be380ab6b971938` is empty in this "
+    "worktree, so there are no tracked code changes to review relative to "
+    "the provided merge base. The only difference present is an untracked "
+    "session plan file, which is outside the requested diff."
+)
+
+# Real Codex output captured from PR #820 (stale worktree, alternate phrasing)
+_RC1_FIXTURE_PR820 = (
+    "`git diff 3e77dcb74a2b9220ab97ba05ed2dd4dcfca3b295` is empty in this "
+    "worktree, so there are no committed changes to review relative to "
+    "`main`. I only see untracked plan-session files, which are outside "
+    "the requested diff."
+)
+
+# Real Codex output captured from PR #809 (yet another phrasing)
+_RC1_FIXTURE_PR809 = (
+    "`git diff 13ba62ee796891736b44b4bd5be380ab6b971938` is empty for "
+    "tracked files, so there are no code changes relative to `main` to "
+    "review. The only visible differences are untracked local files, "
+    "which are outside the requested diff."
+)
+
+
+class TestEmptyDiffDetection:
+    """RC1 fix: empty-diff output from stale worktrees should be clean."""
+
+    def test_pr800_empty_diff_is_clean(self):
+        """PR #800 exact output: 'is empty in this worktree'."""
+        assert _CLEAN_REVIEW_PATTERNS.search(_RC1_FIXTURE_PR800) is not None
+
+    def test_pr820_empty_diff_is_clean(self):
+        """PR #820 exact output: 'no committed changes to review'."""
+        assert _CLEAN_REVIEW_PATTERNS.search(_RC1_FIXTURE_PR820) is not None
+
+    def test_pr809_empty_diff_is_clean(self):
+        """PR #809 exact output: 'no code changes relative to'."""
+        assert _CLEAN_REVIEW_PATTERNS.search(_RC1_FIXTURE_PR809) is not None
+
+    def test_no_changes_to_review_short(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("No changes to review.") is not None
+
+    def test_nothing_to_review_short(self):
+        assert _CLEAN_REVIEW_PATTERNS.search("Nothing to review.") is not None
+
+    def test_empty_diff_yields_zero_findings(self):
+        """Empty-diff output should produce zero parsed findings."""
+        assert parse_codex_output(_RC1_FIXTURE_PR800) == []
+        assert parse_codex_output(_RC1_FIXTURE_PR820) == []
+
+    @patch("codex_plan_review_adapter._run_with_pty")
+    @patch("codex_review_adapter._resolve_codex_binary", return_value=["codex"])
+    def test_empty_diff_returns_success(self, mock_resolve, mock_pty):
+        """Empty-diff output should produce success=True (not Unparseable)."""
+        mock_pty.return_value = (0, _RC1_FIXTURE_PR800)
+        result = invoke_codex_cli(base="main")
+        assert result.success is True
+        assert result.error is None
+        assert len(result.findings) == 0
+
+
+# =====================================================================
+# Tests for reversed format parsing (RC2 fix)
+# =====================================================================
+
+# Real Codex output captured from PR #818 (reversed format with findings)
+_RC2_FIXTURE_PR818 = (
+    "The new tmux launcher has a default-configuration failure in its pane "
+    "targeting, and it also derives steward worktree paths incorrectly when "
+    "invoked from a linked worktree. Those issues are enough to make the new "
+    "session bootstrap unreliable.\n"
+    "\n"
+    "Full review comments:\n"
+    "\n"
+    "- [P1] Use valid tmux pane indices for the dashboard layout \u2014 "
+    "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre-steward-author/"
+    ".claude/tmux/steward-session.sh:90-95\n"
+    "  On a stock tmux setup, pane indices start at `0`, and this repo does "
+    "not set `pane-base-index` anywhere.\n"
+    "\n"
+    "- [P2] Resolve the primary checkout before building steward worktree "
+    "paths \u2014 /Users/claude_runner/Projects/Bid-Euchre-meta/"
+    "Bid-Euchre-steward-author/.claude/tmux/steward-session.sh:36-42\n"
+    "  If this launcher is started from an existing linked worktree such as "
+    "`Bid-Euchre-steward-author`, `REPO_NAME` is captured from that checkout.\n"
+    "\n"
+    "- [P2] Guard the `caffeinate` wrapper on hosts that do not provide it "
+    "\u2014 /Users/claude_runner/Projects/Bid-Euchre-meta/"
+    "Bid-Euchre-steward-author/.claude/tmux/steward-session.sh:67-67\n"
+    "  On Linux or any machine without the macOS-only `caffeinate` utility, "
+    "both attach paths unconditionally run `exec caffeinate`."
+)
+
+
+class TestReversedFormatParsing:
+    """RC2 fix: reversed format [P1] message — /abs/path:line-range."""
+
+    def test_pr818_full_replay(self):
+        """Full PR #818 raw output: should extract exactly 3 findings."""
+        findings = parse_codex_output(_RC2_FIXTURE_PR818)
+        assert len(findings) == 3
+        assert findings[0].severity == "P1"
+        assert findings[1].severity == "P2"
+        assert findings[2].severity == "P2"
+
+    def test_pr818_first_finding_details(self):
+        findings = parse_codex_output(_RC2_FIXTURE_PR818)
+        f = findings[0]
+        assert f.severity == "P1"
+        assert f.line == 90
+        assert "tmux pane indices" in f.message
+
+    def test_pr818_file_paths_stripped(self):
+        """Absolute paths should be stripped to repo-relative."""
+        # Mock cwd to the repo root embedded in the fixture paths
+        repo_root = (
+            "/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre-steward-author"
+        )
+        with patch("codex_review_adapter.os.getcwd", return_value=repo_root):
+            findings = parse_codex_output(_RC2_FIXTURE_PR818)
+        for f in findings:
+            assert not f.file.startswith("/Users"), f"Path not stripped: {f.file}"
+            assert ".claude/tmux/steward-session.sh" in f.file
+
+    def test_reversed_single_line(self):
+        """Single finding in reversed format."""
+        line = "- [P1] Missing error handling \u2014 src/bid_euchre/core/rules.py:42"
+        finding = _parse_reversed_format(line)
+        assert finding is not None
+        assert finding.severity == "P1"
+        assert finding.file == "src/bid_euchre/core/rules.py"
+        assert finding.line == 42
+        assert "error handling" in finding.message
+
+    def test_reversed_line_range_extracts_start(self):
+        """Line range like 90-95 should extract just 90."""
+        line = "- [P0] Critical bug \u2014 scripts/internal/foo.py:90-95"
+        finding = _parse_reversed_format(line)
+        assert finding is not None
+        assert finding.line == 90
+
+    def test_reversed_no_line_number(self):
+        """Reversed format without line number."""
+        line = "- [P2] Style issue \u2014 src/bid_euchre/sim/engine.py"
+        finding = _parse_reversed_format(line)
+        assert finding is not None
+        assert finding.line == 0
+        assert finding.file == "src/bid_euchre/sim/engine.py"
+
+    def test_reversed_with_check_id_in_message(self):
+        """Check ID in message should be extracted."""
+        line = "- [P1] Unseeded random (C1) \u2014 src/bid_euchre/strategy/foo.py:10"
+        finding = _parse_reversed_format(line)
+        assert finding is not None
+        assert finding.check_id == "C1"
+
+    def test_reversed_does_not_match_standard(self):
+        """Standard format should NOT be parsed by reversed regex."""
+        line = "[P1] src/foo.py:42 \u2014 Some message"
+        finding = _parse_reversed_format(line)
+        # Standard format has no leading bullet, so reversed regex should not match
+        assert finding is None
+
+    def test_reversed_absolute_path_stripped(self):
+        """Absolute path should be stripped to repo-relative via cwd."""
+        line = "- [P1] Bug \u2014 /fake/repo/src/bid_euchre/core/rules.py:10"
+        with patch("codex_review_adapter.os.getcwd", return_value="/fake/repo"):
+            finding = _parse_reversed_format(line)
+        assert finding is not None
+        assert finding.file == "src/bid_euchre/core/rules.py"
+
+    def test_strip_to_relative_with_cwd_match(self):
+        """_strip_to_relative removes cwd prefix."""
+        with patch("codex_review_adapter.os.getcwd", return_value="/a/b"):
+            assert _strip_to_relative("/a/b/src/foo.py") == "src/foo.py"
+
+    def test_strip_to_relative_no_match(self):
+        """_strip_to_relative returns path unchanged if cwd doesn't match."""
+        with patch("codex_review_adapter.os.getcwd", return_value="/other"):
+            assert _strip_to_relative("/a/b/src/foo.py") == "/a/b/src/foo.py"
+
+
+# =====================================================================
+# Tests for expanded prose file extensions (RC2 prose fix)
+# =====================================================================
+
+
+class TestExpandedProseExtensions:
+    """Prose fallback should match .sh, .yaml, .json, etc."""
+
+    def test_prose_matches_sh_file(self):
+        output = "The script scripts/internal/post-pr-review.sh has a bug at line 42."
+        findings = parse_codex_output(output)
+        assert len(findings) >= 1
+        assert any("post-pr-review.sh" in f.file for f in findings)
+
+    def test_prose_matches_yaml_file(self):
+        output = "In experiments/configs/quick_test.yaml:10, the seed is missing."
+        findings = parse_codex_output(output)
+        assert len(findings) >= 1
+        assert any("quick_test.yaml" in f.file for f in findings)
+
+    def test_prose_matches_json_file(self):
+        output = "The file src/bid_euchre/validation/schema.json has wrong format."
+        findings = parse_codex_output(output)
+        assert len(findings) >= 1
+
+    def test_prose_matches_claude_dir(self):
+        output = "Check .claude/hooks/post-pr-review.sh:5 for the sentinel logic."
+        findings = parse_codex_output(output)
+        assert len(findings) >= 1
+        assert any("post-pr-review.sh" in f.file for f in findings)
+
+    def test_prose_no_match_system_path(self):
+        """System paths like /usr/bin/bash should NOT match prose regex."""
+        output = "The /usr/bin/bash interpreter is version 5.2."
+        findings = parse_codex_output(output)
+        assert len(findings) == 0
+
+    def test_prose_no_match_bare_absolute_path(self):
+        """Bare absolute path without known prefix should not match."""
+        output = "See /Users/someone/Desktop/notes.txt for details."
+        findings = parse_codex_output(output)
+        assert len(findings) == 0
+
+
+# =====================================================================
+# Tests for line range handling in all regexes (Step 4)
+# =====================================================================
+
+
+class TestLineRangeHandling:
+    """All regex formats should handle line ranges like :10-20."""
+
+    def test_standard_format_line_range(self):
+        line = "[P1] src/bid_euchre/core/rules.py:10-20 \u2014 Bug found"
+        finding = _parse_standard_format(line)
+        assert finding is not None
+        assert finding.line == 10
+        assert finding.file == "src/bid_euchre/core/rules.py"
+
+    def test_standard_format_single_line_still_works(self):
+        line = "[P1] src/foo.py:42 \u2014 Some message"
+        finding = _parse_standard_format(line)
+        assert finding is not None
+        assert finding.line == 42
+
+    def test_table_format_line_range(self):
+        output = "| P1 | src/bid_euchre/core/rules.py | 10-20 | C1 | Bug found |"
+        findings = parse_codex_output(output)
+        assert len(findings) == 1
+        assert findings[0].line == 10
+
+    def test_prose_format_line_range(self):
+        output = "In src/bid_euchre/core/rules.py:10-20, there's a critical bug."
+        findings = parse_codex_output(output)
+        assert len(findings) >= 1
+        assert any(f.line == 10 for f in findings)
+
+
+# =====================================================================
+# Tests for parse ordering (Pass 1 > Pass 1.5 > Pass 2)
+# =====================================================================
+
+
+class TestParseOrdering:
+    """Ensure correct parse priority: standard > reversed > prose."""
+
+    def test_standard_format_preferred_over_reversed(self):
+        """If both standard and reversed could match, standard wins."""
+        # Standard format: [P1] file:line — message
+        output = "[P1] src/foo.py:42 \u2014 Some message"
+        findings = parse_codex_output(output)
+        assert len(findings) == 1
+        assert findings[0].file == "src/foo.py"
+        assert findings[0].line == 42
+
+    def test_reversed_tried_before_prose(self):
+        """When standard doesn't match, reversed should match before prose."""
+        # This line matches reversed format AND contains a file ref for prose.
+        # Reversed should win because it has higher fidelity (severity tag).
+        output = "- [P1] Bug in the code \u2014 src/bid_euchre/core/rules.py:42"
+        findings = parse_codex_output(output)
+        assert len(findings) == 1
+        assert findings[0].severity == "P1"
+        assert findings[0].file == "src/bid_euchre/core/rules.py"
+
+    def test_prose_only_when_nothing_else_matches(self):
+        """Prose fallback fires only when standard and reversed find nothing."""
+        output = (
+            "I found a bug in src/bid_euchre/core/rules.py:42, it uses unseeded random."
+        )
+        findings = parse_codex_output(output)
+        assert len(findings) >= 1
+        # This should be parsed by prose (no [P1] tag)
+        assert findings[0].severity == "P1"  # "unseeded" → P1
