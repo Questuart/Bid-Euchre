@@ -11,6 +11,14 @@ after PR creation, triggered by the `post-pr-review-loop.sh` PostToolUse hook.
 When the loop reaches `ready_to_merge`, it enables GitHub auto-merge (squash)
 and transitions to `merged`. GitHub merges once CI + branch protection pass.
 
+**Transitional status:** The local review loop infrastructure
+(`.claude/runtime/review_loops/`) is transitional. PR review is planned to
+migrate to an online-first model where GitHub is the source of truth for
+review state and deterministic prechecks run as GitHub Actions. Do not build
+new first-class dependencies on the local review loop directories. See
+`docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` (§ Autonomous Review Loop)
+for the migration context.
+
 ## Architecture
 
 ### Components
