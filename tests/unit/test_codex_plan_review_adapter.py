@@ -17,6 +17,9 @@ from codex_plan_review_adapter import (
     PlanReviewFinding,
     _build_claude_review_prompt,
     _check_codex_auth,
+    _normalize_claude_finding,
+    _parse_claude_json_output,
+    _strip_code_fences,
     detect_plan_tier,
     invoke_claude_failsafe,
     parse_plan_findings,
@@ -485,6 +488,193 @@ class TestClaudeFailsafeResolution:
                 result = invoke_claude_failsafe(plan, "small")
                 assert result.success is True
                 assert len(result.findings) == 0
+
+
+# --- Code Fence Stripping Tests ---
+
+
+class TestStripCodeFences:
+    """Test _strip_code_fences extracts JSON from markdown wrappers."""
+
+    def test_json_code_fence(self) -> None:
+        """JSON wrapped in ```json ... ``` is extracted."""
+        raw = '```json\n[{"severity": "CRITICAL"}]\n```'
+        assert _strip_code_fences(raw) == '[{"severity": "CRITICAL"}]'
+
+    def test_bare_code_fence(self) -> None:
+        """JSON wrapped in ``` ... ``` (no language tag) is extracted."""
+        raw = "```\n[]\n```"
+        assert _strip_code_fences(raw) == "[]"
+
+    def test_preamble_before_fence(self) -> None:
+        """Text before the code fence is ignored; JSON inside is extracted."""
+        raw = 'Here are my findings:\n\n```json\n[{"key": "val"}]\n```\n\nDone.'
+        assert _strip_code_fences(raw) == '[{"key": "val"}]'
+
+    def test_no_fences_returns_stripped(self) -> None:
+        """Plain JSON without fences is returned stripped."""
+        raw = '  [{"severity": "INFO"}]  '
+        assert _strip_code_fences(raw) == '[{"severity": "INFO"}]'
+
+    def test_empty_input(self) -> None:
+        assert _strip_code_fences("") == ""
+
+    def test_uppercase_json_tag(self) -> None:
+        """```JSON tag is also handled."""
+        raw = '```JSON\n[{"a": 1}]\n```'
+        assert _strip_code_fences(raw) == '[{"a": 1}]'
+
+
+# --- Schema Normalization Tests ---
+
+
+class TestNormalizeClaudeFinding:
+    """Test _normalize_claude_finding maps Claude's schema to canonical."""
+
+    def test_block_to_critical(self) -> None:
+        item = {"severity": "BLOCK", "rule": "CLAUDE.md", "message": "Missing outcome"}
+        norm = _normalize_claude_finding(item)
+        assert norm["severity"] == "CRITICAL"
+        assert norm["category"] == "CLAUDE.md"
+        assert norm["description"] == "Missing outcome"
+        assert norm["file"] == "(plan)"
+        assert norm["line"] == 0
+        assert norm["check_id"] is None
+
+    def test_warn_to_warning(self) -> None:
+        item = {"severity": "WARN", "message": "Steps lack specificity"}
+        norm = _normalize_claude_finding(item)
+        assert norm["severity"] == "WARNING"
+        assert norm["description"] == "Steps lack specificity"
+
+    def test_canonical_fields_pass_through(self) -> None:
+        """Items already using canonical schema are preserved."""
+        item = {
+            "severity": "CRITICAL",
+            "category": "convention",
+            "file": "plan.md",
+            "line": 42,
+            "description": "Bad reference",
+            "check_id": "P1",
+        }
+        norm = _normalize_claude_finding(item)
+        assert norm["severity"] == "CRITICAL"
+        assert norm["category"] == "convention"
+        assert norm["file"] == "plan.md"
+        assert norm["line"] == 42
+        assert norm["description"] == "Bad reference"
+        assert norm["check_id"] == "P1"
+
+    def test_missing_severity_defaults_info(self) -> None:
+        norm = _normalize_claude_finding({"message": "minor thing"})
+        assert norm["severity"] == "INFO"
+
+    def test_blocking_to_critical(self) -> None:
+        """BLOCKING is also mapped to CRITICAL."""
+        norm = _normalize_claude_finding({"severity": "BLOCKING", "message": "x"})
+        assert norm["severity"] == "CRITICAL"
+
+
+# --- Claude JSON Output Parsing Tests ---
+
+
+class TestParseClaudeJsonOutput:
+    """Test _parse_claude_json_output with real-world Claude CLI output."""
+
+    def test_fenced_claude_schema(self) -> None:
+        """Real-world: code-fenced + Claude's BLOCK/WARN/rule/message schema."""
+        raw = (
+            "```json\n"
+            "[\n"
+            '  {"severity": "BLOCK", "rule": "CLAUDE.md §Workflow", '
+            '"message": "Missing ## Outcome section"},\n'
+            '  {"severity": "WARN", "rule": "CLAUDE.md §Planning", '
+            '"message": "Steps not grounded"}\n'
+            "]\n"
+            "```"
+        )
+        findings = _parse_claude_json_output(raw)
+        assert len(findings) == 2
+        assert findings[0].severity == "CRITICAL"
+        assert findings[0].description == "Missing ## Outcome section"
+        assert findings[0].category == "CLAUDE.md §Workflow"
+        assert findings[1].severity == "WARNING"
+
+    def test_bare_canonical_json(self) -> None:
+        """Regression: bare valid JSON with canonical fields still works."""
+        raw = json.dumps(
+            [
+                {
+                    "severity": "WARNING",
+                    "category": "convention",
+                    "file": "plan.md",
+                    "line": 5,
+                    "description": "Missing seed",
+                    "check_id": None,
+                }
+            ]
+        )
+        findings = _parse_claude_json_output(raw)
+        assert len(findings) == 1
+        assert findings[0].severity == "WARNING"
+        assert findings[0].file == "plan.md"
+        assert findings[0].description == "Missing seed"
+
+    def test_empty_fenced_array(self) -> None:
+        """Code-fenced empty array → empty findings (clean review)."""
+        raw = "```json\n[]\n```"
+        findings = _parse_claude_json_output(raw)
+        assert findings == []
+
+    def test_bare_empty_array(self) -> None:
+        """Plain [] → empty findings."""
+        findings = _parse_claude_json_output("[]")
+        assert findings == []
+
+    def test_invalid_json(self) -> None:
+        """Garbage input → empty findings, no crash."""
+        findings = _parse_claude_json_output("This is not JSON at all.")
+        assert findings == []
+
+    def test_mixed_schema_items(self) -> None:
+        """Mix of canonical and Claude schema items in one array."""
+        raw = json.dumps(
+            [
+                {
+                    "severity": "CRITICAL",
+                    "category": "convention",
+                    "file": "plan.md",
+                    "line": 1,
+                    "description": "Canonical item",
+                    "check_id": "P1",
+                },
+                {
+                    "severity": "BLOCK",
+                    "rule": "CLAUDE.md",
+                    "message": "Claude-style item",
+                },
+            ]
+        )
+        findings = _parse_claude_json_output(raw)
+        assert len(findings) == 2
+        assert findings[0].file == "plan.md"
+        assert findings[0].check_id == "P1"
+        assert findings[1].severity == "CRITICAL"
+        assert findings[1].file == "(plan)"
+
+    def test_preamble_text_with_fenced_json(self) -> None:
+        """Claude adds commentary before the code fence."""
+        raw = (
+            "I reviewed the plan and here are my findings:\n\n"
+            "```json\n"
+            '[{"severity": "WARN", "message": "No rollback plan"}]\n'
+            "```\n"
+            "\nLet me know if you have questions."
+        )
+        findings = _parse_claude_json_output(raw)
+        assert len(findings) == 1
+        assert findings[0].severity == "WARNING"
+        assert findings[0].description == "No rollback plan"
 
 
 # --- Timeout and Error Path Tests ---
