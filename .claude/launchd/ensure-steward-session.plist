@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  launchd agent template: ensure the steward tmux session is running.
+
+  This is a TEMPLATE. Before installing, replace __REPO_PATH__ with the
+  absolute path to your Bid Euchre main checkout. Use install-launchd.sh
+  for automated substitution and installation.
+
+  Behavior:
+    - Runs at user login (RunAtLoad).
+    - Checks whether the steward tmux session exists; if not, creates it.
+    - Uses KeepAlive/SuccessfulExit=false so launchd restarts the check
+      only if the wrapper script exits non-zero (indicating tmux died or
+      failed to start).
+    - ThrottleInterval prevents rapid-fire restart loops (minimum 120s).
+    - Logs to /tmp for debugging.
+
+  Install:
+    .claude/launchd/install-launchd.sh
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.bid-euchre.steward-session.plist
+    rm ~/Library/LaunchAgents/com.bid-euchre.steward-session.plist
+-->
+<dict>
+  <key>Label</key>
+  <string>com.bid-euchre.steward-session</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>
+      # Check if steward tmux session exists; start it if not.
+      if tmux has-session -t steward 2>/dev/null; then
+        echo "$(date): steward session already running"
+        exit 0
+      else
+        echo "$(date): starting steward session"
+        # Run in detached mode (no exec tmux attach)
+        STEWARD_DETACHED=1 __REPO_PATH__/.claude/tmux/steward-session.sh steward
+        exit $?
+      fi
+    </string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>120</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/bid-euchre-steward-session.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/bid-euchre-steward-session.err</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

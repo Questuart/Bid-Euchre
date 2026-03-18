@@ -5,16 +5,28 @@
       "path": "."
     },
     {
-      "name": "author",
-      "path": "../Bid-Euchre-author"
+      "name": "author-a",
+      "path": "../Bid-Euchre-steward-author"
+    },
+    {
+      "name": "author-b",
+      "path": "../Bid-Euchre-steward-author-b"
+    },
+    {
+      "name": "author-c",
+      "path": "../Bid-Euchre-steward-author-c"
+    },
+    {
+      "name": "author-d",
+      "path": "../Bid-Euchre-steward-author-d"
     },
     {
       "name": "review",
-      "path": "../Bid-Euchre-review"
+      "path": "../Bid-Euchre-steward-review"
     },
     {
-      "name": "ops",
-      "path": "../Bid-Euchre-ops"
+      "name": "scratch",
+      "path": "../Bid-Euchre-steward-author-scratch"
     }
   ],
   "settings": {

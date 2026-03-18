@@ -159,6 +159,10 @@ fi
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
     update_last_active
+    if [ "${STEWARD_DETACHED:-}" = "1" ]; then
+        echo "Session '${SESSION}' already exists (detached mode, not attaching)."
+        exit 0
+    fi
     exec caffeinate -dims tmux attach-session -t "$SESSION"
 fi
 
@@ -210,4 +214,10 @@ tmux new-window -t "$SESSION" -n author-scratch -c "$AUTHOR_SCRATCH" \
 tmux select-window -t "${SESSION}:dashboard"
 
 update_last_active
+
+if [ "${STEWARD_DETACHED:-}" = "1" ]; then
+    echo "Session '${SESSION}' created (detached mode, not attaching)."
+    exit 0
+fi
+
 exec caffeinate -dims tmux attach-session -t "$SESSION"

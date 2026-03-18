@@ -198,7 +198,9 @@ code Bid-Euchre-agent-audit.code-workspace
 ```
 
 This opens a multi-root workspace with folders for the main checkout and
-all lane worktrees.
+all steward lane worktrees: `author-a` through `author-d`, `review`, and
+`scratch`. The `ops` lane runs from the main checkout and does not need a
+separate folder.
 
 ### File Exclusions
 
@@ -236,6 +238,15 @@ via **Terminal > Run Task** or `Ctrl+Shift+P > Tasks: Run Task`.
 | **Orchestrator log (tail)** | Last 30 lines of overnight orchestrator |
 | **Session metadata** | Active session metadata JSON files |
 | **Worktree registry** | Registered worktree metadata |
+
+#### GitHub and CI Tasks
+
+| Task | What it shows |
+|------|---------------|
+| **GitHub PR checks (current branch)** | CI check status for the current branch's PR |
+| **GitHub PR checks (specific)** | CI check status for a specific PR number |
+| **Deterministic prechecks** | Local deterministic prechecks output |
+| **Plan review artifacts** | Contents of plan review artifact directories |
 
 ### Recommended Extensions
 
@@ -280,6 +291,94 @@ The legacy scripts remain for backward compatibility with the three-role model:
 These scripts are **compatibility-only**. They write runtime metadata with
 both legacy `role` and canonical `lane_id` fields. New workflows should use
 `steward-session.sh`.
+
+---
+
+## Host-Level Recovery (macOS)
+
+The steward session is designed to be persistent, but tmux sessions can be
+lost due to host reboots, terminal crashes, or system updates. A macOS
+`launchd` agent template is provided to automatically re-establish the
+steward session on login.
+
+### How It Works
+
+The `launchd` agent runs a simple check:
+1. If the `steward` tmux session exists, exit successfully (no action).
+2. If the session is missing, run `steward-session.sh` in detached mode to
+   recreate all lane windows and worktrees.
+
+The agent uses `KeepAlive/SuccessfulExit=false` so `launchd` only restarts
+the check if the script exits with an error. A 120-second throttle interval
+prevents rapid restart loops.
+
+### Installation
+
+```bash
+# Preview what will be installed (dry run)
+.claude/launchd/install-launchd.sh --dry-run
+
+# Install the agent
+.claude/launchd/install-launchd.sh
+
+# Uninstall the agent
+.claude/launchd/install-launchd.sh --uninstall
+```
+
+The installer:
+1. Substitutes `__REPO_PATH__` in the plist template with the actual repo path.
+2. Validates the rendered plist with `plutil -lint`.
+3. Copies it to `~/Library/LaunchAgents/com.bid-euchre.steward-session.plist`.
+4. Loads the agent with `launchctl load`.
+
+### Detached Mode
+
+The `steward-session.sh` script supports a `STEWARD_DETACHED=1` environment
+variable. When set, the script creates the tmux session but does not attach
+to it (no `exec tmux attach`). This is required for non-interactive contexts
+like `launchd` agents.
+
+### Verifying the Agent
+
+```bash
+# Check if the agent is loaded
+launchctl list | grep bid-euchre
+
+# Check the agent log
+cat /tmp/bid-euchre-steward-session.log
+
+# Check for errors
+cat /tmp/bid-euchre-steward-session.err
+
+# Manually trigger the agent
+launchctl start com.bid-euchre.steward-session
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Agent not running after login | Not loaded | Run `install-launchd.sh` |
+| Session created but Claude not starting | `claude` not in PATH | Check `PATH` in plist includes Homebrew/cargo dirs |
+| Rapid restarts in log | Script failing immediately | Check `.err` log for syntax/path errors |
+| Session exists but empty panes | tmux created but Claude exited | Manually check `tmux list-panes -t steward` |
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `.claude/launchd/ensure-steward-session.plist` | Template plist with `__REPO_PATH__` placeholder |
+| `.claude/launchd/install-launchd.sh` | Installer/uninstaller script |
+| `~/Library/LaunchAgents/com.bid-euchre.steward-session.plist` | Installed (rendered) plist |
+| `/tmp/bid-euchre-steward-session.log` | Agent stdout log |
+| `/tmp/bid-euchre-steward-session.err` | Agent stderr log |
+
+### Non-macOS Hosts
+
+The `launchd` agent is macOS-specific. On Linux, equivalent recovery can be
+achieved with a systemd user unit or a cron `@reboot` job that runs
+`steward-session.sh` in detached mode. Templates for other platforms may be
+added in future PRs.
 
 ---
 
@@ -568,7 +667,7 @@ here for context. They are not yet implemented.
 - Durable event production/consumption
 - Queue-driven review execution
 - Scheduled health checks and remediation
-- `launchd` recovery for persistent sessions
+- ~~`launchd` recovery for persistent sessions~~ (delivered in PR-2)
 
 ### Audit Index and Memory
 
