@@ -1,4 +1,8 @@
-"""Smoke tests for .claude/tmux/steward-session.sh — update_last_active()."""
+"""Tests for the steward session bootstrap script (.claude/tmux/steward-session.sh).
+
+Covers update_last_active(), detached-mode support, and launchd recovery
+infrastructure without requiring tmux to be running.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,17 @@ from pathlib import Path
 
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+STEWARD_SCRIPT = REPO_ROOT / ".claude" / "tmux" / "steward-session.sh"
+INSTALL_SCRIPT = REPO_ROOT / ".claude" / "launchd" / "install-launchd.sh"
+PLIST_TEMPLATE = REPO_ROOT / ".claude" / "launchd" / "ensure-steward-session.plist"
+
 STEWARD_SESSION = Path(".claude/tmux/steward-session.sh")
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -31,6 +45,11 @@ def registry_dir(tmp_path: Path) -> Path:
     }
     (reg / "author.json").write_text(json.dumps(entry, indent=2) + "\n")
     return reg
+
+
+# ---------------------------------------------------------------------------
+# update_last_active() tests (from main)
+# ---------------------------------------------------------------------------
 
 
 class TestUpdateLastActive:
@@ -155,3 +174,150 @@ update_last_active
             if key == "last_active":
                 continue
             assert updated[key] == original[key], f"{key} changed unexpectedly"
+
+
+# ---------------------------------------------------------------------------
+# Steward session script structure tests
+# ---------------------------------------------------------------------------
+
+
+class TestStewardSessionScript:
+    """Validate steward-session.sh structure and syntax."""
+
+    def test_script_exists(self) -> None:
+        assert STEWARD_SCRIPT.exists(), f"Missing: {STEWARD_SCRIPT}"
+
+    def test_script_is_executable(self) -> None:
+        assert STEWARD_SCRIPT.stat().st_mode & 0o111, "Script must be executable"
+
+    def test_bash_syntax_valid(self) -> None:
+        result = subprocess.run(
+            ["bash", "-n", str(STEWARD_SCRIPT)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Syntax error: {result.stderr}"
+
+    def test_detached_mode_supported(self) -> None:
+        """The script must support STEWARD_DETACHED=1 for non-interactive use."""
+        content = STEWARD_SCRIPT.read_text()
+        assert "STEWARD_DETACHED" in content, (
+            "steward-session.sh must support STEWARD_DETACHED env var "
+            "for launchd and other non-interactive contexts"
+        )
+
+    def test_detached_mode_skips_attach(self) -> None:
+        """When STEWARD_DETACHED=1, script should not exec tmux attach."""
+        content = STEWARD_SCRIPT.read_text()
+        # Find the detached mode blocks — they should exit 0 instead of attaching
+        lines = content.split("\n")
+        in_detached_block = False
+        detached_exits_found = 0
+        for line in lines:
+            stripped = line.strip()
+            if "STEWARD_DETACHED" in stripped and "1" in stripped:
+                in_detached_block = True
+            if in_detached_block and "exit 0" in stripped:
+                detached_exits_found += 1
+                in_detached_block = False
+        assert detached_exits_found >= 2, (
+            f"Expected at least 2 detached-mode exit points (existing session + "
+            f"new session), found {detached_exits_found}"
+        )
+
+    def test_writes_lane_metadata(self) -> None:
+        """Script must write worktree registry metadata for each lane."""
+        content = STEWARD_SCRIPT.read_text()
+        assert (
+            "write_lane_metadata" in content
+        ), "steward-session.sh must call write_lane_metadata for lane registry"
+
+
+# ---------------------------------------------------------------------------
+# launchd template tests
+# ---------------------------------------------------------------------------
+
+
+class TestLaunchdTemplate:
+    """Validate the launchd plist template."""
+
+    def test_plist_exists(self) -> None:
+        assert PLIST_TEMPLATE.exists(), f"Missing: {PLIST_TEMPLATE}"
+
+    def test_plist_valid_xml(self) -> None:
+        result = subprocess.run(
+            ["plutil", "-lint", str(PLIST_TEMPLATE)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Invalid plist: {result.stderr}"
+
+    def test_plist_contains_placeholder(self) -> None:
+        content = PLIST_TEMPLATE.read_text()
+        assert (
+            "__REPO_PATH__" in content
+        ), "Plist template must contain __REPO_PATH__ placeholder"
+
+    def test_plist_references_steward_session(self) -> None:
+        content = PLIST_TEMPLATE.read_text()
+        assert (
+            "steward-session.sh" in content
+        ), "Plist must reference steward-session.sh"
+
+    def test_plist_uses_detached_mode(self) -> None:
+        content = PLIST_TEMPLATE.read_text()
+        assert (
+            "STEWARD_DETACHED=1" in content
+        ), "Plist must use STEWARD_DETACHED=1 for non-interactive context"
+
+    def test_plist_has_throttle_interval(self) -> None:
+        content = PLIST_TEMPLATE.read_text()
+        assert (
+            "ThrottleInterval" in content
+        ), "Plist must set ThrottleInterval to prevent rapid restarts"
+
+
+# ---------------------------------------------------------------------------
+# Install script tests
+# ---------------------------------------------------------------------------
+
+
+class TestInstallScript:
+    """Validate the launchd install helper."""
+
+    def test_install_script_exists(self) -> None:
+        assert INSTALL_SCRIPT.exists(), f"Missing: {INSTALL_SCRIPT}"
+
+    def test_install_script_is_executable(self) -> None:
+        assert INSTALL_SCRIPT.stat().st_mode & 0o111, "Script must be executable"
+
+    def test_install_script_syntax_valid(self) -> None:
+        result = subprocess.run(
+            ["bash", "-n", str(INSTALL_SCRIPT)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Syntax error: {result.stderr}"
+
+    def test_install_script_supports_dry_run(self) -> None:
+        content = INSTALL_SCRIPT.read_text()
+        assert "--dry-run" in content, "Install script must support --dry-run"
+
+    def test_install_script_supports_uninstall(self) -> None:
+        content = INSTALL_SCRIPT.read_text()
+        assert "--uninstall" in content, "Install script must support --uninstall"
+
+    @pytest.mark.skipif(
+        subprocess.run(["uname"], capture_output=True, text=True).stdout.strip()
+        != "Darwin",
+        reason="macOS-only test",
+    )
+    def test_dry_run_succeeds(self) -> None:
+        """Dry run should succeed without side effects."""
+        result = subprocess.run(
+            [str(INSTALL_SCRIPT), "--dry-run"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Dry run failed: {result.stderr}"
+        assert "Would install to" in result.stdout, "Dry run should show target path"

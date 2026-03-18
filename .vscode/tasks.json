@@ -186,6 +186,54 @@
         "clear": true
       },
       "problemMatcher": []
+    },
+    {
+      "label": "GitHub PR checks (current branch)",
+      "type": "shell",
+      "command": "gh pr checks 2>/dev/null || echo 'No PR found for current branch'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "GitHub PR checks (specific)",
+      "type": "shell",
+      "command": "gh pr checks ${input:prNumber}",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Deterministic prechecks",
+      "type": "shell",
+      "command": "uv run python scripts/internal/deterministic_prechecks.py 2>&1 | tail -40",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Plan review artifacts",
+      "type": "shell",
+      "command": "found=0; for d in .claude/runtime/plan_reviews/*/; do [ -d \"$d\" ] && echo \"--- $(basename $d) ---\" && ls -lt \"$d\" | head -5 && echo '' && found=1; done; [ $found -eq 0 ] && echo 'No plan review artifacts found'",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
     }
   ],
   "inputs": [
@@ -201,6 +249,12 @@
       "description": "Select a rung",
       "options": ["r0", "r1", "r2", "r3"],
       "default": "r0"
+    },
+    {
+      "id": "prNumber",
+      "type": "promptString",
+      "description": "PR number (e.g., 123)",
+      "default": ""
     }
   ]
 }
