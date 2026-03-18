@@ -229,13 +229,14 @@ class TestDecisionReport:
         assert "**HALT**" in content
         assert "1 hypothesis check(s) failed" in content
 
-    def test_pending_when_no_hypothesis_outcomes(self, tmp_path, charts_dir):
-        """Reports PENDING when hypothesis_outcomes.csv is missing."""
+    def test_pending_when_no_hypothesis_outcomes_full_mode(self, tmp_path, charts_dir):
+        """Reports PENDING when hypothesis_outcomes.csv is missing in FULL mode."""
         tables_dir = tmp_path / "tables"
         tables_dir.mkdir(parents=True, exist_ok=True)
         content = generate_decision_report(
             tables_dir=tables_dir,
             charts_dir=charts_dir,
+            mode="FULL",
         )
         assert "**PENDING**" in content
         assert "not yet available" in content
@@ -255,12 +256,23 @@ class TestDecisionReport:
         assert "2 skipped" in content
         assert "All evaluated hypothesis checks passed" in content
 
-    def test_pending_when_all_skipped(self, tmp_path, charts_dir):
-        """Reports PENDING when all hypothesis checks are skipped."""
+    def test_preliminary_when_all_skipped_quick(self, tmp_path, charts_dir):
+        """Reports PRELIMINARY when all hypothesis checks are skipped in QUICK mode."""
         tables_dir = _make_hypothesis_outcomes(tmp_path, ["SKIP", "SKIP"])
         content = generate_decision_report(
             tables_dir=tables_dir,
             charts_dir=charts_dir,
+            mode="QUICK",
+        )
+        assert "**PRELIMINARY**" in content
+
+    def test_pending_when_all_skipped_full(self, tmp_path, charts_dir):
+        """Reports PENDING when all hypothesis checks are skipped in FULL mode."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["SKIP", "SKIP"])
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+            mode="FULL",
         )
         assert "**PENDING**" in content
 
@@ -316,8 +328,119 @@ class TestDecisionReport:
         content = generate_decision_report(
             tables_dir=tables_dir,
             charts_dir=charts_dir,
+            mode="FULL",
         )
         assert "# Rung" in content
         assert "**PENDING**" in content
         # Should not crash, should have placeholder text
         assert "not yet generated" in content or "not yet available" in content
+
+
+# ──────────────────────────────────────────────
+#  PRELIMINARY triage tests (§3.7)
+# ──────────────────────────────────────────────
+
+
+class TestPreliminaryTriage:
+    """Tests for QUICK-mode PRELIMINARY triage when advance-check evidence is absent."""
+
+    def test_quick_no_hypothesis_returns_preliminary(self, tmp_path):
+        """QUICK mode without hypothesis outcomes produces PRELIMINARY, not PENDING."""
+        tables = tmp_path / "tables"
+        tables.mkdir()
+        charts = tmp_path / "charts"
+        charts.mkdir()
+        # Write empty hypothesis_outcomes.csv (header only)
+        (tables / "hypothesis_outcomes.csv").write_text(
+            "hypothesis_id,description,status\n"
+        )
+        # Write minimal comparator_rankings.csv
+        (tables / "comparator_rankings.csv").write_text(
+            "model,net_eppd,ci_low,ci_high,rank,facet\ngbt_av,2.0,1.8,2.2,1,pooled\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables,
+            charts_dir=charts,
+            rung="R0",
+            mode="QUICK",
+        )
+        assert "PRELIMINARY" in content
+        assert "PENDING" not in content
+        assert "Rung R0" in content
+
+    def test_preliminary_includes_comparator_data(self, tmp_path):
+        """PRELIMINARY triage includes top model performance from comparator data."""
+        tables = tmp_path / "tables"
+        tables.mkdir()
+        charts = tmp_path / "charts"
+        charts.mkdir()
+        (tables / "comparator_rankings.csv").write_text(
+            "model,net_eppd,ci_low,ci_high,rank,facet\n"
+            "gbt_av,2.0,1.8,2.2,1,pooled\n"
+            "ols_av,1.5,1.3,1.7,2,pooled\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables,
+            charts_dir=charts,
+            rung="R0",
+            mode="QUICK",
+        )
+        assert "gbt_av" in content
+        assert "net_eppd" in content
+        assert "Watch items" in content
+
+    def test_preliminary_includes_h2h_data(self, tmp_path):
+        """PRELIMINARY triage includes H2H win rate data."""
+        tables = tmp_path / "tables"
+        tables.mkdir()
+        charts = tmp_path / "charts"
+        charts.mkdir()
+        _make_comparator_rankings(tables)
+        _make_h2h_tier_summary(tables)
+
+        content = generate_decision_report(
+            tables_dir=tables,
+            charts_dir=charts,
+            rung="R0",
+            mode="QUICK",
+        )
+        assert "Best H2H win rate" in content
+
+    def test_preliminary_includes_sanity_data(self, tmp_path):
+        """PRELIMINARY triage notes data sanity results when available."""
+        tables = tmp_path / "tables"
+        tables.mkdir()
+        charts = tmp_path / "charts"
+        charts.mkdir()
+        (tables / "data_sanity.csv").write_text(
+            "check,status,detail\nbalance,PASS,ok\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables,
+            charts_dir=charts,
+            rung="R0",
+            mode="QUICK",
+        )
+        assert "Data sanity: all checks passed" in content
+
+    def test_full_with_hypothesis_returns_advance(self, tmp_path):
+        """FULL mode with passing hypotheses produces ADVANCE."""
+        tables = tmp_path / "tables"
+        tables.mkdir()
+        charts = tmp_path / "charts"
+        charts.mkdir()
+        (tables / "hypothesis_outcomes.csv").write_text(
+            "hypothesis_id,description,status\nH1,test,PASS\nH2,test2,PASS\n"
+        )
+
+        content = generate_decision_report(
+            tables_dir=tables,
+            charts_dir=charts,
+            rung="R0",
+            mode="FULL",
+        )
+        assert "ADVANCE" in content
+        assert "Rung R0" in content

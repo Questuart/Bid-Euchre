@@ -53,7 +53,7 @@ def _inventory_dir(directory: Path, suffix: str) -> list[dict]:
         entries.append(
             {
                 "name": p.name,
-                "path": str(p),
+                "path": _to_repo_relative(str(p)),
                 "size_bytes": p.stat().st_size,
             }
         )
@@ -113,7 +113,7 @@ def _inventory_chart_dir(charts_dir: Path) -> list[dict]:
         if chart_path in on_disk:
             entry["present"] = True
             entry["size_bytes"] = on_disk[chart_path]
-            entry["path"] = str(charts_dir / chart_path)
+            entry["path"] = _to_repo_relative(str(charts_dir / chart_path))
         else:
             entry["present"] = False
             entry["size_bytes"] = 0
@@ -131,11 +131,28 @@ def _inventory_chart_dir(charts_dir: Path) -> list[dict]:
                     "title": entry_extra.title if entry_extra else name,
                     "present": True,
                     "size_bytes": size,
-                    "path": str(charts_dir / name),
+                    "path": _to_repo_relative(str(charts_dir / name)),
                 }
             )
 
     return entries
+
+
+def _to_repo_relative(path_str: str) -> str:
+    """Convert an absolute path to repo-relative if possible."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        repo_root = result.stdout.strip()
+        if repo_root and path_str.startswith(repo_root):
+            return path_str[len(repo_root) :].lstrip("/")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return path_str
 
 
 def generate_evidence_manifest(
@@ -144,6 +161,7 @@ def generate_evidence_manifest(
     plan_dir: Path | None = None,
     rung_id: str = "r0",
     lineage_id: str = "arc_d_v2",
+    mode: str | None = None,
 ) -> dict:
     """Generate the evidence manifest dict.
 
@@ -153,6 +171,8 @@ def generate_evidence_manifest(
         plan_dir: Path to rung plan directory.
         rung_id: Rung identifier (e.g., "r0").
         lineage_id: Lineage identifier (e.g., "arc_d_v2").
+        mode: Execution mode override (``"QUICK"`` / ``"FULL"``). When
+            provided, takes precedence over H2H-derived mode.
 
     Returns:
         Evidence manifest dict matching arc_d_evidence_manifest_v1 schema.
@@ -167,10 +187,13 @@ def generate_evidence_manifest(
         anchor = roster.get("anchor", {})
         anchor_name = anchor.get("name", "")
         for m in roster.get("models", []):
+            class_name = (
+                m.get("class_name") or m.get("class") or m.get("model_class") or ""
+            )
             roster_entries.append(
                 {
                     "name": m.get("name"),
-                    "class_name": m.get("class_name"),
+                    "class_name": class_name,
                     "trainable": m.get("trainable", False),
                     "status": "evaluated",
                 }
@@ -180,7 +203,8 @@ def generate_evidence_manifest(
     h2h = _load_json(rung_dir / "h2h_battery.json")
     seeds: list[int] = []
     run_ids: list[str] = []
-    mode = "QUICK"
+    explicit_mode = mode  # Capture caller override before h2h detection
+    detected_mode = "QUICK"
     if h2h:
         if h2h.get("seeds_merged"):
             # Multi-seed FULL: discover seeds from directory structure
@@ -194,7 +218,7 @@ def generate_evidence_manifest(
             seed_val = h2h.get("seed")
             if seed_val is not None:
                 seeds.append(seed_val)
-        mode = h2h.get("mode", "QUICK")
+        detected_mode = h2h.get("mode") or "QUICK"
         for cell in h2h.get("cells", {}).values():
             rid = cell.get("run_id")
             if rid and rid not in run_ids:
@@ -206,6 +230,20 @@ def generate_evidence_manifest(
         comp_seed = comparator.get("seed")
         if comp_seed is not None and comp_seed not in seeds:
             seeds.append(comp_seed)
+
+    # Fallback: discover seeds from directory structure if still empty
+    if not seeds:
+        for d in sorted(rung_dir.glob("seed_*")):
+            if d.is_dir():
+                try:
+                    s = int(d.name.split("_", 1)[1])
+                    if s not in seeds:
+                        seeds.append(s)
+                except (ValueError, IndexError):
+                    pass
+
+    # Mode: caller override > H2H detection > default
+    resolved_mode = explicit_mode or detected_mode
 
     # Inventory tables
     tables_dir = report_dir / "tables"
@@ -225,7 +263,7 @@ def generate_evidence_manifest(
         artifact_inventory.append(
             {
                 "name": art_path.stem,
-                "path": str(art_path),
+                "path": _to_repo_relative(str(art_path)),
                 "schema_version": "",
             }
         )
@@ -241,7 +279,7 @@ def generate_evidence_manifest(
     if plan_dir and plan_dir.exists():
         plan_file = plan_dir / "plan.md"
         if plan_file.exists():
-            governing_plan = str(plan_file)
+            governing_plan = _to_repo_relative(str(plan_file))
 
     # Lifecycle status for the rung directory
     lifecycle_status = _get_lifecycle_status(rung_dir)
@@ -256,7 +294,7 @@ def generate_evidence_manifest(
         "anchor": anchor_name,
         "roster": roster_entries,
         "seeds": seeds,
-        "mode": mode,
+        "mode": resolved_mode,
         "run_ids": run_ids,
         "lifecycle": lifecycle_status,
         "artifacts": artifact_inventory,
