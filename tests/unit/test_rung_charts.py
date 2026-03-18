@@ -538,6 +538,26 @@ class TestOutcomeDistributionsChart:
 
 
 # ──────────────────────────────────────────────
+#  outcome_summary removal (Phase E cleanup)
+# ──────────────────────────────────────────────
+
+
+class TestOutcomeSummaryRemoved:
+    """Verify generate_outcome_summary was removed (Phase E — not in 23-chart registry)."""
+
+    def test_generate_outcome_summary_not_in_module(self, charts_mod):
+        """generate_outcome_summary should no longer exist in the chart module."""
+        assert not hasattr(charts_mod, "generate_outcome_summary")
+
+    def test_outcome_summary_not_in_chart_data_generators(self, charts_mod):
+        """The generate_all_charts function source should not reference outcome_summary.png."""
+        import inspect
+
+        source = inspect.getsource(charts_mod.generate_all_charts)
+        assert "outcome_summary.png" not in source
+
+
+# ──────────────────────────────────────────────
 #  Bid level distribution tests (new — Phase B)
 # ──────────────────────────────────────────────
 

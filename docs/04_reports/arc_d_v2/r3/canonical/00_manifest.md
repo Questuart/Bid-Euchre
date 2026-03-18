@@ -80,7 +80,6 @@
 | 21 | Decision Agreement | `full_chart_suite/decision_agreement.png` | - | absent |
 | 22 | Disagreement Outcomes | `full_chart_suite/disagreement_outcomes.png` | - | absent |
 | 23 | Intelligence-Faceted H2H | `full_chart_suite/h2h_intelligence_faceted.png` | 56,540 bytes | present |
-| - | full_chart_suite/outcome_summary.png | `full_chart_suite/outcome_summary.png` | 52,354 bytes | present |
 
 ## Chart Data
 
