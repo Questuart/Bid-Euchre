@@ -23,6 +23,7 @@ from bid_euchre.arc_d_v2.tables import (
     TIER_SMART,
     _classify_tier,
     _extract_bid_levels,
+    _extract_bid_levels_from_parquet,
     _extract_decision_comparison,
     _extract_disagreement_outcomes,
     _extract_feature_importance,
@@ -2283,3 +2284,121 @@ class TestExtractFeatureImportancesFlat:
         """disagreement_outcomes returns empty with no parquet files."""
         rows = _extract_disagreement_outcomes([])
         assert rows == []
+
+
+class TestBidLevelsFromParquet:
+    """Tests for parquet-backed bid-level distribution extraction."""
+
+    def test_bid_levels_from_parquet(self, tmp_path):
+        """bid_levels.csv extracted from parquet has per-level rows."""
+        # Create test parquet with bid_n column
+        df = pd.DataFrame(
+            {
+                "contract_family": ["suit", "suit", "suit", "high", "high"],
+                "bid_n": [6, 7, 6, 8, 9],
+                "action_type": ["bid", "bid", "bid", "bid", "bid"],
+                "tricks_won": [7, 8, 6, 9, 10],
+                "focal_seat": [0, 1, 2, 0, 1],
+            }
+        )
+        pq_path = tmp_path / "test.parquet"
+        df.to_parquet(pq_path)
+
+        rows = _extract_bid_levels_from_parquet([pq_path])
+        assert len(rows) > 0
+
+        result_df = pd.DataFrame(rows)
+        assert "bid_level" in result_df.columns
+        assert "contract" in result_df.columns
+        assert "count" in result_df.columns
+        assert "fraction" in result_df.columns
+
+        # suit bid_n=6 appears twice, bid_n=7 once
+        suit_6 = result_df[
+            (result_df["contract"] == "suit") & (result_df["bid_level"] == 6)
+        ]
+        assert len(suit_6) == 1
+        assert suit_6.iloc[0]["count"] == 2
+
+    def test_bid_levels_fallback_to_aggregate(self):
+        """bid_levels.csv falls back to aggregate when no parquet available."""
+        comparator_cis = {
+            "bidders": {
+                "model_a": {"bid_rate": 0.7, "make_rate": 0.8},
+                "model_b": {"bid_rate": 0.6, "make_rate": 0.9},
+            }
+        }
+        rows = _extract_bid_levels(comparator_cis)
+        assert len(rows) == 2
+        assert all("model" in r for r in rows)
+        assert all("bid_rate" in r for r in rows)
+
+    def test_bid_levels_parquet_preferred_over_aggregate(self, tmp_path):
+        """bid_levels uses parquet when available, ignoring aggregate fallback."""
+        # Create parquet with bid_n
+        df = pd.DataFrame(
+            {
+                "contract_family": ["suit", "suit"],
+                "bid_n": [6, 7],
+                "action_type": ["bid", "bid"],
+            }
+        )
+        pq_path = tmp_path / "test.parquet"
+        df.to_parquet(pq_path)
+
+        comparator_cis = {
+            "bidders": {
+                "model_a": {"bid_rate": 0.7, "make_rate": 0.8},
+            }
+        }
+        generated = generate_chart_data(
+            comparator_cis=comparator_cis,
+            output_dir=tmp_path,
+            parquet_paths=[pq_path],
+        )
+        assert "bid_levels.csv" in generated
+        result_df = pd.read_csv(tmp_path / "bid_levels.csv")
+        # Parquet-backed rows have bid_level column, not bid_rate
+        assert "bid_level" in result_df.columns
+
+    def test_bid_levels_from_parquet_no_bid_n(self, tmp_path):
+        """bid_levels returns empty when parquet lacks bid_n column."""
+        df = pd.DataFrame(
+            {
+                "contract_family": ["suit", "suit"],
+                "action_type": ["bid", "bid"],
+                "tricks_won": [7, 8],
+            }
+        )
+        pq_path = tmp_path / "test.parquet"
+        df.to_parquet(pq_path)
+
+        rows = _extract_bid_levels_from_parquet([pq_path])
+        assert rows == []
+
+    def test_outcome_distributions_synthetic_flagged(self, tmp_path):
+        """Synthetic outcome distributions write a .status sidecar file."""
+        h2h = {
+            "cells": {
+                "self_a": {
+                    "bidder_a": "model_a",
+                    "bidder_b": "model_a",
+                    "by_contract": {
+                        "suit": {"deals_total": 100, "mean_tricks_won": 5.5},
+                    },
+                }
+            }
+        }
+        rows = _extract_outcome_distributions(h2h, parquet_paths=None)
+        assert len(rows) > 0
+        assert all(r["source"] == "synthetic" for r in rows)
+
+        # Verify the full pipeline writes a .status sidecar
+        generated = generate_chart_data(
+            h2h_battery=h2h,
+            output_dir=tmp_path,
+        )
+        assert "outcome_distributions.csv" in generated
+        status_path = tmp_path / "outcome_distributions.status"
+        assert status_path.exists()
+        assert "degraded:synthetic" in status_path.read_text()

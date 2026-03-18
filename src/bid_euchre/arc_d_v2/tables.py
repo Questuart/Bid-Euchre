@@ -1031,13 +1031,17 @@ def generate_chart_data(
             df.to_csv(output_dir / "h2h_by_contract.csv", index=False)
             generated.append("h2h_by_contract.csv")
 
-    # 4. bid_levels.csv — aggregate bidding metrics per model from comparator CIs
-    if comparator_cis:
-        rows = _extract_bid_levels(comparator_cis)
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "bid_levels.csv", index=False)
-            generated.append("bid_levels.csv")
+    # 4. bid_levels.csv — prefer parquet-backed per-level distribution
+    bid_level_rows: list[dict] = []
+    if parquet_paths:
+        bid_level_rows = _extract_bid_levels_from_parquet(parquet_paths)
+    if not bid_level_rows and comparator_cis:
+        # Fallback: aggregate rates from comparator CIs
+        bid_level_rows = _extract_bid_levels(comparator_cis)
+    if bid_level_rows:
+        df = pd.DataFrame(bid_level_rows)
+        df.to_csv(output_dir / "bid_levels.csv", index=False)
+        generated.append("bid_levels.csv")
 
     # 5. seat_balance.csv — per-seat trick distributions from parquet if available
     #    Deferred: requires per-seat JSONL/parquet not present in battery summaries.
@@ -1062,6 +1066,14 @@ def generate_chart_data(
             df = pd.DataFrame(rows)
             df.to_csv(output_dir / "outcome_distributions.csv", index=False)
             generated.append("outcome_distributions.csv")
+            # Mark degraded state if all rows are synthetic
+            if all(r.get("source") == "synthetic" for r in rows):
+                status_path = output_dir / "outcome_distributions.status"
+                status_path.write_text("degraded:synthetic\n")
+                logger.warning(
+                    "outcome_distributions.csv is fully synthetic — "
+                    "no parquet-backed distribution data available"
+                )
 
     # 8. feature_importances.csv — flat feature importance table
     if training_artifacts:
@@ -1130,6 +1142,104 @@ def _extract_h2h_by_contract(h2h_battery: dict) -> list[dict]:
                 "deals_total": cell.get("deals_total"),
                 "win_rate": _safe_round(cell.get("win_rate_a")),
             }
+        )
+    return rows
+
+
+def _extract_bid_levels_from_parquet(
+    parquet_paths: list[Path],
+) -> list[dict]:
+    """Extract per-bid-level distribution from action-value parquet files.
+
+    Uses the ``bid_n`` column in parquet data to produce actual bid-level
+    frequency rows: model, contract, bid_level, count, fraction.
+
+    Args:
+        parquet_paths: List of paths to action-value parquet files.
+
+    Returns:
+        List of dicts with keys: model, contract, bid_level, count, fraction.
+        Empty list if no valid parquet files found or bid_n column absent.
+    """
+    frames: list[pd.DataFrame] = []
+    for path in parquet_paths:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path)
+            frames.append(df)
+        except Exception as e:
+            logger.warning("Failed to read parquet %s for bid_levels: %s", path, e)
+            continue
+
+    if not frames:
+        return []
+
+    combined = pd.concat(frames, ignore_index=True)
+
+    if "bid_n" not in combined.columns:
+        logger.info(
+            "bid_n column not in parquet; bid_levels will use aggregate fallback"
+        )
+        return []
+
+    # Determine contract column
+    contract_col = None
+    for candidate in ("contract_family", "contract_type", "contract"):
+        if candidate in combined.columns:
+            contract_col = candidate
+            break
+
+    if contract_col is None:
+        return []
+
+    # Filter to bidding actions only (action_type == "bid" if column exists)
+    if "action_type" in combined.columns:
+        bid_df = combined[combined["action_type"] == "bid"].copy()
+    else:
+        # If no action_type, use all rows with non-null bid_n
+        bid_df = combined[combined["bid_n"].notna()].copy()
+
+    if len(bid_df) == 0:
+        return []
+
+    # Determine model column if present
+    model_col = None
+    for candidate in ("model", "bidder", "model_name"):
+        if candidate in bid_df.columns:
+            model_col = candidate
+            break
+
+    rows: list[dict] = []
+
+    # Group by model (if present), contract, bid_level
+    if model_col:
+        group_cols = [model_col, contract_col, "bid_n"]
+    else:
+        group_cols = [contract_col, "bid_n"]
+
+    grouped = bid_df.groupby(group_cols).size().reset_index(name="count")
+
+    # Compute fractions within each model+contract group
+    fraction_group_cols = [model_col, contract_col] if model_col else [contract_col]
+    totals = grouped.groupby(fraction_group_cols)["count"].transform("sum")
+    grouped["fraction"] = grouped["count"] / totals
+
+    for _, row in grouped.iterrows():
+        entry: dict = {
+            "model": row[model_col] if model_col else "unknown",
+            "contract": row[contract_col],
+            "bid_level": int(row["bid_n"]),
+            "count": int(row["count"]),
+            "fraction": _safe_round(float(row["fraction"])),
+        }
+        rows.append(entry)
+
+    if rows:
+        logger.info(
+            "Extracted %d bid-level distribution rows from %d parquet file(s)",
+            len(rows),
+            len(frames),
         )
     return rows
 
