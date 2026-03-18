@@ -731,10 +731,10 @@ def _convert_codex_findings(
 
 
 # Regex to strip markdown code fences from Claude CLI output.
-# Matches ```json ... ``` or ``` ... ``` with optional language tag.
+# Matches ```json ... ``` or ``` ... ``` with optional language tag (case-insensitive).
 _CODE_FENCE_RE = re.compile(
-    r"```(?:json|JSON)?\s*\n(.*?)\n\s*```",
-    re.DOTALL,
+    r"```(?:json)?\s*\n(.*?)\n\s*```",
+    re.DOTALL | re.IGNORECASE,
 )
 
 # Severity mapping from Claude CLI's natural output to PlanReviewFinding schema.
