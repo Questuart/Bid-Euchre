@@ -56,7 +56,9 @@
       "status": "evaluated"
     }
   ],
-  "seeds": [],
+  "seeds": [
+    42
+  ],
   "mode": "full",
   "run_ids": [],
   "lifecycle": [],

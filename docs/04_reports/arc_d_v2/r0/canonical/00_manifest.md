@@ -4,7 +4,7 @@
 **Rung:** r0
 **Provenance SHA:** `13ba62ee796891736b44b4bd5be380ab6b971938`
 **Mode:** QUICK
-**Seeds:** []
+**Seeds:** [42, 123, 456]
 **Anchor:** anchor_hybrid_r0_full
 
 ## Model Roster
