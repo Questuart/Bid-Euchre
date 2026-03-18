@@ -1059,3 +1059,202 @@ class TestFullChartSuiteLayout:
         # Suite charts are in subdirectory
         for s in suite_charts:
             assert (charts_dir / s).exists(), f"Suite chart {s} not in subdirectory"
+
+
+# ──────────────────────────────────────────────
+#  Violin+box outcome distributions (Chart 9 upgrade)
+# ──────────────────────────────────────────────
+
+
+class TestOutcomeDistributionsViolin:
+    """Tests for Chart 9 violin+box overlay with real parquet data."""
+
+    def test_violin_with_real_data(self, charts_mod, tmp_path):
+        """Chart 9 uses violin+box when real parquet data available."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        # Create real distribution data (many tricks_won values)
+        rows = []
+        for contract in ["suit", "high", "low"]:
+            for tricks in range(0, 11):
+                rows.append(
+                    {
+                        "model": "test_model",
+                        "contract": contract,
+                        "tricks_won": tricks,
+                        "count": max(1, 10 - abs(tricks - 5)),
+                        "fraction": 0.1,
+                        "source": "parquet",
+                    }
+                )
+        pd.DataFrame(rows).to_csv(chart_data / "outcome_distributions.csv", index=False)
+
+        result = charts_mod.generate_outcome_distributions_chart(chart_data, output)
+        assert result is True
+        assert (output / "outcome_distributions.png").exists()
+
+    def test_bars_with_synthetic_data(self, charts_mod, tmp_path):
+        """Chart 9 uses bar chart with warning when data is synthetic."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        rows = []
+        for contract in ["suit", "high"]:
+            for tricks in [4, 5]:
+                rows.append(
+                    {
+                        "model": "test_model",
+                        "contract": contract,
+                        "tricks_won": tricks,
+                        "count": 10,
+                        "fraction": 0.5,
+                        "source": "synthetic",
+                    }
+                )
+        pd.DataFrame(rows).to_csv(chart_data / "outcome_distributions.csv", index=False)
+
+        result = charts_mod.generate_outcome_distributions_chart(chart_data, output)
+        assert result is True
+        assert (output / "outcome_distributions.png").exists()
+
+    def test_filters_pooled_contract(self, charts_mod, tmp_path):
+        """Chart 9 excludes 'pooled' contract when other contracts exist."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        rows = []
+        for contract in ["suit", "pooled"]:
+            for tricks in range(0, 11):
+                rows.append(
+                    {
+                        "model": "test_model",
+                        "contract": contract,
+                        "tricks_won": tricks,
+                        "count": max(1, 10 - abs(tricks - 5)),
+                        "fraction": 0.1,
+                        "source": "parquet",
+                    }
+                )
+        pd.DataFrame(rows).to_csv(chart_data / "outcome_distributions.csv", index=False)
+
+        result = charts_mod.generate_outcome_distributions_chart(chart_data, output)
+        assert result is True
+        assert (output / "outcome_distributions.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Per-bid-level histogram (Chart 13 upgrade)
+# ──────────────────────────────────────────────
+
+
+class TestBidLevelDistributionPerLevel:
+    """Tests for Chart 13 histogram with bid_level+count columns."""
+
+    def test_histogram_with_per_level_data(self, charts_mod, tmp_path):
+        """Chart 13 uses histogram when bid_level+count columns present."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        rows = []
+        for contract in ["suit", "high"]:
+            for bl in [6, 7, 8]:
+                rows.append(
+                    {
+                        "model": "test_model",
+                        "contract": contract,
+                        "bid_level": bl,
+                        "count": 100 - bl * 10,
+                        "fraction": 0.33,
+                    }
+                )
+        pd.DataFrame(rows).to_csv(chart_data / "bid_levels.csv", index=False)
+
+        result = charts_mod.generate_bid_level_distribution(chart_data, output)
+        assert result is True
+        assert (output / "bid_level_distribution.png").exists()
+
+    def test_aggregate_rates_fallback(self, charts_mod, tmp_path):
+        """Chart 13 falls back to aggregate rates when no bid_level column."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "bid_rate": [0.65, 0.55],
+                "make_rate": [0.72, 0.61],
+                "pass_rate": [0.35, 0.45],
+            }
+        ).to_csv(chart_data / "bid_levels.csv", index=False)
+
+        result = charts_mod.generate_bid_level_distribution(chart_data, output)
+        assert result is True
+        assert (output / "bid_level_distribution.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Feature importance prefers feature_importances.csv (Chart 20 upgrade)
+# ──────────────────────────────────────────────
+
+
+class TestFeatureImportancePreference:
+    """Tests that Chart 20 prefers feature_importances.csv."""
+
+    def test_prefers_feature_importances_csv(self, charts_mod, tmp_path):
+        """Chart 20 reads feature_importances.csv when available."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        pd.DataFrame(
+            {
+                "model": ["gbt"] * 5,
+                "contract": ["suit"] * 5,
+                "rank": [1, 2, 3, 4, 5],
+                "feature_name": [
+                    "trump_count",
+                    "hand_strength",
+                    "seat",
+                    "bid_level",
+                    "void_count",
+                ],
+                "importance": [0.35, 0.25, 0.18, 0.12, 0.10],
+            }
+        ).to_csv(chart_data / "feature_importances.csv", index=False)
+
+        result = charts_mod.generate_feature_importance_chart(chart_data, output)
+        assert result is True
+        assert (output / "feature_importance.png").exists()
+
+    def test_falls_back_to_selection_paths(self, charts_mod, tmp_path):
+        """Chart 20 falls back to selection_paths.csv when feature_importances.csv missing."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        pd.DataFrame(
+            {
+                "model": ["gbt"] * 3,
+                "contract": ["suit"] * 3,
+                "rank": [1, 2, 3],
+                "feature_name": ["trump_count", "hand_strength", "seat"],
+                "importance": [0.35, 0.25, 0.18],
+            }
+        ).to_csv(chart_data / "selection_paths.csv", index=False)
+
+        result = charts_mod.generate_feature_importance_chart(chart_data, output)
+        assert result is True
+        assert (output / "feature_importance.png").exists()
