@@ -159,6 +159,53 @@ Hooks are registered across two files:
   - Branch = `main`
 - Working in a worktree or on a different branch is always allowed
 
+## Unattended State Contract
+
+Scripts that run in the background, poll external systems, or continue after
+user interaction ends must expose minimal machine-readable state for debugging.
+
+### Required outputs
+
+| Output | Format | Purpose |
+|--------|--------|---------|
+| `status.json` | JSON object | Current state snapshot: status, summary, timestamp, identifiers |
+| Append-only log | Plain text or JSONL | Execution progress and failure details |
+
+### `status.json` minimal schema
+
+```json
+{
+  "status": "running | success | failure | timeout",
+  "summary": "Human-readable one-liner",
+  "updated_at": "ISO-8601 timestamp",
+  "pr_number": 123
+}
+```
+
+Additional fields are script-specific but the four above are the baseline.
+
+### Conforming scripts
+
+| Script | State dir | status.json | Log |
+|--------|-----------|-------------|-----|
+| `scripts/internal/ci_poller.sh` | `.claude/runtime/ci_polls/pr_<N>/` | `status.json` | `poller.log` |
+| `scripts/internal/review_driver.py` | `.claude/runtime/review_loops/pr_<N>/` | `state.json` | Per-round artifacts |
+| `scripts/internal/plan_review_driver.py` | `.claude/runtime/plan_reviews/<key>/` | `state.json` | Per-round artifacts |
+
+### Non-conforming scripts (audit)
+
+The following hooks run in the background but do not yet write `status.json`:
+
+| Script | Runs in background? | Gap |
+|--------|---------------------|-----|
+| `.claude/hooks/post-push-ci-check.sh` | Yes (launches ci_poller) | Delegates to ci_poller — no gap |
+| `.claude/hooks/post-pr-review-loop.sh` | Yes (launches review_driver) | Delegates to review_driver — no gap |
+| `.claude/hooks/post-merge-review.sh` | Yes (spawns agent) | Agent-spawned — no status.json feasible |
+| `.claude/hooks/post-tool-daemon-notify.sh` | Yes (checks daemons) | Lightweight checker — no long-running state |
+
+No actionable gaps were found. All long-running unattended scripts already
+conform via their downstream drivers.
+
 ## Design Notes
 
 This is a **three-layered solution** to work around hook limitations:
