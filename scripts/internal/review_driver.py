@@ -37,6 +37,40 @@ from review_state import (
 
 logger = logging.getLogger("review_driver")
 
+# Failure state categories that should trigger agent notification
+_FAILURE_STATES = frozenset(
+    {
+        ReviewState.STOPPED_CI_FAILURE,
+        ReviewState.STOPPED_REVIEW_FAILURE,
+        ReviewState.STOPPED_MAX_ITERATIONS,
+        ReviewState.STOPPED_NO_PROGRESS,
+    }
+)
+
+
+def _write_failure_sentinel(loop_state: ReviewLoopState) -> None:
+    """Write a FAILED sentinel file so the notification hook can alert the agent.
+
+    Only writes for terminal failure states. The sentinel is a one-line summary
+    read by .claude/hooks/post-tool-daemon-notify.sh.
+    """
+    if loop_state.current_state not in _FAILURE_STATES:
+        return
+
+    state_dir = Path(".claude/runtime/review_loops") / f"pr_{loop_state.pr_number}"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    sentinel = state_dir / "FAILED"
+
+    reason = loop_state.stop_reason or loop_state.current_state.value
+    label = loop_state.current_state.value.upper()
+    summary = f"{label}: {reason}"
+
+    try:
+        sentinel.write_text(summary + "\n")
+        logger.info("PR #%d: wrote failure sentinel: %s", loop_state.pr_number, summary)
+    except OSError:
+        logger.warning("PR #%d: failed to write failure sentinel", loop_state.pr_number)
+
 
 def _publish_status(pr_number: int, state: str, description: str) -> bool:
     """Publish a review status to GitHub, logging errors but not raising.
@@ -1272,6 +1306,7 @@ def main() -> int:
             except Exception:
                 loop_state.state = ReviewState.STOPPED_REVIEW_FAILURE.value
             save_state(loop_state)
+            _write_failure_sentinel(loop_state)
             return 1
 
         # If we didn't advance (stuck in a polling state), sleep before retry
@@ -1302,6 +1337,7 @@ def main() -> int:
             loop_state.pr_number,
             loop_state.stop_reason or "completed",
         )
+        _write_failure_sentinel(loop_state)
 
     return 0
 
