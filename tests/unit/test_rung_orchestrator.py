@@ -3198,3 +3198,351 @@ class TestStep7bPassesRungAndMode:
         mode_idx = report_cmd.index("--mode")
         assert report_cmd[rung_idx + 1] == "r0"
         assert report_cmd[mode_idx + 1] == "quick"
+
+
+# ============================================================================
+# Step 6 / 8 / 9 Tests
+# ============================================================================
+
+
+class TestStep6CommandConstruction:
+    """Tests for execute_step_6 (generate canonical tables)."""
+
+    def test_step6_success_constructs_correct_command(self, tmp_path):
+        """Step 6 success path: verify cmd includes --rung-dir, --output-dir, --mode, --seed."""
+        # Create the script so the "missing script" path is not taken
+        script = tmp_path / "scripts" / "internal" / "generate_rung_tables.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# stub")
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        captured_cmds = []
+
+        def mock_subprocess(cmd, step, rung, log_suffix=""):
+            captured_cmds.append(cmd)
+            return True, None
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_6(state)
+
+        assert ok is True
+        assert state.steps["6"]["status"] == "complete"
+        assert len(captured_cmds) == 1
+
+        cmd = captured_cmds[0]
+        assert "--rung-dir" in cmd
+        assert "--output-dir" in cmd
+        assert "--mode" in cmd
+        assert "--seed" in cmd
+
+        mode_idx = cmd.index("--mode")
+        assert cmd[mode_idx + 1] == "quick"
+
+        seed_idx = cmd.index("--seed")
+        assert cmd[seed_idx + 1] == "42"
+
+    def test_step6_dry_run_skips_subprocess(self, tmp_path):
+        """dry_run=True should mark complete without calling run_subprocess."""
+        script = tmp_path / "scripts" / "internal" / "generate_rung_tables.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# stub")
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r1"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r1", "quick", [42])
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess") as mock_run,
+        ):
+            ok = run_rung_mod.execute_step_6(state, dry_run=True)
+
+        assert ok is True
+        assert state.steps["6"]["status"] == "complete"
+        mock_run.assert_not_called()
+
+    def test_step6_script_missing_skips(self, tmp_path):
+        """Missing generate_rung_tables.py should mark step skipped, return True."""
+        # Do NOT create the script file
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+        ):
+            ok = run_rung_mod.execute_step_6(state)
+
+        assert ok is True
+        assert state.steps["6"]["status"] == "skipped"
+
+    def test_step6_subprocess_failure_marks_failed(self, tmp_path):
+        """Subprocess failure should mark step failed with error message."""
+        script = tmp_path / "scripts" / "internal" / "generate_rung_tables.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# stub")
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        def mock_subprocess(cmd, step, rung, log_suffix=""):
+            return False, "table generation crashed"
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_6(state)
+
+        assert ok is False
+        assert state.steps["6"]["status"] == "failed"
+        assert "table generation crashed" in state.steps["6"].get("error", "")
+
+    def test_step6_multi_seed_comma_separated(self, tmp_path):
+        """Multiple seeds should be comma-separated; None seeds should default to '42'."""
+        script = tmp_path / "scripts" / "internal" / "generate_rung_tables.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# stub")
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        # --- Multi-seed case ---
+        state_multi = RunState.create_fresh("r0", "quick", [42, 123])
+        captured_cmds = []
+
+        def mock_subprocess(cmd, step, rung, log_suffix=""):
+            captured_cmds.append(cmd)
+            return True, None
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_6(state_multi)
+
+        assert ok is True
+        cmd = captured_cmds[0]
+        seed_idx = cmd.index("--seed")
+        assert cmd[seed_idx + 1] == "42,123"
+
+        # --- None-seed case (defaults to "42") ---
+        state_none = RunState.create_fresh("r0", "quick", [42])
+        state_none.seeds = None
+        captured_cmds.clear()
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_6(state_none)
+
+        assert ok is True
+        cmd = captured_cmds[0]
+        seed_idx = cmd.index("--seed")
+        assert cmd[seed_idx + 1] == "42"
+
+
+class TestStep8CommandConstruction:
+    """Tests for execute_step_8 (advance check)."""
+
+    def test_step8_success_constructs_correct_command(self, tmp_path):
+        """Step 8 success path: verify cmd includes --hypotheses, --tables-dir, --output, --mode, --rung."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        captured_cmds = []
+
+        def mock_subprocess(cmd, step, rung, log_suffix=""):
+            captured_cmds.append(cmd)
+            return True, None
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_8(state)
+
+        assert ok is True
+        assert state.steps["8"]["status"] == "complete"
+        assert len(captured_cmds) == 1
+
+        cmd = captured_cmds[0]
+        assert "--hypotheses" in cmd
+        assert "--tables-dir" in cmd
+        assert "--output" in cmd
+        assert "--mode" in cmd
+        assert "--rung" in cmd
+
+        mode_idx = cmd.index("--mode")
+        assert cmd[mode_idx + 1] == "quick"
+
+        rung_idx = cmd.index("--rung")
+        assert cmd[rung_idx + 1] == "r0"
+
+        # Verify hypotheses path points to plan dir
+        hyp_idx = cmd.index("--hypotheses")
+        assert "hypotheses.json" in cmd[hyp_idx + 1]
+
+        # Verify output path points to plan dir
+        out_idx = cmd.index("--output")
+        assert "advance_check.json" in cmd[out_idx + 1]
+
+    def test_step8_dry_run_skips_subprocess(self, tmp_path):
+        """dry_run=True should mark complete without calling run_subprocess."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r2"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r2", "full", [42])
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess") as mock_run,
+        ):
+            ok = run_rung_mod.execute_step_8(state, dry_run=True)
+
+        assert ok is True
+        assert state.steps["8"]["status"] == "complete"
+        mock_run.assert_not_called()
+
+    def test_step8_subprocess_failure_marks_failed(self, tmp_path):
+        """Subprocess failure should mark step failed with error message."""
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        def mock_subprocess(cmd, step, rung, log_suffix=""):
+            return False, "advance check failed"
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(run_rung_mod, "_plans_dir", return_value=plan_dir),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+            patch.object(run_rung_mod, "run_subprocess", side_effect=mock_subprocess),
+        ):
+            ok = run_rung_mod.execute_step_8(state)
+
+        assert ok is False
+        assert state.steps["8"]["status"] == "failed"
+        assert "advance check failed" in state.steps["8"].get("error", "")
+
+
+class TestStep9NarrativeMarker:
+    """Tests for execute_step_9 (narrative marker / decision report check)."""
+
+    def test_step9_decision_exists_marks_complete(self, tmp_path):
+        """When 04_rung_decision.md exists, step 9 should mark complete."""
+        # Create the decision report file
+        decision_path = (
+            tmp_path
+            / "docs"
+            / "04_reports"
+            / "arc_d_v2"
+            / "r0"
+            / "quick"
+            / "04_rung_decision.md"
+        )
+        decision_path.parent.mkdir(parents=True)
+        decision_path.write_text("# Decision Report\nADVANCE\n")
+
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+        ):
+            ok = run_rung_mod.execute_step_9(state)
+
+        assert ok is True
+        assert state.steps["9"]["status"] == "complete"
+
+    def test_step9_decision_missing_marks_skipped(self, tmp_path):
+        """When 04_rung_decision.md is missing, step 9 should mark skipped."""
+        # Do NOT create the decision report file
+        plan_dir = tmp_path / "plans" / "arc_d_v2" / "r0"
+        plan_dir.mkdir(parents=True)
+
+        state = RunState.create_fresh("r0", "quick", [42])
+
+        with (
+            patch.object(run_rung_mod, "_repo_root", return_value=tmp_path),
+            patch.object(
+                run_rung_mod,
+                "_state_path",
+                return_value=plan_dir / "state.json",
+            ),
+        ):
+            ok = run_rung_mod.execute_step_9(state)
+
+        assert ok is True
+        assert state.steps["9"]["status"] == "skipped"
+        assert "04_rung_decision.md not yet written" in (
+            state.steps["9"].get("skip_reason") or state.steps["9"].get("error") or ""
+        )
