@@ -621,11 +621,15 @@ def generate_feature_importance_chart(
 ) -> bool:
     """Horizontal bar chart of top 15 features by importance.
 
-    Reads chart_data/selection_paths.csv
+    Prefers chart_data/feature_importances.csv, falls back to
+    chart_data/selection_paths.csv.
     (columns: model, contract, rank, feature_name, importance).
     Produces charts/feature_importance.png.
     """
-    df = _read_csv_safe(chart_data_dir / "selection_paths.csv")
+    # Prefer feature_importances.csv over selection_paths.csv
+    df = _read_csv_safe(chart_data_dir / "feature_importances.csv")
+    if df is None:
+        df = _read_csv_safe(chart_data_dir / "selection_paths.csv")
     if df is None:
         return False
 
@@ -819,10 +823,12 @@ def generate_outcome_distributions_chart(
     output_dir: Path,
     dpi: int = 150,
 ) -> bool:
-    """Histogram/CDF of outcome distributions, faceted by contract.
+    """Violin+box overlay of outcome distributions, faceted by contract.
 
     Reads chart_data/outcome_distributions.csv
     (columns: model, contract, tricks_won, count, fraction).
+    When data is real (many tricks_won values), uses violin+box overlay.
+    When synthetic (few rows), falls back to bar chart with warning annotation.
     Output: charts/outcome_distributions.png
     """
     df = _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
@@ -837,8 +843,14 @@ def generate_outcome_distributions_chart(
         )
         return False
 
-    contracts = sorted(df["contract"].unique())
+    # Detect if data is synthetic (single-bin per model+contract)
+    is_synthetic = "source" in df.columns and (df["source"] == "synthetic").all()
+
+    contracts = sorted(c for c in df["contract"].unique() if c != "pooled")
+    if not contracts:
+        contracts = sorted(df["contract"].unique())
     n_contracts = max(len(contracts), 1)
+
     fig, axes = plt.subplots(
         1, n_contracts, figsize=(5 * n_contracts, 4), squeeze=False
     )
@@ -847,25 +859,76 @@ def generate_outcome_distributions_chart(
         ax = axes[0, idx]
         cdf = df[df["contract"] == contract]
         models = sorted(cdf["model"].unique())
-        model_colors = _get_model_colors(models)
 
-        for model in models:
-            mdf = cdf[cdf["model"] == model].sort_values("tricks_won")
-            ax.bar(
-                mdf["tricks_won"],
-                mdf["count"],
-                alpha=0.6,
-                label=model,
-                color=model_colors[model],
-                width=0.8 / max(len(models), 1),
+        if is_synthetic or cdf["tricks_won"].nunique() <= 2:
+            # Synthetic or very sparse: fallback to bar chart with warning
+            model_colors = _get_model_colors(models)
+            for model in models:
+                mdf = cdf[cdf["model"] == model].sort_values("tricks_won")
+                ax.bar(
+                    mdf["tricks_won"],
+                    mdf["count"],
+                    alpha=0.6,
+                    label=model,
+                    color=model_colors[model],
+                    width=0.8 / max(len(models), 1),
+                )
+            ax.annotate(
+                "synthetic data",
+                xy=(0.5, 0.97),
+                xycoords="axes fraction",
+                ha="center",
+                va="top",
+                fontsize=7,
+                color="red",
+                style="italic",
             )
+        else:
+            # Real distribution: reconstruct raw data for violin+box
+            raw_data: dict[str, list[int]] = {}
+            for model in models:
+                mdf = cdf[cdf["model"] == model]
+                # Expand counts back to raw observations for violin
+                expanded: list[int] = []
+                for _, row in mdf.iterrows():
+                    expanded.extend([int(row["tricks_won"])] * int(row["count"]))
+                if expanded:
+                    raw_data[model] = expanded
 
-        ax.set_xlabel("Tricks Won", fontsize=9)
-        ax.set_ylabel("Count", fontsize=9)
+            if raw_data:
+                positions = list(range(len(raw_data)))
+                data_list = list(raw_data.values())
+                labels = list(raw_data.keys())
+                model_colors = _get_model_colors(labels)
+
+                vp = ax.violinplot(data_list, positions=positions, showextrema=False)
+                for i, body in enumerate(vp["bodies"]):
+                    body.set_facecolor(model_colors[labels[i]])
+                    body.set_alpha(0.3)
+                bp = ax.boxplot(
+                    data_list,
+                    positions=positions,
+                    widths=0.15,
+                    showfliers=False,
+                    patch_artist=True,
+                )
+                for i, patch in enumerate(bp["boxes"]):
+                    patch.set_facecolor(model_colors[labels[i]])
+                    patch.set_alpha(0.7)
+                ax.set_xticks(positions)
+                ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
+
+        ax.set_xlabel("Tricks Won" if is_synthetic else "Model", fontsize=9)
+        ax.set_ylabel("Count" if is_synthetic else "Tricks Won", fontsize=9)
         ax.set_title(f"{contract.title()}", fontsize=11)
-        ax.legend(fontsize=7, loc="best")
+        if is_synthetic:
+            ax.legend(fontsize=7, loc="best")
 
-    fig.suptitle("Outcome Distributions", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        "Outcome Distributions" + (" (synthetic)" if is_synthetic else ""),
+        fontsize=14,
+        fontweight="bold",
+    )
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     _save_chart(fig, output_dir, "outcome_distributions.png", dpi)
     return True
@@ -876,9 +939,12 @@ def generate_bid_level_distribution(
     output_dir: Path,
     dpi: int = 150,
 ) -> bool:
-    """Grouped bar chart of bid level frequencies by model.
+    """Histogram of bid level frequencies by model/contract.
 
-    Reads chart_data/bid_levels.csv (columns: model, bid_rate, make_rate, pass_rate).
+    Reads chart_data/bid_levels.csv.
+    When parquet-backed data is available (bid_level+count columns), uses
+    per-bid-level histograms faceted by contract.
+    Falls back to aggregate rates (bid_rate/make_rate/pass_rate) grouped bars.
     Output: charts/bid_level_distribution.png
     """
     df = _read_csv_safe(chart_data_dir / "bid_levels.csv")
@@ -888,32 +954,84 @@ def generate_bid_level_distribution(
     if "model" not in df.columns:
         return False
 
-    # Available metrics to plot
-    metric_cols = [c for c in ["bid_rate", "make_rate", "pass_rate"] if c in df.columns]
-    if not metric_cols:
-        return False
+    # Detect schema: parquet-backed has bid_level+count, aggregate has bid_rate+make_rate
+    has_bid_level = "bid_level" in df.columns and "count" in df.columns
 
-    models = sorted(df["model"].unique())
-    model_colors = _get_model_colors(models)
-    x = np.arange(len(metric_cols))
-    width = 0.8 / max(len(models), 1)
+    if has_bid_level:
+        # Per-bid-level histogram from parquet data
+        contracts = sorted(c for c in df["contract"].unique() if c != "pooled")
+        if not contracts:
+            contracts = sorted(df["contract"].unique())
+        n_plots = max(len(contracts), 1)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for i, model in enumerate(models):
-        row = df[df["model"] == model]
-        vals = []
-        for col in metric_cols:
-            v = row[col].iloc[0] if len(row) > 0 and col in row.columns else 0
-            vals.append(0 if pd.isna(v) else v)
-        offset = (i - len(models) / 2 + 0.5) * width
-        ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+        fig, axes = plt.subplots(1, n_plots, figsize=(5 * n_plots, 4), squeeze=False)
+        for idx, contract in enumerate(contracts):
+            ax = axes[0, idx]
+            cdf = df[df["contract"] == contract]
+            models = sorted(cdf["model"].unique())
+            model_colors = _get_model_colors(models)
 
-    ax.set_xticks(x)
-    ax.set_xticklabels([c.replace("_", " ").title() for c in metric_cols], fontsize=9)
-    ax.set_ylabel("Rate", fontsize=10)
-    ax.set_title("Bid Level Distribution by Model", fontsize=12)
-    ax.legend(fontsize=8)
-    fig.tight_layout()
+            bid_levels = sorted(cdf["bid_level"].unique())
+            x = np.arange(len(bid_levels))
+            width = 0.8 / max(len(models), 1)
+
+            for i, model in enumerate(models):
+                mdf = cdf[cdf["model"] == model]
+                vals = []
+                for bl in bid_levels:
+                    row = mdf[mdf["bid_level"] == bl]
+                    vals.append(int(row["count"].iloc[0]) if len(row) > 0 else 0)
+                offset = (i - len(models) / 2 + 0.5) * width
+                ax.bar(
+                    x + offset,
+                    vals,
+                    width,
+                    label=model,
+                    color=model_colors[model],
+                    alpha=0.8,
+                )
+
+            ax.set_xticks(x)
+            ax.set_xticklabels([str(int(bl)) for bl in bid_levels], fontsize=8)
+            ax.set_xlabel("Bid Level", fontsize=9)
+            ax.set_ylabel("Count", fontsize=9)
+            ax.set_title(f"{contract.title()}", fontsize=11)
+            ax.legend(fontsize=7, loc="best")
+
+        fig.suptitle("Bid Level Distribution", fontsize=14, fontweight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+    else:
+        # Fallback: aggregate rates grouped bar
+        metric_cols = [
+            c for c in ["bid_rate", "make_rate", "pass_rate"] if c in df.columns
+        ]
+        if not metric_cols:
+            return False
+
+        models = sorted(df["model"].unique())
+        model_colors = _get_model_colors(models)
+        x = np.arange(len(metric_cols))
+        width = 0.8 / max(len(models), 1)
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for i, model in enumerate(models):
+            row = df[df["model"] == model]
+            vals = []
+            for col in metric_cols:
+                v = row[col].iloc[0] if len(row) > 0 and col in row.columns else 0
+                vals.append(0 if pd.isna(v) else v)
+            offset = (i - len(models) / 2 + 0.5) * width
+            ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(
+            [c.replace("_", " ").title() for c in metric_cols], fontsize=9
+        )
+        ax.set_ylabel("Rate", fontsize=10)
+        ax.set_title("Bid Level Distribution by Model (aggregate)", fontsize=12)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+
     _save_chart(fig, output_dir, "bid_level_distribution.png", dpi)
     return True
 
@@ -1542,7 +1660,7 @@ def generate_dashboard_health(
     else:
         _unavailable_panel(ax, "Contract Mix")
 
-    # Panel 3: Outcome distributions (prefer outcome_distributions.csv, fall back to outcome_summary.csv)
+    # Panel 3: Outcome distributions (violin+box if real, bars if synthetic)
     ax = axes[1, 0]
     dist_df = (
         _read_csv_safe(chart_data_dir / "outcome_distributions.csv")
@@ -1555,62 +1673,65 @@ def generate_dashboard_health(
         and "tricks_won" in dist_df.columns
         and "count" in dist_df.columns
     ):
-        # True outcome distribution data — histogram bars
+        is_synthetic = (
+            "source" in dist_df.columns and (dist_df["source"] == "synthetic").all()
+        )
         models = sorted(dist_df["model"].unique())
         model_colors = _get_model_colors(models)
-        # Plot pooled across contracts
-        for model in models:
-            mdf = dist_df[dist_df["model"] == model]
-            agg = mdf.groupby("tricks_won")["count"].sum().reset_index()
-            agg = agg.sort_values("tricks_won")
-            ax.bar(
-                agg["tricks_won"],
-                agg["count"],
-                alpha=0.6,
-                label=model,
-                color=model_colors[model],
-            )
-        ax.set_xlabel("Tricks Won", fontsize=9)
-        ax.set_ylabel("Count", fontsize=9)
-        ax.set_title("Outcome Distributions", fontsize=11)
-        ax.legend(fontsize=7, loc="best")
-    else:
-        # Fall back to outcome_summary.csv
-        outcome_df = (
-            _read_csv_safe(chart_data_dir / "outcome_summary.csv")
-            if chart_data_dir
-            else None
-        )
-        if (
-            outcome_df is not None
-            and "model" in outcome_df.columns
-            and "contract" in outcome_df.columns
-            and "value" in outcome_df.columns
-        ):
-            models = sorted(outcome_df["model"].unique())
-            contracts = sorted(outcome_df["contract"].unique())
-            model_colors = _get_model_colors(models)
-            x = np.arange(len(contracts))
-            width = 0.8 / max(len(models), 1)
-            for i, model in enumerate(models):
-                vals = []
-                for contract in contracts:
-                    sub = outcome_df[
-                        (outcome_df["model"] == model)
-                        & (outcome_df["contract"] == contract)
-                    ]
-                    vals.append(sub["value"].iloc[0] if len(sub) > 0 else 0)
-                offset = (i - len(models) / 2 + 0.5) * width
-                ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
-            ax.set_xticks(x)
-            ax.set_xticklabels(contracts, fontsize=8)
-            ax.set_xlabel("Contract Type", fontsize=9)
-            ax.set_ylabel("Metric Value", fontsize=9)
-            ax.set_title("Outcome Summary (fallback)", fontsize=11)
-            ax.legend(fontsize=7, loc="best")
-            ax.axhline(y=0, color="gray", linestyle="--", linewidth=0.5)
+
+        if not is_synthetic and dist_df["tricks_won"].nunique() > 2:
+            # Real data: violin+box per model (pooled across contracts)
+            raw_data: dict[str, list[int]] = {}
+            for model in models:
+                mdf = dist_df[dist_df["model"] == model]
+                expanded: list[int] = []
+                for _, row in mdf.iterrows():
+                    expanded.extend([int(row["tricks_won"])] * int(row["count"]))
+                if expanded:
+                    raw_data[model] = expanded
+            if raw_data:
+                positions = list(range(len(raw_data)))
+                data_list = list(raw_data.values())
+                labels = list(raw_data.keys())
+                vp = ax.violinplot(data_list, positions=positions, showextrema=False)
+                for i, body in enumerate(vp["bodies"]):
+                    body.set_facecolor(model_colors[labels[i]])
+                    body.set_alpha(0.3)
+                bp = ax.boxplot(
+                    data_list,
+                    positions=positions,
+                    widths=0.15,
+                    showfliers=False,
+                    patch_artist=True,
+                )
+                for i, patch in enumerate(bp["boxes"]):
+                    patch.set_facecolor(model_colors[labels[i]])
+                    patch.set_alpha(0.7)
+                ax.set_xticks(positions)
+                ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
+                ax.set_ylabel("Tricks Won", fontsize=9)
+                ax.set_title("Outcome Distributions", fontsize=11)
+            else:
+                _unavailable_panel(ax, "Outcome Distributions")
         else:
-            _unavailable_panel(ax, "Outcome Distributions")
+            # Synthetic: bars with annotation
+            for model in models:
+                mdf = dist_df[dist_df["model"] == model]
+                agg = mdf.groupby("tricks_won")["count"].sum().reset_index()
+                agg = agg.sort_values("tricks_won")
+                ax.bar(
+                    agg["tricks_won"],
+                    agg["count"],
+                    alpha=0.6,
+                    label=model,
+                    color=model_colors[model],
+                )
+            ax.set_xlabel("Tricks Won", fontsize=9)
+            ax.set_ylabel("Count", fontsize=9)
+            ax.set_title("Outcome Distributions (synthetic)", fontsize=11)
+            ax.legend(fontsize=7, loc="best")
+    else:
+        _unavailable_panel(ax, "Outcome Distributions")
 
     # Panel 4: Bid-level distribution (prefer bid_levels.csv, fall back to behavior_by_bid_type)
     ax = axes[1, 1]
@@ -1618,33 +1739,53 @@ def generate_dashboard_health(
         _read_csv_safe(chart_data_dir / "bid_levels.csv") if chart_data_dir else None
     )
     if bid_level_df is not None and "model" in bid_level_df.columns:
-        metric_cols = [
-            c
-            for c in ["bid_rate", "make_rate", "pass_rate"]
-            if c in bid_level_df.columns
-        ]
-        if metric_cols:
-            models = sorted(bid_level_df["model"].unique())
-            model_colors = _get_model_colors(models)
-            x = np.arange(len(metric_cols))
-            width = 0.8 / max(len(models), 1)
-            for i, model in enumerate(models):
-                row = bid_level_df[bid_level_df["model"] == model]
-                vals = []
-                for col in metric_cols:
-                    v = row[col].iloc[0] if len(row) > 0 else 0
-                    vals.append(0 if pd.isna(v) else v)
-                offset = (i - len(models) / 2 + 0.5) * width
-                ax.bar(x + offset, vals, width, label=model, color=model_colors[model])
-            ax.set_xticks(x)
-            ax.set_xticklabels(
-                [c.replace("_", " ").title() for c in metric_cols], fontsize=8
-            )
-            ax.set_ylabel("Rate", fontsize=9)
+        has_bid_level = (
+            "bid_level" in bid_level_df.columns and "count" in bid_level_df.columns
+        )
+
+        if has_bid_level:
+            # Per-bid-level histogram (pooled across contracts for dashboard)
+            agg = bid_level_df.groupby("bid_level")["count"].sum().reset_index()
+            agg = agg.sort_values("bid_level")
+            ax.bar(agg["bid_level"], agg["count"], color="#4C72B0", alpha=0.8)
+            ax.set_xlabel("Bid Level", fontsize=9)
+            ax.set_ylabel("Count", fontsize=9)
             ax.set_title("Bid Level Distribution", fontsize=11)
-            ax.legend(fontsize=7, loc="best")
         else:
-            _unavailable_panel(ax, "Bid Level Distribution")
+            # Aggregate rates fallback
+            metric_cols = [
+                c
+                for c in ["bid_rate", "make_rate", "pass_rate"]
+                if c in bid_level_df.columns
+            ]
+            if metric_cols:
+                models = sorted(bid_level_df["model"].unique())
+                model_colors = _get_model_colors(models)
+                x = np.arange(len(metric_cols))
+                width = 0.8 / max(len(models), 1)
+                for i, model in enumerate(models):
+                    row = bid_level_df[bid_level_df["model"] == model]
+                    vals = []
+                    for col in metric_cols:
+                        v = row[col].iloc[0] if len(row) > 0 else 0
+                        vals.append(0 if pd.isna(v) else v)
+                    offset = (i - len(models) / 2 + 0.5) * width
+                    ax.bar(
+                        x + offset,
+                        vals,
+                        width,
+                        label=model,
+                        color=model_colors[model],
+                    )
+                ax.set_xticks(x)
+                ax.set_xticklabels(
+                    [c.replace("_", " ").title() for c in metric_cols], fontsize=8
+                )
+                ax.set_ylabel("Rate", fontsize=9)
+                ax.set_title("Bid Level Distribution", fontsize=11)
+                ax.legend(fontsize=7, loc="best")
+            else:
+                _unavailable_panel(ax, "Bid Level Distribution")
     else:
         # Fallback: behavior_by_bid_type.csv
         bid_type_df = _read_csv_safe(tables_dir / "behavior_by_bid_type.csv")
@@ -1914,13 +2055,19 @@ def generate_dashboard_model_eval(
     else:
         _unavailable_panel(ax, "Calibration Curve")
 
-    # Panel 6: Feature importance (from selection_paths.csv)
+    # Panel 6: Feature importance (prefer feature_importances.csv over selection_paths.csv)
     ax = axes[2, 1]
     sel_df = (
-        _read_csv_safe(chart_data_dir / "selection_paths.csv")
+        _read_csv_safe(chart_data_dir / "feature_importances.csv")
         if chart_data_dir
         else None
     )
+    if sel_df is None:
+        sel_df = (
+            _read_csv_safe(chart_data_dir / "selection_paths.csv")
+            if chart_data_dir
+            else None
+        )
     if sel_df is not None and {"model", "feature_name", "importance"}.issubset(
         sel_df.columns
     ):
