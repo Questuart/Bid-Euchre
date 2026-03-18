@@ -206,10 +206,22 @@ class TestDecisionReport:
             charts_dir=charts_dir,
         )
         assert "**ADVANCE**" in content
+        assert "All hypothesis checks passed." in content
+        assert "skipped" not in content
 
     def test_halt_when_any_fail(self, tmp_path, charts_dir):
         """Reports HALT when any hypothesis check fails."""
         tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "FAIL", "PASS"])
+        content = generate_decision_report(
+            tables_dir=tables_dir,
+            charts_dir=charts_dir,
+        )
+        assert "**HALT**" in content
+        assert "1 hypothesis check(s) failed" in content
+
+    def test_halt_when_fail_plus_skips(self, tmp_path, charts_dir):
+        """Reports HALT when FAILs coexist with SKIPs — SKIP does not mask FAIL."""
+        tables_dir = _make_hypothesis_outcomes(tmp_path, ["PASS", "FAIL", "SKIP"])
         content = generate_decision_report(
             tables_dir=tables_dir,
             charts_dir=charts_dir,
@@ -240,6 +252,8 @@ class TestDecisionReport:
             charts_dir=charts_dir,
         )
         assert "**ADVANCE**" in content
+        assert "2 skipped" in content
+        assert "All evaluated hypothesis checks passed" in content
 
     def test_pending_when_all_skipped(self, tmp_path, charts_dir):
         """Reports PENDING when all hypothesis checks are skipped."""
