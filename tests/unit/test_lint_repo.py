@@ -918,3 +918,31 @@ class TestCheckInfraChangesRequireTests:
         violations = check_infra_changes_require_tests(changed)
         assert len(violations) == 1
         assert violations[0].rule == "infra-changes-require-tests"
+
+    def test_modified_claude_script_without_tests_violation(self):
+        """Modified .claude/scripts/ file without tests -> violation."""
+        changed = [
+            ("M", ".claude/scripts/start-role-worktree.sh"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert violations[0].rule == "infra-changes-require-tests"
+        assert "start-role-worktree.sh" in violations[0].message
+
+    def test_modified_tmux_script_without_tests_violation(self):
+        """Modified .claude/tmux/ file without tests -> violation."""
+        changed = [
+            ("M", ".claude/tmux/steward-session.sh"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert len(violations) == 1
+        assert violations[0].rule == "infra-changes-require-tests"
+        assert "steward-session.sh" in violations[0].message
+
+    def test_new_claude_script_no_violation(self):
+        """New .claude/scripts/ file without tests -> no violation (additions exempt)."""
+        changed = [
+            ("A", ".claude/scripts/new-script.sh"),
+        ]
+        violations = check_infra_changes_require_tests(changed)
+        assert violations == []

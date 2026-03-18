@@ -627,6 +627,8 @@ def check_no_import_experiments_package(
 INFRA_PATH_PREFIXES = [
     ".github/workflows/",
     ".claude/hooks/",
+    ".claude/scripts/",
+    ".claude/tmux/",
     "scripts/internal/",
 ]
 

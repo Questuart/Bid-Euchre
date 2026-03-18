@@ -16,7 +16,7 @@ Bid Euchre AI Research Framework — a Python framework for deterministic simula
 
 - Always use `git worktree` for PR branches — never work directly on main.
 - Pattern: `git worktree add ../worktree-<branch> -b <branch>`
-- After merging a PR: update local main (`git pull`), clean up the worktree, and update MEMORY.md.
+- After merging a PR: update local main (`git pull`), clean up the worktree (ephemeral PR worktrees only; persistent role worktrees are never removed — see `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` § Cleanup Policy), and update MEMORY.md.
 - When merging stacked PRs, merge bottom-up and immediately recreate any auto-closed downstream PRs before proceeding.
 
 ### Stacked PRs
