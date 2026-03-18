@@ -3,7 +3,7 @@
 <!-- review-tier: governing -->
 
 **Date:** 2026-03-18
-**Status:** PROPOSED
+**Status:** COMPLETE
 **Owner:** Reporting refactor follow-up
 **Audience:** Implementation handoff to another agent
 **Replaces:** `plans/arc_d_v2/reporting_refactor_implementation_outline.md` as the execution spec
@@ -913,3 +913,32 @@ If implementation reveals a conflict with this plan:
 - preserve the canonical 3-report surface
 - preserve the 23-chart numbering contract
 - prefer explicit degraded states over misleading surrogate outputs
+
+## Outcome
+
+**Status:** COMPLETE (2026-03-18)
+
+All 7 phases implemented across 7 PRs:
+
+| PR | Scope | Status |
+|----|-------|--------|
+| #834 | P0: Column fallbacks (actual→tricks_won, seat→focal_seat) | ✅ Merged |
+| #837 | P0: Parquet discovery wiring for chart_data generation | ✅ Merged |
+| #838 | P0: Cross-rung progression CLI + dormant extractor annotations | ✅ Merged |
+| #843 | P2: Parquet-backed bid-level distributions + synthetic degradation markers | ✅ Merged |
+| #844 | P1: PRELIMINARY triage for QUICK decisions + manifest metadata repair | ✅ Merged |
+| #845 | P3-4: Violin+box distributions + bid-level histograms in charts/dashboards | ✅ Merged |
+| #848 | P5-6: Report consolidation + bundle regeneration (171 files) | ✅ Merged |
+
+### Acceptance Criteria Status (§13)
+
+- ✅ QUICK and FULL both produce usable 00/01/02 bundles
+- ✅ QUICK decision reports show PRELIMINARY triage (not placeholder PENDING)
+- ✅ Health analysis uses violin+box for real distributions, explicit degraded fallback for synthetic
+- ✅ Model evaluation includes prediction diagnostics when source artifacts exist
+- ✅ behavior_by_contract.csv facets by contract (via bidders_by_contract)
+- ✅ bid_levels.csv extracts per-bid-level distributions from parquet bid_n column
+- ✅ Manifests correctly report mode, seeds, and model class
+- ✅ 02_decision.md is the sole decision artifact (04_rung_decision.md historical only)
+- ✅ 23-chart numbered registry preserved
+- ✅ No new top-level report files added
