@@ -64,6 +64,13 @@
 - [ ] Blocking findings addressed
 - [ ] Non-blocking findings captured as follow-up issues (if any)
 
+## Infra Incident (optional — fill when fixing infra breakage)
+<!-- Delete this section if not an infra-incident PR -->
+- Issue: <!-- Link to GitHub issue with `infra-incident` label, or N/A -->
+- First occurrence or repeat: <!-- "first" or link to prior issue -->
+- Regression test: <!-- Path to new/updated test, e.g., tests/unit/test_ci_poller.py -->
+- Detection/logging note: <!-- How was this detected? What monitoring exists now? -->
+
 ## Checklist
 - [ ] No generated artifacts committed (`data/runs`, `data/reports`)
 - [ ] If behavior changed, tests updated/added to lock it
