@@ -146,6 +146,7 @@ while true; do
     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
         echo "[$(date -u +%H:%M:%S)] Timeout after ${ELAPSED}s."
         write_status "timeout" "CI still pending after ${TIMEOUT}s"
+        echo "CI_TIMEOUT: CI still pending after ${TIMEOUT}s" > "$STATE_DIR/FAILED"
         exit 2
     fi
 
@@ -179,6 +180,7 @@ while true; do
         FAILED_NAMES=$(echo "$CHECK_OUTPUT" | jq -r '[.[] | select(.state == "FAILURE") | .name] | join(", ")' 2>/dev/null || echo "unknown")
         echo "[$(date -u +%H:%M:%S)] CI FAILED: $FAILED_NAMES"
         write_status "failed" "Failed checks: $FAILED_NAMES"
+        echo "CI_FAILED: Failed checks: $FAILED_NAMES" > "$STATE_DIR/FAILED"
         exit 1
     fi
 
@@ -210,6 +212,7 @@ while true; do
 
             echo "[$(date -u +%H:%M:%S)] Auto-merge also failed (rc=$AUTO_RC): $AUTO_OUTPUT"
             write_status "merge_failed" "All checks passed but merge failed — manual merge required"
+            echo "MERGE_FAILED: All checks passed but merge failed — manual merge required" > "$STATE_DIR/FAILED"
             exit 1
         else
             write_status "passed" "All checks passed"
