@@ -1258,3 +1258,200 @@ class TestFeatureImportancePreference:
         result = charts_mod.generate_feature_importance_chart(chart_data, output)
         assert result is True
         assert (output / "feature_importance.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Post-merge hardening: Chart 9 sparse annotation (C1)
+# ──────────────────────────────────────────────
+
+
+class TestOutcomeDistributionsSparseAnnotation:
+    """Tests that sparse real data gets 'sparse data' annotation, not 'synthetic data'."""
+
+    def test_sparse_real_data_no_crash(self, charts_mod, tmp_path):
+        """Chart 9 renders bar fallback for sparse real data (≤2 tricks_won, no source col)."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        # Only 2 unique tricks_won values, no source column → sparse-but-not-synthetic
+        rows = []
+        for contract in ["suit", "high"]:
+            for tricks in [4, 5]:
+                rows.append(
+                    {
+                        "model": "test_model",
+                        "contract": contract,
+                        "tricks_won": tricks,
+                        "count": 10,
+                        "fraction": 0.5,
+                    }
+                )
+        pd.DataFrame(rows).to_csv(chart_data / "outcome_distributions.csv", index=False)
+
+        result = charts_mod.generate_outcome_distributions_chart(chart_data, output)
+        assert result is True
+        assert (output / "outcome_distributions.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Post-merge hardening: Chart 9 empty raw_data fallback (C2)
+# ──────────────────────────────────────────────
+
+
+class TestOutcomeDistributionsEmptyRawData:
+    """Tests that Chart 9 handles zero-count violin path gracefully."""
+
+    def test_all_zero_counts(self, charts_mod, tmp_path):
+        """Chart 9 renders fallback when all counts are 0 (real path, many tricks_won)."""
+        chart_data = tmp_path / "chart_data"
+        chart_data.mkdir()
+        output = tmp_path / "charts" / "full_chart_suite"
+        output.mkdir(parents=True)
+
+        # Many tricks_won values (>2), source=parquet, but all counts=0
+        rows = []
+        for contract in ["suit", "high"]:
+            for tricks in range(0, 11):
+                rows.append(
+                    {
+                        "model": "test_model",
+                        "contract": contract,
+                        "tricks_won": tricks,
+                        "count": 0,
+                        "fraction": 0.0,
+                        "source": "parquet",
+                    }
+                )
+        pd.DataFrame(rows).to_csv(chart_data / "outcome_distributions.csv", index=False)
+
+        result = charts_mod.generate_outcome_distributions_chart(chart_data, output)
+        assert result is True
+        assert (output / "outcome_distributions.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Post-merge hardening: Dashboard health Panel 4 bid_level+count (T1)
+# ──────────────────────────────────────────────
+
+
+class TestDashboardHealthBidLevelSchema:
+    """Tests dashboard health Panel 4 with parquet-backed bid_level+count schema."""
+
+    def test_panel4_bid_level_count_schema(self, charts_mod, tmp_path):
+        """Dashboard health renders Panel 4 with bid_level+count CSV."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Behavior summary for panels 1 & 2
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "source": ["comparator", "comparator"],
+                "bid_rate": [0.65, 0.55],
+                "make_rate": [0.72, 0.61],
+                "mix_suit": [0.5, 0.5],
+                "mix_high": [0.3, 0.3],
+                "mix_low": [0.2, 0.2],
+            }
+        ).to_csv(tables_dir / "behavior_summary.csv", index=False)
+
+        # bid_levels.csv with bid_level+count schema (parquet-backed)
+        rows = []
+        for model in ["gbt", "ols"]:
+            for contract in ["suit", "high"]:
+                for bl in [6, 7, 8]:
+                    rows.append(
+                        {
+                            "model": model,
+                            "contract": contract,
+                            "bid_level": bl,
+                            "count": 100 - bl * 10,
+                        }
+                    )
+        pd.DataFrame(rows).to_csv(chart_data_dir / "bid_levels.csv", index=False)
+
+        result = charts_mod.generate_dashboard_health(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Post-merge hardening: Dashboard health Panel 3 paths (T2, T4)
+# ──────────────────────────────────────────────
+
+
+class TestDashboardHealthPanel3Paths:
+    """Tests dashboard health Panel 3 rendering variants."""
+
+    def test_panel3_zero_count_fallback(self, charts_mod, tmp_path):
+        """Dashboard health Panel 3 degrades gracefully with all-zero counts."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Outcome distributions with all-zero counts (triggers empty raw_data)
+        rows = []
+        for tricks in range(0, 11):
+            rows.append(
+                {
+                    "model": "gbt",
+                    "contract": "suit",
+                    "tricks_won": tricks,
+                    "count": 0,
+                    "fraction": 0.0,
+                    "source": "parquet",
+                }
+            )
+        pd.DataFrame(rows).to_csv(
+            chart_data_dir / "outcome_distributions.csv", index=False
+        )
+
+        result = charts_mod.generate_dashboard_health(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+    def test_panel3_synthetic_path(self, charts_mod, tmp_path):
+        """Dashboard health Panel 3 renders synthetic bar path."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # Outcome distributions with source=synthetic and few bins
+        rows = []
+        for contract in ["suit", "high"]:
+            for tricks in [4, 5]:
+                rows.append(
+                    {
+                        "model": "gbt",
+                        "contract": contract,
+                        "tricks_won": tricks,
+                        "count": 15,
+                        "fraction": 0.5,
+                        "source": "synthetic",
+                    }
+                )
+        pd.DataFrame(rows).to_csv(
+            chart_data_dir / "outcome_distributions.csv", index=False
+        )
+
+        result = charts_mod.generate_dashboard_health(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()

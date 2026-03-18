@@ -873,8 +873,9 @@ def generate_outcome_distributions_chart(
                     color=model_colors[model],
                     width=0.8 / max(len(models), 1),
                 )
+            annotation = "synthetic data" if is_synthetic else "sparse data"
             ax.annotate(
-                "synthetic data",
+                annotation,
                 xy=(0.5, 0.97),
                 xycoords="axes fraction",
                 ha="center",
@@ -917,11 +918,27 @@ def generate_outcome_distributions_chart(
                     patch.set_alpha(0.7)
                 ax.set_xticks(positions)
                 ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
+                ax.set_xlabel("Model", fontsize=9)
+                ax.set_ylabel("Tricks Won", fontsize=9)
+            else:
+                # All counts are zero — no data to visualize
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Insufficient data",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    fontsize=11,
+                    color="#888888",
+                )
+                ax.set_xticks([])
+                ax.set_yticks([])
 
-        ax.set_xlabel("Tricks Won" if is_synthetic else "Model", fontsize=9)
-        ax.set_ylabel("Count" if is_synthetic else "Tricks Won", fontsize=9)
         ax.set_title(f"{contract.title()}", fontsize=11)
-        if is_synthetic:
+        if is_synthetic or cdf["tricks_won"].nunique() <= 2:
+            ax.set_xlabel("Tricks Won", fontsize=9)
+            ax.set_ylabel("Count", fontsize=9)
             ax.legend(fontsize=7, loc="best")
 
     fig.suptitle(
