@@ -57,12 +57,15 @@ def ensure_ref_exists(ref: str) -> None:
         )
 
 
-def list_changed_files(base: str, head: str) -> list[str]:
-    """
-    Return changed files between base..head (added/modified/renamed), excluding deletions.
+def list_changed_files_with_status(base: str, head: str) -> list[tuple[str, str]]:
+    """Return (status_letter, path) pairs for changed files between base..head.
+
+    Status letters: A=added, M=modified, R=renamed, C=copied, T=type-change.
+    Deletions (D) are excluded.  For renames (R100 old new) the *new* path
+    is returned.
     """
     out = run_git("diff", "--name-status", f"{base}..{head}")
-    files: list[str] = []
+    result: list[tuple[str, str]] = []
     for line in out.splitlines():
         if not line.strip():
             continue
@@ -70,10 +73,19 @@ def list_changed_files(base: str, head: str) -> list[str]:
         status = parts[0]
         if status.startswith("D"):
             continue
-        # Handle rename lines: R100 old new -> take last token (new path)
+        # Normalise multi-digit statuses: R100 → R, C095 → C
+        letter = status[0]
+        # Handle rename/copy lines: R100 old new → take last token (new path)
         path = parts[-1]
-        files.append(path)
-    return files
+        result.append((letter, path))
+    return result
+
+
+def list_changed_files(base: str, head: str) -> list[str]:
+    """
+    Return changed files between base..head (added/modified/renamed), excluding deletions.
+    """
+    return [path for _status, path in list_changed_files_with_status(base, head)]
 
 
 def is_under(path: str, prefix: str) -> bool:
@@ -606,6 +618,88 @@ def check_no_import_experiments_package(
                 )
             )
     return violations
+
+
+# --- Infra change enforcement ---
+
+# Paths considered "infrastructure".  Modifications to *existing* files
+# under these prefixes require a corresponding test change.
+INFRA_PATH_PREFIXES = [
+    ".github/workflows/",
+    ".claude/hooks/",
+    "scripts/internal/",
+]
+
+# Exact files (not directories) that are also infra.
+INFRA_EXACT_FILES = {
+    "Makefile",
+}
+
+# Extensions within infra paths that are documentation-only and can
+# never affect runtime behaviour.
+INFRA_DOC_EXTENSIONS = {".md", ".txt", ".rst"}
+
+
+def _is_infra_path(path: str) -> bool:
+    """Return True if *path* is an infrastructure file."""
+    if path in INFRA_EXACT_FILES:
+        return True
+    return any(is_under(path, prefix) for prefix in INFRA_PATH_PREFIXES)
+
+
+def check_infra_changes_require_tests(
+    changed_with_status: list[tuple[str, str]],
+) -> list[Violation]:
+    """If existing infra files are modified, at least one test file must change.
+
+    Phase-1 scoping:
+    - Only *modifications* to existing infra files trigger the gate (status M
+      or T).  Pure additions (A) and renames (R) of new infra files are exempt.
+    - Documentation-only changes (.md, .txt, .rst) under infra paths are exempt.
+    - If any qualifying infra file changed **and** no file under ``tests/``
+      appears in the changeset, a blocking violation is returned.
+    """
+    qualifying_infra: list[str] = []
+    has_test_change = False
+
+    for status, path in changed_with_status:
+        # Track whether *any* test file changed (regardless of status)
+        if is_under(path, "tests/"):
+            has_test_change = True
+
+        # Only modifications to existing files qualify
+        if status not in ("M", "T"):
+            continue
+
+        if not _is_infra_path(path):
+            continue
+
+        # Exempt documentation-only files
+        ext = Path(path).suffix.lower()
+        if ext in INFRA_DOC_EXTENSIONS:
+            continue
+
+        qualifying_infra.append(path)
+
+    if qualifying_infra and not has_test_change:
+        # Produce one violation listing all offending infra files
+        files_str = ", ".join(qualifying_infra[:5])
+        extra = (
+            f" (+{len(qualifying_infra) - 5} more)" if len(qualifying_infra) > 5 else ""
+        )
+        return [
+            Violation(
+                rule="infra-changes-require-tests",
+                path=qualifying_infra[0],
+                message=(
+                    f"Modified infra file(s) without any test changes: "
+                    f"{files_str}{extra}. "
+                    f"Add or update a regression test under tests/."
+                ),
+            )
+        ]
+
+    return []
 
 
 # --- Promotion contract lint rules ---
@@ -1292,9 +1386,11 @@ def main() -> int:
 
     ensure_ref_exists(args.base)
 
-    changed = list_changed_files(args.base, args.head)
+    changed_with_status = list_changed_files_with_status(args.base, args.head)
+    changed = [path for _status, path in changed_with_status]
 
     violations: list[Violation] = []
+    violations += check_infra_changes_require_tests(changed_with_status)
     violations += check_no_generated_artifacts(changed)
     violations += check_no_deprecated_changes(changed)
     violations += check_src_no_experiments_or_tests_imports(changed, repo_root)
