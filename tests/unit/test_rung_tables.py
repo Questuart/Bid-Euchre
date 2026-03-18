@@ -1769,6 +1769,99 @@ class TestSeatBalance:
         assert "n_hands" in out_df.columns
         assert len(out_df) == 8  # 4 seats * 2 contracts
 
+    def test_seat_balance_no_seat_col_returns_none(self, tmp_path):
+        """Returns None when DataFrame has tricks_won and contract_family but no seat column."""
+        df = pd.DataFrame(
+            {
+                "contract_family": ["suit", "high", "suit"],
+                "tricks_won": [5.0, 4.0, 6.0],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        result = generate_seat_balance_csv(parquet_path, tmp_path / "chart_data")
+        assert result is None
+
+    def test_seat_balance_no_value_col_returns_none(self, tmp_path):
+        """Returns None when DataFrame has seat but no tricks_won or actual column."""
+        df = pd.DataFrame(
+            {
+                "seat": [0, 1, 2, 3],
+                "contract_family": ["suit", "suit", "suit", "suit"],
+                "some_other_metric": [1.0, 2.0, 3.0, 4.0],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        result = generate_seat_balance_csv(parquet_path, tmp_path / "chart_data")
+        assert result is None
+
+    def test_seat_balance_pooled_no_contract_col(self, tmp_path):
+        """Uses pooled groupby (seat only) when no contract column is present."""
+        df = pd.DataFrame(
+            {
+                "seat": [0, 0, 1, 1, 2, 2, 3, 3],
+                "tricks_won": [5.0, 6.0, 4.0, 5.0, 3.0, 7.0, 4.5, 5.5],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        output_dir = tmp_path / "chart_data"
+        result = generate_seat_balance_csv(parquet_path, output_dir)
+        assert result == "seat_balance.csv"
+        out_df = pd.read_csv(output_dir / "seat_balance.csv")
+        assert len(out_df) == 4  # 4 seats, no contract faceting
+        assert set(out_df["contract"].unique()) == {"pooled"}
+        assert set(out_df["seat"].unique()) == {0, 1, 2, 3}
+
+    def test_seat_balance_contract_type_fallback(self, tmp_path):
+        """Falls back to contract_type when contract_family is absent."""
+        df = pd.DataFrame(
+            {
+                "seat": [0, 0, 1, 1],
+                "contract_type": ["suit", "high", "suit", "high"],
+                "tricks_won": [5.0, 4.0, 6.0, 3.0],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        output_dir = tmp_path / "chart_data"
+        result = generate_seat_balance_csv(parquet_path, output_dir)
+        assert result == "seat_balance.csv"
+        out_df = pd.read_csv(output_dir / "seat_balance.csv")
+        assert len(out_df) == 4  # 2 seats * 2 contract types
+        assert set(out_df["contract"].unique()) == {"suit", "high"}
+
+    def test_seat_balance_actual_fallback(self, tmp_path):
+        """Falls back to actual column when tricks_won is absent."""
+        df = pd.DataFrame(
+            {
+                "seat": [0, 0, 1, 1, 2, 2, 3, 3],
+                "contract_family": [
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                    "suit",
+                    "high",
+                ],
+                "actual": [5.0, 4.0, 6.0, 3.0, 5.5, 4.5, 4.5, 5.5],
+            }
+        )
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+        output_dir = tmp_path / "chart_data"
+        result = generate_seat_balance_csv(parquet_path, output_dir)
+        assert result == "seat_balance.csv"
+        out_df = pd.read_csv(output_dir / "seat_balance.csv")
+        assert len(out_df) == 8  # 4 seats * 2 contracts
+        assert "mean_tricks" in out_df.columns
+        # Verify the actual values were used (seat 0, suit should be 5.0)
+        seat0_suit = out_df[(out_df["seat"] == 0) & (out_df["contract"] == "suit")]
+        assert float(seat0_suit["mean_tricks"].iloc[0]) == 5.0
+
 
 # ──────────────────────────────────────────────
 #  Feature importance extraction tests
