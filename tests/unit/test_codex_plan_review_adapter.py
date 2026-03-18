@@ -233,6 +233,55 @@ class TestParsePlanFindings:
         assert findings[0].source == "test_source"
 
 
+class TestParsePlanFindingsReversedFormat:
+    """Test that reversed-format Codex output is parsed through delegation.
+
+    The plan review adapter delegates to parse_codex_output() from the code
+    review adapter, which already handles reversed format (Pass 1.5). These
+    tests confirm the delegation path works correctly for plan review (fixes #830).
+    """
+
+    def test_reversed_format_standard(self) -> None:
+        """Reversed format: - [P1] message — src/file.py:42 is parsed."""
+        output = (
+            "- [P1] Missing seed in experiment command — src/bid_euchre/foo.py:42\n"
+        )
+        findings = parse_plan_findings(output)
+        assert len(findings) == 1
+        assert findings[0].severity == "WARNING"  # P1 -> WARNING
+        assert findings[0].description == "Missing seed in experiment command"
+        assert "foo.py" in findings[0].file
+
+    def test_reversed_format_line_range(self) -> None:
+        """Line range (90-95) extracts start line only."""
+        output = "- [P0] Critical logic error — src/bid_euchre/core/rules.py:90-95\n"
+        findings = parse_plan_findings(output)
+        assert len(findings) == 1
+        assert findings[0].severity == "CRITICAL"  # P0 -> CRITICAL
+        # Line should be 90 (start of range), not 95
+        assert findings[0].line == 90
+
+    def test_reversed_format_absolute_path(self) -> None:
+        """Absolute path starting with cwd is stripped to repo-relative."""
+        cwd = os.getcwd()
+        abs_path = f"{cwd}/src/bid_euchre/scoring.py"
+        output = f"- [P2] Minor style issue — {abs_path}:10\n"
+        findings = parse_plan_findings(output)
+        assert len(findings) == 1
+        # Should be stripped to repo-relative path
+        assert findings[0].file == "src/bid_euchre/scoring.py"
+        assert findings[0].line == 10
+
+    def test_reversed_format_shell_extension(self) -> None:
+        """Shell script (.sh) file extension is recognized."""
+        output = (
+            "- [P1] Missing error handling — scripts/internal/review_driver.sh:25\n"
+        )
+        findings = parse_plan_findings(output)
+        assert len(findings) == 1
+        assert "review_driver.sh" in findings[0].file
+
+
 # --- Finding Dataclass Tests ---
 
 
