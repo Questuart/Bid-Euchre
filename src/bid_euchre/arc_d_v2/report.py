@@ -375,7 +375,7 @@ def generate_report(report_dir: Path) -> str:
         failures = sanity[sanity["status"].str.upper() == "FAIL"]
         if len(failures) > 0:
             for _, row in failures.iterrows():
-                check = row.get("check", "unknown")
+                check = row.get("check_name", "unknown")
                 notes.append(
                     f"- **Sanity: {check}** — failed. "
                     "This may be expected for small sample sizes or early rungs."
@@ -689,7 +689,7 @@ def generate_decision_report(
             lines.append(f"**{n_fail}/{n_total} sanity checks failed.**")
             lines.append("")
             for _, row in failures.iterrows():
-                check = row.get("check", "unknown")
+                check = row.get("check_name", "unknown")
                 lines.append(f"- {check}: FAIL")
             lines.append("")
             lines.append(
