@@ -210,6 +210,9 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Worktree registry state: role/class (`persistent` or `ephemeral`), task/plan/PR linkage, TTL, cleanup status, and active session ownership.
 - Session state: active role, current task, governing/session plan link, last checkpoint, and restart metadata.
 - Task state: canonical todo list, current `in_progress` item, blocked reasons, validation status, and explicit completion marker.
+- Event state: durable event log for review requests, CI failures, heartbeat anomalies, task completions, and other hook-produced operational signals.
+- Review queue state: queued review requests, claim status, owner, source lane/task/PR, and completion status.
+- Scheduler state: last tick time, last successful health pass, next due checks, and host-level recovery metadata.
 - Review state: `.claude/runtime/review_loops/**`, sidecars, PR metadata.
 - Plan-review state: `.claude/runtime/plan_reviews/**`.
 - Rung/orchestration state: `plans/**/state.json`, `execution_log.jsonl`, heartbeat files, checkpoints.
@@ -228,6 +231,14 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Long-running autonomous work should create bounded shadow snapshots so bad edits can be audited and rolled back without relying on fragile terminal history.
 - Long-running autonomous processes should be covered by repo-owned watchdogs that detect stalls, exceeded wall-time, and lack of task progress before they become silent failures.
 - Every growing runtime structure must have explicit bounds: retries, reminders, snapshots, task list size, and retained archives.
+- Session-local cron helpers are not a persistence primitive. Durable monitoring must be driven by repo-owned state plus host-level recovery, not by Claude-session-only timers.
+
+### Scheduling And Monitoring Model
+- `ops` is the active scheduler/orchestrator role. It owns periodic health checks, event draining, review-queue maintenance, and escalation.
+- `review` is queue-driven with light polling. It should react to durable review requests rather than free-running full-repo scans.
+- Hooks produce durable events on disk; they do not themselves become the long-lived scheduler.
+- Host-level persistence is provided by OS-level startup/recovery (macOS `launchd` in the first implementation), whose job is to ensure the steward session and `ops` lane are re-established after terminal/session loss.
+- Claude-session-only cron facilities may be used as convenience inside a running session, but they must not be the authoritative persistence or scheduling mechanism.
 
 ### Context Safety Model
 - Agent-loaded context sources are explicitly classified as trusted, generated, or untrusted.
@@ -287,11 +298,13 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Replace fragile ad hoc terminal tabs with a deterministic, resumable session layout.
 - Make VS Code the stable audit surface across all active worktrees.
 - Establish cmux as the default outer coordination host while preserving tmux as the resumable runtime layer.
+- Ensure the steward session, especially the `ops` lane, can be re-established automatically after host/session loss.
 
 #### Deliverables
 - `.claude/tmux/agent-ops-session.sh`
 - `.claude/tmux/agent-ops-layout.conf` or equivalent repo-owned layout file
 - `.claude/cmux/agent-ops-session.sh` or equivalent wrapper around the tmux session
+- `.claude/launchd/ensure-steward-session.plist` template or generator script for macOS host-level recovery
 - `Bid-Euchre-agent-audit.code-workspace`
 - `.vscode/tasks.json`
 - docs updates in `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
@@ -301,6 +314,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Each tmux window must start in the correct worktree.
 - The cmux wrapper must start or attach the steward tmux session cleanly and expose stable workspace/surface targets for notifications.
 - The initial cmux integration does not require one native cmux surface per lane; per-lane routing may continue to use tmux pane/window targets in the first implementation.
+- The repo must provide a documented host-level recovery path that re-establishes the steward session and `ops` lane after process loss or reboot.
 - VS Code workspace must include:
   - main checkout
   - author worktree
@@ -315,6 +329,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 
 #### Acceptance Criteria
 - One repo-owned command starts the tmux session with all role windows and works cleanly when launched from cmux.
+- On macOS, one repo-owned launchd template or setup step can re-establish the steward session without manual recreation after host/session loss.
 - One repo-owned workspace file opens the audit layout in VS Code.
 - The user can inspect all active role worktrees and runtime artifacts from VS Code without moving agent sessions into the VS Code terminal.
 
@@ -330,6 +345,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Detect and surface long-running process failures early through lightweight watchdogs rather than manual polling.
 - Enable autonomous post-push CI remediation: `ops` polls CI status, classifies failures, and `author` applies bounded safe fixes without human intervention.
 - Make lane-aware notifications and routing a first-class behavior: notifications should include a human-facing lane label, but routing and persistence must remain keyed to canonical metadata.
+- Make `ops` the scheduler brain for persistent monitoring and make `review` operate from a durable review queue rather than session-only timers.
 
 #### Deliverables
 - `scripts/internal/ops.py`
@@ -338,7 +354,12 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `src/bid_euchre/ops/watchdogs.py`
 - `src/bid_euchre/ops/messages.py`
 - `src/bid_euchre/ops/notifications.py`
+- `src/bid_euchre/ops/events.py`
+- `src/bid_euchre/ops/review_queue.py`
+- `src/bid_euchre/ops/scheduler.py`
 - recovery-template data or helpers under `src/bid_euchre/ops/recovery.py`
+- `.claude/hooks/post-task-event.sh` — hook that appends durable operational events
+- `.claude/hooks/post-review-request.sh` or equivalent hook/helper that queues review requests durably
 - `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook that detects direct `rm -rf` on worktree directories and redirects to `ops.py worktrees prune`
 - unit tests under `tests/unit/`
 - optional `Makefile` targets like `make ops-status`
@@ -347,11 +368,21 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `tests/unit/test_ops_ci.py` — CI failure classification and remediation policy tests
 - `tests/unit/test_ops_messages.py` — routing and message transport tests
 - `tests/unit/test_ops_notifications.py` — lane-aware notification formatting tests
+- `tests/unit/test_ops_events.py` — durable event append/drain tests
+- `tests/unit/test_ops_review_queue.py` — review queue enqueue/claim/complete tests
+- `tests/unit/test_ops_scheduler.py` — scheduler tick, due-check, and recovery tests
 
 #### Commands
 - `ops.py status`
 - `ops.py message --to <role>`
 - `ops.py notify --to <role>`
+- `ops.py events`
+- `ops.py events drain`
+- `ops.py review-queue`
+- `ops.py review-queue enqueue`
+- `ops.py review-queue claim`
+- `ops.py tick`
+- `ops.py daemon`
 - `ops.py worktrees`
 - `ops.py worktrees prune`
 - `ops.py worktrees quarantine`
@@ -396,6 +427,9 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 #### Data Sources
 - `git worktree list`
 - `.claude/runtime/worktree_registry/**`
+- `.claude/runtime/events/**`
+- `.claude/runtime/review_queue/**`
+- `.claude/runtime/scheduler/**`
 - `.claude/runtime/review_loops/**/state.json`
 - `.claude/runtime/plan_reviews/**/state.json`
 - `.claude/runtime/task_state/**`
@@ -409,6 +443,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 #### Watchdog Coverage
 - rung orchestrators with stale or missing heartbeats
 - review loops that stop changing state for too long
+- review-queue items that remain unclaimed or unresolved too long
 - long-running commands that exceed configured wall-time bounds
 - task sessions that remain `in_progress` without evidence of forward progress
 - abandoned dirty worktrees associated with inactive sessions
@@ -423,6 +458,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Watchdogs must not silently kill or mutate important processes by default.
 - Worktree cleanup defaults to dry-run reporting first; removal requires clean-state or explicit quarantine/archive handling.
 - Notification and transport helpers must distinguish canonical role/worktree identity from human-facing display labels such as tmux pane titles.
+- `ops` periodic monitoring should be implemented as a durable scheduler loop (`tick`/`daemon`) backed by repo-local state, not by session-only cron.
+- `review` periodic behavior should be queue-driven with bounded polling rather than continuous broad scans.
 
 #### Worktree Cleanup Policy
 - Persistent role worktrees are never auto-pruned.
@@ -436,6 +473,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - JSON output mode for agent consumption.
 - Non-zero exit when requested checks find blocking failures or stale runtime state.
 - Health output must cover stale heartbeats, stuck review loops, abandoned dirty worktrees, and missing or stale indexes.
+- Health and scheduler output must show whether the event queue, review queue, and host-level recovery path are healthy.
 - Watchdog output must identify which process or session is unhealthy, why it tripped, which threshold fired, and the next bounded recovery action.
 - Recovery output must classify common failures and recommend the next bounded action instead of generic retry loops.
 - Worktree output must distinguish persistent role worktrees from ephemeral task worktrees and show cleanup candidacy clearly.
@@ -446,6 +484,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - The CLI works from the main checkout and any worktree.
 - Agents can use JSON mode without custom parsing hacks.
 - Scheduled health checks can run unattended and produce actionable summaries without human triage first.
+- `ops` can recover its own periodic monitoring after session restart by reading scheduler state rather than relying on re-entered cron commands.
+- `review` can resume from a durable review queue without rescanning the entire repo manually.
 - Common failure classes have deterministic recovery paths surfaced through the operator CLI.
 - Watchdogs reliably detect stalled or overlong autonomous processes without introducing unsafe default auto-kill behavior.
 - Worktree sprawl is bounded through explicit lifecycle states, safe prune flows, and visibility into stale/abandoned worktrees.
@@ -483,6 +523,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Session archive: non-lossy compaction target containing older observations, operation summaries, and touched-artifact indexes for restart/resume.
 
 #### Indexed Sources
+- durable event log
+- review queue artifacts
 - review-loop sidecars and states
 - plan-review sidecars and states
 - rung `state.json`
@@ -495,6 +537,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - “What failed in the last rung run?”
 - “Which worktree owns the active implementation branch?”
 - “What review findings are still open?”
+- “Which review requests are queued or stale?”
+- “What events did ops process in the last hour?”
 - “Which rung is blocked and why?”
 - “What artifacts were produced most recently?”
 
@@ -552,13 +596,19 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `.claude/scripts/start-agent-role.sh` — starts Claude in the correct role worktree with expected instructions.
 - `.claude/tmux/agent-ops-session.sh` — tmux bootstrap for persistent multi-role sessions.
 - `.claude/tmux/agent-ops-layout.conf` — stable tmux window and pane layout.
+- `.claude/launchd/ensure-steward-session.plist` — macOS host-level recovery template for steward session bootstrap.
 - `Bid-Euchre-agent-audit.code-workspace` — multi-root audit workspace for VS Code.
 - `.vscode/tasks.json` — audit/status/validation tasks.
 - `scripts/internal/ops.py` — top-level operator CLI.
 - `src/bid_euchre/ops/__init__.py` — package root for operator helpers.
 - `src/bid_euchre/ops/status.py` — status aggregation logic.
 - `src/bid_euchre/ops/worktrees.py` — worktree registry, classification, TTL, and cleanup policy helpers.
+- `src/bid_euchre/ops/events.py` — durable event append/drain helpers.
+- `src/bid_euchre/ops/review_queue.py` — review queue state and claim logic.
+- `src/bid_euchre/ops/scheduler.py` — periodic scheduler loop and due-check logic.
 - `src/bid_euchre/ops/memory.py` — curated memory ingestion, validation, and query helpers.
+- `.claude/hooks/post-task-event.sh` — durable event producer hook for task completions/failures.
+- `.claude/hooks/post-review-request.sh` — durable review-request enqueue hook/helper.
 - `.claude/hooks/pre-worktree-cleanup.sh` — PreToolUse hook redirecting direct `rm -rf` on worktree dirs to `ops.py worktrees prune`.
 - `src/bid_euchre/ops/watchdogs.py` — watchdog rules for long-running process health and stall detection.
 - `src/bid_euchre/ops/ci.py` — CI status polling, failure classification, remediation policy, and retry tracking.
@@ -567,6 +617,9 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `src/bid_euchre/ops/index.py` — audit index build/query logic.
 - `tests/unit/test_ops_status.py` — CLI/status tests.
 - `tests/unit/test_ops_worktrees.py` — worktree lifecycle, prune, quarantine, and archive tests.
+- `tests/unit/test_ops_events.py` — durable event log tests.
+- `tests/unit/test_ops_review_queue.py` — review queue tests.
+- `tests/unit/test_ops_scheduler.py` — scheduler/due-check/recovery tests.
 - `tests/unit/test_ops_memory.py` — curated memory tests.
 - `tests/unit/test_ops_watchdogs.py` — watchdog threshold and stall-detection tests.
 - `tests/unit/test_ops_ci.py` — CI failure classification, remediation policy, and retry cap tests.
@@ -579,12 +632,14 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Install and adopt tmux.
 - Decide whether to keep the current shell profile or add aliases/launchers.
 - Confirm that `cmux ping`, `cmux notify`, and the Claude notification hook work from inside tmux.
+- Install or enable the repo-provided `launchd` recovery job if host-level persistence is desired on macOS.
 
 ## Agent-Owned Tasks
 - Implement all repo-local scripts, workspace files, tasks, docs, and CLI surfaces.
 - Reuse existing worktree hooks instead of replacing them.
 - Add tests for all new repo-local behavior.
 - Implement scheduled health checks, curated memory, and safety scanning as repo-owned capabilities.
+- Implement durable event production, review queueing, and scheduler state as repo-owned capabilities.
 - Implement task-state tracking, compaction, recovery templates, shadow snapshot helpers, and watchdogs as repo-owned capabilities.
 - Implement worktree lifecycle tracking, TTL policy, and safe cleanup as repo-owned capabilities.
 - Validate the workflow through bounded pilots before making it default.
@@ -598,6 +653,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - **Curated memory system (PR-4):** Provenance-tracked memory distinct from MEMORY.md. Risk of duplicating or conflicting with the existing auto-memory system. Must define clear boundary: curated memory stores operator-validated facts; auto-memory remains the conversation-scoped system.
 - **SQLite audit index (PR-4):** Introduces a database dependency for operational state. Must remain optional — the workflow should degrade gracefully if the index is stale or absent.
 - **CI remediation loop (PR-3):** Autonomous CI fix-and-repush could introduce scope creep or unbounded retries. Mitigated by strict failure classification, retry caps (max 3), and escalation for non-remediable classes. The `risky/destructive` class is never auto-remediated.
+- **Host-level persistence (PR-2/PR-3):** `launchd` recovery plus scheduler state must not create duplicate steward sessions or duplicate monitor loops. Idempotent bootstrap and lock/state checks are required.
 
 ## Risks And Mitigations
 - Role drift between worktrees.
@@ -622,6 +678,8 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Mitigation: classify failures, cap retries, and surface explicit next-step guidance.
 - Watchdogs producing noisy false positives.
   - Mitigation: per-process thresholds, observe-only rollout first, and bounded actions that default to notify rather than mutate.
+- Review queue becoming a dumping ground without ownership.
+  - Mitigation: claim/owner model, stale-item watchdogs, and explicit completion or escalation states.
 - Cleanup accidentally removing valuable in-progress worktrees.
   - Mitigation: persistent vs ephemeral classification, dry-run-first cleanup, quarantine for dirty worktrees, and no default deletion of role worktrees.
 - CI remediation introducing unrelated changes or scope creep.
@@ -635,6 +693,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Unit tests for `ops.py` parsing and state aggregation.
 - Unit tests for role metadata and recovery logic.
 - Unit tests for routing and lane-aware notification formatting.
+- Unit tests for durable event append/drain, review queue claim/complete, and scheduler tick/recovery behavior.
 - Unit tests for worktree registry classification, TTL handling, prune eligibility, and quarantine behavior.
 - Unit tests for curated memory validation and promotion.
 - Unit tests for audit index build/query behavior.
@@ -645,9 +704,11 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Unit tests for non-lossy compaction and archive lookup.
 - Manual smoke test of role bootstrap, cmux host startup, and tmux session creation.
 - Manual smoke test that notifications can be triggered from inside tmux under cmux.
+- Manual smoke test that `launchd` or equivalent host-level recovery re-establishes the steward session and `ops` lane after process loss.
 - Manual smoke test of worktree prune dry-run, quarantine, and archive flows.
 - Manual smoke test of VS Code workspace opening all intended roots.
 - Manual smoke test of scheduled health checks and stuck-session detection.
+- Manual smoke test that a queued review request survives session restart and is claimed by `review`.
 - Manual smoke test of long-running process watchdogs against intentionally stalled sessions.
 - Manual smoke test of snapshot-based rollback and recovery after an intentionally bad edit sequence.
 - Manual smoke test of CI remediation: introduce a lint failure, push, verify `ops.py ci` classifies it correctly and `author` auto-fixes within retry cap.
@@ -662,6 +723,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - The user no longer needs to manage multiple ad hoc terminals in a shared checkout or manually relay routine notifications between agents.
 - A single repo-owned status surface answers the operational questions that currently require manual inspection.
 - Autonomous work is resumable, explicitly tracked, and recoverable without relying on implicit terminal context.
+- `ops` monitoring survives session loss through host-level recovery plus repo-local scheduler state, and `review` resumes from a durable queue rather than a session-only timer.
 
 ## Outcome
 <!-- Filled after implementation -->
@@ -670,3 +732,4 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Planning-only session (2026-03-15). Existing Claude worktree hooks and helper scripts should be treated as implementation inputs, not replaced blindly.
   - Review session (2026-03-16): Compatibility analysis confirmed PRs 1-2 low-risk during FULL backfill. User-side setup completed (Ghostty, tmux, permissions verified, 37 stale worktrees cleaned). Four design decisions resolved. Sequencing revised: Phase 4a first, then PR-1, then PR-2. CI remediation loop added to PR-3 scope.
   - Setup refinement (2026-03-17): cmux is now treated as the default outer coordination host and tmux as the persistence layer. Live setup confirmed the initial topology is one cmux surface hosting one tmux session, so per-lane routing remains tmux-targeted while notifications use human-facing display labels such as pane titles.
+  - Scheduling refinement (2026-03-18): Session-only cron helpers are not treated as durable persistence. The plan now assumes hook-produced durable events, queue-driven review, `ops`-owned scheduler state, and host-level recovery (`launchd` on macOS) for monitoring persistence.
