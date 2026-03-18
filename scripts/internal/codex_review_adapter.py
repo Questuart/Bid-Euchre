@@ -148,35 +148,39 @@ _PROSE_SEVERITY_KEYWORDS = {
     ],
 }
 
-# Patterns that indicate a genuinely clean review (no findings expected)
+# Patterns that indicate a genuinely clean review (no findings expected).
+# Each string is one alternative; compiled with | join for readability.
+_CLEAN_REVIEW_PATTERN_STRINGS: list[str] = [
+    # --- Original patterns ---
+    r"no\s+(?:issues?|findings?|problems?|concerns?)(?:\s+found)?",
+    r"(?:changes?\s+)?look(?:s)?\s+good",
+    r"0\s+findings",
+    r"lgtm",
+    r"all\s+(?:good|clear|clean)",
+    r"ship\s+it",
+    r"(?:^|\.\s+)approved(?:\.|\s*$)",
+    r"nothing\s+to\s+(?:flag|report|note)",
+    r"changes?\s+(?:are\s+)?clean",
+    # --- Expanded patterns (PR #799 — Codex uses varied phrasings) ---
+    r"no\s+(?:significant|major|critical|blocking)\s+issues?",
+    r"no\s+(?:blockers?|violations?)",
+    r"everything\s+(?:looks?\s+good|checks?\s+out)",
+    r"(?:I\s+)?(?:found|see|find|detect(?:ed)?)\s+no\s+issues?",
+    r"(?:I\s+)?(?:don'?t|do\s+not)\s+see\s+(?:any\s+)?issues?",
+    r"good\s+to\s+go",
+    r"ready\s+to\s+merge",
+    r"no\s+(?:action|changes?)\s+(?:needed|required)",
+    r"pass(?:es)?\s+all\s+checks",
+    r"(?:code|plan|changes?|implementation)\s+(?:is|are)\s+(?:correct|sound|solid)",
+    r"(?:looks?|appears?)\s+correct",
+    r"nothing\s+(?:stands?\s+out|to\s+(?:add|mention|change))",
+    r"no\s+(?:errors?|problems?)\s+detected",
+    r"satisfactory",
+    r"no\s+(?:items?|things?)\s+to\s+(?:flag|report|address)",
+]
+
 _CLEAN_REVIEW_PATTERNS = re.compile(
-    r"(?i)"
-    # Original patterns
-    r"(?:no\s+(?:issues?|findings?|problems?|concerns?)(?:\s+found)?)"
-    r"|(?:(?:changes?\s+)?look(?:s)?\s+good)"
-    r"|(?:0\s+findings)"
-    r"|(?:lgtm)"
-    r"|(?:all\s+(?:good|clear|clean))"
-    r"|(?:ship\s+it)"
-    r"|(?:(?:^|\.\s+)approved(?:\.|\s*$))"
-    r"|(?:nothing\s+to\s+(?:flag|report|note))"
-    r"|(?:changes?\s+(?:are\s+)?clean)"
-    # Expanded patterns (PR #799 fix — Codex uses varied phrasings)
-    r"|(?:no\s+(?:significant|major|critical|blocking)\s+issues?)"
-    r"|(?:no\s+(?:blockers?|violations?))"
-    r"|(?:everything\s+(?:looks?\s+good|checks?\s+out))"
-    r"|(?:(?:I\s+)?(?:found|see|find|detect(?:ed)?)\s+no\s+issues?)"
-    r"|(?:(?:I\s+)?(?:don'?t|do\s+not)\s+see\s+(?:any\s+)?issues?)"
-    r"|(?:good\s+to\s+go)"
-    r"|(?:ready\s+to\s+merge)"
-    r"|(?:no\s+(?:action|changes?)\s+(?:needed|required))"
-    r"|(?:pass(?:es)?\s+all\s+checks)"
-    r"|(?:(?:code|plan|changes?|implementation)\s+(?:is|are)\s+(?:correct|sound|solid))"
-    r"|(?:(?:looks?|appears?)\s+correct)"
-    r"|(?:nothing\s+(?:stands?\s+out|to\s+(?:add|mention|change)))"
-    r"|(?:no\s+(?:errors?|problems?)\s+detected)"
-    r"|(?:satisfactory)"
-    r"|(?:no\s+(?:items?|things?)\s+to\s+(?:flag|report|address))"
+    r"(?i)(?:" + "|".join(_CLEAN_REVIEW_PATTERN_STRINGS) + r")"
 )
 
 

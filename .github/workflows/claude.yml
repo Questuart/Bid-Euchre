@@ -19,7 +19,7 @@ jobs:
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
       issues: write
       id-token: write
@@ -43,7 +43,10 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Allowed tools — scoped to read-only inspection + CI/PR management
+          # Allowed tools — scoped to read-only inspection + CI/PR management.
+          # IMPORTANT: Do NOT add wildcards like "gh pr *" — that matches
+          # destructive subcommands (merge, close, edit). Enumerate safe
+          # subcommands explicitly.
           allowed_tools: |
             Bash(make check)
             Bash(make check-quiet)
@@ -52,8 +55,16 @@ jobs:
             Bash(uv run python -m pytest *)
             Bash(uv run ruff check *)
             Bash(uv run ruff format --check *)
-            Bash(gh pr *)
-            Bash(gh issue *)
+            Bash(gh pr view *)
+            Bash(gh pr checks *)
+            Bash(gh pr list *)
+            Bash(gh pr diff *)
+            Bash(gh pr comment *)
+            Bash(gh pr status *)
+            Bash(gh issue view *)
+            Bash(gh issue list *)
+            Bash(gh issue comment *)
             Bash(git diff *)
             Bash(git log *)
             Bash(git show *)
+            Bash(git status)

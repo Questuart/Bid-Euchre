@@ -169,6 +169,9 @@ overlap or replace each other.
   or branch protection rules.
 - The `allowed_tools` list in `claude.yml` is intentionally read-only +
   CI/PR management. It does not include `Edit`, `Write`, or `git push`.
+- The workflow uses `contents: read` (not `write`) to match its read-only intent.
+  `gh pr` subcommands are enumerated explicitly (view, checks, list, diff,
+  comment, status) — no wildcards that could match destructive operations.
 
 ## Known Issue: Docs-Only PRs and CI
 

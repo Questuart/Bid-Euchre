@@ -552,12 +552,14 @@ class TestRawOutputPersistence:
 
         result = run_plan_review_loop(plan_file, base_dir=tmp_path)
 
-        # Read the sidecar and verify raw output section
+        # Read the sidecar and verify it was written with expected structure.
+        # The fallback reviewer has empty raw_output, so "## Raw Output" may be
+        # absent if only the fallback's result was captured last.  Verify the
+        # sidecar at minimum contains the final state section.
         sidecar = Path(result.sidecar_path)
         assert sidecar.exists()
         content = sidecar.read_text()
-        # The fallback's empty raw_output is last, so check that sidecar was written
-        assert "## Raw Output" not in content or "## Final State" in content
+        assert "## Final State" in content
 
 
 # ---------------------------------------------------------------------------
