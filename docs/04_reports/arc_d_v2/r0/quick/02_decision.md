@@ -1,8 +1,8 @@
-# Rung ? (QUICK) — Decision Report
+# Rung r0 (quick) — Decision Report
 
 ## Advancement Decision
 
-**PENDING**
+**ADVANCE**
 
 ## Evidence Summary
 
@@ -10,9 +10,9 @@
 
 | model | net_eppd | ci_low | ci_high | rank |
 | --- | --- | --- | --- | --- |
-| full_ols_av | 2.2560 | 2.1352 | 2.3792 | 1 |
-| constrained_ols_av | 2.2040 | 2.0800 | 2.3288 | 2 |
-| selected_ols_av | 2.1952 | 2.0696 | 2.3240 | 3 |
+| full_ols_av | 2.2980 | 2.2128 | 2.3852 | 1 |
+| selected_two_stage_av | 1.9540 | 1.8624 | 2.0478 | 2 |
+| gbt_av | 1.9390 | 1.8326 | 2.0434 | 3 |
 
 
 See Chart 4 (Comparator Ranking Bars) and Chart 5 (Tail Risk Panel) for visual context.
@@ -53,12 +53,22 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ### Hypothesis Outcomes
 
-> No hypothesis outcomes available.
+| hypothesis_id | description | status |
+| --- | --- | --- |
+| H1 | GBT outperforms anchor on suit contract delta (H2H) | PASS |
+| H2 | GBT outperforms anchor on pooled net_eppd (H2H) | PASS |
+| H3 | GBT high-contract delta is positive vs anchor (H2H) | PASS |
+| H4 | GBT low-contract delta is non-negative vs anchor (H2H) | PASS |
+| H5 | GBT suit R-squared exceeds selected OLS suit R-squared | SKIP |
+| H6 | All models bid at least half the time (no pathological passing) | PASS |
+| H7 | GBT H2H win rate vs anchor exceeds 50% | PASS |
+| H8 | Two-stage model does not regress vs selected OLS on pooled net_eppd | SKIP |
+| H9 | ModeloEspecifico heuristic is worst on pooled net_eppd (sanity check) | PASS |
 
 
 ## Recommendation
 
-Hypothesis outcomes not yet available. Run the advance check pipeline to populate results.
+All evaluated hypothesis checks passed (2 skipped). Evidence supports advancing to the next rung.
 
 ## Supporting Evidence
 
@@ -69,5 +79,3 @@ Hypothesis outcomes not yet available. Run the advance check pipeline to populat
 - Chart 12: Bid and Make Rates
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
-
-<\!-- gate_status: data sanity checks in §1 above -->

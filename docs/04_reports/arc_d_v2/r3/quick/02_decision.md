@@ -1,4 +1,4 @@
-# Rung ? (QUICK) — Decision Report
+# Rung r3 (quick) — Decision Report
 
 ## Advancement Decision
 
@@ -69,5 +69,3 @@ Hypothesis outcomes not yet available. Run the advance check pipeline to populat
 - Chart 12: Bid and Make Rates
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
-
-<\!-- gate_status: data sanity checks in §1 above -->

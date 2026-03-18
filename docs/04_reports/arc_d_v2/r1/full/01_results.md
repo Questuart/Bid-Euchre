@@ -21,9 +21,9 @@ Generated from canonical CSV tables and chart PNGs.
 
 | check_name | scope | value | threshold | status | detail |
 | --- | --- | --- | --- | --- | --- |
-| h2h_cells_populated | h2h | 81.0000 | 81.0000 | PASS | 81/81 cells have metrics |
-| h2h_min_deals | h2h | 2500.0000 | 10.0000 | PASS | Minimum deals across cells: 2500 |
-| comparator_bidders_present | comparator | 8.0000 | 2.0000 | PASS | 8 bidders in comparator |
+| h2h_cells_populated | h2h | 25.0000 | 25.0000 | PASS | 25/25 cells have metrics |
+| h2h_min_deals | h2h | 30000.0000 | 10.0000 | PASS | Minimum deals across cells: 30000 |
+| comparator_bidders_present | comparator | 4.0000 | 2.0000 | PASS | 4 bidders in comparator |
 | r2_positive_constrained_ols_av_high | training | 0.5029 | 0.0000 | PASS | constrained_ols_av high R²=0.5029 |
 | r2_positive_constrained_ols_av_low | training | 0.5088 | 0.0000 | PASS | constrained_ols_av low R²=0.5088 |
 | r2_positive_constrained_ols_av_pass | training | 0.0066 | 0.0000 | PASS | constrained_ols_av pass R²=0.0066 |
@@ -97,14 +97,10 @@ Generated from canonical CSV tables and chart PNGs.
 
 | model | facet | net_eppd | ci_low | ci_high | bid_rate | make_rate | net_cvar_5 | rank |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| full_ols_av | pooled | 2.2336 | 2.1128 | 2.3568 | 1.0000 | 1.0000 | -4.4960 | 1 |
-| constrained_ols_av | pooled | 2.2040 | 2.0800 | 2.3288 | 1.0000 | 1.0000 | -4.5120 | 2 |
-| selected_ols_av | pooled | 2.1952 | 2.0696 | 2.3240 | 1.0000 | 1.0000 | -4.4800 | 3 |
-| gbt_av | pooled | 2.1836 | 2.0544 | 2.3168 | 0.9520 | 0.9916 | -5.6387 | 4 |
-| selected_two_stage_av | pooled | 1.9200 | 1.7840 | 2.0536 | 1.0000 | 0.9960 | -5.1360 | 5 |
-| modeloespecifico | pooled | 1.6608 | 1.5008 | 1.8188 | 1.0000 | 0.9496 | -11.1120 | 6 |
-| stricthellraiser | pooled | 0.1096 | -0.0440 | 0.2648 | 1.0000 | 0.9472 | -11.2240 | 7 |
-| rankthetank | pooled | -9.6972 | -9.9576 | -9.4316 | 1.0000 | 0.1476 | -15.0400 | 8 |
+| full_ols_av | pooled | 2.2750 | 2.1875 | 2.3627 | 1.0000 | 0.9999 | -4.4307 | 1 |
+| gbt_av | pooled | 2.0091 | 1.9081 | 2.1084 | 0.9857 | 0.9807 | -7.1382 | 2 |
+| selected_two_stage_av | pooled | 1.9621 | 1.8688 | 2.0553 | 1.0000 | 0.9953 | -5.1827 | 3 |
+| modeloespecifico | pooled | 1.6332 | 1.5173 | 1.7486 | 1.0000 | 0.9467 | -11.1533 | 4 |
 
 
 ### Chart 4. Comparator Ranking Bars
@@ -131,16 +127,16 @@ Generated from canonical CSV tables and chart PNGs.
 
 | team0 | team1 | facet | net_eppd_delta | ci_low | ci_high | win_rate_a | deals_total |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| modeloespecifico | modeloespecifico | pooled | -0.1724 | -0.3716 | 0.0256 | 0.4204 | 2500 |
-| modeloespecifico | modeloespecifico | suit | -0.1600 | -0.3681 | 0.0438 | 0.4209 | 2350 |
-| modeloespecifico | modeloespecifico | high | -0.6000 | -1.9714 | 0.8000 | 0.4429 | 70 |
-| modeloespecifico | modeloespecifico | low | -0.1625 | -1.4125 | 1.0500 | 0.3875 | 80 |
-| modeloespecifico | modeloespecifico | bid_type:regular | -0.1724 | -0.3716 | 0.0256 | 0.4204 | 2500 |
-| modeloespecifico | selected_two_stage_av | pooled | 0.0800 | -0.1312 | 0.2948 | 0.4304 | 2500 |
-| modeloespecifico | selected_two_stage_av | suit | 0.0617 | -0.1539 | 0.2798 | 0.4260 | 2366 |
-| modeloespecifico | selected_two_stage_av | high | -0.4909 | -2.2005 | 1.2000 | 0.4727 | 55 |
-| modeloespecifico | selected_two_stage_av | low | 1.0253 | -0.2405 | 2.2785 | 0.5316 | 79 |
-| modeloespecifico | selected_two_stage_av | bid_type:regular | 0.0800 | -0.1312 | 0.2948 | 0.4304 | 2500 |
+| modeloespecifico | modeloespecifico | pooled | -0.0268 | -0.1279 | 0.0751 | 0.4363 | 30000 |
+| modeloespecifico | modeloespecifico | suit | -0.0272 | -0.1303 | 0.0764 | 0.4359 | 28248 |
+| modeloespecifico | modeloespecifico | high | 0.1027 | -0.5537 | 0.7887 | 0.4504 | 837 |
+| modeloespecifico | modeloespecifico | low | -0.1333 | -0.7492 | 0.4849 | 0.4360 | 915 |
+| modeloespecifico | modeloespecifico | bid_type:regular | -0.0268 | -0.1279 | 0.0751 | 0.4363 | 30000 |
+| modeloespecifico | selected_two_stage_av | pooled | 0.1369 | 0.0319 | 0.2410 | 0.4261 | 30000 |
+| modeloespecifico | selected_two_stage_av | suit | 0.1071 | 0.0016 | 0.2130 | 0.4218 | 28691 |
+| modeloespecifico | selected_two_stage_av | high | 1.5082 | 0.7477 | 2.3645 | 0.5886 | 547 |
+| modeloespecifico | selected_two_stage_av | low | 0.2730 | -0.4066 | 0.9760 | 0.4711 | 762 |
+| modeloespecifico | selected_two_stage_av | bid_type:regular | 0.1369 | 0.0319 | 0.2410 | 0.4261 | 30000 |
 
 *Full table omitted from markdown — see `tables/h2h_delta_matrix.csv`*
 
@@ -154,32 +150,25 @@ Generated from canonical CSV tables and chart PNGs.
 
 | model | net_eppd | eppd | bid_rate | pass_rate | make_rate | cvar_5 | net_cvar_5 | mix_suit | mix_high | mix_low | source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| modeloespecifico | 1.6608 | 5.6320 | 1.0000 | 0.0000 | 0.9496 | -4.5120 | -11.1120 | 0.9400 | 0.0280 | 0.0320 | comparator |
-| selected_two_stage_av | 1.9200 | 5.9476 | 1.0000 | 0.0000 | 0.9960 | 2.1840 | -5.1360 | 0.9592 | 0.0144 | 0.0264 | comparator |
-| gbt_av | 2.1836 | 5.8152 | 0.9520 | 0.0480 | 0.9916 | 1.4118 | -5.6387 | 0.6980 | 0.0848 | 0.2172 | comparator |
-| constrained_ols_av | 2.2040 | 6.1020 | 1.0000 | 0.0000 | 1.0000 | 2.7440 | -4.5120 | 0.7748 | 0.0552 | 0.1700 | comparator |
-| selected_ols_av | 2.1952 | 6.0976 | 1.0000 | 0.0000 | 1.0000 | 2.7600 | -4.4800 | 0.7500 | 0.0944 | 0.1556 | comparator |
-| full_ols_av | 2.2336 | 6.1168 | 1.0000 | 0.0000 | 1.0000 | 2.7520 | -4.4960 | 0.1880 | 0.2112 | 0.6008 | comparator |
-| stricthellraiser | 0.1096 | 4.9284 | 1.0000 | 0.0000 | 0.9472 | -3.0000 | -11.2240 | 1.0000 | 0.0000 | 0.0000 | comparator |
-| rankthetank | -9.6972 | -5.5808 | 1.0000 | 0.0000 | 0.1476 | -9.2480 | -15.0400 | 1.0000 | 0.0000 | 0.0000 | comparator |
-| modeloespecifico | 4.6906 |  | 0.4880 | 0.5120 | 0.9287 | -3.2600 |  | 0.9400 | 0.0280 | 0.0320 | h2h_self_play |
-| selected_two_stage_av | 4.6008 |  | 0.5076 | 0.4924 | 0.9117 | -4.5760 |  | 0.9592 | 0.0144 | 0.0264 | h2h_self_play |
-
-*Full table omitted from markdown — see `tables/behavior_summary.csv`*
+| modeloespecifico | 1.6332 | 5.6079 | 1.0000 | 0.0000 | 0.9467 | -4.5907 | -11.1533 | 0.9416 | 0.0279 | 0.0305 | comparator |
+| selected_two_stage_av | 1.9621 | 5.9676 | 1.0000 | 0.0000 | 0.9953 | 2.1400 | -5.1827 | 0.9670 | 0.0122 | 0.0208 | comparator |
+| gbt_av | 2.0091 | 5.8401 | 0.9857 | 0.0143 | 0.9807 | -0.4553 | -7.1382 | 0.7295 | 0.0999 | 0.1706 | comparator |
+| full_ols_av | 2.2750 | 6.1375 | 1.0000 | 0.0000 | 0.9999 | 2.7840 | -4.4307 | 0.2586 | 0.2906 | 0.4507 | comparator |
+| modeloespecifico | 4.6780 |  | 0.4991 | 0.5009 | 0.9331 | -3.2210 |  | 0.9416 | 0.0279 | 0.0305 | h2h_self_play |
+| selected_two_stage_av | 4.6278 |  | 0.4981 | 0.5019 | 0.9101 | -4.3410 |  | 0.9670 | 0.0122 | 0.0208 | h2h_self_play |
+| gbt_av | 4.1613 |  | 0.4929 | 0.5071 | 0.8499 | -6.8580 |  | 0.7295 | 0.0999 | 0.1706 | h2h_self_play |
+| full_ols_av | 4.9769 |  | 0.4846 | 0.5154 | 0.9930 | 0.5590 |  | 0.2586 | 0.2906 | 0.4507 | h2h_self_play |
+| anchor_hybrid_r0_full | 3.5406 |  | 0.4092 | 0.5908 | 0.8646 | -5.9520 |  | 0.7758 | 0.0934 | 0.1308 | h2h_self_play |
 
 
 ### Behavior by Contract
 
 | model | contract | net_eppd | bid_rate | pass_rate | make_rate | source |
 | --- | --- | --- | --- | --- | --- | --- |
-| modeloespecifico | pooled | 1.6608 | 1.0000 | 0.0000 | 0.9496 | comparator |
-| selected_two_stage_av | pooled | 1.9200 | 1.0000 | 0.0000 | 0.9960 | comparator |
-| gbt_av | pooled | 2.1836 | 0.9520 | 0.0480 | 0.9916 | comparator |
-| constrained_ols_av | pooled | 2.2040 | 1.0000 | 0.0000 | 1.0000 | comparator |
-| selected_ols_av | pooled | 2.1952 | 1.0000 | 0.0000 | 1.0000 | comparator |
-| full_ols_av | pooled | 2.2336 | 1.0000 | 0.0000 | 1.0000 | comparator |
-| stricthellraiser | pooled | 0.1096 | 1.0000 | 0.0000 | 0.9472 | comparator |
-| rankthetank | pooled | -9.6972 | 1.0000 | 0.0000 | 0.1476 | comparator |
+| modeloespecifico | pooled | 1.6332 | 1.0000 | 0.0000 | 0.9467 | comparator |
+| selected_two_stage_av | pooled | 1.9621 | 1.0000 | 0.0000 | 0.9953 | comparator |
+| gbt_av | pooled | 2.0091 | 0.9857 | 0.0143 | 0.9807 | comparator |
+| full_ols_av | pooled | 2.2750 | 1.0000 | 0.0000 | 0.9999 | comparator |
 
 
 ### Chart 12. Bid and Make Rates
@@ -196,16 +185,24 @@ Generated from canonical CSV tables and chart PNGs.
 | model | check_name | value | lower_bound | upper_bound | status |
 | --- | --- | --- | --- | --- | --- |
 | modeloespecifico | bid_rate_range | 1.0000 | 0.0500 | 0.9500 | FAIL |
-| modeloespecifico | make_rate_range | 0.9496 | 0.1000 | 1.0000 | PASS |
+| modeloespecifico | make_rate_range | 0.9467 | 0.1000 | 1.0000 | PASS |
 | selected_two_stage_av | bid_rate_range | 1.0000 | 0.0500 | 0.9500 | FAIL |
-| selected_two_stage_av | make_rate_range | 0.9960 | 0.1000 | 1.0000 | PASS |
-| gbt_av | bid_rate_range | 0.9520 | 0.0500 | 0.9500 | FAIL |
-| gbt_av | make_rate_range | 0.9916 | 0.1000 | 1.0000 | PASS |
-| constrained_ols_av | bid_rate_range | 1.0000 | 0.0500 | 0.9500 | FAIL |
-| constrained_ols_av | make_rate_range | 1.0000 | 0.1000 | 1.0000 | PASS |
-| selected_ols_av | bid_rate_range | 1.0000 | 0.0500 | 0.9500 | FAIL |
-| selected_ols_av | make_rate_range | 1.0000 | 0.1000 | 1.0000 | PASS |
+| selected_two_stage_av | make_rate_range | 0.9953 | 0.1000 | 1.0000 | PASS |
+| gbt_av | bid_rate_range | 0.9857 | 0.0500 | 0.9500 | FAIL |
+| gbt_av | make_rate_range | 0.9807 | 0.1000 | 1.0000 | PASS |
+| full_ols_av | bid_rate_range | 1.0000 | 0.0500 | 0.9500 | FAIL |
+| full_ols_av | make_rate_range | 0.9999 | 0.1000 | 1.0000 | PASS |
+| constrained_ols_av | r2_positive_high | 0.5029 | 0.0000 | 1.0000 | PASS |
+| constrained_ols_av | r2_positive_low | 0.5088 | 0.0000 | 1.0000 | PASS |
 
 *Full table omitted from markdown — see `tables/sanity_bounds_check.csv`*
 
-<!-- gate_status: referenced via evidence_manifest.json -->
+
+## 10. Data Quality Notes
+
+- **Outcome distributions (Chart 9):** synthetic data — parquet-backed real distributions unavailable for this bundle
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.

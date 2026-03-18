@@ -1,1 +1,10 @@
 hypothesis_id,description,status,evidence,notes
+H1,Partner context improves GBT pooled H2H delta vs anchor,PASS,"observed=1.0119, bound=> 0.3",
+H2,GBT R1 suit H2H delta exceeds R0 suit delta (partner helps suit bidding),PASS,"observed=1.0105, bound=> 0.5",
+H3,GBT R1 suit R-squared exceeds R0 suit R-squared,PASS,"observed=0.6041, bound=> 0.588",
+H4,Position features improve first-bidder accuracy (auction_position=0),PASS,"observed=2.0091, bound=> 2.0",
+H5,Two-stage model narrows gap vs GBT with partner context,PASS,"observed=-0.047, bound=> -1.0",
+H6,All models bid at least half the time (no pathological passing),PASS,"observed=0.9857, bound=> 0.5",
+H7,GBT H2H win rate vs anchor exceeds 50%,PASS,"observed=0.5723, bound=> 0.5",
+H8,Full OLS approximately equals constrained OLS (feature selection doesn't matter for OLS),SKIP,observed=None,SKIP: model(s) constrained_ols_av not in active roster
+H9,ModeloEspecifico heuristic is worst among trained models (sanity check),PASS,"observed=-0.3759, bound=< 0.0",

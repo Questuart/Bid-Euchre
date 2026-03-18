@@ -1,7 +1,7 @@
 check_name,scope,value,threshold,status,detail
-h2h_cells_populated,h2h,81.0,81.0,PASS,81/81 cells have metrics
-h2h_min_deals,h2h,2500.0,10.0,PASS,Minimum deals across cells: 2500
-comparator_bidders_present,comparator,8.0,2.0,PASS,8 bidders in comparator
+h2h_cells_populated,h2h,25.0,25.0,PASS,25/25 cells have metrics
+h2h_min_deals,h2h,30000.0,10.0,PASS,Minimum deals across cells: 30000
+comparator_bidders_present,comparator,4.0,2.0,PASS,4 bidders in comparator
 r2_positive_constrained_ols_av_high,training,0.5029,0.0,PASS,constrained_ols_av high R²=0.5029
 r2_positive_constrained_ols_av_low,training,0.5088,0.0,PASS,constrained_ols_av low R²=0.5088
 r2_positive_constrained_ols_av_pass,training,0.0066,0.0,PASS,constrained_ols_av pass R²=0.0066
