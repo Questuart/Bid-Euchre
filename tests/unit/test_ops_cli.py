@@ -1523,3 +1523,58 @@ class TestRetryEmit:
         # Verify event was emitted
         events_content = events_file.read_text()
         assert "task_rerouted" in events_content
+
+    def test_retry_escalate_emits_escalation(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Failures exceeding max_retries → escalation event emitted."""
+        import ops
+
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": f"2026-03-18T10:0{i}:00Z",
+                    "event_type": "task_failed",
+                    "source": "test",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": f"error {i}"},
+                }
+            )
+            for i in range(5)
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "t1",
+                "--max-retries",
+                "3",
+                "--emit",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["action"] == "escalate"
+        assert data["retry_count"] == 5
+
+        # Verify escalation event was emitted with correct payload
+        events_content = events_file.read_text()
+        assert "escalation" in events_content
+        # Parse the emitted event to verify payload shape
+        for line in events_content.strip().split("\n"):
+            event = json.loads(line)
+            if event.get("event_type") == "escalation":
+                assert event["payload"]["task_id"] == "t1"
+                assert "human attention" in event["payload"]["details"].lower()
+                assert event["payload"]["retry_count"] == 5
+                break
+        else:
+            pytest.fail("No escalation event found in event log")

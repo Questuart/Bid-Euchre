@@ -774,8 +774,8 @@ No feature alters core simulation, strategy, or experiment behavior.
 
 ## Shipped Work (Implementation History)
 
-The following capabilities were delivered across PRs 1-5 of the autonomous
-agent ops workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
+The following capabilities were delivered across the autonomous agent ops
+workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 
 | PR | Scope | Status |
 |----|-------|--------|
@@ -783,13 +783,20 @@ agent ops workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`
 | PR-2 | Steward session launcher, VS Code audit workspace, launchd recovery | Shipped |
 | PR-3 | Operator CLI (`ops.py`), reviews/CI surfaces, scheduler, watchdogs, retry/reroute | Shipped |
 | PR-4 | Audit index, curated memory, session compaction | Shipped |
-| PR-5 | CI event producers, scope management, retry events, operational proof | Shipped |
+| PR-5 (slice 1) | CI event producers, scope management, retry events | Shipped (#961) |
 
-### Remaining Future Work
+> **Note:** PR-5 in the governing plan covers the full rollout/integration
+> phase including context safety, skill promotion, issue triage, and shadow
+> snapshots. Only the deferred watchdog producer wiring slice has shipped
+> so far. The remaining PR-5 deliverables are listed under
+> "Remaining Future Work."
+
+### Remaining Future Work (PR-5 continuation)
 
 - Context safety scanning for auto-loaded content
-- Shadow snapshots for rollback
-- Skill promotion workflow
+- Shadow snapshots and rollback workflow
+- Skill promotion workflow (promote repeated multi-step workflows into skills)
+- Issue-triage workflow and conventions for qualified operational findings
 - Fully automated scope tracking via file-write hooks
 - Automated retry execution (currently advisory only)
 - CI event emission from GitHub Actions (currently only from local CI poller)
