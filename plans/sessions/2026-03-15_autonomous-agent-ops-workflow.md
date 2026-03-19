@@ -9,7 +9,7 @@
 - PR-2: Add a repo-owned steward session launcher and VS Code audit workspace so autonomous sessions can be started consistently and audited from a stable editor surface, while shifting review inspection from local loop state to GitHub/CI outcomes.
 - PR-3: Add a lightweight operator CLI (`ops.py`) that summarizes worktree health, GitHub/CI review outcomes, local plan-review status, rung state, heartbeats, watchdog status for long-running processes, and latest artifacts from one command.
 - PR-4: Add a two-layer memory system: small curated memory for stable operator facts plus a local audit index over execution logs, CI/review outcomes, checkpoints, and manifests for searchable history.
-- PR-5: Roll out the autonomous workflow in stages, validate online-first PR review plus local `/review-plan`, add skill-promotion, issue-triage, and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
+- PR-5: Roll out the autonomous workflow in stages, validate online-first PR review plus local `/review-plan`, add a canonical lane-activity / current-work surface, add skill-promotion, issue-triage, and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
 
 ## Current State
 
@@ -20,6 +20,7 @@ As of 2026-03-19, future agents should treat the following as ground truth:
 - `author`, `review`, and `ops` remain useful **role classes**, but the concrete execution units are lanes/worktrees.
 - PR-1 through PR-4 have established the core substrate: steward bootstrap, audit workspace, `ops.py`, watchdogs/recovery, online-first PR review surfaces, local `/review-plan`, audit index, curated memory, and session compaction.
 - PR-5 is now primarily a rollout, adoption, and operational-proof phase rather than a large architecture-definition phase.
+- The current operator substrate still needs a canonical operator-facing answer to: "which lane is working on which problem right now?"
 - Local PR review-loop and plan-review loop state under `.claude/runtime/review_loops/**` and `.claude/runtime/plan_reviews/**` is transitional/legacy unless explicitly called out otherwise.
 - If issue automation is adopted, it starts as scheduled/event-driven triage with dedupe and thresholds; it is not a default always-on autonomous fixer.
 
@@ -153,6 +154,30 @@ These decisions were resolved during the 2026-03-16 review session.
 **Why:**
 - The new event log, watchdogs, retry/reroute policy, and audit index now produce the evidence needed for durable backlog capture.
 - A triage layer reduces “noticed but not tracked” failures without creating an unbounded autonomous issue/PR loop.
+
+### Lane Activity / Current Work Surface (2026-03-19)
+
+**Decision:** Add a canonical lane-activity view as part of PR-5 continuation, starting by extending `ops.py status` or a tightly related operator surface rather than introducing a separate dashboard framework first.
+
+- The operator should have one repo-owned place to answer: "which lane is working on which problem right now?"
+- The first implementation should prefer extending existing operator surfaces (`ops.py status`, and optionally `ops.py health`) rather than adding a separate web/TUI dashboard.
+- The lane-activity view should synthesize current work from existing repo-local state where possible:
+  - `.claude/runtime/task_state/**`
+  - `.claude/runtime/session_metadata/**`
+  - `.claude/runtime/worktree_registry/**`
+  - durable events
+  - PR / CI linkage already surfaced through `ops.py reviews` and `ops.py ci`
+- Only introduce a dedicated `lane_activity` registry if deriving a trustworthy current-work summary from existing state proves too ambiguous.
+- The surface should highlight at least:
+  - `lane_id`
+  - current task id or short title
+  - current step or progress note
+  - state (`active`, `blocked`, `waiting_review`, `waiting_ci`, `idle`)
+  - linked PR if present
+  - last progress timestamp
+  - attention flag when stale or blocked
+- The primary goal is operator clarity, not polished UI. A richer dashboard can come later if the current-work contract proves useful.
+- The implementation must degrade gracefully when some fields are missing.
 
 ## Decisions
 
@@ -627,11 +652,12 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 ### PR-5: Rollout, Agent Profiles, And Validation
 
 **Depends on:** PR-1 through PR-4 (all infrastructure must be in place before rollout).
-**Produces:** Validated end-to-end workflow, promoted skills, issue-triage workflow, context-safety validation.
+**Produces:** Validated end-to-end workflow, canonical current-work visibility, promoted skills, issue-triage workflow, context-safety validation.
 
 #### Objectives
 - Move from partial manual adoption to the default operating model.
 - Validate the end-to-end flow using real repo tasks.
+- Give the user and `ops` one place to see which lane is working on which problem without reading raw task files or inferring from diffs.
 - Capture repeated successful workflows as reusable skills instead of rediscovering them.
 - Capture qualified repeated operational failures as durable backlog without creating issue spam or autonomous issue/PR loops.
 - Ensure auto-loaded context is safe to consume at high autonomy.
@@ -639,6 +665,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 #### Deliverables
 - rollout guide in `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
 - optional role-specific startup prompts or agent docs under `.claude/agents/`
+- lane-activity / current-work surface in `ops.py status` or a tightly related operator surface showing current task and state per lane
 - context-safety scan script for memory/summary/skill promotion
 - skill-promotion workflow doc or helper script under `.claude/skills/` or `scripts/internal/`
 - issue-triage workflow doc and issue/project conventions for qualified operational findings
@@ -648,6 +675,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 
 #### Rollout Steps
 - Pilot on one bounded implementation task.
+- Pilot the lane-activity surface against multiple active steward lanes and confirm it can answer "x agent is working on y problem" from one command.
 - Pilot one online PR review path with exactly one reviewer enabled.
 - Pilot one local `/review-plan` or report-review task.
 - Pilot on one rung-monitoring task.
@@ -660,6 +688,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 
 #### Acceptance Criteria
 - The user can delegate a task, open VS Code, and audit progress without sharing a checkout with the autonomous agent.
+- The user can see which steward lane is working on which task, current step, and blocker state from one operator surface without reading raw task JSON.
 - An agent can start, continue, review, and monitor work autonomously from dedicated steward lane worktrees.
 - PR review runs online-first with visible GitHub/CI outcomes and without depending on local review-loop orchestration.
 - Local plan review works in-session through `/review-plan` without PTY/parser fragility from a Codex subprocess loop.
@@ -681,7 +710,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `.vscode/tasks.json` — audit/status/validation tasks.
 - `scripts/internal/ops.py` — top-level operator CLI.
 - `src/bid_euchre/ops/__init__.py` — package root for operator helpers.
-- `src/bid_euchre/ops/status.py` — status aggregation logic.
+- `src/bid_euchre/ops/status.py` — status aggregation logic and synthesized lane current-work view.
 - `src/bid_euchre/ops/worktrees.py` — worktree registry, classification, TTL, and cleanup policy helpers.
 - `src/bid_euchre/ops/events.py` — durable event append/drain helpers.
 - `src/bid_euchre/ops/reviews.py` — provider-neutral PR review outcome aggregation and local plan review status helpers.
@@ -701,7 +730,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `src/bid_euchre/ops/recovery.py` — failure classification and bounded recovery templates.
 - `src/bid_euchre/ops/compaction.py` — session compaction and archive metadata helpers.
 - `src/bid_euchre/ops/index.py` — audit index build/query logic.
-- `tests/unit/test_ops_status.py` — CLI/status tests.
+- `tests/unit/test_ops_status.py` — CLI/status/current-work synthesis tests.
 - `tests/unit/test_ops_worktrees.py` — worktree lifecycle, prune, quarantine, and archive tests.
 - `tests/unit/test_ops_events.py` — durable event log tests.
 - `tests/unit/test_ops_reviews.py` — review outcome aggregation and local plan review status tests.
