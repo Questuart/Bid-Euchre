@@ -548,6 +548,43 @@ class TestQuarantineWorktree:
 
         assert (runtime_dir / "worktree_quarantine").is_dir()
 
+    def test_quarantine_persists_cleanup_state(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Quarantine must update cleanup_state in the registry JSON."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": ""})(),
+        )
+
+        # Create a registry entry for the worktree
+        (runtime_dir / "worktree_registry").mkdir(parents=True, exist_ok=True)
+        _write_registry_entry(
+            runtime_dir / "worktree_registry",
+            "task-q.json",
+            lane_id="task-q",
+            lifecycle_class="ephemeral",
+            worktree_path="/tmp/wt-q",
+        )
+
+        wt_mod.quarantine_worktree(
+            "/tmp/wt-q",
+            "dirty and stale",
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+        )
+
+        # Verify registry entry was updated
+        updated = json.loads(
+            (runtime_dir / "worktree_registry" / "task-q.json").read_text()
+        )
+        assert updated["cleanup_state"] == "quarantined"
+
 
 class TestArchiveWorktree:
     """Tests for archive_worktree()."""
@@ -612,3 +649,39 @@ class TestArchiveWorktree:
         assert any(
             "worktree" in str(cmd) and "remove" in str(cmd) for cmd in commands_run
         )
+
+    def test_archive_persists_cleanup_state(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Archive must update cleanup_state in the registry JSON."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        # Create a registry entry
+        _write_registry_entry(
+            runtime_dir / "worktree_registry",
+            "task-a.json",
+            lane_id="task-a",
+            lifecycle_class="ephemeral",
+            worktree_path="/tmp/some-archivable",
+        )
+
+        wt_mod.archive_worktree(
+            "/tmp/some-archivable",
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+        )
+
+        # Verify registry entry was updated
+        updated = json.loads(
+            (runtime_dir / "worktree_registry" / "task-a.json").read_text()
+        )
+        assert updated["cleanup_state"] == "archived"
