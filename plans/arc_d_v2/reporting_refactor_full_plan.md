@@ -51,27 +51,32 @@ Dashboards remain the primary reading surface. Numbered standalone charts remain
 
 ### 2.2 What is still materially broken or incomplete
 
-- `outcome_distributions.csv` in produced bundles is still synthetic and not suitable for actual distribution analysis.
-- `behavior_by_contract.csv` is still pooled-only and does not support actual contract faceting.
-- `bid_levels.csv` currently contains summary rates, not an actual bid-level distribution.
-- QUICK `02_decision.md` remains placeholder-grade:
-  - `Rung ?`
-  - `PENDING`
-  - empty hypothesis outcomes
-- FULL manifests still contain incorrect metadata:
-  - `Mode: QUICK`
-  - `Seeds: []`
-  - `Class: None`
+> **Updated 2026-03-18:** Items marked ~~strikethrough~~ were fixed in
+> PRs #877, #881, #904, #909, #919. See §16 for verified gap details.
+
+- ~~`outcome_distributions.csv` in produced bundles is still synthetic and not suitable for actual distribution analysis.~~ **Fixed (#881):** FULL bundles now have parquet-backed distributions; QUICK bundles use synthetic with explicit `source=synthetic` marker (acceptable).
+- ~~`behavior_by_contract.csv` is still pooled-only and does not support actual contract faceting.~~ **Fixed (#919):** All 8 bundles now have suit/high/low/pooled rows via JSONL re-extraction.
+- ~~`bid_levels.csv` currently contains summary rates, not an actual bid-level distribution.~~ **Fixed (#881):** FULL bundles have per-bid-level rows from parquet.
+- ~~QUICK `02_decision.md` remains placeholder-grade:~~
+  - ~~`Rung ?`~~
+  - ~~`PENDING`~~
+  - ~~empty hypothesis outcomes~~
+  **Fixed (#877/#904):** R0/R1 show ADVANCE, R2/R3 show PRELIMINARY.
+- ~~FULL manifests still contain incorrect metadata:~~
+  - ~~`Mode: QUICK`~~
+  - ~~`Seeds: []`~~
+  - ~~`Class: None`~~
+  **Fixed (#844):** Manifests have correct mode, seeds, and model class.
 - Several chart-data files are either not emitted to bundles or not reliably wired through to charts:
-  - `predictions.csv`
-  - `residuals.csv`
-  - `calibration_bins.csv`
-  - `seat_balance.csv`
-  - `decision_comparison.csv`
-  - `disagreement_outcomes.csv`
-  - `cross_rung_progression.csv`
-- The current health dashboard visually implies more distribution depth than the data actually supports.
-- The current model-evaluation dashboard remains the weakest of the three dashboards despite being the most important for model confidence.
+  - ~~`predictions.csv`~~ **Fixed (#881):** Present in all FULL bundles.
+  - ~~`residuals.csv`~~ **Fixed (#881):** Present in all FULL bundles.
+  - ~~`calibration_bins.csv`~~ **Fixed (#881/#909):** Present in all FULL bundles.
+  - ~~`seat_balance.csv`~~ **Fixed (#881/#909):** Present in all FULL bundles.
+  - `decision_comparison.csv` — Requires `generate_interpretability.py` run (not `generate_chart_data()`); dormant extractor guarded in #919.
+  - `disagreement_outcomes.csv` — Same as above.
+  - `cross_rung_progression.csv` — Optional supporting evidence (§16.5); CLI exists but not required for acceptance.
+- ~~The current health dashboard visually implies more distribution depth than the data actually supports.~~ **Fixed (#845/#877):** Violin+box for real data, bars for synthetic fallback.
+- ~~The current model-evaluation dashboard remains the weakest of the three dashboards despite being the most important for model confidence.~~ **Fixed (#877):** Stepped histogram residuals, N-sample calibration, descriptive absent-data states.
 
 ## 3. Design Decisions
 
@@ -1009,14 +1014,15 @@ acceptance criteria and shipped bundle reality.
 
 **Active remediation plan:** `plans/sessions/2026-03-18_reporting-refactor-alignment-closeout.md`
 
-### 16.1 behavior_by_contract.csv — pooled-only
+### 16.1 ~~behavior_by_contract.csv — pooled-only~~ ✅ FIXED
 
-`generate_behavior_by_contract()` correctly checks for `bidders_by_contract`
+~~`generate_behavior_by_contract()` correctly checks for `bidders_by_contract`
 in comparator_cis, but the source JSON artifacts lack this key. All 12
-committed behavior_by_contract.csv files contain only `contract=pooled` rows.
+committed behavior_by_contract.csv files contain only `contract=pooled` rows.~~
 
-**Fix:** Either populate `bidders_by_contract` in the comparator CIs pipeline
-(preferred) or compute per-contract behavior from H2H battery data.
+**Fixed:** Re-extracted comparator CIs from JSONL game logs with `bidders_by_contract`.
+All 8 committed behavior_by_contract.csv files now have suit/high/low/pooled rows.
+R0/R1: 16 rows (4 bidders × 4 contracts). R2/R3: 29 rows (8 bidders).
 
 ### 16.2 outcome_summary.csv — still present in 9 locations
 
@@ -1102,15 +1108,20 @@ Charts 21, 22 (decision_comparison, disagreement_outcomes) require running
 
 ### 17.5 Post-Regeneration Audit (2026-03-18)
 
+> **Scope:** "Fixed in bundles" means the corrected files are committed on
+> the PR branch and will land on `main` when the PR merges. Items marked
+> "Fixed on main" were already merged in prior PRs.
+
 | Acceptance Criterion | Status | Notes |
 |---------------------|--------|-------|
-| Dormant extractors guarded | ✅ Fixed in code | Steps 9-10 removed from `generate_chart_data()` call path |
-| Regeneration prerequisites documented | ✅ Fixed in code | This section (§17) |
-| `behavior_by_contract.csv` contract-faceted | ⚠️ Data-blocked | Existing comparator_cis JSONs lack `bidders_by_contract`; JSONL logs exist for re-extraction but `extract_comparator_cis.py` changes in PR #909 must merge first |
-| Charts 10, 16, 17, 18 verified | ✅ Fixed in bundles | All render from R0/full chart_data |
+| Dormant extractors guarded | ✅ Fixed in code (#919) | Steps 9-10 removed from `generate_chart_data()` call path; regression test added |
+| Regeneration prerequisites documented | ✅ Fixed in code (#919) | This section (§17) |
+| `behavior_by_contract.csv` contract-faceted | ✅ Fixed in bundles (#919) | Re-extracted from JSONL; all 8 CSVs have suit/high/low/pooled rows (lands on main when #919 merges) |
+| Charts 10, 16, 17, 18 verified | ✅ Verified on R0/full | All 4 render when their source CSVs exist; verified via `generate_rung_charts.py` against one FULL bundle |
 | Charts 21, 22 verified | ⚠️ Data-blocked | Require `generate_interpretability.py` run with joblib models; not produced by `generate_chart_data()` |
-| Governing plan §2.2 and §16 consistent | ✅ Fixed in code | Updated in #904/#909 |
-| `outcome_summary.csv` removed | ✅ Fixed in bundles | Removed in #904 |
-| `04_rung_decision.md` deprecated | ✅ Fixed in bundles | Deprecation notice added in #909 |
-| QUICK `02_decision.md` not PENDING | ✅ Fixed in bundles | R0/R1 show ADVANCE, R2/R3 show PRELIMINARY (#877) |
-| `selection_paths.csv` dual-write removed | ✅ Fixed in code | Now exclusively from `generate_interpretability.py` (#909) |
+| Governing plan §2.2 updated | ✅ Fixed in code (#919) | §2.2 stale bullets corrected with strikethrough + fix references |
+| §16 gaps accurate | ✅ Fixed in code (#919) | §16.1 marked FIXED, §16.5 ownership table updated |
+| `outcome_summary.csv` removed | ✅ Fixed on main (#904) | Removed from all bundles |
+| `04_rung_decision.md` deprecated | ✅ Fixed on main (#909) | Deprecation notice in all FULL bundles |
+| QUICK `02_decision.md` not PENDING | ✅ Fixed on main (#877) | R0/R1 ADVANCE, R2/R3 PRELIMINARY |
+| `selection_paths.csv` dual-write removed | ✅ Fixed on main (#909) | Now exclusively from `generate_interpretability.py` |

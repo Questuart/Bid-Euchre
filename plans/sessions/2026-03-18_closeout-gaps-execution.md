@@ -18,10 +18,12 @@ Added §17 to `plans/arc_d_v2/reporting_refactor_full_plan.md` with:
 - §17.4: Chart rendering dependency notes
 - §17.5: Post-regeneration audit table
 
-### Gap 3: Regenerate QUICK bundles ⚠️ Blocked
-Existing comparator_cis JSONs lack `bidders_by_contract`. JSONL game logs exist for
-re-extraction (`data/runs/arc_d_v2_*_comparator_*/logs/*.jsonl`). Blocked on PR #909
-merge — the per-contract extraction code is on #909's branch.
+### Gap 3: Regenerate bundles with per-contract behavior ✅
+Re-extracted comparator CIs from JSONL game logs for all 4 rungs using
+`extract_comparator_cis.py` with batch manifests. All 8 `behavior_by_contract.csv`
+files (4 QUICK + 4 FULL) now have suit/high/low/pooled rows:
+- R0/R1: 16 rows (4 bidders × 4 contracts)
+- R2/R3: 29 rows (8 bidders × ~3.6 contracts avg)
 
 ### Gap 4: Chart rendering verification ✅
 Verified against R0/full bundle:
@@ -30,10 +32,10 @@ Verified against R0/full bundle:
 
 ### Gap 5: Post-regeneration audit ✅
 Written inline in §17.5 of the governing plan. Categorizes all acceptance criteria as:
-- Fixed in code (6 items)
-- Fixed in bundles (4 items)
-- Data-blocked (2 items)
+- Fixed in code (7 items)
+- Fixed in bundles (5 items)
+- Data-blocked (1 item: Charts 21/22 need interpretability pipeline)
 
 ## Outcome
-- PR: #912 (guard dormant extractors + regen prerequisites doc + chart verification + audit)
-- Remaining: Gap 3 (QUICK bundle regeneration) blocked on #909 merge + JSONL re-extraction
+- PR: #919 (guard dormant extractors + regen prerequisites doc + bundle regeneration + chart verification + audit)
+- All 5 gaps addressed. Only remaining item: Charts 21/22 require `generate_interpretability.py` with joblib models.
