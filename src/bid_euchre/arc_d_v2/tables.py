@@ -727,14 +727,15 @@ def _make_repo_relative(path: Path) -> str:
     """Convert an absolute path to repo-relative by stripping up to ``data/``.
 
     Looks for ``/data/`` in the path string and returns from ``data/`` onward.
-    Falls back to the path basename if ``/data/`` is not found.
+    Falls back to the path's basename if ``/data/`` is not found, to avoid
+    leaking absolute paths into committed artifacts.
     """
     s = str(path)
     marker = "/data/"
     idx = s.find(marker)
     if idx >= 0:
         return s[idx + 1 :]  # Strip leading slash, keep "data/..."
-    return s
+    return path.name
 
 
 def generate_artifact_inventory(

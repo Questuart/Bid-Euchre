@@ -31,6 +31,7 @@ from bid_euchre.arc_d_v2.tables import (
     _extract_h2h_by_contract,
     _extract_outcome_distributions,
     _extract_outcome_distributions_from_parquet,
+    _make_repo_relative,
     _merge_comparator_cis,
     _merge_h2h_batteries,
     _per_seed_sanity_comparator,
@@ -2616,3 +2617,35 @@ class TestExtractOutcomeDistributionsFromParquet:
 
         rows = _extract_outcome_distributions_from_parquet([parquet_path])
         assert all(r["source"] == "parquet" for r in rows)
+
+
+# ──────────────────────────────────────────────
+#  _make_repo_relative helper
+# ──────────────────────────────────────────────
+
+
+class TestMakeRepoRelative:
+    """Tests for _make_repo_relative path normalization."""
+
+    def test_strips_data_prefix(self):
+        """Paths containing /data/ are stripped to repo-relative."""
+        p = Path("/Users/someone/Projects/repo/data/artifacts/r0/foo.json")
+        assert _make_repo_relative(p) == "data/artifacts/r0/foo.json"
+
+    def test_multiple_data_segments(self):
+        """First /data/ occurrence is used when path has multiple."""
+        p = Path("/home/user/data/extra/data/artifacts/foo.json")
+        assert _make_repo_relative(p) == "data/extra/data/artifacts/foo.json"
+
+    def test_fallback_to_basename(self):
+        """Paths without /data/ fall back to basename, not absolute path."""
+        p = Path("/Users/someone/Projects/repo/docs/report.md")
+        result = _make_repo_relative(p)
+        assert result == "report.md"
+        assert not result.startswith("/")
+
+    def test_relative_path_passthrough(self):
+        """Relative paths without /data/ return basename."""
+        p = Path("some/local/path.json")
+        result = _make_repo_relative(p)
+        assert result == "path.json"

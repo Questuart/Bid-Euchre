@@ -1826,7 +1826,8 @@ def generate_dashboard_health(
         all_rates = [bid_rates.max(), make_rates.max()]
         if pass_rates is not None:
             all_rates.append(pass_rates.max())
-        ax.set_ylim(0, max(1.05, max(all_rates) * 1.05))
+        max_rate = max((r for r in all_rates if not np.isnan(r)), default=1.0)
+        ax.set_ylim(0, max(1.05, max_rate * 1.05))
     else:
         _unavailable_panel(ax, "Bid / Pass / Make Rates")
 
