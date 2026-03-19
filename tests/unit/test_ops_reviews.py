@@ -1,0 +1,367 @@
+"""Tests for ops/reviews.py — provider-neutral PR review outcome aggregation."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from unittest.mock import patch
+
+import pytest
+
+from bid_euchre.ops.reviews import (
+    ReviewOutcome,
+    _classify_ci_status,
+    _get_review_status,
+    _has_precheck_ci,
+    format_reviews_json,
+    format_reviews_text,
+    get_open_pr_reviews,
+    get_pr_review_detail,
+)
+
+# --- Helper to create mock subprocess results ---
+
+
+def _mock_result(returncode: int = 0, stdout: str = "", stderr: str = "") -> object:
+    """Create a mock subprocess.CompletedProcess."""
+    return subprocess.CompletedProcess(
+        args=[], returncode=returncode, stdout=stdout, stderr=stderr
+    )
+
+
+# --- Unit tests for classification helpers ---
+
+
+class TestClassifyCIStatus:
+    """Tests for _classify_ci_status()."""
+
+    def test_empty_checks_returns_pending(self) -> None:
+        assert _classify_ci_status([]) == "pending"
+
+    def test_all_success(self) -> None:
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "lint", "state": "SUCCESS"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_any_failure(self) -> None:
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "lint", "state": "FAILURE"},
+        ]
+        assert _classify_ci_status(checks) == "failure"
+
+    def test_any_pending(self) -> None:
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "build", "state": "PENDING"},
+        ]
+        assert _classify_ci_status(checks) == "pending"
+
+    def test_in_progress_counts_as_pending(self) -> None:
+        checks = [{"name": "tests", "state": "IN_PROGRESS"}]
+        assert _classify_ci_status(checks) == "pending"
+
+    def test_excludes_reviewing_changes(self) -> None:
+        checks = [
+            {"name": "reviewing-changes", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_only_reviewing_changes_returns_pending(self) -> None:
+        checks = [{"name": "reviewing-changes", "state": "SUCCESS"}]
+        assert _classify_ci_status(checks) == "pending"
+
+    def test_unknown_state(self) -> None:
+        checks = [{"name": "tests", "state": "CANCELLED"}]
+        assert _classify_ci_status(checks) == "unknown"
+
+
+class TestGetReviewStatus:
+    """Tests for _get_review_status()."""
+
+    def test_success(self) -> None:
+        checks = [{"name": "reviewing-changes", "state": "SUCCESS"}]
+        assert _get_review_status(checks) == "success"
+
+    def test_failure(self) -> None:
+        checks = [{"name": "reviewing-changes", "state": "FAILURE"}]
+        assert _get_review_status(checks) == "failure"
+
+    def test_pending(self) -> None:
+        checks = [{"name": "reviewing-changes", "state": "PENDING"}]
+        assert _get_review_status(checks) == "pending"
+
+    def test_in_progress_maps_to_pending(self) -> None:
+        checks = [{"name": "reviewing-changes", "state": "IN_PROGRESS"}]
+        assert _get_review_status(checks) == "pending"
+
+    def test_no_reviewing_changes_returns_none(self) -> None:
+        checks = [{"name": "tests", "state": "SUCCESS"}]
+        assert _get_review_status(checks) == "none"
+
+    def test_empty_checks(self) -> None:
+        assert _get_review_status([]) == "none"
+
+
+class TestHasPrecheckCI:
+    """Tests for _has_precheck_ci()."""
+
+    def test_has_deterministic_prechecks(self) -> None:
+        checks = [{"name": "deterministic-prechecks", "state": "SUCCESS"}]
+        assert _has_precheck_ci(checks) is True
+
+    def test_has_precheck_variant(self) -> None:
+        checks = [{"name": "Precheck Suite", "state": "SUCCESS"}]
+        assert _has_precheck_ci(checks) is True
+
+    def test_no_precheck(self) -> None:
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "lint", "state": "SUCCESS"},
+        ]
+        assert _has_precheck_ci(checks) is False
+
+    def test_empty_checks(self) -> None:
+        assert _has_precheck_ci([]) is False
+
+
+# --- Integration tests with mocked gh ---
+
+
+class TestGetOpenPRReviews:
+    """Tests for get_open_pr_reviews() with mocked gh CLI."""
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_no_open_prs(self, mock_gh: object) -> None:
+        mock_gh.return_value = _mock_result(stdout="[]")
+        outcomes = get_open_pr_reviews()
+        assert outcomes == []
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_single_pr_all_green(self, mock_gh: object) -> None:
+        pr_list = [
+            {
+                "number": 100,
+                "title": "Fix bug",
+                "headRefName": "fix/bug",
+                "url": "https://github.com/org/repo/pull/100",
+            }
+        ]
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "lint", "state": "SUCCESS"},
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_list)),
+            _mock_result(stdout=json.dumps(checks)),
+        ]
+
+        outcomes = get_open_pr_reviews()
+        assert len(outcomes) == 1
+        assert outcomes[0].pr_number == 100
+        assert outcomes[0].ci_status == "success"
+        assert outcomes[0].review_status == "success"
+        assert outcomes[0].has_precheck_ci is False
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_multiple_prs_sorted(self, mock_gh: object) -> None:
+        pr_list = [
+            {
+                "number": 200,
+                "title": "Second PR",
+                "headRefName": "feat/b",
+                "url": "https://github.com/org/repo/pull/200",
+            },
+            {
+                "number": 100,
+                "title": "First PR",
+                "headRefName": "feat/a",
+                "url": "https://github.com/org/repo/pull/100",
+            },
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_list)),
+            _mock_result(stdout=json.dumps([])),  # checks for PR 200
+            _mock_result(stdout=json.dumps([])),  # checks for PR 100
+        ]
+
+        outcomes = get_open_pr_reviews()
+        assert len(outcomes) == 2
+        assert outcomes[0].pr_number == 100
+        assert outcomes[1].pr_number == 200
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_gh_failure_returns_empty(self, mock_gh: object) -> None:
+        mock_gh.return_value = _mock_result(returncode=1, stderr="auth error")
+        outcomes = get_open_pr_reviews()
+        assert outcomes == []
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_invalid_json_returns_empty(self, mock_gh: object) -> None:
+        mock_gh.return_value = _mock_result(stdout="not json")
+        outcomes = get_open_pr_reviews()
+        assert outcomes == []
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_pr_with_deterministic_prechecks(self, mock_gh: object) -> None:
+        pr_list = [
+            {
+                "number": 300,
+                "title": "PR with prechecks",
+                "headRefName": "feat/c",
+                "url": "https://github.com/org/repo/pull/300",
+            }
+        ]
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "deterministic-prechecks", "state": "SUCCESS"},
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_list)),
+            _mock_result(stdout=json.dumps(checks)),
+        ]
+
+        outcomes = get_open_pr_reviews()
+        assert len(outcomes) == 1
+        assert outcomes[0].has_precheck_ci is True
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_pr_with_failing_ci(self, mock_gh: object) -> None:
+        pr_list = [
+            {
+                "number": 400,
+                "title": "Failing PR",
+                "headRefName": "fix/broken",
+                "url": "https://github.com/org/repo/pull/400",
+            }
+        ]
+        checks = [
+            {"name": "tests", "state": "FAILURE"},
+            {"name": "reviewing-changes", "state": "PENDING"},
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_list)),
+            _mock_result(stdout=json.dumps(checks)),
+        ]
+
+        outcomes = get_open_pr_reviews()
+        assert len(outcomes) == 1
+        assert outcomes[0].ci_status == "failure"
+        assert outcomes[0].review_status == "pending"
+
+
+class TestGetPRReviewDetail:
+    """Tests for get_pr_review_detail() with mocked gh CLI."""
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_successful_detail(self, mock_gh: object) -> None:
+        pr_data = {
+            "number": 100,
+            "title": "Fix bug",
+            "headRefName": "fix/bug",
+            "url": "https://github.com/org/repo/pull/100",
+        }
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_data)),
+            _mock_result(stdout=json.dumps(checks)),
+        ]
+
+        outcome = get_pr_review_detail(100)
+        assert outcome.pr_number == 100
+        assert outcome.ci_status == "success"
+        assert outcome.review_status == "success"
+        assert outcome.checks is not None
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_gh_failure_raises(self, mock_gh: object) -> None:
+        mock_gh.return_value = _mock_result(returncode=1, stderr="not found")
+
+        with pytest.raises(RuntimeError, match="Failed to get PR"):
+            get_pr_review_detail(999)
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_invalid_json_raises(self, mock_gh: object) -> None:
+        mock_gh.return_value = _mock_result(stdout="not json{")
+
+        with pytest.raises(RuntimeError, match="Invalid JSON"):
+            get_pr_review_detail(999)
+
+
+# --- Formatting tests ---
+
+
+class TestFormatReviewsText:
+    """Tests for format_reviews_text()."""
+
+    def test_empty(self) -> None:
+        text = format_reviews_text([])
+        assert "No open PRs" in text
+
+    def test_single_outcome(self) -> None:
+        outcomes = [
+            ReviewOutcome(
+                pr_number=42,
+                title="Test PR",
+                branch="feat/test",
+                ci_status="success",
+                review_status="pending",
+                has_precheck_ci=True,
+                url="https://github.com/org/repo/pull/42",
+            )
+        ]
+        text = format_reviews_text(outcomes)
+        assert "#42" in text
+        assert "Test PR" in text
+        assert "feat/test" in text
+        assert "CI=[+]" in text
+        assert "Review=[~]" in text
+        assert "Precheck=[yes]" in text
+
+    def test_failure_icons(self) -> None:
+        outcomes = [
+            ReviewOutcome(
+                pr_number=1,
+                title="Failing",
+                branch="b",
+                ci_status="failure",
+                review_status="failure",
+                has_precheck_ci=False,
+                url="u",
+            )
+        ]
+        text = format_reviews_text(outcomes)
+        assert "CI=[x]" in text
+        assert "Review=[x]" in text
+
+
+class TestFormatReviewsJSON:
+    """Tests for format_reviews_json()."""
+
+    def test_empty(self) -> None:
+        assert format_reviews_json([]) == []
+
+    def test_serializable(self) -> None:
+        outcomes = [
+            ReviewOutcome(
+                pr_number=42,
+                title="Test",
+                branch="b",
+                ci_status="success",
+                review_status="none",
+                has_precheck_ci=False,
+                url="u",
+            )
+        ]
+        result = format_reviews_json(outcomes)
+        assert len(result) == 1
+        assert result[0]["pr_number"] == 42
+        # Verify it's JSON-serializable
+        json.dumps(result)
