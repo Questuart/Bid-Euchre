@@ -933,7 +933,7 @@ If implementation reveals a conflict with this plan:
 
 **Status:** COMPLETE WITH DEGRADED STATES (2026-03-19)
 
-10 PRs merged covering Phases 0-6 plus final closeout. All §16 gaps resolved.
+11 PRs merged covering Phases 0-6 plus final closeout. All §16 gaps resolved.
 Accepted degraded states documented in §16.6.
 
 ### Implementation History
@@ -951,7 +951,8 @@ Accepted degraded states documented in §16.6.
 | #848 | P5-6: Report consolidation + bundle regeneration (171 files) | ✅ Merged |
 | #919 | Dormant extractor guard + regeneration prerequisites documentation | ✅ Merged |
 | #942 | Bundle regen: behavior_by_contract per-contract, §2.2 fix, regression tests | ✅ Merged |
-| TBD | Final closeout: stale reference cleanup, 04_rung_decision removal, plan truthfulness | 🔄 In Progress |
+| #948 | Final closeout: stale reference cleanup, 04_rung_decision removal, plan truthfulness | ✅ Merged |
+| #962 | DS-4 documentation: R3/full bundle staleness per Codex review | ✅ Merged |
 
 ### Acceptance Criteria Status (§13) — Final (2026-03-19)
 
