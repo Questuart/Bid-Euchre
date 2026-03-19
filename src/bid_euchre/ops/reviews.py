@@ -19,6 +19,11 @@ from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
 
 logger = logging.getLogger("ops.reviews")
 
+# Review context names recognized as "review outcomes".
+# The first match wins when determining review_status.
+# Extend this list when adding a new online reviewer.
+DEFAULT_REVIEW_CONTEXTS: tuple[str, ...] = ("reviewing-changes",)
+
 
 @dataclass
 class ReviewOutcome:
