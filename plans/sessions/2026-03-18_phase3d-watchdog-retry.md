@@ -35,11 +35,11 @@ And respond with bounded retry/reroute policy:
 ## Design Decisions
 
 ### check_ci_stuck()
-- Reads event log for `ci_failure` events
-- Groups by PR number from payload
+- Reads event log for `ci_failure` and `ci_success` events
+- Groups by PR number from payload, keeping only the most recent event per PR
+- Resolves `ci_failure` against subsequent `ci_success` — a PR with a newer
+  `ci_success` is not flagged as stuck
 - Flags PRs where the most recent CI event is `ci_failure` and it's older than `stuck_minutes`
-- Does NOT resolve against `ci_success` events (that would require pairing logic)
-- Simple: any PR with a ci_failure event older than threshold without a subsequent ci_success
 
 ### check_subagent_failures()
 - Reads event log for `task_failed` events
