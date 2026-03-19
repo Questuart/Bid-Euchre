@@ -3,9 +3,14 @@
 **Lineage:** arc_d_v2
 **Rung:** r2
 **Provenance SHA:** `a090bcebbba05ee8cd27ae773567eb8ba28f75a9`
-**Mode:** full
+**Mode:** FULL (single-seed)
 **Seeds:** [42]
 **Anchor:** anchor_hybrid_r0_full
+
+**Note:** R2 was evaluated with seed 42 only. The lineage FULL-mode contract
+(seeds 42/123/456) was not satisfied. R2 advancement was an override decision
+(H2 R² secondary metric) based primarily on QUICK evidence; FULL artifacts
+are seed-42 supplementary evidence.
 
 ## Model Roster
 

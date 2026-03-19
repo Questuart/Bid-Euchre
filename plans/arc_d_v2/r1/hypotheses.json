@@ -40,7 +40,7 @@
     },
     {
       "id": "H4",
-      "description": "Position features improve first-bidder accuracy (auction_position=0)",
+      "description": "GBT pooled comparator net_eppd remains above 2.0 with position features added",
       "metric": "gbt_pooled_comparator",
       "source_table": "comparator_rankings.csv",
       "source_column": "net_eppd",
@@ -48,7 +48,7 @@
       "computation": "value",
       "expected_bound": {"op": ">", "value": 2.0},
       "surprise_if": {"op": "<", "value": 1.5},
-      "_note": "R0 baseline: 2.201. Position context should maintain or improve comparator ranking."
+      "_note": "Originally described as testing position-specific accuracy (auction_position=0), but the metric is pooled comparator net_eppd. Corrected 2026-03-18 to match the actual evaluation. R0 baseline: 2.201."
     },
     {
       "id": "H5",
