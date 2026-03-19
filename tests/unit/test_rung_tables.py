@@ -2265,6 +2265,101 @@ class TestModelEvalCsvs:
         assert "gbt_av" in pred_df["model"].values
         assert len(pred_df[pred_df["model"] == "gbt_av"]) == n_eval
 
+    def test_bid_n_sq_derived_enables_contract_facets(self, tmp_path):
+        """Parquet with bid_n but NOT bid_n_sq produces suit/high/low rows.
+
+        Regression test: before the fix, models requiring bid_n_sq would
+        silently skip non-pass contracts because the derived feature was
+        missing from the parquet. The fix computes bid_n_sq on the fly.
+        """
+        import numpy as np
+
+        # OLS artifact whose suit/high/low models require bid_n + bid_n_sq
+        ols_artifact = {
+            "schema_version": "action_value_olsa_v1",
+            "target": "tricks_won",
+            "models": {
+                "suit": {
+                    "feature_names": ["bowers", "bid_n", "bid_n_sq"],
+                    "coefficients": [0.5, 0.3, -0.01],
+                    "intercept": 2.0,
+                    "r_squared": 0.6,
+                    "mae": 1.0,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+                "high": {
+                    "feature_names": ["bowers", "bid_n", "bid_n_sq"],
+                    "coefficients": [0.4, 0.2, -0.005],
+                    "intercept": 1.5,
+                    "r_squared": 0.5,
+                    "mae": 1.2,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+                "low": {
+                    "feature_names": ["bowers", "bid_n", "bid_n_sq"],
+                    "coefficients": [0.3, 0.1, -0.002],
+                    "intercept": 1.0,
+                    "r_squared": 0.4,
+                    "mae": 1.5,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+                "pass": {
+                    "feature_names": ["bowers"],
+                    "coefficients": [0.2],
+                    "intercept": 3.0,
+                    "r_squared": 0.3,
+                    "mae": 2.0,
+                    "n_train": 100,
+                    "n_val": 20,
+                },
+            },
+            "metadata": {},
+        }
+        training_artifacts = {"test_ols": ols_artifact}
+
+        rng = np.random.RandomState(42)
+        n = 40
+        # Parquet has bid_n but NOT bid_n_sq (mirrors real action_value.parquet)
+        df = pd.DataFrame(
+            {
+                "bowers": rng.uniform(0, 2, n),
+                "bid_n": rng.randint(1, 11, n),
+                "contract_family": ["suit"] * 10
+                + ["high"] * 10
+                + ["low"] * 10
+                + ["none"] * 10,
+                "action_type": ["bid"] * 30 + ["pass"] * 10,
+                "tricks_won": rng.uniform(0, 10, n),
+            }
+        )
+        assert "bid_n_sq" not in df.columns  # Precondition
+
+        parquet_path = tmp_path / "eval.parquet"
+        df.to_parquet(parquet_path)
+
+        output_dir = tmp_path / "chart_data"
+        result = generate_model_eval_csvs(training_artifacts, parquet_path, output_dir)
+
+        assert "predictions.csv" in result
+        pred_df = pd.read_csv(output_dir / "predictions.csv")
+        contracts = sorted(pred_df["contract"].unique())
+
+        # All four contract types should be present
+        assert contracts == [
+            "high",
+            "low",
+            "pass",
+            "suit",
+        ], f"Expected all 4 contracts, got {contracts}"
+
+        # Verify suit/high/low rows exist (the regression target)
+        for contract in ["suit", "high", "low"]:
+            contract_rows = pred_df[pred_df["contract"] == contract]
+            assert len(contract_rows) > 0, f"No rows for contract={contract}"
+
 
 # ──────────────────────────────────────────────
 #  Outcome distributions extraction tests (Phase B)

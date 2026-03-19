@@ -2,8 +2,8 @@
   "schema_version": "arc_d_evidence_manifest_v1",
   "lineage_id": "arc_d_v2",
   "rung_id": "r3",
-  "provenance_sha": "7bf48a81c2e46028150a3eb6f8d2d2d3d7428475",
-  "governing_plan": "plans/arc_d_v2/r3/plan.md",
+  "provenance_sha": "e3f1db3bba1ddc97b144c0b087b1acf3e270a17f",
+  "governing_plan": "",
   "plan_shas": [],
   "anchor": "anchor_hybrid_r0_full",
   "roster": [
@@ -65,52 +65,52 @@
   "artifacts": [
     {
       "name": "comparator_battery_r3_42",
-      "path": "data/artifacts/arc_d_v2/r3/comparator_battery_r3_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/comparator_battery_r3_42.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_cis_r3_42",
-      "path": "data/artifacts/arc_d_v2/r3/comparator_cis_r3_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/comparator_cis_r3_42.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "h2h_battery_quick_42",
-      "path": "data/artifacts/arc_d_v2/r3/h2h_battery_quick_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/h2h_battery_quick_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_smoke_42",
-      "path": "data/artifacts/arc_d_v2/r3/h2h_battery_smoke_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/h2h_battery_smoke_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "roster",
-      "path": "data/artifacts/arc_d_v2/r3/roster.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/roster.json",
       "schema_version": "roster_v1"
     },
     {
       "name": "training_artifact_constrained_ols_av",
-      "path": "data/artifacts/arc_d_v2/r3/training_artifact_constrained_ols_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_constrained_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_full_ols_av",
-      "path": "data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_gbt_av",
-      "path": "data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json",
       "schema_version": "action_value_gbt_v1"
     },
     {
       "name": "training_artifact_selected_ols_av",
-      "path": "data/artifacts/arc_d_v2/r3/training_artifact_selected_ols_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_selected_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_selected_two_stage_av",
-      "path": "data/artifacts/arc_d_v2/r3/training_artifact_selected_two_stage_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r3/training_artifact_selected_two_stage_av.json",
       "schema_version": "two_stage_action_value_v1"
     }
   ],
@@ -216,7 +216,7 @@
       "title": "Model Evaluation Dashboard",
       "required": true,
       "present": true,
-      "size_bytes": 264779,
+      "size_bytes": 340761,
       "path": "docs/04_reports/arc_d_v2/r3/full/charts/dashboard_model_eval.png"
     },
     {
@@ -333,7 +333,7 @@
       "title": "Predicted vs Actual",
       "required": false,
       "present": true,
-      "size_bytes": 69080,
+      "size_bytes": 382837,
       "path": "docs/04_reports/arc_d_v2/r3/full/charts/full_chart_suite/pred_vs_actual.png"
     },
     {
@@ -342,7 +342,7 @@
       "title": "Residual Distribution",
       "required": false,
       "present": true,
-      "size_bytes": 35859,
+      "size_bytes": 81112,
       "path": "docs/04_reports/arc_d_v2/r3/full/charts/full_chart_suite/residual_distribution.png"
     },
     {
@@ -351,7 +351,7 @@
       "title": "Calibration Curve",
       "required": false,
       "present": true,
-      "size_bytes": 51181,
+      "size_bytes": 145760,
       "path": "docs/04_reports/arc_d_v2/r3/full/charts/full_chart_suite/calibration_curve.png"
     },
     {
@@ -407,7 +407,7 @@
     {
       "name": "calibration_bins.csv",
       "path": "docs/04_reports/arc_d_v2/r3/full/chart_data/calibration_bins.csv",
-      "size_bytes": 1732
+      "size_bytes": 7534
     },
     {
       "name": "contract_mix.csv",
@@ -432,12 +432,12 @@
     {
       "name": "predictions.csv",
       "path": "docs/04_reports/arc_d_v2/r3/full/chart_data/predictions.csv",
-      "size_bytes": 540219
+      "size_bytes": 2997645
     },
     {
       "name": "residuals.csv",
       "path": "docs/04_reports/arc_d_v2/r3/full/chart_data/residuals.csv",
-      "size_bytes": 2724
+      "size_bytes": 11948
     },
     {
       "name": "seat_balance.csv",

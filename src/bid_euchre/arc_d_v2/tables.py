@@ -1864,6 +1864,12 @@ def generate_model_eval_csvs(
         logger.warning("Failed to read eval parquet: %s", e)
         return generated
 
+    # Compute derived features that models expect but are not stored in
+    # the parquet (they are computed on-the-fly during training; see
+    # train_action_value.py _build_feature_matrix).
+    if "bid_n" in eval_df.columns and "bid_n_sq" not in eval_df.columns:
+        eval_df["bid_n_sq"] = eval_df["bid_n"] ** 2
+
     prediction_rows: list[dict] = []
     residual_rows: list[dict] = []
     calibration_rows: list[dict] = []

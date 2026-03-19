@@ -2,8 +2,8 @@
   "schema_version": "arc_d_evidence_manifest_v1",
   "lineage_id": "arc_d_v2",
   "rung_id": "r1",
-  "provenance_sha": "a090bcebbba05ee8cd27ae773567eb8ba28f75a9",
-  "governing_plan": "plans/arc_d_v2/r1/plan.md",
+  "provenance_sha": "e3f1db3bba1ddc97b144c0b087b1acf3e270a17f",
+  "governing_plan": "",
   "plan_shas": [],
   "anchor": "anchor_hybrid_r0_full",
   "roster": [
@@ -57,102 +57,102 @@
     }
   ],
   "seeds": [
-    42,
     123,
+    42,
     456
   ],
-  "mode": "full",
+  "mode": "FULL",
   "run_ids": [],
   "lifecycle": [],
   "artifacts": [
     {
       "name": "advance_check",
-      "path": "data/artifacts/arc_d_v2/r1/advance_check.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/advance_check.json",
       "schema_version": "advance_check_v1"
     },
     {
       "name": "comparator_battery_r1_123",
-      "path": "data/artifacts/arc_d_v2/r1/comparator_battery_r1_123.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_123.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_battery_r1_42",
-      "path": "data/artifacts/arc_d_v2/r1/comparator_battery_r1_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_42.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_battery_r1_456",
-      "path": "data/artifacts/arc_d_v2/r1/comparator_battery_r1_456.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_456.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_cis_r1_123",
-      "path": "data/artifacts/arc_d_v2/r1/comparator_cis_r1_123.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_123.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "comparator_cis_r1_42",
-      "path": "data/artifacts/arc_d_v2/r1/comparator_cis_r1_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_42.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "comparator_cis_r1_456",
-      "path": "data/artifacts/arc_d_v2/r1/comparator_cis_r1_456.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_456.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "h2h_battery_full_123",
-      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_full_123.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_full_123.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_full_42",
-      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_full_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_full_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_full_456",
-      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_full_456.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_full_456.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_quick_42",
-      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_quick_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_quick_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_smoke_42",
-      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_smoke_42.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_smoke_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "roster",
-      "path": "data/artifacts/arc_d_v2/r1/roster.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/roster.json",
       "schema_version": "roster_v1"
     },
     {
       "name": "training_artifact_constrained_ols_av",
-      "path": "data/artifacts/arc_d_v2/r1/training_artifact_constrained_ols_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_constrained_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_full_ols_av",
-      "path": "data/artifacts/arc_d_v2/r1/training_artifact_full_ols_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_full_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_gbt_av",
-      "path": "data/artifacts/arc_d_v2/r1/training_artifact_gbt_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_gbt_av.json",
       "schema_version": "action_value_gbt_v1"
     },
     {
       "name": "training_artifact_selected_ols_av",
-      "path": "data/artifacts/arc_d_v2/r1/training_artifact_selected_ols_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_selected_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_selected_two_stage_av",
-      "path": "data/artifacts/arc_d_v2/r1/training_artifact_selected_two_stage_av.json",
+      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_selected_two_stage_av.json",
       "schema_version": "two_stage_action_value_v1"
     }
   ],
@@ -160,7 +160,7 @@
     {
       "name": "artifact_inventory.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/tables/artifact_inventory.csv",
-      "size_bytes": 793
+      "size_bytes": 854
     },
     {
       "name": "behavior_by_bid_type.csv",
@@ -170,7 +170,7 @@
     {
       "name": "behavior_by_contract.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/tables/behavior_by_contract.csv",
-      "size_bytes": 283
+      "size_bytes": 887
     },
     {
       "name": "behavior_summary.csv",
@@ -195,7 +195,7 @@
     {
       "name": "dataset_provenance.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/tables/dataset_provenance.csv",
-      "size_bytes": 1011
+      "size_bytes": 426
     },
     {
       "name": "h2h_delta_matrix.csv",
@@ -249,7 +249,7 @@
       "title": "Health Dashboard",
       "required": true,
       "present": true,
-      "size_bytes": 148556,
+      "size_bytes": 176173,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/dashboard_health.png"
     },
     {
@@ -258,7 +258,7 @@
       "title": "Model Evaluation Dashboard",
       "required": true,
       "present": true,
-      "size_bytes": 295349,
+      "size_bytes": 348046,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/dashboard_model_eval.png"
     },
     {
@@ -312,7 +312,7 @@
       "title": "Outcome Distributions",
       "required": false,
       "present": true,
-      "size_bytes": 77952,
+      "size_bytes": 64211,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/outcome_distributions.png"
     },
     {
@@ -339,7 +339,7 @@
       "title": "Bid and Make Rates",
       "required": true,
       "present": true,
-      "size_bytes": 40159,
+      "size_bytes": 43091,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/bid_behavior_panel.png"
     },
     {
@@ -348,7 +348,7 @@
       "title": "Bid Level Distribution",
       "required": false,
       "present": true,
-      "size_bytes": 33565,
+      "size_bytes": 44495,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/bid_level_distribution.png"
     },
     {
@@ -375,7 +375,7 @@
       "title": "Predicted vs Actual",
       "required": false,
       "present": true,
-      "size_bytes": 78766,
+      "size_bytes": 391280,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/pred_vs_actual.png"
     },
     {
@@ -384,7 +384,7 @@
       "title": "Residual Distribution",
       "required": false,
       "present": true,
-      "size_bytes": 40104,
+      "size_bytes": 85937,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/residual_distribution.png"
     },
     {
@@ -393,7 +393,7 @@
       "title": "Calibration Curve",
       "required": false,
       "present": true,
-      "size_bytes": 58230,
+      "size_bytes": 147946,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/calibration_curve.png"
     },
     {
@@ -451,12 +451,12 @@
     {
       "name": "bid_levels.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/chart_data/bid_levels.csv",
-      "size_bytes": 159
+      "size_bytes": 873
     },
     {
       "name": "calibration_bins.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/chart_data/calibration_bins.csv",
-      "size_bytes": 2046
+      "size_bytes": 7554
     },
     {
       "name": "contract_mix.csv",
@@ -466,7 +466,7 @@
     {
       "name": "feature_importances.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/chart_data/feature_importances.csv",
-      "size_bytes": 10218
+      "size_bytes": 12514
     },
     {
       "name": "h2h_by_contract.csv",
@@ -476,17 +476,17 @@
     {
       "name": "outcome_distributions.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/chart_data/outcome_distributions.csv",
-      "size_bytes": 674
+      "size_bytes": 1592
     },
     {
       "name": "predictions.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/chart_data/predictions.csv",
-      "size_bytes": 795462
+      "size_bytes": 2998748
     },
     {
       "name": "residuals.csv",
       "path": "docs/04_reports/arc_d_v2/r1/full/chart_data/residuals.csv",
-      "size_bytes": 3197
+      "size_bytes": 11970
     },
     {
       "name": "seat_balance.csv",
