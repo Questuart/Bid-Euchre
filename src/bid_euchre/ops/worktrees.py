@@ -432,10 +432,13 @@ def prune_worktrees(
     git_wts = list_worktrees_git()
     registry = list_worktrees_registry(registry_dir)
 
+    # Always check dirty state — even in dry-run mode, the operator needs
+    # accurate reporting. A stale dirty worktree must show as "quarantined"
+    # not "removed" so the dry-run output matches execute behavior.
     candidates = classify_cleanup_candidates(
         git_wts,
         registry,
-        check_dirty=not dry_run,
+        check_dirty=True,
     )
 
     results: list[PruneResult] = []

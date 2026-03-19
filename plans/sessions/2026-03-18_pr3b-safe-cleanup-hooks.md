@@ -153,9 +153,10 @@ ops.py recover [--json]                          # Show recovery guidance
 - Timeout: 5s (must be fast)
 
 **`pre-worktree-cleanup.sh`** — PreToolUse hook on `Bash`:
-- Matches tool input containing `rm -rf ../Bid-Euchre` or `git worktree remove`
-- Prints warning + suggests `uv run python scripts/internal/ops.py worktrees prune`
-- Does NOT block (advisory only — blocking requires `exitCode` non-zero)
+- Reads JSON from stdin (matching existing hook patterns)
+- Matches `.tool_input.command` containing `rm -rf ../Bid-Euchre` or `git worktree remove/prune`
+- Blocks the command (`exit 2`) and suggests `ops.py worktrees prune`
+- Per governing plan: "intercepted by PreToolUse hook and redirected to `ops.py worktrees prune`"
 - Timeout: 5s
 
 ## Implementation Order
