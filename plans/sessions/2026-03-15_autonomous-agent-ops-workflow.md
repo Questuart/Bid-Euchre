@@ -670,7 +670,31 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Implement durable event production, provider-neutral review outcome monitoring, and scheduler state as repo-owned capabilities.
 - Implement task-state tracking, compaction, recovery templates, shadow snapshot helpers, and watchdogs as repo-owned capabilities.
 - Implement worktree lifecycle tracking, TTL policy, and safe cleanup as repo-owned capabilities.
+- Attach explicit validation evidence to each infrastructure PR: tests run, dry-run checks, manual smoke checks, failure-injection checks, rollback path, and known gaps.
 - Validate the workflow through bounded pilots before making it default.
+
+## Operational Validation Gate
+
+Infrastructure PRs in this overhaul must be validated as operational changes, not
+just as code changes.
+
+- Every implementation PR must include a `Validation Performed` section in the PR
+  body before merge.
+- The validation record must include:
+  - automated tests run (`pytest`, `make check-quiet`, workflow checks, or equivalent)
+  - dry-run validation for destructive or stateful paths
+  - manual smoke checks in the real steward environment
+  - at least one failure-injection or unhappy-path check for the new capability
+  - explicit rollback or disable path
+  - known gaps or untested areas
+- New automation should launch in observe-only, report-only, or dry-run mode
+  before enforcement whenever that is technically feasible.
+- Do not remove the previous manual fallback path on first landing. Keep it until
+  the new path passes smoke validation and survives real use.
+- Treat infrastructure changes as "landed but not yet trusted" until they have
+  passed a short soak period in normal steward use without incident.
+- Merge readiness for infrastructure PRs requires more than green CI:
+  operator-facing workflows must be shown to work in the intended environment.
 
 ## Execution Risks
 
@@ -716,6 +740,15 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Mitigation: staged rollout with acceptance checks after each PR.
 
 ## Verification Strategy
+- Per-PR validation must include targeted automated tests plus operational smoke
+  tests for the specific capability being introduced.
+- Per-PR validation must include at least one failure-injection check for the new
+  path, not just the happy path.
+- For new enforcement or automation surfaces, validate detect/report behavior
+  first and enable mutation or enforcement only after shadow-mode confidence is
+  established.
+- After merge, keep new infrastructure on a short soak period before removing
+  manual fallbacks or older workflow paths.
 - Unit tests for `ops.py` parsing and state aggregation.
 - Unit tests for role metadata and recovery logic.
 - Unit tests for durable event append/drain, review outcome aggregation, and scheduler tick/recovery behavior.

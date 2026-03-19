@@ -384,3 +384,315 @@ def classify_cleanup_candidates(
         )
 
     return candidates
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle operations: prune, quarantine, archive
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PruneResult:
+    """Result of a prune decision for one worktree."""
+
+    path: str
+    branch: str
+    action: str  # "removed" | "skipped" | "quarantined"
+    reason: str
+    dry_run: bool
+
+
+def prune_worktrees(
+    runtime_dir: Path,
+    *,
+    dry_run: bool = True,
+    events_dir: Path | None = None,
+) -> list[PruneResult]:
+    """Apply cleanup policy to all worktrees.
+
+    Defaults to dry-run mode. Pass ``dry_run=False`` (CLI: ``--execute``)
+    to actually remove worktrees.
+
+    Policy:
+    - Protected worktrees (steward lanes): always skipped
+    - Persistent lifecycle class: always skipped
+    - Active session: skipped
+    - Stale + dirty: quarantined (diff saved)
+    - Stale + clean: removed (only when ``dry_run=False``)
+
+    Args:
+        runtime_dir: Runtime directory root.
+        dry_run: If True (default), report what would be done without acting.
+        events_dir: Override for events directory.
+
+    Returns:
+        List of PruneResult describing each decision.
+    """
+    registry_dir = runtime_dir / "worktree_registry"
+    git_wts = list_worktrees_git()
+    registry = list_worktrees_registry(registry_dir)
+
+    candidates = classify_cleanup_candidates(
+        git_wts,
+        registry,
+        check_dirty=not dry_run,
+    )
+
+    results: list[PruneResult] = []
+
+    for candidate in candidates:
+        if candidate.is_protected:
+            results.append(
+                PruneResult(
+                    path=candidate.path,
+                    branch=candidate.branch,
+                    action="skipped",
+                    reason="Protected worktree",
+                    dry_run=dry_run,
+                )
+            )
+            continue
+
+        if candidate.cleanup_state == "active":
+            results.append(
+                PruneResult(
+                    path=candidate.path,
+                    branch=candidate.branch,
+                    action="skipped",
+                    reason="Active session",
+                    dry_run=dry_run,
+                )
+            )
+            continue
+
+        if candidate.cleanup_state in ("idle", "stale") and not candidate.is_dirty:
+            if candidate.cleanup_state == "stale":
+                if dry_run:
+                    results.append(
+                        PruneResult(
+                            path=candidate.path,
+                            branch=candidate.branch,
+                            action="removed",
+                            reason=f"Would remove: {candidate.reason}",
+                            dry_run=True,
+                        )
+                    )
+                else:
+                    try:
+                        archive_worktree(
+                            candidate.path,
+                            runtime_dir,
+                            events_dir=events_dir,
+                        )
+                        results.append(
+                            PruneResult(
+                                path=candidate.path,
+                                branch=candidate.branch,
+                                action="removed",
+                                reason=candidate.reason,
+                                dry_run=False,
+                            )
+                        )
+                    except (OSError, subprocess.SubprocessError) as e:
+                        results.append(
+                            PruneResult(
+                                path=candidate.path,
+                                branch=candidate.branch,
+                                action="skipped",
+                                reason=f"Removal failed: {e}",
+                                dry_run=False,
+                            )
+                        )
+            else:
+                results.append(
+                    PruneResult(
+                        path=candidate.path,
+                        branch=candidate.branch,
+                        action="skipped",
+                        reason=f"Idle but within TTL: {candidate.reason}",
+                        dry_run=dry_run,
+                    )
+                )
+            continue
+
+        if candidate.cleanup_state == "quarantined" or candidate.is_dirty:
+            if dry_run:
+                results.append(
+                    PruneResult(
+                        path=candidate.path,
+                        branch=candidate.branch,
+                        action="quarantined",
+                        reason=f"Would quarantine: {candidate.reason}",
+                        dry_run=True,
+                    )
+                )
+            else:
+                quarantine_worktree(
+                    candidate.path,
+                    candidate.reason,
+                    runtime_dir,
+                    events_dir=events_dir,
+                )
+                results.append(
+                    PruneResult(
+                        path=candidate.path,
+                        branch=candidate.branch,
+                        action="quarantined",
+                        reason=candidate.reason,
+                        dry_run=False,
+                    )
+                )
+            continue
+
+        # Fallback: unknown state → skip
+        results.append(
+            PruneResult(
+                path=candidate.path,
+                branch=candidate.branch,
+                action="skipped",
+                reason=f"Unknown cleanup state: {candidate.cleanup_state}",
+                dry_run=dry_run,
+            )
+        )
+
+    return results
+
+
+def quarantine_worktree(
+    worktree_path: str,
+    reason: str,
+    runtime_dir: Path,
+    *,
+    events_dir: Path | None = None,
+) -> Path:
+    """Save a worktree's uncommitted diff and mark it as quarantined.
+
+    Args:
+        worktree_path: Path to the worktree directory.
+        reason: Human-readable reason for quarantine.
+        runtime_dir: Runtime directory root.
+        events_dir: Override for events directory.
+
+    Returns:
+        Path to the saved diff file.
+    """
+    quarantine_dir = runtime_dir / "worktree_quarantine"
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate a slug from the directory name
+    slug = Path(worktree_path).name.replace("/", "_").replace(" ", "_")
+    diff_file = quarantine_dir / f"{slug}.diff"
+
+    # Save the diff
+    result = subprocess.run(
+        ["git", "-C", worktree_path, "diff", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    diff_content = (
+        result.stdout if result.returncode == 0 else f"# diff failed: {result.stderr}"
+    )
+    diff_file.write_text(diff_content)
+
+    logger.info("Quarantined %s → %s (reason: %s)", worktree_path, diff_file, reason)
+
+    # Emit event
+    try:
+        from bid_euchre.ops.events import append_event
+
+        append_event(
+            "worktree_quarantined",
+            "ops.worktrees",
+            "ops",
+            {
+                "worktree_path": worktree_path,
+                "reason": reason,
+                "diff_file": str(diff_file),
+            },
+            events_dir,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to emit quarantine event for %s", worktree_path)
+
+    return diff_file
+
+
+def archive_worktree(
+    worktree_path: str,
+    runtime_dir: Path,
+    *,
+    events_dir: Path | None = None,
+    force: bool = False,
+) -> None:
+    """Remove a worktree via ``git worktree remove``.
+
+    **HIGH RISK**: This is irreversible. Guards:
+    - Rejects if ``worktree_path`` resolves to the current working directory
+    - Rejects if the worktree is in the protected list
+    - Rejects if the worktree is dirty (unless ``force=True``)
+
+    Args:
+        worktree_path: Path to the worktree directory.
+        runtime_dir: Runtime directory root.
+        events_dir: Override for events directory.
+        force: If True, allow removal of dirty worktrees.
+
+    Raises:
+        ValueError: If the worktree is the current directory or is protected.
+        RuntimeError: If the worktree is dirty and ``force`` is False.
+        subprocess.SubprocessError: If ``git worktree remove`` fails.
+    """
+    resolved = str(Path(worktree_path).resolve())
+    cwd = str(Path.cwd().resolve())
+
+    if resolved == cwd:
+        raise ValueError(
+            f"Cannot archive the current working directory: {worktree_path}"
+        )
+
+    if is_protected(worktree_path):
+        raise ValueError(f"Cannot archive protected worktree: {worktree_path}")
+
+    if not force and is_worktree_dirty(worktree_path):
+        raise RuntimeError(
+            f"Worktree {worktree_path} has uncommitted changes. "
+            f"Use quarantine first, or pass force=True."
+        )
+
+    # Look up lane_id from registry for event attribution
+    registry_dir = runtime_dir / "worktree_registry"
+    registry = list_worktrees_registry(registry_dir)
+    lane_id = "ops"
+    for entry in registry:
+        if str(Path(entry.get("worktree_path", "")).resolve()) == resolved:
+            lane_id = entry.get("lane_id", "ops")
+            break
+
+    # Perform removal
+    result = subprocess.run(
+        ["git", "worktree", "remove", worktree_path],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            f"git worktree remove failed: {result.stderr.strip()}"
+        )
+
+    logger.info("Archived worktree: %s", worktree_path)
+
+    # Emit event
+    try:
+        from bid_euchre.ops.events import append_event
+
+        append_event(
+            "worktree_archived",
+            "ops.worktrees",
+            lane_id,
+            {"worktree_path": worktree_path},
+            events_dir,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to emit archive event for %s", worktree_path)

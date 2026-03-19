@@ -541,6 +541,16 @@ One commit per logical slice. Suggested commit sequence:
 
 ## Validation Plan
 
+Operational validation for this PR must follow the governing plan's
+infrastructure gate:
+
+- Include a `Validation Performed` section in the PR body before merge.
+- Record automated tests run, dry-run checks, manual steward-environment smoke
+  checks, at least one failure-injection check, rollback/disable path, and
+  known gaps.
+- Prefer observe-only/report-only rollout before enabling mutation or
+  enforcement for new automation surfaces.
+
 ### During Implementation (Tier 1)
 ```bash
 uv run python -m pytest tests/unit/test_ops_events.py -v
@@ -555,11 +565,31 @@ git fetch origin main && git rebase origin/main
 make check-quiet
 ```
 
+- Prepare the PR-body `Validation Performed` section with:
+  - exact test commands run
+  - dry-run commands and observed results
+  - manual smoke checks completed
+  - at least one unhappy-path or failure-injection exercise
+  - rollback/disable instructions
+  - known gaps
+
+### Failure Injection
+- Create at least one intentionally bad or stale runtime state and verify the
+  new operator surface classifies it correctly instead of only proving the
+  happy path.
+- For destructive or enforcement-adjacent features, prove detect/report mode
+  before enabling mutation.
+
 ### Manual Verification
 - `uv run python scripts/internal/ops.py status` from main checkout
 - `uv run python scripts/internal/ops.py worktrees` reconciliation output
 - `uv run python scripts/internal/ops.py worktrees prune --dry-run` output
 - Hook interception verification (manual `rm -rf` test)
+
+### Post-Merge Soak
+- Treat the PR as landed but not yet trusted until it has survived a short soak
+  period in normal steward use.
+- Do not remove older manual fallback paths immediately after merge.
 
 ## Risk Assessment
 
