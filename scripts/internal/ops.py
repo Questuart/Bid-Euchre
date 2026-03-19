@@ -467,6 +467,8 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
     if result.critical_findings > 0:
         return 1
+    if result.stopped_reason == "error" or result.errors:
+        return 1
     return 0
 
 

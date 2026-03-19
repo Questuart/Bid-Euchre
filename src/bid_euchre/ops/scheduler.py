@@ -36,6 +36,9 @@ DEFAULT_CHECKS = [
     "heartbeats",
     "task_progress",
     "worktree_health",
+    "ci_stuck",
+    "subagent_failures",
+    "scope_drift",
 ]
 
 

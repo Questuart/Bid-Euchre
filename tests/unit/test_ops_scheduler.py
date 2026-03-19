@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.scheduler import (
+    DEFAULT_CHECKS,
     MAX_DAEMON_ITERATIONS,
     DaemonResult,
     SchedulerState,
@@ -247,6 +248,16 @@ class TestDaemonConstants:
 
     def test_max_iterations_cap(self) -> None:
         assert MAX_DAEMON_ITERATIONS == 1000
+
+    def test_default_checks_includes_phase3d(self) -> None:
+        """DEFAULT_CHECKS must include all Phase 3D watchdog names."""
+        assert "ci_stuck" in DEFAULT_CHECKS
+        assert "subagent_failures" in DEFAULT_CHECKS
+        assert "scope_drift" in DEFAULT_CHECKS
+        # Also verify Phase 3A checks are still present
+        assert "heartbeats" in DEFAULT_CHECKS
+        assert "task_progress" in DEFAULT_CHECKS
+        assert "worktree_health" in DEFAULT_CHECKS
 
 
 class TestDaemon:

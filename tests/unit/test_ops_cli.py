@@ -855,6 +855,46 @@ class TestCmdDaemon:
         assert data["stopped_reason"] == "max_iterations"
 
 
+class TestCmdDaemonErrorExit:
+    """Tests for daemon error exit code (Codex P2 fix)."""
+
+    def test_daemon_error_returns_1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Daemon that stops on errors should return non-zero."""
+        from bid_euchre.ops import scheduler as sched_mod
+        from bid_euchre.ops.scheduler import DaemonResult
+
+        mock_result = DaemonResult(
+            ticks_completed=2,
+            total_findings=0,
+            critical_findings=0,
+            total_events_emitted=3,
+            errors=["tick 1 failed", "tick 2 failed", "tick 3 failed"],
+            stopped_reason="error",
+        )
+        monkeypatch.setattr(sched_mod, "daemon", lambda **kw: mock_result)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "daemon",
+                "--max-ticks",
+                "5",
+            ]
+        )
+        assert rc == 1
+
+
 class TestCmdRetry:
     """Tests for the retry subcommand."""
 
