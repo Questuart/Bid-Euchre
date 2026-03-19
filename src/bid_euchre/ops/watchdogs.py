@@ -314,8 +314,9 @@ def run_all_watchdogs(
     heartbeat_staleness_minutes: int = 5,
     task_staleness_minutes: int = 30,
     now: datetime | None = None,
+    checks: set[str] | None = None,
 ) -> list[WatchdogFinding]:
-    """Run all watchdog checks and return combined findings.
+    """Run watchdog checks and return combined findings.
 
     Args:
         runtime_dir: Runtime directory root.
@@ -323,23 +324,32 @@ def run_all_watchdogs(
         heartbeat_staleness_minutes: Threshold for heartbeat checks.
         task_staleness_minutes: Threshold for task progress checks.
         now: Override current time for testing.
+        checks: Set of check names to run. If None, runs all.
+            Valid names: ``"heartbeats"``, ``"task_progress"``,
+            ``"worktree_health"``.
 
     Returns:
         Combined list of all watchdog findings, sorted by severity.
     """
+    all_checks = {"heartbeats", "task_progress", "worktree_health"}
+    active = checks if checks is not None else all_checks
+
     findings: list[WatchdogFinding] = []
 
-    findings.extend(
-        check_heartbeats(
-            plans_dir, staleness_minutes=heartbeat_staleness_minutes, now=now
+    if "heartbeats" in active:
+        findings.extend(
+            check_heartbeats(
+                plans_dir, staleness_minutes=heartbeat_staleness_minutes, now=now
+            )
         )
-    )
-    findings.extend(
-        check_task_progress(
-            runtime_dir, staleness_minutes=task_staleness_minutes, now=now
+    if "task_progress" in active:
+        findings.extend(
+            check_task_progress(
+                runtime_dir, staleness_minutes=task_staleness_minutes, now=now
+            )
         )
-    )
-    findings.extend(check_worktree_health(runtime_dir))
+    if "worktree_health" in active:
+        findings.extend(check_worktree_health(runtime_dir))
 
     # Sort: critical first, then warning, then info
     severity_order = {"critical": 0, "warning": 1, "info": 2}

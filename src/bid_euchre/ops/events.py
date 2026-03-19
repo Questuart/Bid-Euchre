@@ -219,10 +219,13 @@ def drain_events(
         for line in to_drain:
             f.write(line + "\n")
 
-    # Rewrite active log with remaining events
-    with open(events_file, "w") as f:
+    # Atomically rewrite active log with remaining events.
+    # Write to a temp file first, then rename to avoid data loss on crash.
+    tmp_file = events_file.with_suffix(".tmp")
+    with open(tmp_file, "w") as f:
         for line in to_keep:
             f.write(line + "\n")
+    tmp_file.rename(events_file)
 
     logger.info("Drained %d events to archive", len(to_drain))
     return len(to_drain)
