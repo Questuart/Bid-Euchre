@@ -395,8 +395,8 @@ def generate_report(report_dir: Path) -> str:
                 elif "r2_positive" in check:
                     notes.append(
                         f"- **Sanity: {check}** — failed{count_note}. "
-                        f"Value {value}; negative R² indicates the model performs "
-                        "worse than a constant predictor on this contract."
+                        f"Value {value}; non-positive R² indicates the model performs "
+                        "no better than a constant predictor on this contract."
                     )
                 else:
                     notes.append(

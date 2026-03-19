@@ -168,6 +168,44 @@ class TestLoadSave:
         assert data["version"] == 1
         assert len(data["entries"]) == 1
 
+    def test_save_no_double_close_on_replace_failure(self, memory_dir: Path) -> None:
+        """os.close(fd) must not be called twice when os.replace() fails (#971)."""
+        import os
+        from unittest.mock import patch
+
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="abc",
+                    category="repo_fact",
+                    key="test",
+                    value="val",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+
+        close_calls: list[int] = []
+        original_close = os.close
+
+        def tracking_close(fd: int) -> None:
+            close_calls.append(fd)
+            original_close(fd)
+
+        with (
+            patch("os.replace", side_effect=OSError("disk full")),
+            patch("os.close", side_effect=tracking_close),
+        ):
+            with pytest.raises(OSError, match="disk full"):
+                save_memory(store, memory_dir)
+
+        # The fd should be closed exactly once, not twice
+        assert (
+            len(close_calls) == 1
+        ), f"os.close() called {len(close_calls)} times, expected 1"
+
 
 class TestValidation:
     """Tests for validate_entry() and validate_provenance()."""
