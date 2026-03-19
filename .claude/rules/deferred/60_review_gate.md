@@ -151,7 +151,7 @@ CRITICAL findings trigger immediate fix PRs.
 
 ## System Ownership
 
-Three review systems now coexist. Each owns a distinct scope — they do not
+Four review systems now coexist. Each owns a distinct scope — they do not
 overlap or replace each other.
 
 | System | Trigger | Scope | Where |

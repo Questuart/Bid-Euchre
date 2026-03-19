@@ -44,6 +44,8 @@ class TestClaudeReviewWorkflow:
         prompt_lower = prompt.lower()
         found = {t for t in quality_terms if t in prompt_lower}
         assert found, f"prompt must mention at least one of {quality_terms}"
+        # Must scope review to the PR diff
+        assert "diff" in prompt_lower, "prompt must instruct diff-scoped review"
         # Must instruct Claude to post findings as review comments
         assert (
             "review comments" in prompt_lower
