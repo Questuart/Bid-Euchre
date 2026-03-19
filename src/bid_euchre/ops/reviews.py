@@ -17,6 +17,11 @@ from dataclasses import asdict, dataclass
 
 logger = logging.getLogger("ops.reviews")
 
+# Review context names recognized as "review outcomes".
+# The first match wins when determining review_status.
+# Extend this list when adding a new online reviewer.
+DEFAULT_REVIEW_CONTEXTS: tuple[str, ...] = ("reviewing-changes",)
+
 
 @dataclass
 class ReviewOutcome:
@@ -97,16 +102,23 @@ def _get_pr_checks(pr_number: int) -> list[dict]:
         return []
 
 
-def _classify_ci_status(checks: list[dict]) -> str:
+def _classify_ci_status(
+    checks: list[dict],
+    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+) -> str:
     """Classify overall CI status from individual checks.
 
-    Excludes the reviewing-changes status to avoid circular dependency.
+    Excludes review-related status contexts to avoid circular dependency.
+
+    Args:
+        checks: List of check dicts with ``name`` and ``state`` keys.
+        review_contexts: Check names to treat as review (not CI) statuses.
 
     Returns:
         "success", "failure", "pending", or "unknown"
     """
-    # Filter out review loop's own status
-    ci_checks = [c for c in checks if c.get("name") != "reviewing-changes"]
+    # Filter out review statuses
+    ci_checks = [c for c in checks if c.get("name") not in review_contexts]
     if not ci_checks:
         return "pending"
 
@@ -121,14 +133,25 @@ def _classify_ci_status(checks: list[dict]) -> str:
     return "unknown"
 
 
-def _get_review_status(checks: list[dict]) -> str:
-    """Extract the reviewing-changes commit status.
+def _get_review_status(
+    checks: list[dict],
+    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+) -> str:
+    """Extract review status from recognized review contexts.
+
+    Searches checks for any name matching ``review_contexts``. The first
+    match wins. This is configurable so the module is not locked to a
+    single review provider.
+
+    Args:
+        checks: List of check dicts with ``name`` and ``state`` keys.
+        review_contexts: Check names recognized as review outcomes.
 
     Returns:
-        "success", "failure", "pending", or "none" (if no such status exists).
+        "success", "failure", "pending", or "none" (if no review context found).
     """
     for check in checks:
-        if check.get("name") == "reviewing-changes":
+        if check.get("name") in review_contexts:
             state = check.get("state", "PENDING")
             return {
                 "SUCCESS": "success",
