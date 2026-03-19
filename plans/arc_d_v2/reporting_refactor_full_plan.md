@@ -958,10 +958,10 @@ Accepted degraded states documented in §16.6.
 - ✅ QUICK and FULL both produce usable 00/01/02 bundles
 - ✅ QUICK decision reports: r2/r3 regenerated PENDING → PRELIMINARY (#877); r0/r1 show ADVANCE (correct)
 - ✅ Health analysis: FULL bundles have `source=parquet` outcome distributions (#881); QUICK bundles have `source=synthetic` (accepted degraded state — see §16.6)
-- ✅ Model evaluation: All 4 FULL bundles include predictions.csv, residuals.csv, calibration_bins.csv, seat_balance.csv; GBT model eval skipped (joblib path mismatch — accepted known gap)
+- ⚠️ Model evaluation: R0-R2 FULL bundles include model-eval CSVs AND rendered Charts 10, 16-18; **R3 FULL has CSVs but Charts 10, 16-18 are absent** (R3 was regenerated before chart pipeline update — accepted known gap, see §16.6 DS-4); GBT model eval skipped (joblib path mismatch — see §16.6 DS-3)
 - ✅ behavior_by_contract.csv facets by contract: all 8 CSVs have suit/high/low/pooled rows (#942)
 - ✅ bid_levels.csv: FULL bundles have per-bid-level schema (#881); QUICK bundles have aggregate fallback (acceptable)
-- ✅ Manifests correctly report mode, seeds, and model class
+- ⚠️ Manifests correctly report mode, seeds, and model class for R0-R2; **R3/full still shows `Class: None`** for all models (R3 was regenerated before manifest metadata repair — accepted known gap, see §16.6 DS-4)
 - ✅ 02_decision.md is the sole decision artifact; 04_rung_decision.md removed from all FULL bundles (final closeout PR)
 - ✅ 23-chart numbered registry preserved; Charts 21/22 marked absent/data-blocked (accepted degraded state — see §16.6)
 - ✅ No new top-level report files added
@@ -1101,6 +1101,20 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
 - Only OLS-family model eval CSVs are produced.
 - Policy: Accepted known gap. GBT model eval would require pipeline
   adjustment to discover joblib paths.
+
+**DS-4: R3/full bundle stale relative to R0-R2**
+- R3/full was regenerated before the chart pipeline and manifest metadata
+  updates that R0-R2 received (#881, #877).
+- Specific gaps:
+  - Charts 10, 16-18 (seat_balance, pred_vs_actual, residual_distribution,
+    calibration_curve) are absent despite source CSVs being present.
+  - Model class is `None` for all models in 00_manifest.md (R0-R2 have
+    correct class names like `ModeloEspecifico`, `ActionValueBidder`).
+  - Evidence manifest chart_data entries were updated (this closeout PR)
+    but chart rendering was not re-run.
+- Policy: Accepted known gap. Fix requires R3/full bundle regeneration
+  from the updated pipeline. The CSVs are present; only chart rendering
+  and manifest metadata are stale.
 
 ## 17. Regeneration Prerequisites (2026-03-18)
 
