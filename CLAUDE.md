@@ -152,6 +152,7 @@ uv run python -m pytest tests/unit/test_rules.py::test_specific  # Single test
 | `analysis/` | Statistical analysis (stats, paired comparisons, models) |
 | `arc_d_v2/` | Arc D v2 lineage orchestration, charts, tables, reports |
 | `validation/` | Promotion validation and schemas |
+| `ops/` | Operator tooling (internal): status, worktrees, events, watchdogs, scheduler |
 | `scoring.py` | Top-level scoring module |
 
 **Import boundary:** `src/` must NOT import from `experiments/` or `tests/`.
