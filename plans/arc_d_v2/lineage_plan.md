@@ -3036,7 +3036,7 @@ framework (9 checks) and advance/halt decision. All 4 FULL rungs advanced
 |------|--------------|--------------|-------------|
 | R0 | Hand-only (39 features) | Model rankings from hand information alone? | ADVANCE (7/7 pass, 2 skip) |
 | R1 | +6 partner + 2 position (47 features) | Does partner signal help? | ADVANCE (9/9 pass) |
-| R2 | +12 opponent (59 features) | Does opponent signal help? | ADVANCE override (H4 R² 0.604 < 0.621) |
+| R2 | +12 opponent (59 features) | Does opponent signal help? | ADVANCE override (H2 R² 0.604 < 0.621) |
 | R3 | +Moon/loner action space | Do models learn moon/loner risk? | ADVANCE (9/9 pass) — lineage complete |
 
 ### Cross-Rung Trajectory (FULL mode)
@@ -3056,10 +3056,12 @@ framework (9 checks) and advance/halt decision. All 4 FULL rungs advanced
    selection did not help linear models on this data — the OLS trio question
    (§26.2 criterion 11) is resolved: selection is unnecessary.
 
-2. **Best H2H performer:** `gbt_av` dominated all head-to-head matchups across
-   all tiers (smart, anchor, heuristic) at every rung. GBT peaked at R2 in win
-   rate (57.2%) and pooled delta (+1.053 at R1), then slightly declined at R3
-   as the expanded action space increased decision complexity.
+2. **Best H2H performer:** `gbt_av` dominated head-to-head matchups in the
+   smart and anchor tiers at every rung, and led the heuristic tier at R0,
+   R2, and R3 (at R1, `modeloespecifico` posted a higher heuristic-tier
+   delta). GBT peaked at R2 in win rate (57.2%) and pooled delta (+1.053
+   at R1), then slightly declined at R3 as the expanded action space
+   increased decision complexity.
 
 3. **Comparator vs H2H divergence:** `full_ols_av` ranked #1 in comparator
    (solo scoring) but underperformed in H2H (game-theoretic evaluation) at
@@ -3067,9 +3069,9 @@ framework (9 checks) and advance/halt decision. All 4 FULL rungs advanced
    methods capture fundamentally different aspects of bidding quality — solo
    expected value vs adversarial robustness.
 
-4. **R² recovery (major finding):** GBT suit R² dropped from 0.588 (R0) to
-   0.604 (R1/R2), triggering an INVESTIGATE verdict at R2 that was overridden
-   to ADVANCE. R3's expanded action space (moon/loner bidding signals) then
+4. **R² recovery (major finding):** GBT suit R² rose modestly from 0.588 (R0)
+   to 0.604 (R1/R2), but R2 fell short of the H2 threshold (>0.621),
+   triggering an INVESTIGATE verdict that was overridden to ADVANCE. R3's expanded action space (moon/loner bidding signals) then
    dramatically improved suit R² to 0.900 — the highest in the lineage. This
    retroactively validates the R2 override decision. The moon/loner features
    provided substantial predictive information for suit contracts.
