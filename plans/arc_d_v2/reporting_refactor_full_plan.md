@@ -1009,14 +1009,15 @@ acceptance criteria and shipped bundle reality.
 
 **Active remediation plan:** `plans/sessions/2026-03-18_reporting-refactor-alignment-closeout.md`
 
-### 16.1 behavior_by_contract.csv — pooled-only
+### 16.1 ~~behavior_by_contract.csv — pooled-only~~ ✅ FIXED
 
-`generate_behavior_by_contract()` correctly checks for `bidders_by_contract`
+~~`generate_behavior_by_contract()` correctly checks for `bidders_by_contract`
 in comparator_cis, but the source JSON artifacts lack this key. All 12
-committed behavior_by_contract.csv files contain only `contract=pooled` rows.
+committed behavior_by_contract.csv files contain only `contract=pooled` rows.~~
 
-**Fix:** Either populate `bidders_by_contract` in the comparator CIs pipeline
-(preferred) or compute per-contract behavior from H2H battery data.
+**Fixed:** Re-extracted comparator CIs from JSONL game logs with `bidders_by_contract`.
+All 8 committed behavior_by_contract.csv files now have suit/high/low/pooled rows.
+R0/R1: 16 rows (4 bidders × 4 contracts). R2/R3: 29 rows (8 bidders).
 
 ### 16.2 outcome_summary.csv — still present in 9 locations
 
@@ -1106,7 +1107,7 @@ Charts 21, 22 (decision_comparison, disagreement_outcomes) require running
 |---------------------|--------|-------|
 | Dormant extractors guarded | ✅ Fixed in code | Steps 9-10 removed from `generate_chart_data()` call path |
 | Regeneration prerequisites documented | ✅ Fixed in code | This section (§17) |
-| `behavior_by_contract.csv` contract-faceted | ⚠️ Data-blocked | Existing comparator_cis JSONs lack `bidders_by_contract`; JSONL logs exist for re-extraction but `extract_comparator_cis.py` changes in PR #909 must merge first |
+| `behavior_by_contract.csv` contract-faceted | ✅ Fixed in bundles | Re-extracted from JSONL with `bidders_by_contract`; all 8 bundles (4 QUICK + 4 FULL) now have suit/high/low/pooled rows |
 | Charts 10, 16, 17, 18 verified | ✅ Fixed in bundles | All render from R0/full chart_data |
 | Charts 21, 22 verified | ⚠️ Data-blocked | Require `generate_interpretability.py` run with joblib models; not produced by `generate_chart_data()` |
 | Governing plan §2.2 and §16 consistent | ✅ Fixed in code | Updated in #904/#909 |
