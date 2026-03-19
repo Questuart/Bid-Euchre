@@ -7,6 +7,8 @@
 **Seeds:** [42, 123, 456]
 **Anchor:** anchor_hybrid_r0_full
 
+**Governing Plan:** `plans/arc_d_v2/r1/plan.md`
+
 ## Model Roster
 
 | Model | Class | Trainable | Status |
@@ -97,11 +99,11 @@
 | Name | Size |
 |------|------|
 | `bid_levels.csv` | 159 bytes |
+| `calibration_bins.csv` | 1,729 bytes |
 | `contract_mix.csv` | 520 bytes |
 | `feature_importances.csv` | 10,218 bytes |
 | `h2h_by_contract.csv` | 5,752 bytes |
 | `outcome_distributions.csv` | 674 bytes |
-| `calibration_bins.csv` | 1,729 bytes |
 | `predictions.csv` | 677,667 bytes |
 | `residuals.csv` | 2,734 bytes |
 | `seat_balance.csv` | 347 bytes |

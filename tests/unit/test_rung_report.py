@@ -529,6 +529,18 @@ class TestDataQualityNotes:
         assert "## 10. Data Quality Notes" in content
         assert "synthetic data" in content
 
+    def test_section10_r2_zero_says_non_positive(self, base_report_dir):
+        """R²=0.0 quality note says 'non-positive', not 'negative' (#972)."""
+        tables_dir = base_report_dir / "tables"
+        (tables_dir / "sanity_bounds_check.csv").write_text(
+            "model,check_name,value,lower_bound,upper_bound,status\n"
+            "ols_av,r2_positive_pass,0.0,0.0,1.0,FAIL\n"
+        )
+        content = generate_report(base_report_dir)
+        assert "non-positive R²" in content
+        assert "negative R²" not in content
+        assert "no better than a constant predictor" in content
+
 
 class TestDecisionReportDataSanity:
     """Tests for the Data Sanity block in generate_decision_report()."""
