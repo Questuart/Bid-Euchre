@@ -5,6 +5,27 @@ Domain docs live in docs/ — read them on-demand when working in relevant areas
 Skills in .claude/skills/ provide workflow guidance — invoke with /skill-name.
 TUI task list conventions are in `.claude/rules/25_task_lists.md` — use for multi-step work.
 
+## Implementation Handoff Protocol
+
+When generating an implementation handoff for another Codex/Claude agent,
+the prompt must require this sequence before code changes begin:
+1. Refresh the governing/implementation plan context.
+2. Draft or refresh a concrete execution plan.
+3. Spawn at least one reviewer agent to review that plan.
+4. Create a task list for implementation, validation, and PR shipping.
+5. Assess the work for safe parallelism and delegate only disjoint write scopes.
+6. Execute the work end to end autonomously:
+   - implement
+   - test
+   - run smoke/failure-injection validation
+   - commit
+   - open/update the PR
+   - include `Validation Performed` evidence in the PR body
+
+Do not hand off implementation work with only a file list or goal summary.
+The handoff must explicitly tell the next agent to plan, review the plan,
+manage a task list, assess parallelism, and ship the work autonomously.
+
 ## Compaction Instructions
 
 When compacting conversation context, preserve:

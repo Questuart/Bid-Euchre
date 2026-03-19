@@ -40,6 +40,14 @@ The user can `/copy` this into a new Claude Code session to resume work.
 - Commit status: `pending` (review loop in progress)
 - Verdict: DISPATCHED — review loop running asynchronously
 
+### Implementation Directive
+- Refresh the governing/implementation plan before making edits.
+- Draft or refine the execution plan for the remaining work.
+- Spawn at least one reviewer agent to review that plan before major edits.
+- Create and maintain a task list for implementation, validation, and PR shipping.
+- Assess the work for safe parallelism before delegating.
+- Execute the work end to end autonomously through validation and PR update/shipment unless blocked.
+
 ### Context for Next Agent
 [2-3 sentences: What this PR does, what the review loop will check,
 what the next agent needs to know.]
