@@ -100,4 +100,3 @@
 | `residuals.csv` | 2,733 bytes |
 | `seat_balance.csv` | 347 bytes |
 | `selection_paths.csv` | 12,491 bytes |
-
