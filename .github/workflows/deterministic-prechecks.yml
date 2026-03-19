@@ -1,0 +1,66 @@
+name: Deterministic Prechecks
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'experiments/**'
+      - 'notebooks/**'
+
+concurrency:
+  group: prechecks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prechecks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history needed for origin/main...HEAD diff
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install package + dev deps
+        run: uv sync --frozen --all-extras
+
+      - name: Run deterministic prechecks
+        env:
+          PYTHONPATH: scripts/internal
+        run: |
+          uv run python -c "
+          import sys
+          from deterministic_prechecks import check_diff, get_blocking_findings
+
+          findings = check_diff(base='origin/main')
+          blockers = get_blocking_findings(findings)
+
+          # Print summary
+          print(f'Total findings: {len(findings)}')
+          print(f'Blocking (P0/P1): {len(blockers)}')
+          print()
+
+          for f in findings:
+              icon = 'BLOCK' if f.severity in ('P0', 'P1') else 'WARN'
+              print(f'  [{icon}] {f.check_id} {f.file}:{f.line} — {f.message}')
+
+          if blockers:
+              print()
+              print('ERROR: Blocking findings detected')
+              sys.exit(1)
+          else:
+              print()
+              print('OK: No blocking findings')
+          "

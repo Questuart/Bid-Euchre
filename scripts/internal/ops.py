@@ -8,6 +8,9 @@ Usage:
     uv run python scripts/internal/ops.py tick [--json]
     uv run python scripts/internal/ops.py health [--json]
     uv run python scripts/internal/ops.py watchdogs [--json]
+    uv run python scripts/internal/ops.py reviews [--json]
+    uv run python scripts/internal/ops.py ci [--json]
+    uv run python scripts/internal/ops.py ci --pr N [--json]
 """
 
 from __future__ import annotations
@@ -381,6 +384,60 @@ def cmd_recover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reviews(args: argparse.Namespace) -> int:
+    """Show PR review/check outcomes from GitHub."""
+    from bid_euchre.ops.reviews import (
+        format_reviews_json,
+        format_reviews_text,
+        get_open_pr_reviews,
+        get_pr_review_detail,
+    )
+
+    pr_number = getattr(args, "pr", None)
+
+    if pr_number is not None:
+        try:
+            outcome = get_pr_review_detail(pr_number)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+        if args.json:
+            print(json.dumps(outcome.to_dict(), indent=2))
+        else:
+            print(format_reviews_text([outcome]))
+        return 0
+
+    outcomes = get_open_pr_reviews()
+
+    if args.json:
+        print(json.dumps(format_reviews_json(outcomes), indent=2))
+    else:
+        print(format_reviews_text(outcomes))
+
+    return 0
+
+
+def cmd_ci(args: argparse.Namespace) -> int:
+    """Show CI status, optionally classify failures for a specific PR."""
+    pr_number = getattr(args, "pr", None)
+
+    if pr_number is None:
+        print("Error: --pr <number> is required for ci command", file=sys.stderr)
+        return 1
+
+    from bid_euchre.ops.ci import format_ci_json, format_ci_text, poll_ci_status
+
+    report = poll_ci_status(pr_number)
+
+    if args.json:
+        print(json.dumps(format_ci_json(report), indent=2))
+    else:
+        print(format_ci_text(report))
+
+    return 1 if report.overall == "failure" else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -461,6 +518,20 @@ def build_parser() -> argparse.ArgumentParser:
     # recover
     subparsers.add_parser("recover", help="Show recovery guidance for active failures")
 
+    # reviews
+    reviews_parser = subparsers.add_parser(
+        "reviews", help="PR review/check outcomes from GitHub"
+    )
+    reviews_parser.add_argument(
+        "--pr", type=int, default=None, help="Show detail for a specific PR number"
+    )
+
+    # ci
+    ci_parser = subparsers.add_parser("ci", help="CI status and failure classification")
+    ci_parser.add_argument(
+        "--pr", type=int, default=None, help="PR number to check (required)"
+    )
+
     return parser
 
 
@@ -491,6 +562,8 @@ def main(argv: list[str] | None = None) -> int:
         "health": cmd_health,
         "watchdogs": cmd_watchdogs,
         "recover": cmd_recover,
+        "reviews": cmd_reviews,
+        "ci": cmd_ci,
     }
 
     handler = commands.get(args.command)

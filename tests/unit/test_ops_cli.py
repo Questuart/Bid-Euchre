@@ -520,3 +520,218 @@ class TestCmdRecover:
         captured = capsys.readouterr().out
         assert "Active failures: 1" in captured
         assert "ci_failure" in captured
+
+
+class TestCmdReviews:
+    """Tests for the reviews subcommand."""
+
+    def test_reviews_text_no_prs(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import reviews as rev_mod
+
+        monkeypatch.setattr(rev_mod, "get_open_pr_reviews", lambda: [])
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "reviews",
+            ]
+        )
+        assert rc == 0
+        assert "No open PRs" in capsys.readouterr().out
+
+    def test_reviews_json_no_prs(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import reviews as rev_mod
+
+        monkeypatch.setattr(rev_mod, "get_open_pr_reviews", lambda: [])
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "reviews",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data == []
+
+    def test_reviews_with_pr_flag(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import reviews as rev_mod
+        from bid_euchre.ops.reviews import ReviewOutcome
+
+        mock_outcome = ReviewOutcome(
+            pr_number=42,
+            title="Test PR",
+            branch="feat/test",
+            ci_status="success",
+            review_status="success",
+            has_precheck_ci=True,
+            url="https://github.com/org/repo/pull/42",
+        )
+        monkeypatch.setattr(rev_mod, "get_pr_review_detail", lambda n: mock_outcome)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "reviews",
+                "--pr",
+                "42",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "#42" in captured
+
+
+class TestCmdCI:
+    """Tests for the ci subcommand."""
+
+    def test_ci_requires_pr(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "ci",
+            ]
+        )
+        assert rc == 1
+        assert "--pr" in capsys.readouterr().err
+
+    def test_ci_success(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import ci as ci_mod
+        from bid_euchre.ops.ci import CIStatusReport
+
+        mock_report = CIStatusReport(
+            pr_number=42, overall="success", checks=[], classifications=[]
+        )
+        monkeypatch.setattr(ci_mod, "poll_ci_status", lambda n: mock_report)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "ci",
+                "--pr",
+                "42",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "PR #42" in captured
+        assert "success" in captured
+
+    def test_ci_failure_returns_1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import ci as ci_mod
+        from bid_euchre.ops.ci import CIStatusReport
+
+        mock_report = CIStatusReport(
+            pr_number=99, overall="failure", checks=[], classifications=[]
+        )
+        monkeypatch.setattr(ci_mod, "poll_ci_status", lambda n: mock_report)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "ci",
+                "--pr",
+                "99",
+            ]
+        )
+        assert rc == 1
+
+    def test_ci_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import ci as ci_mod
+        from bid_euchre.ops.ci import CIStatusReport
+
+        mock_report = CIStatusReport(
+            pr_number=42, overall="success", checks=[], classifications=[]
+        )
+        monkeypatch.setattr(ci_mod, "poll_ci_status", lambda n: mock_report)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "ci",
+                "--pr",
+                "42",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["pr_number"] == 42
+        assert data["overall"] == "success"
