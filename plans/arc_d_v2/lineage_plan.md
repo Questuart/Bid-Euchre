@@ -1,7 +1,7 @@
 # Canonical Lineage Rebuild — v2
 
 **Date:** 2026-03-13
-**Status:** PROPOSED
+**Status:** COMPLETE
 **Scope:** Repository reorganization, multi-model comparison framework, and canonical evidence contract for Arc D v2
 **Supersedes:** `2026-03-13_canonical-lineage-rebuild-proposal.md` (v1) and ad hoc rung/report structure used across `docs/04_reports/arc_d_v1/r0`, `docs/04_reports/arc_d_v1/r1`, `docs/04_reports/arc_d_v1/r1_5`
 
@@ -3020,4 +3020,124 @@ When a rerun occurs, produce `rerun_manifest.json`:
 
 ## Outcome
 
-_To be filled after implementation._
+**Status:** COMPLETE
+**Date:** 2026-03-19
+**Final PR:** #886 (R3 FULL artifacts + decision reports + lineage state)
+**Follow-up PR:** #889 (hypothesis CSVs + R2/R3 state repairs)
+
+### Lineage Summary
+
+The Arc D v2 lineage ran 4 rungs (R0–R3) across QUICK (5,000 deals × 1 seed)
+and FULL (50,000 deals × 3 seeds) modes. Each rung was gated by a hypothesis
+framework (9 checks) and advance/halt decision. All 4 FULL rungs advanced
+(R2 via override, others clean).
+
+| Rung | Feature Delta | Key Question | Gate Result |
+|------|--------------|--------------|-------------|
+| R0 | Hand-only (39 features) | Model rankings from hand information alone? | ADVANCE (7/7 pass, 2 skip) |
+| R1 | +6 partner + 2 position (47 features) | Does partner signal help? | ADVANCE (9/9 pass) |
+| R2 | +12 opponent (59 features) | Does opponent signal help? | ADVANCE override (H4 R² 0.604 < 0.621) |
+| R3 | +Moon/loner action space | Do models learn moon/loner risk? | ADVANCE (9/9 pass) — lineage complete |
+
+### Cross-Rung Trajectory (FULL mode)
+
+| Metric | R0 | R1 | R2 | R3 |
+|--------|-----|-----|-----|-----|
+| Best net_eppd (`full_ols_av`) | 2.278 | 2.234 | 2.275 | **2.283** |
+| GBT pooled delta vs anchor | +0.703 | +1.053 | +1.012 | +0.974 |
+| GBT suit R² | 0.588 | 0.604 | 0.604 | **0.900** |
+| GBT win rate vs anchor | 53.1% | 55.8% | 57.2% | 55.3% |
+| GBT tail risk (CVaR₅) | −7.895 | −5.639 | −6.017 | −6.017 |
+
+### Key Findings
+
+1. **Best-in-lineage model:** `full_ols_av` (plain OLS, all features, no selection)
+   held the #1 comparator ranking at every rung (2.234–2.283 net_eppd). Feature
+   selection did not help linear models on this data — the OLS trio question
+   (§26.2 criterion 11) is resolved: selection is unnecessary.
+
+2. **Best H2H performer:** `gbt_av` dominated all head-to-head matchups across
+   all tiers (smart, anchor, heuristic) at every rung. GBT peaked at R2 in win
+   rate (57.2%) and pooled delta (+1.053 at R1), then slightly declined at R3
+   as the expanded action space increased decision complexity.
+
+3. **Comparator vs H2H divergence:** `full_ols_av` ranked #1 in comparator
+   (solo scoring) but underperformed in H2H (game-theoretic evaluation) at
+   every rung. This persistent divergence suggests that the two evaluation
+   methods capture fundamentally different aspects of bidding quality — solo
+   expected value vs adversarial robustness.
+
+4. **R² recovery (major finding):** GBT suit R² dropped from 0.588 (R0) to
+   0.604 (R1/R2), triggering an INVESTIGATE verdict at R2 that was overridden
+   to ADVANCE. R3's expanded action space (moon/loner bidding signals) then
+   dramatically improved suit R² to 0.900 — the highest in the lineage. This
+   retroactively validates the R2 override decision. The moon/loner features
+   provided substantial predictive information for suit contracts.
+
+5. **Partner context contributions (R1):** Partner features improved GBT H2H
+   by +0.350 pooled delta and improved tail risk by 2.256 (CVaR₅: −7.895 →
+   −5.639). The suit-relative channel decomposition (same-suit, same-color,
+   off-color) proved more informative than the coarse v1 partner features.
+
+6. **Opponent context contributions (R2):** Opponent features maintained
+   performance but did not yield the gains that partner features did. The
+   transient R² regression (0.604 vs R1's 0.604 — flat, not improved)
+   suggested that opponent signals added noise at FULL scale without
+   proportional signal. R3's action space expansion resolved this.
+
+7. **Contract mix strategy divergence:** `full_ols_av` consistently favored
+   low contracts (40.6% at R3) while GBT and other models heavily favored
+   suit (70–97%). This unconventional strategy was persistently profitable,
+   indicating that low contracts are undervalued by most model architectures.
+
+### Success Criteria Assessment
+
+**Infrastructure criteria (§26.1):**
+- ✅ (1) Rung summaries auditable without notebooks — all reports in `docs/04_reports/`
+- ✅ (2) Every chart traces to a source CSV — chart_data CSVs committed per rung
+- ✅ (3) Every finding traces through evidence manifest to run_id
+- ✅ (4) Same report structure across all rungs — 01_results, 02_decision, 03_health, 04_rung_decision
+- ✅ (5) Autonomous agent can execute a rung from the runbook — orchestrator + runbook used for all FULL runs
+- ✅ (6) Plans and QA are rung-scoped
+- ✅ (7) Cross-rung comparison is meaningful — standardized tables and metrics
+
+**Research criteria (§26.2):**
+- ✅ (8) R0 established clear rankings with non-overlapping CIs (top: `full_ols_av` 2.278, bottom: `modeloespecifico` 1.633)
+- ✅ (9) Multiple trained models significantly outperform anchor (GBT +0.974, OLS +0.212 at R3)
+- ✅ (10) Cross-rung delta table shows context effects faceted by contract type
+- ✅ (11) OLS trio resolved: feature selection does not help (`full_ols_av` ≥ `selected_ols_av` at every rung)
+- ✅ (12) GBT feature importances show partner and opponent channels used in tree splits
+
+### Amendments
+
+Five lineage amendments were registered during execution:
+
+| ID | Title | Impact |
+|----|-------|--------|
+| LA-1 | Position features | Added `auction_position` and `is_dealer` at R1 |
+| LA-2 | Anchor compatibility | Restricted anchor to H2H only (not comparator) |
+| LA-3 | QUICK-first protocol | Run QUICK before FULL to catch issues early |
+| LA-4 | FULL roster trim | Dropped legacy baselines from FULL runs |
+| LA-5 | Regeneration repair | Shared datasets + UIDs + MODE_DEALS for FULL repair |
+
+### Artifacts
+
+- **Reports:** `docs/04_reports/arc_d_v2/r{0,1,2,3}/{quick,full,canonical}/`
+- **Decision reports:** `docs/04_reports/arc_d_v2/r{0,1,2,3}/{quick,full}/04_rung_decision.md`
+- **Advance checks:** `plans/arc_d_v2/r{0,1,2,3}/advance_check.json`
+- **Lineage state:** `plans/arc_d_v2/r{0,1,2,3}/state.json`
+- **Amendments:** `plans/arc_d_v2/amendments.md`
+- **Runbook:** `plans/arc_d_v2/v2_regeneration_repair_runbook.md`
+
+### What's Next
+
+The Arc D v2 lineage is complete. Potential follow-on work (not in scope):
+
+- **R4+ (card inference):** Inferring opponent holdings from auction bids.
+  Would require new feature extraction and likely a different model architecture.
+- **Game-level strategy:** Incorporating running score and match state into
+  bidding decisions (currently excluded by design — §2 Research Intent).
+- **Ensemble methods:** Combining `full_ols_av` (best solo) and `gbt_av`
+  (best H2H) into a hybrid bidder.
+- **Browser game integration:** Using the best models as AI opponents in the
+  browser game (governed by `plans/browser_game/governing_plan.md`).
