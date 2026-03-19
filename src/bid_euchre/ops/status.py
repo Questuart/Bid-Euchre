@@ -44,7 +44,7 @@ class StatusReport:
     """Aggregated status across all lanes, sessions, and tasks."""
 
     lanes: list[LaneStatus] = field(default_factory=list)
-    active_sessions: list[dict[str, Any]] = field(default_factory=list)
+    recent_sessions: list[dict[str, Any]] = field(default_factory=list)
     active_tasks: list[dict[str, Any]] = field(default_factory=list)
     blocked_tasks: list[dict[str, Any]] = field(default_factory=list)
     completed_tasks: list[dict[str, Any]] = field(default_factory=list)
@@ -241,7 +241,7 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
 
     # Session metadata files are preserved for resume/audit — they are
     # NOT proof of live sessions. Store as recent_sessions for context.
-    report.active_sessions = sessions_data
+    report.recent_sessions = sessions_data
 
     # Categorize tasks
     for task in tasks_data:

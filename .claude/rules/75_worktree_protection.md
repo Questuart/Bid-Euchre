@@ -13,6 +13,7 @@ These worktrees are permanent and must not be deleted:
 - `Bid-Euchre-steward-author-d`
 - `Bid-Euchre-steward-author-scratch`
 - `Bid-Euchre-steward-review`
+- `Bid-Euchre-steward-ops`
 
 ## Cleanup Rules
 
