@@ -456,7 +456,7 @@
     {
       "name": "calibration_bins.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/calibration_bins.csv",
-      "size_bytes": 1731
+      "size_bytes": 2047
     },
     {
       "name": "contract_mix.csv",
@@ -481,12 +481,12 @@
     {
       "name": "predictions.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/predictions.csv",
-      "size_bytes": 679196
+      "size_bytes": 797339
     },
     {
       "name": "residuals.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/residuals.csv",
-      "size_bytes": 2710
+      "size_bytes": 3181
     },
     {
       "name": "seat_balance.csv",

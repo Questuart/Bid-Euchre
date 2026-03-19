@@ -19,6 +19,16 @@ full_ols_av,pass,7,-0.2156,3.234,500
 full_ols_av,pass,8,-0.0342,3.036,500
 full_ols_av,pass,9,0.1923,3.052,500
 full_ols_av,pass,10,0.6153,2.796,500
+gbt_av,pass,1,-1.9443,3.326,500
+gbt_av,pass,2,-1.2229,3.39,500
+gbt_av,pass,3,-0.8864,3.214,500
+gbt_av,pass,4,-0.6723,3.366,500
+gbt_av,pass,5,-0.4763,3.034,500
+gbt_av,pass,6,-0.3001,3.232,500
+gbt_av,pass,7,-0.1525,3.18,500
+gbt_av,pass,8,0.0344,3.208,500
+gbt_av,pass,9,0.2709,2.918,500
+gbt_av,pass,10,0.7735,3.286,500
 selected_ols_av,pass,1,-4.6257,3.398,500
 selected_ols_av,pass,2,-3.1266,3.244,500
 selected_ols_av,pass,3,-2.3602,3.554,500
