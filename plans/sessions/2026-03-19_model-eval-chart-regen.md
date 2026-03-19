@@ -102,12 +102,14 @@ Input directories per rung:
 ### Items 1-4 assessment
 1. ✅ #980 verified on main, DS-3 truthfulness pass done
 2. ✅ Model-eval surfaces regenerated for R0-R2/FULL
-3. ✅ DS-3 fully resolved — no remaining gaps
+3. ✅ DS-3 resolved for R0-R2/FULL. R3/FULL GBT eval data-blocked (no FULL parquet).
+   Fixed DS-3 overclaim ("R0-R3" → "R0-R2") in governing plan.
 4. ❌ Charts 21/22 deferred — `action_value.parquet` does not exist for any rung (DS-2 unchanged)
 
 ### Remaining degraded states
 - **DS-1:** QUICK synthetic outcome distributions (accepted policy — unchanged)
 - **DS-2:** Charts 21/22 data-blocked (no `action_value.parquet`) — unchanged
+- **DS-3 minor:** R3/FULL model-eval CSVs still show 4 models only (no FULL eval parquet)
 
 ### Validation
 - test_rung_charts: 56 passed

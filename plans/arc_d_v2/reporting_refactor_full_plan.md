@@ -1105,7 +1105,9 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
 - **Regeneration (PR #980):** R0-R2/FULL `predictions.csv`, `residuals.csv`,
   and `calibration_bins.csv` regenerated with all 5 models: `constrained_ols_av`,
   `full_ols_av`, `gbt_av`, `selected_ols_av`, `selected_two_stage_av`.
-- GBT model-eval evidence now ships in all FULL bundles (R0-R3).
+- GBT model-eval evidence now ships in R0-R2/FULL bundles. R3/FULL retains
+  4 OLS-family models only — no FULL-mode eval parquet exists for R3
+  (only QUICK datasets), so GBT CSV regeneration is data-blocked there.
 - Manifests and evidence manifests updated to reflect new CSV sizes.
 - **Known limitation:** All model-eval CSVs contain only `contract=pass` rows.
   This is a pre-existing data limitation (the `bid_n_sq` derived feature is not
