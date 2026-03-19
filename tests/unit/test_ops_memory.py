@@ -10,6 +10,7 @@ from bid_euchre.ops.memory import (
     VALID_CATEGORIES,
     MemoryEntry,
     MemoryStore,
+    _generate_id,
     add_entry,
     format_memory_json,
     format_memory_text,
@@ -464,3 +465,60 @@ class TestFormatting:
         text = format_memory_text(entries)
         assert "[repo_fact]" in text
         assert "[preference]" in text
+
+
+class TestGenerateId:
+    """Tests for _generate_id collision resistance."""
+
+    def test_same_inputs_produce_different_ids(self) -> None:
+        """Two rapid calls with the same key+category yield distinct IDs."""
+        id1 = _generate_id("test_key", "repo_fact")
+        id2 = _generate_id("test_key", "repo_fact")
+        assert id1 != id2, "IDs should differ due to random nonce"
+
+    def test_id_length(self) -> None:
+        """Generated IDs are 16-char hex strings."""
+        result = _generate_id("k", "preference")
+        assert len(result) == 16
+        assert all(c in "0123456789abcdef" for c in result)
+
+
+class TestSaveMemoryAtomicWrite:
+    """Tests for save_memory atomic write safety."""
+
+    def test_save_creates_file(self, memory_dir: Path) -> None:
+        """save_memory creates the JSON file."""
+        store = MemoryStore()
+        save_memory(store, memory_dir)
+        memory_path = memory_dir / "memory.json"
+        assert memory_path.exists()
+
+    def test_save_produces_valid_json(self, memory_dir: Path) -> None:
+        """Saved file is valid JSON after atomic write."""
+        import json
+
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="x",
+                    category="repo_fact",
+                    key="k",
+                    value="v",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-19T00:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+        memory_path = memory_dir / "memory.json"
+        data = json.loads(memory_path.read_text())
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["key"] == "k"
+
+    def test_save_no_temp_file_left(self, memory_dir: Path) -> None:
+        """No .tmp files remain after successful write."""
+        store = MemoryStore()
+        save_memory(store, memory_dir)
+        tmp_files = list(memory_dir.glob("*.tmp"))
+        assert tmp_files == [], f"Temp files should be cleaned up: {tmp_files}"

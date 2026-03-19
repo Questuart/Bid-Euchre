@@ -16,7 +16,7 @@ def find_repo_root() -> Path:
     """
     p = Path.cwd().resolve()
     while p != p.parent:
-        if (p / ".git").exists() or (p / ".git").is_file():
+        if (p / ".git").exists():
             return p
         p = p.parent
     return Path.cwd()

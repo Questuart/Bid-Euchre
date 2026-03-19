@@ -39,7 +39,7 @@ def _resolve_repo_path(relative: str) -> Path:
     """
     p = Path.cwd().resolve()
     while p != p.parent:
-        if (p / ".git").exists() or (p / ".git").is_file():
+        if (p / ".git").exists():
             return p / relative
         p = p.parent
     return Path.cwd() / relative

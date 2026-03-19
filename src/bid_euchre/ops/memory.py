@@ -155,22 +155,32 @@ def load_memory(memory_dir: Path) -> MemoryStore:
 def save_memory(store: MemoryStore, memory_dir: Path) -> None:
     """Save curated memory to disk.
 
-    Uses exclusive file locking (``fcntl.flock``) to prevent corruption
-    when multiple agents write concurrently.
+    Uses atomic write (temp file + ``os.replace``) to prevent corruption
+    from concurrent writers or interrupted writes.  ``os.replace`` is
+    atomic on POSIX, so readers never see a partially-written file.
     """
-    import fcntl
+    import os
+    import tempfile
 
     memory_dir.mkdir(parents=True, exist_ok=True)
     memory_path = _get_memory_path(memory_dir)
     store.last_updated = _now_iso()
     content = json.dumps(store.to_dict(), indent=2) + "\n"
-    with open(memory_path, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
+
+    # Write to a temp file in the same directory, then atomically replace.
+    fd, tmp_path = tempfile.mkstemp(dir=str(memory_dir), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
             f.write(content)
             f.flush()
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            os.fsync(f.fileno())
+        os.replace(tmp_path, str(memory_path))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ── Validation ───────────────────────────────────────────────────
