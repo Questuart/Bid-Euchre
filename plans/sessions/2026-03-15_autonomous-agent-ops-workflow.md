@@ -5,11 +5,23 @@
 > **Scope note:** This plan has governing-initiative scale (5 PRs, new `src/` package, new CLI) but is filed as a session plan because it is infrastructure/tooling work that does not require the checkpoint/sub-plan governance designed for research lineages. If scope grows beyond 5 PRs, promote to a governed initiative under `plans/agent_ops/`.
 
 ## Plan
-- PR-1: Establish the operating model, bootstrap scripts, and documentation for role-based worktrees (`author`, `review`, `ops`) using the existing Claude worktree hook system as the foundation.
+- PR-1: Establish the steward lane model, bootstrap scripts, and documentation for lane/worktree identity using the existing Claude worktree hook system as the foundation.
 - PR-2: Add a repo-owned steward session launcher and VS Code audit workspace so autonomous sessions can be started consistently and audited from a stable editor surface, while shifting review inspection from local loop state to GitHub/CI outcomes.
 - PR-3: Add a lightweight operator CLI (`ops.py`) that summarizes worktree health, GitHub/CI review outcomes, local plan-review status, rung state, heartbeats, watchdog status for long-running processes, and latest artifacts from one command.
 - PR-4: Add a two-layer memory system: small curated memory for stable operator facts plus a local audit index over execution logs, CI/review outcomes, checkpoints, and manifests for searchable history.
-- PR-5: Roll out the autonomous workflow in stages, validate online-first PR review plus local `/review-plan`, add skill-promotion and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
+- PR-5: Roll out the autonomous workflow in stages, validate online-first PR review plus local `/review-plan`, add skill-promotion, issue-triage, and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
+
+## Current State
+
+As of 2026-03-19, future agents should treat the following as ground truth:
+
+- The canonical execution identity is the **steward lane model** (`lane_id`), not the older three-role-only model.
+- The default steward baseline is a multi-lane tmux session with persistent lanes `author-a` through `author-d`, `review`, `ops`, and `scratch`.
+- `author`, `review`, and `ops` remain useful **role classes**, but the concrete execution units are lanes/worktrees.
+- PR-1 through PR-4 have established the core substrate: steward bootstrap, audit workspace, `ops.py`, watchdogs/recovery, online-first PR review surfaces, local `/review-plan`, audit index, curated memory, and session compaction.
+- PR-5 is now primarily a rollout, adoption, and operational-proof phase rather than a large architecture-definition phase.
+- Local PR review-loop and plan-review loop state under `.claude/runtime/review_loops/**` and `.claude/runtime/plan_reviews/**` is transitional/legacy unless explicitly called out otherwise.
+- If issue automation is adopted, it starts as scheduled/event-driven triage with dedupe and thresholds; it is not a default always-on autonomous fixer.
 
 ## Sequencing — Roadmap Position
 
@@ -40,7 +52,7 @@ Adopt **user-side workflow changes only** — no repo PRs required:
 ### After Phase 4a (QUICK charts reporting sweep) → PRs 1-2
 
 Land the **lightweight workflow scaffolding**:
-- **PR-1:** Worktree/bootstrap contract, role conventions, session/task metadata
+- **PR-1:** Steward lane/worktree contract, identity conventions, session/task metadata
 - **PR-2:** tmux launcher, VS Code audit workspace and tasks
 
 These are low-risk (mostly tooling/docs) and additive. Sequencing them after Phase 4a keeps Arc D v2 closeout on the critical path while slotting infrastructure into the natural gap while FULL compute continues.
@@ -127,22 +139,41 @@ These decisions were resolved during the 2026-03-16 review session.
 **Implementation constraint:**
 - `scripts/internal/deterministic_prechecks.py` uses `git diff origin/main...HEAD`, so any GitHub workflow that runs it must fetch history deeply enough for the merge base to exist.
 
+### Issue Triage Architecture (2026-03-19)
+
+**Decision:** Add issue automation as a triage/backlog layer first, not as a permanently autonomous fix-everything worker.
+
+- The system may create or update GitHub issues from qualified operational findings, but issue creation must be thresholded, deduplicated, and source-backed.
+- `ops` remains the detector and evidence producer. An optional `issues` agent or scheduled triage workflow may convert durable findings into GitHub issues and project items.
+- The recommended initial operating mode is scheduled or event-driven triage, not a permanently running autonomous fixer lane.
+- Autonomous code execution must remain gated behind explicit issue readiness markers such as assignment, `agent-ready`, or equivalent project state. Finding an issue is not by itself permission to start coding.
+- Repeated transient failures, advisory-only findings, and duplicate incidents should update an existing issue or project item instead of creating new backlog noise.
+- Dedupe keys, issue budgets, and escalation thresholds should be repo-owned policy, not improvised by whichever agent happens to be running.
+
+**Why:**
+- The new event log, watchdogs, retry/reroute policy, and audit index now produce the evidence needed for durable backlog capture.
+- A triage layer reduces “noticed but not tracked” failures without creating an unbounded autonomous issue/PR loop.
+
 ## Decisions
 
 ### Target Workflow
 - VS Code remains the primary audit and editing UI.
 - Ghostty or another native terminal becomes the primary terminal host.
 - tmux becomes the session manager for long-lived autonomous agents.
-- Each active autonomous role gets its own git worktree.
+- Each active autonomous lane gets its own git worktree.
 - The main checkout becomes a control plane and audit root, not a write surface.
 
-### Roles
-- `author`: primary implementation agent; writes code, runs targeted checks, opens PRs.
-- `review`: advisory/manual reviewer; triages online PR review outcomes, performs bounded local plan/report/code reviews, and runs follow-up validation when online review or CI flags issues.
-- `ops`: monitoring and orchestration agent; watches rung status, GitHub/CI review outcomes, heartbeats, failures, and artifact publication.
+### Role Classes
+- `author`: implementation role class; in practice the steward baseline may host multiple author lanes (`author-a` through `author-d`) in parallel.
+- `review`: advisory/manual reviewer role class; triages online PR review outcomes, performs bounded local plan/report/code reviews, and runs follow-up validation when online review or CI flags issues.
+- `ops`: monitoring and orchestration role class; watches rung status, GitHub/CI review outcomes, heartbeats, failures, and artifact publication.
+- `issues`: optional triage/backlog role class; turns qualified, deduplicated operational findings into GitHub issues or project items and routes them for later work. It is not the default autonomous fixer.
+- `scratch`: optional utility lane for bounded exploratory or support work; not a primary ownership lane.
 
 ### Worktree Lifecycle Policy
-- The system maintains exactly three default persistent role worktrees: `author`, `review`, and `ops`.
+- The default steward session maintains persistent lanes `author-a`, `author-b`, `author-c`, `author-d`, `review`, `ops`, and `scratch`.
+- These lanes map back to role classes (`author`, `review`, `ops`, optional `issues`), but `lane_id` is the canonical machine identity.
+- Specialized lanes such as `issues` may be added later if they prove useful, but they are not part of the default persistent baseline and should start as scheduled/event-driven workflows before becoming long-lived worktrees.
 - Any additional worktree is ephemeral and must be linked to a bounded task, plan, PR, or experiment.
 - Every worktree must have repo-local metadata: path, branch, role/class, created time, last active time, owner/session, dirty status, and cleanup state.
 - Ephemeral worktrees must carry a TTL and cleanup policy from creation time.
@@ -216,7 +247,25 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `author` may edit repo files, run targeted tests, run bounded validation, create branches/worktrees, and prepare or open PRs.
 - `review` defaults to read, diff, review, and targeted validation only; write access is limited to review artifacts or explicitly delegated fix-up work.
 - `ops` may inspect runtime state, refresh indexes, run status commands, poll GitHub/CI review outcomes, and perform bounded orchestration/recovery actions; code edits are off by default unless explicitly delegated.
+- `issues` may read runtime state, query the audit index, check existing GitHub issues/project state, and create or update bounded backlog items when repo policy thresholds are met; code edits and PR creation are off by default unless a separate execution flow is explicitly triggered.
 - Destructive or recovery actions remain approval-gated regardless of role.
+
+### Issue Triage Policy
+- Issue automation exists to preserve durable backlog and routing, not to create a free-running autonomous fixer loop.
+- New GitHub issues should be created only from qualified findings such as:
+  - retry cap exhaustion
+  - repeated CI failures of the same class
+  - repeated watchdog findings on the same task, lane, PR, or worktree
+  - repeated manual intervention on the same operational failure mode
+  - migration/legacy dependencies that continue to block the target workflow
+- One-off transient failures, advisory-only findings, and duplicate incidents should update or comment on an existing issue rather than create a new one.
+- Issue creation must use repo-owned dedupe keys, thresholds, labels, and project-field conventions.
+- The first rollout should prefer scheduled or event-driven triage.
+- A permanently running `issues` lane is optional and should be adopted only after the triage policy proves low-noise in real use.
+- Autonomous implementation from issues must remain gated by explicit human/project intent:
+  - issue assigned for agent execution
+  - `agent-ready` or equivalent label/state
+  - bounded scope and validation plan
 
 ### User Role
 - The user does not manage day-to-day execution once a task is delegated.
@@ -254,7 +303,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 
 ### Control Surfaces
 - Terminal control surface: Ghostty + tmux for persistent autonomous sessions.
-- Editor audit surface: VS Code multi-root workspace spanning main checkout plus role worktrees.
+- Editor audit surface: VS Code multi-root workspace spanning main checkout plus steward lane worktrees.
 - Repo control surface: repo-owned scripts and tasks for bootstrap, status, resume, and cleanup.
 
 ### State Model
@@ -408,17 +457,18 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `ops.py worktrees quarantine`
 - `ops.py worktrees archive`
 - `ops.py reviews`
-- `ops.py rungs`
-- `ops.py failures`
-- `ops.py artifacts`
-- `ops.py resume --role <role>`
 - `ops.py health`
-- `ops.py schedule`
 - `ops.py recover`
 - `ops.py watchdogs`
+- `ops.py retry --task <TASK_ID>`
 - `ops.py ci` — poll CI status for a PR, classify failures, suggest remediation
 - `ops.py ci --pr <N>` — check specific PR
-- `ops.py ci --remediate` — apply bounded safe fixes (lint/format only by default)
+
+> **Note:** The commands above are the delivered PR-3 operator surface. Later PRs add
+> memory/index commands (`index`, `query`, `memory`, `compact`) on top of this base.
+> Older exploratory command ideas such as `rungs`, `failures`, `artifacts`,
+> `resume --role`, `schedule`, and `ci --remediate` are not part of the current
+> shipped CLI and should be treated as deferred unless reintroduced explicitly.
 
 #### CI Failure Classes
 
@@ -480,7 +530,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `review` work should be triggered by explicit local tasks or follow-up validation requests, not by a durable autonomous loop.
 
 #### Worktree Cleanup Policy
-- Persistent role worktrees are never auto-pruned.
+- Persistent steward lane worktrees are never auto-pruned.
 - Ephemeral worktrees may be `idle`, `stale`, `quarantined`, `ready_to_remove`, or `archived`.
 - Clean ephemeral worktrees with no active session and expired TTL may be removed automatically only in explicitly enabled cleanup mode.
 - Dirty or detached worktrees must go through quarantine or archive flow before removal.
@@ -494,7 +544,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Health and scheduler output must show whether the event queue, GitHub/CI polling, local plan-review path, and host-level recovery path are healthy.
 - Watchdog output must identify which process or session is unhealthy, why it tripped, which threshold fired, and the next bounded recovery action.
 - Recovery output must classify common failures and recommend the next bounded action instead of generic retry loops.
-- Worktree output must distinguish persistent role worktrees from ephemeral task worktrees and show cleanup candidacy clearly.
+- Worktree output must distinguish persistent steward lane worktrees from ephemeral task worktrees and show cleanup candidacy clearly.
 
 #### Acceptance Criteria
 - `ops.py status` answers “what is running, what is blocked, what failed, and what needs attention next?” in one command.
@@ -577,12 +627,13 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 ### PR-5: Rollout, Agent Profiles, And Validation
 
 **Depends on:** PR-1 through PR-4 (all infrastructure must be in place before rollout).
-**Produces:** Validated end-to-end workflow, promoted skills, context-safety validation.
+**Produces:** Validated end-to-end workflow, promoted skills, issue-triage workflow, context-safety validation.
 
 #### Objectives
 - Move from partial manual adoption to the default operating model.
 - Validate the end-to-end flow using real repo tasks.
 - Capture repeated successful workflows as reusable skills instead of rediscovering them.
+- Capture qualified repeated operational failures as durable backlog without creating issue spam or autonomous issue/PR loops.
 - Ensure auto-loaded context is safe to consume at high autonomy.
 
 #### Deliverables
@@ -590,6 +641,8 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - optional role-specific startup prompts or agent docs under `.claude/agents/`
 - context-safety scan script for memory/summary/skill promotion
 - skill-promotion workflow doc or helper script under `.claude/skills/` or `scripts/internal/`
+- issue-triage workflow doc and issue/project conventions for qualified operational findings
+- optional `issues` agent prompt/profile or scheduled triage helper, if adopted after pilot
 - shadow snapshot/rollback workflow docs and helper script
 - validation notes in a follow-up session plan or report
 
@@ -598,6 +651,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Pilot one online PR review path with exactly one reviewer enabled.
 - Pilot one local `/review-plan` or report-review task.
 - Pilot on one rung-monitoring task.
+- Pilot one issue-triage flow from a qualified repeated finding into a deduplicated GitHub issue or project item.
 - Validate handoff behavior across restarts and across multiple active worktrees.
 - Promote at least one repeated multi-step workflow into a reusable skill.
 - Validate that generated summaries or notes are scanned before auto-loading or memory promotion.
@@ -606,10 +660,12 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 
 #### Acceptance Criteria
 - The user can delegate a task, open VS Code, and audit progress without sharing a checkout with the autonomous agent.
-- An agent can start, continue, review, and monitor work autonomously from dedicated role worktrees.
+- An agent can start, continue, review, and monitor work autonomously from dedicated steward lane worktrees.
 - PR review runs online-first with visible GitHub/CI outcomes and without depending on local review-loop orchestration.
 - Local plan review works in-session through `/review-plan` without PTY/parser fragility from a Codex subprocess loop.
 - Repeated successful workflows are captured as skills or documented operator procedures.
+- Qualified repeated operational findings can be captured as deduplicated GitHub issues or project items without flooding the backlog.
+- Autonomous code execution from the issue backlog remains explicitly gated rather than implied by issue existence alone.
 - High-autonomy context loading has a defined safety boundary and validation path.
 - Autonomous work is reversible through documented snapshot/recovery mechanisms.
 - Cleanup and recovery are documented and tested.
@@ -638,8 +694,10 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `.github/workflows/deterministic-prechecks.yml` — GitHub-hosted deterministic prechecks workflow.
 - `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` — migrated review architecture doc, marking local loop state transitional.
 - `docs/02_agent/CODEX_GITHUB_REVIEW.md` — online review path and pilot guidance.
+- `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` — qualified issue intake, dedupe, labels, and execution gates.
 - `.claude/skills/review-plan/SKILL.md` — Claude-only in-session plan review flow.
 - `.claude/skills/reviewing-plans/SKILL.md` — rubric support for `/review-plan`.
+- `.claude/agents/issues.md` or equivalent optional profile — bounded issue-triage guidance if the `issues` agent is adopted.
 - `src/bid_euchre/ops/recovery.py` — failure classification and bounded recovery templates.
 - `src/bid_euchre/ops/compaction.py` — session compaction and archive metadata helpers.
 - `src/bid_euchre/ops/index.py` — audit index build/query logic.
@@ -670,6 +728,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Implement durable event production, provider-neutral review outcome monitoring, and scheduler state as repo-owned capabilities.
 - Implement task-state tracking, compaction, recovery templates, shadow snapshot helpers, and watchdogs as repo-owned capabilities.
 - Implement worktree lifecycle tracking, TTL policy, and safe cleanup as repo-owned capabilities.
+- Implement issue-triage policy, dedupe rules, and GitHub issue/project routing as repo-owned capabilities if PR-5 adopts issue automation.
 - Attach explicit validation evidence to each infrastructure PR: tests run, dry-run checks, manual smoke checks, failure-injection checks, rollback path, and known gaps.
 - Validate the workflow through bounded pilots before making it default.
 
@@ -702,6 +761,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 
 - **Context safety scanning (PR-5):** Prompt-injection and instruction-conflict detection for auto-loaded content. No existing scanner to build on; start with a minimal keyword/pattern scanner and iterate.
 - **Shadow snapshots (PR-5):** Filesystem snapshots for rollback of autonomous edits. Must not conflict with git state or worktree lifecycle. Consider lightweight git stash/branch-based approach before building custom snapshot tooling.
+- **Issue triage automation (PR-5):** Automatic backlog creation can easily create duplicates or noise if thresholds, dedupe keys, and labels are weak. Start with triage-only authority and scheduled/event-driven pilots before considering a persistent `issues` lane.
 - **Curated memory system (PR-4):** Provenance-tracked memory distinct from MEMORY.md. Risk of duplicating or conflicting with the existing auto-memory system. Must define clear boundary: curated memory stores operator-validated facts; auto-memory remains the conversation-scoped system.
 - **SQLite audit index (PR-4):** Introduces a database dependency for operational state. Must remain optional — the workflow should degrade gracefully if the index is stale or absent.
 - **CI remediation loop (PR-3):** Autonomous CI fix-and-repush could introduce scope creep or unbounded retries. Mitigated by strict failure classification, retry caps (max 3), and escalation for non-remediable classes. The `risky/destructive` class is never auto-remediated.
@@ -729,7 +789,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Watchdogs producing noisy false positives.
   - Mitigation: per-process thresholds, observe-only rollout first, and bounded actions that default to notify rather than mutate.
 - Cleanup accidentally removing valuable in-progress worktrees.
-  - Mitigation: persistent vs ephemeral classification, dry-run-first cleanup, quarantine for dirty worktrees, and no default deletion of role worktrees.
+  - Mitigation: persistent vs ephemeral classification, dry-run-first cleanup, quarantine for dirty worktrees, and no default deletion of steward lane worktrees.
 - CI remediation introducing unrelated changes or scope creep.
   - Mitigation: fix scope = failure scope; re-push must not include unrelated changes; Tier 1 validation before each re-push.
 - CI remediation becoming an unbounded retry loop.
@@ -738,6 +798,10 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - Mitigation: mark `.claude/runtime/review_loops/**` and `.claude/runtime/plan_reviews/**` transitional/legacy, and do not build new ops dependencies on them.
 - Added tooling without operational adoption.
   - Mitigation: staged rollout with acceptance checks after each PR.
+- Issue automation flooding the backlog with transient failures or duplicates.
+  - Mitigation: repo-owned dedupe keys, thresholds, issue budgets, and update-existing behavior before opening new issues.
+- Issue discovery automatically turning into autonomous code churn.
+  - Mitigation: triage and execution are separate flows; only explicitly `agent-ready` or assigned issues may enter an autonomous coding lane.
 
 ## Verification Strategy
 - Per-PR validation must include targeted automated tests plus operational smoke
@@ -772,6 +836,7 @@ The following capabilities have no prior repo precedent and carry higher impleme
 - Manual smoke test of long-running process watchdogs against intentionally stalled sessions.
 - Manual smoke test that a lane with stale progress or out-of-scope edits is surfaced as drifting rather than merely alive.
 - Manual smoke test that blocked lanes escalate according to the documented triggers instead of silently retrying forever.
+- Manual smoke test that a qualified repeated failure creates or updates a deduplicated GitHub issue/project item rather than spamming duplicates.
 - Manual smoke test of snapshot-based rollback and recovery after an intentionally bad edit sequence.
 - Manual smoke test of CI remediation: introduce a lint failure, push, verify `ops.py ci` classifies it correctly and `author` auto-fixes within retry cap.
 - Pilot tasks that exercise:
@@ -781,13 +846,14 @@ The following capabilities have no prior repo precedent and carry higher impleme
   - rung monitoring flow
 
 ## Success Criteria
-- The default path for autonomous work is: bootstrap role worktrees -> start tmux session -> delegate tasks to agents -> audit in VS Code.
+- The default path for autonomous work is: bootstrap steward lane worktrees -> start tmux session -> delegate tasks to agents -> audit in VS Code.
 - No autonomous writing occurs from the main checkout.
 - The user no longer needs to manage multiple ad hoc terminals in a shared checkout.
 - A single repo-owned status surface answers the operational questions that currently require manual inspection.
 - Autonomous work is resumable, explicitly tracked, and recoverable without relying on implicit terminal context.
 - `ops` monitoring survives session loss through host-level recovery plus repo-local scheduler state, PR review state comes from GitHub/CI outcomes, and local plan review remains an in-session flow rather than a local subprocess loop.
 - Each active lane stays bounded by an explicit task contract, surfaces progress durably, and can be identified as on-track, blocked, or drifting without reading raw terminal history.
+- Qualified repeated incidents can be captured in GitHub issues/project state with low noise, while autonomous implementation from backlog remains explicitly gated.
 
 ## Outcome
 <!-- Filled after implementation -->
