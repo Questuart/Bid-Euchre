@@ -606,6 +606,83 @@ class TestQuarantineWorktree:
         )
         assert updated["cleanup_state"] == "quarantined"
 
+    def test_quarantine_captures_untracked_files(
+        self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Quarantine diff file must include untracked file listing (892-M2)."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        call_count = 0
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            nonlocal call_count
+            cmd = args[0] if args else kwargs.get("args", [])
+            call_count += 1
+            if "diff" in cmd:
+                return type(
+                    "R",
+                    (),
+                    {"returncode": 0, "stdout": "diff --git a/foo\n+modified\n"},
+                )()
+            if "ls-files" in cmd:
+                return type(
+                    "R",
+                    (),
+                    {"returncode": 0, "stdout": "new_file.py\ndata/scratch.csv\n"},
+                )()
+            return type("R", (), {"returncode": 0, "stdout": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        diff_path = wt_mod.quarantine_worktree(
+            "/tmp/wt-untracked",
+            "stale with untracked",
+            runtime_dir,
+            events_dir=tmp_path / "events",
+        )
+
+        content = diff_path.read_text()
+        # Must contain the diff
+        assert "diff --git" in content
+        # Must contain untracked file listing
+        assert "# Untracked files" in content
+        assert "# - new_file.py" in content
+        assert "# - data/scratch.csv" in content
+
+    def test_quarantine_no_untracked_section_when_clean(
+        self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When there are no untracked files, no untracked section is added."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "diff" in cmd:
+                return type(
+                    "R",
+                    (),
+                    {"returncode": 0, "stdout": "diff --git a/foo\n+bar\n"},
+                )()
+            # ls-files returns empty (no untracked files)
+            return type("R", (), {"returncode": 0, "stdout": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        diff_path = wt_mod.quarantine_worktree(
+            "/tmp/wt-clean-untracked",
+            "stale but no untracked",
+            runtime_dir,
+            events_dir=tmp_path / "events",
+        )
+
+        content = diff_path.read_text()
+        assert "diff --git" in content
+        assert "# Untracked files" not in content
+
 
 class TestArchiveWorktree:
     """Tests for archive_worktree()."""
@@ -671,38 +748,74 @@ class TestArchiveWorktree:
             "worktree" in str(cmd) and "remove" in str(cmd) for cmd in commands_run
         )
 
-    def test_archive_persists_cleanup_state(
+    def test_archive_cleans_registry_entry(
         self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Archive must update cleanup_state in the registry JSON."""
+        """After successful removal, the registry JSON file is deleted (892-M4)."""
         import subprocess as sp
 
         from bid_euchre.ops import worktrees as wt_mod
 
         monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
-
-        def mock_run(*args: object, **kwargs: object) -> object:
-            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-        monkeypatch.setattr(sp, "run", mock_run)
-
-        # Create a registry entry
-        _write_registry_entry(
-            runtime_dir / "worktree_registry",
-            "task-a.json",
-            lane_id="task-a",
-            lifecycle_class="ephemeral",
-            worktree_path="/tmp/some-archivable",
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type(
+                "R", (), {"returncode": 0, "stdout": "", "stderr": ""}
+            )(),
         )
 
+        # Create a registry entry for the worktree we will archive
+        registry_dir = runtime_dir / "worktree_registry"
+        _write_registry_entry(
+            registry_dir,
+            "task-archive.json",
+            lane_id="task-archive",
+            lifecycle_class="ephemeral",
+            worktree_path="/tmp/wt-to-archive",
+        )
+        # Also create an unrelated entry that should survive
+        _write_registry_entry(
+            registry_dir,
+            "other.json",
+            lane_id="other",
+            worktree_path="/tmp/other-wt",
+        )
+
+        assert (registry_dir / "task-archive.json").exists()
+        assert (registry_dir / "other.json").exists()
+
         wt_mod.archive_worktree(
-            "/tmp/some-archivable",
+            "/tmp/wt-to-archive",
             runtime_dir,
             events_dir=runtime_dir / "events",
         )
 
-        # Verify registry entry was updated
-        updated = json.loads(
-            (runtime_dir / "worktree_registry" / "task-a.json").read_text()
+        # The archived worktree's registry entry should be removed
+        assert not (registry_dir / "task-archive.json").exists()
+        # The unrelated entry should remain
+        assert (registry_dir / "other.json").exists()
+
+    def test_archive_no_crash_without_registry_entry(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Archive succeeds even when no registry entry exists for the worktree."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type(
+                "R", (), {"returncode": 0, "stdout": "", "stderr": ""}
+            )(),
         )
-        assert updated["cleanup_state"] == "archived"
+
+        # No registry entry for this worktree — should not crash
+        wt_mod.archive_worktree(
+            "/tmp/unregistered-wt",
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+        )
