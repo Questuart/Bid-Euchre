@@ -162,6 +162,58 @@ class TestCompactSession:
         )
         assert result.success
 
+    def test_partial_write_failure_cleans_up(self, archive_dir: Path) -> None:
+        """A failed compaction must not leave a stale dir that blocks retry (#954)."""
+        from unittest.mock import patch
+
+        session_id = "session-fail"
+        session_dir = archive_dir / session_id
+
+        # Patch Path.write_text to fail on artifacts.json (after metadata.json
+        # has been written, so the directory exists with partial content).
+        original_write_text = Path.write_text
+        call_count = 0
+
+        def failing_write_text(
+            self_path: Path, *args: object, **kwargs: object
+        ) -> None:
+            nonlocal call_count
+            call_count += 1
+            # Let metadata.json succeed (call 1), fail on artifacts.json (call 2)
+            if call_count == 2:
+                raise OSError("Simulated disk full")
+            original_write_text(self_path, *args, **kwargs)
+
+        with patch.object(Path, "write_text", failing_write_text):
+            result = compact_session(
+                session_id=session_id,
+                lane_id="author-a",
+                context_text="context",
+                artifacts=[
+                    ArtifactRef(path="src/foo.py", action="created"),
+                ],
+                archive_dir=archive_dir,
+            )
+
+        # First call should fail
+        assert not result.success
+        assert "Simulated disk full" in result.error
+
+        # Partial directory must be cleaned up
+        assert (
+            not session_dir.exists()
+        ), "Partial archive dir should be removed after failure"
+
+        # Retry with same session_id must succeed (not blocked by stale dir)
+        result2 = compact_session(
+            session_id=session_id,
+            lane_id="author-a",
+            context_text="retry context",
+            artifacts=[],
+            archive_dir=archive_dir,
+        )
+        assert result2.success
+
 
 class TestRetrieval:
     """Tests for list_archives, get_archive, get_archive_artifacts, get_archive_context."""

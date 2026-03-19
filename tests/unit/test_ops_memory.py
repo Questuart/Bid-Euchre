@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,89 @@ class TestLoadSave:
         store = MemoryStore()
         save_memory(store, nested)
         assert (nested / "memory.json").exists()
+
+    def test_load_skips_malformed_entries(
+        self, memory_dir: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A single bad entry must not discard the entire store (#950)."""
+        import json as _json
+
+        good_entry = {
+            "entry_id": "aaa",
+            "category": "repo_fact",
+            "key": "k1",
+            "value": "v1",
+            "source_file": "f.md",
+            "added_by": "test",
+            "added_at": "2026-03-18T10:00:00+00:00",
+        }
+        bad_entry = {
+            # missing entry_id -- will raise KeyError
+            "category": "repo_fact",
+            "key": "k2",
+            "value": "v2",
+            "source_file": "f.md",
+            "added_by": "test",
+            "added_at": "2026-03-18T11:00:00+00:00",
+        }
+        good_entry_2 = {
+            "entry_id": "ccc",
+            "category": "preference",
+            "key": "k3",
+            "value": "v3",
+            "source_file": "f.md",
+            "added_by": "test",
+            "added_at": "2026-03-18T12:00:00+00:00",
+        }
+        data = {
+            "version": 1,
+            "last_updated": "2026-03-18T12:00:00+00:00",
+            "entries": [good_entry, bad_entry, good_entry_2],
+        }
+        (memory_dir / "memory.json").write_text(_json.dumps(data))
+
+        with caplog.at_level(logging.WARNING, logger="ops.memory"):
+            store = load_memory(memory_dir)
+
+        # Two good entries survive; the bad one is skipped
+        assert len(store.entries) == 2
+        assert store.entries[0].entry_id == "aaa"
+        assert store.entries[1].entry_id == "ccc"
+        # Top-level metadata preserved
+        assert store.version == 1
+        assert store.last_updated == "2026-03-18T12:00:00+00:00"
+        # Warning was logged
+        assert any(
+            "malformed memory entry" in r.message.lower() for r in caplog.records
+        )
+
+    def test_save_atomic_no_temp_files(self, memory_dir: Path) -> None:
+        """After save_memory(), no .tmp files should remain (#951)."""
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="abc",
+                    category="repo_fact",
+                    key="test",
+                    value="val",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+
+        # No leftover temp files
+        tmp_files = list(memory_dir.glob("*.tmp"))
+        assert tmp_files == [], f"Leftover temp files: {tmp_files}"
+
+        # The written file is valid JSON
+        import json as _json
+
+        data = _json.loads((memory_dir / "memory.json").read_text())
+        assert data["version"] == 1
+        assert len(data["entries"]) == 1
 
 
 class TestValidation:
