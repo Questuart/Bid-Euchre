@@ -67,7 +67,7 @@
 | Frozen folder (_deprecated/) | `git log` check | No unauthorized changes | pass |
 | Artifact leakage (committed) | `git status data/` | Clean | pass |
 | Artifact leakage (local) | `find data/runs -type f \| wc -l` | 18,484 (gitignored) | pass |
-| Dry-run command | `uv run python experiments/run_experiment.py --dry-run --force` | Success | pass |
+| Dry-run command | `uv run python experiments/run_experiment.py --dry-run --force --seed 42` | Success | pass |
 | Promotion-gate target | `make -n promotion-gate` | Exists | pass |
 | Promotion imports | freeze/splits/eligibility/promotion | All OK | pass |
 | Promotion lint rules | `grep "def check_.*artifact\|gate\|split\|registry"` | 8 rules | pass |
