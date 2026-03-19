@@ -11,6 +11,7 @@ from bid_euchre.ops.index import (
     BuildResult,
     IndexStats,
     QueryResponse,
+    _connect,
     build_index,
     format_query_json,
     format_query_text,
@@ -508,3 +509,331 @@ class TestFormatting:
         text = format_stats_text(stats)
         assert "50" in text
         assert "event" in text
+
+
+# ── Regression tests for #952, #953, #957 ──────────────────────
+
+
+class TestRepoRootPathResolution:
+    """Regression tests for #952: repo-root-aware path derivation."""
+
+    def test_repo_root_ingests_data_runs_manifests(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """build_index(repo_root=...) ingests data/runs manifests without CWD."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        # Create data/runs manifest
+        runs_dir = repo / "data" / "runs" / "run_001"
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "evidence_manifest_R0.json").write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {"name": "model.pkl", "type": "model"},
+                        {"name": "metrics.json", "type": "metrics"},
+                    ]
+                }
+            )
+        )
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=plans,
+            repo_root=repo,
+        )
+        assert result.errors == []
+        assert result.entries_indexed >= 2  # 2 manifest artifacts
+        assert result.sources_indexed >= 1
+
+        # Verify searchable
+        resp = query(index_dir, "model")
+        assert resp.total_matches >= 1
+
+    def test_repo_root_ingests_report_metadata(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """build_index(repo_root=...) ingests docs/04_reports manifests."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        # Create docs/04_reports manifest
+        reports_dir = repo / "docs" / "04_reports" / "R0"
+        reports_dir.mkdir(parents=True)
+        (reports_dir / "manifest_R0.json").write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {"name": "01_results.md", "type": "report"},
+                    ]
+                }
+            )
+        )
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=plans,
+            repo_root=repo,
+        )
+        assert result.errors == []
+        assert result.entries_indexed >= 1
+        assert result.sources_indexed >= 1
+
+    def test_repo_root_absent_dirs_no_errors(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """When data/runs and docs/04_reports don't exist, no errors."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=plans,
+            repo_root=repo,
+        )
+        assert result.errors == []
+        assert result.sources_indexed == 0
+
+
+class TestFtsUpdateTrigger:
+    """Regression tests for #953: FTS AFTER UPDATE trigger."""
+
+    def test_fts_reflects_updated_content(self, index_dir: Path) -> None:
+        """Direct UPDATE on entries.content is reflected in FTS queries."""
+        init_schema(index_dir)
+        conn = _connect(index_dir)
+        try:
+            # Insert a source and entry
+            conn.execute(
+                "INSERT INTO sources (source_type, file_path, indexed_at) "
+                "VALUES ('test', '/tmp/test.json', '2026-01-01T00:00:00')"
+            )
+            source_id = conn.execute(
+                "SELECT source_id FROM sources WHERE file_path = '/tmp/test.json'"
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO entries (source_id, entry_type, content) "
+                "VALUES (?, 'test_entry', 'original keyword alpha')",
+                (source_id,),
+            )
+            conn.commit()
+
+            # Verify original content is searchable
+            row = conn.execute(
+                "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'alpha'"
+            ).fetchone()
+            assert row[0] == 1
+
+            # Direct UPDATE — this previously broke FTS sync (#953)
+            conn.execute(
+                "UPDATE entries SET content = 'updated keyword bravo' "
+                "WHERE source_id = ?",
+                (source_id,),
+            )
+            conn.commit()
+
+            # Old content should NOT match
+            row = conn.execute(
+                "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'alpha'"
+            ).fetchone()
+            assert row[0] == 0, "Stale FTS content found after UPDATE"
+
+            # New content SHOULD match
+            row = conn.execute(
+                "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'bravo'"
+            ).fetchone()
+            assert row[0] == 1, "Updated FTS content not found"
+
+        finally:
+            conn.close()
+
+    def test_insert_and_delete_triggers_still_work(self, index_dir: Path) -> None:
+        """Ensure the existing INSERT and DELETE triggers are not broken."""
+        init_schema(index_dir)
+        conn = _connect(index_dir)
+        try:
+            conn.execute(
+                "INSERT INTO sources (source_type, file_path, indexed_at) "
+                "VALUES ('test', '/tmp/t2.json', '2026-01-01T00:00:00')"
+            )
+            source_id = conn.execute(
+                "SELECT source_id FROM sources WHERE file_path = '/tmp/t2.json'"
+            ).fetchone()[0]
+
+            # INSERT trigger
+            conn.execute(
+                "INSERT INTO entries (source_id, entry_type, content) "
+                "VALUES (?, 'test_entry', 'insert trigger test')",
+                (source_id,),
+            )
+            conn.commit()
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM entries_fts "
+                    "WHERE entries_fts MATCH 'trigger'"
+                ).fetchone()[0]
+                == 1
+            )
+
+            # DELETE trigger
+            conn.execute("DELETE FROM entries WHERE source_id = ?", (source_id,))
+            conn.commit()
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM entries_fts "
+                    "WHERE entries_fts MATCH 'trigger'"
+                ).fetchone()[0]
+                == 0
+            )
+        finally:
+            conn.close()
+
+
+class TestSourcesIndexedAccuracy:
+    """Regression tests for #957: accurate sources_indexed for compound ingestors."""
+
+    def test_review_loop_sources_counted_accurately(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """sources_indexed reflects true count for review-loop compound ingestor."""
+        rt = tmp_path / "runtime"
+
+        # Create review loop with 1 state.json + 2 round artifacts = 3 sources
+        rl_dir = rt / "review_loops" / "pr_100"
+        rl_dir.mkdir(parents=True)
+        (rl_dir / "state.json").write_text(
+            json.dumps({"pr_number": 100, "state": "completed", "branch": "feat/x"})
+        )
+        round_dir = rl_dir / "round_1"
+        round_dir.mkdir()
+        (round_dir / "prechecks.json").write_text(json.dumps([]))
+        (round_dir / "codex_review.json").write_text(
+            json.dumps({"findings": [], "status": "clean"})
+        )
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=tmp_path / "empty_plans",
+            repo_root=tmp_path,
+        )
+        # 3 review sources: state.json + prechecks.json + codex_review.json
+        assert result.sources_indexed == 3
+        assert result.entries_indexed == 3
+
+    def test_plan_review_sources_counted_accurately(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """sources_indexed reflects true count for plan-review compound ingestor."""
+        rt = tmp_path / "runtime"
+
+        # Create 2 plan review files = 2 sources
+        pr1 = rt / "plan_reviews" / "plan_001"
+        pr1.mkdir(parents=True)
+        (pr1 / "review.json").write_text(
+            json.dumps({"plan_path": "plans/a.md", "status": "approved"})
+        )
+        pr2 = rt / "plan_reviews" / "plan_002"
+        pr2.mkdir(parents=True)
+        (pr2 / "review.json").write_text(
+            json.dumps({"plan_path": "plans/b.md", "status": "rejected"})
+        )
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=tmp_path / "empty_plans",
+            repo_root=tmp_path,
+        )
+        assert result.sources_indexed == 2
+        assert result.entries_indexed == 2
+
+    def test_report_metadata_sources_counted_accurately(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """sources_indexed reflects true count for report-metadata compound ingestor."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+
+        # Create 2 report manifests with 3 total artifacts
+        r0_dir = repo / "docs" / "04_reports" / "R0"
+        r0_dir.mkdir(parents=True)
+        (r0_dir / "manifest_R0.json").write_text(
+            json.dumps({"artifacts": [{"name": "a.md", "type": "report"}]})
+        )
+        r1_dir = repo / "docs" / "04_reports" / "R1"
+        r1_dir.mkdir(parents=True)
+        (r1_dir / "manifest_R1.json").write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {"name": "b.md", "type": "report"},
+                        {"name": "c.csv", "type": "data"},
+                    ]
+                }
+            )
+        )
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=tmp_path / "empty_plans",
+            repo_root=repo,
+        )
+        # 2 manifest files = 2 sources, 3 artifact entries
+        assert result.sources_indexed == 2
+        assert result.entries_indexed == 3
+
+    def test_mixed_compound_ingestors(self, index_dir: Path, tmp_path: Path) -> None:
+        """All three compound ingestors count sources accurately together."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        # 1 review-loop source (state.json only, no round artifacts)
+        rl_dir = rt / "review_loops" / "pr_200"
+        rl_dir.mkdir(parents=True)
+        (rl_dir / "state.json").write_text(
+            json.dumps({"pr_number": 200, "state": "completed", "branch": "feat/y"})
+        )
+
+        # 1 plan-review source
+        pr_dir = rt / "plan_reviews" / "plan_003"
+        pr_dir.mkdir(parents=True)
+        (pr_dir / "review.json").write_text(
+            json.dumps({"plan_path": "plans/c.md", "status": "approved"})
+        )
+
+        # 1 report metadata source (1 artifact)
+        r0_dir = repo / "docs" / "04_reports" / "R0"
+        r0_dir.mkdir(parents=True)
+        (r0_dir / "manifest_R0.json").write_text(
+            json.dumps({"artifacts": [{"name": "x.md", "type": "report"}]})
+        )
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=plans,
+            repo_root=repo,
+        )
+        # 1 review-loop + 1 plan-review + 1 report-metadata = 3 sources
+        assert result.sources_indexed == 3
+        # 1 entry + 1 entry + 1 entry = 3 entries
+        assert result.entries_indexed == 3
