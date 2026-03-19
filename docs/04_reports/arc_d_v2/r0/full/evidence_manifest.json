@@ -2,8 +2,8 @@
   "schema_version": "arc_d_evidence_manifest_v1",
   "lineage_id": "arc_d_v2",
   "rung_id": "r0",
-  "provenance_sha": "a090bcebbba05ee8cd27ae773567eb8ba28f75a9",
-  "governing_plan": "plans/arc_d_v2/r0/plan.md",
+  "provenance_sha": "238b33866b872987d86a2169aca6ca2cc8a6d61c",
+  "governing_plan": "",
   "plan_shas": [],
   "anchor": "anchor_hybrid_r0_full",
   "roster": [
@@ -57,11 +57,11 @@
     }
   ],
   "seeds": [
-    42,
     123,
+    42,
     456
   ],
-  "mode": "full",
+  "mode": "FULL",
   "run_ids": [],
   "lifecycle": [],
   "artifacts": [
@@ -160,7 +160,7 @@
     {
       "name": "artifact_inventory.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/tables/artifact_inventory.csv",
-      "size_bytes": 793
+      "size_bytes": 854
     },
     {
       "name": "behavior_by_bid_type.csv",
@@ -170,7 +170,7 @@
     {
       "name": "behavior_by_contract.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/tables/behavior_by_contract.csv",
-      "size_bytes": 284
+      "size_bytes": 886
     },
     {
       "name": "behavior_summary.csv",
@@ -195,7 +195,7 @@
     {
       "name": "dataset_provenance.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/tables/dataset_provenance.csv",
-      "size_bytes": 1011
+      "size_bytes": 422
     },
     {
       "name": "h2h_delta_matrix.csv",
@@ -249,7 +249,7 @@
       "title": "Health Dashboard",
       "required": true,
       "present": true,
-      "size_bytes": 148492,
+      "size_bytes": 176177,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/dashboard_health.png"
     },
     {
@@ -258,7 +258,7 @@
       "title": "Model Evaluation Dashboard",
       "required": true,
       "present": true,
-      "size_bytes": 281257,
+      "size_bytes": 341222,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/dashboard_model_eval.png"
     },
     {
@@ -312,7 +312,7 @@
       "title": "Outcome Distributions",
       "required": false,
       "present": true,
-      "size_bytes": 75476,
+      "size_bytes": 64211,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/outcome_distributions.png"
     },
     {
@@ -339,7 +339,7 @@
       "title": "Bid and Make Rates",
       "required": true,
       "present": true,
-      "size_bytes": 40149,
+      "size_bytes": 43273,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/bid_behavior_panel.png"
     },
     {
@@ -348,7 +348,7 @@
       "title": "Bid Level Distribution",
       "required": false,
       "present": true,
-      "size_bytes": 33579,
+      "size_bytes": 44495,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/bid_level_distribution.png"
     },
     {
@@ -375,7 +375,7 @@
       "title": "Predicted vs Actual",
       "required": false,
       "present": true,
-      "size_bytes": 82813,
+      "size_bytes": 409929,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/pred_vs_actual.png"
     },
     {
@@ -384,7 +384,7 @@
       "title": "Residual Distribution",
       "required": false,
       "present": true,
-      "size_bytes": 36482,
+      "size_bytes": 80850,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/residual_distribution.png"
     },
     {
@@ -393,7 +393,7 @@
       "title": "Calibration Curve",
       "required": false,
       "present": true,
-      "size_bytes": 48213,
+      "size_bytes": 126455,
       "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/calibration_curve.png"
     },
     {
@@ -451,12 +451,12 @@
     {
       "name": "bid_levels.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/bid_levels.csv",
-      "size_bytes": 159
+      "size_bytes": 873
     },
     {
       "name": "calibration_bins.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/calibration_bins.csv",
-      "size_bytes": 2047
+      "size_bytes": 7564
     },
     {
       "name": "contract_mix.csv",
@@ -466,7 +466,7 @@
     {
       "name": "feature_importances.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/feature_importances.csv",
-      "size_bytes": 6067
+      "size_bytes": 8040
     },
     {
       "name": "h2h_by_contract.csv",
@@ -476,17 +476,17 @@
     {
       "name": "outcome_distributions.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/outcome_distributions.csv",
-      "size_bytes": 674
+      "size_bytes": 1592
     },
     {
       "name": "predictions.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/predictions.csv",
-      "size_bytes": 797339
+      "size_bytes": 2999926
     },
     {
       "name": "residuals.csv",
       "path": "docs/04_reports/arc_d_v2/r0/full/chart_data/residuals.csv",
-      "size_bytes": 3181
+      "size_bytes": 11945
     },
     {
       "name": "seat_balance.csv",

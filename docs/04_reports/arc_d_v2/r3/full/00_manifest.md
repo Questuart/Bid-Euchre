@@ -2,12 +2,10 @@
 
 **Lineage:** arc_d_v2
 **Rung:** r3
-**Provenance SHA:** `7bf48a81c2e46028150a3eb6f8d2d2d3d7428475`
+**Provenance SHA:** `238b33866b872987d86a2169aca6ca2cc8a6d61c`
 **Mode:** FULL
 **Seeds:** [42]
 **Anchor:** anchor_hybrid_r0_full
-
-**Governing Plan:** `plans/arc_d_v2/r3/plan.md`
 
 ## Model Roster
 
@@ -63,7 +61,7 @@
 |---|-------|------|------|--------|
 | 1 | Competitive Dashboard | `dashboard_competitive.png` | 213,333 bytes | present |
 | 2 | Health Dashboard | `dashboard_health.png` | 186,619 bytes | present |
-| 3 | Model Evaluation Dashboard | `dashboard_model_eval.png` | 264,779 bytes | present |
+| 3 | Model Evaluation Dashboard | `dashboard_model_eval.png` | 340,761 bytes | present |
 | 4 | Comparator Ranking Bars | `full_chart_suite/comparator_ranking_bars.png` | 25,622 bytes | present |
 | 5 | Tail Risk Panel | `full_chart_suite/tail_risk_panel.png` | 26,261 bytes | present |
 | 6 | H2H Delta by Contract | `full_chart_suite/delta_bars_by_contract.png` | 225,441 bytes | present |
@@ -76,9 +74,9 @@
 | 13 | Bid Level Distribution | `full_chart_suite/bid_level_distribution.png` | 42,155 bytes | present |
 | 14 | R-squared by Contract | `full_chart_suite/r2_by_contract.png` | 30,959 bytes | present |
 | 15 | MAE by Contract | `full_chart_suite/mae_by_contract.png` | 32,600 bytes | present |
-| 16 | Predicted vs Actual | `full_chart_suite/pred_vs_actual.png` | 69,080 bytes | present |
-| 17 | Residual Distribution | `full_chart_suite/residual_distribution.png` | 35,859 bytes | present |
-| 18 | Calibration Curve | `full_chart_suite/calibration_curve.png` | 51,181 bytes | present |
+| 16 | Predicted vs Actual | `full_chart_suite/pred_vs_actual.png` | 382,837 bytes | present |
+| 17 | Residual Distribution | `full_chart_suite/residual_distribution.png` | 81,112 bytes | present |
+| 18 | Calibration Curve | `full_chart_suite/calibration_curve.png` | 145,760 bytes | present |
 | 19 | Selection Path | `full_chart_suite/selection_path.png` | 69,011 bytes | present |
 | 20 | Feature Importance | `full_chart_suite/feature_importance.png` | 76,753 bytes | present |
 | 21 | Decision Agreement | `full_chart_suite/decision_agreement.png` | - | absent |
@@ -90,12 +88,12 @@
 | Name | Size |
 |------|------|
 | `bid_levels.csv` | 844 bytes |
-| `calibration_bins.csv` | 1,732 bytes |
+| `calibration_bins.csv` | 7,534 bytes |
 | `contract_mix.csv` | 519 bytes |
 | `feature_importances.csv` | 10,115 bytes |
 | `h2h_by_contract.csv` | 5,760 bytes |
 | `outcome_distributions.csv` | 1,555 bytes |
-| `predictions.csv` | 540,219 bytes |
-| `residuals.csv` | 2,724 bytes |
+| `predictions.csv` | 2,997,645 bytes |
+| `residuals.csv` | 11,948 bytes |
 | `seat_balance.csv` | 332 bytes |
 | `selection_paths.csv` | 11,955 bytes |
