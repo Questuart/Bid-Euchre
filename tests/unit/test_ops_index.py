@@ -326,6 +326,37 @@ class TestBuildIndex:
         )
         assert isinstance(result, BuildResult)
 
+    def test_full_rebuild_cleans_wal_shm(
+        self, index_dir: Path, runtime_dir: Path, plans_dir: Path
+    ) -> None:
+        """Verify full_rebuild removes WAL and SHM journal files."""
+        # Build once to create the database
+        build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
+
+        db_path = index_dir / "audit.db"
+        assert db_path.exists()
+
+        # Simulate leftover WAL/SHM files (SQLite journal artifacts)
+        wal_path = index_dir / "audit.db-wal"
+        shm_path = index_dir / "audit.db-shm"
+        wal_path.write_bytes(b"stale WAL data")
+        shm_path.write_bytes(b"stale SHM data")
+
+        # Full rebuild should remove them
+        build_index(
+            index_dir,
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            full_rebuild=True,
+        )
+
+        assert not wal_path.exists(), "WAL file should be cleaned up"
+        assert not shm_path.exists(), "SHM file should be cleaned up"
+        # DB should be recreated and functional
+        assert db_path.exists()
+        stats = get_stats(index_dir)
+        assert stats.total_entries > 0
+
     def test_handles_malformed_review_loop_state(
         self, index_dir: Path, tmp_path: Path
     ) -> None:

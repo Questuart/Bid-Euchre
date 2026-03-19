@@ -11,6 +11,7 @@ from bid_euchre.ops.compaction import (
     ArtifactRef,
     CompactionResult,
     SessionMetadata,
+    _validate_session_id,
     compact_session,
     delete_archive,
     format_archives_json,
@@ -277,6 +278,64 @@ class TestDeleteArchive:
 
     def test_delete_nonexistent(self, archive_dir: Path) -> None:
         assert not delete_archive("nonexistent", archive_dir)
+
+
+class TestPathTraversalValidation:
+    """Tests for _validate_session_id() path traversal rejection."""
+
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "",
+            "..",
+            "../etc/passwd",
+            "session/../../../etc",
+            "session/sub",
+            "session\\sub",
+            "..\\windows\\system32",
+        ],
+    )
+    def test_rejects_traversal_ids(self, bad_id: str) -> None:
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            _validate_session_id(bad_id)
+
+    @pytest.mark.parametrize(
+        "good_id",
+        [
+            "session-001",
+            "2026-03-18_author-a",
+            "abc123",
+            "session.with.dots",
+        ],
+    )
+    def test_accepts_valid_ids(self, good_id: str) -> None:
+        _validate_session_id(good_id)  # Should not raise
+
+    def test_delete_archive_rejects_traversal(self, archive_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            delete_archive("../escape", archive_dir)
+
+    def test_compact_session_rejects_traversal(self, archive_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            compact_session(
+                session_id="../../escape",
+                lane_id="author-a",
+                context_text="context",
+                artifacts=[],
+                archive_dir=archive_dir,
+            )
+
+    def test_get_archive_rejects_traversal(self, archive_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            get_archive("../escape", archive_dir)
+
+    def test_get_archive_artifacts_rejects_traversal(self, archive_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            get_archive_artifacts("sub/dir", archive_dir)
+
+    def test_get_archive_context_rejects_traversal(self, archive_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            get_archive_context("back\\slash", archive_dir)
 
 
 class TestFormatting:

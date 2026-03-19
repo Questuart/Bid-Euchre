@@ -107,6 +107,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _validate_session_id(session_id: str) -> None:
+    """Validate session_id contains no path traversal sequences."""
+    if not session_id or ".." in session_id or "/" in session_id or "\\" in session_id:
+        raise ValueError(
+            f"Invalid session_id {session_id!r}: must not contain path separators or '..'"
+        )
+
+
 # ── Compact / Archive ─────────────────────────────────────────────
 
 
@@ -143,6 +151,8 @@ def compact_session(
     Returns:
         CompactionResult with archive path and counts.
     """
+    _validate_session_id(session_id)
+
     if archive_dir is None:
         archive_dir = DEFAULT_ARCHIVE_DIR
 
@@ -245,6 +255,8 @@ def get_archive(
     session_id: str, archive_dir: Path | None = None
 ) -> SessionMetadata | None:
     """Get metadata for a specific archived session."""
+    _validate_session_id(session_id)
+
     if archive_dir is None:
         archive_dir = DEFAULT_ARCHIVE_DIR
 
@@ -263,6 +275,8 @@ def get_archive_artifacts(
     session_id: str, archive_dir: Path | None = None
 ) -> list[ArtifactRef]:
     """Get the artifact index for an archived session."""
+    _validate_session_id(session_id)
+
     if archive_dir is None:
         archive_dir = DEFAULT_ARCHIVE_DIR
 
@@ -283,6 +297,8 @@ def get_archive_context(session_id: str, archive_dir: Path | None = None) -> str
 
     Returns None if the archive doesn't exist.
     """
+    _validate_session_id(session_id)
+
     if archive_dir is None:
         archive_dir = DEFAULT_ARCHIVE_DIR
 
@@ -298,6 +314,8 @@ def delete_archive(session_id: str, archive_dir: Path | None = None) -> bool:
 
     Returns True if the archive was found and deleted.
     """
+    _validate_session_id(session_id)
+
     if archive_dir is None:
         archive_dir = DEFAULT_ARCHIVE_DIR
 
