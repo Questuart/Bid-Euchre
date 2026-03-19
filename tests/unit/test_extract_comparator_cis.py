@@ -209,6 +209,112 @@ class TestParseJsonlPoints:
         assert data["deals_total"] == 3
         assert len(data["bidder_team_points"]) == 2
 
+    def test_by_contract_basic(self, tmp_path):
+        """Per-contract tracking counts deals correctly."""
+        records = [
+            _make_hand_end(
+                t0=7, t1=3, winning_bid=6, bidder_position=0, contract="suit"
+            ),
+            _make_hand_end(
+                t0=6,
+                t1=4,
+                winning_bid=5,
+                bidder_position=0,
+                contract="high",
+                trump=None,
+            ),
+            _make_hand_end(
+                t0=4, t1=6, winning_bid=5, bidder_position=1, contract="low", trump=None
+            ),
+            _make_hand_end(
+                t0=8, t1=2, winning_bid=7, bidder_position=0, contract="suit"
+            ),
+        ]
+        log = tmp_path / "game.jsonl"
+        _write_jsonl(log, records)
+        data = _parse_jsonl_points(log)
+        bc = data["by_contract"]
+        assert bc["suit"]["deals_total"] == 2
+        assert bc["high"]["deals_total"] == 1
+        assert bc["low"]["deals_total"] == 1
+        assert len(bc["suit"]["bidder_team_points"]) == 2
+        assert len(bc["high"]["bidder_team_points"]) == 1
+        assert len(bc["low"]["bidder_team_points"]) == 1
+
+    def test_all_pass_does_not_poison_high(self, tmp_path):
+        """All-pass redeals (contract='high' from dummy_ctype) must NOT inflate
+        by_contract['high']['deals_total']. This is the regression test for F1:
+        simulation.py:426 uses dummy_ctype='high' for all-pass, which would
+        poison the 'high' contract metrics if counted."""
+        records = [
+            # Real "high" contract bid
+            _make_hand_end(
+                t0=6,
+                t1=4,
+                winning_bid=5,
+                bidder_position=0,
+                contract="high",
+                trump=None,
+            ),
+            # All-pass redeal — simulation.py logs contract="high" (dummy_ctype)
+            _make_hand_end(redeal_flag=True, contract="high"),
+            # Another all-pass with contract="high"
+            _make_hand_end(redeal_flag=True, contract="high"),
+            # Real suit bid
+            _make_hand_end(
+                t0=7, t1=3, winning_bid=6, bidder_position=0, contract="suit"
+            ),
+        ]
+        log = tmp_path / "game.jsonl"
+        _write_jsonl(log, records)
+        data = _parse_jsonl_points(log)
+
+        # Pooled deals_total includes all-pass
+        assert data["deals_total"] == 4
+
+        # Per-contract "high" must only count the 1 real bid, NOT the 2 all-pass
+        bc = data["by_contract"]
+        assert bc["high"]["deals_total"] == 1, (
+            f"All-pass redeals with dummy contract='high' must not inflate "
+            f"by_contract['high']['deals_total']; got {bc['high']['deals_total']}"
+        )
+        assert len(bc["high"]["bidder_team_points"]) == 1
+
+        # Suit should be unaffected
+        assert bc["suit"]["deals_total"] == 1
+        assert len(bc["suit"]["bidder_team_points"]) == 1
+
+        # Low should have no deals
+        assert bc["low"]["deals_total"] == 0
+
+    def test_per_contract_bid_rate_is_one(self, tmp_path):
+        """Per-contract bid_rate is always 1.0 by construction (every deal
+        in a contract bucket had a bid)."""
+        records = [
+            _make_hand_end(
+                t0=7, t1=3, winning_bid=6, bidder_position=0, contract="suit"
+            ),
+            _make_hand_end(
+                t0=6,
+                t1=4,
+                winning_bid=5,
+                bidder_position=0,
+                contract="high",
+                trump=None,
+            ),
+            _make_hand_end(redeal_flag=True, contract="high"),  # all-pass, excluded
+        ]
+        log = tmp_path / "game.jsonl"
+        _write_jsonl(log, records)
+        data = _parse_jsonl_points(log)
+        for ct in ("suit", "high"):
+            ct_data = data["by_contract"][ct]
+            if ct_data["deals_total"] > 0:
+                metrics = _compute_bidder_metrics(ct_data)
+                assert (
+                    metrics["bid_rate"] == pytest.approx(1.0)
+                ), f"Per-contract bid_rate for '{ct}' should be 1.0, got {metrics['bid_rate']}"
+
 
 # ---------------------------------------------------------------------------
 # Tests: _cvar_5
