@@ -37,6 +37,8 @@ VALID_EVENT_TYPES = frozenset(
         "worktree_archived",
         "escalation",
         "recovery_action",
+        "retry_attempted",
+        "task_rerouted",
         "session_started",
         "session_ended",
         "watchdog_finding",

@@ -8,7 +8,9 @@ Modules:
     worktrees   -- Worktree registry parsing, reconciliation, lifecycle
     status      -- Status aggregation across lanes/sessions/tasks
     watchdogs   -- Watchdog rules for health and progress monitoring
-    scheduler   -- Periodic tick loop and scheduler state
+                    (heartbeats, task progress, worktree health,
+                     CI stuck, sub-agent failures, scope drift)
+    scheduler   -- Periodic tick loop, scheduler state, daemon mode
     reviews     -- Provider-neutral PR review outcome aggregation
     ci          -- CI status polling and failure classification
 """

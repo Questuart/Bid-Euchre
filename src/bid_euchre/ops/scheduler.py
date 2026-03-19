@@ -1,8 +1,12 @@
-"""Periodic scheduler for ops tick loop and due-check logic.
+"""Periodic scheduler for ops tick loop, daemon mode, and due-check logic.
 
 The scheduler runs health checks on a configurable interval, emits
 events for findings, and persists state so it can resume after session
 restart without relying on session-only cron.
+
+The ``daemon()`` function provides a bounded repeating loop that calls
+``tick()`` at a configurable interval, suitable for long-running operator
+sessions.
 
 Storage: ``.claude/runtime/scheduler/state.json`` (gitignored)
 """
@@ -11,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +36,9 @@ DEFAULT_CHECKS = [
     "heartbeats",
     "task_progress",
     "worktree_health",
+    "ci_stuck",
+    "subagent_failures",
+    "scope_drift",
 ]
 
 
@@ -256,4 +264,152 @@ def format_tick_json(result: TickResult) -> dict[str, Any]:
             }
             for f in result.findings
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Daemon mode — bounded repeating tick loop
+# ---------------------------------------------------------------------------
+
+# Hard ceiling to prevent infinite loops
+MAX_DAEMON_ITERATIONS = 1000
+
+# Default interval between ticks
+DEFAULT_DAEMON_INTERVAL_SECONDS = 300  # 5 minutes
+
+
+@dataclass
+class DaemonResult:
+    """Summary of a daemon run."""
+
+    ticks_completed: int
+    total_findings: int
+    critical_findings: int
+    total_events_emitted: int
+    errors: list[str]
+    stopped_reason: str  # "max_iterations", "error", "interrupted"
+
+
+def daemon(
+    runtime_dir: Path | None = None,
+    plans_dir: Path | None = None,
+    scheduler_dir: Path | None = None,
+    events_dir: Path | None = None,
+    *,
+    interval_seconds: int = DEFAULT_DAEMON_INTERVAL_SECONDS,
+    max_iterations: int = 100,
+    _sleep_fn: Any = None,
+) -> DaemonResult:
+    """Run a bounded repeating tick loop.
+
+    Calls ``tick()`` at the specified interval, up to ``max_iterations``
+    times. This is a blocking function suitable for long-running operator
+    sessions.
+
+    The loop is bounded: it will stop after ``max_iterations`` ticks or
+    on unrecoverable error. It does NOT run indefinitely.
+
+    Args:
+        runtime_dir: Runtime directory root.
+        plans_dir: Plans directory for heartbeat scanning.
+        scheduler_dir: Scheduler state directory.
+        events_dir: Events directory for emitting findings.
+        interval_seconds: Seconds between ticks.
+        max_iterations: Maximum number of ticks to run. Hard-capped at
+            ``MAX_DAEMON_ITERATIONS`` (1000).
+        _sleep_fn: Override for ``time.sleep`` (for testing). Must accept
+            a float seconds argument.
+
+    Returns:
+        DaemonResult with summary of the run.
+    """
+    if _sleep_fn is None:
+        _sleep_fn = time.sleep
+
+    # Enforce hard ceiling
+    effective_max = min(max_iterations, MAX_DAEMON_ITERATIONS)
+
+    result = DaemonResult(
+        ticks_completed=0,
+        total_findings=0,
+        critical_findings=0,
+        total_events_emitted=0,
+        errors=[],
+        stopped_reason="max_iterations",
+    )
+
+    for i in range(effective_max):
+        try:
+            tick_result = tick(
+                runtime_dir=runtime_dir,
+                plans_dir=plans_dir,
+                scheduler_dir=scheduler_dir,
+                events_dir=events_dir,
+            )
+            result.ticks_completed += 1
+            result.total_findings += len(tick_result.findings)
+            result.critical_findings += sum(
+                1 for f in tick_result.findings if f.severity == "critical"
+            )
+            result.total_events_emitted += tick_result.events_emitted
+
+            if tick_result.errors:
+                result.errors.extend(tick_result.errors)
+
+            logger.info(
+                "Daemon tick %d/%d: %d findings (%d critical)",
+                i + 1,
+                effective_max,
+                len(tick_result.findings),
+                sum(1 for f in tick_result.findings if f.severity == "critical"),
+            )
+
+        except KeyboardInterrupt:
+            result.stopped_reason = "interrupted"
+            logger.info("Daemon interrupted at tick %d", i + 1)
+            break
+        except Exception as e:
+            error_msg = f"Daemon tick {i + 1} failed: {e}"
+            logger.error(error_msg)
+            result.errors.append(error_msg)
+            # Continue on recoverable errors; stop on repeated failures
+            if len(result.errors) >= 3:
+                result.stopped_reason = "error"
+                break
+
+        # Sleep between ticks (skip after last tick)
+        if i < effective_max - 1:
+            try:
+                _sleep_fn(interval_seconds)
+            except KeyboardInterrupt:
+                result.stopped_reason = "interrupted"
+                break
+
+    return result
+
+
+def format_daemon_text(result: DaemonResult) -> str:
+    """Format a DaemonResult as human-readable text."""
+    lines = ["=== Daemon Run Summary ===", ""]
+    lines.append(f"Ticks completed: {result.ticks_completed}")
+    lines.append(f"Total findings: {result.total_findings}")
+    lines.append(f"Critical findings: {result.critical_findings}")
+    lines.append(f"Events emitted: {result.total_events_emitted}")
+    lines.append(f"Stopped: {result.stopped_reason}")
+    if result.errors:
+        lines.append(f"Errors: {len(result.errors)}")
+        for e in result.errors:
+            lines.append(f"  - {e}")
+    return "\n".join(lines)
+
+
+def format_daemon_json(result: DaemonResult) -> dict[str, Any]:
+    """Format a DaemonResult as JSON-serializable dict."""
+    return {
+        "ticks_completed": result.ticks_completed,
+        "total_findings": result.total_findings,
+        "critical_findings": result.critical_findings,
+        "total_events_emitted": result.total_events_emitted,
+        "errors": result.errors,
+        "stopped_reason": result.stopped_reason,
     }

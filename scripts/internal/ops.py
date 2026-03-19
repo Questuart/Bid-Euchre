@@ -11,6 +11,8 @@ Usage:
     uv run python scripts/internal/ops.py reviews [--json]
     uv run python scripts/internal/ops.py ci [--json]
     uv run python scripts/internal/ops.py ci --pr N [--json]
+    uv run python scripts/internal/ops.py daemon [--interval N] [--max-ticks N] [--json]
+    uv run python scripts/internal/ops.py retry --task TASK_ID [--json]
 """
 
 from __future__ import annotations
@@ -438,6 +440,70 @@ def cmd_ci(args: argparse.Namespace) -> int:
     return 1 if report.overall == "failure" else 0
 
 
+def cmd_daemon(args: argparse.Namespace) -> int:
+    """Run bounded daemon loop (repeating tick)."""
+    from bid_euchre.ops.scheduler import (
+        daemon,
+        format_daemon_json,
+        format_daemon_text,
+    )
+
+    interval = getattr(args, "interval", 300)
+    max_ticks = getattr(args, "max_ticks", 100)
+
+    result = daemon(
+        runtime_dir=args.runtime_dir,
+        plans_dir=args.plans_dir,
+        scheduler_dir=args.runtime_dir / "scheduler",
+        events_dir=args.runtime_dir / "events",
+        interval_seconds=interval,
+        max_iterations=max_ticks,
+    )
+
+    if args.json:
+        print(json.dumps(format_daemon_json(result), indent=2))
+    else:
+        print(format_daemon_text(result))
+
+    if result.critical_findings > 0:
+        return 1
+    if result.stopped_reason == "error" or result.errors:
+        return 1
+    return 0
+
+
+def cmd_retry(args: argparse.Namespace) -> int:
+    """Evaluate retry/reroute policy for a task."""
+    from bid_euchre.ops.events import read_events
+    from bid_euchre.ops.recovery import (
+        evaluate_retry_policy,
+        format_retry_policy_json,
+        format_retry_policy_text,
+    )
+
+    task_id = getattr(args, "task", None)
+    if not task_id:
+        print("Error: --task <task_id> is required", file=sys.stderr)
+        return 1
+
+    max_retries = getattr(args, "max_retries", 3)
+    lane = getattr(args, "lane", None)
+
+    events_dir = args.runtime_dir / "events"
+    events = read_events(events_dir, limit=200)
+
+    policy = evaluate_retry_policy(
+        task_id, events, max_retries=max_retries, current_lane=lane
+    )
+
+    if args.json:
+        print(json.dumps(format_retry_policy_json(policy), indent=2))
+    else:
+        print(format_retry_policy_text(policy))
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -532,6 +598,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--pr", type=int, default=None, help="PR number to check (required)"
     )
 
+    # daemon
+    daemon_parser = subparsers.add_parser(
+        "daemon", help="Run bounded repeating tick loop"
+    )
+    daemon_parser.add_argument(
+        "--interval",
+        type=int,
+        default=300,
+        help="Seconds between ticks (default: 300)",
+    )
+    daemon_parser.add_argument(
+        "--max-ticks",
+        type=int,
+        default=100,
+        help="Maximum number of ticks (default: 100, hard cap: 1000)",
+    )
+
+    # retry
+    retry_parser = subparsers.add_parser(
+        "retry", help="Evaluate retry/reroute policy for a task"
+    )
+    retry_parser.add_argument(
+        "--task", type=str, required=True, help="Task ID to evaluate"
+    )
+    retry_parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Max retries before reroute (default: 3)",
+    )
+    retry_parser.add_argument(
+        "--lane", type=str, default=None, help="Current lane (for reroute target)"
+    )
+
     return parser
 
 
@@ -564,6 +664,8 @@ def main(argv: list[str] | None = None) -> int:
         "recover": cmd_recover,
         "reviews": cmd_reviews,
         "ci": cmd_ci,
+        "daemon": cmd_daemon,
+        "retry": cmd_retry,
     }
 
     handler = commands.get(args.command)

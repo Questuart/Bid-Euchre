@@ -761,3 +761,233 @@ class TestCmdCI:
         data = json.loads(capsys.readouterr().out)
         assert data["pr_number"] == 42
         assert data["overall"] == "success"
+
+
+# ---- Phase 3D: Daemon + Retry CLI tests ----
+
+
+class TestCmdDaemon:
+    """Tests for the daemon subcommand."""
+
+    def test_daemon_text(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        # Patch daemon to run with no-op sleep and limited iterations
+        from bid_euchre.ops import scheduler as sched_mod
+
+        original_daemon = sched_mod.daemon
+
+        def fast_daemon(**kwargs):
+            kwargs["_sleep_fn"] = lambda _: None
+            kwargs["max_iterations"] = 2
+            return original_daemon(**kwargs)
+
+        monkeypatch.setattr(sched_mod, "daemon", fast_daemon)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "daemon",
+                "--max-ticks",
+                "2",
+                "--interval",
+                "1",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Daemon Run Summary" in captured
+
+    def test_daemon_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        from bid_euchre.ops import scheduler as sched_mod
+
+        original_daemon = sched_mod.daemon
+
+        def fast_daemon(**kwargs):
+            kwargs["_sleep_fn"] = lambda _: None
+            kwargs["max_iterations"] = 2
+            return original_daemon(**kwargs)
+
+        monkeypatch.setattr(sched_mod, "daemon", fast_daemon)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "daemon",
+                "--max-ticks",
+                "2",
+                "--interval",
+                "1",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert "ticks_completed" in data
+        assert data["stopped_reason"] == "max_iterations"
+
+
+class TestCmdDaemonErrorExit:
+    """Tests for daemon error exit code (Codex P2 fix)."""
+
+    def test_daemon_error_returns_1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Daemon that stops on errors should return non-zero."""
+        from bid_euchre.ops import scheduler as sched_mod
+        from bid_euchre.ops.scheduler import DaemonResult
+
+        mock_result = DaemonResult(
+            ticks_completed=2,
+            total_findings=0,
+            critical_findings=0,
+            total_events_emitted=3,
+            errors=["tick 1 failed", "tick 2 failed", "tick 3 failed"],
+            stopped_reason="error",
+        )
+        monkeypatch.setattr(sched_mod, "daemon", lambda **kw: mock_result)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "daemon",
+                "--max-ticks",
+                "5",
+            ]
+        )
+        assert rc == 1
+
+
+class TestCmdRetry:
+    """Tests for the retry subcommand."""
+
+    def test_retry_no_failures(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "task-1",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Retry/Reroute Policy" in captured
+        assert "RETRY" in captured
+
+    def test_retry_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "task-1",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["task_id"] == "task-1"
+        assert data["action"] == "retry"
+
+    def test_retry_with_failures(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """With 3 failures, action should be reroute."""
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = []
+        for i in range(3):
+            lines.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-03-18T10:0{i}:00Z",
+                        "event_type": "task_failed",
+                        "source": "test",
+                        "lane_id": "author-a",
+                        "payload": {"task_id": "task-x", "details": f"err {i}"},
+                    }
+                )
+            )
+        events_file.write_text("\n".join(lines) + "\n")
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "task-x",
+                "--lane",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["action"] == "reroute"
+        assert data["reroute_to"] is not None
+        assert data["reroute_to"] != "author-a"

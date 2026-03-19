@@ -9,7 +9,10 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.watchdogs import (
+    check_ci_stuck,
     check_heartbeats,
+    check_scope_drift,
+    check_subagent_failures,
     check_task_progress,
     format_watchdog_json,
     format_watchdog_text,
@@ -31,6 +34,7 @@ def runtime_dir(tmp_path: Path) -> Path:
     rd = tmp_path / "runtime"
     (rd / "task_state").mkdir(parents=True)
     (rd / "worktree_registry").mkdir(parents=True)
+    (rd / "events").mkdir(parents=True)
     return rd
 
 
@@ -291,3 +295,390 @@ class TestFormatters:
         assert len(data) == 1
         assert data[0]["watchdog_name"] == "test"
         assert data[0]["severity"] == "warning"
+
+
+# ---- Phase 3D: New watchdog tests ----
+
+
+class TestCheckCiStuck:
+    """Tests for check_ci_stuck()."""
+
+    def test_no_events(self, runtime_dir: Path) -> None:
+        findings = check_ci_stuck(runtime_dir)
+        assert findings == []
+
+    def test_recent_ci_failure_not_stuck(self, runtime_dir: Path) -> None:
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=5)).isoformat(),
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 100, "failure_class": "lint_format"},
+                }
+            )
+            + "\n"
+        )
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert findings == []
+
+    def test_old_ci_failure_is_stuck(self, runtime_dir: Path) -> None:
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=60)).isoformat(),
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 100, "failure_class": "lint_format"},
+                }
+            )
+            + "\n"
+        )
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert len(findings) == 1
+        assert findings[0].watchdog_name == "ci_stuck_check"
+        assert findings[0].severity == "warning"
+        assert "PR #100" in findings[0].message
+
+    def test_ci_success_clears_stuck(self, runtime_dir: Path) -> None:
+        """A ci_success after ci_failure means PR is no longer stuck."""
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=60)).isoformat(),
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 100, "failure_class": "lint"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=5)).isoformat(),
+                    "event_type": "ci_success",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 100},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert findings == []
+
+    def test_multiple_prs(self, runtime_dir: Path) -> None:
+        """Only flags the stuck PR, not the healthy one."""
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=60)).isoformat(),
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 100, "failure_class": "lint"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=5)).isoformat(),
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-b",
+                    "payload": {"pr_number": 200, "failure_class": "test"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert len(findings) == 1
+        assert "PR #100" in findings[0].message
+
+
+class TestCheckSubagentFailures:
+    """Tests for check_subagent_failures()."""
+
+    def test_no_events(self, runtime_dir: Path) -> None:
+        findings = check_subagent_failures(runtime_dir)
+        assert findings == []
+
+    def test_below_threshold(self, runtime_dir: Path) -> None:
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 1"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 2"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_subagent_failures(runtime_dir, max_failures=3)
+        assert findings == []
+
+    def test_at_threshold(self, runtime_dir: Path) -> None:
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = []
+        for i in range(3):
+            lines.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-03-18T10:0{i}:00Z",
+                        "event_type": "task_failed",
+                        "source": "hook",
+                        "lane_id": "author-a",
+                        "payload": {"task_id": "t1", "details": f"error {i}"},
+                    }
+                )
+            )
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_subagent_failures(runtime_dir, max_failures=3)
+        assert len(findings) == 1
+        assert findings[0].watchdog_name == "subagent_failure_check"
+        assert "3 times" in findings[0].message
+        assert "reroute" in findings[0].recommended_action.lower()
+
+    def test_high_failure_count_is_critical(self, runtime_dir: Path) -> None:
+        """Double the threshold → critical severity."""
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = []
+        for i in range(6):
+            lines.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-03-18T10:0{i}:00Z",
+                        "event_type": "task_failed",
+                        "source": "hook",
+                        "lane_id": "author-a",
+                        "payload": {"task_id": "t1", "details": f"error {i}"},
+                    }
+                )
+            )
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_subagent_failures(runtime_dir, max_failures=3)
+        assert len(findings) == 1
+        assert findings[0].severity == "critical"
+
+    def test_different_tasks_counted_separately(self, runtime_dir: Path) -> None:
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = []
+        for task_id in ("t1", "t2"):
+            for i in range(2):
+                lines.append(
+                    json.dumps(
+                        {
+                            "timestamp": f"2026-03-18T10:0{i}:00Z",
+                            "event_type": "task_failed",
+                            "source": "hook",
+                            "lane_id": "author-a",
+                            "payload": {"task_id": task_id, "details": "err"},
+                        }
+                    )
+                )
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_subagent_failures(runtime_dir, max_failures=3)
+        assert findings == []  # Neither task reached 3 failures
+
+    def test_target_from_payload(self, runtime_dir: Path) -> None:
+        """Uses 'target' field if 'task_id' is absent."""
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = []
+        for i in range(3):
+            lines.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-03-18T10:0{i}:00Z",
+                        "event_type": "task_failed",
+                        "source": "hook",
+                        "lane_id": "author-b",
+                        "payload": {"target": "task-x", "details": "boom"},
+                    }
+                )
+            )
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_subagent_failures(runtime_dir, max_failures=3)
+        assert len(findings) == 1
+        assert "task-x" in findings[0].target
+
+
+class TestCheckScopeDrift:
+    """Tests for check_scope_drift()."""
+
+    def test_no_tasks(self, runtime_dir: Path) -> None:
+        findings = check_scope_drift(runtime_dir)
+        assert findings == []
+
+    def test_no_scope_field_skipped(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "subject": "Do something",
+                }
+            )
+        )
+        findings = check_scope_drift(runtime_dir)
+        assert findings == []
+
+    def test_within_scope(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "subject": "Fix watchdogs",
+                    "lane_id": "author-a",
+                    "scope": {
+                        "declared_files": ["src/bid_euchre/ops/*.py"],
+                        "touched_files": [
+                            "src/bid_euchre/ops/watchdogs.py",
+                            "src/bid_euchre/ops/recovery.py",
+                        ],
+                    },
+                }
+            )
+        )
+        findings = check_scope_drift(runtime_dir)
+        assert findings == []
+
+    def test_out_of_scope(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "subject": "Fix watchdogs",
+                    "lane_id": "author-a",
+                    "scope": {
+                        "declared_files": ["src/bid_euchre/ops/*.py"],
+                        "touched_files": [
+                            "src/bid_euchre/ops/watchdogs.py",
+                            "src/bid_euchre/strategy/heuristic.py",
+                        ],
+                    },
+                }
+            )
+        )
+        findings = check_scope_drift(runtime_dir)
+        assert len(findings) == 1
+        assert findings[0].watchdog_name == "scope_drift_check"
+        assert "heuristic.py" in findings[0].message
+
+    def test_completed_task_ignored(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "completed",
+                    "scope": {
+                        "declared_files": ["src/a.py"],
+                        "touched_files": ["src/b.py"],
+                    },
+                }
+            )
+        )
+        findings = check_scope_drift(runtime_dir)
+        assert findings == []
+
+    def test_many_out_of_scope_truncated(self, runtime_dir: Path) -> None:
+        """More than 5 out-of-scope files are truncated in message."""
+        touched = [f"src/other/file{i}.py" for i in range(10)]
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "subject": "Fix",
+                    "lane_id": "author-a",
+                    "scope": {
+                        "declared_files": ["src/bid_euchre/ops/*.py"],
+                        "touched_files": touched,
+                    },
+                }
+            )
+        )
+        findings = check_scope_drift(runtime_dir)
+        assert len(findings) == 1
+        assert "+5 more" in findings[0].message
+
+    def test_empty_declared_files_skipped(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {
+                        "declared_files": [],
+                        "touched_files": ["src/anything.py"],
+                    },
+                }
+            )
+        )
+        findings = check_scope_drift(runtime_dir)
+        assert findings == []
+
+
+class TestRunAllWatchdogsPhase3D:
+    """Tests that run_all_watchdogs integrates new Phase 3D checks."""
+
+    def test_ci_stuck_included(
+        self, runtime_dir: Path, plans_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=60)).isoformat(),
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 100, "failure_class": "lint"},
+                }
+            )
+            + "\n"
+        )
+
+        findings = run_all_watchdogs(
+            runtime_dir, plans_dir, ci_stuck_minutes=30, now=now
+        )
+        ci_findings = [f for f in findings if f.watchdog_name == "ci_stuck_check"]
+        assert len(ci_findings) == 1
+
+    def test_selective_checks(
+        self, runtime_dir: Path, plans_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Can run only specific checks via the checks parameter."""
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        findings = run_all_watchdogs(runtime_dir, plans_dir, checks={"scope_drift"})
+        # Should only have run scope_drift (no findings expected here)
+        assert findings == []

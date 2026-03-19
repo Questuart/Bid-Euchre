@@ -1,4 +1,4 @@
-"""Tests for scheduler tick loop (ops/scheduler.py)."""
+"""Tests for scheduler tick loop and daemon mode (ops/scheduler.py)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.scheduler import (
+    DEFAULT_CHECKS,
+    MAX_DAEMON_ITERATIONS,
+    DaemonResult,
     SchedulerState,
+    daemon,
+    format_daemon_json,
+    format_daemon_text,
     format_tick_json,
     format_tick_text,
     load_scheduler_state,
@@ -232,3 +238,173 @@ class TestFormatters:
         data = format_tick_json(result)
         assert data["tick_number"] == 5
         assert data["findings_count"] == 0
+
+
+# ---- Phase 3D: Daemon mode tests ----
+
+
+class TestDaemonConstants:
+    """Tests for daemon constants."""
+
+    def test_max_iterations_cap(self) -> None:
+        assert MAX_DAEMON_ITERATIONS == 1000
+
+    def test_default_checks_includes_phase3d(self) -> None:
+        """DEFAULT_CHECKS must include all Phase 3D watchdog names."""
+        assert "ci_stuck" in DEFAULT_CHECKS
+        assert "subagent_failures" in DEFAULT_CHECKS
+        assert "scope_drift" in DEFAULT_CHECKS
+        # Also verify Phase 3A checks are still present
+        assert "heartbeats" in DEFAULT_CHECKS
+        assert "task_progress" in DEFAULT_CHECKS
+        assert "worktree_health" in DEFAULT_CHECKS
+
+
+class TestDaemon:
+    """Tests for daemon()."""
+
+    def _noop_sleep(self, _seconds: float) -> None:
+        """No-op sleep for testing."""
+        pass
+
+    def test_basic_daemon(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=3,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        assert result.ticks_completed == 3
+        assert result.stopped_reason == "max_iterations"
+        assert result.errors == []
+
+        # Scheduler state should show 3 ticks
+        state = load_scheduler_state(scheduler_dir)
+        assert state.tick_count == 3
+
+    def test_daemon_enforces_hard_cap(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        # Request more than MAX_DAEMON_ITERATIONS
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=MAX_DAEMON_ITERATIONS + 100,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        assert result.ticks_completed == MAX_DAEMON_ITERATIONS
+
+    def test_daemon_stops_on_repeated_errors(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Daemon stops after 3 consecutive errors."""
+        call_count = 0
+
+        def failing_tick(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError(f"tick error {call_count}")
+
+        from bid_euchre.ops import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "tick", failing_tick)
+
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=10,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        assert result.stopped_reason == "error"
+        assert len(result.errors) >= 3
+
+    def test_daemon_accumulates_findings(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=2,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        # Each tick emits at least a scheduler_tick event
+        assert result.total_events_emitted >= 2
+
+
+class TestDaemonFormatters:
+    """Tests for daemon result formatters."""
+
+    def test_text_format(self) -> None:
+        result = DaemonResult(
+            ticks_completed=5,
+            total_findings=3,
+            critical_findings=1,
+            total_events_emitted=10,
+            errors=[],
+            stopped_reason="max_iterations",
+        )
+        text = format_daemon_text(result)
+        assert "Daemon Run Summary" in text
+        assert "5" in text
+        assert "max_iterations" in text
+
+    def test_json_format(self) -> None:
+        result = DaemonResult(
+            ticks_completed=5,
+            total_findings=3,
+            critical_findings=1,
+            total_events_emitted=10,
+            errors=["err1"],
+            stopped_reason="error",
+        )
+        data = format_daemon_json(result)
+        assert data["ticks_completed"] == 5
+        assert data["critical_findings"] == 1
+        assert data["stopped_reason"] == "error"
+        assert len(data["errors"]) == 1
