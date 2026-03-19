@@ -101,7 +101,7 @@ def load_sessions(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
         if data.get("schema_version", 1) < 2:
             role = data.get("role", "unknown")
             lane_id_map = {"author": "author-a", "review": "review", "ops": "ops"}
-            data.setdefault("lane_id", lane_id_map.get(role, role))
+            data.setdefault("lane_id", lane_id_map.get(role, "unknown"))
 
         sessions.append(data)
 

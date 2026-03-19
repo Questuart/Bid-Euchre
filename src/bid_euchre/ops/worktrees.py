@@ -168,9 +168,9 @@ def list_worktrees_registry(
         if data.get("schema_version", 1) < 2:
             role = data.get("role", "unknown")
             lane_id_map = {"author": "author-a", "review": "review", "ops": "ops"}
-            data.setdefault("lane_id", lane_id_map.get(role, role))
+            data.setdefault("lane_id", lane_id_map.get(role, "unknown"))
             lane_class_map = {"author": "author", "review": "review", "ops": "ops"}
-            data.setdefault("lane_class", lane_class_map.get(role, role))
+            data.setdefault("lane_class", lane_class_map.get(role, "unknown"))
             data.setdefault("display_name", None)
             data.setdefault("legacy_role", role)
             for transport_field in [

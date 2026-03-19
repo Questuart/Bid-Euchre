@@ -105,6 +105,27 @@ class TestListWorktreesRegistry:
         assert entry["legacy_role"] == "author"
         assert entry["tmux_session"] is None
 
+    def test_v1_unknown_role_maps_to_unknown(self, registry_dir: Path) -> None:
+        """v1 entry with unrecognized role should get lane_id='unknown', not the raw role."""
+        v1_entry = {
+            "schema_version": 1,
+            "role": "bogus_role",
+            "worktree_path": "/tmp/wt-bogus",
+            "branch": "role/bogus",
+            "class": "ephemeral",
+            "created_at": "2026-03-16T22:00:00Z",
+            "last_active": "2026-03-16T22:00:00Z",
+            "session_id": None,
+            "ttl_hours": None,
+        }
+        (registry_dir / "bogus.json").write_text(json.dumps(v1_entry))
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+        assert entries[0]["lane_id"] == "unknown"
+        assert entries[0]["lane_class"] == "unknown"
+        assert entries[0]["legacy_role"] == "bogus_role"
+
     def test_skips_malformed_files(self, registry_dir: Path) -> None:
         (registry_dir / "bad.json").write_text("not json {{{")
         _write_registry_entry(registry_dir, "good.json", lane_id="ops")

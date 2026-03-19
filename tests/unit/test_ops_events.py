@@ -12,7 +12,6 @@ from bid_euchre.ops.events import (
     EVENTS_FILE,
     VALID_EVENT_TYPES,
     append_event,
-    count_events,
     drain_events,
     read_events,
 )
@@ -72,8 +71,8 @@ class TestAppendEvent:
     def test_all_valid_event_types_accepted(self, events_dir: Path) -> None:
         for etype in VALID_EVENT_TYPES:
             append_event(etype, "test", "ops", {}, events_dir)
-        count = count_events(events_dir)
-        assert count == len(VALID_EVENT_TYPES)
+        events = read_events(events_dir, limit=len(VALID_EVENT_TYPES) + 1)
+        assert len(events) == len(VALID_EVENT_TYPES)
 
 
 class TestReadEvents:
@@ -226,24 +225,3 @@ class TestDrainEvents:
 
     def test_drain_nonexistent_dir(self, tmp_path: Path) -> None:
         assert drain_events(tmp_path / "no_such") == 0
-
-
-class TestCountEvents:
-    """Tests for count_events()."""
-
-    def test_count_all(self, events_dir: Path) -> None:
-        for _ in range(7):
-            append_event("task_completed", "test", "ops", {}, events_dir)
-        assert count_events(events_dir) == 7
-
-    def test_count_by_type(self, events_dir: Path) -> None:
-        append_event("task_completed", "test", "ops", {}, events_dir)
-        append_event("ci_failure", "test", "ops", {}, events_dir)
-        append_event("task_completed", "test", "ops", {}, events_dir)
-
-        assert count_events(events_dir, event_type="task_completed") == 2
-        assert count_events(events_dir, event_type="ci_failure") == 1
-        assert count_events(events_dir, event_type="session_started") == 0
-
-    def test_count_empty(self, events_dir: Path) -> None:
-        assert count_events(events_dir) == 0

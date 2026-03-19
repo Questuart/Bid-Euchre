@@ -54,7 +54,16 @@ if [ -z "$EVENT_TYPE" ]; then
 fi
 
 # Emit the event (fire-and-forget, don't block on failure)
+# Use environment variables instead of string interpolation to avoid
+# injection from shell metacharacters in DETAILS or other values.
+EVENT_TYPE="$EVENT_TYPE" LANE_ID="$LANE_ID" DETAILS="$DETAILS" \
 uv run python -c "
+import os
 from bid_euchre.ops.events import append_event
-append_event('$EVENT_TYPE', 'hook.post-task', '$LANE_ID', {'details': '$DETAILS'})
+append_event(
+    os.environ['EVENT_TYPE'],
+    'hook.post-task',
+    os.environ['LANE_ID'],
+    {'details': os.environ['DETAILS']},
+)
 " 2>/dev/null || true
