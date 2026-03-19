@@ -607,7 +607,7 @@ def quarantine_worktree(
     *,
     events_dir: Path | None = None,
 ) -> Path:
-    """Save a worktree's uncommitted diff and mark it as quarantined.
+    """Save a worktree's uncommitted diff and untracked file list.
 
     Args:
         worktree_path: Path to the worktree directory.
@@ -625,7 +625,7 @@ def quarantine_worktree(
     slug = Path(worktree_path).name.replace("/", "_").replace(" ", "_")
     diff_file = quarantine_dir / f"{slug}.diff"
 
-    # Save the diff
+    # Save the diff (tracked changes)
     result = subprocess.run(
         ["git", "-C", worktree_path, "diff", "HEAD"],
         capture_output=True,
@@ -635,7 +635,25 @@ def quarantine_worktree(
     diff_content = (
         result.stdout if result.returncode == 0 else f"# diff failed: {result.stderr}"
     )
-    diff_file.write_text(diff_content)
+
+    # Also capture untracked files
+    untracked_result = subprocess.run(
+        ["git", "-C", worktree_path, "ls-files", "--others", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    untracked_section = ""
+    if untracked_result.returncode == 0 and untracked_result.stdout.strip():
+        untracked_section = (
+            "\n\n# Untracked files\n"
+            + "\n".join(
+                f"# - {f}" for f in untracked_result.stdout.strip().splitlines()
+            )
+            + "\n"
+        )
+
+    diff_file.write_text(diff_content + untracked_section)
 
     logger.info("Quarantined %s → %s (reason: %s)", worktree_path, diff_file, reason)
 
@@ -707,14 +725,21 @@ def archive_worktree(
             f"Use quarantine first, or pass force=True."
         )
 
-    # Look up lane_id from registry for event attribution
+    # Look up lane_id and registry file path for event attribution + cleanup
     registry_dir = runtime_dir / "worktree_registry"
-    registry = list_worktrees_registry(registry_dir)
     lane_id = "ops"
-    for entry in registry:
-        if str(Path(entry.get("worktree_path", "")).resolve()) == resolved:
-            lane_id = entry.get("lane_id", "ops")
-            break
+    registry_file_to_remove: Path | None = None
+    for reg_file in (
+        sorted(registry_dir.glob("*.json")) if registry_dir.exists() else []
+    ):
+        try:
+            reg_data = json.loads(reg_file.read_text())
+            if str(Path(reg_data.get("worktree_path", "")).resolve()) == resolved:
+                lane_id = reg_data.get("lane_id", "ops")
+                registry_file_to_remove = reg_file
+                break
+        except (json.JSONDecodeError, OSError):
+            continue
 
     # Perform removal
     result = subprocess.run(
@@ -728,10 +753,17 @@ def archive_worktree(
             f"git worktree remove failed: {result.stderr.strip()}"
         )
 
-    logger.info("Archived worktree: %s", worktree_path)
+    # Clean up registry entry now that worktree is removed
+    if registry_file_to_remove is not None:
+        try:
+            registry_file_to_remove.unlink()
+            logger.info("Removed registry entry: %s", registry_file_to_remove.name)
+        except OSError:
+            logger.warning(
+                "Failed to remove registry entry: %s", registry_file_to_remove.name
+            )
 
-    # Persist cleanup_state to registry
-    _update_registry_cleanup_state(registry_dir, worktree_path, "archived")
+    logger.info("Archived worktree: %s", worktree_path)
 
     # Emit event
     try:
