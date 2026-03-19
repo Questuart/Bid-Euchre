@@ -1070,21 +1070,18 @@ def generate_chart_data(
             df.to_csv(output_dir / "feature_importances.csv", index=False)
             generated.append("feature_importances.csv")
 
-    # 9. decision_comparison.csv — per-deal bid decision comparison across models
-    if parquet_paths:
-        rows = _extract_decision_comparison(parquet_paths)
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "decision_comparison.csv", index=False)
-            generated.append("decision_comparison.csv")
-
-    # 10. disagreement_outcomes.csv — outcomes for deals where models disagreed
-    if parquet_paths:
-        rows = _extract_disagreement_outcomes(parquet_paths)
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "disagreement_outcomes.csv", index=False)
-            generated.append("disagreement_outcomes.csv")
+    # 9-10. decision_comparison.csv / disagreement_outcomes.csv
+    #
+    # OWNERSHIP GUARD (post-#909 closeout):
+    # These CSVs are canonically produced by generate_interpretability.py
+    # (step 3b), which loads trained models and computes bid decisions from
+    # scratch.  The parquet extractors (_extract_decision_comparison and
+    # _extract_disagreement_outcomes) are retained as library functions but
+    # are NOT called here to prevent silent shadowing if the parquet schema
+    # ever gains ``bid_decision`` + ``model`` columns.
+    #
+    # To use the parquet path intentionally, call the functions directly
+    # rather than relying on generate_chart_data().
 
     return generated
 

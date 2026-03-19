@@ -1046,6 +1046,71 @@ from regenerated bundles.
 
 | CSV | Canonical Producer | Fallback | Status |
 |-----|-------------------|----------|--------|
-| `decision_comparison.csv` | `scripts/internal/generate_interpretability.py` | `tables.py` dormant extractor | Documented in §Phase 2; no wiring gap |
-| `disagreement_outcomes.csv` | `scripts/internal/generate_interpretability.py` | `tables.py` dormant extractor | Documented in §Phase 2; no wiring gap |
+| `decision_comparison.csv` | `scripts/internal/generate_interpretability.py` | `tables.py` (library-only, guarded) | ✅ Guarded — removed from `generate_chart_data()` call path |
+| `disagreement_outcomes.csv` | `scripts/internal/generate_interpretability.py` | `tables.py` (library-only, guarded) | ✅ Guarded — removed from `generate_chart_data()` call path |
 | `cross_rung_progression.csv` | `scripts/internal/generate_cross_rung_progression.py` CLI | — | Optional supporting evidence (§7.12); keep as-is, not required for acceptance |
+
+## 17. Regeneration Prerequisites (2026-03-18)
+
+This section documents the artifact dependencies for each chart_data CSV
+produced by `generate_chart_data()` in `tables.py` and related scripts.
+Agents performing bundle regeneration should verify these inputs exist
+before expecting the corresponding outputs.
+
+### 17.1 Chart-data CSV → Required Artifacts
+
+| CSV | Producer | Required Artifact(s) | Path Pattern |
+|-----|----------|---------------------|--------------|
+| `behavior_by_contract.csv` | `tables.py` → `generate_behavior_by_contract()` | comparator_cis JSON with `bidders_by_contract` key | `data/artifacts/arc_d_v2/<rung>/comparator_cis_*.json` (re-extract from JSONL via `extract_comparator_cis.py` if key missing) |
+| `outcome_distributions.csv` | `tables.py` → `_extract_outcome_distributions_from_parquet()` | action_value.parquet (for real distributions) | `data/runs/arc_d_v2/<rung>_datasets/<mode>/seed_*/action_value.parquet` |
+| `bid_levels.csv` | `tables.py` → `_extract_bid_levels_from_parquet()` | action_value.parquet (for per-bid-level) | same as above |
+| `seat_balance.csv` | `tables.py` → `_extract_seat_balance()` | action_value.parquet | same as above |
+| `predictions.csv` | `tables.py` → `_extract_predictions()` | training_artifact_*.json + action_value.parquet | `data/artifacts/arc_d_v2/<rung>/training_artifact_*.json` + parquet |
+| `residuals.csv` | `tables.py` → `_extract_residuals()` | training_artifact_*.json + action_value.parquet | same as above |
+| `calibration_bins.csv` | `tables.py` → `_extract_calibration_bins()` | training_artifact_*.json + action_value.parquet | same as above |
+| `feature_importances.csv` | `tables.py` → `_extract_feature_importances_flat()` | training_artifact_*.json | `data/artifacts/arc_d_v2/<rung>/training_artifact_*.json` |
+| `decision_comparison.csv` | `generate_interpretability.py` (canonical) | trained models (.joblib) + action_value.parquet | `data/artifacts/arc_d_v2/<rung>/*.joblib` + parquet |
+| `disagreement_outcomes.csv` | `generate_interpretability.py` (canonical) | trained models (.joblib) + action_value.parquet | same as above |
+| `cross_rung_progression.csv` | `generate_cross_rung_progression.py` CLI | all rung comparator_cis JSONs | `data/artifacts/arc_d_v2/r*/comparator_cis_*.json` |
+
+### 17.2 Degraded Modes
+
+- **QUICK bundles without parquet:** `outcome_distributions.csv` falls back to synthetic (from comparator CIs), `bid_levels.csv` falls back to aggregate summary. Both CSVs include a `source` column marking `synthetic` vs `parquet`.
+- **Missing `bidders_by_contract`:** `behavior_by_contract.csv` falls back to pooled-only rows (`contract=pooled`).
+- **Missing training artifacts:** `predictions.csv`, `residuals.csv`, `calibration_bins.csv`, `feature_importances.csv` are skipped entirely.
+- **Missing joblib models:** `decision_comparison.csv` and `disagreement_outcomes.csv` cannot be produced by interpretability pipeline.
+
+### 17.3 JSONL Re-extraction
+
+If comparator_cis JSON files lack `bidders_by_contract`, re-extract from JSONL game logs:
+
+```bash
+uv run python scripts/internal/extract_comparator_cis.py \
+  --artifacts-dir data/artifacts/arc_d_v2/<rung> \
+  --runs-dir data/runs \
+  --output data/artifacts/arc_d_v2/<rung>/comparator_cis_<rung>_v7.json \
+  --seed 42 --n-bootstrap 10000 --single-seat --allow-legacy-seat-discovery
+```
+
+JSONL logs are at: `data/runs/arc_d_v2_<rung>_comparator_*/logs/*.jsonl`
+
+### 17.4 Chart Rendering Dependencies
+
+Charts 10, 16, 17, 18 render when their source CSVs are present in FULL bundles.
+Charts 21, 22 (decision_comparison, disagreement_outcomes) require running
+`generate_interpretability.py` separately — they are NOT produced by `generate_chart_data()`.
+
+### 17.5 Post-Regeneration Audit (2026-03-18)
+
+| Acceptance Criterion | Status | Notes |
+|---------------------|--------|-------|
+| Dormant extractors guarded | ✅ Fixed in code | Steps 9-10 removed from `generate_chart_data()` call path |
+| Regeneration prerequisites documented | ✅ Fixed in code | This section (§17) |
+| `behavior_by_contract.csv` contract-faceted | ⚠️ Data-blocked | Existing comparator_cis JSONs lack `bidders_by_contract`; JSONL logs exist for re-extraction but `extract_comparator_cis.py` changes in PR #909 must merge first |
+| Charts 10, 16, 17, 18 verified | ✅ Fixed in bundles | All render from R0/full chart_data |
+| Charts 21, 22 verified | ⚠️ Data-blocked | Require `generate_interpretability.py` run with joblib models; not produced by `generate_chart_data()` |
+| Governing plan §2.2 and §16 consistent | ✅ Fixed in code | Updated in #904/#909 |
+| `outcome_summary.csv` removed | ✅ Fixed in bundles | Removed in #904 |
+| `04_rung_decision.md` deprecated | ✅ Fixed in bundles | Deprecation notice added in #909 |
+| QUICK `02_decision.md` not PENDING | ✅ Fixed in bundles | R0/R1 show ADVANCE, R2/R3 show PRELIMINARY (#877) |
+| `selection_paths.csv` dual-write removed | ✅ Fixed in code | Now exclusively from `generate_interpretability.py` (#909) |
