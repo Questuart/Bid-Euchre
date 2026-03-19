@@ -377,3 +377,208 @@ class TestIsWorktreeDirty:
         assert len(candidates) == 1
         assert candidates[0].cleanup_state == "quarantined"
         assert candidates[0].is_dirty is True
+
+
+class TestPruneWorktrees:
+    """Tests for prune_worktrees()."""
+
+    @pytest.fixture()
+    def runtime_dir(self, tmp_path: Path) -> Path:
+        rd = tmp_path / "runtime"
+        (rd / "worktree_registry").mkdir(parents=True)
+        (rd / "events").mkdir(parents=True)
+        return rd
+
+    def test_dry_run_returns_candidates_no_removal(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")],
+        )
+        _write_registry_entry(
+            runtime_dir / "worktree_registry",
+            "task.json",
+            lane_id="task-1",
+            lifecycle_class="ephemeral",
+            worktree_path="/tmp/wt-task",
+            last_active="2020-01-01T00:00:00+00:00",
+            ttl_hours=1.0,
+        )
+
+        results = wt_mod.prune_worktrees(runtime_dir, dry_run=True)
+        assert len(results) >= 1
+        # All results should be dry_run=True
+        for r in results:
+            assert r.dry_run is True
+
+    def test_protected_worktree_skipped(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [
+                GitWorktree(
+                    path="/tmp/Bid-Euchre-steward-author",
+                    head="abc",
+                    branch="codex/steward-author",
+                )
+            ],
+        )
+
+        results = wt_mod.prune_worktrees(runtime_dir, dry_run=True)
+        # Protected unregistered worktrees get classified but skipped
+        for r in results:
+            assert r.action == "skipped"
+
+    def test_persistent_worktree_not_candidate(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [GitWorktree(path="/tmp/wt-a", head="abc", branch="br-a")],
+        )
+        _write_registry_entry(
+            runtime_dir / "worktree_registry",
+            "author-a.json",
+            lane_id="author-a",
+            lifecycle_class="persistent",
+            worktree_path="/tmp/wt-a",
+        )
+
+        results = wt_mod.prune_worktrees(runtime_dir, dry_run=True)
+        # Persistent worktrees are not candidates at all
+        assert len(results) == 0
+
+
+class TestQuarantineWorktree:
+    """Tests for quarantine_worktree()."""
+
+    @pytest.fixture()
+    def runtime_dir(self, tmp_path: Path) -> Path:
+        rd = tmp_path / "runtime"
+        rd.mkdir(parents=True)
+        return rd
+
+    def test_saves_diff_file(
+        self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        # Mock git diff to return some content
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type(
+                "R", (), {"returncode": 0, "stdout": "diff --git a/foo\n+bar\n"}
+            )(),
+        )
+
+        diff_path = wt_mod.quarantine_worktree(
+            "/tmp/wt-orphan",
+            "stale and dirty",
+            runtime_dir,
+            events_dir=tmp_path / "events",
+        )
+
+        assert diff_path.exists()
+        assert "diff --git" in diff_path.read_text()
+        assert diff_path.parent.name == "worktree_quarantine"
+
+    def test_quarantine_creates_directory(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": ""})(),
+        )
+
+        wt_mod.quarantine_worktree(
+            "/tmp/wt-x",
+            "test reason",
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+        )
+
+        assert (runtime_dir / "worktree_quarantine").is_dir()
+
+
+class TestArchiveWorktree:
+    """Tests for archive_worktree()."""
+
+    @pytest.fixture()
+    def runtime_dir(self, tmp_path: Path) -> Path:
+        rd = tmp_path / "runtime"
+        (rd / "worktree_registry").mkdir(parents=True)
+        return rd
+
+    def test_rejects_cwd(self, runtime_dir: Path) -> None:
+        from bid_euchre.ops.worktrees import archive_worktree
+
+        cwd = str(Path.cwd())
+        with pytest.raises(ValueError, match="current working directory"):
+            archive_worktree(cwd, runtime_dir)
+
+    def test_rejects_protected(self, runtime_dir: Path) -> None:
+        from bid_euchre.ops.worktrees import archive_worktree
+
+        with pytest.raises(ValueError, match="protected"):
+            archive_worktree(
+                "/tmp/Bid-Euchre-steward-author",
+                runtime_dir,
+            )
+
+    def test_rejects_dirty_without_force(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        # Mock is_worktree_dirty to return True
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: True)
+
+        with pytest.raises(RuntimeError, match="uncommitted changes"):
+            wt_mod.archive_worktree("/tmp/some-worktree", runtime_dir)
+
+    def test_calls_git_worktree_remove(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
+
+        commands_run: list[list[str]] = []
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            cmd = args[0] if args else kwargs.get("args", [])
+            commands_run.append(list(cmd))
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        wt_mod.archive_worktree(
+            "/tmp/some-worktree",
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+        )
+
+        assert any(
+            "worktree" in str(cmd) and "remove" in str(cmd) for cmd in commands_run
+        )

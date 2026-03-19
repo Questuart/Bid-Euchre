@@ -310,3 +310,213 @@ class TestCmdWorktrees:
         data = json.loads(capsys.readouterr().out)
         assert "matched" in data
         assert "unregistered" in data
+
+
+class TestCmdWorktreesPrune:
+    """Tests for the worktrees prune subcommand."""
+
+    def test_prune_dry_run_text(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "prune",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "DRY-RUN" in captured
+
+    def test_prune_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "prune",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert isinstance(data, list)
+
+
+class TestCmdWorktreesQuarantine:
+    """Tests for the worktrees quarantine subcommand."""
+
+    def test_quarantine_text(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import subprocess as sp
+
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type(
+                "R", (), {"returncode": 0, "stdout": "diff content\n", "stderr": ""}
+            )(),
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "quarantine",
+                "/tmp/some-worktree",
+                "--reason",
+                "test quarantine",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Quarantined" in captured
+
+
+class TestCmdWorktreesArchive:
+    """Tests for the worktrees archive subcommand."""
+
+    def test_archive_rejects_protected(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "archive",
+                "/tmp/Bid-Euchre-steward-author",
+            ]
+        )
+        assert rc == 1
+        assert "protected" in capsys.readouterr().err.lower()
+
+
+class TestCmdRecover:
+    """Tests for the recover subcommand."""
+
+    def test_recover_empty(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "recover",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Recovery Guidance" in captured
+        assert "All clear" in captured
+
+    def test_recover_json_empty(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "recover",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data == []
+
+    def test_recover_with_failure_events(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Write a failure event
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "ci_failure",
+                    "source": "test",
+                    "lane_id": "author-a",
+                    "payload": {"details": "lint failed"},
+                }
+            )
+            + "\n"
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "recover",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Active failures: 1" in captured
+        assert "ci_failure" in captured
