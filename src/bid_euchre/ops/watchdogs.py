@@ -318,9 +318,10 @@ def check_ci_stuck(
 ) -> list[WatchdogFinding]:
     """Check for PRs with CI stuck pending or failing beyond threshold.
 
-    Reads the event log for ``ci_failure`` events. For each PR, checks
-    whether the most recent CI event is a failure older than the threshold
-    without a subsequent ``ci_success`` event.
+    Reads the event log for ``ci_failure`` and ``ci_timeout`` events.
+    For each PR, checks whether the most recent CI event is a failure or
+    timeout older than the threshold without a subsequent ``ci_success``
+    event.
 
     Args:
         runtime_dir: Runtime directory root.
@@ -347,7 +348,7 @@ def check_ci_stuck(
 
     for event in events:
         event_type = event.get("event_type", "")
-        if event_type not in ("ci_failure", "ci_success"):
+        if event_type not in ("ci_failure", "ci_success", "ci_timeout"):
             continue
 
         payload = event.get("payload", {})
@@ -363,7 +364,7 @@ def check_ci_stuck(
     findings: list[WatchdogFinding] = []
 
     for pr_num, event in pr_latest.items():
-        if event.get("event_type") != "ci_failure":
+        if event.get("event_type") not in ("ci_failure", "ci_timeout"):
             continue
 
         try:

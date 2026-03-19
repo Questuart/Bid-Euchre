@@ -1016,6 +1016,19 @@ class TestUpdateTaskScope:
                 runtime_dir=runtime_dir,
             )
 
+    @pytest.mark.parametrize(
+        "bad_id",
+        ["../../etc/passwd", "../secret", "foo/bar", "a\\b", ""],
+    )
+    def test_rejects_path_traversal(self, runtime_dir: Path, bad_id: str) -> None:
+        """task_id with path separators or '..' is rejected (#989)."""
+        with pytest.raises(ValueError, match="must not contain"):
+            update_task_scope(
+                bad_id,
+                declared_files=["*.py"],
+                runtime_dir=runtime_dir,
+            )
+
     def test_raises_on_no_arguments(self, runtime_dir: Path) -> None:
         (runtime_dir / "task_state" / "t1.json").write_text(
             json.dumps({"task_id": "t1"})
@@ -1087,3 +1100,12 @@ class TestGetTaskScope:
     def test_raises_on_missing_task(self, runtime_dir: Path) -> None:
         with pytest.raises(FileNotFoundError):
             get_task_scope("nonexistent", runtime_dir=runtime_dir)
+
+    @pytest.mark.parametrize(
+        "bad_id",
+        ["../../etc/passwd", "../secret", "foo/bar", "a\\b", ""],
+    )
+    def test_rejects_path_traversal(self, runtime_dir: Path, bad_id: str) -> None:
+        """task_id with path separators or '..' is rejected (#989)."""
+        with pytest.raises(ValueError, match="must not contain"):
+            get_task_scope(bad_id, runtime_dir=runtime_dir)

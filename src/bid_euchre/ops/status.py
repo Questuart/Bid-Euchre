@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -341,16 +343,14 @@ def synthesize_lane_activity(
         if primary_task is None and lane_tasks:
             primary_task = lane_tasks[0]  # pending
 
-        # Derive state
+        # Derive state — has_active_session is a bool so the branches
+        # are exhaustive; no "unknown" fallback is needed (see #994).
         if primary_task and primary_task.get("status") == "blocked":
             state = "blocked"
         elif has_active_session:
-            # Session exists — lane is active regardless of task status
             state = "active"
-        elif not has_active_session:
-            state = "idle"
         else:
-            state = "unknown"
+            state = "idle"
 
         # Extract task details
         current_task_id = primary_task.get("task_id") if primary_task else None
@@ -692,6 +692,21 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _validate_task_id(task_id: str) -> None:
+    """Validate task_id contains no path traversal sequences.
+
+    Mirrors the validation in ``compaction._validate_session_id`` —
+    rejects empty strings and strings containing ``..``, ``/``, or ``\\``.
+
+    Raises:
+        ValueError: If the task_id is invalid.
+    """
+    if not task_id or ".." in task_id or "/" in task_id or "\\" in task_id:
+        raise ValueError(
+            f"Invalid task_id {task_id!r}: must not contain path separators or '..'"
+        )
+
+
 def update_task_scope(
     task_id: str,
     *,
@@ -721,8 +736,10 @@ def update_task_scope(
     Raises:
         FileNotFoundError: If the task state file does not exist.
         ValueError: If neither ``declared_files`` nor ``touched_files``
-            is provided.
+            is provided, or if ``task_id`` contains path traversal.
     """
+    _validate_task_id(task_id)
+
     if declared_files is None and touched_files is None:
         raise ValueError(
             "At least one of declared_files or touched_files must be provided"
@@ -762,10 +779,24 @@ def update_task_scope(
 
     data["scope"] = scope
 
-    # Atomic write via temp file
-    tmp_file = task_file.with_suffix(".tmp")
-    tmp_file.write_text(json.dumps(data, indent=2))
-    tmp_file.rename(task_file)
+    # Atomic write with fsync — matches memory.py pattern (see #951, #990)
+    content = json.dumps(data, indent=2).encode("utf-8")
+    fd, tmp = tempfile.mkstemp(dir=str(task_file.parent), suffix=".tmp")
+    closed = False
+    try:
+        os.write(fd, content)
+        os.fsync(fd)
+        os.close(fd)
+        closed = True
+        os.replace(tmp, str(task_file))
+    except BaseException:
+        if not closed:
+            os.close(fd)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
     return data
 
@@ -787,7 +818,10 @@ def get_task_scope(
 
     Raises:
         FileNotFoundError: If the task state file does not exist.
+        ValueError: If the task_id contains path traversal sequences.
     """
+    _validate_task_id(task_id)
+
     if runtime_dir is None:
         runtime_dir = DEFAULT_RUNTIME_DIR
 

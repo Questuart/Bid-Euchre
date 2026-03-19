@@ -1681,3 +1681,331 @@ class TestRetryEmit:
                 break
         else:
             pytest.fail("No escalation event found in event log")
+
+
+# ---- Standalone CLI script tests (#992) ----
+
+
+class TestBuildAuditIndexCli:
+    """Tests for build_audit_index.py main()."""
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import build_audit_index
+
+        with pytest.raises(SystemExit, match="0"):
+            build_audit_index.main(["--help"])
+
+    def test_build_index_default(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Runs the build with temp dirs — exercises arg parsing and output."""
+        from bid_euchre.ops.index import BuildResult
+
+        def mock_build(*_args: object, **_kwargs: object) -> BuildResult:
+            return BuildResult(
+                sources_indexed=2,
+                entries_indexed=10,
+                errors=[],
+                duration_seconds=0.1,
+            )
+
+        monkeypatch.setattr("bid_euchre.ops.index.build_index", mock_build)
+
+        from bid_euchre.ops.index import IndexStats
+
+        def mock_stats(*_args: object, **_kwargs: object) -> IndexStats:
+            return IndexStats(
+                total_entries=10,
+                db_path=str(runtime_dir / "audit_index" / "index.db"),
+                source_counts={"events": 5, "plans": 5},
+            )
+
+        monkeypatch.setattr("bid_euchre.ops.index.get_stats", mock_stats)
+
+        import build_audit_index
+
+        rc = build_audit_index.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Sources indexed: 2" in out
+
+    def test_build_index_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """JSON output exercises format_stats_json path."""
+        from bid_euchre.ops.index import BuildResult, IndexStats
+
+        monkeypatch.setattr(
+            "bid_euchre.ops.index.build_index",
+            lambda *a, **kw: BuildResult(
+                sources_indexed=1,
+                entries_indexed=5,
+                errors=[],
+                duration_seconds=0.05,
+            ),
+        )
+        monkeypatch.setattr(
+            "bid_euchre.ops.index.get_stats",
+            lambda *a, **kw: IndexStats(
+                total_entries=5,
+                db_path="x.db",
+                source_counts={"events": 5},
+            ),
+        )
+
+        import build_audit_index
+
+        rc = build_audit_index.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "--json",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["build"]["sources_indexed"] == 1
+
+    def test_errors_return_1(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from bid_euchre.ops.index import BuildResult, IndexStats
+
+        monkeypatch.setattr(
+            "bid_euchre.ops.index.build_index",
+            lambda *a, **kw: BuildResult(
+                sources_indexed=0,
+                entries_indexed=0,
+                errors=["something failed"],
+                duration_seconds=0.01,
+            ),
+        )
+        monkeypatch.setattr(
+            "bid_euchre.ops.index.get_stats",
+            lambda *a, **kw: IndexStats(
+                total_entries=0,
+                db_path="x.db",
+                source_counts={},
+            ),
+        )
+
+        import build_audit_index
+
+        rc = build_audit_index.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+            ]
+        )
+        assert rc == 1
+
+
+class TestBuildCuratedMemoryCli:
+    """Tests for build_curated_memory.py main()."""
+
+    def test_help_exits_zero(self) -> None:
+        import build_curated_memory
+
+        with pytest.raises(SystemExit, match="0"):
+            build_curated_memory.main(["--help"])
+
+    def test_no_action_returns_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import build_curated_memory
+
+        rc = build_curated_memory.main([])
+        assert rc == 1
+
+    def test_list_empty(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        memory_dir = tmp_path / "memory"
+        memory_dir.mkdir()
+
+        import build_curated_memory
+
+        rc = build_curated_memory.main(["--memory-dir", str(memory_dir), "list"])
+        assert rc == 0
+
+    def test_list_json(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        memory_dir = tmp_path / "memory"
+        memory_dir.mkdir()
+
+        import build_curated_memory
+
+        rc = build_curated_memory.main(
+            ["--memory-dir", str(memory_dir), "--json", "list"]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert isinstance(data, (dict, list))
+
+    def test_validate_empty(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        memory_dir = tmp_path / "memory"
+        memory_dir.mkdir()
+
+        import build_curated_memory
+
+        rc = build_curated_memory.main(["--memory-dir", str(memory_dir), "validate"])
+        assert rc == 0
+
+
+class TestCompactSessionContextCli:
+    """Tests for compact_session_context.py main()."""
+
+    def test_help_exits_zero(self) -> None:
+        import compact_session_context
+
+        with pytest.raises(SystemExit, match="0"):
+            compact_session_context.main(["--help"])
+
+    def test_no_action_returns_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import compact_session_context
+
+        rc = compact_session_context.main([])
+        assert rc == 1
+
+    def test_list_empty(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+
+        import compact_session_context
+
+        rc = compact_session_context.main(["--archive-dir", str(archive_dir), "list"])
+        assert rc == 0
+
+    def test_list_json(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+
+        import compact_session_context
+
+        rc = compact_session_context.main(
+            ["--archive-dir", str(archive_dir), "--json", "list"]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert isinstance(data, (dict, list))
+
+    def test_compact_missing_context_file(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Error path: context file does not exist."""
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+
+        import compact_session_context
+
+        rc = compact_session_context.main(
+            [
+                "--archive-dir",
+                str(archive_dir),
+                "compact",
+                "--session-id",
+                "test-session",
+                "--lane",
+                "author-a",
+                "--context-file",
+                str(tmp_path / "nonexistent.txt"),
+            ]
+        )
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "not found" in err.lower()
+
+    def test_show_missing_session(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Error path: show non-existent session."""
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+
+        import compact_session_context
+
+        rc = compact_session_context.main(
+            [
+                "--archive-dir",
+                str(archive_dir),
+                "show",
+                "--session-id",
+                "nonexistent",
+            ]
+        )
+        assert rc == 1
+
+    def test_compact_success(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Happy path: compact a session context."""
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+        context_file = tmp_path / "context.txt"
+        context_file.write_text("Some session context")
+
+        import compact_session_context
+
+        rc = compact_session_context.main(
+            [
+                "--archive-dir",
+                str(archive_dir),
+                "compact",
+                "--session-id",
+                "test-session",
+                "--lane",
+                "author-a",
+                "--context-file",
+                str(context_file),
+                "--summary",
+                "Test summary",
+                "--outcome",
+                "done",
+            ]
+        )
+        assert rc == 0
