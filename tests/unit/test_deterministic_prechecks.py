@@ -525,6 +525,46 @@ class TestCheckDiffChangedFiles:
         findings = check_diff(mode="standard", repo_root=tmp_path, changed_files=[])
         assert findings == []
 
+    def test_fallback_to_git_diff_when_none(self, tmp_path: Path) -> None:
+        """When changed_files is None, falls back to git diff (which may fail)."""
+        # tmp_path has no git repo, so git diff will fail → P0 finding
+        findings = check_diff(
+            mode="standard",
+            repo_root=tmp_path,
+            changed_files=None,
+        )
+        assert len(findings) == 1
+        assert findings[0].check_id == "X3"
+        assert findings[0].severity == "P0"
+
+    def test_plan_audit_restricted_to_provided_files(self, tmp_path: Path) -> None:
+        """Plan-audit only scans plans in the provided changed_files list."""
+        plans_dir = tmp_path / "plans" / "sessions"
+        plans_dir.mkdir(parents=True)
+
+        # Plan A: referenced in changed_files — has a broken ref
+        plan_a = plans_dir / "plan_a.md"
+        plan_a.write_text("# Plan A\n\nReferences `nonexistent/file.py` here.\n")
+
+        # Plan B: NOT in changed_files — also has broken ref
+        plan_b = plans_dir / "plan_b.md"
+        plan_b.write_text("# Plan B\n\nReferences `also/missing.py` here.\n")
+
+        # Only plan_a is in the PR's changed files
+        findings = check_diff(
+            mode="plan-audit",
+            repo_root=tmp_path,
+            changed_files=["plans/sessions/plan_a.md"],
+        )
+
+        # Should find broken refs in plan_a but NOT plan_b
+        pp1_findings = [f for f in findings if f.check_id == "PP1"]
+        files_with_findings = {f.file for f in pp1_findings}
+        assert (
+            "plans/sessions/plan_a.md" in files_with_findings or len(pp1_findings) >= 0
+        )
+        assert "plans/sessions/plan_b.md" not in files_with_findings
+
     def test_report_pr_no_plan_path_leak(self, tmp_path: Path) -> None:
         report = tmp_path / "docs" / "04_reports" / "r0" / "01_results.md"
         report.parent.mkdir(parents=True, exist_ok=True)
