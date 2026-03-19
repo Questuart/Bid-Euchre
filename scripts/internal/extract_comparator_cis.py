@@ -49,6 +49,8 @@ def _parse_jsonl_points(log_path: Path) -> dict:
     net_eppd = sum(net_bidder_team_points) / deals_total
 
     Also tracks per-contract breakdowns (suit/high/low) in ``by_contract``.
+    Per-contract buckets only include deals with actual bids (not all-pass
+    redeals), so per-contract ``bid_rate`` is always 1.0 by construction.
     """
     bidder_pts = []
     net_pts = []
@@ -77,20 +79,19 @@ def _parse_jsonl_points(log_path: Path) -> dict:
                 continue
 
             deals_total += 1
-            contract = record.get("contract")  # "suit", "high", or "low"
-
-            # Count all deals (including all-pass) per contract
-            if contract in by_contract:
-                by_contract[contract]["deals_total"] += 1
 
             winning_bid = record.get("winning_bid")
             bidder_position = record.get("bidder_position")
             t0 = record["t0"]
             t1 = record["t1"]
 
-            # Skip all-pass redeals (no winning bid or bidder)
+            # Skip all-pass redeals (no winning bid or bidder).
+            # All-pass hands use dummy_ctype="high" in simulation.py, so
+            # we must NOT count them in per-contract buckets.
             if winning_bid is None or bidder_position is None:
                 continue
+
+            contract = record.get("contract")  # "suit", "high", or "low"
 
             bid_type = record.get("bid_type", "regular")
             pts_t0, pts_t1 = compute_points(
@@ -108,8 +109,9 @@ def _parse_jsonl_points(log_path: Path) -> dict:
             bidder_pts.append(float(bidder_val))
             net_pts.append(float(net_val))
 
-            # Track per-contract
+            # Track per-contract (only for real bids, not all-pass)
             if contract in by_contract:
+                by_contract[contract]["deals_total"] += 1
                 by_contract[contract]["bidder_team_points"].append(float(bidder_val))
                 by_contract[contract]["net_bidder_team_points"].append(float(net_val))
 
@@ -443,6 +445,14 @@ def main():
                 "bidder_team_points": [],
                 "net_bidder_team_points": [],
                 "deals_total": 0,
+                "by_contract": {
+                    ct: {
+                        "bidder_team_points": [],
+                        "net_bidder_team_points": [],
+                        "deals_total": 0,
+                    }
+                    for ct in ("suit", "high", "low")
+                },
             }
 
             if manifest_seat_dirs is not None:
@@ -487,6 +497,18 @@ def main():
                     seat_data["net_bidder_team_points"]
                 )
                 merged["deals_total"] += seat_data["deals_total"]
+                # Merge per-contract data from each seat
+                for ct in ("suit", "high", "low"):
+                    seat_ct = seat_data.get("by_contract", {}).get(ct, {})
+                    merged["by_contract"][ct]["bidder_team_points"].extend(
+                        seat_ct.get("bidder_team_points", [])
+                    )
+                    merged["by_contract"][ct]["net_bidder_team_points"].extend(
+                        seat_ct.get("net_bidder_team_points", [])
+                    )
+                    merged["by_contract"][ct]["deals_total"] += seat_ct.get(
+                        "deals_total", 0
+                    )
                 run_directories[name].append(Path(run_dir).name)
 
             all_data[name] = merged
@@ -650,7 +672,7 @@ def main():
                 )
 
     output = {
-        "schema": "comparator_cis_v1",
+        "schema": "comparator_cis_v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "seed": args.seed,
         "n_bootstrap": args.n_bootstrap,
