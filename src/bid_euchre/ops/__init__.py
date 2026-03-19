@@ -13,6 +13,9 @@ Modules:
     scheduler   -- Periodic tick loop, scheduler state, daemon mode
     reviews     -- Provider-neutral PR review outcome aggregation
     ci          -- CI status polling and failure classification
+    index       -- SQLite FTS5 audit index for operational history
+    memory      -- Curated memory for stable operator facts
+    compaction  -- Session compaction and non-lossy context archival
 """
 
 # Shared constant: GitHub status/check context names that represent
