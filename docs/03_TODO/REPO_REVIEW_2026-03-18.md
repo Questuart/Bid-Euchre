@@ -36,7 +36,7 @@
 | Rank | ID | Severity | Issue | Effort |
 |------|-----|----------|-------|--------|
 | 1 | R18-1 | HIGH | 25 undocumented internal scripts in ARCHITECTURE.md (49 exist, 28 documented) | medium |
-| 2 | R18-2 | HIGH | Orphan `utils/` directory persists (R17-1 still open) | trivial |
+| 2 | R18-2 | ~~HIGH~~ | ~~Orphan `utils/` directory persists (R17-1 still open)~~ **RESOLVED** | trivial |
 | 3 | R18-3 | MEDIUM | Review prompt milestones table 84 PRs behind (#781–#864) | small |
 | 4 | R18-4 | MEDIUM | 2 stale import paths in REPO_REVIEW_PROMPT.md | trivial |
 | 5 | R18-5 | MEDIUM | 3 stale path references in active (non-archive) docs | small |
@@ -111,16 +111,13 @@
 - **Recommendation:** Add a documentation pass for `scripts/internal/`. Group by domain (arc_d_v2, review infra, training, analysis).
 - **Carryover from:** R17-6 (was 4 undocumented shell scripts; has grown to 25 undocumented Python scripts)
 
-### R18-2: Orphan `utils/` directory persists
+### R18-2: ~~Orphan `utils/` directory persists~~ RESOLVED
 
-- **Severity:** HIGH
-- **Location:** `src/bid_euchre/utils/`
-- **Issue:** Empty module directory with no `__init__.py` — only contains stale `__pycache__/__init__.cpython-314.pyc`. Causes module count confusion (14 dirs vs 13 real modules). ARCHITECTURE.md correctly omits it but notes it as "(empty — cleanup candidate)".
-- **Evidence:** `ls src/bid_euchre/utils/` → only `__pycache__/`; no `__init__.py`
-- **Risk:** Low — cosmetic, but confuses automated counting and new contributors
-- **Effort:** Trivial — `rm -rf src/bid_euchre/utils/`
-- **Recommendation:** Delete the directory. One-line PR.
-- **Carryover from:** R17-1
+- **Severity:** ~~HIGH~~ RESOLVED
+- **Location:** `src/bid_euchre/utils/` (deleted)
+- **Issue:** Empty module directory with no `__init__.py` — only contained stale `__pycache__/__init__.cpython-314.pyc`. Caused module count confusion (14 dirs vs 13 real modules).
+- **Resolution:** Directory deleted (`rm -rf src/bid_euchre/utils/`). Only contained `__pycache__/` — no tracked files, no git diff. Issue carried over from R17-1, now closed.
+- **Resolved:** 2026-03-18
 
 ### R18-3: Review prompt milestones table 84 PRs behind
 
@@ -259,7 +256,7 @@ The Prompt Audit agent found 4 stale items in `docs/02_agent/REPO_REVIEW_PROMPT.
 
 | R17 ID | Issue | R18 Status |
 |--------|-------|------------|
-| R17-1 | Orphan `utils/` directory | **OPEN** → R18-2 |
+| R17-1 | Orphan `utils/` directory | **RESOLVED** (deleted 2026-03-18) |
 | R17-2 | CLAUDE.md missing arc_d_v2 module | **RESOLVED** |
 | R17-3 | Untracked test file `test_post_push_ci_check_hook.py` | **OPEN** → R18-M1 (below top 5) |
 | R17-4 | Stale refs in active docs | **PARTIALLY RESOLVED** → R18-5 (3 remain) |
@@ -269,7 +266,8 @@ The Prompt Audit agent found 4 stale items in `docs/02_agent/REPO_REVIEW_PROMPT.
 ### Delta Summary
 
 - **Improved:** +2 overall score (89 → 91), R17-2 resolved, code quality up
-- **Unchanged:** utils/ orphan, notebook rigor gap
+- **Resolved:** utils/ orphan (R18-2, deleted 2026-03-18)
+- **Unchanged:** notebook rigor gap
 - **Worsened:** Script documentation drift (4 → 25 undocumented internal scripts)
 - **New work:** 84 PRs merged, reporting refactor complete, FULL regeneration progressing
 
@@ -279,7 +277,7 @@ The Prompt Audit agent found 4 stale items in `docs/02_agent/REPO_REVIEW_PROMPT.
 
 | Component | Count |
 |-----------|-------|
-| Source modules | 14 (13 active + 1 orphan `utils/`) |
+| Source modules | 13 |
 | Top-level scoring | 1 (`scoring.py`) |
 | Experiment configs | 42 |
 | Experiment suites | 4 |
