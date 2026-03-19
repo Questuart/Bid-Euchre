@@ -304,13 +304,18 @@ def check_diff(
     *,
     mode: str = "standard",
     repo_root: Path | None = None,
+    changed_files: list[str] | None = None,
 ) -> list[Finding]:
     """Run deterministic prechecks on all files changed vs base.
 
     Args:
-        base: Git ref to diff against.
+        base: Git ref to diff against (ignored when changed_files provided).
         mode: Review mode.
         repo_root: Repository root directory (defaults to cwd).
+        changed_files: Pre-fetched list of changed file paths (e.g. from
+            ``gh pr diff --name-only``).  When provided, skips the local
+            ``git diff`` subprocess — this prevents scope leaks when the
+            local HEAD differs from the PR branch.
 
     Returns:
         List of Finding objects across all changed files.
@@ -318,26 +323,29 @@ def check_diff(
     if repo_root is None:
         repo_root = Path.cwd()
 
-    # Get changed files
-    result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
-        capture_output=True,
-        text=True,
-        cwd=repo_root,
-    )
-    if result.returncode != 0:
-        return [
-            Finding(
-                severity="P0",
-                file="<git>",
-                line=0,
-                category="process",
-                check_id="X3",
-                message=f"git diff failed (rc={result.returncode}): {result.stderr.strip()[:200]}",
-            )
-        ]
+    # Use provided file list or fall back to git diff
+    if changed_files is None:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{base}...HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+        )
+        if result.returncode != 0:
+            return [
+                Finding(
+                    severity="P0",
+                    file="<git>",
+                    line=0,
+                    category="process",
+                    check_id="X3",
+                    message=f"git diff failed (rc={result.returncode}): {result.stderr.strip()[:200]}",
+                )
+            ]
 
-    changed_files = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        changed_files = [
+            f.strip() for f in result.stdout.strip().split("\n") if f.strip()
+        ]
     all_findings: list[Finding] = []
 
     for file_path in changed_files:

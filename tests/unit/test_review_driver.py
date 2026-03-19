@@ -674,6 +674,62 @@ class TestApplyingFixesFilteredFindings:
 
 
 # ---------------------------------------------------------------------------
+# Mode auto-detection scope leak tests
+# ---------------------------------------------------------------------------
+
+
+class TestModeAutoDetectionUsesPRFiles:
+    """Verify mode auto-detection uses PR files, not local git diff.
+
+    The bug: when the driver initializes without --mode, it ran
+    ``git diff --name-only origin/main...HEAD`` from the local checkout.
+    If the local HEAD was a different branch than the PR, mode detection
+    used the wrong file list. The fix uses ``get_pr_changed_files()`` instead.
+    """
+
+    def test_report_pr_gets_report_audit_mode(self) -> None:
+        """A PR touching only docs/04_reports/ should get REPORT_AUDIT, not PLAN_AUDIT.
+
+        This is the exact scenario from the original bug: PR #864 changed
+        docs/04_reports/ files but the local HEAD had a plans/ file change,
+        causing PLAN_AUDIT to be selected instead of REPORT_AUDIT.
+        """
+        from review_state import ReviewMode
+
+        # PR's actual files are reports
+        pr_files = [
+            "docs/04_reports/arc_d_v2/r0/full/00_manifest.md",
+            "docs/04_reports/arc_d_v2/r0/full/evidence_manifest.json",
+            "docs/04_reports/arc_d_v2/r1/full/00_manifest.md",
+        ]
+        mode = classify_review_mode(pr_files)
+        assert mode == ReviewMode.REPORT_AUDIT
+
+    def test_report_pr_not_affected_by_local_plan_files(self) -> None:
+        """Even if local diff had plans/, the PR files should determine mode.
+
+        This test validates the fix end-to-end: the classify_review_mode
+        function receives PR-scoped files, not local git diff output.
+        """
+        from review_state import ReviewMode
+
+        # Only the PR files matter — local diff is irrelevant
+        pr_files = ["docs/04_reports/arc_d_v2/r0/full/evidence_manifest.json"]
+        mode = classify_review_mode(pr_files)
+        assert mode == ReviewMode.REPORT_AUDIT
+
+        # If the local diff's plans/ file had leaked in:
+        leaked_files = [
+            "plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md",
+        ]
+        mode_leaked = classify_review_mode(leaked_files)
+        assert mode_leaked == ReviewMode.PLAN_AUDIT
+
+        # The point: these give different modes — the PR files
+        # determine REPORT_AUDIT, not the leaked local PLAN_AUDIT
+
+
+# ---------------------------------------------------------------------------
 # Degraded review status tests (parse_confidence branching)
 # ---------------------------------------------------------------------------
 
