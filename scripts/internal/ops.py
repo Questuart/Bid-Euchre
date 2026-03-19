@@ -13,6 +13,10 @@ Usage:
     uv run python scripts/internal/ops.py ci --pr N [--json]
     uv run python scripts/internal/ops.py daemon [--interval N] [--max-ticks N] [--json]
     uv run python scripts/internal/ops.py retry --task TASK_ID [--json]
+    uv run python scripts/internal/ops.py index [--rebuild] [--json]
+    uv run python scripts/internal/ops.py query --text TEXT [--type TYPE] [--limit N] [--json]
+    uv run python scripts/internal/ops.py memory [--category CAT] [--json]
+    uv run python scripts/internal/ops.py compact --session-id ID --lane LANE --context-file FILE [--json]
 """
 
 from __future__ import annotations
@@ -504,6 +508,130 @@ def cmd_retry(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_index(args: argparse.Namespace) -> int:
+    """Build or show audit index."""
+    from bid_euchre.ops.index import (
+        build_index,
+        format_stats_json,
+        format_stats_text,
+        get_stats,
+    )
+
+    index_dir = args.runtime_dir / "audit_index"
+    rebuild = getattr(args, "rebuild", False)
+
+    result = build_index(
+        index_dir,
+        runtime_dir=args.runtime_dir,
+        plans_dir=args.plans_dir,
+        full_rebuild=rebuild,
+    )
+
+    stats = get_stats(index_dir)
+
+    if args.json:
+        data = {
+            "build": {
+                "sources_indexed": result.sources_indexed,
+                "entries_indexed": result.entries_indexed,
+                "errors": result.errors,
+                "duration_seconds": round(result.duration_seconds, 3),
+            },
+            "stats": format_stats_json(stats),
+        }
+        print(json.dumps(data, indent=2))
+    else:
+        print(format_stats_text(stats))
+        print()
+        mode = "Rebuilt" if rebuild else "Updated"
+        print(
+            f"{mode}: {result.sources_indexed} sources, "
+            f"{result.entries_indexed} entries "
+            f"({result.duration_seconds:.3f}s)"
+        )
+        if result.errors:
+            print(f"\nErrors: {len(result.errors)}")
+            for err in result.errors:
+                print(f"  - {err}")
+
+    return 1 if result.errors else 0
+
+
+def cmd_query(args: argparse.Namespace) -> int:
+    """Query the audit index."""
+    search_text = getattr(args, "text", None)
+    entry_type = getattr(args, "type", None)
+    limit = getattr(args, "limit", 20)
+    recent = getattr(args, "recent", False)
+
+    index_dir = args.runtime_dir / "audit_index"
+
+    if recent or not search_text:
+        from bid_euchre.ops.index import (
+            format_query_json,
+            format_query_text,
+            query_recent,
+        )
+
+        response = query_recent(index_dir, entry_type=entry_type, limit=limit)
+    else:
+        from bid_euchre.ops.index import (
+            format_query_json,
+            format_query_text,
+            query,
+        )
+
+        response = query(index_dir, search_text, entry_type=entry_type, limit=limit)
+
+    if args.json:
+        print(json.dumps(format_query_json(response), indent=2))
+    else:
+        print(format_query_text(response))
+
+    return 0
+
+
+def cmd_memory(args: argparse.Namespace) -> int:
+    """Show or manage curated memory."""
+    from bid_euchre.ops.memory import (
+        format_memory_json,
+        format_memory_text,
+        list_entries,
+    )
+
+    memory_dir = args.runtime_dir / "curated_memory"
+    category = getattr(args, "category", None)
+    tag = getattr(args, "tag", None)
+
+    entries = list_entries(memory_dir, category=category, tag=tag)
+
+    if args.json:
+        print(json.dumps(format_memory_json(entries), indent=2))
+    else:
+        print(format_memory_text(entries))
+
+    return 0
+
+
+def cmd_compact(args: argparse.Namespace) -> int:
+    """List archived sessions or show compact info."""
+    from bid_euchre.ops.compaction import (
+        format_archives_json,
+        format_archives_text,
+        list_archives,
+    )
+
+    archive_dir = args.runtime_dir / "session_archive"
+    archives = list_archives(archive_dir)
+
+    if args.json:
+        print(json.dumps(format_archives_json(archives), indent=2))
+    else:
+        print(format_archives_text(archives))
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -632,6 +760,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--lane", type=str, default=None, help="Current lane (for reroute target)"
     )
 
+    # index
+    index_parser = subparsers.add_parser("index", help="Build or show audit index")
+    index_parser.add_argument(
+        "--rebuild", action="store_true", help="Full rebuild (drop and recreate)"
+    )
+
+    # query
+    query_parser = subparsers.add_parser("query", help="Query the audit index")
+    query_parser.add_argument(
+        "--text", type=str, default=None, help="Search text (FTS5 query)"
+    )
+    query_parser.add_argument(
+        "--type", type=str, default=None, help="Filter by entry type"
+    )
+    query_parser.add_argument(
+        "--limit", type=int, default=20, help="Max results (default: 20)"
+    )
+    query_parser.add_argument(
+        "--recent", action="store_true", help="Show recent entries instead of searching"
+    )
+
+    # memory
+    memory_parser = subparsers.add_parser("memory", help="Show curated memory entries")
+    memory_parser.add_argument(
+        "--category", type=str, default=None, help="Filter by category"
+    )
+    memory_parser.add_argument("--tag", type=str, default=None, help="Filter by tag")
+
+    # compact
+    subparsers.add_parser("compact", help="List archived sessions")
+
     return parser
 
 
@@ -666,6 +825,10 @@ def main(argv: list[str] | None = None) -> int:
         "ci": cmd_ci,
         "daemon": cmd_daemon,
         "retry": cmd_retry,
+        "index": cmd_index,
+        "query": cmd_query,
+        "memory": cmd_memory,
+        "compact": cmd_compact,
     }
 
     handler = commands.get(args.command)
