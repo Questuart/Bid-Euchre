@@ -93,8 +93,8 @@ keep their own schemes and are not modified:
 
 | Creator | Title Format | Unchanged? |
 |---------|-------------|------------|
-| `review_driver.py` | `fix(<label>): follow-up for PR #N` | Yes |
-| `infra_incident_dedupe.yml` | `[infra] <subsystem> <failure_key>` | Yes |
+| `scripts/internal/review_driver.py` | `fix(<label>): follow-up for PR #N` | Yes |
+| `.github/workflows/infra_incident_dedupe.yml` | `[infra] <subsystem> <failure_key>` | Yes |
 | Manual (steward review) | Free-form | Yes |
 | **New: agent triage** | `[<category>] <subsystem>: <failure_key>` | N/A (new) |
 
@@ -162,7 +162,7 @@ do not authorize work.
   deduplicated issue with `triage` + `fix:test` labels
 - **Unhappy path:** A one-time transient lint failure does NOT qualify for
   issue creation (qualification threshold rejects it)
-- **Disable path:** Removing the `issues.md` agent profile disables the
+- **Disable path:** Removing the `.claude/agents/issues.md` agent profile disables the
   triage guidance without breaking any other workflow
 
 ### Failure Injection
@@ -172,7 +172,7 @@ do not authorize work.
 ### Rollback / Disable Path
 - **Agent profile:** Remove `.claude/agents/issues.md` to disable triage
   guidance without affecting any other workflow
-- **Workflow doc:** Amend or delete `ISSUE_TRIAGE_WORKFLOW.md` if
+- **Workflow doc:** Amend or delete `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` if
   qualification thresholds or anti-spam rules prove too permissive. Since
   the doc is purely prescriptive (no code enforcement), tightening rules
   is a single-file edit with no downstream breakage

@@ -154,6 +154,9 @@ when **all** of the following are true:
 - An agent that discovers a qualified finding should **create the issue**
   and **stop**. It should not also start fixing it in the same session
   unless the finding is already `agent-ready` and assigned.
+- **Role boundary:** The `issues` agent profile (`.claude/agents/issues.md`)
+  is strictly triage-only. It never implements fixes. When an issue becomes
+  `agent-ready`, it must be handed off to an author lane for implementation.
 
 ### Escalation
 

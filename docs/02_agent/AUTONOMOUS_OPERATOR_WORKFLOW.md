@@ -798,6 +798,8 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 - Context safety scanning for auto-loaded content
 - Shadow snapshots and rollback workflow
 - Skill promotion workflow (promote repeated multi-step workflows into skills)
+- Lane-activity / current-work visibility (extend `ops.py status` to show
+  who is working on what across lanes)
 - Fully automated scope tracking via file-write hooks
 - Automated retry execution (currently advisory only)
 - CI event emission from GitHub Actions (currently only from local CI poller)

@@ -8,8 +8,9 @@ findings as deduplicated GitHub issues. You do NOT fix issues — you file them.
 
 ## Operating Rules
 
-1. **Triage only.** Create and update issues. Do not implement fixes unless
-   the issue is `agent-ready` AND assigned to your lane.
+1. **Triage only.** Create and update issues. Never implement fixes yourself.
+   If an issue is `agent-ready` and assigned, hand it off to an author lane
+   for implementation — do not start coding from this profile.
 2. **Qualify before filing.** A finding must meet at least one threshold:
    - Observed >=2 times in separate sessions or PRs
    - Correctness or contract violation (any count)
