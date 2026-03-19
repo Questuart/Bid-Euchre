@@ -49,6 +49,77 @@
       "net_cvar_5_ci": [-4.5, -5.4, -3.6]
     }
   },
+  "bidders_by_contract": {
+    "suit": {
+      "gbt_av": {
+        "deals_total": 30,
+        "hands_with_bids": 14,
+        "bid_rate": 0.4667,
+        "make_rate": 0.71,
+        "net_eppd": 2.50
+      },
+      "selected_ols_av": {
+        "deals_total": 30,
+        "hands_with_bids": 12,
+        "bid_rate": 0.40,
+        "make_rate": 0.67,
+        "net_eppd": 1.80
+      },
+      "modeloespecifico": {
+        "deals_total": 30,
+        "hands_with_bids": 10,
+        "bid_rate": 0.3333,
+        "make_rate": 0.50,
+        "net_eppd": 0.10
+      }
+    },
+    "high": {
+      "gbt_av": {
+        "deals_total": 10,
+        "hands_with_bids": 4,
+        "bid_rate": 0.40,
+        "make_rate": 0.75,
+        "net_eppd": 1.90
+      },
+      "selected_ols_av": {
+        "deals_total": 10,
+        "hands_with_bids": 4,
+        "bid_rate": 0.40,
+        "make_rate": 0.50,
+        "net_eppd": 1.20
+      },
+      "modeloespecifico": {
+        "deals_total": 10,
+        "hands_with_bids": 4,
+        "bid_rate": 0.40,
+        "make_rate": 0.50,
+        "net_eppd": 0.05
+      }
+    },
+    "low": {
+      "gbt_av": {
+        "deals_total": 10,
+        "hands_with_bids": 4,
+        "bid_rate": 0.40,
+        "make_rate": 0.50,
+        "net_eppd": 1.50
+      },
+      "selected_ols_av": {
+        "deals_total": 10,
+        "hands_with_bids": 3,
+        "bid_rate": 0.30,
+        "make_rate": 0.67,
+        "net_eppd": 1.40
+      },
+      "modeloespecifico": {
+        "deals_total": 10,
+        "hands_with_bids": 3,
+        "bid_rate": 0.30,
+        "make_rate": 0.67,
+        "net_eppd": 0.05
+      }
+    }
+  },
   "pairwise_significance": [
     {
       "bidder_a": "gbt_av",

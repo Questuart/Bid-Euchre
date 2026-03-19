@@ -224,11 +224,15 @@ class TestComparatorRankings:
         df = generate_comparator_rankings(comparator_cis)
         assert list(df.columns) == EXPECTED_SCHEMAS["comparator_rankings"]
 
-    def test_row_count_pooled_only(self, comparator_cis):
+    def test_row_count_with_facets(self, comparator_cis):
+        """Pooled rows always present; per-contract rows when bidders_by_contract exists."""
         df = generate_comparator_rankings(comparator_cis)
         n_bidders = len(comparator_cis["bidders"])
-        assert len(df) == n_bidders
-        assert (df["facet"] == "pooled").all()
+        pooled = df[df["facet"] == "pooled"]
+        assert len(pooled) == n_bidders
+        # With bidders_by_contract in fixture, also expect per-contract rows
+        n_contracts = len(comparator_cis.get("bidders_by_contract", {}))
+        assert len(df) == n_bidders * (1 + n_contracts)
 
     def test_ranking_order(self, comparator_cis):
         df = generate_comparator_rankings(comparator_cis)
@@ -1455,12 +1459,22 @@ class TestBehaviorSummaryExpanded:
         assert row["mix_high"] == pytest.approx(0.2, abs=1e-3)
         assert row["mix_low"] == pytest.approx(0.1, abs=1e-3)
 
-    def test_graceful_without_contract_data(self, comparator_cis):
+    def test_graceful_without_contract_data(self):
         """mix_* columns are None when no by_contract data is available."""
-        df = generate_behavior_summary(comparator_cis, None)
+        # Use a minimal fixture WITHOUT bidders_by_contract
+        cis_no_contract = {
+            "bidders": {
+                "model_a": {
+                    "bid_rate": 0.5,
+                    "make_rate": 0.7,
+                    "net_eppd": 1.0,
+                    "cvar_5": -1.0,
+                    "net_cvar_5": -2.0,
+                },
+            },
+        }
+        df = generate_behavior_summary(cis_no_contract, None)
         for col in ("mix_suit", "mix_high", "mix_low"):
-            # All should be None since fixture comparator_cis has no
-            # bidders_by_contract and we passed no h2h_battery
             assert df[col].isna().all()
 
 
@@ -1479,6 +1493,36 @@ class TestBehaviorByContractExpanded:
             if row["bid_rate"] is not None and not pd.isna(row["bid_rate"]):
                 expected = round(1.0 - row["bid_rate"], 4)
                 assert row["pass_rate"] == pytest.approx(expected, abs=1e-4)
+
+    def test_per_contract_rows_when_data_present(self, comparator_cis):
+        """When bidders_by_contract is present, emit suit/high/low rows."""
+        assert (
+            "bidders_by_contract" in comparator_cis
+        ), "Fixture should include bidders_by_contract"
+        df = generate_behavior_by_contract(comparator_cis)
+        contracts = sorted(df["contract"].unique())
+        assert "suit" in contracts, "Should have suit rows"
+        assert "high" in contracts, "Should have high rows"
+        assert "low" in contracts, "Should have low rows"
+        assert "pooled" in contracts, "Should still have pooled rows"
+
+    def test_per_contract_bid_rate_populated(self, comparator_cis):
+        """Per-contract rows should have non-null bid_rate/make_rate."""
+        df = generate_behavior_by_contract(comparator_cis)
+        suit_rows = df[df["contract"] == "suit"]
+        assert len(suit_rows) > 0, "Should have suit rows"
+        assert suit_rows["bid_rate"].notna().all(), "bid_rate should not be null"
+        assert suit_rows["make_rate"].notna().all(), "make_rate should not be null"
+
+    def test_pooled_only_without_contract_data(self):
+        """Without bidders_by_contract, only pooled rows are emitted."""
+        cis_no_contract = {
+            "bidders": {
+                "model_a": {"bid_rate": 0.5, "make_rate": 0.7, "net_eppd": 1.0},
+            }
+        }
+        df = generate_behavior_by_contract(cis_no_contract)
+        assert df["contract"].unique().tolist() == ["pooled"]
 
 
 # ──────────────────────────────────────────────

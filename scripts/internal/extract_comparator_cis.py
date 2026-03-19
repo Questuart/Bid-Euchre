@@ -47,10 +47,21 @@ def _parse_jsonl_points(log_path: Path) -> dict:
       - deals_total: total hand_end count (including all-pass redeals)
 
     net_eppd = sum(net_bidder_team_points) / deals_total
+
+    Also tracks per-contract breakdowns (suit/high/low) in ``by_contract``.
     """
     bidder_pts = []
     net_pts = []
     deals_total = 0
+
+    # Per-contract tracking
+    by_contract: dict[str, dict] = {}
+    for ct in ("suit", "high", "low"):
+        by_contract[ct] = {
+            "bidder_team_points": [],
+            "net_bidder_team_points": [],
+            "deals_total": 0,
+        }
 
     with log_path.open() as f:
         for line in f:
@@ -66,6 +77,11 @@ def _parse_jsonl_points(log_path: Path) -> dict:
                 continue
 
             deals_total += 1
+            contract = record.get("contract")  # "suit", "high", or "low"
+
+            # Count all deals (including all-pass) per contract
+            if contract in by_contract:
+                by_contract[contract]["deals_total"] += 1
 
             winning_bid = record.get("winning_bid")
             bidder_position = record.get("bidder_position")
@@ -92,10 +108,16 @@ def _parse_jsonl_points(log_path: Path) -> dict:
             bidder_pts.append(float(bidder_val))
             net_pts.append(float(net_val))
 
+            # Track per-contract
+            if contract in by_contract:
+                by_contract[contract]["bidder_team_points"].append(float(bidder_val))
+                by_contract[contract]["net_bidder_team_points"].append(float(net_val))
+
     return {
         "bidder_team_points": bidder_pts,
         "net_bidder_team_points": net_pts,
         "deals_total": deals_total,
+        "by_contract": by_contract,
     }
 
 
@@ -604,6 +626,29 @@ def main():
             f"  {a_name} vs {b_name}: diff={a_arr.mean() - b_arr.mean():.4f}, p={p_val:.4f}"
         )
 
+    # Compute per-contract metrics (bidders_by_contract)
+    bidders_by_contract: dict[str, dict] = {}
+    for ct in ("suit", "high", "low"):
+        ct_results = {}
+        for name, data in all_data.items():
+            ct_data = data.get("by_contract", {}).get(ct, {})
+            if ct_data and ct_data.get("deals_total", 0) > 0:
+                ct_metrics = _compute_bidder_metrics(ct_data)
+                ct_results[name] = ct_metrics
+        if ct_results:
+            bidders_by_contract[ct] = ct_results
+
+    if bidders_by_contract:
+        print(
+            f"\nPer-contract metrics generated for: {list(bidders_by_contract.keys())}"
+        )
+        for ct, ct_res in bidders_by_contract.items():
+            for name, m in ct_res.items():
+                print(
+                    f"  {name}/{ct}: net_eppd={m['net_eppd']:.4f}, "
+                    f"bid_rate={m['bid_rate']:.4f}, make_rate={m['make_rate']:.4f}"
+                )
+
     output = {
         "schema": "comparator_cis_v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -614,6 +659,8 @@ def main():
         "bidders": results,
         "pairwise_significance": pairwise,
     }
+    if bidders_by_contract:
+        output["bidders_by_contract"] = bidders_by_contract
     if run_directories:
         output["run_directories"] = run_directories
 
