@@ -66,3 +66,5 @@ All hypothesis checks passed. Evidence supports advancing — lineage complete.
 - Chart 12: Bid and Make Rates
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
+
+<!-- gate_status: referenced via evidence_manifest.json -->
