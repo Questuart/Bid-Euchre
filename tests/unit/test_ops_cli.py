@@ -128,7 +128,7 @@ class TestCmdEvents:
     def test_events_drain_subcommand(
         self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Test `ops.py drain` subcommand (canonical drain interface)."""
+        """Test `ops.py events drain` (canonical drain interface per governing plan)."""
         import ops
 
         rc = ops.main(
@@ -137,6 +137,7 @@ class TestCmdEvents:
                 str(runtime_dir),
                 "--plans-dir",
                 str(plans_dir),
+                "events",
                 "drain",
             ]
         )

@@ -289,8 +289,13 @@ class TestAggregateStatus:
         report = aggregate_status(runtime_dir)
         assert len(report.lanes) == 1
         assert report.lanes[0].has_active_session is False
-        # Session task should still be available for context
+        # Session task available for context but NOT displayed as active work
         assert report.lanes[0].session_task == "Previous task"
+
+        # Text output must show "(idle, last: ...)" not "→ Previous task"
+        text = format_status_text(report)
+        assert "idle, last: Previous task" in text
+        assert "→ Previous task" not in text
 
     def test_blocked_task_generates_warning(self, runtime_dir: Path) -> None:
         _write_json(

@@ -115,7 +115,11 @@ def cmd_worktrees(args: argparse.Namespace) -> int:
 
 
 def cmd_events(args: argparse.Namespace) -> int:
-    """Show recent events."""
+    """Show recent events, or drain if subcommand given."""
+    # Dispatch to drain if nested subcommand
+    if getattr(args, "events_action", None) == "drain":
+        return cmd_events_drain(args)
+
     events_dir = args.runtime_dir / "events"
 
     from bid_euchre.ops.events import read_events
@@ -266,8 +270,8 @@ def build_parser() -> argparse.ArgumentParser:
     # worktrees
     subparsers.add_parser("worktrees", help="Worktree registry and reconciliation")
 
-    # events
-    events_parser = subparsers.add_parser("events", help="Show recent events")
+    # events (with nested "drain" subcommand)
+    events_parser = subparsers.add_parser("events", help="Event log")
     events_parser.add_argument(
         "--type", type=str, default=None, help="Filter by event type"
     )
@@ -277,9 +281,8 @@ def build_parser() -> argparse.ArgumentParser:
     events_parser.add_argument(
         "--limit", type=int, default=50, help="Max events to show"
     )
-
-    # events drain (as a separate top-level subcommand for clarity)
-    subparsers.add_parser("drain", help="Drain (archive) all events")
+    events_sub = events_parser.add_subparsers(dest="events_action")
+    events_sub.add_parser("drain", help="Drain (archive) all events")
 
     # tick
     subparsers.add_parser("tick", help="Run one scheduler cycle")
@@ -316,7 +319,6 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status,
         "worktrees": cmd_worktrees,
         "events": cmd_events,
-        "drain": cmd_events_drain,
         "tick": cmd_tick,
         "health": cmd_health,
         "watchdogs": cmd_watchdogs,

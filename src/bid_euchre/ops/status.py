@@ -287,7 +287,12 @@ def format_status_text(report: StatusReport) -> str:
     # Lanes
     lines.append(f"Lanes: {len(report.lanes)}")
     for lane in report.lanes:
-        session_info = f" → {lane.session_task}" if lane.session_task else " (idle)"
+        if lane.has_active_session and lane.session_task:
+            session_info = f" → {lane.session_task}"
+        elif lane.session_task:
+            session_info = f" (idle, last: {lane.session_task})"
+        else:
+            session_info = " (idle)"
         lines.append(f"  {lane.lane_id} [{lane.lane_class}]{session_info}")
 
     lines.append("")
