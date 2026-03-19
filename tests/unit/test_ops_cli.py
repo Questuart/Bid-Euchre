@@ -1241,3 +1241,285 @@ class TestCmdCompact:
         assert rc == 0
         data = json.loads(capsys.readouterr().out)
         assert data == []
+
+
+# ---- PR-5: Scope CLI Tests ----
+
+
+class TestScopeShow:
+    """Tests for ops.py scope show."""
+
+    def test_show_scope(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "scope": {
+                        "declared_files": ["src/*.py"],
+                        "touched_files": ["src/a.py"],
+                    },
+                }
+            )
+        )
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "scope",
+                "show",
+                "--task",
+                "t1",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "src/*.py" in out
+        assert "src/a.py" in out
+
+    def test_show_scope_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "scope": {
+                        "declared_files": ["src/*.py"],
+                        "touched_files": [],
+                    },
+                }
+            )
+        )
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "scope",
+                "show",
+                "--task",
+                "t1",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["declared_files"] == ["src/*.py"]
+
+    def test_show_nonexistent_task(self, runtime_dir: Path, plans_dir: Path) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "scope",
+                "show",
+                "--task",
+                "nonexistent",
+            ]
+        )
+        assert rc == 1
+
+
+class TestScopeSet:
+    """Tests for ops.py scope set."""
+
+    def test_set_declared(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "scope",
+                "set",
+                "--task",
+                "t1",
+                "--declared",
+                "src/bid_euchre/ops/*.py",
+                "tests/unit/test_ops_*.py",
+            ]
+        )
+        assert rc == 0
+        # Verify the file was updated
+        data = json.loads((runtime_dir / "task_state" / "t1.json").read_text())
+        assert data["scope"]["declared_files"] == [
+            "src/bid_euchre/ops/*.py",
+            "tests/unit/test_ops_*.py",
+        ]
+
+
+class TestScopeTouch:
+    """Tests for ops.py scope touch."""
+
+    def test_touch_files(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {"declared_files": [], "touched_files": ["a.py"]},
+                }
+            )
+        )
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "scope",
+                "touch",
+                "--task",
+                "t1",
+                "--file",
+                "b.py",
+                "c.py",
+            ]
+        )
+        assert rc == 0
+        data = json.loads((runtime_dir / "task_state" / "t1.json").read_text())
+        assert data["scope"]["touched_files"] == ["a.py", "b.py", "c.py"]
+
+
+# ---- PR-5: Retry Event Emission Tests ----
+
+
+class TestRetryEmit:
+    """Tests for ops.py retry --emit."""
+
+    def test_retry_emits_event(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        # Create a task_failed event to give retry something to evaluate
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "test",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "lint error"},
+                }
+            )
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "t1",
+                "--lane",
+                "author-a",
+                "--emit",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["action"] == "retry"
+
+        # Verify event was emitted
+        events_content = events_file.read_text()
+        assert "retry_attempted" in events_content
+
+    def test_retry_no_emit_by_default(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text("")
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "t1",
+            ]
+        )
+        assert rc == 0
+        # No event emitted when --emit not passed
+        events_content = events_file.read_text()
+        assert "retry_attempted" not in events_content
+
+    def test_retry_reroute_emits_task_rerouted(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        events_file = runtime_dir / "events" / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": f"2026-03-18T10:0{i}:00Z",
+                    "event_type": "task_failed",
+                    "source": "test",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": f"error {i}"},
+                }
+            )
+            for i in range(3)
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "retry",
+                "--task",
+                "t1",
+                "--lane",
+                "author-a",
+                "--max-retries",
+                "3",
+                "--emit",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["action"] == "reroute"
+
+        # Verify event was emitted
+        events_content = events_file.read_text()
+        assert "task_rerouted" in events_content

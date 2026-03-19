@@ -670,38 +670,129 @@ review architecture migration plan.
 
 ---
 
-## Future Work
+## Operator CLI Reference
 
-The following capabilities are planned for subsequent PRs and are documented
-here for context. They are not yet implemented.
+The operator CLI (`scripts/internal/ops.py`) provides a single entrypoint for
+workspace health monitoring, event inspection, and operational management.
 
-### Operator CLI (ops.py)
+### Commands
 
-- Single-command status summary
-- Worktree lifecycle management (`prune`, `quarantine`, `archive`)
-- Health checks and watchdogs
-- CI failure classification and bounded remediation
-- Recovery templates for common failure modes
+| Command | Purpose | Example |
+|---------|---------|---------|
+| `status` | Lane/session/task health summary | `ops.py status --json` |
+| `health` | Aggregated health (status + watchdogs) | `ops.py health` |
+| `watchdogs` | Run all watchdog checks | `ops.py watchdogs --json` |
+| `tick` | Run one scheduler cycle | `ops.py tick` |
+| `daemon` | Run bounded repeating tick loop | `ops.py daemon --interval 300 --max-ticks 50` |
+| `events` | Show recent events | `ops.py events --type ci_failure --limit 10` |
+| `events drain` | Archive all events | `ops.py events drain` |
+| `reviews` | PR review/check outcomes from GitHub | `ops.py reviews --pr 927` |
+| `ci` | CI status and failure classification | `ops.py ci --pr 940` |
+| `recover` | Recovery guidance for active failures | `ops.py recover` |
+| `retry` | Evaluate retry/reroute policy | `ops.py retry --task t1 --emit` |
+| `worktrees` | Worktree registry and reconciliation | `ops.py worktrees --json` |
+| `worktrees prune` | Prune stale worktrees (dry-run default) | `ops.py worktrees prune --execute` |
+| `worktrees quarantine` | Quarantine a dirty worktree | `ops.py worktrees quarantine /path` |
+| `worktrees archive` | Archive (remove) a worktree | `ops.py worktrees archive /path` |
+| `scope show` | Show task scope fields | `ops.py scope show --task t1` |
+| `scope set` | Set declared_files for a task | `ops.py scope set --task t1 --declared 'src/*.py'` |
+| `scope touch` | Record touched files for a task | `ops.py scope touch --task t1 --file src/a.py` |
+| `index` | Build or show audit index | `ops.py index --rebuild` |
+| `query` | Query the audit index | `ops.py query --text "ci_failure" --limit 5` |
+| `memory` | Show curated memory entries | `ops.py memory --category workflow` |
+| `compact` | List archived sessions | `ops.py compact` |
 
-### Scheduler and Event System
+All commands support `--json` for machine-readable output. Use
+`--runtime-dir` and `--plans-dir` to override default paths.
 
-- Durable event production/consumption
-- Queue-driven review execution
-- Scheduled health checks and remediation
-- ~~`launchd` recovery for persistent sessions~~ (delivered in PR-2)
+### Watchdog Checks
 
-### Audit Index and Memory
+Six watchdog checks run automatically via `ops.py tick` or `ops.py watchdogs`:
 
-- SQLite-based searchable index over runtime artifacts
-- Curated memory for stable operator facts
-- Session compaction and archive
+| Check | What it detects | Input source |
+|-------|----------------|-------------|
+| `heartbeats` | Stale/missing heartbeat files | `plans/**/heartbeat` files |
+| `task_progress` | Stalled in-progress tasks | `task_state/*.json` progress fields |
+| `worktree_health` | Unregistered/missing worktrees | Git worktree list vs registry |
+| `ci_stuck` | CI failing beyond threshold | `ci_failure`/`ci_success` events |
+| `subagent_failures` | Repeated task failures | `task_failed` events |
+| `scope_drift` | Files changed outside declared scope | `task_state/*.json` scope fields |
 
-### Rollout and Safety
+### Event Producers
+
+Events are emitted to the durable event log (runtime events JSONL) by:
+
+| Producer | Event types | Trigger |
+|----------|------------|---------|
+| `ci_poller.sh` | `ci_failure`, `ci_success` | CI pass/fail on PR checks |
+| `post-task-event.sh` | `task_completed` | `gh pr merge` via PostToolUse hook |
+| `ops.py tick` | `watchdog_finding`, `scheduler_tick` | Scheduler tick cycle |
+| `ops.py retry --emit` | `retry_attempted`, `task_rerouted`, `escalation` | Retry policy evaluation |
+
+### Task Scope Management
+
+Task scope enables the `scope_drift` watchdog to detect when an agent modifies
+files outside its declared scope. Scope is managed via the CLI:
+
+```bash
+# At task start: declare the intended file scope
+ops.py scope set --task t1 --declared 'src/bid_euchre/ops/*.py' 'tests/unit/test_ops_*.py'
+
+# During execution: record files as they are modified
+ops.py scope touch --task t1 --file src/bid_euchre/ops/watchdogs.py
+
+# Inspect current scope
+ops.py scope show --task t1
+```
+
+The scope API can also be called programmatically:
+
+```python
+from bid_euchre.ops.status import update_task_scope, get_task_scope
+
+update_task_scope("t1", declared_files=["src/bid_euchre/ops/*.py"])
+update_task_scope("t1", touched_files=["src/bid_euchre/ops/watchdogs.py"], append_touched=True)
+scope = get_task_scope("t1")
+```
+
+### Rollback and Disable
+
+All operator stack features are designed to be independently disablable:
+
+| Feature | Disable method |
+|---------|---------------|
+| CI event emission | Remove `emit_ci_event` calls from `ci_poller.sh` |
+| Scope tracking | Stop calling `ops.py scope set/touch` — watchdog degrades gracefully |
+| Retry event emission | Omit `--emit` flag (default: off) |
+| Watchdog checks | Pass `checks={"heartbeats"}` to run only specific checks |
+| Scheduler daemon | Do not run `ops.py daemon` — all checks are on-demand via `ops.py tick` |
+| Full stack | Remove `.claude/hooks/post-task-event.sh` and stop running `ops.py` |
+
+No feature alters core simulation, strategy, or experiment behavior.
+
+---
+
+## Shipped Work (Implementation History)
+
+The following capabilities were delivered across PRs 1-5 of the autonomous
+agent ops workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
+
+| PR | Scope | Status |
+|----|-------|--------|
+| PR-1 | Operating model, worktree bootstrap, documentation | Shipped |
+| PR-2 | Steward session launcher, VS Code audit workspace, launchd recovery | Shipped |
+| PR-3 | Operator CLI (`ops.py`), reviews/CI surfaces, scheduler, watchdogs, retry/reroute | Shipped |
+| PR-4 | Audit index, curated memory, session compaction | Shipped |
+| PR-5 | CI event producers, scope management, retry events, operational proof | Shipped |
+
+### Remaining Future Work
 
 - Context safety scanning for auto-loaded content
 - Shadow snapshots for rollback
 - Skill promotion workflow
-- End-to-end validation pilots
+- Fully automated scope tracking via file-write hooks
+- Automated retry execution (currently advisory only)
+- CI event emission from GitHub Actions (currently only from local CI poller)
 
 See `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` for the
 full implementation sequence and design decisions.

@@ -359,3 +359,115 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
         "completed_tasks": report.completed_tasks,
         "warnings": report.warnings,
     }
+
+
+# ---------------------------------------------------------------------------
+# Task scope management
+# ---------------------------------------------------------------------------
+
+
+def update_task_scope(
+    task_id: str,
+    *,
+    declared_files: list[str] | None = None,
+    touched_files: list[str] | None = None,
+    append_touched: bool = False,
+    runtime_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Update scope fields on a task state file.
+
+    Reads the task state JSON, updates the ``scope`` object, and writes
+    it back atomically. Creates the ``scope`` key if it does not exist.
+
+    Args:
+        task_id: Task identifier (filename stem in ``task_state/``).
+        declared_files: Glob patterns for declared file scope. Replaces
+            existing ``scope.declared_files`` if provided.
+        touched_files: File paths to record as touched. Behavior depends
+            on ``append_touched``.
+        append_touched: If True, appends ``touched_files`` to the existing
+            list (deduplicating). If False, replaces the existing list.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        The updated task state dict.
+
+    Raises:
+        FileNotFoundError: If the task state file does not exist.
+        ValueError: If neither ``declared_files`` nor ``touched_files``
+            is provided.
+    """
+    if declared_files is None and touched_files is None:
+        raise ValueError(
+            "At least one of declared_files or touched_files must be provided"
+        )
+
+    if runtime_dir is None:
+        runtime_dir = DEFAULT_RUNTIME_DIR
+
+    task_file = runtime_dir / "task_state" / f"{task_id}.json"
+    if not task_file.exists():
+        raise FileNotFoundError(f"Task state file not found: {task_file}")
+
+    data = json.loads(task_file.read_text())
+
+    # Ensure scope object exists
+    if "scope" not in data or not isinstance(data.get("scope"), dict):
+        data["scope"] = {"declared_files": [], "touched_files": []}
+
+    scope = data["scope"]
+
+    if declared_files is not None:
+        scope["declared_files"] = list(declared_files)
+
+    if touched_files is not None:
+        if append_touched:
+            existing = scope.get("touched_files", [])
+            # Deduplicate while preserving order
+            seen = set(existing)
+            merged = list(existing)
+            for f in touched_files:
+                if f not in seen:
+                    seen.add(f)
+                    merged.append(f)
+            scope["touched_files"] = merged
+        else:
+            scope["touched_files"] = list(touched_files)
+
+    data["scope"] = scope
+
+    # Atomic write via temp file
+    tmp_file = task_file.with_suffix(".tmp")
+    tmp_file.write_text(json.dumps(data, indent=2))
+    tmp_file.rename(task_file)
+
+    return data
+
+
+def get_task_scope(
+    task_id: str,
+    *,
+    runtime_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Read scope fields from a task state file.
+
+    Args:
+        task_id: Task identifier (filename stem in ``task_state/``).
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        The scope dict (``declared_files``, ``touched_files``), or an
+        empty dict if no scope is set.
+
+    Raises:
+        FileNotFoundError: If the task state file does not exist.
+    """
+    if runtime_dir is None:
+        runtime_dir = DEFAULT_RUNTIME_DIR
+
+    task_file = runtime_dir / "task_state" / f"{task_id}.json"
+    if not task_file.exists():
+        raise FileNotFoundError(f"Task state file not found: {task_file}")
+
+    data = json.loads(task_file.read_text())
+    return data.get("scope", {})
