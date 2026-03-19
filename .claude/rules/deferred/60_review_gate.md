@@ -158,13 +158,13 @@ overlap or replace each other.
 |--------|---------|-------|-------|
 | **Local review loop** | `gh pr create` (PostToolUse hook) | Convention prechecks, Codex CLI review, auto-fix | `scripts/internal/review_driver.py` |
 | **Claude GitHub Action (assistant)** | `@claude` mention on issue/PR/comment | Ad-hoc tasks, questions, investigation | `.github/workflows/claude.yml` |
-| **Claude GitHub Action (review)** | PR opened/updated (code paths only) | Automated code review via plugin | `.github/workflows/claude-code-review.yml` |
+| **Claude GitHub Action (review)** | PR opened/updated (code paths only) | Prompt-based automated code review via Claude Code action | `.github/workflows/claude-code-review.yml` |
 | **Post-merge review** | `gh pr merge` (PostToolUse hook) | Correctness, contracts, architecture | Background Explore agent |
 
 **Boundary rules:**
 - The local review loop and Claude GitHub Action review may both comment on the
   same PR. Their scopes differ: local loop runs prechecks + Codex; GitHub Action
-  runs the code-review plugin.
+  runs prompt-based Claude Code review.
 - Neither GitHub Action workflow modifies `review_driver.py`, status contexts,
   or branch protection rules.
 - The `allowed_tools` list in `claude.yml` is intentionally read-only +

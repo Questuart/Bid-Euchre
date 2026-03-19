@@ -33,14 +33,29 @@ class TestClaudeReviewWorkflow:
         assert "plugin_marketplaces" not in with_block
         assert "plugins" not in with_block
 
-    def test_has_prompt(self):
+    def test_prompt_contains_review_semantics(self):
+        """Prompt must instruct Claude to perform a code review."""
         step = self._review_step()
-        assert "prompt" in step["with"]
+        prompt = step["with"]["prompt"]
+        assert "review" in prompt.lower(), "prompt must mention 'review'"
+        assert "pull request" in prompt.lower(), "prompt must reference pull requests"
+        # At least one quality dimension must be specified
+        quality_terms = {"quality", "correctness", "security"}
+        prompt_lower = prompt.lower()
+        found = {t for t in quality_terms if t in prompt_lower}
+        assert found, f"prompt must mention at least one of {quality_terms}"
+        # Must instruct Claude to post findings as review comments
+        assert (
+            "review comments" in prompt_lower
+        ), "prompt must instruct posting findings as review comments"
 
-    def test_has_max_turns(self):
+    def test_max_turns_value(self):
+        """Max turns must be explicitly set to a small bound."""
         step = self._review_step()
-        assert "claude_args" in step["with"]
-        assert "--max-turns" in step["with"]["claude_args"]
+        claude_args = step["with"]["claude_args"]
+        assert (
+            claude_args == "--max-turns 5"
+        ), f"expected '--max-turns 5', got {claude_args!r}"
 
     def _review_step(self):
         """Return the 'Run Claude Code Review' step."""
