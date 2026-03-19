@@ -991,3 +991,253 @@ class TestCmdRetry:
         assert data["action"] == "reroute"
         assert data["reroute_to"] is not None
         assert data["reroute_to"] != "author-a"
+
+
+# ---- PR-4: Index, Query, Memory, Compact CLI tests ----
+
+
+class TestCmdIndex:
+    """Tests for the index subcommand."""
+
+    def test_index_build(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            ["--runtime-dir", str(runtime_dir), "--plans-dir", str(plans_dir), "index"]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Audit Index" in captured
+
+    def test_index_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "index",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert "build" in data
+        assert "stats" in data
+        assert "sources_indexed" in data["build"]
+
+    def test_index_rebuild(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "index",
+                "--rebuild",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "Rebuilt" in captured
+
+
+class TestCmdQuery:
+    """Tests for the query subcommand."""
+
+    def test_query_recent(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        # Build index first
+        ops.main(
+            ["--runtime-dir", str(runtime_dir), "--plans-dir", str(plans_dir), "index"]
+        )
+        capsys.readouterr()  # clear output
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "query",
+                "--recent",
+            ]
+        )
+        assert rc == 0
+
+    def test_query_text_search(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        # Build index first
+        ops.main(
+            ["--runtime-dir", str(runtime_dir), "--plans-dir", str(plans_dir), "index"]
+        )
+        capsys.readouterr()
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "query",
+                "--text",
+                "test",
+            ]
+        )
+        assert rc == 0
+
+    def test_query_json(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        # Build index first
+        ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "index",
+            ]
+        )
+        capsys.readouterr()
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "query",
+                "--recent",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert "query" in data
+        assert "results" in data
+
+
+class TestCmdMemory:
+    """Tests for the memory subcommand."""
+
+    def test_memory_empty(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            ["--runtime-dir", str(runtime_dir), "--plans-dir", str(plans_dir), "memory"]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "no curated memory" in captured.lower()
+
+    def test_memory_json_empty(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "memory",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data == []
+
+
+class TestCmdCompact:
+    """Tests for the compact subcommand."""
+
+    def test_compact_no_archives(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "compact",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr().out
+        assert "no archived" in captured.lower()
+
+    def test_compact_json_no_archives(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "compact",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data == []

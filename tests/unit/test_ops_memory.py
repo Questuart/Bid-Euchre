@@ -258,6 +258,9 @@ class TestCRUD:
             source_file=str(source_file),
             added_by="test",
         )
+        # New entry must have a distinct ID from the old one
+        assert entry2.entry_id != entry1.entry_id
+        # Supersedes must point to the prior entry's distinct ID
         assert entry2.supersedes == entry1.entry_id
         assert entry2.value == "v2"
 

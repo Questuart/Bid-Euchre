@@ -16,7 +16,7 @@ Usage:
     uv run python scripts/internal/ops.py index [--rebuild] [--json]
     uv run python scripts/internal/ops.py query --text TEXT [--type TYPE] [--limit N] [--json]
     uv run python scripts/internal/ops.py memory [--category CAT] [--json]
-    uv run python scripts/internal/ops.py compact --session-id ID --lane LANE --context-file FILE [--json]
+    uv run python scripts/internal/ops.py compact [--json]
 """
 
 from __future__ import annotations

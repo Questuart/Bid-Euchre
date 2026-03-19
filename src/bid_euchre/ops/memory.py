@@ -110,11 +110,16 @@ def _now_iso() -> str:
 
 
 def _generate_id(key: str, category: str) -> str:
-    """Generate a deterministic entry ID from key and category."""
+    """Generate a unique entry ID from key, category, and current time.
+
+    Each call produces a distinct ID even for the same key+category,
+    so that supersession chains have distinct IDs per version.
+    """
     import hashlib
 
-    raw = f"{category}:{key}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+    now = datetime.now(timezone.utc).isoformat()
+    raw = f"{category}:{key}:{now}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def _get_memory_path(memory_dir: Path) -> Path:

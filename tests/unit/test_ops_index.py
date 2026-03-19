@@ -114,6 +114,58 @@ def plans_dir(tmp_path: Path) -> Path:
     return pd
 
 
+@pytest.fixture()
+def runtime_with_reviews(runtime_dir: Path) -> Path:
+    """Extend runtime_dir with review loop and plan review artifacts."""
+    # Review loop sidecars
+    rl_dir = runtime_dir / "review_loops" / "pr_906"
+    rl_dir.mkdir(parents=True)
+    (rl_dir / "state.json").write_text(
+        json.dumps(
+            {
+                "pr_number": 906,
+                "branch": "codex/steward-author-c",
+                "state": "completed",
+                "iteration_count": 1,
+            }
+        )
+    )
+    round_dir = rl_dir / "round_1"
+    round_dir.mkdir()
+    (round_dir / "prechecks.json").write_text(json.dumps([]))
+    (round_dir / "codex_review.json").write_text(
+        json.dumps({"findings": [], "status": "clean"})
+    )
+
+    # Plan review artifacts
+    pr_dir = runtime_dir / "plan_reviews" / "plan_001"
+    pr_dir.mkdir(parents=True)
+    (pr_dir / "review.json").write_text(
+        json.dumps(
+            {
+                "plan_path": "plans/sessions/test.md",
+                "status": "approved",
+                "timestamp": "2026-03-18T14:00:00+00:00",
+            }
+        )
+    )
+
+    # CI poll snapshots (in nested pr_N dirs)
+    ci_dir = runtime_dir / "ci_polls" / "pr_906"
+    ci_dir.mkdir(parents=True)
+    (ci_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "pr_number": 906,
+                "overall": "success",
+                "checked_at": "2026-03-18T13:00:00+00:00",
+            }
+        )
+    )
+
+    return runtime_dir
+
+
 class TestInitSchema:
     """Tests for schema initialization."""
 
@@ -228,6 +280,66 @@ class TestBuildIndex:
             plans_dir=tmp_path / "plans",
         )
         # Should handle gracefully
+        assert isinstance(result, BuildResult)
+
+    def test_indexes_review_loop_sidecars(
+        self, index_dir: Path, runtime_with_reviews: Path, plans_dir: Path
+    ) -> None:
+        result = build_index(
+            index_dir, runtime_dir=runtime_with_reviews, plans_dir=plans_dir
+        )
+        # Should index review loop state + round artifacts
+        assert result.entries_indexed >= 9  # base entries + review loop entries
+
+        # Verify review_outcome entries exist
+        response = query(index_dir, "review loop")
+        assert response.total_matches >= 1
+
+    def test_indexes_plan_review_artifacts(
+        self, index_dir: Path, runtime_with_reviews: Path, plans_dir: Path
+    ) -> None:
+        build_index(index_dir, runtime_dir=runtime_with_reviews, plans_dir=plans_dir)
+        response = query(index_dir, "plan review")
+        assert response.total_matches >= 1
+        # Verify it's a plan_review_outcome entry type
+        plan_results = [
+            r for r in response.results if r.entry_type == "plan_review_outcome"
+        ]
+        assert len(plan_results) >= 1
+
+    def test_indexes_ci_poll_snapshots(
+        self, index_dir: Path, runtime_with_reviews: Path, plans_dir: Path
+    ) -> None:
+        build_index(index_dir, runtime_dir=runtime_with_reviews, plans_dir=plans_dir)
+        response = query(index_dir, "906")
+        assert response.total_matches >= 1
+
+    def test_handles_empty_review_loops(self, index_dir: Path, tmp_path: Path) -> None:
+        rt = tmp_path / "runtime"
+        rl_dir = rt / "review_loops"
+        rl_dir.mkdir(parents=True)
+        # Empty review_loops dir
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=tmp_path / "plans",
+        )
+        assert isinstance(result, BuildResult)
+
+    def test_handles_malformed_review_loop_state(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        rt = tmp_path / "runtime"
+        rl_dir = rt / "review_loops" / "pr_999"
+        rl_dir.mkdir(parents=True)
+        (rl_dir / "state.json").write_text("not valid json")
+
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=tmp_path / "plans",
+        )
+        # Should handle gracefully — malformed entries are skipped
         assert isinstance(result, BuildResult)
 
 

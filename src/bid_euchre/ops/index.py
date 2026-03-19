@@ -454,6 +454,146 @@ def _ingest_review(conn: sqlite3.Connection, review_file: Path) -> int:
     return 1
 
 
+def _ingest_review_loop(conn: sqlite3.Connection, loop_dir: Path) -> int:
+    """Ingest review-loop sidecar artifacts (state.json + per-round findings).
+
+    These are transitional/legacy sources per the governing plan, but are
+    indexed for searchable history while the migration to online-first
+    review is in progress.
+    """
+    if not loop_dir.exists():
+        return 0
+
+    total = 0
+
+    # Ingest state.json for each PR
+    for pr_dir in sorted(loop_dir.iterdir()):
+        if not pr_dir.is_dir():
+            continue
+
+        state_file = pr_dir / "state.json"
+        if state_file.exists():
+            stat = state_file.stat()
+            source_id = _upsert_source(
+                conn,
+                "review",
+                str(state_file),
+                datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                stat.st_size,
+            )
+            try:
+                data = json.loads(state_file.read_text())
+                pr = data.get("pr_number", pr_dir.name)
+                state = data.get("state", "unknown")
+                branch = data.get("branch", "")
+                content = (
+                    f"review loop: PR#{pr} state={state} branch={branch} "
+                    f"{json.dumps(data)}"
+                )
+                _insert_entry(
+                    conn,
+                    source_id,
+                    "review_outcome",
+                    None,
+                    content,
+                    data,
+                )
+                total += 1
+            except json.JSONDecodeError:
+                logger.warning("Skipping malformed review loop state: %s", state_file)
+
+        # Ingest per-round artifacts (prechecks, codex_review)
+        for round_dir in sorted(pr_dir.glob("round_*")):
+            if not round_dir.is_dir():
+                continue
+            for artifact_name in ("prechecks.json", "codex_review.json"):
+                artifact = round_dir / artifact_name
+                if not artifact.exists():
+                    continue
+                stat = artifact.stat()
+                source_id = _upsert_source(
+                    conn,
+                    "review",
+                    str(artifact),
+                    datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                    stat.st_size,
+                )
+                try:
+                    data = json.loads(artifact.read_text())
+                    round_name = round_dir.name
+                    content = (
+                        f"review artifact: {artifact_name} {round_name} "
+                        f"PR={pr_dir.name} {json.dumps(data)}"
+                    )
+                    _insert_entry(
+                        conn,
+                        source_id,
+                        "review_outcome",
+                        None,
+                        content,
+                        data if isinstance(data, dict) else {"findings": data},
+                    )
+                    total += 1
+                except json.JSONDecodeError:
+                    logger.warning("Skipping malformed artifact: %s", artifact)
+
+    return total
+
+
+def _ingest_plan_reviews(conn: sqlite3.Connection, plan_reviews_dir: Path) -> int:
+    """Ingest local /review-plan artifacts and summaries."""
+    if not plan_reviews_dir.exists():
+        return 0
+
+    total = 0
+    for review_file in sorted(plan_reviews_dir.rglob("*.json")):
+        stat = review_file.stat()
+        source_id = _upsert_source(
+            conn,
+            "plan_review",
+            str(review_file),
+            datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            stat.st_size,
+        )
+        try:
+            data = json.loads(review_file.read_text())
+        except json.JSONDecodeError:
+            logger.warning("Skipping malformed plan review: %s", review_file)
+            continue
+
+        plan_path = data.get("plan_path", data.get("plan", review_file.name))
+        status = data.get("status", data.get("result", "unknown"))
+        content = f"plan review: plan={plan_path} status={status} {json.dumps(data)}"
+        _insert_entry(
+            conn,
+            source_id,
+            "plan_review_outcome",
+            data.get("timestamp", data.get("reviewed_at")),
+            content,
+            data,
+        )
+        total += 1
+
+    return total
+
+
+def _ingest_report_metadata(conn: sqlite3.Connection, reports_dir: Path) -> int:
+    """Ingest latest report metadata (manifest files in report directories)."""
+    if not reports_dir.exists():
+        return 0
+
+    total = 0
+    # Look for report manifests and metadata files
+    for meta_file in sorted(reports_dir.rglob("manifest*.json")):
+        try:
+            n = _ingest_manifest(conn, meta_file)
+            total += n
+        except Exception as e:
+            logger.warning("Skipping report metadata %s: %s", meta_file, e)
+
+    return total
+
+
 # ── Build / Rebuild ──────────────────────────────────────────────
 
 
@@ -496,14 +636,16 @@ def build_index(
     if plans_dir is None:
         plans_dir = Path("plans")
 
-    # Initialize schema
-    init_schema(index_dir)
-
     if full_rebuild:
         db_path = _get_db_path(index_dir)
-        if db_path.exists():
-            db_path.unlink()
-        init_schema(index_dir)
+        # Remove main DB and any journal files (WAL, SHM)
+        for suffix in ("", "-wal", "-shm"):
+            p = db_path.parent / (db_path.name + suffix)
+            if p.exists():
+                p.unlink()
+
+    # Initialize schema (creates DB if needed, or reconnects)
+    init_schema(index_dir)
 
     conn = _connect(index_dir)
 
@@ -583,14 +725,47 @@ def build_index(
         # 6. Ingest CI poll snapshots
         ci_polls_dir = runtime_dir / "ci_polls"
         if ci_polls_dir.exists():
-            for review_file in ci_polls_dir.glob("*.json"):
-                try:
-                    n = _ingest_review(conn, review_file)
-                    if n > 0:
-                        result.sources_indexed += 1
-                        result.entries_indexed += n
-                except Exception as e:
-                    result.errors.append(f"review {review_file}: {e}")
+            for ci_pr_dir in sorted(ci_polls_dir.iterdir()):
+                if not ci_pr_dir.is_dir():
+                    continue
+                for review_file in ci_pr_dir.glob("*.json"):
+                    try:
+                        n = _ingest_review(conn, review_file)
+                        if n > 0:
+                            result.sources_indexed += 1
+                            result.entries_indexed += n
+                    except Exception as e:
+                        result.errors.append(f"review {review_file}: {e}")
+
+        # 7. Ingest review-loop sidecars (transitional/legacy)
+        review_loops_dir = runtime_dir / "review_loops"
+        try:
+            n = _ingest_review_loop(conn, review_loops_dir)
+            if n > 0:
+                result.sources_indexed += 1
+                result.entries_indexed += n
+        except Exception as e:
+            result.errors.append(f"review_loops: {e}")
+
+        # 8. Ingest local /review-plan artifacts
+        plan_reviews_dir = runtime_dir / "plan_reviews"
+        try:
+            n = _ingest_plan_reviews(conn, plan_reviews_dir)
+            if n > 0:
+                result.sources_indexed += 1
+                result.entries_indexed += n
+        except Exception as e:
+            result.errors.append(f"plan_reviews: {e}")
+
+        # 9. Ingest report metadata
+        reports_dir = Path("docs/04_reports")
+        try:
+            n = _ingest_report_metadata(conn, reports_dir)
+            if n > 0:
+                result.sources_indexed += 1
+                result.entries_indexed += n
+        except Exception as e:
+            result.errors.append(f"report_metadata: {e}")
 
         # Update metadata
         conn.execute(
