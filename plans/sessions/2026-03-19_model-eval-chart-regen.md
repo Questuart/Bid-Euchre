@@ -90,7 +90,7 @@ Input directories per rung:
 
 ## Outcome
 
-**PR:** #TBD
+**PR:** #993
 
 ### What shipped
 - 12 model-eval PNGs regenerated (Charts 16-18 + dashboard_model_eval × 3 rungs)
