@@ -201,10 +201,10 @@ Generated from canonical CSV tables and chart PNGs.
 ## 10. Data Quality Notes
 
 - **Outcome distributions (Chart 9):** synthetic data — parquet-backed real distributions unavailable for this bundle
-- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: unknown** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: r2_positive_suit** — failed. This may be expected for small sample sizes or early rungs.
 
 <!-- gate_status: data sanity checks in §1 above -->
