@@ -293,4 +293,10 @@ validation as a cross-rung note in R3's decision report (Step 2).
 
 ## Outcome
 
-_To be filled after implementation._
+**PRs:** #886 (R3 artifacts + decision report), #889 (hypothesis CSVs + state
+repairs), #891 (lineage conclusion + governing plan close), #894 (backfill
+PENDING canonical 02_decision.md)
+**Status:** ALL MERGED (2026-03-19)
+
+R3 FULL completed with 9/9 PASS. Best-in-lineage: `full_ols_av` at 2.283
+net_eppd, R² 0.900. Lineage governing plan closed as COMPLETE.

@@ -198,4 +198,9 @@ for json_path in sorted(registry_dir.glob("*.json")):
 
 ## Outcome
 
-_To be filled after implementation._
+**PR:** #918 — fix: address 5 deferred review findings in ops package
+**Status:** MERGED (2026-03-19)
+
+All 5 deferred findings addressed: H1+M7 crash-safe event drain with
+`fcntl.flock`, F6 worktree path resolution fallback, M2 timeout
+observability in reviews, V1 lane_id inference in worktree archive.

@@ -114,11 +114,16 @@ def _generate_id(key: str, category: str) -> str:
 
     Each call produces a distinct ID even for the same key+category,
     so that supersession chains have distinct IDs per version.
+
+    A random nonce is included to prevent collisions when two calls
+    occur within the same microsecond (e.g. concurrent agents).
     """
     import hashlib
+    import os
 
     now = datetime.now(timezone.utc).isoformat()
-    raw = f"{category}:{key}:{now}"
+    nonce = os.urandom(8).hex()
+    raw = f"{category}:{key}:{now}:{nonce}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -148,11 +153,24 @@ def load_memory(memory_dir: Path) -> MemoryStore:
 
 
 def save_memory(store: MemoryStore, memory_dir: Path) -> None:
-    """Save curated memory to disk."""
+    """Save curated memory to disk.
+
+    Uses exclusive file locking (``fcntl.flock``) to prevent corruption
+    when multiple agents write concurrently.
+    """
+    import fcntl
+
     memory_dir.mkdir(parents=True, exist_ok=True)
     memory_path = _get_memory_path(memory_dir)
     store.last_updated = _now_iso()
-    memory_path.write_text(json.dumps(store.to_dict(), indent=2) + "\n")
+    content = json.dumps(store.to_dict(), indent=2) + "\n"
+    with open(memory_path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(content)
+            f.flush()
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 # ── Validation ───────────────────────────────────────────────────
