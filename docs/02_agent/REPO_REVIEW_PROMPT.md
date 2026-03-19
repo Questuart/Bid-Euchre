@@ -1,6 +1,6 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Version:** 3.6 (Drift-Resilient, Discovery-Driven)
+**Version:** 3.7 (Drift-Resilient, Discovery-Driven)
 **Last Updated:** March 2026
 
 ---
@@ -184,8 +184,8 @@ uv run python -c "from bid_euchre.validation.arc_d_gate import normalize_eval_me
 # Verify Arc D v2 modules (lineage orchestration, charts, tables, reports)
 uv run python -c "import bid_euchre.arc_d_v2; print('arc_d_v2 OK')"
 uv run python -c "from bid_euchre.arc_d_v2.chart_registry import CHART_REGISTRY; print('chart_registry OK')"
-uv run python -c "from bid_euchre.arc_d_v2.tables import generate_rung_tables; print('tables OK')"
-uv run python -c "from bid_euchre.arc_d_v2.report import generate_rung_report; print('report OK')"
+uv run python -c "from bid_euchre.arc_d_v2.tables import generate_all_tables; print('tables OK')"
+uv run python -c "from bid_euchre.arc_d_v2.report import generate_report; print('report OK')"
 
 # Dynamic: also verify any modules not listed above
 # ls -d src/bid_euchre/*/ | grep -v __pycache__
@@ -819,7 +819,7 @@ These are the **blessed canonical commands** for this repo. Run `make help` for 
 
 ```bash
 # Run all CI checks (required before PR)
-# Composition: repo-lint + lint + test + notebook-check + docs-check
+# Composition: ensure-venv + repo-lint + lint + test + notebook-check + docs-check
 make check
 
 # Individual checks
@@ -969,7 +969,9 @@ bid-euchre/
 │   └── FLOW_DIAGRAM.md          # Top-level flow diagram (not in 01_core/)
 ├── data/
 │   ├── fixtures/                # Committed test fixtures (≤100KB each)
-│   └── runs/                    # Generated outputs (gitignored)
+│   ├── runs/                    # Generated outputs (gitignored)
+│   ├── artifacts/               # Model artifacts (gitignored)
+│   └── reports/                 # Generated reports (gitignored)
 ├── Makefile                     # Gold path commands (run `make help`)
 ├── pyproject.toml               # Project config
 └── .github/
@@ -1012,6 +1014,7 @@ bid-euchre/
 | **Arc D v2 QUICK Ladder** | #681–740 | R0-R3 QUICK rungs, dataset generation, orchestrator | R0-R3 all pass (9/9 R3), GBT promotions, chart_data extraction |
 | **Reporting Suite** | #741–764 | Report contracts, table expansion, dashboards, diagnostics | 9 CSV chart_data, 3×2 dashboards, bundle backfill, integrity fixes |
 | **Chart Suite + Ops** | #765–780 | 23-chart registry, agent ops, regeneration repair, Option B | Full chart registry, tmux manager, R0 anchor fix, subdir field refactor |
+| **Reporting Refactor + FULL Regen** | #781–#864 | Reporting Refactor + FULL Regeneration | Reporting refactor phases 1–6; FULL rung regeneration R0–R2; review loop parser repairs; agent ops infrastructure; evidence manifest fixes |
 
 **Current state:** Derive via:
 
@@ -1163,5 +1166,5 @@ summary and do not proceed to later phases unless explicitly asked.
 
 ---
 
-*Template version: 3.6 (Drift-Resilient, Discovery-Driven)*
-*Previous versions: 3.5, 3.4, 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
+*Template version: 3.7 (Drift-Resilient, Discovery-Driven)*
+*Previous versions: 3.6, 3.5, 3.4, 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
