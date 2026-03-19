@@ -3,6 +3,10 @@
 Provides a unified summary of the current state of the steward workspace:
 which lanes are active, which sessions are running, which tasks are blocked,
 and what needs attention.
+
+The lane-activity view synthesizes current work from existing repo-local
+state (worktree registry, session metadata, task state, durable events)
+to answer: "which lane is working on which problem right now?"
 """
 
 from __future__ import annotations
@@ -10,12 +14,19 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("ops.status")
 
 DEFAULT_RUNTIME_DIR = Path(".claude/runtime")
+
+# Minutes after which an active lane with no progress is flagged as stale.
+STALE_MINUTES = 30
+
+# Valid lane activity states.
+LANE_STATES = frozenset({"active", "blocked", "idle", "unknown"})
 
 
 @dataclass
@@ -26,6 +37,11 @@ class LaneStatus:
     has a non-null ``session_id``, indicating the lane is currently owned
     by a running session. Preserved session metadata files (which persist
     after session end for resume/audit) do **not** count as live sessions.
+
+    Lane activity fields (``state``, ``current_task_id``, etc.) are
+    derived by ``synthesize_lane_activity()`` from existing repo-local
+    state. They degrade gracefully to None/``"unknown"`` when data is
+    missing.
     """
 
     lane_id: str
@@ -37,6 +53,16 @@ class LaneStatus:
     session_task: str | None = None
     last_active: str | None = None
     last_checkpoint: str | None = None
+
+    # --- Lane activity fields (synthesized) ---
+    state: str = "unknown"
+    current_task_id: str | None = None
+    current_task_title: str | None = None
+    current_step: str | None = None
+    linked_pr: int | None = None
+    last_progress: str | None = None
+    attention_needed: bool = False
+    attention_reason: str | None = None
 
 
 @dataclass
@@ -187,6 +213,265 @@ def load_tasks(
     return tasks
 
 
+def _derive_current_step(task: dict[str, Any]) -> str | None:
+    """Extract a human-readable progress note from a task.
+
+    Looks at the task's ``progress`` field first, then counts checklist
+    items to produce a "step N/M" summary.
+
+    Args:
+        task: Task state dict.
+
+    Returns:
+        Short progress string, or None if no progress info is available.
+    """
+    # Prefer explicit progress field
+    progress = task.get("progress")
+    if progress and isinstance(progress, dict):
+        note = progress.get("last_completed_item") or progress.get("note")
+        if note:
+            return str(note)
+
+    # Fall back to checklist item counts
+    items = task.get("items")
+    if items and isinstance(items, list):
+        total = len(items)
+        done = sum(1 for item in items if item.get("status") == "completed")
+        in_prog = [item for item in items if item.get("status") == "in_progress"]
+        if in_prog:
+            return f"step {done + 1}/{total}: {in_prog[0].get('description', '?')}"
+        if done > 0:
+            return f"step {done}/{total}"
+
+    return None
+
+
+def _find_pr_from_events(
+    events: list[dict[str, Any]],
+    lane_id: str,
+) -> int | None:
+    """Find the most recent PR number from events for a given lane.
+
+    Scans events (assumed most-recent-first) for payload containing
+    ``pr_number``.
+
+    Args:
+        events: List of event dicts, most recent first.
+        lane_id: Lane to filter by.
+
+    Returns:
+        PR number if found, else None.
+    """
+    for event in events:
+        if event.get("lane_id") != lane_id:
+            continue
+        payload = event.get("payload")
+        if isinstance(payload, dict):
+            pr = payload.get("pr_number")
+            if isinstance(pr, int):
+                return pr
+    return None
+
+
+def _parse_iso_timestamp(ts: str | None) -> datetime | None:
+    """Parse an ISO 8601 timestamp string to a timezone-aware datetime.
+
+    Returns None if the string is missing or unparseable.
+    """
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
+def synthesize_lane_activity(
+    lanes_data: list[dict[str, Any]],
+    sessions_by_lane: dict[str, dict[str, Any]],
+    tasks_by_lane: dict[str, list[dict[str, Any]]],
+    events: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    stale_minutes: int = STALE_MINUTES,
+) -> list[LaneStatus]:
+    """Synthesize lane-activity view from existing repo-local state.
+
+    Combines worktree registry, session metadata, task state, and durable
+    events to produce a per-lane activity summary with derived state,
+    current task, PR linkage, and attention flags.
+
+    Args:
+        lanes_data: Worktree registry entries.
+        sessions_by_lane: Most recent session per lane_id.
+        tasks_by_lane: Active (pending/in_progress/blocked) tasks grouped
+            by ``owner_lane``.
+        events: Recent events, most-recent-first.
+        now: Current time for staleness checks (default: UTC now).
+        stale_minutes: Minutes without progress before flagging stale.
+
+    Returns:
+        List of enriched LaneStatus objects.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    results: list[LaneStatus] = []
+
+    for lane in lanes_data:
+        lane_id = lane.get("lane_id", "unknown")
+        session = sessions_by_lane.get(lane_id)
+        has_active_session = lane.get("session_id") is not None
+
+        # Find the primary task for this lane (prefer in_progress over pending)
+        lane_tasks = tasks_by_lane.get(lane_id, [])
+        primary_task: dict[str, Any] | None = None
+        for t in lane_tasks:
+            if t.get("status") == "in_progress":
+                primary_task = t
+                break
+        if primary_task is None:
+            for t in lane_tasks:
+                if t.get("status") == "blocked":
+                    primary_task = t
+                    break
+        if primary_task is None and lane_tasks:
+            primary_task = lane_tasks[0]  # pending
+
+        # Derive state
+        if primary_task and primary_task.get("status") == "blocked":
+            state = "blocked"
+        elif has_active_session:
+            # Session exists — lane is active regardless of task status
+            state = "active"
+        elif not has_active_session:
+            state = "idle"
+        else:
+            state = "unknown"
+
+        # Extract task details
+        current_task_id = primary_task.get("task_id") if primary_task else None
+        current_task_title = (
+            primary_task.get("subject") or primary_task.get("goal")
+            if primary_task
+            else None
+        )
+        current_step = _derive_current_step(primary_task) if primary_task else None
+
+        # PR linkage: task metadata first, then events
+        linked_pr: int | None = None
+        if primary_task:
+            pr = primary_task.get("pr_number")
+            if isinstance(pr, int):
+                linked_pr = pr
+        if linked_pr is None:
+            linked_pr = _find_pr_from_events(events, lane_id)
+
+        # Last progress: best available timestamp
+        last_progress_candidates: list[str] = []
+        if primary_task:
+            prog = primary_task.get("progress")
+            if isinstance(prog, dict):
+                ts = prog.get("last_forward_progress_at")
+                if ts:
+                    last_progress_candidates.append(ts)
+        if session:
+            ts = session.get("started_at")
+            if ts:
+                last_progress_candidates.append(ts)
+        last_active_ts = lane.get("last_active")
+        if last_active_ts:
+            last_progress_candidates.append(last_active_ts)
+
+        last_progress = (
+            max(last_progress_candidates) if last_progress_candidates else None
+        )
+
+        # Attention flags
+        attention_needed = False
+        attention_reason: str | None = None
+
+        if state == "blocked":
+            attention_needed = True
+            blockers = primary_task.get("blocked_by", []) if primary_task else []
+            attention_reason = f"blocked: {blockers}" if blockers else "blocked"
+        elif state == "active" and last_progress:
+            lp_dt = _parse_iso_timestamp(last_progress)
+            if lp_dt and (now - lp_dt).total_seconds() / 60 > stale_minutes:
+                age_min = int((now - lp_dt).total_seconds() / 60)
+                attention_needed = True
+                attention_reason = f"stale: no progress for {age_min}min"
+        elif state == "idle" and lane.get("class", "persistent") == "persistent":
+            attention_needed = True
+            attention_reason = "persistent lane idle with no active session"
+
+        lane_status = LaneStatus(
+            lane_id=lane_id,
+            lane_class=lane.get("lane_class", "unknown"),
+            worktree_path=lane.get("worktree_path", ""),
+            branch=lane.get("branch", ""),
+            lifecycle_class=lane.get("class", "persistent"),
+            has_active_session=has_active_session,
+            session_task=session.get("task") if session else None,
+            last_active=last_active_ts,
+            last_checkpoint=session.get("last_checkpoint") if session else None,
+            state=state,
+            current_task_id=current_task_id,
+            current_task_title=current_task_title,
+            current_step=current_step,
+            linked_pr=linked_pr,
+            last_progress=last_progress,
+            attention_needed=attention_needed,
+            attention_reason=attention_reason,
+        )
+        results.append(lane_status)
+
+    return results
+
+
+def _load_recent_events(
+    runtime_dir: Path,
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Load recent events for lane-activity synthesis.
+
+    Reads the JSONL event log and returns the most recent ``limit``
+    entries, most-recent-first.
+
+    Args:
+        runtime_dir: Runtime directory root.
+        limit: Maximum number of events to return.
+
+    Returns:
+        List of event dicts, most recent first.
+    """
+    events_file = runtime_dir / "events" / "events.jsonl"
+    if not events_file.exists():
+        return []
+
+    # Read all lines and take the tail (most recent)
+    try:
+        lines = events_file.read_text().strip().splitlines()
+    except OSError:
+        return []
+
+    recent_lines = lines[-limit:] if len(lines) > limit else lines
+    events: list[dict[str, Any]] = []
+    for line in reversed(recent_lines):  # most recent first
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    return events
+
+
 def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
     """Build a unified status report across lanes, sessions, and tasks.
 
@@ -205,6 +490,7 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
     lanes_data = load_lane_registry(runtime_dir)
     sessions_data = load_sessions(runtime_dir)
     tasks_data = load_tasks(runtime_dir, sessions=sessions_data)
+    events = _load_recent_events(runtime_dir)
 
     # Build session lookup by lane_id (most recent per lane, for context)
     sessions_by_lane: dict[str, dict[str, Any]] = {}
@@ -217,27 +503,21 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
             ):
                 sessions_by_lane[lane_id] = session
 
-    # Build lane statuses.
-    # Liveness is determined by the worktree registry's session_id field,
-    # NOT by the presence of preserved session metadata files (which
-    # persist after session end for resume/audit).
-    for lane in lanes_data:
-        lane_id = lane.get("lane_id", "unknown")
-        session = sessions_by_lane.get(lane_id)
-        has_active_session = lane.get("session_id") is not None
+    # Build task lookup by owner_lane (non-completed tasks only)
+    tasks_by_lane: dict[str, list[dict[str, Any]]] = {}
+    for task in tasks_data:
+        owner = task.get("owner_lane", "unknown")
+        status = task.get("status", "pending")
+        if status != "completed":
+            tasks_by_lane.setdefault(owner, []).append(task)
 
-        lane_status = LaneStatus(
-            lane_id=lane_id,
-            lane_class=lane.get("lane_class", "unknown"),
-            worktree_path=lane.get("worktree_path", ""),
-            branch=lane.get("branch", ""),
-            lifecycle_class=lane.get("class", "persistent"),
-            has_active_session=has_active_session,
-            session_task=session.get("task") if session else None,
-            last_active=lane.get("last_active"),
-            last_checkpoint=session.get("last_checkpoint") if session else None,
-        )
-        report.lanes.append(lane_status)
+    # Synthesize lane activity from all data sources
+    report.lanes = synthesize_lane_activity(
+        lanes_data,
+        sessions_by_lane,
+        tasks_by_lane,
+        events,
+    )
 
     # Session metadata files are preserved for resume/audit — they are
     # NOT proof of live sessions. Store as recent_sessions for context.
@@ -253,7 +533,12 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
         elif status in ("pending", "in_progress"):
             report.active_tasks.append(task)
 
-    # Generate warnings
+    # Generate warnings from lane attention flags
+    for lane in report.lanes:
+        if lane.attention_needed and lane.attention_reason:
+            report.warnings.append(f"Lane {lane.lane_id!r}: {lane.attention_reason}")
+
+    # Generate warnings from blocked tasks
     for task in report.blocked_tasks:
         blockers = task.get("blocked_by", [])
         report.warnings.append(
@@ -261,14 +546,20 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
             f"is blocked: {blockers}"
         )
 
-    # Check for lanes with no session
-    for lane in report.lanes:
-        if lane.lifecycle_class == "persistent" and not lane.has_active_session:
-            report.warnings.append(
-                f"Persistent lane {lane.lane_id!r} has no active session"
-            )
-
     return report
+
+
+def _format_time_short(ts: str | None) -> str:
+    """Format a timestamp as a short HH:MM string for display.
+
+    Falls back to ``"—"`` if the timestamp is missing or unparseable.
+    """
+    if not ts:
+        return "—"
+    dt = _parse_iso_timestamp(ts)
+    if dt is None:
+        return "—"
+    return dt.strftime("%H:%M")
 
 
 def format_status_text(report: StatusReport) -> str:
@@ -284,18 +575,45 @@ def format_status_text(report: StatusReport) -> str:
     lines.append("=== Steward Status ===")
     lines.append("")
 
-    # Lanes
-    lines.append(f"Lanes: {len(report.lanes)}")
+    # Lane Activity
+    lines.append(f"Lane Activity: {len(report.lanes)}")
     for lane in report.lanes:
-        if lane.has_active_session and lane.session_task:
-            session_info = f" → {lane.session_task}"
+        # State badge
+        state_badge = f"[{lane.state}]"
+        if lane.attention_needed:
+            state_badge = f"[{lane.state}!]"
+
+        # Task info
+        if lane.current_task_title:
+            task_info = lane.current_task_title
+            if lane.current_step:
+                task_info += f" ({lane.current_step})"
+        elif lane.has_active_session and lane.session_task:
+            task_info = lane.session_task
         elif lane.session_task:
-            session_info = f" (idle, last: {lane.session_task})"
+            task_info = f"idle, last: {lane.session_task}"
         else:
-            session_info = " (idle)"
-        lines.append(f"  {lane.lane_id} [{lane.lane_class}]{session_info}")
+            task_info = "—"
+
+        # PR info
+        pr_info = f"  PR #{lane.linked_pr}" if lane.linked_pr else ""
+
+        # Time
+        time_info = f"  {_format_time_short(lane.last_progress)}"
+
+        lines.append(
+            f"  {lane.lane_id:15s} {state_badge:12s} {task_info}{pr_info}{time_info}"
+        )
 
     lines.append("")
+
+    # Attention items
+    attention_lanes = [l for l in report.lanes if l.attention_needed]
+    if attention_lanes:
+        lines.append(f"Attention: {len(attention_lanes)}")
+        for lane in attention_lanes:
+            lines.append(f"  {lane.lane_id}: {lane.attention_reason}")
+        lines.append("")
 
     # Tasks
     active_count = len(report.active_tasks)
@@ -344,12 +662,20 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
             {
                 "lane_id": lane.lane_id,
                 "lane_class": lane.lane_class,
+                "state": lane.state,
+                "current_task_id": lane.current_task_id,
+                "current_task_title": lane.current_task_title,
+                "current_step": lane.current_step,
+                "linked_pr": lane.linked_pr,
+                "last_progress": lane.last_progress,
+                "last_active": lane.last_active,
+                "attention_needed": lane.attention_needed,
+                "attention_reason": lane.attention_reason,
                 "worktree_path": lane.worktree_path,
                 "branch": lane.branch,
                 "lifecycle_class": lane.lifecycle_class,
                 "has_active_session": lane.has_active_session,
                 "session_task": lane.session_task,
-                "last_active": lane.last_active,
                 "last_checkpoint": lane.last_checkpoint,
             }
             for lane in report.lanes
