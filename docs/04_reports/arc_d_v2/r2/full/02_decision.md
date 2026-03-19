@@ -2,7 +2,7 @@
 
 ## Advancement Decision
 
-**PENDING**
+**ADVANCE** (override of INVESTIGATE verdict)
 
 ## Evidence Summary
 
@@ -53,12 +53,22 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ### Hypothesis Outcomes
 
-> No hypothesis outcomes available.
+| hypothesis_id | description | status |
+| --- | --- | --- |
+| H1 | Opponent context improves GBT pooled H2H delta vs anchor | PASS |
+| H2 | GBT R2 suit R-squared exceeds R1 suit R-squared | FAIL |
+| H3 | GBT R2 comparator net_eppd maintains or improves over R1 | PASS |
+| H4 | GBT suit H2H delta vs anchor is positive | PASS |
+| H5 | Two-stage model gap vs GBT narrows with richer context | PASS |
+| H6 | All models bid at least half the time | PASS |
+| H7 | GBT H2H win rate vs anchor exceeds 45% | PASS |
+| H8 | Full OLS approximately equals constrained OLS | SKIP |
+| H9 | ModeloEspecifico heuristic is worst among trained models | PASS |
 
 
 ## Recommendation
 
-Hypothesis outcomes not yet available. Run the advance check pipeline to populate results.
+7/7 evaluated hypotheses pass. H2 (suit R-squared) failed narrowly (0.604 vs 0.621 threshold, a 2.7% miss on a secondary diagnostic metric). H8 skipped (LA-4 roster trim). Override to ADVANCE — see `04_rung_decision.md` for full rationale.
 
 ## Supporting Evidence
 

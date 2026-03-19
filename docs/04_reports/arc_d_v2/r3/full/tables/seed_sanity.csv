@@ -1,0 +1,19 @@
+check,scope,matchup_or_model,detail
+h2h_seed_outlier,h2h,modeloespecifico_vs_selected_two_stage_av,Seed 42 delta=0.3316 is 3.9 MAD from median=0.4737 (MAD=0.0367)
+h2h_seed_outlier,h2h,selected_two_stage_av_vs_modeloespecifico,Seed 123 delta=-0.4228 is 17.1 MAD from median=-0.5152 (MAD=0.0054)
+h2h_seed_outlier,h2h,modeloespecifico_vs_full_ols_av,Seed 42 delta=1.0154 is 15.7 MAD from median=1.0985 (MAD=0.0053)
+h2h_seed_outlier,h2h,anchor_hybrid_r0_full_vs_modeloespecifico,Seed 42 delta=-0.4927 is 15.4 MAD from median=-0.4309 (MAD=0.0040)
+h2h_seed_outlier,h2h,gbt_av_vs_selected_two_stage_av,Seed 42 delta=1.2968 is 32.2 MAD from median=1.3708 (MAD=0.0023)
+h2h_seed_outlier,h2h,selected_two_stage_av_vs_anchor_hybrid_r0_full,Seed 456 delta=0.2361 is 3.7 MAD from median=0.1486 (MAD=0.0235)
+h2h_seed_outlier,h2h,anchor_hybrid_r0_full_vs_selected_two_stage_av,Seed 42 delta=-0.2729 is 3.1 MAD from median=-0.2251 (MAD=0.0154)
+h2h_seed_outlier,h2h,gbt_av_self_play,Seed 42 delta=-0.1527 is 3.6 MAD from median=0.0253 (MAD=0.0491)
+h2h_seed_outlier,h2h,gbt_av_vs_full_ols_av,Seed 42 delta=1.8151 is 9.6 MAD from median=1.8853 (MAD=0.0073)
+h2h_seed_outlier,h2h,full_ols_av_self_play,Seed 123 delta=0.0184 is 7.0 MAD from median=-0.0553 (MAD=0.0106)
+h2h_seed_outlier,h2h,anchor_hybrid_r0_full_self_play,Seed 456 delta=0.0313 is 4.4 MAD from median=-0.0615 (MAD=0.0213)
+h2h_rank_reversal,h2h,modeloespecifico_self_play,"Sign flip across seeds: seed 42=-0.0830, seed 123=0.0286, seed 456=-0.0259"
+h2h_rank_reversal,h2h,selected_two_stage_av_self_play,"Sign flip across seeds: seed 42=-0.0332, seed 123=0.0890, seed 456=0.0269"
+h2h_rank_reversal,h2h,gbt_av_self_play,"Sign flip across seeds: seed 42=-0.1527, seed 123=0.0744, seed 456=0.0253"
+h2h_rank_reversal,h2h,full_ols_av_self_play,"Sign flip across seeds: seed 42=-0.0659, seed 123=0.0184, seed 456=-0.0553"
+h2h_rank_reversal,h2h,anchor_hybrid_r0_full_self_play,"Sign flip across seeds: seed 42=-0.0828, seed 123=-0.0615, seed 456=0.0313"
+comparator_seed_outlier,comparator,modeloespecifico,Seed 456 net_eppd=1.6998 is 10.6 MAD from median=1.6044 (MAD=0.0090)
+comparator_seed_outlier,comparator,full_ols_av,Seed 123 net_eppd=2.2430 is 7.0 MAD from median=2.2988 (MAD=0.0080)

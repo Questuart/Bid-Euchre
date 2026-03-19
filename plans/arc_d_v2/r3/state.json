@@ -1,0 +1,614 @@
+{
+  "schema_version": "rung_state_v1",
+  "rung": "r3",
+  "mode": "full",
+  "seeds": [
+    42,
+    123,
+    456
+  ],
+  "current_step": "9",
+  "step_status": "complete",
+  "status_detail": "",
+  "retries": 0,
+  "max_retries": 3,
+  "blocker": null,
+  "active_investigation": null,
+  "supersession": null,
+  "timeout_policy": {
+    "default": 3600,
+    "step_overrides": {
+      "1": 1800,
+      "2": 7200,
+      "4": 3600,
+      "5": 3600,
+      "3b": 1800
+    },
+    "heartbeat_interval": 60,
+    "stale_threshold": 300
+  },
+  "steps": {
+    "0": {
+      "status": "complete",
+      "started_at": "2026-03-18T12:59:59.841549Z",
+      "completed_at": "2026-03-18T12:59:59.842199Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "1": {
+      "status": "complete",
+      "started_at": "2026-03-18T12:59:59.842530Z",
+      "completed_at": "2026-03-18T14:55:44.810762Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "2": {
+      "status": "complete",
+      "started_at": "2026-03-18T19:28:37.477715Z",
+      "completed_at": "2026-03-18T21:56:22.644481Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {
+        "42:selected_two_stage_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T15:32:46.312470Z",
+          "started_at": null,
+          "error": null
+        },
+        "42:gbt_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T17:10:36.353980Z",
+          "started_at": null,
+          "error": null
+        },
+        "42:full_ols_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T17:12:29.293403Z",
+          "started_at": null,
+          "error": null
+        },
+        "123:selected_two_stage_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T17:49:18.759121Z",
+          "started_at": null,
+          "error": null
+        },
+        "123:gbt_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T19:26:41.077484Z",
+          "started_at": null,
+          "error": null
+        },
+        "123:full_ols_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T19:28:37.469228Z",
+          "started_at": null,
+          "error": null
+        },
+        "456:selected_two_stage_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T20:11:31.203639Z",
+          "started_at": null,
+          "error": null
+        },
+        "456:gbt_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T21:54:06.913311Z",
+          "started_at": null,
+          "error": null
+        },
+        "456:full_ols_av": {
+          "status": "complete",
+          "completed_at": "2026-03-18T21:56:22.637584Z",
+          "started_at": null,
+          "error": null
+        }
+      },
+      "fingerprint": {
+        "seed": 456,
+        "mode": "full",
+        "step": "2",
+        "script_mtime_train_action_value": 1773762627.7686694
+      }
+    },
+    "3": {
+      "status": "complete",
+      "started_at": "2026-03-18T21:56:24.218969Z",
+      "completed_at": "2026-03-18T21:56:24.856534Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "3b": {
+      "status": "complete",
+      "started_at": "2026-03-18T21:56:25.342475Z",
+      "completed_at": "2026-03-18T21:56:25.585277Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "4": {
+      "status": "complete",
+      "started_at": "2026-03-18T23:12:42.795853Z",
+      "completed_at": "2026-03-18T23:51:58.848698Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "5": {
+      "status": "complete",
+      "started_at": "2026-03-18T23:56:47.145820Z",
+      "completed_at": "2026-03-19T00:00:08.432047Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "6": {
+      "status": "complete",
+      "started_at": "2026-03-19T00:00:08.432927Z",
+      "completed_at": "2026-03-19T00:00:09.952820Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "7": {
+      "status": "complete",
+      "started_at": "2026-03-19T00:00:09.955549Z",
+      "completed_at": "2026-03-19T00:00:18.144689Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "8": {
+      "status": "complete",
+      "started_at": "2026-03-19T00:00:18.145827Z",
+      "completed_at": "2026-03-19T00:00:18.897441Z",
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "9": {
+      "status": "complete",
+      "started_at": "2026-03-19T01:27:41.932426Z",
+      "completed_at": "2026-03-19T01:27:41.932560Z",
+      "error": "04_rung_decision.md not yet written (narrative pending)",
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    }
+  },
+  "per_seed": {
+    "42": {
+      "0": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "1": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "2": {
+        "status": "complete",
+        "started_at": "2026-03-18T14:55:44.812191Z",
+        "completed_at": "2026-03-18T17:12:29.298631Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {
+          "selected_two_stage_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T15:32:46.312470Z",
+            "started_at": null,
+            "error": null
+          },
+          "gbt_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T17:10:36.353980Z",
+            "started_at": null,
+            "error": null
+          },
+          "full_ols_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T17:12:29.293403Z",
+            "started_at": null,
+            "error": null
+          }
+        },
+        "fingerprint": {
+          "seed": 42,
+          "mode": "full",
+          "step": "2",
+          "script_mtime_train_action_value": 1773762627.7686694
+        }
+      },
+      "3": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:22.646658Z",
+        "completed_at": "2026-03-18T21:56:23.534798Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "3b": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:24.857979Z",
+        "completed_at": "2026-03-18T21:56:25.099130Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "4": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:25.585981Z",
+        "completed_at": "2026-03-18T22:35:12.235876Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "5": {
+        "status": "complete",
+        "started_at": "2026-03-18T23:51:58.849643Z",
+        "completed_at": "2026-03-18T23:54:12.797708Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "6": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "7": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "8": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "9": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      }
+    },
+    "123": {
+      "0": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "1": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "2": {
+        "status": "complete",
+        "started_at": "2026-03-18T17:12:29.306352Z",
+        "completed_at": "2026-03-18T19:28:37.473220Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {
+          "selected_two_stage_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T17:49:18.759121Z",
+            "started_at": null,
+            "error": null
+          },
+          "gbt_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T19:26:41.077484Z",
+            "started_at": null,
+            "error": null
+          },
+          "full_ols_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T19:28:37.469228Z",
+            "started_at": null,
+            "error": null
+          }
+        },
+        "fingerprint": {
+          "seed": 123,
+          "mode": "full",
+          "step": "2",
+          "script_mtime_train_action_value": 1773762627.7686694
+        }
+      },
+      "3": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:23.535458Z",
+        "completed_at": "2026-03-18T21:56:24.218312Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "3b": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:25.100139Z",
+        "completed_at": "2026-03-18T21:56:25.340685Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "4": {
+        "status": "complete",
+        "started_at": "2026-03-18T22:35:12.237468Z",
+        "completed_at": "2026-03-18T23:12:42.794761Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "5": {
+        "status": "complete",
+        "started_at": "2026-03-18T23:54:12.799297Z",
+        "completed_at": "2026-03-18T23:56:47.144314Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "6": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "7": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "8": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "9": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      }
+    },
+    "456": {
+      "0": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "1": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "2": {
+        "status": "complete",
+        "started_at": "2026-03-18T19:28:37.477715Z",
+        "completed_at": "2026-03-18T21:56:22.641497Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {
+          "selected_two_stage_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T20:11:31.203639Z",
+            "started_at": null,
+            "error": null
+          },
+          "gbt_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T21:54:06.913311Z",
+            "started_at": null,
+            "error": null
+          },
+          "full_ols_av": {
+            "status": "complete",
+            "completed_at": "2026-03-18T21:56:22.637584Z",
+            "started_at": null,
+            "error": null
+          }
+        },
+        "fingerprint": {
+          "seed": 456,
+          "mode": "full",
+          "step": "2",
+          "script_mtime_train_action_value": 1773762627.7686694
+        }
+      },
+      "3": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:24.218969Z",
+        "completed_at": "2026-03-18T21:56:24.855696Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "3b": {
+        "status": "complete",
+        "started_at": "2026-03-18T21:56:25.342475Z",
+        "completed_at": "2026-03-18T21:56:25.584349Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "4": {
+        "status": "complete",
+        "started_at": "2026-03-18T23:12:42.795853Z",
+        "completed_at": "2026-03-18T23:51:58.847693Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "5": {
+        "status": "complete",
+        "started_at": "2026-03-18T23:56:47.145820Z",
+        "completed_at": "2026-03-19T00:00:08.430865Z",
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "6": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "7": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "8": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "9": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      }
+    }
+  },
+  "last_updated": "2026-03-19T01:27:41.933201Z",
+  "created_at": "2026-03-18T12:59:59.840443Z"
+}

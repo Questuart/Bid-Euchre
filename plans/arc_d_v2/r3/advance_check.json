@@ -1,0 +1,162 @@
+{
+  "schema_version": "advance_check_v1",
+  "rung": "r3",
+  "mode": "full",
+  "evidence_tier": "full",
+  "advance_decision": "PROCEED",
+  "reason": "All checks pass.",
+  "timestamp": "2026-03-19T00:00:18.805350Z",
+  "next_action": {
+    "command": "Lineage complete",
+    "prerequisite": "None"
+  },
+  "hypothesis_checks": [
+    {
+      "id": "H1",
+      "description": "GBT pooled H2H delta vs anchor remains positive with expanded action space",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.9736,
+      "expected_bound": "> 0.3",
+      "surprise_threshold": "< 0.0",
+      "error": null
+    },
+    {
+      "id": "H2",
+      "description": "GBT comparator net_eppd maintains above 2.0 with expanded action space",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 2.1024,
+      "expected_bound": "> 2.0",
+      "surprise_threshold": "< 1.5",
+      "error": null
+    },
+    {
+      "id": "H3",
+      "description": "GBT bids (does not pass) at least 40% of the time in comparator",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.9841,
+      "expected_bound": "> 0.4",
+      "surprise_threshold": "< 0.2",
+      "error": null
+    },
+    {
+      "id": "H4",
+      "description": "GBT R3 suit R-squared does not collapse below R0 baseline",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.8999,
+      "expected_bound": "> 0.55",
+      "surprise_threshold": "< 0.45",
+      "error": null
+    },
+    {
+      "id": "H5",
+      "description": "Two-stage model gap vs GBT is within 1.0 net_eppd in comparator",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": -0.1748,
+      "expected_bound": "> -1.0",
+      "surprise_threshold": "< -1.5",
+      "error": null
+    },
+    {
+      "id": "H6",
+      "description": "All models bid at least half the time",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.9841,
+      "expected_bound": "> 0.5",
+      "surprise_threshold": "< 0.2",
+      "error": null
+    },
+    {
+      "id": "H7",
+      "description": "GBT H2H win rate vs anchor exceeds 45%",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.5528,
+      "expected_bound": "> 0.45",
+      "surprise_threshold": "< 0.4",
+      "error": null
+    },
+    {
+      "id": "H8",
+      "description": "GBT make rate stays above 50% in comparator",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": 0.9888,
+      "expected_bound": "> 0.5",
+      "surprise_threshold": "< 0.35",
+      "error": null
+    },
+    {
+      "id": "H9",
+      "description": "ModeloEspecifico heuristic is worst among trained models in comparator",
+      "pass": true,
+      "surprise_hit": false,
+      "observed": -0.4692,
+      "expected_bound": "< 0.0",
+      "surprise_threshold": "> 0.5",
+      "error": null
+    }
+  ],
+  "sufficiency_checks": [
+    {
+      "id": "all_tables_generated",
+      "pass": true,
+      "value": "4/4"
+    },
+    {
+      "id": "data_sanity",
+      "pass": true,
+      "value": "15/15 pass"
+    },
+    {
+      "id": "no_blocked_models",
+      "pass": true,
+      "value": "3/3"
+    }
+  ],
+  "canary_checks": [
+    {
+      "id": "C1_feature_importance_plausible",
+      "check": "Top features are reasonable (requires interpretability data)",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C2_ranking_stable_across_seeds",
+      "check": "Top model consistent across seeds",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C3_magnitude_historical",
+      "check": "No pooled delta > 5.0 (implausible magnitude)",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C4_model_differentiation",
+      "check": "At least 3 distinct ranking positions",
+      "pass": true,
+      "level": "WARNING"
+    },
+    {
+      "id": "C5_feature_count_matches_rung",
+      "check": "Model artifacts used expected feature count for rung",
+      "pass": true,
+      "level": "WARNING"
+    }
+  ],
+  "best_in_lineage": {
+    "model": "full_ols_av",
+    "pooled_net_eppd": 2.2829,
+    "updated": true
+  },
+  "failed_checks_summary": [],
+  "skipped_checks_summary": [],
+  "warnings_summary": []
+}
