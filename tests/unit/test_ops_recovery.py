@@ -1,4 +1,4 @@
-"""Tests for failure classification and recovery templates (ops/recovery.py)."""
+"""Tests for failure classification, recovery templates, and retry/reroute policy (ops/recovery.py)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,18 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.recovery import (
+    DEFAULT_MAX_RETRIES,
+    PERSISTENT_LANES,
     RECOVERY_TEMPLATES,
     FailureClassification,
     RecoveryTemplate,
+    RetryPolicy,
     classify_failure,
+    evaluate_retry_policy,
     format_recovery_json,
     format_recovery_text,
+    format_retry_policy_json,
+    format_retry_policy_text,
     get_active_failures,
 )
 
@@ -457,3 +463,229 @@ class TestFormatters:
         ]
         data = format_recovery_json(failures)
         assert data[0]["template"] is None
+
+
+# ---- Phase 3D: Retry/Reroute Policy Tests ----
+
+
+class TestRetryPolicyConstants:
+    """Tests for retry policy constants."""
+
+    def test_default_max_retries(self) -> None:
+        assert DEFAULT_MAX_RETRIES == 3
+
+    def test_persistent_lanes_defined(self) -> None:
+        assert len(PERSISTENT_LANES) >= 2
+        assert "author-a" in PERSISTENT_LANES
+
+
+class TestEvaluateRetryPolicy:
+    """Tests for evaluate_retry_policy()."""
+
+    def test_no_failures_returns_retry(self) -> None:
+        policy = evaluate_retry_policy("task-1", [])
+        assert policy.action == "retry"
+        assert policy.retry_count == 0
+        assert policy.reroute_to is None
+
+    def test_below_cap_returns_retry(self) -> None:
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-1", "details": "error 1"},
+            },
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-1", "details": "error 2"},
+            },
+        ]
+        policy = evaluate_retry_policy("task-1", events, max_retries=3)
+        assert policy.action == "retry"
+        assert policy.retry_count == 2
+
+    def test_at_cap_returns_reroute(self) -> None:
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-1", "details": f"error {i}"},
+            }
+            for i in range(3)
+        ]
+        policy = evaluate_retry_policy(
+            "task-1", events, max_retries=3, current_lane="author-a"
+        )
+        assert policy.action == "reroute"
+        assert policy.retry_count == 3
+        assert policy.reroute_to is not None
+        assert policy.reroute_to != "author-a"
+
+    def test_above_cap_returns_escalate(self) -> None:
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-1", "details": f"error {i}"},
+            }
+            for i in range(5)
+        ]
+        policy = evaluate_retry_policy("task-1", events, max_retries=3)
+        assert policy.action == "escalate"
+        assert policy.retry_count == 5
+        assert policy.reroute_to is None
+
+    def test_ignores_other_task_failures(self) -> None:
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-1", "details": "err"},
+            },
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-2", "details": "err"},
+            },
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-2", "details": "err"},
+            },
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-2", "details": "err"},
+            },
+        ]
+        policy = evaluate_retry_policy("task-1", events, max_retries=3)
+        assert policy.action == "retry"
+        assert policy.retry_count == 1
+
+    def test_ignores_non_failure_events(self) -> None:
+        events = [
+            {
+                "event_type": "task_completed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "task-1"},
+            },
+            {
+                "event_type": "ci_success",
+                "lane_id": "author-a",
+                "payload": {"pr_number": 100},
+            },
+        ]
+        policy = evaluate_retry_policy("task-1", events)
+        assert policy.action == "retry"
+        assert policy.retry_count == 0
+
+    def test_reroute_avoids_current_lane(self) -> None:
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-b",
+                "payload": {"task_id": "t1", "details": "err"},
+            }
+            for _ in range(3)
+        ]
+        policy = evaluate_retry_policy(
+            "t1", events, max_retries=3, current_lane="author-b"
+        )
+        assert policy.action == "reroute"
+        assert policy.reroute_to is not None
+        assert policy.reroute_to != "author-b"
+
+    def test_reasons_populated(self) -> None:
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "t1", "details": "err"},
+            }
+            for _ in range(3)
+        ]
+        policy = evaluate_retry_policy("t1", events, max_retries=3)
+        assert len(policy.reasons) >= 1
+        assert any("retry cap" in r.lower() for r in policy.reasons)
+
+    def test_last_failure_from_most_recent(self) -> None:
+        """Most recent failure detail is captured (events are most-recent-first)."""
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "t1", "details": "most recent error"},
+            },
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"task_id": "t1", "details": "older error"},
+            },
+        ]
+        policy = evaluate_retry_policy("t1", events)
+        assert policy.last_failure == "most recent error"
+
+    def test_uses_target_fallback(self) -> None:
+        """Uses 'target' field when 'task_id' is absent."""
+        events = [
+            {
+                "event_type": "task_failed",
+                "lane_id": "author-a",
+                "payload": {"target": "task-x", "details": "boom"},
+            }
+            for _ in range(3)
+        ]
+        policy = evaluate_retry_policy("task-x", events, max_retries=3)
+        assert policy.retry_count == 3
+        assert policy.action == "reroute"
+
+
+class TestRetryPolicyFormatters:
+    """Tests for retry policy format functions."""
+
+    def test_text_format(self) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=2,
+            max_retries=3,
+            last_failure="lint error",
+            action="retry",
+            failure_lane="author-a",
+            reasons=["Failure count (2) below retry cap (3)"],
+        )
+        text = format_retry_policy_text(policy)
+        assert "Retry/Reroute Policy" in text
+        assert "t1" in text
+        assert "RETRY" in text
+        assert "lint error" in text
+
+    def test_text_format_reroute(self) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=3,
+            max_retries=3,
+            last_failure="crash",
+            action="reroute",
+            reroute_to="author-b",
+            failure_lane="author-a",
+            reasons=["Reached cap"],
+        )
+        text = format_retry_policy_text(policy)
+        assert "REROUTE" in text
+        assert "author-b" in text
+
+    def test_json_format(self) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=5,
+            max_retries=3,
+            last_failure="fatal",
+            action="escalate",
+            reasons=["Over cap"],
+        )
+        data = format_retry_policy_json(policy)
+        assert data["task_id"] == "t1"
+        assert data["action"] == "escalate"
+        assert data["retry_count"] == 5
+        assert data["reroute_to"] is None

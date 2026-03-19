@@ -1,15 +1,18 @@
-"""Failure classification and recovery templates.
+"""Failure classification, recovery templates, and retry/reroute policy.
 
 Provides structured guidance for common operational failures:
 CI failures, stuck tasks, stale heartbeats, quarantined worktrees, and
 escalations. Each failure type maps to a recovery template with
 human-readable steps.
+
+The retry/reroute policy engine evaluates failure history for a task and
+recommends: retry (under cap), reroute (at cap), or escalate (over cap).
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -298,3 +301,167 @@ def format_recovery_json(
         }
         for f in failures
     ]
+
+
+# ---------------------------------------------------------------------------
+# Retry / Reroute Policy Engine
+# ---------------------------------------------------------------------------
+
+# Persistent lanes that can accept rerouted work
+PERSISTENT_LANES: tuple[str, ...] = (
+    "author-a",
+    "author-b",
+    "author-c",
+    "author-d",
+)
+
+# Default retry cap per task
+DEFAULT_MAX_RETRIES: int = 3
+
+
+@dataclass
+class RetryPolicy:
+    """Retry/reroute decision for a task based on failure history."""
+
+    task_id: str
+    retry_count: int
+    max_retries: int
+    last_failure: str  # most recent failure details
+    action: str  # "retry", "reroute", "escalate"
+    reroute_to: str | None = None  # lane_id for reroute target
+    failure_lane: str | None = None  # lane where failures occurred
+    reasons: list[str] = field(default_factory=list)
+
+
+def evaluate_retry_policy(
+    task_id: str,
+    events: list[dict[str, Any]],
+    *,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    current_lane: str | None = None,
+) -> RetryPolicy:
+    """Evaluate retry/reroute policy for a task based on its failure history.
+
+    Counts ``task_failed`` events for the given task and decides:
+    - **retry** if failure count < max_retries
+    - **reroute** if failure count == max_retries (move to different persistent lane)
+    - **escalate** if failure count > max_retries (human attention needed)
+
+    Args:
+        task_id: The task identifier to evaluate.
+        events: List of event dicts (from ``read_events``).
+        max_retries: Maximum retry attempts before reroute.
+        current_lane: Lane where the task is currently running (used to
+            pick a different reroute target).
+
+    Returns:
+        RetryPolicy with the recommended action.
+    """
+    # Count failures for this specific task
+    failure_count = 0
+    last_failure = "unknown"
+    failure_lane = current_lane
+
+    for event in events:
+        if event.get("event_type") != "task_failed":
+            continue
+        payload = event.get("payload", {})
+        event_task_id = payload.get("task_id", payload.get("target", ""))
+
+        if str(event_task_id) != str(task_id):
+            continue
+
+        failure_count += 1
+        # Events are most-recent-first; capture first (= most recent) failure
+        if failure_count == 1:
+            last_failure = payload.get(
+                "details", payload.get("message", "unknown error")
+            )
+            failure_lane = event.get("lane_id", current_lane)
+
+    # Decide action
+    reasons: list[str] = []
+
+    if failure_count < max_retries:
+        action = "retry"
+        reasons.append(
+            f"Failure count ({failure_count}) below retry cap ({max_retries})"
+        )
+        reroute_to = None
+
+    elif failure_count == max_retries:
+        action = "reroute"
+        reasons.append(
+            f"Failure count ({failure_count}) reached retry cap ({max_retries})"
+        )
+        reasons.append("Rerouting to a different persistent lane")
+        reroute_to = _pick_reroute_target(current_lane)
+
+    else:
+        action = "escalate"
+        reasons.append(
+            f"Failure count ({failure_count}) exceeds retry cap ({max_retries})"
+        )
+        reasons.append("Human operator attention required")
+        reroute_to = None
+
+    return RetryPolicy(
+        task_id=task_id,
+        retry_count=failure_count,
+        max_retries=max_retries,
+        last_failure=last_failure,
+        action=action,
+        reroute_to=reroute_to,
+        failure_lane=failure_lane,
+        reasons=reasons,
+    )
+
+
+def _pick_reroute_target(current_lane: str | None) -> str | None:
+    """Pick a persistent lane to reroute work to, avoiding the current lane.
+
+    Args:
+        current_lane: The lane to avoid.
+
+    Returns:
+        A different persistent lane, or the first available if current is
+        not in the persistent list.
+    """
+    for lane in PERSISTENT_LANES:
+        if lane != current_lane:
+            return lane
+    # Fallback: if all lanes are the same as current (shouldn't happen)
+    return PERSISTENT_LANES[0] if PERSISTENT_LANES else None
+
+
+def format_retry_policy_text(policy: RetryPolicy) -> str:
+    """Format a RetryPolicy as human-readable text."""
+    lines = ["=== Retry/Reroute Policy ===", ""]
+    lines.append(f"Task: {policy.task_id}")
+    lines.append(f"Failures: {policy.retry_count} / {policy.max_retries} max")
+    lines.append(f"Action: {policy.action.upper()}")
+    if policy.failure_lane:
+        lines.append(f"Failure lane: {policy.failure_lane}")
+    if policy.reroute_to:
+        lines.append(f"Reroute to: {policy.reroute_to}")
+    lines.append(f"Last failure: {policy.last_failure}")
+    if policy.reasons:
+        lines.append("")
+        lines.append("Reasons:")
+        for reason in policy.reasons:
+            lines.append(f"  - {reason}")
+    return "\n".join(lines)
+
+
+def format_retry_policy_json(policy: RetryPolicy) -> dict[str, Any]:
+    """Format a RetryPolicy as JSON-serializable dict."""
+    return {
+        "task_id": policy.task_id,
+        "retry_count": policy.retry_count,
+        "max_retries": policy.max_retries,
+        "last_failure": policy.last_failure,
+        "action": policy.action,
+        "reroute_to": policy.reroute_to,
+        "failure_lane": policy.failure_lane,
+        "reasons": policy.reasons,
+    }
