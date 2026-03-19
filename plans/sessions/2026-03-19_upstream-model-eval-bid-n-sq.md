@@ -88,7 +88,7 @@ All changes share one conceptual boundary: "compute the missing derived feature 
 
 ## Outcome
 
-**PR #TBD** — fix: compute bid_n_sq derived feature in model-eval, regenerate R0-R3/FULL
+**PR #997** — fix: compute bid_n_sq derived feature in model-eval, regenerate R0-R3/FULL
 
 **What shipped:**
 - `generate_model_eval_csvs()` now computes `bid_n_sq = bid_n ** 2` before model iteration

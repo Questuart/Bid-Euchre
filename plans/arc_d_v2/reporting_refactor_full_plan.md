@@ -1113,7 +1113,7 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
 - GBT model-eval evidence now ships in all FULL bundles (R0-R3).
 - Manifests and evidence manifests updated to reflect new CSV sizes.
 - ~~**Known limitation:** All model-eval CSVs contain only `contract=pass` rows.~~
-  **RESOLVED (PR #TBD):** `generate_model_eval_csvs()` now computes `bid_n_sq`
+  **RESOLVED (PR #997):** `generate_model_eval_csvs()` now computes `bid_n_sq`
   as a derived feature from `bid_n` before the feature availability check,
   matching the pattern in `train_action_value.py`. All R0-R3/FULL model-eval
   CSVs now contain suit/high/low/pass contract rows across all 5 models.
@@ -1121,7 +1121,7 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
   residual_distribution, calibration_curve) and dashboard_model_eval regenerated
   for R0-R2/FULL from GBT-inclusive CSVs. All model-eval PNGs now reflect 5
   models. Manifests and evidence manifests updated with new byte sizes.
-- **Contract-faceted regeneration (PR #TBD):** Charts 16-18 and
+- **Contract-faceted regeneration (PR #997):** Charts 16-18 and
   dashboard_model_eval regenerated for R0-R3/FULL with contract-faceted
   predictions/residuals/calibration data (suit/high/low/pass × 5 models).
 
