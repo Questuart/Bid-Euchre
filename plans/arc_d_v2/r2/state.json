@@ -8,7 +8,7 @@
     456
   ],
   "current_step": "9",
-  "step_status": "running",
+  "step_status": "complete",
   "status_detail": "",
   "retries": 0,
   "max_retries": 3,
@@ -189,10 +189,10 @@
       "fingerprint": null
     },
     "9": {
-      "status": "skipped",
+      "status": "complete",
       "started_at": "2026-03-18T12:59:39.233062Z",
-      "completed_at": "2026-03-18T12:59:39.233157Z",
-      "error": "04_rung_decision.md not yet written (narrative pending)",
+      "completed_at": "2026-03-19T01:36:00.000000Z",
+      "error": null,
       "retries": 0,
       "retryable": true,
       "models": {},
