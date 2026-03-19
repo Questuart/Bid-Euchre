@@ -76,8 +76,8 @@ column, breaking the interpretability chart generator which expects
 
 ### Validation
 
-- `uv run python -m pytest tests/unit/test_tables.py -x -q` (if exists)
-- `uv run python -m pytest tests/ -k "feature_importance" -x -q`
+- `uv run python -m pytest tests/unit/test_rung_tables.py -x -q`
+- `uv run python -m pytest tests/unit/test_interpretability.py -x -q`
 
 ---
 

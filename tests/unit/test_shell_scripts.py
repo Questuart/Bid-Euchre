@@ -288,3 +288,17 @@ class TestStewardSession:
         assert result.returncode == 1
         combined = result.stdout + result.stderr
         assert "claude" in combined.lower()
+
+
+CI_POLLER = WORKTREE_ROOT / "scripts" / "internal" / "ci_poller.sh"
+
+
+class TestCiPoller:
+    def test_syntax_valid(self) -> None:
+        result = _run(["bash", "-n", str(CI_POLLER)])
+        assert result.returncode == 0, f"Syntax error: {result.stderr}"
+
+    def test_merged_pr_check_present(self) -> None:
+        content = CI_POLLER.read_text()
+        assert "MERGED" in content
+        assert "CLOSED" in content

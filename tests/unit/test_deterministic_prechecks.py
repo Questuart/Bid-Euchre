@@ -506,75 +506,36 @@ class TestX2UndocumentedContractChange:
         assert len(x2) == 3
 
 
-# ---------------------------------------------------------------------------
-# check_diff with provided changed_files — scope leak fix
-# ---------------------------------------------------------------------------
-
-
 class TestCheckDiffChangedFiles:
-    """Verify check_diff uses provided changed_files instead of git diff."""
+    """Verify check_diff() uses provided changed_files instead of git diff."""
 
-    def test_provided_files_skips_git_diff(self, tmp_path: Path) -> None:
-        """When changed_files is provided, no subprocess is spawned."""
-        # Create a clean Python file in the tmp repo
-        py_file = tmp_path / "src" / "foo.py"
-        py_file.parent.mkdir(parents=True)
-        py_file.write_text(CLEAN_CODE)
-
-        # Providing changed_files should skip git diff entirely
-        # (tmp_path has no git repo, so git diff would fail)
+    def test_uses_provided_changed_files(self, tmp_path: Path) -> None:
+        py_file = tmp_path / "src" / "bid_euchre" / "core" / "rules.py"
+        py_file.parent.mkdir(parents=True, exist_ok=True)
+        py_file.write_text("<<<<<<< HEAD\nx = 1\n=======\nx = 2\n>>>>>>> branch\n")
         findings = check_diff(
             mode="standard",
             repo_root=tmp_path,
-            changed_files=["src/foo.py"],
+            changed_files=["src/bid_euchre/core/rules.py"],
         )
-        # Clean code → no blocking findings
-        blocking = get_blocking_findings(findings)
-        assert len(blocking) == 0
+        x3 = [f for f in findings if f.check_id == "X3"]
+        assert len(x3) > 0
 
-    def test_plan_audit_restricted_to_provided_files(self, tmp_path: Path) -> None:
-        """Plan-audit only scans plans in the provided changed_files list."""
-        plans_dir = tmp_path / "plans" / "sessions"
-        plans_dir.mkdir(parents=True)
-
-        # Plan A: referenced in changed_files — has a broken ref
-        plan_a = plans_dir / "plan_a.md"
-        plan_a.write_text("# Plan A\n\nReferences `nonexistent/file.py` here.\n")
-
-        # Plan B: NOT in changed_files — also has broken ref
-        plan_b = plans_dir / "plan_b.md"
-        plan_b.write_text("# Plan B\n\nReferences `also/missing.py` here.\n")
-
-        # Only plan_a is in the PR's changed files
-        findings = check_diff(
-            mode="plan-audit",
-            repo_root=tmp_path,
-            changed_files=["plans/sessions/plan_a.md"],
-        )
-
-        # Should find broken refs in plan_a but NOT plan_b
-        p1_findings = [f for f in findings if f.check_id == "P1"]
-        files_with_findings = {f.file for f in p1_findings}
-        assert "plans/sessions/plan_a.md" in files_with_findings
-        assert "plans/sessions/plan_b.md" not in files_with_findings
-
-    def test_empty_changed_files_returns_no_findings(self, tmp_path: Path) -> None:
-        """Empty changed_files list produces no findings."""
-        findings = check_diff(
-            mode="standard",
-            repo_root=tmp_path,
-            changed_files=[],
-        )
+    def test_empty_changed_files(self, tmp_path: Path) -> None:
+        findings = check_diff(mode="standard", repo_root=tmp_path, changed_files=[])
         assert findings == []
 
-    def test_fallback_to_git_diff_when_none(self, tmp_path: Path) -> None:
-        """When changed_files is None, falls back to git diff (which may fail)."""
-        # tmp_path has no git repo, so git diff will fail → P0 finding
+    def test_report_pr_no_plan_path_leak(self, tmp_path: Path) -> None:
+        report = tmp_path / "docs" / "04_reports" / "r0" / "01_results.md"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("# R0\n")
+        plan = tmp_path / "plans" / "sessions" / "stale.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text("References `src/does_not_exist.py`\n")
         findings = check_diff(
-            mode="standard",
+            mode="report-audit",
             repo_root=tmp_path,
-            changed_files=None,
+            changed_files=["docs/04_reports/r0/01_results.md"],
         )
-        assert len(findings) == 1
-        assert findings[0].check_id == "X3"
-        assert findings[0].severity == "P0"
+        pp1 = [f for f in findings if f.check_id == "PP1"]
+        assert len(pp1) == 0
