@@ -1098,15 +1098,23 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
   The 23-chart registry is preserved for future use if eval data becomes
   available.
 
-~~**DS-3: GBT model evaluation skipped**~~ **RESOLVED**
+~~**DS-3: GBT model evaluation skipped**~~ **RESOLVED (PR #972 + PR #980)**
 - **Code fix (PR #972):** `generate_model_eval_csvs()` now accepts `rung_dir`
   and searches for GBT `.joblib` files in the rung artifacts directory
   (`data/artifacts/arc_d_v2/<rung>/`).
-- **Regeneration (PR #TBD):** R0-R2/FULL `predictions.csv`, `residuals.csv`,
+- **Regeneration (PR #980):** R0-R2/FULL `predictions.csv`, `residuals.csv`,
   and `calibration_bins.csv` regenerated with all 5 models: `constrained_ols_av`,
   `full_ols_av`, `gbt_av`, `selected_ols_av`, `selected_two_stage_av`.
 - GBT model-eval evidence now ships in all FULL bundles (R0-R3).
 - Manifests and evidence manifests updated to reflect new CSV sizes.
+- **Known limitation:** All model-eval CSVs contain only `contract=pass` rows.
+  This is a pre-existing data limitation (the `bid_n_sq` derived feature is not
+  in the eval parquet schema), not specific to GBT. Suit/high/low contract
+  model-eval would require parquet feature engineering upstream.
+- **Chart regeneration (PR #TBD-charts):** Charts 16-18 (pred_vs_actual,
+  residual_distribution, calibration_curve) and dashboard_model_eval regenerated
+  for R0-R2/FULL from GBT-inclusive CSVs. All model-eval PNGs now reflect 5
+  models. Manifests and evidence manifests updated with new byte sizes.
 
 ~~**DS-4: R3/full bundle stale relative to R0-R2**~~ **RESOLVED (PR #972)**
 - R3/full Charts 10, 16-18 (seat_balance, pred_vs_actual, residual_distribution,
