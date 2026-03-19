@@ -1078,21 +1078,9 @@ def generate_chart_data(
             df.to_csv(output_dir / "feature_importances.csv", index=False)
             generated.append("feature_importances.csv")
 
-    # 9. decision_comparison.csv — per-deal bid decision comparison across models
-    if parquet_paths:
-        rows = _extract_decision_comparison(parquet_paths)
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "decision_comparison.csv", index=False)
-            generated.append("decision_comparison.csv")
-
-    # 10. disagreement_outcomes.csv — outcomes for deals where models disagreed
-    if parquet_paths:
-        rows = _extract_disagreement_outcomes(parquet_paths)
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "disagreement_outcomes.csv", index=False)
-            generated.append("disagreement_outcomes.csv")
+    # Steps 9-10 (decision_comparison / disagreement_outcomes) intentionally
+    # omitted: canonical producer is generate_interpretability.py, not this
+    # function.  See governing plan §16.5 for ownership table.
 
     return generated
 
