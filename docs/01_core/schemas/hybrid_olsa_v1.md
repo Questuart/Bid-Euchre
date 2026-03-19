@@ -90,7 +90,7 @@ When both arms are trained, a `rung_bundle_r{N}.json` packages them:
   },
   "split_manifest": "split_manifest_r0_suit.json",
   "training_report": "training_report_r0.json",
-  "progression_report": "docs/04_reports/arc_d_v2/r1/r0_to_r1_progression.md"
+  "progression_report": "docs/04_reports/arc_d_v2/r1/r0_to_r1_progression.md"  // [not yet generated]
 }
 ```
 
