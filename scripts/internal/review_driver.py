@@ -1289,7 +1289,10 @@ def main() -> int:
                         for f in diff_result.stdout.strip().split("\n")
                         if f.strip()
                     ]
-            mode = classify_review_mode(changed)
+            # classify_review_mode([]) returns STANDARD by design (no files →
+            # standard review).  This is the correct fallback when both the
+            # GitHub API and local git diff fail to produce a file list.
+            mode = classify_review_mode(changed) if changed else ReviewMode.STANDARD
         loop_state = initialize_state(
             args.pr,
             args.branch,

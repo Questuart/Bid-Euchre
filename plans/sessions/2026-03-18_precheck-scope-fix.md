@@ -25,4 +25,5 @@ worktree state instead of the actual PR diff:
 
 ## Outcome
 
-_To be filled after implementation._
+Merged as part of PR #875. Scope fix + convention follow-ups shipped together.
+Follow-up PR addresses F1-F7 review findings.

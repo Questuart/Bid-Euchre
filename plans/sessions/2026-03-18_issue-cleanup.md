@@ -115,4 +115,5 @@ for logical grouping (review infra → docs → shell).
 
 ## Outcome
 
-_To be filled after implementation._
+Merged as PR #875. Closed 12 of 14 issues (7 triage closures + 5 code fixes).
+Remaining 3 open: #829, #830 (deferred), #868 (new unrelated bug).

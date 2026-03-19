@@ -309,4 +309,3 @@ class TestCiPoller:
         content = CI_POLLER.read_text()
         assert "MERGED" in content, "Missing MERGED detection"
         assert "CLOSED" in content, "Missing CLOSED detection"
-        assert "CLOSED" in content
