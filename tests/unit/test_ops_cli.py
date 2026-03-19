@@ -125,9 +125,10 @@ class TestCmdEvents:
         data = json.loads(capsys.readouterr().out)
         assert data == []
 
-    def test_events_drain(
+    def test_events_drain_subcommand(
         self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
+        """Test `ops.py drain` subcommand (canonical drain interface)."""
         import ops
 
         rc = ops.main(
@@ -136,33 +137,11 @@ class TestCmdEvents:
                 str(runtime_dir),
                 "--plans-dir",
                 str(plans_dir),
-                "events",
-                "--drain",
+                "drain",
             ]
         )
         assert rc == 0
         assert "Drained 0" in capsys.readouterr().out
-
-    def test_drain_warns_on_filters(
-        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        import ops
-
-        rc = ops.main(
-            [
-                "--runtime-dir",
-                str(runtime_dir),
-                "--plans-dir",
-                str(plans_dir),
-                "events",
-                "--drain",
-                "--type",
-                "ci_failure",
-            ]
-        )
-        assert rc == 0
-        captured = capsys.readouterr()
-        assert "ignored" in captured.err.lower()
 
 
 class TestCmdTick:

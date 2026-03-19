@@ -4,7 +4,7 @@ Usage:
     uv run python scripts/internal/ops.py status [--json]
     uv run python scripts/internal/ops.py worktrees [--json]
     uv run python scripts/internal/ops.py events [--type TYPE] [--lane LANE] [--limit N] [--json]
-    uv run python scripts/internal/ops.py events drain [--all]
+    uv run python scripts/internal/ops.py events drain [--json]
     uv run python scripts/internal/ops.py tick [--json]
     uv run python scripts/internal/ops.py health [--json]
     uv run python scripts/internal/ops.py watchdogs [--json]
@@ -115,34 +115,16 @@ def cmd_worktrees(args: argparse.Namespace) -> int:
 
 
 def cmd_events(args: argparse.Namespace) -> int:
-    """Show or drain events."""
+    """Show recent events."""
     events_dir = args.runtime_dir / "events"
-
-    if hasattr(args, "drain") and args.drain:
-        from bid_euchre.ops.events import drain_events
-
-        # --type/--lane filters are not supported with --drain
-        if getattr(args, "type", None) or getattr(args, "lane", None):
-            print(
-                "Warning: --type and --lane filters are ignored with --drain. "
-                "All events are drained.",
-                file=sys.stderr,
-            )
-
-        drained = drain_events(events_dir)
-        if args.json:
-            print(json.dumps({"drained": drained}))
-        else:
-            print(f"Drained {drained} event(s)")
-        return 0
 
     from bid_euchre.ops.events import read_events
 
     events = read_events(
         events_dir,
-        event_type=args.type if hasattr(args, "type") else None,
-        lane_id=args.lane if hasattr(args, "lane") else None,
-        limit=args.limit if hasattr(args, "limit") else 50,
+        event_type=getattr(args, "type", None),
+        lane_id=getattr(args, "lane", None),
+        limit=getattr(args, "limit", 50),
     )
 
     if args.json:
@@ -162,6 +144,20 @@ def cmd_events(args: argparse.Namespace) -> int:
             source = event.get("source", "?")
             print(f"  [{ts}] {etype:20s} lane={lane:10s} src={source}")
 
+    return 0
+
+
+def cmd_events_drain(args: argparse.Namespace) -> int:
+    """Drain (archive) all events."""
+    events_dir = args.runtime_dir / "events"
+
+    from bid_euchre.ops.events import drain_events
+
+    drained = drain_events(events_dir)
+    if args.json:
+        print(json.dumps({"drained": drained}))
+    else:
+        print(f"Drained {drained} event(s)")
     return 0
 
 
@@ -271,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("worktrees", help="Worktree registry and reconciliation")
 
     # events
-    events_parser = subparsers.add_parser("events", help="Event log")
+    events_parser = subparsers.add_parser("events", help="Show recent events")
     events_parser.add_argument(
         "--type", type=str, default=None, help="Filter by event type"
     )
@@ -281,9 +277,9 @@ def build_parser() -> argparse.ArgumentParser:
     events_parser.add_argument(
         "--limit", type=int, default=50, help="Max events to show"
     )
-    events_parser.add_argument(
-        "--drain", action="store_true", help="Drain (archive) all events"
-    )
+
+    # events drain (as a separate top-level subcommand for clarity)
+    subparsers.add_parser("drain", help="Drain (archive) all events")
 
     # tick
     subparsers.add_parser("tick", help="Run one scheduler cycle")
@@ -320,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status,
         "worktrees": cmd_worktrees,
         "events": cmd_events,
+        "drain": cmd_events_drain,
         "tick": cmd_tick,
         "health": cmd_health,
         "watchdogs": cmd_watchdogs,
