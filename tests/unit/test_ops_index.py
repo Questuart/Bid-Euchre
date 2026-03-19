@@ -607,6 +607,56 @@ class TestRepoRootPathResolution:
         assert result.errors == []
         assert result.sources_indexed == 0
 
+    def test_repo_root_inferred_from_runtime_dir(self, tmp_path: Path) -> None:
+        """Regression: repo_root inferred from runtime_dir when .git exists."""
+        repo = tmp_path / "inferred_repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+        index_dir = rt / "audit_index"
+
+        # Place a .git marker so the inference succeeds
+        (repo / ".git").mkdir()
+
+        # Create a manifest in data/runs under the inferred repo root
+        runs_dir = repo / "data" / "runs" / "run_infer"
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "evidence_manifest_R0.json").write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {"name": "metrics.json", "type": "metrics"},
+                    ]
+                }
+            )
+        )
+
+        # Create a report manifest in docs/04_reports under the inferred root
+        reports_dir = repo / "docs" / "04_reports" / "R0"
+        reports_dir.mkdir(parents=True)
+        (reports_dir / "manifest_R0.json").write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {"name": "01_results.md", "type": "report"},
+                    ]
+                }
+            )
+        )
+
+        # Call WITHOUT explicit repo_root -- should infer from runtime_dir
+        result = build_index(
+            index_dir,
+            runtime_dir=rt,
+            plans_dir=plans,
+        )
+        assert result.errors == []
+        assert (
+            result.sources_indexed >= 2
+        ), f"Expected >=2 sources (manifest + report), got {result.sources_indexed}"
+        assert result.entries_indexed >= 2
+
 
 class TestFtsUpdateTrigger:
     """Regression tests for #953: FTS AFTER UPDATE trigger."""
@@ -682,8 +732,7 @@ class TestFtsUpdateTrigger:
             conn.commit()
             assert (
                 conn.execute(
-                    "SELECT COUNT(*) FROM entries_fts "
-                    "WHERE entries_fts MATCH 'trigger'"
+                    "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'trigger'"
                 ).fetchone()[0]
                 == 1
             )
@@ -693,8 +742,7 @@ class TestFtsUpdateTrigger:
             conn.commit()
             assert (
                 conn.execute(
-                    "SELECT COUNT(*) FROM entries_fts "
-                    "WHERE entries_fts MATCH 'trigger'"
+                    "SELECT COUNT(*) FROM entries_fts WHERE entries_fts MATCH 'trigger'"
                 ).fetchone()[0]
                 == 0
             )

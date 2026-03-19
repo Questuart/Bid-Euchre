@@ -675,8 +675,10 @@ def build_index(
         plans_dir: Plans directory (default: plans/).
         repo_root: Repository root for deriving auxiliary scan paths
             (``data/runs``, ``docs/04_reports``).  When *None*,
-            defaults to the result of ``_resolve_repo_path("")``
-            (i.e. the git repo root or cwd).
+            inferred from *runtime_dir* (assumed to be
+            ``<repo>/.claude/runtime``) if a ``.git`` marker is
+            found two levels up; otherwise falls back to
+            ``_resolve_repo_path("")`` (git repo root or cwd).
         full_rebuild: If True, drop and rebuild from scratch.
 
     Returns:
@@ -694,9 +696,17 @@ def build_index(
     if plans_dir is None:
         plans_dir = _resolve_repo_path("plans")
 
-    # Derive repo_root for auxiliary scan paths (#952)
+    # Derive repo_root for auxiliary scan paths (#952).
+    # Prefer structural inference from runtime_dir (which is typically
+    # <repo>/.claude/runtime) so that callers that already inject
+    # runtime_dir get correct auxiliary paths even when cwd != repo root.
     if repo_root is None:
-        repo_root = _resolve_repo_path("")
+        if runtime_dir is not None and runtime_dir.name == "runtime":
+            candidate = runtime_dir.parent.parent
+            if (candidate / ".git").exists() or (candidate / ".git").is_file():
+                repo_root = candidate
+        if repo_root is None:
+            repo_root = _resolve_repo_path("")
 
     if full_rebuild:
         db_path = _get_db_path(index_dir)

@@ -582,6 +582,7 @@ def cmd_index(args: argparse.Namespace) -> int:
         index_dir,
         runtime_dir=args.runtime_dir,
         plans_dir=args.plans_dir,
+        repo_root=getattr(args, "repo_root", None),
         full_rebuild=rebuild,
     )
 
@@ -1024,6 +1025,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.plans_dir is None:
         args.plans_dir = repo_root / "plans"
+
+    args.repo_root = repo_root
 
     # Dispatch
     commands = {
