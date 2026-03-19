@@ -443,6 +443,13 @@ class TestBuildClaudeReviewPrompt:
         prompt = _build_claude_review_prompt(plan, "small")
         assert "JSON array" in prompt
 
+    def test_prompt_includes_handoff_discipline_check(self, tmp_path: Path) -> None:
+        plan = tmp_path / "test.md"
+        plan.write_text("# Plan\n\nHand off to agent.\n")
+        prompt = _build_claude_review_prompt(plan, "small")
+        assert "implementation handoff" in prompt
+        assert "execution" in prompt
+
 
 class TestClaudeFailsafeResolution:
     """Test Claude failsafe resolution order: env var -> claude CLI -> error."""

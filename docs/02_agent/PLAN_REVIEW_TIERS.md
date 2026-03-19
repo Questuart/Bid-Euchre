@@ -26,7 +26,7 @@ Tiers are determined by the first matching rule (evaluated in order):
    a multi-PR chain, or exceed 80 lines escalate to **medium**.
 5. **Default** — Everything else is **small**.
 
-## Small Tier (7 checks)
+## Small Tier (8 checks)
 
 Applies to: session plans, single-PR bugfixes, small feature plans.
 
@@ -38,9 +38,10 @@ Applies to: session plans, single-PR bugfixes, small feature plans.
 | P5 | **Single-concept** — Plan addresses one coherent change (no mixed refactor + feature) | convention |
 | P6 | **Testing strategy** — Plan specifies which tests to run or create | convention |
 | P9 | **Template completeness** — Required template sections are present (Summary, Outcome placeholder) | convention |
+| P16 | **Execution handoff discipline** — If the plan hands implementation to another agent, it explicitly requires: plan refresh/draft, spawned plan review, task list, parallelism assessment, and end-to-end autonomous execution through validation and PR shipment. **SKIP** when the plan is not an implementation handoff or execution directive. | convention |
 | R4 | **Scope creep** — Plan scope matches the stated goal; no undeclared side-work | risk |
 
-## Medium Tier (15 checks)
+## Medium Tier (16 checks)
 
 Applies to: multi-file changes, multi-PR chains, plans 80-300 lines.
 
@@ -130,6 +131,7 @@ If no issues are found, return `[]`.
 | P13 (knowledge transfer) | INFO | — |
 | P14 (failure containment) | WARNING | CRITICAL for multi-rung plans |
 | P15 (step dependencies) | WARNING | — |
+| P16 (execution handoff discipline) | WARNING | CRITICAL if the document is an explicit implementation handoff and omits the required sequence |
 | R1 (execution risk) | WARNING | — |
 | R2 (rollback plan) | INFO | WARNING for irreversible operations |
 | R3 (dependency chain) | WARNING | CRITICAL if dependencies are unmerged PRs |

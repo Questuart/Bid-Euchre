@@ -534,6 +534,10 @@ def _build_claude_review_prompt(plan_path: Path, tier: str) -> str:
         "- Contradictory or unclear steps\n"
         "- Missing rollback/failure handling\n"
         "- Scope too broad for a single PR\n\n"
+        "- If this is an implementation handoff, missing execution discipline: "
+        "the plan should require plan refresh/draft, spawned plan review, task "
+        "list creation, parallelism assessment, and end-to-end autonomous "
+        "execution through validation and PR shipment\n\n"
         "If no issues found, output: []\n\n"
         f"Plan content:\n```\n{content}\n```"
     )
