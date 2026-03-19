@@ -258,7 +258,7 @@
       "title": "Model Evaluation Dashboard",
       "required": true,
       "present": true,
-      "size_bytes": 111797,
+      "size_bytes": 295349,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/dashboard_model_eval.png"
     },
     {
@@ -375,7 +375,7 @@
       "title": "Predicted vs Actual",
       "required": false,
       "present": true,
-      "size_bytes": 67882,
+      "size_bytes": 78766,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/pred_vs_actual.png"
     },
     {
@@ -384,7 +384,7 @@
       "title": "Residual Distribution",
       "required": false,
       "present": true,
-      "size_bytes": 37714,
+      "size_bytes": 40104,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/residual_distribution.png"
     },
     {
@@ -393,7 +393,7 @@
       "title": "Calibration Curve",
       "required": false,
       "present": true,
-      "size_bytes": 54536,
+      "size_bytes": 58230,
       "path": "docs/04_reports/arc_d_v2/r1/full/charts/full_chart_suite/calibration_curve.png"
     },
     {

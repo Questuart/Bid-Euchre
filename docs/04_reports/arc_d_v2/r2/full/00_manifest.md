@@ -63,7 +63,7 @@
 |---|-------|------|------|--------|
 | 1 | Competitive Dashboard | `dashboard_competitive.png` | 299,338 bytes | present |
 | 2 | Health Dashboard | `dashboard_health.png` | 184,431 bytes | present |
-| 3 | Model Evaluation Dashboard | `dashboard_model_eval.png` | 266,026 bytes | present |
+| 3 | Model Evaluation Dashboard | `dashboard_model_eval.png` | 272,242 bytes | present |
 | 4 | Comparator Ranking Bars | `full_chart_suite/comparator_ranking_bars.png` | 42,247 bytes | present |
 | 5 | Tail Risk Panel | `full_chart_suite/tail_risk_panel.png` | 39,772 bytes | present |
 | 6 | H2H Delta by Contract | `full_chart_suite/delta_bars_by_contract.png` | 693,130 bytes | present |
@@ -76,9 +76,9 @@
 | 13 | Bid Level Distribution | `full_chart_suite/bid_level_distribution.png` | 44,495 bytes | present |
 | 14 | R-squared by Contract | `full_chart_suite/r2_by_contract.png` | 35,891 bytes | present |
 | 15 | MAE by Contract | `full_chart_suite/mae_by_contract.png` | 36,660 bytes | present |
-| 16 | Predicted vs Actual | `full_chart_suite/pred_vs_actual.png` | 67,896 bytes | present |
-| 17 | Residual Distribution | `full_chart_suite/residual_distribution.png` | 36,877 bytes | present |
-| 18 | Calibration Curve | `full_chart_suite/calibration_curve.png` | 51,404 bytes | present |
+| 16 | Predicted vs Actual | `full_chart_suite/pred_vs_actual.png` | 66,028 bytes | present |
+| 17 | Residual Distribution | `full_chart_suite/residual_distribution.png` | 37,014 bytes | present |
+| 18 | Calibration Curve | `full_chart_suite/calibration_curve.png` | 56,587 bytes | present |
 | 19 | Selection Path | `full_chart_suite/selection_path.png` | 80,965 bytes | present |
 | 20 | Feature Importance | `full_chart_suite/feature_importance.png` | 87,589 bytes | present |
 | 21 | Decision Agreement | `full_chart_suite/decision_agreement.png` | - | absent |
