@@ -287,6 +287,57 @@ class TestParseJsonlPoints:
         # Low should have no deals
         assert bc["low"]["deals_total"] == 0
 
+    def test_missing_contract_field_excluded_from_by_contract(self, tmp_path):
+        """Records without a 'contract' field are excluded from by_contract
+        buckets but still counted in pooled deals_total. Covers backward
+        compat with older JSONL logs (pre-contract-field era)."""
+        records = [
+            # Normal suit record
+            _make_hand_end(
+                t0=7, t1=3, winning_bid=6, bidder_position=0, contract="suit"
+            ),
+            # Normal high record
+            _make_hand_end(
+                t0=6,
+                t1=4,
+                winning_bid=5,
+                bidder_position=0,
+                contract="high",
+                trump=None,
+            ),
+            # Record with NO contract key (simulates pre-contract-field era)
+            {
+                "event": "hand_end",
+                "t0": 5,
+                "t1": 5,
+                "winning_bid": 6,
+                "bidder_position": 0,
+                "trump": "H",
+            },
+        ]
+        log = tmp_path / "game.jsonl"
+        _write_jsonl(log, records)
+        data = _parse_jsonl_points(log)
+
+        # All 3 records counted in pooled total
+        assert data["deals_total"] == 3
+        # All 3 had bids, so all contribute to bid arrays
+        assert len(data["bidder_team_points"]) == 3
+
+        # Per-contract: only the 2 records WITH contract keys are bucketed
+        bc = data["by_contract"]
+        assert bc["suit"]["deals_total"] == 1
+        assert bc["high"]["deals_total"] == 1
+        assert bc["low"]["deals_total"] == 0
+
+        # The missing-contract record's points are NOT in any bucket
+        total_bucketed = sum(
+            len(bc[ct]["bidder_team_points"]) for ct in ("suit", "high", "low")
+        )
+        assert (
+            total_bucketed == 2
+        ), f"Expected 2 bucketed bid hands (suit + high), got {total_bucketed}"
+
     def test_per_contract_bid_rate_is_one(self, tmp_path):
         """Per-contract bid_rate is always 1.0 by construction (every deal
         in a contract bucket had a bid)."""
@@ -753,6 +804,106 @@ class TestCLISkipRunContract:
         assert result.returncode != 0
         # Should fail trying to find run dirs
         assert "No run dir" in result.stderr
+
+    def test_non_single_seat_produces_bidders_by_contract(self, tmp_path):
+        """Non-single-seat CLI path produces bidders_by_contract in output
+        and schema is comparator_cis_v2. Covers G2 (schema assertion) and
+        G3 (non-single-seat integration) from post-merge review of PR #909."""
+        artifacts = tmp_path / "artifacts"
+        artifacts.mkdir()
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        output_path = tmp_path / "output.json"
+
+        # Create two synthetic bidders with mixed contract types
+        bidders = {
+            "alpha": {"net_eppd": 0.0, "eppd": 0.0},
+            "beta": {"net_eppd": 0.0, "eppd": 0.0},
+        }
+        battery = {"bidders": bidders}
+        (artifacts / "battery.json").write_text(json.dumps(battery))
+
+        for name in ("alpha", "beta"):
+            run_dir = runs / f"auction_comparator_{name}_42_20260318_120000"
+            run_dir.mkdir()
+            _make_meta_json(run_dir, seed=42, n_per=10)
+
+            logs_dir = run_dir / "logs"
+            logs_dir.mkdir()
+            records = [
+                _make_hand_end(
+                    t0=7, t1=3, winning_bid=6, bidder_position=0, contract="suit"
+                ),
+                _make_hand_end(
+                    t0=6,
+                    t1=4,
+                    winning_bid=5,
+                    bidder_position=0,
+                    contract="high",
+                    trump=None,
+                ),
+                _make_hand_end(
+                    t0=4,
+                    t1=6,
+                    winning_bid=5,
+                    bidder_position=1,
+                    contract="low",
+                    trump=None,
+                ),
+                _make_hand_end(
+                    t0=8, t1=2, winning_bid=7, bidder_position=0, contract="suit"
+                ),
+                _make_hand_end(redeal_flag=True),  # all-pass
+            ]
+            _write_jsonl(logs_dir / "game_log.jsonl", records)
+
+        result = self._run_extractor(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--runs-dir",
+                str(runs),
+                "--seed",
+                "42",
+                "--n-bootstrap",
+                "100",
+                "--battery-file",
+                "battery.json",
+                "--force",
+                "--output",
+                str(output_path),
+            ]
+        )
+        assert (
+            result.returncode == 0
+        ), f"Extractor failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+        output = json.loads(output_path.read_text())
+
+        # G2: Schema version locked at v2
+        assert output["schema"] == "comparator_cis_v2"
+
+        # G3: bidders_by_contract present in non-single-seat output
+        assert (
+            "bidders_by_contract" in output
+        ), "Non-single-seat path must produce bidders_by_contract"
+
+        by_contract = output["bidders_by_contract"]
+        # All three contract types should be present (each bidder has all 3)
+        for ct in ("suit", "high", "low"):
+            assert ct in by_contract, f"Missing contract type '{ct}'"
+            # Both bidders should appear in each contract
+            for name in ("alpha", "beta"):
+                assert (
+                    name in by_contract[ct]
+                ), f"Bidder '{name}' missing from contract '{ct}'"
+                assert by_contract[ct][name]["deals_total"] > 0
+
+        # Verify expected deal counts: 2 suit, 1 high, 1 low per bidder
+        for name in ("alpha", "beta"):
+            assert by_contract["suit"][name]["deals_total"] == 2
+            assert by_contract["high"][name]["deals_total"] == 1
+            assert by_contract["low"][name]["deals_total"] == 1
 
     def test_help_includes_manifest_flags(self):
         """--help output includes the new flags."""
