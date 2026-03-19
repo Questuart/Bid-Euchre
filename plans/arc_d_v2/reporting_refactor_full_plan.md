@@ -938,7 +938,7 @@ Accepted degraded states documented in §16.6.
 
 ### Implementation History
 
-10 PRs merged covering Phases 0-6 plus final closeout:
+11 PRs merged covering Phases 0-6 plus final closeout:
 
 | PR | Scope | Status |
 |----|-------|--------|
