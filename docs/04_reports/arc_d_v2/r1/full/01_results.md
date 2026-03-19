@@ -66,15 +66,15 @@ Generated from canonical CSV tables and chart PNGs.
 
 ### Chart 16. Predicted vs Actual
 
-*Chart not available — source data absent.*
+![Predicted vs Actual](charts/full_chart_suite/pred_vs_actual.png)
 
 ### Chart 17. Residual Distribution
 
-*Chart not available — source data absent.*
+![Residual Distribution](charts/full_chart_suite/residual_distribution.png)
 
 ### Chart 18. Calibration Curve
 
-*Chart not available — source data absent.*
+![Calibration Curve](charts/full_chart_suite/calibration_curve.png)
 
 ### Chart 20. Feature Importance
 
@@ -200,7 +200,7 @@ Generated from canonical CSV tables and chart PNGs.
 
 ## 10. Data Quality Notes
 
-- **Outcome distributions (Chart 9):** synthetic data — parquet-backed real distributions unavailable for this bundle
+- **Outcome distributions (Chart 9):** parquet-backed real distributions
 - **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
 - **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
 - **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
