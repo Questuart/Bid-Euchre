@@ -60,6 +60,14 @@ Complete workflow for shipping a change from development through PR to merge.
 - Forgetting to update MEMORY.md after merge
 - Leaving orphaned worktrees or remote branches behind
 
+## Gotchas
+
+- Check `.claude/rules/75_worktree_protection.md` before removing ANY worktree — steward worktrees (`*steward*`) are permanent
+- `git worktree prune` is FORBIDDEN — it removes stale entries indiscriminately
+- Always run `git fetch origin main && git rebase origin/main` BEFORE opening a PR to avoid stale-base conflicts
+- After merge, verify the worktree is clean before removal: `git -C <path> status --short`
+- If the worktree has dirty state, save it first: `git -C <path> diff > /tmp/<name>.diff`
+
 ## Notes
 
 - This workflow assumes you're working in a git worktree (not the main checkout)

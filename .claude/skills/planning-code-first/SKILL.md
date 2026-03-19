@@ -56,6 +56,14 @@ Create implementation plans grounded in actual source code, not assumptions.
 - Planning changes to code you haven't read
 - Referencing utilities that may not exist
 
+## Gotchas
+
+- Line numbers in plans go stale after any edit to the referenced file — use them as hints, not contracts
+- After a rebase or merge, re-verify ALL file paths and signatures before resuming plan execution
+- `grep -rn "function_name" src/` is more reliable than remembered line numbers
+- Plans should reference `plans/sessions/YYYY-MM-DD_<slug>.md` for standalone work, not `docs/plans/`
+- If the plan references a function that doesn't exist, check if it was renamed or moved — never assume absence without `grep`
+
 ## Notes
 
 - Save plans to `plans/` directory as specified in CLAUDE.md

@@ -66,7 +66,7 @@ After generating the summary, **automatically** update auto memory:
 
 ### 4. Launch Review Agent
 
-After the summary is generated and lessons are committed, spawn a **reviewer agent** using the Task tool (`subagent_type: general-purpose`) to verify the session's work. Pass the full summary text as context.
+After the summary is generated and lessons are committed, spawn a **reviewer agent** using the Agent tool (`subagent_type: general-purpose`) to verify the session's work. Pass the full summary text as context.
 
 **Agent prompt template** — see [REVIEWER_TEMPLATE.md](REVIEWER_TEMPLATE.md) for the full reviewer agent prompt.
 

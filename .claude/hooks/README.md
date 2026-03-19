@@ -84,9 +84,9 @@ Then restart your Claude session in that directory.
 **Replacement:** Use `/review-plan [path]` for manual plan review with
 independent Codex CLI + Claude agent reviewers.
 
-**History:** Previously auto-invoked `/reviewing-plans` after plan file
-creation. Replaced by the independent plan review loop (PR-4 of the
-plan review agent chain).
+**History:** Previously auto-invoked the now-retired `/reviewing-plans` skill
+after plan file creation. Replaced by `/review-plan` which provides independent
+review via Codex CLI + Claude failsafe (PR-4 of the plan review agent chain).
 
 ## Helper Script
 
