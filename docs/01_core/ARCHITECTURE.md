@@ -20,6 +20,7 @@ Submodules:
 - `diagnostics/` — Visualization and analysis tools
 - `validation/` — Schema validation
 - `arc_d_v2/` — Arc D v2 lineage: typed schemas, paths, configuration (orchestration and reporting scripts import from here)
+- `ops/` — Operator tooling (internal): status, worktrees, events, watchdogs, scheduler
 - `reporting/`, `logging/`, `analysis/` — Supporting utilities
 - `scoring.py` — Top-level scoring module (compute_points)
 
@@ -291,6 +292,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/validate_arc_d_rung_contract.py` | Arc D rung bundle validator |
 | `scripts/internal/ci_poller.sh` | Background CI poller with optional auto-merge (launched by post-push hook) |
 | `scripts/internal/clean_worktrees.sh` | Remove worktrees and branches whose upstream remote is deleted (`[gone]`) |
+| `scripts/internal/ops.py` | Operator CLI for steward workspace health, worktree lifecycle, events, and monitoring |
 | `scripts/internal/overnight_full_orchestrator.sh` | Sequential overnight orchestrator for FULL-mode Arc D v2 rung runs |
 | `scripts/internal/set_review_status.sh` | Publish GitHub commit statuses for review gate contexts |
 

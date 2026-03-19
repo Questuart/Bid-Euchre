@@ -1,0 +1,308 @@
+"""Status aggregation across lanes, sessions, and tasks.
+
+Provides a unified summary of the current state of the steward workspace:
+which lanes are active, which sessions are running, which tasks are blocked,
+and what needs attention.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("ops.status")
+
+DEFAULT_RUNTIME_DIR = Path(".claude/runtime")
+
+
+@dataclass
+class LaneStatus:
+    """Status summary for one lane."""
+
+    lane_id: str
+    lane_class: str
+    worktree_path: str
+    branch: str
+    lifecycle_class: str
+    has_session: bool
+    session_task: str | None = None
+    last_active: str | None = None
+    last_checkpoint: str | None = None
+
+
+@dataclass
+class StatusReport:
+    """Aggregated status across all lanes, sessions, and tasks."""
+
+    lanes: list[LaneStatus] = field(default_factory=list)
+    active_sessions: list[dict[str, Any]] = field(default_factory=list)
+    active_tasks: list[dict[str, Any]] = field(default_factory=list)
+    blocked_tasks: list[dict[str, Any]] = field(default_factory=list)
+    completed_tasks: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def load_lane_registry(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Read all worktree registry entries.
+
+    Delegates to ``worktrees.list_worktrees_registry()`` using the standard
+    registry subdirectory under ``runtime_dir``.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        List of registry entry dicts (normalized to v2).
+    """
+    if runtime_dir is None:
+        runtime_dir = DEFAULT_RUNTIME_DIR
+
+    from bid_euchre.ops.worktrees import list_worktrees_registry
+
+    return list_worktrees_registry(runtime_dir / "worktree_registry")
+
+
+def load_sessions(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Read all session metadata entries.
+
+    Handles both v1 and v2 entries, inferring missing v2 fields.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        List of session entry dicts.
+    """
+    if runtime_dir is None:
+        runtime_dir = DEFAULT_RUNTIME_DIR
+
+    session_dir = runtime_dir / "session_metadata"
+    if not session_dir.exists():
+        return []
+
+    sessions: list[dict[str, Any]] = []
+    for f in sorted(session_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Skipping malformed session file %s: %s", f.name, e)
+            continue
+
+        # v1 → v2 inference
+        if data.get("schema_version", 1) < 2:
+            role = data.get("role", "unknown")
+            lane_id_map = {"author": "author-a", "review": "review", "ops": "ops"}
+            data.setdefault("lane_id", lane_id_map.get(role, role))
+
+        sessions.append(data)
+
+    return sessions
+
+
+def load_tasks(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Read all task state entries.
+
+    Handles both v1 and v2 entries, inferring missing v2 fields.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        List of task entry dicts.
+    """
+    if runtime_dir is None:
+        runtime_dir = DEFAULT_RUNTIME_DIR
+
+    task_dir = runtime_dir / "task_state"
+    if not task_dir.exists():
+        return []
+
+    tasks: list[dict[str, Any]] = []
+    for f in sorted(task_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Skipping malformed task file %s: %s", f.name, e)
+            continue
+
+        # v1 → v2 inference
+        if data.get("schema_version", 1) < 2:
+            data.setdefault("owner_lane", "unknown")
+            data.setdefault("goal", data.get("subject", ""))
+            data.setdefault("in_scope", [])
+            data.setdefault("out_of_scope", [])
+            data.setdefault("escalation_triggers", [])
+            data.setdefault("progress", None)
+            data.setdefault("completion_note", None)
+
+        tasks.append(data)
+
+    return tasks
+
+
+def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
+    """Build a unified status report across lanes, sessions, and tasks.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        StatusReport with categorized entries and warnings.
+    """
+    if runtime_dir is None:
+        runtime_dir = DEFAULT_RUNTIME_DIR
+
+    report = StatusReport()
+
+    # Load data
+    lanes_data = load_lane_registry(runtime_dir)
+    sessions_data = load_sessions(runtime_dir)
+    tasks_data = load_tasks(runtime_dir)
+
+    # Build session lookup by lane_id
+    sessions_by_lane: dict[str, dict[str, Any]] = {}
+    for session in sessions_data:
+        lane_id = session.get("lane_id", "")
+        if lane_id:
+            # Keep the most recent session per lane
+            existing = sessions_by_lane.get(lane_id)
+            if existing is None or session.get("started_at", "") > existing.get(
+                "started_at", ""
+            ):
+                sessions_by_lane[lane_id] = session
+
+    # Build lane statuses
+    for lane in lanes_data:
+        lane_id = lane.get("lane_id", "unknown")
+        session = sessions_by_lane.get(lane_id)
+
+        lane_status = LaneStatus(
+            lane_id=lane_id,
+            lane_class=lane.get("lane_class", "unknown"),
+            worktree_path=lane.get("worktree_path", ""),
+            branch=lane.get("branch", ""),
+            lifecycle_class=lane.get("class", "persistent"),
+            has_session=session is not None,
+            session_task=session.get("task") if session else None,
+            last_active=lane.get("last_active"),
+            last_checkpoint=session.get("last_checkpoint") if session else None,
+        )
+        report.lanes.append(lane_status)
+
+    # Categorize sessions
+    report.active_sessions = sessions_data
+
+    # Categorize tasks
+    for task in tasks_data:
+        status = task.get("status", "pending")
+        if status == "blocked":
+            report.blocked_tasks.append(task)
+        elif status == "completed":
+            report.completed_tasks.append(task)
+        elif status in ("pending", "in_progress"):
+            report.active_tasks.append(task)
+
+    # Generate warnings
+    for task in report.blocked_tasks:
+        blockers = task.get("blocked_by", [])
+        report.warnings.append(
+            f"Task {task.get('task_id', '?')!r} ({task.get('subject', '?')}) "
+            f"is blocked: {blockers}"
+        )
+
+    # Check for lanes with no session
+    for lane in report.lanes:
+        if lane.lifecycle_class == "persistent" and not lane.has_session:
+            report.warnings.append(
+                f"Persistent lane {lane.lane_id!r} has no active session"
+            )
+
+    return report
+
+
+def format_status_text(report: StatusReport) -> str:
+    """Format a StatusReport as human-readable text.
+
+    Args:
+        report: The status report to format.
+
+    Returns:
+        Multi-line text summary.
+    """
+    lines: list[str] = []
+    lines.append("=== Steward Status ===")
+    lines.append("")
+
+    # Lanes
+    lines.append(f"Lanes: {len(report.lanes)}")
+    for lane in report.lanes:
+        session_info = f" → {lane.session_task}" if lane.session_task else " (idle)"
+        lines.append(f"  {lane.lane_id} [{lane.lane_class}]{session_info}")
+
+    lines.append("")
+
+    # Tasks
+    active_count = len(report.active_tasks)
+    blocked_count = len(report.blocked_tasks)
+    completed_count = len(report.completed_tasks)
+    lines.append(
+        f"Tasks: {active_count} active, {blocked_count} blocked, "
+        f"{completed_count} completed"
+    )
+
+    for task in report.active_tasks:
+        lines.append(
+            f"  [{task.get('status', '?')}] {task.get('subject', '?')} "
+            f"(owner: {task.get('owner_lane', '?')})"
+        )
+
+    for task in report.blocked_tasks:
+        lines.append(
+            f"  [BLOCKED] {task.get('subject', '?')} — {task.get('blocked_by', [])}"
+        )
+
+    lines.append("")
+
+    # Warnings
+    if report.warnings:
+        lines.append(f"Warnings: {len(report.warnings)}")
+        for w in report.warnings:
+            lines.append(f"  ⚠ {w}")
+    else:
+        lines.append("Warnings: none")
+
+    return "\n".join(lines)
+
+
+def format_status_json(report: StatusReport) -> dict[str, Any]:
+    """Format a StatusReport as a JSON-serializable dict.
+
+    Args:
+        report: The status report to format.
+
+    Returns:
+        Dict suitable for JSON serialization.
+    """
+    return {
+        "lanes": [
+            {
+                "lane_id": lane.lane_id,
+                "lane_class": lane.lane_class,
+                "worktree_path": lane.worktree_path,
+                "branch": lane.branch,
+                "lifecycle_class": lane.lifecycle_class,
+                "has_session": lane.has_session,
+                "session_task": lane.session_task,
+                "last_active": lane.last_active,
+                "last_checkpoint": lane.last_checkpoint,
+            }
+            for lane in report.lanes
+        ],
+        "active_tasks": report.active_tasks,
+        "blocked_tasks": report.blocked_tasks,
+        "completed_tasks": report.completed_tasks,
+        "warnings": report.warnings,
+    }

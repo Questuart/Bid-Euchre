@@ -1,0 +1,322 @@
+"""Tests for worktree registry parsing and reconciliation (ops/worktrees.py)."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from bid_euchre.ops.worktrees import (
+    PROTECTED_WORKTREE_NAMES,
+    GitWorktree,
+    classify_cleanup_candidates,
+    is_protected,
+    list_worktrees_registry,
+    reconcile,
+)
+
+
+@pytest.fixture()
+def registry_dir(tmp_path: Path) -> Path:
+    """Create a temp registry dir."""
+    d = tmp_path / "worktree_registry"
+    d.mkdir()
+    return d
+
+
+def _write_registry_entry(
+    registry_dir: Path,
+    filename: str,
+    *,
+    lane_id: str = "author-a",
+    lane_class: str = "author",
+    worktree_path: str = "/tmp/wt-author",
+    branch: str = "codex/steward-author",
+    lifecycle_class: str = "persistent",
+    last_active: str = "2026-03-18T10:00:00+00:00",
+    session_id: str | None = None,
+    ttl_hours: float | None = None,
+    schema_version: int = 2,
+    **extra: object,
+) -> dict:
+    """Helper to write a registry entry JSON file."""
+    entry = {
+        "schema_version": schema_version,
+        "lane_id": lane_id,
+        "lane_class": lane_class,
+        "worktree_path": worktree_path,
+        "branch": branch,
+        "class": lifecycle_class,
+        "created_at": "2026-03-18T10:00:00+00:00",
+        "last_active": last_active,
+        "session_id": session_id,
+        "ttl_hours": ttl_hours,
+        "display_name": None,
+        "tmux_session": None,
+        "tmux_window": None,
+        "tmux_pane": None,
+        "cmux_workspace_ref": None,
+        "cmux_surface_ref": None,
+        "legacy_role": None,
+        **extra,
+    }
+    (registry_dir / filename).write_text(json.dumps(entry, indent=2))
+    return entry
+
+
+class TestListWorktreesRegistry:
+    """Tests for list_worktrees_registry()."""
+
+    def test_empty_dir(self, registry_dir: Path) -> None:
+        entries = list_worktrees_registry(registry_dir)
+        assert entries == []
+
+    def test_reads_v2_entries(self, registry_dir: Path) -> None:
+        _write_registry_entry(registry_dir, "author-a.json", lane_id="author-a")
+        _write_registry_entry(registry_dir, "ops.json", lane_id="ops", lane_class="ops")
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 2
+        lane_ids = {e["lane_id"] for e in entries}
+        assert lane_ids == {"author-a", "ops"}
+
+    def test_infers_v1_fields(self, registry_dir: Path) -> None:
+        v1_entry = {
+            "schema_version": 1,
+            "role": "author",
+            "worktree_path": "/tmp/wt-author",
+            "branch": "role/author",
+            "class": "persistent",
+            "created_at": "2026-03-16T22:00:00Z",
+            "last_active": "2026-03-16T22:00:00Z",
+            "session_id": None,
+            "ttl_hours": None,
+        }
+        (registry_dir / "author.json").write_text(json.dumps(v1_entry))
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["lane_id"] == "author-a"
+        assert entry["lane_class"] == "author"
+        assert entry["legacy_role"] == "author"
+        assert entry["tmux_session"] is None
+
+    def test_skips_malformed_files(self, registry_dir: Path) -> None:
+        (registry_dir / "bad.json").write_text("not json {{{")
+        _write_registry_entry(registry_dir, "good.json", lane_id="ops")
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+
+    def test_nonexistent_dir(self, tmp_path: Path) -> None:
+        entries = list_worktrees_registry(tmp_path / "no_such_dir")
+        assert entries == []
+
+    def test_ignores_non_json_files(self, registry_dir: Path) -> None:
+        (registry_dir / "README.md").write_text("# Doc")
+        _write_registry_entry(registry_dir, "ops.json", lane_id="ops")
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+
+
+class TestIsProtected:
+    """Tests for is_protected()."""
+
+    def test_protected_names(self) -> None:
+        for name in PROTECTED_WORKTREE_NAMES:
+            assert is_protected(f"/Users/user/Projects/{name}")
+
+    def test_non_protected(self) -> None:
+        assert not is_protected("/tmp/work-feature-xyz")
+        assert not is_protected("/tmp/Bid-Euchre")
+
+    def test_partial_match_not_protected(self) -> None:
+        assert not is_protected("/tmp/Bid-Euchre-steward-author-extra")
+
+
+class TestReconcile:
+    """Tests for reconcile()."""
+
+    def test_all_matched(self) -> None:
+        git_wts = [
+            GitWorktree(path="/tmp/wt-a", head="abc123", branch="branch-a"),
+        ]
+        registry = [{"worktree_path": "/tmp/wt-a", "lane_id": "author-a"}]
+
+        report = reconcile(git_wts, registry)
+        assert len(report.matched) == 1
+        assert len(report.unregistered) == 0
+        assert len(report.missing) == 0
+
+    def test_unregistered_worktree(self) -> None:
+        git_wts = [
+            GitWorktree(path="/tmp/wt-a", head="abc", branch="branch-a"),
+            GitWorktree(path="/tmp/wt-orphan", head="def", branch="branch-b"),
+        ]
+        registry = [{"worktree_path": "/tmp/wt-a", "lane_id": "author-a"}]
+
+        report = reconcile(git_wts, registry)
+        assert len(report.matched) == 1
+        assert len(report.unregistered) == 1
+        assert report.unregistered[0].path == "/tmp/wt-orphan"
+
+    def test_missing_worktree(self) -> None:
+        git_wts = [
+            GitWorktree(path="/tmp/wt-a", head="abc", branch="branch-a"),
+        ]
+        registry = [
+            {"worktree_path": "/tmp/wt-a", "lane_id": "author-a"},
+            {"worktree_path": "/tmp/wt-gone", "lane_id": "review"},
+        ]
+
+        report = reconcile(git_wts, registry)
+        assert len(report.matched) == 1
+        assert len(report.missing) == 1
+        assert report.missing[0]["lane_id"] == "review"
+        assert len(report.warnings) == 1
+
+    def test_bare_main_skipped(self) -> None:
+        git_wts = [
+            GitWorktree(path="/tmp/main", head="abc", branch="main", bare=True),
+        ]
+        registry: list[dict] = []
+
+        report = reconcile(git_wts, registry)
+        assert len(report.unregistered) == 0
+
+    def test_empty_inputs(self) -> None:
+        report = reconcile([], [])
+        assert len(report.matched) == 0
+        assert len(report.unregistered) == 0
+        assert len(report.missing) == 0
+
+
+class TestClassifyCleanupCandidates:
+    """Tests for classify_cleanup_candidates()."""
+
+    def test_persistent_not_candidate(self) -> None:
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/wt-a", head="abc", branch="br-a")]
+        registry = [
+            {
+                "worktree_path": "/tmp/wt-a",
+                "lane_id": "author-a",
+                "class": "persistent",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": None,
+                "ttl_hours": None,
+            },
+        ]
+
+        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        assert len(candidates) == 0
+
+    def test_ephemeral_stale(self) -> None:
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")]
+        registry = [
+            {
+                "worktree_path": "/tmp/wt-task",
+                "lane_id": "task-1",
+                "class": "ephemeral",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": None,
+                "ttl_hours": 24,
+            },
+        ]
+
+        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        assert len(candidates) == 1
+        assert candidates[0].cleanup_state == "stale"
+        assert "expired" in candidates[0].reason.lower()
+
+    def test_ephemeral_within_ttl(self) -> None:
+        now = datetime(2026, 3, 18, 14, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")]
+        registry = [
+            {
+                "worktree_path": "/tmp/wt-task",
+                "lane_id": "task-1",
+                "class": "ephemeral",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": None,
+                "ttl_hours": 24,
+            },
+        ]
+
+        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        assert len(candidates) == 1
+        assert candidates[0].cleanup_state == "idle"
+
+    def test_ephemeral_active_session(self) -> None:
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")]
+        registry = [
+            {
+                "worktree_path": "/tmp/wt-task",
+                "lane_id": "task-1",
+                "class": "ephemeral",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": "some-uuid",
+                "ttl_hours": 24,
+            },
+        ]
+
+        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        assert len(candidates) == 1
+        assert candidates[0].cleanup_state == "active"
+
+    def test_unregistered_worktree_candidate(self) -> None:
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/orphan-wt", head="abc", branch="orphan")]
+        registry: list[dict] = []
+
+        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        assert len(candidates) == 1
+        assert candidates[0].lifecycle_class == "unknown"
+        assert "not in worktree registry" in candidates[0].reason.lower()
+
+    def test_protected_worktree_not_cleanup_candidate(self) -> None:
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        # Use a protected worktree name
+        path = "/tmp/Bid-Euchre-steward-author"
+        git_wts = [GitWorktree(path=path, head="abc", branch="codex/steward-author")]
+        registry = [
+            {
+                "worktree_path": path,
+                "lane_id": "author-a",
+                "class": "persistent",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": None,
+                "ttl_hours": None,
+            },
+        ]
+
+        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        # Persistent + protected → no candidate
+        assert len(candidates) == 0
+
+    def test_default_ttl_applied(self) -> None:
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")]
+        registry = [
+            {
+                "worktree_path": "/tmp/wt-task",
+                "lane_id": "task-1",
+                "class": "ephemeral",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": None,
+                "ttl_hours": None,  # No explicit TTL
+            },
+        ]
+
+        # Default TTL is 24h, 48h have passed → stale
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, ttl_hours_default=24.0, now=now
+        )
+        assert len(candidates) == 1
+        assert candidates[0].cleanup_state == "stale"
