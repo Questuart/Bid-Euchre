@@ -1488,15 +1488,11 @@ class TestBehaviorByContractExpanded:
 class TestChartData:
     """Tests for chart_data CSV generation."""
 
-    def test_outcome_summary_from_h2h(self, h2h_battery, tmp_path):
-        """outcome_summary.csv generated from H2H self-play data."""
+    def test_outcome_summary_not_generated(self, h2h_battery, tmp_path):
+        """outcome_summary.csv removed per plan §3.10 — no longer generated."""
         generated = generate_chart_data(h2h_battery=h2h_battery, output_dir=tmp_path)
-        assert "outcome_summary.csv" in generated
-        df = pd.read_csv(tmp_path / "outcome_summary.csv")
-        assert "model" in df.columns
-        assert "contract" in df.columns
-        assert "value" in df.columns
-        assert len(df) > 0
+        assert "outcome_summary.csv" not in generated
+        assert not (tmp_path / "outcome_summary.csv").exists()
 
     def test_contract_mix_from_h2h(self, tmp_path):
         """contract_mix.csv generated from H2H self-play by_contract."""
@@ -1548,8 +1544,7 @@ class TestChartData:
         output_dir = tmp_path / "tables"
         generated = generate_all_tables(FIXTURES_DIR, output_dir)
         chart_data_items = [g for g in generated if g.startswith("chart_data/")]
-        # Fixture h2h_battery has self-play cells with fullgame_eppd,
-        # so outcome_summary should be present
+        # Fixture h2h_battery has self-play cells with fullgame_eppd
         assert len(chart_data_items) > 0
 
     def test_h2h_by_contract_from_h2h(self, h2h_battery, tmp_path):
@@ -1641,7 +1636,7 @@ class TestChartData:
         generated = generate_all_tables(FIXTURES_DIR, output_dir)
         chart_data_items = [g for g in generated if g.startswith("chart_data/")]
         csv_names = [item.replace("chart_data/", "") for item in chart_data_items]
-        assert "outcome_summary.csv" in csv_names
+        assert "outcome_summary.csv" not in csv_names  # removed per plan §3.10
         # Training artifacts have feature_importances, so selection_paths
         assert "selection_paths.csv" in csv_names
 
@@ -2348,6 +2343,8 @@ class TestExtractFeatureImportancesFlat:
         assert (df["source"] == "parquet").all()
         # Should have multiple tricks_won bins, not just one
         assert df["tricks_won"].nunique() > 1
+        # Without a model column in parquet, model defaults to "pooled"
+        assert (df["model"] == "pooled").all()
 
     def test_outcome_distributions_synthetic_fallback(self, tmp_path):
         """outcome_distributions.csv falls back to synthetic without parquet."""

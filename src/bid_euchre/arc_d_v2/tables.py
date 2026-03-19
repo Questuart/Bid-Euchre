@@ -954,44 +954,10 @@ def generate_chart_data(
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = []
 
-    # 1. outcome_summary.csv — summary metrics from H2H self-play by_contract
-    #    NOTE: This is *summary* data (one row per model per contract facet),
-    #    NOT per-deal observations. Renamed from outcome_distributions.csv to
-    #    avoid implying distributional granularity.
-    if h2h_battery:
-        rows = []
-        for _mid, cell in h2h_battery.get("cells", {}).items():
-            if cell.get("bidder_a") != cell.get("bidder_b"):
-                continue  # Self-play only
-            model = cell["bidder_a"]
-            # Pooled outcome
-            fullgame_eppd = cell.get("fullgame_eppd")
-            if fullgame_eppd is not None:
-                rows.append(
-                    {
-                        "model": model,
-                        "contract": "pooled",
-                        "value": _safe_round(fullgame_eppd),
-                        "metric": "fullgame_eppd",
-                    }
-                )
-            # Per-contract outcomes
-            by_contract = cell.get("by_contract", {})
-            for ct in ("suit", "high", "low"):
-                ct_data = by_contract.get(ct)
-                if ct_data and ct_data.get("net_eppd_delta") is not None:
-                    rows.append(
-                        {
-                            "model": model,
-                            "contract": ct,
-                            "value": _safe_round(ct_data["net_eppd_delta"]),
-                            "metric": "net_eppd_delta",
-                        }
-                    )
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(output_dir / "outcome_summary.csv", index=False)
-            generated.append("outcome_summary.csv")
+    # 1. outcome_summary.csv — REMOVED per plan §3.10.
+    #    Was summary-only data that implied distributional granularity.
+    #    Not read by any chart generator. Canonical distribution source is
+    #    outcome_distributions.csv (step 7, parquet-backed).
 
     # 2. contract_mix.csv — deal counts by contract from H2H self-play
     if h2h_battery:
@@ -1150,6 +1116,7 @@ def _extract_h2h_by_contract(h2h_battery: dict) -> list[dict]:
 
 def _extract_bid_levels_from_parquet(
     parquet_paths: list[Path],
+    model_label: str = "pooled",
 ) -> list[dict]:
     """Extract per-bid-level distribution from action-value parquet files.
 
@@ -1158,6 +1125,9 @@ def _extract_bid_levels_from_parquet(
 
     Args:
         parquet_paths: List of paths to action-value parquet files.
+        model_label: Label to use for the ``model`` column when the parquet
+            schema does not contain a model/bidder column. Defaults to
+            ``"pooled"``.
 
     Returns:
         List of dicts with keys: model, contract, bid_level, count, fraction.
@@ -1229,7 +1199,7 @@ def _extract_bid_levels_from_parquet(
 
     for _, row in grouped.iterrows():
         entry: dict = {
-            "model": row[model_col] if model_col else "unknown",
+            "model": row[model_col] if model_col else model_label,
             "contract": row[contract_col],
             "bid_level": int(row["bid_n"]),
             "count": int(row["count"]),
@@ -1415,6 +1385,7 @@ def _extract_outcome_distributions(
 
 def _extract_outcome_distributions_from_parquet(
     parquet_paths: list[Path],
+    model_label: str = "pooled",
 ) -> list[dict]:
     """Extract true outcome distributions from action-value parquet files.
 
@@ -1423,6 +1394,9 @@ def _extract_outcome_distributions_from_parquet(
 
     Args:
         parquet_paths: List of paths to action-value parquet files.
+        model_label: Label to use for the ``model`` column when the parquet
+            schema does not contain a model/bidder column. Defaults to
+            ``"pooled"`` (shared evaluation dataset across all models).
 
     Returns:
         List of dicts with keys: model, contract, tricks_won, count, fraction, source.
@@ -1480,7 +1454,7 @@ def _extract_outcome_distributions_from_parquet(
 
     for _, row in grouped.iterrows():
         entry: dict = {
-            "model": row[model_col] if model_col else "unknown",
+            "model": row[model_col] if model_col else model_label,
             "contract": row[contract_col],
             "tricks_won": int(row["tricks_won"]),
             "count": int(row["count"]),
@@ -2645,7 +2619,7 @@ def generate_all_tables(
             len(parquet_paths),
         )
 
-    # 14a. chart_data CSVs (outcome_summary, contract_mix, etc.)
+    # 14a. chart_data CSVs (contract_mix, bid_levels, outcome_distributions, etc.)
     chart_data_dir = output_dir.parent / "chart_data"
     chart_data_csvs = generate_chart_data(
         h2h_battery=h2h_battery,

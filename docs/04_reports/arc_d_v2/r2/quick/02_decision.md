@@ -2,7 +2,7 @@
 
 ## Advancement Decision
 
-**PENDING**
+**PRELIMINARY**
 
 ## Evidence Summary
 
@@ -58,7 +58,21 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ## Recommendation
 
-Hypothesis outcomes not yet available. Run the advance check pipeline to populate results.
+**PRELIMINARY — formal advance-check evidence absent**
+
+Data-driven triage based on available QUICK evidence:
+
+- **full_ols_av** net_eppd = 2.234
+- **constrained_ols_av** net_eppd = 2.204
+- **selected_ols_av** net_eppd = 2.195
+- Best H2H win rate: **modeloespecifico** (71.7% vs heuristic tier)
+- Data sanity: all checks passed
+
+**Watch items / caveats:**
+
+- Formal hypothesis tests not yet executed
+- QUICK sample sizes may be insufficient for tail analysis
+- Run the advance-check pipeline (`--mode FULL`) for definitive evidence
 
 ## Supporting Evidence
 
