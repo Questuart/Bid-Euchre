@@ -329,6 +329,29 @@ class TestPollCIStatus:
         report = poll_ci_status(800)
         assert report.overall == "pending"
 
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_custom_review_context_excluded(self, mock_run: object) -> None:
+        """Custom review contexts are excluded from CI checks."""
+        checks = [
+            {"name": "codex-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(900, review_contexts=("codex-review",))
+        assert report.overall == "success"
+        assert len(report.checks) == 1
+        assert report.checks[0].name == "tests"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_timeout_returns_unknown(self, mock_run: object) -> None:
+        """Timeout on gh CLI returns unknown status."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="gh", timeout=30)
+
+        report = poll_ci_status(999)
+        assert report.overall == "unknown"
+        assert report.checks == []
+
 
 # --- Formatting tests ---
 

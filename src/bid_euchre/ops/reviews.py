@@ -15,12 +15,9 @@ import logging
 import subprocess
 from dataclasses import asdict, dataclass
 
-logger = logging.getLogger("ops.reviews")
+from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
 
-# Review context names recognized as "review outcomes".
-# The first match wins when determining review_status.
-# Extend this list when adding a new online reviewer.
-DEFAULT_REVIEW_CONTEXTS: tuple[str, ...] = ("reviewing-changes",)
+logger = logging.getLogger("ops.reviews")
 
 
 @dataclass
@@ -41,12 +38,28 @@ class ReviewOutcome:
 
 
 def _run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
-    """Run a gh CLI command and return the result."""
-    return subprocess.run(
-        ["gh", *args],
-        capture_output=True,
-        text=True,
-    )
+    """Run a gh CLI command and return the result.
+
+    Uses ``GH_TIMEOUT_SECONDS`` to prevent indefinite hangs. On timeout,
+    returns a synthetic failure result so callers degrade gracefully.
+    """
+    try:
+        return subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "gh CLI timed out after %ds: gh %s", GH_TIMEOUT_SECONDS, " ".join(args)
+        )
+        return subprocess.CompletedProcess(
+            args=["gh", *args],
+            returncode=1,
+            stdout="",
+            stderr=f"Timed out after {GH_TIMEOUT_SECONDS}s",
+        )
 
 
 def _get_open_prs() -> list[dict]:

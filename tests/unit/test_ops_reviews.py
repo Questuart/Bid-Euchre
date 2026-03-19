@@ -231,6 +231,13 @@ class TestGetOpenPRReviews:
         outcomes = get_open_pr_reviews()
         assert outcomes == []
 
+    @patch("bid_euchre.ops.reviews.subprocess.run")
+    def test_gh_timeout_returns_empty(self, mock_run: object) -> None:
+        """Timeout on gh CLI returns empty list, not a hang."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="gh", timeout=30)
+        outcomes = get_open_pr_reviews()
+        assert outcomes == []
+
     @patch("bid_euchre.ops.reviews._run_gh")
     def test_invalid_json_returns_empty(self, mock_gh: object) -> None:
         mock_gh.return_value = _mock_result(stdout="not json")

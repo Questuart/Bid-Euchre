@@ -16,6 +16,8 @@ import re
 import subprocess
 from dataclasses import asdict, dataclass
 
+from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
+
 logger = logging.getLogger("ops.ci")
 
 
@@ -222,27 +224,44 @@ def classify_ci_failure(
     )
 
 
-def poll_ci_status(pr_number: int) -> CIStatusReport:
+def poll_ci_status(
+    pr_number: int,
+    *,
+    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+) -> CIStatusReport:
     """Poll CI status for a PR with per-check breakdown.
 
     Args:
         pr_number: GitHub PR number.
+        review_contexts: Check names to exclude from CI aggregation
+            (they represent review outcomes, not CI results). Uses the
+            same shared default as ``reviews.py``.
 
     Returns:
         CIStatusReport with overall status and per-check results.
     """
-    result = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "checks",
-            str(pr_number),
-            "--json",
-            "name,state",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "checks",
+                str(pr_number),
+                "--json",
+                "name,state",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("gh pr checks timed out for PR #%d", pr_number)
+        return CIStatusReport(
+            pr_number=pr_number,
+            overall="unknown",
+            checks=[],
+            classifications=[],
+        )
 
     if result.returncode != 0:
         return CIStatusReport(
@@ -262,8 +281,8 @@ def poll_ci_status(pr_number: int) -> CIStatusReport:
             classifications=[],
         )
 
-    # Filter out reviewing-changes to avoid circular dependency
-    ci_checks = [c for c in raw_checks if c.get("name") != "reviewing-changes"]
+    # Filter out review contexts to avoid counting review status as CI
+    ci_checks = [c for c in raw_checks if c.get("name") not in review_contexts]
 
     check_results: list[CICheckResult] = []
     classifications: list[CIFailureClassification] = []
