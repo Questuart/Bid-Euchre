@@ -697,6 +697,10 @@ def generate_cross_rung_deltas() -> pd.DataFrame:
     )
 
 
+# SHA-256 of the empty byte-string; used as a sentinel for "not computed".
+_EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
 def generate_dataset_provenance(
     training_artifacts: dict[str, dict] | None = None,
     dataset_path: str | None = None,
@@ -709,13 +713,19 @@ def generate_dataset_provenance(
     if training_artifacts:
         for model_name, artifact in training_artifacts.items():
             meta = artifact.get("metadata", {})
+            raw_path = meta.get("dataset_path", dataset_path or "")
+            if raw_path:
+                raw_path = _make_repo_relative(Path(raw_path))
+            sha = meta.get("dataset_sha256", "")
+            if sha == _EMPTY_SHA256:
+                sha = ""
             rows.append(
                 {
                     "dataset_name": model_name,
-                    "path": meta.get("dataset_path", dataset_path or ""),
-                    "n_rows": None,  # Requires loading the parquet
+                    "path": raw_path,
+                    "n_rows": meta.get("n_deals"),
                     "seed": meta.get("training_seed"),
-                    "sha256": meta.get("dataset_sha256", ""),
+                    "sha256": sha,
                     "model_class": meta.get("model_class", ""),
                 }
             )
@@ -754,9 +764,7 @@ def generate_artifact_inventory(
         for model_name, artifact in training_artifacts.items():
             meta = artifact.get("metadata", {})
             raw_path = (
-                rung_dir / f"training_artifact_{model_name.split('_')[-1]}.json"
-                if rung_dir
-                else None
+                rung_dir / f"training_artifact_{model_name}.json" if rung_dir else None
             )
             rows.append(
                 {
