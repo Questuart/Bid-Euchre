@@ -143,7 +143,7 @@ class TestGetActiveFailures:
             json.dumps(
                 {
                     "timestamp": "2026-03-18T10:01:00Z",
-                    "event_type": "ci_success",
+                    "event_type": "session_started",
                     "source": "hook",
                     "lane_id": "author-a",
                     "payload": {},
@@ -165,6 +165,200 @@ class TestGetActiveFailures:
         assert len(failures) == 2
         types = {f.failure_type for f in failures}
         assert types == {"ci_failure", "task_blocked"}
+
+    def test_resolved_failure_excluded(self, events_dir: Path) -> None:
+        """ci_failure followed by ci_success for same target → resolved (F6)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"details": "lint failed"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "ci_success",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        assert len(failures) == 0
+
+    def test_newer_failure_after_resolution_still_active(
+        self, events_dir: Path
+    ) -> None:
+        """ci_success then ci_failure (newer) → failure is active (F6)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "ci_success",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"details": "test failed"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        assert len(failures) == 1
+        assert failures[0].failure_type == "ci_failure"
+
+    def test_different_target_not_resolved(self, events_dir: Path) -> None:
+        """ci_failure(PR#1) + ci_success(PR#2) → failure still active (F6)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"details": "lint failed", "target": "PR #100"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "ci_success",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"target": "PR #200"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        assert len(failures) == 1
+        assert failures[0].target == "PR #100"
+
+    def test_task_completed_resolves_task_failed(self, events_dir: Path) -> None:
+        """task_completed resolves both task_failed and task_blocked (F6)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "scheduler",
+                    "lane_id": "author-a",
+                    "payload": {"details": "build error"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:01:00Z",
+                    "event_type": "task_blocked",
+                    "source": "scheduler",
+                    "lane_id": "author-a",
+                    "payload": {"details": "blocked by dependency"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "task_completed",
+                    "source": "scheduler",
+                    "lane_id": "author-a",
+                    "payload": {},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        assert len(failures) == 0
+
+    def test_heartbeat_ok_resolves_heartbeat_stale(self, events_dir: Path) -> None:
+        """heartbeat_ok resolves heartbeat_stale for same lane (F6)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "heartbeat_stale",
+                    "source": "watchdog",
+                    "lane_id": "author-b",
+                    "payload": {"message": "No heartbeat for 10 min"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "heartbeat_ok",
+                    "source": "watchdog",
+                    "lane_id": "author-b",
+                    "payload": {},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        assert len(failures) == 0
+
+    def test_mixed_resolved_and_unresolved(self, events_dir: Path) -> None:
+        """Some failures resolved, others not → only unresolved returned (F6)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            # Old ci_failure — will be resolved
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "ci_failure",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"details": "lint failed"},
+                }
+            ),
+            # ci_success resolves the ci_failure
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:02:00Z",
+                    "event_type": "ci_success",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {},
+                }
+            ),
+            # Unresolved escalation on a different lane
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:03:00Z",
+                    "event_type": "escalation",
+                    "source": "watchdog",
+                    "lane_id": "ops",
+                    "payload": {"details": "repeated failures"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        assert len(failures) == 1
+        assert failures[0].failure_type == "escalation"
 
     def test_most_recent_first(self, events_dir: Path) -> None:
         events_file = events_dir / "events.jsonl"

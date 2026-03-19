@@ -13,6 +13,7 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -135,7 +136,9 @@ def read_events(
     if not events_file.exists():
         return []
 
-    events: list[dict[str, Any]] = []
+    # Use a bounded deque to keep only the last `limit` matching events,
+    # avoiding O(N) memory for the full log when limit is small (M2).
+    matched: deque[dict[str, Any]] = deque(maxlen=limit)
     with open(events_file) as f:
         for line in f:
             line = line.strip()
@@ -160,11 +163,12 @@ def read_events(
                 except (KeyError, ValueError):
                     continue
 
-            events.append(event)
+            matched.append(event)
 
-    # Most recent first, capped at limit
-    events.reverse()
-    return events[:limit]
+    # Most recent first
+    result = list(matched)
+    result.reverse()
+    return result
 
 
 def drain_events(
@@ -177,11 +181,17 @@ def drain_events(
     Moves events with timestamps <= ``up_to`` from the active log to
     the archive file. If ``up_to`` is None, drains all events.
 
-    Note:
-        If the process crashes between archive append and active log rewrite,
-        drained events may appear in both files on next read. This is acceptable
-        because (a) events are advisory, not transactional, and (b) consumers
-        should be idempotent. The alternative (data loss) is worse.
+    Crash safety (H1):
+        The active log is updated via atomic rename *before* archive append.
+        If a crash occurs between rename and archive append, drained events
+        are removed from the active log but missing from the archive. This
+        is acceptable because (a) events are advisory, not transactional,
+        and (b) the archive is best-effort historical storage.
+
+    Concurrency (M7):
+        An exclusive ``fcntl.flock()`` is held for the entire
+        read→filter→rename→archive cycle, serializing drain with concurrent
+        ``append_event()`` calls that acquire the same lock.
 
     Args:
         events_dir: Override for events directory.
@@ -202,42 +212,51 @@ def drain_events(
     to_drain: list[str] = []
     to_keep: list[str] = []
 
-    with open(events_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
+    # Hold exclusive lock for the entire drain cycle to prevent concurrent
+    # append_event() calls from writing to the old file between read and rename.
+    with open(events_file, "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
 
-            if up_to is None:
-                to_drain.append(line)
-                continue
-
-            try:
-                event = json.loads(line)
-                event_time = datetime.fromisoformat(event["timestamp"])
-                if event_time <= up_to:
+                if up_to is None:
                     to_drain.append(line)
-                else:
+                    continue
+
+                try:
+                    event = json.loads(line)
+                    event_time = datetime.fromisoformat(event["timestamp"])
+                    if event_time <= up_to:
+                        to_drain.append(line)
+                    else:
+                        to_keep.append(line)
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    # Keep malformed lines in active log
                     to_keep.append(line)
-            except (json.JSONDecodeError, KeyError, ValueError):
-                # Keep malformed lines in active log
-                to_keep.append(line)
 
-    if not to_drain:
-        return 0
+            if not to_drain:
+                return 0
 
-    # Append drained events to archive
-    with open(archive_file, "a") as f:
-        for line in to_drain:
-            f.write(line + "\n")
+            # 1. Write remaining events to temp file (while holding lock)
+            tmp_file = events_file.with_suffix(".tmp")
+            with open(tmp_file, "w") as tmp:
+                for line in to_keep:
+                    tmp.write(line + "\n")
 
-    # Atomically rewrite active log with remaining events.
-    # Write to a temp file first, then rename to avoid data loss on crash.
-    tmp_file = events_file.with_suffix(".tmp")
-    with open(tmp_file, "w") as f:
-        for line in to_keep:
-            f.write(line + "\n")
-    tmp_file.rename(events_file)
+            # 2. Atomic rename: removes drained events from active log.
+            #    Done BEFORE archive append so crash can only lose archive
+            #    entries (best-effort), never duplicate them.
+            tmp_file.rename(events_file)
+
+            # 3. Append drained events to archive (best-effort historical)
+            with open(archive_file, "a") as af:
+                for line in to_drain:
+                    af.write(line + "\n")
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
     logger.info("Drained %d events to archive", len(to_drain))
     return len(to_drain)

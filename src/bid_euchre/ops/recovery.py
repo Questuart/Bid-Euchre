@@ -129,6 +129,16 @@ _FAILURE_EVENT_TYPES = frozenset(
     }
 )
 
+# Maps resolution event types to the failure types they resolve.
+# Used by get_active_failures() to exclude resolved failures.
+_RESOLUTION_MAP: dict[str, frozenset[str]] = {
+    "ci_success": frozenset({"ci_failure"}),
+    "task_completed": frozenset({"task_failed", "task_blocked"}),
+    "heartbeat_ok": frozenset({"heartbeat_stale"}),
+    "worktree_archived": frozenset({"worktree_quarantined"}),
+    "recovery_action": frozenset({"escalation"}),
+}
+
 
 def classify_failure(event: dict[str, Any]) -> FailureClassification:
     """Classify a single event into a failure with recovery guidance.
@@ -162,33 +172,66 @@ def classify_failure(event: dict[str, Any]) -> FailureClassification:
     )
 
 
+def _resolution_target(event: dict[str, Any]) -> str:
+    """Extract the resolution-matching target from an event.
+
+    Uses ``payload.target`` if present, falling back to ``lane_id``.
+    This key is used to correlate failure events with their resolutions.
+    """
+    payload = event.get("payload", {})
+    return str(payload.get("target", event.get("lane_id", "unknown")))
+
+
 def get_active_failures(
     events_dir: Path,
     *,
     limit: int = 50,
 ) -> list[FailureClassification]:
-    """Read recent events and return those that need attention.
+    """Read recent events and return only unresolved failures.
 
-    Only returns events matching failure types (CI failures, blocked tasks,
-    stale heartbeats, etc.). Resolution events (ci_success, task_completed)
-    are not included.
+    Scans recent events (newest-first) and correlates failure events with
+    resolution events by target. A failure is considered resolved when a
+    matching resolution event (e.g., ``ci_success`` for ``ci_failure``)
+    exists with a later timestamp for the same target.
+
+    Resolution pairs (defined in ``_RESOLUTION_MAP``):
+    - ``ci_failure`` ← ``ci_success``
+    - ``task_failed`` / ``task_blocked`` ← ``task_completed``
+    - ``heartbeat_stale`` ← ``heartbeat_ok``
+    - ``worktree_quarantined`` ← ``worktree_archived``
+    - ``escalation`` ← ``recovery_action``
 
     Args:
         events_dir: Path to the events directory.
         limit: Maximum number of events to scan.
 
     Returns:
-        List of FailureClassification objects, most recent first.
+        List of FailureClassification objects for unresolved failures,
+        most recent first.
     """
     from bid_euchre.ops.events import read_events
 
     events = read_events(events_dir, limit=limit)
 
+    # Walk events newest-first. Resolution events mark (failure_type, target)
+    # as resolved. Only failure events whose key is NOT resolved are returned.
+    resolved_keys: set[tuple[str, str]] = set()
     failures: list[FailureClassification] = []
+
     for event in events:
         event_type = event.get("event_type", "")
+        target = _resolution_target(event)
+
+        # If this is a resolution event, mark the corresponding failure
+        # types as resolved for this target.
+        resolved_failure_types = _RESOLUTION_MAP.get(event_type, frozenset())
+        for ft in resolved_failure_types:
+            resolved_keys.add((ft, target))
+
+        # If this is a failure event, only include if not yet resolved.
         if event_type in _FAILURE_EVENT_TYPES:
-            failures.append(classify_failure(event))
+            if (event_type, target) not in resolved_keys:
+                failures.append(classify_failure(event))
 
     return failures
 

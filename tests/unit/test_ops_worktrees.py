@@ -11,6 +11,7 @@ import pytest
 from bid_euchre.ops.worktrees import (
     PROTECTED_WORKTREE_NAMES,
     GitWorktree,
+    _update_registry_cleanup_state,
     classify_cleanup_candidates,
     is_protected,
     is_worktree_dirty,
@@ -981,3 +982,68 @@ class TestArchiveWorktree:
 
         with pytest.raises(FileNotFoundError, match="not found"):
             archive_worktree("/tmp/no-such-worktree-xyz", runtime_dir)
+
+
+class TestUpdateRegistryCleanupState:
+    """Tests for _update_registry_cleanup_state()."""
+
+    @pytest.fixture()
+    def registry_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "worktree_registry"
+        d.mkdir()
+        return d
+
+    def test_updates_matching_entry(self, registry_dir: Path) -> None:
+        """Updates cleanup_state for a matching worktree path (F7)."""
+        _write_registry_entry(
+            registry_dir,
+            "author-a.json",
+            lane_id="author-a",
+            worktree_path="/tmp/wt-author",
+        )
+
+        result = _update_registry_cleanup_state(
+            registry_dir, "/tmp/wt-author", "quarantined"
+        )
+        assert result is True
+
+        data = json.loads((registry_dir / "author-a.json").read_text())
+        assert data["cleanup_state"] == "quarantined"
+
+    def test_returns_false_for_no_match(self, registry_dir: Path) -> None:
+        """Returns False when no registry entry matches the path."""
+        _write_registry_entry(
+            registry_dir,
+            "author-a.json",
+            lane_id="author-a",
+            worktree_path="/tmp/wt-author",
+        )
+
+        result = _update_registry_cleanup_state(
+            registry_dir, "/tmp/wt-nonexistent", "quarantined"
+        )
+        assert result is False
+
+    def test_produces_valid_json_after_update(self, registry_dir: Path) -> None:
+        """File remains valid JSON after read-modify-write (F7 TOCTOU fix)."""
+        _write_registry_entry(
+            registry_dir,
+            "task.json",
+            lane_id="task-1",
+            worktree_path="/tmp/wt-task",
+        )
+
+        _update_registry_cleanup_state(registry_dir, "/tmp/wt-task", "archived")
+
+        # Must be valid JSON with the updated field
+        data = json.loads((registry_dir / "task.json").read_text())
+        assert data["cleanup_state"] == "archived"
+        # Original fields preserved
+        assert data["lane_id"] == "task-1"
+        assert data["worktree_path"] == "/tmp/wt-task"
+
+    def test_nonexistent_dir_returns_false(self, tmp_path: Path) -> None:
+        result = _update_registry_cleanup_state(
+            tmp_path / "no_such_dir", "/tmp/wt", "quarantined"
+        )
+        assert result is False
