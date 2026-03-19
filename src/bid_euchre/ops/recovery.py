@@ -156,8 +156,10 @@ def classify_failure(event: dict[str, Any]) -> FailureClassification:
     lane_id = event.get("lane_id", "unknown")
     payload = event.get("payload", {})
 
-    # Determine target from payload or lane
-    target = payload.get("target", lane_id)
+    # Determine target: explicit target > worktree_path > lane_id
+    target = payload.get("target")
+    if target is None:
+        target = payload.get("worktree_path", lane_id)
 
     # Build details string
     details = payload.get("details", payload.get("message", f"{event_type} event"))
@@ -178,11 +180,24 @@ def classify_failure(event: dict[str, Any]) -> FailureClassification:
 def _resolution_target(event: dict[str, Any]) -> str:
     """Extract the resolution-matching target from an event.
 
-    Uses ``payload.target`` if present, falling back to ``lane_id``.
+    Uses ``payload.target`` if present, then ``payload.worktree_path``
+    for worktree-related events, falling back to ``lane_id``.
     This key is used to correlate failure events with their resolutions.
+
+    The ``worktree_path`` fallback ensures that worktree events
+    (``worktree_quarantined`` / ``worktree_archived``) are matched by
+    the specific worktree rather than the lane, since a single lane can
+    own multiple worktrees.
     """
     payload = event.get("payload", {})
-    return str(payload.get("target", event.get("lane_id", "unknown")))
+    target = payload.get("target")
+    if target is not None:
+        return str(target)
+    # Worktree events: prefer worktree_path as matching key
+    wt_path = payload.get("worktree_path")
+    if wt_path:
+        return str(wt_path)
+    return str(event.get("lane_id", "unknown"))
 
 
 def get_active_failures(

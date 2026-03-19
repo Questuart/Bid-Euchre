@@ -2718,10 +2718,14 @@ class TestMakeRepoRelative:
         assert not result.startswith("/")
 
     def test_relative_path_passthrough(self):
-        """Relative paths without /data/ return basename."""
+        """Relative paths without /data/ are resolved repo-relative or basename."""
         p = Path("some/local/path.json")
         result = _make_repo_relative(p)
-        assert result == "path.json"
+        # With repo root detection, the relative path resolves against cwd
+        # (inside the repo), producing a repo-relative result.  Without
+        # detection (outside a git repo), falls back to basename.
+        assert not result.startswith("/"), "Must not leak absolute paths"
+        assert result.endswith("path.json")
 
 
 # ──────────────────────────────────────────────

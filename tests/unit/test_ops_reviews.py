@@ -122,6 +122,45 @@ class TestGetReviewStatus:
         """DEFAULT_REVIEW_CONTEXTS includes reviewing-changes."""
         assert "reviewing-changes" in DEFAULT_REVIEW_CONTEXTS
 
+    def test_multiple_contexts_all_success(self) -> None:
+        """Multiple review providers all passing → success (#920)."""
+        checks = [
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+            {"name": "codex-review", "state": "SUCCESS"},
+        ]
+        assert (
+            _get_review_status(
+                checks, review_contexts=("reviewing-changes", "codex-review")
+            )
+            == "success"
+        )
+
+    def test_multiple_contexts_one_failure(self) -> None:
+        """One review provider failing → failure, even if another passes (#920)."""
+        checks = [
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+            {"name": "codex-review", "state": "FAILURE"},
+        ]
+        assert (
+            _get_review_status(
+                checks, review_contexts=("reviewing-changes", "codex-review")
+            )
+            == "failure"
+        )
+
+    def test_multiple_contexts_one_pending(self) -> None:
+        """One review provider pending → pending (#920)."""
+        checks = [
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+            {"name": "codex-review", "state": "PENDING"},
+        ]
+        assert (
+            _get_review_status(
+                checks, review_contexts=("reviewing-changes", "codex-review")
+            )
+            == "pending"
+        )
+
 
 class TestClassifyCIStatusCustomContexts:
     """Tests for _classify_ci_status() with custom review contexts."""

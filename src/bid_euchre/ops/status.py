@@ -97,11 +97,11 @@ def load_sessions(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
             logger.warning("Skipping malformed session file %s: %s", f.name, e)
             continue
 
-        # v1 → v2 inference
+        # v1 → v2 inference: use role name as fallback to preserve uniqueness
         if data.get("schema_version", 1) < 2:
             role = data.get("role", "unknown")
             lane_id_map = {"author": "author-a", "review": "review", "ops": "ops"}
-            data.setdefault("lane_id", lane_id_map.get(role, "unknown"))
+            data.setdefault("lane_id", lane_id_map.get(role, role))
 
         sessions.append(data)
 
