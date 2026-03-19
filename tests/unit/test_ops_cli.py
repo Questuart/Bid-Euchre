@@ -1061,6 +1061,49 @@ class TestCmdIndex:
         assert "Rebuilt" in captured
 
 
+class TestCmdIndexRepoRoot:
+    """Regression test for #952: repo_root alignment with injected dirs."""
+
+    def test_index_ingests_data_runs_from_injected_root(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """CLI `ops index` with overridden dirs indexes data/runs manifests."""
+        # Set up a self-contained repo tree
+        repo = tmp_path / "target_repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        # Create a data/runs manifest with a searchable artifact
+        runs_dir = repo / "data" / "runs" / "run_001"
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "evidence_manifest_R0.json").write_text(
+            json.dumps({"artifacts": [{"name": "test_model.pkl", "type": "model"}]})
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(rt),
+                "--plans-dir",
+                str(plans),
+                "index",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert (
+            data["build"]["sources_indexed"] >= 1
+        ), "data/runs manifest should be indexed when dirs are overridden"
+        assert data["build"]["entries_indexed"] >= 1
+
+
 class TestCmdQuery:
     """Tests for the query subcommand."""
 

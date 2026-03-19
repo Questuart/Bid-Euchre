@@ -674,9 +674,10 @@ def build_index(
         runtime_dir: Runtime directory (default: .claude/runtime).
         plans_dir: Plans directory (default: plans/).
         repo_root: Repository root for deriving auxiliary scan paths
-            (``data/runs``, ``docs/04_reports``).  When *None*,
-            defaults to the result of ``_resolve_repo_path("")``
-            (i.e. the git repo root or cwd).
+            (``data/runs``, ``docs/04_reports``).  When *None* and
+            *plans_dir* is provided, derived as ``plans_dir.parent``
+            (since plans/ is conventionally one level below the repo
+            root).  Otherwise falls back to ``_resolve_repo_path("")``.
         full_rebuild: If True, drop and rebuild from scratch.
 
     Returns:
@@ -694,9 +695,12 @@ def build_index(
     if plans_dir is None:
         plans_dir = _resolve_repo_path("plans")
 
-    # Derive repo_root for auxiliary scan paths (#952)
+    # Derive repo_root for auxiliary scan paths (#952).
+    # plans_dir is always set at this point (defaulted above), so
+    # plans_dir.parent aligns auxiliary paths (data/runs, docs/04_reports)
+    # with whichever repo the caller targeted.
     if repo_root is None:
-        repo_root = _resolve_repo_path("")
+        repo_root = plans_dir.parent
 
     if full_rebuild:
         db_path = _get_db_path(index_dir)
