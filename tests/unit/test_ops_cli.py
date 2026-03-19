@@ -91,6 +91,109 @@ class TestCmdStatus:
         assert "lanes" in data
         assert "warnings" in data
 
+    def test_status_json_lane_activity_fields(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JSON output includes lane-activity fields when lanes exist."""
+        from datetime import datetime, timezone
+
+        recent = datetime.now(timezone.utc).isoformat()
+        # Create a lane with session and task
+        (runtime_dir / "worktree_registry" / "author-a.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "lane_id": "author-a",
+                    "lane_class": "author",
+                    "worktree_path": "/tmp/wt-a",
+                    "branch": "codex/steward-author",
+                    "class": "persistent",
+                    "session_id": "uuid-1",
+                    "last_active": recent,
+                }
+            )
+        )
+        (runtime_dir / "session_metadata" / "session-1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "session_id": "uuid-1",
+                    "lane_id": "author-a",
+                    "started_at": recent,
+                    "task": "Test task",
+                }
+            )
+        )
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "task_id": "t1",
+                    "owner_lane": "author-a",
+                    "subject": "Test task",
+                    "status": "in_progress",
+                    "pr_number": 999,
+                    "blocked_by": [],
+                    "items": [],
+                }
+            )
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "status",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["lanes"]) == 1
+        lane = data["lanes"][0]
+        assert lane["state"] == "active"
+        assert lane["current_task_id"] == "t1"
+        assert lane["current_task_title"] == "Test task"
+        assert lane["linked_pr"] == 999
+        assert lane["attention_needed"] is False
+
+    def test_status_text_lane_activity(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Text output shows lane-activity format."""
+        from datetime import datetime, timezone
+
+        recent = datetime.now(timezone.utc).isoformat()
+        (runtime_dir / "worktree_registry" / "ops.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "lane_id": "ops",
+                    "lane_class": "ops",
+                    "worktree_path": "/tmp/wt-ops",
+                    "branch": "codex/steward-ops",
+                    "class": "persistent",
+                    "session_id": None,
+                    "last_active": recent,
+                }
+            )
+        )
+
+        import ops
+
+        rc = ops.main(
+            ["--runtime-dir", str(runtime_dir), "--plans-dir", str(plans_dir), "status"]
+        )
+        assert rc == 0
+        text = capsys.readouterr().out
+        assert "Lane Activity:" in text
+        assert "[idle" in text
+        assert "ops" in text
+
 
 class TestCmdEvents:
     """Tests for the events subcommand."""
