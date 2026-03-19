@@ -80,4 +80,4 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
 
-<!-- gate_status: data sanity checks in §1 above -->
+<!-- gate_status: data sanity checks in Evidence Summary above -->

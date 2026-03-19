@@ -764,7 +764,7 @@ def generate_decision_report(
     lines.append("")
 
     # Gate status marker — required by repo linter for promotion registry docs
-    lines.append("<!-- gate_status: data sanity checks in \u00a71 above -->")
+    lines.append("<!-- gate_status: data sanity checks in Evidence Summary above -->")
     lines.append("")
 
     content = "\n".join(lines)
