@@ -1070,18 +1070,9 @@ def generate_chart_data(
             df.to_csv(output_dir / "feature_importances.csv", index=False)
             generated.append("feature_importances.csv")
 
-    # 9-10. decision_comparison.csv / disagreement_outcomes.csv
-    #
-    # OWNERSHIP GUARD (post-#909 closeout):
-    # These CSVs are canonically produced by generate_interpretability.py
-    # (step 3b), which loads trained models and computes bid decisions from
-    # scratch.  The parquet extractors (_extract_decision_comparison and
-    # _extract_disagreement_outcomes) are retained as library functions but
-    # are NOT called here to prevent silent shadowing if the parquet schema
-    # ever gains ``bid_decision`` + ``model`` columns.
-    #
-    # To use the parquet path intentionally, call the functions directly
-    # rather than relying on generate_chart_data().
+    # Steps 9-10 (decision_comparison / disagreement_outcomes) intentionally
+    # omitted: canonical producer is generate_interpretability.py, not this
+    # function.  See governing plan §16.5 for ownership table.
 
     return generated
 
