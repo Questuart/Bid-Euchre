@@ -1,6 +1,9 @@
 #!/bin/bash
 # Enhanced worktree guard hook for UserPromptSubmit
-# Automatically creates worktree when blocked, provides copy-paste cd command
+# Blocks edits on main, creates a worktree the first time, reuses on repeat.
+#
+# Fix for #943: session-level dedup prevents unbounded worktree creation
+# when /loop or repeated prompts fire the hook from a main-checkout session.
 
 set -euo pipefail
 
@@ -10,7 +13,35 @@ MAIN_DIR="/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre"
 
 # Only block if in main checkout on main branch
 if [ "$CURRENT_DIR" = "$MAIN_DIR" ] && [ "$CURRENT_BRANCH" = "main" ]; then
-  # Generate branch name from timestamp
+
+  # --- Session dedup: reuse existing ephemeral worktree ---
+  # Scan for any work-* worktree that already exists. If found, point to it
+  # instead of creating yet another one. This prevents unbounded growth from
+  # /loop or repeated prompts.
+  EXISTING_WT=""
+  while IFS= read -r wt_path; do
+    wt_name=$(basename "$wt_path")
+    if [[ "$wt_name" == Bid-Euchre-work-* ]]; then
+      # Verify the directory actually exists on disk
+      if [ -d "$wt_path" ]; then
+        EXISTING_WT="$wt_path"
+        break
+      fi
+    fi
+  done < <(git worktree list --porcelain 2>/dev/null | grep "^worktree " | sed 's/^worktree //')
+
+  if [ -n "$EXISTING_WT" ]; then
+    echo "⛔ Cannot work from main checkout."
+    echo ""
+    echo "   Existing worktree available: $EXISTING_WT"
+    echo ""
+    echo "   cd $EXISTING_WT"
+    echo ""
+    echo "Then restart your Claude session in that directory."
+    exit 1
+  fi
+
+  # --- First invocation: create a new worktree ---
   BRANCH_NAME="work-$(date +%Y%m%d-%H%M%S)"
   WORKTREE_DIR="../Bid-Euchre-$BRANCH_NAME"
 
