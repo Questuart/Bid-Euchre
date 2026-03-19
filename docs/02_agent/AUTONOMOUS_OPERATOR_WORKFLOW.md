@@ -231,7 +231,7 @@ via **Terminal > Run Task** or `Ctrl+Shift+P > Tasks: Run Task`.
 |------|---------------|
 | **Rung status** | State of all rungs (r0-r3) |
 | **Rung status (single)** | State of a selected rung (pick list) |
-| **Review loop state** | Active review loop state.json files |
+| **Review loop state (legacy)** | Local review loop state.json files (transitional -- prefer GitHub PR checks) |
 | **Heartbeat check** | Agent heartbeat files in plans/ |
 | **Worktree list** | All git worktrees |
 | **Git status (all worktrees)** | Short status for every worktree |
@@ -359,15 +359,30 @@ launchctl start com.bid-euchre.steward-session
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Agent not running after login | Not loaded | Run `install-launchd.sh` |
-| Session created but Claude not starting | `claude` not in PATH | Check `PATH` in plist includes Homebrew/cargo dirs |
+| `claude` not found at launch | PATH changed since install | Re-run `install-launchd.sh` to re-resolve paths |
 | Rapid restarts in log | Script failing immediately | Check `.err` log for syntax/path errors |
 | Session exists but empty panes | tmux created but Claude exited | Manually check `tmux list-panes -t steward` |
+
+### Path Resolution
+
+The installer resolves paths **at install time**, not at runtime:
+
+- **`__CLAUDE_BIN__`** -- absolute path to `claude` from `command -v claude`
+- **`__LAUNCHD_PATH__`** -- the installer's shell `$PATH` plus essential system dirs
+- **`__REPO_PATH__`** -- absolute path to the main checkout
+
+If you install `claude` in a new location (e.g., move from Homebrew to cargo),
+re-run `install-launchd.sh` to update the rendered plist.
+
+The `steward-session.sh` script also accepts a `CLAUDE_BIN` env var override,
+which the rendered plist sets explicitly so the session is not dependent on
+launchd's limited default PATH.
 
 ### Files
 
 | File | Purpose |
 |------|---------|
-| `.claude/launchd/ensure-steward-session.plist` | Template plist with `__REPO_PATH__` placeholder |
+| `.claude/launchd/ensure-steward-session.plist` | Template plist with `__REPO_PATH__`, `__CLAUDE_BIN__`, `__LAUNCHD_PATH__` placeholders |
 | `.claude/launchd/install-launchd.sh` | Installer/uninstaller script |
 | `~/Library/LaunchAgents/com.bid-euchre.steward-session.plist` | Installed (rendered) plist |
 | `/tmp/bid-euchre-steward-session.log` | Agent stdout log |

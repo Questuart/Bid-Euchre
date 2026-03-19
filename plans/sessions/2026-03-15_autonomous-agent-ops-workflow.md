@@ -310,89 +310,54 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 
 ## Implementation Sequence
 
-### PR-1: Workflow Contract And Bootstrap
+### PR-1: Workflow Contract And Bootstrap — COMPLETE
 
 **Depends on:** None (first PR in the chain).
-**Produces:** Role conventions, bootstrap scripts, session/task metadata schemas, workflow docs. Required by all later PRs.
+**Produces:** Lane identity model, steward bootstrap, session/task/worktree metadata schemas, workflow docs. Required by all later PRs.
+**Delivered:** #835 (role-model → steward-model), #839 (task discipline + lane governance), #841 (progress-state + one-task-per-lane)
 
-#### Objectives
-- Make the operating model explicit and repo-owned.
-- Standardize role names, branch names, worktree locations, and lifecycle rules.
-- Provide a single bootstrap command for agent worktree creation.
+> **Note:** The original plan described a three-role model (`author`, `review`, `ops`).
+> Implementation evolved to a 7-lane steward model with `lane_id` as the canonical
+> identity. Legacy three-role scripts are retained for compatibility. See
+> `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` for the delivered identity model.
 
-#### Deliverables
-- `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
-- `.claude/scripts/start-role-worktree.sh`
-- `.claude/scripts/start-agent-role.sh`
-- `.claude/runtime/session_metadata/` contract and schema docs
-- `.claude/runtime/task_state/` contract and schema docs
-- `.claude/runtime/worktree_registry/` contract and schema docs
-- `scripts/internal/clean_worktrees.sh` updates if needed for role-named worktrees
-- optional `Makefile` targets for bootstrap and cleanup
+#### Delivered Outcomes
+- `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` — comprehensive workflow doc with steward identity model, lane capability matrix, task discipline contract, and progress-state schema.
+- `.claude/tmux/steward-session.sh` — canonical steward launcher creating 7 lanes (author-a through author-d, review, ops, scratch) with v2 worktree registry metadata.
+- `.claude/scripts/start-role-worktree.sh`, `.claude/scripts/start-agent-role.sh` — legacy compatibility bootstrap.
+- `.claude/runtime/session_metadata/`, `.claude/runtime/task_state/`, `.claude/runtime/worktree_registry/` — v2 schemas with README docs.
+- Lane governance: one-task-per-lane rule, escalation triggers, progress visibility contract.
 
-#### Requirements
-- Support fixed role names: `author`, `review`, `ops`.
-- Default worktree paths outside the main checkout, sibling to the repo root.
-- Role bootstrap must be idempotent: reuse an existing role worktree if present.
-- Startup output must tell the agent which role it is assuming and which commands are expected in that role.
-- Bootstrap must write role/session metadata so sessions can be resumed cleanly after restart.
-- Bootstrap or role startup must initialize task-state tracking for delegated work.
-- Bootstrap must classify worktrees as persistent role worktrees or ephemeral task worktrees and write registry metadata immediately.
-- The workflow doc must define the capability matrix and approval boundaries for each role.
-- The workflow doc must define the planner/executor split for non-trivial tasks.
-- The workflow doc must define cleanup states, TTL defaults, and the quarantine/archive flow for stale worktrees.
-- The workflow doc must define how gitignored local config or tool state is copied/shared into role worktrees.
-- Main checkout remains blocked for editing by existing hooks.
+#### Acceptance Criteria (all met)
+- From the main checkout, `steward-session.sh` creates or reuses all 7 lane worktrees.
+- Each lane session is identified via `lane_id` and resumable from repo-local metadata.
+- Non-trivial delegated tasks create explicit task records with plan, scope, validation, and completion criteria.
+- Documentation defines lane responsibilities, capability matrix, and the “one writer per worktree” rule.
 
-#### Acceptance Criteria
-- From the main checkout, one command creates or reuses the three role worktrees.
-- A role-specific command can enter a single role worktree and start Claude.
-- Each role session can be identified and resumed from repo-local metadata without relying on terminal history.
-- Non-trivial delegated tasks create an explicit task record with plan, todo state, validation steps, and completion criteria.
-- Ephemeral worktrees are created with explicit metadata and are discoverable as cleanup candidates later.
-- Documentation clearly states the role responsibilities and the “one writer per worktree” rule.
+### PR-2: Persistent Session Manager And VS Code Audit Surface — COMPLETE
 
-### PR-2: Persistent Session Manager And VS Code Audit Surface
+**Depends on:** PR-1 (lane identity model and bootstrap scripts).
+**Produces:** tmux session layout, VS Code workspace, host-level recovery. Required by PR-5 (rollout).
+**Delivered:** #858
 
-**Depends on:** PR-1 (role worktree conventions and bootstrap scripts).
-**Produces:** tmux session layout, VS Code workspace. Required by PR-5 (rollout).
+> **Note:** The steward tmux launcher was delivered in PR-1. PR-2 completed the
+> remaining deliverables: steward-lane VS Code workspace, missing CI/review tasks,
+> macOS launchd recovery, and `STEWARD_DETACHED` mode for non-interactive startup.
 
-#### Objectives
-- Replace fragile ad hoc terminal tabs with a deterministic, resumable session layout.
-- Make VS Code and GitHub the stable audit surfaces across all active worktrees.
-- Ensure the steward session, especially the `ops` lane, can be re-established automatically after host/session loss.
+#### Delivered Outcomes
+- `Bid-Euchre-agent-audit.code-workspace` — multi-root workspace with all steward lanes (author-a through author-d, review, scratch).
+- `.vscode/tasks.json` — 19 tasks covering testing, status inspection, GitHub PR checks, deterministic prechecks, and plan review artifacts.
+- `.claude/launchd/ensure-steward-session.plist` — macOS launchd template with `__REPO_PATH__`, `__CLAUDE_BIN__`, and `__LAUNCHD_PATH__` placeholders resolved at install time.
+- `.claude/launchd/install-launchd.sh` — installer that resolves `claude` path and shell `PATH` at install time, validates plist, and loads via modern `launchctl bootstrap` with fallback.
+- `STEWARD_DETACHED=1` env var in `steward-session.sh` for non-interactive contexts.
+- `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` — host-level recovery section, new task tables.
+- `tests/unit/test_steward_session.py` — 21+ regression tests.
 
-#### Deliverables
-- `.claude/tmux/steward-session.sh` or equivalent canonical steward launcher
-- `.claude/tmux/agent-ops-layout.conf` or equivalent repo-owned layout file if still needed after steward alignment
-- `.claude/launchd/ensure-steward-session.plist` template or generator script for macOS host-level recovery
-- `Bid-Euchre-agent-audit.code-workspace`
-- `.vscode/tasks.json`
-- docs updates in `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
-
-#### Requirements
-- tmux layout must support the steward baseline (`author-a`, `author-b`, `review`, `ops`) plus overflow/scratch lanes without locking the long-term worker model to a fixed small set.
-- Each tmux window/pane must start in the correct worktree.
-- The repo must provide a documented host-level recovery path that re-establishes the steward session and `ops` lane after process loss or reboot.
-- VS Code workspace must include:
-  - main checkout
-  - active worker worktree(s)
-  - review worktree
-  - ops/control-plane view
-- VS Code tasks must include:
-  - targeted pytest
-  - `make check-quiet`
-  - `scripts/internal/run_rung.py --status`
-  - GitHub PR checks inspection
-  - deterministic prechecks status inspection
-  - heartbeat inspection
-  - local plan review artifact inspection only as needed
-
-#### Acceptance Criteria
-- One repo-owned command starts the tmux session with all role windows.
-- On macOS, one repo-owned launchd template or setup step can re-establish the steward session without manual recreation after host/session loss.
-- One repo-owned workspace file opens the audit layout in VS Code.
-- The user can inspect all active role worktrees and runtime artifacts from VS Code without moving agent sessions into the VS Code terminal.
+#### Acceptance Criteria (all met)
+- One repo-owned command (`steward-session.sh`) starts the tmux session with all lane windows.
+- On macOS, `install-launchd.sh` installs a launchd agent that re-establishes the steward session after host/session loss, with the `claude` binary path resolved at install time.
+- One repo-owned workspace file opens the audit layout in VS Code with all steward lanes.
+- The user can inspect all active lane worktrees and runtime artifacts from VS Code via 19 pre-configured tasks.
 
 ### PR-3: Operator CLI
 

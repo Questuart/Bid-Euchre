@@ -79,9 +79,35 @@ if ! git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 1
 fi
 
+# --- resolve claude path -----------------------------------------------------
+
+CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"
+if [ -z "$CLAUDE_BIN" ]; then
+    echo "Warning: 'claude' not found in current PATH."
+    echo "The launchd agent needs the absolute path to claude."
+    echo "Set CLAUDE_BIN=/path/to/claude and re-run, or ensure claude is in PATH."
+    exit 1
+fi
+CLAUDE_BIN="$(cd "$(dirname "$CLAUDE_BIN")" && pwd)/$(basename "$CLAUDE_BIN")"
+
+# Build a PATH that includes the directories needed for claude + tmux + git.
+# Start from the current shell's PATH (which has the right dirs), then ensure
+# essential system dirs are present.
+LAUNCHD_PATH="$PATH"
+for dir in /usr/local/bin /opt/homebrew/bin /usr/bin /bin; do
+    case ":${LAUNCHD_PATH}:" in
+        *":${dir}:"*) ;;  # already present
+        *) LAUNCHD_PATH="${LAUNCHD_PATH}:${dir}" ;;
+    esac
+done
+
 # --- render ------------------------------------------------------------------
 
-RENDERED="$(sed "s|__REPO_PATH__|${REPO_DIR}|g" "$PLIST_TEMPLATE")"
+RENDERED="$(sed \
+    -e "s|__REPO_PATH__|${REPO_DIR}|g" \
+    -e "s|__CLAUDE_BIN__|${CLAUDE_BIN}|g" \
+    -e "s|__LAUNCHD_PATH__|${LAUNCHD_PATH}|g" \
+    "$PLIST_TEMPLATE")"
 
 if [ "$DRY_RUN" = 1 ]; then
     echo "=== Dry run: rendered plist ==="
@@ -90,6 +116,8 @@ if [ "$DRY_RUN" = 1 ]; then
     echo ""
     echo "=== Would install to: ${INSTALL_PATH} ==="
     echo "=== Repo path: ${REPO_DIR} ==="
+    echo "=== Claude bin: ${CLAUDE_BIN} ==="
+    echo "=== Launchd PATH: ${LAUNCHD_PATH} ==="
     exit 0
 fi
 
