@@ -7,6 +7,7 @@ or unregistered worktrees.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import subprocess
@@ -604,18 +605,28 @@ def _update_registry_cleanup_state(
 
     resolved = str(Path(worktree_path).resolve())
 
-    for f in sorted(registry_dir.glob("*.json")):
+    for json_path in sorted(registry_dir.glob("*.json")):
         try:
-            data = json.loads(f.read_text())
+            with open(json_path, "r+") as fh:
+                fcntl.flock(fh, fcntl.LOCK_EX)
+                try:
+                    data = json.loads(fh.read())
+                    entry_path = data.get("worktree_path", "")
+                    if entry_path and str(Path(entry_path).resolve()) == resolved:
+                        data["cleanup_state"] = cleanup_state
+                        fh.seek(0)
+                        fh.truncate()
+                        fh.write(json.dumps(data, indent=2))
+                        logger.info(
+                            "Updated registry %s: cleanup_state=%s",
+                            json_path.name,
+                            cleanup_state,
+                        )
+                        return True
+                finally:
+                    fcntl.flock(fh, fcntl.LOCK_UN)
         except (json.JSONDecodeError, OSError):
             continue
-
-        entry_path = data.get("worktree_path", "")
-        if entry_path and str(Path(entry_path).resolve()) == resolved:
-            data["cleanup_state"] = cleanup_state
-            f.write_text(json.dumps(data, indent=2))
-            logger.info("Updated registry %s: cleanup_state=%s", f.name, cleanup_state)
-            return True
 
     return False
 

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from bid_euchre.ops.events import (
+    ARCHIVE_FILE,
     EVENTS_FILE,
     VALID_EVENT_TYPES,
     append_event,
@@ -225,3 +228,90 @@ class TestDrainEvents:
 
     def test_drain_nonexistent_dir(self, tmp_path: Path) -> None:
         assert drain_events(tmp_path / "no_such") == 0
+
+    def test_drain_archive_written_after_active_rename(self, events_dir: Path) -> None:
+        """Archive append happens AFTER active log rename (H1 crash safety).
+
+        Verify that after drain, the active log contains only kept events
+        and archive contains only drained events — no duplication.
+        """
+        events_file = events_dir / EVENTS_FILE
+        now = datetime.now(timezone.utc)
+        old = now - timedelta(hours=2)
+
+        # Write 2 old events (will be drained) and 1 recent (will be kept)
+        for ts in [old, old + timedelta(minutes=1), now]:
+            event = {
+                "timestamp": ts.isoformat(),
+                "event_type": "task_completed",
+                "source": "test",
+                "lane_id": "ops",
+                "payload": {"ts": ts.isoformat()},
+            }
+            with open(events_file, "a") as f:
+                f.write(json.dumps(event) + "\n")
+
+        cutoff = now - timedelta(hours=1)
+        drained = drain_events(events_dir, up_to=cutoff)
+        assert drained == 2
+
+        # Active log should have exactly 1 event (the recent one)
+        remaining = read_events(events_dir)
+        assert len(remaining) == 1
+
+        # Archive should have exactly 2 events
+        archive = events_dir / ARCHIVE_FILE
+        assert archive.exists()
+        archive_lines = [
+            l for l in archive.read_text().strip().split("\n") if l.strip()
+        ]
+        assert len(archive_lines) == 2
+
+    def test_drain_serializes_with_concurrent_append(self, events_dir: Path) -> None:
+        """drain_events() holds lock, preventing concurrent append loss (M7).
+
+        Appends that start during drain must complete after drain releases
+        the lock, ensuring the appended event survives.
+        """
+        # Write initial events
+        for i in range(3):
+            append_event("task_completed", "test", "ops", {"i": i}, events_dir)
+
+        drain_started = threading.Event()
+        drain_done = threading.Event()
+        append_done = threading.Event()
+
+        def do_drain() -> None:
+            drain_started.set()
+            drain_events(events_dir)
+            drain_done.set()
+
+        def do_append() -> None:
+            # Wait for drain to start, then try appending
+            drain_started.wait(timeout=5)
+            # Small delay to let drain acquire lock
+            time.sleep(0.05)
+            append_event(
+                "ci_failure", "concurrent", "ops", {"concurrent": True}, events_dir
+            )
+            append_done.set()
+
+        t1 = threading.Thread(target=do_drain)
+        t2 = threading.Thread(target=do_append)
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        assert drain_done.is_set(), "drain should complete"
+        assert append_done.is_set(), "append should complete"
+
+        # The concurrent append should survive (written to the new active log
+        # after drain released the lock and renamed the file).
+        remaining = read_events(events_dir)
+        assert len(remaining) >= 1
+        # At least the concurrent event should be present
+        concurrent_events = [
+            e for e in remaining if e.get("payload", {}).get("concurrent") is True
+        ]
+        assert len(concurrent_events) == 1
