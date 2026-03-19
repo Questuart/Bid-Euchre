@@ -784,19 +784,20 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 | PR-3 | Operator CLI (`ops.py`), reviews/CI surfaces, scheduler, watchdogs, retry/reroute | Shipped |
 | PR-4 | Audit index, curated memory, session compaction | Shipped |
 | PR-5 (slice 1) | CI event producers, scope management, retry events | Shipped (#961) |
+| PR-5 (slice 2) | Issue-triage workflow, agent profile, conventions | Shipped |
 
 > **Note:** PR-5 in the governing plan covers the full rollout/integration
 > phase including context safety, skill promotion, issue triage, and shadow
-> snapshots. Only the deferred watchdog producer wiring slice has shipped
-> so far. The remaining PR-5 deliverables are listed under
-> "Remaining Future Work."
+> snapshots. Slices 1 (event producers/scope) and 2 (issue triage) have
+> shipped. The remaining PR-5 deliverables are listed under
+> "Remaining Future Work." Issue-triage details:
+> `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md`.
 
 ### Remaining Future Work (PR-5 continuation)
 
 - Context safety scanning for auto-loaded content
 - Shadow snapshots and rollback workflow
 - Skill promotion workflow (promote repeated multi-step workflows into skills)
-- Issue-triage workflow and conventions for qualified operational findings
 - Fully automated scope tracking via file-write hooks
 - Automated retry execution (currently advisory only)
 - CI event emission from GitHub Actions (currently only from local CI poller)
