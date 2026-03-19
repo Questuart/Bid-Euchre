@@ -52,7 +52,7 @@ _IMPORT_BOUNDARY_RE = re.compile(
     r"^\s*(?:from|import)\s+(?:experiments|tests)\b", re.MULTILINE
 )
 
-# TODO: remove before merge
+# X3 check: detects leftover "remove-before-merge" TODO markers
 _TODO_REMOVE_RE = re.compile(r"TODO:\s*remove before merge", re.IGNORECASE)
 
 # Large commented-out blocks (>10 consecutive comment lines)
@@ -137,7 +137,7 @@ def check_file(
                     line=i,
                     category="process",
                     check_id="X3",
-                    message="'TODO: remove before merge' marker",
+                    message="'TODO-remove-before-merge' marker",
                 )
             )
 
