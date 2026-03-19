@@ -2,16 +2,118 @@
   "schema_version": "arc_d_evidence_manifest_v1",
   "lineage_id": "arc_d_v2",
   "rung_id": "r3",
-  "provenance_sha": "7bf48a81c2e46028150a3eb6f8d2d2d3d7428475",
-  "governing_plan": "",
+  "provenance_sha": "8a2688afaa9e7666be5c7ef6a44e980505f82694",
+  "governing_plan": "plans/arc_d_v2/r3/plan.md",
   "plan_shas": [],
-  "anchor": "",
-  "roster": [],
-  "seeds": [],
+  "anchor": "anchor_hybrid_r0_full",
+  "roster": [
+    {
+      "name": "modeloespecifico",
+      "class_name": "ModeloEspecifico",
+      "trainable": false,
+      "status": "evaluated"
+    },
+    {
+      "name": "selected_two_stage_av",
+      "class_name": "TwoStageActionValueBidder",
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "gbt_av",
+      "class_name": "GBTActionValueBidder",
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "constrained_ols_av",
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "selected_ols_av",
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "full_ols_av",
+      "class_name": "ActionValueBidder",
+      "trainable": true,
+      "status": "evaluated"
+    },
+    {
+      "name": "stricthellraiser",
+      "class_name": "StrictHellRaiser",
+      "trainable": false,
+      "status": "evaluated"
+    },
+    {
+      "name": "rankthetank",
+      "class_name": "RanktheTank",
+      "trainable": false,
+      "status": "evaluated"
+    }
+  ],
+  "seeds": [
+    42
+  ],
   "mode": "FULL",
   "run_ids": [],
   "lifecycle": [],
-  "artifacts": [],
+  "artifacts": [
+    {
+      "name": "comparator_battery_r3_42",
+      "path": "data/artifacts/arc_d_v2/r3/comparator_battery_r3_42.json",
+      "schema_version": "arc_d_comparator_v1"
+    },
+    {
+      "name": "comparator_cis_r3_42",
+      "path": "data/artifacts/arc_d_v2/r3/comparator_cis_r3_42.json",
+      "schema_version": "comparator_cis_v1"
+    },
+    {
+      "name": "h2h_battery_quick_42",
+      "path": "data/artifacts/arc_d_v2/r3/h2h_battery_quick_42.json",
+      "schema_version": "h2h_battery_v2"
+    },
+    {
+      "name": "h2h_battery_smoke_42",
+      "path": "data/artifacts/arc_d_v2/r3/h2h_battery_smoke_42.json",
+      "schema_version": "h2h_battery_v2"
+    },
+    {
+      "name": "roster",
+      "path": "data/artifacts/arc_d_v2/r3/roster.json",
+      "schema_version": "roster_v1"
+    },
+    {
+      "name": "training_artifact_constrained_ols_av",
+      "path": "data/artifacts/arc_d_v2/r3/training_artifact_constrained_ols_av.json",
+      "schema_version": "action_value_olsa_v1"
+    },
+    {
+      "name": "training_artifact_full_ols_av",
+      "path": "data/artifacts/arc_d_v2/r3/training_artifact_full_ols_av.json",
+      "schema_version": "action_value_olsa_v1"
+    },
+    {
+      "name": "training_artifact_gbt_av",
+      "path": "data/artifacts/arc_d_v2/r3/training_artifact_gbt_av.json",
+      "schema_version": "action_value_gbt_v1"
+    },
+    {
+      "name": "training_artifact_selected_ols_av",
+      "path": "data/artifacts/arc_d_v2/r3/training_artifact_selected_ols_av.json",
+      "schema_version": "action_value_olsa_v1"
+    },
+    {
+      "name": "training_artifact_selected_two_stage_av",
+      "path": "data/artifacts/arc_d_v2/r3/training_artifact_selected_two_stage_av.json",
+      "schema_version": "two_stage_action_value_v1"
+    }
+  ],
   "tables": [
     {
       "name": "artifact_inventory.csv",

@@ -393,10 +393,24 @@ def generate_report(report_dir: Path) -> str:
                         "bid rate bounds by design when optimized for net_eppd."
                     )
                 elif "r2_positive" in check:
+                    try:
+                        r2_val = float(value)
+                    except (ValueError, TypeError):
+                        r2_val = None
+                    if r2_val is not None and r2_val < 0:
+                        r2_detail = (
+                            f"Value {value}; negative R² indicates the model "
+                            "performs worse than a constant predictor on this contract."
+                        )
+                    elif r2_val is not None and r2_val == 0.0:
+                        r2_detail = (
+                            f"Value {value}; R² of zero means model coefficients "
+                            "are absent or the model was not trained for this contract."
+                        )
+                    else:
+                        r2_detail = f"Value {value}."
                     notes.append(
-                        f"- **Sanity: {check}** — failed{count_note}. "
-                        f"Value {value}; negative R² indicates the model performs "
-                        "worse than a constant predictor on this contract."
+                        f"- **Sanity: {check}** — failed{count_note}. {r2_detail}"
                     )
                 else:
                     notes.append(

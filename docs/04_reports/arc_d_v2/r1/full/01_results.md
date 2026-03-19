@@ -209,6 +209,6 @@ Generated from canonical CSV tables and chart PNGs.
 ## 10. Data Quality Notes
 
 - **Sanity: bid_rate_range** — failed (4 models). Trained models may exceed the conservative [0.05, 0.95] bid rate bounds by design when optimized for net_eppd.
-- **Sanity: r2_positive_suit** — failed (selected_two_stage_av). Value 0.0; negative R² indicates the model performs worse than a constant predictor on this contract.
+- **Sanity: r2_positive_suit** — failed (selected_two_stage_av). Value 0.0; R² of zero means model coefficients are absent or the model was not trained for this contract.
 
 <!-- gate_status: data sanity checks in §1 above -->
