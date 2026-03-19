@@ -423,11 +423,6 @@
       "size_bytes": 995
     },
     {
-      "name": "outcome_summary.csv",
-      "path": "docs/04_reports/arc_d_v2/r2/quick/chart_data/outcome_summary.csv",
-      "size_bytes": 1422
-    },
-    {
       "name": "selection_paths.csv",
       "path": "docs/04_reports/arc_d_v2/r2/quick/chart_data/selection_paths.csv",
       "size_bytes": 12491

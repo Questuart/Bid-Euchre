@@ -98,5 +98,8 @@ are seed-42 supplementary evidence.
 | `feature_importances.csv` | 10,248 bytes |
 | `h2h_by_contract.csv` | 16,395 bytes |
 | `outcome_distributions.csv` | 1,004 bytes |
-| `outcome_summary.csv` | 1,422 bytes |
+| `calibration_bins.csv` | 1,725 bytes |
+| `predictions.csv` | 677,929 bytes |
+| `residuals.csv` | 2,733 bytes |
+| `seat_balance.csv` | 347 bytes |
 | `selection_paths.csv` | 12,491 bytes |
