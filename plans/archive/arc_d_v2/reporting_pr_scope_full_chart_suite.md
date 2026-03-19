@@ -2,6 +2,8 @@
 
 <!-- review-tier: medium -->
 
+> **ARCHIVED:** Superseded by reporting refactor PRs #834–#848. Moved 2026-03-18.
+
 **Date:** 2026-03-16
 **Status:** PROPOSED
 **Owner:** Reporting follow-up PR

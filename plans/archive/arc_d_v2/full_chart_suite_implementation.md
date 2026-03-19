@@ -2,6 +2,8 @@
 
 <!-- review-tier: medium -->
 
+> **ARCHIVED:** Superseded by reporting refactor PRs #834–#848. Moved 2026-03-18.
+
 **Date:** 2026-03-17
 **Status:** PROPOSED
 **Scope:** Close all remaining gaps between current main and `reporting_pr_scope_full_chart_suite.md`
