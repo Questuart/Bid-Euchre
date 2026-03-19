@@ -455,4 +455,6 @@ def _check_plan_paths(changed_files: list[str], repo_root: Path) -> list[Finding
 
 def get_blocking_findings(findings: list[Finding]) -> list[Finding]:
     """Filter to only P0/P1 findings (blocking)."""
-    return [f for f in findings if f.severity in ("P0", "P1")]
+    from review_common import is_blocking_severity
+
+    return [f for f in findings if is_blocking_severity(f.severity)]

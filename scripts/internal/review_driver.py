@@ -110,7 +110,9 @@ def _create_follow_up_issues(
     Returns:
         List of URLs for created issues.
     """
-    warn_findings = [f for f in findings if f.get("severity") == "P2"]
+    from review_common import WARN_SEVERITY
+
+    warn_findings = [f for f in findings if f.get("severity") == WARN_SEVERITY]
     if not warn_findings:
         return []
 
@@ -639,8 +641,10 @@ def _format_review_comment(
     lines.append("")
 
     # Separate blocking vs warning findings
-    blockers = [f for f in all_findings if f.get("severity") in ("P0", "P1")]
-    warnings = [f for f in all_findings if f.get("severity") == "P2"]
+    from review_common import BLOCKING_SEVERITIES, WARN_SEVERITY
+
+    blockers = [f for f in all_findings if f.get("severity") in BLOCKING_SEVERITIES]
+    warnings = [f for f in all_findings if f.get("severity") == WARN_SEVERITY]
 
     if blockers:
         lines.append("### Blocking Findings")
@@ -763,7 +767,11 @@ def _step_pr_open(
 
     # Merge plan validation findings (already dicts) with precheck Finding objects
     # Plan findings with P1 severity count as blocking
-    plan_blocking = [f for f in plan_findings if f.get("severity") in ("P0", "P1")]
+    from review_common import BLOCKING_SEVERITIES
+
+    plan_blocking = [
+        f for f in plan_findings if f.get("severity") in BLOCKING_SEVERITIES
+    ]
 
     # Save all precheck + plan validation + scope-drift results for this round
     rdir = round_dir(loop_state.pr_number, loop_state.iteration_count + 1, base_dir)
@@ -1018,7 +1026,11 @@ def _step_scoring_findings(
 
     if not blocking:
         # Create follow-up issues for remaining P2 findings
-        p2_count = sum(1 for f in filtered_findings if f.get("severity") == "P2")
+        from review_common import WARN_SEVERITY
+
+        p2_count = sum(
+            1 for f in filtered_findings if f.get("severity") == WARN_SEVERITY
+        )
         follow_up_urls = _create_follow_up_issues(
             loop_state.pr_number, filtered_findings
         )
