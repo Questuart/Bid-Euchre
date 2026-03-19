@@ -149,9 +149,9 @@
 - **Severity:** MEDIUM
 - **Location:** Multiple active (non-archive) documentation files
 - **Issue:** Three docs reference files that no longer exist:
-  1. `docs/01_core/schemas/hybrid_olsa_v1.md:93` → references `docs/04_reports/arc_d_v2/r1/r0_to_r1_progression.md` (not generated)
-  2. `docs/04_reports/codex_validation/results_2026-03-09_e2e.md:15` → references `src/bid_euchre/validation/e2e_test_seeded_bugs.py` (deleted)
-  3. `docs/04_reports/codex_validation/results_2026-03-08.md:7,28-30,67` → references `scripts/internal/codex_test_fixture.py` and `codex_v2_test_fixture.py` (deleted)
+  1. `docs/01_core/schemas/hybrid_olsa_v1.md:93` → references docs/04_reports/arc_d_v2/r1/r0_to_r1_progression.md [deleted] (not generated)
+  2. `docs/04_reports/codex_validation/results_2026-03-09_e2e.md:15` → references src/bid_euchre/validation/e2e_test_seeded_bugs.py [deleted]
+  3. `docs/04_reports/codex_validation/results_2026-03-08.md:7,28-30,67` → references scripts/internal/codex_test_fixture.py [deleted] and codex_v2_test_fixture.py [deleted]
 - **Evidence:** `ls` confirms files do not exist
 - **Risk:** Low — codex validation reports are historical artifacts; schema example is informational
 - **Effort:** Small — update or annotate references
