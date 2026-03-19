@@ -477,12 +477,18 @@ Escalation is required, not optional, when:
 
 ### Task Completion Requirements
 
-When completing a task, a lane must:
+When completing a task that has a formal task record (see "When to Create
+a Task Record" below for criteria), a lane must:
 1. Update `status` to `completed` in the task record
 2. Record the validation outcome
 3. Write a `completion_note` summarizing what was done and any follow-ups
 4. Emit follow-ups or blockers explicitly rather than leaving them implicit
    in chat history
+
+Work that does not warrant a task record (single-file edits, running
+commands) should still follow general completion discipline: verify the
+result and record any follow-ups in the appropriate persistent system
+(checkpoints, MEMORY.md, or GitHub issues).
 
 ### Progress Visibility
 

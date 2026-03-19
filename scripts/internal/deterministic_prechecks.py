@@ -309,13 +309,12 @@ def check_diff(
     """Run deterministic prechecks on all files changed vs base.
 
     Args:
-        base: Git ref to diff against (ignored when changed_files provided).
+        base: Git ref to diff against (ignored when *changed_files* is provided).
         mode: Review mode.
         repo_root: Repository root directory (defaults to cwd).
-        changed_files: Pre-fetched list of changed file paths (e.g. from
-            ``gh pr diff --name-only``).  When provided, skips the local
-            ``git diff`` subprocess — this prevents scope leaks when the
-            local HEAD differs from the PR branch.
+        changed_files: PR-scoped file list.  When provided, skip the local
+            ``git diff`` and use this list directly.  This avoids scope leaks
+            where the local worktree has drifted from the PR branch.
 
     Returns:
         List of Finding objects across all changed files.
@@ -323,7 +322,7 @@ def check_diff(
     if repo_root is None:
         repo_root = Path.cwd()
 
-    # Use provided file list or fall back to git diff
+    # Use PR-scoped file list when available; fall back to local git diff.
     if changed_files is None:
         result = subprocess.run(
             ["git", "diff", "--name-only", f"{base}...HEAD"],

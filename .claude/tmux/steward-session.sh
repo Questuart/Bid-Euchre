@@ -70,16 +70,17 @@ update_last_active() {
         [ -f "$f" ] || continue
         python3 -c "
 import json, sys
+fpath, timestamp = sys.argv[1], sys.argv[2]
 try:
-    with open('$f') as fh:
+    with open(fpath) as fh:
         d = json.load(fh)
-    d['last_active'] = '$now'
-    with open('$f', 'w') as fh:
+    d['last_active'] = timestamp
+    with open(fpath, 'w') as fh:
         json.dump(d, fh, indent=2)
         fh.write('\n')
 except Exception:
     pass
-" 2>/dev/null || true
+" "$f" "$now" 2>/dev/null || true
     done
 }
 

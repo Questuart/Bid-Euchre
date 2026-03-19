@@ -104,7 +104,7 @@ prechecks. They verify that PRs reference a governing or session plan and
 that the declared plan file exists with content. Checks:
 
 - **PV1:** Plan reference present in PR description (P2 — non-blocking)
-- **PV2:** Referenced plan file exists on disk (P1 — blocking)
+- **PV2:** Referenced plan file exists on disk (P2 — non-blocking)
 - **PV3:** Plan file has non-trivial content (P2 — non-blocking)
 - **SD1:** Scope drift — files changed but not declared in plan (P2 — non-blocking)
 

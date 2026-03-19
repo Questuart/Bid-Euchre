@@ -150,6 +150,14 @@ while true; do
         exit 2
     fi
 
+    # Check if PR has been merged or closed — stop polling if so (#862)
+    PR_STATE=$(gh pr view "$PR_NUM" --json state --jq '.state' 2>/dev/null || echo "")
+    if [ "$PR_STATE" = "MERGED" ] || [ "$PR_STATE" = "CLOSED" ]; then
+        echo "[$(date -u +%H:%M:%S)] PR #${PR_NUM} is ${PR_STATE}. Exiting."
+        write_status "completed" "PR ${PR_STATE} — polling no longer needed"
+        exit 0
+    fi
+
     # Re-check for review loop every 5 polls
     POLL_COUNT=$((POLL_COUNT + 1))
     if [ $((POLL_COUNT % 5)) -eq 0 ] && review_loop_active; then

@@ -256,6 +256,13 @@ class TestValidatePlan:
         assert plan_path == "plans/sessions/test.md"
         assert findings == []
 
+    def test_validate_plan_docstring_matches_code_severity(self) -> None:
+        """PV2 docstring must say P2, not P1. Regression test for #828."""
+        docstring = validate_plan.__doc__
+        assert docstring is not None
+        assert "P2 if broken reference" in docstring
+        assert "P1 if broken reference" not in docstring
+
     @patch("github_pr_state.get_pr_body")
     def test_empty_plan_file_produces_p2(self, mock_body, tmp_path) -> None:
         plan_dir = tmp_path / "plans" / "sessions"
@@ -325,6 +332,15 @@ class TestClassifyReviewMode:
             ["docs/04_reports/arc_d_v1/r0/report.md", "plans/sessions/test.md"]
         )
         assert mode == ReviewMode.REPORT_AUDIT
+
+    def test_report_pr_unaffected_by_local_plan_files(self) -> None:
+        """PR-scoped mode stays REPORT_AUDIT regardless of local plan files."""
+        from review_state import ReviewMode
+
+        pr_files = ["docs/04_reports/arc_d_v2/r0/01_results.md"]
+        local_files = pr_files + ["plans/sessions/stale.md"]
+        assert classify_review_mode(pr_files) == ReviewMode.REPORT_AUDIT
+        assert classify_review_mode(local_files) == ReviewMode.REPORT_AUDIT
 
 
 # ---------------------------------------------------------------------------

@@ -416,7 +416,7 @@ def validate_plan(
 
     Checks:
     1. Plan reference is present in the PR body (P2 if missing).
-    2. Referenced plan file exists on disk (P1 if broken reference).
+    2. Referenced plan file exists on disk (P2 if broken reference — non-blocking).
     3. Plan file has non-trivial content (P2 if empty/boilerplate).
 
     Failures in fetching the PR body are non-blocking (logged and skipped).
@@ -721,7 +721,12 @@ def _step_pr_open(
     """PR_OPEN → WAITING_FOR_CI: Run plan validation + prechecks."""
     from deterministic_prechecks import check_diff, get_blocking_findings
 
-    # 0. Fetch PR-scoped changed files (used by scope-drift + prechecks)
+    # 0. Validate plan reference (non-blocking on fetch failures)
+    plan_path, plan_findings = validate_plan(loop_state.pr_number)
+    if plan_path:
+        loop_state.plan_path = plan_path
+
+    # 0a. Fetch PR-scoped changed files once — shared by scope-drift and prechecks.
     pr_changed_files: list[str] | None = None
     try:
         from github_pr_state import get_pr_changed_files
@@ -729,14 +734,10 @@ def _step_pr_open(
         pr_changed_files = get_pr_changed_files(loop_state.pr_number)
     except Exception:
         logger.warning(
-            "PR #%d: failed to fetch PR files — prechecks will use git diff",
+            "PR #%d: could not fetch PR-scoped changed files — "
+            "falling back to local git diff for prechecks",
             loop_state.pr_number,
         )
-
-    # 0a. Validate plan reference (non-blocking on fetch failures)
-    plan_path, plan_findings = validate_plan(loop_state.pr_number)
-    if plan_path:
-        loop_state.plan_path = plan_path
 
     # 0b. Scope-drift check (only if we have a valid plan path + PR files)
     scope_drift_findings: list[dict] = []
@@ -756,7 +757,7 @@ def _step_pr_open(
                 loop_state.pr_number,
             )
 
-    # 1. Run deterministic prechecks (using PR-scoped files when available)
+    # 1. Run deterministic prechecks (PR-scoped when available)
     findings = check_diff(mode=loop_state.mode, changed_files=pr_changed_files)
     blocking = get_blocking_findings(findings)
 
@@ -1264,16 +1265,17 @@ def main() -> int:
         if args.mode:
             mode = ReviewMode(args.mode)
         else:
-            # Auto-detect from PR's actual changed files (not local HEAD)
+            # Auto-detect from PR-scoped changed files (avoids local-diff
+            # scope leak where worktree has drifted from the PR branch).
+            changed: list[str] = []
             try:
                 from github_pr_state import get_pr_changed_files
 
                 changed = get_pr_changed_files(args.pr)
-                mode = classify_review_mode(changed)
             except Exception:
                 logger.warning(
-                    "PR #%d: failed to fetch PR files for mode detection — "
-                    "falling back to git diff",
+                    "PR #%d: could not fetch PR files for mode detection — "
+                    "falling back to local git diff",
                     args.pr,
                 )
                 diff_result = subprocess.run(
@@ -1287,9 +1289,7 @@ def main() -> int:
                         for f in diff_result.stdout.strip().split("\n")
                         if f.strip()
                     ]
-                    mode = classify_review_mode(changed)
-                else:
-                    mode = ReviewMode.STANDARD
+            mode = classify_review_mode(changed)
         loop_state = initialize_state(
             args.pr,
             args.branch,

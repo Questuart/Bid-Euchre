@@ -108,9 +108,13 @@ without reading terminal history. All sub-fields are optional.
 | `last_forward_progress_at` | string/null | ISO 8601 timestamp of the last meaningful forward progress |
 
 Agents should update `progress` whenever they complete a checklist item,
-run a validation step, or encounter/clear a blocker. The
-`last_forward_progress_at` timestamp enables `ops` to detect stalled lanes
-by comparing it against a configured staleness threshold.
+run a validation step, or encounter/clear a blocker. However, only
+**forward-progress events** (completed items, passed validations) should
+update `last_forward_progress_at`. Blocker events update `current_blocker`
+but do not refresh the forward-progress timestamp — otherwise a lane that
+repeatedly encounters blockers would appear active when it is actually
+stalled. The `last_forward_progress_at` timestamp enables `ops` to detect
+stalled lanes by comparing it against a configured staleness threshold.
 
 ### Item Fields
 
