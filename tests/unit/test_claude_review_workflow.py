@@ -44,6 +44,10 @@ class TestClaudeReviewWorkflow:
         prompt_lower = prompt.lower()
         found = {t for t in quality_terms if t in prompt_lower}
         assert found, f"prompt must mention at least one of {quality_terms}"
+        # Must instruct Claude to post findings as review comments
+        assert (
+            "review comments" in prompt_lower
+        ), "prompt must instruct posting findings as review comments"
 
     def test_max_turns_value(self):
         """Max turns must be explicitly set to a small bound."""
