@@ -119,6 +119,18 @@ class TestChartRegistry:
         assert hasattr(entry, "source")
         assert hasattr(entry, "subdir")
 
+    def test_chart_20_source_is_feature_importances(self):
+        """Chart 20 (Feature Importance) must source from feature_importances.csv.
+
+        Regression test: Chart 20 was previously registered against
+        selection_paths.csv, but the plan spec §7.10 requires
+        feature_importances.csv as the canonical source.
+        """
+        entry = get_chart_by_number(20)
+        assert entry is not None
+        assert entry.filename == "feature_importance.png"
+        assert entry.source == "chart_data/feature_importances.csv"
+
     def test_chart_23_is_intelligence_faceted_h2h(self):
         """Chart 23 is the intelligence-faceted H2H chart."""
         entry = get_chart_by_number(23)

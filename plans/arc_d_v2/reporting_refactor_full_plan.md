@@ -3,7 +3,7 @@
 <!-- review-tier: governing -->
 
 **Date:** 2026-03-18
-**Status:** COMPLETE
+**Status:** PARTIALLY COMPLETE — see §15 Remaining Work
 **Owner:** Reporting refactor follow-up
 **Audience:** Implementation handoff to another agent
 **Replaces:** `plans/arc_d_v2/reporting_refactor_implementation_outline.md` as the execution spec
@@ -703,6 +703,9 @@ Tasks:
   - `bid_max`
 - ensure `predictions.csv`, `residuals.csv`, `calibration_bins.csv` flow when training artifacts exist
 - ensure `decision_comparison.csv` and `disagreement_outcomes.csv` flow when interpretability sources exist
+  - **Canonical producer:** `scripts/internal/generate_interpretability.py` (step 3b: loads models, computes decisions, writes CSVs)
+  - **Dormant fallback:** `tables.py` `_extract_decision_comparison()` / `_extract_disagreement_outcomes()` — these parquet extractors are annotated dormant because the current parquet schema lacks `bid_decision` and `model` columns. They activate only if the parquet schema is extended in the future. Do not invest effort in repairing these extractors.
+  - **Acceptance:** exactly one producer writes each CSV during normal regeneration. The dormant path must not shadow or conflict with interpretability-pipeline output.
 - ensure `seat_balance.csv` is emitted whenever parquet sources exist
 - treat `outcome_distributions.csv` synthetic fallback as degraded, not normal
 
@@ -726,6 +729,7 @@ Tasks:
 - redesign Chart 10 into a meaningful balance chart
 - redesign Chart 13 to use actual bid-level data
 - update Chart 20 to read `feature_importances.csv`
+  - **Status (2026-03-18):** Chart 20 registry (`chart_registry.py` line 191) already points to `chart_data/feature_importances.csv`. The generator (`generate_feature_importance_chart`) also prefers `feature_importances.csv` with `selection_paths.csv` as fallback. Only a stale docstring in `generate_dashboard_model_eval` (line 1929) still mentions `selection_paths.csv` — this is cosmetic, not a source-contract mismatch.
 - improve Chart 6 from crude bars to interval/dot comparison if available
 - preserve current strong charts 4, 5, 7, 8, 23
 
@@ -733,6 +737,7 @@ Acceptance criteria:
 
 - the health suite visually communicates real distribution shape
 - no chart title overclaims unsupported semantics
+- Chart 20 registry source-of-truth path matches `feature_importances.csv` (verified ✅)
 
 ### Phase 4: Dashboard Recomposition
 
@@ -900,13 +905,18 @@ This plan is complete only when all of the following are true:
 
 The next agent should implement from this plan, not from the older scope docs.
 
-Immediate first steps:
+**As of 2026-03-18, Phases 0-6 have been partially implemented (7 PRs merged)
+but remaining work exists. See §15 for the specific gaps. The next agent should
+start from §15, not from Phase 0.**
 
-1. verify current repo state against Sections 2 and 7
-2. start with PR 1, not chart redesign
-3. treat synthetic distribution output as a blocking quality issue
-4. do not add notebooks
-5. do not add new top-level report files
+Recommended first steps:
+
+1. read §15 Remaining Work to understand current gaps
+2. fix r2/r3 QUICK PENDING → PRELIMINARY (§15.1) as smallest corrective PR
+3. recompose health dashboard to match §6.2 (§15.2)
+4. treat synthetic distribution output as a blocking quality issue
+5. do not add notebooks
+6. do not add new top-level report files
 
 If implementation reveals a conflict with this plan:
 
@@ -916,9 +926,11 @@ If implementation reveals a conflict with this plan:
 
 ## Outcome
 
-**Status:** COMPLETE (2026-03-18)
+**Status:** PARTIALLY COMPLETE (2026-03-18)
 
-All 7 phases implemented across 7 PRs:
+### Implementation History
+
+7 PRs merged covering Phases 0-6:
 
 | PR | Scope | Status |
 |----|-------|--------|
@@ -933,12 +945,66 @@ All 7 phases implemented across 7 PRs:
 ### Acceptance Criteria Status (§13)
 
 - ✅ QUICK and FULL both produce usable 00/01/02 bundles
-- ✅ QUICK decision reports show PRELIMINARY triage (not placeholder PENDING)
-- ✅ Health analysis uses violin+box for real distributions, explicit degraded fallback for synthetic
-- ✅ Model evaluation includes prediction diagnostics when source artifacts exist
+- ❌ QUICK decision reports: r0/r1 show ADVANCE (from formal advance-check), but **r2/r3 still show PENDING** — the PRELIMINARY triage path is not activating for these rungs
+- ⚠️ Health analysis: violin+box code exists and activates for real data, but **all committed bundles have synthetic-only data** (every `outcome_distributions.csv` shows `source=synthetic`). The degraded fallback renders correctly but no bundle exercises the real path.
+- ⚠️ Model evaluation: prediction diagnostics code exists but **predictions.csv, residuals.csv, calibration_bins.csv are absent from every bundle** (no joblib models on disk during regeneration)
 - ✅ behavior_by_contract.csv facets by contract (via bidders_by_contract)
-- ✅ bid_levels.csv extracts per-bid-level distributions from parquet bid_n column
+- ⚠️ bid_levels.csv: parquet-backed extractor exists but **all bundles contain aggregate fallback** (`bid_rate,make_rate,pass_rate` columns, not `bid_level,count,fraction`)
 - ✅ Manifests correctly report mode, seeds, and model class
 - ✅ 02_decision.md is the sole decision artifact (04_rung_decision.md historical only)
 - ✅ 23-chart numbered registry preserved
 - ✅ No new top-level report files added
+- ✅ Chart 20 registry and generator correctly point to `feature_importances.csv`
+- ❌ Health dashboard panel layout does not match plan §6.2 (missing CDF/CCDF panel, different panel order)
+- ❌ `seat_balance.csv` absent from all bundles (parquet required at generation time)
+
+## 15. Remaining Work
+
+The following gaps block this plan from COMPLETE status. The next agent should
+pick up from here, not assume cleanup only.
+
+### 15.1 Decision Report Gaps
+
+- **r2/r3 QUICK `02_decision.md` still show `PENDING`** instead of PRELIMINARY
+  triage. The triage logic in `report.py` is not activating for these rungs.
+  Investigate whether r2/r3 lack the required evidence inputs or whether the
+  triage codepath has a conditional bug.
+- r2 FULL `02_decision.md` also shows PENDING (should show INVESTIGATE per
+  the R2 FULL decision).
+
+### 15.2 Dashboard Recomposition
+
+- Health dashboard panel layout does not match §6.2 spec. Current layout:
+  bid-rates / contract-mix / outcome / bid-level / seat-balance / bid-type.
+  Target: outcome-violin / CDF-CCDF / seat-balance / contract-mix / rates / bid-level.
+- CDF/CCDF tail panel (§6.2 Panel 2) has no implementation — must be added.
+- Model eval dashboard docstring (line 1929) still says "from selection_paths.csv"
+  — cosmetic fix.
+
+### 15.3 Chart-Data Availability
+
+All committed bundles use fallback/synthetic chart-data because report
+regeneration ran without parquet data on disk. The extraction code is correct
+and will produce real CSVs when parquet is available.
+
+Missing from all bundles:
+- `outcome_distributions.csv` with `source=parquet` (currently all synthetic)
+- `bid_levels.csv` with per-bid-level schema (currently aggregate rates)
+- `seat_balance.csv` (not generated without parquet)
+- `predictions.csv` / `residuals.csv` / `calibration_bins.csv` (require joblib models)
+
+**Resolution path:** Re-run step 6 on a machine with parquet data in
+`data/runs/arc_d_v2/base_datasets/`. FULL seed_1001 parquet exists (chunked).
+QUICK parquet does not exist. Joblib models are not persisted.
+
+### 15.4 Ownership Gaps
+
+- `decision_comparison.csv` and `disagreement_outcomes.csv` canonical producer
+  now declared in Phase 2 (amended 2026-03-18): `generate_interpretability.py`
+  is primary, `tables.py` extractors are dormant fallback. No code change
+  needed, but this ownership was not explicit before this amendment.
+
+### Handoff Reference
+
+Follow-up plan with per-PR scoping:
+`plans/sessions/2026-03-18_dashboard-data-contract-completion.md`
