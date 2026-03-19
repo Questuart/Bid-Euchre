@@ -177,13 +177,16 @@ def save_memory(store: MemoryStore, memory_dir: Path) -> None:
     content = json.dumps(store.to_dict(), indent=2) + "\n"
 
     fd, tmp = tempfile.mkstemp(dir=str(memory_dir), suffix=".tmp")
+    fd_open = True
     try:
         os.write(fd, content.encode("utf-8"))
         os.fsync(fd)
         os.close(fd)
+        fd_open = False
         os.replace(tmp, str(memory_path))
     except BaseException:
-        os.close(fd)
+        if fd_open:
+            os.close(fd)
         try:
             os.unlink(tmp)
         except OSError:
