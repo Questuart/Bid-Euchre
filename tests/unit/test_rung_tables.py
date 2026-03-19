@@ -18,6 +18,7 @@ import pytest
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "arc_d_v2"
 
 from bid_euchre.arc_d_v2.tables import (
+    _EMPTY_SHA256,
     TIER_ANCHOR,
     TIER_HEURISTIC,
     TIER_SMART,
@@ -2649,3 +2650,100 @@ class TestMakeRepoRelative:
         p = Path("some/local/path.json")
         result = _make_repo_relative(p)
         assert result == "path.json"
+
+
+# ──────────────────────────────────────────────
+#  Provenance generation bug fixes
+# ──────────────────────────────────────────────
+
+
+class TestArtifactInventoryPaths:
+    """Regression tests for artifact_inventory path generation."""
+
+    def test_artifact_inventory_distinct_paths(self, tmp_path):
+        """Each model must produce a distinct path containing the full model name."""
+        rung_dir = tmp_path / "data" / "artifacts" / "arc_d_v2" / "r0"
+        rung_dir.mkdir(parents=True)
+        model_names = ["full_ols_av", "gbt_av", "selected_ols_av"]
+        artifacts = {}
+        for name in model_names:
+            artifacts[name] = {
+                "metadata": {"model_class": "ols", "git_sha": "abc123"},
+                "schema_version": "v1",
+            }
+
+        df = generate_artifact_inventory(
+            training_artifacts=artifacts, rung_dir=rung_dir
+        )
+
+        # All paths must be unique
+        paths = df["path"].tolist()
+        assert len(set(paths)) == len(paths), f"Duplicate paths: {paths}"
+
+        # Each path must contain the full model name
+        for name in model_names:
+            expected_file = f"training_artifact_{name}.json"
+            matching = [p for p in paths if expected_file in p]
+            assert (
+                len(matching) == 1
+            ), f"Expected exactly one path containing {expected_file}, got {matching}"
+
+
+class TestDatasetProvenanceBugs:
+    """Regression tests for dataset_provenance generation."""
+
+    @staticmethod
+    def _make_artifact(
+        *,
+        n_deals=5000,
+        dataset_path="/Users/foo/Projects/Bid-Euchre/data/runs/arc_d_v2/ds",
+        dataset_sha256=_EMPTY_SHA256,
+        model_class="ols",
+    ):
+        """Build a minimal training artifact dict with metadata."""
+        return {
+            "metadata": {
+                "n_deals": n_deals,
+                "dataset_path": dataset_path,
+                "dataset_sha256": dataset_sha256,
+                "model_class": model_class,
+                "training_seed": 42,
+            }
+        }
+
+    def test_n_rows_from_n_deals(self):
+        """n_rows should be populated from metadata.n_deals."""
+        artifacts = {"full_ols_av": self._make_artifact(n_deals=5000)}
+        df = generate_dataset_provenance(training_artifacts=artifacts)
+        assert df.loc[0, "n_rows"] == 5000
+
+    def test_neutralizes_empty_sha256(self):
+        """SHA-256 of empty bytes must be replaced with empty string."""
+        artifacts = {"gbt_av": self._make_artifact(dataset_sha256=_EMPTY_SHA256)}
+        df = generate_dataset_provenance(training_artifacts=artifacts)
+        assert df.loc[0, "sha256"] == ""
+
+    def test_preserves_real_sha256(self):
+        """A genuine SHA-256 value must be preserved."""
+        real_sha = "abc123def456" * 5  # Not the empty-string sentinel
+        artifacts = {"gbt_av": self._make_artifact(dataset_sha256=real_sha)}
+        df = generate_dataset_provenance(training_artifacts=artifacts)
+        assert df.loc[0, "sha256"] == real_sha
+
+    def test_repo_relative_paths(self):
+        """Absolute worktree paths must be converted to repo-relative."""
+        abs_path = (
+            "/Users/foo/Projects/Bid-Euchre-steward-author"
+            "/data/runs/arc_d_v2/base_datasets/pre_r3/full"
+        )
+        artifacts = {"full_ols_av": self._make_artifact(dataset_path=abs_path)}
+        df = generate_dataset_provenance(training_artifacts=artifacts)
+        result = df.loc[0, "path"]
+        assert result.startswith("data/"), f"Expected repo-relative, got: {result}"
+        assert not result.startswith("/"), f"Path still absolute: {result}"
+
+    def test_empty_path_stays_empty(self):
+        """If dataset_path is empty, it should remain empty (no crash)."""
+        artifacts = {"x": self._make_artifact(dataset_path="")}
+        df = generate_dataset_provenance(training_artifacts=artifacts)
+        assert df.loc[0, "path"] == ""
