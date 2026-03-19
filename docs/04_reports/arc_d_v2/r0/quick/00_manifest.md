@@ -100,5 +100,4 @@
 | `feature_importances.csv` | 6,067 bytes |
 | `h2h_by_contract.csv` | 16,322 bytes |
 | `outcome_distributions.csv` | 995 bytes |
-| `outcome_summary.csv` | 1,424 bytes |
 | `selection_paths.csv` | 8,040 bytes |

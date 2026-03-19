@@ -95,5 +95,8 @@
 | `feature_importances.csv` | 10,115 bytes |
 | `h2h_by_contract.csv` | 5,760 bytes |
 | `outcome_distributions.csv` | 674 bytes |
-| `outcome_summary.csv` | 890 bytes |
+| `calibration_bins.csv` | 1,732 bytes |
+| `predictions.csv` | 540,219 bytes |
+| `residuals.csv` | 2,724 bytes |
+| `seat_balance.csv` | 332 bytes |
 | `selection_paths.csv` | 11,955 bytes |

@@ -412,6 +412,11 @@
       "size_bytes": 271
     },
     {
+      "name": "calibration_bins.csv",
+      "path": "docs/04_reports/arc_d_v2/r2/full/chart_data/calibration_bins.csv",
+      "size_bytes": 1725
+    },
+    {
       "name": "contract_mix.csv",
       "path": "docs/04_reports/arc_d_v2/r2/full/chart_data/contract_mix.csv",
       "size_bytes": 863
@@ -432,9 +437,19 @@
       "size_bytes": 1004
     },
     {
-      "name": "outcome_summary.csv",
-      "path": "docs/04_reports/arc_d_v2/r2/full/chart_data/outcome_summary.csv",
-      "size_bytes": 1422
+      "name": "predictions.csv",
+      "path": "docs/04_reports/arc_d_v2/r2/full/chart_data/predictions.csv",
+      "size_bytes": 677929
+    },
+    {
+      "name": "residuals.csv",
+      "path": "docs/04_reports/arc_d_v2/r2/full/chart_data/residuals.csv",
+      "size_bytes": 2733
+    },
+    {
+      "name": "seat_balance.csv",
+      "path": "docs/04_reports/arc_d_v2/r2/full/chart_data/seat_balance.csv",
+      "size_bytes": 347
     },
     {
       "name": "selection_paths.csv",
