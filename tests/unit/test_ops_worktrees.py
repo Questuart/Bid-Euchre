@@ -13,6 +13,7 @@ from bid_euchre.ops.worktrees import (
     GitWorktree,
     classify_cleanup_candidates,
     is_protected,
+    is_worktree_dirty,
     list_worktrees_registry,
     reconcile,
 )
@@ -212,7 +213,9 @@ class TestClassifyCleanupCandidates:
             },
         ]
 
-        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
         assert len(candidates) == 0
 
     def test_ephemeral_stale(self) -> None:
@@ -229,7 +232,9 @@ class TestClassifyCleanupCandidates:
             },
         ]
 
-        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
         assert len(candidates) == 1
         assert candidates[0].cleanup_state == "stale"
         assert "expired" in candidates[0].reason.lower()
@@ -248,7 +253,9 @@ class TestClassifyCleanupCandidates:
             },
         ]
 
-        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
         assert len(candidates) == 1
         assert candidates[0].cleanup_state == "idle"
 
@@ -266,7 +273,9 @@ class TestClassifyCleanupCandidates:
             },
         ]
 
-        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
         assert len(candidates) == 1
         assert candidates[0].cleanup_state == "active"
 
@@ -275,7 +284,9 @@ class TestClassifyCleanupCandidates:
         git_wts = [GitWorktree(path="/tmp/orphan-wt", head="abc", branch="orphan")]
         registry: list[dict] = []
 
-        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
         assert len(candidates) == 1
         assert candidates[0].lifecycle_class == "unknown"
         assert "not in worktree registry" in candidates[0].reason.lower()
@@ -296,7 +307,9 @@ class TestClassifyCleanupCandidates:
             },
         ]
 
-        candidates = classify_cleanup_candidates(git_wts, registry, now=now)
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
         # Persistent + protected → no candidate
         assert len(candidates) == 0
 
@@ -316,7 +329,51 @@ class TestClassifyCleanupCandidates:
 
         # Default TTL is 24h, 48h have passed → stale
         candidates = classify_cleanup_candidates(
-            git_wts, registry, ttl_hours_default=24.0, now=now
+            git_wts, registry, ttl_hours_default=24.0, now=now, check_dirty=False
         )
         assert len(candidates) == 1
         assert candidates[0].cleanup_state == "stale"
+
+
+class TestIsWorktreeDirty:
+    """Tests for is_worktree_dirty()."""
+
+    def test_dirty_on_nonexistent_path(self) -> None:
+        # Nonexistent path → assume dirty for safety
+        assert is_worktree_dirty("/tmp/no-such-worktree-abc123") is True
+
+    def test_dirty_detection_with_mock(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        # Clean worktree
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type("R", (), {"returncode": 0, "stdout": ""})(),
+        )
+        assert wt_mod.is_worktree_dirty("/tmp/wt") is False
+
+    def test_stale_dirty_becomes_quarantined(self) -> None:
+        """When check_dirty=True and worktree is dirty, stale → quarantined."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")]
+        registry = [
+            {
+                "worktree_path": "/tmp/wt-task",
+                "lane_id": "task-1",
+                "class": "ephemeral",
+                "last_active": "2026-03-18T10:00:00+00:00",
+                "session_id": None,
+                "ttl_hours": 24,
+            },
+        ]
+
+        # is_worktree_dirty will fail on /tmp/wt-task (doesn't exist) → True
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=True
+        )
+        assert len(candidates) == 1
+        assert candidates[0].cleanup_state == "quarantined"
+        assert candidates[0].is_dirty is True

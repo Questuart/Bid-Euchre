@@ -81,6 +81,7 @@ def list_worktrees_git() -> list[GitWorktree]:
         ["git", "worktree", "list", "--porcelain"],
         capture_output=True,
         text=True,
+        timeout=30,
     )
     if result.returncode != 0:
         logger.warning("git worktree list failed: %s", result.stderr[:200])
@@ -212,6 +213,7 @@ def is_worktree_dirty(worktree_path: str) -> bool:
         ["git", "-C", worktree_path, "status", "--porcelain"],
         capture_output=True,
         text=True,
+        timeout=30,
     )
     if result.returncode != 0:
         # If we can't check, assume dirty for safety
@@ -283,6 +285,7 @@ def classify_cleanup_candidates(
     *,
     ttl_hours_default: float = 24.0,
     now: datetime | None = None,
+    check_dirty: bool = True,
 ) -> list[CleanupCandidate]:
     """Apply lifecycle policy to identify cleanup candidates.
 
@@ -291,6 +294,8 @@ def classify_cleanup_candidates(
         registry_entries: Output from ``list_worktrees_registry()``.
         ttl_hours_default: Default TTL for ephemeral worktrees without explicit TTL.
         now: Override current time for testing.
+        check_dirty: If True, probe each worktree for uncommitted changes
+            via ``is_worktree_dirty()``. Default True.
 
     Returns:
         List of cleanup candidates with their classification.
@@ -340,6 +345,13 @@ def classify_cleanup_candidates(
                 cleanup_state = "idle"
                 reason = f"Within TTL ({hours_since:.1f}h < {ttl}h)"
 
+        dirty = is_worktree_dirty(git_wt.path) if check_dirty else False
+
+        # Override stale → quarantined if dirty
+        if cleanup_state == "stale" and dirty:
+            cleanup_state = "quarantined"
+            reason += " (dirty — needs manual review)"
+
         candidates.append(
             CleanupCandidate(
                 path=git_wt.path,
@@ -347,6 +359,7 @@ def classify_cleanup_candidates(
                 lifecycle_class=lifecycle,
                 cleanup_state=cleanup_state,
                 reason=reason,
+                is_dirty=dirty,
                 is_protected=protected,
                 registry_entry=entry,
             )
@@ -355,6 +368,7 @@ def classify_cleanup_candidates(
     # Unregistered worktrees — unknown lifecycle
     for git_wt in report.unregistered:
         protected = is_protected(git_wt.path)
+        dirty = is_worktree_dirty(git_wt.path) if check_dirty else False
         candidates.append(
             CleanupCandidate(
                 path=git_wt.path,
@@ -364,6 +378,7 @@ def classify_cleanup_candidates(
                 reason="Not in worktree registry"
                 if not protected
                 else "Protected worktree (unregistered)",
+                is_dirty=dirty,
                 is_protected=protected,
             )
         )

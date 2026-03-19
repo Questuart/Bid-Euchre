@@ -154,11 +154,12 @@ def tick(
         tick_number=state.tick_count,
     )
 
-    # 2. Run watchdogs
+    # 2. Run watchdogs (only those listed in due_checks)
     try:
-        findings = run_all_watchdogs(runtime_dir, plans_dir, now=now)
+        due = set(state.due_checks) if state.due_checks else set(DEFAULT_CHECKS)
+        findings = run_all_watchdogs(runtime_dir, plans_dir, now=now, checks=due)
         result.findings = findings
-        result.checks_run = list(DEFAULT_CHECKS)
+        result.checks_run = sorted(due)
     except Exception as e:
         error_msg = f"Watchdog checks failed: {e}"
         logger.error(error_msg)

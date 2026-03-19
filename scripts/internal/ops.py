@@ -121,6 +121,14 @@ def cmd_events(args: argparse.Namespace) -> int:
     if hasattr(args, "drain") and args.drain:
         from bid_euchre.ops.events import drain_events
 
+        # --type/--lane filters are not supported with --drain
+        if getattr(args, "type", None) or getattr(args, "lane", None):
+            print(
+                "Warning: --type and --lane filters are ignored with --drain. "
+                "All events are drained.",
+                file=sys.stderr,
+            )
+
         drained = drain_events(events_dir)
         if args.json:
             print(json.dumps({"drained": drained}))
