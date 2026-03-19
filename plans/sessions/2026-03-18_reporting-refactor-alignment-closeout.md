@@ -109,6 +109,18 @@
 - `python3 - <<'PY'\nfrom pathlib import Path\nfor rung in ['r0','r1','r2','r3']:\n    p = Path(f'docs/04_reports/arc_d_v2/{rung}/quick/02_decision.md')\n    if p.exists():\n        print(rung, p.read_text().splitlines()[4])\nPY`
 
 ## Outcome
-<!-- Filled after implementation -->
-- PR: pending
-- Notes: This session plan is the active closeout runbook for the remaining gap between the current shipped bundles and the governing reporting refactor plan.
+- PR: pending (branch: fix/reporting-refactor-status-correction)
+- **Completed (3 of 9 steps):**
+  - Step 1: Governing plan status corrected (COMPLETE → PARTIALLY COMPLETE, §16 added)
+  - Step 2: Chart-data ownership locked (§16.5 table)
+  - Partial Step 4: outcome_summary.csv removed from 9 committed locations
+  - Step 7: 04_rung_decision.md deprecated (notices added to all 4 full bundles)
+  - Step 9: 34 bundle hygiene tests added
+- **Blocked (6 of 9 steps):**
+  - Step 3 (chart-data completion): No source artifacts on disk (data/artifacts/ empty)
+  - Step 4 (behavior_by_contract): Requires upstream pipeline change to extract_comparator_cis.py — source data lacks `bidders_by_contract`
+  - Step 5 (chart enforcement): Depends on Steps 3-4
+  - Step 6 (dashboard alignment): Depends on Steps 3-4
+  - Step 8 (bundle regeneration): No source artifacts on disk
+  - Partial Step 9 (manifest agreement checks): Depends on regenerated bundles
+- Notes: The blocked items require either: (a) source data on disk (JSONL game logs, parquet, training artifacts), or (b) upstream pipeline changes. The completed items establish the correct contract and enforcement tests.
