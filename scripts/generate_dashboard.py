@@ -29,7 +29,7 @@ import numpy as np  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 # ── Bollinger Band parameters ────────────────────────────────────────────
-WINDOW = 10  # 10 working days ≈ 2 calendar weeks
+WINDOW = 10  # 10 active days (any day with commits)
 NUM_STD = 2  # Standard 2σ bands
 
 
@@ -348,12 +348,18 @@ def _draw_bollinger_panel(
         1 for i in range(len(x)) if not np.isnan(sma[i]) and data[i] < lower[i]
     )
     n_within = n_valid - n_above - n_below
+    if n_valid > 0:
+        stats_text = (
+            f"Above: {n_above}/{n_valid} ({100 * n_above / n_valid:.0f}%)  "
+            f"Below: {n_below}/{n_valid} ({100 * n_below / n_valid:.0f}%)  "
+            f"Within: {n_within}/{n_valid} ({100 * n_within / n_valid:.0f}%)"
+        )
+    else:
+        stats_text = "Insufficient data for Bollinger statistics"
     ax.text(
         0.99,
         0.03,
-        f"Above: {n_above}/{n_valid} ({100 * n_above / n_valid:.0f}%)  "
-        f"Below: {n_below}/{n_valid} ({100 * n_below / n_valid:.0f}%)  "
-        f"Within: {n_within}/{n_valid} ({100 * n_within / n_valid:.0f}%)",
+        stats_text,
         transform=ax.transAxes,
         fontsize=8,
         ha="right",
