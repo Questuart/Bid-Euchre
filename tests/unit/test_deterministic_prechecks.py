@@ -558,11 +558,12 @@ class TestCheckDiffChangedFiles:
         )
 
         # Should find broken refs in plan_a but NOT plan_b
-        pp1_findings = [f for f in findings if f.check_id == "PP1"]
-        files_with_findings = {f.file for f in pp1_findings}
+        p1_findings = [f for f in findings if f.check_id == "P1"]
+        files_with_findings = {f.file for f in p1_findings}
         assert (
-            "plans/sessions/plan_a.md" in files_with_findings or len(pp1_findings) >= 0
-        )
+            len(p1_findings) > 0
+        ), "Expected P1 findings for plan with broken references"
+        assert "plans/sessions/plan_a.md" in files_with_findings
         assert "plans/sessions/plan_b.md" not in files_with_findings
 
     def test_report_pr_no_plan_path_leak(self, tmp_path: Path) -> None:
@@ -577,5 +578,5 @@ class TestCheckDiffChangedFiles:
             repo_root=tmp_path,
             changed_files=["docs/04_reports/r0/01_results.md"],
         )
-        pp1 = [f for f in findings if f.check_id == "PP1"]
-        assert len(pp1) == 0
+        p1 = [f for f in findings if f.check_id == "P1"]
+        assert len(p1) == 0
