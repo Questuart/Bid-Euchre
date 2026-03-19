@@ -1,0 +1,256 @@
+{
+  "schema_version": "rung_state_v1",
+  "rung": "r1",
+  "mode": "smoke",
+  "seeds": [
+    42
+  ],
+  "current_step": "0",
+  "step_status": "not_started",
+  "status_detail": "",
+  "retries": 0,
+  "max_retries": 3,
+  "blocker": null,
+  "active_investigation": null,
+  "supersession": null,
+  "timeout_policy": {
+    "default": 3600,
+    "step_overrides": {
+      "1": 1800,
+      "2": 7200,
+      "4": 3600,
+      "5": 3600,
+      "3b": 1800
+    },
+    "heartbeat_interval": 60,
+    "stale_threshold": 300
+  },
+  "steps": {
+    "0": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "1": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "2": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "3": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "3b": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "4": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "5": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "6": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "7": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "8": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    },
+    "9": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retries": 0,
+      "retryable": true,
+      "models": {},
+      "fingerprint": null
+    }
+  },
+  "per_seed": {
+    "42": {
+      "0": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "1": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "2": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "3": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "3b": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "4": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "5": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "6": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "7": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "8": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      },
+      "9": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "retries": 0,
+        "retryable": true,
+        "models": {},
+        "fingerprint": null
+      }
+    }
+  },
+  "last_updated": "2026-03-18T04:33:25.057698Z",
+  "created_at": "2026-03-18T04:33:25.057642Z"
+}
