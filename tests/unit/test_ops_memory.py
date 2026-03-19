@@ -206,6 +206,34 @@ class TestLoadSave:
             len(close_calls) == 1
         ), f"os.close() called {len(close_calls)} times, expected 1"
 
+    def test_save_replace_failure_cleans_up(self, memory_dir: Path) -> None:
+        """If os.replace() fails, the temp file must be cleaned up and the original error preserved (#951)."""
+        from unittest.mock import patch
+
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="abc",
+                    category="repo_fact",
+                    key="test",
+                    value="val",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+
+        with patch(
+            "bid_euchre.ops.memory.os.replace", side_effect=OSError("cross-device link")
+        ):
+            with pytest.raises(OSError, match="cross-device link"):
+                save_memory(store, memory_dir)
+
+        # No .tmp files should remain
+        tmp_files = list(memory_dir.glob("*.tmp"))
+        assert tmp_files == [], f"Leaked temp files: {tmp_files}"
+
 
 class TestValidation:
     """Tests for validate_entry() and validate_provenance()."""
