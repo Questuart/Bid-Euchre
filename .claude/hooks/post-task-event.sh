@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 # PostToolUse hook: Emit durable events on task-relevant tool completions.
 #
-# Matches Bash tool output containing patterns like "gh pr merge" and emits
-# structured events to the ops event log.
+# Reads PostToolUse JSON from stdin (matching existing hook patterns like
+# post-pr-review.sh and post-merge-ci-check.sh). Matches successful
+# gh pr merge commands and emits task_completed events.
 #
 # Timeout: 5s (must be fast — runs on every Bash tool completion)
 
 set -euo pipefail
 
-# Read tool output from stdin (PostToolUse receives tool_input and tool_output)
-TOOL_OUTPUT="${TOOL_OUTPUT:-}"
-if [ -z "$TOOL_OUTPUT" ]; then
-    # Try reading from the environment or bail
+# Read PostToolUse JSON payload from stdin
+INPUT=$(cat)
+
+# Extract the bash command and exit code
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
+EXIT_CODE=$(echo "$INPUT" | jq -r '.tool_response.exit_code // 0' 2>/dev/null || echo "0")
+
+# Only process successful commands
+if [ "$EXIT_CODE" != "0" ]; then
     exit 0
 fi
 
@@ -31,16 +37,15 @@ if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
     esac
 fi
 
-# Check for task-relevant patterns in tool output
+# Check for task-relevant patterns in the command
 EVENT_TYPE=""
 DETAILS=""
 
-if echo "$TOOL_OUTPUT" | grep -q "gh pr merge"; then
+if [[ "$COMMAND" == *"gh pr merge"* ]]; then
     EVENT_TYPE="task_completed"
-    DETAILS="PR merged"
-elif echo "$TOOL_OUTPUT" | grep -q "Successfully rebased"; then
-    # Not a failure event, just informational — skip
-    exit 0
+    # Try to extract PR number from command
+    PR_NUM=$(echo "$COMMAND" | grep -oE '[0-9]+' | head -1 || true)
+    DETAILS="PR #${PR_NUM:-unknown} merged"
 fi
 
 # Only emit if we matched a relevant pattern

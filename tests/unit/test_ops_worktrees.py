@@ -459,6 +459,36 @@ class TestPruneWorktrees:
         # Persistent worktrees are not candidates at all
         assert len(results) == 0
 
+    def test_dry_run_dirty_stale_shows_quarantined(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dry-run must check dirtiness and show quarantined, not removed."""
+        from bid_euchre.ops import worktrees as wt_mod
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [GitWorktree(path="/tmp/wt-dirty", head="abc", branch="task-2")],
+        )
+        # Mock is_worktree_dirty to return True
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: True)
+
+        _write_registry_entry(
+            runtime_dir / "worktree_registry",
+            "task-dirty.json",
+            lane_id="task-2",
+            lifecycle_class="ephemeral",
+            worktree_path="/tmp/wt-dirty",
+            last_active="2020-01-01T00:00:00+00:00",
+            ttl_hours=1.0,
+        )
+
+        results = wt_mod.prune_worktrees(runtime_dir, dry_run=True)
+        assert len(results) == 1
+        # Must show quarantined, not removed — dirtiness is checked even in dry-run
+        assert results[0].action == "quarantined"
+        assert results[0].dry_run is True
+
 
 class TestQuarantineWorktree:
     """Tests for quarantine_worktree()."""
