@@ -1,1 +1,10 @@
 hypothesis_id,description,status,evidence,notes
+H1,GBT pooled H2H delta vs anchor remains positive with expanded action space,PASS,observed=0.9736 bound=>0.3,
+H2,GBT comparator net_eppd maintains above 2.0 with expanded action space,PASS,observed=2.1024 bound=>2.0,
+H3,GBT bids at least 40% of the time in comparator,PASS,observed=0.9841 bound=>0.4,
+H4,GBT R3 suit R-squared does not collapse below R0 baseline,PASS,observed=0.8999 bound=>0.55,
+H5,Two-stage model gap vs GBT is within 1.0 net_eppd in comparator,PASS,observed=-0.1748 bound=>-1.0,
+H6,All models bid at least half the time,PASS,observed=0.9841 bound=>0.5,
+H7,GBT H2H win rate vs anchor exceeds 45%,PASS,observed=0.5528 bound=>0.45,
+H8,GBT make rate stays above 50% in comparator,PASS,observed=0.9888 bound=>0.5,
+H9,ModeloEspecifico heuristic is worst among trained models in comparator,PASS,observed=-0.4692 bound=<0.0,
