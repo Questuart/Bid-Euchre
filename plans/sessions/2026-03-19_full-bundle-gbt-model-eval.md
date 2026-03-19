@@ -74,14 +74,15 @@ done
 
 Expected: `gbt_av` rows appear alongside existing OLS-family rows.
 
-### Step 3: Refresh affected manifests and results
+### Step 3: Refresh affected manifests
 
-For each rung, regenerate:
-- `00_manifest.md` — update chart inventory to reflect new model-eval data
-- `evidence_manifest.json` — update CSV inventory
-- `01_results.md` — update model-eval dashboard narrative
+For each rung, update CSV size metadata:
+- `00_manifest.md` — update `calibration_bins.csv`, `predictions.csv`, `residuals.csv` sizes
+- `evidence_manifest.json` — update `size_bytes` for the same 3 CSVs
 
-Use `generate_rung_report.py` or `generate_evidence_manifest.py` as appropriate.
+Note: `01_results.md` and dashboard PNGs (Charts 16-18) were **not** refreshed
+in this PR. The GBT data ships in the CSVs but is not yet surfaced in the
+chart/report reading experience. This is documented in the governing plan DS-3.
 
 ### Step 4: Update DS-3 in governing plan
 
@@ -103,10 +104,8 @@ bundles.
 | `docs/04_reports/arc_d_v2/r{0,1,2}/full/chart_data/predictions.csv` | Add GBT rows |
 | `docs/04_reports/arc_d_v2/r{0,1,2}/full/chart_data/residuals.csv` | Add GBT rows |
 | `docs/04_reports/arc_d_v2/r{0,1,2}/full/chart_data/calibration_bins.csv` | Add GBT rows |
-| `docs/04_reports/arc_d_v2/r{0,1,2}/full/tables/*.csv` | Possible minor regeneration changes |
-| `docs/04_reports/arc_d_v2/r{0,1,2}/full/00_manifest.md` | Updated chart inventory |
-| `docs/04_reports/arc_d_v2/r{0,1,2}/full/evidence_manifest.json` | Updated CSV inventory |
-| `docs/04_reports/arc_d_v2/r{0,1,2}/full/01_results.md` | Updated model-eval narrative |
+| `docs/04_reports/arc_d_v2/r{0,1,2}/full/00_manifest.md` | Updated CSV sizes |
+| `docs/04_reports/arc_d_v2/r{0,1,2}/full/evidence_manifest.json` | Updated CSV size_bytes |
 | `plans/arc_d_v2/reporting_refactor_full_plan.md` | DS-3 status update |
 
 ## Out of Scope
@@ -127,7 +126,7 @@ bundles.
 
 ## Outcome
 
-**Status:** COMPLETE
+**Status:** COMPLETE (with documented remaining gaps)
 
 Regenerated model-eval CSVs for R0-R2/FULL bundles with GBT rows.
 
@@ -136,7 +135,13 @@ Regenerated model-eval CSVs for R0-R2/FULL bundles with GBT rows.
 - Before: 20,000 rows (4 OLS-family models × 5,000 each)
 - After: 25,000 rows (5 models × 5,000 each)
 - Manifests and evidence manifests updated with new sizes
-- DS-3 in governing plan marked RESOLVED
+- DS-3 in governing plan marked RESOLVED (PR #972 code fix + PR #980 regeneration)
 - DS-4 PR reference updated to #972
 
-**PR:** _TBD_
+**Not shipped (documented in DS-3):**
+- `01_results.md` unchanged — no narrative update for GBT model-eval
+- Dashboard PNGs (Charts 16-18) not re-rendered from updated CSVs
+- All model-eval CSVs contain only `contract=pass` rows (pre-existing limitation:
+  `bid_n_sq` derived feature missing from eval parquet)
+
+**PR:** [#980](https://github.com/Questuart/Bid-Euchre/pull/980)
