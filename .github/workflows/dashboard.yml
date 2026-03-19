@@ -1,0 +1,48 @@
+name: Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'assets/dashboard/**'
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6am UTC
+  workflow_dispatch:
+
+concurrency:
+  group: dashboard
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Generate dashboard
+        run: uv run python scripts/generate_dashboard.py --output assets/dashboard/commit_bollinger.png
+
+      - name: Commit updated dashboard
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update commit analytics dashboard [skip ci]"
+          file_pattern: "assets/dashboard/*.png"
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"

@@ -2,6 +2,12 @@
 
 A Python framework for deterministic simulation and strategy evaluation of the card game Bid Euchre.
 
+## Dashboard
+
+![Commit Analytics](assets/dashboard/commit_bollinger.png)
+
+Churn-corrected Bollinger Bands on daily commit counts (working days only). Updated automatically after each merge to main. See `scripts/generate_dashboard.py` for methodology.
+
 ## Quick Start
 
 ### Install
