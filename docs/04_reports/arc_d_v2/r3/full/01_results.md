@@ -66,15 +66,15 @@ Generated from canonical CSV tables and chart PNGs.
 
 ### Chart 16. Predicted vs Actual
 
-*Chart not available — source data absent.*
+![Predicted vs Actual](charts/full_chart_suite/pred_vs_actual.png)
 
 ### Chart 17. Residual Distribution
 
-*Chart not available — source data absent.*
+![Residual Distribution](charts/full_chart_suite/residual_distribution.png)
 
 ### Chart 18. Calibration Curve
 
-*Chart not available — source data absent.*
+![Calibration Curve](charts/full_chart_suite/calibration_curve.png)
 
 ### Chart 20. Feature Importance
 
@@ -165,10 +165,18 @@ Generated from canonical CSV tables and chart PNGs.
 
 | model | contract | net_eppd | bid_rate | pass_rate | make_rate | source |
 | --- | --- | --- | --- | --- | --- | --- |
-| modeloespecifico | pooled | 1.6332 | 1.0000 | 0.0000 | 0.9467 | comparator |
-| selected_two_stage_av | pooled | 1.9276 | 0.9999 | 0.0001 | 0.9939 | comparator |
-| gbt_av | pooled | 2.1024 | 0.9841 | 0.0159 | 0.9888 | comparator |
-| full_ols_av | pooled | 2.2829 | 1.0000 | 0.0000 | 0.9999 | comparator |
+| modeloespecifico | suit | 1.5742 | 1.0000 | 0.0000 | 0.9472 | comparator |
+| selected_two_stage_av | suit | 2.0204 | 1.0000 | 0.0000 | 0.9864 | comparator |
+| gbt_av | suit | 2.1402 | 1.0000 | 0.0000 | 0.9930 | comparator |
+| constrained_ols_av | suit | 2.2513 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| selected_ols_av | suit | 2.1645 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| full_ols_av | suit | 2.4584 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| stricthellraiser | suit | 0.1096 | 1.0000 | 0.0000 | 0.9472 | comparator |
+| rankthetank | suit | -9.7004 | 1.0000 | 0.0000 | 0.1474 | comparator |
+| modeloespecifico | high | 2.5814 | 1.0000 | 0.0000 | 0.9767 | comparator |
+| selected_two_stage_av | high | 1.8261 | 1.0000 | 0.0000 | 1.0000 | comparator |
+
+*Full table omitted from markdown — see `tables/behavior_by_contract.csv`*
 
 
 ### Chart 12. Bid and Make Rates
@@ -197,4 +205,10 @@ Generated from canonical CSV tables and chart PNGs.
 
 *Full table omitted from markdown — see `tables/sanity_bounds_check.csv`*
 
-<\!-- gate_status: data sanity checks in §1 above -->
+
+## 10. Data Quality Notes
+
+- **Sanity: bid_rate_range** — failed (4 models). Trained models may exceed the conservative [0.05, 0.95] bid rate bounds by design when optimized for net_eppd.
+- **Sanity: r2_positive_suit** — failed (selected_two_stage_av). Value 0.0; negative R² indicates the model performs worse than a constant predictor on this contract.
+
+<!-- gate_status: data sanity checks in §1 above -->

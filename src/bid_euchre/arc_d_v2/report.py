@@ -370,16 +370,39 @@ def generate_report(report_dir: Path) -> str:
                 "parquet-backed real distributions unavailable for this bundle"
             )
 
-    # Check for sanity bound failures that are expected
+    # Check for sanity bound failures — provide context-aware notes
     if sanity is not None and "status" in sanity.columns:
         failures = sanity[sanity["status"].str.upper() == "FAIL"]
         if len(failures) > 0:
+            # Deduplicate by check_name — one note per distinct check type
+            seen_checks: set[str] = set()
             for _, row in failures.iterrows():
                 check = row.get("check_name", "unknown")
-                notes.append(
-                    f"- **Sanity: {check}** — failed. "
-                    "This may be expected for small sample sizes or early rungs."
-                )
+                if check in seen_checks:
+                    continue
+                seen_checks.add(check)
+                model = row.get("model", "")
+                value = row.get("value", "")
+                n_same = len(failures[failures["check_name"] == check])
+                count_note = f" ({n_same} models)" if n_same > 1 else f" ({model})"
+                # Provide check-specific context
+                if "bid_rate" in check:
+                    notes.append(
+                        f"- **Sanity: {check}** — failed{count_note}. "
+                        "Trained models may exceed the conservative [0.05, 0.95] "
+                        "bid rate bounds by design when optimized for net_eppd."
+                    )
+                elif "r2_positive" in check:
+                    notes.append(
+                        f"- **Sanity: {check}** — failed{count_note}. "
+                        f"Value {value}; negative R² indicates the model performs "
+                        "worse than a constant predictor on this contract."
+                    )
+                else:
+                    notes.append(
+                        f"- **Sanity: {check}** — failed{count_note}. "
+                        "Review the sanity bounds table for details."
+                    )
 
     if has_degraded or notes:
         lines.extend(
