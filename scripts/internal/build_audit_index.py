@@ -51,7 +51,6 @@ def main(argv: list[str] | None = None) -> int:
         index_dir,
         runtime_dir=runtime_dir,
         plans_dir=plans_dir,
-        repo_root=repo_root,
         full_rebuild=args.rebuild,
     )
 

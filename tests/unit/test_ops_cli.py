@@ -1060,6 +1060,55 @@ class TestCmdIndex:
         captured = capsys.readouterr().out
         assert "Rebuilt" in captured
 
+    def test_index_with_overridden_dirs_scans_auxiliary_paths(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Regression: ops index --runtime-dir/--plans-dir indexes
+        data/runs and docs/04_reports under the inferred repo root,
+        not the caller's CWD."""
+        repo = tmp_path / "other_repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+        (repo / ".git").mkdir()
+
+        # Create manifest in data/runs
+        runs_dir = repo / "data" / "runs" / "test_run"
+        runs_dir.mkdir(parents=True)
+        (runs_dir / "evidence_manifest_R0.json").write_text(
+            json.dumps({"artifacts": [{"name": "m.json", "type": "metrics"}]})
+        )
+
+        # Create report manifest in docs/04_reports
+        reports_dir = repo / "docs" / "04_reports" / "R0"
+        reports_dir.mkdir(parents=True)
+        (reports_dir / "manifest_R0.json").write_text(
+            json.dumps({"artifacts": [{"name": "01_results.md", "type": "report"}]})
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(rt),
+                "--plans-dir",
+                str(plans),
+                "index",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        # Should have indexed both the data/runs manifest and the report manifest
+        assert data["build"]["sources_indexed"] >= 2, (
+            f"Expected >=2 sources (data/runs + reports), "
+            f"got {data['build']['sources_indexed']}"
+        )
+
 
 class TestCmdQuery:
     """Tests for the query subcommand."""
