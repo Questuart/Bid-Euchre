@@ -2,6 +2,8 @@
 
 <!-- review-tier: medium -->
 
+> **ARCHIVED:** Superseded by PR #775 (chart suite cleanup). Moved 2026-03-18.
+
 **Date:** 2026-03-17
 **Status:** PROPOSED
 **Scope:** Single PR fixing all remaining gaps from Codex review of PRs #768/#769/#771, plus chart directory restructuring
