@@ -172,6 +172,14 @@ def init_schema(index_dir: Path) -> None:
                 VALUES ('delete', old.entry_id, old.content);
             END;
 
+            CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries
+            BEGIN
+                INSERT INTO entries_fts(entries_fts, rowid, content)
+                VALUES ('delete', old.entry_id, old.content);
+                INSERT INTO entries_fts(rowid, content)
+                VALUES (new.entry_id, new.content);
+            END;
+
             CREATE TABLE IF NOT EXISTS index_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -470,17 +478,20 @@ def _ingest_review(conn: sqlite3.Connection, review_file: Path) -> int:
     return 1
 
 
-def _ingest_review_loop(conn: sqlite3.Connection, loop_dir: Path) -> int:
+def _ingest_review_loop(conn: sqlite3.Connection, loop_dir: Path) -> _IngestCounts:
     """Ingest review-loop sidecar artifacts (state.json + per-round findings).
 
     These are transitional/legacy sources per the governing plan, but are
     indexed for searchable history while the migration to online-first
     review is in progress.
+
+    Returns:
+        _IngestCounts with accurate per-source and per-entry tallies.
     """
     if not loop_dir.exists():
-        return 0
+        return _IngestCounts()
 
-    total = 0
+    counts = _IngestCounts()
 
     # Ingest state.json for each PR
     for pr_dir in sorted(loop_dir.iterdir()):
@@ -514,7 +525,8 @@ def _ingest_review_loop(conn: sqlite3.Connection, loop_dir: Path) -> int:
                     content,
                     data,
                 )
-                total += 1
+                counts.sources += 1
+                counts.entries += 1
             except json.JSONDecodeError:
                 logger.warning("Skipping malformed review loop state: %s", state_file)
 
@@ -549,19 +561,26 @@ def _ingest_review_loop(conn: sqlite3.Connection, loop_dir: Path) -> int:
                         content,
                         data if isinstance(data, dict) else {"findings": data},
                     )
-                    total += 1
+                    counts.sources += 1
+                    counts.entries += 1
                 except json.JSONDecodeError:
                     logger.warning("Skipping malformed artifact: %s", artifact)
 
-    return total
+    return counts
 
 
-def _ingest_plan_reviews(conn: sqlite3.Connection, plan_reviews_dir: Path) -> int:
-    """Ingest local /review-plan artifacts and summaries."""
+def _ingest_plan_reviews(
+    conn: sqlite3.Connection, plan_reviews_dir: Path
+) -> _IngestCounts:
+    """Ingest local /review-plan artifacts and summaries.
+
+    Returns:
+        _IngestCounts with accurate per-source and per-entry tallies.
+    """
     if not plan_reviews_dir.exists():
-        return 0
+        return _IngestCounts()
 
-    total = 0
+    counts = _IngestCounts()
     for review_file in sorted(plan_reviews_dir.rglob("*.json")):
         stat = review_file.stat()
         source_id = _upsert_source(
@@ -588,26 +607,43 @@ def _ingest_plan_reviews(conn: sqlite3.Connection, plan_reviews_dir: Path) -> in
             content,
             data,
         )
-        total += 1
+        counts.sources += 1
+        counts.entries += 1
 
-    return total
+    return counts
 
 
-def _ingest_report_metadata(conn: sqlite3.Connection, reports_dir: Path) -> int:
-    """Ingest latest report metadata (manifest files in report directories)."""
+def _ingest_report_metadata(
+    conn: sqlite3.Connection, reports_dir: Path
+) -> _IngestCounts:
+    """Ingest latest report metadata (manifest files in report directories).
+
+    Returns:
+        _IngestCounts with accurate per-source and per-entry tallies.
+    """
     if not reports_dir.exists():
-        return 0
+        return _IngestCounts()
 
-    total = 0
+    counts = _IngestCounts()
     # Look for report manifests and metadata files
     for meta_file in sorted(reports_dir.rglob("manifest*.json")):
         try:
             n = _ingest_manifest(conn, meta_file)
-            total += n
+            if n > 0:
+                counts.sources += 1
+                counts.entries += n
         except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
             logger.warning("Skipping report metadata %s: %s", meta_file, e)
 
-    return total
+    return counts
+
+
+@dataclass
+class _IngestCounts:
+    """Return type for compound ingestors that upsert multiple sources."""
+
+    sources: int = 0
+    entries: int = 0
 
 
 # ── Build / Rebuild ──────────────────────────────────────────────
@@ -628,6 +664,7 @@ def build_index(
     runtime_dir: Path | None = None,
     plans_dir: Path | None = None,
     *,
+    repo_root: Path | None = None,
     full_rebuild: bool = False,
 ) -> BuildResult:
     """Build or rebuild the audit index from runtime artifacts.
@@ -636,6 +673,10 @@ def build_index(
         index_dir: Directory for the SQLite database.
         runtime_dir: Runtime directory (default: .claude/runtime).
         plans_dir: Plans directory (default: plans/).
+        repo_root: Repository root for deriving auxiliary scan paths
+            (``data/runs``, ``docs/04_reports``).  When *None*,
+            defaults to the result of ``_resolve_repo_path("")``
+            (i.e. the git repo root or cwd).
         full_rebuild: If True, drop and rebuild from scratch.
 
     Returns:
@@ -652,6 +693,10 @@ def build_index(
         runtime_dir = _resolve_repo_path(".claude/runtime")
     if plans_dir is None:
         plans_dir = _resolve_repo_path("plans")
+
+    # Derive repo_root for auxiliary scan paths (#952)
+    if repo_root is None:
+        repo_root = _resolve_repo_path("")
 
     if full_rebuild:
         db_path = _get_db_path(index_dir)
@@ -708,7 +753,7 @@ def build_index(
                 result.errors.append(f"manifest {manifest_file}: {e}")
 
         # Also check data/runs for manifests
-        data_runs = Path("data/runs")
+        data_runs = repo_root / "data" / "runs"
         if data_runs.exists():
             for manifest_file in _find_files(data_runs, "evidence_manifest*.json"):
                 try:
@@ -757,30 +802,27 @@ def build_index(
         # 7. Ingest review-loop sidecars (transitional/legacy)
         review_loops_dir = runtime_dir / "review_loops"
         try:
-            n = _ingest_review_loop(conn, review_loops_dir)
-            if n > 0:
-                result.sources_indexed += 1
-                result.entries_indexed += n
+            ic = _ingest_review_loop(conn, review_loops_dir)
+            result.sources_indexed += ic.sources
+            result.entries_indexed += ic.entries
         except Exception as e:
             result.errors.append(f"review_loops: {e}")
 
         # 8. Ingest local /review-plan artifacts
         plan_reviews_dir = runtime_dir / "plan_reviews"
         try:
-            n = _ingest_plan_reviews(conn, plan_reviews_dir)
-            if n > 0:
-                result.sources_indexed += 1
-                result.entries_indexed += n
+            ic = _ingest_plan_reviews(conn, plan_reviews_dir)
+            result.sources_indexed += ic.sources
+            result.entries_indexed += ic.entries
         except Exception as e:
             result.errors.append(f"plan_reviews: {e}")
 
         # 9. Ingest report metadata
-        reports_dir = Path("docs/04_reports")
+        reports_dir = repo_root / "docs" / "04_reports"
         try:
-            n = _ingest_report_metadata(conn, reports_dir)
-            if n > 0:
-                result.sources_indexed += 1
-                result.entries_indexed += n
+            ic = _ingest_report_metadata(conn, reports_dir)
+            result.sources_indexed += ic.sources
+            result.entries_indexed += ic.entries
         except Exception as e:
             result.errors.append(f"report_metadata: {e}")
 
