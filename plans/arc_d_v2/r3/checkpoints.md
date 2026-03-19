@@ -20,7 +20,7 @@
 | Step 6: Sanity Bounds Check | COMPLETE | 2026-03-16 | Orchestrator | All bounds pass |
 | Step 7: Generate Reports | COMPLETE | 2026-03-16 | Orchestrator + PR | Tables + h2h_tier_summary |
 | Step 8: Advance Decision + Narrative | COMPLETE | 2026-03-16 | Orchestrator | PROCEED, 9/9 pass, 1 canary warning |
-| Step 9: Archive & Advance | PENDING | | | Awaiting FULL backfill |
+| Step 9: Archive & Advance | COMPLETE | 2026-03-19 | author-a | R3 FULL closeout PR |
 
 ## Prerequisites
 

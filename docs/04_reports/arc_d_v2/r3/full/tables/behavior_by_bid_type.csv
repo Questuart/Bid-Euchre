@@ -1,0 +1,12 @@
+model,bid_type,count,bid_rate,make_rate,mean_net_points,source
+modeloespecifico,regular,5000,1.0,0.9467,1.6332,comparator
+selected_two_stage_av,regular,4999,0.9999,0.9939,1.9276,comparator
+gbt_av,regular,4919,0.9841,0.9888,2.1024,comparator
+full_ols_av,regular,5000,1.0,0.9999,2.2829,comparator
+modeloespecifico,regular,30000,,0.4363,-0.0268,h2h_self_play
+selected_two_stage_av,regular,30000,,0.4173,0.0276,h2h_self_play
+gbt_av,regular,29948,,0.4615,-0.0212,h2h_self_play
+gbt_av,moon,16,,0.6875,7.4375,h2h_self_play
+gbt_av,loner,36,,0.5,-0.3889,h2h_self_play
+full_ols_av,regular,30000,,0.4134,-0.0343,h2h_self_play
+anchor_hybrid_r0_full,regular,24720,,0.4616,-0.0457,h2h_self_play

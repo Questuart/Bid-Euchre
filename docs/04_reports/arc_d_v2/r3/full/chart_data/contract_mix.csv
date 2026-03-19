@@ -1,0 +1,16 @@
+model,contract,deals,fraction
+modeloespecifico,suit,28248,0.9416
+modeloespecifico,high,837,0.0279
+modeloespecifico,low,915,0.0305
+selected_two_stage_av,suit,29095,0.9698
+selected_two_stage_av,high,245,0.0082
+selected_two_stage_av,low,660,0.022
+gbt_av,suit,21274,0.7091
+gbt_av,high,3606,0.1202
+gbt_av,low,5120,0.1707
+full_ols_av,suit,9280,0.3093
+full_ols_av,high,8551,0.285
+full_ols_av,low,12169,0.4056
+anchor_hybrid_r0_full,suit,19179,0.7758
+anchor_hybrid_r0_full,high,2308,0.0934
+anchor_hybrid_r0_full,low,3233,0.1308

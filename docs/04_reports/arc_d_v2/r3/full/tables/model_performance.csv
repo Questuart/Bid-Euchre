@@ -1,0 +1,13 @@
+model,contract,r_squared,mae,n_train,n_val
+full_ols_av,high,0.8661,3.6854,1549966,193083
+full_ols_av,low,0.8625,3.6996,1549966,193083
+full_ols_av,pass,0.0545,3.3816,160000,20000
+full_ols_av,suit,0.8902,3.4376,6199864,772332
+gbt_av,high,0.8752,3.3317,1549966,193083
+gbt_av,low,0.8721,3.3615,1549966,193083
+gbt_av,pass,0.0854,3.2702,160000,20000
+gbt_av,suit,0.8999,2.9986,6199864,772332
+selected_two_stage_av,high,0.8633,3.7166,1549966,193083
+selected_two_stage_av,low,0.8595,3.734,1549966,193083
+selected_two_stage_av,pass,0.0484,3.4208,160000,20000
+selected_two_stage_av,suit,,,6199864,772332

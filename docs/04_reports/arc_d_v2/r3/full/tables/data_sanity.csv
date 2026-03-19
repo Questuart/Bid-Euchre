@@ -1,0 +1,16 @@
+check_name,scope,value,threshold,status,detail
+h2h_cells_populated,h2h,25.0,25.0,PASS,25/25 cells have metrics
+h2h_min_deals,h2h,30000.0,10.0,PASS,Minimum deals across cells: 30000
+comparator_bidders_present,comparator,4.0,2.0,PASS,4 bidders in comparator
+r2_positive_full_ols_av_high,training,0.8661,0.0,PASS,full_ols_av high R²=0.8661
+r2_positive_full_ols_av_low,training,0.8625,0.0,PASS,full_ols_av low R²=0.8625
+r2_positive_full_ols_av_pass,training,0.0545,0.0,PASS,full_ols_av pass R²=0.0545
+r2_positive_full_ols_av_suit,training,0.8902,0.0,PASS,full_ols_av suit R²=0.8902
+r2_positive_gbt_av_high,training,0.8752,0.0,PASS,gbt_av high R²=0.8752
+r2_positive_gbt_av_low,training,0.8721,0.0,PASS,gbt_av low R²=0.8721
+r2_positive_gbt_av_pass,training,0.0854,0.0,PASS,gbt_av pass R²=0.0854
+r2_positive_gbt_av_suit,training,0.8999,0.0,PASS,gbt_av suit R²=0.8999
+r2_positive_selected_two_stage_av_high,training,0.8633,0.0,PASS,selected_two_stage_av high R²=0.8633
+r2_positive_selected_two_stage_av_low,training,0.8595,0.0,PASS,selected_two_stage_av low R²=0.8595
+r2_positive_selected_two_stage_av_pass,training,0.0484,0.0,PASS,selected_two_stage_av pass R²=0.0484
+r2_positive_selected_two_stage_av_suit,training,0.0,0.0,WARN,selected_two_stage_av suit R²=0.0000
