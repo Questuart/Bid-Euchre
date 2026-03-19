@@ -58,3 +58,8 @@ Report the full result back.",
 - Results are written to `.claude/runtime/plan_reviews/<hash>/review.md`
 - Tier can be overridden with `<!-- review-tier: small|medium|governing -->` in the plan file.
 - See `docs/02_agent/PLAN_REVIEW_TIERS.md` for the full rubric specification.
+- The tier rubric includes an execution-handoff check (`P16`) for implementation
+  handoffs. Plans that direct another agent to execute work should explicitly
+  require: plan refresh/draft, spawned plan review, task list creation,
+  parallelism assessment, and end-to-end autonomous execution through PR
+  shipment.

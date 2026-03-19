@@ -22,8 +22,8 @@ defined in `docs/02_agent/PLAN_REVIEW_TIERS.md`.
 
 ## Tier Quick Reference
 
-- **Small** (7 checks): P1, P2, P3, P5, P6, P9, R4
-- **Medium** (15 checks): all Small + P4, P7, P8, P10, P11, P15, R1-R5
+- **Small** (8 checks): P1, P2, P3, P5, P6, P9, P16, R4
+- **Medium** (16 checks): all Small + P4, P7, P8, P10, P11, P15, R1-R5
 - **Governing** (all Medium + P12, P13, P14 + full 16-dimension weighted rubric + 8 hard gates)
 
 For P8 (sample size) and P11 (hypotheses): auto-detect research intent via
@@ -43,6 +43,15 @@ checks for non-research plans.
 - For **P8/P11**: First check for research keywords. If none found, mark SKIP
   and move on. Do not flag non-research plans for missing sample sizes or
   hypotheses.
+- For **P16 (execution handoff discipline)**: If the plan is an implementation
+  handoff or execution directive for another agent, verify that it explicitly
+  requires this sequence:
+  1. refresh or draft the plan
+  2. have a spawned reviewer agent review the plan
+  3. create a task list
+  4. assess safe parallelism
+  5. execute end to end autonomously through validation and PR shipment
+  Mark SKIP when the plan is not an implementation handoff.
 
 ## Output Format
 
@@ -56,7 +65,7 @@ Return a JSON-parseable list of findings:
     "file": "plans/path/to/plan.md",
     "line": 42,
     "description": "Brief description of the issue",
-    "check_id": "P1|P2|P3|P4|P5|P6|P7|P8|P9|P10|P11|P12|P13|P14|P15|R1|R2|R3|R4|R5"
+    "check_id": "P1|P2|P3|P4|P5|P6|P7|P8|P9|P10|P11|P12|P13|P14|P15|P16|R1|R2|R3|R4|R5"
   }
 ]
 ```

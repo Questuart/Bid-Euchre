@@ -28,8 +28,8 @@ See `docs/02_agent/PLAN_REVIEW_TIERS.md` for the full specification.
 
 | Tier | Scope | Checks |
 |------|-------|--------|
-| Small | <=3 files, single-PR, <80 lines | 7 convention checks (P1,P2,P3,P5,P6,P9,R4) |
-| Medium | 4-10 files, multi-PR, 80-300 lines | 15 convention + 5 risk flags |
+| Small | <=3 files, single-PR, <80 lines | 8 checks (P1,P2,P3,P5,P6,P9,P16,R4) |
+| Medium | 4-10 files, multi-PR, 80-300 lines | 16 convention + 5 risk flags |
 | Governing | Multi-rung/phase, research plans | Full 16-dimension rubric + 8 hard gates |
 
 Codex: when reviewing plan files, classify the plan tier and apply the
