@@ -723,6 +723,20 @@ def generate_dataset_provenance(
     return pd.DataFrame(rows)
 
 
+def _make_repo_relative(path: Path) -> str:
+    """Convert an absolute path to repo-relative by stripping up to ``data/``.
+
+    Looks for ``/data/`` in the path string and returns from ``data/`` onward.
+    Falls back to the path basename if ``/data/`` is not found.
+    """
+    s = str(path)
+    marker = "/data/"
+    idx = s.find(marker)
+    if idx >= 0:
+        return s[idx + 1 :]  # Strip leading slash, keep "data/..."
+    return s
+
+
 def generate_artifact_inventory(
     training_artifacts: dict[str, dict] | None = None,
     roster: dict | None = None,
@@ -731,19 +745,22 @@ def generate_artifact_inventory(
     """Generate artifact_inventory.csv -- artifact paths and versions.
 
     Columns: artifact_name, path, schema_version, model_class, git_sha
+
+    Paths are repo-relative (e.g. ``data/artifacts/arc_d_v2/r0/...``).
     """
     rows = []
     if training_artifacts:
         for model_name, artifact in training_artifacts.items():
             meta = artifact.get("metadata", {})
+            raw_path = (
+                rung_dir / f"training_artifact_{model_name.split('_')[-1]}.json"
+                if rung_dir
+                else None
+            )
             rows.append(
                 {
                     "artifact_name": model_name,
-                    "path": str(
-                        rung_dir / f"training_artifact_{model_name.split('_')[-1]}.json"
-                    )
-                    if rung_dir
-                    else "",
+                    "path": _make_repo_relative(raw_path) if raw_path else "",
                     "schema_version": artifact.get("schema_version", ""),
                     "model_class": meta.get("model_class", ""),
                     "git_sha": meta.get("git_sha", ""),
@@ -751,10 +768,11 @@ def generate_artifact_inventory(
             )
 
     if roster:
+        raw_path = rung_dir / "roster.json" if rung_dir else None
         rows.append(
             {
                 "artifact_name": "roster",
-                "path": str(rung_dir / "roster.json") if rung_dir else "",
+                "path": _make_repo_relative(raw_path) if raw_path else "",
                 "schema_version": roster.get("schema_version", ""),
                 "model_class": "",
                 "git_sha": "",

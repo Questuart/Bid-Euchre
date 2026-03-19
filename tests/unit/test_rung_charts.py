@@ -1455,3 +1455,143 @@ class TestDashboardHealthPanel3Paths:
         )
         assert result is True
         assert (charts_dir / "dashboard_health.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  CDF/CCDF tail panel contract faceting (F1)
+# ──────────────────────────────────────────────
+
+
+class TestCdfContractFaceting:
+    """Tests that CDF panel facets by contract when data has contract column."""
+
+    def test_cdf_with_contract_column(self, charts_mod, tmp_path):
+        """Health dashboard CDF panel handles per-contract distribution data."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        # behavior_summary.csv (minimal)
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "bid_rate": [0.6, 0.5],
+                "make_rate": [0.7, 0.6],
+            }
+        ).to_csv(tables_dir / "behavior_summary.csv", index=False)
+
+        # outcome_distributions.csv WITH contract column
+        rows = []
+        for model in ["gbt", "ols"]:
+            for contract in ["suit", "high", "low"]:
+                for tricks in range(0, 11):
+                    rows.append(
+                        {
+                            "model": model,
+                            "contract": contract,
+                            "tricks_won": tricks,
+                            "count": max(1, 10 - abs(tricks - 5)),
+                            "fraction": 0.1,
+                            "source": "parquet",
+                        }
+                    )
+        pd.DataFrame(rows).to_csv(
+            chart_data_dir / "outcome_distributions.csv", index=False
+        )
+
+        result = charts_mod.generate_dashboard_health(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+    def test_cdf_without_contract_column(self, charts_mod, tmp_path):
+        """Health dashboard CDF panel falls back when no contract column."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+        chart_data_dir = tmp_path / "chart_data"
+        chart_data_dir.mkdir()
+
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "bid_rate": [0.6, 0.5],
+                "make_rate": [0.7, 0.6],
+            }
+        ).to_csv(tables_dir / "behavior_summary.csv", index=False)
+
+        # outcome_distributions.csv WITHOUT contract column
+        rows = []
+        for model in ["gbt", "ols"]:
+            for tricks in range(0, 11):
+                rows.append(
+                    {
+                        "model": model,
+                        "tricks_won": tricks,
+                        "count": max(1, 10 - abs(tricks - 5)),
+                        "fraction": 0.1,
+                        "source": "parquet",
+                    }
+                )
+        pd.DataFrame(rows).to_csv(
+            chart_data_dir / "outcome_distributions.csv", index=False
+        )
+
+        result = charts_mod.generate_dashboard_health(
+            tables_dir, charts_dir, chart_data_dir
+        )
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+
+# ──────────────────────────────────────────────
+#  Pass rate in health dashboard rate panel (F2)
+# ──────────────────────────────────────────────
+
+
+class TestPassRateInRatePanel:
+    """Tests that rate panel includes pass_rate when available."""
+
+    def test_rate_panel_with_pass_rate(self, charts_mod, tmp_path):
+        """Health dashboard rate panel renders 3 bar groups with pass_rate."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "bid_rate": [0.65, 0.55],
+                "pass_rate": [0.35, 0.45],
+                "make_rate": [0.72, 0.61],
+            }
+        ).to_csv(tables_dir / "behavior_summary.csv", index=False)
+
+        result = charts_mod.generate_dashboard_health(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()
+
+    def test_rate_panel_without_pass_rate(self, charts_mod, tmp_path):
+        """Health dashboard rate panel renders 2 bar groups without pass_rate."""
+        tables_dir = tmp_path / "tables"
+        tables_dir.mkdir()
+        charts_dir = tmp_path / "charts"
+        charts_dir.mkdir()
+
+        pd.DataFrame(
+            {
+                "model": ["gbt", "ols"],
+                "bid_rate": [0.65, 0.55],
+                "make_rate": [0.72, 0.61],
+            }
+        ).to_csv(tables_dir / "behavior_summary.csv", index=False)
+
+        result = charts_mod.generate_dashboard_health(tables_dir, charts_dir)
+        assert result is True
+        assert (charts_dir / "dashboard_health.png").exists()

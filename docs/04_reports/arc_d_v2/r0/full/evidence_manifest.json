@@ -320,8 +320,9 @@
       "name": "full_chart_suite/seat_balance.png",
       "title": "Seat Balance",
       "required": false,
-      "present": false,
-      "size_bytes": 0
+      "present": true,
+      "size_bytes": 24493,
+      "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/seat_balance.png"
     },
     {
       "number": 11,
@@ -373,24 +374,27 @@
       "name": "full_chart_suite/pred_vs_actual.png",
       "title": "Predicted vs Actual",
       "required": false,
-      "present": false,
-      "size_bytes": 0
+      "present": true,
+      "size_bytes": 79478,
+      "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/pred_vs_actual.png"
     },
     {
       "number": 17,
       "name": "full_chart_suite/residual_distribution.png",
       "title": "Residual Distribution",
       "required": false,
-      "present": false,
-      "size_bytes": 0
+      "present": true,
+      "size_bytes": 35137,
+      "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/residual_distribution.png"
     },
     {
       "number": 18,
       "name": "full_chart_suite/calibration_curve.png",
       "title": "Calibration Curve",
       "required": false,
-      "present": false,
-      "size_bytes": 0
+      "present": true,
+      "size_bytes": 45733,
+      "path": "docs/04_reports/arc_d_v2/r0/full/charts/full_chart_suite/calibration_curve.png"
     },
     {
       "number": 19,

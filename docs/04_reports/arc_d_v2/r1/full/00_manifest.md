@@ -76,15 +76,15 @@
 | 7 | H2H Heatmap | `full_chart_suite/h2h_heatmap.png` | 64,673 bytes | present |
 | 8 | H2H Ranking Scatter | `full_chart_suite/h2h_ranking_scatter.png` | 46,790 bytes | present |
 | 9 | Outcome Distributions | `full_chart_suite/outcome_distributions.png` | 77,952 bytes | present |
-| 10 | Seat Balance | `full_chart_suite/seat_balance.png` | - | absent |
+| 10 | Seat Balance | `full_chart_suite/seat_balance.png` | 24,493 bytes | present |
 | 11 | Contract Mix | `full_chart_suite/contract_mix_bars.png` | 27,378 bytes | present |
 | 12 | Bid and Make Rates | `full_chart_suite/bid_behavior_panel.png` | 40,159 bytes | present |
 | 13 | Bid Level Distribution | `full_chart_suite/bid_level_distribution.png` | 33,565 bytes | present |
 | 14 | R-squared by Contract | `full_chart_suite/r2_by_contract.png` | 35,934 bytes | present |
 | 15 | MAE by Contract | `full_chart_suite/mae_by_contract.png` | 36,745 bytes | present |
-| 16 | Predicted vs Actual | `full_chart_suite/pred_vs_actual.png` | - | absent |
-| 17 | Residual Distribution | `full_chart_suite/residual_distribution.png` | - | absent |
-| 18 | Calibration Curve | `full_chart_suite/calibration_curve.png` | - | absent |
+| 16 | Predicted vs Actual | `full_chart_suite/pred_vs_actual.png` | 67,882 bytes | present |
+| 17 | Residual Distribution | `full_chart_suite/residual_distribution.png` | 37,714 bytes | present |
+| 18 | Calibration Curve | `full_chart_suite/calibration_curve.png` | 54,536 bytes | present |
 | 19 | Selection Path | `full_chart_suite/selection_path.png` | 82,582 bytes | present |
 | 20 | Feature Importance | `full_chart_suite/feature_importance.png` | 104,763 bytes | present |
 | 21 | Decision Agreement | `full_chart_suite/decision_agreement.png` | - | absent |

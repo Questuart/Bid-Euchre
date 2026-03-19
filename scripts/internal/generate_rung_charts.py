@@ -1680,30 +1680,46 @@ def generate_dashboard_health(
     else:
         _unavailable_panel(ax, "Outcome Distributions")
 
-    # ── Panel 2: CDF / CCDF tail panel ──
+    # ── Panel 2: CDF / CCDF tail panel (contract-faceted when available) ──
     ax = axes[0, 1]
     if _is_real:
         models = sorted(dist_df["model"].unique())
         model_colors = _get_model_colors(models)
+        has_contracts = "contract" in dist_df.columns
+        contracts = sorted(dist_df["contract"].unique()) if has_contracts else [None]
+        contract_styles = {
+            "suit": "-",
+            "high": "--",
+            "low": ":",
+        }
         for model in models:
-            mdf = dist_df[dist_df["model"] == model]
-            expanded: list[int] = []
-            for _, row in mdf.iterrows():
-                expanded.extend([int(row["tricks_won"])] * int(row["count"]))
-            if expanded:
-                sorted_vals = np.sort(expanded)
-                cdf_y = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
-                ax.plot(
-                    sorted_vals,
-                    cdf_y,
-                    label=model,
-                    color=model_colors[model],
-                    linewidth=1.2,
-                )
+            for contract in contracts:
+                if contract is not None:
+                    mdf = dist_df[
+                        (dist_df["model"] == model) & (dist_df["contract"] == contract)
+                    ]
+                else:
+                    mdf = dist_df[dist_df["model"] == model]
+                expanded: list[int] = []
+                for _, row in mdf.iterrows():
+                    expanded.extend([int(row["tricks_won"])] * int(row["count"]))
+                if expanded:
+                    sorted_vals = np.sort(expanded)
+                    cdf_y = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+                    label = f"{model} ({contract})" if contract is not None else model
+                    linestyle = contract_styles.get(str(contract), "-")
+                    ax.plot(
+                        sorted_vals,
+                        cdf_y,
+                        label=label,
+                        color=model_colors[model],
+                        linestyle=linestyle,
+                        linewidth=1.2,
+                    )
         ax.set_xlabel("Tricks Won", fontsize=9)
         ax.set_ylabel("Cumulative Probability", fontsize=9)
         ax.set_title("CDF — Outcome Distribution", fontsize=11)
-        ax.legend(fontsize=7, loc="best")
+        ax.legend(fontsize=6, loc="best", ncol=2 if has_contracts else 1)
         ax.grid(True, alpha=0.3)
     else:
         _unavailable_panel(ax, "CDF / CCDF (requires row-level data)")
@@ -1783,23 +1799,36 @@ def generate_dashboard_health(
             comp = behavior_df
         models = comp["model"].tolist()
         x = np.arange(len(models))
-        width = 0.35
+        has_pass = "pass_rate" in comp.columns
+        width = 0.25 if has_pass else 0.35
         bid_rates = comp["bid_rate"].values
+        pass_rates = comp["pass_rate"].values if has_pass else None
         make_rates = (
             comp["make_rate"].values
             if "make_rate" in comp.columns
             else np.zeros(len(models))
         )
-        ax.bar(x - width / 2, bid_rates, width, label="Bid Rate", color="#4C72B0")
-        ax.bar(x + width / 2, make_rates, width, label="Make Rate", color="#55A868")
+        if has_pass:
+            ax.bar(x - width, bid_rates, width, label="Bid Rate", color="#4C72B0")
+            ax.bar(x, pass_rates, width, label="Pass Rate", color="#DD8452")
+            ax.bar(x + width, make_rates, width, label="Make Rate", color="#55A868")
+        else:
+            ax.bar(x - width / 2, bid_rates, width, label="Bid Rate", color="#4C72B0")
+            ax.bar(x + width / 2, make_rates, width, label="Make Rate", color="#55A868")
         ax.set_xticks(x)
         ax.set_xticklabels(models, rotation=45, ha="right", fontsize=7)
         ax.set_ylabel("Rate", fontsize=9)
-        ax.set_title("Bid / Make Rates", fontsize=11)
+        ax.set_title(
+            "Bid / Pass / Make Rates" if has_pass else "Bid / Make Rates",
+            fontsize=11,
+        )
         ax.legend(fontsize=8)
-        ax.set_ylim(0, max(1.05, max(bid_rates.max(), make_rates.max()) * 1.05))
+        all_rates = [bid_rates.max(), make_rates.max()]
+        if pass_rates is not None:
+            all_rates.append(pass_rates.max())
+        ax.set_ylim(0, max(1.05, max(all_rates) * 1.05))
     else:
-        _unavailable_panel(ax, "Bid / Make Rates")
+        _unavailable_panel(ax, "Bid / Pass / Make Rates")
 
     # ── Panel 6: Bid-level distribution ──
     ax = axes[2, 1]
