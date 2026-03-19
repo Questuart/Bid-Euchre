@@ -45,6 +45,7 @@ Canonical scripts:
 - `check_infra_pr_metadata.py` — Infra PR metadata checker (advisory governance gate)
 - `compare_rollup.py` — Drift detection (compares rollup against baseline fixture)
 - `compare_runs.py` — Run comparison utility with bootstrap statistics
+- `generate_dashboard.py` — Commit analytics dashboard (churn-corrected Bollinger Bands)
 - `generate_report.py` — Per-run report generator
 - `lint_repo.py` — Repository linter (enforces boundaries and data policy)
 - `run_bidless_diagnostics.py` — Bidless feature dataset diagnostics
@@ -229,6 +230,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/check_docs_freshness.py` | Docs freshness gate (path refs + script list) |
 | `scripts/check_infra_pr_metadata.py` | Infra PR metadata checker (advisory governance gate) |
 | `scripts/compare_runs.py` | Compare two runs with bootstrap statistics |
+| `scripts/generate_dashboard.py` | Commit analytics dashboard (churn-corrected Bollinger Bands) |
 | `scripts/compare_rollup.py` | Drift detection against baseline fixture |
 | `scripts/lint_repo.py` | Repository linter |
 | `scripts/run_charts.py` | Production chart generation |
