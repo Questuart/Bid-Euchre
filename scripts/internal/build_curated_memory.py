@@ -15,15 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-
-def _find_repo_root() -> Path:
-    """Find the git repository root."""
-    p = Path.cwd().resolve()
-    while p != p.parent:
-        if (p / ".git").exists() or (p / ".git").is_file():
-            return p
-        p = p.parent
-    return Path.cwd()
+from _repo_utils import find_repo_root
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    repo_root = _find_repo_root()
+    repo_root = find_repo_root()
     memory_dir = args.memory_dir or (
         repo_root / ".claude" / "runtime" / "curated_memory"
     )

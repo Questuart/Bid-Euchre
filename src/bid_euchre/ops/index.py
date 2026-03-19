@@ -29,6 +29,22 @@ logger = logging.getLogger("ops.index")
 DEFAULT_INDEX_DIR = Path(".claude/runtime/audit_index")
 DB_FILENAME = "audit.db"
 
+
+def _resolve_repo_path(relative: str) -> Path:
+    """Resolve a repo-relative path against the git repo root.
+
+    Walks up from the current working directory looking for ``.git``
+    (directory or worktree file).  Falls back to cwd if no repo root
+    is found (preserving existing behaviour).
+    """
+    p = Path.cwd().resolve()
+    while p != p.parent:
+        if (p / ".git").exists() or (p / ".git").is_file():
+            return p / relative
+        p = p.parent
+    return Path.cwd() / relative
+
+
 # Source types that can be indexed
 SOURCE_TYPES = frozenset(
     {
@@ -588,7 +604,7 @@ def _ingest_report_metadata(conn: sqlite3.Connection, reports_dir: Path) -> int:
         try:
             n = _ingest_manifest(conn, meta_file)
             total += n
-        except Exception as e:
+        except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
             logger.warning("Skipping report metadata %s: %s", meta_file, e)
 
     return total
@@ -630,11 +646,12 @@ def build_index(
     start = time.monotonic()
     result = BuildResult()
 
-    # Default directories
+    # Default directories — resolve against repo root so callers don't
+    # need to ensure cwd == repo root.
     if runtime_dir is None:
-        runtime_dir = Path(".claude/runtime")
+        runtime_dir = _resolve_repo_path(".claude/runtime")
     if plans_dir is None:
-        plans_dir = Path("plans")
+        plans_dir = _resolve_repo_path("plans")
 
     if full_rebuild:
         db_path = _get_db_path(index_dir)

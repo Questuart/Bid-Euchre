@@ -162,4 +162,8 @@ is found, fall back to `/data/` heuristic.
 
 ## Outcome
 
-_To be filled after implementation._
+**PR:** #939 — fix: address 8 deferred review findings (batch 2)
+**Status:** MERGED (2026-03-19)
+
+All 8 issues closed: #924, #922, #920, #908, #907, #900, #898, #895.
+Fixes across ops/, arc_d_v2/, CI workflow, and docs.

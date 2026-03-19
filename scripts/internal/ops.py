@@ -29,15 +29,7 @@ import json
 import sys
 from pathlib import Path
 
-
-def _find_repo_root() -> Path:
-    """Find the git repository root."""
-    p = Path.cwd().resolve()
-    while p != p.parent:
-        if (p / ".git").exists() or (p / ".git").is_file():
-            return p
-        p = p.parent
-    return Path.cwd()
+from _repo_utils import find_repo_root
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -1025,7 +1017,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # Resolve directories relative to repo root
-    repo_root = _find_repo_root()
+    repo_root = find_repo_root()
 
     if args.runtime_dir is None:
         args.runtime_dir = repo_root / ".claude" / "runtime"
