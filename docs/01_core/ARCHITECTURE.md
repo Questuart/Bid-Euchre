@@ -71,29 +71,54 @@ Shell scripts:
 Arc D v2 lineage scripts (orchestrator, reporting) are canonical execution tools
 that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 
+- `analyze_phase1a_matrix.py` — Phase 1A 2×2 model×label matrix H2H analysis (effect decomposition)
 - `audit_analysis.py` — Review pipeline audit (follow-up rates, corrective PRs, per-PR trail)
 - `blind_strategy_comparison.py` — Blind strategy comparison for Arc D evaluation (anonymize, rubric, unblind)
+- `calibrate_arc_d_thresholds.py` — Arc D gate threshold calibration from H2H null signal
+- `claude_fix_adapter.py` — Deterministic fix application from Codex findings (auto-fix + commit)
+- `codex_plan_review_adapter.py` — Codex CLI plan review adapter (tier detection, plan-scoped invocation, Claude failsafe)
+- `codex_review_adapter.py` — Codex CLI invocation and output parsing (review findings extraction)
+- `confidence_scorer.py` — Deterministic confidence scoring for P2 review findings (heuristic filtering)
+- `deterministic_prechecks.py` — Fast deterministic code checks (merge markers, RNG, imports)
 - `evaluate_diagnostic_tricks.py` — Diagnostic Ridge evaluation
 - `evaluate_gate_x3.py` — R1.5 Gate X3 offline ranking evaluation (action-value model vs oracle)
 - `extract_comparator_cis.py` — Bootstrap CIs for comparator battery metrics
+- `generate_action_value_dataset.py` — Counterfactual action-value dataset generator (R1.5)
 - `generate_advance_check.py` — Arc D v2 advance check generator (hypothesis + sufficiency + canary evaluation)
 - `generate_arc_dashboard.py` — Cross-rung Arc D progression dashboard
 - `generate_auction_context_dataset.py` — Auction-context dataset generator (R1 partner features)
 - `generate_batch_report.py` — Batch report + eligibility gate
+- `generate_cross_rung_tables.py` — Cross-rung progression table from per-rung comparator CIs
+- `generate_evidence_manifest.py` — Evidence manifest generator (JSON + markdown) for Arc D v2
+- `generate_interpretability.py` — Interpretability pipeline (SHAP, selection paths, decision comparison)
+- `generate_interpretability_charts.py` — Interpretability chart generation from CSV data
+- `generate_r1_5_diagnostics.py` — R1.5-v2 calibration diagnostics (cross-rung analysis + bimodality tests)
 - `generate_r4_charts.py` — One-off report chart regeneration utility
+- `generate_rung_charts.py` — CSV-first rung chart generation for Arc D v2 reports
+- `generate_rung_report.py` — Markdown rung report renderer from CSV tables and chart PNGs
+- `generate_rung_tables.py` — Canonical CSV table generation for Arc D v2 rung reports
+- `github_pr_state.py` — GitHub CLI wrappers for PR metadata and CI status
+- `manage_artifacts.py` — Artifact lifecycle CLI (status, supersession, quarantine, prune)
+- `plan_review_driver.py` — Plan review loop orchestrator (Codex -> fix -> re-review cycles with fallback alerting)
 - `play_policy_gate.py` — Play policy stability gate
-- `calibrate_arc_d_thresholds.py` — Arc D gate threshold calibration from H2H null signal
+- `review_driver.py` — Autonomous review loop orchestrator (state machine)
+- `review_state.py` — Review loop state schema, persistence, and transitions
 - `run_arc_d_gate.py` — Arc D promotion gate runner
 - `run_arc_d_h2h_battery.py` — H2H all-vs-all battery runner (competitive validation)
-- `run_play_confound_audit.py` — E1 play-policy confound audit (ranking comparison)
 - `run_auction_comparator.py` — Auction comparator orchestrator
 - `run_lambda_sweep.py` — Simulation-based risk_lambda tuning sweep
 - `run_normalizer_offline_screen.py` — Normalizer go/no-go offline screening pipeline
+- `run_play_confound_audit.py` — E1 play-policy confound audit (ranking comparison)
 - `run_rung.py` — Arc D v2 rung orchestrator (9-step runbook execution, multi-seed, QUICK/FULL pipeline)
 - `run_threshold_sweep.py` — Grid search over pass_threshold values (R1 threshold tuning)
 - `rung_state.py` — Rung orchestrator state management (RunState persistence, step/model tracking)
+- `suit_decision_diagnostic.py` — R1.5.3 Step 0 decision-level suit diagnostic (error taxonomy, boundary analysis)
+- `test_codex_plan_review_live.py` — Live smoke/quick/full test for Codex CLI plan review pipeline
+- `test_review_infra.py` — Tiered (SMOKE/QUICK/FULL) end-to-end review infrastructure test harness
+- `train_action_value.py` — Action-value OLS training pipeline (R1.5)
 - `train_unified_model.py` — Unified cross-contract OLS training (Track F OneModel)
 - `update_arc_registry.py` — Arc D registry updater (MODEL_ARC_RUNS.md)
+- `validate_action_value_artifact.py` — Behavioral validation gate for action-value artifacts
 - `validate_arc_d_rung_contract.py` — Arc D rung bundle validator
 
 Shell scripts:
