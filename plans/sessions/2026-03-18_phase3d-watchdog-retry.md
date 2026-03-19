@@ -81,4 +81,20 @@ And respond with bounded retry/reroute policy:
 
 ## Outcome
 
-_To be filled after implementation._
+**PR:** #927 — merged (pending review loop)
+**Commits:** 3 (feat + Codex review fix + doc sync)
+**Tests:** 125 unit tests (40 watchdog + 33 recovery + 19 scheduler + 34 CLI)
+
+### Shipped
+- 3 new watchdog rules: `check_ci_stuck()`, `check_subagent_failures()`, `check_scope_drift()`
+- Retry/reroute policy engine: `evaluate_retry_policy()` with bounded retries → reroute → escalate
+- Scheduler daemon mode: `daemon()` with configurable interval, hard cap 1000
+- 2 new CLI subcommands: `ops.py daemon`, `ops.py retry`
+- 2 new event types: `retry_attempted`, `task_rerouted`
+- `DEFAULT_CHECKS` includes all 6 watchdog names (Codex P1 fix)
+- Daemon returns non-zero on error stop (Codex P2 fix)
+
+### Known gaps (deferred, tracked as issues)
+- #928: `check_ci_stuck()` inert — no hook emits `ci_failure`/`ci_success` events yet
+- #929: `check_scope_drift()` inert — no hook populates `scope.declared_files`/`scope.touched_files` in task state
+- #930: `retry_attempted`/`task_rerouted` event types defined but not yet emitted by any automation
