@@ -127,6 +127,23 @@ update_last_active
         assert result.returncode == 0
         assert "SHOULD NOT REACH HERE" not in result.stdout
 
+    def test_uses_argv_not_shell_interpolation(self) -> None:
+        """Inline Python must use sys.argv, not shell interpolation (#860)."""
+        content = STEWARD_SCRIPT.read_text()
+        # Find the update_last_active function body
+        in_func = False
+        func_lines: list[str] = []
+        for line in content.split("\n"):
+            if "update_last_active()" in line:
+                in_func = True
+            if in_func:
+                func_lines.append(line)
+                if line.strip() == "}" and in_func:
+                    break
+        func_body = "\n".join(func_lines)
+        assert "sys.argv[1]" in func_body, "Must pass file path via sys.argv[1]"
+        assert "sys.argv[2]" in func_body, "Must pass timestamp via sys.argv[2]"
+
     def test_preserves_all_fields(self, tmp_path: Path, registry_dir: Path) -> None:
         """update_last_active() preserves all fields except last_active."""
         runtime_dir = tmp_path / ".claude" / "runtime"

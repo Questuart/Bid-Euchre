@@ -290,15 +290,23 @@ class TestStewardSession:
         assert "claude" in combined.lower()
 
 
+# ---------------------------------------------------------------------------
+# ci_poller.sh
+# ---------------------------------------------------------------------------
+
 CI_POLLER = WORKTREE_ROOT / "scripts" / "internal" / "ci_poller.sh"
 
 
 class TestCiPoller:
+    """Smoke tests for ci_poller.sh."""
+
     def test_syntax_valid(self) -> None:
         result = _run(["bash", "-n", str(CI_POLLER)])
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
     def test_merged_pr_check_present(self) -> None:
+        """ci_poller.sh must detect merged/closed PRs (#862)."""
         content = CI_POLLER.read_text()
-        assert "MERGED" in content
+        assert "MERGED" in content, "Missing MERGED detection"
+        assert "CLOSED" in content, "Missing CLOSED detection"
         assert "CLOSED" in content
