@@ -2,7 +2,7 @@
   "schema_version": "arc_d_evidence_manifest_v1",
   "lineage_id": "arc_d_v2",
   "rung_id": "r1",
-  "provenance_sha": "e3f1db3bba1ddc97b144c0b087b1acf3e270a17f",
+  "provenance_sha": "238b33866b872987d86a2169aca6ca2cc8a6d61c",
   "governing_plan": "",
   "plan_shas": [],
   "anchor": "anchor_hybrid_r0_full",
@@ -67,92 +67,92 @@
   "artifacts": [
     {
       "name": "advance_check",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/advance_check.json",
+      "path": "data/artifacts/arc_d_v2/r1/advance_check.json",
       "schema_version": "advance_check_v1"
     },
     {
       "name": "comparator_battery_r1_123",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_123.json",
+      "path": "data/artifacts/arc_d_v2/r1/comparator_battery_r1_123.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_battery_r1_42",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_42.json",
+      "path": "data/artifacts/arc_d_v2/r1/comparator_battery_r1_42.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_battery_r1_456",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_battery_r1_456.json",
+      "path": "data/artifacts/arc_d_v2/r1/comparator_battery_r1_456.json",
       "schema_version": "arc_d_comparator_v1"
     },
     {
       "name": "comparator_cis_r1_123",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_123.json",
+      "path": "data/artifacts/arc_d_v2/r1/comparator_cis_r1_123.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "comparator_cis_r1_42",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_42.json",
+      "path": "data/artifacts/arc_d_v2/r1/comparator_cis_r1_42.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "comparator_cis_r1_456",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/comparator_cis_r1_456.json",
+      "path": "data/artifacts/arc_d_v2/r1/comparator_cis_r1_456.json",
       "schema_version": "comparator_cis_v1"
     },
     {
       "name": "h2h_battery_full_123",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_full_123.json",
+      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_full_123.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_full_42",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_full_42.json",
+      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_full_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_full_456",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_full_456.json",
+      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_full_456.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_quick_42",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_quick_42.json",
+      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_quick_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "h2h_battery_smoke_42",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/h2h_battery_smoke_42.json",
+      "path": "data/artifacts/arc_d_v2/r1/h2h_battery_smoke_42.json",
       "schema_version": "h2h_battery_v2"
     },
     {
       "name": "roster",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/roster.json",
+      "path": "data/artifacts/arc_d_v2/r1/roster.json",
       "schema_version": "roster_v1"
     },
     {
       "name": "training_artifact_constrained_ols_av",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_constrained_ols_av.json",
+      "path": "data/artifacts/arc_d_v2/r1/training_artifact_constrained_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_full_ols_av",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_full_ols_av.json",
+      "path": "data/artifacts/arc_d_v2/r1/training_artifact_full_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_gbt_av",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_gbt_av.json",
+      "path": "data/artifacts/arc_d_v2/r1/training_artifact_gbt_av.json",
       "schema_version": "action_value_gbt_v1"
     },
     {
       "name": "training_artifact_selected_ols_av",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_selected_ols_av.json",
+      "path": "data/artifacts/arc_d_v2/r1/training_artifact_selected_ols_av.json",
       "schema_version": "action_value_olsa_v1"
     },
     {
       "name": "training_artifact_selected_two_stage_av",
-      "path": "../Bid-Euchre/data/artifacts/arc_d_v2/r1/training_artifact_selected_two_stage_av.json",
+      "path": "data/artifacts/arc_d_v2/r1/training_artifact_selected_two_stage_av.json",
       "schema_version": "two_stage_action_value_v1"
     }
   ],
