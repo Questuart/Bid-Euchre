@@ -10,6 +10,7 @@ Archive: ``.claude/runtime/events/events.archive.jsonl`` (drained events)
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 from datetime import datetime, timezone
@@ -96,7 +97,12 @@ def append_event(
     events_file = events_dir / EVENTS_FILE
 
     with open(events_file, "a") as f:
-        f.write(json.dumps(event, sort_keys=True) + "\n")
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(event, sort_keys=True) + "\n")
+            f.flush()
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
     logger.debug("Event appended: %s from %s", event_type, source)
     return event
@@ -171,6 +177,12 @@ def drain_events(
     Moves events with timestamps <= ``up_to`` from the active log to
     the archive file. If ``up_to`` is None, drains all events.
 
+    Note:
+        If the process crashes between archive append and active log rewrite,
+        drained events may appear in both files on next read. This is acceptable
+        because (a) events are advisory, not transactional, and (b) consumers
+        should be idempotent. The alternative (data loss) is worse.
+
     Args:
         events_dir: Override for events directory.
         up_to: Drain events up to this timestamp. None drains all.
@@ -229,42 +241,3 @@ def drain_events(
 
     logger.info("Drained %d events to archive", len(to_drain))
     return len(to_drain)
-
-
-def count_events(
-    events_dir: Path | None = None,
-    *,
-    event_type: str | None = None,
-) -> int:
-    """Count events in the active log.
-
-    Args:
-        events_dir: Override for events directory.
-        event_type: Count only events of this type.
-
-    Returns:
-        Number of matching events.
-    """
-    if events_dir is None:
-        events_dir = DEFAULT_EVENTS_DIR
-
-    events_file = events_dir / EVENTS_FILE
-    if not events_file.exists():
-        return 0
-
-    count = 0
-    with open(events_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if event_type is None:
-                count += 1
-            else:
-                try:
-                    event = json.loads(line)
-                    if event.get("event_type") == event_type:
-                        count += 1
-                except json.JSONDecodeError:
-                    continue
-    return count
