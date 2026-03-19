@@ -1111,7 +1111,7 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
   This is a pre-existing data limitation (the `bid_n_sq` derived feature is not
   in the eval parquet schema), not specific to GBT. Suit/high/low contract
   model-eval would require parquet feature engineering upstream.
-- **Chart regeneration (PR #TBD-charts):** Charts 16-18 (pred_vs_actual,
+- **Chart regeneration (PR #993):** Charts 16-18 (pred_vs_actual,
   residual_distribution, calibration_curve) and dashboard_model_eval regenerated
   for R0-R2/FULL from GBT-inclusive CSVs. All model-eval PNGs now reflect 5
   models. Manifests and evidence manifests updated with new byte sizes.
