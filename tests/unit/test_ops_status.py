@@ -101,22 +101,22 @@ class TestLoadSessions:
         assert len(sessions) == 1
         assert sessions[0]["lane_id"] == "author-a"
 
-    def test_v1_unknown_role_maps_to_unknown(self, runtime_dir: Path) -> None:
-        """v1 session with unrecognized role should get lane_id='unknown'."""
+    def test_v1_unmapped_role_uses_role_name(self, runtime_dir: Path) -> None:
+        """v1 session with unrecognized role preserves role as lane_id (#907)."""
         _write_json(
             runtime_dir / "session_metadata",
             "bogus-session.json",
             {
                 "schema_version": 1,
                 "session_id": "bogus-uuid",
-                "role": "bogus_role",
+                "role": "experiment",
                 "started_at": "2026-03-16T10:00:00Z",
-                "worktree_path": "/tmp/wt-bogus",
+                "worktree_path": "/tmp/wt-experiment",
             },
         )
         sessions = load_sessions(runtime_dir)
         assert len(sessions) == 1
-        assert sessions[0]["lane_id"] == "unknown"
+        assert sessions[0]["lane_id"] == "experiment"
 
 
 class TestLoadTasks:

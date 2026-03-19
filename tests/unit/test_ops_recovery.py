@@ -14,6 +14,7 @@ from bid_euchre.ops.recovery import (
     FailureClassification,
     RecoveryTemplate,
     RetryPolicy,
+    _resolution_target,
     classify_failure,
     evaluate_retry_policy,
     format_recovery_json,
@@ -119,6 +120,34 @@ class TestClassifyFailure:
         }
         result = classify_failure(event)
         assert result.target == "task-uuid-123"
+
+
+class TestResolutionTarget:
+    """Tests for _resolution_target()."""
+
+    def test_payload_target_takes_precedence(self) -> None:
+        event = {
+            "lane_id": "author-a",
+            "payload": {"target": "PR #100", "worktree_path": "/tmp/wt"},
+        }
+        assert _resolution_target(event) == "PR #100"
+
+    def test_worktree_path_used_when_no_target(self) -> None:
+        """Worktree events use worktree_path as fallback target (#922)."""
+        event = {
+            "event_type": "worktree_quarantined",
+            "lane_id": "author-a",
+            "payload": {"worktree_path": "/tmp/wt-ephemeral"},
+        }
+        assert _resolution_target(event) == "/tmp/wt-ephemeral"
+
+    def test_lane_id_fallback(self) -> None:
+        event = {"lane_id": "ops", "payload": {}}
+        assert _resolution_target(event) == "ops"
+
+    def test_unknown_when_nothing_available(self) -> None:
+        event = {"payload": {}}
+        assert _resolution_target(event) == "unknown"
 
 
 class TestGetActiveFailures:
@@ -324,6 +353,54 @@ class TestGetActiveFailures:
 
         failures = get_active_failures(events_dir)
         assert len(failures) == 0
+
+    def test_worktree_resolved_by_path_not_lane(self, events_dir: Path) -> None:
+        """worktree_archived resolves quarantine on same path, not same lane (#922)."""
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            # Quarantine on worktree A
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "event_type": "worktree_quarantined",
+                    "source": "ops",
+                    "lane_id": "author-a",
+                    "payload": {
+                        "worktree_path": "/tmp/wt-a",
+                        "details": "dirty",
+                    },
+                }
+            ),
+            # Quarantine on worktree B (same lane!)
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:01:00Z",
+                    "event_type": "worktree_quarantined",
+                    "source": "ops",
+                    "lane_id": "author-a",
+                    "payload": {
+                        "worktree_path": "/tmp/wt-b",
+                        "details": "stale",
+                    },
+                }
+            ),
+            # Archive worktree A only
+            json.dumps(
+                {
+                    "timestamp": "2026-03-18T10:05:00Z",
+                    "event_type": "worktree_archived",
+                    "source": "ops",
+                    "lane_id": "author-a",
+                    "payload": {"worktree_path": "/tmp/wt-a"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        failures = get_active_failures(events_dir)
+        # Only worktree B should still be active
+        assert len(failures) == 1
+        assert failures[0].target == "/tmp/wt-b"
 
     def test_mixed_resolved_and_unresolved(self, events_dir: Path) -> None:
         """Some failures resolved, others not → only unresolved returned (F6)."""

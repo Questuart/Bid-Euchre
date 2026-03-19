@@ -40,7 +40,13 @@ jobs:
       - name: Generate dashboard
         run: uv run python scripts/generate_dashboard.py --output assets/dashboard/commit_bollinger.png
 
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet -- assets/dashboard/ && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+
       - name: Commit updated dashboard
+        if: steps.changes.outputs.changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update commit analytics dashboard [skip ci]"

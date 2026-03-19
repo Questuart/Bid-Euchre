@@ -19,6 +19,7 @@ Extracted from ``scripts/internal/generate_rung_tables.py``.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 from pathlib import Path
@@ -733,14 +734,36 @@ def generate_dataset_provenance(
     return pd.DataFrame(rows)
 
 
-def _make_repo_relative(path: Path) -> str:
-    """Convert an absolute path to repo-relative by stripping up to ``data/``.
+@functools.lru_cache(maxsize=1)
+def _find_repo_root() -> Path | None:
+    """Find the repo root by walking up from this source file.
 
-    Looks for ``/data/`` in the path string and returns from ``data/`` onward.
-    Falls back to the path's basename if ``/data/`` is not found, to avoid
-    leaking absolute paths into committed artifacts.
+    Checks for ``.git`` (directory in a normal checkout, file in a
+    worktree).  Cached so the walk happens at most once per process.
     """
-    s = str(path)
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def _make_repo_relative(path: Path) -> str:
+    """Convert an absolute path to repo-relative.
+
+    Tries ``Path.relative_to(repo_root)`` first (accurate in all
+    layouts).  Falls back to the ``/data/`` marker heuristic, then
+    to the path's basename to avoid leaking absolute paths.
+    """
+    resolved = path.resolve()
+    root = _find_repo_root()
+    if root is not None:
+        try:
+            return str(resolved.relative_to(root))
+        except ValueError:
+            pass
+    # Fallback: /data/ marker heuristic
+    s = str(resolved)
     marker = "/data/"
     idx = s.find(marker)
     if idx >= 0:

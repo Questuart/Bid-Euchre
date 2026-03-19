@@ -81,7 +81,13 @@ def _get_open_prs() -> list[dict]:
         ]
     )
     if result.returncode != 0:
-        logger.warning("gh pr list failed: %s", result.stderr[:200])
+        if "Timed out" in result.stderr:
+            logger.error(
+                "gh pr list timed out — review data unavailable: %s",
+                result.stderr[:200],
+            )
+        else:
+            logger.warning("gh pr list failed: %s", result.stderr[:200])
         return []
 
     try:
@@ -152,9 +158,11 @@ def _get_review_status(
 ) -> str:
     """Extract review status from recognized review contexts.
 
-    Searches checks for any name matching ``review_contexts``. The first
-    match wins. This is configurable so the module is not locked to a
-    single review provider.
+    Collects all checks matching ``review_contexts`` and aggregates
+    deterministically: any FAILURE → ``"failure"``, any PENDING →
+    ``"pending"``, all SUCCESS → ``"success"``.  When multiple review
+    providers coexist, this avoids silently ignoring a failing provider
+    just because another provider appears first in the check list.
 
     Args:
         checks: List of check dicts with ``name`` and ``state`` keys.
@@ -163,16 +171,20 @@ def _get_review_status(
     Returns:
         "success", "failure", "pending", or "none" (if no review context found).
     """
-    for check in checks:
-        if check.get("name") in review_contexts:
-            state = check.get("state", "PENDING")
-            return {
-                "SUCCESS": "success",
-                "FAILURE": "failure",
-                "PENDING": "pending",
-                "IN_PROGRESS": "pending",
-            }.get(state, "unknown")
-    return "none"
+    states = [
+        check.get("state", "PENDING")
+        for check in checks
+        if check.get("name") in review_contexts
+    ]
+    if not states:
+        return "none"
+    if any(s == "FAILURE" for s in states):
+        return "failure"
+    if any(s in ("PENDING", "IN_PROGRESS") for s in states):
+        return "pending"
+    if all(s == "SUCCESS" for s in states):
+        return "success"
+    return "unknown"
 
 
 def _has_precheck_ci(checks: list[dict]) -> bool:

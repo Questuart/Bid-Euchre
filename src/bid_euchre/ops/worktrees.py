@@ -610,13 +610,26 @@ def _update_registry_cleanup_state(
             with open(json_path, "r+") as fh:
                 fcntl.flock(fh, fcntl.LOCK_EX)
                 try:
-                    data = json.loads(fh.read())
+                    try:
+                        data = json.loads(fh.read())
+                    except json.JSONDecodeError:
+                        logger.debug("Skipping malformed registry %s", json_path.name)
+                        continue
+
                     entry_path = data.get("worktree_path", "")
                     if entry_path and str(Path(entry_path).resolve()) == resolved:
                         data["cleanup_state"] = cleanup_state
-                        fh.seek(0)
-                        fh.truncate()
-                        fh.write(json.dumps(data, indent=2))
+                        try:
+                            fh.seek(0)
+                            fh.truncate()
+                            fh.write(json.dumps(data, indent=2))
+                        except OSError as exc:
+                            logger.error(
+                                "Registry match found at %s but write failed: %s",
+                                json_path.name,
+                                exc,
+                            )
+                            return False
                         logger.info(
                             "Updated registry %s: cleanup_state=%s",
                             json_path.name,
@@ -625,7 +638,7 @@ def _update_registry_cleanup_state(
                         return True
                 finally:
                     fcntl.flock(fh, fcntl.LOCK_UN)
-        except (json.JSONDecodeError, OSError):
+        except OSError:
             continue
 
     return False
@@ -765,13 +778,19 @@ def archive_worktree(
     registry_dir = runtime_dir / "worktree_registry"
     lane_id = "ops"
     registry_file_to_remove: Path | None = None
+    _v1_lane_map = {"author": "author-a", "review": "review", "ops": "ops"}
     for reg_file in (
         sorted(registry_dir.glob("*.json")) if registry_dir.exists() else []
     ):
         try:
             reg_data = json.loads(reg_file.read_text())
             if str(Path(reg_data.get("worktree_path", "")).resolve()) == resolved:
-                lane_id = reg_data.get("lane_id", "ops")
+                # Prefer lane_id; for v1 entries, infer from role field
+                lane_id = reg_data.get("lane_id")
+                if not lane_id and reg_data.get("schema_version", 1) < 2:
+                    role = reg_data.get("role", "ops")
+                    lane_id = _v1_lane_map.get(role, role)
+                lane_id = lane_id or "ops"
                 registry_file_to_remove = reg_file
                 break
         except (json.JSONDecodeError, OSError):
