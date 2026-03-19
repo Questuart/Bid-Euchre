@@ -106,8 +106,8 @@ class TestListWorktreesRegistry:
         assert entry["legacy_role"] == "author"
         assert entry["tmux_session"] is None
 
-    def test_v1_unknown_role_maps_to_unknown(self, registry_dir: Path) -> None:
-        """v1 entry with unrecognized role should get lane_id='unknown', not the raw role."""
+    def test_v1_unknown_role_uses_role_as_fallback(self, registry_dir: Path) -> None:
+        """v1 entry with unrecognized role should use the role name as fallback lane_id."""
         v1_entry = {
             "schema_version": 1,
             "role": "bogus_role",
@@ -123,8 +123,8 @@ class TestListWorktreesRegistry:
 
         entries = list_worktrees_registry(registry_dir)
         assert len(entries) == 1
-        assert entries[0]["lane_id"] == "unknown"
-        assert entries[0]["lane_class"] == "unknown"
+        assert entries[0]["lane_id"] == "bogus_role"
+        assert entries[0]["lane_class"] == "bogus_role"
         assert entries[0]["legacy_role"] == "bogus_role"
 
     def test_skips_malformed_files(self, registry_dir: Path) -> None:
