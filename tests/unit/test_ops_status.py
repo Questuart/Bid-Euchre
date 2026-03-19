@@ -12,9 +12,11 @@ from bid_euchre.ops.status import (
     aggregate_status,
     format_status_json,
     format_status_text,
+    get_task_scope,
     load_lane_registry,
     load_sessions,
     load_tasks,
+    update_task_scope,
 )
 
 
@@ -419,3 +421,156 @@ class TestFormatters:
         text = format_status_text(report)
         assert "Warnings: 1" in text
         assert "Something is wrong" in text
+
+
+# ---- Task Scope Management Tests ----
+
+
+class TestUpdateTaskScope:
+    """Tests for update_task_scope()."""
+
+    def test_set_declared_files(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        result = update_task_scope(
+            "t1",
+            declared_files=["src/bid_euchre/ops/*.py"],
+            runtime_dir=runtime_dir,
+        )
+        assert result["scope"]["declared_files"] == ["src/bid_euchre/ops/*.py"]
+        assert result["scope"]["touched_files"] == []
+
+    def test_set_touched_files_replace(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {
+                        "declared_files": [],
+                        "touched_files": ["old.py"],
+                    },
+                }
+            )
+        )
+        result = update_task_scope(
+            "t1",
+            touched_files=["new.py"],
+            runtime_dir=runtime_dir,
+        )
+        assert result["scope"]["touched_files"] == ["new.py"]
+
+    def test_append_touched_deduplicates(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {
+                        "declared_files": [],
+                        "touched_files": ["a.py", "b.py"],
+                    },
+                }
+            )
+        )
+        result = update_task_scope(
+            "t1",
+            touched_files=["b.py", "c.py"],
+            append_touched=True,
+            runtime_dir=runtime_dir,
+        )
+        assert result["scope"]["touched_files"] == ["a.py", "b.py", "c.py"]
+
+    def test_creates_scope_object_if_missing(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        result = update_task_scope(
+            "t1",
+            declared_files=["*.py"],
+            runtime_dir=runtime_dir,
+        )
+        assert "scope" in result
+        assert result["scope"]["declared_files"] == ["*.py"]
+        assert result["scope"]["touched_files"] == []
+
+    def test_raises_on_missing_task(self, runtime_dir: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            update_task_scope(
+                "nonexistent",
+                declared_files=["*.py"],
+                runtime_dir=runtime_dir,
+            )
+
+    def test_raises_on_no_arguments(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1"})
+        )
+        with pytest.raises(ValueError, match="At least one"):
+            update_task_scope("t1", runtime_dir=runtime_dir)
+
+    def test_atomic_write(self, runtime_dir: Path) -> None:
+        """Verify file is rewritten atomically (no .tmp leftover)."""
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        update_task_scope(
+            "t1",
+            declared_files=["src/*.py"],
+            runtime_dir=runtime_dir,
+        )
+        assert not (runtime_dir / "task_state" / "t1.tmp").exists()
+        # Verify file is valid JSON
+        data = json.loads((runtime_dir / "task_state" / "t1.json").read_text())
+        assert data["scope"]["declared_files"] == ["src/*.py"]
+
+    def test_preserves_other_fields(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "subject": "Do something",
+                    "owner_lane": "author-a",
+                }
+            )
+        )
+        result = update_task_scope(
+            "t1",
+            declared_files=["src/*.py"],
+            runtime_dir=runtime_dir,
+        )
+        assert result["subject"] == "Do something"
+        assert result["owner_lane"] == "author-a"
+
+
+class TestGetTaskScope:
+    """Tests for get_task_scope()."""
+
+    def test_returns_scope(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "scope": {
+                        "declared_files": ["src/*.py"],
+                        "touched_files": ["src/a.py"],
+                    },
+                }
+            )
+        )
+        scope = get_task_scope("t1", runtime_dir=runtime_dir)
+        assert scope["declared_files"] == ["src/*.py"]
+        assert scope["touched_files"] == ["src/a.py"]
+
+    def test_returns_empty_dict_if_no_scope(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1"})
+        )
+        scope = get_task_scope("t1", runtime_dir=runtime_dir)
+        assert scope == {}
+
+    def test_raises_on_missing_task(self, runtime_dir: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            get_task_scope("nonexistent", runtime_dir=runtime_dir)

@@ -17,6 +17,9 @@ Usage:
     uv run python scripts/internal/ops.py query --text TEXT [--type TYPE] [--limit N] [--json]
     uv run python scripts/internal/ops.py memory [--category CAT] [--json]
     uv run python scripts/internal/ops.py compact [--json]
+    uv run python scripts/internal/ops.py scope show --task TASK_ID [--json]
+    uv run python scripts/internal/ops.py scope set --task TASK_ID --declared PATTERN [PATTERN ...]
+    uv run python scripts/internal/ops.py scope touch --task TASK_ID --file PATH [PATH ...]
 """
 
 from __future__ import annotations
@@ -477,7 +480,7 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
 
 def cmd_retry(args: argparse.Namespace) -> int:
-    """Evaluate retry/reroute policy for a task."""
+    """Evaluate retry/reroute policy for a task and optionally emit events."""
     from bid_euchre.ops.events import read_events
     from bid_euchre.ops.recovery import (
         evaluate_retry_policy,
@@ -492,6 +495,7 @@ def cmd_retry(args: argparse.Namespace) -> int:
 
     max_retries = getattr(args, "max_retries", 3)
     lane = getattr(args, "lane", None)
+    emit = getattr(args, "emit", False)
 
     events_dir = args.runtime_dir / "events"
     events = read_events(events_dir, limit=200)
@@ -500,12 +504,74 @@ def cmd_retry(args: argparse.Namespace) -> int:
         task_id, events, max_retries=max_retries, current_lane=lane
     )
 
+    # Emit durable event for the policy decision
+    if emit:
+        _emit_retry_event(policy, lane or "unknown", events_dir)
+
     if args.json:
         print(json.dumps(format_retry_policy_json(policy), indent=2))
     else:
         print(format_retry_policy_text(policy))
 
     return 0
+
+
+def _emit_retry_event(
+    policy: object,
+    lane_id: str,
+    events_dir: Path,
+) -> None:
+    """Emit a durable event based on the retry policy decision.
+
+    Maps policy actions to event types:
+    - retry → retry_attempted
+    - reroute → task_rerouted
+    - escalate → escalation
+    """
+    from bid_euchre.ops.events import append_event
+
+    action = getattr(policy, "action", "")
+    task_id = getattr(policy, "task_id", "unknown")
+    retry_count = getattr(policy, "retry_count", 0)
+    reroute_to = getattr(policy, "reroute_to", None)
+    last_failure = getattr(policy, "last_failure", "unknown")
+
+    event_map = {
+        "retry": "retry_attempted",
+        "reroute": "task_rerouted",
+        "escalate": "escalation",
+    }
+
+    event_type = event_map.get(action)
+    if not event_type:
+        return
+
+    payload: dict[str, object] = {
+        "task_id": task_id,
+        "retry_count": retry_count,
+        "last_failure": last_failure,
+    }
+
+    if action == "reroute" and reroute_to:
+        payload["source_lane"] = lane_id
+        payload["target_lane"] = reroute_to
+
+    if action == "escalate":
+        payload["details"] = (
+            f"Task {task_id} exceeded retry cap "
+            f"({retry_count} failures) — human attention required"
+        )
+
+    try:
+        append_event(
+            event_type=event_type,
+            source="ops.retry",
+            lane_id=lane_id,
+            payload=payload,
+            events_dir=events_dir,
+        )
+    except Exception as e:
+        print(f"Warning: failed to emit {event_type} event: {e}", file=sys.stderr)
 
 
 def cmd_index(args: argparse.Namespace) -> int:
@@ -628,6 +694,121 @@ def cmd_compact(args: argparse.Namespace) -> int:
         print(json.dumps(format_archives_json(archives), indent=2))
     else:
         print(format_archives_text(archives))
+
+    return 0
+
+
+def cmd_scope(args: argparse.Namespace) -> int:
+    """Manage task scope fields (declared_files, touched_files)."""
+    scope_action = getattr(args, "scope_action", None)
+
+    if scope_action == "set":
+        return cmd_scope_set(args)
+    if scope_action == "touch":
+        return cmd_scope_touch(args)
+    if scope_action == "show":
+        return cmd_scope_show(args)
+
+    # No subcommand — show help
+    print("Usage: ops.py scope {show|set|touch} --task TASK_ID ...", file=sys.stderr)
+    return 1
+
+
+def cmd_scope_set(args: argparse.Namespace) -> int:
+    """Set declared_files for a task's scope."""
+    from bid_euchre.ops.status import update_task_scope
+
+    task_id = getattr(args, "task", None)
+    declared = getattr(args, "declared", None)
+
+    if not task_id:
+        print("Error: --task required", file=sys.stderr)
+        return 1
+    if not declared:
+        print("Error: --declared required", file=sys.stderr)
+        return 1
+
+    try:
+        data = update_task_scope(
+            task_id, declared_files=declared, runtime_dir=args.runtime_dir
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    scope = data.get("scope", {})
+    if args.json:
+        print(json.dumps(scope, indent=2))
+    else:
+        print(f"Scope updated for task {task_id}")
+        print(f"  declared_files: {scope.get('declared_files', [])}")
+
+    return 0
+
+
+def cmd_scope_touch(args: argparse.Namespace) -> int:
+    """Record touched files for a task's scope."""
+    from bid_euchre.ops.status import update_task_scope
+
+    task_id = getattr(args, "task", None)
+    files = getattr(args, "file", None)
+
+    if not task_id:
+        print("Error: --task required", file=sys.stderr)
+        return 1
+    if not files:
+        print("Error: --file required", file=sys.stderr)
+        return 1
+
+    try:
+        data = update_task_scope(
+            task_id,
+            touched_files=files,
+            append_touched=True,
+            runtime_dir=args.runtime_dir,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    scope = data.get("scope", {})
+    if args.json:
+        print(json.dumps(scope, indent=2))
+    else:
+        touched = scope.get("touched_files", [])
+        print(f"Recorded {len(files)} file(s) for task {task_id}")
+        print(f"  touched_files ({len(touched)} total): {touched}")
+
+    return 0
+
+
+def cmd_scope_show(args: argparse.Namespace) -> int:
+    """Show current scope for a task."""
+    from bid_euchre.ops.status import get_task_scope
+
+    task_id = getattr(args, "task", None)
+    if not task_id:
+        print("Error: --task required", file=sys.stderr)
+        return 1
+
+    try:
+        scope = get_task_scope(task_id, runtime_dir=args.runtime_dir)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(scope, indent=2))
+    else:
+        declared = scope.get("declared_files", [])
+        touched = scope.get("touched_files", [])
+        print(f"Scope for task {task_id}:")
+        print(f"  declared_files ({len(declared)}):")
+        for p in declared:
+            print(f"    - {p}")
+        print(f"  touched_files ({len(touched)}):")
+        for p in touched:
+            print(f"    - {p}")
 
     return 0
 
@@ -759,6 +940,11 @@ def build_parser() -> argparse.ArgumentParser:
     retry_parser.add_argument(
         "--lane", type=str, default=None, help="Current lane (for reroute target)"
     )
+    retry_parser.add_argument(
+        "--emit",
+        action="store_true",
+        help="Emit durable event for the policy decision (default: off)",
+    )
 
     # index
     index_parser = subparsers.add_parser("index", help="Build or show audit index")
@@ -790,6 +976,41 @@ def build_parser() -> argparse.ArgumentParser:
 
     # compact
     subparsers.add_parser("compact", help="List archived sessions")
+
+    # scope (with nested set/touch/show subcommands)
+    scope_parser = subparsers.add_parser(
+        "scope", help="Manage task scope fields (declared/touched files)"
+    )
+    scope_sub = scope_parser.add_subparsers(dest="scope_action")
+
+    scope_show_parser = scope_sub.add_parser("show", help="Show scope for a task")
+    scope_show_parser.add_argument(
+        "--task", type=str, required=True, help="Task ID to inspect"
+    )
+
+    scope_set_parser = scope_sub.add_parser(
+        "set", help="Set declared_files for a task scope"
+    )
+    scope_set_parser.add_argument("--task", type=str, required=True, help="Task ID")
+    scope_set_parser.add_argument(
+        "--declared",
+        type=str,
+        nargs="+",
+        required=True,
+        help="Glob patterns for declared file scope",
+    )
+
+    scope_touch_parser = scope_sub.add_parser(
+        "touch", help="Record touched files for a task scope"
+    )
+    scope_touch_parser.add_argument("--task", type=str, required=True, help="Task ID")
+    scope_touch_parser.add_argument(
+        "--file",
+        type=str,
+        nargs="+",
+        required=True,
+        help="File paths to record as touched",
+    )
 
     return parser
 
@@ -829,6 +1050,7 @@ def main(argv: list[str] | None = None) -> int:
         "query": cmd_query,
         "memory": cmd_memory,
         "compact": cmd_compact,
+        "scope": cmd_scope,
     }
 
     handler = commands.get(args.command)

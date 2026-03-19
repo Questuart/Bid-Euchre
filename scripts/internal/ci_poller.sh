@@ -86,6 +86,44 @@ write_status() {
 SEOF
 }
 
+emit_ci_event() {
+    # Emit a durable CI event to the ops event log (fire-and-forget).
+    # Args: $1=event_type (ci_failure|ci_success), $2=failure_class (optional)
+    local event_type="$1"
+    local failure_class="${2:-}"
+    local lane_id="unknown"
+
+    # Infer lane_id from worktree directory name
+    local dir_name
+    dir_name=$(basename "$REPO_ROOT")
+    case "$dir_name" in
+        *steward-author-scratch) lane_id="author-scratch" ;;
+        *steward-author-b)       lane_id="author-b" ;;
+        *steward-author-c)       lane_id="author-c" ;;
+        *steward-author-d)       lane_id="author-d" ;;
+        *steward-author)         lane_id="author-a" ;;
+        *steward-review)         lane_id="review" ;;
+        *steward-ops)            lane_id="ops" ;;
+    esac
+
+    EVENT_TYPE="$event_type" LANE_ID="$lane_id" PR_NUM_ENV="$PR_NUM" \
+    FAILURE_CLASS="$failure_class" \
+    uv run python -c "
+import os, json
+from bid_euchre.ops.events import append_event
+payload = {'pr_number': int(os.environ['PR_NUM_ENV'])}
+fc = os.environ.get('FAILURE_CLASS', '')
+if fc:
+    payload['failure_class'] = fc
+append_event(
+    os.environ['EVENT_TYPE'],
+    'ci_poller',
+    os.environ['LANE_ID'],
+    payload,
+)
+" 2>/dev/null || true
+}
+
 cleanup() {
     rm -f "$PID_FILE"
 }
@@ -191,6 +229,7 @@ while true; do
         FAILED_NAMES=$(echo "$CHECK_OUTPUT" | jq -r '[.[] | select(.state == "FAILURE") | .name] | join(", ")' 2>/dev/null || echo "unknown")
         echo "[$(date -u +%H:%M:%S)] CI FAILED: $FAILED_NAMES"
         write_status "failed" "Failed checks: $FAILED_NAMES"
+        emit_ci_event "ci_failure" "$FAILED_NAMES"
         echo "CI_FAILED: Failed checks: $FAILED_NAMES" > "$STATE_DIR/FAILED"
         exit 1
     fi
@@ -198,6 +237,7 @@ while true; do
     # --- ALL PASSED (matches github_pr_state.py: all(s == "SUCCESS")) ---
     if [ "$SUCCEEDED" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
         echo "[$(date -u +%H:%M:%S)] All ${TOTAL} checks passed!"
+        emit_ci_event "ci_success"
 
         if [ "$AUTO_MERGE" = true ]; then
             echo "[$(date -u +%H:%M:%S)] Attempting squash merge..."
