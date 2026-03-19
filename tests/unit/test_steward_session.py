@@ -7,6 +7,7 @@ infrastructure without requiring tmux to be running.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -244,6 +245,10 @@ class TestLaunchdTemplate:
     def test_plist_exists(self) -> None:
         assert PLIST_TEMPLATE.exists(), f"Missing: {PLIST_TEMPLATE}"
 
+    @pytest.mark.skipif(
+        shutil.which("plutil") is None,
+        reason="plutil is macOS-only; not available on Linux CI",
+    )
     def test_plist_valid_xml(self) -> None:
         result = subprocess.run(
             ["plutil", "-lint", str(PLIST_TEMPLATE)],
