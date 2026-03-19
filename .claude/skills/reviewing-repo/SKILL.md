@@ -19,7 +19,7 @@ Comprehensive repo health check following the protocol in `docs/02_agent/REPO_RE
 
 ## Wave 1 — Parallel Data Gathering (Phases 1-3 + Prompt Audit)
 
-Spawn **4 sub-agents in parallel** using the Task tool (`subagent_type: general-purpose`). Each agent works from the repo root and is **read-only** (no file edits).
+Spawn **4 sub-agents in parallel** using the Agent tool (`subagent_type: general-purpose`). Each agent works from the repo root and is **read-only** (no file edits).
 
 **Important:** Launch all 4 in a single message so they run concurrently.
 

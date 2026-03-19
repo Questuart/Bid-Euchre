@@ -57,6 +57,14 @@ What would you like to work on?
 - Presenting stale PR statuses without checking (if uncertain, verify with `gh pr view`)
 - Dumping the entire MEMORY.md raw instead of summarizing
 
+## Gotchas
+
+- MEMORY.md has a 200-line loading limit — lines after 200 are truncated; keep MEMORY.md as a concise index with details in topic files
+- MEMORY.md may be stale if the last session didn't update it — cross-check with `git log --oneline -10` for recent PRs
+- PR statuses in MEMORY.md are snapshots — verify with `gh pr view <N> --json state` if acting on them
+- Topic memory files (e.g., `memory/pr_history.md`) may contain more detailed context than MEMORY.md itself
+- Don't dump raw MEMORY.md to the user — summarize the three key parts (completed, status, next)
+
 ## Notes
 
 - This skill should be invoked at session start for best results

@@ -2,15 +2,15 @@
 
 Weighted rubric for evaluating governing plans (multi-rung research designs,
 lineage rebuilds, canonical plan revisions). Complements the tactical
-`/reviewing-plans` skill, which handles convention compliance for session-scoped
-plans.
+`/review-plan` skill, which handles convention compliance for session-scoped
+plans via Codex CLI + Claude failsafe.
 
 **When to use this rubric:**
 - Governing plans that span multiple rungs or PRs
 - Lineage rebuild plans
 - Any plan that defines a multi-step research program with promotion gates
 
-**When `/reviewing-plans` is sufficient:**
+**When `/review-plan` is sufficient:**
 - Session-scoped plans (single PR)
 - Bugfix or small feature plans
 - Plans with no experimental evaluation component

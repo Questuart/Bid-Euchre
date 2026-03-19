@@ -72,6 +72,14 @@ Mark the review loop as **SPAWNED** (not COMPLETE — it runs asynchronously).
 
 Output the handoff after a horizontal rule.
 
+## Gotchas
+
+- This skill is ONLY a dispatcher (~5s) — do NOT manually run review checks, read files, or create issues; the autonomous loop handles all of that
+- If `gh pr view` fails, you may not be in a worktree with an open PR — push and create the PR first
+- The review status is advisory (not required for merge) — a stuck `pending` won't block merging
+- The PostToolUse hook triggers `review_driver.py` asynchronously — if it doesn't fire, check `.claude/runtime/review_loops/` for state
+- Don't confuse this dispatcher with the post-MERGE review (different hook, different scope)
+
 ## Important Notes
 
 - **Do NOT read changed files** or apply manual review checks — the loop handles this.

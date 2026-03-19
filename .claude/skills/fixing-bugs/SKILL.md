@@ -19,7 +19,7 @@ Execute parallel bug fixes for cascading test failures using isolated worktree a
 For each independent failure category:
 1. **Create isolated worktree**: `git worktree add ../Bid-Euchre-bugfix-X <new-branch>`
 2. **Spawn sub-task agent** — see [AGENT_TEMPLATE.md](AGENT_TEMPLATE.md) for instructions format
-3. **Track progress** with TodoWrite
+3. **Track progress** with TaskCreate/TaskUpdate
 
 ### Phase 3: Converge Fixes
 1. Collect all agent diffs

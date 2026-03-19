@@ -35,7 +35,7 @@ For each work unit (respecting dependencies):
 - After each unit: Report progress to user
 - Before dependent unit: Verify prerequisite PR exists
 - If unit fails: Diagnose → attempt fix → continue with independent units
-- Track progress with TodoWrite
+- Track progress with TaskCreate/TaskUpdate
 
 ### Phase 5: Final Summary
 - List all PRs created
@@ -72,7 +72,7 @@ If a work unit fails:
 1. Capture error details
 2. Attempt automatic fix (read error, fix code, retry)
 3. If still failing: Report to user, continue with independent units
-4. Mark unit as blocked in TodoWrite
+4. Mark unit as blocked with TaskUpdate
 5. Update MEMORY.md with blocker details
 
 If Unit C depends on blocked Unit A:
@@ -80,9 +80,17 @@ If Unit C depends on blocked Unit A:
 - Continue with independent units
 - Report blocking chain to user
 
+## Gotchas
+
+- Spawned agents silently die when they exhaust their context window (~15 min or ~700KB output) — keep agent tasks small and focused (one concept per agent)
+- Never combine fix + validation in one agent — run validation separately after the fix agent completes
+- Plan files may live in `plans/` (not just `docs/plans/`) — check both locations
+- Agent reliability degrades sharply above 10 minutes — prefer small sequential agents over large combined ones
+- If an agent goes silent, check output file size: identical size after 5 seconds means the agent is dead
+
 ## Notes
 
-- Plan file must exist at `docs/plans/[PLAN_FILE].md`
+- Plan file must exist at `docs/plans/[PLAN_FILE].md` or `plans/`
 - Each work unit should be PR-sized
 - Agents operate with full autonomy (no confirmation prompts)
 - Best for 3-6 unit plans (larger plans → use `/chunking-prs`)
