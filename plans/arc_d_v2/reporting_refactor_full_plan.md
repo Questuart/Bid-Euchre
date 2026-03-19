@@ -1098,20 +1098,17 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
   The 23-chart registry is preserved for future use if eval data becomes
   available.
 
-**DS-3: GBT model evaluation — code fixed, R0-R2 regeneration deferred**
-- **Fixed (PR #TBD):** `generate_model_eval_csvs()` now accepts `rung_dir`
+~~**DS-3: GBT model evaluation skipped**~~ **RESOLVED**
+- **Code fix (PR #972):** `generate_model_eval_csvs()` now accepts `rung_dir`
   and searches for GBT `.joblib` files in the rung artifacts directory
   (`data/artifacts/arc_d_v2/<rung>/`).
-- The path mismatch that caused GBT models to be skipped has been resolved
-  in code. The fix is backward-compatible (new `rung_dir` parameter defaults
-  to `None`, preserving existing behavior).
-- **Remaining gap:** R0-R2/FULL `predictions.csv`, `residuals.csv`, and
-  `calibration_bins.csv` still contain only OLS-family model rows. A
-  regeneration pass would add GBT rows to these CSVs.
-- Policy: Narrowed from "code-blocked" to "regeneration-deferred". The
-  pipeline is now capable; a future regeneration PR can realize the benefit.
+- **Regeneration (PR #TBD):** R0-R2/FULL `predictions.csv`, `residuals.csv`,
+  and `calibration_bins.csv` regenerated with all 5 models: `constrained_ols_av`,
+  `full_ols_av`, `gbt_av`, `selected_ols_av`, `selected_two_stage_av`.
+- GBT model-eval evidence now ships in all FULL bundles (R0-R3).
+- Manifests and evidence manifests updated to reflect new CSV sizes.
 
-~~**DS-4: R3/full bundle stale relative to R0-R2**~~ **RESOLVED (PR #TBD)**
+~~**DS-4: R3/full bundle stale relative to R0-R2**~~ **RESOLVED (PR #972)**
 - R3/full Charts 10, 16-18 (seat_balance, pred_vs_actual, residual_distribution,
   calibration_curve) regenerated from existing chart_data CSVs.
 - R3/full manifest and evidence_manifest updated to reflect present charts.

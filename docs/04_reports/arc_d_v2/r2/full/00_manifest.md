@@ -91,12 +91,12 @@
 | Name | Size |
 |------|------|
 | `bid_levels.csv` | 873 bytes |
-| `calibration_bins.csv` | 1,725 bytes |
+| `calibration_bins.csv` | 2,038 bytes |
 | `contract_mix.csv` | 863 bytes |
 | `feature_importances.csv` | 12,491 bytes |
 | `h2h_by_contract.csv` | 16,395 bytes |
 | `outcome_distributions.csv` | 1,592 bytes |
-| `predictions.csv` | 677,929 bytes |
-| `residuals.csv` | 2,733 bytes |
+| `predictions.csv` | 795,598 bytes |
+| `residuals.csv` | 3,195 bytes |
 | `seat_balance.csv` | 347 bytes |
 | `selection_paths.csv` | 12,491 bytes |
