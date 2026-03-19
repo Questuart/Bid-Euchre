@@ -1,3 +1,7 @@
+> **DEPRECATED:** This file is a historical narrative artifact from the Arc D v2
+> lineage. The canonical decision surface is `02_decision.md`. This file is
+> retained for reference but will not be updated or regenerated.
+
 # R0 FULL — Rung Decision Report
 
 **Lineage:** Arc D v2

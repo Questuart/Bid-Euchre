@@ -3,7 +3,7 @@
 <!-- review-tier: governing -->
 
 **Date:** 2026-03-18
-**Status:** COMPLETE — §15 remaining work resolved (PRs #865, #877, #881)
+**Status:** PARTIALLY COMPLETE — see §16 for verified remaining gaps and active remediation
 **Owner:** Reporting refactor follow-up
 **Audience:** Implementation handoff to another agent
 **Replaces:** `plans/arc_d_v2/reporting_refactor_implementation_outline.md` as the execution spec
@@ -926,7 +926,9 @@ If implementation reveals a conflict with this plan:
 
 ## Outcome
 
-**Status:** COMPLETE (2026-03-18)
+**Status:** PARTIALLY COMPLETE (2026-03-18)
+
+7 PRs merged covering bulk of Phases 0-6. Remaining gaps identified in §16.
 
 ### Implementation History
 
@@ -947,16 +949,16 @@ If implementation reveals a conflict with this plan:
 - ✅ QUICK and FULL both produce usable 00/01/02 bundles
 - ✅ QUICK decision reports: r2/r3 regenerated PENDING → PRELIMINARY (#877); r0/r1 show ADVANCE (correct)
 - ✅ Health analysis: FULL bundles now have `source=parquet` outcome distributions (#881); QUICK bundles remain synthetic (no QUICK parquet exists — acceptable)
-- ✅ Model evaluation: FULL bundles now include predictions.csv, residuals.csv, calibration_bins.csv (#881); GBT model eval skipped (joblib path mismatch — acceptable known gap)
-- ✅ behavior_by_contract.csv facets by contract (via bidders_by_contract)
+- ⚠️ Model evaluation: R0-R2 FULL bundles include predictions.csv, residuals.csv, calibration_bins.csv (#881); **R3 FULL is missing all 4 model-eval CSVs** (regenerated before #881); GBT model eval skipped (joblib path mismatch — acceptable known gap)
+- ❌ behavior_by_contract.csv facets by contract — **still pooled-only**; code checks for `bidders_by_contract` in comparator_cis but source data lacks this key
 - ✅ bid_levels.csv: FULL bundles have per-bid-level schema (#881); QUICK bundles have aggregate fallback (acceptable)
 - ✅ Manifests correctly report mode, seeds, and model class
-- ✅ 02_decision.md is the sole decision artifact (04_rung_decision.md historical only)
+- ⚠️ 02_decision.md is the primary decision artifact but 04_rung_decision.md still ships in all 4 full bundles (not yet removed or folded)
 - ✅ 23-chart numbered registry preserved
 - ✅ No new top-level report files added
 - ✅ Chart 20 registry and generator correctly point to `feature_importances.csv`
 - ✅ Health dashboard panel layout recomposed to §6.2 (#877): outcome-violin / CDF-CCDF / seat-balance / contract-mix / rates / bid-level
-- ✅ seat_balance.csv present in FULL bundles (#881); absent from QUICK (no parquet — acceptable)
+- ⚠️ seat_balance.csv present in R0-R2 FULL bundles (#881); **absent from R3 FULL** (regenerated before #881); absent from QUICK (no parquet — acceptable)
 
 ## 15. Remaining Work
 
@@ -987,7 +989,7 @@ R0-R2 FULL bundles regenerated with parquet-backed chart_data:
 - `residuals.csv` — binned residuals (was absent)
 - `calibration_bins.csv` — decile calibration (was absent)
 
-Stale `outcome_summary.csv` and `outcome_distributions.status` removed.
+Stale `outcome_distributions.status` removed. `outcome_summary.csv` removed from R0-R2 FULL bundles but **still present in 9 locations**: 4 quick, 4 canonical, and R3/full.
 
 **Remaining known gap:** GBT model eval skipped (joblib at different path).
 QUICK bundles remain synthetic (no QUICK parquet exists). Both are acceptable.
@@ -999,3 +1001,51 @@ Canonical producer declared in Phase 2 amendment.
 ### Handoff Reference
 
 Follow-up plan: `plans/sessions/2026-03-18_dashboard-data-contract-completion.md`
+
+## 16. Verified Remaining Gaps (2026-03-18)
+
+Post-implementation audit found the following gaps between the governing plan's
+acceptance criteria and shipped bundle reality.
+
+**Active remediation plan:** `plans/sessions/2026-03-18_reporting-refactor-alignment-closeout.md`
+
+### 16.1 behavior_by_contract.csv — pooled-only
+
+`generate_behavior_by_contract()` correctly checks for `bidders_by_contract`
+in comparator_cis, but the source JSON artifacts lack this key. All 12
+committed behavior_by_contract.csv files contain only `contract=pooled` rows.
+
+**Fix:** Either populate `bidders_by_contract` in the comparator CIs pipeline
+(preferred) or compute per-contract behavior from H2H battery data.
+
+### 16.2 outcome_summary.csv — still present in 9 locations
+
+Committed in: r0-r3 quick (4), r0-r3 canonical (4), r3/full (1).
+Code generation path was removed in #820, but committed files were not
+cleaned up for quick/canonical/r3-full.
+
+**Fix:** `git rm` the 9 files.
+
+### 16.3 R3/full chart_data — missing model-eval CSVs
+
+R0-R2 full bundles were regenerated with parquet-backed chart_data (#881).
+R3/full was regenerated earlier (#886) and missed the 4 model-eval CSVs:
+predictions.csv, residuals.csv, calibration_bins.csv, seat_balance.csv.
+
+**Fix:** Regenerate R3/full bundle from corrected pipeline.
+
+### 16.4 04_rung_decision.md — still ships in full bundles
+
+All 4 full bundles include 04_rung_decision.md. Per §3.1 and §8.3, this
+content should be folded into 02_decision.md and the extra file removed.
+
+**Fix:** Fold useful narrative into 02_decision.md, remove 04_rung_decision.md
+from regenerated bundles.
+
+### 16.5 Chart-data ownership lock
+
+| CSV | Canonical Producer | Fallback | Status |
+|-----|-------------------|----------|--------|
+| `decision_comparison.csv` | `scripts/internal/generate_interpretability.py` | `tables.py` dormant extractor | Documented in §Phase 2; no wiring gap |
+| `disagreement_outcomes.csv` | `scripts/internal/generate_interpretability.py` | `tables.py` dormant extractor | Documented in §Phase 2; no wiring gap |
+| `cross_rung_progression.csv` | `scripts/internal/generate_cross_rung_progression.py` CLI | — | Optional supporting evidence (§7.12); keep as-is, not required for acceptance |
