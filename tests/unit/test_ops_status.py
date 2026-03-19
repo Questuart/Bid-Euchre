@@ -818,6 +818,122 @@ class TestSynthesizeLaneActivity:
         assert lane.current_task_id == "t2"
         assert lane.current_task_title == "Blocked"
 
+    def test_last_progress_mixed_iso_formats(self) -> None:
+        """last_progress correctly compares Z, +00:00, and naive timestamps.
+
+        Regression test for P1 finding: lexicographic max() on mixed ISO
+        formats gives wrong results (e.g., "Z" < "+00:00" lexicographically).
+        """
+        now = datetime(2026, 3, 19, 16, 0, 0, tzinfo=timezone.utc)
+        # The +00:00 timestamp is actually later, but sorts before Z lexicographically
+        lanes = [
+            _make_lane(
+                "author-a",
+                session_id="s1",
+                last_active="2026-03-19T14:00:00Z",  # 14:00 UTC
+            )
+        ]
+        sessions = {
+            "author-a": {
+                "task": "Work",
+                "started_at": "2026-03-19T15:00:00+00:00",  # 15:00 UTC — later
+            }
+        }
+        tasks = {
+            "author-a": [
+                _make_task(
+                    "t1",
+                    "author-a",
+                    progress={
+                        "last_forward_progress_at": "2026-03-19T15:30:00",  # naive, 15:30 UTC
+                    },
+                ),
+            ],
+        }
+
+        result = synthesize_lane_activity(lanes, sessions, tasks, [], now=now)
+        lane = result[0]
+        # 15:30 naive (treated as UTC) is the latest — should be selected
+        assert lane.last_progress == "2026-03-19T15:30:00"
+        # 30 min old — not stale (threshold is 30 min)
+        assert lane.attention_needed is False
+
+    def test_last_progress_z_vs_offset(self) -> None:
+        """Z suffix and +00:00 represent the same instant — later one wins."""
+        now = datetime(2026, 3, 19, 16, 0, 0, tzinfo=timezone.utc)
+        lanes = [
+            _make_lane(
+                "author-a",
+                session_id="s1",
+                last_active="2026-03-19T15:00:00+00:00",
+            )
+        ]
+        sessions = {
+            "author-a": {
+                "task": "Work",
+                "started_at": "2026-03-19T15:30:00Z",  # Same as +00:00, but later
+            }
+        }
+
+        result = synthesize_lane_activity(lanes, sessions, {}, [], now=now)
+        lane = result[0]
+        # 15:30Z is later than 15:00+00:00
+        assert lane.last_progress == "2026-03-19T15:30:00Z"
+
+
+class TestSessionSelectionTimezone:
+    """Tests for session selection with mixed ISO formats."""
+
+    def test_session_selection_mixed_formats(self, runtime_dir: Path) -> None:
+        """Most recent session selected despite mixed ISO formats.
+
+        Regression test: lexicographic comparison of "Z" vs "+00:00"
+        can pick the wrong session.
+        """
+        # Older session with Z suffix
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-old.json",
+            {
+                "schema_version": 2,
+                "session_id": "old",
+                "lane_id": "author-a",
+                "started_at": "2026-03-19T14:00:00Z",
+                "task": "Old task",
+            },
+        )
+        # Newer session with +00:00 suffix
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-new.json",
+            {
+                "schema_version": 2,
+                "session_id": "new",
+                "lane_id": "author-a",
+                "started_at": "2026-03-19T15:00:00+00:00",
+                "task": "New task",
+            },
+        )
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "author-a.json",
+            {
+                "schema_version": 2,
+                "lane_id": "author-a",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-a",
+                "branch": "codex/steward-author",
+                "class": "persistent",
+                "session_id": "new",
+                "last_active": "2026-03-19T15:00:00+00:00",
+            },
+        )
+
+        report = aggregate_status(runtime_dir)
+        lane = report.lanes[0]
+        # Must pick "New task" (15:00) not "Old task" (14:00)
+        assert lane.session_task == "New task"
+
 
 class TestAggregateStatusLaneActivity:
     """Integration tests for lane-activity via aggregate_status()."""
