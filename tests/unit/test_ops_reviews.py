@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from bid_euchre.ops.reviews import (
+    DEFAULT_REVIEW_CONTEXTS,
     ReviewOutcome,
     _classify_ci_status,
     _get_review_status,
@@ -105,6 +106,36 @@ class TestGetReviewStatus:
     def test_empty_checks(self) -> None:
         assert _get_review_status([]) == "none"
 
+    def test_custom_review_context(self) -> None:
+        """Custom review context is recognized when passed."""
+        checks = [{"name": "codex-review", "state": "SUCCESS"}]
+        assert (
+            _get_review_status(checks, review_contexts=("codex-review",)) == "success"
+        )
+
+    def test_custom_context_excludes_default(self) -> None:
+        """Custom contexts don't include defaults unless explicitly listed."""
+        checks = [{"name": "reviewing-changes", "state": "SUCCESS"}]
+        assert _get_review_status(checks, review_contexts=("codex-review",)) == "none"
+
+    def test_default_contexts_constant(self) -> None:
+        """DEFAULT_REVIEW_CONTEXTS includes reviewing-changes."""
+        assert "reviewing-changes" in DEFAULT_REVIEW_CONTEXTS
+
+
+class TestClassifyCIStatusCustomContexts:
+    """Tests for _classify_ci_status() with custom review contexts."""
+
+    def test_custom_review_context_excluded_from_ci(self) -> None:
+        checks = [
+            {"name": "codex-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        # codex-review is a review context, not CI — should be excluded
+        assert (
+            _classify_ci_status(checks, review_contexts=("codex-review",)) == "success"
+        )
+
 
 class TestHasPrecheckCI:
     """Tests for _has_precheck_ci()."""
@@ -197,6 +228,13 @@ class TestGetOpenPRReviews:
     @patch("bid_euchre.ops.reviews._run_gh")
     def test_gh_failure_returns_empty(self, mock_gh: object) -> None:
         mock_gh.return_value = _mock_result(returncode=1, stderr="auth error")
+        outcomes = get_open_pr_reviews()
+        assert outcomes == []
+
+    @patch("bid_euchre.ops.reviews.subprocess.run")
+    def test_gh_timeout_returns_empty(self, mock_run: object) -> None:
+        """Timeout on gh CLI returns empty list, not a hang."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="gh", timeout=30)
         outcomes = get_open_pr_reviews()
         assert outcomes == []
 

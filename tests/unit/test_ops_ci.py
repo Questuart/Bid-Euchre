@@ -153,7 +153,7 @@ class TestClassifyCIFailure:
         result = classify_ci_failure("rm -rf /important/data")
         assert result.failure_class == "risky_destructive"
 
-    # --- Fallback ---
+    # --- Fallback (log_output mode) ---
 
     def test_unknown_output_falls_back_to_deterministic_test(self) -> None:
         result = classify_ci_failure("something unexpected happened")
@@ -163,6 +163,24 @@ class TestClassifyCIFailure:
     def test_empty_output_falls_back(self) -> None:
         result = classify_ci_failure("")
         assert result.failure_class == "deterministic_test"
+
+    # --- name_only evidence level ---
+
+    def test_name_only_with_matching_pattern(self) -> None:
+        """Name-only still classifies when the name contains a pattern."""
+        result = classify_ci_failure("ruff check", evidence_level="name_only")
+        assert result.failure_class == "lint_format"
+
+    def test_name_only_generic_falls_to_unclassified(self) -> None:
+        """Generic job name like 'tests' should NOT guess a class."""
+        result = classify_ci_failure("tests", evidence_level="name_only")
+        assert result.failure_class == "unclassified"
+        assert result.auto_remediable is False
+        assert "tests" in result.details
+
+    def test_name_only_unknown_falls_to_unclassified(self) -> None:
+        result = classify_ci_failure("build", evidence_level="name_only")
+        assert result.failure_class == "unclassified"
 
     # --- Classification output structure ---
 
@@ -200,6 +218,7 @@ class TestCIFailureClasses:
             "flaky_external",
             "infra_auth",
             "risky_destructive",
+            "unclassified",
         }
         assert set(CI_FAILURE_CLASSES.keys()) == expected
 
@@ -209,7 +228,12 @@ class TestCIFailureClasses:
 
     def test_non_remediable_classes(self) -> None:
         manual = {k for k, v in CI_FAILURE_CLASSES.items() if not v["auto_remediable"]}
-        assert manual == {"flaky_external", "infra_auth", "risky_destructive"}
+        assert manual == {
+            "flaky_external",
+            "infra_auth",
+            "risky_destructive",
+            "unclassified",
+        }
 
 
 # --- poll_ci_status tests (mocked gh) ---
@@ -243,8 +267,8 @@ class TestPollCIStatus:
         report = poll_ci_status(200)
         assert report.overall == "failure"
         assert len(report.classifications) == 1
-        # "tests" check name matches deterministic_test pattern
-        assert report.classifications[0].failure_class == "deterministic_test"
+        # "tests" is a generic name — name_only evidence → unclassified
+        assert report.classifications[0].failure_class == "unclassified"
 
     @patch("bid_euchre.ops.ci.subprocess.run")
     def test_lint_failure_classified(self, mock_run: object) -> None:
@@ -304,6 +328,29 @@ class TestPollCIStatus:
 
         report = poll_ci_status(800)
         assert report.overall == "pending"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_custom_review_context_excluded(self, mock_run: object) -> None:
+        """Custom review contexts are excluded from CI checks."""
+        checks = [
+            {"name": "codex-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(900, review_contexts=("codex-review",))
+        assert report.overall == "success"
+        assert len(report.checks) == 1
+        assert report.checks[0].name == "tests"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_timeout_returns_unknown(self, mock_run: object) -> None:
+        """Timeout on gh CLI returns unknown status."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="gh", timeout=30)
+
+        report = poll_ci_status(999)
+        assert report.overall == "unknown"
+        assert report.checks == []
 
 
 # --- Formatting tests ---

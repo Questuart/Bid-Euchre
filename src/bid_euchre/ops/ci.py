@@ -16,6 +16,8 @@ import re
 import subprocess
 from dataclasses import asdict, dataclass
 
+from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
+
 logger = logging.getLogger("ops.ci")
 
 
@@ -57,6 +59,12 @@ CI_FAILURE_CLASSES: dict[str, dict] = {
         "max_retries": 0,
         "description": "Potentially destructive operation detected",
         "hint": "Review the change manually before retrying",
+    },
+    "unclassified": {
+        "auto_remediable": False,
+        "max_retries": 1,
+        "description": "Failure class unknown — insufficient evidence to classify",
+        "hint": "Inspect the CI check logs for details",
     },
 }
 
@@ -158,14 +166,25 @@ _CLASSIFICATION_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
-def classify_ci_failure(check_output: str) -> CIFailureClassification:
+def classify_ci_failure(
+    check_output: str,
+    *,
+    evidence_level: str = "log_output",
+) -> CIFailureClassification:
     """Classify a CI failure from its output text.
 
-    Uses pattern matching to categorize the failure. Falls back to
-    ``deterministic_test`` if no pattern matches.
+    Uses pattern matching to categorize the failure. When only a check
+    name is available (``evidence_level="name_only"``), classification is
+    best-effort — if no pattern matches, the failure is reported as
+    ``unclassified`` rather than defaulting to ``deterministic_test``.
 
     Args:
-        check_output: The CI check output/log text.
+        check_output: The CI check output/log text (or check name when
+            evidence_level is "name_only").
+        evidence_level: Quality of the input evidence. One of:
+            - ``"log_output"`` — full CI log text (default, highest confidence).
+            - ``"name_only"`` — only the check name is available (lower confidence;
+              falls back to ``unclassified`` instead of guessing).
 
     Returns:
         CIFailureClassification with category, remediation hint, and details.
@@ -182,7 +201,19 @@ def classify_ci_failure(check_output: str) -> CIFailureClassification:
                 remediation_hint=meta["hint"],
             )
 
-    # Fallback: classify as deterministic test failure
+    # Fallback depends on evidence level
+    if evidence_level == "name_only":
+        # Insufficient evidence — do not guess
+        meta = CI_FAILURE_CLASSES["unclassified"]
+        return CIFailureClassification(
+            failure_class="unclassified",
+            auto_remediable=meta["auto_remediable"],
+            description=meta["description"],
+            details=f"Check name only: {check_output!r}",
+            remediation_hint=meta["hint"],
+        )
+
+    # Full log output but no pattern matched — likely a test failure
     meta = CI_FAILURE_CLASSES["deterministic_test"]
     return CIFailureClassification(
         failure_class="deterministic_test",
@@ -193,27 +224,44 @@ def classify_ci_failure(check_output: str) -> CIFailureClassification:
     )
 
 
-def poll_ci_status(pr_number: int) -> CIStatusReport:
+def poll_ci_status(
+    pr_number: int,
+    *,
+    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+) -> CIStatusReport:
     """Poll CI status for a PR with per-check breakdown.
 
     Args:
         pr_number: GitHub PR number.
+        review_contexts: Check names to exclude from CI aggregation
+            (they represent review outcomes, not CI results). Uses the
+            same shared default as ``reviews.py``.
 
     Returns:
         CIStatusReport with overall status and per-check results.
     """
-    result = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "checks",
-            str(pr_number),
-            "--json",
-            "name,state",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "checks",
+                str(pr_number),
+                "--json",
+                "name,state",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("gh pr checks timed out for PR #%d", pr_number)
+        return CIStatusReport(
+            pr_number=pr_number,
+            overall="unknown",
+            checks=[],
+            classifications=[],
+        )
 
     if result.returncode != 0:
         return CIStatusReport(
@@ -233,8 +281,8 @@ def poll_ci_status(pr_number: int) -> CIStatusReport:
             classifications=[],
         )
 
-    # Filter out reviewing-changes to avoid circular dependency
-    ci_checks = [c for c in raw_checks if c.get("name") != "reviewing-changes"]
+    # Filter out review contexts to avoid counting review status as CI
+    ci_checks = [c for c in raw_checks if c.get("name") not in review_contexts]
 
     check_results: list[CICheckResult] = []
     classifications: list[CIFailureClassification] = []
@@ -246,8 +294,9 @@ def poll_ci_status(pr_number: int) -> CIStatusReport:
         check_result = CICheckResult(name=name, state=state)
 
         if state == "FAILURE":
-            # Classify based on check name (we don't have the full log here)
-            classification = classify_ci_failure(name)
+            # Classify from check name — evidence_level="name_only" since
+            # we don't have the full log from `gh pr checks`.
+            classification = classify_ci_failure(name, evidence_level="name_only")
             check_result.classification = classification
             classifications.append(classification)
 
