@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,11 +98,21 @@ class MemoryStore:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MemoryStore:
-        """Create from a dict."""
+        """Create from a dict.
+
+        Malformed entries are skipped with a warning rather than failing
+        the entire load (see #950).
+        """
+        entries: list[MemoryEntry] = []
+        for raw in data.get("entries", []):
+            try:
+                entries.append(MemoryEntry.from_dict(raw))
+            except (KeyError, TypeError) as e:
+                logger.warning("Skipping malformed memory entry: %s", e)
         return cls(
             version=data.get("version", 1),
             last_updated=data.get("last_updated"),
-            entries=[MemoryEntry.from_dict(e) for e in data.get("entries", [])],
+            entries=entries,
         )
 
 
@@ -153,24 +165,30 @@ def load_memory(memory_dir: Path) -> MemoryStore:
 
 
 def save_memory(store: MemoryStore, memory_dir: Path) -> None:
-    """Save curated memory to disk.
+    """Save curated memory to disk atomically.
 
-    Uses exclusive file locking (``fcntl.flock``) to prevent corruption
-    when multiple agents write concurrently.
+    Writes to a same-directory tempfile, fsyncs, then atomically replaces
+    the target via ``os.replace()`` so a crash mid-write cannot leave a
+    truncated file (see #951).
     """
-    import fcntl
-
     memory_dir.mkdir(parents=True, exist_ok=True)
     memory_path = _get_memory_path(memory_dir)
     store.last_updated = _now_iso()
     content = json.dumps(store.to_dict(), indent=2) + "\n"
-    with open(memory_path, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+
+    fd, tmp = tempfile.mkstemp(dir=str(memory_dir), suffix=".tmp")
+    try:
+        os.write(fd, content.encode("utf-8"))
+        os.fsync(fd)
+        os.close(fd)
+        os.replace(tmp, str(memory_path))
+    except BaseException:
+        os.close(fd)
         try:
-            f.write(content)
-            f.flush()
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 # ── Validation ───────────────────────────────────────────────────

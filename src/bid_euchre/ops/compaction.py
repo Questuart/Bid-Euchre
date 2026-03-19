@@ -208,6 +208,10 @@ def compact_session(
 
     except OSError as e:
         logger.error("Failed to compact session %s: %s", session_id, e)
+        # Clean up partial archive so a retry is not permanently blocked
+        # by a stale directory (see #954).
+        if session_dir.exists():
+            shutil.rmtree(session_dir)
         return CompactionResult(
             session_id=session_id,
             archive_path=str(session_dir),
