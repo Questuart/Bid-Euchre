@@ -29,6 +29,7 @@ PROTECTED_WORKTREE_NAMES = frozenset(
         "Bid-Euchre-steward-author-d",
         "Bid-Euchre-steward-author-scratch",
         "Bid-Euchre-steward-review",
+        "Bid-Euchre-steward-ops",
     }
 )
 
@@ -208,7 +209,15 @@ def is_worktree_dirty(worktree_path: str) -> bool:
 
     Returns:
         True if the working tree has uncommitted changes.
+
+    Raises:
+        FileNotFoundError: If ``worktree_path`` does not exist or is not a
+            directory.
     """
+    if not Path(worktree_path).is_dir():
+        raise FileNotFoundError(
+            f"Worktree path does not exist or is not a directory: {worktree_path}"
+        )
     result = subprocess.run(
         ["git", "-C", worktree_path, "status", "--porcelain"],
         capture_output=True,
@@ -530,21 +539,32 @@ def prune_worktrees(
                     )
                 )
             else:
-                quarantine_worktree(
-                    candidate.path,
-                    candidate.reason,
-                    runtime_dir,
-                    events_dir=events_dir,
-                )
-                results.append(
-                    PruneResult(
-                        path=candidate.path,
-                        branch=candidate.branch,
-                        action="quarantined",
-                        reason=candidate.reason,
-                        dry_run=False,
+                try:
+                    quarantine_worktree(
+                        candidate.path,
+                        candidate.reason,
+                        runtime_dir,
+                        events_dir=events_dir,
                     )
-                )
+                    results.append(
+                        PruneResult(
+                            path=candidate.path,
+                            branch=candidate.branch,
+                            action="quarantined",
+                            reason=candidate.reason,
+                            dry_run=False,
+                        )
+                    )
+                except (OSError, subprocess.SubprocessError) as e:
+                    results.append(
+                        PruneResult(
+                            path=candidate.path,
+                            branch=candidate.branch,
+                            action="skipped",
+                            reason=f"Quarantine failed: {e}",
+                            dry_run=False,
+                        )
+                    )
             continue
 
         # Fallback: unknown state → skip
@@ -621,9 +641,11 @@ def quarantine_worktree(
     quarantine_dir = runtime_dir / "worktree_quarantine"
     quarantine_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate a slug from the directory name
+    # Generate a slug from the directory name, with timestamp to avoid
+    # overwriting diffs from a previous quarantine of the same worktree.
     slug = Path(worktree_path).name.replace("/", "_").replace(" ", "_")
-    diff_file = quarantine_dir / f"{slug}.diff"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    diff_file = quarantine_dir / f"{slug}_{timestamp}.diff"
 
     # Save the diff (tracked changes)
     result = subprocess.run(
@@ -710,6 +732,9 @@ def archive_worktree(
     """
     resolved = str(Path(worktree_path).resolve())
     cwd = str(Path.cwd().resolve())
+
+    if not Path(resolved).is_dir():
+        raise FileNotFoundError(f"Worktree directory not found: {worktree_path}")
 
     if resolved == cwd:
         raise ValueError(

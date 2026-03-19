@@ -144,6 +144,27 @@ class TestCmdEvents:
         assert rc == 0
         assert "Drained 0" in capsys.readouterr().out
 
+    def test_events_drain_json_subcommand(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test `ops.py --json events drain` returns valid JSON (888-L1)."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "events",
+                "drain",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["drained"] == 0
+
 
 class TestCmdTick:
     """Tests for the tick subcommand."""
@@ -418,8 +439,13 @@ class TestCmdWorktreesArchive:
         self,
         runtime_dir: Path,
         plans_dir: Path,
+        tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
+        # Create a real directory with a protected name
+        protected_dir = tmp_path / "Bid-Euchre-steward-author"
+        protected_dir.mkdir()
+
         import ops
 
         rc = ops.main(
@@ -430,7 +456,7 @@ class TestCmdWorktreesArchive:
                 str(plans_dir),
                 "worktrees",
                 "archive",
-                "/tmp/Bid-Euchre-steward-author",
+                str(protected_dir),
             ]
         )
         assert rc == 1
