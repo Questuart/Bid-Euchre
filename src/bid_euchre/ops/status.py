@@ -20,14 +20,20 @@ DEFAULT_RUNTIME_DIR = Path(".claude/runtime")
 
 @dataclass
 class LaneStatus:
-    """Status summary for one lane."""
+    """Status summary for one lane.
+
+    ``has_active_session`` is True only when the worktree registry entry
+    has a non-null ``session_id``, indicating the lane is currently owned
+    by a running session. Preserved session metadata files (which persist
+    after session end for resume/audit) do **not** count as live sessions.
+    """
 
     lane_id: str
     lane_class: str
     worktree_path: str
     branch: str
     lifecycle_class: str
-    has_session: bool
+    has_active_session: bool
     session_task: str | None = None
     last_active: str | None = None
     last_checkpoint: str | None = None
@@ -102,13 +108,47 @@ def load_sessions(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
     return sessions
 
 
-def load_tasks(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
+def _infer_owner_lane(
+    sessions: list[dict[str, Any]],
+    task_worktree: str | None,
+) -> str:
+    """Infer owner_lane for a v1 task from session metadata.
+
+    Matches by worktree_path if available, otherwise returns ``"unknown"``.
+
+    Args:
+        sessions: All loaded session metadata entries.
+        task_worktree: The task's worktree_path, if present.
+
+    Returns:
+        Inferred lane_id, or ``"unknown"`` if no match found.
+    """
+    if not task_worktree:
+        return "unknown"
+
+    for session in sessions:
+        if session.get("worktree_path") == task_worktree:
+            lane_id = session.get("lane_id")
+            if lane_id:
+                return lane_id
+    return "unknown"
+
+
+def load_tasks(
+    runtime_dir: Path | None = None,
+    *,
+    sessions: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Read all task state entries.
 
     Handles both v1 and v2 entries, inferring missing v2 fields.
+    For v1 tasks missing ``owner_lane``, attempts to infer from session
+    metadata per the v2 schema contract.
 
     Args:
         runtime_dir: Override for the runtime directory root.
+        sessions: Pre-loaded session metadata for v1 owner inference.
+            If None and v1 tasks are found, no inference is attempted.
 
     Returns:
         List of task entry dicts.
@@ -130,6 +170,10 @@ def load_tasks(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
 
         # v1 → v2 inference
         if data.get("schema_version", 1) < 2:
+            # Infer owner_lane from session metadata when available
+            if "owner_lane" not in data:
+                inferred = _infer_owner_lane(sessions or [], data.get("worktree_path"))
+                data["owner_lane"] = inferred
             data.setdefault("owner_lane", "unknown")
             data.setdefault("goal", data.get("subject", ""))
             data.setdefault("in_scope", [])
@@ -157,27 +201,30 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
 
     report = StatusReport()
 
-    # Load data
+    # Load data — sessions first so load_tasks can use them for v1 owner inference
     lanes_data = load_lane_registry(runtime_dir)
     sessions_data = load_sessions(runtime_dir)
-    tasks_data = load_tasks(runtime_dir)
+    tasks_data = load_tasks(runtime_dir, sessions=sessions_data)
 
-    # Build session lookup by lane_id
+    # Build session lookup by lane_id (most recent per lane, for context)
     sessions_by_lane: dict[str, dict[str, Any]] = {}
     for session in sessions_data:
         lane_id = session.get("lane_id", "")
         if lane_id:
-            # Keep the most recent session per lane
             existing = sessions_by_lane.get(lane_id)
             if existing is None or session.get("started_at", "") > existing.get(
                 "started_at", ""
             ):
                 sessions_by_lane[lane_id] = session
 
-    # Build lane statuses
+    # Build lane statuses.
+    # Liveness is determined by the worktree registry's session_id field,
+    # NOT by the presence of preserved session metadata files (which
+    # persist after session end for resume/audit).
     for lane in lanes_data:
         lane_id = lane.get("lane_id", "unknown")
         session = sessions_by_lane.get(lane_id)
+        has_active_session = lane.get("session_id") is not None
 
         lane_status = LaneStatus(
             lane_id=lane_id,
@@ -185,14 +232,15 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
             worktree_path=lane.get("worktree_path", ""),
             branch=lane.get("branch", ""),
             lifecycle_class=lane.get("class", "persistent"),
-            has_session=session is not None,
+            has_active_session=has_active_session,
             session_task=session.get("task") if session else None,
             last_active=lane.get("last_active"),
             last_checkpoint=session.get("last_checkpoint") if session else None,
         )
         report.lanes.append(lane_status)
 
-    # Categorize sessions
+    # Session metadata files are preserved for resume/audit — they are
+    # NOT proof of live sessions. Store as recent_sessions for context.
     report.active_sessions = sessions_data
 
     # Categorize tasks
@@ -215,7 +263,7 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
 
     # Check for lanes with no session
     for lane in report.lanes:
-        if lane.lifecycle_class == "persistent" and not lane.has_session:
+        if lane.lifecycle_class == "persistent" and not lane.has_active_session:
             report.warnings.append(
                 f"Persistent lane {lane.lane_id!r} has no active session"
             )
@@ -239,7 +287,12 @@ def format_status_text(report: StatusReport) -> str:
     # Lanes
     lines.append(f"Lanes: {len(report.lanes)}")
     for lane in report.lanes:
-        session_info = f" → {lane.session_task}" if lane.session_task else " (idle)"
+        if lane.has_active_session and lane.session_task:
+            session_info = f" → {lane.session_task}"
+        elif lane.session_task:
+            session_info = f" (idle, last: {lane.session_task})"
+        else:
+            session_info = " (idle)"
         lines.append(f"  {lane.lane_id} [{lane.lane_class}]{session_info}")
 
     lines.append("")
@@ -294,7 +347,7 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
                 "worktree_path": lane.worktree_path,
                 "branch": lane.branch,
                 "lifecycle_class": lane.lifecycle_class,
-                "has_session": lane.has_session,
+                "has_active_session": lane.has_active_session,
                 "session_task": lane.session_task,
                 "last_active": lane.last_active,
                 "last_checkpoint": lane.last_checkpoint,

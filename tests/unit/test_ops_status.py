@@ -154,6 +154,54 @@ class TestLoadTasks:
         assert tasks[0]["goal"] == "Legacy task"
         assert tasks[0]["in_scope"] == []
 
+    def test_v1_owner_inferred_from_session(self, runtime_dir: Path) -> None:
+        """v1 task with matching session metadata → owner_lane inferred."""
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-1.json",
+            {
+                "schema_version": 2,
+                "session_id": "uuid-1",
+                "lane_id": "author-a",
+                "started_at": "2026-03-18T10:00:00Z",
+                "worktree_path": "/tmp/wt-a",
+            },
+        )
+        _write_json(
+            runtime_dir / "task_state",
+            "task-v1.json",
+            {
+                "schema_version": 1,
+                "task_id": "v1-task",
+                "subject": "Legacy task with worktree",
+                "status": "in_progress",
+                "items": [],
+                "worktree_path": "/tmp/wt-a",
+            },
+        )
+        sessions = load_sessions(runtime_dir)
+        tasks = load_tasks(runtime_dir, sessions=sessions)
+        assert len(tasks) == 1
+        assert tasks[0]["owner_lane"] == "author-a"
+
+    def test_v1_owner_unknown_without_session(self, runtime_dir: Path) -> None:
+        """v1 task with no matching session → owner_lane stays unknown."""
+        _write_json(
+            runtime_dir / "task_state",
+            "task-v1.json",
+            {
+                "schema_version": 1,
+                "task_id": "v1-task",
+                "subject": "Orphan legacy task",
+                "status": "completed",
+                "items": [],
+                "worktree_path": "/tmp/wt-gone",
+            },
+        )
+        tasks = load_tasks(runtime_dir, sessions=[])
+        assert len(tasks) == 1
+        assert tasks[0]["owner_lane"] == "unknown"
+
 
 class TestAggregateStatus:
     """Tests for aggregate_status()."""
@@ -164,7 +212,8 @@ class TestAggregateStatus:
         assert len(report.active_tasks) == 0
         assert len(report.blocked_tasks) == 0
 
-    def test_lane_with_session(self, runtime_dir: Path) -> None:
+    def test_lane_with_active_session(self, runtime_dir: Path) -> None:
+        """Lane with session_id set in registry → has_active_session=True."""
         _write_json(
             runtime_dir / "worktree_registry",
             "author-a.json",
@@ -177,7 +226,7 @@ class TestAggregateStatus:
                 "class": "persistent",
                 "created_at": "2026-03-18T10:00:00Z",
                 "last_active": "2026-03-18T12:00:00Z",
-                "session_id": None,
+                "session_id": "uuid-1",
                 "ttl_hours": None,
             },
         )
@@ -197,9 +246,56 @@ class TestAggregateStatus:
 
         report = aggregate_status(runtime_dir)
         assert len(report.lanes) == 1
-        assert report.lanes[0].has_session
+        assert report.lanes[0].has_active_session is True
         assert report.lanes[0].session_task == "Implement PR-3"
         assert report.lanes[0].last_checkpoint == "Phase 3A step 2"
+
+    def test_preserved_session_not_active(self, runtime_dir: Path) -> None:
+        """Preserved session metadata with session_id=None → not active.
+
+        Session metadata files persist after session end for resume/audit.
+        They must NOT be treated as proof of a live session.
+        """
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "author-a.json",
+            {
+                "schema_version": 2,
+                "lane_id": "author-a",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-a",
+                "branch": "codex/steward-author",
+                "class": "persistent",
+                "created_at": "2026-03-18T10:00:00Z",
+                "last_active": "2026-03-18T12:00:00Z",
+                "session_id": None,
+                "ttl_hours": None,
+            },
+        )
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-old.json",
+            {
+                "schema_version": 2,
+                "session_id": "old-uuid",
+                "lane_id": "author-a",
+                "started_at": "2026-03-18T10:00:00Z",
+                "task": "Previous task",
+                "worktree_path": "/tmp/wt-a",
+                "last_checkpoint": "Done",
+            },
+        )
+
+        report = aggregate_status(runtime_dir)
+        assert len(report.lanes) == 1
+        assert report.lanes[0].has_active_session is False
+        # Session task available for context but NOT displayed as active work
+        assert report.lanes[0].session_task == "Previous task"
+
+        # Text output must show "(idle, last: ...)" not "→ Previous task"
+        text = format_status_text(report)
+        assert "idle, last: Previous task" in text
+        assert "→ Previous task" not in text
 
     def test_blocked_task_generates_warning(self, runtime_dir: Path) -> None:
         _write_json(
@@ -246,7 +342,7 @@ class TestAggregateStatus:
 
         report = aggregate_status(runtime_dir)
         assert len(report.lanes) == 1
-        assert not report.lanes[0].has_session
+        assert not report.lanes[0].has_active_session
         assert any("no active session" in w.lower() for w in report.warnings)
 
     def test_task_categorization(self, runtime_dir: Path) -> None:
