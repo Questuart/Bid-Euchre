@@ -1,8 +1,8 @@
-# Rung ? (QUICK) — Decision Report
+# Rung r1 (canonical) — Decision Report
 
 ## Advancement Decision
 
-**PENDING**
+**PRELIMINARY**
 
 ## Evidence Summary
 
@@ -58,7 +58,21 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ## Recommendation
 
-Hypothesis outcomes not yet available. Run the advance check pipeline to populate results.
+**PRELIMINARY — formal advance-check evidence absent**
+
+Data-driven triage based on available canonical evidence:
+
+- **gbt_av** net_eppd = 3.120
+- **full_ols_av** net_eppd = 1.960
+- **selected_ols_av** net_eppd = 1.920
+- Best H2H win rate: **modeloespecifico** (70.0% vs heuristic tier)
+- Data sanity: all checks passed
+
+**Watch items / caveats:**
+
+- Formal hypothesis tests not yet executed
+- Canonical sample sizes (single seed) may be insufficient for tail analysis
+- Run the advance-check pipeline (`--mode FULL`) for definitive evidence
 
 ## Supporting Evidence
 
@@ -70,4 +84,4 @@ Hypothesis outcomes not yet available. Run the advance check pipeline to populat
 - Chart 23: Intelligence-Faceted H2H
 - Full tables: `tables/comparator_rankings.csv`, `tables/h2h_delta_matrix.csv`, `tables/h2h_tier_summary.csv`
 
-<\!-- gate_status: data sanity checks in Evidence Summary above -->
+<!-- gate_status: data sanity checks in Evidence Summary above -->
