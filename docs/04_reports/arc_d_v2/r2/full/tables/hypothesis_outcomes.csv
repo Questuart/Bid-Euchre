@@ -1,10 +1,10 @@
 hypothesis_id,description,status,evidence,notes
-H1,Opponent context improves GBT pooled H2H delta vs anchor,PASS,observed=1.0119 bound=>0.3,
-H2,GBT R2 suit R-squared exceeds R1 suit R-squared,FAIL,observed=0.6041 bound=>0.621,Narrow miss (2.7%) on secondary diagnostic metric
-H3,GBT R2 comparator net_eppd maintains or improves over R1,PASS,observed=2.0091 bound=>2.0,
-H4,GBT suit H2H delta vs anchor is positive,PASS,observed=1.0105 bound=>0.0,
-H5,Two-stage model gap vs GBT narrows with richer context,PASS,observed=-0.047 bound=>-1.0,
-H6,All models bid at least half the time,PASS,observed=0.9857 bound=>0.5,
-H7,GBT H2H win rate vs anchor exceeds 45%,PASS,observed=0.5723 bound=>0.45,
-H8,Full OLS approximately equals constrained OLS,SKIP,,,SKIP: model(s) constrained_ols_av not in active roster
-H9,ModeloEspecifico heuristic is worst among trained models,PASS,observed=-0.3759 bound=<0.0,
+H1,Opponent context improves GBT pooled H2H delta vs anchor,PASS,"observed=1.0528, bound=> 0.3",
+H2,GBT R2 suit R-squared exceeds R1 suit R-squared,FAIL,"observed=0.6044, bound=> 0.621",
+H3,GBT R2 comparator net_eppd maintains or improves over R1,PASS,"observed=2.1836, bound=> 2.0",
+H4,GBT suit H2H delta vs anchor is positive,PASS,"observed=0.9388, bound=> 0.0",
+H5,Two-stage model gap vs GBT narrows with richer context,PASS,"observed=-0.2636, bound=> -1.0",
+H6,All models bid at least half the time,PASS,"observed=0.952, bound=> 0.5",
+H7,GBT H2H win rate vs anchor exceeds 45%,PASS,"observed=0.5584, bound=> 0.45",
+H8,Full OLS approximately equals constrained OLS,SKIP,observed=None,SKIP: model(s) constrained_ols_av not in active roster
+H9,ModeloEspecifico heuristic is worst among trained models,PASS,"observed=-0.5228, bound=< 0.0",
