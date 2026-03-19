@@ -52,7 +52,7 @@ _IMPORT_BOUNDARY_RE = re.compile(
     r"^\s*(?:from|import)\s+(?:experiments|tests)\b", re.MULTILINE
 )
 
-# TODO: remove before merge
+# X3 check: detects leftover "remove-before-merge" TODO markers
 _TODO_REMOVE_RE = re.compile(r"TODO:\s*remove before merge", re.IGNORECASE)
 
 # Large commented-out blocks (>10 consecutive comment lines)
@@ -137,7 +137,7 @@ def check_file(
                     line=i,
                     category="process",
                     check_id="X3",
-                    message="'TODO: remove before merge' marker",
+                    message="'TODO-remove-before-merge' marker",
                 )
             )
 
@@ -455,4 +455,6 @@ def _check_plan_paths(changed_files: list[str], repo_root: Path) -> list[Finding
 
 def get_blocking_findings(findings: list[Finding]) -> list[Finding]:
     """Filter to only P0/P1 findings (blocking)."""
-    return [f for f in findings if f.severity in ("P0", "P1")]
+    from review_common import is_blocking_severity
+
+    return [f for f in findings if is_blocking_severity(f.severity)]

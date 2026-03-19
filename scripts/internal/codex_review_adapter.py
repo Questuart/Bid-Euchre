@@ -707,7 +707,9 @@ def invoke_codex_cli(
 
 def get_blocking_findings(findings: list[CodexFinding]) -> list[CodexFinding]:
     """Filter to only P0/P1 findings (blocking)."""
-    return [f for f in findings if f.severity in ("P0", "P1")]
+    from review_common import is_blocking_severity
+
+    return [f for f in findings if is_blocking_severity(f.severity)]
 
 
 def save_review_result(

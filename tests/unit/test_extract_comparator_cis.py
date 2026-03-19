@@ -914,6 +914,138 @@ class TestCLISkipRunContract:
 
 
 # ---------------------------------------------------------------------------
+# Tests: single-seat by_contract merge (CLI-level)
+# ---------------------------------------------------------------------------
+
+
+class TestSingleSeatByContractMerge:
+    """Test that --single-seat merges by_contract data across seats.
+
+    Covers the merge path at lines ~499-511 of extract_comparator_cis.py:
+    per-seat by_contract points are concatenated and deals_total summed.
+
+    Closes #937.
+    """
+
+    def _run_extractor(self, args, env_extra=None):
+        """Run extract_comparator_cis.py as subprocess."""
+        env = {**__import__("os").environ, "PYTHONPATH": "src"}
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            [sys.executable, str(_EXTRACTOR_SCRIPT)] + args,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_single_seat_merges_by_contract(self, tmp_path):
+        """--single-seat with manifest correctly merges per-contract data
+        from 4 seat runs into a single bidders_by_contract output."""
+        artifacts = tmp_path / "artifacts"
+        artifacts.mkdir()
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        output_path = tmp_path / "output.json"
+
+        bidders = {"alpha": {"net_eppd": 0.0, "eppd": 0.0}}
+        battery = {"bidders": bidders}
+        (artifacts / "battery.json").write_text(json.dumps(battery))
+
+        # Create 4 per-seat run directories with different contract mixes
+        members = {}
+        for seat in range(4):
+            dirname = f"auction_comparator_alpha_seat{seat}_42_20260318_120000"
+            run_dir = runs / dirname
+            run_dir.mkdir()
+            _make_meta_json(run_dir, seed=42, n_per=10)
+            members[f"alpha_seat{seat}"] = dirname
+
+            logs_dir = run_dir / "logs"
+            logs_dir.mkdir()
+
+            # Each seat gets: 2 suit hands, 1 high hand, 1 low hand
+            records = [
+                _make_hand_end(
+                    t0=7, t1=3, winning_bid=6, bidder_position=0, contract="suit"
+                ),
+                _make_hand_end(
+                    t0=6, t1=4, winning_bid=5, bidder_position=0, contract="suit"
+                ),
+                _make_hand_end(
+                    t0=5,
+                    t1=5,
+                    winning_bid=5,
+                    bidder_position=0,
+                    contract="high",
+                    trump=None,
+                ),
+                _make_hand_end(
+                    t0=4,
+                    t1=6,
+                    winning_bid=5,
+                    bidder_position=1,
+                    contract="low",
+                    trump=None,
+                ),
+            ]
+            _write_jsonl(logs_dir / "game_log.jsonl", records)
+
+        manifest_path = _make_manifest(runs, members, policies=["alpha"], n_per=10)
+
+        result = self._run_extractor(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--runs-dir",
+                str(runs),
+                "--seed",
+                "42",
+                "--n-bootstrap",
+                "100",
+                "--battery-file",
+                "battery.json",
+                "--single-seat",
+                "--manifest",
+                manifest_path,
+                "--force",
+                "--output",
+                str(output_path),
+            ]
+        )
+        assert (
+            result.returncode == 0
+        ), f"Extractor failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+        output = json.loads(output_path.read_text())
+
+        # Schema must be v2
+        assert output["schema"] == "comparator_cis_v2"
+
+        # bidders_by_contract must be present
+        assert (
+            "bidders_by_contract" in output
+        ), "Single-seat path must produce bidders_by_contract"
+
+        by_contract = output["bidders_by_contract"]
+
+        # All three contract types present
+        for ct in ("suit", "high", "low"):
+            assert ct in by_contract, f"Missing contract type '{ct}'"
+            assert (
+                "alpha" in by_contract[ct]
+            ), f"Bidder 'alpha' missing from contract '{ct}'"
+
+        # Verify merged deal counts: 4 seats × {2 suit, 1 high, 1 low}
+        assert by_contract["suit"]["alpha"]["deals_total"] == 8  # 4 seats × 2
+        assert by_contract["high"]["alpha"]["deals_total"] == 4  # 4 seats × 1
+        assert by_contract["low"]["alpha"]["deals_total"] == 4  # 4 seats × 1
+
+        # Verify pooled total: all 4 seats × 4 hands = 16
+        assert output["bidders"]["alpha"]["deals_total"] == 16
+
+
+# ---------------------------------------------------------------------------
 # Tests: _extract_timestamp
 # ---------------------------------------------------------------------------
 
