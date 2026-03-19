@@ -70,6 +70,19 @@ When bidding is enabled (`contract_type: null` in scenario config), the evaluato
 
 **Source:** `src/bid_euchre/reporting/evaluator.py`
 
+### Per-Contract vs Pooled Metric Denominators
+
+The comparator CIs pipeline (`scripts/internal/extract_comparator_cis.py`) computes metrics at two granularities with **different denominators**:
+
+| Granularity | `deals_total` denominator | `bid_rate` |
+|-------------|--------------------------|------------|
+| **Pooled** | All deals including all-pass redeals | Fraction of deals with an auction winner |
+| **Per-contract** (suit/high/low) | Only deals with actual bids in that contract type | Always 1.0 by construction |
+
+**Key implication:** Pooled and per-contract `net_eppd` values are **not directly comparable** because they divide by different denominators. Pooled `net_eppd` is diluted by all-pass redeals (which contribute 0 points), while per-contract `net_eppd` reflects only deals where the contract was actually played.
+
+All-pass redeals (which use `dummy_ctype="high"` internally) are explicitly excluded from per-contract buckets to prevent contamination of the "high" contract metrics.
+
 ## Where to Find These Fields
 
 ### Results JSON Files
