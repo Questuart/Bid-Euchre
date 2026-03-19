@@ -2,10 +2,12 @@
 
 **Lineage:** arc_d_v2
 **Rung:** r0
-**Provenance SHA:** `a090bcebbba05ee8cd27ae773567eb8ba28f75a9`
-**Mode:** quick
-**Seeds:** [42, 123, 456]
+**Provenance SHA:** `1fdbc22991e631b71cba43dbd73cfaba899a08c2`
+**Mode:** QUICK
+**Seeds:** [123, 42, 456]
 **Anchor:** anchor_hybrid_r0_full
+
+**Governing Plan:** `plans/arc_d_v2/r0/plan.md`
 
 ## Model Roster
 
@@ -47,14 +49,14 @@
 
 | Name | Size |
 |------|------|
-| `artifact_inventory.csv` | 793 bytes |
+| `artifact_inventory.csv` | 854 bytes |
 | `behavior_by_bid_type.csv` | 813 bytes |
-| `behavior_by_contract.csv` | 277 bytes |
+| `behavior_by_contract.csv` | 886 bytes |
 | `behavior_summary.csv` | 1,207 bytes |
 | `comparator_rankings.csv` | 319 bytes |
 | `cross_rung_deltas.csv` | 71 bytes |
 | `data_sanity.csv` | 2,011 bytes |
-| `dataset_provenance.csv` | 1,011 bytes |
+| `dataset_provenance.csv` | 422 bytes |
 | `h2h_delta_matrix.csv` | 27,332 bytes |
 | `h2h_tier_summary.csv` | 1,073 bytes |
 | `hypothesis_outcomes.csv` | 982 bytes |
