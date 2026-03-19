@@ -929,7 +929,6 @@ bid-euchre/
 │   ├── analysis/                # Statistical analysis, paired comparisons
 │   ├── experiments/             # Config system, batch metadata
 │   ├── arc_d_v2/                # Arc D v2 lineage: orchestration, charts, tables, reports
-│   ├── utils/                   # (empty — cleanup candidate)
 │   └── scoring.py               # Top-level scoring module
 │   # (verify via: ls -d src/bid_euchre/*/ | grep -v __pycache__)
 ├── experiments/                 # Experiment configs + runner
