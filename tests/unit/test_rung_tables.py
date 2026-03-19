@@ -2189,6 +2189,82 @@ class TestModelEvalCsvs:
         for _, row in pred_df.iterrows():
             assert row["actual"] in [round(v, 4) for v in actual_values]
 
+    def test_gbt_joblib_discovered_via_rung_dir(self, tmp_path):
+        """GBT joblib files are found when rung_dir points to artifacts directory."""
+        import numpy as np
+
+        try:
+            import joblib
+        except ImportError:
+            pytest.skip("joblib not installed")
+
+        from sklearn.ensemble import GradientBoostingRegressor
+
+        # Train a minimal GBT model and save as joblib
+        rng = np.random.RandomState(42)
+        n_train = 50
+        X_train = rng.uniform(0, 10, (n_train, 1))
+        y_train = rng.uniform(2, 8, n_train)
+        model = GradientBoostingRegressor(n_estimators=5, max_depth=2, random_state=42)
+        model.fit(X_train, y_train)
+
+        # Set up rung_dir with joblib model
+        rung_dir = tmp_path / "rung_artifacts"
+        rung_dir.mkdir()
+        joblib.dump(model, rung_dir / "gbt_suit.joblib")
+
+        # GBT training artifact referencing the joblib file
+        gbt_artifact = {
+            "schema_version": "action_value_gbt_v1",
+            "models": {
+                "suit": {
+                    "feature_names": ["hand_value"],
+                    "model_file": "gbt_suit.joblib",
+                    "r_squared": 0.5,
+                    "mae": 1.5,
+                    "n_train": n_train,
+                    "n_val": 10,
+                },
+            },
+        }
+        training_artifacts = {"gbt_av": gbt_artifact}
+
+        # Eval parquet in a completely separate directory (simulating real layout)
+        eval_dir = tmp_path / "datasets" / "action_value"
+        eval_dir.mkdir(parents=True)
+        n_eval = 30
+        df = pd.DataFrame(
+            {
+                "hand_value": rng.uniform(0, 10, n_eval),
+                "contract_family": ["suit"] * n_eval,
+                "action_type": ["bid"] * n_eval,
+                "tricks_won": rng.uniform(2, 8, n_eval),
+            }
+        )
+        parquet_path = eval_dir / "eval.parquet"
+        df.to_parquet(parquet_path)
+
+        output_dir = tmp_path / "chart_data"
+
+        # Without rung_dir: GBT should be skipped (joblib not near parquet)
+        result_without = generate_model_eval_csvs(
+            training_artifacts, parquet_path, output_dir
+        )
+        assert result_without == []
+
+        # With rung_dir: GBT should be found and produce predictions
+        result_with = generate_model_eval_csvs(
+            training_artifacts, parquet_path, output_dir, rung_dir=rung_dir
+        )
+        assert "predictions.csv" in result_with
+        assert "residuals.csv" in result_with
+        assert "calibration_bins.csv" in result_with
+
+        # Verify GBT model name appears in predictions
+        pred_df = pd.read_csv(output_dir / "predictions.csv")
+        assert "gbt_av" in pred_df["model"].values
+        assert len(pred_df[pred_df["model"] == "gbt_av"]) == n_eval
+
 
 # ──────────────────────────────────────────────
 #  Outcome distributions extraction tests (Phase B)

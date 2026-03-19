@@ -165,10 +165,18 @@ Generated from canonical CSV tables and chart PNGs.
 
 | model | contract | net_eppd | bid_rate | pass_rate | make_rate | source |
 | --- | --- | --- | --- | --- | --- | --- |
-| modeloespecifico | pooled | 1.6332 | 1.0000 | 0.0000 | 0.9467 | comparator |
-| selected_two_stage_av | pooled | 1.9621 | 1.0000 | 0.0000 | 0.9953 | comparator |
-| gbt_av | pooled | 2.0091 | 0.9857 | 0.0143 | 0.9807 | comparator |
-| full_ols_av | pooled | 2.2750 | 1.0000 | 0.0000 | 0.9999 | comparator |
+| modeloespecifico | suit | 1.5099 | 1.0000 | 0.0000 | 0.9433 | comparator |
+| selected_two_stage_av | suit | 2.1749 | 1.0000 | 0.0000 | 0.9913 | comparator |
+| gbt_av | suit | 2.0373 | 1.0000 | 0.0000 | 0.9851 | comparator |
+| full_ols_av | suit | 2.4421 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| modeloespecifico | high | 2.5444 | 1.0000 | 0.0000 | 0.9763 | comparator |
+| selected_two_stage_av | high | 1.7661 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| gbt_av | high | 2.3715 | 1.0000 | 0.0000 | 0.9839 | comparator |
+| full_ols_av | high | 2.0831 | 1.0000 | 0.0000 | 1.0000 | comparator |
+| modeloespecifico | low | 2.1623 | 1.0000 | 0.0000 | 0.9693 | comparator |
+| selected_two_stage_av | low | 1.7695 | 1.0000 | 0.0000 | 1.0000 | comparator |
+
+*Full table omitted from markdown — see `tables/behavior_by_contract.csv`*
 
 
 ### Chart 12. Bid and Make Rates
@@ -200,11 +208,7 @@ Generated from canonical CSV tables and chart PNGs.
 
 ## 10. Data Quality Notes
 
-- **Outcome distributions (Chart 9):** parquet-backed real distributions
-- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: bid_rate_range** — failed. This may be expected for small sample sizes or early rungs.
-- **Sanity: r2_positive_suit** — failed. This may be expected for small sample sizes or early rungs.
+- **Sanity: bid_rate_range** — failed (4 models). Trained models may exceed the conservative [0.05, 0.95] bid rate bounds by design when optimized for net_eppd.
+- **Sanity: r2_positive_suit** — failed (selected_two_stage_av). Value 0.0; negative R² indicates the model performs worse than a constant predictor on this contract.
 
 <!-- gate_status: data sanity checks in §1 above -->

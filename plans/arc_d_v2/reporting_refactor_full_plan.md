@@ -933,12 +933,13 @@ If implementation reveals a conflict with this plan:
 
 **Status:** COMPLETE WITH DEGRADED STATES (2026-03-19)
 
-11 PRs merged covering Phases 0-6 plus final closeout. All §16 gaps resolved.
+12 PRs merged covering Phases 0-6 plus final closeout and post-closeout quality pass.
+All §16 gaps resolved. DS-3 narrowed (code fix shipped), DS-4 resolved.
 Accepted degraded states documented in §16.6.
 
 ### Implementation History
 
-11 PRs merged covering Phases 0-6 plus final closeout:
+12 PRs merged covering Phases 0-6 plus final closeout and post-closeout quality:
 
 | PR | Scope | Status |
 |----|-------|--------|
@@ -953,6 +954,7 @@ Accepted degraded states documented in §16.6.
 | #942 | Bundle regen: behavior_by_contract per-contract, §2.2 fix, regression tests | ✅ Merged |
 | #948 | Final closeout: stale reference cleanup, 04_rung_decision removal, plan truthfulness | ✅ Merged |
 | #962 | DS-4 documentation: R3/full bundle staleness per Codex review | ✅ Merged |
+| TBD | GBT model-eval fix, R3/FULL chart parity, report quality notes | 🔄 In Progress |
 
 ### Acceptance Criteria Status (§13) — Final (2026-03-19)
 
@@ -1096,26 +1098,27 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
   The 23-chart registry is preserved for future use if eval data becomes
   available.
 
-**DS-3: GBT model evaluation skipped**
-- GBT `.joblib` models exist but are not loaded by the prediction-level
-  extraction pipeline (joblib path mismatch).
-- Only OLS-family model eval CSVs are produced.
-- Policy: Accepted known gap. GBT model eval would require pipeline
-  adjustment to discover joblib paths.
+**DS-3: GBT model evaluation — code fixed, R0-R2 regeneration deferred**
+- **Fixed (PR #TBD):** `generate_model_eval_csvs()` now accepts `rung_dir`
+  and searches for GBT `.joblib` files in the rung artifacts directory
+  (`data/artifacts/arc_d_v2/<rung>/`).
+- The path mismatch that caused GBT models to be skipped has been resolved
+  in code. The fix is backward-compatible (new `rung_dir` parameter defaults
+  to `None`, preserving existing behavior).
+- **Remaining gap:** R0-R2/FULL `predictions.csv`, `residuals.csv`, and
+  `calibration_bins.csv` still contain only OLS-family model rows. A
+  regeneration pass would add GBT rows to these CSVs.
+- Policy: Narrowed from "code-blocked" to "regeneration-deferred". The
+  pipeline is now capable; a future regeneration PR can realize the benefit.
 
-**DS-4: R3/full bundle stale relative to R0-R2**
-- R3/full was regenerated before the chart pipeline and manifest metadata
-  updates that R0-R2 received (#881, #877).
-- Specific gaps:
-  - Charts 10, 16-18 (seat_balance, pred_vs_actual, residual_distribution,
-    calibration_curve) are absent despite source CSVs being present.
-  - Model class is `None` for all models in 00_manifest.md (R0-R2 have
-    correct class names like `ModeloEspecifico`, `ActionValueBidder`).
-  - Evidence manifest chart_data entries were updated (this closeout PR)
-    but chart rendering was not re-run.
-- Policy: Accepted known gap. Fix requires R3/full bundle regeneration
-  from the updated pipeline. The CSVs are present; only chart rendering
-  and manifest metadata are stale.
+~~**DS-4: R3/full bundle stale relative to R0-R2**~~ **RESOLVED (PR #TBD)**
+- R3/full Charts 10, 16-18 (seat_balance, pred_vs_actual, residual_distribution,
+  calibration_curve) regenerated from existing chart_data CSVs.
+- R3/full manifest and evidence_manifest updated to reflect present charts.
+- R3/full now matches R0-R2/FULL chart parity (Charts 1-20, 23 present;
+  Charts 21-22 absent — same as all other FULL bundles).
+- Model class `None` in roster remains a minor cosmetic issue (does not
+  affect analytical value; originates from roster.json not having class metadata).
 
 ## 17. Regeneration Prerequisites (2026-03-18)
 

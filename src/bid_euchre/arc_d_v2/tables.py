@@ -1822,6 +1822,7 @@ def generate_model_eval_csvs(
     training_artifacts: dict[str, dict],
     eval_parquet_path: Path | None,
     output_dir: Path,
+    rung_dir: Path | None = None,
 ) -> list[str]:
     """Generate model evaluation chart_data CSVs (predictions, residuals, calibration).
 
@@ -1832,6 +1833,10 @@ def generate_model_eval_csvs(
         training_artifacts: Dict of model_name -> training artifact JSON.
         eval_parquet_path: Path to evaluation parquet dataset.
         output_dir: Path to write CSVs.
+        rung_dir: Path to rung artifacts directory (e.g.,
+            ``data/artifacts/arc_d_v2/r3/``). When provided, this directory
+            is searched for GBT ``.joblib`` model files before falling back
+            to parquet-relative paths.
 
     Returns:
         List of generated CSV filenames.
@@ -1889,10 +1894,17 @@ def generate_model_eval_csvs(
                 if not model_file:
                     continue
                 if eval_parquet_path is not None:
-                    candidate_dirs = [
-                        eval_parquet_path.parent.parent / "artifacts",
-                        eval_parquet_path.parent,
-                    ]
+                    candidate_dirs: list[Path] = []
+                    # Prefer rung artifacts dir (where joblib files live)
+                    if rung_dir is not None:
+                        candidate_dirs.append(rung_dir)
+                    # Legacy fallback paths near the eval parquet
+                    candidate_dirs.extend(
+                        [
+                            eval_parquet_path.parent.parent / "artifacts",
+                            eval_parquet_path.parent,
+                        ]
+                    )
                     model_path = None
                     for cdir in candidate_dirs:
                         p = cdir / model_file
@@ -2678,7 +2690,7 @@ def generate_all_tables(
     # 16. model eval CSVs (predictions, residuals, calibration) from parquet + models
     if training_artifacts and parquet_paths:
         eval_csvs = generate_model_eval_csvs(
-            training_artifacts, parquet_paths[0], chart_data_dir
+            training_artifacts, parquet_paths[0], chart_data_dir, rung_dir=rung_dir
         )
         for csv_name in eval_csvs:
             generated.append(f"chart_data/{csv_name}")
