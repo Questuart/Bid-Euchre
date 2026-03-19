@@ -1,4 +1,16 @@
 model,contract,net_eppd,bid_rate,pass_rate,make_rate,source
+modeloespecifico,suit,1.5099,1.0,0.0,0.9433,comparator
+selected_two_stage_av,suit,2.1749,1.0,0.0,0.9913,comparator
+gbt_av,suit,2.0373,1.0,0.0,0.9851,comparator
+full_ols_av,suit,2.4421,1.0,0.0,1.0,comparator
+modeloespecifico,high,2.5444,1.0,0.0,0.9763,comparator
+selected_two_stage_av,high,1.7661,1.0,0.0,1.0,comparator
+gbt_av,high,2.3715,1.0,0.0,0.9839,comparator
+full_ols_av,high,2.0831,1.0,0.0,1.0,comparator
+modeloespecifico,low,2.1623,1.0,0.0,0.9693,comparator
+selected_two_stage_av,low,1.7695,1.0,0.0,1.0,comparator
+gbt_av,low,1.8427,1.0,0.0,0.9562,comparator
+full_ols_av,low,1.969,1.0,0.0,1.0,comparator
 modeloespecifico,pooled,1.6044,1.0,0.0,0.9468,comparator
 selected_two_stage_av,pooled,1.954,1.0,0.0,0.996,comparator
 gbt_av,pooled,2.0136,0.986,0.014,0.9807,comparator

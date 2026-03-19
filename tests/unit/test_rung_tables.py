@@ -1540,6 +1540,34 @@ class TestChartData:
         assert "outcome_summary.csv" not in generated
         assert not (tmp_path / "outcome_summary.csv").exists()
 
+    def test_decision_comparison_not_in_canonical_path(self, tmp_path):
+        """decision_comparison.csv not produced by generate_chart_data().
+
+        Canonical producer is generate_interpretability.py. The dormant
+        parquet extractor is retained as a library function but must not
+        be called from generate_chart_data() to prevent silent shadowing.
+        See governing plan §16.5 ownership table.
+        """
+        parquet_path = FIXTURES_DIR / "action_value.parquet"
+        generated = generate_chart_data(
+            output_dir=tmp_path, parquet_paths=[parquet_path]
+        )
+        assert "decision_comparison.csv" not in generated
+        assert not (tmp_path / "decision_comparison.csv").exists()
+
+    def test_disagreement_outcomes_not_in_canonical_path(self, tmp_path):
+        """disagreement_outcomes.csv not produced by generate_chart_data().
+
+        Canonical producer is generate_interpretability.py. Same ownership
+        guard as decision_comparison.csv.
+        """
+        parquet_path = FIXTURES_DIR / "action_value.parquet"
+        generated = generate_chart_data(
+            output_dir=tmp_path, parquet_paths=[parquet_path]
+        )
+        assert "disagreement_outcomes.csv" not in generated
+        assert not (tmp_path / "disagreement_outcomes.csv").exists()
+
     def test_contract_mix_from_h2h(self, tmp_path):
         """contract_mix.csv generated from H2H self-play by_contract."""
         h2h = {
