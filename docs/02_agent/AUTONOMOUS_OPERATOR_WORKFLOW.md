@@ -786,15 +786,17 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 | PR-5 (slice 1) | CI event producers, scope management, retry events | Shipped (#961) |
 
 > **Note:** PR-5 in the governing plan covers the full rollout/integration
-> phase including context safety, skill promotion, and shadow snapshots.
-> Only the deferred watchdog producer wiring slice has shipped so far.
-> The remaining PR-5 deliverables are listed under "Remaining Future Work."
+> phase including context safety, skill promotion, issue triage, and shadow
+> snapshots. Only the deferred watchdog producer wiring slice has shipped
+> so far. The remaining PR-5 deliverables are listed under
+> "Remaining Future Work."
 
 ### Remaining Future Work (PR-5 continuation)
 
 - Context safety scanning for auto-loaded content
-- Shadow snapshots for rollback
-- Skill promotion workflow
+- Shadow snapshots and rollback workflow
+- Skill promotion workflow (promote repeated multi-step workflows into skills)
+- Issue-triage workflow and conventions for qualified operational findings
 - Fully automated scope tracking via file-write hooks
 - Automated retry execution (currently advisory only)
 - CI event emission from GitHub Actions (currently only from local CI poller)
