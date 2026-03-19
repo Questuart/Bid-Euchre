@@ -4,6 +4,9 @@
 **Context:** Brainstorm captured at the close of Arc D v2 lineage (R0–R3 complete).
 These are potential follow-on directions — none are committed or prioritized.
 
+For operator-stack follow-ons and the longer-term autonomous self-improvement
+roadmap after PR-5, see `plans/post_pr5_follow_on_roadmap.md`.
+
 ---
 
 ## Evaluation & Benchmarking
