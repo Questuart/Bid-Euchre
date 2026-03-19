@@ -543,6 +543,28 @@ proposed --> in_progress --> completed
 Any status --> superseded (when replaced)
 ```
 
+### 12.4 Implementation Handoff Rule
+
+When an agent writes a handoff prompt for another agent to continue or execute
+implementation work, the handoff must direct the next agent to do the
+following in order:
+
+1. Refresh the governing plan and relevant implementation plan.
+2. Draft or refine a concrete execution plan.
+3. Spawn at least one reviewer agent to review that plan before major edits.
+4. Create a task list covering implementation, validation, and PR shipment.
+5. Assess the work for safe parallelism and only delegate disjoint write scopes.
+6. Execute the work end to end autonomously:
+   - implement
+   - test
+   - run smoke/failure-injection validation
+   - commit
+   - open or update the PR
+   - include required validation evidence in the PR body
+
+Handoffs that omit this sequence are incomplete for governed implementation
+work. A file list or goal summary alone is not sufficient.
+
 **Template:** `plans/_templates/sub_plan.md`
 
 **Anti-pattern:** Do not invent ad hoc planning structures once a governing

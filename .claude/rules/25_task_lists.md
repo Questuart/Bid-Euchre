@@ -73,6 +73,20 @@ The list drifts and loses its value as a progress signal. Prevent this:
 - Reference the checkpoint step ID in subjects (e.g., "R2.3: Generate behavior tables")
 - On completion, update both the TUI task AND `checkpoints.md`
 
+## Implementation Handoff Requirement
+
+If you are writing a handoff prompt for another implementation agent, the
+handoff must explicitly require the recipient to:
+- refresh or draft the implementation plan first
+- have a spawned reviewer agent review that plan before major edits
+- create and maintain a task list for execution and validation
+- assess the work for safe parallelism before delegating
+- execute the work end to end autonomously through PR creation
+
+This rule exists so handoffs do not skip directly from goal statement to
+implementation without planning, review, task discipline, and bounded
+parallelism.
+
 ## Relationship to Other Systems
 
 | System | Scope | Persists? | Use for |
