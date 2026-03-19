@@ -561,6 +561,45 @@ def prune_worktrees(
     return results
 
 
+def _update_registry_cleanup_state(
+    registry_dir: Path,
+    worktree_path: str,
+    cleanup_state: str,
+) -> bool:
+    """Update the ``cleanup_state`` field in a worktree registry entry.
+
+    Finds the registry JSON file whose ``worktree_path`` matches, then
+    rewrites it with the new ``cleanup_state``.
+
+    Args:
+        registry_dir: Path to the worktree_registry directory.
+        worktree_path: The worktree path to match.
+        cleanup_state: New cleanup state value.
+
+    Returns:
+        True if a matching entry was found and updated, False otherwise.
+    """
+    if not registry_dir.exists():
+        return False
+
+    resolved = str(Path(worktree_path).resolve())
+
+    for f in sorted(registry_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        entry_path = data.get("worktree_path", "")
+        if entry_path and str(Path(entry_path).resolve()) == resolved:
+            data["cleanup_state"] = cleanup_state
+            f.write_text(json.dumps(data, indent=2))
+            logger.info("Updated registry %s: cleanup_state=%s", f.name, cleanup_state)
+            return True
+
+    return False
+
+
 def quarantine_worktree(
     worktree_path: str,
     reason: str,
@@ -599,6 +638,11 @@ def quarantine_worktree(
     diff_file.write_text(diff_content)
 
     logger.info("Quarantined %s → %s (reason: %s)", worktree_path, diff_file, reason)
+
+    # Persist cleanup_state to registry
+    _update_registry_cleanup_state(
+        runtime_dir / "worktree_registry", worktree_path, "quarantined"
+    )
 
     # Emit event
     try:
@@ -685,6 +729,9 @@ def archive_worktree(
         )
 
     logger.info("Archived worktree: %s", worktree_path)
+
+    # Persist cleanup_state to registry
+    _update_registry_cleanup_state(registry_dir, worktree_path, "archived")
 
     # Emit event
     try:

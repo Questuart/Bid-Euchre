@@ -145,11 +145,12 @@ ops.py recover [--json]                          # Show recovery guidance
 ### 4. Hooks
 
 **`post-task-event.sh`** — PostToolUse hook on `Bash`:
-- Matches tool output containing `gh pr merge`, `task completed`, etc.
+- Reads PostToolUse JSON from stdin (matching existing hook patterns: `INPUT=$(cat)` + `jq`)
+- Matches `.tool_input.command` for `gh pr merge` and checks `.tool_response.exit_code == 0`
 - Resolves `lane_id` from the worktree directory name (e.g., `Bid-Euchre-steward-author-c` → `author-c`),
   falling back to `"unknown"` if the name doesn't match a known pattern
 - Calls `uv run python -c "from bid_euchre.ops.events import append_event; ..."`
-- Emits `task_completed` or relevant event type
+- Emits `task_completed` event on successful merge
 - Timeout: 5s (must be fast)
 
 **`pre-worktree-cleanup.sh`** — PreToolUse hook on `Bash`:
