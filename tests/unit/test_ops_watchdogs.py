@@ -404,6 +404,80 @@ class TestCheckCiStuck:
         assert "PR #100" in findings[0].message
 
 
+class TestCheckCiTimeout:
+    """Tests for ci_timeout event detection in check_ci_stuck() (#991)."""
+
+    def test_ci_timeout_detected_as_stuck(self, runtime_dir: Path) -> None:
+        """A ci_timeout event older than threshold is flagged as stuck."""
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=60)).isoformat(),
+                    "event_type": "ci_timeout",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 300, "failure_class": "timeout"},
+                }
+            )
+            + "\n"
+        )
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert len(findings) == 1
+        assert "PR #300" in findings[0].message
+        assert "timeout" in findings[0].message
+
+    def test_ci_success_clears_timeout(self, runtime_dir: Path) -> None:
+        """A ci_success after ci_timeout clears the stuck state."""
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        # JSONL is chronological (oldest first); read_events reverses,
+        # so ci_success (more recent) must be the LAST line.
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=60)).isoformat(),
+                    "event_type": "ci_timeout",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 300, "failure_class": "timeout"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=5)).isoformat(),
+                    "event_type": "ci_success",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 300},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert findings == []
+
+    def test_recent_timeout_not_stuck(self, runtime_dir: Path) -> None:
+        """A ci_timeout within threshold is not flagged."""
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        events_file = runtime_dir / "events" / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": (now - timedelta(minutes=5)).isoformat(),
+                    "event_type": "ci_timeout",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"pr_number": 300, "failure_class": "timeout"},
+                }
+            )
+            + "\n"
+        )
+        findings = check_ci_stuck(runtime_dir, stuck_minutes=30, now=now)
+        assert findings == []
+
+
 class TestCheckSubagentFailures:
     """Tests for check_subagent_failures()."""
 

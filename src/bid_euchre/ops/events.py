@@ -27,6 +27,7 @@ VALID_EVENT_TYPES = frozenset(
         "task_blocked",
         "ci_failure",
         "ci_success",
+        "ci_timeout",
         "heartbeat_stale",
         "heartbeat_ok",
         "review_outcome",
