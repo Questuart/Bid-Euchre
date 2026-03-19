@@ -156,4 +156,19 @@ The following open issues are intentionally excluded:
 
 ## Outcome
 
-_To be filled after implementation._
+Combined all 6 issues into a single PR instead of 3 separate ones (all on the
+same branch, each as a distinct commit):
+
+- **PR [#949](https://github.com/Questuart/Bid-Euchre/pull/949)** — `fix/convention-batch-3`
+  - Commit 1: Extract shared severity mapping + by_contract merge test (#935, #937)
+  - Commit 2: Regenerate R0/R2/R3 evidence manifests (#890, #925, #944)
+  - Commit 3: Worktree-guard session dedup (#943)
+
+**Deviation from plan:** Merged three planned PRs (A/B/C) into one PR since all
+work was on the same branch. Each commit is independently reviewable.
+
+**Plan review findings addressed:**
+- Added `codex_review_adapter.py` as third dedup site (P2 finding)
+- Corrected test name to `TestSingleSeatByContractMerge` (P2 finding)
+- Added artifact prereq check and rollback note for PR B (R3 critical finding)
+- Verified artifacts via symlink from main checkout (R3 resolution)
