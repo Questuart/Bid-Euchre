@@ -41,3 +41,31 @@ jobs:
             Analyze the diff, then post your findings as review comments.
             Follow the project's CLAUDE.md guidelines.
           claude_args: "--max-turns 5"
+
+      - name: Flag reviewer infra failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+        shell: bash
+        run: |
+          # Classify the failure: max-turns vs auth vs unknown
+          SUBTYPE="unknown"
+          DENIALS=0
+          if [ -f "$EXECUTION_FILE" ]; then
+            SUBTYPE=$(jq -r 'select(.type == "result") | .subtype // "unknown"' "$EXECUTION_FILE" 2>/dev/null | tail -1)
+            DENIALS=$(jq -r 'select(.type == "result") | .permission_denials_count // 0' "$EXECUTION_FILE" 2>/dev/null | tail -1)
+          fi
+
+          gh issue create \
+            --title "claude-review infra failure on PR #${{ github.event.pull_request.number }} ($SUBTYPE)" \
+            --body "The Claude Code Review action failed on PR #${{ github.event.pull_request.number }}.
+
+          **Failure type:** \`$SUBTYPE\`
+          **Permission denials:** $DENIALS
+          **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          This is a reviewer infrastructure issue, not a code review finding.
+          The \`claude-review\` check remains failed on the PR as a visible signal." \
+            --label "follow-up"
+          echo "::warning::claude-review infra failure (subtype=$SUBTYPE, denials=$DENIALS) — issue created"
