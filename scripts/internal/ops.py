@@ -486,6 +486,11 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
 def cmd_retry(args: argparse.Namespace) -> int:
     """Evaluate retry/reroute policy for a task and optionally emit events."""
+    # Dispatch to summary subcommand if requested
+    retry_action = getattr(args, "retry_action", None)
+    if retry_action == "summary":
+        return cmd_retry_summary(args)
+
     from bid_euchre.ops.events import read_events
     from bid_euchre.ops.recovery import (
         evaluate_retry_policy,
@@ -495,7 +500,10 @@ def cmd_retry(args: argparse.Namespace) -> int:
 
     task_id = getattr(args, "task", None)
     if not task_id:
-        print("Error: --task <task_id> is required", file=sys.stderr)
+        print(
+            "Error: --task <task_id> is required (or use `retry summary`)",
+            file=sys.stderr,
+        )
         return 1
 
     max_retries = getattr(args, "max_retries", 3)
@@ -675,9 +683,14 @@ def cmd_scope(args: argparse.Namespace) -> int:
         return cmd_scope_touch(args)
     if scope_action == "show":
         return cmd_scope_show(args)
+    if scope_action == "check":
+        return cmd_scope_check(args)
 
     # No subcommand — show help
-    print("Usage: ops.py scope {show|set|touch} --task TASK_ID ...", file=sys.stderr)
+    print(
+        "Usage: ops.py scope {show|set|touch|check} --task TASK_ID ...",
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -778,6 +791,65 @@ def cmd_scope_show(args: argparse.Namespace) -> int:
             print(f"    - {p}")
 
     return 0
+
+
+def cmd_scope_check(args: argparse.Namespace) -> int:
+    """Check scope drift for a task (declared vs touched files)."""
+    from bid_euchre.ops.scope import (
+        check_scope_drift,
+        emit_scope_drift_event,
+        format_scope_drift_json,
+        format_scope_drift_text,
+    )
+
+    task_id = getattr(args, "task", None)
+    if not task_id:
+        print("Error: --task required", file=sys.stderr)
+        return 1
+
+    emit = getattr(args, "emit", False)
+
+    try:
+        report = check_scope_drift(task_id, runtime_dir=args.runtime_dir)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if emit and report.has_drift:
+        lane = getattr(args, "lane", None) or "unknown"
+        events_dir = args.runtime_dir / "events"
+        try:
+            emit_scope_drift_event(report, lane, events_dir)
+        except Exception as e:
+            print(f"Warning: failed to emit scope event: {e}", file=sys.stderr)
+
+    if args.json:
+        print(json.dumps(format_scope_drift_json(report), indent=2))
+    else:
+        print(format_scope_drift_text(report))
+
+    return 1 if report.has_drift else 0
+
+
+def cmd_retry_summary(args: argparse.Namespace) -> int:
+    """Show retry follow-through summary across all tasks."""
+    from bid_euchre.ops.events import read_events
+    from bid_euchre.ops.retries import (
+        format_retry_summary_json,
+        format_retry_summary_text,
+        get_retry_summary,
+    )
+
+    events_dir = args.runtime_dir / "events"
+    events = read_events(events_dir, limit=500)
+    summary = get_retry_summary(events)
+
+    if args.json:
+        print(json.dumps(format_retry_summary_json(summary), indent=2))
+    else:
+        print(format_retry_summary_text(summary))
+
+    return 1 if summary.dropped_count > 0 else 0
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
@@ -1196,12 +1268,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of ticks (default: 100, hard cap: 1000)",
     )
 
-    # retry
+    # retry (with nested "summary" subcommand)
     retry_parser = subparsers.add_parser(
         "retry", help="Evaluate retry/reroute policy for a task"
     )
     retry_parser.add_argument(
-        "--task", type=str, required=True, help="Task ID to evaluate"
+        "--task", type=str, default=None, help="Task ID to evaluate"
     )
     retry_parser.add_argument(
         "--max-retries",
@@ -1216,6 +1288,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--emit",
         action="store_true",
         help="Emit durable event for the policy decision (default: off)",
+    )
+    retry_sub = retry_parser.add_subparsers(dest="retry_action")
+    retry_sub.add_parser(
+        "summary", help="Show retry follow-through summary across all tasks"
     )
 
     # index
@@ -1331,6 +1407,21 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         required=True,
         help="File paths to record as touched",
+    )
+
+    scope_check_parser = scope_sub.add_parser(
+        "check", help="Check scope drift (declared vs touched)"
+    )
+    scope_check_parser.add_argument(
+        "--task", type=str, required=True, help="Task ID to check"
+    )
+    scope_check_parser.add_argument(
+        "--emit",
+        action="store_true",
+        help="Emit watchdog_finding event on drift (default: off)",
+    )
+    scope_check_parser.add_argument(
+        "--lane", type=str, default=None, help="Lane ID for event attribution"
     )
 
     # skills (with nested propose/review/promote/disable subcommands)
