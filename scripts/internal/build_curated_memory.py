@@ -6,8 +6,8 @@ Usage:
     uv run python scripts/internal/build_curated_memory.py [--json] remove --id ENTRY_ID
     uv run python scripts/internal/build_curated_memory.py [--json] search --text TEXT
     uv run python scripts/internal/build_curated_memory.py [--json] validate
-    uv run python scripts/internal/build_curated_memory.py [--json] scan --text TEXT
-    uv run python scripts/internal/build_curated_memory.py [--json] scan --file PATH
+    uv run python scripts/internal/build_curated_memory.py [--json] scan --text TEXT [--source FILE] [--by AGENT]
+    uv run python scripts/internal/build_curated_memory.py [--json] scan --file PATH [--source FILE] [--by AGENT]
 """
 
 from __future__ import annotations
