@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
+from bid_euchre.ops import GH_TIMEOUT_SECONDS, classify_check
 
 logger = logging.getLogger("ops.ci")
 
@@ -229,15 +229,16 @@ def classify_ci_failure(
 def poll_ci_status(
     pr_number: int,
     *,
-    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+    review_contexts: tuple[str, ...] | None = None,
 ) -> CIStatusReport:
     """Poll CI status for a PR with per-check breakdown.
 
     Args:
         pr_number: GitHub PR number.
-        review_contexts: Check names to exclude from CI aggregation
-            (they represent review outcomes, not CI results). Uses the
-            same shared default as ``reviews.py``.
+        review_contexts: Explicit check names to exclude from CI aggregation.
+            When ``None`` (default), uses ``classify_check()`` to dynamically
+            identify non-CI checks. Pass an explicit tuple for backward
+            compatibility.
 
     Returns:
         CIStatusReport with overall status and per-check results.
@@ -283,8 +284,12 @@ def poll_ci_status(
             classifications=[],
         )
 
-    # Filter out review contexts to avoid counting review status as CI
-    ci_checks = [c for c in raw_checks if c.get("name") not in review_contexts]
+    # Filter out non-CI checks (review gate + advisory) to avoid counting
+    # review status or advisory infra failures as CI.
+    if review_contexts is not None:
+        ci_checks = [c for c in raw_checks if c.get("name") not in review_contexts]
+    else:
+        ci_checks = [c for c in raw_checks if classify_check(c.get("name", "")) == "ci"]
 
     check_results: list[CICheckResult] = []
     classifications: list[CIFailureClassification] = []

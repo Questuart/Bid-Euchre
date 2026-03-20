@@ -12,6 +12,7 @@ from bid_euchre.ops.reviews import (
     DEFAULT_REVIEW_CONTEXTS,
     ReviewOutcome,
     _classify_ci_status,
+    _get_advisory_status,
     _get_review_status,
     _has_precheck_ci,
     format_reviews_json,
@@ -162,6 +163,48 @@ class TestGetReviewStatus:
         )
 
 
+class TestClassifyCIStatusDefaultExcludesAdvisory:
+    """Tests for _classify_ci_status() default excluding advisory checks."""
+
+    def test_default_excludes_claude_review(self) -> None:
+        """Default (None) excludes claude-review from CI status."""
+        checks = [
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_default_excludes_reviewing_changes(self) -> None:
+        """Default (None) still excludes reviewing-changes."""
+        checks = [
+            {"name": "reviewing-changes", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_default_excludes_both(self) -> None:
+        """Default (None) excludes both review gate and advisory."""
+        checks = [
+            {"name": "reviewing-changes", "state": "FAILURE"},
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_explicit_override_uses_old_logic(self) -> None:
+        """Explicit review_contexts uses the override, not classify_check."""
+        checks = [
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        # With explicit override that does NOT include claude-review,
+        # it should count as CI and cause failure.
+        assert (
+            _classify_ci_status(checks, review_contexts=("reviewing-changes",))
+            == "failure"
+        )
+
+
 class TestClassifyCIStatusCustomContexts:
     """Tests for _classify_ci_status() with custom review contexts."""
 
@@ -196,6 +239,32 @@ class TestHasPrecheckCI:
 
     def test_empty_checks(self) -> None:
         assert _has_precheck_ci([]) is False
+
+
+class TestGetAdvisoryStatus:
+    """Tests for _get_advisory_status()."""
+
+    def test_claude_review_success(self) -> None:
+        checks = [{"name": "claude-review", "state": "SUCCESS"}]
+        assert _get_advisory_status(checks) == "success"
+
+    def test_claude_review_failure(self) -> None:
+        checks = [{"name": "claude-review", "state": "FAILURE"}]
+        assert _get_advisory_status(checks) == "failure"
+
+    def test_claude_review_pending(self) -> None:
+        checks = [{"name": "claude-review", "state": "PENDING"}]
+        assert _get_advisory_status(checks) == "pending"
+
+    def test_no_advisory_checks_returns_none(self) -> None:
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+        ]
+        assert _get_advisory_status(checks) == "none"
+
+    def test_empty_checks(self) -> None:
+        assert _get_advisory_status([]) == "none"
 
 
 # --- Integration tests with mocked gh ---
@@ -330,6 +399,57 @@ class TestGetOpenPRReviews:
         assert outcomes[0].ci_status == "failure"
         assert outcomes[0].review_status == "pending"
 
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_advisory_status_populated(self, mock_gh: object) -> None:
+        """advisory_status is populated from claude-review check."""
+        pr_list = [
+            {
+                "number": 500,
+                "title": "PR with advisory",
+                "headRefName": "feat/d",
+                "url": "https://github.com/org/repo/pull/500",
+            }
+        ]
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+            {"name": "claude-review", "state": "FAILURE"},
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_list)),
+            _mock_result(stdout=json.dumps(checks)),
+        ]
+
+        outcomes = get_open_pr_reviews()
+        assert len(outcomes) == 1
+        assert outcomes[0].ci_status == "success"
+        assert outcomes[0].review_status == "success"
+        assert outcomes[0].advisory_status == "failure"
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_advisory_status_none_when_absent(self, mock_gh: object) -> None:
+        """advisory_status is 'none' when no advisory check exists."""
+        pr_list = [
+            {
+                "number": 501,
+                "title": "PR without advisory",
+                "headRefName": "feat/e",
+                "url": "https://github.com/org/repo/pull/501",
+            }
+        ]
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+        ]
+        mock_gh.side_effect = [
+            _mock_result(stdout=json.dumps(pr_list)),
+            _mock_result(stdout=json.dumps(checks)),
+        ]
+
+        outcomes = get_open_pr_reviews()
+        assert len(outcomes) == 1
+        assert outcomes[0].advisory_status == "none"
+
 
 class TestGetPRReviewDetail:
     """Tests for get_pr_review_detail() with mocked gh CLI."""
@@ -400,7 +520,24 @@ class TestFormatReviewsText:
         assert "feat/test" in text
         assert "CI=[+]" in text
         assert "Review=[~]" in text
+        assert "Advisory=[-]" in text  # default "none" → "-"
         assert "Precheck=[yes]" in text
+
+    def test_advisory_failure_icon(self) -> None:
+        outcomes = [
+            ReviewOutcome(
+                pr_number=99,
+                title="Advisory fail",
+                branch="b",
+                ci_status="success",
+                review_status="success",
+                has_precheck_ci=False,
+                url="u",
+                advisory_status="failure",
+            )
+        ]
+        text = format_reviews_text(outcomes)
+        assert "Advisory=[x]" in text
 
     def test_failure_icons(self) -> None:
         outcomes = [
@@ -440,5 +577,22 @@ class TestFormatReviewsJSON:
         result = format_reviews_json(outcomes)
         assert len(result) == 1
         assert result[0]["pr_number"] == 42
+        assert result[0]["advisory_status"] == "none"
         # Verify it's JSON-serializable
         json.dumps(result)
+
+    def test_advisory_status_in_json(self) -> None:
+        outcomes = [
+            ReviewOutcome(
+                pr_number=42,
+                title="Test",
+                branch="b",
+                ci_status="success",
+                review_status="success",
+                has_precheck_ci=False,
+                url="u",
+                advisory_status="failure",
+            )
+        ]
+        result = format_reviews_json(outcomes)
+        assert result[0]["advisory_status"] == "failure"
