@@ -151,6 +151,7 @@ uv run python -m pytest tests/unit/test_rules.py::test_specific  # Single test
 | `logging/` | JSONL game logging |
 | `analysis/` | Statistical analysis (stats, paired comparisons, models) |
 | `arc_d_v2/` | Arc D v2 lineage orchestration, charts, tables, reports |
+| `agent_ops/` | Governed follow-on plan for agentic orchestration platform work |
 | `validation/` | Promotion validation and schemas |
 | `ops/` | Operator tooling (internal): status, worktrees, events, watchdogs, scheduler |
 | `scoring.py` | Top-level scoring module |
@@ -239,6 +240,7 @@ See `docs/01_core/RULES.md` for complete rules specification.
 |-----------|---------------|--------|
 | Arc D v2 (multi-model lineage) | `plans/arc_d_v2/lineage_plan.md` | COMPLETE |
 | Browser Game Hosting and Human Data Capture | `plans/browser_game/governing_plan.md` | ACTIVE |
+| Agentic Orchestration Platform | `plans/agent_ops/governing_plan.md` | ACTIVE |
 
 When starting work on a governed initiative, begin with the Agent Execution
 Protocol below.

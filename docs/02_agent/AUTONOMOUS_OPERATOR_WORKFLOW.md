@@ -122,6 +122,7 @@ Main checkout (control plane, read-only for agents)
   |     +-- review_loops/                     # Review loop state (existing)
   |     +-- plan_reviews/                     # Plan review state (existing)
   |
+  +-- ../<repo>-steward-orchestrator/         # orchestrator lane (target)
   +-- ../<repo>-steward-author/               # author-a lane
   +-- ../<repo>-steward-author-b/             # author-b lane
   +-- ../<repo>-steward-author-c/             # author-c lane
@@ -132,7 +133,11 @@ Main checkout (control plane, read-only for agents)
 
 The `ops` lane runs from the main checkout itself. It does not have a
 dedicated worktree because it is read-only -- it inspects state, checks
-health, and orchestrates but does not write code.
+health, and supervises but does not write code.
+
+The target steady-state model adds a distinct `orchestrator` lane as the
+single normal user entrypoint for new work. `author-*` lanes become a
+background/resumable worker pool that the orchestrator delegates into.
 
 ---
 
@@ -149,7 +154,9 @@ From the main checkout:
 .claude/tmux/steward-session.sh
 ```
 
-This creates (or attaches to) a tmux session named `steward` with:
+This creates (or attaches to) a tmux session named `steward`.
+
+Current shipped baseline:
 
 | Window | Name | Panes | Purpose |
 |--------|------|-------|---------|
@@ -157,6 +164,20 @@ This creates (or attaches to) a tmux session named `steward` with:
 | 1 | `author-c` | 1 | Overflow author lane |
 | 2 | `author-d` | 1 | Overflow author lane |
 | 3 | `author-scratch` | 1 | Exploratory lane |
+
+Target dashboard-first layout (governed follow-on target):
+
+| Window | Name | Panes | Purpose |
+|--------|------|-------|---------|
+| 0 | `dashboard` | summary surface | High-signal current work and alerts |
+| 1 | `orchestrator` | 1 | Single human-facing intake/delegation lane |
+| 2 | `ops` | 1 | Supervisor / health / recovery lane |
+| 3 | `review` | 1 | Review / validation lane |
+| 4 | `issues` | 1 (optional) | Scheduled triage lane |
+
+`author-*` lanes remain available as background workers and should be
+resumable/inspectable by lane name rather than requiring them all to stay
+foreground panes at all times.
 
 Custom session name:
 
@@ -786,11 +807,15 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 | PR-5 (slice 1) | CI event producers, scope management, retry events | Shipped (#961) |
 | PR-5 (slice 2) | Issue-triage workflow, agent profile, conventions | Shipped |
 
-> **Note:** PR-5 in the governing plan covers the full rollout/integration
+> **Note:** PR-5 in the session workflow plan covers the full rollout/integration
 > phase including context safety, skill promotion, issue triage, and shadow
 > snapshots. Slices 1 (event producers/scope) and 2 (issue triage) have
-> shipped. The remaining PR-5 deliverables are listed under
-> "Remaining Future Work." Issue-triage details:
+> shipped. The remaining rollout-critical PR-5 deliverables are listed under
+> "Remaining Future Work." The larger single-entry orchestrator /
+> dashboard-first / remote-channel / exportable-platform architecture has
+> been promoted into the governed follow-on plan
+> `plans/agent_ops/governing_plan.md`.
+> Issue-triage details:
 > `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md`.
 
 ### Remaining Future Work (PR-5 continuation)
@@ -803,6 +828,27 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 - Fully automated scope tracking via file-write hooks
 - Automated retry execution (currently advisory only)
 - CI event emission from GitHub Actions (currently only from local CI poller)
+
+### Follow-On Governed Initiative
+
+- Agent-native orchestration layer: canonical lane prompts, named skills,
+  supervisor routines, and automatic state updates so daily work is
+  prompt-first rather than command-first
+- Single-entry `orchestrator` lane and dashboard-first steward session, with
+  `author-*` lanes acting as resumable background workers
+- Remote operator channel integration (Telegram and/or Discord via official
+  Claude Code plugin flows) for out-of-band summaries, alerts, bounded
+  supervision, and 5-minute idle-attention notifications
+- Background worker-pool management, resume-by-name, communication logging,
+  and exportability to other coding projects
+- Reviewed self-improving skill loop for repeated successful workflows
+- Bounded second-model reviewer/maintainer service lanes (for example Codex as
+  background reviewer/maintainer while Claude remains the primary executor)
+
+See
+`plans/agent_ops/governing_plan.md`
+for the governed follow-on architecture plan, detailed `Platform-*` PR
+roadmap, dependency batches, portability boundary, and development footguns.
 
 See `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` for the
 full implementation sequence and design decisions.

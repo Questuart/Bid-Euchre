@@ -2,14 +2,14 @@
 **Date:** 2026-03-15
 **Goal:** Move to a fully autonomous multi-agent operating model where agents execute work end-to-end in isolated worktrees and persistent terminal sessions, while the user audits progress, diffs, artifacts, and status primarily through VS Code.
 
-> **Scope note:** This plan has governing-initiative scale (5 PRs, new `src/` package, new CLI) but is filed as a session plan because it is infrastructure/tooling work that does not require the checkpoint/sub-plan governance designed for research lineages. If scope grows beyond 5 PRs, promote to a governed initiative under `plans/agent_ops/`.
+> **Scope note:** This plan began as a 5-PR infrastructure session plan. As of 2026-03-19, the larger agent-native orchestration architecture (single-entry orchestrator, dashboard-first steward session, background worker pool, communication bus, remote channels, and exportability to other repos) has outgrown that boundary and is now promoted into the governed follow-on plan [governing_plan.md](../agent_ops/governing_plan.md). This session plan remains the source of truth for PR-1 through PR-5 rollout and safety work.
 
 ## Plan
 - PR-1: Establish the steward lane model, bootstrap scripts, and documentation for lane/worktree identity using the existing Claude worktree hook system as the foundation.
 - PR-2: Add a repo-owned steward session launcher and VS Code audit workspace so autonomous sessions can be started consistently and audited from a stable editor surface, while shifting review inspection from local loop state to GitHub/CI outcomes.
 - PR-3: Add a lightweight operator CLI (`ops.py`) that summarizes worktree health, GitHub/CI review outcomes, local plan-review status, rung state, heartbeats, watchdog status for long-running processes, and latest artifacts from one command.
 - PR-4: Add a two-layer memory system: small curated memory for stable operator facts plus a local audit index over execution logs, CI/review outcomes, checkpoints, and manifests for searchable history.
-- PR-5: Roll out the autonomous workflow in stages, validate online-first PR review plus local `/review-plan`, add a canonical lane-activity / current-work surface, add skill-promotion, issue-triage, and context-safety workflows, and retire ad hoc “multiple terminals in one checkout” usage.
+- PR-5: Roll out the autonomous workflow in stages, validate online-first PR review plus local `/review-plan`, add a canonical lane-activity / current-work surface, add skill-promotion, issue-triage, and context-safety workflows, pilot the minimum prompt/profile and automation improvements needed for safe adoption, and retire ad hoc “multiple terminals in one checkout” usage.
 
 ## Current State
 
@@ -20,6 +20,7 @@ As of 2026-03-19, future agents should treat the following as ground truth:
 - `author`, `review`, and `ops` remain useful **role classes**, but the concrete execution units are lanes/worktrees.
 - PR-1 through PR-4 have established the core substrate: steward bootstrap, audit workspace, `ops.py`, watchdogs/recovery, online-first PR review surfaces, local `/review-plan`, audit index, curated memory, and session compaction.
 - PR-5 is now primarily a rollout, adoption, and operational-proof phase rather than a large architecture-definition phase.
+- The current stack is still stronger as a repo-owned control plane than as an agent-native prompt interface; PR-5 continuation should close the most immediate rollout gaps, while the larger agent-native platform work is now tracked in [governing_plan.md](../agent_ops/governing_plan.md).
 - The current operator substrate still needs a canonical operator-facing answer to: "which lane is working on which problem right now?"
 - Local PR review-loop and plan-review loop state under `.claude/runtime/review_loops/**` and `.claude/runtime/plan_reviews/**` is transitional/legacy unless explicitly called out otherwise.
 - If issue automation is adopted, it starts as scheduled/event-driven triage with dedupe and thresholds; it is not a default always-on autonomous fixer.
@@ -31,6 +32,12 @@ As of 2026-03-19, future agents should treat the following as ground truth:
 > **Context:** Arc D v2 QUICK ladder complete (R0-R3, 9/9 PASS on R3). FULL backfill running (R0-R2 × 3 seeds, sequential orchestrator). Browser-game initiative ACTIVE but not yet started.
 
 This plan is a **staged enabling track**, not a monolithic blocker. It should not pause Arc D and should not be deferred until after everything else. The thin slice lands after the next Arc D closeout slice (Phase 4a); the heavier infrastructure lands as browser-game creates real multi-agent coordination pressure.
+
+> **Sequencing clarification (2026-03-19):** "Not a monolithic blocker" does
+> **not** mean the browser-game or later product work is independent of this
+> infrastructure. The intended model is that browser-game and similar in-repo
+> work should benefit from the platform incrementally as slices land, without
+> being forced to wait for the entire orchestration platform to be complete.
 
 ### Compatibility with Running FULL Backfill
 
@@ -187,8 +194,15 @@ These decisions were resolved during the 2026-03-16 review session.
 - tmux becomes the session manager for long-lived autonomous agents.
 - Each active autonomous lane gets its own git worktree.
 - The main checkout becomes a control plane and audit root, not a write surface.
+- The user's normal entrypoint for new work becomes a single `orchestrator` lane that delegates to background author workers.
+
+> **Status note:** This section mixes the current steward baseline with the
+> intended target-state model. PR-5 prepares for that target, but the governed
+> follow-on platform plan owns full `orchestrator`, dashboard-first, remote
+> channel, and background-worker-pool implementation.
 
 ### Role Classes
+- `orchestrator`: user-facing intake and coordination role class; accepts new work, creates or refines the task contract, ensures planning/review discipline, delegates to author lanes, tracks cross-lane dependencies, and returns final outcomes to the user.
 - `author`: implementation role class; in practice the steward baseline may host multiple author lanes (`author-a` through `author-d`) in parallel.
 - `review`: advisory/manual reviewer role class; triages online PR review outcomes, performs bounded local plan/report/code reviews, and runs follow-up validation when online review or CI flags issues.
 - `ops`: monitoring and orchestration role class; watches rung status, GitHub/CI review outcomes, heartbeats, failures, and artifact publication.
@@ -196,9 +210,13 @@ These decisions were resolved during the 2026-03-16 review session.
 - `scratch`: optional utility lane for bounded exploratory or support work; not a primary ownership lane.
 
 ### Worktree Lifecycle Policy
-- The default steward session maintains persistent lanes `author-a`, `author-b`, `author-c`, `author-d`, `review`, `ops`, and `scratch`.
+- The target steward session is dashboard-first: human-facing lanes are `dashboard`, `orchestrator`, `ops`, `review`, and optional `issues`, while `author-*` lanes behave as a resumable background worker pool.
+- The current steward baseline maintains persistent lanes `author-a`, `author-b`, `author-c`, `author-d`, `review`, `ops`, and `scratch`; PR-5 continuation should migrate this toward the dashboard-first model without losing the existing worker pool.
 - These lanes map back to role classes (`author`, `review`, `ops`, optional `issues`), but `lane_id` is the canonical machine identity.
-- Specialized lanes such as `issues` may be added later if they prove useful, but they are not part of the default persistent baseline and should start as scheduled/event-driven workflows before becoming long-lived worktrees.
+- Specialized lanes such as `issues` may be added later if they prove useful. The preferred model is a scheduled/event-driven triage lane rather than a permanently coding worker.
+- The `orchestrator` lane becomes the single normal ingress for user-submitted work. Users should not need to pick an author lane manually for ordinary tasks.
+- `author-*` lanes are execution workers. They should be resumable by lane name/session identity, inspectable on demand, and creatable dynamically when the orchestrator determines additional parallelism is justified.
+- Dynamic author-lane creation must stay bounded by repo-owned concurrency limits, registry metadata, and cleanup policy so it does not recreate untracked worktree sprawl.
 - Any additional worktree is ephemeral and must be linked to a bounded task, plan, PR, or experiment.
 - Every worktree must have repo-local metadata: path, branch, role/class, created time, last active time, owner/session, dirty status, and cleanup state.
 - Ephemeral worktrees must carry a TTL and cleanup policy from creation time.
@@ -323,6 +341,11 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Introducing fully dynamic self-modifying agent behavior.
 - Replacing the existing rung orchestrator state machines.
 - Preserving the current local PR/plan review loops as canonical long-term architecture.
+
+> **Scope clarification:** These exclusions apply to PR-1 through PR-5. The
+> governed follow-on platform plan may add bounded self-improvement of reviewed
+> skills under explicit validation and approval gates, but not unbounded
+> self-modifying agent behavior.
 
 ## Architecture
 
@@ -652,7 +675,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 ### PR-5: Rollout, Agent Profiles, And Validation
 
 **Depends on:** PR-1 through PR-4 (all infrastructure must be in place before rollout).
-**Produces:** Validated end-to-end workflow, canonical current-work visibility, promoted skills, issue-triage workflow, context-safety validation.
+**Produces:** Validated end-to-end workflow, canonical current-work visibility, promoted skills, issue-triage workflow, context-safety validation, and the rollout/safety subset needed before the larger agent-native orchestration platform tracked in [governing_plan.md](../agent_ops/governing_plan.md).
 
 #### Objectives
 - Move from partial manual adoption to the default operating model.
@@ -661,21 +684,41 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Capture repeated successful workflows as reusable skills instead of rediscovering them.
 - Capture qualified repeated operational failures as durable backlog without creating issue spam or autonomous issue/PR loops.
 - Ensure auto-loaded context is safe to consume at high autonomy.
+- Shift PR-5 pilots toward prompt/profile use on the existing steward lanes so
+  repo-owned tooling increasingly acts as substrate/API rather than the only
+  human-facing workflow.
+- Define the minimum prompt/profile improvements needed for the current
+  `author-*`, `review`, and `ops` lanes to pilot the workflow safely.
+- Keep PR-5 outputs aligned with the governed follow-on platform plan without
+  requiring full `orchestrator`, dashboard-first, remote-channel, or
+  background-worker-pool implementation inside PR-5.
+
+> **Scope boundary update (2026-03-19):** PR-5 should focus on rollout-critical capabilities: lane-activity/current-work visibility, context-safety scanning, skill-promotion workflow, issue-triage workflow, shadow snapshot/rollback, and the minimum prompt/profile improvements needed to pilot the workflow safely. The broader platform architecture for a dashboard-first steward session, message bus, dynamic worker pool, remote channel orchestration, and cross-repo exportability is now tracked separately in [governing_plan.md](../agent_ops/governing_plan.md).
 
 #### Deliverables
 - rollout guide in `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
 - optional role-specific startup prompts or agent docs under `.claude/agents/`
+  for the existing steward lanes used in PR-5 pilots
+- minimal prompts/profiles for `ops`, `review`, and `author-*` sufficient to
+  pilot prompt-first work safely on the current steward baseline
 - lane-activity / current-work surface in `ops.py status` or a tightly related operator surface showing current task and state per lane
 - context-safety scan script for memory/summary/skill promotion
 - skill-promotion workflow doc or helper script under `.claude/skills/` or `scripts/internal/`
 - issue-triage workflow doc and issue/project conventions for qualified operational findings
 - optional `issues` agent prompt/profile or scheduled triage helper, if adopted after pilot
 - shadow snapshot/rollback workflow docs and helper script
+- at least one named skill or prompt wrapper promoted from a repeated PR-5
+  workflow
+- rollout-critical automatic state updates where practical (for example
+  file-touch tracking, PR linkage, lane activity, and durable progress updates)
 - validation notes in a follow-up session plan or report
 
 #### Rollout Steps
 - Pilot on one bounded implementation task.
 - Pilot the lane-activity surface against multiple active steward lanes and confirm it can answer "x agent is working on y problem" from one command.
+- Pilot minimal lane prompts so an existing steward lane can be given a
+  natural-language task and drive planning, scope, validation, PR creation, and
+  status updates without the user spelling out `uv run ...` commands.
 - Pilot one online PR review path with exactly one reviewer enabled.
 - Pilot one local `/review-plan` or report-review task.
 - Pilot on one rung-monitoring task.
@@ -683,6 +726,9 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Validate handoff behavior across restarts and across multiple active worktrees.
 - Promote at least one repeated multi-step workflow into a reusable skill.
 - Validate that generated summaries or notes are scanned before auto-loading or memory promotion.
+- Validate that the `ops` lane can act as a prompt-guided supervisor on the
+  current steward baseline and report deltas and recommended actions rather than
+  forcing constant manual command use.
 - Validate that shadow snapshots and operation logs are sufficient to audit and recover from a bad autonomous edit sequence.
 - Make the workflow the documented default once all pilots pass.
 
@@ -690,6 +736,9 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - The user can delegate a task, open VS Code, and audit progress without sharing a checkout with the autonomous agent.
 - The user can see which steward lane is working on which task, current step, and blocker state from one operator surface without reading raw task JSON.
 - An agent can start, continue, review, and monitor work autonomously from dedicated steward lane worktrees.
+- A user can increasingly interact with the current steward lanes through
+  prompts and handoffs; `ops.py` and runtime files serve as substrate/API
+  rather than the only human workflow surface.
 - PR review runs online-first with visible GitHub/CI outcomes and without depending on local review-loop orchestration.
 - Local plan review works in-session through `/review-plan` without PTY/parser fragility from a Codex subprocess loop.
 - Repeated successful workflows are captured as skills or documented operator procedures.
@@ -699,12 +748,77 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - Autonomous work is reversible through documented snapshot/recovery mechanisms.
 - Cleanup and recovery are documented and tested.
 
+#### Near-Term Execution Roadmap (2026-03-19 Focus)
+
+The current focus should remain on **closing PR-5 cleanly** before the
+follow-on governed orchestration platform becomes the main line of work.
+
+##### PR-5 closeout slices
+
+| Slice | Scope | Depends on | Parallelism guidance |
+|------|-------|------------|----------------------|
+| `PR-5 slice 3` | Context-safety scanning for memory/summary/skill promotion | Existing PR-5 slices 1-2 | Can run in parallel with slice 4 if write scopes stay disjoint |
+| `PR-5 slice 4` | Shadow snapshots and rollback workflow | Existing PR-5 slices 1-2 | Can run in parallel with slice 3 |
+| `PR-5 slice 5` | Skill-promotion workflow | Slice 3 preferred | Can begin after context-safety contract is clear; avoid overlapping docs/scripts with slice 3 |
+| `PR-5 slice 6` | Lane-activity/current-work stabilization and trusted operator visibility | Existing lane-activity work + any required worktree/session stabilizers | Can overlap partially with slices 3-4, but should finish before PR-5 closeout |
+| `PR-5 slice 7` | Automated scope tracking, retry follow-through, CI event emission follow-ups, and PR-5 closeout | Slices 3-6 | Final closeout slice; not a good parallel candidate |
+
+##### Supporting stabilizers
+
+The following may need to interleave opportunistically if they block trusted
+operator use during PR-5:
+
+- worktree registry/bootstrap fixes
+- main-checkout exemption in worktree prune/quarantine flows
+- review/CI process fixes such as issue `#987`
+
+These should stay small and focused; do not fold them into large PR-5 slices
+unless they are inseparable from the capability being shipped.
+
+##### Practical delivery expectation
+
+At current shipping rates, the **remaining PR-5 closeout stack** is the part
+that can plausibly be pushed through in roughly one to two focused days if
+review churn stays low. The follow-on governed initiative is intentionally a
+larger multi-PR platform effort and should not be treated as a same-day stack.
+
+> **User migration note:** The explicit schedule for when the user should
+> change day-to-day workflow (existing steward layout -> dashboard-first ->
+> orchestrator-first intake -> remote supervision as default) is tracked in the
+> governed platform plan:
+> [governing_plan.md](../agent_ops/governing_plan.md).
+
+#### Agent-Native Orchestration Target
+
+PR-5 contributes only the rollout/safety subset of the broader
+agent-native-orchestration target:
+
+- current-work visibility
+- minimal prompt/profile improvements on the current steward baseline
+- context safety
+- skill promotion
+- issue triage
+- rollback / snapshot safety
+
+For the full target-state model (`orchestrator`, dashboard-first stewardship,
+communication bus, remote channels, worker-pool management, and portability),
+see the governed follow-on plan:
+[governing_plan.md](../agent_ops/governing_plan.md).
+
 ## Detailed File Plan
+- This file plan is restricted to PR-5 rollout/safety scope. Target-state
+  platform artifacts such as `orchestrator`, the communication bus, remote
+  operator channels, resume-by-name, and worker-pool management are tracked in
+  the governed follow-on plan.
 - `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` — canonical workflow doc for the new operating model.
 - `.claude/scripts/start-role-worktree.sh` — role-aware worktree bootstrap and reuse logic.
 - `.claude/scripts/start-agent-role.sh` — starts Claude in the correct role worktree with expected instructions.
 - `.claude/tmux/steward-session.sh` — canonical tmux bootstrap for the steward session baseline.
 - `.claude/tmux/agent-ops-layout.conf` — stable tmux window and pane layout.
+- `.claude/agents/README.md` — overview of pilot prompts and when each current steward lane/profile should be used.
+- `.claude/agents/ops.md` or equivalent pilot supervisor prompt — prompt-first monitoring, delta reporting, and recovery behavior for the `ops` lane.
+- `.claude/agents/review.md` or equivalent pilot review prompt — bounded plan/code review and validation behavior for the `review` lane.
+- `.claude/agents/author.md` or equivalent pilot implementation prompt — end-to-end execution discipline for `author-*` lanes.
 - `.claude/launchd/ensure-steward-session.plist` — macOS host-level recovery template for steward session bootstrap.
 - `Bid-Euchre-agent-audit.code-workspace` — multi-root audit workspace for VS Code.
 - `.vscode/tasks.json` — audit/status/validation tasks.
@@ -712,6 +826,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `src/bid_euchre/ops/__init__.py` — package root for operator helpers.
 - `src/bid_euchre/ops/status.py` — status aggregation logic and synthesized lane current-work view.
 - `src/bid_euchre/ops/worktrees.py` — worktree registry, classification, TTL, and cleanup policy helpers.
+- `src/bid_euchre/ops/session.py` or equivalent session-metadata helpers — lane activity inputs, current-work synthesis inputs, and PR-5 rollout metadata.
 - `src/bid_euchre/ops/events.py` — durable event append/drain helpers.
 - `src/bid_euchre/ops/reviews.py` — provider-neutral PR review outcome aggregation and local plan review status helpers.
 - `src/bid_euchre/ops/scheduler.py` — periodic scheduler loop and due-check logic.
@@ -726,6 +841,7 @@ The Claude Code permission model must evolve alongside the worktree lifecycle sy
 - `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` — qualified issue intake, dedupe, labels, and execution gates.
 - `.claude/skills/review-plan/SKILL.md` — Claude-only in-session plan review flow.
 - `.claude/skills/reviewing-plans/SKILL.md` — rubric support for `/review-plan`.
+- `.claude/skills/` additions for common lane flows — start-task, monitor-pr, recover-stalled-lane, prepare-review, and similar repeatable routines.
 - `.claude/agents/issues.md` or equivalent optional profile — bounded issue-triage guidance if the `issues` agent is adopted.
 - `src/bid_euchre/ops/recovery.py` — failure classification and bounded recovery templates.
 - `src/bid_euchre/ops/compaction.py` — session compaction and archive metadata helpers.
