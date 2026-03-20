@@ -400,15 +400,44 @@ class TestPollCIStatus:
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
-        # Without explicit override, codex-review is classified as CI
+        # Default: codex-review is advisory → excluded from CI
         report = poll_ci_status(900)
-        assert report.overall == "failure"
+        assert report.overall == "success"
 
-        # With explicit override, codex-review is excluded
+        # Explicit override also excludes codex-review
         report = poll_ci_status(900, review_contexts=("codex-review",))
         assert report.overall == "success"
         assert len(report.checks) == 1
         assert report.checks[0].name == "tests"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_default_excludes_codex_review(self, mock_run: object) -> None:
+        """Default (None) excludes codex-review from CI checks (advisory)."""
+        checks = [
+            {"name": "codex-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(904)
+        assert report.overall == "success"
+        assert len(report.checks) == 1
+        assert report.checks[0].name == "tests"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_default_excludes_all_non_ci(self, mock_run: object) -> None:
+        """Default excludes reviewing-changes, claude-review, and codex-review."""
+        checks = [
+            {"name": "reviewing-changes", "state": "FAILURE"},
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "codex-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(905)
+        assert report.overall == "success"
+        assert len(report.checks) == 1
 
     @patch("bid_euchre.ops.ci.subprocess.run")
     def test_timeout_returns_unknown(self, mock_run: object) -> None:
