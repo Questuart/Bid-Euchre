@@ -797,8 +797,11 @@ def archive_worktree(
             continue
 
     # Perform removal
+    cmd = ["git", "worktree", "remove", worktree_path]
+    if force:
+        cmd.append("--force")
     result = subprocess.run(
-        ["git", "worktree", "remove", worktree_path],
+        cmd,
         capture_output=True,
         text=True,
         timeout=30,

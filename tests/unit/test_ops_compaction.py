@@ -452,6 +452,27 @@ class TestPathTraversalValidation:
         with pytest.raises(ValueError, match="Invalid session_id"):
             get_archive_context("back\\slash", archive_dir)
 
+    def test_delete_archive_rejects_symlink_escape(
+        self, archive_dir: Path, tmp_path: Path
+    ) -> None:
+        """delete_archive refuses to follow symlinks that escape archive dir (#959)."""
+        # Create a target directory outside the archive
+        target = tmp_path / "important_data"
+        target.mkdir()
+        (target / "precious.txt").write_text("do not delete")
+
+        # Create a symlink inside archive_dir that points to the external target
+        symlink_name = "session-evil"
+        (archive_dir / symlink_name).symlink_to(target)
+
+        # delete_archive should refuse and return False
+        result = delete_archive(symlink_name, archive_dir)
+        assert result is False, "delete_archive should refuse symlink escaping archive"
+
+        # Verify the external target was NOT deleted
+        assert target.exists(), "External target should not have been deleted"
+        assert (target / "precious.txt").exists()
+
 
 class TestFormatting:
     """Tests for formatting helpers."""
