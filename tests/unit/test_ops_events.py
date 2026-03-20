@@ -13,6 +13,7 @@ import pytest
 from bid_euchre.ops.events import (
     ARCHIVE_FILE,
     EVENTS_FILE,
+    LOCK_FILE,
     VALID_EVENT_TYPES,
     append_event,
     drain_events,
@@ -315,3 +316,42 @@ class TestDrainEvents:
             e for e in remaining if e.get("payload", {}).get("concurrent") is True
         ]
         assert len(concurrent_events) == 1
+
+
+class TestLockFile:
+    """Tests for dedicated lock file (#938)."""
+
+    def test_append_creates_lock_file(self, events_dir: Path) -> None:
+        """append_event creates the dedicated lock file."""
+        append_event("task_completed", "test", "ops", {}, events_dir)
+        assert (events_dir / LOCK_FILE).exists()
+
+    def test_drain_creates_lock_file(self, events_dir: Path) -> None:
+        """drain_events creates the dedicated lock file."""
+        append_event("task_completed", "test", "ops", {}, events_dir)
+        # Remove lock file to verify drain recreates it
+        lock_path = events_dir / LOCK_FILE
+        lock_path.unlink()
+        drain_events(events_dir)
+        assert lock_path.exists()
+
+    def test_append_after_drain_not_lost(self, events_dir: Path) -> None:
+        """An event appended immediately after drain is not lost (#938).
+
+        Before the fix, append_event could lock the old inode (pre-rename)
+        and write to an unlinked file.  With the dedicated lock file, both
+        sides lock the same object regardless of renames.
+        """
+        # Populate and drain
+        for i in range(3):
+            append_event("task_completed", "test", "ops", {"i": i}, events_dir)
+        drained = drain_events(events_dir)
+        assert drained == 3
+
+        # Append immediately after drain
+        append_event("ci_failure", "post-drain", "ops", {"survived": True}, events_dir)
+
+        # The post-drain event must be readable
+        events = read_events(events_dir)
+        assert len(events) == 1
+        assert events[0]["payload"]["survived"] is True

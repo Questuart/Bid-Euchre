@@ -50,6 +50,7 @@ VALID_EVENT_TYPES = frozenset(
 DEFAULT_EVENTS_DIR = Path(".claude/runtime/events")
 EVENTS_FILE = "events.jsonl"
 ARCHIVE_FILE = "events.archive.jsonl"
+LOCK_FILE = ".events.lock"
 
 
 def _now_iso() -> str:
@@ -98,15 +99,20 @@ def append_event(
     }
 
     events_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = events_dir / LOCK_FILE
     events_file = events_dir / EVENTS_FILE
 
-    with open(events_file, "a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+    # Lock a dedicated lock file instead of the data file.  drain_events()
+    # replaces the data file via rename, which would invalidate an flock
+    # held on the old inode — see #938.
+    with open(lock_path, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
         try:
-            f.write(json.dumps(event, sort_keys=True) + "\n")
-            f.flush()
+            with open(events_file, "a") as f:
+                f.write(json.dumps(event, sort_keys=True) + "\n")
+                f.flush()
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
     logger.debug("Event appended: %s from %s", event_type, source)
     return event
@@ -215,30 +221,33 @@ def drain_events(
     to_drain: list[str] = []
     to_keep: list[str] = []
 
-    # Hold exclusive lock for the entire drain cycle to prevent concurrent
-    # append_event() calls from writing to the old file between read and rename.
-    with open(events_file, "r+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+    # Lock a dedicated lock file (same one used by append_event) so that
+    # concurrent appenders cannot write to an inode that is about to be
+    # replaced by rename — see #938.
+    lock_path = events_dir / LOCK_FILE
+    with open(lock_path, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
         try:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+            with open(events_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
 
-                if up_to is None:
-                    to_drain.append(line)
-                    continue
-
-                try:
-                    event = json.loads(line)
-                    event_time = datetime.fromisoformat(event["timestamp"])
-                    if event_time <= up_to:
+                    if up_to is None:
                         to_drain.append(line)
-                    else:
+                        continue
+
+                    try:
+                        event = json.loads(line)
+                        event_time = datetime.fromisoformat(event["timestamp"])
+                        if event_time <= up_to:
+                            to_drain.append(line)
+                        else:
+                            to_keep.append(line)
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        # Keep malformed lines in active log
                         to_keep.append(line)
-                except (json.JSONDecodeError, KeyError, ValueError):
-                    # Keep malformed lines in active log
-                    to_keep.append(line)
 
             if not to_drain:
                 return 0
@@ -259,7 +268,7 @@ def drain_events(
                 for line in to_drain:
                     af.write(line + "\n")
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
     logger.info("Drained %d events to archive", len(to_drain))
     return len(to_drain)

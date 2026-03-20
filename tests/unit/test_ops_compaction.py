@@ -394,6 +394,27 @@ class TestDeleteArchive:
 
         assert result is False
 
+    def test_delete_rejects_symlink_escape(
+        self, archive_dir: Path, tmp_path: Path
+    ) -> None:
+        """delete_archive refuses to follow a symlink pointing outside archive_dir (#959)."""
+        # Create a target directory outside archive_dir
+        target_dir = tmp_path / "sensitive-data"
+        target_dir.mkdir()
+        (target_dir / "important.txt").write_text("do not delete")
+
+        # Create a symlink inside archive_dir pointing to the target
+        symlink = archive_dir / "evil-session"
+        symlink.symlink_to(target_dir)
+
+        # delete_archive should refuse and return False
+        result = delete_archive("evil-session", archive_dir)
+        assert result is False
+
+        # Target directory must be untouched
+        assert target_dir.exists()
+        assert (target_dir / "important.txt").read_text() == "do not delete"
+
 
 class TestPathTraversalValidation:
     """Tests for _validate_session_id() path traversal rejection."""

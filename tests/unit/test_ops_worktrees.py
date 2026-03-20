@@ -899,7 +899,7 @@ class TestArchiveWorktree:
     def test_archive_passes_force_flag(
         self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """force=True must pass --force to git worktree remove (#967)."""
+        """--force is passed to git worktree remove when force=True (#967)."""
         import subprocess as sp
 
         from bid_euchre.ops import worktrees as wt_mod
@@ -907,7 +907,8 @@ class TestArchiveWorktree:
         wt_dir = tmp_path / "dirty-worktree"
         wt_dir.mkdir()
 
-        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
+        # force=True bypasses the dirty check, so we don't need to mock it as clean
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: True)
 
         commands_run: list[list[str]] = []
 
@@ -925,10 +926,41 @@ class TestArchiveWorktree:
             force=True,
         )
 
-        # Verify --force was passed to git
         git_cmds = [c for c in commands_run if "worktree" in str(c)]
-        assert len(git_cmds) >= 1
-        assert "--force" in git_cmds[0], f"--force missing from command: {git_cmds[0]}"
+        assert len(git_cmds) == 1
+        assert "--force" in git_cmds[0], f"--force missing from: {git_cmds[0]}"
+
+    def test_archive_no_force_flag_by_default(
+        self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--force is NOT in the command when force=False."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        wt_dir = tmp_path / "clean-worktree"
+        wt_dir.mkdir()
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
+
+        commands_run: list[list[str]] = []
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            cmd = args[0] if args else kwargs.get("args", [])
+            commands_run.append(list(cmd))
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        wt_mod.archive_worktree(
+            str(wt_dir),
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+        )
+
+        git_cmds = [c for c in commands_run if "worktree" in str(c)]
+        assert len(git_cmds) == 1
+        assert "--force" not in git_cmds[0], f"Unexpected --force in: {git_cmds[0]}"
 
     def test_archive_cleans_registry_entry(
         self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

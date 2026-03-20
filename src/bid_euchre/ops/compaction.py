@@ -324,6 +324,10 @@ def delete_archive(session_id: str, archive_dir: Path | None = None) -> bool:
     """Delete an archived session.
 
     Returns True if the archive was found and deleted.
+
+    A symlink containment check ensures that even if a symlink with a
+    valid session_id name exists inside *archive_dir*, ``shutil.rmtree``
+    will not follow it outside the archive directory (#959).
     """
     _validate_session_id(session_id)
 
@@ -334,13 +338,17 @@ def delete_archive(session_id: str, archive_dir: Path | None = None) -> bool:
     if not session_dir.exists():
         return False
 
-    # Defence-in-depth: verify resolved path stays inside archive_dir (#959).
-    # _validate_session_id blocks ".." but cannot prevent symlinks whose
-    # targets lie outside the archive tree.
-    if not session_dir.resolve().is_relative_to(archive_dir.resolve()):
+    # Symlink containment: resolved path must be inside archive_dir (#959).
+    resolved = session_dir.resolve()
+    archive_resolved = archive_dir.resolve()
+    if resolved != archive_resolved and not str(resolved).startswith(
+        str(archive_resolved) + "/"
+    ):
         logger.warning(
-            "Refusing to delete %s: resolved path escapes archive directory",
+            "Refusing to delete %s: resolves to %s (outside %s)",
             session_dir,
+            resolved,
+            archive_resolved,
         )
         return False
 
