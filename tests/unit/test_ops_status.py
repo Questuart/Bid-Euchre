@@ -16,6 +16,7 @@ from bid_euchre.ops.status import (
     _derive_current_step,
     _find_last_event_for_lane,
     _format_relative_time,
+    _probe_lane_liveness,
     aggregate_status,
     emit_scope_snapshot,
     format_status_json,
@@ -1720,6 +1721,8 @@ class TestJsonOutputStability:
             "last_checkpoint",
             "last_event_type",
             "last_event_at",
+            "liveness_source",
+            "liveness_detail",
         }
         assert set(lane_json.keys()) == expected_fields
         assert lane_json["last_event_type"] == "ci_success"
@@ -2245,3 +2248,441 @@ class TestEmitScopeSnapshot:
         touched = result["scope"]["touched_files"]
         # existing.py should not be duplicated
         assert touched == ["src/existing.py", "src/new.py"]
+
+
+# ---------------------------------------------------------------------------
+# Liveness probing tests
+# ---------------------------------------------------------------------------
+
+
+class TestProbeLaneLiveness:
+    """Tests for _probe_lane_liveness() fallback signal detection."""
+
+    def test_recent_event_detected(self) -> None:
+        """Recent event within recency window → 'recent_event' source."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:20:00Z",  # 10 min ago
+            },
+        ]
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b", "author-b", events, now=now, recency_minutes=30
+        )
+        assert source == "recent_event"
+        assert detail is not None
+        assert "task_started" in detail
+        assert "10m ago" in detail
+
+    def test_stale_event_ignored(self) -> None:
+        """Event older than recency window → 'none' source."""
+        now = datetime(2026, 3, 19, 12, 0, 0, tzinfo=timezone.utc)
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:00:00Z",  # 120 min ago
+            },
+        ]
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b", "author-b", events, now=now, recency_minutes=30
+        )
+        assert source == "none"
+        assert detail is None
+
+    def test_event_for_different_lane_ignored(self) -> None:
+        """Events for a different lane are not considered."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-a",  # Different lane
+                "timestamp": "2026-03-19T10:20:00Z",
+            },
+        ]
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b", "author-b", events, now=now, recency_minutes=30
+        )
+        assert source == "none"
+
+    def test_worktree_dirty_detected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Dirty worktree → 'worktree_dirty' source when check_worktree=True."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+
+        # Mock is_worktree_dirty to return True
+        import bid_euchre.ops.worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda path: True)
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b",
+            "author-b",
+            [],  # No events
+            now=now,
+            check_worktree=True,
+        )
+        assert source == "worktree_dirty"
+        assert detail is not None
+        assert "uncommitted" in detail
+
+    def test_worktree_clean_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Clean worktree with no events → 'none' source."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+
+        import bid_euchre.ops.worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda path: False)
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b",
+            "author-b",
+            [],
+            now=now,
+            check_worktree=True,
+        )
+        assert source == "none"
+        assert detail is None
+
+    def test_worktree_check_disabled_by_default(self) -> None:
+        """With check_worktree=False (default), no subprocess is called."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        # Even if we pass a worktree path, no dirty check should happen
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b",
+            "author-b",
+            [],  # No events
+            now=now,
+            check_worktree=False,
+        )
+        assert source == "none"
+
+    def test_recent_event_takes_priority_over_dirty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When both signals exist, recent_event wins (checked first)."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        events = [
+            {
+                "event_type": "ci_success",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:25:00Z",  # 5 min ago
+            },
+        ]
+
+        import bid_euchre.ops.worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda path: True)
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b",
+            "author-b",
+            events,
+            now=now,
+            recency_minutes=30,
+            check_worktree=True,
+        )
+        # Event signal is checked first and returned
+        assert source == "recent_event"
+
+    def test_worktree_dirty_check_failure_degrades(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If worktree dirty check raises, degrade gracefully to 'none'."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+
+        import bid_euchre.ops.worktrees as wt_mod
+
+        def raise_error(path: str) -> bool:
+            raise FileNotFoundError("Worktree gone")
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", raise_error)
+
+        source, detail = _probe_lane_liveness(
+            "/tmp/wt-author-b",
+            "author-b",
+            [],
+            now=now,
+            check_worktree=True,
+        )
+        assert source == "none"
+        assert detail is None
+
+
+class TestSynthesizeLaneActivityLiveness:
+    """Tests for likely_active state in synthesize_lane_activity()."""
+
+    def test_likely_active_from_recent_event(self) -> None:
+        """Lane with no session but recent event → likely_active."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b")]
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:20:00Z",  # 10 min ago
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, {}, {}, events, now=now)
+        lane = result[0]
+        assert lane.state == "likely_active"
+        assert lane.liveness_source == "recent_event"
+        assert lane.liveness_detail is not None
+        assert "task_started" in lane.liveness_detail
+
+    def test_likely_active_attention_flag(self) -> None:
+        """likely_active lanes get attention_needed with evidence."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b")]
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:20:00Z",
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, {}, {}, events, now=now)
+        lane = result[0]
+        assert lane.attention_needed is True
+        assert "likely active" in (lane.attention_reason or "").lower()
+        assert "no registry session" in (lane.attention_reason or "").lower()
+
+    def test_active_with_session_preserves_registry_source(self) -> None:
+        """Lane with session_id → active with liveness_source='registry'."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-a", session_id="s1")]
+        sessions = {"author-a": {"task": "Work", "started_at": "2026-03-19T10:00:00Z"}}
+
+        result = synthesize_lane_activity(lanes, sessions, {}, [], now=now)
+        lane = result[0]
+        assert lane.state == "active"
+        assert lane.liveness_source == "registry"
+        assert lane.liveness_detail is None
+
+    def test_idle_no_signals_preserves_none_source(self) -> None:
+        """Lane with no session and no signals → idle with source='none'."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b")]
+
+        result = synthesize_lane_activity(lanes, {}, {}, [], now=now)
+        lane = result[0]
+        assert lane.state == "idle"
+        assert lane.liveness_source == "none"
+        assert lane.liveness_detail is None
+
+    def test_likely_active_from_worktree_dirty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Lane with dirty worktree but no session → likely_active."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b")]
+
+        import bid_euchre.ops.worktrees as wt_mod
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda path: True)
+
+        result = synthesize_lane_activity(
+            lanes, {}, {}, [], now=now, probe_worktree=True
+        )
+        lane = result[0]
+        assert lane.state == "likely_active"
+        assert lane.liveness_source == "worktree_dirty"
+
+    def test_stale_event_does_not_trigger_likely_active(self) -> None:
+        """Old event (beyond stale_minutes) does not trigger likely_active."""
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b", lifecycle_class="ephemeral")]
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:00:00Z",  # 5 hours ago
+            },
+        ]
+
+        result = synthesize_lane_activity(
+            lanes, {}, {}, events, now=now, stale_minutes=30
+        )
+        lane = result[0]
+        assert lane.state == "idle"
+
+    def test_blocked_takes_precedence_over_liveness(self) -> None:
+        """Blocked task state takes precedence regardless of liveness."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b")]
+        tasks = {
+            "author-b": [
+                _make_task("t1", "author-b", status="blocked", blocked_by=["CI down"]),
+            ],
+        }
+        events = [
+            {
+                "event_type": "task_started",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:20:00Z",
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, {}, tasks, events, now=now)
+        lane = result[0]
+        assert lane.state == "blocked"
+
+    def test_likely_active_not_flagged_as_idle_persistent(self) -> None:
+        """likely_active persistent lane does NOT get 'idle persistent' attention."""
+        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b", lifecycle_class="persistent")]
+        events = [
+            {
+                "event_type": "ci_success",
+                "lane_id": "author-b",
+                "timestamp": "2026-03-19T10:25:00Z",
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, {}, {}, events, now=now)
+        lane = result[0]
+        assert lane.state == "likely_active"
+        # Should NOT say "persistent lane idle"
+        assert "idle" not in (lane.attention_reason or "").lower()
+        # Should say "likely active ... no registry session"
+        assert "likely active" in (lane.attention_reason or "").lower()
+
+
+class TestFormatStatusTextLiveness:
+    """Tests for liveness-related text formatting."""
+
+    def test_likely_active_badge(self) -> None:
+        """likely_active lanes show [active?] badge."""
+        report = StatusReport(
+            lanes=[
+                LaneStatus(
+                    lane_id="author-b",
+                    lane_class="author",
+                    worktree_path="/tmp/wt",
+                    branch="codex/steward-author-b",
+                    lifecycle_class="persistent",
+                    has_active_session=False,
+                    state="likely_active",
+                    liveness_source="recent_event",
+                    liveness_detail="task_started 5m ago",
+                    attention_needed=True,
+                    attention_reason="likely active (task_started 5m ago) but no registry session",
+                ),
+            ],
+        )
+        text = format_status_text(report)
+        assert "[active?]" in text
+        assert "via task_started 5m ago" in text
+
+    def test_active_badge_unchanged(self) -> None:
+        """Normal active lanes still show [active] badge."""
+        report = StatusReport(
+            lanes=[
+                LaneStatus(
+                    lane_id="author-a",
+                    lane_class="author",
+                    worktree_path="/tmp/wt",
+                    branch="codex/steward-author-a",
+                    lifecycle_class="persistent",
+                    has_active_session=True,
+                    state="active",
+                    liveness_source="registry",
+                    session_task="Fix bug",
+                ),
+            ],
+        )
+        text = format_status_text(report)
+        assert "[active]" in text
+        assert "[active?]" not in text
+
+    def test_likely_active_in_summary_counts(self) -> None:
+        """likely_active state appears in lane activity summary."""
+        report = StatusReport(
+            lanes=[
+                LaneStatus(
+                    lane_id="author-b",
+                    lane_class="author",
+                    worktree_path="/tmp/wt",
+                    branch="main",
+                    lifecycle_class="persistent",
+                    has_active_session=False,
+                    state="likely_active",
+                    liveness_source="worktree_dirty",
+                ),
+            ],
+        )
+        text = format_status_text(report)
+        assert "1 likely_active" in text
+
+
+class TestFormatStatusJsonLiveness:
+    """Tests for liveness fields in JSON output."""
+
+    def test_liveness_fields_present(self) -> None:
+        """JSON output includes liveness_source and liveness_detail."""
+        report = StatusReport(
+            lanes=[
+                LaneStatus(
+                    lane_id="author-b",
+                    lane_class="author",
+                    worktree_path="/tmp/wt",
+                    branch="main",
+                    lifecycle_class="persistent",
+                    has_active_session=False,
+                    state="likely_active",
+                    liveness_source="recent_event",
+                    liveness_detail="ci_success 3m ago",
+                ),
+            ],
+        )
+        data = format_status_json(report)
+        lane = data["lanes"][0]
+        assert lane["liveness_source"] == "recent_event"
+        assert lane["liveness_detail"] == "ci_success 3m ago"
+        assert lane["state"] == "likely_active"
+
+    def test_registry_source_in_json(self) -> None:
+        """Active lane with registry source in JSON output."""
+        report = StatusReport(
+            lanes=[
+                LaneStatus(
+                    lane_id="author-a",
+                    lane_class="author",
+                    worktree_path="/tmp/wt",
+                    branch="main",
+                    lifecycle_class="persistent",
+                    has_active_session=True,
+                    state="active",
+                    liveness_source="registry",
+                ),
+            ],
+        )
+        data = format_status_json(report)
+        lane = data["lanes"][0]
+        assert lane["liveness_source"] == "registry"
+        assert lane["liveness_detail"] is None
+
+    def test_likely_active_in_summary_counts(self) -> None:
+        """JSON summary includes likely_active count."""
+        report = StatusReport(
+            lanes=[
+                LaneStatus(
+                    lane_id="author-b",
+                    lane_class="author",
+                    worktree_path="/tmp/wt",
+                    branch="main",
+                    lifecycle_class="persistent",
+                    has_active_session=False,
+                    state="likely_active",
+                    liveness_source="worktree_dirty",
+                ),
+            ],
+        )
+        data = format_status_json(report)
+        assert data["summary"]["lanes_by_state"]["likely_active"] == 1
