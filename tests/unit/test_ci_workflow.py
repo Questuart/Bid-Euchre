@@ -106,3 +106,25 @@ class TestCIWorkflowStructure:
             assert "install" not in name.lower()
             assert "checkout" not in name.lower()
             assert "setup" not in name.lower()
+
+    def test_aggregator_evaluates_all_upstream_jobs(self) -> None:
+        """The gate must check every upstream job including ``changes``.
+
+        If ``changes`` fails but is omitted from the evaluation, all
+        downstream jobs would be skipped and the gate would pass green,
+        silently masking the failure.
+        """
+        tests_job = self.jobs["tests"]
+        # Find the evaluation step that runs the bash gate logic
+        eval_steps = [
+            s
+            for s in tests_job.get("steps", [])
+            if "results=(" in str(s.get("run", ""))
+        ]
+        assert len(eval_steps) == 1, "Expected exactly one evaluation step"
+        run_script = eval_steps[0]["run"]
+        # Every job listed in needs must appear in the results array
+        for job_name in tests_job["needs"]:
+            assert (
+                f"needs.{job_name}.result" in run_script
+            ), f"Aggregator does not evaluate {job_name!r} result"

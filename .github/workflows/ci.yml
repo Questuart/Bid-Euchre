@@ -213,12 +213,13 @@ jobs:
 
       - name: Evaluate upstream results
         run: |
+          echo "changes:        ${{ needs.changes.result }}"
           echo "checks:         ${{ needs.checks.result }}"
           echo "tests-shard:    ${{ needs.tests-shard.result }}"
           echo "notebooks:      ${{ needs.notebooks.result }}"
           echo "promotion-gate: ${{ needs.promotion-gate.result }}"
 
-          results=("${{ needs.checks.result }}" "${{ needs.tests-shard.result }}" "${{ needs.notebooks.result }}" "${{ needs.promotion-gate.result }}")
+          results=("${{ needs.changes.result }}" "${{ needs.checks.result }}" "${{ needs.tests-shard.result }}" "${{ needs.notebooks.result }}" "${{ needs.promotion-gate.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
               echo "::error::Upstream job result: $r"
