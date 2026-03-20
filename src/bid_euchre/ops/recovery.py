@@ -480,3 +480,72 @@ def format_retry_policy_json(policy: RetryPolicy) -> dict[str, Any]:
         "failure_lane": policy.failure_lane,
         "reasons": policy.reasons,
     }
+
+
+# ---------------------------------------------------------------------------
+# Retry/Reroute Event Emission (#930)
+# ---------------------------------------------------------------------------
+
+
+def emit_retry_event(
+    policy: RetryPolicy,
+    lane_id: str,
+    events_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Emit a durable event based on a retry policy decision.
+
+    Maps ``RetryPolicy.action`` to event types:
+
+    - ``"retry"`` -> ``retry_attempted``
+    - ``"reroute"`` -> ``task_rerouted``
+    - ``"escalate"`` -> ``escalation``
+
+    This function is the canonical producer for ``retry_attempted`` and
+    ``task_rerouted`` events, which are consumed by watchdogs and the
+    recovery guidance surface.
+
+    Args:
+        policy: The evaluated retry policy.
+        lane_id: Canonical lane identity (e.g., ``"author-a"``).
+        events_dir: Override for events directory. Defaults to
+            ``.claude/runtime/events``.
+
+    Returns:
+        The emitted event dict, or None if the action has no matching
+        event type.
+    """
+    from bid_euchre.ops.events import append_event
+
+    _EVENT_MAP: dict[str, str] = {
+        "retry": "retry_attempted",
+        "reroute": "task_rerouted",
+        "escalate": "escalation",
+    }
+
+    event_type = _EVENT_MAP.get(policy.action)
+    if not event_type:
+        return None
+
+    payload: dict[str, object] = {
+        "task_id": policy.task_id,
+        "retry_count": policy.retry_count,
+        "last_failure": policy.last_failure,
+    }
+
+    if policy.action == "reroute" and policy.reroute_to:
+        payload["source_lane"] = lane_id
+        payload["target_lane"] = policy.reroute_to
+
+    if policy.action == "escalate":
+        payload["details"] = (
+            f"Task {policy.task_id} exceeded retry cap "
+            f"({policy.retry_count} failures) — human attention required"
+        )
+
+    return append_event(
+        event_type=event_type,
+        source="ops.retry",
+        lane_id=lane_id,
+        payload=payload,
+        events_dir=events_dir,
+    )

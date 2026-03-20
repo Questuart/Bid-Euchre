@@ -13,12 +13,15 @@ from bid_euchre.ops.status import (
     LaneStatus,
     StatusReport,
     aggregate_status,
+    emit_scope_snapshot,
     format_status_json,
     format_status_text,
     get_task_scope,
     load_lane_registry,
     load_sessions,
     load_tasks,
+    record_touched_files,
+    set_declared_scope,
     synthesize_lane_activity,
     update_task_scope,
 )
@@ -1401,3 +1404,243 @@ class TestGetTaskScope:
         """task_id with path separators or '..' is rejected (#989)."""
         with pytest.raises(ValueError, match="must not contain"):
             get_task_scope(bad_id, runtime_dir=runtime_dir)
+
+
+# ---- Convenience Scope Wrappers (#929) ----
+
+
+class TestSetDeclaredScope:
+    """Tests for set_declared_scope() convenience wrapper."""
+
+    def test_sets_declared_patterns(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        result = set_declared_scope(
+            "t1",
+            ["src/bid_euchre/ops/*.py", "tests/unit/test_ops_*.py"],
+            runtime_dir,
+        )
+        assert result["scope"]["declared_files"] == [
+            "src/bid_euchre/ops/*.py",
+            "tests/unit/test_ops_*.py",
+        ]
+
+    def test_rejects_empty_patterns(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        with pytest.raises(ValueError, match="non-empty"):
+            set_declared_scope("t1", [], runtime_dir)
+
+    def test_raises_on_missing_task(self, runtime_dir: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            set_declared_scope("nonexistent", ["*.py"], runtime_dir)
+
+
+class TestRecordTouchedFiles:
+    """Tests for record_touched_files() convenience wrapper."""
+
+    def test_appends_files(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {
+                        "declared_files": ["src/*.py"],
+                        "touched_files": ["src/a.py"],
+                    },
+                }
+            )
+        )
+        result = record_touched_files("t1", ["src/b.py", "src/c.py"], runtime_dir)
+        assert result["scope"]["touched_files"] == [
+            "src/a.py",
+            "src/b.py",
+            "src/c.py",
+        ]
+
+    def test_deduplicates_on_append(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {
+                        "declared_files": [],
+                        "touched_files": ["src/a.py"],
+                    },
+                }
+            )
+        )
+        result = record_touched_files("t1", ["src/a.py", "src/b.py"], runtime_dir)
+        assert result["scope"]["touched_files"] == ["src/a.py", "src/b.py"]
+
+    def test_creates_scope_if_missing(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        result = record_touched_files("t1", ["src/new.py"], runtime_dir)
+        assert result["scope"]["touched_files"] == ["src/new.py"]
+
+    def test_rejects_empty_files(self, runtime_dir: Path) -> None:
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+        with pytest.raises(ValueError, match="non-empty"):
+            record_touched_files("t1", [], runtime_dir)
+
+    def test_raises_on_missing_task(self, runtime_dir: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            record_touched_files("nonexistent", ["a.py"], runtime_dir)
+
+
+# ---- Git-based scope snapshot (#929) ----
+
+
+class TestEmitScopeSnapshot:
+    """Tests for emit_scope_snapshot() -- git-based scope tracking (#929)."""
+
+    @pytest.fixture()
+    def runtime_dir(self, tmp_path: Path) -> Path:
+        rd = tmp_path / "runtime"
+        (rd / "task_state").mkdir(parents=True)
+        return rd
+
+    def test_with_changes(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Captures git-changed files into touched_files."""
+        import subprocess
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+
+        def mock_run(cmd, **kwargs):
+            # Both staged and unstaged return files
+            if cmd == ["git", "diff", "--name-only", "HEAD"]:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="src/a.py\nsrc/b.py\n", stderr=""
+                )
+            if cmd == ["git", "diff", "--name-only"]:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout="src/b.py\nsrc/c.py\n", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1, stdout="", stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = emit_scope_snapshot(
+            "t1", repo_root=Path("/fake"), runtime_dir=runtime_dir
+        )
+        assert result is not None
+        touched = result["scope"]["touched_files"]
+        # Union of staged and unstaged, sorted
+        assert sorted(touched) == ["src/a.py", "src/b.py", "src/c.py"]
+
+    def test_no_changes_returns_none(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Returns None when no files have changed."""
+        import subprocess
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+
+        def mock_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="", stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = emit_scope_snapshot(
+            "t1", repo_root=Path("/fake"), runtime_dir=runtime_dir
+        )
+        assert result is None
+
+    def test_nonexistent_task_raises(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raises FileNotFoundError for missing task state."""
+        import subprocess
+
+        def mock_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="src/a.py\n", stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        with pytest.raises(FileNotFoundError):
+            emit_scope_snapshot(
+                "nonexistent", repo_root=Path("/fake"), runtime_dir=runtime_dir
+            )
+
+    def test_git_failure_graceful(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Git command failure returns None (no crash)."""
+        import subprocess
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps({"task_id": "t1", "status": "in_progress"})
+        )
+
+        def mock_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=128, stdout="", stderr="not a git repo"
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = emit_scope_snapshot(
+            "t1", repo_root=Path("/fake"), runtime_dir=runtime_dir
+        )
+        assert result is None
+
+    def test_appends_to_existing_touched(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Appends new files to existing touched_files without duplicates."""
+        import subprocess
+
+        (runtime_dir / "task_state" / "t1.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t1",
+                    "status": "in_progress",
+                    "scope": {
+                        "declared_files": ["src/*.py"],
+                        "touched_files": ["src/existing.py"],
+                    },
+                }
+            )
+        )
+
+        def mock_run(cmd, **kwargs):
+            if cmd == ["git", "diff", "--name-only", "HEAD"]:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="src/existing.py\nsrc/new.py\n",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="", stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        result = emit_scope_snapshot(
+            "t1", repo_root=Path("/fake"), runtime_dir=runtime_dir
+        )
+        assert result is not None
+        touched = result["scope"]["touched_files"]
+        # existing.py should not be duplicated
+        assert touched == ["src/existing.py", "src/new.py"]

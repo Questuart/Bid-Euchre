@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from bid_euchre.ops.scheduler import (
     MAX_DAEMON_ITERATIONS,
     DaemonResult,
     SchedulerState,
+    _evaluate_retries_for_findings,
     daemon,
     format_daemon_json,
     format_daemon_text,
@@ -509,3 +511,157 @@ class TestDaemonFormatters:
         assert data["critical_findings"] == 1
         assert data["stopped_reason"] == "error"
         assert len(data["errors"]) == 1
+
+
+# ---- Retry evaluation in tick (#930) ----
+
+
+class TestEvaluateRetriesForFindings:
+    """Tests for _evaluate_retries_for_findings() and its integration in tick()."""
+
+    @pytest.fixture()
+    def events_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "events"
+        d.mkdir()
+        return d
+
+    def test_emits_retry_for_subagent_failures(self, events_dir: Path) -> None:
+        """Subagent failure findings trigger retry event emission."""
+        from bid_euchre.ops.events import read_events
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        # Pre-populate event log with task failures (needed for policy eval)
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 1"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:01:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 2"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        # Create a subagent failure finding
+        findings = [
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="author-a:t1",
+                message="Task t1 failed 2 times",
+                threshold="3 failures",
+                recommended_action="Reroute",
+            ),
+        ]
+
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        assert emitted == 1
+
+        # Verify the retry_attempted event was written
+        events = read_events(events_dir)
+        retry_events = [e for e in events if e["event_type"] == "retry_attempted"]
+        assert len(retry_events) == 1
+        assert retry_events[0]["payload"]["task_id"] == "t1"
+        assert retry_events[0]["lane_id"] == "author-a"
+
+    def test_no_retry_without_subagent_findings(self, events_dir: Path) -> None:
+        """Non-subagent findings do not trigger retry evaluation."""
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        findings = [
+            WatchdogFinding(
+                watchdog_name="heartbeat_check",
+                severity="critical",
+                target="plans/sub/heartbeat",
+                message="Stale heartbeat",
+                threshold="5min",
+                recommended_action="Check process",
+            ),
+        ]
+
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        assert emitted == 0
+
+    def test_empty_findings_returns_zero(self, events_dir: Path) -> None:
+        emitted = _evaluate_retries_for_findings([], events_dir)
+        assert emitted == 0
+
+    def test_malformed_target_skipped(self, events_dir: Path) -> None:
+        """Findings with unparseable targets are skipped gracefully."""
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        findings = [
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="no-colon-here",
+                message="Bad target",
+                threshold="3 failures",
+                recommended_action="Reroute",
+            ),
+        ]
+
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        assert emitted == 0
+
+    def test_tick_integrates_retry_evaluation(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Full tick with subagent failures emits retry events."""
+        from bid_euchre.ops import worktrees as wt_mod
+        from bid_euchre.ops.events import read_events
+
+        monkeypatch.setattr(wt_mod, "list_worktrees_git", lambda: [])
+
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+
+        # The watchdog reads events from runtime_dir / "events", and tick
+        # also writes events there. Use that directory for both.
+        tick_events_dir = runtime_dir / "events"
+        tick_events_dir.mkdir(exist_ok=True)
+
+        # Pre-populate event log with repeated task failures
+        events_file = tick_events_dir / "events.jsonl"
+        lines = []
+        for i in range(3):
+            lines.append(
+                json.dumps(
+                    {
+                        "timestamp": f"2026-03-20T10:0{i}:00Z",
+                        "event_type": "task_failed",
+                        "source": "hook",
+                        "lane_id": "author-a",
+                        "payload": {"task_id": "t1", "details": f"error {i}"},
+                    }
+                )
+            )
+        events_file.write_text("\n".join(lines) + "\n")
+
+        tick(runtime_dir, plans_dir, scheduler_dir, tick_events_dir, now=now)
+
+        # The tick should have produced retry events via the
+        # subagent_failures watchdog finding 3 failures for t1
+        events = read_events(tick_events_dir)
+        retry_events = [
+            e
+            for e in events
+            if e["event_type"] in ("retry_attempted", "task_rerouted", "escalation")
+        ]
+        # 3 failures with default max_retries=3 means reroute
+        assert len(retry_events) >= 1
