@@ -779,3 +779,103 @@ class TestEvaluateRetriesForFindings:
         ]
         # 3 failures with default max_retries=3 means reroute
         assert len(retry_events) >= 1
+
+    def test_dedup_skips_already_escalated_tasks(self, events_dir: Path) -> None:
+        """Tasks with existing escalation events are not re-processed (#1045)."""
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        # Pre-populate with task failures AND an existing escalation event
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 1"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:01:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 2"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:02:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 3"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:03:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 4"},
+                }
+            ),
+            # Existing escalation event -- should prevent re-emission
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:04:00Z",
+                    "event_type": "escalation",
+                    "source": "ops.retry",
+                    "lane_id": "author-a",
+                    "payload": {
+                        "task_id": "t1",
+                        "retry_count": 4,
+                        "last_failure": "error 4",
+                        "details": "Task t1 exceeded retry cap",
+                    },
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        findings = [
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="author-a:t1",
+                message="Task t1 failed 4 times",
+                threshold="3 failures",
+                recommended_action="Escalate",
+            ),
+        ]
+
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        assert emitted == 0, "Should skip t1 -- escalation event already exists"
+
+    def test_events_are_always_dicts(self, events_dir: Path) -> None:
+        """Verify read_events() returns list[dict], validating dead-branch removal (#1042)."""
+        from bid_euchre.ops.events import append_event, read_events
+
+        # Write a few events of different types
+        append_event(
+            event_type="retry_attempted",
+            source="test",
+            lane_id="test-lane",
+            payload={"task_id": "t1"},
+            events_dir=events_dir,
+        )
+        append_event(
+            event_type="escalation",
+            source="test",
+            lane_id="test-lane",
+            payload={"task_id": "t2"},
+            events_dir=events_dir,
+        )
+
+        events = read_events(events_dir)
+        assert len(events) >= 2
+        for evt in events:
+            assert isinstance(evt, dict), f"Expected dict, got {type(evt)}"
