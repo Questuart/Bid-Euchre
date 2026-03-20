@@ -1653,6 +1653,152 @@ class TestProbeFallbackLiveness:
         assert probe.is_stale is False
         assert probe.source is None
 
+    def test_dirty_worktree_returns_likely_live(self, tmp_path: Path) -> None:
+        """Dirty worktree with no other evidence → likely_active."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        # Create a fake worktree dir so is_worktree_dirty can find it
+        wt = tmp_path / "wt-author-b"
+        wt.mkdir()
+        # Mock is_worktree_dirty to return True
+        import unittest.mock as mock
+
+        with mock.patch(
+            "bid_euchre.ops.worktrees.is_worktree_dirty", return_value=True
+        ):
+            probe = _probe_fallback_liveness(
+                "author-b",
+                session=None,
+                lane_tasks=[],
+                events=[],
+                last_active_ts=None,
+                now=now,
+                stale_minutes=30,
+                worktree_path=str(wt),
+            )
+        assert probe.is_likely_live is True
+        assert probe.is_stale is False
+        assert probe.source == "worktree_dirty"
+        assert "uncommitted changes" in probe.detail
+
+    def test_clean_worktree_returns_idle(self, tmp_path: Path) -> None:
+        """Clean worktree with no other evidence → genuinely idle."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        wt = tmp_path / "wt-author-b"
+        wt.mkdir()
+        import unittest.mock as mock
+
+        with mock.patch(
+            "bid_euchre.ops.worktrees.is_worktree_dirty", return_value=False
+        ):
+            probe = _probe_fallback_liveness(
+                "author-b",
+                session=None,
+                lane_tasks=[],
+                events=[],
+                last_active_ts=None,
+                now=now,
+                stale_minutes=30,
+                worktree_path=str(wt),
+            )
+        assert probe.is_likely_live is False
+        assert probe.is_stale is False
+        assert probe.source is None
+
+    def test_worktree_file_not_found_degrades_gracefully(self) -> None:
+        """FileNotFoundError from is_worktree_dirty → skip signal, idle."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        import unittest.mock as mock
+
+        with mock.patch(
+            "bid_euchre.ops.worktrees.is_worktree_dirty",
+            side_effect=FileNotFoundError("no such dir"),
+        ):
+            probe = _probe_fallback_liveness(
+                "author-b",
+                session=None,
+                lane_tasks=[],
+                events=[],
+                last_active_ts=None,
+                now=now,
+                stale_minutes=30,
+                worktree_path="/nonexistent/path",
+            )
+        assert probe.is_likely_live is False
+        assert probe.source is None
+
+    def test_worktree_subprocess_error_degrades_gracefully(self) -> None:
+        """Generic exception from is_worktree_dirty → skip signal, idle."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        import unittest.mock as mock
+
+        with mock.patch(
+            "bid_euchre.ops.worktrees.is_worktree_dirty",
+            side_effect=OSError("subprocess failed"),
+        ):
+            probe = _probe_fallback_liveness(
+                "author-b",
+                session=None,
+                lane_tasks=[],
+                events=[],
+                last_active_ts=None,
+                now=now,
+                stale_minutes=30,
+                worktree_path="/some/path",
+            )
+        assert probe.is_likely_live is False
+        assert probe.source is None
+
+    def test_worktree_check_skipped_when_disabled(self) -> None:
+        """check_worktree=False → is_worktree_dirty never called."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        import unittest.mock as mock
+
+        with mock.patch("bid_euchre.ops.worktrees.is_worktree_dirty") as mock_dirty:
+            probe = _probe_fallback_liveness(
+                "author-b",
+                session=None,
+                lane_tasks=[],
+                events=[],
+                last_active_ts=None,
+                now=now,
+                stale_minutes=30,
+                worktree_path="/some/path",
+                check_worktree=False,
+            )
+        mock_dirty.assert_not_called()
+        assert probe.is_likely_live is False
+        assert probe.source is None
+
+    def test_worktree_signal_lowest_priority(self) -> None:
+        """Fresh event takes priority over dirty worktree."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        events = [
+            {
+                "lane_id": "author-b",
+                "event_type": "ci_success",
+                "timestamp": "2026-03-20T11:50:00+00:00",
+            },
+        ]
+        import unittest.mock as mock
+
+        with mock.patch(
+            "bid_euchre.ops.worktrees.is_worktree_dirty", return_value=True
+        ) as mock_dirty:
+            probe = _probe_fallback_liveness(
+                "author-b",
+                session=None,
+                lane_tasks=[],
+                events=events,
+                last_active_ts=None,
+                now=now,
+                stale_minutes=30,
+                worktree_path="/some/path",
+            )
+        # Fresh event returns early — worktree check never reached
+        mock_dirty.assert_not_called()
+        assert probe.is_likely_live is True
+        assert probe.source == "events"
+
 
 class TestSynthesizeLaneActivityLiveness:
     """Tests for fallback liveness in synthesize_lane_activity()."""
@@ -1749,6 +1895,24 @@ class TestSynthesizeLaneActivityLiveness:
         lane = result[0]
         assert lane.state == "blocked"
         assert lane.liveness_source == "registry"
+
+    def test_likely_active_from_dirty_worktree(self) -> None:
+        """No session, no events, no tasks, but dirty worktree → likely_active."""
+        import unittest.mock as mock
+
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b")]  # worktree_path = /tmp/wt-author-b
+
+        with mock.patch(
+            "bid_euchre.ops.worktrees.is_worktree_dirty", return_value=True
+        ):
+            result = synthesize_lane_activity(lanes, {}, {}, [], now=now)
+
+        lane = result[0]
+        assert lane.state == "likely_active"
+        assert lane.liveness_source == "worktree_dirty"
+        # likely_active lanes are not flagged for attention (they're live)
+        assert lane.attention_needed is False
 
 
 class TestLivenessFormatting:
