@@ -35,8 +35,11 @@ DEFAULT_REVIEW_CONTEXTS: tuple[str, ...] = ("reviewing-changes",)
 REVIEW_GATE_CONTEXTS: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS
 """Check names that are merge-relevant review gates (alias for DEFAULT_REVIEW_CONTEXTS)."""
 
-ADVISORY_CONTEXTS: tuple[str, ...] = ("claude-review",)
+ADVISORY_CONTEXTS: tuple[str, ...] = ("claude-review", "enable-auto-merge")
 """Check names that are advisory-only — infrastructure failures here must not poison CI.
+
+``enable-auto-merge`` is GitHub plumbing (the auto-merge queue action), not a
+validation check. Its failures should never count as CI failures.
 
 NOTE: When Codex Cloud review is enabled (via chatgpt.com/codex), observe
 the actual GitHub check/status context name it emits, then add it here.
@@ -66,10 +69,10 @@ def classify_check(name: str) -> str:
     return "ci"
 
 
-# Allowlist of GitHub check names that represent real CI (build/test/lint).
-# Used by scripts/internal/github_pr_state.py for review-loop CI polling
-# (fail-closed: only known CI check names are considered).
-# Update this set when adding new CI workflow jobs.
+# DEPRECATED: Fail-closed CI allowlist. Retained for backward compatibility.
+# Prefer classify_check() which uses a fail-open denylist — new CI jobs are
+# included by default without needing to update this set.
+# See #1036 for the unification rationale.
 CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})
 
 # Default timeout (seconds) for gh CLI subprocess calls.

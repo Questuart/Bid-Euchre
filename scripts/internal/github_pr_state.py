@@ -143,22 +143,32 @@ def get_pr_head_sha(pr_number: int) -> str:
     return result.stdout.strip()
 
 
-# Shared CI check allowlist — single source of truth lives in
-# bid_euchre.ops.CI_CHECK_NAMES.  Import here to stay in sync.
+# CI check classification — single source of truth is classify_check()
+# in bid_euchre.ops (fail-open denylist: unknown checks default to "ci").
+# See #1036 for the unification rationale.
 try:
-    from bid_euchre.ops import CI_CHECK_NAMES as _CI_CHECK_NAMES
+    from bid_euchre.ops import classify_check as _classify_check
 except ImportError:
     # Fallback for environments where bid_euchre is not installed.
-    _CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})  # type: ignore[no-redef]
+    # Inline the denylist logic so new CI jobs are still included by default.
+    # Keep in sync with REVIEW_GATE_CONTEXTS + ADVISORY_CONTEXTS in ops/__init__.py.
+    _FALLBACK_NON_CI: frozenset[str] = frozenset(
+        {"reviewing-changes", "claude-review", "enable-auto-merge"}
+    )
+
+    def _classify_check(name: str) -> str:  # type: ignore[misc]
+        """Inline fallback for classify_check when bid_euchre is not installed."""
+        if name in _FALLBACK_NON_CI:
+            return "non_ci"
+        return "ci"
 
 
 def get_ci_status(pr_number: int) -> str:
     """Get the CI status of a PR.
 
-    Uses an explicit allowlist (:data:`_CI_CHECK_NAMES`) so that only
-    real CI checks (tests, lint, governance) are considered.  Review
-    statuses, advisory actions, and any future non-CI contexts are
-    excluded automatically.
+    Uses :func:`classify_check` (fail-open denylist) so that only known
+    non-CI checks (review gates, advisory) are excluded.  New CI jobs
+    are included by default without needing allowlist updates.
 
     Returns:
         "success", "failure", "pending", or "unknown"
@@ -179,8 +189,8 @@ def get_ci_status(pr_number: int) -> str:
         return "unknown"
 
     checks = json.loads(result.stdout)
-    # Only consider checks that are known CI jobs
-    ci_checks = [c for c in checks if c.get("name") in _CI_CHECK_NAMES]
+    # Exclude non-CI checks (review gate + advisory) via classify_check
+    ci_checks = [c for c in checks if _classify_check(c.get("name", "")) == "ci"]
     if not ci_checks:
         return "pending"
 
