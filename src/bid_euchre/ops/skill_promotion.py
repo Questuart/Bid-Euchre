@@ -88,6 +88,20 @@ class SkillCandidate:
 # ── Validation helpers ──────────────────────────────────────────
 
 
+def _validate_candidate_id(candidate_id: str) -> None:
+    """Validate *candidate_id* is a well-formed UUID to prevent path traversal.
+
+    Raises:
+        ValueError: If the string is not a valid UUID.
+    """
+    try:
+        uuid.UUID(candidate_id)
+    except (ValueError, AttributeError):
+        raise ValueError(
+            f"Invalid candidate ID '{candidate_id}': must be a valid UUID."
+        )
+
+
 def validate_skill_name(name: str) -> list[str]:
     """Return a list of validation errors for *name* (empty if valid)."""
     errors: list[str] = []
@@ -214,8 +228,10 @@ def review_skill(
 
     Raises:
         FileNotFoundError: If the candidate does not exist.
-        ValueError: If the candidate is not in a reviewable state.
+        ValueError: If the candidate is not in a reviewable state, or
+            the candidate_id is not a valid UUID.
     """
+    _validate_candidate_id(candidate_id)
     cdir = candidates_dir or DEFAULT_CANDIDATES_DIR
     path = cdir / f"{candidate_id}.json"
 
@@ -267,8 +283,10 @@ def promote_skill(
     Raises:
         FileNotFoundError: If the candidate does not exist.
         ValueError: If the candidate is not approved, or the safety scan
-            rejects the content, or a skill with that name already exists.
+            rejects the content, or a skill with that name already exists,
+            or the candidate_id is not a valid UUID.
     """
+    _validate_candidate_id(candidate_id)
     cdir = candidates_dir or DEFAULT_CANDIDATES_DIR
     sdir = skills_dir or DEFAULT_SKILLS_DIR
 
@@ -277,6 +295,14 @@ def promote_skill(
         raise FileNotFoundError(f"Candidate '{candidate_id}' not found.")
 
     candidate = _load_candidate(path)
+
+    # Re-validate name after loading from disk (defense against tampered JSON)
+    name_errors = validate_skill_name(candidate.name)
+    if name_errors:
+        raise ValueError(
+            f"Candidate '{candidate_id}' has invalid skill name "
+            f"'{candidate.name}': {'; '.join(name_errors)}"
+        )
 
     if candidate.status != "approved":
         raise ValueError(
@@ -423,7 +449,9 @@ def get_candidate(
 
     Raises:
         FileNotFoundError: If the candidate does not exist.
+        ValueError: If the candidate_id is not a valid UUID.
     """
+    _validate_candidate_id(candidate_id)
     cdir = candidates_dir or DEFAULT_CANDIDATES_DIR
     path = cdir / f"{candidate_id}.json"
     if not path.exists():
@@ -434,33 +462,52 @@ def get_candidate(
 # ── Rendering ───────────────────────────────────────────────────
 
 
+def _sanitize_comment(value: object) -> str:
+    """Strip HTML comment close sequence to prevent injection."""
+    if value is None:
+        return "None"
+    return str(value).replace("-->", "-- >")
+
+
 def _render_skill_md(candidate: SkillCandidate) -> str:
     """Render a SKILL.md file from a candidate."""
     # YAML front matter matching existing skill conventions
     provenance_lines = []
     for key, val in sorted(candidate.provenance.items()):
+        safe_key = _sanitize_comment(key)
         if isinstance(val, list):
-            provenance_lines.append(f"#   {key}: {', '.join(str(v) for v in val)}")
+            safe_vals = ", ".join(_sanitize_comment(v) for v in val)
+            provenance_lines.append(f"#   {safe_key}: {safe_vals}")
         else:
-            provenance_lines.append(f"#   {key}: {val}")
+            provenance_lines.append(f"#   {safe_key}: {_sanitize_comment(val)}")
 
     provenance_block = "\n".join(provenance_lines)
+
+    # Escape YAML-significant characters in quoted scalar values.
+    # Newlines would break out of the quoted scalar and allow injection
+    # of extra front-matter keys; backslashes need escaping first.
+    safe_desc = (
+        candidate.description.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
     return (
         (
             f"---\n"
-            f"name: {candidate.name}\n"
-            f'description: "{candidate.description}"\n'
+            f'name: "{candidate.name}"\n'
+            f'description: "{safe_desc}"\n'
             f"---\n"
             f"\n"
             f"<!-- Promoted by skill-promotion workflow -->\n"
-            f"<!-- candidate_id: {candidate.candidate_id} -->\n"
-            f"<!-- proposed_by: {candidate.proposed_by} -->\n"
-            f"<!-- proposed_at: {candidate.proposed_at} -->\n"
-            f"<!-- reviewed_by: {candidate.reviewed_by} -->\n"
-            f"<!-- reviewed_at: {candidate.reviewed_at} -->\n"
-            f"<!-- source_workflow: {candidate.source_workflow} -->\n"
-            f"<!-- safety_scan_outcome: {candidate.safety_scan_outcome} -->\n"
+            f"<!-- candidate_id: {_sanitize_comment(candidate.candidate_id)} -->\n"
+            f"<!-- proposed_by: {_sanitize_comment(candidate.proposed_by)} -->\n"
+            f"<!-- proposed_at: {_sanitize_comment(candidate.proposed_at)} -->\n"
+            f"<!-- reviewed_by: {_sanitize_comment(candidate.reviewed_by)} -->\n"
+            f"<!-- reviewed_at: {_sanitize_comment(candidate.reviewed_at)} -->\n"
+            f"<!-- source_workflow: {_sanitize_comment(candidate.source_workflow)} -->\n"
+            f"<!-- safety_scan_outcome: {_sanitize_comment(candidate.safety_scan_outcome)} -->\n"
         )
         + (
             f"<!-- provenance:\n{provenance_block}\n-->\n\n"

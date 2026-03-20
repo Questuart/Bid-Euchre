@@ -13,6 +13,8 @@ import pytest
 
 from bid_euchre.ops.skill_promotion import (
     SkillCandidate,
+    _render_skill_md,
+    _sanitize_comment,
     disable_skill,
     format_candidates_json,
     format_candidates_text,
@@ -243,9 +245,11 @@ class TestReview:
         assert reviewed.status == "rejected"
 
     def test_review_nonexistent_raises(self, candidates_dir: Path) -> None:
+        import uuid
+
         with pytest.raises(FileNotFoundError):
             review_skill(
-                "nonexistent-id",
+                str(uuid.uuid4()),
                 approve=True,
                 reviewed_by="operator",
                 candidates_dir=candidates_dir,
@@ -321,7 +325,7 @@ class TestPromote:
 
         # Verify SKILL.md content
         content = skill_path.read_text()
-        assert "name: my-skill" in content
+        assert 'name: "my-skill"' in content
         assert 'description: "A useful skill"' in content
         assert "candidate_id:" in content
         assert "proposed_by: author-b" in content
@@ -358,9 +362,11 @@ class TestPromote:
     def test_promote_nonexistent_raises(
         self, candidates_dir: Path, skills_dir: Path
     ) -> None:
+        import uuid
+
         with pytest.raises(FileNotFoundError):
             promote_skill(
-                "nonexistent-id",
+                str(uuid.uuid4()),
                 candidates_dir=candidates_dir,
                 skills_dir=skills_dir,
             )
@@ -596,8 +602,10 @@ class TestListAndGet:
         assert loaded.candidate_id == c.candidate_id
 
     def test_get_nonexistent_raises(self, candidates_dir: Path) -> None:
+        import uuid
+
         with pytest.raises(FileNotFoundError):
-            get_candidate("nonexistent", candidates_dir=candidates_dir)
+            get_candidate(str(uuid.uuid4()), candidates_dir=candidates_dir)
 
 
 # ── SkillCandidate serialization ────────────────────────────────
@@ -720,3 +728,217 @@ class TestFormatting:
         assert len(result) == 1
         assert result[0]["name"] == "my-skill"
         assert result[0]["status"] == "pending"
+
+
+# ── Path traversal / candidate_id validation ─────────────────
+
+
+class TestCandidateIdValidation:
+    """F1: candidate_id must be a valid UUID to prevent path traversal."""
+
+    def test_review_rejects_path_traversal_id(self, candidates_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid candidate ID"):
+            review_skill(
+                "../../etc/passwd",
+                approve=True,
+                reviewed_by="operator",
+                candidates_dir=candidates_dir,
+            )
+
+    def test_promote_rejects_path_traversal_id(
+        self, candidates_dir: Path, skills_dir: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="Invalid candidate ID"):
+            promote_skill(
+                "../../etc/passwd",
+                candidates_dir=candidates_dir,
+                skills_dir=skills_dir,
+            )
+
+    def test_get_candidate_rejects_path_traversal_id(
+        self, candidates_dir: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="Invalid candidate ID"):
+            get_candidate("../../etc/passwd", candidates_dir=candidates_dir)
+
+    def test_review_rejects_non_uuid_string(self, candidates_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid candidate ID"):
+            review_skill(
+                "not-a-uuid-at-all",
+                approve=True,
+                reviewed_by="operator",
+                candidates_dir=candidates_dir,
+            )
+
+    def test_promote_rejects_non_uuid_string(
+        self, candidates_dir: Path, skills_dir: Path
+    ) -> None:
+        with pytest.raises(ValueError, match="Invalid candidate ID"):
+            promote_skill(
+                "not-a-uuid-at-all",
+                candidates_dir=candidates_dir,
+                skills_dir=skills_dir,
+            )
+
+    def test_get_candidate_rejects_non_uuid_string(self, candidates_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid candidate ID"):
+            get_candidate("not-a-uuid-at-all", candidates_dir=candidates_dir)
+
+    def test_valid_uuid_passes_validation(self, candidates_dir: Path) -> None:
+        """Valid UUID format should not raise ValueError (may raise FileNotFoundError)."""
+        import uuid
+
+        valid_id = str(uuid.uuid4())
+        with pytest.raises(FileNotFoundError):
+            get_candidate(valid_id, candidates_dir=candidates_dir)
+
+
+# ── Name re-validation after disk load ───────────────────────
+
+
+class TestNameRevalidation:
+    """F2: promote_skill re-validates candidate.name after loading from disk."""
+
+    def test_promote_rejects_tampered_name(
+        self, candidates_dir: Path, skills_dir: Path
+    ) -> None:
+        """If candidate JSON is tampered with a bad name, promote rejects it."""
+        c = _propose(candidates_dir)
+        review_skill(
+            c.candidate_id,
+            approve=True,
+            reviewed_by="operator",
+            candidates_dir=candidates_dir,
+        )
+
+        # Tamper the name to include path traversal
+        path = candidates_dir / f"{c.candidate_id}.json"
+        data = json.loads(path.read_text())
+        data["name"] = "../../etc"
+        path.write_text(json.dumps(data))
+
+        with pytest.raises(ValueError, match="invalid skill name"):
+            promote_skill(
+                c.candidate_id,
+                candidates_dir=candidates_dir,
+                skills_dir=skills_dir,
+            )
+
+    def test_promote_rejects_tampered_uppercase_name(
+        self, candidates_dir: Path, skills_dir: Path
+    ) -> None:
+        c = _propose(candidates_dir)
+        review_skill(
+            c.candidate_id,
+            approve=True,
+            reviewed_by="operator",
+            candidates_dir=candidates_dir,
+        )
+
+        path = candidates_dir / f"{c.candidate_id}.json"
+        data = json.loads(path.read_text())
+        data["name"] = "Bad Name!"
+        path.write_text(json.dumps(data))
+
+        with pytest.raises(ValueError, match="invalid skill name"):
+            promote_skill(
+                c.candidate_id,
+                candidates_dir=candidates_dir,
+                skills_dir=skills_dir,
+            )
+
+
+# ── YAML and HTML sanitization ───────────────────────────────
+
+
+class TestRenderingSanitization:
+    """F3/F4: YAML quoting and HTML comment sanitization."""
+
+    def test_yaml_name_is_quoted(self, candidates_dir: Path) -> None:
+        c = _propose(candidates_dir)
+        content = _render_skill_md(c)
+        assert 'name: "my-skill"' in content
+
+    def test_yaml_description_quotes_escaped(self, candidates_dir: Path) -> None:
+        c = _propose(candidates_dir, description='A skill with "quotes" inside')
+        content = _render_skill_md(c)
+        assert 'description: "A skill with \\"quotes\\" inside"' in content
+
+    def test_html_comment_injection_sanitized(self, candidates_dir: Path) -> None:
+        """Values containing --> are sanitized to prevent comment breakout."""
+        c = _propose(
+            candidates_dir,
+            source_workflow="evil --> <script>alert(1)</script>",
+        )
+        content = _render_skill_md(c)
+        # The injected --> should be sanitized to "-- >"
+        assert "evil -- > <script>" in content
+        # The raw injection should NOT appear
+        assert "evil --> <script>" not in content
+
+    def test_sanitize_comment_none(self) -> None:
+        assert _sanitize_comment(None) == "None"
+
+    def test_sanitize_comment_arrow(self) -> None:
+        assert _sanitize_comment("bad --> value") == "bad -- > value"
+
+    def test_sanitize_comment_clean(self) -> None:
+        assert _sanitize_comment("clean value") == "clean value"
+
+    def test_provenance_values_sanitized(self, candidates_dir: Path) -> None:
+        """Provenance block values containing --> are also sanitized."""
+        c = propose_skill(
+            name="prov-test",
+            description="Testing provenance",
+            content="# Test\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            provenance={"evil_key": "value --> escape"},
+            candidates_dir=candidates_dir,
+        )
+        content = _render_skill_md(c)
+        assert "-- >" in content
+        # The raw --> should not appear in the provenance section
+        assert "value --> escape" not in content
+
+    def test_provenance_keys_sanitized(self, candidates_dir: Path) -> None:
+        """Provenance keys containing --> are also sanitized (Codex finding)."""
+        c = propose_skill(
+            name="key-test",
+            description="Testing key sanitization",
+            content="# Test\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            provenance={"evil-->key": "safe_value"},
+            candidates_dir=candidates_dir,
+        )
+        content = _render_skill_md(c)
+        assert "evil-- >key" in content
+        assert "evil-->key" not in content
+
+    def test_yaml_description_newline_injection(self, candidates_dir: Path) -> None:
+        """Description with embedded newlines cannot inject extra YAML keys (Codex finding)."""
+        c = _propose(
+            candidates_dir,
+            description='good"\nmalicious: yes\n"',
+        )
+        content = _render_skill_md(c)
+        # The front matter should be exactly 2 key lines: name and description.
+        # If newlines were not escaped, the injected text would appear as a
+        # third YAML key on its own line.
+        front_matter = content.split("---")[1]
+        lines = [ln for ln in front_matter.strip().split("\n") if ln.strip()]
+        assert len(lines) == 2, f"Expected 2 YAML lines, got {len(lines)}: {lines}"
+        assert lines[0].startswith("name:")
+        assert lines[1].startswith("description:")
+        # "malicious:" must not appear as a standalone YAML key (start of line)
+        for ln in lines:
+            assert not ln.strip().startswith(
+                "malicious:"
+            ), f"Injected YAML key found: {ln}"
+
+    def test_yaml_description_backslash_preserved(self, candidates_dir: Path) -> None:
+        """Backslashes in description are properly escaped."""
+        c = _propose(candidates_dir, description="path\\to\\file")
+        content = _render_skill_md(c)
+        assert 'description: "path\\\\to\\\\file"' in content
