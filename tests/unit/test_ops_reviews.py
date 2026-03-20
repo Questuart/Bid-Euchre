@@ -182,29 +182,11 @@ class TestClassifyCIStatusDefaultExcludesAdvisory:
         ]
         assert _classify_ci_status(checks) == "success"
 
-    def test_default_excludes_codex_review(self) -> None:
-        """Default (None) excludes codex-review from CI status."""
-        checks = [
-            {"name": "codex-review", "state": "FAILURE"},
-            {"name": "tests", "state": "SUCCESS"},
-        ]
-        assert _classify_ci_status(checks) == "success"
-
     def test_default_excludes_both(self) -> None:
         """Default (None) excludes both review gate and advisory."""
         checks = [
             {"name": "reviewing-changes", "state": "FAILURE"},
             {"name": "claude-review", "state": "FAILURE"},
-            {"name": "tests", "state": "SUCCESS"},
-        ]
-        assert _classify_ci_status(checks) == "success"
-
-    def test_default_excludes_all_non_ci(self) -> None:
-        """Default (None) excludes all non-CI contexts including codex-review."""
-        checks = [
-            {"name": "reviewing-changes", "state": "FAILURE"},
-            {"name": "claude-review", "state": "FAILURE"},
-            {"name": "codex-review", "state": "FAILURE"},
             {"name": "tests", "state": "SUCCESS"},
         ]
         assert _classify_ci_status(checks) == "success"
@@ -273,34 +255,6 @@ class TestGetAdvisoryStatus:
     def test_claude_review_pending(self) -> None:
         checks = [{"name": "claude-review", "state": "PENDING"}]
         assert _get_advisory_status(checks) == "pending"
-
-    def test_codex_review_success(self) -> None:
-        checks = [{"name": "codex-review", "state": "SUCCESS"}]
-        assert _get_advisory_status(checks) == "success"
-
-    def test_codex_review_failure(self) -> None:
-        checks = [{"name": "codex-review", "state": "FAILURE"}]
-        assert _get_advisory_status(checks) == "failure"
-
-    def test_codex_review_pending(self) -> None:
-        checks = [{"name": "codex-review", "state": "PENDING"}]
-        assert _get_advisory_status(checks) == "pending"
-
-    def test_both_advisory_any_failure(self) -> None:
-        """If any advisory check fails, overall advisory is failure."""
-        checks = [
-            {"name": "claude-review", "state": "SUCCESS"},
-            {"name": "codex-review", "state": "FAILURE"},
-        ]
-        assert _get_advisory_status(checks) == "failure"
-
-    def test_both_advisory_all_success(self) -> None:
-        """Both advisory checks passing → success."""
-        checks = [
-            {"name": "claude-review", "state": "SUCCESS"},
-            {"name": "codex-review", "state": "SUCCESS"},
-        ]
-        assert _get_advisory_status(checks) == "success"
 
     def test_no_advisory_checks_returns_none(self) -> None:
         checks = [

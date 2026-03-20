@@ -23,9 +23,6 @@ class TestClassifyCheck:
     def test_claude_review_is_advisory(self) -> None:
         assert classify_check("claude-review") == "advisory"
 
-    def test_codex_review_is_advisory(self) -> None:
-        assert classify_check("codex-review") == "advisory"
-
     def test_tests_is_ci(self) -> None:
         assert classify_check("tests") == "ci"
 
@@ -48,17 +45,6 @@ class TestConstants:
 
     def test_advisory_contains_claude_review(self) -> None:
         assert "claude-review" in ADVISORY_CONTEXTS
-
-    def test_advisory_contains_codex_review(self) -> None:
-        assert "codex-review" in ADVISORY_CONTEXTS
-
-    def test_codex_review_in_non_ci_contexts(self) -> None:
-        """codex-review must appear in NON_CI_CONTEXTS union."""
-        assert "codex-review" in NON_CI_CONTEXTS
-
-    def test_codex_review_not_in_review_gate(self) -> None:
-        """codex-review must NOT be a review gate — it is advisory only."""
-        assert "codex-review" not in REVIEW_GATE_CONTEXTS
 
     def test_non_ci_is_union(self) -> None:
         """NON_CI_CONTEXTS is the union of review gate + advisory."""
