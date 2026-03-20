@@ -206,21 +206,30 @@ def get_retry_summary(events: list[dict[str, Any]]) -> RetrySummary:
     tasks have failures, how many were retried/rerouted/escalated,
     and how many are pending (dropped without follow-up).
 
+    Follow-up counting is **chronology-aware**: a follow-up event only
+    counts toward failures that occurred before it.  This matches
+    ``get_pending_retries()`` semantics.
+
     Args:
         events: List of event dicts (from ``read_events``).
 
     Returns:
         RetrySummary with aggregate counts.
     """
-    # Collect all task_ids with failures
+    # Collect all task_ids with failures and their earliest failure timestamp.
     failed_task_ids: set[str] = set()
+    earliest_failure: dict[str, str] = {}
     for event in events:
         if event.get("event_type") == "task_failed":
             task_id = _extract_task_id(event)
             if task_id:
                 failed_task_ids.add(task_id)
+                ts = event.get("timestamp", "")
+                if task_id not in earliest_failure or ts < earliest_failure[task_id]:
+                    earliest_failure[task_id] = ts
 
-    # Collect follow-up actions per task
+    # Collect follow-up actions per task (chronology-aware).
+    # A follow-up only counts if it occurs at or after the earliest failure.
     task_followups: dict[str, set[str]] = {tid: set() for tid in failed_task_ids}
     for event in events:
         event_type = event.get("event_type", "")
@@ -229,6 +238,13 @@ def get_retry_summary(events: list[dict[str, Any]]) -> RetrySummary:
             continue
         task_id = _extract_task_id(event)
         if task_id and task_id in task_followups:
+            followup_ts = event.get("timestamp", "")
+            task_earliest = earliest_failure.get(task_id, "")
+            # Only count follow-ups at or after the earliest failure.
+            # If timestamps are missing (empty string), count the follow-up
+            # to preserve backward compat for events without timestamps.
+            if followup_ts and task_earliest and followup_ts < task_earliest:
+                continue
             task_followups[task_id].add(action)
 
     # Count categories
