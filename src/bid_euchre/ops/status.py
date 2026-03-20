@@ -77,7 +77,7 @@ class LaneStatus:
     # --- Liveness provenance ---
     # Where the state determination came from:
     # "registry" (session_id), "events", "task_state", "session_metadata",
-    # "last_active", or None (genuinely idle / no evidence).
+    # "last_active", "worktree_dirty", or None (genuinely idle / no evidence).
     liveness_source: str | None = None
 
     # --- Event context (enriched from durable event log) ---
@@ -414,6 +414,8 @@ def _probe_fallback_liveness(
     last_active_ts: str | None,
     now: datetime,
     stale_minutes: int,
+    worktree_path: str | None = None,
+    check_worktree: bool = True,
 ) -> _LivenessProbe:
     """Check repo-local signals for lane activity beyond registry session_id.
 
@@ -425,6 +427,12 @@ def _probe_fallback_liveness(
        recent ``last_forward_progress_at`` timestamp.
     3. **Session metadata** — if the lane's session ``started_at`` is recent.
     4. **Registry last_active** — if the registry's ``last_active`` is recent.
+    5. **Dirty worktree** — if the worktree has uncommitted changes (subprocess
+       check, lowest priority).  Gated by ``check_worktree`` and requires a
+       valid ``worktree_path``.  Exceptions (``FileNotFoundError``,
+       ``subprocess.TimeoutExpired``, etc.) are caught and the signal is
+       silently skipped so that a subprocess failure never blocks status
+       aggregation.
 
     Returns a ``_LivenessProbe`` indicating whether the lane is likely live,
     stale (evidence exists but is aging), or genuinely idle.
@@ -437,6 +445,11 @@ def _probe_fallback_liveness(
         last_active_ts: Registry ``last_active`` timestamp, if any.
         now: Current time for freshness checks.
         stale_minutes: Threshold for "recent" evidence.
+        worktree_path: Filesystem path to the lane's worktree directory.
+            When provided (and ``check_worktree`` is True), a ``git status``
+            subprocess is used as the lowest-priority liveness signal.
+        check_worktree: If False, skip the dirty-worktree subprocess check
+            entirely.  Default True.
 
     Returns:
         ``_LivenessProbe`` with the determination.
@@ -551,6 +564,33 @@ def _probe_fallback_liveness(
                     ),
                 )
 
+    # --- Signal 5: Dirty worktree (subprocess, lowest priority) ---
+    # This is a last-resort check: if no data-driven signal found activity,
+    # check whether the worktree has uncommitted changes.  A dirty worktree
+    # strongly suggests someone is actively editing, even if the registry and
+    # event log have no record.
+    if check_worktree and worktree_path:
+        try:
+            from bid_euchre.ops.worktrees import is_worktree_dirty
+
+            if is_worktree_dirty(worktree_path):
+                wt_name = Path(worktree_path).name
+                return _LivenessProbe(
+                    is_likely_live=True,
+                    is_stale=False,
+                    source="worktree_dirty",
+                    detail=f"uncommitted changes in {wt_name}",
+                )
+        except Exception:  # noqa: BLE001
+            # Subprocess failures (FileNotFoundError, TimeoutExpired, git
+            # errors) must not block status aggregation.  Degrade gracefully
+            # by skipping this signal.
+            logger.debug(
+                "dirty-worktree check failed for %s, skipping signal",
+                worktree_path,
+                exc_info=True,
+            )
+
     # --- No fresh evidence found ---
     if stale_candidate is not None:
         return stale_candidate
@@ -650,6 +690,7 @@ def synthesize_lane_activity(
                 lane_tasks=lane_tasks,
                 events=events,
                 last_active_ts=last_active_ts,
+                worktree_path=lane.get("worktree_path") or None,
                 now=now,
                 stale_minutes=stale_minutes,
             )
