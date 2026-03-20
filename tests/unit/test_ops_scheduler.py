@@ -616,6 +616,120 @@ class TestEvaluateRetriesForFindings:
         emitted = _evaluate_retries_for_findings(findings, events_dir)
         assert emitted == 0
 
+    def test_dedup_skips_already_retried_tasks(self, events_dir: Path) -> None:
+        """Tasks with existing retry_attempted events are not re-emitted."""
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        # Pre-populate with task failures AND an existing retry_attempted event
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 1"},
+                }
+            ),
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:01:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 2"},
+                }
+            ),
+            # Existing retry event — should prevent re-emission
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:02:00Z",
+                    "event_type": "retry_attempted",
+                    "source": "ops.retry",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "retry_count": 2},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        findings = [
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="author-a:t1",
+                message="Task t1 failed 2 times",
+                threshold="3 failures",
+                recommended_action="Reroute",
+            ),
+        ]
+
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        assert emitted == 0, "Should skip t1 — retry_attempted already exists"
+
+    def test_dedup_allows_new_tasks(self, events_dir: Path) -> None:
+        """Dedup only blocks previously-retried tasks, not new ones."""
+        from bid_euchre.ops.events import read_events
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        events_file = events_dir / "events.jsonl"
+        lines = [
+            # t1 already retried
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:00:00Z",
+                    "event_type": "retry_attempted",
+                    "source": "ops.retry",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "retry_count": 1},
+                }
+            ),
+            # t2 has failures but no retry event yet
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:01:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-b",
+                    "payload": {"task_id": "t2", "details": "error"},
+                }
+            ),
+        ]
+        events_file.write_text("\n".join(lines) + "\n")
+
+        findings = [
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="author-a:t1",
+                message="Task t1 still failing",
+                threshold="3 failures",
+                recommended_action="Reroute",
+            ),
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="author-b:t2",
+                message="Task t2 failed",
+                threshold="3 failures",
+                recommended_action="Retry",
+            ),
+        ]
+
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        # t1 should be skipped (already retried), t2 should emit
+        assert emitted == 1
+
+        events = read_events(events_dir)
+        new_retry_events = [
+            e
+            for e in events
+            if e["event_type"] in ("retry_attempted", "task_rerouted")
+            and e["payload"].get("task_id") == "t2"
+        ]
+        assert len(new_retry_events) == 1
+
     def test_tick_integrates_retry_evaluation(
         self,
         runtime_dir: Path,

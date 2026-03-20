@@ -149,6 +149,21 @@ def _evaluate_retries_for_findings(
     events = read_events(events_dir, limit=200)
     emitted = 0
 
+    # Dedup guard: skip tasks that already have a retry/reroute event
+    # to prevent cascading re-emission on every tick for persistent failures.
+    already_retried: set[str] = set()
+    for evt in events:
+        if isinstance(evt, dict):
+            etype = evt.get("event_type", "")
+            payload = evt.get("payload", {})
+        else:
+            etype = getattr(evt, "event_type", "")
+            payload = getattr(evt, "payload", {})
+        if etype in ("retry_attempted", "task_rerouted"):
+            tid = payload.get("task_id") if isinstance(payload, dict) else None
+            if tid:
+                already_retried.add(tid)
+
     for finding in subagent_findings:
         try:
             # finding.target format is "lane_id:task_id"
@@ -160,6 +175,11 @@ def _evaluate_retries_for_findings(
                 continue
 
             lane_id, task_id = parts
+
+            if task_id in already_retried:
+                logger.debug("Skipping retry for %s — event already emitted", task_id)
+                continue
+
             policy = evaluate_retry_policy(task_id, events, current_lane=lane_id)
             event = emit_retry_event(policy, lane_id, events_dir)
             if event is not None:

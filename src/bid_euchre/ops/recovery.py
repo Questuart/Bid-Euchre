@@ -526,7 +526,7 @@ def emit_retry_event(
     if not event_type:
         return None
 
-    payload: dict[str, object] = {
+    payload: dict[str, str | int] = {
         "task_id": policy.task_id,
         "retry_count": policy.retry_count,
         "last_failure": policy.last_failure,

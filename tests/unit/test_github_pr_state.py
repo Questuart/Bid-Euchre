@@ -206,6 +206,12 @@ class TestCICheckAllowlist:
         assert "claude-review" not in _CI_CHECK_NAMES
         assert "enable-auto-merge" not in _CI_CHECK_NAMES
 
+    def test_matches_shared_constant(self) -> None:
+        """Local _CI_CHECK_NAMES must equal the shared CI_CHECK_NAMES constant."""
+        from bid_euchre.ops import CI_CHECK_NAMES
+
+        assert set(_CI_CHECK_NAMES) == set(CI_CHECK_NAMES)
+
 
 class TestGetCIStatus:
     """Test get_ci_status with allowlist-based classification."""
