@@ -18,6 +18,125 @@ logger = logging.getLogger("github_pr_state")
 # HTML comment marker for deduplication of machine-owned PR comments.
 REVIEW_COMMENT_MARKER = "<!-- review-loop-comment -->"
 
+# --- PR comment ingestion ---
+
+# Trusted bot logins recognized for comment-based review signals.
+# Only add verified identities here — never speculative names.
+TRUSTED_BOT_LOGINS: frozenset[str] = frozenset(
+    {
+        "chatgpt-codex-connector[bot]",
+    }
+)
+
+# GitHub user types that indicate bot accounts.
+_BOT_USER_TYPES: frozenset[str] = frozenset({"Bot", "bot"})
+
+
+@dataclass
+class PRComment:
+    """Normalized PR issue comment for operational ingestion.
+
+    Represents a single comment on a PR issue thread, classified
+    by author identity for trusted-bot detection.
+    """
+
+    pr_number: int
+    comment_id: int
+    author_login: str
+    author_type: str  # "human", "trusted_bot", "other_bot"
+    created_at: str  # ISO 8601 timestamp
+    body: str
+    source_channel: str = "issue_comment"
+
+
+def classify_comment_author(login: str, user_type: str = "") -> str:
+    """Classify a comment author as human, trusted_bot, or other_bot.
+
+    Args:
+        login: GitHub username (e.g., ``"octocat"`` or
+            ``"chatgpt-codex-connector[bot]"``).
+        user_type: GitHub user type field (e.g., ``"User"``, ``"Bot"``).
+            When empty, classification falls back to login pattern matching.
+
+    Returns:
+        ``"trusted_bot"`` if login is in ``TRUSTED_BOT_LOGINS``,
+        ``"other_bot"`` if user_type is ``"Bot"`` or login ends with ``[bot]``,
+        ``"human"`` otherwise.
+    """
+    if login in TRUSTED_BOT_LOGINS:
+        return "trusted_bot"
+    if user_type in _BOT_USER_TYPES or login.endswith("[bot]"):
+        return "other_bot"
+    return "human"
+
+
+def get_pr_comments(
+    pr_number: int,
+    *,
+    timeout: int = 30,
+) -> list[PRComment]:
+    """Fetch and normalize issue comments for a PR.
+
+    Uses ``gh api`` to retrieve all issue comments, then classifies
+    each by author identity.
+
+    Args:
+        pr_number: PR number.
+        timeout: Subprocess timeout in seconds.
+
+    Returns:
+        List of :class:`PRComment` objects, ordered by creation time.
+
+    Raises:
+        RuntimeError: If the ``gh`` CLI call fails.
+    """
+    jq_expr = (
+        "[.[] | {id: .id, login: .user.login, user_type: .user.type, "
+        "created_at: .created_at, body: .body}]"
+    )
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
+                "--jq",
+                jq_expr,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"PR #{pr_number}: comment fetch timed out after {timeout}s")
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"PR #{pr_number}: failed to fetch comments: {result.stderr[:200]}"
+        )
+
+    try:
+        raw_comments = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"PR #{pr_number}: invalid JSON from comment fetch: {e}")
+
+    comments: list[PRComment] = []
+    for raw in raw_comments:
+        login = raw.get("login", "")
+        user_type = raw.get("user_type", "")
+        comments.append(
+            PRComment(
+                pr_number=pr_number,
+                comment_id=raw.get("id", 0),
+                author_login=login,
+                author_type=classify_comment_author(login, user_type),
+                created_at=raw.get("created_at", ""),
+                body=raw.get("body", ""),
+            )
+        )
+
+    return comments
+
 
 @dataclass
 class PRMetadata:

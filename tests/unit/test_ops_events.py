@@ -78,6 +78,18 @@ class TestAppendEvent:
         events = read_events(events_dir, limit=len(VALID_EVENT_TYPES) + 1)
         assert len(events) == len(VALID_EVENT_TYPES)
 
+    def test_pr_comment_ingested_event_accepted(self, events_dir: Path) -> None:
+        """pr_comment_ingested is a valid event type for comment ingestion."""
+        result = append_event(
+            "pr_comment_ingested",
+            "ops.comments",
+            "operator",
+            {"pr_number": 42, "total_comments": 3, "trusted_bot_comments": 1},
+            events_dir,
+        )
+        assert result["event_type"] == "pr_comment_ingested"
+        assert result["payload"]["pr_number"] == 42
+
 
 class TestReadEvents:
     """Tests for read_events()."""

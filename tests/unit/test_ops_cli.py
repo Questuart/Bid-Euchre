@@ -2014,3 +2014,146 @@ class TestCompactSessionContextCli:
             ]
         )
         assert rc == 0
+
+
+# --- Comments subcommand tests ---
+
+
+class TestCmdComments:
+    """Tests for the comments subcommand."""
+
+    def test_comments_requires_pr(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """comments without --pr should fail."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "comments",
+            ]
+        )
+        assert rc == 1
+        assert "required" in capsys.readouterr().err.lower()
+
+    def test_comments_json_output(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """comments --pr N --json returns JSON overlay (mocked gh)."""
+        from unittest.mock import patch as _patch
+
+        import ops
+
+        raw_comments = [
+            {
+                "id": 1,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "LGTM",
+            },
+            {
+                "id": 2,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body": "Review findings",
+            },
+        ]
+
+        import subprocess
+
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(raw_comments), stderr=""
+        )
+
+        with _patch("bid_euchre.ops.reviews._run_gh", return_value=mock_result):
+            rc = ops.main(
+                [
+                    "--json",
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "comments",
+                    "--pr",
+                    "42",
+                ]
+            )
+
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 1
+        assert data[0]["pr_number"] == 42
+        assert data[0]["total_comments"] == 2
+        assert data[0]["trusted_bot_comments"] == 1
+
+    def test_comments_ingest_writes_sidecar(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """comments --pr N --ingest writes sidecar JSONL and emits event."""
+        from unittest.mock import patch as _patch
+
+        import ops
+
+        raw_comments = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body": "Ingested review",
+            },
+        ]
+
+        import subprocess
+
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(raw_comments), stderr=""
+        )
+
+        with _patch("bid_euchre.ops.reviews._run_gh", return_value=mock_result):
+            rc = ops.main(
+                [
+                    "--json",
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "comments",
+                    "--pr",
+                    "42",
+                    "--ingest",
+                ]
+            )
+
+        assert rc == 0
+
+        # Verify sidecar written
+        sidecar = runtime_dir / "pr_comments" / "pr_42.jsonl"
+        assert sidecar.exists()
+        lines = [l for l in sidecar.read_text().strip().split("\n") if l.strip()]
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["pr_number"] == 42
+
+        # Verify event emitted
+        events_file = runtime_dir / "events" / "events.jsonl"
+        assert events_file.exists()
+        event_lines = [
+            l for l in events_file.read_text().strip().split("\n") if l.strip()
+        ]
+        assert len(event_lines) >= 1
+        event = json.loads(event_lines[-1])
+        assert event["event_type"] == "pr_comment_ingested"
+        assert event["payload"]["pr_number"] == 42

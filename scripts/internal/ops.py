@@ -9,6 +9,7 @@ Usage:
     uv run python scripts/internal/ops.py health [--json]
     uv run python scripts/internal/ops.py watchdogs [--json]
     uv run python scripts/internal/ops.py reviews [--json]
+    uv run python scripts/internal/ops.py comments --pr N [--ingest] [--json]
     uv run python scripts/internal/ops.py ci [--json]
     uv run python scripts/internal/ops.py ci --pr N [--json]
     uv run python scripts/internal/ops.py daemon [--interval N] [--max-ticks N] [--json]
@@ -428,6 +429,57 @@ def cmd_reviews(args: argparse.Namespace) -> int:
         print(json.dumps(format_reviews_json(outcomes), indent=2))
     else:
         print(format_reviews_text(outcomes))
+
+    return 0
+
+
+def cmd_comments(args: argparse.Namespace) -> int:
+    """Show or ingest PR comment overlays."""
+    from bid_euchre.ops.reviews import (
+        format_comment_overlays_json,
+        format_comment_overlays_text,
+        get_pr_comment_overlay,
+    )
+
+    pr_number = getattr(args, "pr", None)
+    if pr_number is None:
+        print("Error: --pr <number> is required for comments command", file=sys.stderr)
+        return 1
+
+    ingest = getattr(args, "ingest", False)
+
+    overlay = get_pr_comment_overlay(pr_number)
+
+    if ingest and overlay.total_comments > 0:
+        # Write comment sidecar JSONL for index ingestion
+        pr_comments_dir = args.runtime_dir / "pr_comments"
+        pr_comments_dir.mkdir(parents=True, exist_ok=True)
+        sidecar_file = pr_comments_dir / f"pr_{pr_number}.jsonl"
+        with open(sidecar_file, "w") as f:
+            for c in overlay.comments:
+                record = {**c, "pr_number": pr_number}
+                f.write(json.dumps(record, sort_keys=True) + "\n")
+
+        # Emit event
+        from bid_euchre.ops.events import append_event
+
+        append_event(
+            event_type="pr_comment_ingested",
+            source="ops.comments",
+            lane_id="operator",
+            payload={
+                "pr_number": pr_number,
+                "total_comments": overlay.total_comments,
+                "trusted_bot_comments": overlay.trusted_bot_comments,
+                "sidecar_file": str(sidecar_file),
+            },
+            events_dir=args.runtime_dir / "events",
+        )
+
+    if args.json:
+        print(json.dumps(format_comment_overlays_json([overlay]), indent=2))
+    else:
+        print(format_comment_overlays_text([overlay]))
 
     return 0
 
@@ -1245,6 +1297,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--pr", type=int, default=None, help="Show detail for a specific PR number"
     )
 
+    # comments
+    comments_parser = subparsers.add_parser(
+        "comments", help="PR comment overlays (Codex Cloud, bots, humans)"
+    )
+    comments_parser.add_argument(
+        "--pr", type=int, default=None, help="PR number (required)"
+    )
+    comments_parser.add_argument(
+        "--ingest",
+        action="store_true",
+        help="Write comment sidecar for index and emit event",
+    )
+
     # ci
     ci_parser = subparsers.add_parser("ci", help="CI status and failure classification")
     ci_parser.add_argument(
@@ -1510,6 +1575,7 @@ def main(argv: list[str] | None = None) -> int:
         "watchdogs": cmd_watchdogs,
         "recover": cmd_recover,
         "reviews": cmd_reviews,
+        "comments": cmd_comments,
         "ci": cmd_ci,
         "daemon": cmd_daemon,
         "retry": cmd_retry,

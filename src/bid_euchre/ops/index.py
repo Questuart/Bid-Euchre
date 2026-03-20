@@ -127,6 +127,7 @@ ENTRY_TYPES = frozenset(
         "log_entry",
         "review_outcome",
         "plan_review_outcome",
+        "pr_comment",
     }
 )
 
@@ -705,6 +706,87 @@ class _IngestCounts:
     entries: int = 0
 
 
+def _ingest_pr_comments(
+    conn: sqlite3.Connection, pr_comments_dir: Path
+) -> _IngestCounts:
+    """Ingest PR comment JSONL sidecars from the pr_comments runtime directory.
+
+    Expected file layout::
+
+        .claude/runtime/pr_comments/pr_123.jsonl
+        .claude/runtime/pr_comments/pr_456.jsonl
+
+    Each line in a JSONL file is a normalized comment record with at least:
+    ``comment_id``, ``author_login``, ``author_type``, ``created_at``,
+    ``body`` (or ``body_excerpt``), ``pr_number``.
+
+    Returns:
+        _IngestCounts with accurate per-source and per-entry tallies.
+    """
+    if not pr_comments_dir.exists():
+        return _IngestCounts()
+
+    counts = _IngestCounts()
+    for jsonl_file in sorted(pr_comments_dir.glob("pr_*.jsonl")):
+        try:
+            stat = jsonl_file.stat()
+            source_id = _upsert_source(
+                conn,
+                "pr_comment",
+                str(jsonl_file),
+                datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                stat.st_size,
+            )
+
+            n = 0
+            for line in jsonl_file.read_text().strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Skipping malformed comment line in %s: %s",
+                        jsonl_file.name,
+                        line[:80],
+                    )
+                    continue
+
+                pr_num = record.get("pr_number", "")
+                author = record.get("author_login", "unknown")
+                author_type = record.get("author_type", "unknown")
+                body = record.get("body_excerpt", record.get("body", ""))[:200]
+                timestamp = record.get("created_at", "")
+
+                content = f"PR #{pr_num} comment by {author} ({author_type}): {body}"
+                metadata = {
+                    "pr_number": pr_num,
+                    "comment_id": record.get("comment_id", 0),
+                    "author_login": author,
+                    "author_type": author_type,
+                }
+
+                _insert_entry(
+                    conn,
+                    source_id,
+                    "pr_comment",
+                    timestamp,
+                    content,
+                    metadata,
+                )
+                n += 1
+
+            if n > 0:
+                counts.sources += 1
+                counts.entries += n
+
+        except (OSError, ValueError) as e:
+            logger.warning("Skipping PR comment file %s: %s", jsonl_file, e)
+
+    return counts
+
+
 # ── Build / Rebuild ──────────────────────────────────────────────
 
 
@@ -894,6 +976,15 @@ def build_index(
             result.entries_indexed += ic.entries
         except Exception as e:
             result.errors.append(f"report_metadata: {e}")
+
+        # 10. Ingest PR comment sidecars
+        pr_comments_dir = runtime_dir / "pr_comments"
+        try:
+            ic = _ingest_pr_comments(conn, pr_comments_dir)
+            result.sources_indexed += ic.sources
+            result.entries_indexed += ic.entries
+        except Exception as e:
+            result.errors.append(f"pr_comments: {e}")
 
         # Update metadata
         conn.execute(

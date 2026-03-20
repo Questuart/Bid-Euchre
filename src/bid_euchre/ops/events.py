@@ -48,6 +48,7 @@ VALID_EVENT_TYPES = frozenset(
         "snapshot_rolled_back",
         "skill_promoted",
         "skill_disabled",
+        "pr_comment_ingested",
     }
 )
 

@@ -1,8 +1,9 @@
-"""Tests for github_pr_state.py — PR metadata, body, changed files, CI status, comment upsert."""
+"""Tests for github_pr_state.py — PR metadata, body, changed files, CI status, comment upsert, comment ingestion."""
 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -14,11 +15,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "intern
 
 from github_pr_state import (
     REVIEW_COMMENT_MARKER,
+    TRUSTED_BOT_LOGINS,
+    PRComment,
     PRMetadata,
     _classify_check,
+    classify_comment_author,
     get_ci_status,
     get_pr_body,
     get_pr_changed_files,
+    get_pr_comments,
     get_pr_metadata,
     upsert_review_comment,
 )
@@ -464,3 +469,131 @@ class TestUpsertReviewComment:
         assert result is True
         # Should have made 4 calls: list, get 111, get 222, create
         assert mock_run.call_count == 4
+
+
+# ---------------------------------------------------------------------------
+# PR comment ingestion tests
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyCommentAuthor:
+    """Test classify_comment_author() identity classification."""
+
+    def test_trusted_bot_by_login(self) -> None:
+        assert classify_comment_author("chatgpt-codex-connector[bot]") == "trusted_bot"
+
+    def test_trusted_bot_ignores_user_type(self) -> None:
+        """Trusted bot is recognized by login alone, regardless of user_type."""
+        assert (
+            classify_comment_author("chatgpt-codex-connector[bot]", "User")
+            == "trusted_bot"
+        )
+
+    def test_other_bot_by_user_type(self) -> None:
+        assert classify_comment_author("dependabot[bot]", "Bot") == "other_bot"
+
+    def test_other_bot_by_login_suffix(self) -> None:
+        """Bots with [bot] suffix are detected even without user_type."""
+        assert classify_comment_author("some-other[bot]") == "other_bot"
+
+    def test_human_user(self) -> None:
+        assert classify_comment_author("octocat", "User") == "human"
+
+    def test_human_without_user_type(self) -> None:
+        assert classify_comment_author("octocat") == "human"
+
+    def test_empty_login(self) -> None:
+        assert classify_comment_author("") == "human"
+
+
+class TestTrustedBotLogins:
+    """Test TRUSTED_BOT_LOGINS constant."""
+
+    def test_contains_codex_connector(self) -> None:
+        assert "chatgpt-codex-connector[bot]" in TRUSTED_BOT_LOGINS
+
+    def test_is_frozenset(self) -> None:
+        assert isinstance(TRUSTED_BOT_LOGINS, frozenset)
+
+
+class TestPRComment:
+    """Test PRComment dataclass."""
+
+    def test_default_source_channel(self) -> None:
+        c = PRComment(
+            pr_number=42,
+            comment_id=123,
+            author_login="octocat",
+            author_type="human",
+            created_at="2026-03-20T10:00:00Z",
+            body="Hello",
+        )
+        assert c.source_channel == "issue_comment"
+
+    def test_all_fields(self) -> None:
+        c = PRComment(
+            pr_number=42,
+            comment_id=456,
+            author_login="chatgpt-codex-connector[bot]",
+            author_type="trusted_bot",
+            created_at="2026-03-20T12:00:00Z",
+            body="Review complete",
+            source_channel="issue_comment",
+        )
+        assert c.pr_number == 42
+        assert c.author_type == "trusted_bot"
+
+
+class TestGetPRComments:
+    """Test get_pr_comments() with mocked gh CLI."""
+
+    @patch("github_pr_state.subprocess.run")
+    def test_returns_classified_comments(self, mock_run: Mock) -> None:
+        raw = [
+            {
+                "id": 100,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "LGTM",
+            },
+            {
+                "id": 200,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body": "Review findings...",
+            },
+        ]
+        mock_run.return_value = Mock(returncode=0, stdout=json.dumps(raw))
+
+        comments = get_pr_comments(42)
+        assert len(comments) == 2
+        assert comments[0].author_type == "human"
+        assert comments[0].author_login == "octocat"
+        assert comments[1].author_type == "trusted_bot"
+        assert comments[1].author_login == "chatgpt-codex-connector[bot]"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_empty_comments(self, mock_run: Mock) -> None:
+        mock_run.return_value = Mock(returncode=0, stdout="[]")
+        comments = get_pr_comments(42)
+        assert comments == []
+
+    @patch("github_pr_state.subprocess.run")
+    def test_raises_on_failure(self, mock_run: Mock) -> None:
+        mock_run.return_value = Mock(returncode=1, stderr="not found")
+        with pytest.raises(RuntimeError, match="failed to fetch comments"):
+            get_pr_comments(99)
+
+    @patch("github_pr_state.subprocess.run")
+    def test_raises_on_timeout(self, mock_run: Mock) -> None:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="gh", timeout=30)
+        with pytest.raises(RuntimeError, match="timed out"):
+            get_pr_comments(99)
+
+    @patch("github_pr_state.subprocess.run")
+    def test_raises_on_invalid_json(self, mock_run: Mock) -> None:
+        mock_run.return_value = Mock(returncode=0, stdout="not json")
+        with pytest.raises(RuntimeError, match="invalid JSON"):
+            get_pr_comments(42)

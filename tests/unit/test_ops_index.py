@@ -1079,3 +1079,134 @@ class TestStalenessCache:
         # idx2's cache should still be valid
         stats2 = get_stats(idx2)
         assert isinstance(stats2.stale_sources, int)
+
+
+# ── PR comment ingestion tests ────────────────────────────────────
+
+
+class TestPRCommentIngestion:
+    """Tests for pr_comment JSONL sidecar ingestion."""
+
+    def test_indexes_pr_comment_sidecars(self, index_dir: Path, tmp_path: Path) -> None:
+        """build_index ingests pr_comments/*.jsonl sidecars."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        # Create pr_comments sidecar
+        pr_comments_dir = rt / "pr_comments"
+        pr_comments_dir.mkdir()
+        comments = [
+            {
+                "comment_id": 100,
+                "author_login": "octocat",
+                "author_type": "human",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body_excerpt": "LGTM",
+                "pr_number": 42,
+            },
+            {
+                "comment_id": 200,
+                "author_login": "chatgpt-codex-connector[bot]",
+                "author_type": "trusted_bot",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body_excerpt": "Review findings: no issues",
+                "pr_number": 42,
+            },
+        ]
+        lines = [json.dumps(c) for c in comments]
+        (pr_comments_dir / "pr_42.jsonl").write_text("\n".join(lines) + "\n")
+
+        result = build_index(index_dir, runtime_dir=rt, plans_dir=plans, repo_root=repo)
+        assert result.errors == []
+        assert result.sources_indexed >= 1
+        assert result.entries_indexed >= 2
+
+        # Verify searchable
+        resp = query(index_dir, "codex connector")
+        assert resp.total_matches >= 1
+
+    def test_pr_comment_entry_type_in_results(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """Ingested comments have entry_type 'pr_comment'."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        pr_comments_dir = rt / "pr_comments"
+        pr_comments_dir.mkdir()
+        comment = {
+            "comment_id": 300,
+            "author_login": "chatgpt-codex-connector[bot]",
+            "author_type": "trusted_bot",
+            "created_at": "2026-03-20T12:00:00Z",
+            "body_excerpt": "Unique searchable token xyzabc",
+            "pr_number": 99,
+        }
+        (pr_comments_dir / "pr_99.jsonl").write_text(json.dumps(comment) + "\n")
+
+        build_index(index_dir, runtime_dir=rt, plans_dir=plans, repo_root=repo)
+
+        resp = query(index_dir, "xyzabc")
+        assert resp.total_matches >= 1
+        assert any(r.entry_type == "pr_comment" for r in resp.results)
+
+    def test_empty_pr_comments_dir(self, index_dir: Path, tmp_path: Path) -> None:
+        """Empty pr_comments directory causes no errors."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        (rt / "pr_comments").mkdir()
+        plans = repo / "plans"
+        plans.mkdir()
+
+        result = build_index(index_dir, runtime_dir=rt, plans_dir=plans, repo_root=repo)
+        assert result.errors == []
+
+    def test_no_pr_comments_dir(self, index_dir: Path, tmp_path: Path) -> None:
+        """Missing pr_comments directory causes no errors."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        result = build_index(index_dir, runtime_dir=rt, plans_dir=plans, repo_root=repo)
+        assert result.errors == []
+
+    def test_malformed_jsonl_lines_skipped(
+        self, index_dir: Path, tmp_path: Path
+    ) -> None:
+        """Malformed JSONL lines are skipped, valid lines are indexed."""
+        repo = tmp_path / "repo"
+        rt = repo / ".claude" / "runtime"
+        rt.mkdir(parents=True)
+        plans = repo / "plans"
+        plans.mkdir()
+
+        pr_comments_dir = rt / "pr_comments"
+        pr_comments_dir.mkdir()
+        content = (
+            "not valid json\n"
+            + json.dumps(
+                {
+                    "comment_id": 400,
+                    "author_login": "octocat",
+                    "author_type": "human",
+                    "created_at": "2026-03-20T13:00:00Z",
+                    "body_excerpt": "Valid comment",
+                    "pr_number": 50,
+                }
+            )
+            + "\n"
+        )
+        (pr_comments_dir / "pr_50.jsonl").write_text(content)
+
+        result = build_index(index_dir, runtime_dir=rt, plans_dir=plans, repo_root=repo)
+        assert result.errors == []
+        assert result.entries_indexed >= 1

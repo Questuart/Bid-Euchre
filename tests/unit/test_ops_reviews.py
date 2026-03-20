@@ -11,15 +11,21 @@ import pytest
 
 from bid_euchre.ops.reviews import (
     DEFAULT_REVIEW_CONTEXTS,
+    TRUSTED_BOT_LOGINS,
+    CommentOverlay,
     ReviewOutcome,
     _classify_ci_status,
     _get_advisory_status,
     _get_review_status,
     _has_precheck_ci,
+    classify_comment_author,
     emit_review_event,
+    format_comment_overlays_json,
+    format_comment_overlays_text,
     format_reviews_json,
     format_reviews_text,
     get_open_pr_reviews,
+    get_pr_comment_overlay,
     get_pr_review_detail,
 )
 
@@ -681,3 +687,197 @@ class TestEmitReviewEvent:
         assert len(events) == 1
         assert events[0]["event_type"] == "review_outcome"
         assert events[0]["payload"]["pr_number"] == 42
+
+
+# --- Comment overlay tests ---
+
+
+class TestClassifyCommentAuthorReviews:
+    """Tests for classify_comment_author() in reviews module."""
+
+    def test_trusted_bot(self) -> None:
+        assert classify_comment_author("chatgpt-codex-connector[bot]") == "trusted_bot"
+
+    def test_other_bot_by_type(self) -> None:
+        assert classify_comment_author("dependabot[bot]", "Bot") == "other_bot"
+
+    def test_other_bot_by_suffix(self) -> None:
+        assert classify_comment_author("my-bot[bot]") == "other_bot"
+
+    def test_human(self) -> None:
+        assert classify_comment_author("octocat", "User") == "human"
+
+    def test_human_no_type(self) -> None:
+        assert classify_comment_author("octocat") == "human"
+
+    def test_trusted_bot_logins_contains_codex(self) -> None:
+        assert "chatgpt-codex-connector[bot]" in TRUSTED_BOT_LOGINS
+
+
+class TestCommentOverlay:
+    """Tests for CommentOverlay dataclass."""
+
+    def test_defaults(self) -> None:
+        overlay = CommentOverlay(pr_number=42)
+        assert overlay.total_comments == 0
+        assert overlay.trusted_bot_comments == 0
+        assert overlay.human_comments == 0
+        assert overlay.other_bot_comments == 0
+        assert overlay.latest_trusted_bot_excerpt is None
+        assert overlay.comments == []
+
+    def test_to_dict(self) -> None:
+        overlay = CommentOverlay(pr_number=42, total_comments=3)
+        d = overlay.to_dict()
+        assert d["pr_number"] == 42
+        assert d["total_comments"] == 3
+
+
+class TestGetPRCommentOverlay:
+    """Tests for get_pr_comment_overlay() with pre-fetched data."""
+
+    def test_empty_comments(self) -> None:
+        overlay = get_pr_comment_overlay(42, raw_comments=[])
+        assert overlay.pr_number == 42
+        assert overlay.total_comments == 0
+
+    def test_classifies_comments(self) -> None:
+        raw = [
+            {
+                "id": 1,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "LGTM",
+            },
+            {
+                "id": 2,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body": "Review findings: no issues found.",
+            },
+            {
+                "id": 3,
+                "login": "dependabot[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T12:00:00Z",
+                "body": "Bump version",
+            },
+        ]
+        overlay = get_pr_comment_overlay(42, raw_comments=raw)
+        assert overlay.total_comments == 3
+        assert overlay.human_comments == 1
+        assert overlay.trusted_bot_comments == 1
+        assert overlay.other_bot_comments == 1
+        assert overlay.latest_trusted_bot_author == "chatgpt-codex-connector[bot]"
+        assert overlay.latest_trusted_bot_time == "2026-03-20T11:00:00Z"
+        assert "Review findings" in (overlay.latest_trusted_bot_excerpt or "")
+
+    def test_latest_trusted_bot_is_most_recent(self) -> None:
+        raw = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "First review",
+            },
+            {
+                "id": 2,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T14:00:00Z",
+                "body": "Second review",
+            },
+        ]
+        overlay = get_pr_comment_overlay(42, raw_comments=raw)
+        assert overlay.trusted_bot_comments == 2
+        assert overlay.latest_trusted_bot_time == "2026-03-20T14:00:00Z"
+        assert "Second review" in (overlay.latest_trusted_bot_excerpt or "")
+
+    def test_body_excerpt_truncated(self) -> None:
+        long_body = "x" * 500
+        raw = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": long_body,
+            },
+        ]
+        overlay = get_pr_comment_overlay(42, raw_comments=raw)
+        assert len(overlay.latest_trusted_bot_excerpt or "") <= 200
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_fetches_from_github_when_no_raw(self, mock_gh: object) -> None:
+        """When raw_comments is None, fetches from GitHub."""
+        raw = [
+            {
+                "id": 10,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "nice",
+            },
+        ]
+        mock_gh.return_value = _mock_result(stdout=json.dumps(raw))
+        overlay = get_pr_comment_overlay(42)
+        assert overlay.total_comments == 1
+        assert overlay.human_comments == 1
+
+    @patch("bid_euchre.ops.reviews._run_gh")
+    def test_gh_failure_returns_empty_overlay(self, mock_gh: object) -> None:
+        """GitHub failure returns overlay with zero comments."""
+        mock_gh.return_value = _mock_result(returncode=1, stderr="not found")
+        overlay = get_pr_comment_overlay(42)
+        assert overlay.total_comments == 0
+
+
+class TestFormatCommentOverlays:
+    """Tests for comment overlay formatting."""
+
+    def test_text_empty(self) -> None:
+        text = format_comment_overlays_text([])
+        assert "No comment data" in text
+
+    def test_text_with_trusted_bot(self) -> None:
+        overlay = CommentOverlay(
+            pr_number=42,
+            total_comments=3,
+            trusted_bot_comments=1,
+            human_comments=2,
+            latest_trusted_bot_author="chatgpt-codex-connector[bot]",
+            latest_trusted_bot_time="2026-03-20T10:00:00Z",
+            latest_trusted_bot_excerpt="Review findings...",
+        )
+        text = format_comment_overlays_text([overlay])
+        assert "#42" in text
+        assert "Trusted=[+:1]" in text
+        assert "Human=2" in text
+        assert "chatgpt-codex-connector[bot]" in text
+
+    def test_text_no_trusted_bot(self) -> None:
+        overlay = CommentOverlay(
+            pr_number=42,
+            total_comments=1,
+            human_comments=1,
+        )
+        text = format_comment_overlays_text([overlay])
+        assert "Trusted=[-:0]" in text
+
+    def test_json_serializable(self) -> None:
+        overlay = CommentOverlay(
+            pr_number=42,
+            total_comments=2,
+            trusted_bot_comments=1,
+            human_comments=1,
+            latest_trusted_bot_excerpt="Review ok",
+        )
+        result = format_comment_overlays_json([overlay])
+        assert len(result) == 1
+        assert result[0]["pr_number"] == 42
+        assert result[0]["trusted_bot_comments"] == 1
+        # Must be JSON-serializable
+        json.dumps(result)
