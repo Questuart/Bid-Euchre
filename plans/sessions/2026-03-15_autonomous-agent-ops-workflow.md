@@ -768,6 +768,14 @@ follow-on governed orchestration platform becomes the main line of work.
 The following may need to interleave opportunistically if they block trusted
 operator use during PR-5:
 
+- **Immediate post-slices 3/4 priority:** review-gate semantics /
+  `claude-review` reliability fix. Once slices 3 and 4 ship, take a small
+  stabilizer PR that:
+  - keeps `get_ci_status()` limited to true CI/build/governance checks
+  - stops `claude-review` infra failure from masquerading as CI failure
+  - keeps review findings distinct from reviewer-service-health failures
+  - preserves a clear merge-relevant review gate while reducing auto-merge
+    churn during the rest of the refactor arc
 - worktree registry/bootstrap fixes
 - main-checkout exemption in worktree prune/quarantine flows
 - review/CI process fixes such as issue `#987`
@@ -775,12 +783,23 @@ operator use during PR-5:
 These should stay small and focused; do not fold them into large PR-5 slices
 unless they are inseparable from the capability being shipped.
 
+Recommended sequencing:
+
+1. finish `PR-5 slice 3`
+2. finish `PR-5 slice 4`
+3. land the review-gate / `claude-review` stabilizer
+4. continue with `PR-5 slice 5` through `PR-5 slice 7`
+
 ##### Practical delivery expectation
 
 At current shipping rates, the **remaining PR-5 closeout stack** is the part
 that can plausibly be pushed through in roughly one to two focused days if
 review churn stays low. The follow-on governed initiative is intentionally a
 larger multi-PR platform effort and should not be treated as a same-day stack.
+
+If auto-merge remains enabled, treat the review-gate / `claude-review`
+stabilizer as the next reliability slice after 3/4, because it improves the
+delivery substrate for the rest of PR-5 and the governed follow-on work.
 
 > **User migration note:** The explicit schedule for when the user should
 > change day-to-day workflow (existing steward layout -> dashboard-first ->
