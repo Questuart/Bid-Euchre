@@ -1167,6 +1167,20 @@ These are the short names future handoffs should use.
   - second-model failures degrade into explicit service-lane health signals
     rather than silent stalls
 
+> **Interim advisory CI path (2026-03-20):** Codex may return to the CI
+> pipeline before `Platform-12` as an advisory overlay — for example, as a
+> GitHub Action that posts review comments. If so, the following constraints
+> apply:
+>
+> 1. It must be **advisory-only** — not merge-blocking.
+> 2. It must reuse the shipped `ci` / `review_gate` / `advisory` check-category
+>    split (#1017, #1025, #1030). Its status must land in the `advisory`
+>    category.
+> 3. It must **not** revive the old local Codex subprocess review loop as the
+>    primary review architecture.
+> 4. Any interim Codex CI overlay should later be migrated into or aligned with
+>    the durable service-lane contract defined by `Platform-12`.
+
 ### `Platform-13` — Second-Project Validation
 
 - validate against another coding repo or clearly separate subproject mode
