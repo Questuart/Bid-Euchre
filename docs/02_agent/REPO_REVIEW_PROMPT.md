@@ -1,6 +1,6 @@
 # Repo Review Prompt — AI Agent Execution Protocol
 
-**Version:** 3.7 (Drift-Resilient, Discovery-Driven)
+**Version:** 3.8 (Drift-Resilient, Discovery-Driven)
 **Last Updated:** March 2026
 
 ---
@@ -187,6 +187,9 @@ uv run python -c "from bid_euchre.arc_d_v2.chart_registry import CHART_REGISTRY;
 uv run python -c "from bid_euchre.arc_d_v2.tables import generate_all_tables; print('tables OK')"
 uv run python -c "from bid_euchre.arc_d_v2.report import generate_report; print('report OK')"
 
+# Verify ops module (operator tooling)
+uv run python -c "import bid_euchre.ops; print('ops OK')"
+
 # Dynamic: also verify any modules not listed above
 # ls -d src/bid_euchre/*/ | grep -v __pycache__
 # (check if any module directories exist that aren't covered by the imports above)
@@ -336,7 +339,7 @@ ls experiments/comparisons/*.py experiments/training/*.py 2>/dev/null
 
 ```bash
 # Check for uncommitted artifacts in working tree
-find data/runs data/reports data/models -type f 2>/dev/null | head -5
+find data/runs data/reports data/artifacts -type f 2>/dev/null | head -5
 
 # Check git status for accidental staging
 git status data/
@@ -922,6 +925,7 @@ bid-euchre/
 │   ├── features/                # Hand evaluation + bidless features
 │   ├── datasets/                # Dataset collectors
 │   ├── models/                  # Model training/inference, splits, freeze
+│   ├── ops/                     # Operator tooling (internal)
 │   ├── diagnostics/             # Visualization, analysis, health checks, notebook validation
 │   ├── reporting/               # Metrics, evaluation, charts, eligibility
 │   ├── logging/                 # Structured game logging
@@ -1014,6 +1018,7 @@ bid-euchre/
 | **Reporting Suite** | #741–764 | Report contracts, table expansion, dashboards, diagnostics | 9 CSV chart_data, 3×2 dashboards, bundle backfill, integrity fixes |
 | **Chart Suite + Ops** | #765–780 | 23-chart registry, agent ops, regeneration repair, Option B | Full chart registry, tmux manager, R0 anchor fix, subdir field refactor |
 | **Reporting Refactor + FULL Regen** | #781–#864 | Reporting Refactor + FULL Regeneration | Reporting refactor phases 1–6; FULL rung regeneration R0–R2; review loop parser repairs; agent ops infrastructure; evidence manifest fixes |
+| **Lineage Closeout + Ops Hardening + Agent Ops Planning** | #865–#1088 | Lineage Closeout + Ops Hardening + Agent Ops Planning | Final Arc D v2 closeout, operator tooling hardening (status, events, watchdogs), agentic orchestration platform planning, CI workflow improvements |
 
 **Current state:** Derive via:
 
@@ -1165,5 +1170,5 @@ summary and do not proceed to later phases unless explicitly asked.
 
 ---
 
-*Template version: 3.7 (Drift-Resilient, Discovery-Driven)*
-*Previous versions: 3.6, 3.5, 3.4, 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
+*Template version: 3.8 (Drift-Resilient, Discovery-Driven)*
+*Previous versions: 3.7, 3.6, 3.5, 3.4, 3.3 (February 18, 2026), 3.2, 3.1 (February 4, 2026), 3.0 (February 1, 2026)*
