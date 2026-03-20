@@ -199,7 +199,7 @@ class TestManifestSeeds:
             rung_id="r0",
         )
         assert sorted(manifest["seeds"]) == [42, 123, 456]
-        assert manifest["mode"] == "FULL"
+        assert manifest["mode"] == "full"
 
     def test_seeds_empty_when_no_seed_key(self, tmp_path):
         """Battery without seed key produces seeds=[]."""
@@ -259,7 +259,7 @@ class TestManifestModeOverride:
             report_dir=report_dir,
             mode="FULL",
         )
-        assert manifest["mode"] == "FULL"
+        assert manifest["mode"] == "full"
 
     def test_mode_override_over_h2h(self, tmp_path):
         """Explicit mode overrides H2H-detected mode."""
@@ -280,7 +280,7 @@ class TestManifestModeOverride:
             report_dir=report_dir,
             mode="FULL",
         )
-        assert manifest["mode"] == "FULL"
+        assert manifest["mode"] == "full"
 
     def test_mode_defaults_to_h2h(self, tmp_path):
         """Without explicit mode, H2H detection is used."""
@@ -299,7 +299,7 @@ class TestManifestModeOverride:
             rung_dir=rung_dir,
             report_dir=report_dir,
         )
-        assert manifest["mode"] == "FULL"
+        assert manifest["mode"] == "full"
 
 
 class TestManifestSeedsFromDirectory:

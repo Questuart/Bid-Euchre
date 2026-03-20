@@ -3,7 +3,7 @@
 **Lineage:** arc_d_v2
 **Rung:** r1
 **Provenance SHA:** `238b33866b872987d86a2169aca6ca2cc8a6d61c`
-**Mode:** FULL
+**Mode:** full
 **Seeds:** [123, 42, 456]
 **Anchor:** anchor_hybrid_r0_full
 
