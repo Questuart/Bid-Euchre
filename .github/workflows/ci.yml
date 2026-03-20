@@ -4,7 +4,8 @@ on:
   pull_request:
     branches: [ "main" ]
     # No paths-ignore — always trigger so the required `tests` check
-    # posts a status. Docs/plans-only PRs skip heavy steps via paths-filter.
+    # posts a status. Docs/plans-only PRs skip heavy jobs via paths-filter
+    # gating, and the `tests` aggregation gate passes on all-skipped upstream.
   push:
     branches: [ "main" ]
 
@@ -13,38 +14,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Shared change detection (lightweight, ~5s) ───────────────────
+  # ── Change detection (PR only, ~5s) ───────────────────────────────
   # Exports path-filter results so downstream jobs can be truly absent
-  # (not just step-skipped) on non-matching PRs.  The required `tests`
-  # job does NOT depend on this — it runs its own paths-filter to keep
-  # the required check independent.
+  # (not just step-skipped) on non-matching PRs.  On push events this
+  # job is skipped; downstream jobs detect push and run unconditionally.
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
+      notebooks_changed: ${{ steps.filter.outputs.notebooks }}
     steps:
       - name: Detect changes
         id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            code:
-              - 'src/**'
-              - 'scripts/**'
-              - 'tests/**'
-              - 'experiments/**'
-              - 'Makefile'
-              - 'pyproject.toml'
-              - '.github/workflows/ci.yml'
-
-  tests:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Detect changes
-        id: changes
-        if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -61,137 +43,59 @@ jobs:
               - 'src/bid_euchre/diagnostics/**'
               - 'src/bid_euchre/reporting/**'
 
-      # ── Lane logic ──────────────────────────────────────────────────
-      # For pushes to main: always run everything.
-      # For PRs: run lanes based on which paths changed.
-      #   - "any_code" = code OR notebooks (anything that needs install)
-      #   - Docs/plans-only PRs skip all heavy steps → fast green check.
-      #
-      # Condition shorthands used in steps below:
-      #   push_or_code:      github.event_name == 'push' || steps.changes.outputs.code == 'true'
-      #   push_or_any:       github.event_name == 'push' || steps.changes.outputs.code == 'true' || steps.changes.outputs.notebooks == 'true'
-      #   push_or_notebooks: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
-
-      - name: Skip notice
-        if: >-
-          github.event_name == 'pull_request' &&
-          steps.changes.outputs.code != 'true' &&
-          steps.changes.outputs.notebooks != 'true'
-        run: echo "::notice::Docs/plans-only PR — skipping all heavy steps"
-
-      # ── Setup (shared across all lanes) ─────────────────────────────
+  # ── Static checks (lint, config validation, docs freshness) ───────
+  checks:
+    needs: [changes]
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name == 'push' ||
+       needs.changes.outputs.code_changed == 'true' ||
+       needs.changes.outputs.notebooks_changed == 'true')
+    runs-on: ubuntu-latest
+    steps:
       - name: Checkout
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install uv
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         uses: astral-sh/setup-uv@v5
 
       - name: Install package + dev deps
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         run: uv sync --frozen --extra dev
 
-      # ── Fast checks (always, when any code touched) ─────────────────
       - name: Repo linter
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         run: make repo-lint
 
       - name: Validate configs
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         run: uv run python scripts/validate_configs.py
 
       - name: Docs freshness
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         run: make docs-check
 
       - name: Ruff (lint)
-        if: >-
-          github.event_name == 'push' ||
-          steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true'
         run: make lint
 
-      # ── Code lane: pytest ───────────────────────────────────────────
-      - name: Tests (fast)
-        if: github.event_name == 'push' || steps.changes.outputs.code == 'true'
-        run: make test
-
-      # ── Notebook lane: hygiene + smoke execution ────────────────────
-      - name: Notebook hygiene
-        if: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
-        run: make notebook-check
-
-      - name: Execute notebooks (smoke)
-        if: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
-        run: make notebook-run
-
-      # ── Promotion gate (label-triggered) ────────────────────────────
-      - name: Promotion gate
-        if: |
-          (github.event_name == 'push' || steps.changes.outputs.code == 'true') &&
-          contains(github.event.pull_request.labels.*.name, 'promotion')
-        env:
-          ARTIFACT_DIR: ${{ vars.ARTIFACT_DIR || '' }}
-          ROLLUP_JSON: ${{ vars.ROLLUP_JSON || '' }}
-          SPLIT_MANIFEST_DIR: ${{ vars.SPLIT_MANIFEST_DIR || '' }}
-        run: |
-          if [ -z "$ARTIFACT_DIR" ] || [ -z "$ROLLUP_JSON" ]; then
-            echo "::error::Promotion gate requires ARTIFACT_DIR and ROLLUP_JSON. Set these repository variables or remove the 'promotion' label."
-            exit 1
-          fi
-          make promotion-gate ARTIFACT_DIR="$ARTIFACT_DIR" ROLLUP_JSON="$ROLLUP_JSON" SPLIT_MANIFEST_DIR="${SPLIT_MANIFEST_DIR:-}"
-
-  # ── Shadow sharding trial (non-required, PR code changes only) ──
-  # Runs the fast test suite across 2 balanced shards using pytest-split.
-  # This job is advisory — it does not block merges. It exists to measure
-  # shard wall-clock, balance, and stability before promoting sharding to
-  # replace the serial `tests` job.
-  #
-  # Gated on the `changes` job so the matrix is truly absent (not just
-  # step-skipped) on docs/plans-only PRs and on push events.
-  #
-  # To promote: add an aggregation `tests-gate` job, update branch
-  # protection to require `tests-gate`, then remove the serial `tests` job.
-  tests-shadow-shard:
+  # ── Sharded pytest (2-way split via pytest-split) ─────────────────
+  # Promoted from the shadow sharding trial.  Two balanced shards run
+  # in parallel; both must pass for the `tests` aggregation gate to
+  # succeed.  Uses the committed `.test_durations` baseline.
+  tests-shard:
     needs: [changes]
-    if: needs.changes.outputs.code_changed == 'true'
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name == 'push' ||
+       needs.changes.outputs.code_changed == 'true')
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         group: [1, 2]
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -211,9 +115,114 @@ jobs:
 
       - name: Tests (shard ${{ matrix.group }}/2)
         run: |
-          echo "::group::Shard ${{ matrix.group }}/2 — pytest-split"
           PYTHONPATH=.:src uv run python -m pytest \
             -m "not slow" tests/ \
             --splits 2 --group ${{ matrix.group }} \
             -q --tb=short
-          echo "::endgroup::"
+
+  # ── Notebook hygiene + smoke execution ────────────────────────────
+  notebooks:
+    needs: [changes]
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name == 'push' ||
+       needs.changes.outputs.notebooks_changed == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install package + dev deps
+        run: uv sync --frozen --extra dev
+
+      - name: Notebook hygiene
+        run: make notebook-check
+
+      - name: Execute notebooks (smoke)
+        run: make notebook-run
+
+  # ── Promotion gate (label-driven, code PRs only) ──────────────────
+  promotion-gate:
+    needs: [changes]
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name == 'push' ||
+       needs.changes.outputs.code_changed == 'true') &&
+      contains(github.event.pull_request.labels.*.name, 'promotion')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install package + dev deps
+        run: uv sync --frozen --extra dev
+
+      - name: Promotion gate
+        env:
+          ARTIFACT_DIR: ${{ vars.ARTIFACT_DIR || '' }}
+          ROLLUP_JSON: ${{ vars.ROLLUP_JSON || '' }}
+          SPLIT_MANIFEST_DIR: ${{ vars.SPLIT_MANIFEST_DIR || '' }}
+        run: |
+          if [ -z "$ARTIFACT_DIR" ] || [ -z "$ROLLUP_JSON" ]; then
+            echo "::error::Promotion gate requires ARTIFACT_DIR and ROLLUP_JSON. Set these repository variables or remove the 'promotion' label."
+            exit 1
+          fi
+          make promotion-gate ARTIFACT_DIR="$ARTIFACT_DIR" ROLLUP_JSON="$ROLLUP_JSON" SPLIT_MANIFEST_DIR="${SPLIT_MANIFEST_DIR:-}"
+
+  # ── Required aggregation gate ─────────────────────────────────────
+  # This non-matrix job preserves the required `tests` check context
+  # so branch protection needs no migration.  It evaluates all upstream
+  # lane results and posts a single pass/fail status.
+  #
+  # Behavior:
+  #   - if: always() ensures a status is posted even on docs-only PRs
+  #   - Fails if any applicable upstream is failure or cancelled
+  #   - Passes when all upstreams are success or skipped
+  tests:
+    needs: [changes, checks, tests-shard, notebooks, promotion-gate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notice
+        if: >-
+          github.event_name == 'pull_request' &&
+          needs.checks.result == 'skipped' &&
+          needs.tests-shard.result == 'skipped' &&
+          needs.notebooks.result == 'skipped'
+        run: echo "::notice::Docs/plans-only PR — all heavy jobs skipped"
+
+      - name: Evaluate upstream results
+        run: |
+          echo "checks:         ${{ needs.checks.result }}"
+          echo "tests-shard:    ${{ needs.tests-shard.result }}"
+          echo "notebooks:      ${{ needs.notebooks.result }}"
+          echo "promotion-gate: ${{ needs.promotion-gate.result }}"
+
+          results=("${{ needs.checks.result }}" "${{ needs.tests-shard.result }}" "${{ needs.notebooks.result }}" "${{ needs.promotion-gate.result }}")
+          for r in "${results[@]}"; do
+            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
+              echo "::error::Upstream job result: $r"
+              exit 1
+            fi
+          done
+          echo "All upstream jobs passed or were skipped — gate OK"
