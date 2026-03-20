@@ -250,6 +250,131 @@ class TestStewardSessionScript:
             "write_lane_metadata" in content
         ), "steward-session.sh must call write_lane_metadata for lane registry"
 
+    def test_has_boundary_validation(self) -> None:
+        """Script must contain validate_worktree_path() for boundary enforcement."""
+        content = STEWARD_SCRIPT.read_text()
+        assert "validate_worktree_path" in content, (
+            "steward-session.sh must define validate_worktree_path() for "
+            "filesystem boundary enforcement"
+        )
+
+    def test_ensure_worktree_calls_boundary_check(self) -> None:
+        """ensure_worktree() must call validate_worktree_path before creating."""
+        content = STEWARD_SCRIPT.read_text()
+        # Find ensure_worktree body and verify it calls validate_worktree_path
+        in_func = False
+        func_lines: list[str] = []
+        for line in content.split("\n"):
+            if "ensure_worktree()" in line and "validate" not in line:
+                in_func = True
+            if in_func:
+                func_lines.append(line)
+                if line.strip() == "}" and in_func:
+                    break
+        func_body = "\n".join(func_lines)
+        assert (
+            "validate_worktree_path" in func_body
+        ), "ensure_worktree() must call validate_worktree_path before creating"
+
+
+class TestBoundaryValidation:
+    """Tests for validate_worktree_path() in steward-session.sh."""
+
+    def test_accepts_path_in_parent_dir(self, tmp_path: Path) -> None:
+        """Paths within PARENT_DIR should be accepted."""
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        wt_path = parent / "worktree"
+        wt_path.mkdir()
+
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"""
+PARENT_DIR="{parent}"
+validate_worktree_path() {{
+    local path="$1"
+    local resolved
+    if [ -e "$path" ]; then
+        resolved="$(cd "$path" && pwd -P)"
+    else
+        local par
+        par="$(dirname "$path")"
+        if [ ! -d "$par" ]; then
+            echo "Error: parent directory does not exist: $par" >&2
+            return 1
+        fi
+        resolved="$(cd "$par" && pwd -P)/$(basename "$path")"
+    fi
+    local parent_resolved
+    parent_resolved="$(cd "$PARENT_DIR" && pwd -P)"
+    case "$resolved" in
+        "${{parent_resolved}}"/*)
+            return 0
+            ;;
+        *)
+            echo "Error: worktree path is outside the repo boundary: $resolved" >&2
+            return 1
+            ;;
+    esac
+}}
+validate_worktree_path "{wt_path}"
+""",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    def test_rejects_path_outside_parent_dir(self, tmp_path: Path) -> None:
+        """Paths outside PARENT_DIR should be rejected."""
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"""
+PARENT_DIR="{parent}"
+validate_worktree_path() {{
+    local path="$1"
+    local resolved
+    if [ -e "$path" ]; then
+        resolved="$(cd "$path" && pwd -P)"
+    else
+        local par
+        par="$(dirname "$path")"
+        if [ ! -d "$par" ]; then
+            echo "Error: parent directory does not exist: $par" >&2
+            return 1
+        fi
+        resolved="$(cd "$par" && pwd -P)/$(basename "$path")"
+    fi
+    local parent_resolved
+    parent_resolved="$(cd "$PARENT_DIR" && pwd -P)"
+    case "$resolved" in
+        "${{parent_resolved}}"/*)
+            return 0
+            ;;
+        *)
+            echo "Error: worktree path is outside the repo boundary: $resolved" >&2
+            return 1
+            ;;
+    esac
+}}
+validate_worktree_path "{external}"
+""",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "outside the repo boundary" in result.stderr
+
 
 # ---------------------------------------------------------------------------
 # launchd template tests

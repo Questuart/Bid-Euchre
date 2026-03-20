@@ -522,6 +522,9 @@ class TestCmdWorktreesQuarantine:
 
         import ops
 
+        # Bypass boundary check — this test covers quarantine logic, not boundary
+        monkeypatch.setattr(ops, "_check_boundary", lambda *a, **kw: None)
+
         rc = ops.main(
             [
                 "--runtime-dir",
@@ -2014,3 +2017,296 @@ class TestCompactSessionContextCli:
             ]
         )
         assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Filesystem boundary tests
+# ---------------------------------------------------------------------------
+
+
+class TestBoundaryRejection:
+    """Tests that CLI commands reject paths outside the repo boundary."""
+
+    def _mock_boundaries(
+        self, monkeypatch: pytest.MonkeyPatch, repo_root: Path
+    ) -> None:
+        """Set up fs_boundary mocks that make *repo_root* the boundary."""
+        from bid_euchre.ops import fs_boundary
+
+        repo_root_str = str(repo_root.resolve())
+        runtime_str = str((repo_root / ".claude" / "runtime").resolve())
+
+        fake_boundaries = {
+            "repo_root": repo_root_str,
+            "worktree_paths": [repo_root_str],
+            "runtime_dirs": [runtime_str],
+        }
+        monkeypatch.setattr(
+            fs_boundary,
+            "get_repo_boundaries",
+            lambda **kw: fake_boundaries,
+        )
+
+    def test_quarantine_rejects_external(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """worktrees quarantine should reject paths outside the boundary."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        self._mock_boundaries(monkeypatch, repo_root)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "quarantine",
+                "/tmp/evil-worktree",
+                "--reason",
+                "test",
+            ]
+        )
+        assert rc == 1
+        assert "outside the repo boundary" in capsys.readouterr().err
+
+    def test_archive_rejects_external(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """worktrees archive should reject paths outside the boundary."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        self._mock_boundaries(monkeypatch, repo_root)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "archive",
+                "/tmp/evil-worktree",
+            ]
+        )
+        assert rc == 1
+        assert "outside the repo boundary" in capsys.readouterr().err
+
+    def test_snapshot_create_rejects_external(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """snapshot create should reject --worktree paths outside the boundary."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        self._mock_boundaries(monkeypatch, repo_root)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "snapshot",
+                "create",
+                "--worktree",
+                "/tmp/evil-worktree",
+                "--reason",
+                "test",
+            ]
+        )
+        assert rc == 1
+        assert "outside the repo boundary" in capsys.readouterr().err
+
+    def test_skills_propose_rejects_external(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """skills propose should reject --content-file paths outside the boundary."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        self._mock_boundaries(monkeypatch, repo_root)
+
+        # Create a content file outside the boundary
+        external_file = tmp_path / "external" / "skill.md"
+        external_file.parent.mkdir()
+        external_file.write_text("# Evil skill")
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "skills",
+                "propose",
+                "--name",
+                "evil-skill",
+                "--description",
+                "test skill",
+                "--content-file",
+                str(external_file),
+                "--source-workflow",
+                "test",
+                "--proposed-by",
+                "ops",
+            ]
+        )
+        assert rc == 1
+        assert "outside the repo boundary" in capsys.readouterr().err
+
+    def test_snapshot_create_allows_in_boundary(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """snapshot create should allow --worktree paths inside the boundary.
+
+        The path passes the boundary check but create_snapshot may still fail
+        because the test dir isn't a real git repo — that's expected.
+        We only verify the error is NOT a boundary violation.
+        """
+        import subprocess as sp
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        self._mock_boundaries(monkeypatch, repo_root)
+
+        wt_path = repo_root / "some-subdir"
+        wt_path.mkdir()
+
+        import ops
+
+        # create_snapshot will call git commands that fail in test env.
+        # We want to verify boundary check passes — not that snapshot works.
+        # Track whether _check_boundary was called and returned None (allowed).
+        original_check = ops._check_boundary
+        boundary_result = []
+
+        def tracking_check(*a, **kw):
+            result = original_check(*a, **kw)
+            boundary_result.append(result)
+            return result
+
+        monkeypatch.setattr(ops, "_check_boundary", tracking_check)
+
+        # The command may raise or return 1 — we don't care
+        try:
+            ops.main(
+                [
+                    "--runtime-dir",
+                    str(runtime_dir),
+                    "--plans-dir",
+                    str(plans_dir),
+                    "snapshot",
+                    "create",
+                    "--worktree",
+                    str(wt_path),
+                    "--reason",
+                    "test",
+                ]
+            )
+        except (sp.SubprocessError, OSError):
+            pass  # Expected: test dir isn't a real git repo
+
+        # Boundary check was called and returned None (allowed)
+        assert boundary_result == [
+            None
+        ], f"Expected boundary check to allow the path, got {boundary_result}"
+
+    def test_quarantine_allows_registered_worktree(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Paths within a registered worktree should pass boundary checks."""
+        import subprocess as sp
+
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        wt_path = tmp_path / "Bid-Euchre-steward-author"
+        wt_path.mkdir()
+
+        from bid_euchre.ops import fs_boundary
+
+        repo_root_str = str(repo_root.resolve())
+        wt_str = str(wt_path.resolve())
+        runtime_str = str((repo_root / ".claude" / "runtime").resolve())
+
+        monkeypatch.setattr(
+            fs_boundary,
+            "get_repo_boundaries",
+            lambda **kw: {
+                "repo_root": repo_root_str,
+                "worktree_paths": [repo_root_str, wt_str],
+                "runtime_dirs": [runtime_str],
+            },
+        )
+
+        # Mock subprocess so quarantine itself doesn't fail
+        monkeypatch.setattr(
+            sp,
+            "run",
+            lambda *a, **kw: type(
+                "R", (), {"returncode": 0, "stdout": "diff\n", "stderr": ""}
+            )(),
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+                "quarantine",
+                str(wt_path),
+                "--reason",
+                "test",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "outside the repo boundary" not in captured.err
