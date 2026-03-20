@@ -32,12 +32,26 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Check for API key
+        id: check-key
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY not configured — skipping Codex review"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
       - name: Checkout repository
+        if: steps.check-key.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Run Codex review
+        if: steps.check-key.outputs.skip != 'true'
         id: review
         uses: openai/codex-action@v1
         with:
