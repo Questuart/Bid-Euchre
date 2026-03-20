@@ -40,53 +40,34 @@ class TestClaudeReviewWorkflow:
         assert "do not" in prompt, "prompt must include prohibitions"
 
     def test_max_turns_value(self):
-        """Max turns must be explicitly set to a small bound."""
+        """Max turns must be explicitly set to a bounded value."""
         step = self._review_step()
         claude_args = step["with"]["claude_args"]
         assert (
-            claude_args == "--max-turns 5"
-        ), f"expected '--max-turns 5', got {claude_args!r}"
+            claude_args == "--max-turns 10"
+        ), f"expected '--max-turns 10', got {claude_args!r}"
 
     def test_no_continue_on_error(self):
         """Review step must NOT use continue-on-error — failures must be visible."""
         step = self._review_step()
         assert step.get("continue-on-error") is not True
 
-    # -- allowed_tools constraints --
+    def test_no_allowed_tools_input(self):
+        """allowed_tools is not a valid action input — must not be present.
 
-    def test_has_allowed_tools(self):
-        """Review step must declare an explicit allowed_tools allowlist."""
+        The anthropics/claude-code-action@v1 action silently ignores this input.
+        Its presence provides no tool restriction and adds confusion.
+        """
         step = self._review_step()
-        assert "allowed_tools" in step["with"], "allowed_tools must be present"
-
-    def test_allowed_tools_includes_read_tools(self):
-        """Allowlist must include core read-only inspection tools."""
-        tools = self._allowed_tools_set()
-        for required in ("Read", "Glob", "Grep"):
-            assert required in tools, f"missing read tool: {required}"
-
-    def test_allowed_tools_excludes_write_tools(self):
-        """Allowlist must NOT include tools that modify the repository."""
-        tools_text = self._review_step()["with"]["allowed_tools"]
-        for forbidden in ("Edit", "Write", "NotebookEdit"):
-            assert forbidden not in tools_text, f"write tool present: {forbidden}"
-        # No git push, git commit, or destructive gh commands
-        for forbidden_bash in ("git push", "git commit", "git checkout", "gh pr merge"):
-            assert (
-                forbidden_bash not in tools_text
-            ), f"destructive bash pattern present: {forbidden_bash}"
-
-    def test_allowed_tools_includes_pr_comment(self):
-        """Reviewer must be able to post PR comments (its primary output)."""
-        tools = self._allowed_tools_set()
-        assert any(
-            "gh pr comment" in t for t in tools
-        ), "must include Bash(gh pr comment *)"
+        assert "allowed_tools" not in step.get("with", {}), (
+            "allowed_tools is not a valid input for claude-code-action@v1 — "
+            "remove it (GitHub Actions ignores it silently)"
+        )
 
     # -- infra-failure classifier constraints --
 
     def test_has_infra_failure_flag_step(self):
-        """A follow-up step must create an issue on reviewer infra failure."""
+        """A follow-up step must handle reviewer failures (conditional issue creation)."""
         steps = self.cfg["jobs"]["claude-review"]["steps"]
         flag_steps = [
             s for s in steps if s.get("name") == "Flag reviewer infra failure"
@@ -95,20 +76,48 @@ class TestClaudeReviewWorkflow:
         flag_step = flag_steps[0]
         # Must scope to the review step specifically, not blanket failure()
         assert "steps.claude-review.outcome" in flag_step["if"]
-        # Must have GH_TOKEN for gh issue create
+        # Must have GH_TOKEN for gh issue create (used on genuine failures)
         assert "GH_TOKEN" in str(flag_step.get("env", {}))
 
-    def test_classifier_handles_missing_execution_file(self):
-        """Classifier must explicitly handle blank/missing EXECUTION_FILE."""
+    def test_classifier_suppresses_blank_execution_file(self):
+        """Blank EXECUTION_FILE must warn and exit 0, not create an issue.
+
+        The action does not set execution_file on error_max_turns exits.
+        Creating an issue for every blank file would spam the repo.
+        """
         flag_step = self._flag_step()
         script = flag_step["run"]
-        # Must check for blank EXECUTION_FILE (not just file-not-found)
+        # Must check for blank EXECUTION_FILE
         assert (
             '-z "$EXECUTION_FILE"' in script
         ), "classifier must check for blank EXECUTION_FILE"
+        # Must exit 0 (no issue creation) on blank path
+        # Find the blank-file branch and verify it has exit 0 before gh issue create
+        blank_idx = script.index('-z "$EXECUTION_FILE"')
+        exit_idx = script.index("exit 0", blank_idx)
+        issue_idx = script.index("gh issue create")
         assert (
-            "missing_execution_file" in script
-        ), "must classify blank EXECUTION_FILE as 'missing_execution_file'"
+            exit_idx < issue_idx
+        ), "blank EXECUTION_FILE path must exit 0 before reaching gh issue create"
+
+    def test_classifier_suppresses_max_turns(self):
+        """error_max_turns must warn and exit 0, not create an issue.
+
+        Max-turns exhaustion is a normal operational boundary, not an infra
+        failure. Issue creation is reserved for genuine infra failures.
+        """
+        flag_step = self._flag_step()
+        script = flag_step["run"]
+        assert (
+            "error_max_turns" in script
+        ), "classifier must check for error_max_turns subtype"
+        # The error_max_turns guard must exit 0 before gh issue create
+        max_turns_idx = script.index("error_max_turns")
+        exit_idx = script.index("exit 0", max_turns_idx)
+        issue_idx = script.index("gh issue create")
+        assert (
+            exit_idx < issue_idx
+        ), "error_max_turns path must exit 0 before reaching gh issue create"
 
     def test_classifier_handles_file_not_found(self):
         """Classifier must handle EXECUTION_FILE path set but file absent."""
@@ -146,8 +155,3 @@ class TestClaudeReviewWorkflow:
             if s.get("name") == "Flag reviewer infra failure":
                 return s
         raise AssertionError("Flag reviewer infra failure step not found")
-
-    def _allowed_tools_set(self) -> set[str]:
-        """Parse allowed_tools into a set of tool entries."""
-        raw = self._review_step()["with"]["allowed_tools"]
-        return {line.strip() for line in raw.strip().splitlines() if line.strip()}
