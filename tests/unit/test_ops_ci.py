@@ -288,8 +288,8 @@ class TestPollCIStatus:
         assert len(report.classifications) == 1
 
     @patch("bid_euchre.ops.ci.subprocess.run")
-    def test_non_allowlisted_check_excluded(self, mock_run: object) -> None:
-        """Checks not in the CI allowlist are excluded from the report."""
+    def test_unknown_check_included_as_ci(self, mock_run: object) -> None:
+        """Unknown check names default to 'ci' via classify_check (included)."""
         checks = [
             {"name": "ruff check", "state": "FAILURE"},
             {"name": "tests", "state": "SUCCESS"},
@@ -297,10 +297,9 @@ class TestPollCIStatus:
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
         report = poll_ci_status(300)
-        # "ruff check" is not in CI_CHECK_NAMES, so it's excluded
-        assert report.overall == "success"
-        assert len(report.checks) == 1
-        assert report.checks[0].name == "tests"
+        # classify_check("ruff check") == "ci", so it's included
+        assert report.overall == "failure"
+        assert len(report.checks) == 2
 
     @patch("bid_euchre.ops.ci.subprocess.run")
     def test_pending_checks(self, mock_run: object) -> None:
@@ -391,15 +390,22 @@ class TestPollCIStatus:
         assert len(report.checks) == 2
 
     @patch("bid_euchre.ops.ci.subprocess.run")
-    def test_custom_review_context_excluded(self, mock_run: object) -> None:
-        """Custom review contexts are excluded from CI checks."""
+    def test_explicit_review_contexts_override_classifier(
+        self, mock_run: object
+    ) -> None:
+        """Passing explicit review_contexts excludes those names from CI."""
         checks = [
             {"name": "codex-review", "state": "FAILURE"},
             {"name": "tests", "state": "SUCCESS"},
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
+        # Without explicit override, codex-review is classified as CI
         report = poll_ci_status(900)
+        assert report.overall == "failure"
+
+        # With explicit override, codex-review is excluded
+        report = poll_ci_status(900, review_contexts=("codex-review",))
         assert report.overall == "success"
         assert len(report.checks) == 1
         assert report.checks[0].name == "tests"
