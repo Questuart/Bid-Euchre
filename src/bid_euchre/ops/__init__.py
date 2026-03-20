@@ -6,6 +6,7 @@ surface and should not be re-exported broadly.
 Modules:
     events      -- Durable event log (append/drain/query)
     worktrees   -- Worktree registry parsing, reconciliation, lifecycle
+    snapshots   -- Shadow snapshots for auditable rollback of autonomous edits
     status      -- Status aggregation across lanes/sessions/tasks
     watchdogs   -- Watchdog rules for health and progress monitoring
                     (heartbeats, task progress, worktree health,

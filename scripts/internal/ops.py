@@ -20,6 +20,10 @@ Usage:
     uv run python scripts/internal/ops.py scope show --task TASK_ID [--json]
     uv run python scripts/internal/ops.py scope set --task TASK_ID --declared PATTERN [PATTERN ...]
     uv run python scripts/internal/ops.py scope touch --task TASK_ID --file PATH [PATH ...]
+    uv run python scripts/internal/ops.py snapshot create --worktree PATH --reason TEXT [--lane LANE] [--task TASK] [--json]
+    uv run python scripts/internal/ops.py snapshot list [--worktree PATH] [--limit N] [--json]
+    uv run python scripts/internal/ops.py snapshot rollback SNAPSHOT_ID [--json]
+    uv run python scripts/internal/ops.py snapshot prune [--max-per-worktree N] [--max-age-hours H] [--json]
 """
 
 from __future__ import annotations
@@ -810,6 +814,147 @@ def cmd_scope_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    """Dispatch snapshot subcommands."""
+    snap_action = getattr(args, "snapshot_action", None)
+    if snap_action == "create":
+        return cmd_snapshot_create(args)
+    if snap_action == "list":
+        return cmd_snapshot_list(args)
+    if snap_action == "rollback":
+        return cmd_snapshot_rollback(args)
+    if snap_action == "prune":
+        return cmd_snapshot_prune(args)
+
+    print(
+        "Usage: ops.py snapshot {create|list|rollback|prune} ...",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def cmd_snapshot_create(args: argparse.Namespace) -> int:
+    """Create a shadow snapshot."""
+    from bid_euchre.ops.snapshots import (
+        create_snapshot,
+        format_snapshots_json,
+        format_snapshots_text,
+    )
+
+    worktree = getattr(args, "worktree", None)
+    reason = getattr(args, "reason", "Manual snapshot")
+    lane = getattr(args, "lane", None)
+    task = getattr(args, "task", None)
+    snapshots_dir = args.runtime_dir / "snapshots"
+    events_dir = args.runtime_dir / "events"
+
+    if not worktree:
+        print("Error: --worktree required", file=sys.stderr)
+        return 1
+
+    try:
+        record = create_snapshot(
+            worktree,
+            reason,
+            snapshots_dir,
+            lane_id=lane,
+            task_id=task,
+            events_dir=events_dir,
+        )
+    except (FileNotFoundError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(format_snapshots_json([record])[0], indent=2))
+    else:
+        print(format_snapshots_text([record]))
+
+    return 0
+
+
+def cmd_snapshot_list(args: argparse.Namespace) -> int:
+    """List shadow snapshots."""
+    from bid_euchre.ops.snapshots import (
+        format_snapshots_json,
+        format_snapshots_text,
+        list_snapshots,
+    )
+
+    snapshots_dir = args.runtime_dir / "snapshots"
+    worktree = getattr(args, "worktree", None)
+    limit = getattr(args, "limit", 20)
+
+    records = list_snapshots(snapshots_dir, worktree_path=worktree, limit=limit)
+
+    if args.json:
+        print(json.dumps(format_snapshots_json(records), indent=2))
+    else:
+        print(format_snapshots_text(records))
+
+    return 0
+
+
+def cmd_snapshot_rollback(args: argparse.Namespace) -> int:
+    """Roll back to a shadow snapshot."""
+    from bid_euchre.ops.snapshots import (
+        format_rollback_json,
+        format_rollback_text,
+        rollback_snapshot,
+    )
+
+    snapshot_id = getattr(args, "snapshot_id", None)
+    if not snapshot_id:
+        print("Error: snapshot ID required", file=sys.stderr)
+        return 1
+
+    snapshots_dir = args.runtime_dir / "snapshots"
+    events_dir = args.runtime_dir / "events"
+
+    try:
+        result = rollback_snapshot(
+            snapshot_id,
+            snapshots_dir,
+            events_dir=events_dir,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(format_rollback_json(result), indent=2))
+    else:
+        print(format_rollback_text(result))
+
+    return 0 if result.success else 1
+
+
+def cmd_snapshot_prune(args: argparse.Namespace) -> int:
+    """Prune old shadow snapshots."""
+    from bid_euchre.ops.snapshots import (
+        format_prune_json,
+        format_prune_text,
+        prune_snapshots,
+    )
+
+    snapshots_dir = args.runtime_dir / "snapshots"
+    max_per_worktree = getattr(args, "max_per_worktree", 20)
+    max_age_hours = getattr(args, "max_age_hours", 168.0)
+
+    pruned = prune_snapshots(
+        snapshots_dir,
+        max_per_worktree=max_per_worktree,
+        max_age_hours=max_age_hours,
+    )
+
+    if args.json:
+        print(json.dumps(format_prune_json(pruned), indent=2))
+    else:
+        print(format_prune_text(pruned))
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -974,6 +1119,55 @@ def build_parser() -> argparse.ArgumentParser:
     # compact
     subparsers.add_parser("compact", help="List archived sessions")
 
+    # snapshot (with nested create/list/rollback/prune subcommands)
+    snap_parser = subparsers.add_parser(
+        "snapshot", help="Shadow snapshots for auditable rollback"
+    )
+    snap_sub = snap_parser.add_subparsers(dest="snapshot_action")
+
+    snap_create_parser = snap_sub.add_parser("create", help="Create a shadow snapshot")
+    snap_create_parser.add_argument(
+        "--worktree", type=str, required=True, help="Worktree path to snapshot"
+    )
+    snap_create_parser.add_argument(
+        "--reason", type=str, default="Manual snapshot", help="Reason for snapshot"
+    )
+    snap_create_parser.add_argument(
+        "--lane", type=str, default=None, help="Lane ID for attribution"
+    )
+    snap_create_parser.add_argument(
+        "--task", type=str, default=None, help="Task ID for attribution"
+    )
+
+    snap_list_parser = snap_sub.add_parser("list", help="List shadow snapshots")
+    snap_list_parser.add_argument(
+        "--worktree", type=str, default=None, help="Filter by worktree path"
+    )
+    snap_list_parser.add_argument(
+        "--limit", type=int, default=20, help="Max results (default: 20)"
+    )
+
+    snap_rollback_parser = snap_sub.add_parser(
+        "rollback", help="Roll back to a snapshot"
+    )
+    snap_rollback_parser.add_argument(
+        "snapshot_id", type=str, help="Snapshot ID to roll back to"
+    )
+
+    snap_prune_parser = snap_sub.add_parser("prune", help="Prune old snapshots")
+    snap_prune_parser.add_argument(
+        "--max-per-worktree",
+        type=int,
+        default=20,
+        help="Max snapshots per worktree (default: 20)",
+    )
+    snap_prune_parser.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=168.0,
+        help="Max age in hours (default: 168 = 7 days)",
+    )
+
     # scope (with nested set/touch/show subcommands)
     scope_parser = subparsers.add_parser(
         "scope", help="Manage task scope fields (declared/touched files)"
@@ -1050,6 +1244,7 @@ def main(argv: list[str] | None = None) -> int:
         "memory": cmd_memory,
         "compact": cmd_compact,
         "scope": cmd_scope,
+        "snapshot": cmd_snapshot,
     }
 
     handler = commands.get(args.command)
