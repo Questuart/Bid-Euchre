@@ -800,3 +800,86 @@ class TestLockedUpdate:
         keys = {e.key for e in entries}
         assert "concurrent_a" in keys, f"Lost write for concurrent_a. Keys: {keys}"
         assert "concurrent_b" in keys, f"Lost write for concurrent_b. Keys: {keys}"
+
+
+class TestSafetyScanIntegration:
+    """Tests for context-safety scan integration in add_entry()."""
+
+    def test_safe_content_persists(self, memory_dir: Path, source_file: Path) -> None:
+        """Safe content is accepted when safety_scan=True (default)."""
+        entry = add_entry(
+            memory_dir,
+            category="repo_fact",
+            key="safe_fact",
+            value="Main branch is protected",
+            source_file=str(source_file),
+            added_by="test",
+        )
+        assert entry.key == "safe_fact"
+        assert "_safety_warnings" not in entry.tags
+
+    def test_unsafe_content_rejected(self, memory_dir: Path, source_file: Path) -> None:
+        """Unsafe content (secret) is rejected by default."""
+        with pytest.raises(ValueError, match="safety scan"):
+            add_entry(
+                memory_dir,
+                category="repo_fact",
+                key="bad_secret",
+                value="password = 'super_secret_password_123'",
+                source_file=str(source_file),
+                added_by="test",
+            )
+
+        # Entry should NOT be persisted
+        entries = list_entries(memory_dir)
+        assert not any(e.key == "bad_secret" for e in entries)
+
+    def test_unsafe_content_bypass(self, memory_dir: Path, source_file: Path) -> None:
+        """Unsafe content is accepted when safety_scan=False."""
+        entry = add_entry(
+            memory_dir,
+            category="repo_fact",
+            key="bypass_test",
+            value="password = 'super_secret_password_123'",
+            source_file=str(source_file),
+            added_by="test",
+            safety_scan=False,
+        )
+        assert entry.key == "bypass_test"
+
+    def test_warned_content_persists_with_tag(
+        self, memory_dir: Path, source_file: Path
+    ) -> None:
+        """Warned content (oversized) is persisted with _safety_warnings tag."""
+        from bid_euchre.ops.context_safety import DEFAULT_MAX_CONTENT_BYTES
+
+        entry = add_entry(
+            memory_dir,
+            category="repo_fact",
+            key="big_fact",
+            value="x" * (DEFAULT_MAX_CONTENT_BYTES + 1),
+            source_file=str(source_file),
+            added_by="test",
+        )
+        assert "_safety_warnings" in entry.tags
+
+    def test_warned_content_logs_warning(
+        self,
+        memory_dir: Path,
+        source_file: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Warned content logs a warning message."""
+        from bid_euchre.ops.context_safety import DEFAULT_MAX_CONTENT_BYTES
+
+        with caplog.at_level(logging.WARNING, logger="ops.memory"):
+            add_entry(
+                memory_dir,
+                category="repo_fact",
+                key="big_fact_log",
+                value="x" * (DEFAULT_MAX_CONTENT_BYTES + 1),
+                source_file=str(source_file),
+                added_by="test",
+            )
+
+        assert any("safety scan warnings" in r.message.lower() for r in caplog.records)
