@@ -43,6 +43,7 @@ class SnapshotRecord:
     has_uncommitted: bool = False
     files_changed: int = 0
     summary: str = ""  # one-line diff summary
+    untracked_files: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -56,6 +57,7 @@ class RollbackResult:
     success: bool
     message: str
     warnings: list[str] = field(default_factory=list)
+    cleaned_files: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +112,9 @@ def create_snapshot(
     # Get a summary of what changed
     files_changed, summary = _git_diff_summary(worktree_path)
 
+    # Record untracked files so rollback can clean up new ones
+    untracked_files = _git_list_untracked(worktree_path)
+
     timestamp = datetime.now(timezone.utc).isoformat()
 
     record = SnapshotRecord(
@@ -125,6 +130,7 @@ def create_snapshot(
         has_uncommitted=has_uncommitted,
         files_changed=files_changed,
         summary=summary,
+        untracked_files=untracked_files,
     )
 
     # Persist metadata
@@ -274,6 +280,9 @@ def rollback_snapshot(
                 f"Stash SHA: {record.stash_sha}"
             )
 
+    # Step 3: Clean up untracked files created after the snapshot
+    cleaned_files = _clean_new_untracked(wt_path, record.untracked_files, warnings)
+
     message = f"Rolled back to snapshot {snapshot_id}"
     if stash_applied:
         message += " (HEAD + uncommitted changes restored)"
@@ -281,6 +290,9 @@ def rollback_snapshot(
         message += " (HEAD restored, uncommitted changes failed to apply)"
     else:
         message += " (HEAD restored, no uncommitted changes in snapshot)"
+
+    if cleaned_files:
+        message += f", {len(cleaned_files)} untracked file(s) removed"
 
     result = RollbackResult(
         snapshot_id=snapshot_id,
@@ -290,6 +302,7 @@ def rollback_snapshot(
         success=True,
         message=message,
         warnings=warnings,
+        cleaned_files=cleaned_files,
     )
 
     logger.info("Rollback %s: %s", snapshot_id, message)
@@ -502,7 +515,13 @@ def _git_stash_create(worktree_path: str) -> str | None:
     """Create a stash commit without modifying the working tree.
 
     Returns the stash SHA if there are uncommitted changes, None otherwise.
-    ``git stash create`` produces no output when the working tree is clean.
+    ``git stash create`` exits with code 1 and empty output when the working
+    tree is clean (this is normal). A non-zero exit with stderr indicates a
+    real error.
+
+    Raises:
+        subprocess.SubprocessError: If git stash create fails with an error
+            (as opposed to simply having nothing to stash).
     """
     result = subprocess.run(
         ["git", "-C", worktree_path, "stash", "create"],
@@ -511,9 +530,14 @@ def _git_stash_create(worktree_path: str) -> str | None:
         timeout=30,
     )
     sha = result.stdout.strip()
-    if not sha:
-        return None
-    return sha
+    if sha:
+        return sha
+    # No output — either clean tree (exit 1, no stderr) or real error
+    if result.returncode != 0 and result.stderr.strip():
+        raise subprocess.SubprocessError(
+            f"git stash create failed: {result.stderr.strip()}"
+        )
+    return None
 
 
 def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
@@ -521,6 +545,7 @@ def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
 
     Returns:
         Tuple of (files_changed, one_line_summary).
+        Returns ``(0, "")`` if git diff fails (logged as warning).
     """
     result = subprocess.run(
         ["git", "-C", worktree_path, "diff", "--stat", "HEAD"],
@@ -528,7 +553,11 @@ def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
         text=True,
         timeout=10,
     )
-    if result.returncode != 0 or not result.stdout.strip():
+    if result.returncode != 0:
+        if result.stderr.strip():
+            logger.warning("git diff --stat failed: %s", result.stderr.strip()[:200])
+        return 0, ""
+    if not result.stdout.strip():
         return 0, ""
 
     lines = result.stdout.strip().splitlines()
@@ -542,6 +571,27 @@ def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
         except (ValueError, IndexError):
             files_changed = max(0, len(lines) - 1)
     return files_changed, summary
+
+
+def _git_list_untracked(worktree_path: str) -> list[str]:
+    """List untracked files (excluding gitignored) in the worktree.
+
+    Returns:
+        Sorted list of untracked file paths relative to the worktree root.
+        Empty list on error (logged as warning).
+    """
+    result = subprocess.run(
+        ["git", "-C", worktree_path, "ls-files", "--others", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        if result.stderr.strip():
+            logger.warning("git ls-files failed: %s", result.stderr.strip()[:200])
+        return []
+    files = [f for f in result.stdout.strip().splitlines() if f]
+    return sorted(files)
 
 
 def _git_reset_hard(worktree_path: str, sha: str) -> None:
@@ -570,6 +620,62 @@ def _git_stash_apply(worktree_path: str, stash_sha: str) -> None:
         raise subprocess.SubprocessError(
             f"git stash apply failed: {result.stderr.strip()}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Untracked file cleanup (used by rollback)
+# ---------------------------------------------------------------------------
+
+
+def _clean_new_untracked(
+    worktree_path: str,
+    snapshot_untracked: list[str],
+    warnings: list[str],
+) -> list[str]:
+    """Remove untracked files that were created after the snapshot.
+
+    Compares the current untracked files with those recorded in the snapshot.
+    Files present now but not in the snapshot are removed. This ensures
+    rollback fully restores the worktree state, including cleaning up files
+    added by a bad edit sequence.
+
+    Args:
+        worktree_path: Path to the worktree.
+        snapshot_untracked: Untracked files recorded at snapshot time.
+        warnings: Mutable list to append any warnings to.
+
+    Returns:
+        List of file paths that were removed.
+    """
+    current_untracked = _git_list_untracked(worktree_path)
+    snapshot_set = set(snapshot_untracked)
+
+    # Files that exist now but weren't in the snapshot
+    new_files = [f for f in current_untracked if f not in snapshot_set]
+    if not new_files:
+        return []
+
+    cleaned: list[str] = []
+    wt = Path(worktree_path)
+    for rel_path in new_files:
+        full_path = wt / rel_path
+        try:
+            if full_path.is_file():
+                full_path.unlink()
+                cleaned.append(rel_path)
+            elif full_path.is_dir():
+                # Defensive: don't recursively delete directories
+                warnings.append(
+                    f"Skipped untracked directory: {rel_path} "
+                    f"(remove manually if needed)"
+                )
+        except OSError as e:
+            warnings.append(f"Failed to remove {rel_path}: {e}")
+
+    if cleaned:
+        logger.info("Cleaned %d new untracked file(s) during rollback", len(cleaned))
+
+    return cleaned
 
 
 # ---------------------------------------------------------------------------
@@ -629,4 +735,5 @@ def _record_from_dict(data: dict[str, Any]) -> SnapshotRecord:
         has_uncommitted=data.get("has_uncommitted", False),
         files_changed=data.get("files_changed", 0),
         summary=data.get("summary", ""),
+        untracked_files=data.get("untracked_files", []),
     )

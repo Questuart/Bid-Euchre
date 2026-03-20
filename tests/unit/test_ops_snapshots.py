@@ -106,6 +106,7 @@ class TestCreateSnapshot:
         monkeypatch.setattr(
             snap_mod, "_git_diff_summary", lambda wt: (3, "3 files changed")
         )
+        monkeypatch.setattr(snap_mod, "_git_list_untracked", lambda wt: ["scratch.py"])
 
         record = create_snapshot(
             str(wt_dir),
@@ -126,6 +127,7 @@ class TestCreateSnapshot:
         assert record.lane_id == "author-a"
         assert record.task_id == "task-1"
         assert record.reason == "test snapshot"
+        assert record.untracked_files == ["scratch.py"]
 
         # Verify file was written
         meta_files = list(snapshots_dir.glob("*.json"))
@@ -149,6 +151,7 @@ class TestCreateSnapshot:
         monkeypatch.setattr(snap_mod, "_git_current_branch", lambda wt: "main")
         monkeypatch.setattr(snap_mod, "_git_stash_create", lambda wt: None)
         monkeypatch.setattr(snap_mod, "_git_diff_summary", lambda wt: (0, ""))
+        monkeypatch.setattr(snap_mod, "_git_list_untracked", lambda wt: [])
 
         record = create_snapshot(str(wt_dir), "clean snapshot", snapshots_dir)
 
@@ -178,6 +181,7 @@ class TestCreateSnapshot:
         monkeypatch.setattr(snap_mod, "_git_current_branch", lambda wt: "main")
         monkeypatch.setattr(snap_mod, "_git_stash_create", lambda wt: None)
         monkeypatch.setattr(snap_mod, "_git_diff_summary", lambda wt: (0, ""))
+        monkeypatch.setattr(snap_mod, "_git_list_untracked", lambda wt: [])
 
         create_snapshot(
             str(wt_dir),
@@ -325,6 +329,7 @@ class TestRollbackSnapshot:
             "_git_reset_hard",
             lambda wt, sha: reset_calls.append(sha),
         )
+        monkeypatch.setattr(snap_mod, "_git_list_untracked", lambda wt: [])
 
         result = rollback_snapshot("snap-clean", snapshots_dir)
         assert result.success is True
@@ -356,6 +361,7 @@ class TestRollbackSnapshot:
 
         monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
         monkeypatch.setattr(snap_mod, "_git_stash_apply", lambda wt, sha: None)
+        monkeypatch.setattr(snap_mod, "_git_list_untracked", lambda wt: [])
 
         result = rollback_snapshot("snap-stash", snapshots_dir)
         assert result.success is True
@@ -384,6 +390,7 @@ class TestRollbackSnapshot:
         import bid_euchre.ops.snapshots as snap_mod
 
         monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        monkeypatch.setattr(snap_mod, "_git_list_untracked", lambda wt: [])
 
         def failing_apply(wt: str, sha: str) -> None:
             raise subprocess.SubprocessError("merge conflict")
@@ -423,6 +430,236 @@ class TestRollbackSnapshot:
         result = rollback_snapshot("snap-resetfail", snapshots_dir)
         assert result.success is False
         assert "reset failed" in result.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# Untracked file cleanup during rollback
+# ---------------------------------------------------------------------------
+
+
+class TestUntrackedFileCleanup:
+    """Tests for untracked file cleanup during rollback."""
+
+    def test_rollback_removes_new_untracked_files(
+        self,
+        tmp_path: Path,
+        snapshots_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Files created after snapshot are removed on rollback."""
+        wt_dir = tmp_path / "wt-untracked"
+        wt_dir.mkdir()
+
+        # Create a file that was NOT present at snapshot time
+        new_file = wt_dir / "new_agent_file.py"
+        new_file.write_text("# bad edit")
+
+        # Snapshot recorded no untracked files
+        _write_snapshot_meta(
+            snapshots_dir,
+            snapshot_id="snap-clean-untracked",
+            worktree_path=str(wt_dir),
+            head_sha="abc123",
+        )
+        # Ensure untracked_files is in the metadata
+        meta = json.loads((snapshots_dir / "snap-clean-untracked.json").read_text())
+        meta["untracked_files"] = []
+        (snapshots_dir / "snap-clean-untracked.json").write_text(json.dumps(meta))
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        # After reset, git reports new_agent_file.py as untracked
+        monkeypatch.setattr(
+            snap_mod,
+            "_git_list_untracked",
+            lambda wt: ["new_agent_file.py"],
+        )
+
+        result = rollback_snapshot("snap-clean-untracked", snapshots_dir)
+        assert result.success is True
+        assert "new_agent_file.py" in result.cleaned_files
+        assert not new_file.exists()
+
+    def test_rollback_preserves_files_that_existed_at_snapshot(
+        self,
+        tmp_path: Path,
+        snapshots_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Files present at snapshot time are not removed on rollback."""
+        wt_dir = tmp_path / "wt-preserve"
+        wt_dir.mkdir()
+
+        # This file existed at snapshot time AND still exists
+        existing_file = wt_dir / "existing.txt"
+        existing_file.write_text("keep me")
+
+        _write_snapshot_meta(
+            snapshots_dir,
+            snapshot_id="snap-preserve",
+            worktree_path=str(wt_dir),
+            head_sha="abc123",
+        )
+        meta = json.loads((snapshots_dir / "snap-preserve.json").read_text())
+        meta["untracked_files"] = ["existing.txt"]
+        (snapshots_dir / "snap-preserve.json").write_text(json.dumps(meta))
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        monkeypatch.setattr(
+            snap_mod,
+            "_git_list_untracked",
+            lambda wt: ["existing.txt"],
+        )
+
+        result = rollback_snapshot("snap-preserve", snapshots_dir)
+        assert result.success is True
+        assert result.cleaned_files == []
+        assert existing_file.exists()
+
+    def test_rollback_reports_count_in_message(
+        self,
+        tmp_path: Path,
+        snapshots_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Rollback message includes count of cleaned files."""
+        wt_dir = tmp_path / "wt-count"
+        wt_dir.mkdir()
+
+        (wt_dir / "a.py").write_text("x")
+        (wt_dir / "b.py").write_text("y")
+
+        _write_snapshot_meta(
+            snapshots_dir,
+            snapshot_id="snap-count",
+            worktree_path=str(wt_dir),
+            head_sha="abc123",
+        )
+        meta = json.loads((snapshots_dir / "snap-count.json").read_text())
+        meta["untracked_files"] = []
+        (snapshots_dir / "snap-count.json").write_text(json.dumps(meta))
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        monkeypatch.setattr(
+            snap_mod,
+            "_git_list_untracked",
+            lambda wt: ["a.py", "b.py"],
+        )
+
+        result = rollback_snapshot("snap-count", snapshots_dir)
+        assert "2 untracked file(s) removed" in result.message
+
+    def test_legacy_snapshot_without_untracked_field(
+        self,
+        tmp_path: Path,
+        snapshots_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Snapshots without untracked_files field don't crash rollback."""
+        wt_dir = tmp_path / "wt-legacy"
+        wt_dir.mkdir()
+
+        # Write metadata WITHOUT untracked_files field
+        _write_snapshot_meta(
+            snapshots_dir,
+            snapshot_id="snap-legacy",
+            worktree_path=str(wt_dir),
+            head_sha="abc123",
+        )
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        monkeypatch.setattr(
+            snap_mod,
+            "_git_list_untracked",
+            lambda wt: ["new_file.py"],
+        )
+
+        # new_file.py doesn't actually exist on disk, so cleanup
+        # should gracefully handle the missing file
+        result = rollback_snapshot("snap-legacy", snapshots_dir)
+        assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# Git error handling
+# ---------------------------------------------------------------------------
+
+
+class TestGitErrorHandling:
+    """Tests for git helper error detection."""
+
+    def test_stash_create_raises_on_real_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_git_stash_create raises SubprocessError on stderr errors."""
+        import subprocess as sp
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            return type(
+                "R",
+                (),
+                {
+                    "returncode": 128,
+                    "stdout": "",
+                    "stderr": "fatal: not a git repository",
+                },
+            )()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        with pytest.raises(subprocess.SubprocessError, match="not a git repository"):
+            snap_mod._git_stash_create("/tmp/fake")
+
+    def test_stash_create_returns_none_for_clean_tree(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_git_stash_create returns None (not error) for clean working tree."""
+        import subprocess as sp
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        # git stash create exits 1 with no output for clean tree
+        def mock_run(*args: object, **kwargs: object) -> object:
+            return type("R", (), {"returncode": 1, "stdout": "", "stderr": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        result = snap_mod._git_stash_create("/tmp/fake")
+        assert result is None
+
+    def test_diff_summary_logs_warning_on_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_git_diff_summary returns (0, '') and logs warning on git error."""
+        import subprocess as sp
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            return type(
+                "R",
+                (),
+                {
+                    "returncode": 128,
+                    "stdout": "",
+                    "stderr": "fatal: bad revision",
+                },
+            )()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        files_changed, summary = snap_mod._git_diff_summary("/tmp/fake")
+        assert files_changed == 0
+        assert summary == ""
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +787,7 @@ class TestRecordFromDict:
         assert record.lane_id is None
         assert record.has_uncommitted is False
         assert record.files_changed == 0
+        assert record.untracked_files == []
 
     def test_empty_dict_uses_defaults(self) -> None:
         record = _record_from_dict({})
