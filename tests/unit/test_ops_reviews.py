@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,7 @@ from bid_euchre.ops.reviews import (
     _get_advisory_status,
     _get_review_status,
     _has_precheck_ci,
+    emit_review_event,
     format_reviews_json,
     format_reviews_text,
     get_open_pr_reviews,
@@ -596,3 +598,86 @@ class TestFormatReviewsJSON:
         ]
         result = format_reviews_json(outcomes)
         assert result[0]["advisory_status"] == "failure"
+
+
+# --- emit_review_event tests ---
+
+
+class TestEmitReviewEvent:
+    """Tests for emit_review_event() — review event emission (#slice7)."""
+
+    @pytest.fixture()
+    def events_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "events"
+        d.mkdir()
+        return d
+
+    def _make_outcome(
+        self,
+        review_status: str = "success",
+        ci_status: str = "success",
+        advisory_status: str = "none",
+    ) -> ReviewOutcome:
+        return ReviewOutcome(
+            pr_number=42,
+            title="Test PR",
+            branch="fix/test",
+            ci_status=ci_status,
+            review_status=review_status,
+            has_precheck_ci=True,
+            url="https://github.com/org/repo/pull/42",
+            advisory_status=advisory_status,
+        )
+
+    def test_success_emits_review_outcome(self, events_dir: Path) -> None:
+        outcome = self._make_outcome(review_status="success")
+        result = emit_review_event(outcome, "author-a", events_dir)
+        assert result is not None
+        assert result["event_type"] == "review_outcome"
+        assert result["source"] == "ops.reviews"
+        assert result["lane_id"] == "author-a"
+        assert result["payload"]["pr_number"] == 42
+        assert result["payload"]["review_status"] == "success"
+        assert result["payload"]["ci_status"] == "success"
+        assert result["payload"]["branch"] == "fix/test"
+
+    def test_failure_emits_review_outcome(self, events_dir: Path) -> None:
+        outcome = self._make_outcome(review_status="failure")
+        result = emit_review_event(outcome, "author-b", events_dir)
+        assert result is not None
+        assert result["event_type"] == "review_outcome"
+        assert result["payload"]["review_status"] == "failure"
+
+    def test_pending_returns_none(self, events_dir: Path) -> None:
+        outcome = self._make_outcome(review_status="pending")
+        result = emit_review_event(outcome, "author-a", events_dir)
+        assert result is None
+
+    def test_none_returns_none(self, events_dir: Path) -> None:
+        outcome = self._make_outcome(review_status="none")
+        result = emit_review_event(outcome, "author-a", events_dir)
+        assert result is None
+
+    def test_advisory_status_included_when_present(self, events_dir: Path) -> None:
+        outcome = self._make_outcome(review_status="success", advisory_status="failure")
+        result = emit_review_event(outcome, "author-a", events_dir)
+        assert result is not None
+        assert result["payload"]["advisory_status"] == "failure"
+
+    def test_advisory_status_omitted_when_none(self, events_dir: Path) -> None:
+        outcome = self._make_outcome(review_status="success", advisory_status="none")
+        result = emit_review_event(outcome, "author-a", events_dir)
+        assert result is not None
+        assert "advisory_status" not in result["payload"]
+
+    def test_event_persisted_to_jsonl(self, events_dir: Path) -> None:
+        """Verify the event is actually readable from the log."""
+        from bid_euchre.ops.events import read_events
+
+        outcome = self._make_outcome(review_status="success")
+        emit_review_event(outcome, "author-a", events_dir)
+
+        events = read_events(events_dir)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "review_outcome"
+        assert events[0]["payload"]["pr_number"] == 42

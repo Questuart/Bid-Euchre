@@ -14,6 +14,8 @@ import json
 import logging
 import subprocess
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
 
 from bid_euchre.ops import (
     ADVISORY_CONTEXTS,
@@ -317,6 +319,57 @@ def get_pr_review_detail(pr_number: int) -> ReviewOutcome:
         url=pr.get("url", ""),
         advisory_status=_get_advisory_status(checks),
         checks=checks,
+    )
+
+
+# --- Event Emission ---
+
+
+def emit_review_event(
+    outcome: ReviewOutcome,
+    lane_id: str,
+    events_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Emit a ``review_outcome`` event based on a ``ReviewOutcome``.
+
+    This is the review-side counterpart to ``ci.emit_ci_events()``.
+    It translates a PR review outcome into a durable event:
+
+    - ``review_status`` in ``("success", "failure")`` → ``review_outcome``
+    - ``review_status`` in ``("pending", "none")`` → no event (returns None)
+
+    Args:
+        outcome: Review outcome from ``get_open_pr_reviews()`` or
+            ``get_pr_review_detail()``.
+        lane_id: Canonical lane identity (e.g., ``"author-a"``).
+        events_dir: Override for events directory. Defaults to
+            ``.claude/runtime/events``.
+
+    Returns:
+        The emitted event dict, or None if the review status does not
+        warrant an event (pending/none).
+    """
+    if outcome.review_status not in ("success", "failure"):
+        return None
+
+    from bid_euchre.ops.events import append_event
+
+    payload: dict[str, Any] = {
+        "pr_number": outcome.pr_number,
+        "review_status": outcome.review_status,
+        "ci_status": outcome.ci_status,
+        "branch": outcome.branch,
+    }
+
+    if outcome.advisory_status != "none":
+        payload["advisory_status"] = outcome.advisory_status
+
+    return append_event(
+        event_type="review_outcome",
+        source="ops.reviews",
+        lane_id=lane_id,
+        payload=payload,
+        events_dir=events_dir,
     )
 
 
