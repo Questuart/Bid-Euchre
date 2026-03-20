@@ -2,10 +2,19 @@
 
 Creates lightweight, git-native snapshots of worktree state before risky
 autonomous operations. Each snapshot records the current HEAD, any
-uncommitted changes (via ``git stash create``), and the set of untracked
-files, enabling point-in-time rollback when an agent produces a bad edit
-sequence.  On rollback, tracked changes are restored via ``git reset
---hard`` + stash apply, and newly created untracked files are removed.
+uncommitted changes to tracked files (via ``git stash create``), and the
+names of untracked files present at snapshot time.
+
+On rollback:
+
+- **Tracked state** is restored via ``git reset --hard`` + stash apply.
+- **Newly created untracked files** (not present at snapshot time) are
+  removed.
+- **Pre-existing untracked files** are preserved by name but their
+  *contents* are not captured or restored.  If an agent modifies an
+  untracked file that existed at snapshot time, rollback will not revert
+  those edits.  Full untracked-content backup is a potential future
+  enhancement.
 
 Storage: ``.claude/runtime/snapshots/<snapshot_id>.json`` (gitignored)
 Retention: bounded per-worktree (default 20) and by age (default 7 days).

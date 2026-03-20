@@ -898,6 +898,50 @@ class TestUntrackedFileRollback:
         # new_bad_file.py was NOT in snapshot — should be removed
         assert not (wt_dir / "new_bad_file.py").exists()
 
+    def test_rollback_does_not_restore_modified_untracked_contents(
+        self,
+        tmp_path: Path,
+        snapshots_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Modified pre-existing untracked files keep their new contents.
+
+        This is a known limitation: snapshot records untracked file *names*
+        but not their *contents*, so edits to pre-existing untracked files
+        survive rollback.  This test documents the expected behavior.
+        """
+        wt_dir = tmp_path / "wt-modified-untracked"
+        wt_dir.mkdir()
+
+        # Snapshot had one untracked file with original content
+        meta_data = {
+            "snapshot_id": "snap-mod-untracked",
+            "worktree_path": str(wt_dir),
+            "head_sha": "abc123",
+            "branch": "main",
+            "stash_sha": None,
+            "reason": "test",
+            "timestamp": "2026-03-20T10:00:00+00:00",
+            "untracked_files": ["notes.md"],
+        }
+        (snapshots_dir / "snap-mod-untracked.json").write_text(json.dumps(meta_data))
+
+        # File exists but was modified after snapshot
+        (wt_dir / "notes.md").write_text("modified by agent")
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        monkeypatch.setattr(snap_mod, "_git_ls_untracked", lambda wt: ["notes.md"])
+
+        result = rollback_snapshot("snap-mod-untracked", snapshots_dir)
+
+        assert result.success is True
+        # File is preserved (it was in the snapshot)
+        assert (wt_dir / "notes.md").exists()
+        # But contents are NOT restored — this is the known limitation
+        assert (wt_dir / "notes.md").read_text() == "modified by agent"
+
     def test_record_from_dict_handles_untracked_files(self) -> None:
         """_record_from_dict defaults untracked_files to empty list."""
         record = _record_from_dict({})
