@@ -1119,8 +1119,10 @@ degraded modes. They do not block the plan's COMPLETE WITH DEGRADED STATES statu
   CSVs now contain suit/high/low/pass contract rows across all 5 models.
 - **Chart regeneration (PR #993):** Charts 16-18 (pred_vs_actual,
   residual_distribution, calibration_curve) and dashboard_model_eval regenerated
-  for R0-R2/FULL from GBT-inclusive CSVs. All model-eval PNGs now reflect 5
-  models. Manifests and evidence manifests updated with new byte sizes.
+  for R0-R2/FULL only from GBT-inclusive CSVs (R3 charts not regenerated — R3
+  bundle predates the chart pipeline update; see DS-4). All R0-R2 model-eval
+  PNGs now reflect 5 models. Manifests and evidence manifests updated with new
+  byte sizes.
 - **Contract-faceted regeneration (PR #997):** Charts 16-18 and
   dashboard_model_eval regenerated for R0-R3/FULL with contract-faceted
   predictions/residuals/calibration data (suit/high/low/pass × 5 models).

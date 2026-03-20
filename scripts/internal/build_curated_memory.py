@@ -1,11 +1,11 @@
 """Build or update curated memory entries.
 
 Usage:
-    uv run python scripts/internal/build_curated_memory.py list [--category CAT] [--json]
-    uv run python scripts/internal/build_curated_memory.py add --category CAT --key KEY --value VALUE --source FILE --by AGENT [--tags TAG1,TAG2] [--json]
-    uv run python scripts/internal/build_curated_memory.py remove --id ENTRY_ID [--json]
-    uv run python scripts/internal/build_curated_memory.py search --text TEXT [--json]
-    uv run python scripts/internal/build_curated_memory.py validate [--json]
+    uv run python scripts/internal/build_curated_memory.py [--json] list [--category CAT]
+    uv run python scripts/internal/build_curated_memory.py [--json] add --category CAT --key KEY --value VALUE --source FILE --by AGENT [--tags TAG1,TAG2]
+    uv run python scripts/internal/build_curated_memory.py [--json] remove --id ENTRY_ID
+    uv run python scripts/internal/build_curated_memory.py [--json] search --text TEXT
+    uv run python scripts/internal/build_curated_memory.py [--json] validate
 """
 
 from __future__ import annotations

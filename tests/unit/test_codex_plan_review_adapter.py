@@ -281,6 +281,7 @@ class TestParsePlanFindingsReversedFormat:
         findings = parse_plan_findings(output)
         assert len(findings) == 1
         assert "review_driver.sh" in findings[0].file
+        assert findings[0].severity == "WARNING"  # P1 → WARNING (#946)
 
     def test_reversed_format_no_line_number(self) -> None:
         """Reversed format without :N line suffix is still parsed."""
@@ -289,6 +290,20 @@ class TestParsePlanFindingsReversedFormat:
         assert len(findings) == 1
         assert "foo.py" in findings[0].file
         assert findings[0].line is None or findings[0].line == 0
+        assert findings[0].severity == "WARNING"  # P1 → WARNING (#946)
+
+    def test_severity_mapping_end_to_end(self) -> None:
+        """P0/P1/P2 Codex severities map to CRITICAL/WARNING/INFO (#946)."""
+        output = (
+            "- [P0] Security issue — src/bid_euchre/a.py:1\n"
+            "- [P1] Convention issue — src/bid_euchre/b.py:2\n"
+            "- [P2] Minor style — src/bid_euchre/c.py:3\n"
+        )
+        findings = parse_plan_findings(output)
+        assert len(findings) == 3
+        assert findings[0].severity == "CRITICAL"  # P0 → CRITICAL
+        assert findings[1].severity == "WARNING"  # P1 → WARNING
+        assert findings[2].severity == "INFO"  # P2 → INFO
 
 
 # --- Finding Dataclass Tests ---
