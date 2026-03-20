@@ -172,11 +172,19 @@ def load_memory(memory_dir: Path) -> MemoryStore:
             memory_path.rename(backup)
             logger.warning("Corrupt memory file backed up to %s: %s", backup.name, e)
         except OSError as rename_err:
-            logger.warning(
-                "Failed to backup corrupt memory file (%s): %s",
-                rename_err,
-                e,
-            )
+            if not memory_path.exists():
+                # Source file already renamed by a concurrent process —
+                # recovery succeeded, just not by us.
+                logger.info(
+                    "Corrupt memory file already recovered by another process: %s",
+                    e,
+                )
+            else:
+                logger.warning(
+                    "Failed to backup corrupt memory file (%s): %s",
+                    rename_err,
+                    e,
+                )
         return MemoryStore()
     except (KeyError, TypeError) as e:
         # Structural issues (valid JSON but unexpected shape).  No backup
@@ -225,11 +233,16 @@ def save_memory(store: MemoryStore, memory_dir: Path) -> None:
 @contextmanager
 def _locked_update(memory_dir: Path) -> Generator[MemoryStore, None, None]:
     """Acquire an exclusive lock, yield a loaded :class:`MemoryStore`, and
-    save it back on clean exit.
+    save it back on clean exit — but only if the store was actually modified.
 
     This serializes concurrent read-modify-write cycles (e.g. two
     ``add_entry()`` calls from different processes) so that neither
     update is lost (#1002).
+
+    A snapshot of the store is taken before ``yield``.  After the caller
+    returns, the store is compared against the snapshot.  If nothing
+    changed, ``save_memory()`` is skipped — avoiding wasted I/O and
+    ``last_updated`` timestamp pollution on no-op mutations.
 
     A dedicated lock file (rather than the data file) is used because
     ``save_memory()`` atomically *replaces* the data file via
@@ -245,8 +258,10 @@ def _locked_update(memory_dir: Path) -> Generator[MemoryStore, None, None]:
         fcntl.flock(lock_fh, fcntl.LOCK_EX)
         try:
             store = load_memory(memory_dir)
+            snapshot = json.dumps(store.to_dict(), sort_keys=True)
             yield store
-            save_memory(store, memory_dir)
+            if json.dumps(store.to_dict(), sort_keys=True) != snapshot:
+                save_memory(store, memory_dir)
         finally:
             fcntl.flock(lock_fh, fcntl.LOCK_UN)
 

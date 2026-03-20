@@ -355,11 +355,13 @@ def daemon(
             )
             result.total_events_emitted += tick_result.events_emitted
 
+            # Successful tick (no exception) — reset consecutive error
+            # counter.  tick_result.errors are non-fatal warnings (e.g.
+            # watchdog check failures) that get logged but must NOT
+            # count toward the consecutive-error shutdown threshold.
+            consecutive_errors = 0
             if tick_result.errors:
                 result.errors.extend(tick_result.errors)
-                consecutive_errors += 1
-            else:
-                consecutive_errors = 0
 
             logger.info(
                 "Daemon tick %d/%d: %d findings (%d critical)",

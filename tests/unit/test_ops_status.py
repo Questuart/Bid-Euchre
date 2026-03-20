@@ -1078,6 +1078,39 @@ class TestParseIsoTimestamp:
         assert _parse_iso_timestamp("not-a-timestamp") is None
 
 
+class TestIsNewerSession:
+    """Direct unit tests for _is_newer_session() edge cases."""
+
+    def test_malformed_candidate_loses_to_valid_existing(self) -> None:
+        """Malformed candidate must lose to valid existing session.
+
+        Covers the branch at status.py where candidate is malformed but
+        existing is valid — existing wins (return False).
+        """
+        from bid_euchre.ops.status import _is_newer_session
+
+        malformed = {"started_at": "not-a-date"}
+        valid = {"started_at": "2026-03-18T12:00:00+00:00"}
+        assert not _is_newer_session(malformed, valid)
+
+    def test_valid_candidate_beats_malformed_existing(self) -> None:
+        """Valid candidate must beat malformed existing session."""
+        from bid_euchre.ops.status import _is_newer_session
+
+        valid = {"started_at": "2026-03-18T12:00:00+00:00"}
+        malformed = {"started_at": "garbage"}
+        assert _is_newer_session(valid, malformed)
+
+    def test_both_malformed_uses_lexicographic(self) -> None:
+        """When both are malformed, lexicographic fallback applies."""
+        from bid_euchre.ops.status import _is_newer_session
+
+        a = {"started_at": "zzz"}
+        b = {"started_at": "aaa"}
+        assert _is_newer_session(a, b)
+        assert not _is_newer_session(b, a)
+
+
 class TestAggregateStatusLaneActivity:
     """Integration tests for lane-activity via aggregate_status()."""
 

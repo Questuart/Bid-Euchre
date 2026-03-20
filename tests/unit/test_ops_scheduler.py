@@ -427,6 +427,56 @@ class TestDaemon:
         # Each tick emits at least a scheduler_tick event
         assert result.total_events_emitted >= 2
 
+    def test_daemon_warnings_do_not_trigger_shutdown(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """tick_result.errors (watchdog warnings) must NOT count toward
+        the consecutive-error shutdown threshold.
+
+        Regression test: the daemon previously conflated tick_result.errors
+        (non-fatal warnings from a successful tick) with actual exceptions.
+        5 consecutive ticks with warnings would trigger shutdown (>= 3).
+        After the fix, only exceptions increment the counter.
+        """
+        call_count = 0
+
+        def warning_tick(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            from bid_euchre.ops.scheduler import TickResult
+
+            return TickResult(
+                checks_run=["heartbeats"],
+                findings=[],
+                events_emitted=0,
+                errors=[f"watchdog warning {call_count}"],  # Non-fatal
+                tick_number=call_count,
+            )
+
+        from bid_euchre.ops import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "tick", warning_tick)
+
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=5,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        # All 5 ticks must complete — warnings are not fatal
+        assert result.ticks_completed == 5
+        assert result.stopped_reason == "max_iterations"
+        # Warnings are still accumulated in result.errors
+        assert len(result.errors) == 5
+
 
 class TestDaemonFormatters:
     """Tests for daemon result formatters."""
