@@ -455,6 +455,65 @@ class TestGetRetrySummary:
         assert summary.retried_tasks == 1
         assert summary.dropped_count == 1
 
+    def test_summary_followup_before_failure_not_counted(self) -> None:
+        """Follow-up events before the earliest failure are not counted.
+
+        t1: retry@10:00, failed@10:05
+        The retry at 10:00 predates the failure at 10:05 and should not
+        register as a retried task in the summary.
+        """
+        events = [
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="crash",
+                timestamp="2026-03-20T10:05:00Z",
+            ),
+            _make_event(
+                "retry_attempted",
+                task_id="t1",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        summary = get_retry_summary(events)
+        assert summary.total_tasks_with_failures == 1
+        # Retry predates the failure → should NOT count as retried
+        assert summary.retried_tasks == 0
+        # The failure is still pending (no follow-up after it)
+        assert summary.dropped_count == 1
+
+    def test_summary_retried_count_with_chronology(self) -> None:
+        """Summary counts reflect chronology-aware resolution.
+
+        t1: failed@10:00, retry@10:05, failed@10:10
+        The retry at 10:05 is after the earliest failure at 10:00,
+        so retried_tasks should count. But the newer failure at 10:10
+        makes t1 still pending (dropped).
+        """
+        events = [
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="second crash",
+                timestamp="2026-03-20T10:10:00Z",
+            ),
+            _make_event(
+                "retry_attempted",
+                task_id="t1",
+                timestamp="2026-03-20T10:05:00Z",
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="first crash",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        summary = get_retry_summary(events)
+        assert summary.total_tasks_with_failures == 1
+        assert summary.retried_tasks == 1
+        assert summary.dropped_count == 1
+
     def test_to_dict(self) -> None:
         summary = RetrySummary(
             total_tasks_with_failures=2,

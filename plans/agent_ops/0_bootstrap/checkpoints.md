@@ -75,3 +75,8 @@
 - Aligned session plan, checkpoints, governing plan, and operator docs.
 - Next: Step 3 (Platform-1 implementation handoff) opens once bridge gate
   is satisfied per the entry checklist.
+
+### 2026-03-20 -- author-a (summary chronology fix)
+- Fixed `get_retry_summary()` follow-up counting: was not chronology-aware
+  (#1112 fixed `get_pending_retries()` but missed the summary function).
+  Applied same string-comparison approach. 2 regression tests added.
