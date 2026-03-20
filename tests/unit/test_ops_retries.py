@@ -230,6 +230,148 @@ class TestGetPendingRetries:
     def test_empty_events(self) -> None:
         assert get_pending_retries([]) == []
 
+    # --- Chronology regression tests (PR #1098 post-merge finding P1) ---
+
+    def test_failure_after_retry_still_pending(self) -> None:
+        """A newer failure after an older retry is NOT resolved."""
+        events = [
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="new_crash",
+                timestamp="2026-03-20T10:10:00Z",
+            ),
+            _make_event(
+                "retry_attempted", task_id="t1", timestamp="2026-03-20T10:05:00Z"
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="old_crash",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        pending = get_pending_retries(events)
+        assert len(pending) == 1
+        assert pending[0].task_id == "t1"
+        assert pending[0].failure_count == 1
+        assert pending[0].last_failure_details == "new_crash"
+
+    def test_failure_after_completion_still_pending(self) -> None:
+        """A newer failure after an older task_completed is NOT resolved."""
+        events = [
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="relapse",
+                timestamp="2026-03-20T10:10:00Z",
+            ),
+            _make_event(
+                "task_completed", task_id="t1", timestamp="2026-03-20T10:05:00Z"
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="original",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        pending = get_pending_retries(events)
+        assert len(pending) == 1
+        assert pending[0].task_id == "t1"
+        assert pending[0].last_failure_details == "relapse"
+
+    def test_multi_cycle_fail_retry_fail_complete(self) -> None:
+        """Full cycle: fail → retry → fail → complete → all resolved."""
+        events = [
+            _make_event(
+                "task_completed", task_id="t1", timestamp="2026-03-20T10:15:00Z"
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="second_fail",
+                timestamp="2026-03-20T10:10:00Z",
+            ),
+            _make_event(
+                "retry_attempted", task_id="t1", timestamp="2026-03-20T10:05:00Z"
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="first_fail",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        pending = get_pending_retries(events)
+        assert len(pending) == 0
+
+    def test_failure_at_same_timestamp_as_resolution_is_resolved(self) -> None:
+        """Tie: failure at exact same timestamp as resolution → treated as resolved."""
+        events = [
+            _make_event(
+                "retry_attempted", task_id="t1", timestamp="2026-03-20T10:00:00Z"
+            ),
+            _make_event("task_failed", task_id="t1", timestamp="2026-03-20T10:00:00Z"),
+        ]
+        pending = get_pending_retries(events)
+        assert len(pending) == 0
+
+    def test_multiple_unresolved_failures_after_resolution(self) -> None:
+        """Multiple failures after a resolution all count as unresolved."""
+        events = [
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="third",
+                timestamp="2026-03-20T10:12:00Z",
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="second",
+                timestamp="2026-03-20T10:10:00Z",
+            ),
+            _make_event(
+                "retry_attempted", task_id="t1", timestamp="2026-03-20T10:05:00Z"
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="first",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        pending = get_pending_retries(events)
+        assert len(pending) == 1
+        assert pending[0].task_id == "t1"
+        assert pending[0].failure_count == 2
+        assert pending[0].last_failure_details == "third"
+
+    def test_summary_dropped_count_reflects_chronology(self) -> None:
+        """get_retry_summary.dropped_count respects chronological resolution."""
+        events = [
+            # t1: failure AFTER retry → still pending
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="new_fail",
+                timestamp="2026-03-20T10:10:00Z",
+            ),
+            _make_event(
+                "retry_attempted", task_id="t1", timestamp="2026-03-20T10:05:00Z"
+            ),
+            _make_event(
+                "task_failed",
+                task_id="t1",
+                details="old_fail",
+                timestamp="2026-03-20T10:00:00Z",
+            ),
+        ]
+        summary = get_retry_summary(events)
+        assert summary.dropped_count == 1
+        assert summary.pending_retries[0].task_id == "t1"
+
 
 # --- get_retry_summary ---
 

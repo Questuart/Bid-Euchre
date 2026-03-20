@@ -126,17 +126,20 @@ def get_pending_retries(
     Returns:
         List of PendingRetry objects, most recent first.
     """
-    # Build a set of task_ids that have follow-up events
-    resolved_task_ids: set[str] = set()
+    # Phase 1: find the latest resolution timestamp per task.
+    # A resolution event only resolves failures that occurred *before* it.
+    # Failures after the latest resolution are still pending.
+    latest_resolution: dict[str, str] = {}
     for event in events:
         event_type = event.get("event_type", "")
         if event_type in _RESOLUTION_EVENTS:
             task_id = _extract_task_id(event)
             if task_id:
-                resolved_task_ids.add(task_id)
+                ts = event.get("timestamp", "")
+                if task_id not in latest_resolution or ts > latest_resolution[task_id]:
+                    latest_resolution[task_id] = ts
 
-    # Find unresolved task_failed events
-    # Track per-task: accumulate failure count, keep most recent details
+    # Phase 2: find failures newer than the latest resolution for each task.
     task_failures: dict[str, dict[str, Any]] = {}
     cutoff: datetime | None = None
 
@@ -151,8 +154,10 @@ def get_pending_retries(
         if not task_id:
             continue
 
-        # Skip resolved tasks
-        if task_id in resolved_task_ids:
+        # Only count failures that are newer than the latest resolution.
+        # A failure at or before the resolution timestamp is considered resolved.
+        event_ts = event.get("timestamp", "")
+        if task_id in latest_resolution and event_ts <= latest_resolution[task_id]:
             continue
 
         # Apply age filter

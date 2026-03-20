@@ -338,6 +338,13 @@ def emit_review_event(
     - ``review_status`` in ``("success", "failure")`` → ``review_outcome``
     - ``review_status`` in ``("pending", "none")`` → no event (returns None)
 
+    .. note::
+
+        This function is **not yet wired** into any production polling
+        path (scheduler, ops CLI, or review loop). It must be called
+        explicitly by the caller. Production wiring is tracked as
+        follow-up work.
+
     Args:
         outcome: Review outcome from ``get_open_pr_reviews()`` or
             ``get_pr_review_detail()``.
