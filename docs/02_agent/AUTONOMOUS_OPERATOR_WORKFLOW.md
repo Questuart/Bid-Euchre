@@ -1000,10 +1000,9 @@ full implementation sequence and design decisions.
 
 ### Overview
 
-Content entering the curated memory store is scanned before persistence.
-Summary auto-load and skill promotion paths are not yet gated by this
-scanner — those integrations are tracked as future PR-5 slices.  Every
-piece of content is classified as:
+Content entering the curated memory store and the skill-promotion
+workflow is scanned before persistence.  Every piece of content is
+classified as:
 
 | Outcome | Effect |
 |---------|--------|
@@ -1059,6 +1058,89 @@ uv run python scripts/internal/build_curated_memory.py list --tag _safety_warnin
 ### Implementation
 
 - Scanner module: `src/bid_euchre/ops/context_safety.py`
-- Integration: `src/bid_euchre/ops/memory.py` (`add_entry()`)
+- Integration: `src/bid_euchre/ops/memory.py` (`add_entry()`), `src/bid_euchre/ops/skill_promotion.py`
 - CLI surface: `scripts/internal/build_curated_memory.py` (`scan` subcommand)
 - Tests: `tests/unit/test_ops_context_safety.py`, `tests/unit/test_ops_memory.py`
+
+---
+
+## Skill Promotion
+
+### Overview
+
+Repeated successful multi-step workflows can be proposed as skill candidates,
+reviewed by an operator, scanned for context safety, and promoted into the
+`.claude/skills/` directory with full provenance.  This is the PR-5
+rollout/safety skill-promotion workflow — not the governed Platform-11
+skill-learning loop.
+
+### Lifecycle
+
+```
+propose → review (approve/reject) → promote → [disable]
+```
+
+1. **Propose** — create a candidate with name, description, content, and
+   provenance.  Context-safety scanning runs immediately.  Even if the scan
+   rejects the content, the candidate is persisted so the operator can inspect
+   the reason and revise.
+2. **Review** — an operator inspects the candidate and approves or rejects it.
+   Only pending candidates can be reviewed.
+3. **Promote** — write the skill to `.claude/skills/<name>/SKILL.md`.  Only
+   allowed if the candidate is approved AND a re-scan at promotion time does
+   not reject the content.
+4. **Disable** — rename `SKILL.md` to `SKILL.md.disabled`.  The candidate
+   record is retained for provenance.
+
+### Storage
+
+| Artifact | Location | Git status |
+|----------|----------|------------|
+| Candidates (pending review) | `.claude/runtime/skill_candidates/<id>.json` | gitignored |
+| Promoted skills | `.claude/skills/<name>/SKILL.md` | committed |
+
+### Context-Safety Integration
+
+- Scanning is mandatory at **proposal** and **promotion** time.
+- A `reject` outcome blocks promotion until the content is revised.
+- A `warn` outcome allows promotion; warnings are recorded in the candidate
+  metadata.
+- There is no bypass path — even programmatic access runs the scan.
+
+### CLI Commands
+
+```bash
+# List all candidates (or filter by status)
+uv run python scripts/internal/ops.py skills [--status pending|approved|rejected|promoted] [--json]
+
+# Propose a new skill
+uv run python scripts/internal/ops.py skills propose \
+  --name my-skill \
+  --description "One-line description" \
+  --content-file path/to/content.md \
+  --source-workflow "Repeated PR review workflow" \
+  --proposed-by author-b
+
+# Review a candidate
+uv run python scripts/internal/ops.py skills review <candidate-id> \
+  --approve --reviewed-by operator --notes "Looks good"
+
+# Promote an approved candidate
+uv run python scripts/internal/ops.py skills promote <candidate-id>
+
+# Disable a promoted skill
+uv run python scripts/internal/ops.py skills disable my-skill --reason "Discovered issue"
+```
+
+### Rollback
+
+Disabling a skill renames `SKILL.md` to `SKILL.md.disabled` in the skill
+directory.  The candidate record under `.claude/runtime/skill_candidates/`
+is retained for provenance.  To fully remove a disabled skill, delete the
+directory manually.
+
+### Implementation
+
+- Promotion module: `src/bid_euchre/ops/skill_promotion.py`
+- CLI surface: `scripts/internal/ops.py` (`skills` subcommand)
+- Tests: `tests/unit/test_ops_skill_promotion.py`
