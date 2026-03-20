@@ -19,15 +19,74 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 logger = logging.getLogger("ops.index")
 
 DEFAULT_INDEX_DIR = Path(".claude/runtime/audit_index")
 DB_FILENAME = "audit.db"
+
+# TTL for staleness cache — how long to reuse a staleness check result
+# before re-scanning sources.  Monkeypatch to 0.0 in tests for immediate
+# expiry.
+_STALENESS_TTL_SECONDS: float = 30.0
+
+
+class _CacheEntry(NamedTuple):
+    """A single cached staleness result."""
+
+    timestamp: float  # time.monotonic() when computed
+    stale_count: int  # number of stale sources
+
+
+class _StalenessCache:
+    """TTL-based cache for staleness checks, keyed by resolved index_dir.
+
+    Avoids re-scanning every source file with ``stat()`` on every query.
+    Thread-safe via an internal lock.
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[Path, _CacheEntry] = {}
+        self._lock = threading.Lock()
+
+    def get(self, conn: sqlite3.Connection, index_dir: Path) -> int:
+        """Return cached stale-source count, recomputing if TTL has expired."""
+        resolved = index_dir.resolve()
+        now = time.monotonic()
+
+        with self._lock:
+            entry = self._entries.get(resolved)
+            if entry is not None and (now - entry.timestamp) < _STALENESS_TTL_SECONDS:
+                return entry.stale_count
+
+        # Compute outside the lock to avoid holding it during I/O
+        count = _count_stale_sources(conn)
+
+        with self._lock:
+            self._entries[resolved] = _CacheEntry(time.monotonic(), count)
+
+        return count
+
+    def invalidate(self, index_dir: Path) -> None:
+        """Evict cache entry for a specific index directory."""
+        resolved = index_dir.resolve()
+        with self._lock:
+            self._entries.pop(resolved, None)
+
+    def invalidate_all(self) -> None:
+        """Clear the entire cache (useful in tests)."""
+        with self._lock:
+            self._entries.clear()
+
+
+# Module-level singleton
+_staleness_cache = _StalenessCache()
 
 
 def _resolve_repo_path(relative: str) -> Path:
@@ -850,6 +909,7 @@ def build_index(
         conn.close()
 
     result.duration_seconds = time.monotonic() - start
+    _staleness_cache.invalidate(index_dir)
     return result
 
 
@@ -902,7 +962,7 @@ def query(
 
     try:
         # Check staleness
-        stale = _check_staleness(conn)
+        stale = _check_staleness(conn, index_dir)
 
         # Build query
         if entry_type:
@@ -1024,7 +1084,7 @@ def query_recent(
         )
 
     try:
-        stale = _check_staleness(conn)
+        stale = _check_staleness(conn, index_dir)
 
         if entry_type:
             sql = """
@@ -1118,7 +1178,7 @@ def get_stats(index_dir: Path) -> IndexStats:
         if meta_row:
             stats.last_built = meta_row[0]
 
-        stats.stale_sources = _count_stale_sources(conn)
+        stats.stale_sources = _staleness_cache.get(conn, index_dir)
 
         return stats
 
@@ -1128,8 +1188,14 @@ def get_stats(index_dir: Path) -> IndexStats:
         conn.close()
 
 
-def _check_staleness(conn: sqlite3.Connection) -> bool:
-    """Check if any indexed sources are stale (file modified after indexing)."""
+def _check_staleness(conn: sqlite3.Connection, index_dir: Path | None = None) -> bool:
+    """Check if any indexed sources are stale (file modified after indexing).
+
+    When *index_dir* is provided the result is served from a TTL cache,
+    amortizing the cost of ``stat()``-ing every source file.
+    """
+    if index_dir is not None:
+        return _staleness_cache.get(conn, index_dir) > 0
     return _count_stale_sources(conn) > 0
 
 
