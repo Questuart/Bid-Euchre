@@ -357,6 +357,9 @@ def daemon(
 
             if tick_result.errors:
                 result.errors.extend(tick_result.errors)
+                # Both tick-reported errors (e.g., watchdog check failures)
+                # and exceptions count toward consecutive failures. A tick
+                # that completes but reports errors is still unhealthy.
                 consecutive_errors += 1
             else:
                 consecutive_errors = 0

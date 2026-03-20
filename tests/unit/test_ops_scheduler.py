@@ -403,6 +403,50 @@ class TestDaemon:
         # 3 errors total, but never 3 consecutive
         assert len(result.errors) == 3
 
+    def test_daemon_stops_on_consecutive_tick_reported_errors(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Daemon stops after 3 consecutive ticks that report errors.
+
+        Ticks that complete but return non-empty errors (e.g., watchdog check
+        failures) count toward the consecutive error threshold, not just
+        ticks that raise exceptions.
+        """
+
+        def tick_with_errors(*args, **kwargs):
+            from bid_euchre.ops.scheduler import TickResult
+
+            return TickResult(
+                checks_run=["heartbeats"],
+                findings=[],
+                events_emitted=0,
+                errors=["Watchdog check failed: file not readable"],
+                tick_number=1,
+            )
+
+        from bid_euchre.ops import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "tick", tick_with_errors)
+
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=10,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        assert result.stopped_reason == "error"
+        # Stopped after 3 consecutive ticks with errors
+        assert result.ticks_completed == 3
+        assert len(result.errors) == 3
+
     def test_daemon_accumulates_findings(
         self,
         runtime_dir: Path,
