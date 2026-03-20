@@ -25,22 +25,11 @@ jobs:
           # Full history needed for origin/main...HEAD diff
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install package + dev deps
-        run: uv sync --frozen --all-extras
-
       - name: Run deterministic prechecks
         env:
           PYTHONPATH: scripts/internal
         run: |
-          uv run python -c "
+          python3 -c "
           import sys
           from deterministic_prechecks import check_diff, get_blocking_findings
 

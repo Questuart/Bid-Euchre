@@ -26,7 +26,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install package + dev deps
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Validate teacher roster manifest + bidding artifact schema
         env:
