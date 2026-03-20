@@ -13,6 +13,7 @@ from bid_euchre.ops.worktrees import (
     GitWorktree,
     _update_registry_cleanup_state,
     classify_cleanup_candidates,
+    is_main_worktree,
     is_protected,
     is_worktree_dirty,
     list_worktrees_registry,
@@ -163,6 +164,28 @@ class TestIsProtected:
 
     def test_partial_match_not_protected(self) -> None:
         assert not is_protected("/tmp/Bid-Euchre-steward-author-extra")
+
+
+class TestIsMainWorktree:
+    """Tests for is_main_worktree()."""
+
+    def test_main_checkout_has_git_dir(self, tmp_path: Path) -> None:
+        """A directory with a .git/ directory is the main working tree."""
+        (tmp_path / ".git").mkdir()
+        assert is_main_worktree(str(tmp_path)) is True
+
+    def test_linked_worktree_has_git_file(self, tmp_path: Path) -> None:
+        """A directory with a .git file (not directory) is a linked worktree."""
+        (tmp_path / ".git").write_text("gitdir: /some/repo/.git/worktrees/foo")
+        assert is_main_worktree(str(tmp_path)) is False
+
+    def test_no_git_at_all(self, tmp_path: Path) -> None:
+        """A directory without any .git is not the main worktree."""
+        assert is_main_worktree(str(tmp_path)) is False
+
+    def test_nonexistent_path(self) -> None:
+        """Nonexistent path returns False (no crash)."""
+        assert is_main_worktree("/tmp/no-such-dir-xyz") is False
 
 
 class TestReconcile:
@@ -359,6 +382,44 @@ class TestClassifyCleanupCandidates:
         )
         assert len(candidates) == 1
         assert candidates[0].cleanup_state == "stale"
+
+    def test_main_checkout_skipped(self, tmp_path: Path) -> None:
+        """The main checkout is never a cleanup candidate even when unregistered."""
+        # Create a fake main checkout (has .git directory)
+        main_dir = tmp_path / "Bid-Euchre"
+        main_dir.mkdir()
+        (main_dir / ".git").mkdir()
+
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [
+            GitWorktree(path=str(main_dir), head="abc", branch="main"),
+        ]
+        registry: list[dict] = []
+
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
+        # Main checkout should be filtered out
+        assert len(candidates) == 0
+
+    def test_linked_worktree_still_candidate(self, tmp_path: Path) -> None:
+        """A linked worktree (non-main) that is unregistered remains a candidate."""
+        # Create a fake linked worktree (has .git file, not directory)
+        linked_dir = tmp_path / "worktree-feature"
+        linked_dir.mkdir()
+        (linked_dir / ".git").write_text("gitdir: /some/repo/.git/worktrees/feature")
+
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        git_wts = [
+            GitWorktree(path=str(linked_dir), head="abc", branch="feature-x"),
+        ]
+        registry: list[dict] = []
+
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
+        assert len(candidates) == 1
+        assert candidates[0].lifecycle_class == "unknown"
 
 
 class TestIsWorktreeDirty:
