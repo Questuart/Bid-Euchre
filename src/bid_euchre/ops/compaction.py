@@ -339,16 +339,16 @@ def delete_archive(session_id: str, archive_dir: Path | None = None) -> bool:
         return False
 
     # Symlink containment: resolved path must be inside archive_dir (#959).
+    # Even though shutil.rmtree refuses to follow top-level symlinks on
+    # Python 3.9+, this check is defense-in-depth against future changes
+    # and ensures consistent security posture.
     resolved = session_dir.resolve()
-    archive_resolved = archive_dir.resolve()
-    if resolved != archive_resolved and not str(resolved).startswith(
-        str(archive_resolved) + "/"
-    ):
+    if not resolved.is_relative_to(archive_dir.resolve()):
         logger.warning(
             "Refusing to delete %s: resolves to %s (outside %s)",
             session_dir,
             resolved,
-            archive_resolved,
+            archive_dir.resolve(),
         )
         return False
 
