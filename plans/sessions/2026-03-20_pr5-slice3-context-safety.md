@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-20
 **Parent:** `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` → PR-5 closeout slice 3
-**Branch:** `ops/context-safety-scan`
+**Branch:** `codex/steward-author-c`
 **Lane:** author-c
 
 ## Goal
