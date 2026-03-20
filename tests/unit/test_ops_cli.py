@@ -164,7 +164,12 @@ class TestCmdStatus:
     def test_status_text_lane_activity(
         self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Text output shows lane-activity format."""
+        """Text output shows lane-activity format.
+
+        A lane with session_id=None but a recent last_active timestamp
+        shows as ``likely_active`` (not idle) since the fallback liveness
+        probe detects the fresh registry timestamp.
+        """
         from datetime import datetime, timezone
 
         recent = datetime.now(timezone.utc).isoformat()
@@ -191,7 +196,7 @@ class TestCmdStatus:
         assert rc == 0
         text = capsys.readouterr().out
         assert "Lane Activity:" in text
-        assert "[idle" in text
+        assert "[likely_active]" in text
         assert "ops" in text
 
 

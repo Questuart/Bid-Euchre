@@ -28,7 +28,15 @@ DEFAULT_RUNTIME_DIR = Path(".claude/runtime")
 STALE_MINUTES = 30
 
 # Valid lane activity states.
-LANE_STATES = frozenset({"active", "blocked", "idle", "likely_active", "unknown"})
+# - active: confirmed active via registry session_id
+# - likely_active: no session_id, but fresh fallback evidence
+# - stale: evidence exists but is aging / uncertain
+# - blocked: primary task is blocked
+# - idle: no evidence of activity
+# - unknown: cannot determine (reserved)
+LANE_STATES = frozenset(
+    {"active", "likely_active", "stale", "blocked", "idle", "unknown"}
+)
 
 
 @dataclass
@@ -66,13 +74,15 @@ class LaneStatus:
     attention_needed: bool = False
     attention_reason: str | None = None
 
+    # --- Liveness provenance ---
+    # Where the state determination came from:
+    # "registry" (session_id), "events", "task_state", "session_metadata",
+    # "last_active", or None (genuinely idle / no evidence).
+    liveness_source: str | None = None
+
     # --- Event context (enriched from durable event log) ---
     last_event_type: str | None = None
     last_event_at: str | None = None
-
-    # --- Liveness provenance (how the state was determined) ---
-    liveness_source: str = "registry"
-    liveness_detail: str | None = None
 
 
 @dataclass
@@ -380,71 +390,177 @@ def _is_newer_session(
     return candidate.get("started_at", "") > existing.get("started_at", "")
 
 
-def _probe_lane_liveness(
-    worktree_path: str,
+@dataclass
+class _LivenessProbe:
+    """Result of fallback liveness inference for a lane.
+
+    When registry ``session_id`` is absent, this probe checks repo-local
+    signals to distinguish genuinely idle lanes from lanes that are likely
+    active but have stale/missing heartbeat metadata.
+    """
+
+    is_likely_live: bool
+    is_stale: bool
+    source: str | None  # signal that determined the result
+    detail: str  # human-readable explanation
+
+
+def _probe_fallback_liveness(
     lane_id: str,
-    events: list[dict[str, Any]],
     *,
+    session: dict[str, Any] | None,
+    lane_tasks: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    last_active_ts: str | None,
     now: datetime,
-    recency_minutes: int = 30,
-    check_worktree: bool = False,
-) -> tuple[str, str | None]:
-    """Probe for fallback liveness signals when registry session_id is absent.
+    stale_minutes: int,
+) -> _LivenessProbe:
+    """Check repo-local signals for lane activity beyond registry session_id.
 
-    When the worktree registry lacks a ``session_id`` for a lane, this
-    function checks additional repo-local signals to determine if the lane
-    might still be active. This addresses the known failure mode where
-    live Claude processes operate without updating the registry.
+    Examines (in priority order):
 
-    Checks are performed in priority order (cheapest first):
+    1. **Recent events** — if the lane has an event within ``stale_minutes``,
+       it was recently active.
+    2. **In-progress tasks** — if the lane has an in-progress task with a
+       recent ``last_forward_progress_at`` timestamp.
+    3. **Session metadata** — if the lane's session ``started_at`` is recent.
+    4. **Registry last_active** — if the registry's ``last_active`` is recent.
 
-    1. **Recent events** — if the durable event log contains a recent
-       entry for this lane (within ``recency_minutes``), the lane was
-       recently active.
-    2. **Worktree dirty** — if the worktree has uncommitted changes,
-       something is or was recently working there (requires subprocess;
-       gated behind ``check_worktree``).
+    Returns a ``_LivenessProbe`` indicating whether the lane is likely live,
+    stale (evidence exists but is aging), or genuinely idle.
 
     Args:
-        worktree_path: Path to the lane's worktree directory.
         lane_id: Lane identifier for event filtering.
+        session: Most recent session metadata for this lane, if any.
+        lane_tasks: Active (non-completed) tasks for this lane.
         events: Recent events, most-recent-first.
-        now: Current time for recency checks.
-        recency_minutes: Events newer than this are considered live signals.
-        check_worktree: If True, probe the worktree for uncommitted changes
-            via ``git status``. Requires subprocess; disabled by default.
+        last_active_ts: Registry ``last_active`` timestamp, if any.
+        now: Current time for freshness checks.
+        stale_minutes: Threshold for "recent" evidence.
 
     Returns:
-        Tuple of ``(source, detail)`` where *source* is one of:
-
-        - ``"recent_event"`` — event log shows recent activity
-        - ``"worktree_dirty"`` — worktree has uncommitted changes
-        - ``"none"`` — no fallback signal detected
+        ``_LivenessProbe`` with the determination.
     """
-    # 1. Check recent events (cheap — data already in memory)
+    threshold_seconds = stale_minutes * 60
+
+    # --- Signal 1: Recent events for this lane ---
     last_event = _find_last_event_for_lane(events, lane_id)
     if last_event:
-        event_ts = _parse_iso_timestamp(last_event.get("timestamp"))
-        if event_ts and (now - event_ts).total_seconds() / 60 <= recency_minutes:
+        event_dt = _parse_iso_timestamp(last_event.get("timestamp"))
+        if event_dt is not None:
+            age = (now - event_dt).total_seconds()
             event_type = last_event.get("event_type", "unknown")
-            age_min = int((now - event_ts).total_seconds() / 60)
-            return (
-                "recent_event",
-                f"{event_type} {age_min}m ago",
+            if age <= threshold_seconds:
+                return _LivenessProbe(
+                    is_likely_live=True,
+                    is_stale=False,
+                    source="events",
+                    detail=f"recent event '{event_type}' {int(age / 60)}m ago",
+                )
+            # Event exists but is stale — record as candidate
+            # (may be overridden by fresher signals below)
+            stale_candidate = _LivenessProbe(
+                is_likely_live=False,
+                is_stale=True,
+                source="events",
+                detail=(
+                    f"last event '{event_type}' {int(age / 60)}m ago "
+                    f"(>{stale_minutes}m threshold)"
+                ),
             )
+        else:
+            stale_candidate = None
+    else:
+        stale_candidate = None
 
-    # 2. Check worktree for uncommitted changes (subprocess — gated)
-    if check_worktree and worktree_path:
-        try:
-            from bid_euchre.ops.worktrees import is_worktree_dirty
+    # --- Signal 2: In-progress tasks with recent progress ---
+    for task in lane_tasks:
+        if task.get("status") != "in_progress":
+            continue
+        progress = task.get("progress")
+        if isinstance(progress, dict):
+            progress_ts = progress.get("last_forward_progress_at")
+            progress_dt = _parse_iso_timestamp(progress_ts)
+            if progress_dt is not None:
+                age = (now - progress_dt).total_seconds()
+                subject = task.get("subject", "?")
+                if age <= threshold_seconds:
+                    return _LivenessProbe(
+                        is_likely_live=True,
+                        is_stale=False,
+                        source="task_state",
+                        detail=(
+                            f"in-progress task '{subject}' "
+                            f"progressed {int(age / 60)}m ago"
+                        ),
+                    )
+                if stale_candidate is None:
+                    stale_candidate = _LivenessProbe(
+                        is_likely_live=False,
+                        is_stale=True,
+                        source="task_state",
+                        detail=(
+                            f"in-progress task '{subject}' last progressed "
+                            f"{int(age / 60)}m ago (>{stale_minutes}m threshold)"
+                        ),
+                    )
 
-            if is_worktree_dirty(worktree_path):
-                wt_name = Path(worktree_path).name
-                return ("worktree_dirty", f"uncommitted changes in {wt_name}")
-        except Exception:  # noqa: BLE001
-            logger.debug("Worktree dirty check failed for %s", worktree_path)
+    # --- Signal 3: Session metadata freshness ---
+    if session:
+        session_dt = _parse_iso_timestamp(session.get("started_at"))
+        if session_dt is not None:
+            age = (now - session_dt).total_seconds()
+            if age <= threshold_seconds:
+                return _LivenessProbe(
+                    is_likely_live=True,
+                    is_stale=False,
+                    source="session_metadata",
+                    detail=f"session started {int(age / 60)}m ago",
+                )
+            if stale_candidate is None:
+                stale_candidate = _LivenessProbe(
+                    is_likely_live=False,
+                    is_stale=True,
+                    source="session_metadata",
+                    detail=(
+                        f"session started {int(age / 60)}m ago "
+                        f"(>{stale_minutes}m threshold)"
+                    ),
+                )
 
-    return ("none", None)
+    # --- Signal 4: Registry last_active ---
+    if last_active_ts:
+        la_dt = _parse_iso_timestamp(last_active_ts)
+        if la_dt is not None:
+            age = (now - la_dt).total_seconds()
+            if age <= threshold_seconds:
+                return _LivenessProbe(
+                    is_likely_live=True,
+                    is_stale=False,
+                    source="last_active",
+                    detail=f"registry last_active {int(age / 60)}m ago",
+                )
+            if stale_candidate is None:
+                stale_candidate = _LivenessProbe(
+                    is_likely_live=False,
+                    is_stale=True,
+                    source="last_active",
+                    detail=(
+                        f"registry last_active {int(age / 60)}m ago "
+                        f"(>{stale_minutes}m threshold)"
+                    ),
+                )
+
+    # --- No fresh evidence found ---
+    if stale_candidate is not None:
+        return stale_candidate
+
+    return _LivenessProbe(
+        is_likely_live=False,
+        is_stale=False,
+        source=None,
+        detail="no activity evidence found",
+    )
 
 
 def synthesize_lane_activity(
@@ -455,7 +571,6 @@ def synthesize_lane_activity(
     *,
     now: datetime | None = None,
     stale_minutes: int = STALE_MINUTES,
-    probe_worktree: bool = False,
 ) -> list[LaneStatus]:
     """Synthesize lane-activity view from existing repo-local state.
 
@@ -463,11 +578,11 @@ def synthesize_lane_activity(
     events to produce a per-lane activity summary with derived state,
     current task, PR linkage, and attention flags.
 
-    When ``has_active_session`` is False for a lane, the function probes
-    for fallback liveness signals (recent events, worktree dirty state)
-    before declaring the lane idle. Lanes with fallback signals are
-    marked ``"likely_active"`` with the evidence source recorded in
-    ``liveness_source`` / ``liveness_detail``.
+    When ``has_active_session`` is False for a lane, the function runs a
+    fallback liveness probe checking recent events, in-progress tasks,
+    session metadata, and registry timestamps. Lanes with fresh evidence
+    are marked ``"likely_active"``; lanes with stale evidence become
+    ``"stale"``; lanes with no evidence remain ``"idle"``.
 
     Args:
         lanes_data: Worktree registry entries.
@@ -477,9 +592,6 @@ def synthesize_lane_activity(
         events: Recent events, most-recent-first.
         now: Current time for staleness checks (default: UTC now).
         stale_minutes: Minutes without progress before flagging stale.
-        probe_worktree: If True, check worktrees for uncommitted changes
-            via subprocess when the registry lacks a session_id. Default
-            False (callers that tolerate subprocess cost should enable).
 
     Returns:
         List of enriched LaneStatus objects.
@@ -493,6 +605,10 @@ def synthesize_lane_activity(
         lane_id = lane.get("lane_id", "unknown")
         session = sessions_by_lane.get(lane_id)
         has_active_session = lane.get("session_id") is not None
+
+        # Extract last_active early — needed by both state derivation and
+        # last_progress computation.
+        last_active_ts = lane.get("last_active")
 
         # Find the primary task for this lane (prefer in_progress over pending)
         lane_tasks = tasks_by_lane.get(lane_id, [])
@@ -509,34 +625,44 @@ def synthesize_lane_activity(
         if primary_task is None and lane_tasks:
             primary_task = lane_tasks[0]  # pending
 
-        # Derive state — has_active_session is a bool so the branches
-        # are exhaustive; no "unknown" fallback is needed (see #994).
-        # When session_id is absent, probe for fallback liveness signals
-        # before declaring idle (addresses stale-registry truth gap).
-        liveness_source = "registry"
-        liveness_detail: str | None = None
+        # Derive state with fallback liveness probe (slice 6 trust repair).
+        #
+        # Priority:
+        #   1. Blocked task → "blocked" (regardless of liveness)
+        #   2. Registry session_id → "active" (confirmed)
+        #   3. Fallback probe → "likely_active" / "stale" / "idle"
+        liveness_source: str | None = None
+        probe_detail: str = ""
 
         if primary_task and primary_task.get("status") == "blocked":
             state = "blocked"
+            liveness_source = "registry" if has_active_session else None
         elif has_active_session:
             state = "active"
+            liveness_source = "registry"
         else:
-            # No session_id — probe for fallback liveness signals
-            probe_src, probe_detail = _probe_lane_liveness(
-                lane.get("worktree_path", ""),
+            # No session_id — probe fallback signals before defaulting
+            # to idle. This fixes the trust gap where obviously-live lanes
+            # were reported as "idle" due to stale/missing registry state.
+            probe = _probe_fallback_liveness(
                 lane_id,
-                events,
+                session=session,
+                lane_tasks=lane_tasks,
+                events=events,
+                last_active_ts=last_active_ts,
                 now=now,
-                recency_minutes=stale_minutes,
-                check_worktree=probe_worktree,
+                stale_minutes=stale_minutes,
             )
-            if probe_src != "none":
+            probe_detail = probe.detail
+            if probe.is_likely_live:
                 state = "likely_active"
-                liveness_source = probe_src
-                liveness_detail = probe_detail
+                liveness_source = probe.source
+            elif probe.is_stale:
+                state = "stale"
+                liveness_source = probe.source
             else:
                 state = "idle"
-                liveness_source = "none"
+                liveness_source = None
 
         # Extract task details
         current_task_id = primary_task.get("task_id") if primary_task else None
@@ -576,7 +702,6 @@ def synthesize_lane_activity(
             ts = session.get("started_at")
             if ts:
                 last_progress_candidates.append(ts)
-        last_active_ts = lane.get("last_active")
         if last_active_ts:
             last_progress_candidates.append(last_active_ts)
         # Include event timestamp — events may be more recent than
@@ -600,11 +725,11 @@ def synthesize_lane_activity(
                 age_min = int((now - lp_dt).total_seconds() / 60)
                 attention_needed = True
                 attention_reason = f"stale: no progress for {age_min}min"
-        elif state == "likely_active":
-            # Registry disagrees with live signal — inform operator
+        elif state == "stale":
+            # Stale lanes have evidence of past activity but it's aging.
+            # Flag for operator attention — the process may have died.
             attention_needed = True
-            src = liveness_detail or liveness_source
-            attention_reason = f"likely active ({src}) but no registry session"
+            attention_reason = f"stale heartbeat/evidence ({probe_detail})"
         elif state == "idle" and lane.get("class", "persistent") == "persistent":
             attention_needed = True
             attention_reason = "persistent lane idle with no active session"
@@ -627,10 +752,9 @@ def synthesize_lane_activity(
             last_progress=last_progress,
             attention_needed=attention_needed,
             attention_reason=attention_reason,
+            liveness_source=liveness_source,
             last_event_type=last_event_type,
             last_event_at=last_event_at,
-            liveness_source=liveness_source,
-            liveness_detail=liveness_detail,
         )
         results.append(lane_status)
 
@@ -677,18 +801,11 @@ def _load_recent_events(
     return events
 
 
-def aggregate_status(
-    runtime_dir: Path | None = None,
-    *,
-    probe_worktree: bool = True,
-) -> StatusReport:
+def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
     """Build a unified status report across lanes, sessions, and tasks.
 
     Args:
         runtime_dir: Override for the runtime directory root.
-        probe_worktree: If True (default), probe worktrees for uncommitted
-            changes when the registry lacks a session_id. This calls
-            ``git status`` via subprocess for each idle lane.
 
     Returns:
         StatusReport with categorized entries and warnings.
@@ -728,7 +845,6 @@ def aggregate_status(
         sessions_by_lane,
         tasks_by_lane,
         events,
-        probe_worktree=probe_worktree,
     )
 
     # Session metadata files are preserved for resume/audit — they are
@@ -859,10 +975,8 @@ def format_status_text(
     lines.append(f"Lane Activity: {len(report.lanes)} lanes ({summary_str})")
 
     for lane in report.lanes:
-        # State badge — "likely_active" uses "[active?]" for brevity
-        if lane.state == "likely_active":
-            state_badge = "[active?]"
-        elif lane.attention_needed:
+        # State badge
+        if lane.attention_needed:
             state_badge = f"[{lane.state}!]"
         else:
             state_badge = f"[{lane.state}]"
@@ -874,16 +988,21 @@ def format_status_text(
                 task_info += f" ({lane.current_step})"
         elif lane.has_active_session and lane.session_task:
             task_info = lane.session_task
+        elif lane.state == "likely_active" and lane.liveness_source:
+            # No session_id but fallback evidence says likely live
+            task_info = f"likely active (via {lane.liveness_source})"
+            if lane.session_task:
+                task_info += f", last: {lane.session_task}"
+        elif lane.state == "stale" and lane.liveness_source:
+            task_info = f"stale (via {lane.liveness_source})"
+            if lane.session_task:
+                task_info += f", last: {lane.session_task}"
         elif lane.session_task:
             task_info = f"idle, last: {lane.session_task}"
         elif lane.last_event_type:
             task_info = f"idle, last event: {lane.last_event_type}"
         else:
             task_info = "—"
-
-        # For likely_active lanes, append the fallback evidence source
-        if lane.state == "likely_active" and lane.liveness_detail:
-            task_info += f" (via {lane.liveness_detail})"
 
         # Branch info — always show for orientation
         branch_short = _branch_short(lane.branch) if lane.branch else ""
@@ -975,6 +1094,7 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
                 "lane_id": lane.lane_id,
                 "lane_class": lane.lane_class,
                 "state": lane.state,
+                "liveness_source": lane.liveness_source,
                 "current_task_id": lane.current_task_id,
                 "current_task_title": lane.current_task_title,
                 "current_step": lane.current_step,
@@ -991,8 +1111,6 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
                 "last_checkpoint": lane.last_checkpoint,
                 "last_event_type": lane.last_event_type,
                 "last_event_at": lane.last_event_at,
-                "liveness_source": lane.liveness_source,
-                "liveness_detail": lane.liveness_detail,
             }
             for lane in report.lanes
         ],
