@@ -35,8 +35,13 @@ DEFAULT_REVIEW_CONTEXTS: tuple[str, ...] = ("reviewing-changes",)
 REVIEW_GATE_CONTEXTS: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS
 """Check names that are merge-relevant review gates (alias for DEFAULT_REVIEW_CONTEXTS)."""
 
-ADVISORY_CONTEXTS: tuple[str, ...] = ("claude-review", "codex-review")
-"""Check names that are advisory-only — infrastructure failures here must not poison CI."""
+ADVISORY_CONTEXTS: tuple[str, ...] = ("claude-review",)
+"""Check names that are advisory-only — infrastructure failures here must not poison CI.
+
+NOTE: When Codex Cloud review is enabled (via chatgpt.com/codex), observe
+the actual GitHub check/status context name it emits, then add it here.
+Do not add speculative names — verify on a real PR first.
+"""
 
 NON_CI_CONTEXTS: tuple[str, ...] = REVIEW_GATE_CONTEXTS + ADVISORY_CONTEXTS
 """Union of all non-CI check contexts (review gate + advisory)."""
