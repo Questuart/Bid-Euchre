@@ -60,7 +60,7 @@ test:
 	PYTHONPATH=.:src $(PYTHON) -m pytest -q -m "not slow" tests/
 
 ensure-venv:
-	@[ -d .venv ] || { echo ">>> Bootstrapping venv (fresh worktree detected)"; uv sync --all-extras; }
+	@[ -d .venv ] || { echo ">>> Bootstrapping venv (fresh worktree detected)"; uv sync --extra dev; }
 
 check: ensure-venv repo-lint lint test notebook-check docs-check
 	@echo "✓ All checks passed"
