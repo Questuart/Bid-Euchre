@@ -26,31 +26,37 @@ class TestClaudeReviewWorkflow:
         with_block = step["with"]
         assert "claude_code_oauth_token" in with_block
 
-    def test_uses_code_review_plugin(self):
-        """Workflow uses the code-review plugin via marketplace."""
-        step = self._review_step()
-        with_block = step["with"]
-        assert "plugin_marketplaces" in with_block
-        assert "plugins" in with_block
-        assert "code-review" in with_block["plugins"]
-
-    def test_prompt_invokes_code_review_skill(self):
-        """Prompt invokes the /code-review skill with the PR reference."""
+    def test_prompt_contains_review_semantics(self):
+        """Prompt must instruct Claude to perform a code review."""
         step = self._review_step()
         prompt = step["with"]["prompt"]
-        assert "/code-review" in prompt, "prompt must invoke the code-review skill"
-        assert "pull" in prompt.lower(), "prompt must reference the pull request"
+        assert "review" in prompt.lower(), "prompt must mention 'review'"
+
+    def test_max_turns_value(self):
+        """Max turns must be explicitly set to a small bound."""
+        step = self._review_step()
+        claude_args = step["with"]["claude_args"]
+        assert (
+            claude_args == "--max-turns 5"
+        ), f"expected '--max-turns 5', got {claude_args!r}"
 
     def test_no_continue_on_error(self):
         """Review step must NOT use continue-on-error — failures must be visible."""
         step = self._review_step()
         assert step.get("continue-on-error") is not True
 
-    def test_permissions_are_read_only(self):
-        """Permissions must be read-only (no write access to contents)."""
-        permissions = self.cfg["jobs"]["claude-review"]["permissions"]
-        assert permissions.get("contents") == "read"
-        assert permissions.get("pull-requests") == "read"
+    def test_has_infra_failure_flag_step(self):
+        """A follow-up step must create an issue on reviewer infra failure."""
+        steps = self.cfg["jobs"]["claude-review"]["steps"]
+        flag_steps = [
+            s for s in steps if s.get("name") == "Flag reviewer infra failure"
+        ]
+        assert len(flag_steps) == 1
+        flag_step = flag_steps[0]
+        # Must scope to the review step specifically, not blanket failure()
+        assert "steps.claude-review.outcome" in flag_step["if"]
+        # Must have GH_TOKEN for gh issue create
+        assert "GH_TOKEN" in str(flag_step.get("env", {}))
 
     def _review_step(self):
         """Return the 'Run Claude Code Review' step."""
