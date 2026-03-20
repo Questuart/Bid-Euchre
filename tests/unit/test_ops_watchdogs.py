@@ -14,6 +14,7 @@ from bid_euchre.ops.watchdogs import (
     check_scope_drift,
     check_subagent_failures,
     check_task_progress,
+    check_worktree_health,
     format_watchdog_json,
     format_watchdog_text,
     run_all_watchdogs,
@@ -199,6 +200,152 @@ class TestCheckTaskProgress:
         assert len(findings) == 1
         assert findings[0].severity == "warning"
         assert "waiting for ci" in findings[0].message.lower()
+
+
+class TestCheckWorktreeHealth:
+    """Tests for check_worktree_health() noise reduction."""
+
+    def test_main_checkout_skipped(
+        self,
+        runtime_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The main checkout should not produce a warning."""
+        from bid_euchre.ops import worktrees as wt_mod
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        # Fake main checkout: has a .git directory
+        main_dir = tmp_path / "Bid-Euchre"
+        main_dir.mkdir()
+        (main_dir / ".git").mkdir()
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [
+                GitWorktree(path=str(main_dir), head="abc123", branch="main"),
+            ],
+        )
+
+        findings = check_worktree_health(runtime_dir)
+        assert findings == []
+
+    def test_protected_steward_downgrades_to_info(
+        self,
+        runtime_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unregistered steward worktrees produce 'info', not 'warning'."""
+        from bid_euchre.ops import worktrees as wt_mod
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        # Fake linked worktree with a protected name (.git is a file)
+        steward_dir = tmp_path / "Bid-Euchre-steward-author"
+        steward_dir.mkdir()
+        (steward_dir / ".git").write_text("gitdir: /repo/.git/worktrees/x")
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [
+                GitWorktree(
+                    path=str(steward_dir),
+                    head="abc123",
+                    branch="codex/steward-author",
+                ),
+            ],
+        )
+
+        findings = check_worktree_health(runtime_dir)
+        assert len(findings) == 1
+        assert findings[0].severity == "info"
+        assert "protected steward" in findings[0].message.lower()
+
+    def test_genuine_orphan_remains_warning(
+        self,
+        runtime_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A truly orphaned worktree still gets a 'warning'."""
+        from bid_euchre.ops import worktrees as wt_mod
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        # Fake linked worktree with non-protected name
+        orphan_dir = tmp_path / "worktree-old-feature"
+        orphan_dir.mkdir()
+        (orphan_dir / ".git").write_text("gitdir: /repo/.git/worktrees/y")
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [
+                GitWorktree(
+                    path=str(orphan_dir),
+                    head="def456",
+                    branch="old-feature",
+                ),
+            ],
+        )
+
+        findings = check_worktree_health(runtime_dir)
+        assert len(findings) == 1
+        assert findings[0].severity == "warning"
+        assert "unregistered worktree" in findings[0].message.lower()
+
+    def test_mixed_worktrees_correct_classification(
+        self,
+        runtime_dir: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Main + steward + orphan: only orphan is warning, steward is info."""
+        from bid_euchre.ops import worktrees as wt_mod
+        from bid_euchre.ops.worktrees import GitWorktree
+
+        # Main checkout
+        main_dir = tmp_path / "Bid-Euchre"
+        main_dir.mkdir()
+        (main_dir / ".git").mkdir()
+
+        # Protected steward
+        steward_dir = tmp_path / "Bid-Euchre-steward-ops"
+        steward_dir.mkdir()
+        (steward_dir / ".git").write_text("gitdir: /repo/.git/worktrees/ops")
+
+        # Genuine orphan
+        orphan_dir = tmp_path / "worktree-stale"
+        orphan_dir.mkdir()
+        (orphan_dir / ".git").write_text("gitdir: /repo/.git/worktrees/stale")
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [
+                GitWorktree(path=str(main_dir), head="a", branch="main"),
+                GitWorktree(
+                    path=str(steward_dir),
+                    head="b",
+                    branch="codex/steward-ops",
+                ),
+                GitWorktree(path=str(orphan_dir), head="c", branch="stale-branch"),
+            ],
+        )
+
+        findings = check_worktree_health(runtime_dir)
+        # Main is silently skipped, steward is info, orphan is warning
+        assert len(findings) == 2
+
+        severities = {f.severity for f in findings}
+        assert severities == {"info", "warning"}
+
+        info_finding = [f for f in findings if f.severity == "info"][0]
+        assert "steward" in info_finding.message.lower()
+
+        warn_finding = [f for f in findings if f.severity == "warning"][0]
+        assert "stale-branch" in warn_finding.message
 
 
 class TestRunAllWatchdogs:

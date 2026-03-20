@@ -266,6 +266,8 @@ def check_worktree_health(
         runtime_dir = Path(".claude/runtime")
 
     from bid_euchre.ops.worktrees import (
+        is_main_worktree,
+        is_protected,
         list_worktrees_git,
         list_worktrees_registry,
         reconcile,
@@ -278,6 +280,28 @@ def check_worktree_health(
     report = reconcile(git_wts, registry)
 
     for wt in report.unregistered:
+        # Main checkout is always unregistered — skip silently.
+        if is_main_worktree(wt.path):
+            continue
+
+        # Protected steward lanes are expected persistent infrastructure.
+        # Downgrade to "info" so they don't drown out real problems.
+        if is_protected(wt.path):
+            findings.append(
+                WatchdogFinding(
+                    watchdog_name="worktree_health",
+                    severity="info",
+                    target=wt.path,
+                    message=(f"Protected steward worktree (unregistered): {wt.branch}"),
+                    threshold="n/a",
+                    recommended_action=(
+                        "Register in worktree_registry to silence this notice"
+                    ),
+                )
+            )
+            continue
+
+        # Genuinely unregistered — likely orphaned.
         findings.append(
             WatchdogFinding(
                 watchdog_name="worktree_health",

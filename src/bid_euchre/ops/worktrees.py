@@ -202,6 +202,24 @@ def is_protected(worktree_path: str) -> bool:
     return dirname in PROTECTED_WORKTREE_NAMES
 
 
+def is_main_worktree(worktree_path: str) -> bool:
+    """Check if a worktree path is the main working tree (not a linked worktree).
+
+    The main working tree has a ``.git`` **directory**. Linked worktrees
+    created by ``git worktree add`` have a ``.git`` **file** that points
+    back to the main repository's ``.git/worktrees/`` directory.
+
+    Args:
+        worktree_path: Path to the worktree directory.
+
+    Returns:
+        True if the path is the main working tree.
+    """
+    git_path = Path(worktree_path) / ".git"
+    # is_dir() returns False for files and symlinks to files
+    return git_path.is_dir()
+
+
 def is_worktree_dirty(worktree_path: str) -> bool:
     """Check if a worktree has uncommitted changes.
 
@@ -377,6 +395,10 @@ def classify_cleanup_candidates(
 
     # Unregistered worktrees — unknown lifecycle
     for git_wt in report.unregistered:
+        # Skip the main checkout — it's expected to be unregistered and
+        # is never a cleanup target.
+        if is_main_worktree(git_wt.path):
+            continue
         protected = is_protected(git_wt.path)
         dirty = is_worktree_dirty(git_wt.path) if check_dirty else False
         candidates.append(
