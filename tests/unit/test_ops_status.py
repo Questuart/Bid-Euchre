@@ -12,6 +12,10 @@ from bid_euchre.ops.status import (
     STALE_MINUTES,
     LaneStatus,
     StatusReport,
+    _branch_short,
+    _derive_current_step,
+    _find_last_event_for_lane,
+    _format_relative_time,
     aggregate_status,
     emit_scope_snapshot,
     format_status_json,
@@ -1229,6 +1233,603 @@ class TestAggregateStatusLaneActivity:
 
         report = aggregate_status(runtime_dir)
         assert report.lanes[0].linked_pr == 982
+
+
+# ---- New helpers and enrichment tests ----
+
+
+class TestDeriveCurrentStepAllDone:
+    """Tests for _derive_current_step when all items completed."""
+
+    def test_all_items_completed(self) -> None:
+        """All items completed → 'all N steps done'."""
+        task = {
+            "items": [
+                {"id": 1, "description": "Step A", "status": "completed"},
+                {"id": 2, "description": "Step B", "status": "completed"},
+                {"id": 3, "description": "Step C", "status": "completed"},
+            ],
+        }
+        assert _derive_current_step(task) == "all 3 steps done"
+
+    def test_single_item_completed(self) -> None:
+        task = {"items": [{"id": 1, "description": "Only step", "status": "completed"}]}
+        assert _derive_current_step(task) == "all 1 steps done"
+
+    def test_no_items_returns_none(self) -> None:
+        task = {"items": []}
+        assert _derive_current_step(task) is None
+
+    def test_progress_field_takes_precedence_over_all_done(self) -> None:
+        """Explicit progress note wins over checklist summary."""
+        task = {
+            "progress": {"last_completed_item": "Manual override note"},
+            "items": [
+                {"id": 1, "description": "Step", "status": "completed"},
+            ],
+        }
+        assert _derive_current_step(task) == "Manual override note"
+
+
+class TestFindLastEventForLane:
+    """Tests for _find_last_event_for_lane()."""
+
+    def test_finds_matching_lane(self) -> None:
+        events = [
+            {"lane_id": "author-a", "event_type": "ci_success", "timestamp": "T2"},
+            {"lane_id": "author-b", "event_type": "ci_failure", "timestamp": "T1"},
+        ]
+        result = _find_last_event_for_lane(events, "author-a")
+        assert result is not None
+        assert result["event_type"] == "ci_success"
+
+    def test_returns_first_match_most_recent(self) -> None:
+        """Events are most-recent-first, so first match is latest."""
+        events = [
+            {"lane_id": "ops", "event_type": "task_completed", "timestamp": "T3"},
+            {"lane_id": "ops", "event_type": "ci_success", "timestamp": "T2"},
+        ]
+        result = _find_last_event_for_lane(events, "ops")
+        assert result is not None
+        assert result["event_type"] == "task_completed"
+
+    def test_no_match_returns_none(self) -> None:
+        events = [
+            {"lane_id": "author-a", "event_type": "ci_success"},
+        ]
+        assert _find_last_event_for_lane(events, "ops") is None
+
+    def test_empty_events(self) -> None:
+        assert _find_last_event_for_lane([], "author-a") is None
+
+
+class TestFormatRelativeTime:
+    """Tests for _format_relative_time()."""
+
+    def test_minutes(self) -> None:
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        assert _format_relative_time("2026-03-19T14:55:00+00:00", now=now) == "5m ago"
+
+    def test_hours(self) -> None:
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        assert _format_relative_time("2026-03-19T13:00:00+00:00", now=now) == "2h ago"
+
+    def test_days(self) -> None:
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        assert _format_relative_time("2026-03-17T15:00:00+00:00", now=now) == "2d ago"
+
+    def test_days_plus(self) -> None:
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        assert _format_relative_time("2026-03-10T15:00:00+00:00", now=now) == "9d+"
+
+    def test_now(self) -> None:
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        assert _format_relative_time("2026-03-19T14:59:50+00:00", now=now) == "now"
+
+    def test_future(self) -> None:
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        assert _format_relative_time("2026-03-19T16:00:00+00:00", now=now) == "now"
+
+    def test_none_returns_dash(self) -> None:
+        assert _format_relative_time(None) == "—"
+
+    def test_garbage_returns_dash(self) -> None:
+        assert _format_relative_time("not-a-time") == "—"
+
+
+class TestBranchShort:
+    """Tests for _branch_short()."""
+
+    def test_strips_codex_steward_prefix(self) -> None:
+        assert _branch_short("codex/steward-author") == "author"
+
+    def test_strips_codex_prefix(self) -> None:
+        assert _branch_short("codex/some-branch") == "some-branch"
+
+    def test_strips_refs_heads_prefix(self) -> None:
+        assert _branch_short("refs/heads/main") == "main"
+
+    def test_no_prefix(self) -> None:
+        assert _branch_short("feature/my-branch") == "feature/my-branch"
+
+    def test_empty(self) -> None:
+        assert _branch_short("") == ""
+
+
+class TestSynthesizeLaneActivityEventEnrichment:
+    """Tests for event-enriched lane activity fields."""
+
+    def test_event_context_populated(self) -> None:
+        """Last event type and timestamp are populated per lane."""
+        lanes = [_make_lane("author-a", session_id="s1")]
+        sessions = {"author-a": {"task": "Work", "started_at": "2026-03-19T10:00:00Z"}}
+        events = [
+            {
+                "lane_id": "author-a",
+                "event_type": "ci_success",
+                "timestamp": "2026-03-19T10:05:00Z",
+                "payload": {},
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, sessions, {}, events)
+        lane = result[0]
+        assert lane.last_event_type == "ci_success"
+        assert lane.last_event_at == "2026-03-19T10:05:00Z"
+
+    def test_no_events_for_lane(self) -> None:
+        """Lane with no matching events → event fields are None."""
+        lanes = [_make_lane("author-a", session_id="s1")]
+        sessions = {"author-a": {"task": "Work", "started_at": "2026-03-19T10:00:00Z"}}
+        events = [
+            {"lane_id": "ops", "event_type": "scheduler_tick", "timestamp": "T1"},
+        ]
+
+        result = synthesize_lane_activity(lanes, sessions, {}, events)
+        lane = result[0]
+        assert lane.last_event_type is None
+        assert lane.last_event_at is None
+
+    def test_event_timestamp_enriches_last_progress(self) -> None:
+        """Event timestamp is used in last_progress when it's the most recent."""
+        now = datetime(2026, 3, 19, 16, 0, 0, tzinfo=timezone.utc)
+        # Session started at 14:00, event at 15:30 — event is more recent
+        lanes = [_make_lane("author-a", session_id="s1")]
+        sessions = {
+            "author-a": {"task": "Work", "started_at": "2026-03-19T14:00:00+00:00"}
+        }
+        events = [
+            {
+                "lane_id": "author-a",
+                "event_type": "ci_success",
+                "timestamp": "2026-03-19T15:30:00+00:00",
+                "payload": {},
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, sessions, {}, events, now=now)
+        lane = result[0]
+        # Event timestamp (15:30) is later than session started_at (14:00)
+        assert lane.last_progress == "2026-03-19T15:30:00+00:00"
+
+    def test_idle_lane_with_event_shows_event_context(self) -> None:
+        """Idle lane with no session but with events → shows last event type."""
+        now = datetime(2026, 3, 19, 16, 0, 0, tzinfo=timezone.utc)
+        lanes = [_make_lane("author-b", lifecycle_class="ephemeral")]
+        events = [
+            {
+                "lane_id": "author-b",
+                "event_type": "task_completed",
+                "timestamp": "2026-03-19T15:00:00+00:00",
+                "payload": {},
+            },
+        ]
+
+        result = synthesize_lane_activity(lanes, {}, {}, events, now=now)
+        lane = result[0]
+        assert lane.state == "idle"
+        assert lane.last_event_type == "task_completed"
+        # Event timestamp used for last_progress
+        assert lane.last_progress == "2026-03-19T15:00:00+00:00"
+
+
+class TestMixedRuntimeStatesIntegration:
+    """Integration test: multiple lanes with varied states and partial data."""
+
+    def test_multi_lane_mixed_states(self, runtime_dir: Path) -> None:
+        """5 lanes: active+task, active+no-task, blocked, idle+session, idle+no-data."""
+        recent = datetime.now(timezone.utc).isoformat()
+
+        # Lane 1: active with task and PR
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "author-a.json",
+            {
+                "schema_version": 2,
+                "lane_id": "author-a",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-a",
+                "branch": "codex/steward-author",
+                "class": "persistent",
+                "session_id": "uuid-a",
+                "last_active": recent,
+            },
+        )
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-a.json",
+            {
+                "schema_version": 2,
+                "session_id": "uuid-a",
+                "lane_id": "author-a",
+                "started_at": recent,
+                "task": "Implement lane activity",
+            },
+        )
+        _write_json(
+            runtime_dir / "task_state",
+            "t-a.json",
+            {
+                "schema_version": 2,
+                "task_id": "t-a",
+                "owner_lane": "author-a",
+                "subject": "Implement lane activity",
+                "status": "in_progress",
+                "pr_number": 1025,
+                "items": [
+                    {"id": 1, "description": "Code", "status": "completed"},
+                    {"id": 2, "description": "Test", "status": "in_progress"},
+                ],
+                "blocked_by": [],
+            },
+        )
+
+        # Lane 2: active session, no task (ops monitoring)
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "ops.json",
+            {
+                "schema_version": 2,
+                "lane_id": "ops",
+                "lane_class": "ops",
+                "worktree_path": "/tmp/wt-ops",
+                "branch": "codex/steward-ops",
+                "class": "persistent",
+                "session_id": "uuid-ops",
+                "last_active": recent,
+            },
+        )
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-ops.json",
+            {
+                "schema_version": 2,
+                "session_id": "uuid-ops",
+                "lane_id": "ops",
+                "started_at": recent,
+                "task": "Daily monitoring",
+            },
+        )
+
+        # Lane 3: blocked task
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "author-b.json",
+            {
+                "schema_version": 2,
+                "lane_id": "author-b",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-b",
+                "branch": "codex/steward-author-b",
+                "class": "persistent",
+                "session_id": "uuid-b",
+                "last_active": recent,
+            },
+        )
+        _write_json(
+            runtime_dir / "task_state",
+            "t-b.json",
+            {
+                "schema_version": 2,
+                "task_id": "t-b",
+                "owner_lane": "author-b",
+                "subject": "Blocked on CI",
+                "status": "blocked",
+                "blocked_by": ["CI red on main"],
+                "items": [],
+            },
+        )
+
+        # Lane 4: idle persistent with old session (no active session_id)
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "review.json",
+            {
+                "schema_version": 2,
+                "lane_id": "review",
+                "lane_class": "review",
+                "worktree_path": "/tmp/wt-review",
+                "branch": "codex/steward-review",
+                "class": "persistent",
+                "session_id": None,
+                "last_active": "2026-03-19T10:00:00Z",
+            },
+        )
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-review-old.json",
+            {
+                "schema_version": 2,
+                "session_id": "old-review",
+                "lane_id": "review",
+                "started_at": "2026-03-19T10:00:00Z",
+                "task": "Previous review",
+            },
+        )
+
+        # Lane 5: idle ephemeral with no data at all
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "work-123.json",
+            {
+                "schema_version": 2,
+                "lane_id": "work-123",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-work-123",
+                "branch": "work-20260319-123",
+                "class": "ephemeral",
+                "session_id": None,
+                "last_active": None,
+            },
+        )
+
+        # Add an event for author-a
+        event_line = json.dumps(
+            {
+                "event_type": "ci_success",
+                "lane_id": "author-a",
+                "payload": {"pr_number": 1025},
+                "timestamp": recent,
+            }
+        )
+        (runtime_dir / "events" / "events.jsonl").write_text(event_line + "\n")
+
+        report = aggregate_status(runtime_dir)
+
+        # Verify all 5 lanes present
+        assert len(report.lanes) == 5
+        by_id = {lane.lane_id: lane for lane in report.lanes}
+
+        # Lane 1: active with task
+        assert by_id["author-a"].state == "active"
+        assert by_id["author-a"].current_task_id == "t-a"
+        assert by_id["author-a"].current_task_title == "Implement lane activity"
+        assert by_id["author-a"].current_step == "step 2/2: Test"
+        assert by_id["author-a"].linked_pr == 1025
+        assert by_id["author-a"].last_event_type == "ci_success"
+        assert by_id["author-a"].attention_needed is False
+
+        # Lane 2: active ops
+        assert by_id["ops"].state == "active"
+        assert by_id["ops"].current_task_id is None
+        assert by_id["ops"].session_task == "Daily monitoring"
+
+        # Lane 3: blocked
+        assert by_id["author-b"].state == "blocked"
+        assert by_id["author-b"].attention_needed is True
+        assert "CI red" in (by_id["author-b"].attention_reason or "")
+
+        # Lane 4: idle persistent → attention needed
+        assert by_id["review"].state == "idle"
+        assert by_id["review"].attention_needed is True
+        assert by_id["review"].session_task == "Previous review"
+
+        # Lane 5: idle ephemeral → no attention
+        assert by_id["work-123"].state == "idle"
+        assert by_id["work-123"].attention_needed is False
+        assert by_id["work-123"].last_event_type is None
+
+        # Verify JSON output includes summary
+        data = format_status_json(report)
+        assert "summary" in data
+        assert data["summary"]["total_lanes"] == 5
+        assert data["summary"]["lanes_by_state"]["active"] == 2
+        assert data["summary"]["lanes_by_state"]["blocked"] == 1
+        assert data["summary"]["lanes_by_state"]["idle"] == 2
+        assert data["summary"]["active_tasks"] == len(report.active_tasks)
+        assert "generated_at" in data["summary"]
+
+        # Verify JSON includes event fields
+        lane_a_json = next(l for l in data["lanes"] if l["lane_id"] == "author-a")
+        assert lane_a_json["last_event_type"] == "ci_success"
+        assert lane_a_json["last_event_at"] is not None
+
+        # Verify text output includes state summary, branch info, and relative time
+        text = format_status_text(report)
+        assert "lanes (" in text
+        assert "2 active" in text
+        assert "1 blocked" in text
+        assert "2 idle" in text
+        assert "@author" in text  # branch shortening
+        assert "Attention:" in text
+        assert "Blocked on CI" in text
+
+
+class TestJsonOutputStability:
+    """Tests that JSON output has a stable, useful schema for tooling."""
+
+    def test_empty_report_json_schema(self) -> None:
+        """Empty report produces a complete, well-formed JSON structure."""
+        report = StatusReport()
+        data = format_status_json(report)
+
+        # Top-level keys are always present
+        assert set(data.keys()) == {
+            "summary",
+            "lanes",
+            "active_tasks",
+            "blocked_tasks",
+            "completed_tasks",
+            "warnings",
+        }
+
+        # Summary always present with stable fields
+        summary = data["summary"]
+        assert isinstance(summary["total_lanes"], int)
+        assert isinstance(summary["lanes_by_state"], dict)
+        assert isinstance(summary["active_tasks"], int)
+        assert isinstance(summary["blocked_tasks"], int)
+        assert isinstance(summary["completed_tasks"], int)
+        assert isinstance(summary["warnings"], int)
+        assert isinstance(summary["generated_at"], str)
+
+    def test_lane_json_has_all_fields(self) -> None:
+        """Every lane entry in JSON has the complete field set."""
+        lane = LaneStatus(
+            lane_id="author-a",
+            lane_class="author",
+            worktree_path="/tmp/wt-a",
+            branch="codex/steward-author",
+            lifecycle_class="persistent",
+            has_active_session=True,
+            state="active",
+            last_event_type="ci_success",
+            last_event_at="2026-03-19T15:00:00Z",
+        )
+        report = StatusReport(lanes=[lane])
+        data = format_status_json(report)
+        lane_json = data["lanes"][0]
+
+        expected_fields = {
+            "lane_id",
+            "lane_class",
+            "state",
+            "current_task_id",
+            "current_task_title",
+            "current_step",
+            "linked_pr",
+            "last_progress",
+            "last_active",
+            "attention_needed",
+            "attention_reason",
+            "worktree_path",
+            "branch",
+            "lifecycle_class",
+            "has_active_session",
+            "session_task",
+            "last_checkpoint",
+            "last_event_type",
+            "last_event_at",
+        }
+        assert set(lane_json.keys()) == expected_fields
+        assert lane_json["last_event_type"] == "ci_success"
+        assert lane_json["last_event_at"] == "2026-03-19T15:00:00Z"
+
+
+class TestTextOutputEnhancements:
+    """Tests for the improved text output format."""
+
+    def test_state_summary_in_header(self) -> None:
+        """Header line includes lane count and state breakdown."""
+        lanes = [
+            LaneStatus(
+                lane_id="a",
+                lane_class="author",
+                worktree_path="/tmp/a",
+                branch="b",
+                lifecycle_class="persistent",
+                has_active_session=True,
+                state="active",
+            ),
+            LaneStatus(
+                lane_id="b",
+                lane_class="author",
+                worktree_path="/tmp/b",
+                branch="b2",
+                lifecycle_class="persistent",
+                has_active_session=False,
+                state="idle",
+                attention_needed=True,
+                attention_reason="idle",
+            ),
+        ]
+        report = StatusReport(lanes=lanes)
+        text = format_status_text(report)
+        assert "2 lanes" in text
+        assert "1 active" in text
+        assert "1 idle" in text
+
+    def test_branch_info_in_lane_row(self) -> None:
+        """Lane row includes shortened branch name."""
+        lane = LaneStatus(
+            lane_id="author-a",
+            lane_class="author",
+            worktree_path="/tmp/wt-a",
+            branch="codex/steward-author",
+            lifecycle_class="persistent",
+            has_active_session=True,
+            state="active",
+        )
+        report = StatusReport(lanes=[lane])
+        text = format_status_text(report)
+        assert "@author" in text
+
+    def test_relative_time_in_lane_row(self) -> None:
+        """Lane row shows relative time instead of absolute HH:MM."""
+        now = datetime(2026, 3, 19, 15, 0, 0, tzinfo=timezone.utc)
+        lane = LaneStatus(
+            lane_id="author-a",
+            lane_class="author",
+            worktree_path="/tmp/wt-a",
+            branch="b",
+            lifecycle_class="persistent",
+            has_active_session=True,
+            state="active",
+            last_progress="2026-03-19T14:45:00+00:00",
+        )
+        report = StatusReport(lanes=[lane])
+        text = format_status_text(report, now=now)
+        assert "15m ago" in text
+
+    def test_idle_lane_with_event_context(self) -> None:
+        """Idle lane with no session but event → shows last event type."""
+        lane = LaneStatus(
+            lane_id="work-123",
+            lane_class="author",
+            worktree_path="/tmp/wt-w",
+            branch="work-branch",
+            lifecycle_class="ephemeral",
+            has_active_session=False,
+            state="idle",
+            last_event_type="task_completed",
+        )
+        report = StatusReport(lanes=[lane])
+        text = format_status_text(report)
+        assert "idle, last event: task_completed" in text
+
+    def test_idle_lane_with_session_shows_last_task(self) -> None:
+        """Idle lane with preserved session → shows 'idle, last: task'."""
+        lane = LaneStatus(
+            lane_id="review",
+            lane_class="review",
+            worktree_path="/tmp/wt-r",
+            branch="codex/steward-review",
+            lifecycle_class="persistent",
+            has_active_session=False,
+            state="idle",
+            session_task="Previous review",
+            attention_needed=True,
+            attention_reason="idle",
+        )
+        report = StatusReport(lanes=[lane])
+        text = format_status_text(report)
+        assert "idle, last: Previous review" in text
+
+    def test_no_lanes_shows_none_summary(self) -> None:
+        """Empty report shows 0 lanes with 'none' summary."""
+        report = StatusReport()
+        text = format_status_text(report)
+        assert "0 lanes (none)" in text
 
 
 # ---- Task Scope Management Tests ----

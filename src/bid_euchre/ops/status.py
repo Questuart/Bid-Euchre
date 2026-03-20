@@ -66,6 +66,10 @@ class LaneStatus:
     attention_needed: bool = False
     attention_reason: str | None = None
 
+    # --- Event context (enriched from durable event log) ---
+    last_event_type: str | None = None
+    last_event_at: str | None = None
+
 
 @dataclass
 class StatusReport:
@@ -242,6 +246,8 @@ def _derive_current_step(task: dict[str, Any]) -> str | None:
         in_prog = [item for item in items if item.get("status") == "in_progress"]
         if in_prog:
             return f"step {done + 1}/{total}: {in_prog[0].get('description', '?')}"
+        if done == total:
+            return f"all {total} steps done"
         if done > 0:
             return f"step {done}/{total}"
 
@@ -272,6 +278,27 @@ def _find_pr_from_events(
             pr = payload.get("pr_number")
             if isinstance(pr, int):
                 return pr
+    return None
+
+
+def _find_last_event_for_lane(
+    events: list[dict[str, Any]],
+    lane_id: str,
+) -> dict[str, Any] | None:
+    """Find the most recent event for a given lane.
+
+    Scans events (assumed most-recent-first) and returns the first match.
+
+    Args:
+        events: List of event dicts, most recent first.
+        lane_id: Lane to filter by.
+
+    Returns:
+        The most recent event dict for the lane, or None.
+    """
+    for event in events:
+        if event.get("lane_id") == lane_id:
+            return event
     return None
 
 
@@ -428,7 +455,15 @@ def synthesize_lane_activity(
         if linked_pr is None:
             linked_pr = _find_pr_from_events(events, lane_id)
 
-        # Last progress: best available timestamp
+        # Event context: most recent event for this lane
+        last_event = _find_last_event_for_lane(events, lane_id)
+        last_event_type: str | None = None
+        last_event_at: str | None = None
+        if last_event:
+            last_event_type = last_event.get("event_type")
+            last_event_at = last_event.get("timestamp")
+
+        # Last progress: best available timestamp from all sources
         last_progress_candidates: list[str] = []
         if primary_task:
             prog = primary_task.get("progress")
@@ -443,6 +478,10 @@ def synthesize_lane_activity(
         last_active_ts = lane.get("last_active")
         if last_active_ts:
             last_progress_candidates.append(last_active_ts)
+        # Include event timestamp — events may be more recent than
+        # session/registry timestamps for lanes that have finished work.
+        if last_event_at:
+            last_progress_candidates.append(last_event_at)
 
         last_progress = _max_timestamp(last_progress_candidates)
 
@@ -482,6 +521,8 @@ def synthesize_lane_activity(
             last_progress=last_progress,
             attention_needed=attention_needed,
             attention_reason=attention_reason,
+            last_event_type=last_event_type,
+            last_event_at=last_event_at,
         )
         results.append(lane_status)
 
@@ -617,28 +658,97 @@ def _format_time_short(ts: str | None) -> str:
     return dt.strftime("%H:%M")
 
 
-def format_status_text(report: StatusReport) -> str:
+def _format_relative_time(
+    ts: str | None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Format a timestamp as a human-readable relative time.
+
+    Produces output like ``"5m ago"``, ``"2h ago"``, ``"1d ago"``, or
+    ``"3d+"`` for longer durations. Falls back to ``"—"`` if the
+    timestamp is missing or unparseable.
+
+    Args:
+        ts: ISO 8601 timestamp string.
+        now: Current time for relative computation (default: UTC now).
+
+    Returns:
+        Short relative time string.
+    """
+    if not ts:
+        return "—"
+    dt = _parse_iso_timestamp(ts)
+    if dt is None:
+        return "—"
+    if now is None:
+        now = datetime.now(timezone.utc)
+    delta_seconds = (now - dt).total_seconds()
+    if delta_seconds < 0:
+        return "now"
+    minutes = int(delta_seconds / 60)
+    if minutes < 1:
+        return "now"
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days <= 3:
+        return f"{days}d ago"
+    return f"{days}d+"
+
+
+def _branch_short(branch: str) -> str:
+    """Shorten a branch name for display.
+
+    Strips common prefixes like ``codex/steward-`` to save horizontal space.
+    """
+    for prefix in ("codex/steward-", "codex/", "refs/heads/"):
+        if branch.startswith(prefix):
+            return branch[len(prefix) :]
+    return branch
+
+
+def format_status_text(
+    report: StatusReport,
+    *,
+    now: datetime | None = None,
+) -> str:
     """Format a StatusReport as human-readable text.
 
     Args:
         report: The status report to format.
+        now: Current time for relative timestamps (default: UTC now).
 
     Returns:
         Multi-line text summary.
     """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
     lines: list[str] = []
     lines.append("=== Steward Status ===")
     lines.append("")
 
-    # Lane Activity
-    lines.append(f"Lane Activity: {len(report.lanes)}")
+    # Lane Activity — summary line with state counts
+    state_counts: dict[str, int] = {}
+    for lane in report.lanes:
+        state_counts[lane.state] = state_counts.get(lane.state, 0) + 1
+    summary_parts = [
+        f"{count} {state}" for state, count in sorted(state_counts.items())
+    ]
+    summary_str = ", ".join(summary_parts) if summary_parts else "none"
+    lines.append(f"Lane Activity: {len(report.lanes)} lanes ({summary_str})")
+
     for lane in report.lanes:
         # State badge
         state_badge = f"[{lane.state}]"
         if lane.attention_needed:
             state_badge = f"[{lane.state}!]"
 
-        # Task info
+        # Task info — prefer specific task, fall back to session, then branch
         if lane.current_task_title:
             task_info = lane.current_task_title
             if lane.current_step:
@@ -647,23 +757,30 @@ def format_status_text(report: StatusReport) -> str:
             task_info = lane.session_task
         elif lane.session_task:
             task_info = f"idle, last: {lane.session_task}"
+        elif lane.last_event_type:
+            task_info = f"idle, last event: {lane.last_event_type}"
         else:
             task_info = "—"
+
+        # Branch info — always show for orientation
+        branch_short = _branch_short(lane.branch) if lane.branch else ""
+        branch_info = f"  @{branch_short}" if branch_short else ""
 
         # PR info
         pr_info = f"  PR #{lane.linked_pr}" if lane.linked_pr else ""
 
-        # Time
-        time_info = f"  {_format_time_short(lane.last_progress)}"
+        # Time — show relative for quick scanning
+        time_info = f"  {_format_relative_time(lane.last_progress, now=now)}"
 
         lines.append(
-            f"  {lane.lane_id:15s} {state_badge:12s} {task_info}{pr_info}{time_info}"
+            f"  {lane.lane_id:15s} {state_badge:12s} "
+            f"{task_info}{pr_info}{branch_info}{time_info}"
         )
 
     lines.append("")
 
     # Attention items
-    attention_lanes = [l for l in report.lanes if l.attention_needed]
+    attention_lanes = [lane for lane in report.lanes if lane.attention_needed]
     if attention_lanes:
         lines.append(f"Attention: {len(attention_lanes)}")
         for lane in attention_lanes:
@@ -706,13 +823,30 @@ def format_status_text(report: StatusReport) -> str:
 def format_status_json(report: StatusReport) -> dict[str, Any]:
     """Format a StatusReport as a JSON-serializable dict.
 
+    Includes a ``summary`` block with state/task counts and a generation
+    timestamp for downstream tooling stability.
+
     Args:
         report: The status report to format.
 
     Returns:
         Dict suitable for JSON serialization.
     """
+    # Compute state counts for summary
+    state_counts: dict[str, int] = {}
+    for lane in report.lanes:
+        state_counts[lane.state] = state_counts.get(lane.state, 0) + 1
+
     return {
+        "summary": {
+            "total_lanes": len(report.lanes),
+            "lanes_by_state": state_counts,
+            "active_tasks": len(report.active_tasks),
+            "blocked_tasks": len(report.blocked_tasks),
+            "completed_tasks": len(report.completed_tasks),
+            "warnings": len(report.warnings),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        },
         "lanes": [
             {
                 "lane_id": lane.lane_id,
@@ -732,6 +866,8 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
                 "has_active_session": lane.has_active_session,
                 "session_task": lane.session_task,
                 "last_checkpoint": lane.last_checkpoint,
+                "last_event_type": lane.last_event_type,
+                "last_event_at": lane.last_event_at,
             }
             for lane in report.lanes
         ],
