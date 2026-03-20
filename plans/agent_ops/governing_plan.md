@@ -495,6 +495,23 @@ The platform must define:
 - which remote commands are allowed
 - which remote commands require explicit confirmation
 - how destructive actions remain gated even when triggered remotely
+- how filesystem access is bounded so agents default to repo-owned paths rather
+  than wandering into arbitrary host files
+
+### Filesystem access boundary
+
+The platform should make repo-bounded filesystem access the default:
+
+- agents may read and write inside the repo root by default
+- repo-owned runtime areas remain allowed (for example `.claude/runtime/**`)
+- any temp/artifact exception should be narrow, explicit, and auditable
+- reads outside the repo are sensitive too; not just writes
+- outside-repo access should require explicit operator approval or a narrowly
+  managed allowlist, not just prompt wording
+
+This is both a safety control and an extensibility control: it keeps future
+multi-agent and second-model behavior bounded to the repo unless the operator
+chooses otherwise.
 
 ### Pause / safe-mode / kill switch
 
@@ -677,6 +694,16 @@ Treat the following as prerequisites before Platform-1 begins:
 - `ops.py status` is trustworthy enough to support dashboard-first work
 - worktree/session registry behavior is stable enough to extend rather than
   re-litigate
+- review surfaces are dialed in enough that Platform-1 does not begin on top of
+  unstable PR-review plumbing:
+  - `reviewing-changes` remains the merge-relevant gate
+  - `claude-review` remains visible without poisoning CI
+  - Codex Cloud proving-run behavior is recorded accurately
+  - if early Codex integration is still wanted, a small comment-ingestion /
+    trusted-command bridge lands before Platform-1 rather than speculative
+    check/status plumbing
+- repo-bounded filesystem access is the default, with only narrow managed
+  exceptions and explicit operator approval for outside-repo access
 
 ### Sequencing principle
 
@@ -1167,19 +1194,21 @@ These are the short names future handoffs should use.
   - second-model failures degrade into explicit service-lane health signals
     rather than silent stalls
 
-> **Interim advisory CI path (2026-03-20):** Codex may return to the CI
-> pipeline before `Platform-12` as an advisory overlay — for example, as a
-> GitHub Action that posts review comments. If so, the following constraints
-> apply:
+> **Interim Codex overlay path (2026-03-20):** Codex may still be used before
+> `Platform-12`, but the proving run showed Codex Cloud currently landing as PR
+> issue comments from `chatgpt-codex-connector[bot]`, not as checks, statuses,
+> or PR review objects. That means the near-term path is a small
+> comment-ingestion / trusted-command bridge after PR-5 if needed, not a
+> speculative advisory-check integration. The following constraints apply:
 >
 > 1. It must be **advisory-only** — not merge-blocking.
-> 2. It must reuse the shipped `ci` / `review_gate` / `advisory` check-category
->    split (#1017, #1025, #1030). Its status must land in the `advisory`
->    category.
-> 3. It must **not** revive the old local Codex subprocess review loop as the
+> 2. It must **not** revive the old local Codex subprocess review loop as the
 >    primary review architecture.
-> 4. Any interim Codex CI overlay should later be migrated into or aligned with
->    the durable service-lane contract defined by `Platform-12`.
+> 3. If the repo wants Codex surfaced operationally before `Platform-12`, use
+>    explicit comment ingestion for trusted bot comments rather than pretending
+>    they are checks or PR review objects.
+> 4. Any interim Codex overlay should later be migrated into or aligned with the
+>    durable service-lane contract defined by `Platform-12`.
 
 ### `Platform-13` — Second-Project Validation
 
