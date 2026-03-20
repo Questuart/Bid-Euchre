@@ -121,6 +121,10 @@ The exploratory operator/orchestration ideas in
 non-binding background context. This governed plan supersedes that roadmap for
 committed orchestration-platform scope.
 
+Additional non-binding post-sprint branch-out ideas for the `agent_ops`
+initiative are tracked in
+[post_sprint_brainstorm.md](post_sprint_brainstorm.md).
+
 ## Desired End State
 
 ### Human-facing surfaces
