@@ -66,7 +66,7 @@ Data-driven triage based on available canonical evidence:
 - **full_ols_av** net_eppd = 1.960
 - **selected_ols_av** net_eppd = 1.920
 - Best H2H win rate: **modeloespecifico** (70.0% vs heuristic tier)
-- Data sanity: all checks passed
+- Data sanity: all checks passed (some with WARNINGs — see caveats below)
 
 **Watch items / caveats:**
 

@@ -586,7 +586,14 @@ def _build_preliminary_triage(
             if n_fail > 0:
                 parts.append(f"- Data sanity: **{n_fail} failure(s)** detected")
             else:
-                parts.append("- Data sanity: all checks passed")
+                n_warn = (data_sanity["status"].str.upper() == "WARN").sum()
+                if n_warn > 0:
+                    parts.append(
+                        "- Data sanity: all checks passed "
+                        "(some with WARNINGs — see caveats below)"
+                    )
+                else:
+                    parts.append("- Data sanity: all checks passed")
 
     parts.append("")
     parts.append("**Watch items / caveats:**")

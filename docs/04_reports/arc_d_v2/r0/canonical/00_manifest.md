@@ -3,7 +3,7 @@
 **Lineage:** arc_d_v2
 **Rung:** r0
 **Provenance SHA:** `13ba62ee796891736b44b4bd5be380ab6b971938`
-**Mode:** QUICK
+**Mode:** quick
 **Seeds:** [42, 123, 456]
 **Anchor:** anchor_hybrid_r0_full
 
@@ -11,29 +11,29 @@
 
 | Model | Class | Trainable | Status |
 |-------|-------|-----------|--------|
-| modeloespecifico | None | False | evaluated |
-| selected_two_stage_av | None | True | evaluated |
-| gbt_av | None | True | evaluated |
-| constrained_ols_av | None | True | evaluated |
-| selected_ols_av | None | True | evaluated |
-| full_ols_av | None | True | evaluated |
-| stricthellraiser | None | False | evaluated |
-| rankthetank | None | False | evaluated |
+| modeloespecifico | ModeloEspecifico | False | evaluated |
+| selected_two_stage_av | TwoStageActionValueBidder | True | evaluated |
+| gbt_av | GBTActionValueBidder | True | evaluated |
+| constrained_ols_av | ActionValueBidder | True | evaluated |
+| selected_ols_av | ActionValueBidder | True | evaluated |
+| full_ols_av | ActionValueBidder | True | evaluated |
+| stricthellraiser | StrictHellRaiser | False | evaluated |
+| rankthetank | RanktheTank | False | evaluated |
 
 ## Artifacts
 
 | Name | Schema | Path |
 |------|--------|------|
-| comparator_battery_r0_42 | arc_d_comparator_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/comparator_battery_r0_42.json` |
-| comparator_cis_r0_42 | comparator_cis_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/comparator_cis_r0_42.json` |
-| h2h_battery_quick_42 | h2h_battery_v2 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/h2h_battery_quick_42.json` |
-| h2h_battery_smoke_42 | h2h_battery_v2 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/h2h_battery_smoke_42.json` |
-| roster | roster_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/roster.json` |
-| training_artifact_constrained_ols_av | action_value_olsa_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/training_artifact_constrained_ols_av.json` |
-| training_artifact_full_ols_av | action_value_olsa_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/training_artifact_full_ols_av.json` |
-| training_artifact_gbt_av | action_value_gbt_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/training_artifact_gbt_av.json` |
-| training_artifact_selected_ols_av | action_value_olsa_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/training_artifact_selected_ols_av.json` |
-| training_artifact_selected_two_stage_av | two_stage_action_value_v1 | `/Users/claude_runner/Projects/Bid-Euchre-meta/Bid-Euchre/data/artifacts/arc_d_v2/r0/training_artifact_selected_two_stage_av.json` |
+| comparator_battery_r0_42 | arc_d_comparator_v1 | `data/artifacts/arc_d_v2/r0/comparator_battery_r0_42.json` |
+| comparator_cis_r0_42 | comparator_cis_v1 | `data/artifacts/arc_d_v2/r0/comparator_cis_r0_42.json` |
+| h2h_battery_quick_42 | h2h_battery_v2 | `data/artifacts/arc_d_v2/r0/h2h_battery_quick_42.json` |
+| h2h_battery_smoke_42 | h2h_battery_v2 | `data/artifacts/arc_d_v2/r0/h2h_battery_smoke_42.json` |
+| roster | roster_v1 | `data/artifacts/arc_d_v2/r0/roster.json` |
+| training_artifact_constrained_ols_av | action_value_olsa_v1 | `data/artifacts/arc_d_v2/r0/training_artifact_constrained_ols_av.json` |
+| training_artifact_full_ols_av | action_value_olsa_v1 | `data/artifacts/arc_d_v2/r0/training_artifact_full_ols_av.json` |
+| training_artifact_gbt_av | action_value_gbt_v1 | `data/artifacts/arc_d_v2/r0/training_artifact_gbt_av.json` |
+| training_artifact_selected_ols_av | action_value_olsa_v1 | `data/artifacts/arc_d_v2/r0/training_artifact_selected_ols_av.json` |
+| training_artifact_selected_two_stage_av | two_stage_action_value_v1 | `data/artifacts/arc_d_v2/r0/training_artifact_selected_two_stage_av.json` |
 
 ## Tables
 

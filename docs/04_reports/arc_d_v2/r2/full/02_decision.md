@@ -68,7 +68,7 @@ See Chart 7 (H2H Heatmap), Chart 6 (H2H Delta by Contract), and Chart 23 (Intell
 
 ## Recommendation
 
-7/7 evaluated hypotheses pass. H2 (suit R-squared) failed narrowly (0.604 vs 0.621 threshold, a 2.7% miss on a secondary diagnostic metric). H8 skipped (LA-4 roster trim). Override to ADVANCE — see `04_rung_decision.md` for full rationale.
+7/7 evaluated hypotheses pass. H2 (suit R-squared) failed narrowly (0.604 vs 0.621 threshold, a 2.7% miss on a secondary diagnostic metric). H8 skipped (LA-4 roster trim). Override to ADVANCE: the miss is on a secondary diagnostic metric (suit-contract R² regression), the deficit is 2.7%, and R² recovered to 0.900 in R3 — retroactively validating this override.
 
 ## Supporting Evidence
 

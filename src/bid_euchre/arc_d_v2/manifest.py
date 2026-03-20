@@ -139,7 +139,13 @@ def _inventory_chart_dir(charts_dir: Path) -> list[dict]:
 
 
 def _to_repo_relative(path_str: str) -> str:
-    """Convert an absolute path to repo-relative if possible."""
+    """Convert an absolute path to repo-relative if possible.
+
+    Handles cross-worktree paths: when the manifest generator runs in a
+    worktree but artifact paths reference the main checkout, the simple
+    prefix match fails.  The fallback strips any absolute prefix up to a
+    known repo-relative directory root (``data/``, ``docs/``, etc.).
+    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -152,6 +158,15 @@ def _to_repo_relative(path_str: str) -> str:
             return path_str[len(repo_root) :].lstrip("/")
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
+
+    # Fallback: strip any absolute prefix up to a known repo-relative root.
+    # This handles the cross-worktree case where the path references the
+    # main checkout (e.g. /Users/.../Bid-Euchre/data/...) while the
+    # generator runs from a different worktree.
+    for marker in ("data/", "docs/", "src/", "plans/", "experiments/"):
+        idx = path_str.find(marker)
+        if idx >= 0:
+            return path_str[idx:]
     return path_str
 
 
@@ -198,6 +213,15 @@ def generate_evidence_manifest(
                     "status": "evaluated",
                 }
             )
+
+    # Supplement missing class_name from training artifacts
+    for entry in roster_entries:
+        if entry.get("class_name"):
+            continue
+        art_path = rung_dir / f"training_artifact_{entry['name']}.json"
+        art_data = _load_json(art_path)
+        if art_data:
+            entry["class_name"] = art_data.get("model_class") or ""
 
     # Load H2H for run_ids and seeds
     h2h = _load_json(rung_dir / "h2h_battery.json")
@@ -260,8 +284,8 @@ def generate_evidence_manifest(
             except ValueError:
                 pass
 
-    # Mode: caller override > H2H detection > default
-    resolved_mode = explicit_mode or detected_mode
+    # Mode: caller override > H2H detection > default (always lowercase)
+    resolved_mode = (explicit_mode or detected_mode).lower()
 
     # Inventory tables
     tables_dir = report_dir / "tables"
