@@ -4,8 +4,8 @@
 Produces a 4-panel PNG:
   1. Raw commits with Bollinger Bands (working days only)
   2. Churn-corrected effective commits with Bollinger Bands
-  3. Line churn ratio per working day
-  4. File churn ratio per working day
+  3. Line churn ratio with Bollinger Bands (percentage)
+  4. File churn ratio with Bollinger Bands (percentage)
 
 Usage:
     uv run python scripts/generate_dashboard.py
@@ -154,6 +154,12 @@ def generate_dashboard(repo: str, output: str) -> None:
         effective_commits, WINDOW, NUM_STD
     )
 
+    # Churn ratios as percentages for Bollinger computation
+    churn_pct = churn_ratio * 100
+    file_churn_pct = file_churn_ratio * 100
+    lc_sma, lc_upper, lc_lower, lc_pctb = _bollinger(churn_pct, WINDOW, NUM_STD)
+    fc_sma, fc_upper, fc_lower, fc_pctb = _bollinger(file_churn_pct, WINDOW, NUM_STD)
+
     # ── Latest day (replaces hardcoded "today") ──────────────────────────
     latest_idx = n - 1
 
@@ -166,13 +172,14 @@ def generate_dashboard(repo: str, output: str) -> None:
     tick_labels = [sorted_dates[i] for i in tick_positions]
 
     valid = ~np.isnan(raw_sma)
+    churn_valid = ~np.isnan(lc_sma)
 
     # ── Plot ─────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(
         4,
         1,
-        figsize=(16, 15),
-        gridspec_kw={"height_ratios": [3, 3, 1.2, 1.2]},
+        figsize=(16, 20),
+        gridspec_kw={"height_ratios": [3, 3, 2.5, 2.5]},
         sharex=True,
     )
     fig.suptitle(
@@ -227,13 +234,49 @@ def generate_dashboard(repo: str, output: str) -> None:
         pad=4,
     )
 
-    # ── Panel 3: Line churn ratio ────────────────────────────────────────
+    # ── Panel 3: Line churn ratio (Bollinger) ───────────────────────────
     ax3 = axes[2]
-    _draw_churn_bar(ax3, x, churn_ratio, latest_idx, "Line Churn Ratio")
+    _draw_bollinger_panel(
+        ax3,
+        x,
+        churn_pct,
+        lc_sma,
+        lc_upper,
+        lc_lower,
+        lc_pctb,
+        churn_valid,
+        latest_idx,
+        band_color="#e67e22",
+        sma_color="#d35400",
+        dot_color="#7f8c8d",
+        max_y=100.0,
+        fmt=".1f",
+    )
+    ax3.set_ylabel("Line churn %", fontsize=11)
+    ax3.set_title("Line Churn Ratio  (1 \u2212 net/gross)", fontsize=12, pad=4)
 
-    # ── Panel 4: File churn ratio ────────────────────────────────────────
+    # ── Panel 4: File churn ratio (Bollinger) ─────────────────────────
     ax4 = axes[3]
-    _draw_churn_bar(ax4, x, file_churn_ratio, latest_idx, "File Churn")
+    _draw_bollinger_panel(
+        ax4,
+        x,
+        file_churn_pct,
+        fc_sma,
+        fc_upper,
+        fc_lower,
+        fc_pctb,
+        churn_valid,
+        latest_idx,
+        band_color="#8e44ad",
+        sma_color="#6c3483",
+        dot_color="#7f8c8d",
+        max_y=100.0,
+        fmt=".1f",
+    )
+    ax4.set_ylabel("File churn %", fontsize=11)
+    ax4.set_title(
+        "File Churn Ratio  (multi-touch files / unique files)", fontsize=12, pad=4
+    )
     ax4.set_xlabel("Working day", fontsize=11)
 
     # ── X-axis ticks ─────────────────────────────────────────────────────
@@ -257,8 +300,14 @@ def generate_dashboard(repo: str, output: str) -> None:
         f"  Effective: {effective_commits[li]:.1f}, "
         f"SMA: {eff_sma[li]:.1f}, %B: {eff_pctb[li]:.2f}"
     )
-    print(f"  Line churn: {churn_ratio[li] * 100:.1f}%")
-    print(f"  File churn: {file_churn_ratio[li] * 100:.1f}%")
+    print(
+        f"  Line churn: {churn_pct[li]:.1f}%, "
+        f"SMA: {lc_sma[li]:.1f}%, %B: {lc_pctb[li]:.2f}"
+    )
+    print(
+        f"  File churn: {file_churn_pct[li]:.1f}%, "
+        f"SMA: {fc_sma[li]:.1f}%, %B: {fc_pctb[li]:.2f}"
+    )
 
 
 def _draw_bollinger_panel(
@@ -275,8 +324,15 @@ def _draw_bollinger_panel(
     band_color: str,
     sma_color: str,
     dot_color: str,
+    max_y: float | None = None,
+    fmt: str = ".0f",
 ) -> None:
-    """Draw a single Bollinger Band panel."""
+    """Draw a single Bollinger Band panel.
+
+    Args:
+        max_y: Hard cap for y-axis (e.g. 100 for percentage panels).
+        fmt: Format specifier for latest-day label values (e.g. ".0f", ".1f").
+    """
     light_band = band_color
     ax.fill_between(
         x[valid], lower[valid], upper[valid], color=light_band, alpha=0.10, zorder=1
@@ -323,7 +379,7 @@ def _draw_bollinger_panel(
         ax.text(
             0.99,
             0.95,
-            f"Latest: {data[latest_idx]:.0f}  SMA: {sma[latest_idx]:.0f}  "
+            f"Latest: {data[latest_idx]:{fmt}}  SMA: {sma[latest_idx]:{fmt}}  "
             f"%B: {pct_b[latest_idx]:.2f}  ({sigma:+.1f}\u03c3)",
             transform=ax.transAxes,
             fontsize=9,
@@ -415,37 +471,9 @@ def _draw_bollinger_panel(
     ]
     ax.legend(handles=legend_elements, loc="upper left", fontsize=8, framealpha=0.9)
     ax.grid(axis="y", alpha=0.15, zorder=0)
-    ax.set_ylim(0, float(np.max(data)) * 1.15)
+    y_top = max_y if max_y is not None else float(np.max(data)) * 1.15
+    ax.set_ylim(0, y_top)
     ax.set_xlim(-1, len(x) + 0.5)
-
-
-def _draw_churn_bar(
-    ax: plt.Axes,
-    x: np.ndarray,
-    ratio: np.ndarray,
-    latest_idx: int,
-    title: str,
-) -> None:
-    """Draw a churn ratio bar panel."""
-    colors = [
-        "#e74c3c" if r > 0.5 else "#e67e22" if r > 0.3 else "#3498db" for r in ratio
-    ]
-    colors[latest_idx] = "#c0392b"
-    ax.bar(x, ratio * 100, color=colors, alpha=0.75, width=0.7, zorder=2)
-    median_val = float(np.median(ratio)) * 100
-    ax.axhline(
-        median_val,
-        color="#2c3e50",
-        linewidth=1,
-        linestyle="--",
-        alpha=0.5,
-        label=f"Median: {median_val:.0f}%",
-    )
-    ax.set_ylabel(f"{title} %", fontsize=11)
-    ax.set_title(title, fontsize=10, pad=4)
-    ax.legend(fontsize=8, loc="upper left")
-    ax.grid(axis="y", alpha=0.15, zorder=0)
-    ax.set_ylim(0, 100)
 
 
 def main() -> None:
