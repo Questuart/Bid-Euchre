@@ -159,14 +159,16 @@ The system manages a worker pool of:
 ## Core Principles
 
 1. **Single ingress:** Normal new work enters through `orchestrator`.
-2. **Background workers:** Authors are execution workers, not primary human-facing interfaces.
-3. **Clear role boundaries:** `orchestrator`, `ops`, `review`, `issues`, and `author-*` retain distinct responsibilities.
-4. **Prompt-first:** The primary interface is prompts, skills, and workflows, not raw CLI choreography.
-5. **Durable coordination:** Important messages and decisions must be logged in repo-owned state.
-6. **High-signal notifications:** Remote alerts are summarized, deduplicated, and bounded.
-7. **Exportable core:** Generic orchestration logic should be separable from repo-specific policy.
-8. **Remote reachability is required:** The user must be reachable through Telegram and/or Discord when away from the steward session.
-9. **Learning loop is explicit:** Repeated successful workflows should be turned into reviewed, reusable skills over time.
+2. **Delegation alignment:** For non-trivial tasks, `orchestrator` shows the
+   proposed author-lane prompt/task packet to the user before dispatch.
+3. **Background workers:** Authors are execution workers, not primary human-facing interfaces.
+4. **Clear role boundaries:** `orchestrator`, `ops`, `review`, `issues`, and `author-*` retain distinct responsibilities.
+5. **Prompt-first:** The primary interface is prompts, skills, and workflows, not raw CLI choreography.
+6. **Durable coordination:** Important messages and decisions must be logged in repo-owned state.
+7. **High-signal notifications:** Remote alerts are summarized, deduplicated, and bounded.
+8. **Exportable core:** Generic orchestration logic should be separable from repo-specific policy.
+9. **Remote reachability is required:** The user must be reachable through Telegram and/or Discord when away from the steward session.
+10. **Learning loop is explicit:** Repeated successful workflows should be turned into reviewed, reusable skills over time.
 
 ## Non-Goals
 
@@ -231,6 +233,9 @@ for the first version.
 - **`orchestrator`**
   - single user-facing intake point
   - decomposes work
+  - drafts delegation prompts / task packets for author lanes
+  - shows non-trivial delegation prompts to the user for approval or editing
+    before dispatch
   - spawns plan review
   - assesses safe parallelism
   - delegates to author workers
@@ -267,8 +272,10 @@ The visible steward session should become dashboard-first:
 - `review`
 - optional `issues`
 
-Author workers may remain available in tmux, but ordinary supervision should
-not require keeping all worker panes foregrounded.
+Author workers should be hidden or closed by default in the visible steward
+layout and opened or resumed on demand when the orchestrator delegates work or
+the user explicitly drills down. Ordinary supervision should not require
+keeping all worker panes foregrounded.
 
 ### Registry model
 
@@ -771,6 +778,70 @@ Do Telegram first unless a shared-team Discord requirement appears earlier.
 
 - `Platform-14`
 
+### Batch Pass Gates
+
+Each batch should clear a concrete pass gate before the plan treats the next UX
+shift or larger autonomy step as trustworthy.
+
+#### Batch A pass gate
+
+- lane/session identity survives restart without lane collisions
+- resume-by-name works in a live steward smoke check
+- `ops` can summarize worker visibility from registry state without pane
+  guesswork
+
+#### Batch B pass gate
+
+- `orchestrator` can take one real task, preview the proposed delegation prompt
+  or task packet, receive approval/edit/redirect, and dispatch it successfully
+- one real task thread can be replayed end to end from durable state rather
+  than reconstructed from terminal history
+- one real author-lane completion is acknowledged back into durable
+  coordination state
+
+#### Batch C pass gate
+
+- the dashboard-first steward layout is usable for daily supervision
+- one real PR goes through the new prompt-first orchestrator/review flow
+  successfully
+- the user can supervise ordinary work without keeping all author panes
+  foregrounded
+
+#### Batch D pass gate
+
+- `ops` delta summaries are reliable enough to drive intervention decisions
+- worker reuse/open-on-demand behavior works in a live multi-lane proving run
+- stale/blocked/degraded lane handling is auditable and does not require pane
+  archaeology
+
+#### Batch E pass gate
+
+- one real away-from-keyboard idle-attention flow reaches Telegram/Discord (or
+  the approved fallback adapter) successfully
+- acknowledgements and bounded replies are recorded durably
+- dedupe/backoff prevents noisy alert spam in a proving run
+
+#### Batch F pass gate
+
+- at least one repo adapter boundary is exercised outside the initial infra
+  path
+- bounded skill learning can propose a reusable workflow without bypassing
+  review, context-safety, or rollback controls
+
+#### Batch G pass gate
+
+- second-model service lanes operate advisory-first without becoming flaky
+  hidden blockers
+- one second-project or second-subproject validation run proves the
+  core-vs-adapter split is real
+
+#### Batch H pass gate
+
+- migration docs reflect the actual working operator model
+- no remaining critical plan or runtime-contract gaps block normal use of the
+  platform
+- the platform can be handed off without relying on chat-history-only context
+
 ### Practical delivery expectation
 
 At current shipping rates:
@@ -791,6 +862,53 @@ pattern is:
 - observe friction and tighten the core/adapter split
 - continue with the next batch
 
+## Real-World Proving Runs
+
+The platform should not advance only on unit tests and design review. Each
+major batch should be exercised through live steward usage that proves the
+workflow actually works under realistic conditions.
+
+### Core proving runs
+
+- **Single-task proving run**
+  - one real task enters through `orchestrator`, is delegated, executed, and
+    closed out with durable state
+- **Parallel two-author proving run**
+  - two real tasks run at once with distinct ownership and visible supervision
+- **PR / review / CI proving run**
+  - one real PR moves through author -> review -> CI -> resolution using the
+    new operating model
+- **Restart / resume proving run**
+  - an interrupted lane or session is resumed from durable state rather than
+    reconstructed manually
+- **Blocked / stale / recovery proving run**
+  - one deliberately stalled or blocked scenario exercises supervisor
+    detection, recommendation, and recovery handling
+- **Remote-away-from-keyboard proving run**
+  - one real idle-attention notification and acknowledgement path succeeds
+    through the remote operator channel
+
+### Later proving runs
+
+- **Skill-learning proving run**
+  - one repeated workflow becomes a reviewed reusable skill without bypassing
+    safety checks
+- **Second-model advisory proving run**
+  - one Codex-or-equivalent reviewer/maintainer task succeeds without becoming
+    a hidden blocker
+- **Second-project portability proving run**
+  - one non-Bid-Euchre consumer uses the orchestration core through an adapter
+
+### Proving-run evidence
+
+Each proving run should leave:
+
+- a concise written outcome
+- validation commands run
+- unhappy-path coverage exercised
+- known gaps / follow-ups
+- enough durable state that another agent can inspect what happened later
+
 ## User Migration Checkpoints
 
 This section defines **when you should change your own UX/workflow**, rather
@@ -804,6 +922,8 @@ You should continue to use the current steward baseline:
 - no `orchestrator`-first intake yet
 - remote Telegram/Discord supervision is not yet part of daily workflow
 - direct inspection of author panes is still expected
+- do not change normal UX on the basis of target architecture alone; wait for
+  the relevant proving runs and pass gates
 
 ### After `Platform-1` to `Platform-3`
 
@@ -813,12 +933,18 @@ Expected user change:
 - begin trusting lane/session identity and resume-by-name semantics
 - start treating lane communication and coordination as durable repo state, not
   just pane history
+- expect `orchestrator` to preview non-trivial delegation prompts before
+  sending them to author lanes
 
 Not yet expected:
 
 - switching fully to `orchestrator` as the only intake
 - hiding author lanes by default
 - relying on Telegram/Discord as part of normal supervision
+
+Gate:
+
+- do not treat this as the default workflow until Batch B proving runs pass
 
 ### After `Platform-4` and `Platform-5`
 
@@ -828,6 +954,8 @@ Expected user change:
 
 - use the dashboard-first steward session as the default visible layout
 - submit normal new work to `orchestrator`
+- review and approve or edit non-trivial author delegation prompts before
+  dispatch
 - treat `author-*` as worker lanes you inspect only when needed
 - begin relying on canonical prompts/skills rather than direct command
   choreography
@@ -840,6 +968,11 @@ At this point, the normal visible lanes should be:
 - `review`
 - optional `issues`
 
+Gate:
+
+- do not make dashboard-first / orchestrator-first the default until Batch C
+  proving runs pass
+
 ### After `Platform-6` and `Platform-7`
 
 Expected user change:
@@ -847,7 +980,13 @@ Expected user change:
 - rely on `ops` for delta summaries and attention routing rather than frequent
   manual polling
 - let the orchestrator assign and reuse author workers automatically
+- expect author panes to open or resume on demand when work is delegated, then
+  return to background or hidden state when no drill-down is needed
 - inspect authors mainly for drill-down, intervention, or debugging
+
+Gate:
+
+- do not hide author panes by default until Batch D proving runs pass
 
 ### After `Platform-8` and `Platform-9`
 
@@ -862,6 +1001,11 @@ Expected user change:
 
 At this point, remote supervision is part of the intended default workflow,
 not an experiment.
+
+Gate:
+
+- do not treat remote supervision as a normal required workflow until Batch E
+  proving runs pass
 
 ### After `Platform-10` to `Platform-14`
 
@@ -892,11 +1036,14 @@ These are the short names future handoffs should use.
 
 - add `orchestrator` lane/profile
 - define task intake and task packet contract
+- add prompt-preview / approval flow for non-trivial author delegation
 - delegate to existing author lanes
 - no message bus yet beyond minimal durable handoff contract
 - done when:
   - a user request can be converted into a durable task packet with owner,
     scope, and validation requirements
+  - `orchestrator` can show the proposed author-lane prompt/task packet to the
+    user and capture approve/edit/redirect before dispatch for non-trivial work
   - `orchestrator` can assign that packet to an existing author lane and record
     acknowledgment/completion without manual pane inspection
 
@@ -924,6 +1071,7 @@ These are the short names future handoffs should use.
 - done when:
   - the default visible steward layout no longer requires author panes to stay
     foregrounded for ordinary supervision
+  - hidden-by-default author lanes remain easy to inspect or resume by name
   - the dashboard surface can answer who owns what and what needs attention
 
 ### `Platform-5` — Canonical Prompts And Skills
@@ -951,11 +1099,15 @@ These are the short names future handoffs should use.
 - bounded dynamic author creation
 - worker parking/retirement
 - worker-pool dashboard state
+- open/resume author panes on delegation and return them to background/hidden
+  state when idle
 - note:
   - if scaling and retirement logic do not fit cleanly, this slice may land as
     two PRs under the same parent label
 - done when:
   - `orchestrator` can reuse idle authors before creating new workers
+  - a delegated task can cause the needed author lane to open or resume on
+    demand without requiring all author panes to be pre-opened
   - dynamic worker creation and retirement obey repo-owned concurrency and
     cleanup limits
 
@@ -1178,6 +1330,7 @@ Additional platform-specific validation:
 - remote channel acknowledgement tests
 - worker-pool scaling safety checks
 - communication log replay / audit checks
+- applicable real-world proving runs for the current batch
 
 ## 9. Success Criteria
 
