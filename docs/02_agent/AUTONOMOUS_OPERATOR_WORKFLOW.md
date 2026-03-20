@@ -650,6 +650,143 @@ git worktree remove ../Bid-Euchre-<name>
 
 ---
 
+## Shadow Snapshots
+
+Shadow snapshots provide lightweight, git-native point-in-time captures of
+worktree state. They enable auditable rollback when an autonomous agent
+produces a bad edit sequence.
+
+### What a Shadow Snapshot Captures
+
+| Field | Source | Purpose |
+|-------|--------|---------|
+| `head_sha` | `git rev-parse HEAD` | Commit to restore via `git reset --hard` |
+| `branch` | `git rev-parse --abbrev-ref HEAD` | Branch context |
+| `stash_sha` | `git stash create` | Uncommitted changes (staged + unstaged) |
+| `files_changed` | `git diff --stat HEAD` | Change magnitude |
+| `lane_id` / `task_id` | Caller-provided | Attribution |
+| `reason` | Caller-provided | Human-readable context |
+| `timestamp` | UTC ISO 8601 | Ordering and age-based pruning |
+
+**Storage:** `.claude/runtime/snapshots/<snapshot_id>.json` (gitignored).
+
+### When to Create Snapshots
+
+- Before a risky autonomous refactor or multi-file edit sequence
+- Before running an auto-fix agent that modifies committed code
+- Before any destructive git operation in a worktree (rebase, reset)
+- At agent session boundaries for progress checkpointing
+
+### Creating a Snapshot
+
+```bash
+# Via CLI
+uv run python scripts/internal/ops.py snapshot create \
+  --worktree /path/to/worktree \
+  --reason "before risky refactor" \
+  --lane author-a \
+  --task task-123
+
+# Programmatic (from Python)
+from bid_euchre.ops.snapshots import create_snapshot
+record = create_snapshot(
+    worktree_path="/path/to/worktree",
+    reason="before risky refactor",
+    snapshots_dir=Path(".claude/runtime/snapshots"),
+    lane_id="author-a",
+    task_id="task-123",
+    events_dir=Path(".claude/runtime/events"),
+)
+```
+
+### Listing Snapshots
+
+```bash
+# All snapshots (most recent first)
+uv run python scripts/internal/ops.py snapshot list
+
+# Filter by worktree
+uv run python scripts/internal/ops.py snapshot list --worktree /path/to/worktree
+
+# JSON output
+uv run python scripts/internal/ops.py snapshot list --json
+```
+
+### Rolling Back
+
+```bash
+# Roll back to a specific snapshot
+uv run python scripts/internal/ops.py snapshot rollback snap-abc123def456
+
+# Check result
+uv run python scripts/internal/ops.py snapshot rollback snap-abc123def456 --json
+```
+
+**Rollback is destructive.** It runs `git reset --hard` to the snapshot's
+HEAD, then attempts `git stash apply` if uncommitted changes were captured.
+If the stash apply fails (e.g., due to conflicts), the rollback still
+succeeds for the HEAD reset and reports a warning with the stash SHA for
+manual recovery.
+
+### Retention and Pruning
+
+Snapshots are bounded by two retention rules:
+
+| Rule | Default | Purpose |
+|------|---------|---------|
+| Per-worktree cap | 20 | Prevent unbounded growth |
+| Age cap | 168 hours (7 days) | Remove stale snapshots |
+
+```bash
+# Prune with defaults
+uv run python scripts/internal/ops.py snapshot prune
+
+# Custom retention
+uv run python scripts/internal/ops.py snapshot prune \
+  --max-per-worktree 10 --max-age-hours 48
+```
+
+### Interaction with Worktrees and Git
+
+- Snapshots are **per-worktree**: each snapshot records and targets a
+  specific worktree path. Rolling back snapshot A in worktree X does not
+  affect worktree Y.
+- `git stash create` produces a commit object without modifying the stash
+  list or working tree, so snapshot creation has **no side effects** on the
+  working state.
+- Snapshot metadata is stored in `.claude/runtime/snapshots/` (gitignored),
+  not in the worktree itself.
+- Worktree cleanup (prune/archive) does not automatically remove snapshots.
+  Run `snapshot prune` separately.
+- The stash commit SHA referenced by a snapshot may be garbage-collected by
+  `git gc` if the snapshot is very old. Prune snapshots before their stash
+  objects expire (the 7-day default is well within git's default GC window).
+
+### Event Integration
+
+Snapshot operations emit durable events to the ops event log:
+
+| Event Type | When |
+|------------|------|
+| `snapshot_created` | After successful snapshot creation |
+| `snapshot_rolled_back` | After successful rollback |
+
+These events appear in `ops.py events` output and are indexed by the
+audit index for searchable history.
+
+### Bypassing Snapshots
+
+If the snapshot system causes issues:
+
+1. **Skip snapshot creation**: Simply don't call `snapshot create` — it's
+   always opt-in.
+2. **Ignore stale snapshots**: Run `snapshot prune --max-per-worktree 0` to
+   clear all snapshot metadata.
+3. **Manual recovery**: Use standard `git reflog` and `git stash list` for
+   recovery without the snapshot layer.
+
+---
+
 ## Relationship to Existing Systems
 
 ### Agent Execution Protocol (CLAUDE.md)
@@ -722,6 +859,10 @@ workspace health monitoring, event inspection, and operational management.
 | `query` | Query the audit index | `ops.py query --text "ci_failure" --limit 5` |
 | `memory` | Show curated memory entries | `ops.py memory --category workflow` |
 | `compact` | List archived sessions | `ops.py compact` |
+| `snapshot create` | Create a shadow snapshot | `ops.py snapshot create --worktree /path --reason "text"` |
+| `snapshot list` | List shadow snapshots | `ops.py snapshot list --worktree /path` |
+| `snapshot rollback` | Roll back to a snapshot | `ops.py snapshot rollback snap-abc123` |
+| `snapshot prune` | Prune old snapshots | `ops.py snapshot prune --max-per-worktree 10` |
 
 All commands support `--json` for machine-readable output. Use
 `--runtime-dir` and `--plans-dir` to override default paths.
@@ -821,7 +962,7 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 ### Remaining Future Work (PR-5 continuation)
 
 - Context safety scanning for auto-loaded content
-- Shadow snapshots and rollback workflow
+- ~~Shadow snapshots and rollback workflow~~ → Shipped (see § Shadow Snapshots above)
 - Skill promotion workflow (promote repeated multi-step workflows into skills)
 - Lane-activity / current-work visibility (extend `ops.py status` to show
   who is working on what across lanes)

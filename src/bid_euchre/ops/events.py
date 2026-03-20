@@ -44,6 +44,8 @@ VALID_EVENT_TYPES = frozenset(
         "session_ended",
         "watchdog_finding",
         "scheduler_tick",
+        "snapshot_created",
+        "snapshot_rolled_back",
     }
 )
 
