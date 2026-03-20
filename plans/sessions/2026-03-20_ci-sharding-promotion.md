@@ -130,8 +130,8 @@ proves incompatible in practice.
 
 ## Outcome
 
-- PR: #TBD (feat/promote-ci-sharding)
+- PR: #1086 (feat/promote-ci-sharding)
 - `tests` context preserved as aggregation gate — no branch-protection migration needed
 - Shadow trial machinery removed (workflow, script, tests, ARCHITECTURE.md entry)
-- 8 workflow regression tests + 6 shard baseline tests pass
+- 9 workflow regression tests + 6 shard baseline tests pass
 - Repo-lint and docs-check pass
