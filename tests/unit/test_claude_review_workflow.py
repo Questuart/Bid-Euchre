@@ -39,13 +39,13 @@ class TestClaudeReviewWorkflow:
         assert "read-only" in prompt, "prompt must state 'read-only'"
         assert "do not" in prompt, "prompt must include prohibitions"
 
-    def test_max_turns_value(self):
+    def test_max_turns_in_claude_args(self):
         """Max turns must be explicitly set to a bounded value."""
         step = self._review_step()
         claude_args = step["with"]["claude_args"]
         assert (
-            claude_args == "--max-turns 10"
-        ), f"expected '--max-turns 10', got {claude_args!r}"
+            "--max-turns 10" in claude_args
+        ), f"expected '--max-turns 10' in claude_args, got {claude_args!r}"
 
     def test_no_continue_on_error(self):
         """Review step must NOT use continue-on-error — failures must be visible."""
@@ -56,13 +56,34 @@ class TestClaudeReviewWorkflow:
         """allowed_tools is not a valid action input — must not be present.
 
         The anthropics/claude-code-action@v1 action silently ignores this input.
-        Its presence provides no tool restriction and adds confusion.
+        Tool restrictions must be passed via --disallowedTools in claude_args.
         """
         step = self._review_step()
         assert "allowed_tools" not in step.get("with", {}), (
             "allowed_tools is not a valid input for claude-code-action@v1 — "
-            "remove it (GitHub Actions ignores it silently)"
+            "use --disallowedTools in claude_args instead"
         )
+
+    def test_disallowed_tools_in_claude_args(self):
+        """claude_args must include --disallowedTools to block write tools.
+
+        Without this, the reviewer wastes turns on permission-denied attempts
+        to use Edit/Write/NotebookEdit, burning 2+ turns of the max-turns budget.
+        """
+        step = self._review_step()
+        claude_args = step["with"]["claude_args"]
+        assert (
+            "--disallowedTools" in claude_args
+        ), "claude_args must include --disallowedTools to prevent write tool denials"
+
+    def test_disallowed_tools_blocks_write_tools(self):
+        """The --disallowedTools list must include Edit, Write, and NotebookEdit."""
+        step = self._review_step()
+        claude_args = step["with"]["claude_args"]
+        for tool in ("Edit", "Write", "NotebookEdit"):
+            assert (
+                tool in claude_args
+            ), f"write tool '{tool}' must be in --disallowedTools list"
 
     # -- infra-failure classifier constraints --
 

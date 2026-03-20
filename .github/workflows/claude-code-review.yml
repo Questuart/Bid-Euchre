@@ -50,7 +50,12 @@ jobs:
 
             Post your findings as review comments on the PR.
 
-          claude_args: "--max-turns 10"
+          # --disallowedTools prevents the reviewer from attempting write tools
+          # (Edit, Write, NotebookEdit) that get denied and waste turns toward
+          # the max-turns budget.  The allowed_tools action input does NOT work
+          # (not declared in claude-code-action@v1 action.yml) — use CLI flags
+          # via claude_args instead.
+          claude_args: '--max-turns 10 --disallowedTools "Edit,Write,NotebookEdit"'
 
       - name: Flag reviewer infra failure
         if: always() && steps.claude-review.outcome == 'failure'
