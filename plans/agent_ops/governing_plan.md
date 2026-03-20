@@ -40,7 +40,7 @@ they ship, rather than forming one monolithic prerequisite wall.
 
 | Phase | Directory | Description | Depends On |
 |-------|-----------|-------------|------------|
-| 0 | `0_bootstrap` | Governed-plan scaffolding, discovery wiring, and Platform-1 entry gating | PR-5 closeout in progress |
+| 0 | `0_bootstrap` | Governed-plan scaffolding, discovery wiring, and Platform-1 entry gating | PR-5 closed; bridge gate pending |
 | 1 | `1_coordination_core` | `Platform-1` through `Platform-3`: lane registry, intake contract, communication substrate | Phase 0 |
 | 2 | `2_visible_operating_model` | `Platform-4` through `Platform-5`: dashboard-first stewardship, canonical prompts, first skills | Phase 1 |
 | 3 | `3_supervision_and_scaling` | `Platform-6` through `Platform-7`: supervisor routines and worker-pool manager | Phase 2 |
@@ -78,9 +78,10 @@ Each phase follows this standard sequence:
 
 Before `Platform-1` implementation begins:
 
-- PR-5 slices 3-7 must be either complete or explicitly recorded as non-blocking in `plans/agent_ops/0_bootstrap/checkpoints.md`
-- `ops.py status` must be trustworthy enough to support dashboard-first work
-- worktree/session registry behavior must be stable enough to extend rather than re-litigate
+- [x] PR-5 slices 3-7 complete (2026-03-20)
+- [x] `ops.py status` is trustworthy enough to support dashboard-first work
+- [x] worktree/session registry behavior is stable enough to extend
+- [ ] post-PR-5 bridge gate satisfied (see `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`)
 
 ## 5. Sub-Plan Governance
 
@@ -686,24 +687,27 @@ dependency boundary.
 
 ### Entry criteria
 
-Treat the following as prerequisites before Platform-1 begins:
+Treat the following as prerequisites before Platform-1 begins.
+The full checklist is at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.
 
-- PR-5 closeout slices are complete, or any remaining slices are explicitly
-  recorded in `plans/agent_ops/0_bootstrap/checkpoints.md` as non-blocking to
-  Platform-1 with rationale
-- `ops.py status` is trustworthy enough to support dashboard-first work
-- worktree/session registry behavior is stable enough to extend rather than
-  re-litigate
-- review surfaces are dialed in enough that Platform-1 does not begin on top of
+- [x] **PR-5 closed** (2026-03-20) — all slices complete: #1054, #1068,
+  #1091, #1098, #1104, #1112
+- [x] `ops.py status` is trustworthy enough to support dashboard-first work
+- [x] worktree/session registry behavior is stable enough to extend rather
+  than re-litigate
+- [ ] **review surfaces dialed in** — Platform-1 must not begin on top of
   unstable PR-review plumbing:
-  - `reviewing-changes` remains the merge-relevant gate
-  - `claude-review` remains visible without poisoning CI
-  - Codex Cloud proving-run behavior is recorded accurately
-  - if early Codex integration is still wanted, a small comment-ingestion /
-    trusted-command bridge lands before Platform-1 rather than speculative
-    check/status plumbing
-- repo-bounded filesystem access is the default, with only narrow managed
-  exceptions and explicit operator approval for outside-repo access
+  - [x] `reviewing-changes` remains the merge-relevant gate
+  - [x] `claude-review` remains visible without poisoning CI
+  - [x] Codex Cloud proving-run behavior is recorded accurately
+  - [ ] PR comment ingestion bridge lands so Codex Cloud comments are
+    operationally visible (not speculative check/status plumbing)
+- [ ] **repo-bounded filesystem access** is the default, with only narrow
+  managed exceptions and explicit operator approval for outside-repo access
+
+> **Bridge queue (2026-03-20):** The remaining unchecked items are tracked in
+> `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`.
+> Platform-1 (Step 3) opens once the bridge gate is satisfied.
 
 ### Sequencing principle
 
@@ -1397,5 +1401,7 @@ _To be filled after implementation._
 - PRs: --
 - Notes:
   - Governing-plan scaffold created on 2026-03-19.
-  - Phase 0 remains active while PR-5 closeout is completed and Platform-1
-    entry criteria are satisfied.
+  - PR-5 closed on 2026-03-20; all slices complete.
+  - Phase 0 remains active: post-PR-5 bridge gate (filesystem boundary +
+    PR comment ingestion) must be satisfied before Platform-1 begins.
+  - Entry checklist published at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.

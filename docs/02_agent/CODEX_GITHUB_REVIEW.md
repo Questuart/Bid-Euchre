@@ -108,6 +108,11 @@ new comment-ingestion capability:
 - parse or summarize those findings
 - present them separately from checks and PR reviews
 
+This comment-ingestion bridge is tracked as pre-Platform-1 work in
+`plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
+(Lane B). See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md` for the full
+entry gate.
+
 Do not add a speculative `codex-review.yml` workflow or speculative advisory
 check-name registration for the ChatGPT-subscription path.
 
