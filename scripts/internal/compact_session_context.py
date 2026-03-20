@@ -1,12 +1,12 @@
 """Compact and archive session context.
 
 Usage:
-    uv run python scripts/internal/compact_session_context.py compact \
+    uv run python scripts/internal/compact_session_context.py [--json] compact \
         --session-id SESSION_ID --lane LANE --context-file FILE \
-        [--summary TEXT] [--outcome TEXT] [--pr PR1,PR2] [--json]
-    uv run python scripts/internal/compact_session_context.py list [--json]
-    uv run python scripts/internal/compact_session_context.py show --session-id SESSION_ID [--json]
-    uv run python scripts/internal/compact_session_context.py artifacts --session-id SESSION_ID [--json]
+        [--summary TEXT] [--outcome TEXT] [--pr PR1,PR2]
+    uv run python scripts/internal/compact_session_context.py [--json] list
+    uv run python scripts/internal/compact_session_context.py [--json] show --session-id SESSION_ID
+    uv run python scripts/internal/compact_session_context.py [--json] artifacts --session-id SESSION_ID
 """
 
 from __future__ import annotations

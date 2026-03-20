@@ -3,7 +3,7 @@
   "lineage_id": "arc_d_v2",
   "rung_id": "r0",
   "provenance_sha": "13ba62ee796891736b44b4bd5be380ab6b971938",
-  "governing_plan": "",
+  "governing_plan": "plans/arc_d_v2/lineage_plan.md",
   "plan_shas": [],
   "anchor": "anchor_hybrid_r0_full",
   "roster": [
