@@ -122,4 +122,9 @@ Add a "Context Safety" section documenting:
 
 ## Outcome
 
-_To be filled after implementation._
+PR #1024 — `ops: add context-safety scanning for promoted operator content`
+
+Delivered all acceptance criteria. Post-review fixes tightened shell injection
+regexes to reduce false positives (H1/H2/M4), added `TYPE_CHECKING` import
+for `MemoryEntry` (M2), and made CLI dry-run skip provenance when `--source`/`--by`
+are omitted (M1).

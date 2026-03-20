@@ -147,6 +147,40 @@ class TestShellInjection:
         result = scan_content(content, _safe_metadata())
         assert result.outcome == "allow"
 
+    def test_git_push_not_false_positive(self) -> None:
+        """Words ending in 'sh' (push, stash) should not trigger (H1 fix)."""
+        content = "Run `git push` to publish your changes."
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
+    def test_git_stash_not_false_positive(self) -> None:
+        content = "Use `git stash` to save work in progress."
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
+    def test_hash_word_not_false_positive(self) -> None:
+        content = "Compute the `hash` of the input."
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
+    def test_triple_backtick_code_fence_not_matched(self) -> None:
+        """Triple-backtick code fences should not trigger (M4 fix)."""
+        content = "```bash\nrm -rf /tmp/build\n```"
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
+    def test_markdown_table_pipe_not_false_positive(self) -> None:
+        """Markdown table cells should not trigger pipe detection (H2 fix)."""
+        content = "| Tool | Purpose |\n| bash | Shell scripting |"
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
+    def test_exec_in_prose_not_false_positive(self) -> None:
+        """The word 'exec' in documentation should not trigger."""
+        content = "Python's `exec` function evaluates code dynamically."
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
 
 # ── Path traversal ──────────────────────────────────────────────
 

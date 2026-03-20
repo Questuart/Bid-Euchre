@@ -69,13 +69,13 @@ def main(argv: list[str] | None = None) -> int:
         "--source",
         type=str,
         default="",
-        help="Source file for provenance check (optional)",
+        help="Source file for provenance (omit to skip provenance check)",
     )
     scan_parser.add_argument(
         "--by",
         type=str,
         default="",
-        help="Added-by identity for provenance check (optional)",
+        help="Added-by identity for provenance (omit to skip provenance check)",
     )
 
     args = parser.parse_args(argv)
@@ -187,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.action == "scan":
         from bid_euchre.ops.context_safety import (
+            DEFAULT_RULES,
             format_scan_json,
             format_scan_text,
             scan_content,
@@ -210,7 +211,13 @@ def main(argv: list[str] | None = None) -> int:
         if by:
             metadata["added_by"] = by
 
-        result = scan_content(content, metadata)
+        # Skip provenance rule in dry-run when neither --source nor --by
+        # is provided, so the scan tests content rules only.
+        rules = DEFAULT_RULES
+        if not source and not by:
+            rules = [r for r in DEFAULT_RULES if r.rule_id != "missing_provenance"]
+
+        result = scan_content(content, metadata, rules=rules)
 
         if args.json:
             print(json.dumps(format_scan_json(result), indent=2))

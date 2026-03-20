@@ -32,7 +32,10 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
+
+if TYPE_CHECKING:
+    from bid_euchre.ops.memory import MemoryEntry
 
 logger = logging.getLogger("ops.context_safety")
 
@@ -140,23 +143,36 @@ def _check_secrets(content: str, _metadata: dict[str, Any]) -> list[ScanFinding]
     return findings
 
 
-# Shell injection patterns: backtick execution, $() subshells, dangerous commands
+# Shell injection patterns: backtick execution, $() subshells, dangerous commands.
+#
+# Design notes on false-positive mitigation:
+# - Backtick/subshell patterns use \b anchors on both sides of command names
+#   to avoid matching words like "push", "stash", "hash", "crash" that end
+#   in "sh".  Only whole-word matches of dangerous commands are flagged.
+# - Triple-backtick code fences (```...```) are excluded by requiring the
+#   backtick pattern to match single backticks only (no ` preceded by ``).
+# - The "dangerous pipe" pattern requires the pipe NOT to be at the start of
+#   a line (which would indicate a markdown table cell), reducing false
+#   positives for content like "| bash | description |".
 _SHELL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "Backtick execution",
-        re.compile(r"`[^`]*(?:rm|curl|wget|eval|exec|sh|bash)\b[^`]*`"),
+        # Single-backtick inline code containing a dangerous command.
+        # Negative lookbehind (?<!`) excludes triple-backtick fences.
+        re.compile(r"(?<!`)`(?!`)[^`]*\b(?:rm|curl|wget|eval)\b[^`]*`"),
     ),
     (
         "Subshell execution",
-        re.compile(r"\$\([^)]*(?:rm|curl|wget|eval|exec|sh|bash)\b[^)]*\)"),
+        re.compile(r"\$\([^)]*\b(?:rm|curl|wget|eval)\b[^)]*\)"),
     ),
     (
         "Dangerous pipe",
-        re.compile(r"\|\s*(?:sh|bash|zsh|eval)\b"),
+        # Pipe to shell — but not at line start (markdown table cells).
+        re.compile(r"(?<!^)\|\s*\b(?:sh|bash|zsh|eval)\b", re.M),
     ),
     (
         "Curl-to-shell",
-        re.compile(r"curl\s+[^\n]*\|\s*(?:sh|bash|sudo)", re.I),
+        re.compile(r"curl\s+[^\n]*\|\s*\b(?:sh|bash|sudo)\b", re.I),
     ),
 ]
 
@@ -373,24 +389,22 @@ def scan_content(
     )
 
 
-def scan_memory_entry(entry: object) -> ScanResult:
+def scan_memory_entry(entry: MemoryEntry) -> ScanResult:
     """Scan a MemoryEntry for safety issues.
 
-    Accepts a MemoryEntry (from ops.memory) and extracts its value
-    and provenance metadata for scanning.
+    Extracts the entry's value and provenance metadata for scanning.
 
     Args:
-        entry: A MemoryEntry instance.
+        entry: A MemoryEntry instance from ``ops.memory``.
 
     Returns:
         ScanResult with outcome, findings, and content hash.
     """
-    value = getattr(entry, "value", "")
     metadata = {
-        "source_file": getattr(entry, "source_file", ""),
-        "added_by": getattr(entry, "added_by", ""),
+        "source_file": entry.source_file,
+        "added_by": entry.added_by,
     }
-    return scan_content(value, metadata)
+    return scan_content(entry.value, metadata)
 
 
 # ── Formatting ──────────────────────────────────────────────────
