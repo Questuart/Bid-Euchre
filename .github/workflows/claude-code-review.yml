@@ -37,9 +37,34 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            Review this pull request for code quality, correctness, and security.
-            Analyze the diff, then post your findings as review comments.
-            Follow the project's CLAUDE.md guidelines.
+            You are a read-only code reviewer. Your job is to inspect the PR diff
+            and relevant source files, then post review findings as PR comments.
+
+            DO NOT attempt to modify files, create commits, push branches, or
+            perform any implementation work. You may only read and comment.
+
+            Review this pull request for:
+            - Code correctness and logic errors
+            - Security concerns
+            - Adherence to project conventions (see CLAUDE.md)
+
+            Post your findings as review comments on the PR.
+
+          # Read-only tool allowlist — prevents turn waste from permission denials.
+          # The reviewer can inspect code and post comments but cannot modify the repo.
+          allowed_tools: |
+            Read
+            Glob
+            Grep
+            Bash(git diff *)
+            Bash(git log *)
+            Bash(git show *)
+            Bash(git status)
+            Bash(gh pr diff *)
+            Bash(gh pr view *)
+            Bash(gh pr checks *)
+            Bash(gh pr comment *)
+
           claude_args: "--max-turns 5"
 
       - name: Flag reviewer infra failure
@@ -52,9 +77,20 @@ jobs:
           # Classify the failure: max-turns vs auth vs unknown
           SUBTYPE="unknown"
           DENIALS=0
-          if [ -f "$EXECUTION_FILE" ]; then
+
+          if [ -z "$EXECUTION_FILE" ]; then
+            # Output was never set — action crashed before producing metadata
+            SUBTYPE="missing_execution_file"
+          elif [ ! -f "$EXECUTION_FILE" ]; then
+            # Path was set but file doesn't exist on disk
+            SUBTYPE="execution_file_not_found"
+          else
+            # File exists — extract structured fields
             SUBTYPE=$(jq -r 'select(.type == "result") | .subtype // "unknown"' "$EXECUTION_FILE" 2>/dev/null | tail -1)
             DENIALS=$(jq -r 'select(.type == "result") | .permission_denials_count // 0' "$EXECUTION_FILE" 2>/dev/null | tail -1)
+            # Guard against empty jq output
+            [ -z "$SUBTYPE" ] && SUBTYPE="unparseable_execution_file"
+            [ -z "$DENIALS" ] && DENIALS=0
           fi
 
           gh issue create \
