@@ -11,9 +11,11 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from ci_shadow_trial_report import (  # noqa: E402
     COMMENT_MARKER,
+    ROLLING_SAMPLE_SIZE,
     build_rolling_summary,
     duration_seconds,
     extract_trial_record,
+    find_existing_comment_id,
     format_duration,
     render_comment,
 )
@@ -167,3 +169,53 @@ def test_render_comment_contains_marker_and_summary_table() -> None:
     assert "Projected savings vs serial: `3m29s`" in body
     assert "Successful data points collected: `1/5`" in body
     assert "| PR | Run | Serial | Shard 1 | Shard 2 | Projected | Savings |" in body
+
+
+def test_rolling_summary_returns_full_count_when_current_not_successful() -> None:
+    """B2 regression: rolling summary should return ROLLING_SAMPLE_SIZE records
+    even when the current run is not a successful datapoint."""
+    # Build 5 successful historical records
+    records = []
+    for i in range(ROLLING_SAMPLE_SIZE):
+        record = extract_trial_record(
+            _run(i + 1, 2000 + i),
+            [
+                _job(
+                    "tests",
+                    "success",
+                    f"2026-03-2{i}T12:00:00Z",
+                    f"2026-03-2{i}T12:08:00Z",
+                ),
+                _job(
+                    "tests-shadow-shard (1)",
+                    "success",
+                    f"2026-03-2{i}T12:00:00Z",
+                    f"2026-03-2{i}T12:04:00Z",
+                ),
+                _job(
+                    "tests-shadow-shard (2)",
+                    "success",
+                    f"2026-03-2{i}T12:00:00Z",
+                    f"2026-03-2{i}T12:03:50Z",
+                ),
+            ],
+        )
+        records.append(record)
+
+    summary = build_rolling_summary(records)
+    assert summary["count"] == ROLLING_SAMPLE_SIZE
+
+
+def test_find_existing_comment_id_returns_none_for_empty_list(
+    monkeypatch,
+) -> None:
+    """B1 regression: find_existing_comment_id should handle empty comment lists
+    without errors."""
+    import ci_shadow_trial_report as mod
+
+    def mock_gh_get(_token, _path, *, params=None):
+        return []
+
+    monkeypatch.setattr(mod, "gh_get", mock_gh_get)
+    result = find_existing_comment_id("fake-token", "owner/repo", 42)
+    assert result is None
