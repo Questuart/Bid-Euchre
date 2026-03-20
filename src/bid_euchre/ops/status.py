@@ -291,6 +291,48 @@ def _parse_iso_timestamp(ts: str | None) -> datetime | None:
         return None
 
 
+def _max_timestamp(candidates: list[str]) -> str | None:
+    """Return the latest ISO 8601 timestamp from a list, using parsed comparison.
+
+    Handles mixed formats (``Z``, ``+00:00``, naive) by parsing each
+    candidate to a timezone-aware ``datetime`` before comparing. Entries
+    that cannot be parsed are silently skipped.
+
+    Args:
+        candidates: ISO 8601 timestamp strings.
+
+    Returns:
+        The raw string corresponding to the latest instant, or None if
+        no candidates could be parsed.
+    """
+    best_dt: datetime | None = None
+    best_raw: str | None = None
+    for raw in candidates:
+        dt = _parse_iso_timestamp(raw)
+        if dt is not None and (best_dt is None or dt > best_dt):
+            best_dt = dt
+            best_raw = raw
+    return best_raw
+
+
+def _is_newer_session(
+    candidate: dict[str, Any],
+    existing: dict[str, Any],
+) -> bool:
+    """Return True if *candidate* session started after *existing*.
+
+    Uses parsed datetime comparison to handle mixed ISO 8601 formats
+    (``Z``, ``+00:00``, naive). Falls back to lexicographic comparison
+    only if both timestamps are unparseable.
+    """
+    c_ts = _parse_iso_timestamp(candidate.get("started_at"))
+    e_ts = _parse_iso_timestamp(existing.get("started_at"))
+    if c_ts is not None and e_ts is not None:
+        return c_ts > e_ts
+    # Fallback: lexicographic (both unparseable or one missing)
+    return candidate.get("started_at", "") > existing.get("started_at", "")
+
+
 def synthesize_lane_activity(
     lanes_data: list[dict[str, Any]],
     sessions_by_lane: dict[str, dict[str, Any]],
@@ -386,9 +428,7 @@ def synthesize_lane_activity(
         if last_active_ts:
             last_progress_candidates.append(last_active_ts)
 
-        last_progress = (
-            max(last_progress_candidates) if last_progress_candidates else None
-        )
+        last_progress = _max_timestamp(last_progress_candidates)
 
         # Attention flags
         attention_needed = False
@@ -492,15 +532,14 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
     tasks_data = load_tasks(runtime_dir, sessions=sessions_data)
     events = _load_recent_events(runtime_dir)
 
-    # Build session lookup by lane_id (most recent per lane, for context)
+    # Build session lookup by lane_id (most recent per lane, for context).
+    # Uses parsed datetime comparison to handle mixed ISO formats.
     sessions_by_lane: dict[str, dict[str, Any]] = {}
     for session in sessions_data:
         lane_id = session.get("lane_id", "")
         if lane_id:
             existing = sessions_by_lane.get(lane_id)
-            if existing is None or session.get("started_at", "") > existing.get(
-                "started_at", ""
-            ):
+            if existing is None or _is_newer_session(session, existing):
                 sessions_by_lane[lane_id] = session
 
     # Build task lookup by owner_lane (non-completed tasks only)
