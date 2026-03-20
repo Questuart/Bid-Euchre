@@ -13,6 +13,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Shared change detection (lightweight, ~5s) ───────────────────
+  # Exports path-filter results so downstream jobs can be truly absent
+  # (not just step-skipped) on non-matching PRs.  The required `tests`
+  # job does NOT depend on this — it runs its own paths-filter to keep
+  # the required check independent.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'scripts/**'
+              - 'tests/**'
+              - 'experiments/**'
+              - 'Makefile'
+              - 'pyproject.toml'
+              - '.github/workflows/ci.yml'
+
   tests:
     runs-on: ubuntu-latest
 
@@ -35,38 +60,23 @@ jobs:
               - 'notebooks/**'
               - 'src/bid_euchre/diagnostics/**'
               - 'src/bid_euchre/reporting/**'
-            arc_d_v2:
-              - 'src/bid_euchre/arc_d_v2/**'
-              - 'scripts/internal/run_rung.py'
-              - 'scripts/internal/rung_state.py'
-              - 'scripts/internal/generate_advance_check.py'
-              - 'scripts/internal/generate_rung_tables.py'
-              - 'scripts/internal/generate_rung_charts*.py'
-              - 'scripts/internal/generate_evidence_manifest.py'
-              - 'scripts/internal/generate_rung_report.py'
-              - 'scripts/internal/generate_interpretability.py'
-              - 'scripts/internal/train_action_value.py'
-              - 'plans/arc_d_v2/**'
-              - 'data/fixtures/arc_d_v2/**'
 
       # ── Lane logic ──────────────────────────────────────────────────
       # For pushes to main: always run everything.
       # For PRs: run lanes based on which paths changed.
-      #   - "any_code" = code OR notebooks OR arc_d_v2 (anything that needs install)
+      #   - "any_code" = code OR notebooks (anything that needs install)
       #   - Docs/plans-only PRs skip all heavy steps → fast green check.
       #
       # Condition shorthands used in steps below:
       #   push_or_code:      github.event_name == 'push' || steps.changes.outputs.code == 'true'
-      #   push_or_any:       github.event_name == 'push' || steps.changes.outputs.code == 'true' || steps.changes.outputs.notebooks == 'true' || steps.changes.outputs.arc_d_v2 == 'true'
+      #   push_or_any:       github.event_name == 'push' || steps.changes.outputs.code == 'true' || steps.changes.outputs.notebooks == 'true'
       #   push_or_notebooks: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
-      #   push_or_arc_d_v2:  github.event_name == 'push' || steps.changes.outputs.arc_d_v2 == 'true'
 
       - name: Skip notice
         if: >-
           github.event_name == 'pull_request' &&
           steps.changes.outputs.code != 'true' &&
-          steps.changes.outputs.notebooks != 'true' &&
-          steps.changes.outputs.arc_d_v2 != 'true'
+          steps.changes.outputs.notebooks != 'true'
         run: echo "::notice::Docs/plans-only PR — skipping all heavy steps"
 
       # ── Setup (shared across all lanes) ─────────────────────────────
@@ -74,8 +84,7 @@ jobs:
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -84,8 +93,7 @@ jobs:
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -94,49 +102,43 @@ jobs:
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         uses: astral-sh/setup-uv@v5
 
       - name: Install package + dev deps
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
-        run: uv sync --frozen --all-extras
+          steps.changes.outputs.notebooks == 'true'
+        run: uv sync --frozen --extra dev
 
       # ── Fast checks (always, when any code touched) ─────────────────
       - name: Repo linter
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         run: make repo-lint
 
       - name: Validate configs
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         run: uv run python scripts/validate_configs.py
 
       - name: Docs freshness
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         run: make docs-check
 
       - name: Ruff (lint)
         if: >-
           github.event_name == 'push' ||
           steps.changes.outputs.code == 'true' ||
-          steps.changes.outputs.notebooks == 'true' ||
-          steps.changes.outputs.arc_d_v2 == 'true'
+          steps.changes.outputs.notebooks == 'true'
         run: make lint
 
       # ── Code lane: pytest ───────────────────────────────────────────
@@ -153,28 +155,6 @@ jobs:
         if: github.event_name == 'push' || steps.changes.outputs.notebooks == 'true'
         run: make notebook-run
 
-      # ── Arc D v2 lane: schema + pipeline tests ─────────────────────
-      - name: Arc D v2 pipeline smoke
-        if: github.event_name == 'push' || steps.changes.outputs.arc_d_v2 == 'true'
-        run: |
-          # Run Arc D v2 schema tests (always present)
-          uv run python -m pytest tests/unit/test_arc_d_v2_schemas.py -v
-
-          # Run orchestrator tests if they exist (added by PR #646)
-          if [ -f tests/unit/test_rung_orchestrator.py ]; then
-            uv run python -m pytest tests/unit/test_rung_orchestrator.py -v -k "not slow"
-          fi
-
-          # Run reporting pipeline tests if they exist (added by PR #644)
-          for f in tests/unit/test_rung_tables.py \
-                   tests/unit/test_rung_report.py \
-                   tests/unit/test_evidence_manifest.py \
-                   tests/unit/test_reporting_pipeline_smoke.py; do
-            if [ -f "$f" ]; then
-              uv run python -m pytest "$f" -v
-            fi
-          done
-
       # ── Promotion gate (label-triggered) ────────────────────────────
       - name: Promotion gate
         if: |
@@ -190,3 +170,50 @@ jobs:
             exit 1
           fi
           make promotion-gate ARTIFACT_DIR="$ARTIFACT_DIR" ROLLUP_JSON="$ROLLUP_JSON" SPLIT_MANIFEST_DIR="${SPLIT_MANIFEST_DIR:-}"
+
+  # ── Shadow sharding trial (non-required, PR code changes only) ──
+  # Runs the fast test suite across 2 balanced shards using pytest-split.
+  # This job is advisory — it does not block merges. It exists to measure
+  # shard wall-clock, balance, and stability before promoting sharding to
+  # replace the serial `tests` job.
+  #
+  # Gated on the `changes` job so the matrix is truly absent (not just
+  # step-skipped) on docs/plans-only PRs and on push events.
+  #
+  # To promote: add an aggregation `tests-gate` job, update branch
+  # protection to require `tests-gate`, then remove the serial `tests` job.
+  tests-shadow-shard:
+    needs: [changes]
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install package + dev deps
+        run: uv sync --frozen --extra dev
+
+      - name: Tests (shard ${{ matrix.group }}/2)
+        run: |
+          echo "::group::Shard ${{ matrix.group }}/2 — pytest-split"
+          PYTHONPATH=.:src uv run python -m pytest \
+            -m "not slow" tests/ \
+            --splits 2 --group ${{ matrix.group }} \
+            -q --tb=short
+          echo "::endgroup::"
