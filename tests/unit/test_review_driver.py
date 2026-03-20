@@ -612,6 +612,36 @@ class TestFormatReviewComment:
         )
         assert mode == ReviewMode.STANDARD
 
+    def test_pyproject_triggers_standard(self) -> None:
+        """pyproject.toml is infrastructure code — triggers STANDARD (#934)."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(["pyproject.toml", "docs/01_core/RULES.md"])
+        assert mode == ReviewMode.STANDARD
+
+    def test_makefile_triggers_standard(self) -> None:
+        """Makefile is infrastructure code — triggers STANDARD (#934)."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(["Makefile"])
+        assert mode == ReviewMode.STANDARD
+
+    def test_experiments_yaml_triggers_standard(self) -> None:
+        """experiments/ configs are code per CI paths-filter (#934)."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode(
+            ["experiments/configs/quick_test.yaml", "plans/sessions/test.md"]
+        )
+        assert mode == ReviewMode.STANDARD
+
+    def test_github_workflow_triggers_standard(self) -> None:
+        """.github/workflows/ changes are code (#934)."""
+        from review_state import ReviewMode
+
+        mode = classify_review_mode([".github/workflows/ci.yml"])
+        assert mode == ReviewMode.STANDARD
+
 
 # ---------------------------------------------------------------------------
 # _step_applying_fixes: filtered findings preference tests (Bug 1 fix)

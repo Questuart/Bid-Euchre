@@ -207,10 +207,24 @@ def classify_review_mode(changed_files: list[str]) -> ReviewMode:
 
     Code files always trigger STANDARD mode. Plan/report-only PRs
     get specialized audit modes.
+
+    The code-detection patterns are intentionally aligned with the CI
+    workflow's ``dorny/paths-filter`` ``code`` filter (see
+    ``.github/workflows/ci.yml``) so that any PR triggering full CI
+    tests also receives STANDARD review (#934).
     """
+    # Aligned with .github/workflows/ci.yml dorny/paths-filter 'code' filter.
+    _code_prefixes = (
+        "src/",
+        "scripts/",
+        "tests/",
+        "experiments/",
+        ".github/workflows/",
+    )
+    _code_exact = ("Makefile", "pyproject.toml")
+
     has_code = any(
-        f.endswith(".py")
-        and (f.startswith("src/") or f.startswith("scripts/") or f.startswith("tests/"))
+        any(f.startswith(p) for p in _code_prefixes) or f in _code_exact
         for f in changed_files
     )
     has_reports = any(f.startswith("docs/04_reports/") for f in changed_files)
