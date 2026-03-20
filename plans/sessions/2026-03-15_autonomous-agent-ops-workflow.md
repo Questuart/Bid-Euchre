@@ -140,18 +140,16 @@ These decisions were resolved during the 2026-03-16 review session.
 - `/review-plan` remains the user-facing plan review command, but its backend should be simplified to a local Claude-first in-session flow rather than a Codex CLI subprocess loop.
 - Existing local PR/plan review loop code may be kept functioning during migration, but it should not be expanded further unless strictly required for transition safety.
 
-**Dated repo fact (2026-03-20, updated from 2026-03-18):**
-- Branch protection on `main` currently requires `tests` and `governance`.
-- `reviewing-changes` is advisory, not required.
-- CI checks are now classified into three categories (#1017, #1025, #1030):
-  - `ci` = true validation checks (tests, lint, governance)
-  - `review_gate` = merge-relevant review state (`reviewing-changes`)
-  - `advisory` = reviewer overlays such as `claude-review`
-- `claude-review` infra failures no longer masquerade as CI failures.
-- **Codex-at-CI rule:** If Codex is reintroduced at CI before `Platform-12`,
-  it must be advisory-only and must reuse the shipped `ci` / `review_gate` /
-  `advisory` category model. It must not revive the old local Codex subprocess
-  loop as the primary review architecture.
+**Dated repo fact (updated 2026-03-20 after #1017 / #1025 / #1030):**
+- Review and CI semantics now use three categories:
+  - `ci` for true validation checks such as `tests`, `prechecks`, and
+    `governance`
+  - `review_gate` for merge-relevant review state (`reviewing-changes`)
+  - `advisory` for reviewer-health or informational overlays such as
+    `claude-review`
+- `claude-review` failures should remain visible, but must not poison CI.
+- Any future Codex-at-CI reintroduction should enter through the same
+  `advisory` category first rather than becoming a new implicit merge gate.
 
 **Implementation constraint:**
 - `scripts/internal/deterministic_prechecks.py` uses `git diff origin/main...HEAD`, so any GitHub workflow that runs it must fetch history deeply enough for the merge base to exist.
@@ -177,6 +175,10 @@ These decisions were resolved during the 2026-03-16 review session.
 
 - The operator should have one repo-owned place to answer: "which lane is working on which problem right now?"
 - The first implementation should prefer extending existing operator surfaces (`ops.py status`, and optionally `ops.py health`) rather than adding a separate web/TUI dashboard.
+- If event/heartbeat state disagrees with live tmux/process/session reality,
+  repair trusted liveness capture before spending more time on richer
+  presentation. A pretty lane-activity surface is not useful if it reports idle
+  lanes while live agents are still working.
 - The lane-activity view should synthesize current work from existing repo-local state where possible:
   - `.claude/runtime/task_state/**`
   - `.claude/runtime/session_metadata/**`
@@ -184,6 +186,8 @@ These decisions were resolved during the 2026-03-16 review session.
   - durable events
   - PR / CI linkage already surfaced through `ops.py reviews` and `ops.py ci`
 - Only introduce a dedicated `lane_activity` registry if deriving a trustworthy current-work summary from existing state proves too ambiguous.
+- Until trusted liveness is repaired, tmux/session/process evidence is the
+  ground truth and `ops.py` lane-activity should be treated as advisory.
 - The surface should highlight at least:
   - `lane_id`
   - current task id or short title
@@ -769,7 +773,7 @@ follow-on governed orchestration platform becomes the main line of work.
 | `PR-5 slice 3` | Context-safety scanning for memory/summary/skill promotion | Existing PR-5 slices 1-2 | Can run in parallel with slice 4 if write scopes stay disjoint |
 | `PR-5 slice 4` | Shadow snapshots and rollback workflow | Existing PR-5 slices 1-2 | Can run in parallel with slice 3 |
 | `PR-5 slice 5` | Skill-promotion workflow | Slice 3 preferred | Can begin after context-safety contract is clear; avoid overlapping docs/scripts with slice 3 |
-| `PR-5 slice 6` | Lane-activity/current-work stabilization and trusted operator visibility | Existing lane-activity work + any required worktree/session stabilizers | Can overlap partially with slices 3-4, but should finish before PR-5 closeout |
+| `PR-5 slice 6` | Lane-activity/current-work stabilization, trusted liveness/heartbeat repair, and trusted operator visibility | Existing lane-activity work + any required worktree/session stabilizers | Can overlap partially with slices 3-4, but should finish before PR-5 closeout |
 | `PR-5 slice 7` | Automated scope tracking, retry follow-through, CI event emission follow-ups, and PR-5 closeout | Slices 3-6 | Final closeout slice; not a good parallel candidate |
 
 ##### Supporting stabilizers
@@ -777,12 +781,16 @@ follow-on governed orchestration platform becomes the main line of work.
 The following may need to interleave opportunistically if they block trusted
 operator use during PR-5:
 
-- ~~**Immediate post-slices 3/4 priority:** review-gate semantics /
-  `claude-review` reliability fix.~~ **SHIPPED** (#1017, #1025, #1030).
-  The three-category CI classification (`ci` / `review_gate` / `advisory`)
-  is now the merged baseline. `claude-review` infra failures no longer
-  masquerade as CI failures. Review findings are distinct from
-  reviewer-service-health failures.
+- **Shipped review-gate stabilizer (2026-03-20):** PRs #1017, #1025, and #1030
+  established the current review substrate:
+  - the review driver now limits CI truth to explicit validation checks
+  - ops surfaces now distinguish `ci`, `review_gate`, and `advisory` checks
+  - `claude-review` remains visible but no longer poisons CI
+  - `reviewing-changes` remains the merge-relevant review gate
+  - if Codex review is reintroduced at CI before the later platform service-lane
+    work, it should enter as `advisory` only and reuse the same category model
+- lane heartbeat/event wiring repair whenever `ops.py` disagrees with live
+  Claude/tmux/process state
 - worktree registry/bootstrap fixes
 - main-checkout exemption in worktree prune/quarantine flows
 - review/CI process fixes such as issue `#987`
@@ -790,14 +798,21 @@ operator use during PR-5:
 These should stay small and focused; do not fold them into large PR-5 slices
 unless they are inseparable from the capability being shipped.
 
-Recommended sequencing (updated 2026-03-20):
+Recommended sequencing after slices 3 and 4:
 
-1. ~~finish `PR-5 slice 4`~~ **DONE** (#1016)
-2. ~~land the review-gate / `claude-review` stabilizer~~ **DONE** (#1017, #1025, #1030)
-3. finish `PR-5 slice 3` (context-safety scanning — #1024 still open)
-4. continue with `PR-5 slice 5` (skill-promotion workflow)
-5. continue with `PR-5 slice 6` (lane-activity stabilization)
-6. continue with `PR-5 slice 7` (PR-5 closeout)
+1. ~~finish `PR-5 slice 3`~~ **DONE** (#1024)
+2. ~~finish `PR-5 slice 4`~~ **DONE** (#1016)
+3. continue with `PR-5 slice 5`
+4. take `PR-5 slice 6` with trusted liveness/heartbeat repair as part of the
+   core scope before relying on richer operator visibility
+5. finish `PR-5 slice 7`
+6. keep any additional review-surface work narrow and compatible with the
+   shipped `ci` / `review_gate` / `advisory` split
+
+Operational note (2026-03-20): recent ops review showed multiple live Claude
+agent processes while `ops.py` lane-activity reported all lanes as idle. Until
+slice 6 closes that trust gap, process/tmux evidence is the ground truth and
+lane-activity surfaces should be treated as advisory.
 
 ##### Practical delivery expectation
 
