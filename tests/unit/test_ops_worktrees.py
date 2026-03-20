@@ -896,6 +896,40 @@ class TestArchiveWorktree:
             "worktree" in str(cmd) and "remove" in str(cmd) for cmd in commands_run
         )
 
+    def test_archive_passes_force_flag(
+        self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """force=True must pass --force to git worktree remove (#967)."""
+        import subprocess as sp
+
+        from bid_euchre.ops import worktrees as wt_mod
+
+        wt_dir = tmp_path / "dirty-worktree"
+        wt_dir.mkdir()
+
+        monkeypatch.setattr(wt_mod, "is_worktree_dirty", lambda p: False)
+
+        commands_run: list[list[str]] = []
+
+        def mock_run(*args: object, **kwargs: object) -> object:
+            cmd = args[0] if args else kwargs.get("args", [])
+            commands_run.append(list(cmd))
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        monkeypatch.setattr(sp, "run", mock_run)
+
+        wt_mod.archive_worktree(
+            str(wt_dir),
+            runtime_dir,
+            events_dir=runtime_dir / "events",
+            force=True,
+        )
+
+        # Verify --force was passed to git
+        git_cmds = [c for c in commands_run if "worktree" in str(c)]
+        assert len(git_cmds) >= 1
+        assert "--force" in git_cmds[0], f"--force missing from command: {git_cmds[0]}"
+
     def test_archive_cleans_registry_entry(
         self, runtime_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

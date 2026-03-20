@@ -334,6 +334,16 @@ def delete_archive(session_id: str, archive_dir: Path | None = None) -> bool:
     if not session_dir.exists():
         return False
 
+    # Defence-in-depth: verify resolved path stays inside archive_dir (#959).
+    # _validate_session_id blocks ".." but cannot prevent symlinks whose
+    # targets lie outside the archive tree.
+    if not session_dir.resolve().is_relative_to(archive_dir.resolve()):
+        logger.warning(
+            "Refusing to delete %s: resolved path escapes archive directory",
+            session_dir,
+        )
+        return False
+
     try:
         shutil.rmtree(session_dir)
     except OSError as e:
