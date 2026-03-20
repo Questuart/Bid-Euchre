@@ -796,10 +796,11 @@ def archive_worktree(
         except (json.JSONDecodeError, OSError):
             continue
 
-    # Perform removal
-    cmd = ["git", "worktree", "remove", worktree_path]
+    # Perform removal — pass --force when requested so git accepts dirty trees (#967)
+    cmd = ["git", "worktree", "remove"]
     if force:
         cmd.append("--force")
+    cmd.append(worktree_path)
     result = subprocess.run(
         cmd,
         capture_output=True,
