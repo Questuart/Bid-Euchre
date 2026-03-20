@@ -156,6 +156,39 @@ def _create_follow_up_issues(
 
         title = f"fix({label}): follow-up for PR #{pr_number}"
 
+        # Dedup guard: check for existing issue with same label + PR number
+        try:
+            dedup_result = subprocess.run(
+                [
+                    "gh",
+                    "issue",
+                    "list",
+                    "--label",
+                    f"{label},follow-up",
+                    "--search",
+                    f"follow-up for PR #{pr_number} in:title",
+                    "--state",
+                    "all",
+                    "--limit",
+                    "1",
+                    "--json",
+                    "url",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            existing = json.loads(dedup_result.stdout or "[]")
+            if existing:
+                logger.info(
+                    "Skipping duplicate issue for %s on PR #%d: %s",
+                    label,
+                    pr_number,
+                    existing[0].get("url", "?"),
+                )
+                continue
+        except (json.JSONDecodeError, Exception) as e:
+            logger.debug("Dedup check failed, proceeding with creation: %s", e)
+
         # Try with labels first, fall back to without
         result = subprocess.run(
             [

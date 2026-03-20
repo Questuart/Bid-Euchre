@@ -60,6 +60,12 @@ def classify_check(name: str) -> str:
     return "ci"
 
 
+# Allowlist of GitHub check names that represent real CI (build/test/lint).
+# Used by scripts/internal/github_pr_state.py for review-loop CI polling
+# (fail-closed: only known CI check names are considered).
+# Update this set when adding new CI workflow jobs.
+CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})
+
 # Default timeout (seconds) for gh CLI subprocess calls.
 # Operator surfaces must never hang indefinitely.
 GH_TIMEOUT_SECONDS: int = 30

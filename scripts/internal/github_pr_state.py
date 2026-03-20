@@ -143,15 +143,13 @@ def get_pr_head_sha(pr_number: int) -> str:
     return result.stdout.strip()
 
 
-# Allowlist of GitHub check names that represent real CI (build/test/lint).
-# Only these checks are considered when determining whether CI has passed.
-# Any check not in this set (review statuses, advisory actions, etc.) is
-# ignored.  Update this set when adding new CI workflow jobs.
-_CI_CHECK_NAMES: set[str] = {
-    "tests",
-    "prechecks",
-    "governance",
-}
+# Shared CI check allowlist — single source of truth lives in
+# bid_euchre.ops.CI_CHECK_NAMES.  Import here to stay in sync.
+try:
+    from bid_euchre.ops import CI_CHECK_NAMES as _CI_CHECK_NAMES
+except ImportError:
+    # Fallback for environments where bid_euchre is not installed.
+    _CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})  # type: ignore[no-redef]
 
 
 def get_ci_status(pr_number: int) -> str:

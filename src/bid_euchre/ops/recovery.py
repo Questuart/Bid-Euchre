@@ -486,6 +486,13 @@ def format_retry_policy_json(policy: RetryPolicy) -> dict[str, Any]:
 # Retry/Reroute Event Emission (#930)
 # ---------------------------------------------------------------------------
 
+# Module-level constant: maps RetryPolicy action names to event types.
+_RETRY_EVENT_MAP: dict[str, str] = {
+    "retry": "retry_attempted",
+    "reroute": "task_rerouted",
+    "escalate": "escalation",
+}
+
 
 def emit_retry_event(
     policy: RetryPolicy,
@@ -516,17 +523,11 @@ def emit_retry_event(
     """
     from bid_euchre.ops.events import append_event
 
-    _EVENT_MAP: dict[str, str] = {
-        "retry": "retry_attempted",
-        "reroute": "task_rerouted",
-        "escalate": "escalation",
-    }
-
-    event_type = _EVENT_MAP.get(policy.action)
+    event_type = _RETRY_EVENT_MAP.get(policy.action)
     if not event_type:
         return None
 
-    payload: dict[str, object] = {
+    payload: dict[str, str | int] = {
         "task_id": policy.task_id,
         "retry_count": policy.retry_count,
         "last_failure": policy.last_failure,

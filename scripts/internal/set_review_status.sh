@@ -33,6 +33,7 @@ TARGET_URL="${3:-}"
 CONTEXT="${4:-reviewing-changes}"
 SHA="${5:-${REVIEW_STATUS_SHA:-$(git rev-parse HEAD)}}"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+REPO=${REPO:?"Failed to determine repository name"}
 
 # Validate state
 case "$STATE" in

@@ -1012,8 +1012,8 @@ def emit_scope_snapshot(
             for line in result.stdout.strip().splitlines():
                 if line.strip():
                     changed.add(line.strip())
-    except (subprocess.TimeoutExpired, OSError):
-        pass
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        logger.warning("git diff --name-only HEAD failed for task %s: %s", task_id, exc)
 
     # Unstaged changes
     try:
@@ -1028,8 +1028,8 @@ def emit_scope_snapshot(
             for line in result.stdout.strip().splitlines():
                 if line.strip():
                     changed.add(line.strip())
-    except (subprocess.TimeoutExpired, OSError):
-        pass
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        logger.warning("git diff --name-only failed for task %s: %s", task_id, exc)
 
     if not changed:
         return None

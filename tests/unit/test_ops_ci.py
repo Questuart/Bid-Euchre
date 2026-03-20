@@ -250,7 +250,7 @@ class TestPollCIStatus:
     def test_all_success(self, mock_run: object) -> None:
         checks = [
             {"name": "tests", "state": "SUCCESS"},
-            {"name": "lint", "state": "SUCCESS"},
+            {"name": "prechecks", "state": "SUCCESS"},
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
@@ -264,7 +264,7 @@ class TestPollCIStatus:
     def test_failure_classified(self, mock_run: object) -> None:
         checks = [
             {"name": "tests", "state": "FAILURE"},
-            {"name": "lint", "state": "SUCCESS"},
+            {"name": "prechecks", "state": "SUCCESS"},
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
@@ -275,9 +275,10 @@ class TestPollCIStatus:
         assert report.classifications[0].failure_class == "unclassified"
 
     @patch("bid_euchre.ops.ci.subprocess.run")
-    def test_lint_failure_classified(self, mock_run: object) -> None:
+    def test_prechecks_failure_classified(self, mock_run: object) -> None:
+        """Prechecks failure is classified (prechecks is in CI allowlist)."""
         checks = [
-            {"name": "ruff check", "state": "FAILURE"},
+            {"name": "prechecks", "state": "FAILURE"},
             {"name": "tests", "state": "SUCCESS"},
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
@@ -285,13 +286,26 @@ class TestPollCIStatus:
         report = poll_ci_status(300)
         assert report.overall == "failure"
         assert len(report.classifications) == 1
-        assert report.classifications[0].failure_class == "lint_format"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_unknown_check_included_as_ci(self, mock_run: object) -> None:
+        """Unknown check names default to 'ci' via classify_check (included)."""
+        checks = [
+            {"name": "ruff check", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(300)
+        # classify_check("ruff check") == "ci", so it's included
+        assert report.overall == "failure"
+        assert len(report.checks) == 2
 
     @patch("bid_euchre.ops.ci.subprocess.run")
     def test_pending_checks(self, mock_run: object) -> None:
         checks = [
             {"name": "tests", "state": "PENDING"},
-            {"name": "lint", "state": "SUCCESS"},
+            {"name": "prechecks", "state": "SUCCESS"},
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
@@ -376,14 +390,21 @@ class TestPollCIStatus:
         assert len(report.checks) == 2
 
     @patch("bid_euchre.ops.ci.subprocess.run")
-    def test_custom_review_context_excluded(self, mock_run: object) -> None:
-        """Custom review contexts are excluded from CI checks."""
+    def test_explicit_review_contexts_override_classifier(
+        self, mock_run: object
+    ) -> None:
+        """Passing explicit review_contexts excludes those names from CI."""
         checks = [
             {"name": "codex-review", "state": "FAILURE"},
             {"name": "tests", "state": "SUCCESS"},
         ]
         mock_run.return_value = _mock_result(stdout=json.dumps(checks))
 
+        # Without explicit override, codex-review is classified as CI
+        report = poll_ci_status(900)
+        assert report.overall == "failure"
+
+        # With explicit override, codex-review is excluded
         report = poll_ci_status(900, review_contexts=("codex-review",))
         assert report.overall == "success"
         assert len(report.checks) == 1
@@ -609,3 +630,25 @@ class TestEmitCIEvents:
         assert result is not None
         # Classes sorted alphabetically
         assert result["payload"]["failure_class"] == "deterministic_test, lint_format"
+
+
+class TestCICheckNamesConsistency:
+    """Verify CI classification constants are consistent."""
+
+    def test_ci_check_names_accessible(self) -> None:
+        """CI_CHECK_NAMES allowlist is importable and has expected members."""
+        from bid_euchre.ops import CI_CHECK_NAMES
+
+        assert "tests" in CI_CHECK_NAMES
+        assert "prechecks" in CI_CHECK_NAMES
+        assert "governance" in CI_CHECK_NAMES
+        assert "reviewing-changes" not in CI_CHECK_NAMES
+
+    def test_classify_check_consistent_with_non_ci(self) -> None:
+        """classify_check categorizes review/advisory contexts as non-CI."""
+        from bid_euchre.ops import classify_check
+
+        assert classify_check("reviewing-changes") == "review_gate"
+        assert classify_check("claude-review") == "advisory"
+        assert classify_check("tests") == "ci"
+        assert classify_check("prechecks") == "ci"

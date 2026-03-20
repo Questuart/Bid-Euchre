@@ -218,16 +218,21 @@ while true; do
     fi
 
     FAILED=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "FAILURE")] | length' 2>/dev/null || echo "0")
+    FAILED=${FAILED:-0}
     # Count both PENDING and IN_PROGRESS as "not yet complete" (matches github_pr_state.py)
     NOT_COMPLETE=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "PENDING" or .state == "IN_PROGRESS")] | length' 2>/dev/null || echo "0")
+    NOT_COMPLETE=${NOT_COMPLETE:-0}
     SUCCEEDED=$(echo "$CHECK_OUTPUT" | jq '[.[] | select(.state == "SUCCESS")] | length' 2>/dev/null || echo "0")
+    SUCCEEDED=${SUCCEEDED:-0}
     TOTAL=$(echo "$CHECK_OUTPUT" | jq 'length' 2>/dev/null || echo "0")
+    TOTAL=${TOTAL:-0}
 
     echo "[$(date -u +%H:%M:%S)] [${ELAPSED}s] Checks: ${SUCCEEDED}/${TOTAL} succeeded, ${NOT_COMPLETE} in progress, ${FAILED} failed"
 
     # --- CI FAILED ---
     if [ "$FAILED" -gt 0 ]; then
         FAILED_NAMES=$(echo "$CHECK_OUTPUT" | jq -r '[.[] | select(.state == "FAILURE") | .name] | join(", ")' 2>/dev/null || echo "unknown")
+        FAILED_NAMES=${FAILED_NAMES:-unknown}
         echo "[$(date -u +%H:%M:%S)] CI FAILED: $FAILED_NAMES"
         write_status "failed" "Failed checks: $FAILED_NAMES"
         emit_ci_event "ci_failure" "$FAILED_NAMES"
