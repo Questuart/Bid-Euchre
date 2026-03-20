@@ -151,7 +151,6 @@ _CI_CHECK_NAMES: set[str] = {
     "tests",
     "prechecks",
     "governance",
-    "enable-auto-merge",
 }
 
 

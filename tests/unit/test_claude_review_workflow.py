@@ -70,8 +70,9 @@ class TestClaudeReviewWorkflow:
         ]
         assert len(flag_steps) == 1
         flag_step = flag_steps[0]
-        # Must only run on failure, and must have GH_TOKEN for gh issue create
-        assert "failure()" in flag_step["if"]
+        # Must scope to the review step specifically, not blanket failure()
+        assert "steps.claude-review.outcome" in flag_step["if"]
+        # Must have GH_TOKEN for gh issue create
         assert "GH_TOKEN" in str(flag_step.get("env", {}))
 
     def _review_step(self):

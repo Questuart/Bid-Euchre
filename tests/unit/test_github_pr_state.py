@@ -200,10 +200,11 @@ class TestCICheckAllowlist:
     def test_contains_governance(self) -> None:
         assert "governance" in _CI_CHECK_NAMES
 
-    def test_does_not_contain_review_contexts(self) -> None:
-        """Review/advisory checks must never appear in the CI allowlist."""
+    def test_does_not_contain_non_validation_checks(self) -> None:
+        """Review, advisory, and plumbing checks must not appear in CI allowlist."""
         assert "reviewing-changes" not in _CI_CHECK_NAMES
         assert "claude-review" not in _CI_CHECK_NAMES
+        assert "enable-auto-merge" not in _CI_CHECK_NAMES
 
 
 class TestGetCIStatus:
@@ -257,6 +258,17 @@ class TestGetCIStatus:
         mock_run.return_value = _mock_checks_result(
             [
                 {"name": "claude-review", "state": "FAILURE"},
+                {"name": "tests", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_enable_auto_merge_failure_ignored(self, mock_run: Mock) -> None:
+        """enable-auto-merge is plumbing, not validation — ignored."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "enable-auto-merge", "state": "FAILURE"},
                 {"name": "tests", "state": "SUCCESS"},
             ]
         )

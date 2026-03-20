@@ -43,7 +43,7 @@ jobs:
           claude_args: "--max-turns 5"
 
       - name: Flag reviewer infra failure
-        if: failure()
+        if: always() && steps.claude-review.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
