@@ -298,7 +298,6 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/build_curated_memory.py` | Manage curated memory entries (add, remove, search, validate provenance) |
 | `scripts/internal/compact_session_context.py` | Compact and archive session context with non-lossy artifact index |
 | `scripts/internal/ci_poller.sh` | Background CI poller with optional auto-merge (launched by post-push hook) |
-| `scripts/internal/ci_shadow_trial_report.py` | Post-CI reporter for shadow sharding trial (job timings, shard balance, rolling summary) |
 | `scripts/internal/clean_worktrees.sh` | Remove worktrees and branches whose upstream remote is deleted (`[gone]`) |
 | `scripts/internal/ops.py` | Operator CLI for steward workspace health, worktree lifecycle, events, and monitoring |
 | `scripts/internal/overnight_full_orchestrator.sh` | Sequential overnight orchestrator for FULL-mode Arc D v2 rung runs |
