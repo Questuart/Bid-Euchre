@@ -175,6 +175,23 @@ class TestShellInjection:
         result = scan_content(content, _safe_metadata())
         assert result.outcome == "allow"
 
+    def test_markdown_table_mid_column_not_false_positive(self) -> None:
+        """Mid-column table cells like '| Feature | bash support |' (W1 fix)."""
+        content = "| Feature | bash support | notes |"
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
+    def test_markdown_table_multi_row_not_false_positive(self) -> None:
+        """Full markdown table with shell terms should be allowed."""
+        content = (
+            "| Shell | Version |\n"
+            "|-------|---------|\n"
+            "| bash  | 5.2     |\n"
+            "| zsh   | 5.9     |"
+        )
+        result = scan_content(content, _safe_metadata())
+        assert result.outcome == "allow"
+
     def test_exec_in_prose_not_false_positive(self) -> None:
         """The word 'exec' in documentation should not trigger."""
         content = "Python's `exec` function evaluates code dynamically."

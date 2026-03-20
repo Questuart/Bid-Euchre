@@ -942,6 +942,48 @@ class TestUntrackedFileRollback:
         # But contents are NOT restored — this is the known limitation
         assert (wt_dir / "notes.md").read_text() == "modified by agent"
 
+    def test_rollback_skips_out_of_tree_paths(
+        self,
+        tmp_path: Path,
+        snapshots_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Rollback must not delete files outside the worktree (W4 fix)."""
+        wt_dir = tmp_path / "wt-containment"
+        wt_dir.mkdir()
+
+        # A file outside the worktree that should NOT be deleted
+        outside_file = tmp_path / "precious.txt"
+        outside_file.write_text("do not delete")
+
+        meta_data = {
+            "snapshot_id": "snap-escape",
+            "worktree_path": str(wt_dir),
+            "head_sha": "abc123",
+            "branch": "main",
+            "stash_sha": None,
+            "reason": "test",
+            "timestamp": "2026-03-20T10:00:00+00:00",
+            "untracked_files": [],
+        }
+        (snapshots_dir / "snap-escape.json").write_text(json.dumps(meta_data))
+
+        import bid_euchre.ops.snapshots as snap_mod
+
+        monkeypatch.setattr(snap_mod, "_git_reset_hard", lambda wt, sha: None)
+        # Simulate git returning a traversal path
+        monkeypatch.setattr(
+            snap_mod, "_git_ls_untracked", lambda wt: ["../precious.txt"]
+        )
+
+        result = rollback_snapshot("snap-escape", snapshots_dir)
+
+        assert result.success is True
+        # File outside worktree must NOT be deleted
+        assert outside_file.exists()
+        # Warning should be emitted
+        assert any("out-of-tree" in w for w in result.warnings)
+
     def test_record_from_dict_handles_untracked_files(self) -> None:
         """_record_from_dict defaults untracked_files to empty list."""
         record = _record_from_dict({})

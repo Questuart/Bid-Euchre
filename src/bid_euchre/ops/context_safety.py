@@ -172,6 +172,21 @@ _SHELL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+def _is_markdown_table_line(content: str, pos: int) -> bool:
+    """Check if the character at ``pos`` is within a markdown table line.
+
+    A markdown table line starts with optional whitespace then ``|`` and
+    contains at least two ``|`` characters total.
+    """
+    # Find the start and end of the line containing pos
+    line_start = content.rfind("\n", 0, pos) + 1
+    line_end = content.find("\n", pos)
+    if line_end == -1:
+        line_end = len(content)
+    line = content[line_start:line_end]
+    return line.lstrip().startswith("|") and line.count("|") >= 2
+
+
 def _check_shell_injection(
     content: str, _metadata: dict[str, Any]
 ) -> list[ScanFinding]:
@@ -179,6 +194,11 @@ def _check_shell_injection(
     findings: list[ScanFinding] = []
     for label, pattern in _SHELL_PATTERNS:
         for match in pattern.finditer(content):
+            # Skip pipe matches inside markdown table lines (W1 fix)
+            if label == "Dangerous pipe" and _is_markdown_table_line(
+                content, match.start()
+            ):
+                continue
             line_no = content[: match.start()].count("\n") + 1
             findings.append(
                 ScanFinding(

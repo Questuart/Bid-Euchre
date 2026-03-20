@@ -285,8 +285,14 @@ def rollback_snapshot(
         current_untracked = set(_git_ls_untracked(wt_path))
         snapshot_untracked = set(record.untracked_files)
         new_untracked = current_untracked - snapshot_untracked
+        wt_resolved = str(Path(wt_path).resolve())
         for rel_path in new_untracked:
-            full = Path(wt_path) / rel_path
+            full = (Path(wt_path) / rel_path).resolve()
+            # Defense-in-depth: ensure resolved path stays within worktree
+            if not str(full).startswith(wt_resolved):
+                logger.warning("Skipping out-of-tree path: %s", rel_path)
+                warnings.append(f"Skipped out-of-tree untracked path: {rel_path}")
+                continue
             if full.is_file():
                 full.unlink()
                 logger.info("Removed untracked file added after snapshot: %s", rel_path)
