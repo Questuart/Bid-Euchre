@@ -347,12 +347,21 @@ def write_step_summary(body: str) -> None:
 def find_existing_comment_id(
     token: str, repo: str, pr_number: int, marker: str = COMMENT_MARKER
 ) -> int | None:
-    comments = gh_get(
-        token, f"/repos/{repo}/issues/{pr_number}/comments", params={"per_page": 100}
-    )
-    for comment in comments:
-        if marker in comment.get("body", ""):
-            return int(comment["id"])
+    page = 1
+    while True:
+        comments = gh_get(
+            token,
+            f"/repos/{repo}/issues/{pr_number}/comments",
+            params={"per_page": 100, "page": page},
+        )
+        if not comments:
+            break
+        for comment in comments:
+            if marker in comment.get("body", ""):
+                return int(comment["id"])
+        if len(comments) < 100:
+            break
+        page += 1
     return None
 
 
@@ -403,7 +412,7 @@ def fetch_recent_trial_records(
         records.append(record)
         if record.pr_number is not None:
             seen.add(record.pr_number)
-        if len(records) >= limit - 1:
+        if len(records) >= limit:
             break
     return records
 
@@ -440,10 +449,16 @@ def main() -> int:
         print("Skipping: current run does not contain the shadow shard trial jobs")
         return 0
 
+    current_is_datapoint = current.is_successful_datapoint
     seen_prs = (
         {current.pr_number}
-        if current.is_successful_datapoint and current.pr_number is not None
+        if current_is_datapoint and current.pr_number is not None
         else set()
+    )
+    # When the current run is a successful datapoint it will be prepended to
+    # the rolling list, so fetch one fewer from history.
+    history_limit = (
+        ROLLING_SAMPLE_SIZE - 1 if current_is_datapoint else ROLLING_SAMPLE_SIZE
     )
     recent = fetch_recent_trial_records(
         token,
@@ -451,8 +466,9 @@ def main() -> int:
         int(workflow_run["workflow_id"]),
         current_run_id=current.run_id,
         seen_pr_numbers=seen_prs,
+        limit=history_limit,
     )
-    rolling_records = [current] + recent if current.is_successful_datapoint else recent
+    rolling_records = [current] + recent if current_is_datapoint else recent
     rolling = build_rolling_summary(rolling_records)
     body = render_comment(current, rolling)
     upsert_comment(token, repo, int(prs[0]["number"]), body)
