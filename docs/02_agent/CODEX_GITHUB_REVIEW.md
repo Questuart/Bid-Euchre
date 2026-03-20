@@ -71,6 +71,23 @@ setting disabled), the loop publishes success and the PR can be merged manually.
 
 See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for crash recovery procedures.
 
+## Codex Cloud Review (Under Investigation)
+
+Codex Cloud (chatgpt.com/codex) offers a subscription-backed GitHub code review
+path that does not require an API key or a GitHub Actions workflow. To enable:
+
+1. Connect the repo at chatgpt.com/codex/settings/code-review
+2. Trigger via `@codex review` comment on a PR, or enable automatic reviews
+
+**Status:** Not yet enabled for this repo. A proving run is needed to determine
+what GitHub artifacts Codex Cloud actually emits (PR review only, or PR review
+plus check run/status). Until verified empirically, no speculative classification
+has been added to `ADVISORY_CONTEXTS` or `reviews.py`.
+
+**Possible integration points** (to be confirmed after proving run):
+- If Codex Cloud emits a check/status: classify in `ops/__init__.py`
+- If Codex Cloud posts only PR reviews: handle in `ops/reviews.py`
+
 ## Migration from GitHub Codex Plugin
 
 The GitHub Codex plugin was previously used as a passive overlay (auto-reviewed
