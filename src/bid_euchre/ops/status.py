@@ -322,14 +322,24 @@ def _is_newer_session(
     """Return True if *candidate* session started after *existing*.
 
     Uses parsed datetime comparison to handle mixed ISO 8601 formats
-    (``Z``, ``+00:00``, naive). Falls back to lexicographic comparison
-    only if both timestamps are unparseable.
+    (``Z``, ``+00:00``, naive). Handles all four cases:
+
+    - Both parseable → compare datetimes.
+    - Candidate parseable, existing malformed → candidate wins.
+    - Candidate malformed, existing parseable → existing wins.
+    - Both unparseable → lexicographic fallback.
     """
     c_ts = _parse_iso_timestamp(candidate.get("started_at"))
     e_ts = _parse_iso_timestamp(existing.get("started_at"))
     if c_ts is not None and e_ts is not None:
         return c_ts > e_ts
-    # Fallback: lexicographic (both unparseable or one missing)
+    if c_ts is not None:
+        # Candidate is valid, existing is malformed → candidate wins
+        return True
+    if e_ts is not None:
+        # Existing is valid, candidate is malformed → existing wins
+        return False
+    # Both unparseable → lexicographic fallback
     return candidate.get("started_at", "") > existing.get("started_at", "")
 
 

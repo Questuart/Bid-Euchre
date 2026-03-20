@@ -934,6 +934,108 @@ class TestSessionSelectionTimezone:
         # Must pick "New task" (15:00) not "Old task" (14:00)
         assert lane.session_task == "New task"
 
+    def test_session_selection_malformed_vs_valid(self, runtime_dir: Path) -> None:
+        """Valid session wins over malformed session timestamp.
+
+        Regression test for Codex P2 finding on PR #998:
+        _is_newer_session() fell through to lexicographic comparison
+        when one timestamp was malformed, causing a bogus timestamp
+        to win over a valid one.
+        """
+        # Session with malformed timestamp
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-bad.json",
+            {
+                "schema_version": 2,
+                "session_id": "bad",
+                "lane_id": "author-a",
+                "started_at": "bogus-not-a-timestamp",
+                "task": "Bad session",
+            },
+        )
+        # Session with valid timestamp
+        _write_json(
+            runtime_dir / "session_metadata",
+            "session-good.json",
+            {
+                "schema_version": 2,
+                "session_id": "good",
+                "lane_id": "author-a",
+                "started_at": "2026-03-19T15:00:00+00:00",
+                "task": "Good session",
+            },
+        )
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "author-a.json",
+            {
+                "schema_version": 2,
+                "lane_id": "author-a",
+                "lane_class": "author",
+                "worktree_path": "/tmp/wt-a",
+                "branch": "codex/steward-author",
+                "class": "persistent",
+                "session_id": "good",
+                "last_active": "2026-03-19T15:00:00+00:00",
+            },
+        )
+
+        report = aggregate_status(runtime_dir)
+        lane = report.lanes[0]
+        # Valid timestamp must always win over malformed
+        assert lane.session_task == "Good session"
+
+    def test_session_selection_valid_vs_malformed(self, runtime_dir: Path) -> None:
+        """Valid session wins regardless of file sort order.
+
+        Files are sorted alphabetically, so this test ensures the valid
+        session wins even when the malformed session file sorts later.
+        """
+        # Valid session (sorts first alphabetically)
+        _write_json(
+            runtime_dir / "session_metadata",
+            "a-session-valid.json",
+            {
+                "schema_version": 2,
+                "session_id": "valid",
+                "lane_id": "ops",
+                "started_at": "2026-03-19T10:00:00Z",
+                "task": "Valid session",
+            },
+        )
+        # Malformed session (sorts second alphabetically)
+        _write_json(
+            runtime_dir / "session_metadata",
+            "z-session-malformed.json",
+            {
+                "schema_version": 2,
+                "session_id": "malformed",
+                "lane_id": "ops",
+                "started_at": "zzz-definitely-not-a-date",
+                "task": "Malformed session",
+            },
+        )
+        _write_json(
+            runtime_dir / "worktree_registry",
+            "ops.json",
+            {
+                "schema_version": 2,
+                "lane_id": "ops",
+                "lane_class": "ops",
+                "worktree_path": "/tmp/wt-ops",
+                "branch": "codex/steward-ops",
+                "class": "persistent",
+                "session_id": "valid",
+                "last_active": "2026-03-19T10:00:00Z",
+            },
+        )
+
+        report = aggregate_status(runtime_dir)
+        lane = report.lanes[0]
+        # Valid timestamp must always beat malformed
+        assert lane.session_task == "Valid session"
+
 
 class TestAggregateStatusLaneActivity:
     """Integration tests for lane-activity via aggregate_status()."""
