@@ -358,6 +358,11 @@ def disable_skill(
     Raises:
         FileNotFoundError: If the skill directory or SKILL.md does not exist.
     """
+    # Validate name to prevent path traversal
+    name_errors = validate_skill_name(name)
+    if name_errors:
+        raise ValueError(f"Invalid skill name '{name}': {'; '.join(name_errors)}")
+
     sdir = skills_dir or DEFAULT_SKILLS_DIR
     skill_md = sdir / name / "SKILL.md"
 
@@ -445,7 +450,7 @@ def _render_skill_md(candidate: SkillCandidate) -> str:
         (
             f"---\n"
             f"name: {candidate.name}\n"
-            f"description: {candidate.description}\n"
+            f'description: "{candidate.description}"\n'
             f"---\n"
             f"\n"
             f"<!-- Promoted by skill-promotion workflow -->\n"
@@ -478,20 +483,13 @@ def _emit_event(
 ) -> None:
     """Emit a skill event to the ops event log (best-effort)."""
     try:
-        from bid_euchre.ops.events import VALID_EVENT_TYPES, append_event
-
-        # Register skill event types if not already present
-        # (events module uses a frozen set — we emit with type prefix instead)
-        actual_type = "task_completed"  # Reuse existing event type
-        if event_type in VALID_EVENT_TYPES:
-            actual_type = event_type
+        from bid_euchre.ops.events import append_event
 
         append_event(
-            event_type=actual_type,
+            event_type=event_type,
             source="ops.skill_promotion",
             lane_id=candidate.proposed_by,
             payload={
-                "action": event_type,
                 "candidate_id": candidate.candidate_id,
                 "skill_name": candidate.name,
                 "safety_outcome": candidate.safety_scan_outcome,
@@ -514,11 +512,10 @@ def _emit_disable_event(
         from bid_euchre.ops.events import append_event
 
         append_event(
-            event_type="task_completed",
+            event_type="skill_disabled",
             source="ops.skill_promotion",
             lane_id=disabled_by,
             payload={
-                "action": "skill_disabled",
                 "skill_name": name,
                 "reason": reason,
             },

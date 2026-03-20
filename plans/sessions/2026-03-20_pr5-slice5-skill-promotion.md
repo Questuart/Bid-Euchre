@@ -1,7 +1,7 @@
 # PR-5 Slice 5: Skill-Promotion Workflow
 
 **Date:** 2026-03-20
-**Status:** IN_PROGRESS
+**Status:** COMPLETE
 **Parent:** `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` (PR-5 slice 5)
 **Gate:** Slice 3 (#1024) and slice 4 (#1016) are merged.
 
@@ -123,4 +123,4 @@ promoted into the `.claude/skills/` directory with full provenance.
 
 ## Outcome
 
-_To be filled after implementation._
+PR #1054 — `ops: add reviewed skill-promotion workflow`

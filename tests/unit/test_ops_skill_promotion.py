@@ -322,7 +322,7 @@ class TestPromote:
         # Verify SKILL.md content
         content = skill_path.read_text()
         assert "name: my-skill" in content
-        assert "description: A useful skill" in content
+        assert 'description: "A useful skill"' in content
         assert "candidate_id:" in content
         assert "proposed_by: author-b" in content
         assert "# My Skill" in content
@@ -501,6 +501,15 @@ class TestDisable:
     def test_disable_nonexistent_raises(self, skills_dir: Path) -> None:
         with pytest.raises(FileNotFoundError):
             disable_skill("nonexistent-skill", skills_dir=skills_dir)
+
+    def test_disable_path_traversal_rejected(self, skills_dir: Path) -> None:
+        """Path traversal names are rejected before filesystem access."""
+        with pytest.raises(ValueError, match="Invalid skill name"):
+            disable_skill("../../etc", skills_dir=skills_dir)
+
+    def test_disable_invalid_name_rejected(self, skills_dir: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid skill name"):
+            disable_skill("My Bad Name!", skills_dir=skills_dir)
 
     def test_candidate_record_retained_after_disable(
         self, candidates_dir: Path, skills_dir: Path, events_dir: Path
