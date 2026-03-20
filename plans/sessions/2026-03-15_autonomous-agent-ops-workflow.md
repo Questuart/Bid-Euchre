@@ -815,9 +815,8 @@ Recommended sequencing after slices 3 and 4:
 
 1. ~~finish `PR-5 slice 3`~~ **DONE** (#1024)
 2. ~~finish `PR-5 slice 4`~~ **DONE** (#1016)
-3. continue with `PR-5 slice 5`
-4. take `PR-5 slice 6` with trusted liveness/heartbeat repair as part of the
-   core scope before relying on richer operator visibility
+3. ~~finish `PR-5 slice 5`~~ **DONE** (#1054)
+4. ~~take `PR-5 slice 6` with trusted liveness/heartbeat repair~~ **DONE** (#1068)
 5. finish `PR-5 slice 7`
 6. take a small post-PR-5 bridge slice to dial in review surfaces before
    Platform-1:
@@ -833,9 +832,9 @@ Recommended sequencing after slices 3 and 4:
    shipped `ci` / `review_gate` / `advisory` split
 
 Operational note (2026-03-20): recent ops review showed multiple live Claude
-agent processes while `ops.py` lane-activity reported all lanes as idle. Until
-slice 6 closes that trust gap, process/tmux evidence is the ground truth and
-lane-activity surfaces should be treated as advisory.
+agent processes while `ops.py` lane-activity reported all lanes as idle. Slice
+6 (#1068) repaired trusted lane liveness and heartbeat status; the trust gap
+should now be closed.
 
 Operational note (2026-03-20, Codex Cloud): the proving run showed Codex Cloud
 currently arriving as PR issue comments rather than checks or PR review
