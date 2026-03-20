@@ -88,7 +88,7 @@ SEOF
 
 emit_ci_event() {
     # Emit a durable CI event to the ops event log (fire-and-forget).
-    # Args: $1=event_type (ci_failure|ci_success), $2=failure_class (optional)
+    # Args: $1=event_type (ci_failure|ci_success|ci_timeout), $2=failure_class (optional)
     local event_type="$1"
     local failure_class="${2:-}"
     local lane_id="unknown"
@@ -184,6 +184,7 @@ while true; do
     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
         echo "[$(date -u +%H:%M:%S)] Timeout after ${ELAPSED}s."
         write_status "timeout" "CI still pending after ${TIMEOUT}s"
+        emit_ci_event "ci_timeout" "timeout"
         echo "CI_TIMEOUT: CI still pending after ${TIMEOUT}s" > "$STATE_DIR/FAILED"
         exit 2
     fi

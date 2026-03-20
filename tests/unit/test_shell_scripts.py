@@ -309,3 +309,27 @@ class TestCiPoller:
         content = CI_POLLER.read_text()
         assert "MERGED" in content, "Missing MERGED detection"
         assert "CLOSED" in content, "Missing CLOSED detection"
+
+    def test_timeout_emits_ci_timeout_event(self) -> None:
+        """Timeout branch must emit ci_timeout event (#991)."""
+        content = CI_POLLER.read_text()
+        # The emit_ci_event helper must document ci_timeout
+        assert (
+            "ci_timeout" in content
+        ), "ci_poller.sh must emit ci_timeout on the timeout path"
+        # Verify the timeout branch specifically calls emit_ci_event
+        # Find the timeout block and verify it contains the emit call
+        lines = content.split("\n")
+        in_timeout_block = False
+        found_emit_in_timeout = False
+        for line in lines:
+            if "ELAPSED" in line and "TIMEOUT" in line and "-ge" in line:
+                in_timeout_block = True
+            if in_timeout_block and "emit_ci_event" in line and "ci_timeout" in line:
+                found_emit_in_timeout = True
+                break
+            if in_timeout_block and "fi" in line.strip():
+                break
+        assert (
+            found_emit_in_timeout
+        ), "Timeout branch must call emit_ci_event with ci_timeout"
