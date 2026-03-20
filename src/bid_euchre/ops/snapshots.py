@@ -1,9 +1,20 @@
 """Shadow snapshots for auditable rollback of autonomous edit sequences.
 
 Creates lightweight, git-native snapshots of worktree state before risky
-autonomous operations. Each snapshot records the current HEAD and any
-uncommitted changes (via ``git stash create``), enabling point-in-time
-rollback when an agent produces a bad edit sequence.
+autonomous operations. Each snapshot records the current HEAD, any
+uncommitted changes to tracked files (via ``git stash create``), and the
+names of untracked files present at snapshot time.
+
+On rollback:
+
+- **Tracked state** is restored via ``git reset --hard`` + stash apply.
+- **Newly created untracked files** (not present at snapshot time) are
+  removed.
+- **Pre-existing untracked files** are preserved by name but their
+  *contents* are not captured or restored.  If an agent modifies an
+  untracked file that existed at snapshot time, rollback will not revert
+  those edits.  Full untracked-content backup is a potential future
+  enhancement.
 
 Storage: ``.claude/runtime/snapshots/<snapshot_id>.json`` (gitignored)
 Retention: bounded per-worktree (default 20) and by age (default 7 days).
@@ -43,6 +54,7 @@ class SnapshotRecord:
     has_uncommitted: bool = False
     files_changed: int = 0
     summary: str = ""  # one-line diff summary
+    untracked_files: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -107,6 +119,10 @@ def create_snapshot(
     stash_sha = _git_stash_create(worktree_path)
     has_uncommitted = stash_sha is not None
 
+    # Capture untracked files so rollback can remove files added after
+    # the snapshot (git stash create / git reset --hard do not handle these).
+    untracked = _git_ls_untracked(worktree_path)
+
     # Get a summary of what changed
     files_changed, summary = _git_diff_summary(worktree_path)
 
@@ -125,6 +141,7 @@ def create_snapshot(
         has_uncommitted=has_uncommitted,
         files_changed=files_changed,
         summary=summary,
+        untracked_files=untracked,
     )
 
     # Persist metadata
@@ -261,7 +278,28 @@ def rollback_snapshot(
             message=f"git reset failed: {e}",
         )
 
-    # Step 2: Reapply stash if present
+    # Step 2: Remove untracked files added after the snapshot.
+    # git reset --hard does not remove untracked files, so we clean up
+    # anything that wasn't present when the snapshot was taken.
+    try:
+        current_untracked = set(_git_ls_untracked(wt_path))
+        snapshot_untracked = set(record.untracked_files)
+        new_untracked = current_untracked - snapshot_untracked
+        wt_resolved = str(Path(wt_path).resolve())
+        for rel_path in new_untracked:
+            full = (Path(wt_path) / rel_path).resolve()
+            # Defense-in-depth: ensure resolved path stays within worktree
+            if not str(full).startswith(wt_resolved):
+                logger.warning("Skipping out-of-tree path: %s", rel_path)
+                warnings.append(f"Skipped out-of-tree untracked path: {rel_path}")
+                continue
+            if full.is_file():
+                full.unlink()
+                logger.info("Removed untracked file added after snapshot: %s", rel_path)
+    except (subprocess.SubprocessError, OSError) as e:
+        warnings.append(f"Failed to clean untracked files: {e}")
+
+    # Step 3: Reapply stash if present
     stash_applied = False
     if record.stash_sha:
         try:
@@ -502,7 +540,11 @@ def _git_stash_create(worktree_path: str) -> str | None:
     """Create a stash commit without modifying the working tree.
 
     Returns the stash SHA if there are uncommitted changes, None otherwise.
-    ``git stash create`` produces no output when the working tree is clean.
+    ``git stash create`` produces no output when the working tree is clean,
+    and exits 0 in both cases.  A nonzero exit indicates a real git error.
+
+    Raises:
+        subprocess.SubprocessError: If git exits nonzero (fail closed).
     """
     result = subprocess.run(
         ["git", "-C", worktree_path, "stash", "create"],
@@ -510,6 +552,10 @@ def _git_stash_create(worktree_path: str) -> str | None:
         text=True,
         timeout=30,
     )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            f"git stash create failed (rc={result.returncode}): {result.stderr.strip()}"
+        )
     sha = result.stdout.strip()
     if not sha:
         return None
@@ -521,6 +567,9 @@ def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
 
     Returns:
         Tuple of (files_changed, one_line_summary).
+
+    Raises:
+        subprocess.SubprocessError: If git exits nonzero (fail closed).
     """
     result = subprocess.run(
         ["git", "-C", worktree_path, "diff", "--stat", "HEAD"],
@@ -528,7 +577,11 @@ def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
         text=True,
         timeout=10,
     )
-    if result.returncode != 0 or not result.stdout.strip():
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            f"git diff --stat failed (rc={result.returncode}): {result.stderr.strip()}"
+        )
+    if not result.stdout.strip():
         return 0, ""
 
     lines = result.stdout.strip().splitlines()
@@ -542,6 +595,30 @@ def _git_diff_summary(worktree_path: str) -> tuple[int, str]:
         except (ValueError, IndexError):
             files_changed = max(0, len(lines) - 1)
     return files_changed, summary
+
+
+def _git_ls_untracked(worktree_path: str) -> list[str]:
+    """List untracked files in the worktree (repo-relative paths).
+
+    Returns an empty list if there are no untracked files.
+
+    Raises:
+        subprocess.SubprocessError: If git exits nonzero.
+    """
+    result = subprocess.run(
+        ["git", "-C", worktree_path, "ls-files", "--others", "--exclude-standard"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            f"git ls-files failed (rc={result.returncode}): {result.stderr.strip()}"
+        )
+    output = result.stdout.strip()
+    if not output:
+        return []
+    return output.splitlines()
 
 
 def _git_reset_hard(worktree_path: str, sha: str) -> None:
@@ -629,4 +706,5 @@ def _record_from_dict(data: dict[str, Any]) -> SnapshotRecord:
         has_uncommitted=data.get("has_uncommitted", False),
         files_changed=data.get("files_changed", 0),
         summary=data.get("summary", ""),
+        untracked_files=data.get("untracked_files", []),
     )

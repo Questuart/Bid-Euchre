@@ -352,6 +352,7 @@ def add_entry(
     *,
     tags: list[str] | None = None,
     check_source_exists: bool = True,
+    safety_scan: bool = True,
 ) -> MemoryEntry:
     """Add a new entry to curated memory.
 
@@ -366,14 +367,18 @@ def add_entry(
         added_by: Who/what is adding this (e.g., "author-a", "user").
         tags: Optional tags for filtering.
         check_source_exists: If True, verify source_file exists.
+        safety_scan: If True (default), run context-safety scan on value
+            before persisting.  Rejected content raises ValueError.
+            Warned content is persisted with a ``_safety_warnings`` tag.
 
     Returns:
         The created MemoryEntry.
 
     Raises:
-        ValueError: If validation fails.
+        ValueError: If validation or safety scan fails.
     """
     entry_id = _generate_id(key, category)
+    resolved_tags = list(tags) if tags else []
     entry = MemoryEntry(
         entry_id=entry_id,
         category=category,
@@ -382,7 +387,7 @@ def add_entry(
         source_file=source_file,
         added_by=added_by,
         added_at=_now_iso(),
-        tags=tags or [],
+        tags=resolved_tags,
     )
 
     # Validate *before* acquiring the lock so we don't hold it during
@@ -390,6 +395,23 @@ def add_entry(
     result = validate_provenance(entry, check_source_exists=check_source_exists)
     if not result.valid:
         raise ValueError(f"Invalid memory entry: {'; '.join(result.errors)}")
+
+    # Context-safety scan (also before lock — pure computation).
+    if safety_scan:
+        from bid_euchre.ops.context_safety import scan_memory_entry
+
+        scan_result = scan_memory_entry(entry)
+        if scan_result.outcome == "reject":
+            reasons = "; ".join(f.message for f in scan_result.findings)
+            raise ValueError(f"Content blocked by safety scan: {reasons}")
+        if scan_result.outcome == "warn":
+            logger.warning(
+                "Safety scan warnings for entry '%s': %s",
+                key,
+                "; ".join(f.message for f in scan_result.findings),
+            )
+            if "_safety_warnings" not in entry.tags:
+                entry.tags.append("_safety_warnings")
 
     # Locked read-modify-write to prevent lost updates (#1002).
     with _locked_update(memory_dir) as store:

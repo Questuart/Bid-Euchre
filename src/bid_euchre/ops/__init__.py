@@ -16,6 +16,7 @@ Modules:
     ci          -- CI status polling and failure classification
     index       -- SQLite FTS5 audit index for operational history
     memory      -- Curated memory for stable operator facts
+    context_safety -- Content scanning for memory/summary/skill promotion
     compaction  -- Session compaction and non-lossy context archival
 """
 

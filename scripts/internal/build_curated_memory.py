@@ -6,6 +6,8 @@ Usage:
     uv run python scripts/internal/build_curated_memory.py [--json] remove --id ENTRY_ID
     uv run python scripts/internal/build_curated_memory.py [--json] search --text TEXT
     uv run python scripts/internal/build_curated_memory.py [--json] validate
+    uv run python scripts/internal/build_curated_memory.py [--json] scan --text TEXT [--source FILE] [--by AGENT]
+    uv run python scripts/internal/build_curated_memory.py [--json] scan --file PATH [--source FILE] [--by AGENT]
 """
 
 from __future__ import annotations
@@ -55,6 +57,26 @@ def main(argv: list[str] | None = None) -> int:
 
     # validate
     subparsers.add_parser("validate", help="Validate all entries")
+
+    # scan (dry-run context-safety check)
+    scan_parser = subparsers.add_parser(
+        "scan", help="Scan content for context-safety issues (dry-run)"
+    )
+    scan_group = scan_parser.add_mutually_exclusive_group(required=True)
+    scan_group.add_argument("--text", type=str, help="Content to scan (inline)")
+    scan_group.add_argument("--file", type=str, help="File whose content to scan")
+    scan_parser.add_argument(
+        "--source",
+        type=str,
+        default="",
+        help="Source file for provenance (omit to skip provenance check)",
+    )
+    scan_parser.add_argument(
+        "--by",
+        type=str,
+        default="",
+        help="Added-by identity for provenance (omit to skip provenance check)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -162,6 +184,47 @@ def main(argv: list[str] | None = None) -> int:
                     if not r["valid"]:
                         print(f"  {r['entry_id']} ({r['key']}): {r['errors']}")
         return 0 if all_valid else 1
+
+    elif args.action == "scan":
+        from bid_euchre.ops.context_safety import (
+            DEFAULT_RULES,
+            format_scan_json,
+            format_scan_text,
+            scan_content,
+        )
+
+        # Read content from --text or --file
+        if getattr(args, "file", None):
+            try:
+                content = Path(args.file).read_text()
+            except (OSError, UnicodeDecodeError) as e:
+                print(f"Error reading file: {e}", file=sys.stderr)
+                return 1
+        else:
+            content = args.text
+
+        metadata: dict[str, str] = {}
+        source = getattr(args, "source", "")
+        by = getattr(args, "by", "")
+        if source:
+            metadata["source_file"] = source
+        if by:
+            metadata["added_by"] = by
+
+        # Skip provenance rule in dry-run when neither --source nor --by
+        # is provided, so the scan tests content rules only.
+        rules = DEFAULT_RULES
+        if not source and not by:
+            rules = [r for r in DEFAULT_RULES if r.rule_id != "missing_provenance"]
+
+        result = scan_content(content, metadata, rules=rules)
+
+        if args.json:
+            print(json.dumps(format_scan_json(result), indent=2))
+        else:
+            print(format_scan_text(result))
+
+        return 0 if result.outcome != "reject" else 1
 
     return 1
 

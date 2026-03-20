@@ -993,3 +993,72 @@ roadmap, dependency batches, portability boundary, and development footguns.
 
 See `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` for the
 full implementation sequence and design decisions.
+
+---
+
+## Context Safety
+
+### Overview
+
+Content entering the curated memory store is scanned before persistence.
+Summary auto-load and skill promotion paths are not yet gated by this
+scanner — those integrations are tracked as future PR-5 slices.  Every
+piece of content is classified as:
+
+| Outcome | Effect |
+|---------|--------|
+| **allow** | Content accepted without restriction |
+| **warn** | Content persisted, but tagged `_safety_warnings` and logged |
+| **reject** | Content blocked — not persisted, ValueError raised |
+
+### What Is Scanned
+
+| Rule | Severity | Detects |
+|------|----------|---------|
+| `secret_pattern` | reject | API keys, tokens, passwords, private keys |
+| `shell_injection` | reject | Backtick execution, `$()` subshells, pipe-to-shell |
+| `path_traversal` | reject | `../../` traversal, sensitive system paths |
+| `missing_provenance` | reject | Missing `source_file` or `added_by` metadata |
+| `oversized_content` | warn | Content exceeding 10 KB (configurable) |
+| `binary_content` | reject | Null bytes / non-text data |
+
+### When Scanning Happens
+
+- **`add_entry()`** — enabled by default (`safety_scan=True`).  All curated
+  memory entries are scanned before persistence.
+- **CLI dry-run** — the `scan` subcommand lets an operator preview the scan
+  result without persisting:
+
+  ```bash
+  # Scan inline text
+  uv run python scripts/internal/build_curated_memory.py scan --text "content..."
+
+  # Scan a file
+  uv run python scripts/internal/build_curated_memory.py scan --file path/to/content
+
+  # Include provenance for full check
+  uv run python scripts/internal/build_curated_memory.py scan \
+    --text "content" --source CLAUDE.md --by author-a
+  ```
+
+### Disabling the Scan
+
+Pass `safety_scan=False` to `add_entry()` or use the existing `add` CLI
+subcommand (which does not expose a `--no-scan` flag — bypassing requires
+programmatic access, keeping the default safe).
+
+### Audit Trail
+
+Every scan result includes a SHA-256 `content_hash` for traceability.
+Warned entries carry the `_safety_warnings` tag, making them filterable:
+
+```bash
+uv run python scripts/internal/build_curated_memory.py list --tag _safety_warnings
+```
+
+### Implementation
+
+- Scanner module: `src/bid_euchre/ops/context_safety.py`
+- Integration: `src/bid_euchre/ops/memory.py` (`add_entry()`)
+- CLI surface: `scripts/internal/build_curated_memory.py` (`scan` subcommand)
+- Tests: `tests/unit/test_ops_context_safety.py`, `tests/unit/test_ops_memory.py`
