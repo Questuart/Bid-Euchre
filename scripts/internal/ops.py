@@ -24,6 +24,11 @@ Usage:
     uv run python scripts/internal/ops.py snapshot list [--worktree PATH] [--limit N] [--json]
     uv run python scripts/internal/ops.py snapshot rollback SNAPSHOT_ID [--json]
     uv run python scripts/internal/ops.py snapshot prune [--max-per-worktree N] [--max-age-hours H] [--json]
+    uv run python scripts/internal/ops.py skills [--status STATUS] [--json]
+    uv run python scripts/internal/ops.py skills propose --name NAME --description DESC --content-file PATH --source-workflow TEXT --proposed-by LANE [--json]
+    uv run python scripts/internal/ops.py skills review CANDIDATE_ID --approve|--reject --reviewed-by LANE [--notes TEXT] [--json]
+    uv run python scripts/internal/ops.py skills promote CANDIDATE_ID [--json]
+    uv run python scripts/internal/ops.py skills disable NAME [--reason TEXT] [--disabled-by LANE] [--json]
 """
 
 from __future__ import annotations
@@ -916,6 +921,170 @@ def cmd_snapshot_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_skills(args: argparse.Namespace) -> int:
+    """Dispatch skill promotion subcommands."""
+    action = getattr(args, "skills_action", None)
+    if action == "propose":
+        return cmd_skills_propose(args)
+    if action == "review":
+        return cmd_skills_review(args)
+    if action == "promote":
+        return cmd_skills_promote(args)
+    if action == "disable":
+        return cmd_skills_disable(args)
+    # Default: list candidates
+    return cmd_skills_list(args)
+
+
+def cmd_skills_list(args: argparse.Namespace) -> int:
+    """List skill candidates."""
+    from bid_euchre.ops.skill_promotion import (
+        format_candidates_json,
+        format_candidates_text,
+        list_candidates,
+    )
+
+    candidates_dir = args.runtime_dir / "skill_candidates"
+    status_filter = getattr(args, "status", None)
+    candidates = list_candidates(
+        status_filter=status_filter, candidates_dir=candidates_dir
+    )
+
+    if args.json:
+        print(json.dumps(format_candidates_json(candidates), indent=2))
+    else:
+        print(format_candidates_text(candidates))
+
+    return 0
+
+
+def cmd_skills_propose(args: argparse.Namespace) -> int:
+    """Propose a new skill candidate."""
+    from bid_euchre.ops.skill_promotion import propose_skill
+
+    content_file = Path(args.content_file)
+    if not content_file.exists():
+        print(f"Error: content file not found: {content_file}", file=sys.stderr)
+        return 1
+
+    content = content_file.read_text(encoding="utf-8")
+    candidates_dir = args.runtime_dir / "skill_candidates"
+
+    try:
+        candidate = propose_skill(
+            name=args.name,
+            description=args.description,
+            content=content,
+            source_workflow=args.source_workflow,
+            proposed_by=args.proposed_by,
+            candidates_dir=candidates_dir,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(candidate.to_dict(), indent=2))
+    else:
+        safety_note = ""
+        if candidate.safety_scan_outcome == "reject":
+            safety_note = " ⚠ SAFETY REJECTED — fix content before promotion"
+        elif candidate.safety_scan_outcome == "warn":
+            safety_note = " ⚠ safety warnings present"
+        print(
+            f"Proposed skill '{candidate.name}' "
+            f"(id={candidate.candidate_id}){safety_note}"
+        )
+
+    return 0
+
+
+def cmd_skills_review(args: argparse.Namespace) -> int:
+    """Review (approve/reject) a skill candidate."""
+    from bid_euchre.ops.skill_promotion import review_skill
+
+    candidates_dir = args.runtime_dir / "skill_candidates"
+    approve = args.approve  # True if --approve, False if --reject
+
+    try:
+        candidate = review_skill(
+            args.candidate_id,
+            approve=approve,
+            reviewed_by=args.reviewed_by,
+            review_notes=getattr(args, "notes", "") or "",
+            candidates_dir=candidates_dir,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(candidate.to_dict(), indent=2))
+    else:
+        print(f"Skill '{candidate.name}' → {candidate.status}")
+
+    return 0
+
+
+def cmd_skills_promote(args: argparse.Namespace) -> int:
+    """Promote an approved skill candidate."""
+    from bid_euchre.ops.skill_promotion import promote_skill
+
+    candidates_dir = args.runtime_dir / "skill_candidates"
+    skills_dir = args.repo_root / ".claude" / "skills"
+    events_dir = args.runtime_dir / "events"
+
+    try:
+        candidate, skill_path = promote_skill(
+            args.candidate_id,
+            candidates_dir=candidates_dir,
+            skills_dir=skills_dir,
+            events_dir=events_dir,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(
+            json.dumps(
+                {"candidate": candidate.to_dict(), "skill_path": str(skill_path)},
+                indent=2,
+            )
+        )
+    else:
+        print(f"Promoted skill '{candidate.name}' → {skill_path}")
+
+    return 0
+
+
+def cmd_skills_disable(args: argparse.Namespace) -> int:
+    """Disable a promoted skill."""
+    from bid_euchre.ops.skill_promotion import disable_skill
+
+    skills_dir = args.repo_root / ".claude" / "skills"
+    events_dir = args.runtime_dir / "events"
+
+    try:
+        disabled_path = disable_skill(
+            args.name,
+            reason=getattr(args, "reason", "") or "",
+            disabled_by=getattr(args, "disabled_by", "operator") or "operator",
+            skills_dir=skills_dir,
+            events_dir=events_dir,
+        )
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps({"disabled_path": str(disabled_path)}, indent=2))
+    else:
+        print(f"Disabled skill → {disabled_path}")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -1164,6 +1333,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="File paths to record as touched",
     )
 
+    # skills (with nested propose/review/promote/disable subcommands)
+    skills_parser = subparsers.add_parser("skills", help="Skill-promotion workflow")
+    skills_parser.add_argument(
+        "--status",
+        type=str,
+        choices=["pending", "approved", "rejected", "promoted"],
+        help="Filter by candidate status",
+    )
+    skills_sub = skills_parser.add_subparsers(dest="skills_action")
+
+    skills_propose = skills_sub.add_parser("propose", help="Propose a new skill")
+    skills_propose.add_argument(
+        "--name", type=str, required=True, help="Skill name (kebab-case)"
+    )
+    skills_propose.add_argument(
+        "--description", type=str, required=True, help="One-line description"
+    )
+    skills_propose.add_argument(
+        "--content-file", type=str, required=True, help="Path to SKILL.md content"
+    )
+    skills_propose.add_argument(
+        "--source-workflow", type=str, required=True, help="Source workflow description"
+    )
+    skills_propose.add_argument(
+        "--proposed-by", type=str, required=True, help="Proposer lane ID"
+    )
+
+    skills_review = skills_sub.add_parser("review", help="Review a skill candidate")
+    skills_review.add_argument("candidate_id", type=str, help="Candidate ID to review")
+    review_group = skills_review.add_mutually_exclusive_group(required=True)
+    review_group.add_argument(
+        "--approve", action="store_true", help="Approve the candidate"
+    )
+    review_group.add_argument(
+        "--reject", action="store_false", dest="approve", help="Reject the candidate"
+    )
+    skills_review.add_argument(
+        "--reviewed-by", type=str, required=True, help="Reviewer lane ID"
+    )
+    skills_review.add_argument("--notes", type=str, help="Review notes")
+
+    skills_promote = skills_sub.add_parser("promote", help="Promote an approved skill")
+    skills_promote.add_argument(
+        "candidate_id", type=str, help="Candidate ID to promote"
+    )
+
+    skills_disable = skills_sub.add_parser("disable", help="Disable a promoted skill")
+    skills_disable.add_argument("name", type=str, help="Skill name to disable")
+    skills_disable.add_argument("--reason", type=str, help="Reason for disabling")
+    skills_disable.add_argument(
+        "--disabled-by", type=str, default="operator", help="Who is disabling"
+    )
+
     return parser
 
 
@@ -1206,6 +1428,7 @@ def main(argv: list[str] | None = None) -> int:
         "compact": cmd_compact,
         "scope": cmd_scope,
         "snapshot": cmd_snapshot,
+        "skills": cmd_skills,
     }
 
     handler = commands.get(args.command)

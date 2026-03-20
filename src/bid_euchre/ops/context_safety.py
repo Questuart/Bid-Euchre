@@ -1,11 +1,10 @@
 """Context-safety scanning for curated memory persistence.
 
 Scans candidate content before it is persisted to the curated memory
-store, classifying each piece as allow / warn / reject.  Currently
-wired into ``memory.add_entry()`` (enabled by default) and exposed
-via a CLI dry-run subcommand.  Summary auto-load and skill promotion
-paths are not yet gated by this scanner — those integrations are
-tracked as future slices.
+store or promoted as a skill, classifying each piece as allow / warn /
+reject.  Wired into ``memory.add_entry()`` (enabled by default),
+``skill_promotion.propose_skill()`` and ``skill_promotion.promote_skill()``
+(mandatory), and exposed via a CLI dry-run subcommand.
 
 Every piece of content is classified as:
 - **allow** — safe to persist
