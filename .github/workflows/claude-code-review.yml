@@ -3,12 +3,12 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    paths:
-      - "src/**"
-      - "scripts/**"
-      - "tests/**"
-      - "experiments/**"
-      - "notebooks/**"
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.ts"
+    #   - "src/**/*.tsx"
+    #   - "src/**/*.js"
+    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
+      pull-requests: read
+      issues: read
       id-token: write
 
     steps:
@@ -36,36 +36,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            Review this pull request for code quality, correctness, and security.
-            Analyze the diff, then post your findings as review comments.
-            Follow the project's CLAUDE.md guidelines.
-          claude_args: "--max-turns 5"
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
+          # or https://code.claude.com/docs/en/cli-reference for available options
 
-      - name: Flag reviewer infra failure
-        if: always() && steps.claude-review.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
-        shell: bash
-        run: |
-          # Classify the failure: max-turns vs auth vs unknown
-          SUBTYPE="unknown"
-          DENIALS=0
-          if [ -f "$EXECUTION_FILE" ]; then
-            SUBTYPE=$(jq -r 'select(.type == "result") | .subtype // "unknown"' "$EXECUTION_FILE" 2>/dev/null | tail -1)
-            DENIALS=$(jq -r 'select(.type == "result") | .permission_denials_count // 0' "$EXECUTION_FILE" 2>/dev/null | tail -1)
-          fi
-
-          gh issue create \
-            --title "claude-review infra failure on PR #${{ github.event.pull_request.number }} ($SUBTYPE)" \
-            --body "The Claude Code Review action failed on PR #${{ github.event.pull_request.number }}.
-
-          **Failure type:** \`$SUBTYPE\`
-          **Permission denials:** $DENIALS
-          **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-          This is a reviewer infrastructure issue, not a code review finding.
-          The \`claude-review\` check remains failed on the PR as a visible signal." \
-            --label "follow-up"
-          echo "::warning::claude-review infra failure (subtype=$SUBTYPE, denials=$DENIALS) — issue created"
