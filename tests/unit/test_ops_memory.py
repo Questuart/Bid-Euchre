@@ -8,9 +8,11 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.memory import (
+    LOCK_FILE,
     VALID_CATEGORIES,
     MemoryEntry,
     MemoryStore,
+    _locked_update,
     add_entry,
     format_memory_json,
     format_memory_text,
@@ -614,3 +616,187 @@ class TestFormatting:
         text = format_memory_text(entries)
         assert "[repo_fact]" in text
         assert "[preference]" in text
+
+
+class TestCorruptFileBackup:
+    """Tests for corrupt file backup on JSONDecodeError (#950 residual)."""
+
+    def test_load_backs_up_corrupt_file(self, memory_dir: Path) -> None:
+        """Corrupt JSON is renamed to .corrupt.* and empty store returned."""
+        corrupt_content = "not valid json {{{"
+        (memory_dir / "memory.json").write_text(corrupt_content)
+
+        store = load_memory(memory_dir)
+
+        # Returns empty store
+        assert store.entries == []
+
+        # Original file removed
+        assert not (memory_dir / "memory.json").exists()
+
+        # Backup file exists with original content
+        backups = list(memory_dir.glob("memory.corrupt.*"))
+        assert len(backups) == 1
+        assert backups[0].read_text() == corrupt_content
+
+    def test_load_corrupt_backup_logs_warning(
+        self, memory_dir: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Corrupt file backup logs a warning with the backup filename."""
+        (memory_dir / "memory.json").write_text("{invalid")
+
+        with caplog.at_level(logging.WARNING, logger="ops.memory"):
+            load_memory(memory_dir)
+
+        assert any("backed up to" in r.message.lower() for r in caplog.records)
+
+    def test_load_corrupt_backup_failure_still_returns_empty(
+        self, memory_dir: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """If backup rename fails, still return empty store (don't crash)."""
+        (memory_dir / "memory.json").write_text("corrupt!")
+
+        # Make the directory read-only so rename fails
+        memory_dir.chmod(0o555)
+        try:
+            with caplog.at_level(logging.WARNING, logger="ops.memory"):
+                store = load_memory(memory_dir)
+            assert store.entries == []
+            assert any("failed to backup" in r.message.lower() for r in caplog.records)
+        finally:
+            memory_dir.chmod(0o755)
+
+    def test_load_structural_error_no_backup(self, memory_dir: Path) -> None:
+        """KeyError/TypeError from bad structure does NOT trigger backup."""
+        import json as _json
+
+        # Valid JSON but totally wrong structure (list instead of dict)
+        # This will hit the TypeError/AttributeError path
+        (memory_dir / "memory.json").write_text(_json.dumps({"entries": "not-a-list"}))
+
+        store = load_memory(memory_dir)
+
+        # Returns empty store (from_dict handles this gracefully)
+        assert isinstance(store, MemoryStore)
+
+        # Original file is NOT backed up (still exists)
+        assert (memory_dir / "memory.json").exists()
+        assert list(memory_dir.glob("memory.corrupt.*")) == []
+
+
+class TestLockedUpdate:
+    """Tests for _locked_update context manager (#1002)."""
+
+    def test_locked_update_basic(self, memory_dir: Path) -> None:
+        """_locked_update loads, allows mutation, and saves."""
+        # Pre-populate
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="aaa",
+                    category="repo_fact",
+                    key="k1",
+                    value="v1",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+
+        # Mutate inside lock
+        with _locked_update(memory_dir) as s:
+            s.entries.append(
+                MemoryEntry(
+                    entry_id="bbb",
+                    category="preference",
+                    key="k2",
+                    value="v2",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T11:00:00+00:00",
+                )
+            )
+
+        # Verify persisted
+        reloaded = load_memory(memory_dir)
+        assert len(reloaded.entries) == 2
+        assert {e.entry_id for e in reloaded.entries} == {"aaa", "bbb"}
+
+    def test_locked_update_creates_lock_file(self, memory_dir: Path) -> None:
+        """Lock file is created in memory_dir."""
+        with _locked_update(memory_dir) as _s:
+            assert (memory_dir / LOCK_FILE).exists()
+
+    def test_locked_update_exception_does_not_save(self, memory_dir: Path) -> None:
+        """If caller raises inside the context, changes are NOT persisted."""
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="aaa",
+                    category="repo_fact",
+                    key="k1",
+                    value="original",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+
+        with pytest.raises(RuntimeError, match="abort"):
+            with _locked_update(memory_dir) as s:
+                s.entries[0] = MemoryEntry(
+                    entry_id="aaa",
+                    category="repo_fact",
+                    key="k1",
+                    value="MODIFIED",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+                raise RuntimeError("abort")
+
+        # Original value preserved
+        reloaded = load_memory(memory_dir)
+        assert reloaded.entries[0].value == "original"
+
+    def test_concurrent_add_entry_no_lost_writes(
+        self, memory_dir: Path, source_file: Path
+    ) -> None:
+        """Two threads calling add_entry concurrently must not lose writes."""
+        import threading
+
+        barrier = threading.Barrier(2, timeout=5)
+        errors: list[Exception] = []
+
+        def _add(key: str) -> None:
+            try:
+                barrier.wait()  # Force both threads to contend on the lock
+                add_entry(
+                    memory_dir,
+                    category="repo_fact",
+                    key=key,
+                    value=f"value-{key}",
+                    source_file=str(source_file),
+                    added_by="test",
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        t1 = threading.Thread(target=_add, args=("concurrent_a",))
+        t2 = threading.Thread(target=_add, args=("concurrent_b",))
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        assert not errors, f"Thread errors: {errors}"
+
+        # Both entries must be present — no lost writes
+        entries = list_entries(memory_dir)
+        keys = {e.key for e in entries}
+        assert "concurrent_a" in keys, f"Lost write for concurrent_a. Keys: {keys}"
+        assert "concurrent_b" in keys, f"Lost write for concurrent_b. Keys: {keys}"

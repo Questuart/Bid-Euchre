@@ -18,19 +18,22 @@ Storage: ``.claude/runtime/curated_memory/memory.json`` (gitignored)
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 import tempfile
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 logger = logging.getLogger("ops.memory")
 
 DEFAULT_MEMORY_DIR = Path(".claude/runtime/curated_memory")
 MEMORY_FILE = "memory.json"
+LOCK_FILE = ".memory.lock"
 
 # Categories for organizing memory entries
 VALID_CATEGORIES = frozenset(
@@ -159,7 +162,25 @@ def load_memory(memory_dir: Path) -> MemoryStore:
     try:
         data = json.loads(memory_path.read_text())
         return MemoryStore.from_dict(data)
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
+    except json.JSONDecodeError as e:
+        # Preserve corrupt file for manual recovery before returning empty
+        # store.  Without this, the next save_memory() would silently
+        # overwrite the corrupt data, permanently destroying all entries.
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+        backup = memory_path.with_suffix(f".corrupt.{ts}")
+        try:
+            memory_path.rename(backup)
+            logger.warning("Corrupt memory file backed up to %s: %s", backup.name, e)
+        except OSError as rename_err:
+            logger.warning(
+                "Failed to backup corrupt memory file (%s): %s",
+                rename_err,
+                e,
+            )
+        return MemoryStore()
+    except (KeyError, TypeError) as e:
+        # Structural issues (valid JSON but unexpected shape).  No backup
+        # needed — the file can be manually inspected as-is.
         logger.warning("Failed to load curated memory: %s", e)
         return MemoryStore()
 
@@ -170,6 +191,13 @@ def save_memory(store: MemoryStore, memory_dir: Path) -> None:
     Writes to a same-directory tempfile, fsyncs, then atomically replaces
     the target via ``os.replace()`` so a crash mid-write cannot leave a
     truncated file (see #951).
+
+    .. note::
+
+        This function does **not** acquire a file lock.  Callers that perform
+        a read-modify-write cycle (load → mutate → save) must serialize via
+        :func:`_locked_update` or their own ``flock()`` on the same
+        :data:`LOCK_FILE` to prevent lost updates (#1002).
     """
     memory_dir.mkdir(parents=True, exist_ok=True)
     memory_path = _get_memory_path(memory_dir)
@@ -192,6 +220,35 @@ def save_memory(store: MemoryStore, memory_dir: Path) -> None:
         except OSError:
             pass
         raise
+
+
+@contextmanager
+def _locked_update(memory_dir: Path) -> Generator[MemoryStore, None, None]:
+    """Acquire an exclusive lock, yield a loaded :class:`MemoryStore`, and
+    save it back on clean exit.
+
+    This serializes concurrent read-modify-write cycles (e.g. two
+    ``add_entry()`` calls from different processes) so that neither
+    update is lost (#1002).
+
+    A dedicated lock file (rather than the data file) is used because
+    ``save_memory()`` atomically *replaces* the data file via
+    ``os.replace()``, which would invalidate an ``flock`` held on the
+    original inode.
+
+    Raises whatever ``save_memory`` raises on write failure; the lock is
+    always released.
+    """
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = memory_dir / LOCK_FILE
+    with open(lock_path, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            store = load_memory(memory_dir)
+            yield store
+            save_memory(store, memory_dir)
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
 
 # ── Validation ───────────────────────────────────────────────────
@@ -313,24 +370,23 @@ def add_entry(
         tags=tags or [],
     )
 
-    # Validate
+    # Validate *before* acquiring the lock so we don't hold it during
+    # potentially slow I/O (source file existence check).
     result = validate_provenance(entry, check_source_exists=check_source_exists)
     if not result.valid:
         raise ValueError(f"Invalid memory entry: {'; '.join(result.errors)}")
 
-    # Load existing store
-    store = load_memory(memory_dir)
-
-    # Check for existing entry with same key+category
-    existing = [e for e in store.entries if e.key == key and e.category == category]
-    if existing:
-        entry.supersedes = existing[0].entry_id
-        store.entries = [
-            e for e in store.entries if not (e.key == key and e.category == category)
-        ]
-
-    store.entries.append(entry)
-    save_memory(store, memory_dir)
+    # Locked read-modify-write to prevent lost updates (#1002).
+    with _locked_update(memory_dir) as store:
+        existing = [e for e in store.entries if e.key == key and e.category == category]
+        if existing:
+            entry.supersedes = existing[0].entry_id
+            store.entries = [
+                e
+                for e in store.entries
+                if not (e.key == key and e.category == category)
+            ]
+        store.entries.append(entry)
 
     return entry
 
@@ -340,14 +396,12 @@ def remove_entry(memory_dir: Path, entry_id: str) -> bool:
 
     Returns True if the entry was found and removed.
     """
-    store = load_memory(memory_dir)
-    original_len = len(store.entries)
-    store.entries = [e for e in store.entries if e.entry_id != entry_id]
+    with _locked_update(memory_dir) as store:
+        original_len = len(store.entries)
+        store.entries = [e for e in store.entries if e.entry_id != entry_id]
+        removed = len(store.entries) < original_len
 
-    if len(store.entries) < original_len:
-        save_memory(store, memory_dir)
-        return True
-    return False
+    return removed
 
 
 def get_entry(memory_dir: Path, entry_id: str) -> MemoryEntry | None:
