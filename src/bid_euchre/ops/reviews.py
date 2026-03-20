@@ -15,7 +15,13 @@ import logging
 import subprocess
 from dataclasses import asdict, dataclass
 
-from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
+from bid_euchre.ops import (
+    ADVISORY_CONTEXTS,
+    DEFAULT_REVIEW_CONTEXTS,  # noqa: F401 — re-exported for backward compat
+    GH_TIMEOUT_SECONDS,
+    REVIEW_GATE_CONTEXTS,
+    classify_check,
+)
 
 logger = logging.getLogger("ops.reviews")
 
@@ -31,6 +37,7 @@ class ReviewOutcome:
     review_status: str  # "success", "failure", "pending", "none"
     has_precheck_ci: bool  # whether deterministic-prechecks check exists
     url: str
+    advisory_status: str = "none"  # "success", "failure", "pending", "none"
     checks: list[dict] | None = None  # per-check breakdown when available
 
     def to_dict(self) -> dict:
@@ -123,21 +130,29 @@ def _get_pr_checks(pr_number: int) -> list[dict]:
 
 def _classify_ci_status(
     checks: list[dict],
-    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+    review_contexts: tuple[str, ...] | None = None,
 ) -> str:
     """Classify overall CI status from individual checks.
 
-    Excludes review-related status contexts to avoid circular dependency.
+    Excludes non-CI status contexts (review gate + advisory) to avoid
+    circular dependency and prevent advisory infra failures from poisoning
+    CI status.
 
     Args:
         checks: List of check dicts with ``name`` and ``state`` keys.
-        review_contexts: Check names to treat as review (not CI) statuses.
+        review_contexts: Explicit check names to exclude. When ``None``
+            (default), uses ``classify_check()`` to dynamically identify
+            non-CI checks. Pass an explicit tuple for backward compatibility.
 
     Returns:
         "success", "failure", "pending", or "unknown"
     """
-    # Filter out review statuses
-    ci_checks = [c for c in checks if c.get("name") not in review_contexts]
+    if review_contexts is not None:
+        # Backward-compatible: explicit exclusion list
+        ci_checks = [c for c in checks if c.get("name") not in review_contexts]
+    else:
+        # Default: use classify_check() to exclude all non-CI checks
+        ci_checks = [c for c in checks if classify_check(c.get("name", "")) == "ci"]
     if not ci_checks:
         return "pending"
 
@@ -154,7 +169,7 @@ def _classify_ci_status(
 
 def _get_review_status(
     checks: list[dict],
-    review_contexts: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS,
+    review_contexts: tuple[str, ...] = REVIEW_GATE_CONTEXTS,
 ) -> str:
     """Extract review status from recognized review contexts.
 
@@ -196,6 +211,38 @@ def _has_precheck_ci(checks: list[dict]) -> bool:
     )
 
 
+def _get_advisory_status(
+    checks: list[dict],
+    advisory_contexts: tuple[str, ...] = ADVISORY_CONTEXTS,
+) -> str:
+    """Extract advisory review status from recognized advisory contexts.
+
+    Same aggregation pattern as ``_get_review_status`` but filters on
+    ``ADVISORY_CONTEXTS`` (informational checks that must not block CI).
+
+    Args:
+        checks: List of check dicts with ``name`` and ``state`` keys.
+        advisory_contexts: Check names recognized as advisory outcomes.
+
+    Returns:
+        "success", "failure", "pending", or "none" (if no advisory context found).
+    """
+    states = [
+        check.get("state", "PENDING")
+        for check in checks
+        if check.get("name") in advisory_contexts
+    ]
+    if not states:
+        return "none"
+    if any(s == "FAILURE" for s in states):
+        return "failure"
+    if any(s in ("PENDING", "IN_PROGRESS") for s in states):
+        return "pending"
+    if all(s == "SUCCESS" for s in states):
+        return "success"
+    return "unknown"
+
+
 def get_open_pr_reviews() -> list[ReviewOutcome]:
     """Get review outcomes for all open PRs.
 
@@ -221,6 +268,7 @@ def get_open_pr_reviews() -> list[ReviewOutcome]:
                 review_status=_get_review_status(checks),
                 has_precheck_ci=_has_precheck_ci(checks),
                 url=pr.get("url", ""),
+                advisory_status=_get_advisory_status(checks),
                 checks=checks,
             )
         )
@@ -267,6 +315,7 @@ def get_pr_review_detail(pr_number: int) -> ReviewOutcome:
         review_status=_get_review_status(checks),
         has_precheck_ci=_has_precheck_ci(checks),
         url=pr.get("url", ""),
+        advisory_status=_get_advisory_status(checks),
         checks=checks,
     )
 
@@ -285,10 +334,13 @@ def format_reviews_text(outcomes: list[ReviewOutcome]) -> str:
         review_icon = {"success": "+", "failure": "x", "pending": "~"}.get(
             o.review_status, "-"
         )
+        advisory_icon = {"success": "+", "failure": "x", "pending": "~"}.get(
+            o.advisory_status, "-"
+        )
         precheck = "yes" if o.has_precheck_ci else "no"
         lines.append(
             f"  #{o.pr_number:<5d} CI=[{ci_icon}] Review=[{review_icon}] "
-            f"Precheck=[{precheck}]"
+            f"Advisory=[{advisory_icon}] Precheck=[{precheck}]"
         )
         lines.append(f"         {o.title}")
         lines.append(f"         {o.branch} | {o.url}")
@@ -307,6 +359,7 @@ def format_reviews_json(outcomes: list[ReviewOutcome]) -> list[dict]:
             "branch": o.branch,
             "ci_status": o.ci_status,
             "review_status": o.review_status,
+            "advisory_status": o.advisory_status,
             "has_precheck_ci": o.has_precheck_ci,
             "url": o.url,
         }

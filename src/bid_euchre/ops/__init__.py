@@ -25,6 +25,41 @@ Modules:
 # Extend this tuple when adding a new online reviewer.
 DEFAULT_REVIEW_CONTEXTS: tuple[str, ...] = ("reviewing-changes",)
 
+# --- Three-category check classification ---
+#
+# review_gate: merge-relevant review statuses (branch protection may require these)
+# advisory:   informational review checks (never block CI or merge)
+# ci:         everything else (real CI checks)
+
+REVIEW_GATE_CONTEXTS: tuple[str, ...] = DEFAULT_REVIEW_CONTEXTS
+"""Check names that are merge-relevant review gates (alias for DEFAULT_REVIEW_CONTEXTS)."""
+
+ADVISORY_CONTEXTS: tuple[str, ...] = ("claude-review",)
+"""Check names that are advisory-only — infrastructure failures here must not poison CI."""
+
+NON_CI_CONTEXTS: tuple[str, ...] = REVIEW_GATE_CONTEXTS + ADVISORY_CONTEXTS
+"""Union of all non-CI check contexts (review gate + advisory)."""
+
+
+def classify_check(name: str) -> str:
+    """Classify a GitHub check/status context name into a category.
+
+    Args:
+        name: The check or status context name (e.g. ``"tests"``,
+            ``"reviewing-changes"``, ``"claude-review"``).
+
+    Returns:
+        ``"review_gate"`` for merge-relevant review statuses,
+        ``"advisory"`` for informational review checks, or
+        ``"ci"`` for everything else (conservative default).
+    """
+    if name in REVIEW_GATE_CONTEXTS:
+        return "review_gate"
+    if name in ADVISORY_CONTEXTS:
+        return "advisory"
+    return "ci"
+
+
 # Default timeout (seconds) for gh CLI subprocess calls.
 # Operator surfaces must never hang indefinitely.
 GH_TIMEOUT_SECONDS: int = 30

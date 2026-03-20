@@ -334,6 +334,48 @@ class TestPollCIStatus:
         assert report.overall == "pending"
 
     @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_default_excludes_claude_review(self, mock_run: object) -> None:
+        """Default (None) excludes claude-review from CI checks."""
+        checks = [
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(901)
+        assert report.overall == "success"
+        assert len(report.checks) == 1
+        assert report.checks[0].name == "tests"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_default_excludes_both_non_ci(self, mock_run: object) -> None:
+        """Default excludes both reviewing-changes and claude-review."""
+        checks = [
+            {"name": "reviewing-changes", "state": "FAILURE"},
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(902)
+        assert report.overall == "success"
+        assert len(report.checks) == 1
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_explicit_override_uses_old_logic(self, mock_run: object) -> None:
+        """Explicit review_contexts uses old exclusion logic."""
+        checks = [
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "tests", "state": "SUCCESS"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        # Only excluding reviewing-changes, so claude-review counts as CI
+        report = poll_ci_status(903, review_contexts=("reviewing-changes",))
+        assert report.overall == "failure"
+        assert len(report.checks) == 2
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
     def test_custom_review_context_excluded(self, mock_run: object) -> None:
         """Custom review contexts are excluded from CI checks."""
         checks = [
