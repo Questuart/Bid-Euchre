@@ -184,6 +184,7 @@ while true; do
     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
         echo "[$(date -u +%H:%M:%S)] Timeout after ${ELAPSED}s."
         write_status "timeout" "CI still pending after ${TIMEOUT}s"
+        emit_ci_event "ci_timeout" "timeout"
         echo "CI_TIMEOUT: CI still pending after ${TIMEOUT}s" > "$STATE_DIR/FAILED"
         exit 2
     fi

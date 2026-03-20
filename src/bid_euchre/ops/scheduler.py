@@ -118,6 +118,58 @@ def save_scheduler_state(
     return state_file
 
 
+def _evaluate_retries_for_findings(
+    findings: list[WatchdogFinding],
+    events_dir: Path | None = None,
+) -> int:
+    """Evaluate retry policy for tasks flagged by subagent failure watchdog.
+
+    For each finding from ``check_subagent_failures()``, parses the
+    ``"lane_id:task_id"`` target, evaluates the retry/reroute policy, and
+    emits the appropriate durable event via ``emit_retry_event()``.
+
+    Args:
+        findings: Watchdog findings from the current tick.
+        events_dir: Override for events directory.
+
+    Returns:
+        Number of retry/reroute events emitted.
+    """
+    from bid_euchre.ops.events import read_events
+    from bid_euchre.ops.recovery import emit_retry_event, evaluate_retry_policy
+
+    subagent_findings = [
+        f for f in findings if f.watchdog_name == "subagent_failure_check"
+    ]
+
+    if not subagent_findings:
+        return 0
+
+    # Read events once for all evaluations
+    events = read_events(events_dir, limit=200)
+    emitted = 0
+
+    for finding in subagent_findings:
+        try:
+            # finding.target format is "lane_id:task_id"
+            parts = finding.target.split(":", 1)
+            if len(parts) != 2:
+                logger.warning(
+                    "Cannot parse subagent finding target: %s", finding.target
+                )
+                continue
+
+            lane_id, task_id = parts
+            policy = evaluate_retry_policy(task_id, events, current_lane=lane_id)
+            event = emit_retry_event(policy, lane_id, events_dir)
+            if event is not None:
+                emitted += 1
+        except Exception as e:
+            logger.warning("Failed to evaluate retry for %s: %s", finding.target, e)
+
+    return emitted
+
+
 def tick(
     runtime_dir: Path | None = None,
     plans_dir: Path | None = None,
@@ -196,6 +248,9 @@ def tick(
             result.events_emitted += 1
         except Exception as e:
             logger.warning("Failed to emit event for finding: %s", e)
+
+    # 3.5 Evaluate retry policy for tasks with repeated failures (#930)
+    result.events_emitted += _evaluate_retries_for_findings(findings, events_dir)
 
     # Also emit a tick event
     try:

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from bid_euchre.ops.ci import (
     CI_FAILURE_CLASSES,
@@ -12,6 +15,7 @@ from bid_euchre.ops.ci import (
     CIFailureClassification,
     CIStatusReport,
     classify_ci_failure,
+    emit_ci_events,
     format_ci_json,
     format_ci_text,
     poll_ci_status,
@@ -445,3 +449,121 @@ class TestFormatCIJSON:
         assert len(result["classifications"]) == 1
         assert result["classifications"][0]["failure_class"] == "lint_format"
         json.dumps(result)
+
+
+# --- emit_ci_events tests (#928) ---
+
+
+class TestEmitCIEvents:
+    """Tests for emit_ci_events() -- CI event producer for watchdogs (#928)."""
+
+    @pytest.fixture()
+    def events_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "events"
+        d.mkdir()
+        return d
+
+    def test_failure_emits_ci_failure(self, events_dir: Path) -> None:
+        classification = CIFailureClassification(
+            failure_class="lint_format",
+            auto_remediable=True,
+            description="Lint failure",
+            details="ruff check",
+            remediation_hint="Run make lint",
+        )
+        report = CIStatusReport(
+            pr_number=42,
+            overall="failure",
+            checks=[
+                CICheckResult(
+                    name="lint", state="FAILURE", classification=classification
+                ),
+            ],
+            classifications=[classification],
+        )
+        result = emit_ci_events(report, "author-a", events_dir)
+        assert result is not None
+        assert result["event_type"] == "ci_failure"
+        assert result["lane_id"] == "author-a"
+        assert result["source"] == "ops.ci"
+        assert result["payload"]["pr_number"] == 42
+        assert result["payload"]["failure_class"] == "lint_format"
+
+    def test_success_emits_ci_success(self, events_dir: Path) -> None:
+        report = CIStatusReport(
+            pr_number=99,
+            overall="success",
+            checks=[CICheckResult(name="tests", state="SUCCESS")],
+            classifications=[],
+        )
+        result = emit_ci_events(report, "author-b", events_dir)
+        assert result is not None
+        assert result["event_type"] == "ci_success"
+        assert result["payload"]["pr_number"] == 99
+
+    def test_pending_returns_none(self, events_dir: Path) -> None:
+        report = CIStatusReport(
+            pr_number=50,
+            overall="pending",
+            checks=[CICheckResult(name="tests", state="PENDING")],
+            classifications=[],
+        )
+        result = emit_ci_events(report, "author-a", events_dir)
+        assert result is None
+
+    def test_unknown_returns_none(self, events_dir: Path) -> None:
+        report = CIStatusReport(
+            pr_number=60,
+            overall="unknown",
+            checks=[],
+            classifications=[],
+        )
+        result = emit_ci_events(report, "ops", events_dir)
+        assert result is None
+
+    def test_event_persisted_to_jsonl(self, events_dir: Path) -> None:
+        """Verify the emitted event is actually readable from the log."""
+        from bid_euchre.ops.events import read_events
+
+        report = CIStatusReport(
+            pr_number=77,
+            overall="success",
+            checks=[CICheckResult(name="tests", state="SUCCESS")],
+            classifications=[],
+        )
+        emit_ci_events(report, "author-a", events_dir)
+
+        events = read_events(events_dir)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "ci_success"
+        assert events[0]["payload"]["pr_number"] == 77
+
+    def test_multiple_failure_classes_joined(self, events_dir: Path) -> None:
+        """Multiple failure classifications are joined in the payload."""
+        cls1 = CIFailureClassification(
+            failure_class="lint_format",
+            auto_remediable=True,
+            description="Lint",
+            details="ruff",
+            remediation_hint="fix",
+        )
+        cls2 = CIFailureClassification(
+            failure_class="deterministic_test",
+            auto_remediable=True,
+            description="Test failure",
+            details="pytest",
+            remediation_hint="fix tests",
+        )
+        report = CIStatusReport(
+            pr_number=88,
+            overall="failure",
+            checks=[
+                CICheckResult(name="lint", state="FAILURE", classification=cls1),
+                CICheckResult(name="tests", state="FAILURE", classification=cls2),
+            ],
+            classifications=[cls1, cls2],
+        )
+        result = emit_ci_events(report, "author-a", events_dir)
+        assert result is not None
+        # Classes sorted alphabetically
+        assert result["payload"]["failure_class"] == "deterministic_test, lint_format"

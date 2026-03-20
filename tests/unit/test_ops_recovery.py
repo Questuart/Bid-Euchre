@@ -16,6 +16,7 @@ from bid_euchre.ops.recovery import (
     RetryPolicy,
     _resolution_target,
     classify_failure,
+    emit_retry_event,
     evaluate_retry_policy,
     format_recovery_json,
     format_recovery_text,
@@ -766,3 +767,105 @@ class TestRetryPolicyFormatters:
         assert data["action"] == "escalate"
         assert data["retry_count"] == 5
         assert data["reroute_to"] is None
+
+
+# ---- Retry/Reroute Event Emission (#930) ----
+
+
+class TestEmitRetryEvent:
+    """Tests for emit_retry_event()."""
+
+    @pytest.fixture()
+    def events_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / "events"
+        d.mkdir()
+        return d
+
+    def test_retry_emits_retry_attempted(self, events_dir: Path) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=1,
+            max_retries=3,
+            last_failure="lint error",
+            action="retry",
+        )
+        result = emit_retry_event(policy, "author-a", events_dir)
+        assert result is not None
+        assert result["event_type"] == "retry_attempted"
+        assert result["source"] == "ops.retry"
+        assert result["lane_id"] == "author-a"
+        assert result["payload"]["task_id"] == "t1"
+        assert result["payload"]["retry_count"] == 1
+
+    def test_reroute_emits_task_rerouted(self, events_dir: Path) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=3,
+            max_retries=3,
+            last_failure="crash",
+            action="reroute",
+            reroute_to="author-b",
+            failure_lane="author-a",
+        )
+        result = emit_retry_event(policy, "author-a", events_dir)
+        assert result is not None
+        assert result["event_type"] == "task_rerouted"
+        assert result["payload"]["source_lane"] == "author-a"
+        assert result["payload"]["target_lane"] == "author-b"
+
+    def test_escalate_emits_escalation(self, events_dir: Path) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=5,
+            max_retries=3,
+            last_failure="fatal",
+            action="escalate",
+        )
+        result = emit_retry_event(policy, "ops", events_dir)
+        assert result is not None
+        assert result["event_type"] == "escalation"
+        assert "exceeded retry cap" in result["payload"]["details"]
+
+    def test_unknown_action_returns_none(self, events_dir: Path) -> None:
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=0,
+            max_retries=3,
+            last_failure="",
+            action="unknown_action",
+        )
+        result = emit_retry_event(policy, "ops", events_dir)
+        assert result is None
+
+    def test_event_persisted_to_jsonl(self, events_dir: Path) -> None:
+        """Verify the event is actually written to the events file."""
+        from bid_euchre.ops.events import read_events
+
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=2,
+            max_retries=3,
+            last_failure="test error",
+            action="retry",
+        )
+        emit_retry_event(policy, "author-a", events_dir)
+
+        events = read_events(events_dir)
+        assert len(events) == 1
+        assert events[0]["event_type"] == "retry_attempted"
+        assert events[0]["payload"]["task_id"] == "t1"
+
+    def test_reroute_without_target_omits_lane_fields(self, events_dir: Path) -> None:
+        """Reroute with no reroute_to does not add source/target fields."""
+        policy = RetryPolicy(
+            task_id="t1",
+            retry_count=3,
+            max_retries=3,
+            last_failure="crash",
+            action="reroute",
+            reroute_to=None,
+        )
+        result = emit_retry_event(policy, "author-a", events_dir)
+        assert result is not None
+        assert "source_lane" not in result["payload"]
+        assert "target_lane" not in result["payload"]

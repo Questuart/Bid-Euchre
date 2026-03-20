@@ -886,3 +886,152 @@ def get_task_scope(
 
     data = json.loads(task_file.read_text())
     return data.get("scope", {})
+
+
+# ---------------------------------------------------------------------------
+# Convenience wrappers for scope producers (#929)
+# ---------------------------------------------------------------------------
+
+
+def set_declared_scope(
+    task_id: str,
+    patterns: list[str],
+    runtime_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Set declared file-scope patterns for a task.
+
+    Convenience wrapper around ``update_task_scope()`` for use by hooks
+    and agents when a task is assigned or its scope is defined.
+
+    Args:
+        task_id: Task identifier (filename stem in ``task_state/``).
+        patterns: Glob patterns for declared file scope
+            (e.g., ``["src/bid_euchre/ops/*.py", "tests/unit/test_ops_*.py"]``).
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        The updated task state dict.
+
+    Raises:
+        FileNotFoundError: If the task state file does not exist.
+        ValueError: If ``task_id`` contains path traversal or ``patterns``
+            is empty.
+    """
+    if not patterns:
+        raise ValueError("patterns must be a non-empty list of glob strings")
+    return update_task_scope(task_id, declared_files=patterns, runtime_dir=runtime_dir)
+
+
+def record_touched_files(
+    task_id: str,
+    files: list[str],
+    runtime_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Append touched files to a task's scope tracking.
+
+    Convenience wrapper around ``update_task_scope()`` with
+    ``append_touched=True``. Designed for hooks that observe which files
+    an agent has modified so that ``check_scope_drift()`` can detect
+    out-of-scope edits.
+
+    Args:
+        task_id: Task identifier (filename stem in ``task_state/``).
+        files: File paths to record as touched. Appended to the existing
+            list (duplicates are automatically removed).
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        The updated task state dict.
+
+    Raises:
+        FileNotFoundError: If the task state file does not exist.
+        ValueError: If ``task_id`` contains path traversal or ``files``
+            is empty.
+    """
+    if not files:
+        raise ValueError("files must be a non-empty list of file paths")
+    return update_task_scope(
+        task_id,
+        touched_files=files,
+        append_touched=True,
+        runtime_dir=runtime_dir,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Git-based scope snapshot (#929)
+# ---------------------------------------------------------------------------
+
+
+def emit_scope_snapshot(
+    task_id: str,
+    repo_root: Path | None = None,
+    runtime_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Snapshot current git changes into a task's ``touched_files`` scope.
+
+    Runs ``git diff --name-only HEAD`` and ``git diff --name-only`` (unstaged)
+    from *repo_root* to discover which files the current work has modified,
+    then appends them to the task's ``scope.touched_files`` via
+    ``record_touched_files()``.
+
+    This is the canonical hook-friendly producer for scope tracking: a
+    PostToolUse hook or pre-commit hook can call this after file edits
+    so that ``check_scope_drift()`` has data to consume.
+
+    Args:
+        task_id: Task identifier (filename stem in ``task_state/``).
+        repo_root: Working directory for git commands. Defaults to the
+            current working directory.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        The updated task state dict, or None if no files have changed.
+
+    Raises:
+        FileNotFoundError: If the task state file does not exist.
+        ValueError: If ``task_id`` contains path traversal sequences.
+    """
+    import subprocess
+
+    if repo_root is None:
+        repo_root = Path.cwd()
+
+    changed: set[str] = set()
+
+    # Staged changes (relative to HEAD)
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+            timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                if line.strip():
+                    changed.add(line.strip())
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    # Unstaged changes
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only"],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+            timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                if line.strip():
+                    changed.add(line.strip())
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    if not changed:
+        return None
+
+    return record_touched_files(task_id, sorted(changed), runtime_dir)

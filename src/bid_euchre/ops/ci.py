@@ -15,6 +15,8 @@ import logging
 import re
 import subprocess
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
 
 from bid_euchre.ops import DEFAULT_REVIEW_CONTEXTS, GH_TIMEOUT_SECONDS
 
@@ -323,6 +325,66 @@ def poll_ci_status(
 
 
 # --- Formatting ---
+
+
+def emit_ci_events(
+    report: CIStatusReport,
+    lane_id: str,
+    events_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Emit a durable CI event based on a ``CIStatusReport``.
+
+    This is the Python-level counterpart to ``ci_poller.sh:emit_ci_event()``.
+    It translates the ``overall`` field of a polled CI status report into
+    the appropriate durable event:
+
+    - ``"failure"`` -> ``ci_failure`` with ``pr_number`` and ``failure_class``
+    - ``"success"`` -> ``ci_success`` with ``pr_number``
+    - otherwise -> no event (returns None)
+
+    Args:
+        report: CI status report from ``poll_ci_status()``.
+        lane_id: Canonical lane identity (e.g., ``"author-a"``).
+        events_dir: Override for events directory. Defaults to
+            ``.claude/runtime/events``.
+
+    Returns:
+        The emitted event dict, or None if the report does not warrant
+        an event (pending/unknown status).
+    """
+    from bid_euchre.ops.events import append_event
+
+    if report.overall == "failure":
+        # Collect unique failure classes from classifications
+        failure_classes = sorted({c.failure_class for c in report.classifications})
+        failure_class = (
+            ", ".join(failure_classes) if failure_classes else "unclassified"
+        )
+
+        return append_event(
+            event_type="ci_failure",
+            source="ops.ci",
+            lane_id=lane_id,
+            payload={
+                "pr_number": report.pr_number,
+                "failure_class": failure_class,
+            },
+            events_dir=events_dir,
+        )
+
+    if report.overall == "success":
+        return append_event(
+            event_type="ci_success",
+            source="ops.ci",
+            lane_id=lane_id,
+            payload={
+                "pr_number": report.pr_number,
+            },
+            events_dir=events_dir,
+        )
+
+    # pending / unknown — no event
+    return None
 
 
 def format_ci_text(report: CIStatusReport) -> str:

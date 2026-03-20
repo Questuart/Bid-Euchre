@@ -523,55 +523,16 @@ def _emit_retry_event(
 ) -> None:
     """Emit a durable event based on the retry policy decision.
 
-    Maps policy actions to event types:
-    - retry → retry_attempted
-    - reroute → task_rerouted
-    - escalate → escalation
+    Delegates to ``recovery.emit_retry_event()`` which is the canonical
+    producer for ``retry_attempted`` and ``task_rerouted`` events (#930).
+    This wrapper adds error handling for CLI context.
     """
-    from bid_euchre.ops.events import append_event
-
-    action = policy.action
-    task_id = policy.task_id
-    retry_count = policy.retry_count
-    reroute_to = policy.reroute_to
-    last_failure = policy.last_failure
-
-    event_map = {
-        "retry": "retry_attempted",
-        "reroute": "task_rerouted",
-        "escalate": "escalation",
-    }
-
-    event_type = event_map.get(action)
-    if not event_type:
-        return
-
-    payload: dict[str, object] = {
-        "task_id": task_id,
-        "retry_count": retry_count,
-        "last_failure": last_failure,
-    }
-
-    if action == "reroute" and reroute_to:
-        payload["source_lane"] = lane_id
-        payload["target_lane"] = reroute_to
-
-    if action == "escalate":
-        payload["details"] = (
-            f"Task {task_id} exceeded retry cap "
-            f"({retry_count} failures) — human attention required"
-        )
+    from bid_euchre.ops.recovery import emit_retry_event
 
     try:
-        append_event(
-            event_type=event_type,
-            source="ops.retry",
-            lane_id=lane_id,
-            payload=payload,
-            events_dir=events_dir,
-        )
+        emit_retry_event(policy, lane_id, events_dir)
     except Exception as e:
-        print(f"Warning: failed to emit {event_type} event: {e}", file=sys.stderr)
+        print(f"Warning: failed to emit retry event: {e}", file=sys.stderr)
 
 
 def cmd_index(args: argparse.Namespace) -> int:
