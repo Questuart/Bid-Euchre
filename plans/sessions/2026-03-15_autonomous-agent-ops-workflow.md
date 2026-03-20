@@ -789,6 +789,12 @@ operator use during PR-5:
   - `reviewing-changes` remains the merge-relevant review gate
   - if Codex review is reintroduced at CI before the later platform service-lane
     work, it should enter as `advisory` only and reuse the same category model
+- lightweight Codex Cloud proving run:
+  - enable repo access in Codex Cloud under the user's ChatGPT subscription
+  - use `@codex review` on a throwaway PR
+  - record the actual emitted GitHub check/status name
+  - only then add a one-line advisory classification follow-up if the repo
+    needs it; do not add a separate GitHub Actions workflow for this path
 - lane heartbeat/event wiring repair whenever `ops.py` disagrees with live
   Claude/tmux/process state
 - worktree registry/bootstrap fixes
@@ -806,7 +812,9 @@ Recommended sequencing after slices 3 and 4:
 4. take `PR-5 slice 6` with trusted liveness/heartbeat repair as part of the
    core scope before relying on richer operator visibility
 5. finish `PR-5 slice 7`
-6. keep any additional review-surface work narrow and compatible with the
+6. in parallel, do the lightweight Codex Cloud proving run (`@codex review` on
+   a throwaway PR) and record the real emitted check/context name
+7. keep any additional review-surface work narrow and compatible with the
    shipped `ci` / `review_gate` / `advisory` split
 
 Operational note (2026-03-20): recent ops review showed multiple live Claude
