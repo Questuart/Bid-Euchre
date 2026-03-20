@@ -204,6 +204,7 @@ class TestCICheckAllowlist:
         """Review, advisory, and plumbing checks must not appear in CI allowlist."""
         assert "reviewing-changes" not in _CI_CHECK_NAMES
         assert "claude-review" not in _CI_CHECK_NAMES
+        assert "codex-review" not in _CI_CHECK_NAMES
         assert "enable-auto-merge" not in _CI_CHECK_NAMES
 
     def test_matches_shared_constant(self) -> None:
@@ -264,6 +265,17 @@ class TestGetCIStatus:
         mock_run.return_value = _mock_checks_result(
             [
                 {"name": "claude-review", "state": "FAILURE"},
+                {"name": "tests", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_codex_review_failure_ignored(self, mock_run: Mock) -> None:
+        """codex-review is not in the CI allowlist — ignored."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "codex-review", "state": "FAILURE"},
                 {"name": "tests", "state": "SUCCESS"},
             ]
         )
