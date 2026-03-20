@@ -23,6 +23,10 @@ class TestClassifyCheck:
     def test_claude_review_is_advisory(self) -> None:
         assert classify_check("claude-review") == "advisory"
 
+    def test_enable_auto_merge_is_advisory(self) -> None:
+        """enable-auto-merge is plumbing, not CI (#1036)."""
+        assert classify_check("enable-auto-merge") == "advisory"
+
     def test_tests_is_ci(self) -> None:
         assert classify_check("tests") == "ci"
 
@@ -30,7 +34,7 @@ class TestClassifyCheck:
         assert classify_check("lint") == "ci"
 
     def test_unknown_name_defaults_to_ci(self) -> None:
-        """Unknown check names must default to 'ci' (conservative)."""
+        """Unknown check names must default to 'ci' (fail-open denylist)."""
         assert classify_check("some-random-check") == "ci"
 
     def test_empty_name_is_ci(self) -> None:
@@ -45,6 +49,10 @@ class TestConstants:
 
     def test_advisory_contains_claude_review(self) -> None:
         assert "claude-review" in ADVISORY_CONTEXTS
+
+    def test_advisory_contains_enable_auto_merge(self) -> None:
+        """enable-auto-merge is plumbing — must be in advisory (#1036)."""
+        assert "enable-auto-merge" in ADVISORY_CONTEXTS
 
     def test_non_ci_is_union(self) -> None:
         """NON_CI_CONTEXTS is the union of review gate + advisory."""
@@ -62,19 +70,67 @@ class TestConstants:
 
 
 class TestConsistencyWithGithubPrState:
-    """Verify github_pr_state.py CI allowlist excludes all non-CI contexts."""
+    """Verify github_pr_state.py uses classify_check for CI classification."""
 
-    def test_ci_allowlist_excludes_non_ci_contexts(self) -> None:
-        """The CI allowlist in scripts/internal must not contain any non-CI context."""
-        # Add scripts/internal to path for import
+    def test_github_pr_state_uses_classify_check(self) -> None:
+        """github_pr_state._classify_check must agree with ops.classify_check."""
         scripts_dir = Path(__file__).resolve().parents[2] / "scripts" / "internal"
         sys.path.insert(0, str(scripts_dir))
         try:
-            from github_pr_state import _CI_CHECK_NAMES
+            from github_pr_state import _classify_check as pr_state_classify
 
+            # All non-CI contexts must be excluded by both classifiers
             for ctx in NON_CI_CONTEXTS:
                 assert (
-                    ctx not in _CI_CHECK_NAMES
-                ), f"Non-CI context {ctx!r} found in _CI_CHECK_NAMES allowlist"
+                    pr_state_classify(ctx) != "ci"
+                ), f"Non-CI context {ctx!r} classified as 'ci' by github_pr_state"
+
+            # Known CI checks must be included by both
+            for name in ("tests", "prechecks", "governance"):
+                assert (
+                    pr_state_classify(name) == "ci"
+                ), f"CI check {name!r} not classified as 'ci' by github_pr_state"
+
+            # Unknown checks must default to CI (fail-open)
+            assert pr_state_classify("brand-new-workflow") == "ci"
+        finally:
+            sys.path.pop(0)
+
+
+class TestDriftDetection:
+    """Catch drift between CI_CHECK_NAMES (deprecated) and classify_check."""
+
+    def test_ci_check_names_members_classify_as_ci(self) -> None:
+        """Every name in the deprecated CI_CHECK_NAMES must classify as 'ci'.
+
+        If this fails, a CI check was added to the allowlist but is being
+        excluded by the denylist — an inconsistency that should be resolved.
+        """
+        from bid_euchre.ops import CI_CHECK_NAMES
+
+        for name in CI_CHECK_NAMES:
+            assert (
+                classify_check(name) == "ci"
+            ), f"CI_CHECK_NAMES member {name!r} does not classify as 'ci'"
+
+    def test_fallback_denylist_matches_non_ci_contexts(self) -> None:
+        """The inline fallback denylist in github_pr_state.py must cover all
+        NON_CI_CONTEXTS from ops/__init__.py.
+
+        If this fails, a new non-CI context was added to ops but not to the
+        inline fallback, which would cause divergence when bid_euchre is not
+        importable.
+        """
+        scripts_dir = Path(__file__).resolve().parents[2] / "scripts" / "internal"
+        sys.path.insert(0, str(scripts_dir))
+        try:
+            from github_pr_state import _classify_check as pr_state_classify
+
+            for ctx in NON_CI_CONTEXTS:
+                result = pr_state_classify(ctx)
+                assert result != "ci", (
+                    f"NON_CI_CONTEXTS member {ctx!r} classified as 'ci' by "
+                    f"github_pr_state fallback — update _FALLBACK_NON_CI"
+                )
         finally:
             sys.path.pop(0)

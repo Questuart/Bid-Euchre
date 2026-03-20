@@ -13,9 +13,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from github_pr_state import (
-    _CI_CHECK_NAMES,
     REVIEW_COMMENT_MARKER,
     PRMetadata,
+    _classify_check,
     get_ci_status,
     get_pr_body,
     get_pr_changed_files,
@@ -179,7 +179,7 @@ class TestGetPRChangedFiles:
 
 
 # ---------------------------------------------------------------------------
-# get_ci_status tests — allowlist-based CI classification
+# get_ci_status tests — classify_check-based CI classification
 # ---------------------------------------------------------------------------
 
 
@@ -188,33 +188,50 @@ def _mock_checks_result(checks: list[dict]) -> Mock:
     return Mock(returncode=0, stdout=json.dumps(checks))
 
 
-class TestCICheckAllowlist:
-    """Verify the CI allowlist contains expected check names."""
+class TestCIClassification:
+    """Verify classify_check-based CI classification in github_pr_state."""
 
-    def test_contains_tests(self) -> None:
-        assert "tests" in _CI_CHECK_NAMES
+    def test_known_ci_checks_classified_as_ci(self) -> None:
+        """Known CI check names must classify as 'ci'."""
+        assert _classify_check("tests") == "ci"
+        assert _classify_check("prechecks") == "ci"
+        assert _classify_check("governance") == "ci"
 
-    def test_contains_prechecks(self) -> None:
-        assert "prechecks" in _CI_CHECK_NAMES
+    def test_review_gate_excluded(self) -> None:
+        """Review gate checks must not classify as 'ci'."""
+        assert _classify_check("reviewing-changes") != "ci"
 
-    def test_contains_governance(self) -> None:
-        assert "governance" in _CI_CHECK_NAMES
+    def test_advisory_excluded(self) -> None:
+        """Advisory checks must not classify as 'ci'."""
+        assert _classify_check("claude-review") != "ci"
+        assert _classify_check("enable-auto-merge") != "ci"
 
-    def test_does_not_contain_non_validation_checks(self) -> None:
-        """Review, advisory, and plumbing checks must not appear in CI allowlist."""
-        assert "reviewing-changes" not in _CI_CHECK_NAMES
-        assert "claude-review" not in _CI_CHECK_NAMES
-        assert "enable-auto-merge" not in _CI_CHECK_NAMES
+    def test_unknown_checks_default_to_ci(self) -> None:
+        """Unknown check names must classify as 'ci' (fail-open denylist)."""
+        assert _classify_check("some-new-ci-job") == "ci"
+        assert _classify_check("lint-v2") == "ci"
 
-    def test_matches_shared_constant(self) -> None:
-        """Local _CI_CHECK_NAMES must equal the shared CI_CHECK_NAMES constant."""
-        from bid_euchre.ops import CI_CHECK_NAMES
+    def test_consistent_with_ops_classify_check(self) -> None:
+        """Local _classify_check must agree with ops.classify_check on all known names."""
+        from bid_euchre.ops import classify_check
 
-        assert set(_CI_CHECK_NAMES) == set(CI_CHECK_NAMES)
+        for name in (
+            "tests",
+            "prechecks",
+            "governance",
+            "reviewing-changes",
+            "claude-review",
+        ):
+            local = _classify_check(name)
+            canonical = classify_check(name)
+            # Both should agree on CI vs non-CI
+            assert (local == "ci") == (
+                canonical == "ci"
+            ), f"Disagreement on {name!r}: local={local}, canonical={canonical}"
 
 
 class TestGetCIStatus:
-    """Test get_ci_status with allowlist-based classification."""
+    """Test get_ci_status with classify_check-based classification."""
 
     @patch("github_pr_state.subprocess.run")
     def test_all_ci_checks_pass(self, mock_run: Mock) -> None:
@@ -249,7 +266,7 @@ class TestGetCIStatus:
 
     @patch("github_pr_state.subprocess.run")
     def test_reviewing_changes_failure_ignored(self, mock_run: Mock) -> None:
-        """reviewing-changes is not in the CI allowlist — ignored."""
+        """reviewing-changes is a review gate — excluded from CI."""
         mock_run.return_value = _mock_checks_result(
             [
                 {"name": "reviewing-changes", "state": "FAILURE"},
@@ -260,7 +277,7 @@ class TestGetCIStatus:
 
     @patch("github_pr_state.subprocess.run")
     def test_claude_review_failure_ignored(self, mock_run: Mock) -> None:
-        """claude-review is not in the CI allowlist — ignored."""
+        """claude-review is advisory — excluded from CI."""
         mock_run.return_value = _mock_checks_result(
             [
                 {"name": "claude-review", "state": "FAILURE"},
@@ -271,7 +288,7 @@ class TestGetCIStatus:
 
     @patch("github_pr_state.subprocess.run")
     def test_enable_auto_merge_failure_ignored(self, mock_run: Mock) -> None:
-        """enable-auto-merge is plumbing, not validation — ignored."""
+        """enable-auto-merge is advisory (plumbing) — excluded from CI."""
         mock_run.return_value = _mock_checks_result(
             [
                 {"name": "enable-auto-merge", "state": "FAILURE"},
@@ -281,15 +298,20 @@ class TestGetCIStatus:
         assert get_ci_status(1) == "success"
 
     @patch("github_pr_state.subprocess.run")
-    def test_future_unknown_check_ignored(self, mock_run: Mock) -> None:
-        """Any unknown check name not in allowlist is ignored."""
+    def test_future_unknown_check_included_as_ci(self, mock_run: Mock) -> None:
+        """Unknown check names default to CI (fail-open denylist).
+
+        This is the key behavioral change from #1036: previously unknown
+        checks were invisible (fail-closed). Now they count as CI so new
+        workflow jobs are automatically monitored.
+        """
         mock_run.return_value = _mock_checks_result(
             [
-                {"name": "some-new-advisory-thing", "state": "FAILURE"},
+                {"name": "some-new-ci-job", "state": "FAILURE"},
                 {"name": "tests", "state": "SUCCESS"},
             ]
         )
-        assert get_ci_status(1) == "success"
+        assert get_ci_status(1) == "failure"
 
     @patch("github_pr_state.subprocess.run")
     def test_only_non_ci_checks_returns_pending(self, mock_run: Mock) -> None:
