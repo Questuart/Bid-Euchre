@@ -900,3 +900,45 @@ class TestRenderingSanitization:
         assert "-- >" in content
         # The raw --> should not appear in the provenance section
         assert "value --> escape" not in content
+
+    def test_provenance_keys_sanitized(self, candidates_dir: Path) -> None:
+        """Provenance keys containing --> are also sanitized (Codex finding)."""
+        c = propose_skill(
+            name="key-test",
+            description="Testing key sanitization",
+            content="# Test\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            provenance={"evil-->key": "safe_value"},
+            candidates_dir=candidates_dir,
+        )
+        content = _render_skill_md(c)
+        assert "evil-- >key" in content
+        assert "evil-->key" not in content
+
+    def test_yaml_description_newline_injection(self, candidates_dir: Path) -> None:
+        """Description with embedded newlines cannot inject extra YAML keys (Codex finding)."""
+        c = _propose(
+            candidates_dir,
+            description='good"\nmalicious: yes\n"',
+        )
+        content = _render_skill_md(c)
+        # The front matter should be exactly 2 key lines: name and description.
+        # If newlines were not escaped, the injected text would appear as a
+        # third YAML key on its own line.
+        front_matter = content.split("---")[1]
+        lines = [ln for ln in front_matter.strip().split("\n") if ln.strip()]
+        assert len(lines) == 2, f"Expected 2 YAML lines, got {len(lines)}: {lines}"
+        assert lines[0].startswith("name:")
+        assert lines[1].startswith("description:")
+        # "malicious:" must not appear as a standalone YAML key (start of line)
+        for ln in lines:
+            assert not ln.strip().startswith(
+                "malicious:"
+            ), f"Injected YAML key found: {ln}"
+
+    def test_yaml_description_backslash_preserved(self, candidates_dir: Path) -> None:
+        """Backslashes in description are properly escaped."""
+        c = _propose(candidates_dir, description="path\\to\\file")
+        content = _render_skill_md(c)
+        assert 'description: "path\\\\to\\\\file"' in content
