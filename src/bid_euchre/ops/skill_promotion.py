@@ -474,16 +474,24 @@ def _render_skill_md(candidate: SkillCandidate) -> str:
     # YAML front matter matching existing skill conventions
     provenance_lines = []
     for key, val in sorted(candidate.provenance.items()):
+        safe_key = _sanitize_comment(key)
         if isinstance(val, list):
             safe_vals = ", ".join(_sanitize_comment(v) for v in val)
-            provenance_lines.append(f"#   {key}: {safe_vals}")
+            provenance_lines.append(f"#   {safe_key}: {safe_vals}")
         else:
-            provenance_lines.append(f"#   {key}: {_sanitize_comment(val)}")
+            provenance_lines.append(f"#   {safe_key}: {_sanitize_comment(val)}")
 
     provenance_block = "\n".join(provenance_lines)
 
-    # Escape internal double quotes in YAML values
-    safe_desc = candidate.description.replace('"', '\\"')
+    # Escape YAML-significant characters in quoted scalar values.
+    # Newlines would break out of the quoted scalar and allow injection
+    # of extra front-matter keys; backslashes need escaping first.
+    safe_desc = (
+        candidate.description.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
     return (
         (
