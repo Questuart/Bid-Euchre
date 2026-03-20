@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # Add scripts/internal to path for direct imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from review_driver import (
+    _create_follow_up_issues,
     _format_review_comment,
     _parse_plan_files,
     check_scope_drift,
@@ -937,3 +939,132 @@ class TestDegradedReviewStatus:
         # Status should NOT say "degraded"
         for _, _, desc in status_calls:
             assert "degraded" not in desc.lower()
+
+
+# ---------------------------------------------------------------------------
+# _create_follow_up_issues dedup guard tests (#1043)
+# ---------------------------------------------------------------------------
+
+# A minimal P2 finding that will pass the WARN_SEVERITY filter.
+_P2_FINDING = {
+    "severity": "P2",
+    "category": "convention",
+    "check_id": "T1",
+    "file": "src/foo.py",
+    "line": 10,
+    "message": "Untested behavior change",
+}
+
+
+class TestCreateFollowUpIssuesDedup:
+    """Test that the dedup guard in _create_follow_up_issues catches only
+    expected exceptions and logs at WARNING level (#1043)."""
+
+    def test_dedup_catches_subprocess_error(self) -> None:
+        """CalledProcessError from `gh issue list` is caught gracefully;
+        issue creation still proceeds."""
+
+        def _side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            # The dedup check calls 'gh issue list'
+            if "list" in cmd:
+                raise subprocess.CalledProcessError(1, cmd, stderr="auth failed")
+            # The create call succeeds
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "https://github.com/test/repo/issues/99"
+            return result
+
+        with patch("review_driver.subprocess.run", side_effect=_side_effect):
+            urls = _create_follow_up_issues(42, [_P2_FINDING])
+
+        # Issue should have been created despite dedup failure
+        assert len(urls) == 1
+        assert "issues/99" in urls[0]
+
+    def test_dedup_catches_json_decode_error(self) -> None:
+        """Malformed gh output (JSONDecodeError) is caught; creation proceeds."""
+
+        call_count = {"n": 0}
+
+        def _side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "list" in cmd:
+                # Return garbage that json.loads will choke on
+                result = MagicMock()
+                result.returncode = 0
+                result.stdout = "NOT_VALID_JSON"
+                return result
+            # The create call succeeds
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "https://github.com/test/repo/issues/100"
+            call_count["n"] += 1
+            return result
+
+        with patch("review_driver.subprocess.run", side_effect=_side_effect):
+            urls = _create_follow_up_issues(42, [_P2_FINDING])
+
+        assert len(urls) == 1
+        assert call_count["n"] >= 1
+
+    def test_dedup_catches_os_error(self) -> None:
+        """OSError (e.g., gh not found) is caught; creation proceeds."""
+
+        def _side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "list" in cmd:
+                raise OSError("gh: command not found")
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "https://github.com/test/repo/issues/101"
+            return result
+
+        with patch("review_driver.subprocess.run", side_effect=_side_effect):
+            urls = _create_follow_up_issues(42, [_P2_FINDING])
+
+        assert len(urls) == 1
+
+    def test_dedup_does_not_catch_unexpected_error(self) -> None:
+        """Unexpected errors (e.g., TypeError) must propagate, not be silently
+        swallowed. This is the key behavioral change from #1043."""
+
+        def _side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "list" in cmd:
+                raise TypeError("unexpected error in dedup")
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "https://github.com/test/repo/issues/102"
+            return result
+
+        import pytest
+
+        with (
+            patch("review_driver.subprocess.run", side_effect=_side_effect),
+            pytest.raises(TypeError, match="unexpected error in dedup"),
+        ):
+            _create_follow_up_issues(42, [_P2_FINDING])
+
+    def test_dedup_logs_at_warning_level(self) -> None:
+        """Dedup failures should log at WARNING, not DEBUG (#1043)."""
+
+        def _side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "list" in cmd:
+                raise subprocess.CalledProcessError(1, cmd, stderr="timeout")
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "https://github.com/test/repo/issues/103"
+            return result
+
+        with (
+            patch("review_driver.subprocess.run", side_effect=_side_effect),
+            patch("review_driver.logger") as mock_logger,
+        ):
+            _create_follow_up_issues(42, [_P2_FINDING])
+
+        # Verify warning was called (not debug)
+        mock_logger.warning.assert_called()
+        warning_msg = mock_logger.warning.call_args[0][0]
+        assert "Dedup check failed" in warning_msg
