@@ -12,7 +12,7 @@
 |------|--------|------|---------------|-------|
 | Step 0: Create governing-plan scaffold | COMPLETE | 2026-03-19 | Codex | Added canonical governing plan path, sub-plan registry, amendments log, and phase files. |
 | Step 1: Normalize discovery and references | COMPLETE | 2026-03-19 | Codex | Registered `agent_ops` in `CLAUDE.md` and updated plan references to the canonical governing-plan path. |
-| Step 2: Track Platform-1 entry criteria | IN_PROGRESS | 2026-03-20 | Codex | Slices 5 (#1054) and 6 (#1068) are now complete; only slice 7 remains before PR-5 closeout. The review-gate / `claude-review` stabilizer shipped in #1017, #1025, and #1030. Slice 6 repaired trusted lane liveness/heartbeat. Before Platform-1 begins, the review surfaces should be dialed in: keep `claude-review` stable, record the Codex Cloud proving-run behavior, and if needed land a small comment-ingestion / trusted-command bridge for `chatgpt-codex-connector[bot]` PR comments. Filesystem access should also be repo-bounded by default before Platform-1, with only narrow managed exceptions and explicit approval for outside-repo access. |
+| Step 2: Track Platform-1 entry criteria | COMPLETE | 2026-03-20 | author-d | PR-5 closed: all slices done — slice 5 (#1054), slice 6 (#1068, #1091), slice 7 (#1098, liveness #1104, retries #1112). Review-gate stabilizer shipped (#1017, #1025, #1030). Next gate: post-PR-5 bridge (filesystem boundary + PR comment ingestion) before Platform-1. Entry checklist published at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`. |
 | Step 3: Open Platform-1 implementation handoff / sub-plan | PENDING | -- | -- | Create the first execution handoff once Step 2 is clear. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
@@ -24,16 +24,18 @@
 
 ## Blockers
 
-- [ ] PR-5 slice 7 is not yet complete; Platform-1 should not begin until the
-  remaining slice is either complete or explicitly recorded as non-blocking in
-  the governing-plan entry criteria. (Slices 5 and 6 landed in #1054 and #1068.)
-- [ ] Review surfaces are not yet fully dialed in for Platform-1:
-  `claude-review` should stay stable, and any pre-Platform-1 Codex handling
-  should use the proved comment-based path rather than speculative check/status
-  plumbing.
-- [ ] Filesystem access policy is not yet fully dialed in for Platform-1:
+- [x] ~~PR-5 slice 7 is not yet complete~~ — **CLOSED** (2026-03-20). All
+  slices done: #1054 (slice 5), #1068/#1091 (slice 6), #1098/#1104/#1112
+  (slice 7).
+- [ ] Review surfaces need bridge work before Platform-1:
+  `claude-review` is stable. Codex Cloud comments from
+  `chatgpt-codex-connector[bot]` need ingestion/surfacing as operational
+  signals (not CI or merge-gate artifacts). See bridge plan:
+  `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`.
+- [ ] Filesystem access needs bridge work before Platform-1:
   agents should default to repo-bounded reads/writes, with outside-repo access
-  requiring explicit managed exceptions or operator approval.
+  requiring explicit managed exceptions or operator approval. See bridge plan
+  Lane A.
 
 ## Session Log
 
@@ -64,3 +66,12 @@
   a small bridge slice if needed so comment-based Codex overlay behavior and
   `claude-review` stability are dialed in before Platform-1 begins, and land
   repo-bounded file access as a governance hardening step.
+
+### 2026-03-20 -- author-d (Lane C: bridge contract and entry checklist)
+- Completed: Step 2 → COMPLETE. PR-5 closed — all slices (3-7) shipped.
+- Published Platform-1 entry checklist at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.
+- Documented next queue: filesystem boundary bridge → PR comment ingestion
+  bridge → bounded trusted commands if needed → Platform-1.
+- Aligned session plan, checkpoints, governing plan, and operator docs.
+- Next: Step 3 (Platform-1 implementation handoff) opens once bridge gate
+  is satisfied per the entry checklist.

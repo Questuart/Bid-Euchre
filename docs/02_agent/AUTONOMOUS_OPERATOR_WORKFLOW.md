@@ -947,28 +947,26 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 | PR-4 | Audit index, curated memory, session compaction | Shipped |
 | PR-5 (slice 1) | CI event producers, scope management, retry events | Shipped (#961) |
 | PR-5 (slice 2) | Issue-triage workflow, agent profile, conventions | Shipped |
+| PR-5 (slices 3-7) | Context safety, shadow snapshots, skill promotion, lane-activity, scope/retry/CI closeout | Shipped (#1024, #1016, #1054, #1068, #1091, #1098, #1104, #1112) |
 
-> **Note:** PR-5 in the session workflow plan covers the full rollout/integration
-> phase including context safety, skill promotion, issue triage, and shadow
-> snapshots. Slices 1 (event producers/scope) and 2 (issue triage) have
-> shipped. The remaining rollout-critical PR-5 deliverables are listed under
-> "Remaining Future Work." The larger single-entry orchestrator /
-> dashboard-first / remote-channel / exportable-platform architecture has
-> been promoted into the governed follow-on plan
+> **Note:** PR-5 is now **closed** (2026-03-20). All slices have shipped. The
+> remaining pre-Platform-1 work is the post-PR-5 bridge (filesystem boundary
+> + PR comment ingestion). See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`
+> for the full entry gate. The larger single-entry orchestrator /
+> dashboard-first / remote-channel / exportable-platform architecture is
+> tracked in the governed follow-on plan
 > `plans/agent_ops/governing_plan.md`.
 > Issue-triage details:
 > `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md`.
 
-### Remaining Future Work (PR-5 continuation)
+### Remaining Pre-Platform-1 Work (Post-PR-5 Bridge)
 
-- Context safety scanning for auto-loaded content
-- ~~Shadow snapshots and rollback workflow~~ → Shipped (see § Shadow Snapshots above)
-- Skill promotion workflow (promote repeated multi-step workflows into skills)
-- Lane-activity / current-work visibility (extend `ops.py status` to show
-  who is working on what across lanes)
-- Fully automated scope tracking via file-write hooks
-- Automated retry execution (currently advisory only)
-- CI event emission from GitHub Actions (currently only from local CI poller)
+- Repo-bounded filesystem access as default in repo-owned entrypoints
+- PR comment ingestion for trusted-bot operational signals (Codex Cloud)
+- Bounded trusted command handling (conditional — only if still needed)
+
+See `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
+for the bridge implementation plan.
 
 ### Follow-On Governed Initiative
 
