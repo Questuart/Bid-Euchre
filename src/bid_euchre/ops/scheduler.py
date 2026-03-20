@@ -338,6 +338,8 @@ def daemon(
         stopped_reason="max_iterations",
     )
 
+    consecutive_errors = 0
+
     for i in range(effective_max):
         try:
             tick_result = tick(
@@ -355,6 +357,9 @@ def daemon(
 
             if tick_result.errors:
                 result.errors.extend(tick_result.errors)
+                consecutive_errors += 1
+            else:
+                consecutive_errors = 0
 
             logger.info(
                 "Daemon tick %d/%d: %d findings (%d critical)",
@@ -372,10 +377,12 @@ def daemon(
             error_msg = f"Daemon tick {i + 1} failed: {e}"
             logger.error(error_msg)
             result.errors.append(error_msg)
-            # Continue on recoverable errors; stop on repeated failures
-            if len(result.errors) >= 3:
-                result.stopped_reason = "error"
-                break
+            consecutive_errors += 1
+
+        # Stop on consecutive failures (not cumulative)
+        if consecutive_errors >= 3:
+            result.stopped_reason = "error"
+            break
 
         # Sleep between ticks (skip after last tick)
         if i < effective_max - 1:

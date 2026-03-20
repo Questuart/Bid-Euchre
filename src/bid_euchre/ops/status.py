@@ -278,11 +278,17 @@ def _find_pr_from_events(
 def _parse_iso_timestamp(ts: str | None) -> datetime | None:
     """Parse an ISO 8601 timestamp string to a timezone-aware datetime.
 
+    Normalizes the ``Z`` suffix to ``+00:00`` for Python 3.10 compatibility
+    (``datetime.fromisoformat`` only handles ``Z`` natively in 3.11+).
+
     Returns None if the string is missing or unparseable.
     """
     if not ts:
         return None
     try:
+        # Normalize Z suffix for Python 3.10 compat
+        if ts.endswith("Z"):
+            ts = ts[:-1] + "+00:00"
         dt = datetime.fromisoformat(ts)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)

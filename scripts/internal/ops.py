@@ -28,8 +28,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from _repo_utils import find_repo_root
+
+if TYPE_CHECKING:
+    from bid_euchre.ops.recovery import RetryPolicy
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -509,7 +513,7 @@ def cmd_retry(args: argparse.Namespace) -> int:
 
 
 def _emit_retry_event(
-    policy: object,
+    policy: RetryPolicy,
     lane_id: str,
     events_dir: Path,
 ) -> None:
@@ -522,11 +526,11 @@ def _emit_retry_event(
     """
     from bid_euchre.ops.events import append_event
 
-    action = getattr(policy, "action", "")
-    task_id = getattr(policy, "task_id", "unknown")
-    retry_count = getattr(policy, "retry_count", 0)
-    reroute_to = getattr(policy, "reroute_to", None)
-    last_failure = getattr(policy, "last_failure", "unknown")
+    action = policy.action
+    task_id = policy.task_id
+    retry_count = policy.retry_count
+    reroute_to = policy.reroute_to
+    last_failure = policy.last_failure
 
     event_map = {
         "retry": "retry_attempted",

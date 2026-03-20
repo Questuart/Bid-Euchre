@@ -211,7 +211,14 @@ def compact_session(
         # Clean up partial archive so a retry is not permanently blocked
         # by a stale directory (see #954).
         if session_dir.exists():
-            shutil.rmtree(session_dir)
+            try:
+                shutil.rmtree(session_dir)
+            except OSError as cleanup_err:
+                logger.warning(
+                    "Failed to clean up partial archive %s: %s",
+                    session_dir,
+                    cleanup_err,
+                )
         return CompactionResult(
             session_id=session_id,
             archive_path=str(session_dir),
@@ -327,7 +334,11 @@ def delete_archive(session_id: str, archive_dir: Path | None = None) -> bool:
     if not session_dir.exists():
         return False
 
-    shutil.rmtree(session_dir)
+    try:
+        shutil.rmtree(session_dir)
+    except OSError as e:
+        logger.warning("Failed to delete archive %s: %s", session_dir, e)
+        return False
     return True
 
 

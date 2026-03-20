@@ -21,7 +21,7 @@ Analyze experiment results with the rigor standards this repo requires. Every in
 
 3. For comparator output, check for existing artifacts:
    ```bash
-   ls data/artifacts/arc_d/ 2>/dev/null
+   ls data/artifacts/arc_d_v2/ 2>/dev/null
    ```
 
 ## Phase 2 — Statistical Checklist
