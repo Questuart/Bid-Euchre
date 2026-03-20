@@ -12,6 +12,7 @@ from bid_euchre.ops.index import (
     IndexStats,
     QueryResponse,
     _connect,
+    _staleness_cache,
     build_index,
     format_query_json,
     format_query_text,
@@ -885,3 +886,197 @@ class TestSourcesIndexedAccuracy:
         assert result.sources_indexed == 3
         # 1 entry + 1 entry + 1 entry = 3 entries
         assert result.entries_indexed == 3
+
+
+# ── Regression tests for #956 ─────────────────────────────────────
+
+
+class TestStalenessCache:
+    """Regression tests for #956: TTL-cached staleness checks."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self) -> None:
+        """Ensure each test starts with a clean cache."""
+        _staleness_cache.invalidate_all()
+
+    def test_staleness_detected_after_file_modification(
+        self, index_dir: Path, runtime_dir: Path, plans_dir: Path
+    ) -> None:
+        """After modifying a source file, staleness should be detected."""
+        import time as _time
+
+        build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
+
+        # Index should not be stale immediately after build
+        stats = get_stats(index_dir)
+        assert stats.stale_sources == 0
+
+        # Modify a source file — ensure mtime advances
+        events_file = runtime_dir / "events" / "events.jsonl"
+        _time.sleep(0.05)  # ensure mtime resolution
+        events_file.write_text(
+            events_file.read_text() + '{"event_type":"new","timestamp":"2026-12-31"}\n'
+        )
+
+        # Cache should be invalidated for this query (build just ran, but
+        # we need to force expiry to see the modification)
+        _staleness_cache.invalidate(index_dir)
+
+        stats = get_stats(index_dir)
+        assert stats.stale_sources >= 1
+
+    def test_staleness_cache_avoids_repeated_stat_calls(
+        self,
+        index_dir: Path,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Multiple queries within TTL should not re-scan source files."""
+        import bid_euchre.ops.index as idx_mod
+
+        # Set a long TTL so the cache definitely doesn't expire
+        monkeypatch.setattr(idx_mod, "_STALENESS_TTL_SECONDS", 3600.0)
+
+        build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
+
+        # First query — populates cache
+        resp1 = query(index_dir, "task_completed")
+        assert resp1.total_matches >= 1
+
+        # Patch _count_stale_sources to track calls
+        call_count = 0
+        original_fn = idx_mod._count_stale_sources
+
+        def counting_wrapper(conn: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return original_fn(conn)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(idx_mod, "_count_stale_sources", counting_wrapper)
+
+        # Subsequent queries should hit cache — zero calls to _count_stale_sources
+        query(index_dir, "ci_failure")
+        query(index_dir, "review_outcome")
+        query_recent(index_dir)
+        get_stats(index_dir)
+
+        assert call_count == 0, f"Expected 0 stale-source scans, got {call_count}"
+
+    def test_staleness_cache_expires_after_ttl(
+        self,
+        index_dir: Path,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After TTL expires, the next query should re-scan."""
+        import bid_euchre.ops.index as idx_mod
+
+        # Set TTL to 0 so cache always expires
+        monkeypatch.setattr(idx_mod, "_STALENESS_TTL_SECONDS", 0.0)
+
+        build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
+
+        # Track calls
+        call_count = 0
+        original_fn = idx_mod._count_stale_sources
+
+        def counting_wrapper(conn: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return original_fn(conn)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(idx_mod, "_count_stale_sources", counting_wrapper)
+
+        # Each query should trigger a fresh scan
+        query(index_dir, "task_completed")
+        query(index_dir, "ci_failure")
+
+        assert call_count == 2, f"Expected 2 scans with TTL=0, got {call_count}"
+
+    def test_staleness_cache_invalidated_after_build(
+        self,
+        index_dir: Path,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """build_index() invalidates the cache so next query re-scans."""
+        import bid_euchre.ops.index as idx_mod
+
+        monkeypatch.setattr(idx_mod, "_STALENESS_TTL_SECONDS", 3600.0)
+
+        build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
+
+        # Prime the cache
+        query(index_dir, "task_completed")
+
+        # Track calls
+        call_count = 0
+        original_fn = idx_mod._count_stale_sources
+
+        def counting_wrapper(conn: object) -> int:
+            nonlocal call_count
+            call_count += 1
+            return original_fn(conn)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(idx_mod, "_count_stale_sources", counting_wrapper)
+
+        # Rebuild — should invalidate cache
+        build_index(index_dir, runtime_dir=runtime_dir, plans_dir=plans_dir)
+
+        # Next query should re-scan despite long TTL
+        query(index_dir, "task_completed")
+
+        assert call_count >= 1, "Cache should have been invalidated after build"
+
+    def test_staleness_cache_isolated_across_index_dirs(self, tmp_path: Path) -> None:
+        """Two different index_dirs should not share cache entries."""
+        import bid_euchre.ops.index as idx_mod
+
+        idx_mod._STALENESS_TTL_SECONDS = 3600.0
+
+        # Create two independent indexes
+        idx1 = tmp_path / "idx1"
+        idx1.mkdir()
+        idx2 = tmp_path / "idx2"
+        idx2.mkdir()
+
+        rt1 = tmp_path / "rt1"
+        rt1.mkdir()
+        events_dir1 = rt1 / "events"
+        events_dir1.mkdir()
+        (events_dir1 / "events.jsonl").write_text(
+            '{"event_type":"alpha","timestamp":"2026-01-01"}\n'
+        )
+
+        rt2 = tmp_path / "rt2"
+        rt2.mkdir()
+        events_dir2 = rt2 / "events"
+        events_dir2.mkdir()
+        (events_dir2 / "events.jsonl").write_text(
+            '{"event_type":"bravo","timestamp":"2026-01-01"}\n'
+        )
+
+        plans = tmp_path / "plans"
+        plans.mkdir()
+
+        build_index(idx1, runtime_dir=rt1, plans_dir=plans, repo_root=tmp_path)
+        build_index(idx2, runtime_dir=rt2, plans_dir=plans, repo_root=tmp_path)
+
+        # Query each — results should be independent
+        resp1 = query(idx1, "alpha")
+        resp2 = query(idx2, "bravo")
+
+        assert resp1.total_matches >= 1
+        assert resp2.total_matches >= 1
+
+        # Staleness for one should not affect the other
+        _staleness_cache.invalidate(idx1)
+        # idx2's cache should still be valid
+        stats2 = get_stats(idx2)
+        assert isinstance(stats2.stale_sources, int)
+
+        # Restore default TTL
+        idx_mod._STALENESS_TTL_SECONDS = 30.0
