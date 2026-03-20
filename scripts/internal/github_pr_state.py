@@ -143,11 +143,24 @@ def get_pr_head_sha(pr_number: int) -> str:
     return result.stdout.strip()
 
 
+# Allowlist of GitHub check names that represent real CI (build/test/lint).
+# Only these checks are considered when determining whether CI has passed.
+# Any check not in this set (review statuses, advisory actions, etc.) is
+# ignored.  Update this set when adding new CI workflow jobs.
+_CI_CHECK_NAMES: set[str] = {
+    "tests",
+    "prechecks",
+    "governance",
+}
+
+
 def get_ci_status(pr_number: int) -> str:
     """Get the CI status of a PR.
 
-    Excludes the ``reviewing-changes`` commit status to avoid circular
-    dependency (the review loop publishes that status itself).
+    Uses an explicit allowlist (:data:`_CI_CHECK_NAMES`) so that only
+    real CI checks (tests, lint, governance) are considered.  Review
+    statuses, advisory actions, and any future non-CI contexts are
+    excluded automatically.
 
     Returns:
         "success", "failure", "pending", or "unknown"
@@ -168,12 +181,12 @@ def get_ci_status(pr_number: int) -> str:
         return "unknown"
 
     checks = json.loads(result.stdout)
-    # Filter out the review loop's own status to avoid circular dependency
-    checks = [c for c in checks if c.get("name") != "reviewing-changes"]
-    if not checks:
+    # Only consider checks that are known CI jobs
+    ci_checks = [c for c in checks if c.get("name") in _CI_CHECK_NAMES]
+    if not ci_checks:
         return "pending"
 
-    states = [c.get("state", "PENDING") for c in checks]
+    states = [c.get("state", "PENDING") for c in ci_checks]
 
     if any(s == "FAILURE" for s in states):
         return "failure"

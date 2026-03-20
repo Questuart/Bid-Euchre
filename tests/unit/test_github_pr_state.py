@@ -1,4 +1,4 @@
-"""Tests for github_pr_state.py — PR metadata, body retrieval, changed files, comment upsert."""
+"""Tests for github_pr_state.py — PR metadata, body, changed files, CI status, comment upsert."""
 
 from __future__ import annotations
 
@@ -13,8 +13,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
 from github_pr_state import (
+    _CI_CHECK_NAMES,
     REVIEW_COMMENT_MARKER,
     PRMetadata,
+    get_ci_status,
     get_pr_body,
     get_pr_changed_files,
     get_pr_metadata,
@@ -174,6 +176,135 @@ class TestGetPRChangedFiles:
         mock_run.return_value = Mock(returncode=0, stdout="")
         files = get_pr_changed_files(1)
         assert files == []
+
+
+# ---------------------------------------------------------------------------
+# get_ci_status tests — allowlist-based CI classification
+# ---------------------------------------------------------------------------
+
+
+def _mock_checks_result(checks: list[dict]) -> Mock:
+    """Build a Mock subprocess result for get_ci_status."""
+    return Mock(returncode=0, stdout=json.dumps(checks))
+
+
+class TestCICheckAllowlist:
+    """Verify the CI allowlist contains expected check names."""
+
+    def test_contains_tests(self) -> None:
+        assert "tests" in _CI_CHECK_NAMES
+
+    def test_contains_prechecks(self) -> None:
+        assert "prechecks" in _CI_CHECK_NAMES
+
+    def test_contains_governance(self) -> None:
+        assert "governance" in _CI_CHECK_NAMES
+
+    def test_does_not_contain_non_validation_checks(self) -> None:
+        """Review, advisory, and plumbing checks must not appear in CI allowlist."""
+        assert "reviewing-changes" not in _CI_CHECK_NAMES
+        assert "claude-review" not in _CI_CHECK_NAMES
+        assert "enable-auto-merge" not in _CI_CHECK_NAMES
+
+
+class TestGetCIStatus:
+    """Test get_ci_status with allowlist-based classification."""
+
+    @patch("github_pr_state.subprocess.run")
+    def test_all_ci_checks_pass(self, mock_run: Mock) -> None:
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "SUCCESS"},
+                {"name": "prechecks", "state": "SUCCESS"},
+                {"name": "governance", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_ci_failure(self, mock_run: Mock) -> None:
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "FAILURE"},
+                {"name": "prechecks", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "failure"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_ci_pending(self, mock_run: Mock) -> None:
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "PENDING"},
+                {"name": "prechecks", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "pending"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_reviewing_changes_failure_ignored(self, mock_run: Mock) -> None:
+        """reviewing-changes is not in the CI allowlist — ignored."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "reviewing-changes", "state": "FAILURE"},
+                {"name": "tests", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_claude_review_failure_ignored(self, mock_run: Mock) -> None:
+        """claude-review is not in the CI allowlist — ignored."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "claude-review", "state": "FAILURE"},
+                {"name": "tests", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_enable_auto_merge_failure_ignored(self, mock_run: Mock) -> None:
+        """enable-auto-merge is plumbing, not validation — ignored."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "enable-auto-merge", "state": "FAILURE"},
+                {"name": "tests", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_future_unknown_check_ignored(self, mock_run: Mock) -> None:
+        """Any unknown check name not in allowlist is ignored."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "some-new-advisory-thing", "state": "FAILURE"},
+                {"name": "tests", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_only_non_ci_checks_returns_pending(self, mock_run: Mock) -> None:
+        """If no CI checks exist, treat as pending."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "reviewing-changes", "state": "SUCCESS"},
+                {"name": "claude-review", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "pending"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_gh_failure_returns_unknown(self, mock_run: Mock) -> None:
+        mock_run.return_value = Mock(returncode=1, stderr="not found")
+        assert get_ci_status(1) == "unknown"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_empty_checks_returns_pending(self, mock_run: Mock) -> None:
+        mock_run.return_value = _mock_checks_result([])
+        assert get_ci_status(1) == "pending"
 
 
 # ---------------------------------------------------------------------------

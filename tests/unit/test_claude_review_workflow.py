@@ -57,6 +57,24 @@ class TestClaudeReviewWorkflow:
             claude_args == "--max-turns 5"
         ), f"expected '--max-turns 5', got {claude_args!r}"
 
+    def test_no_continue_on_error(self):
+        """Review step must NOT use continue-on-error — failures must be visible."""
+        step = self._review_step()
+        assert step.get("continue-on-error") is not True
+
+    def test_has_infra_failure_flag_step(self):
+        """A follow-up step must create an issue on reviewer infra failure."""
+        steps = self.cfg["jobs"]["claude-review"]["steps"]
+        flag_steps = [
+            s for s in steps if s.get("name") == "Flag reviewer infra failure"
+        ]
+        assert len(flag_steps) == 1
+        flag_step = flag_steps[0]
+        # Must scope to the review step specifically, not blanket failure()
+        assert "steps.claude-review.outcome" in flag_step["if"]
+        # Must have GH_TOKEN for gh issue create
+        assert "GH_TOKEN" in str(flag_step.get("env", {}))
+
     def _review_step(self):
         """Return the 'Run Claude Code Review' step."""
         steps = self.cfg["jobs"]["claude-review"]["steps"]
