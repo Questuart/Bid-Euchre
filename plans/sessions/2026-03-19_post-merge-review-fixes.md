@@ -119,4 +119,10 @@ the new utility from Fix 2). **Execute in order: Fix 2 → Fix 4 → Fix 1 → F
 
 ## Outcome
 
-_To be filled after implementation._
+**PR:** #969 — Address 5 verified post-merge review findings.
+
+All 5 verified fixes shipped: `_generate_id()` collision nonce, `_find_repo_root()`
+deduplication into `_repo_utils.py`, `except Exception` narrowing in
+`_ingest_report_metadata()`, `build_index()` relative path resolution,
+and `save_memory()` atomic write with fsync. Session plan outcomes filled
+separately in this batch.

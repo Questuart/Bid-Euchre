@@ -352,6 +352,57 @@ class TestDaemon:
         assert result.stopped_reason == "error"
         assert len(result.errors) >= 3
 
+    def test_daemon_survives_intermittent_errors(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        scheduler_dir: Path,
+        events_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Daemon does NOT stop when errors are separated by successes.
+
+        Regression test: cumulative error counting stopped the daemon after
+        3 total errors spread across many ticks. With consecutive semantics,
+        only 3 errors in a row should trigger shutdown.
+        """
+        call_count = 0
+
+        def intermittent_tick(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Fail on ticks 1, 3, 5 (separated by successes on 2, 4, 6)
+            if call_count % 2 == 1:
+                raise RuntimeError(f"intermittent error {call_count}")
+            # Import to return a valid TickResult on success
+            from bid_euchre.ops.scheduler import TickResult
+
+            return TickResult(
+                checks_run=[],
+                findings=[],
+                events_emitted=0,
+                errors=[],
+                tick_number=call_count,
+            )
+
+        from bid_euchre.ops import scheduler as sched_mod
+
+        monkeypatch.setattr(sched_mod, "tick", intermittent_tick)
+
+        result = daemon(
+            runtime_dir=runtime_dir,
+            plans_dir=plans_dir,
+            scheduler_dir=scheduler_dir,
+            events_dir=events_dir,
+            max_iterations=6,
+            _sleep_fn=self._noop_sleep,
+        )
+
+        # Should complete all 6 ticks (not stop early from cumulative errors)
+        assert result.stopped_reason == "max_iterations"
+        # 3 errors total, but never 3 consecutive
+        assert len(result.errors) == 3
+
     def test_daemon_accumulates_findings(
         self,
         runtime_dir: Path,

@@ -314,6 +314,48 @@ class TestRetrieval:
         assert get_archive_context("nonexistent", archive_dir) is None
 
 
+class TestCompactSessionCleanupFailure:
+    """Tests for compact_session cleanup edge cases."""
+
+    def test_cleanup_rmtree_failure_does_not_mask_original_error(
+        self, archive_dir: Path
+    ) -> None:
+        """If cleanup rmtree fails, the original error should still be reported."""
+        from unittest.mock import patch
+
+        session_id = "session-cleanup-fail"
+        original_write_text = Path.write_text
+        call_count = 0
+
+        def failing_write_text(
+            self_path: Path, *args: object, **kwargs: object
+        ) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise OSError("Original disk error")
+            original_write_text(self_path, *args, **kwargs)
+
+        def failing_rmtree(path: object, **kwargs: object) -> None:
+            raise PermissionError("Cannot remove read-only file")
+
+        with (
+            patch.object(Path, "write_text", failing_write_text),
+            patch("bid_euchre.ops.compaction.shutil.rmtree", failing_rmtree),
+        ):
+            result = compact_session(
+                session_id=session_id,
+                lane_id="author-a",
+                context_text="context",
+                artifacts=[ArtifactRef(path="foo.py", action="created")],
+                archive_dir=archive_dir,
+            )
+
+        # The original error must be reported, not the cleanup error
+        assert not result.success
+        assert "Original disk error" in result.error
+
+
 class TestDeleteArchive:
     """Tests for delete_archive()."""
 
@@ -330,6 +372,27 @@ class TestDeleteArchive:
 
     def test_delete_nonexistent(self, archive_dir: Path) -> None:
         assert not delete_archive("nonexistent", archive_dir)
+
+    def test_delete_returns_false_on_rmtree_failure(self, archive_dir: Path) -> None:
+        """delete_archive returns False if rmtree fails (e.g., read-only file)."""
+        from unittest.mock import patch
+
+        compact_session(
+            session_id="session-perm",
+            lane_id="author-a",
+            context_text="context",
+            artifacts=[],
+            archive_dir=archive_dir,
+        )
+        assert (archive_dir / "session-perm").exists()
+
+        def failing_rmtree(path: object, **kwargs: object) -> None:
+            raise PermissionError("Read-only file in archive")
+
+        with patch("bid_euchre.ops.compaction.shutil.rmtree", failing_rmtree):
+            result = delete_archive("session-perm", archive_dir)
+
+        assert result is False
 
 
 class TestPathTraversalValidation:

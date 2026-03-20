@@ -144,7 +144,14 @@ Tests must follow implementation (sequential).
 
 ## Outcome
 
-_To be filled after implementation._
+**PRs:**
+- #961 — Wire deferred watchdog producers and add scope management (PR-5 core)
+- #966 — Codex review follow-up: PR-5 scope labeling, escalation test coverage
+- #975 — Add lane-activity / current-work surface to PR-5 plan
+- #994 — Add lane-activity / current-work visibility to ops status
+
+All four PR-5 deliverables shipped: CI event emission, scope management API,
+retry event wiring, and lane-activity surface. Known gaps documented below.
 
 ## Known Gaps (Deferred)
 

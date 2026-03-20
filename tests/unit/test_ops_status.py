@@ -1037,6 +1037,47 @@ class TestSessionSelectionTimezone:
         assert lane.session_task == "Valid session"
 
 
+class TestParseIsoTimestamp:
+    """Tests for _parse_iso_timestamp() edge cases."""
+
+    def test_z_suffix_parsed_correctly(self) -> None:
+        """Z-suffix timestamps must parse on Python 3.10+ (not just 3.11+)."""
+        from bid_euchre.ops.status import _parse_iso_timestamp
+
+        result = _parse_iso_timestamp("2026-03-19T15:00:00Z")
+        assert result is not None
+        assert result.year == 2026
+        assert result.month == 3
+        assert result.day == 19
+        assert result.hour == 15
+        assert result.tzinfo is not None
+
+    def test_z_suffix_equals_plus_zero(self) -> None:
+        """Z and +00:00 must produce the same datetime."""
+        from bid_euchre.ops.status import _parse_iso_timestamp
+
+        z_result = _parse_iso_timestamp("2026-03-19T15:00:00Z")
+        offset_result = _parse_iso_timestamp("2026-03-19T15:00:00+00:00")
+        assert z_result is not None
+        assert offset_result is not None
+        assert z_result == offset_result
+
+    def test_none_returns_none(self) -> None:
+        from bid_euchre.ops.status import _parse_iso_timestamp
+
+        assert _parse_iso_timestamp(None) is None
+
+    def test_empty_returns_none(self) -> None:
+        from bid_euchre.ops.status import _parse_iso_timestamp
+
+        assert _parse_iso_timestamp("") is None
+
+    def test_garbage_returns_none(self) -> None:
+        from bid_euchre.ops.status import _parse_iso_timestamp
+
+        assert _parse_iso_timestamp("not-a-timestamp") is None
+
+
 class TestAggregateStatusLaneActivity:
     """Integration tests for lane-activity via aggregate_status()."""
 
