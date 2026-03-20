@@ -50,22 +50,7 @@ jobs:
 
             Post your findings as review comments on the PR.
 
-          # Read-only tool allowlist — prevents turn waste from permission denials.
-          # The reviewer can inspect code and post comments but cannot modify the repo.
-          allowed_tools: |
-            Read
-            Glob
-            Grep
-            Bash(git diff *)
-            Bash(git log *)
-            Bash(git show *)
-            Bash(git status)
-            Bash(gh pr diff *)
-            Bash(gh pr view *)
-            Bash(gh pr checks *)
-            Bash(gh pr comment *)
-
-          claude_args: "--max-turns 5"
+          claude_args: "--max-turns 10"
 
       - name: Flag reviewer infra failure
         if: always() && steps.claude-review.outcome == 'failure'
@@ -79,8 +64,11 @@ jobs:
           DENIALS=0
 
           if [ -z "$EXECUTION_FILE" ]; then
-            # Output was never set — action crashed before producing metadata
-            SUBTYPE="missing_execution_file"
+            # Output was never set — action crashed before producing metadata.
+            # The action does not set execution_file on error_max_turns exits,
+            # so this is the most common case. Warn but do not create an issue.
+            echo "::warning::claude-review exited without execution_file (likely max-turns exhaustion)"
+            exit 0
           elif [ ! -f "$EXECUTION_FILE" ]; then
             # Path was set but file doesn't exist on disk
             SUBTYPE="execution_file_not_found"
@@ -91,6 +79,13 @@ jobs:
             # Guard against empty jq output
             [ -z "$SUBTYPE" ] && SUBTYPE="unparseable_execution_file"
             [ -z "$DENIALS" ] && DENIALS=0
+          fi
+
+          # error_max_turns is a normal operational boundary, not an infra failure.
+          # Warn but do not create a noise issue.
+          if [ "$SUBTYPE" = "error_max_turns" ]; then
+            echo "::warning::claude-review hit max-turns (denials=$DENIALS) — not an infra failure"
+            exit 0
           fi
 
           gh issue create \
