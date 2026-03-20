@@ -186,8 +186,8 @@ def _create_follow_up_issues(
                     existing[0].get("url", "?"),
                 )
                 continue
-        except (json.JSONDecodeError, Exception) as e:
-            logger.debug("Dedup check failed, proceeding with creation: %s", e)
+        except (json.JSONDecodeError, subprocess.CalledProcessError, OSError) as e:
+            logger.warning("Dedup check failed, proceeding with creation: %s", e)
 
         # Try with labels first, fall back to without
         result = subprocess.run(
