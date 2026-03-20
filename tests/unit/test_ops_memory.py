@@ -197,8 +197,8 @@ class TestLoadSave:
             original_close(fd)
 
         with (
-            patch("os.replace", side_effect=OSError("disk full")),
-            patch("os.close", side_effect=tracking_close),
+            patch("bid_euchre.ops.memory.os.replace", side_effect=OSError("disk full")),
+            patch("bid_euchre.ops.memory.os.close", side_effect=tracking_close),
         ):
             with pytest.raises(OSError, match="disk full"):
                 save_memory(store, memory_dir)
@@ -800,3 +800,97 @@ class TestLockedUpdate:
         keys = {e.key for e in entries}
         assert "concurrent_a" in keys, f"Lost write for concurrent_a. Keys: {keys}"
         assert "concurrent_b" in keys, f"Lost write for concurrent_b. Keys: {keys}"
+
+    def test_locked_update_no_op_skips_save(self, memory_dir: Path) -> None:
+        """_locked_update must skip save_memory when store is unmodified."""
+        from unittest.mock import patch as _patch
+
+        # Pre-populate with an entry
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="aaa",
+                    category="repo_fact",
+                    key="k1",
+                    value="v1",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+        original_updated = load_memory(memory_dir).last_updated
+
+        # Open _locked_update but make no changes
+        with _patch("bid_euchre.ops.memory.save_memory") as mock_save:
+            with _locked_update(memory_dir) as _s:
+                pass  # No mutations
+
+            mock_save.assert_not_called()
+
+        # last_updated should be unchanged
+        reloaded = load_memory(memory_dir)
+        assert reloaded.last_updated == original_updated
+
+    def test_locked_update_mutation_saves(self, memory_dir: Path) -> None:
+        """_locked_update must call save_memory when store is modified."""
+        from unittest.mock import patch as _patch
+
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="aaa",
+                    category="repo_fact",
+                    key="k1",
+                    value="v1",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+
+        # Mutate inside the context
+        with _patch("bid_euchre.ops.memory.save_memory") as mock_save:
+            with _locked_update(memory_dir) as s:
+                s.entries.append(
+                    MemoryEntry(
+                        entry_id="bbb",
+                        category="preference",
+                        key="k2",
+                        value="v2",
+                        source_file="f.md",
+                        added_by="test",
+                        added_at="2026-03-18T11:00:00+00:00",
+                    )
+                )
+
+            mock_save.assert_called_once()
+
+    def test_remove_nonexistent_no_timestamp_change(self, memory_dir: Path) -> None:
+        """Removing a nonexistent entry must not update last_updated."""
+        store = MemoryStore(
+            entries=[
+                MemoryEntry(
+                    entry_id="aaa",
+                    category="repo_fact",
+                    key="k1",
+                    value="v1",
+                    source_file="f.md",
+                    added_by="test",
+                    added_at="2026-03-18T10:00:00+00:00",
+                )
+            ]
+        )
+        save_memory(store, memory_dir)
+        original_updated = load_memory(memory_dir).last_updated
+
+        # Remove nonexistent — should be a no-op
+        removed = remove_entry(memory_dir, "nonexistent_id")
+        assert not removed
+
+        # last_updated must be unchanged (no save occurred)
+        reloaded = load_memory(memory_dir)
+        assert reloaded.last_updated == original_updated

@@ -1031,11 +1031,13 @@ class TestStalenessCache:
 
         assert call_count >= 1, "Cache should have been invalidated after build"
 
-    def test_staleness_cache_isolated_across_index_dirs(self, tmp_path: Path) -> None:
+    def test_staleness_cache_isolated_across_index_dirs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Two different index_dirs should not share cache entries."""
         import bid_euchre.ops.index as idx_mod
 
-        idx_mod._STALENESS_TTL_SECONDS = 3600.0
+        monkeypatch.setattr(idx_mod, "_STALENESS_TTL_SECONDS", 3600.0)
 
         # Create two independent indexes
         idx1 = tmp_path / "idx1"
@@ -1077,6 +1079,3 @@ class TestStalenessCache:
         # idx2's cache should still be valid
         stats2 = get_stats(idx2)
         assert isinstance(stats2.stale_sources, int)
-
-        # Restore default TTL
-        idx_mod._STALENESS_TTL_SECONDS = 30.0
