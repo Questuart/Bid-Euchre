@@ -45,6 +45,53 @@ if TYPE_CHECKING:
     from bid_euchre.ops.recovery import RetryPolicy
 
 
+# ---------------------------------------------------------------------------
+# Filesystem boundary enforcement
+# ---------------------------------------------------------------------------
+
+
+def _check_boundary(
+    path: str | Path,
+    args: argparse.Namespace,
+    *,
+    label: str = "path",
+) -> int | None:
+    """Validate that *path* is within the repo boundary.
+
+    Returns ``None`` if the path is allowed, or ``1`` (error exit code) if it
+    is outside the boundary. Emits an audit event on violation.
+
+    This is a thin CLI adapter around
+    :func:`bid_euchre.ops.fs_boundary.require_in_boundary`.
+    """
+    from bid_euchre.ops.fs_boundary import (
+        BoundaryViolationError,
+        get_repo_boundaries,
+        require_in_boundary,
+    )
+
+    boundaries = get_repo_boundaries(repo_root=args.repo_root)
+    events_dir = args.runtime_dir / "events"
+
+    try:
+        require_in_boundary(
+            path,
+            repo_root=boundaries["repo_root"],
+            worktree_paths=boundaries["worktree_paths"],
+            runtime_dirs=boundaries["runtime_dirs"],
+            events_dir=events_dir,
+            source="ops.cli",
+        )
+    except BoundaryViolationError:
+        print(
+            f"Error: {label} is outside the repo boundary: {path}",
+            file=sys.stderr,
+        )
+        return 1
+
+    return None
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show status across lanes, sessions, and tasks."""
     from bid_euchre.ops.status import (
@@ -199,6 +246,11 @@ def cmd_worktrees_quarantine(args: argparse.Namespace) -> int:
         print("Error: worktree path required", file=sys.stderr)
         return 1
 
+    # Boundary check: reject external paths
+    boundary_rc = _check_boundary(wt_path, args, label="worktree path")
+    if boundary_rc is not None:
+        return boundary_rc
+
     reason = getattr(args, "reason", "Manual quarantine")
     events_dir = args.runtime_dir / "events"
 
@@ -230,6 +282,11 @@ def cmd_worktrees_archive(args: argparse.Namespace) -> int:
     if not wt_path:
         print("Error: worktree path required", file=sys.stderr)
         return 1
+
+    # Boundary check: reject external paths
+    boundary_rc = _check_boundary(wt_path, args, label="worktree path")
+    if boundary_rc is not None:
+        return boundary_rc
 
     force = getattr(args, "force", False)
     events_dir = args.runtime_dir / "events"
@@ -890,6 +947,11 @@ def cmd_snapshot_create(args: argparse.Namespace) -> int:
         print("Error: --worktree required", file=sys.stderr)
         return 1
 
+    # Boundary check: reject external paths
+    boundary_rc = _check_boundary(worktree, args, label="--worktree")
+    if boundary_rc is not None:
+        return boundary_rc
+
     try:
         record = create_snapshot(
             worktree,
@@ -1035,6 +1097,12 @@ def cmd_skills_propose(args: argparse.Namespace) -> int:
     from bid_euchre.ops.skill_promotion import propose_skill
 
     content_file = Path(args.content_file)
+
+    # Boundary check: reject external content files
+    boundary_rc = _check_boundary(content_file, args, label="--content-file")
+    if boundary_rc is not None:
+        return boundary_rc
+
     if not content_file.exists():
         print(f"Error: content file not found: {content_file}", file=sys.stderr)
         return 1

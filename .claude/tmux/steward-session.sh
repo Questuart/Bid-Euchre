@@ -44,9 +44,48 @@ AUTHOR_SCRATCH="${PARENT_DIR}/${REPO_NAME}-steward-author-scratch"
 REVIEW="${PARENT_DIR}/${REPO_NAME}-steward-review"
 MAIN_DIR="$(git -C "$MAIN_DIR" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
 
+# ---------------------------------------------------------------------------
+# Filesystem boundary validation
+# ---------------------------------------------------------------------------
+# Worktree paths must be within PARENT_DIR (the parent of the main checkout).
+# This is a repo-level guard — it does not claim OS-level sandboxing.
+
+validate_worktree_path() {
+    local path="$1"
+    local resolved
+    # Resolve the path (create parent dirs first if needed for realpath)
+    if [ -e "$path" ]; then
+        resolved="$(cd "$path" && pwd -P)"
+    else
+        # Path doesn't exist yet — resolve the parent
+        local parent
+        parent="$(dirname "$path")"
+        if [ ! -d "$parent" ]; then
+            echo "Error: parent directory does not exist: $parent" >&2
+            return 1
+        fi
+        resolved="$(cd "$parent" && pwd -P)/$(basename "$path")"
+    fi
+
+    local parent_resolved
+    parent_resolved="$(cd "$PARENT_DIR" && pwd -P)"
+
+    case "$resolved" in
+        "${parent_resolved}"/*)
+            return 0
+            ;;
+        *)
+            echo "Error: worktree path is outside the repo boundary: $resolved" >&2
+            echo "  Expected path under: $parent_resolved" >&2
+            return 1
+            ;;
+    esac
+}
+
 ensure_worktree() {
     local path="$1"
     local branch="$2"
+    validate_worktree_path "$path" || exit 1
     if [ -d "$path" ]; then
         return
     fi
@@ -54,6 +93,7 @@ ensure_worktree() {
 }
 
 ensure_review_worktree() {
+    validate_worktree_path "$REVIEW" || exit 1
     if [ -d "$REVIEW" ]; then
         return
     fi
