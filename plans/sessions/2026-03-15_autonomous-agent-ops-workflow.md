@@ -787,8 +787,21 @@ operator use during PR-5:
   - ops surfaces now distinguish `ci`, `review_gate`, and `advisory` checks
   - `claude-review` remains visible but no longer poisons CI
   - `reviewing-changes` remains the merge-relevant review gate
-  - if Codex review is reintroduced at CI before the later platform service-lane
-    work, it should enter as `advisory` only and reuse the same category model
+  - Claude review reliability and Codex delivery behavior should be dialed in
+    before Platform-1 begins
+- **Codex Cloud proving run (2026-03-20):**
+  - `@codex review` under the user's ChatGPT subscription currently lands as a
+    PR issue comment from `chatgpt-codex-connector[bot]`
+  - it does not currently emit a check run, commit status, or PR review object
+  - near-term Codex integration is therefore a small comment-ingestion /
+    trusted-command bridge if needed, not a speculative `ADVISORY_CONTEXTS`
+    tweak or repo-local GitHub Actions workflow
+- **Filesystem boundary hardening:**
+  - agent filesystem access should be repo-bounded by default
+  - narrow managed exceptions may exist for repo-owned runtime areas and tightly
+    scoped temp paths
+  - reads and writes outside the repo should require explicit operator approval
+    or an explicit allowlist, rather than relying on prompt wording alone
 - lane heartbeat/event wiring repair whenever `ops.py` disagrees with live
   Claude/tmux/process state
 - worktree registry/bootstrap fixes
@@ -806,13 +819,34 @@ Recommended sequencing after slices 3 and 4:
 4. take `PR-5 slice 6` with trusted liveness/heartbeat repair as part of the
    core scope before relying on richer operator visibility
 5. finish `PR-5 slice 7`
-6. keep any additional review-surface work narrow and compatible with the
+6. take a small post-PR-5 bridge slice to dial in review surfaces before
+   Platform-1:
+   - keep `claude-review` behavior stable
+   - treat Codex Cloud as comment-based unless proven otherwise
+   - add bounded PR comment ingestion / trusted command handling only if needed
+7. land repo-bounded filesystem access as a governance/security hardening step
+   before Platform-1:
+   - default agents to repo-only file access
+   - keep exceptions narrow and explicit
+   - require operator approval for outside-repo access when needed
+8. keep any additional review-surface work narrow and compatible with the
    shipped `ci` / `review_gate` / `advisory` split
 
 Operational note (2026-03-20): recent ops review showed multiple live Claude
 agent processes while `ops.py` lane-activity reported all lanes as idle. Until
 slice 6 closes that trust gap, process/tmux evidence is the ground truth and
 lane-activity surfaces should be treated as advisory.
+
+Operational note (2026-03-20, Codex Cloud): the proving run showed Codex Cloud
+currently arriving as PR issue comments rather than checks or PR review
+objects. If the repo wants that surfaced operationally before the later
+platform work, the bridge slice should ingest trusted bot comments rather than
+pretend they are advisory checks.
+
+Operational note (2026-03-20, filesystem boundary): repo-bounded filesystem
+access should become the default before Platform-1 so future autonomous lanes
+and second-model overlays cannot freely read or write outside the repo without
+an explicit exception path.
 
 ##### Practical delivery expectation
 
