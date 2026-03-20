@@ -1000,9 +1000,10 @@ full implementation sequence and design decisions.
 
 ### Overview
 
-Content entering high-autonomy paths (curated memory promotion, summary
-auto-load, skill promotion) is scanned before acceptance.  Every piece of
-content is classified as:
+Content entering the curated memory store is scanned before persistence.
+Summary auto-load and skill promotion paths are not yet gated by this
+scanner — those integrations are tracked as future PR-5 slices.  Every
+piece of content is classified as:
 
 | Outcome | Effect |
 |---------|--------|

@@ -1,13 +1,16 @@
-"""Context-safety scanning for promoted operator content.
+"""Context-safety scanning for curated memory persistence.
 
-Gates memory promotion, summary auto-load, and skill promotion by
-scanning candidate content for unsafe patterns before they enter
-high-autonomy paths.
+Scans candidate content before it is persisted to the curated memory
+store, classifying each piece as allow / warn / reject.  Currently
+wired into ``memory.add_entry()`` (enabled by default) and exposed
+via a CLI dry-run subcommand.  Summary auto-load and skill promotion
+paths are not yet gated by this scanner — those integrations are
+tracked as future slices.
 
 Every piece of content is classified as:
-- **allow** — safe to promote/auto-load
+- **allow** — safe to persist
 - **warn** — non-blocking concern; content is persisted with a warning tag
-- **reject** — blocked; content must not be promoted
+- **reject** — blocked; content must not be persisted
 
 Built-in rules detect:
 - Secrets / token-like material (API keys, passwords)
