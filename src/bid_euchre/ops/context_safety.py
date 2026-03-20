@@ -143,17 +143,9 @@ def _check_secrets(content: str, _metadata: dict[str, Any]) -> list[ScanFinding]
     return findings
 
 
-# Shell injection patterns: backtick execution, $() subshells, dangerous commands.
-#
-# Design notes on false-positive mitigation:
-# - Backtick/subshell patterns use \b anchors on both sides of command names
-#   to avoid matching words like "push", "stash", "hash", "crash" that end
-#   in "sh".  Only whole-word matches of dangerous commands are flagged.
-# - Triple-backtick code fences (```...```) are excluded by requiring the
-#   backtick pattern to match single backticks only (no ` preceded by ``).
-# - The "dangerous pipe" pattern requires the pipe NOT to be at the start of
-#   a line (which would indicate a markdown table cell), reducing false
-#   positives for content like "| bash | description |".
+# Shell injection: backtick execution, $() subshells, dangerous commands.
+# Uses whole-word \b anchors to avoid false positives on push/stash/hash.
+# Excludes triple-backtick fences and markdown table pipes.
 _SHELL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "Backtick execution",
