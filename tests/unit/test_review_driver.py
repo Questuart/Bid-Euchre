@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Add scripts/internal to path for direct imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
@@ -1190,3 +1192,108 @@ class TestCoordinatorContract:
         )
         body = _format_review_comment(state, [], "passed")
         assert REVIEW_COMMENT_MARKER in body
+
+
+# ---------------------------------------------------------------------------
+# Runtime-limit timeout produces terminal state + verdict
+# ---------------------------------------------------------------------------
+
+
+class TestRuntimeLimitTimeout:
+    """Verify runtime-limit exit writes terminal state, verdict, and sentinel."""
+
+    def test_timeout_produces_terminal_state_with_stop_reason(self) -> None:
+        """Runtime-limit exit must leave a terminal state with non-null stop_reason.
+
+        Simulates the exact timeout code path from main() by exercising
+        the same state manipulation on a WAITING_FOR_CI loop.
+        """
+        from review_state import TERMINAL_STATES, ReviewLoopState, ReviewState
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CI.value,
+            current_head_sha="sha_timeout_test",
+        )
+
+        # Simulate the timeout code path from main()
+        loop.stop_reason = "Runtime limit reached (901s > 900s)"
+        try:
+            loop.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+        except Exception:
+            loop.state = ReviewState.STOPPED_REVIEW_FAILURE.value
+
+        assert loop.current_state == ReviewState.STOPPED_REVIEW_FAILURE
+        assert loop.current_state in TERMINAL_STATES
+        assert loop.stop_reason is not None
+        assert "Runtime limit" in loop.stop_reason
+
+    def test_timeout_writes_blocked_verdict(self, tmp_path: Path) -> None:
+        """Runtime-limit exit must write a non-clean (blocked) verdict."""
+        from review_state import ReviewLoopState, ReviewState
+
+        from bid_euchre.ops.review_queue import (
+            STATUS_BLOCKED,
+            read_verdict,
+        )
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CI.value,
+            current_head_sha="sha_timeout_verdict",
+        )
+
+        # Simulate the timeout code path
+        loop.stop_reason = "Runtime limit reached (901s > 900s)"
+        try:
+            loop.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+        except Exception:
+            loop.state = ReviewState.STOPPED_REVIEW_FAILURE.value
+
+        with patch("bid_euchre.ops.review_queue.DEFAULT_QUEUE_DIR", tmp_path):
+            from review_driver import _write_verdict_if_applicable
+
+            _write_verdict_if_applicable(loop)
+
+        verdict = read_verdict(42, tmp_path)
+        assert verdict is not None, "Timeout must write a verdict"
+        assert verdict.status == STATUS_BLOCKED, "Timeout verdict must be blocked"
+        assert verdict.reviewed_sha == "sha_timeout_verdict"
+        assert "Runtime limit" in verdict.reason
+
+    def test_timeout_writes_failure_sentinel(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """Runtime-limit exit must write a FAILED sentinel for the notification hook."""
+        from review_state import ReviewLoopState, ReviewState
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CI.value,
+            current_head_sha="sha_sentinel_test",
+        )
+
+        # Simulate the timeout code path
+        loop.stop_reason = "Runtime limit reached (901s > 900s)"
+        try:
+            loop.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+        except Exception:
+            loop.state = ReviewState.STOPPED_REVIEW_FAILURE.value
+
+        from review_driver import _write_failure_sentinel
+
+        # _write_failure_sentinel writes to .claude/runtime/review_loops/pr_N/FAILED
+        # relative to cwd. Use monkeypatch.chdir so it writes into tmp_path.
+        monkeypatch.chdir(tmp_path)
+        _write_failure_sentinel(loop)
+
+        sentinel = (
+            tmp_path / ".claude" / "runtime" / "review_loops" / "pr_42" / "FAILED"
+        )
+        assert sentinel.exists(), "Timeout must write FAILED sentinel"
+        content = sentinel.read_text()
+        assert "STOPPED_REVIEW_FAILURE" in content
+        assert "Runtime limit" in content

@@ -1515,13 +1515,30 @@ def main() -> int:
         elapsed = time.monotonic() - start_time
         if elapsed > max_runtime_s:
             logger.warning(
-                "PR #%d: runtime limit reached (%.0fs) — exiting. "
+                "PR #%d: runtime limit reached (%.0fs) — stopping. "
                 "Rerun: python scripts/internal/review_driver.py "
                 "--pr %d --trigger manual",
                 loop_state.pr_number,
                 elapsed,
                 loop_state.pr_number,
             )
+            loop_state.stop_reason = (
+                f"Runtime limit reached ({elapsed:.0f}s > {max_runtime_s}s)"
+            )
+            try:
+                loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+            except Exception:
+                # Force-set state when transition validation rejects the edge
+                # (timeout can happen from any non-terminal state).
+                loop_state.state = ReviewState.STOPPED_REVIEW_FAILURE.value
+            _publish_status(
+                loop_state.pr_number,
+                "failure",
+                f"Review timed out after {elapsed:.0f}s",
+            )
+            save_state(loop_state)
+            _write_verdict_if_applicable(loop_state)
+            _write_failure_sentinel(loop_state)
             break
 
         prev_state = loop_state.current_state
