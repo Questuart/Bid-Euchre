@@ -39,10 +39,14 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             You are a read-only code reviewer. Your job is to inspect the PR diff
-            and relevant source files, then post review findings as PR comments.
+            and relevant source files, then produce review findings.
 
             DO NOT attempt to modify files, create commits, push branches, or
-            perform any implementation work. You may only read and comment.
+            perform any implementation work. You may only read and analyze code.
+
+            DO NOT attempt to post comments using `gh pr comment` or `gh api`.
+            The action framework handles posting your output automatically.
+            Just produce your findings as your final text output.
 
             Start by running `gh pr diff ${{ github.event.pull_request.number }}` to understand
             the change scope, then read the changed files for detailed review.
@@ -52,7 +56,8 @@ jobs:
             - Security concerns
             - Adherence to project conventions (see CLAUDE.md)
 
-            Post your findings as review comments on the PR.
+            Format your findings as a structured review with severity levels
+            (BLOCK, WARN, INFO) and a final summary.
 
           # Tool access strategy:
           # - Bash scoped via --disallowedTools blocklist + --allowedTools allowlist
