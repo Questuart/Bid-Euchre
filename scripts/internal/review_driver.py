@@ -219,15 +219,25 @@ def _create_follow_up_issues(
                 capture_output=True,
                 text=True,
             )
-            existing = json.loads(dedup_result.stdout or "[]")
-            if existing:
-                logger.info(
-                    "Skipping duplicate issue for %s on PR #%d: %s",
+            if dedup_result.returncode != 0:
+                logger.warning(
+                    "gh issue list exited %d for %s on PR #%d, "
+                    "treating as dedup failure — proceeding with creation",
+                    dedup_result.returncode,
                     label,
                     pr_number,
-                    existing[0].get("url", "?"),
                 )
-                continue
+                # Fall through to issue creation below
+            else:
+                existing = json.loads(dedup_result.stdout or "[]")
+                if existing:
+                    logger.info(
+                        "Skipping duplicate issue for %s on PR #%d: %s",
+                        label,
+                        pr_number,
+                        existing[0].get("url", "?"),
+                    )
+                    continue
         except (json.JSONDecodeError, subprocess.CalledProcessError, OSError) as e:
             logger.warning("Dedup check failed, proceeding with creation: %s", e)
 
