@@ -1885,7 +1885,11 @@ class TestSynthesizeLaneActivityLiveness:
         assert lane.liveness_source == "registry"
 
     def test_blocked_lane_liveness_source(self) -> None:
-        """Blocked lane with session_id → liveness_source is 'registry'."""
+        """Blocked lane with session_id -> liveness_source is 'task_state'.
+
+        The state is determined by the blocked task, not the registry, so
+        liveness_source should reflect that (#1084 W2).
+        """
         lanes = [_make_lane("author-a", session_id="s1")]
         sessions = {"author-a": {"task": "Work", "started_at": "2026-03-20T12:00:00Z"}}
         tasks = {
@@ -1897,10 +1901,10 @@ class TestSynthesizeLaneActivityLiveness:
         result = synthesize_lane_activity(lanes, sessions, tasks, [])
         lane = result[0]
         assert lane.state == "blocked"
-        assert lane.liveness_source == "registry"
+        assert lane.liveness_source == "task_state"
 
     def test_blocked_lane_no_session_id(self) -> None:
-        """Blocked lane with no session_id -> liveness_source is None (#1106)."""
+        """Blocked lane with no session_id -> liveness_source is 'task_state' (#1084 W2)."""
         lanes = [_make_lane("author-a")]  # no session_id
         sessions: dict = {}  # no active session
         tasks = {
@@ -1912,7 +1916,7 @@ class TestSynthesizeLaneActivityLiveness:
         result = synthesize_lane_activity(lanes, sessions, tasks, [])
         lane = result[0]
         assert lane.state == "blocked"
-        assert lane.liveness_source is None
+        assert lane.liveness_source == "task_state"
         # Blocked lanes always need attention, even without session
         assert lane.attention_needed is True
 

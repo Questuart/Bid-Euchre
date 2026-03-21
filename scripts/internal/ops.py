@@ -102,7 +102,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         format_status_text,
     )
 
-    report = aggregate_status(args.runtime_dir)
+    check_worktree = not getattr(args, "no_probe", False)
+    report = aggregate_status(args.runtime_dir, check_worktree=check_worktree)
 
     if args.json:
         print(json.dumps(format_status_json(report), indent=2))
@@ -398,7 +399,8 @@ def cmd_health(args: argparse.Namespace) -> int:
         run_all_watchdogs,
     )
 
-    status = aggregate_status(args.runtime_dir)
+    check_worktree = not getattr(args, "no_probe", False)
+    status = aggregate_status(args.runtime_dir, check_worktree=check_worktree)
     findings = run_all_watchdogs(args.runtime_dir, args.plans_dir)
 
     if args.json:
@@ -1321,7 +1323,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # status
-    subparsers.add_parser("status", help="Lane/session/task health summary")
+    status_parser = subparsers.add_parser(
+        "status", help="Lane/session/task health summary"
+    )
+    status_parser.add_argument(
+        "--no-probe",
+        action="store_true",
+        default=False,
+        help="Skip dirty-worktree subprocess probes (faster with many idle lanes)",
+    )
 
     # worktrees (with nested prune/quarantine/archive subcommands)
     wt_parser = subparsers.add_parser(
@@ -1368,7 +1378,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("tick", help="Run one scheduler cycle")
 
     # health
-    subparsers.add_parser("health", help="Aggregated health check")
+    health_parser = subparsers.add_parser("health", help="Aggregated health check")
+    health_parser.add_argument(
+        "--no-probe",
+        action="store_true",
+        default=False,
+        help="Skip dirty-worktree subprocess probes (faster with many idle lanes)",
+    )
 
     # watchdogs
     subparsers.add_parser("watchdogs", help="Run watchdog checks")
