@@ -55,12 +55,17 @@ jobs:
             Post your findings as review comments on the PR.
 
           # Tool access strategy:
-          # - Bash available (scoped via --disallowedTools blocklist in claude_args)
+          # - Bash scoped via --disallowedTools blocklist + --allowedTools allowlist
+          # - --allowedTools pre-approves read-only Bash commands for CI (#1197)
+          #   Without it, Bash commands require interactive approval (impossible in CI)
           # - Read/Grep/Glob are allowed by default
           # - Write tools and network/agent tools are disallowed to prevent
           #   wasted turns on permission denials (~36% turn waste before this fix)
           show_full_output: true
-          claude_args: '--max-turns 15 --disallowedTools "Edit,Write,NotebookEdit,Agent,WebFetch,WebSearch,LSP"'
+          claude_args: >-
+            --max-turns 15
+            --disallowedTools "Edit,Write,NotebookEdit,Agent,WebFetch,WebSearch,LSP"
+            --allowedTools "Bash(gh pr diff *),Bash(gh pr view *),Bash(gh pr checks *),Bash(gh api *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(find *),Bash(grep *),Bash(cat *)"
 
       - name: Upload review execution log
         if: always() && steps.claude-review.outputs.execution_file

@@ -33,7 +33,6 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 from bid_euchre.ops.review_queue import (
-    DEFAULT_QUEUE_DIR,
     STATUS_BLOCKED,
     STATUS_FAILED,
     STATUS_PASSED,
@@ -43,6 +42,7 @@ from bid_euchre.ops.review_queue import (
     ReviewVerdict,
     read_request,
     read_verdict,
+    shared_queue_root,
     write_verdict,
 )
 
@@ -145,7 +145,7 @@ def find_pending_requests(queue_dir: Path | None = None) -> list[ReviewRequest]:
     Returns:
         List of ``ReviewRequest`` objects sorted by PR number (FIFO-ish).
     """
-    root = queue_dir or DEFAULT_QUEUE_DIR
+    root = queue_dir if queue_dir is not None else shared_queue_root()
     if not root.exists():
         return []
 

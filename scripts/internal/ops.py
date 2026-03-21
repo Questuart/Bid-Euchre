@@ -1285,7 +1285,9 @@ def cmd_queue(args: argparse.Namespace) -> int:
     """Show shared review queue state (request + verdict packets).
 
     Uses the canonical shared queue root (derived from git common dir)
-    so that all worktrees see the same queue.
+    so that all worktrees see the same queue.  When ``--runtime-dir`` is
+    explicitly provided and contains a ``review_queue/`` subdirectory,
+    that override takes precedence (useful for debug/sandbox workflows).
     """
     from bid_euchre.ops.review_queue import shared_queue_root
     from bid_euchre.ops.reviews import (
@@ -1295,7 +1297,12 @@ def cmd_queue(args: argparse.Namespace) -> int:
         get_queue_entry,
     )
 
-    queue_dir = shared_queue_root()
+    # Respect explicit --runtime-dir override for debug/sandbox (#1196).
+    local_queue = args.runtime_dir / "review_queue"
+    if getattr(args, "_runtime_dir_explicit", False) and local_queue.is_dir():
+        queue_dir = local_queue
+    else:
+        queue_dir = shared_queue_root()
     pr_number = getattr(args, "pr", None)
 
     if pr_number is not None:
@@ -1347,7 +1354,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--runtime-dir",
         type=Path,
         default=None,
-        help="Override runtime directory (default: .claude/runtime)",
+        help=(
+            "Override runtime directory (default: .claude/runtime). "
+            "For queue, only used when the override contains a review_queue/ subdir; "
+            "otherwise the shared queue root is used (see BID_EUCHRE_REVIEW_QUEUE_DIR)."
+        ),
     )
     parser.add_argument(
         "--plans-dir",
@@ -1708,6 +1719,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Resolve directories relative to repo root
     repo_root = find_repo_root()
+
+    # Stash whether the user explicitly passed --runtime-dir before we apply
+    # the default.  cmd_queue() uses this to respect explicit overrides (#1196).
+    args._runtime_dir_explicit = args.runtime_dir is not None
 
     if args.runtime_dir is None:
         args.runtime_dir = repo_root / ".claude" / "runtime"
