@@ -1,7 +1,9 @@
 # Codex Review — Local Gate + Cloud Overlay
 
-> `reviewing-changes` from the local autonomous review loop is the
-> merge-relevant review gate. `claude-review` is an advisory GitHub check.
+> `reviewing-changes` from the local autonomous review loop is the primary
+> code-review signal, though it is **advisory** (not required by branch
+> protection — only `tests` and `governance` are required). `claude-review`
+> is an informational-only GitHub check.
 > Codex Cloud is an optional manual overlay via `@codex review` and, as of the
 > 2026-03-20 proving run, currently lands as an issue comment from
 > `chatgpt-codex-connector[bot]` rather than as a check, status, or PR review.
@@ -11,7 +13,8 @@
 This repo currently has three distinct review surfaces:
 
 1. **Autonomous review loop** (`reviewing-changes`)
-   - merge-relevant
+   - primary code-review signal (advisory — not branch-protection required)
+   - classified as `review_gate` in the ops three-category model (see note below)
    - local/background
    - driven by `scripts/internal/review_driver.py`
    - invokes Codex CLI locally
@@ -29,7 +32,7 @@ This repo currently has three distinct review surfaces:
 
 ## Autonomous Review Loop
 
-All merge-relevant automated review is handled by the autonomous review loop
+All automated code review is handled by the autonomous review loop
 (`review_driver.py`), which invokes **Codex CLI** (`codex review --base main`)
 locally.
 
@@ -59,9 +62,25 @@ The review loop:
 |---------|------|-----------|-----------|
 | `tests` | GitHub Actions check | Yes (branch protection) | CI |
 | `governance` | GitHub Actions check | Yes (branch protection) | CI |
-| `reviewing-changes` | Commit status | Yes (branch protection) | Review loop (`review_driver.py`) |
+| `reviewing-changes` | Commit status | No (advisory) | Review loop (`review_driver.py`) |
 | `claude-review` | GitHub Actions check | No (advisory) | Claude Code Review workflow |
 | Codex Cloud `@codex review` | PR issue comment | No (overlay only) | `chatgpt-codex-connector[bot]` |
+
+> **Terminology note:** "Advisory" has two distinct meanings in this repo:
+>
+> 1. **Branch-protection sense** — the status is not required for merge.
+>    `reviewing-changes` is advisory in this sense (only `tests` and
+>    `governance` are required). It was demoted from required to advisory
+>    after PR #624 and has not been re-added.
+>
+> 2. **Ops classification sense** — the three-category model (`ci`,
+>    `review_gate`, `advisory`) used by `classify_check()` in ops surfaces.
+>    `reviewing-changes` is classified as `review_gate` (not `advisory`)
+>    because it is the primary code-review signal. `claude-review` is
+>    classified as `advisory` because it is informational-only.
+>
+> A check can be `review_gate` in the classification model while being
+> advisory in the branch-protection sense. These are orthogonal axes.
 
 ## Codex Cloud Review
 

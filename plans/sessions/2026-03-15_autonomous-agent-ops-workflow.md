@@ -144,9 +144,13 @@ These decisions were resolved during the 2026-03-16 review session.
 - Review and CI semantics now use three categories:
   - `ci` for true validation checks such as `tests`, `prechecks`, and
     `governance`
-  - `review_gate` for merge-relevant review state (`reviewing-changes`)
-  - `advisory` for reviewer-health or informational overlays such as
-    `claude-review`
+  - `review_gate` for the primary code-review signal (`reviewing-changes`)
+  - `advisory` for informational-only overlays such as `claude-review`
+- **Terminology note:** `reviewing-changes` is classified as `review_gate`
+  in this model but is **advisory in the branch-protection sense** (not
+  required for merge — only `tests` and `governance` are required). These
+  are orthogonal axes: classification category ≠ branch-protection status.
+  See `docs/02_agent/CODEX_GITHUB_REVIEW.md` for the full disambiguation.
 - `claude-review` failures should remain visible, but must not poison CI.
 - Any future Codex-at-CI reintroduction should enter through the same
   `advisory` category first rather than becoming a new implicit merge gate.
@@ -786,7 +790,8 @@ operator use during PR-5:
   - the review driver now limits CI truth to explicit validation checks
   - ops surfaces now distinguish `ci`, `review_gate`, and `advisory` checks
   - `claude-review` remains visible but no longer poisons CI
-  - `reviewing-changes` remains the merge-relevant review gate
+  - `reviewing-changes` remains the primary code-review signal (`review_gate`
+    category, advisory in branch-protection sense)
   - Claude review reliability and Codex delivery behavior should be dialed in
     before Platform-1 begins
 - **Codex Cloud proving run (2026-03-20):**

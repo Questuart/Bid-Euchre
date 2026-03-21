@@ -51,8 +51,10 @@
 ### 2026-03-20 -- Codex
 - Completed: review-gate / `claude-review` stabilizer shipped across #1017,
   #1025, and #1030.
-- Current substrate: CI/build truth is separated from merge-relevant review
-  state and advisory reviewer overlays.
+- Current substrate: CI/build truth is separated from the primary code-review
+  signal (`reviewing-changes`, classified as `review_gate` but advisory in the
+  branch-protection sense) and informational overlays (`claude-review`,
+  classified as `advisory`).
 - Observed gap: recent ops review showed `ops.py` lane-activity/health can
   report lanes idle while live Claude agent processes are still active.
 - Interpretation: treated as a real slice 6 trust gap; slice 6 (#1068) shipped

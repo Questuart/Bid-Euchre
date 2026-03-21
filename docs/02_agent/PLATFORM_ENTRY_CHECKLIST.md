@@ -19,8 +19,13 @@
 
 ## 2. Review Surfaces
 
-- [x] `reviewing-changes` is the merge-relevant gate (branch protection)
-- [x] `claude-review` is advisory only, visible without poisoning CI
+- [x] `reviewing-changes` is the primary code-review signal (advisory — not
+  branch-protection required; only `tests` and `governance` are required)
+- [x] `reviewing-changes` is classified as `review_gate` in the ops
+  three-category model (distinct from `advisory` category — see terminology
+  note in `docs/02_agent/CODEX_GITHUB_REVIEW.md`)
+- [x] `claude-review` is informational only (`advisory` category), visible
+  without poisoning CI
   - stabilized in #1017, #1025, #1030
 - [x] Codex Cloud proving-run behavior recorded in `docs/02_agent/CODEX_GITHUB_REVIEW.md`
   - `@codex review` lands as PR issue comment from `chatgpt-codex-connector[bot]`
