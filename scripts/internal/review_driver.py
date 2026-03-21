@@ -38,6 +38,7 @@ from pathlib import Path
 
 from review_state import (
     TERMINAL_STATES,
+    InvalidTransitionError,
     ReviewLoopState,
     ReviewMode,
     ReviewState,
@@ -1527,7 +1528,7 @@ def main() -> int:
             )
             try:
                 loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
-            except Exception:
+            except InvalidTransitionError:
                 # Force-set state when transition validation rejects the edge
                 # (timeout can happen from any non-terminal state).
                 loop_state.state = ReviewState.STOPPED_REVIEW_FAILURE.value
