@@ -174,30 +174,46 @@ class TestGetPendingRetries:
         assert pending[0].last_failure_details == "err1"
 
     def test_max_age_filter(self) -> None:
-        """Failures older than max_age_hours are excluded."""
+        """Failures older than max_age_hours are excluded.
+
+        Uses timestamps relative to now so the test is stable regardless
+        of when it runs (#1105).
+        """
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        recent_ts = (now - timedelta(hours=1)).isoformat()
+        old_ts = (now - timedelta(hours=48)).isoformat()
+
         events = [
-            # Recent failure (within 1 hour)
             _make_event(
                 "task_failed",
                 task_id="t1",
                 details="recent",
-                timestamp="2026-03-20T10:00:00+00:00",
+                timestamp=recent_ts,
             ),
-            # Old failure (48 hours ago)
             _make_event(
                 "task_failed",
                 task_id="t2",
                 details="old",
-                timestamp="2026-03-18T10:00:00+00:00",
+                timestamp=old_ts,
             ),
         ]
-        # With max_age_hours=24, the old failure should be excluded
-        # But since we're using fixed timestamps and datetime.now(), we
-        # can't easily control this. Instead test that the parameter is accepted.
+        # With max_age_hours=24, only the recent failure (1h old) should pass
         pending = get_pending_retries(events, max_age_hours=24)
-        # Both may or may not be included depending on current time,
-        # but the function should not crash
-        assert isinstance(pending, list)
+        assert len(pending) == 1
+        assert pending[0].task_id == "t1"
+        assert pending[0].last_failure_details == "recent"
+
+        # With max_age_hours=72, both failures should pass
+        pending_all = get_pending_retries(events, max_age_hours=72)
+        assert len(pending_all) == 2
+        task_ids = {p.task_id for p in pending_all}
+        assert task_ids == {"t1", "t2"}
+
+        # With max_age_hours=0.5 (30 minutes), neither should pass
+        pending_none = get_pending_retries(events, max_age_hours=0.5)
+        assert len(pending_none) == 0
 
     def test_uses_target_fallback(self) -> None:
         """Uses 'target' field when 'task_id' is absent."""
