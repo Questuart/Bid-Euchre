@@ -130,6 +130,8 @@ class StatusReport:
     blocked_tasks: list[dict[str, Any]] = field(default_factory=list)
     completed_tasks: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Platform-2: task queue summary (populated when task_queue dir exists)
+    task_queue_summary: dict[str, Any] = field(default_factory=dict)
 
 
 def load_lane_registry(runtime_dir: Path | None = None) -> list[dict[str, Any]]:
@@ -983,6 +985,17 @@ def aggregate_status(
             f"is blocked: {blockers}"
         )
 
+    # Platform-2: enrich with task queue summary if available
+    try:
+        from bid_euchre.ops.task_queue import queue_summary
+
+        # Only load if the task queue directory actually exists
+        task_queue_root = runtime_dir / "task_queue"
+        if task_queue_root.exists():
+            report.task_queue_summary = queue_summary(task_queue_root)
+    except Exception as exc:
+        logger.debug("Task queue enrichment skipped: %s", exc)
+
     return report
 
 
@@ -1160,6 +1173,18 @@ def format_status_text(
 
     lines.append("")
 
+    # Task Queue (Platform-2)
+    tq = report.task_queue_summary
+    if tq and tq.get("total", 0) > 0:
+        lines.append(f"Task Queue: {tq['total']} packets")
+        for pkt_info in tq.get("packets", []):
+            owner_str = pkt_info.get("owner") or "(unassigned)"
+            lines.append(
+                f"  [{pkt_info.get('status', '?')}] "
+                f"{pkt_info.get('title', '?')} -> {owner_str}"
+            )
+        lines.append("")
+
     # Warnings
     if report.warnings:
         lines.append(f"Warnings: {len(report.warnings)}")
@@ -1229,6 +1254,7 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
         "blocked_tasks": report.blocked_tasks,
         "completed_tasks": report.completed_tasks,
         "warnings": report.warnings,
+        "task_queue": report.task_queue_summary,
     }
 
 

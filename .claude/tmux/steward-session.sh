@@ -8,9 +8,10 @@
 #      pane 2: author-b
 #      pane 3: review
 #      pane 4: ops
-#   2. author-c        -- overflow author lane
-#   3. author-d        -- overflow author lane
-#   4. author-scratch  -- exploratory Claude lane
+#   2. orchestrator    -- single intake point for delegating work
+#   3. author-c        -- overflow author lane
+#   4. author-d        -- overflow author lane
+#   5. author-scratch  -- exploratory Claude lane
 #
 # Writes v2 worktree registry metadata for each launched lane.
 # See docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md for the full model.
@@ -239,6 +240,7 @@ write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-
 write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "dashboard" "2"    "foreground" "Author B"
 write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "dashboard" "3"    "foreground" "Review"
 write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "dashboard" "4"    "foreground" "Ops"
+write_lane_metadata "orchestrator"   "orchestrator" "$MAIN_DIR" "--"                           "orchestrator" "null" "foreground" "Orchestrator"
 write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"  "null" "background" "Author C"
 write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"  "null" "background" "Author D"
 write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch" "null" "background" "Scratch"
@@ -262,6 +264,9 @@ tmux select-pane -t "${SESSION}:dashboard.1" -T author-a
 tmux select-pane -t "${SESSION}:dashboard.2" -T author-b
 tmux select-pane -t "${SESSION}:dashboard.3" -T review
 tmux select-pane -t "${SESSION}:dashboard.4" -T ops
+
+tmux new-window -t "$SESSION" -n orchestrator -c "$MAIN_DIR" \
+    "$CLAUDE_BIN" --name orchestrator --agent steward-orchestrator
 
 tmux new-window -t "$SESSION" -n author-c -c "$AUTHOR_C" \
     "$CLAUDE_BIN" --name author-c --agent steward-author-c

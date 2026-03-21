@@ -32,6 +32,8 @@ Usage:
     uv run python scripts/internal/ops.py skills promote CANDIDATE_ID [--json]
     uv run python scripts/internal/ops.py skills disable NAME [--reason TEXT] [--disabled-by LANE] [--json]
     uv run python scripts/internal/ops.py repairs [--json]
+    uv run python scripts/internal/ops.py task list [--status STATUS] [--owner LANE] [--json]
+    uv run python scripts/internal/ops.py task show PACKET_ID [--json]
 """
 
 from __future__ import annotations
@@ -1348,6 +1350,99 @@ def cmd_repairs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_task(args: argparse.Namespace) -> int:
+    """Orchestrator task queue inspection (Platform-2)."""
+    from bid_euchre.ops.task_queue import (
+        list_packets,
+        load_ack,
+        load_packet,
+        load_result,
+    )
+
+    task_queue_root = args.runtime_dir / "task_queue"
+
+    action = getattr(args, "task_action", None)
+
+    if action == "list":
+        packets = list_packets(
+            task_queue_root,
+            status_filter=args.status,
+            owner_filter=args.owner,
+        )
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps([asdict(p) for p in packets], indent=2, default=str))
+        else:
+            if not packets:
+                print("No active task packets.")
+            else:
+                print(f"Task Queue: {len(packets)} packet(s)")
+                print()
+                for pkt in packets:
+                    owner_str = pkt.owner or "(unassigned)"
+                    print(
+                        f"  {pkt.packet_id}  [{pkt.status:11s}]  "
+                        f"{pkt.priority:6s}  {owner_str:15s}  {pkt.title}"
+                    )
+        return 0
+
+    elif action == "show":
+        pkt = load_packet(args.packet_id, task_queue_root)
+        if pkt is None:
+            print(f"Packet {args.packet_id!r} not found.", file=sys.stderr)
+            return 1
+
+        ack = load_ack(args.packet_id, task_queue_root)
+        result = load_result(args.packet_id, task_queue_root)
+
+        if args.json:
+            from dataclasses import asdict
+
+            data: dict = {"packet": asdict(pkt)}
+            if ack:
+                data["ack"] = asdict(ack)
+            if result:
+                data["result"] = asdict(result)
+            print(json.dumps(data, indent=2, default=str))
+        else:
+            print(f"Packet: {pkt.packet_id}")
+            print(f"  Title:       {pkt.title}")
+            print(f"  Status:      {pkt.status}")
+            print(f"  Owner:       {pkt.owner or '(unassigned)'}")
+            print(f"  Priority:    {pkt.priority}")
+            print(f"  Created by:  {pkt.created_by}")
+            print(f"  Created at:  {pkt.created_at}")
+            print(f"  Description: {pkt.description}")
+            if pkt.scope_declared:
+                print(f"  Scope:       {', '.join(pkt.scope_declared)}")
+            if pkt.validation:
+                print(f"  Validation:  {', '.join(pkt.validation)}")
+            if pkt.metadata:
+                print(f"  Metadata:    {pkt.metadata}")
+            if ack:
+                print()
+                print(f"  Ack: {ack.action} by {ack.acked_by} at {ack.acked_at}")
+                if ack.edited_fields:
+                    print(f"    Edits: {ack.edited_fields}")
+                if ack.redirect_to:
+                    print(f"    Redirect to: {ack.redirect_to}")
+            if result:
+                print()
+                print(
+                    f"  Result: {result.status} by {result.completed_by} "
+                    f"at {result.completed_at}"
+                )
+                print(f"    Summary: {result.summary}")
+                if result.pr_number:
+                    print(f"    PR: #{result.pr_number}")
+        return 0
+
+    else:
+        print("Usage: ops.py task {list|show}", file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -1712,6 +1807,21 @@ def build_parser() -> argparse.ArgumentParser:
         "repairs", help="Post-merge repair queue — eligible issues for autonomous fix"
     )
 
+    # task (Platform-2 task queue)
+    task_parser = subparsers.add_parser(
+        "task", help="Orchestrator task queue (Platform-2)"
+    )
+    task_sub = task_parser.add_subparsers(dest="task_action")
+
+    task_list_parser = task_sub.add_parser("list", help="List active task packets")
+    task_list_parser.add_argument(
+        "--status", default=None, help="Filter by packet status"
+    )
+    task_list_parser.add_argument("--owner", default=None, help="Filter by owner lane")
+
+    task_show_parser = task_sub.add_parser("show", help="Show a task packet by ID")
+    task_show_parser.add_argument("packet_id", help="The packet ID to show")
+
     return parser
 
 
@@ -1762,6 +1872,7 @@ def main(argv: list[str] | None = None) -> int:
         "skills": cmd_skills,
         "queue": cmd_queue,
         "repairs": cmd_repairs,
+        "task": cmd_task,
     }
 
     handler = commands.get(args.command)
