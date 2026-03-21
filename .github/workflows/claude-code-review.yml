@@ -29,7 +29,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Full history so the reviewer can run git diff origin/main...HEAD
+          fetch-depth: 0
 
       - name: Run Claude Code Review
         id: claude-review
@@ -43,6 +44,9 @@ jobs:
             DO NOT attempt to modify files, create commits, push branches, or
             perform any implementation work. You may only read and comment.
 
+            Start by running `git diff origin/main...HEAD --stat` to understand
+            the change scope, then read the changed files for detailed review.
+
             Review this pull request for:
             - Code correctness and logic errors
             - Security concerns
@@ -50,12 +54,12 @@ jobs:
 
             Post your findings as review comments on the PR.
 
-          # --disallowedTools prevents the reviewer from attempting write tools
-          # (Edit, Write, NotebookEdit) that get denied and waste turns toward
-          # the max-turns budget.  The allowed_tools action input does NOT work
-          # (not declared in claude-code-action@v1 action.yml) — use CLI flags
-          # via claude_args instead.
-          claude_args: '--max-turns 10 --disallowedTools "Edit,Write,NotebookEdit"'
+          # Tool access strategy:
+          # - Bash is ALLOWED (read-only: git diff, ruff check, pytest --collect-only)
+          # - Read/Grep/Glob are allowed by default
+          # - Write tools and network/agent tools are disallowed to prevent
+          #   wasted turns on permission denials (~36% turn waste before this fix)
+          claude_args: '--max-turns 15 --disallowedTools "Edit,Write,NotebookEdit,Agent,WebFetch,WebSearch,LSP"'
 
       - name: Flag reviewer infra failure
         if: always() && steps.claude-review.outcome == 'failure'
