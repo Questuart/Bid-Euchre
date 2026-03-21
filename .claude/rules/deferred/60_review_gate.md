@@ -1,6 +1,6 @@
 # Review Gate Rules
 
-> **Authoritative source:** `plans/sessions/2026-03-06_workflow-redesign.md`
+> **Authoritative source:** `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md`
 
 ## Operating Model
 
@@ -46,7 +46,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 2. `post-pr-review.sh` hook triggers `/reviewing-changes` dispatcher
 3. Dispatcher publishes `pending` status and generates handoff summary (~5s)
 4. `post-pr-review-loop.sh` hook launches `review_driver.py` asynchronously
-5. Coordinator runs deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
+5. Coordinator runs deterministic prechecks (C1/C2/C5/N1/N2/N3/T1/X2/X3 + convention patterns)
 6. Coordinator waits for GitHub CI to pass (polls `gh pr checks`)
 7. Loop invokes Codex CLI (`codex review --base main`)
 8. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
@@ -84,6 +84,7 @@ Aligned with `/reviewing-changes` CHECKLIST.md check IDs:
 - **N3** — Inference claim without statistical test
 - **T1** — Untested behavior change
 - **X1** — Scope drift (3+ unrelated modules)
+- **C5** — Redundant except clause (`except (Specific, ..., Exception)`)
 - **X2** — Undocumented contract change
 
 ## Follow-up Issue Labels
