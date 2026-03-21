@@ -327,15 +327,20 @@ class TestGetCIStatus:
         assert get_ci_status(1) == "success"
 
     @patch("github_pr_state.subprocess.run")
-    def test_all_skipped_counts_as_success(self, mock_run: Mock) -> None:
-        """All SKIPPED CI checks (docs-only PR) should count as success."""
+    def test_all_skipped_is_not_success(self, mock_run: Mock) -> None:
+        """All-SKIPPED CI checks should NOT count as success (#1206).
+
+        At least one SUCCESS is required. The CI 'tests' aggregation gate
+        always runs and posts SUCCESS even for docs-only PRs, so this case
+        indicates a CI misconfiguration rather than a docs-only PR.
+        """
         mock_run.return_value = _mock_checks_result(
             [
                 {"name": "tests", "state": "SKIPPED"},
                 {"name": "prechecks", "state": "SKIPPED"},
             ]
         )
-        assert get_ci_status(1) == "success"
+        assert get_ci_status(1) == "unknown"
 
     @patch("github_pr_state.subprocess.run")
     def test_skipped_with_failure_still_fails(self, mock_run: Mock) -> None:

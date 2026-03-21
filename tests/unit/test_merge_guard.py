@@ -460,11 +460,13 @@ fi
 """)
         gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC)
 
-        # Mock uv: forward "uv run python ..." → "python ..."
+        # Mock uv: forward "uv run python ..." → "python3 ..."
+        # Use python3 explicitly since bare "python" may not exist in CI.
         uv_script = mock_bin / "uv"
         uv_script.write_text("""#!/usr/bin/env bash
 shift  # skip "run"
-exec "$@"
+shift  # skip "python"
+exec python3 "$@"
 """)
         uv_script.chmod(uv_script.stat().st_mode | stat.S_IEXEC)
 
@@ -492,6 +494,88 @@ exec "$@"
             f"Guard should allow merge with SUCCESS+SKIPPED CI. "
             f"stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
+
+    def test_rejects_merge_when_all_ci_checks_skipped(self, tmp_path: Path) -> None:
+        """Guard should reject merge when ALL CI checks are SKIPPED.
+
+        If every CI check is SKIPPED (none succeeded), the merge gate should
+        not treat this as "success" — at least one real SUCCESS is required.
+        Regression test for #1206.
+        """
+        import json
+        import os
+        import stat
+        import subprocess
+
+        # 1. Write a passing verdict with a known SHA
+        test_sha = "def4567890abc"
+        v = ReviewVerdict(
+            pr_number=99,
+            reviewed_sha=test_sha,
+            status=STATUS_PASSED,
+            reason="clean review",
+        )
+        queue_dir = tmp_path / "shared_queue"
+        write_verdict(v, queue_dir, emit_event=False)
+
+        # 2. Create mock binaries directory
+        mock_bin = tmp_path / "mock_bin"
+        mock_bin.mkdir()
+
+        # Mock gh: return matching SHA for pr view, ALL SKIPPED for pr checks
+        gh_script = mock_bin / "gh"
+        checks_json = json.dumps(
+            [
+                {"name": "tests", "state": "SKIPPED"},
+                {"name": "notebooks", "state": "SKIPPED"},
+                {"name": "reviewing-changes", "state": "SUCCESS"},
+            ]
+        )
+        gh_script.write_text(f"""#!/usr/bin/env bash
+if [[ "$*" == *"pr view"*"--json headRefOid"* ]]; then
+    echo "{test_sha}"
+elif [[ "$*" == *"pr checks"*"--json name,state"* ]]; then
+    echo '{checks_json}'
+else
+    echo "{{}}"
+fi
+""")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC)
+
+        # Mock uv: forward "uv run python ..." → "python3 ..."
+        uv_script = mock_bin / "uv"
+        uv_script.write_text("""#!/usr/bin/env bash
+shift  # skip "run"
+shift  # skip "python"
+exec python3 "$@"
+""")
+        uv_script.chmod(uv_script.stat().st_mode | stat.S_IEXEC)
+
+        # 3. Run the guard — should BLOCK because no CI check succeeded
+        env = os.environ.copy()
+        env["BID_EUCHRE_REVIEW_QUEUE_DIR"] = str(queue_dir)
+        env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
+
+        stdin_payload = json.dumps(
+            {"tool_input": {"command": "gh pr merge 99 --squash"}}
+        )
+
+        result = subprocess.run(
+            ["bash", str(self._guard_script())],
+            input=stdin_payload,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+
+        assert result.returncode != 0, (
+            f"Guard should BLOCK merge when all CI checks are SKIPPED (#1206). "
+            f"stdout={result.stdout!r}, stderr={result.stderr!r}"
+        )
+        assert (
+            "BLOCKED" in result.stdout
+        ), f"Expected BLOCKED message in stdout. Got: {result.stdout!r}"
 
 
 # ---------------------------------------------------------------------------

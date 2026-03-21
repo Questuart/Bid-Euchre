@@ -200,7 +200,10 @@ def get_ci_status(pr_number: int) -> str:
         return "failure"
     if any(s in ("PENDING", "IN_PROGRESS") for s in states):
         return "pending"
-    if all(s in ("SUCCESS", "SKIPPED") for s in states):
+    if any(s == "SUCCESS" for s in states) and all(
+        s in ("SUCCESS", "SKIPPED") for s in states
+    ):
+        # At least one SUCCESS required — all-SKIPPED is not sufficient (#1206).
         return "success"
     return "unknown"
 

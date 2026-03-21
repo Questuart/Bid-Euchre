@@ -151,7 +151,13 @@ if any(s == 'FAILURE' for s in states):
     print('failure')
 elif any(s in ('PENDING', 'IN_PROGRESS') for s in states):
     print('pending')
-elif all(s in ('SUCCESS', 'SKIPPED') for s in states):
+elif any(s == 'SUCCESS' for s in states) and all(s in ('SUCCESS', 'SKIPPED') for s in states):
+    # At least one SUCCESS required — all-SKIPPED is not sufficient (#1206).
+    # Contract dependency: the CI 'tests' aggregation gate always runs and
+    # posts SUCCESS even for docs-only PRs (dorny/paths-filter, PR #635).
+    # This ensures docs-only PRs pass the guard. If CI is reconfigured to
+    # skip the 'tests' gate, this guard will correctly block until the CI
+    # contract is updated.
     print('success')
 else:
     print('unknown')
