@@ -1106,10 +1106,12 @@ class TestGetQueueEntry:
         verdict_file.write_text("not json {{{")
 
         entry = get_queue_entry(42, queue_dir)
-        # Corrupt verdict must surface as error so operators see the problem
+        # Corrupt verdict is transparently handled: read_verdict returns None,
+        # degrading to "request present, no verdict" = pending.
+        # The corruption is logged as a warning by read_verdict (#1182).
         assert entry.has_request is True
         assert entry.has_verdict is False
-        assert entry.effective_status == QUEUE_ERROR
+        assert entry.effective_status == QUEUE_PENDING
 
     def test_corrupt_request_surfaces_as_error(self, tmp_path: Path) -> None:
         """Corrupt request.json → error status, not hidden as no_request."""
