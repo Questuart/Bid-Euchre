@@ -55,13 +55,27 @@ BLOCK
   exit 2
 fi
 
+# --- Resolve shared queue root (canonical across worktrees) ---
+QUEUE_ROOT=$(uv run python -c "from bid_euchre.ops.review_queue import shared_queue_root; print(shared_queue_root())" 2>/dev/null)
+if [ -z "$QUEUE_ROOT" ]; then
+  # Fallback: derive from git common dir directly
+  GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+  if [ -n "$GIT_COMMON" ]; then
+    MAIN_ROOT=$(cd "$GIT_COMMON/.." && pwd -P)
+    QUEUE_ROOT="${MAIN_ROOT}/.claude/runtime/review_queue"
+  else
+    QUEUE_ROOT="${CLAUDE_PROJECT_DIR:-.}/.claude/runtime/review_queue"
+  fi
+fi
+
 # --- Check 1: Verdict exists ---
-VERDICT_FILE="${CLAUDE_PROJECT_DIR:-.}/.claude/runtime/review_queue/pr_${PR_NUM}/verdict.json"
+VERDICT_FILE="${QUEUE_ROOT}/pr_${PR_NUM}/verdict.json"
 if [ ! -f "$VERDICT_FILE" ]; then
   cat <<BLOCK
 BLOCKED: No review verdict found for PR #${PR_NUM}.
 
 The review driver must complete and write a verdict before merge is allowed.
+Queue root: ${QUEUE_ROOT}
 Check review status:
   uv run python scripts/internal/ops.py reviews queue
 

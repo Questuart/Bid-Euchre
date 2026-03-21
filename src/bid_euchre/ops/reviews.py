@@ -223,17 +223,22 @@ def _get_advisory_status(
     Same aggregation pattern as ``_get_review_status`` but filters on
     ``ADVISORY_CONTEXTS`` (informational checks that must not block CI).
 
+    SKIPPED advisory checks are excluded before aggregation — they
+    represent "not applicable" (e.g., ``enable-auto-merge`` skips for
+    non-owner PRs) rather than a positive signal.
+
     Args:
         checks: List of check dicts with ``name`` and ``state`` keys.
         advisory_contexts: Check names recognized as advisory outcomes.
 
     Returns:
-        "success", "failure", "pending", or "none" (if no advisory context found).
+        "success", "failure", "pending", or "none" (if no advisory context found
+        or all advisory checks were skipped).
     """
     states = [
         check.get("state", "PENDING")
         for check in checks
-        if check.get("name") in advisory_contexts
+        if check.get("name") in advisory_contexts and check.get("state") != "SKIPPED"
     ]
     if not states:
         return "none"
@@ -241,7 +246,7 @@ def _get_advisory_status(
         return "failure"
     if any(s in ("PENDING", "IN_PROGRESS") for s in states):
         return "pending"
-    if all(s in ("SUCCESS", "SKIPPED") for s in states):
+    if all(s == "SUCCESS" for s in states):
         return "success"
     return "unknown"
 
@@ -836,15 +841,18 @@ def get_queue_entries(
 
     Gracefully handles a missing queue directory (returns empty list).
 
+    When ``queue_dir`` is ``None``, uses :func:`~bid_euchre.ops.review_queue.shared_queue_root`
+    so that all worktrees for the same repo see the same queue.
+
     Args:
         queue_dir: Override for queue root directory.
 
     Returns:
         List of :class:`QueueEntry`, sorted by PR number.
     """
-    from bid_euchre.ops.review_queue import DEFAULT_QUEUE_DIR
+    from bid_euchre.ops.review_queue import shared_queue_root
 
-    root = queue_dir or DEFAULT_QUEUE_DIR
+    root = queue_dir if queue_dir is not None else shared_queue_root()
     if not root.is_dir():
         return []
 

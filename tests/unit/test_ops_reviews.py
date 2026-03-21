@@ -240,20 +240,33 @@ class TestGetReviewStatusSkipped:
 
 
 class TestGetAdvisoryStatusSkipped:
-    """Tests for _get_advisory_status() with SKIPPED checks (#1191)."""
+    """Tests for _get_advisory_status() with SKIPPED checks (#1191).
 
-    def test_skipped_advisory_treated_as_success(self) -> None:
-        """A SKIPPED advisory check → success (defensive)."""
+    SKIPPED advisory checks are filtered out — they represent "not
+    applicable" (e.g., enable-auto-merge skips for non-owner PRs),
+    not a positive signal.
+    """
+
+    def test_all_skipped_advisory_returns_none(self) -> None:
+        """All SKIPPED advisory checks → none (no signal)."""
         checks = [{"name": "claude-review", "state": "SKIPPED"}]
-        assert _get_advisory_status(checks) == "success"
+        assert _get_advisory_status(checks) == "none"
 
     def test_success_plus_skipped_advisory(self) -> None:
-        """SUCCESS + SKIPPED advisory checks → success."""
+        """SUCCESS + SKIPPED advisory → success (only non-SKIPPED counted)."""
         checks = [
             {"name": "claude-review", "state": "SUCCESS"},
             {"name": "enable-auto-merge", "state": "SKIPPED"},
         ]
         assert _get_advisory_status(checks) == "success"
+
+    def test_failure_plus_skipped_advisory(self) -> None:
+        """FAILURE + SKIPPED advisory → failure (SKIPPED filtered out)."""
+        checks = [
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "enable-auto-merge", "state": "SKIPPED"},
+        ]
+        assert _get_advisory_status(checks) == "failure"
 
 
 class TestClassifyCIStatusDefaultExcludesAdvisory:
@@ -1340,3 +1353,98 @@ class TestFormatQueueJSON:
         assert result[0]["pr_number"] == 42
         assert result[0]["effective_status"] == "passed"
         json.dumps(result)
+
+
+# ---------------------------------------------------------------------------
+# Cross-worktree queue visibility
+# ---------------------------------------------------------------------------
+
+
+class TestCrossWorktreeQueueVisibility:
+    """Verify get_queue_entries/get_queue_entry read the shared queue root.
+
+    Uses BID_EUCHRE_REVIEW_QUEUE_DIR env override to simulate the shared
+    queue being written from one worktree and read from another.
+    """
+
+    def test_queue_entries_surfaces_shared_verdicts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """get_queue_entries() should find verdicts written to the shared queue."""
+        from bid_euchre.ops.review_queue import (
+            ReviewRequest,
+            ReviewVerdict,
+            write_request,
+            write_verdict,
+        )
+
+        shared_dir = tmp_path / "shared_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        # Write request + verdict to shared queue (simulates worktree A)
+        req = ReviewRequest(
+            pr_number=42, head_sha="sha_abc", branch="feat/x", requester="a"
+        )
+        write_request(req, shared_dir, emit_event=False)
+
+        v = ReviewVerdict(
+            pr_number=42, reviewed_sha="sha_abc", status="passed", reason="clean"
+        )
+        write_verdict(v, shared_dir, emit_event=False)
+
+        # Read from "worktree B" via get_queue_entries() with no explicit dir
+        entries = get_queue_entries()
+        assert len(entries) == 1
+        assert entries[0].pr_number == 42
+        assert entries[0].effective_status == QUEUE_PASSED
+        assert entries[0].verdict_sha == "sha_abc"
+
+    def test_queue_entry_surfaces_shared_verdict(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """get_queue_entry() should find a verdict at the shared root."""
+        from bid_euchre.ops.review_queue import (
+            ReviewRequest,
+            ReviewVerdict,
+            write_request,
+            write_verdict,
+        )
+
+        shared_dir = tmp_path / "shared_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        req = ReviewRequest(
+            pr_number=99, head_sha="sha_xyz", branch="fix/y", requester="b"
+        )
+        write_request(req, shared_dir, emit_event=False)
+
+        v = ReviewVerdict(
+            pr_number=99, reviewed_sha="sha_xyz", status="blocked", reason="findings"
+        )
+        write_verdict(v, shared_dir, emit_event=False)
+
+        # Read from "worktree B"
+        entry = get_queue_entry(99)
+        assert entry.pr_number == 99
+        assert entry.effective_status == QUEUE_BLOCKED
+        assert entry.has_verdict is True
+
+    def test_empty_shared_queue_returns_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """get_queue_entries() returns [] when shared queue dir is empty."""
+        shared_dir = tmp_path / "empty_queue"
+        shared_dir.mkdir()
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        entries = get_queue_entries()
+        assert entries == []
+
+    def test_nonexistent_shared_queue_returns_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """get_queue_entries() returns [] when shared queue dir doesn't exist."""
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(tmp_path / "nonexistent"))
+
+        entries = get_queue_entries()
+        assert entries == []
