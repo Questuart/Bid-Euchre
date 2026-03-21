@@ -15,6 +15,7 @@ mock.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 from typing import Any
@@ -205,12 +206,13 @@ def _pr_targets_issue(pr: RepairPR, issue_number: int) -> bool:
     """Heuristic: does *pr* appear to target *issue_number*?
 
     Checks the PR title and body for references like ``#123`` or
-    ``Fixes #123``.
+    ``Fixes #123``.  Uses a word-boundary regex to avoid false positives
+    where ``#42`` matches inside ``#421``.
     """
-    ref = f"#{issue_number}"
-    if ref in pr.title:
+    pattern = rf"(?<!\d)#{issue_number}(?!\d)"
+    if re.search(pattern, pr.title):
         return True
-    if ref in pr.body:
+    if re.search(pattern, pr.body):
         return True
     return False
 
