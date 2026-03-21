@@ -34,6 +34,9 @@ Usage:
     uv run python scripts/internal/ops.py repairs [--json]
     uv run python scripts/internal/ops.py task list [--status STATUS] [--owner LANE] [--json]
     uv run python scripts/internal/ops.py task show PACKET_ID [--json]
+    uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
+    uv run python scripts/internal/ops.py inbox stats [--json]
+    uv run python scripts/internal/ops.py message show MSG_ID [--json]
 """
 
 from __future__ import annotations
@@ -1443,6 +1446,153 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_inbox(args: argparse.Namespace) -> int:
+    """Communication bus inbox inspection (Platform-3)."""
+    from bid_euchre.ops.message_bus import inbox_stats, read_inbox
+
+    bus_root = args.runtime_dir / "message_bus"
+
+    action = getattr(args, "inbox_action", None)
+
+    if action == "stats":
+        stats = inbox_stats(bus_root)
+        if args.json:
+            print(json.dumps(stats, indent=2))
+        else:
+            lanes = stats.get("lanes", [])
+            if not lanes:
+                print("No inbox data.")
+            else:
+                print(f"Inbox Stats: {len(lanes)} lane(s)")
+                print()
+                for lane in lanes:
+                    print(f"  {lane['lane_id']:20s}  total={lane['total']}")
+                    for status, count in sorted(lane.get("by_status", {}).items()):
+                        print(f"    {status:16s}: {count}")
+        return 0
+
+    # Default: list messages
+    lane = getattr(args, "lane", None)
+    status_filter = getattr(args, "status", None)
+    type_filter = getattr(args, "type", None)
+    thread_filter = getattr(args, "thread", None)
+
+    if lane is None:
+        # Show aggregate stats across all lanes
+        stats = inbox_stats(bus_root)
+        if args.json:
+            print(json.dumps(stats, indent=2))
+        else:
+            lanes = stats.get("lanes", [])
+            if not lanes:
+                print("No inbox data. Use --lane LANE to inspect a specific lane.")
+            else:
+                print(f"Inbox Overview: {len(lanes)} lane(s)")
+                print("  Use --lane LANE to see messages for a specific lane.")
+                print()
+                for ln in lanes:
+                    total = ln["total"]
+                    by_s = ln.get("by_status", {})
+                    pending = by_s.get("pending", 0) + by_s.get("delivered", 0)
+                    print(f"  {ln['lane_id']:20s}  {total} msg  ({pending} unresolved)")
+        return 0
+
+    messages = read_inbox(
+        lane,
+        bus_root,
+        status=status_filter,
+        thread_id=thread_filter,
+        message_type=type_filter,
+    )
+
+    if args.json:
+        print(json.dumps(messages, indent=2, default=str))
+    else:
+        if not messages:
+            print(f"No messages in {lane} inbox.")
+        else:
+            print(f"Inbox for {lane}: {len(messages)} message(s)")
+            print()
+            for msg in messages:
+                priority = msg.get("priority", "normal")
+                prio_flag = " !" if priority in ("high", "urgent") else ""
+                print(
+                    f"  {msg.get('message_id', '?'):16s}  "
+                    f"[{msg.get('status', '?'):14s}]  "
+                    f"{msg.get('message_type', '?'):18s}  "
+                    f"from={msg.get('from_lane', '?'):12s}  "
+                    f"{msg.get('summary', '')[:50]}{prio_flag}"
+                )
+    return 0
+
+
+def cmd_message(args: argparse.Namespace) -> int:
+    """Show details of a single message from the audit trail (Platform-3)."""
+    from bid_euchre.ops.message_bus import read_messages
+
+    bus_root = args.runtime_dir / "message_bus"
+
+    action = getattr(args, "message_action", None)
+    if action != "show":
+        print("Usage: ops.py message show MSG_ID", file=sys.stderr)
+        return 1
+
+    msg_id = args.message_id
+
+    # Search audit trail for the message
+    # Read all (large limit) and find by ID
+    all_msgs = read_messages(bus_root, limit=10000)
+    found = None
+    for msg in all_msgs:
+        if msg.get("message_id") == msg_id:
+            found = msg
+            break
+
+    if found is None:
+        print(f"Message {msg_id!r} not found in audit trail.", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(found, indent=2, default=str))
+    else:
+        print(f"Message: {found.get('message_id', '?')}")
+        print(f"  Type:        {found.get('message_type', '?')}")
+        print(f"  Status:      {found.get('status', '?')}")
+        print(f"  From:        {found.get('from_lane', '?')}")
+        print(f"  To:          {found.get('to_lane', '?')}")
+        print(f"  Priority:    {found.get('priority', '?')}")
+        print(f"  Created at:  {found.get('created_at', '?')}")
+        print(f"  Summary:     {found.get('summary', '?')}")
+        thread = found.get("thread_id")
+        if thread:
+            print(f"  Thread:      {thread}")
+        task = found.get("task_id")
+        if task:
+            print(f"  Task:        {task}")
+        parent = found.get("parent_message_id")
+        if parent:
+            print(f"  Parent:      {parent}")
+        if found.get("requires_human"):
+            print("  Requires human attention: YES")
+        acked = found.get("acked_at")
+        if acked:
+            print(f"  Acked at:    {acked}")
+        resolved = found.get("resolved_at")
+        if resolved:
+            print(f"  Resolved at: {resolved}")
+        payload = found.get("payload", {})
+        if payload:
+            # Show payload without delivery policy internals
+            display = {
+                k: v
+                for k, v in payload.items()
+                if k not in ("max_retries", "retry_count", "ttl_seconds")
+            }
+            if display:
+                print(f"  Payload:     {display}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -1822,6 +1972,30 @@ def build_parser() -> argparse.ArgumentParser:
     task_show_parser = task_sub.add_parser("show", help="Show a task packet by ID")
     task_show_parser.add_argument("packet_id", help="The packet ID to show")
 
+    # inbox (Platform-3 message bus)
+    inbox_parser = subparsers.add_parser(
+        "inbox", help="Communication bus inbox (Platform-3)"
+    )
+    inbox_sub = inbox_parser.add_subparsers(dest="inbox_action")
+
+    inbox_sub.add_parser("stats", help="Per-lane inbox statistics")
+
+    inbox_parser.add_argument(
+        "--lane", default=None, help="Show inbox for a specific lane"
+    )
+    inbox_parser.add_argument("--status", default=None, help="Filter by message status")
+    inbox_parser.add_argument("--type", default=None, help="Filter by message type")
+    inbox_parser.add_argument("--thread", default=None, help="Filter by thread ID")
+
+    # message (Platform-3 audit trail)
+    message_parser = subparsers.add_parser(
+        "message", help="Communication bus message detail (Platform-3)"
+    )
+    message_sub = message_parser.add_subparsers(dest="message_action")
+
+    message_show_parser = message_sub.add_parser("show", help="Show a message by ID")
+    message_show_parser.add_argument("message_id", help="The message ID to show")
+
     return parser
 
 
@@ -1873,6 +2047,8 @@ def main(argv: list[str] | None = None) -> int:
         "queue": cmd_queue,
         "repairs": cmd_repairs,
         "task": cmd_task,
+        "inbox": cmd_inbox,
+        "message": cmd_message,
     }
 
     handler = commands.get(args.command)

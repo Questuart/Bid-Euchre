@@ -53,6 +53,10 @@ VALID_EVENT_TYPES = frozenset(
         "pr_comment_ingested",
         "review_request",
         "review_verdict",
+        "message_sent",
+        "message_acked",
+        "message_expired",
+        "message_dead_lettered",
     }
 )
 
