@@ -277,6 +277,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/test_review_infra.py` | Tiered (SMOKE/QUICK/FULL) end-to-end review infrastructure test harness |
 | `scripts/internal/review_common.py` | Shared severity constants and predicates for the review pipeline |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
+| `scripts/internal/review_quality_audit.py` | Review-quality audit: scan loop artifacts, report missed blockers, noisy findings, deterministic-check candidates |
 | `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |
 | `scripts/internal/rung_state.py` | Rung orchestrator state management (RunState persistence, step/model tracking) |
 | `scripts/internal/run_rung.py` | Arc D v2 rung orchestrator (9-step runbook execution, multi-seed, QUICK/FULL pipeline) |
