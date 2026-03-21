@@ -621,11 +621,18 @@ def _probe_fallback_liveness(
                     source="worktree_dirty",
                     detail=f"uncommitted changes in {wt_name}",
                 )
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             # Subprocess failures (FileNotFoundError, TimeoutExpired, git
             # errors) must not block status aggregation.  Degrade gracefully
             # by skipping this signal.
-            logger.debug(
+            #
+            # ImportError is more serious (missing module / broken import) so
+            # escalate to warning to avoid silent masking.
+            log_level = (
+                logging.WARNING if isinstance(exc, ImportError) else logging.DEBUG
+            )
+            logger.log(
+                log_level,
                 "dirty-worktree check failed for %s, skipping signal",
                 worktree_path,
                 exc_info=True,
@@ -651,6 +658,7 @@ def synthesize_lane_activity(
     *,
     now: datetime | None = None,
     stale_minutes: int = STALE_MINUTES,
+    check_worktree: bool = True,
 ) -> list[LaneStatus]:
     """Synthesize lane-activity view from existing repo-local state.
 
@@ -672,6 +680,9 @@ def synthesize_lane_activity(
         events: Recent events, most-recent-first.
         now: Current time for staleness checks (default: UTC now).
         stale_minutes: Minutes without progress before flagging stale.
+        check_worktree: If False, skip the dirty-worktree subprocess probe
+            in the fallback liveness check.  Useful for fast status queries
+            when 7+ worktrees would each spawn a ``git status`` subprocess.
 
     Returns:
         List of enriched LaneStatus objects.
@@ -716,7 +727,7 @@ def synthesize_lane_activity(
 
         if primary_task and primary_task.get("status") == "blocked":
             state = "blocked"
-            liveness_source = "registry" if has_active_session else None
+            liveness_source = "task_state"
         elif has_active_session:
             state = "active"
             liveness_source = "registry"
@@ -733,6 +744,7 @@ def synthesize_lane_activity(
                 worktree_path=lane.get("worktree_path") or None,
                 now=now,
                 stale_minutes=stale_minutes,
+                check_worktree=check_worktree,
             )
             probe_detail = probe.detail
             if probe.is_likely_live:
@@ -884,11 +896,18 @@ def _load_recent_events(
     return events
 
 
-def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
+def aggregate_status(
+    runtime_dir: Path | None = None,
+    *,
+    check_worktree: bool = True,
+) -> StatusReport:
     """Build a unified status report across lanes, sessions, and tasks.
 
     Args:
         runtime_dir: Override for the runtime directory root.
+        check_worktree: If False, skip dirty-worktree subprocess probes
+            in the fallback liveness check.  Saves ~1 ``git status``
+            subprocess per idle lane (7+ with all protected worktrees).
 
     Returns:
         StatusReport with categorized entries and warnings.
@@ -928,6 +947,7 @@ def aggregate_status(runtime_dir: Path | None = None) -> StatusReport:
         sessions_by_lane,
         tasks_by_lane,
         events,
+        check_worktree=check_worktree,
     )
 
     # Session metadata files are preserved for resume/audit — they are
