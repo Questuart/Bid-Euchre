@@ -1406,6 +1406,49 @@ def _step_ready_to_merge(
     return loop_state
 
 
+# ---------------------------------------------------------------------------
+# Timeout helper
+# ---------------------------------------------------------------------------
+
+# Grace period for READY_TO_MERGE state.  Measured from when the loop
+# *enters* READY_TO_MERGE (not from loop start), so a slow scoring step
+# that legitimately reaches READY_TO_MERGE after max_runtime_s is not
+# penalised.  If _step_ready_to_merge() fails to advance within this
+# window the loop force-stops, preventing unbounded execution.
+_READY_TO_MERGE_GRACE_S = 60
+
+
+def _should_timeout(
+    elapsed: float,
+    max_runtime_s: float,
+    current_state: ReviewState,
+    time_in_ready_state: float = 0.0,
+) -> bool:
+    """Determine whether the review loop should timeout.
+
+    Normal timeout fires when *elapsed > max_runtime_s*, unless the loop is
+    in ``READY_TO_MERGE`` (the review decision is made; let the merge step
+    complete).  When in ``READY_TO_MERGE``, a dedicated grace-period cap of
+    60 s (measured from state entry, not loop start) fires if the merge
+    step stalls, preventing unbounded loops.
+
+    Args:
+        elapsed: Total seconds since loop start.
+        max_runtime_s: Normal timeout threshold (e.g. 900).
+        current_state: Current review state.
+        time_in_ready_state: Seconds spent in READY_TO_MERGE (0 if not
+            in that state).
+
+    Returns:
+        True if the loop should stop.
+    """
+    if current_state == ReviewState.READY_TO_MERGE:
+        # Grace-period cap: force-stop if stuck in READY_TO_MERGE
+        return time_in_ready_state > _READY_TO_MERGE_GRACE_S
+    # Normal timeout for all other states
+    return elapsed > max_runtime_s
+
+
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Autonomous review coordinator driver")
@@ -1511,12 +1554,22 @@ def main() -> int:
     max_runtime_s = 900
     poll_interval_s = 30
     start_time = time.monotonic()
+    ready_to_merge_at: float | None = None
 
     while not loop_state.is_terminal:
         elapsed = time.monotonic() - start_time
-        if (
-            elapsed > max_runtime_s
-            and loop_state.current_state != ReviewState.READY_TO_MERGE
+
+        # Track time spent in READY_TO_MERGE for the grace-period cap
+        if loop_state.current_state == ReviewState.READY_TO_MERGE:
+            if ready_to_merge_at is None:
+                ready_to_merge_at = time.monotonic()
+            time_in_ready = time.monotonic() - ready_to_merge_at
+        else:
+            time_in_ready = 0.0
+            ready_to_merge_at = None
+
+        if _should_timeout(
+            elapsed, max_runtime_s, loop_state.current_state, time_in_ready
         ):
             logger.warning(
                 "PR #%d: runtime limit reached (%.0fs) — stopping. "

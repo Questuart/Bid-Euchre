@@ -412,6 +412,87 @@ class TestBashGuardIntegration:
         assert data["reviewed_sha"] == "abc1234567890"
         assert data["status"] == "passed"
 
+    def test_allows_merge_when_ci_has_skipped_checks(self, tmp_path: Path) -> None:
+        """Guard should allow merge when CI has SUCCESS+SKIPPED (no FAILURE/PENDING).
+
+        The bash guard's inline Python classifier treats
+        ``all(s in ('SUCCESS', 'SKIPPED'))`` as "success".  This test
+        exercises that path through the real bash script with mock ``gh``
+        and ``uv`` binaries on PATH.
+        """
+        import json
+        import os
+        import stat
+        import subprocess
+
+        # 1. Write a passing verdict with a known SHA
+        test_sha = "abc1234567890"
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha=test_sha,
+            status=STATUS_PASSED,
+            reason="clean review",
+        )
+        queue_dir = tmp_path / "shared_queue"
+        write_verdict(v, queue_dir, emit_event=False)
+
+        # 2. Create mock binaries directory
+        mock_bin = tmp_path / "mock_bin"
+        mock_bin.mkdir()
+
+        # Mock gh: return matching SHA for pr view, SUCCESS+SKIPPED for pr checks
+        gh_script = mock_bin / "gh"
+        checks_json = json.dumps(
+            [
+                {"name": "tests", "state": "SUCCESS"},
+                {"name": "notebooks", "state": "SKIPPED"},
+                {"name": "reviewing-changes", "state": "SUCCESS"},
+            ]
+        )
+        gh_script.write_text(f"""#!/usr/bin/env bash
+if [[ "$*" == *"pr view"*"--json headRefOid"* ]]; then
+    echo "{test_sha}"
+elif [[ "$*" == *"pr checks"*"--json name,state"* ]]; then
+    echo '{checks_json}'
+else
+    echo "{{}}"
+fi
+""")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC)
+
+        # Mock uv: forward "uv run python ..." → "python ..."
+        uv_script = mock_bin / "uv"
+        uv_script.write_text("""#!/usr/bin/env bash
+shift  # skip "run"
+exec "$@"
+""")
+        uv_script.chmod(uv_script.stat().st_mode | stat.S_IEXEC)
+
+        # 3. Run the guard with mock binaries on PATH.
+        # BID_EUCHRE_REVIEW_QUEUE_DIR tells shared_queue_root() where to
+        # find verdicts (the guard resolves queue root via this env var).
+        env = os.environ.copy()
+        env["BID_EUCHRE_REVIEW_QUEUE_DIR"] = str(queue_dir)
+        env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
+
+        stdin_payload = json.dumps(
+            {"tool_input": {"command": "gh pr merge 42 --squash"}}
+        )
+
+        result = subprocess.run(
+            ["bash", str(self._guard_script())],
+            input=stdin_payload,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+
+        assert result.returncode == 0, (
+            f"Guard should allow merge with SUCCESS+SKIPPED CI. "
+            f"stdout={result.stdout!r}, stderr={result.stderr!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Cross-worktree merge guard tests
