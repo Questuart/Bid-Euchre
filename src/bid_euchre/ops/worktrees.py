@@ -399,19 +399,20 @@ def classify_cleanup_candidates(
         # is never a cleanup target.
         if is_main_worktree(git_wt.path):
             continue
-        protected = is_protected(git_wt.path)
+        # Skip protected steward worktrees — they are permanent lane
+        # infrastructure, not cleanup candidates, even when unregistered.
+        if is_protected(git_wt.path):
+            continue
         dirty = is_worktree_dirty(git_wt.path) if check_dirty else False
         candidates.append(
             CleanupCandidate(
                 path=git_wt.path,
                 branch=git_wt.branch,
                 lifecycle_class="unknown",
-                cleanup_state="idle" if not protected else "active",
-                reason="Not in worktree registry"
-                if not protected
-                else "Protected worktree (unregistered)",
+                cleanup_state="idle",
+                reason="Not in worktree registry",
                 is_dirty=dirty,
-                is_protected=protected,
+                is_protected=False,
             )
         )
 

@@ -362,6 +362,19 @@ class TestClassifyCleanupCandidates:
         # Persistent + protected → no candidate
         assert len(candidates) == 0
 
+    def test_protected_unregistered_worktree_skipped(self) -> None:
+        """Protected steward worktrees are not cleanup candidates even when unregistered."""
+        now = datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc)
+        path = "/tmp/Bid-Euchre-steward-ops"
+        git_wts = [GitWorktree(path=path, head="abc", branch="codex/steward-ops")]
+        registry: list[dict] = []  # No registry entry at all
+
+        candidates = classify_cleanup_candidates(
+            git_wts, registry, now=now, check_dirty=False
+        )
+        # Protected + unregistered → skipped entirely, not a candidate
+        assert len(candidates) == 0
+
     def test_default_ttl_applied(self) -> None:
         now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
         git_wts = [GitWorktree(path="/tmp/wt-task", head="abc", branch="task-1")]

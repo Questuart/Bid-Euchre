@@ -58,6 +58,9 @@
   - issue-driven execution with explicit stop rules
 - [x] Deterministic precheck hardening shipped (#1126, #1132)
   - string-literal masking for C5/T1 checks
+- [x] Control-plane startup decoupled from research imports
+  - `bid_euchre.__init__` uses lazy `__getattr__` for experiments subpackage
+  - ops entrypoints no longer pay strategy/ML import cost
 
 ## 6. Intentionally Deferred to Platform-1 or Later
 
