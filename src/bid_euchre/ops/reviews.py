@@ -429,19 +429,12 @@ def format_reviews_json(outcomes: list[ReviewOutcome]) -> list[dict]:
 
 
 # --- Comment-Based Review Overlays ---
-#
 # PR issue comments are a separate signal channel from checks/statuses.
-# Codex Cloud review arrives as issue comments from
-# chatgpt-codex-connector[bot], not as checks or statuses.
-# These overlays surface comment-derived signals without conflating
-# them with CI or the reviewing-changes gate.
-#
-# This is the single canonical location for comment-author classification.
-# Do NOT duplicate TRUSTED_BOT_LOGINS or classify_comment_author()
-# elsewhere (e.g., github_pr_state.py).
+# Codex Cloud arrives as issue comments, not checks — these overlays surface
+# comment-derived signals without conflating them with CI or the merge gate.
+# This is the SINGLE canonical location for comment-author classification.
 
-# Trusted bot logins recognized for comment-based review signals.
-# Only add verified identities here — never speculative names.
+# Trusted bot logins for comment-based review signals (never speculative).
 TRUSTED_BOT_LOGINS: frozenset[str] = frozenset(
     {
         "chatgpt-codex-connector[bot]",
