@@ -142,7 +142,12 @@ def _save_candidate(candidate: SkillCandidate, candidates_dir: Path) -> Path:
     # Atomic write: write to temp file, fsync, then rename
     tmp_fd, tmp_path = tempfile.mkstemp(dir=str(candidates_dir), suffix=".tmp")
     try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+        try:
+            f = os.fdopen(tmp_fd, "w", encoding="utf-8")
+        except BaseException:
+            os.close(tmp_fd)
+            raise
+        with f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
@@ -358,7 +363,12 @@ def promote_skill(
     skill_content = _render_skill_md(candidate)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=str(skill_dir), suffix=".tmp")
     try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+        try:
+            f = os.fdopen(tmp_fd, "w", encoding="utf-8")
+        except BaseException:
+            os.close(tmp_fd)
+            raise
+        with f:
             f.write(skill_content)
             f.flush()
             os.fsync(f.fileno())
@@ -419,7 +429,7 @@ def disable_skill(
         raise FileNotFoundError(f"Skill '{name}' not found at {skill_md}.")
 
     disabled_path = skill_md.with_suffix(".md.disabled")
-    skill_md.rename(disabled_path)
+    os.replace(str(skill_md), str(disabled_path))
 
     # Emit event
     _emit_disable_event(name, reason, disabled_by, events_dir=events_dir)
