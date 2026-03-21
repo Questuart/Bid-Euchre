@@ -105,6 +105,11 @@ class LaneStatus:
     # "registry" (session_id), "events", "task_state", "session_metadata",
     # "last_active", "worktree_dirty", or None (genuinely idle / no evidence).
     liveness_source: str | None = None
+    # NOTE: ``liveness_detail`` was removed in #1091 (2026-03-20). The field
+    # carried free-text liveness evidence but was unused by any consumer. If
+    # downstream tooling previously read ``liveness_detail`` from
+    # ``ops.py status --json``, it will receive a KeyError. Use
+    # ``liveness_source`` for provenance instead.
 
     # --- Event context (enriched from durable event log) ---
     last_event_type: str | None = None

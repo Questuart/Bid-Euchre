@@ -71,10 +71,9 @@ def classify_check(name: str) -> str:
     return "ci"
 
 
-# DEPRECATED: Fail-closed CI allowlist. Retained for backward compatibility.
-# Prefer classify_check() which uses a fail-open denylist — new CI jobs are
-# included by default without needing to update this set.
-# See #1036 for the unification rationale.
+# DEPRECATED fail-closed allowlist — prefer classify_check() (fail-open denylist).
+# New CI jobs are included by default via classify_check(); this set is retained
+# for backward compat only. Update both when adding workflow jobs. See #1036, #1041.
 CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})
 
 # Default timeout (seconds) for gh CLI subprocess calls.

@@ -210,6 +210,13 @@ def get_retry_summary(events: list[dict[str, Any]]) -> RetrySummary:
     counts toward failures that occurred before it.  This matches
     ``get_pending_retries()`` semantics.
 
+    **Non-exclusive categories:** The returned counts (``resolved_tasks``,
+    ``retried_tasks``, ``rerouted_tasks``, ``escalated_tasks``,
+    ``dropped_tasks``) are **not mutually exclusive**.  A single task may
+    be counted in multiple categories (e.g., both ``retried_tasks`` and
+    ``resolved_tasks`` if it was retried and eventually completed).  The
+    sum of category counts can therefore exceed ``total_tasks_with_failures``.
+
     Args:
         events: List of event dicts (from ``read_events``).
 

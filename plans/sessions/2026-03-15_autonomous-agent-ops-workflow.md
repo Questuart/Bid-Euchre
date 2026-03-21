@@ -150,6 +150,9 @@ These decisions were resolved during the 2026-03-16 review session.
 - `claude-review` failures should remain visible, but must not poison CI.
 - Any future Codex-at-CI reintroduction should enter through the same
   `advisory` category first rather than becoming a new implicit merge gate.
+- **Terminology note:** `reviewing-changes` is "advisory" with respect to
+  branch protection (not required for merge) but classified as `review_gate`
+  in the three-category check model above -- not in the `advisory` category.
 
 **Implementation constraint:**
 - `scripts/internal/deterministic_prechecks.py` uses `git diff origin/main...HEAD`, so any GitHub workflow that runs it must fetch history deeply enough for the merge base to exist.
