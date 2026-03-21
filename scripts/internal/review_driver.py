@@ -1557,13 +1557,14 @@ def main() -> int:
     ready_to_merge_at: float | None = None
 
     while not loop_state.is_terminal:
-        elapsed = time.monotonic() - start_time
+        now = time.monotonic()
+        elapsed = now - start_time
 
         # Track time spent in READY_TO_MERGE for the grace-period cap
         if loop_state.current_state == ReviewState.READY_TO_MERGE:
             if ready_to_merge_at is None:
-                ready_to_merge_at = time.monotonic()
-            time_in_ready = time.monotonic() - ready_to_merge_at
+                ready_to_merge_at = now
+            time_in_ready = now - ready_to_merge_at
         else:
             time_in_ready = 0.0
             ready_to_merge_at = None
@@ -1579,9 +1580,15 @@ def main() -> int:
                 elapsed,
                 loop_state.pr_number,
             )
-            loop_state.stop_reason = (
-                f"Runtime limit reached ({elapsed:.0f}s > {max_runtime_s}s)"
-            )
+            if loop_state.current_state == ReviewState.READY_TO_MERGE:
+                loop_state.stop_reason = (
+                    f"READY_TO_MERGE grace period exceeded "
+                    f"({time_in_ready:.0f}s > {_READY_TO_MERGE_GRACE_S}s)"
+                )
+            else:
+                loop_state.stop_reason = (
+                    f"Runtime limit reached ({elapsed:.0f}s > {max_runtime_s}s)"
+                )
             try:
                 loop_state.transition(ReviewState.STOPPED_REVIEW_FAILURE)
             except InvalidTransitionError:
