@@ -1,9 +1,18 @@
 # Review Architecture — Coordinator + Advisory Overlays
 
 > The **local review coordinator** (`review_driver.py`) is the single
-> reviewer of record.  `reviewing-changes` is the merge-relevant gate.
+> reviewer of record.  `reviewing-changes` is the merge-relevant review
+> gate (advisory — not required by branch protection; see note below).
 > `claude-review` is an advisory GitHub check.  Codex Cloud is an optional
 > overlay via `@codex review`.
+>
+> **Terminology note:** "advisory" is used in two senses in this repo:
+> (1) *branch-protection sense* -- `reviewing-changes` is not required for
+> merge (only `tests` and `governance` are required); (2) *check-category
+> sense* -- `advisory` is one of three categories (`ci`, `review_gate`,
+> `advisory`) in the CI classification model.  `reviewing-changes` is
+> classified as `review_gate` (not `advisory`) in the three-category model,
+> but is advisory with respect to branch protection.
 
 ## Review Coordinator (Reviewer of Record)
 

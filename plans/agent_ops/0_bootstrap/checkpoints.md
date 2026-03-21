@@ -31,7 +31,8 @@
   **CLOSED** (2026-03-21). PR comment ingestion bridge shipped in #1122
   (`src/bid_euchre/ops/reviews.py`, `scripts/internal/github_pr_state.py`).
   Local review coordinator reset shipped in #1123. `claude-review` remains
-  advisory; `reviewing-changes` remains merge-relevant. Codex Cloud
+  advisory (branch-protection sense, not the `advisory` check category);
+  `reviewing-changes` remains merge-relevant. Codex Cloud
   comments are now queryable as operational signals without CI/merge-gate
   side effects. Trusted command handling deferred to Platform-1 (N/A for
   bridge — filesystem + comment bridges provide sufficient control).
@@ -46,8 +47,9 @@
 ### 2026-03-19 -- Codex
 - Completed: Added the canonical governed-plan scaffold, phase files, and
   `CLAUDE.md` registration for `agent_ops`.
-- In progress: Platform-1 entry criteria remain gated on PR-5 slices 3-7,
-  unless remaining items are explicitly recorded as non-blocking.
+- In progress: Platform-1 entry criteria remain gated on PR-5 slices 5-7
+  (slices 3-4 already complete: #1024, #1016), unless remaining items are
+  explicitly recorded as non-blocking.
 - Next: finish PR-5 closeout, then open the first Platform-1 execution
   handoff or sub-plan under the governed initiative.
 

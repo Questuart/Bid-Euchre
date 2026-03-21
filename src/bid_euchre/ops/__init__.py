@@ -75,6 +75,18 @@ def classify_check(name: str) -> str:
 # Prefer classify_check() which uses a fail-open denylist — new CI jobs are
 # included by default without needing to update this set.
 # See #1036 for the unification rationale.
+#
+# DIVERGENCE NOTE (#1041): Two CI classification strategies coexist:
+#
+#   1. classify_check() (above) — fail-open denylist. Unknown check names
+#      default to "ci". This is the preferred approach for new code.
+#   2. CI_CHECK_NAMES (below) — fail-closed allowlist. Unknown check names
+#      are excluded from CI. Retained only for backward compatibility.
+#
+# If a new CI job is added to GitHub workflows but not to CI_CHECK_NAMES,
+# classify_check() will count it as CI (correctly), but any legacy consumer
+# of CI_CHECK_NAMES will ignore it. When adding new workflow jobs, update
+# CI_CHECK_NAMES as well until all consumers have migrated to classify_check().
 CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})
 
 # Default timeout (seconds) for gh CLI subprocess calls.
