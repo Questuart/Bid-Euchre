@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -492,3 +493,119 @@ class TestPrecheckFinding:
         assert f.check_id == "N1"
         assert f.file is None
         assert f.line is None
+
+
+# ---------------------------------------------------------------------------
+# Hardening tests (#1182, #1183, #1184)
+# ---------------------------------------------------------------------------
+
+
+class TestAtomicWrites:
+    """Verify write_request/write_verdict use atomic temp+fsync+replace."""
+
+    def test_write_request_creates_valid_json(self, tmp_path: Path) -> None:
+        req = ReviewRequest(
+            pr_number=42, head_sha="sha1", branch="feat/x", requester="a"
+        )
+        write_request(req, tmp_path, emit_event=False)
+        path = request_path(42, tmp_path)
+        data = json.loads(path.read_text())
+        assert data["pr_number"] == 42
+
+    def test_write_verdict_creates_valid_json(self, tmp_path: Path) -> None:
+        v = ReviewVerdict(
+            pr_number=42, reviewed_sha="sha1", status="passed", reason="clean"
+        )
+        write_verdict(v, tmp_path, emit_event=False)
+        path = verdict_path(42, tmp_path)
+        data = json.loads(path.read_text())
+        assert data["status"] == "passed"
+
+    def test_no_tmp_files_left_on_success(self, tmp_path: Path) -> None:
+        """Atomic writes should not leave .tmp files on success."""
+        v = ReviewVerdict(
+            pr_number=42, reviewed_sha="sha1", status="passed", reason="clean"
+        )
+        write_verdict(v, tmp_path, emit_event=False)
+        pr_slot = tmp_path / "pr_42"
+        tmp_files = list(pr_slot.glob("*.tmp"))
+        assert tmp_files == []
+
+
+class TestCorruptFileHandling:
+    """Verify corrupt files return None instead of crashing (#1182)."""
+
+    def test_corrupt_request_returns_none(self, tmp_path: Path) -> None:
+        slot = tmp_path / "pr_42"
+        slot.mkdir(parents=True)
+        (slot / "request.json").write_text("not json {{{")
+        result = read_request(42, tmp_path)
+        assert result is None
+
+    def test_corrupt_verdict_returns_none(self, tmp_path: Path) -> None:
+        slot = tmp_path / "pr_42"
+        slot.mkdir(parents=True)
+        (slot / "verdict.json").write_text("not json {{{")
+        result = read_verdict(42, tmp_path)
+        assert result is None
+
+    def test_empty_verdict_file_returns_none(self, tmp_path: Path) -> None:
+        slot = tmp_path / "pr_42"
+        slot.mkdir(parents=True)
+        (slot / "verdict.json").write_text("")
+        result = read_verdict(42, tmp_path)
+        assert result is None
+
+    def test_truncated_json_returns_none(self, tmp_path: Path) -> None:
+        slot = tmp_path / "pr_42"
+        slot.mkdir(parents=True)
+        (slot / "verdict.json").write_text('{"pr_number": 42, "reviewed_sha"')
+        result = read_verdict(42, tmp_path)
+        assert result is None
+
+
+class TestVerdictWriterField:
+    """Verify writer field discrimination (#1184)."""
+
+    def test_writer_field_round_trip(self, tmp_path: Path) -> None:
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha1",
+            status="passed",
+            reason="clean",
+            writer="review_driver",
+        )
+        write_verdict(v, tmp_path, emit_event=False, lane_id="review_driver")
+        loaded = read_verdict(42, tmp_path)
+        assert loaded is not None
+        assert loaded.writer == "review_driver"
+
+    def test_writer_defaults_to_empty(self, tmp_path: Path) -> None:
+        v = ReviewVerdict(
+            pr_number=42, reviewed_sha="sha1", status="passed", reason="clean"
+        )
+        assert v.writer == ""
+
+    def test_lane_id_threaded_to_writer(self, tmp_path: Path) -> None:
+        """write_verdict should set writer from lane_id if not already set."""
+        v = ReviewVerdict(
+            pr_number=42, reviewed_sha="sha1", status="passed", reason="clean"
+        )
+        write_verdict(v, tmp_path, emit_event=False, lane_id="review")
+        loaded = read_verdict(42, tmp_path)
+        assert loaded is not None
+        assert loaded.writer == "review"
+
+    def test_explicit_writer_not_overridden(self, tmp_path: Path) -> None:
+        """If verdict already has a writer, lane_id should not override it."""
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha1",
+            status="passed",
+            reason="clean",
+            writer="original_writer",
+        )
+        write_verdict(v, tmp_path, emit_event=False, lane_id="other")
+        loaded = read_verdict(42, tmp_path)
+        assert loaded is not None
+        assert loaded.writer == "original_writer"

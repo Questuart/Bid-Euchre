@@ -29,6 +29,7 @@ from bid_euchre.ops.review_queue import (
     STATUS_FAILED,
     STATUS_PASSED,
     STATUS_PENDING,
+    STATUS_RUNNING,
     ReviewRequest,
     ReviewVerdict,
     read_verdict,
@@ -520,3 +521,70 @@ class TestShadowModeContract:
     def test_lane_id_is_review(self) -> None:
         """The runner identifies as the 'review' lane."""
         assert LANE_ID == "review"
+
+
+# ---------------------------------------------------------------------------
+# Stuck running verdict re-claim (#1183)
+# ---------------------------------------------------------------------------
+
+
+class TestStuckRunningReclaim:
+    """Verify that stale 'running' verdicts are re-claimable."""
+
+    def test_fresh_running_verdict_not_claimable(self, tmp_path: Path) -> None:
+        """A 'running' verdict created just now should NOT be re-claimable."""
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc", branch="feat/x", requester="a"
+        )
+        write_request(req, tmp_path, emit_event=False)
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="abc",
+            status=STATUS_RUNNING,
+            reason="running",
+        )
+        write_verdict(v, tmp_path, emit_event=False)
+
+        pending = find_pending_requests(tmp_path)
+        assert len(pending) == 0
+
+    def test_stale_running_verdict_is_reclaimable(self, tmp_path: Path) -> None:
+        """A 'running' verdict older than 15min should be re-claimable."""
+        from datetime import datetime, timedelta, timezone
+
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc", branch="feat/x", requester="a"
+        )
+        write_request(req, tmp_path, emit_event=False)
+
+        # Write a running verdict with old timestamp
+        old_time = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="abc",
+            status=STATUS_RUNNING,
+            reason="running",
+            created_at=old_time,
+        )
+        write_verdict(v, tmp_path, emit_event=False)
+
+        pending = find_pending_requests(tmp_path)
+        assert len(pending) == 1
+        assert pending[0].pr_number == 42
+
+    def test_passed_verdict_not_reclaimable(self, tmp_path: Path) -> None:
+        """A 'passed' verdict should never be re-claimable regardless of age."""
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc", branch="feat/x", requester="a"
+        )
+        write_request(req, tmp_path, emit_event=False)
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="abc",
+            status=STATUS_PASSED,
+            reason="clean",
+        )
+        write_verdict(v, tmp_path, emit_event=False)
+
+        pending = find_pending_requests(tmp_path)
+        assert len(pending) == 0

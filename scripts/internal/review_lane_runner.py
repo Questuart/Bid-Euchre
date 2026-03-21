@@ -104,12 +104,43 @@ def get_pr_head_sha(pr_number: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+# Maximum age (in minutes) for a ``running`` verdict before it becomes
+# re-claimable.  Protects against runner crashes that leave a PR stuck
+# in ``running`` forever (#1183).
+RUNNING_STALENESS_MINUTES = 15
+
+
+def _is_verdict_stale_running(verdict: ReviewVerdict) -> bool:
+    """Check whether a ``running`` verdict is stale (older than threshold).
+
+    Args:
+        verdict: A verdict with status ``running``.
+
+    Returns:
+        ``True`` if the verdict's ``created_at`` is older than
+        ``RUNNING_STALENESS_MINUTES``.
+    """
+    if verdict.status != STATUS_RUNNING:
+        return False
+    try:
+        from datetime import datetime, timezone
+
+        created = datetime.fromisoformat(verdict.created_at)
+        age_minutes = (datetime.now(timezone.utc) - created).total_seconds() / 60
+        return age_minutes > RUNNING_STALENESS_MINUTES
+    except (ValueError, TypeError):
+        # Unparseable timestamp — treat as stale to avoid permanent stuck state
+        return True
+
+
 def find_pending_requests(queue_dir: Path | None = None) -> list[ReviewRequest]:
     """Scan the queue for PRs with pending review requests.
 
     A request is "claimable" when:
     1. A ``request.json`` exists.
-    2. No verdict exists, OR the existing verdict is ``pending``.
+    2. No verdict exists, OR the existing verdict is ``pending``, OR
+       the verdict is ``running`` but older than ``RUNNING_STALENESS_MINUTES``
+       (protects against runner crashes leaving a PR stuck — #1183).
 
     Returns:
         List of ``ReviewRequest`` objects sorted by PR number (FIFO-ish).
@@ -134,8 +165,16 @@ def find_pending_requests(queue_dir: Path | None = None) -> list[ReviewRequest]:
 
         verdict = read_verdict(pr_number, queue_dir)
         if verdict is not None and verdict.status not in (STATUS_PENDING,):
-            # Already has a non-pending verdict — skip.
-            continue
+            # Re-claimable if running and stale (#1183)
+            if verdict.status == STATUS_RUNNING and _is_verdict_stale_running(verdict):
+                logger.info(
+                    "PR #%d: re-claiming stale running verdict (created %s)",
+                    pr_number,
+                    verdict.created_at,
+                )
+            else:
+                # Already has a non-pending/non-stale verdict — skip.
+                continue
 
         pending.append(req)
 
