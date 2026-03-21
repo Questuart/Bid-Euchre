@@ -72,7 +72,7 @@ the same null-check_id finding.
 ## Validation
 
 - **Tier 1:** `uv run python -m pytest tests/unit/test_review_quality_audit.py -x -v`
-- **Tier 1:** `uv run python -m pytest tests/unit/test_index.py -x -v`
+- **Tier 1:** `uv run python -m pytest tests/unit/test_ops_index.py -x -v`
 - **Tier 2:** `make check-quiet` before PR
 
 ## Outcome

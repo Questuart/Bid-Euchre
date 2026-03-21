@@ -129,6 +129,10 @@ PRs are classified by review mode based on changed file types:
    posts the canonical summary comment, and enables auto-merge
 6. GitHub merges automatically once CI and branch protection are satisfied
 
+No human merge step required.  If auto-merge fails (e.g., conflicts, repo
+setting disabled), the coordinator publishes success and the PR can be merged
+manually.
+
 Codex Cloud, when used, is additive commentary.  It does not publish a
 merge-blocking artifact for this repo.
 

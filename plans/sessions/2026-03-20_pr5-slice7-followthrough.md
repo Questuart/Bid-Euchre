@@ -82,4 +82,4 @@ Add `emit_review_event(outcome, lane_id, events_dir)` analogous to `emit_ci_even
 
 ## Outcome
 
-PR: (to be filled after PR creation)
+PR #1098 merged. PR-5 slice 7 shipped: scope drift detection, retry follow-through scanning, review event emission, and CLI wiring.

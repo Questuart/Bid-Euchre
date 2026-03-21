@@ -143,7 +143,11 @@ PRs 1-3 are documentation-only. PR 4 is conditional on whether the notebook is u
 | R18-11 | 2 hardcoded `trump='H'` | **Unchanged** → R20-9 | Documented as appropriate |
 | R18-12 | 3 hardcoded `seat=0` defaults | **Unchanged** → R20-8 | Documented as appropriate |
 
-**Resolution rate:** 4/9 R18 issues resolved, 1 improved, 1 worsened, 3 unchanged (documented as appropriate).
+**Resolution rate:** 3/9 R18 issues resolved, 1 improved, 1 worsened, 4 unchanged (documented as appropriate).
+
+> **Note:** R18 defined 12 issues (R18-1 through R18-12). This table tracks 9;
+> R18-8, R18-9, and R18-10 (all LOW severity, resolved or no-action-required
+> at R18) were excluded from the longitudinal tracking.
 
 ---
 
