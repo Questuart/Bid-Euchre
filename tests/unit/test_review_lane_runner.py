@@ -126,6 +126,25 @@ class TestFindPendingRequests:
     def test_nonexistent_dir(self, tmp_path: Path) -> None:
         assert find_pending_requests(tmp_path / "nonexistent") == []
 
+    def test_none_queue_dir_delegates_to_shared_queue_root(
+        self, queue_dir: Path, events_dir: Path
+    ) -> None:
+        """When queue_dir is None, find_pending_requests uses shared_queue_root().
+
+        Regression test for #1196: the runner previously fell back to the
+        relative DEFAULT_QUEUE_DIR, which is invisible in linked worktrees.
+        """
+        req = _make_request(pr_number=55)
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        with patch(
+            "review_lane_runner.shared_queue_root", return_value=queue_dir
+        ) as mock_sqr:
+            pending = find_pending_requests(None)
+            mock_sqr.assert_called_once()
+        assert len(pending) == 1
+        assert pending[0].pr_number == 55
+
 
 # ---------------------------------------------------------------------------
 # process_request — SHA verification
