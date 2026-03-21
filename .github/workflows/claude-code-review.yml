@@ -55,7 +55,7 @@ jobs:
             Post your findings as review comments on the PR.
 
           # Tool access strategy:
-          # - Bash is scoped to gh commands via allowed-tools in the action config
+          # - Bash available (scoped via --disallowedTools blocklist in claude_args)
           # - Read/Grep/Glob are allowed by default
           # - Write tools and network/agent tools are disallowed to prevent
           #   wasted turns on permission denials (~36% turn waste before this fix)
@@ -89,11 +89,19 @@ jobs:
               --jq '[.[] | select(.status == "completed")] | .[0:'"$BLANK_EXEC_THRESHOLD"'] | map(.conclusion)' \
               2>/dev/null || echo "[]")
 
-            # Count consecutive failures (all recent runs failed)
-            CONSECUTIVE_FAILURES=$(echo "$RECENT_RUNS" | jq '[.[] | select(. == "failure")] | length' 2>/dev/null || echo "0")
+            # Count truly consecutive failures from the start: stop at first non-failure
+            CONSECUTIVE_FAILURES=$(echo "$RECENT_RUNS" | jq 'reduce .[] as $c ({n:0,stop:false}; if .stop then . else (if $c == "failure" then .n += 1 else .stop = true end) end) | .n' 2>/dev/null || echo "0")
 
             if [ "$CONSECUTIVE_FAILURES" -ge "$BLANK_EXEC_THRESHOLD" ]; then
               echo "::error::claude-review has $CONSECUTIVE_FAILURES consecutive blank-execution failures — creating infra issue"
+
+              # Dedup: skip if an open issue already exists for this alert
+              EXISTING=$(gh issue list --search "claude-review: consecutive blank-execution" --state open --limit 1 --json number --jq '.[0].number' 2>/dev/null || echo "")
+              if [ -n "$EXISTING" ]; then
+                echo "::warning::Infra issue #$EXISTING already open — skipping duplicate"
+                exit 1
+              fi
+
               gh issue create \
                 --title "claude-review: $CONSECUTIVE_FAILURES consecutive blank-execution failures" \
                 --body "The Claude Code Review action has failed $CONSECUTIVE_FAILURES consecutive times without producing an \`execution_file\`. This pattern suggests a persistent infrastructure problem (not intermittent max-turns noise).
