@@ -4,8 +4,8 @@
 **ID:** SP-1-03
 **Date:** 2026-03-21
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 1 (`1_coordination_core`), `Platform-3`
-**Status:** in_progress
-**Owner:** TBD (implementation lane)
+**Status:** completed
+**Owner:** author-b (implementation), author-a (scope lock + closeout)
 
 ---
 
@@ -302,11 +302,31 @@ Expected diff: ~400–600 lines across 5 files (1 new module, 1 new test file,
 
 ## Observed Outputs
 
-_Filled during/after execution._
+- `src/bid_euchre/ops/message_bus.py` (NEW) — `BusMessage` frozen dataclass,
+  JSONL audit trail, per-lane inbox, delivery semantics (ack, retry, TTL,
+  dead-letter), `shared_bus_root()`, duplicate suppression
+- `src/bid_euchre/ops/events.py` — 4 new event types added:
+  `message_sent`, `message_acked`, `message_expired`, `message_dead_lettered`
+- `src/bid_euchre/ops/__init__.py` — message_bus public API exported
+- `scripts/internal/ops.py` — `inbox`, `message show`, `inbox stats`
+  subcommands added
+- `tests/unit/test_ops_message_bus.py` (NEW) — comprehensive message bus tests
+- PR #1225 ("ops: add communication bus v1 foundation (Platform-3)")
+- PR #1226 ("fix: unique temp paths in atomic writes and normalize registry
+  status") — follow-up fix for atomic write temp-path collisions
 
 ## Outcome
 
-_Filled after completion._
+**COMPLETED.** PR #1225 merged 2026-03-21. Follow-up fix PR #1226 merged
+same day.
+
+All three done-when criteria satisfied:
+1. ✅ Durable messages stored, queried, replayed via file-backed JSONL + inbox
+2. ✅ Ack, retry, TTL, dead-letter each covered by unhappy-path tests
+3. ✅ Review requests/verdicts drive merge-safety gate via file I/O
+   (pre-existing `review_queue.py` — no changes needed)
+
+Batch B pass gate formally PASSED (all 4 criteria verified by ops assessment).
 
 ## Handoff
 

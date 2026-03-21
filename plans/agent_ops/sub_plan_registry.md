@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-21 by author-a
+**Last updated:** 2026-03-21 by author-a (Phase 1 closeout)
 
 ---
 
@@ -13,16 +13,16 @@
 | SP-0-02 | Platform-1 prep PR handoff | Phase 0 dependencies and `Platform-1` handoff boundary | completed | Opus | `plans/agent_ops/0_bootstrap/sub/2026-03-20_platform1-prep-pr-handoff.md` | 2026-03-20 | 2026-03-21 (PR #1218) |
 | SP-1-01 | Platform-1 lane registry foundation | Phase 1 Platform-1 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform1-lane-registry-foundation.md` | 2026-03-21 | 2026-03-21 |
 | SP-1-02 | Platform-2 orchestrator intake | Phase 1 Platform-2 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform2-orchestrator-intake.md` | 2026-03-21 | 2026-03-21 |
-| SP-1-03 | Platform-3 communication bus v1 | Phase 1 Platform-3 implementation | in_progress | TBD | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform3-communication-bus.md` | 2026-03-21 | -- |
+| SP-1-03 | Platform-3 communication bus v1 | Phase 1 Platform-3 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform3-communication-bus.md` | 2026-03-21 | 2026-03-21 (PR #1225) |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| in_progress | 1 |
+| in_progress | 0 |
 | blocked | 0 |
-| completed | 3 |
+| completed | 4 |
 | abandoned | 0 |
 | superseded | 1 |
 

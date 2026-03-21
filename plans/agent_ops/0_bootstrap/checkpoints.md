@@ -21,7 +21,7 @@
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
-| SP-0-02 | `plans/agent_ops/0_bootstrap/sub/2026-03-20_platform1-prep-pr-handoff.md` | in_progress | -- (non-blocking) |
+| SP-0-02 | `plans/agent_ops/0_bootstrap/sub/2026-03-20_platform1-prep-pr-handoff.md` | completed | -- (non-blocking) |
 
 ## Blockers
 
