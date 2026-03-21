@@ -51,6 +51,8 @@ VALID_EVENT_TYPES = frozenset(
         "fs_boundary_violation",
         "fs_boundary_exception",
         "pr_comment_ingested",
+        "review_request",
+        "review_verdict",
     }
 )
 
