@@ -3053,3 +3053,60 @@ class TestProgressEventFilter:
         assert "ci_success" in PROGRESS_EVENT_TYPES
         assert "watchdog_finding" not in PROGRESS_EVENT_TYPES
         assert "scheduler_tick" not in PROGRESS_EVENT_TYPES
+
+    def test_progress_event_types_includes_pr1155_additions(self) -> None:
+        """PR #1155 added task_blocked, review_outcome, plan_review_outcome."""
+        assert "task_blocked" in PROGRESS_EVENT_TYPES
+        assert "review_outcome" in PROGRESS_EVENT_TYPES
+        assert "plan_review_outcome" in PROGRESS_EVENT_TYPES
+
+
+class TestSynthesizeLaneActivityClockSkew:
+    """Tests for the clock-skew clamp in synthesize_lane_activity().
+
+    PR #1155 added ``max(0.0, ...)`` to the age_seconds computation in the
+    attention-flag path (line ~806). A future-dated last_progress timestamp
+    should clamp to 0 and never produce a negative age or a spurious
+    stale-attention flag.
+    """
+
+    def test_future_last_progress_does_not_trigger_stale_attention(self) -> None:
+        """Active lane whose last_progress is in the future should not be stale.
+
+        Without the clamp, age_seconds would be negative and the comparison
+        ``age_seconds / 60 > stale_minutes`` would be False anyway, but the
+        clamp ensures age_seconds is never negative (defensive correctness).
+        """
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        # Lane with an active session
+        lanes = [_make_lane("author-b", session_id="s1")]
+        sessions = {
+            "author-b": {
+                "task": "Fix bug",
+                # Session started 5 minutes in the future (clock skew)
+                "started_at": "2026-03-20T12:05:00+00:00",
+            }
+        }
+        tasks = {
+            "author-b": [
+                _make_task("t1", "author-b", subject="Fix bug"),
+            ],
+        }
+        # Event also 5 minutes in the future
+        events = [
+            {
+                "lane_id": "author-b",
+                "event_type": "task_started",
+                "timestamp": "2026-03-20T12:05:00+00:00",
+            },
+        ]
+
+        result = synthesize_lane_activity(
+            lanes, sessions, tasks, events, now=now, stale_minutes=30
+        )
+        assert len(result) == 1
+        lane = result[0]
+        assert lane.state == "active"
+        assert lane.attention_needed is False
+        # No stale reason should be set
+        assert lane.attention_reason is None or "stale" not in lane.attention_reason
