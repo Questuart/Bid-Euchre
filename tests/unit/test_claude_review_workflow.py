@@ -259,15 +259,14 @@ class TestClaudeReviewWorkflow:
     def test_bash_scoping_comment_mentions_blocklist(self):
         """The Bash scoping comment must reference --disallowedTools blocklist.
 
-        The action does NOT use an allowed-tools allowlist — it uses
-        --disallowedTools in claude_args (#1167).
+        The action uses both --disallowedTools (blocklist) and --allowedTools
+        (allowlist for read-only Bash commands in CI, #1197).
         """
         # Check the raw YAML text for the comment; step dict won't include it
         workflow_text = WORKFLOW.read_text()
-        assert "scoped via --disallowedTools blocklist" in workflow_text, (
-            "Bash scoping comment must mention --disallowedTools blocklist, "
-            "not allowed-tools allowlist"
-        )
+        assert (
+            "scoped via --disallowedTools blocklist" in workflow_text
+        ), "Bash scoping comment must mention --disallowedTools blocklist"
         # The old misleading phrasing must not be present
         assert (
             "allowed-tools in the action config" not in workflow_text

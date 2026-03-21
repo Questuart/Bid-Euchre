@@ -2639,3 +2639,48 @@ class TestCmdQueue:
         data = json.loads(capsys.readouterr().out)
         assert data["pr_number"] == 999
         assert data["effective_status"] == "no_request"
+
+    def test_queue_explicit_runtime_dir_override(
+        self,
+        tmp_path: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Explicit --runtime-dir with a review_queue/ subdir overrides shared root (#1196)."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        # Create a separate runtime dir with its own queue + request
+        alt_runtime = tmp_path / "alt_runtime"
+        alt_queue = alt_runtime / "review_queue"
+        alt_events = alt_runtime / "events"
+        alt_events.mkdir(parents=True)
+
+        req = ReviewRequest(
+            pr_number=77,
+            head_sha="override123",
+            branch="feat/override",
+            requester="author-a",
+        )
+        write_request(req, alt_queue, emit_event=False, events_dir=alt_events)
+
+        # Clear env override so we're testing the --runtime-dir path, not env var
+        monkeypatch.delenv("BID_EUCHRE_REVIEW_QUEUE_DIR", raising=False)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(alt_runtime),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 1
+        assert data[0]["pr_number"] == 77
+        assert data[0]["request_sha"] == "override123"
