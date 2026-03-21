@@ -1899,6 +1899,23 @@ class TestSynthesizeLaneActivityLiveness:
         assert lane.state == "blocked"
         assert lane.liveness_source == "registry"
 
+    def test_blocked_lane_no_session_id(self) -> None:
+        """Blocked lane with no session_id -> liveness_source is None (#1106)."""
+        lanes = [_make_lane("author-a")]  # no session_id
+        sessions: dict = {}  # no active session
+        tasks = {
+            "author-a": [
+                _make_task("t1", "author-a", status="blocked", blocked_by=["CI"]),
+            ],
+        }
+
+        result = synthesize_lane_activity(lanes, sessions, tasks, [])
+        lane = result[0]
+        assert lane.state == "blocked"
+        assert lane.liveness_source is None
+        # Blocked lanes always need attention, even without session
+        assert lane.attention_needed is True
+
     def test_likely_active_from_dirty_worktree(self) -> None:
         """No session, no events, no tasks, but dirty worktree → likely_active."""
         import unittest.mock as mock

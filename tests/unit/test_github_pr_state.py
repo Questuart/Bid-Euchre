@@ -221,6 +221,7 @@ class TestCIClassification:
             "governance",
             "reviewing-changes",
             "claude-review",
+            "enable-auto-merge",
         ):
             local = _classify_check(name)
             canonical = classify_check(name)
