@@ -49,6 +49,7 @@ VALID_EVENT_TYPES = frozenset(
         "skill_promoted",
         "skill_disabled",
         "fs_boundary_violation",
+        "fs_boundary_exception",
         "pr_comment_ingested",
     }
 )
