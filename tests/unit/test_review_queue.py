@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.review_queue import (
-    DEFAULT_QUEUE_DIR,
     VALID_STATUSES,
     PrecheckFinding,
     ReviewRequest,
     ReviewVerdict,
+    _resolve_git_common_queue_root,
     invalidate_stale_verdict,
     is_verdict_stale,
     pr_dir,
@@ -20,6 +20,7 @@ from bid_euchre.ops.review_queue import (
     read_request,
     read_verdict,
     request_path,
+    shared_queue_root,
     verdict_path,
     write_request,
     write_verdict,
@@ -107,7 +108,9 @@ class TestReviewVerdict:
 class TestFileLayout:
     def test_pr_dir_default(self) -> None:
         d = pr_dir(42)
-        assert d == DEFAULT_QUEUE_DIR / "pr_42"
+        # Default uses shared_queue_root(), which resolves via git common dir
+        assert d.name == "pr_42"
+        assert d.parent == shared_queue_root()
 
     def test_pr_dir_custom(self, tmp_path: object) -> None:
         from pathlib import Path
@@ -609,3 +612,135 @@ class TestVerdictWriterField:
         loaded = read_verdict(42, tmp_path)
         assert loaded is not None
         assert loaded.writer == "original_writer"
+
+
+# ---------------------------------------------------------------------------
+# Shared queue root — cross-worktree discovery
+# ---------------------------------------------------------------------------
+
+
+class TestSharedQueueRoot:
+    """Verify shared_queue_root() resolves to a canonical path."""
+
+    def test_env_override_takes_precedence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BID_EUCHRE_REVIEW_QUEUE_DIR env var overrides git resolution."""
+        override_dir = tmp_path / "custom_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(override_dir))
+        assert shared_queue_root() == override_dir
+
+    def test_env_override_not_cached(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Env override is checked each call (not cached)."""
+        dir1 = tmp_path / "dir1"
+        dir2 = tmp_path / "dir2"
+
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(dir1))
+        assert shared_queue_root() == dir1
+
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(dir2))
+        assert shared_queue_root() == dir2
+
+    def test_git_common_dir_resolves_to_main_repo(self) -> None:
+        """In a git repo, shared_queue_root() should resolve via git common dir."""
+        # Clear the lru_cache to get a fresh resolution
+        _resolve_git_common_queue_root.cache_clear()
+        try:
+            root = _resolve_git_common_queue_root()
+            # Should be an absolute path ending in .claude/runtime/review_queue
+            assert root.is_absolute()
+            assert root.parts[-3:] == (".claude", "runtime", "review_queue")
+        finally:
+            _resolve_git_common_queue_root.cache_clear()
+
+    def test_path_helpers_use_shared_root_by_default(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """pr_dir/request_path/verdict_path default to shared_queue_root()."""
+        shared_dir = tmp_path / "shared_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        assert pr_dir(42) == shared_dir / "pr_42"
+        assert request_path(42) == shared_dir / "pr_42" / "request.json"
+        assert verdict_path(42) == shared_dir / "pr_42" / "verdict.json"
+
+    def test_explicit_queue_dir_overrides_shared_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Explicit queue_dir parameter still overrides the shared root."""
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(tmp_path / "shared"))
+        local = tmp_path / "local"
+
+        assert pr_dir(42, local) == local / "pr_42"
+        assert request_path(42, local) == local / "pr_42" / "request.json"
+        assert verdict_path(42, local) == local / "pr_42" / "verdict.json"
+
+
+class TestCrossWorktreeVisibility:
+    """Verify that verdicts written via the shared root are visible from any worktree."""
+
+    def test_verdict_written_via_shared_root_visible_everywhere(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A verdict written using the shared root should be readable
+        from any context that also resolves to the shared root."""
+        shared_dir = tmp_path / "shared_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        # Worktree A writes a verdict (no explicit queue_dir → uses shared root)
+        verdict = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="sha_abc",
+            status="passed",
+            reason="Clean review",
+        )
+        write_verdict(verdict, emit_event=False)
+
+        # Worktree B reads the verdict (no explicit queue_dir → uses shared root)
+        loaded = read_verdict(42)
+        assert loaded is not None
+        assert loaded.status == "passed"
+        assert loaded.reviewed_sha == "sha_abc"
+
+    def test_request_written_via_shared_root_visible_everywhere(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A request written using the shared root should be readable
+        from any context that also resolves to the shared root."""
+        shared_dir = tmp_path / "shared_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        req = ReviewRequest(
+            pr_number=99,
+            head_sha="sha_xyz",
+            branch="feat/cross-wt",
+            requester="author-a",
+        )
+        write_request(req, emit_event=False)
+
+        loaded = read_request(99)
+        assert loaded is not None
+        assert loaded.head_sha == "sha_xyz"
+        assert loaded.branch == "feat/cross-wt"
+
+    def test_stale_detection_works_across_worktrees(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stale-verdict detection should work when reader uses shared root."""
+        shared_dir = tmp_path / "shared_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        # Write a verdict at an old SHA
+        verdict = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="old_sha",
+            status="passed",
+            reason="test",
+        )
+        write_verdict(verdict, emit_event=False)
+
+        # From "another worktree", check staleness against new SHA
+        assert is_verdict_stale(42, "new_sha") is True
+        assert is_verdict_stale(42, "old_sha") is False

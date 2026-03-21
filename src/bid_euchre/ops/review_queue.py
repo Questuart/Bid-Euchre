@@ -5,10 +5,16 @@ detection, and a deterministic precheck-to-blocked-verdict path.
 
 Storage layout::
 
-    .claude/runtime/review_queue/
+    <main_repo>/.claude/runtime/review_queue/
         pr_<N>/
             request.json        -- current review request
             verdict.json        -- latest verdict (may be stale)
+
+The queue root is shared across all git worktrees for the same
+repository via :func:`shared_queue_root`, which derives the path from
+``git rev-parse --git-common-dir``.  This ensures a verdict written in
+one worktree is visible to the merge guard running in any other
+worktree.
 
 All files are JSON. The queue is append-friendly but not append-only:
 each PR slot holds exactly one request and one verdict at a time.
@@ -18,9 +24,11 @@ against the request's ``head_sha``.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
+import subprocess
 import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -32,6 +40,63 @@ from bid_euchre.ops.events import append_event
 logger = logging.getLogger("ops.review_queue")
 
 DEFAULT_QUEUE_DIR = Path(".claude/runtime/review_queue")
+
+
+# ---------------------------------------------------------------------------
+# Shared queue root — canonical across all worktrees for the same repo
+# ---------------------------------------------------------------------------
+
+
+@functools.lru_cache(maxsize=1)
+def _resolve_git_common_queue_root() -> Path:
+    """Resolve the review queue root from git's common directory.
+
+    The git common directory (``git rev-parse --git-common-dir``) is shared
+    across all worktrees for the same repository.  Its parent is the main
+    checkout root, so we can derive a single canonical queue path that every
+    worktree agrees on.
+
+    Cached for the lifetime of the process (one subprocess call).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            git_common = Path(result.stdout.strip())
+            if not git_common.is_absolute():
+                git_common = (Path.cwd() / git_common).resolve()
+            else:
+                git_common = git_common.resolve()
+            # Parent of .git dir is the main repo root
+            main_root = git_common.parent
+            return main_root / ".claude" / "runtime" / "review_queue"
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return DEFAULT_QUEUE_DIR
+
+
+def shared_queue_root() -> Path:
+    """Return the canonical review queue root shared across all worktrees.
+
+    Resolution order:
+
+    1. ``BID_EUCHRE_REVIEW_QUEUE_DIR`` environment variable (test/debug override).
+    2. Derived from ``git rev-parse --git-common-dir`` (cached).
+    3. Falls back to :data:`DEFAULT_QUEUE_DIR` if git is unavailable.
+
+    All queue readers and writers should use this (via the path helpers) so
+    that a verdict written in worktree A is visible to the merge guard
+    running in worktree B.
+    """
+    env_override = os.environ.get("BID_EUCHRE_REVIEW_QUEUE_DIR")
+    if env_override:
+        return Path(env_override)
+    return _resolve_git_common_queue_root()
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -141,12 +206,12 @@ def pr_dir(pr_number: int, queue_dir: Path | None = None) -> Path:
 
     Args:
         pr_number: GitHub PR number.
-        queue_dir: Override for queue root. Defaults to ``DEFAULT_QUEUE_DIR``.
+        queue_dir: Override for queue root. Defaults to :func:`shared_queue_root`.
 
     Returns:
-        Path like ``.claude/runtime/review_queue/pr_42``.
+        Path like ``<main_repo>/.claude/runtime/review_queue/pr_42``.
     """
-    root = queue_dir or DEFAULT_QUEUE_DIR
+    root = queue_dir if queue_dir is not None else shared_queue_root()
     return root / f"pr_{pr_number}"
 
 

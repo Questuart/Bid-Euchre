@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 # Add scripts/internal to path for direct imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "internal"))
 
@@ -196,8 +198,10 @@ class TestReviewDriverVerdictWriting:
             current_head_sha="sha_abc123",
         )
 
-        # Patch the write_verdict to use tmp_path
-        with patch("bid_euchre.ops.review_queue.DEFAULT_QUEUE_DIR", tmp_path):
+        # Patch shared_queue_root to redirect writes to tmp_path
+        with patch(
+            "bid_euchre.ops.review_queue.shared_queue_root", return_value=tmp_path
+        ):
             from review_driver import _write_verdict_if_applicable
 
             _write_verdict_if_applicable(loop)
@@ -219,7 +223,9 @@ class TestReviewDriverVerdictWriting:
             stop_reason="CI failed",
         )
 
-        with patch("bid_euchre.ops.review_queue.DEFAULT_QUEUE_DIR", tmp_path):
+        with patch(
+            "bid_euchre.ops.review_queue.shared_queue_root", return_value=tmp_path
+        ):
             from review_driver import _write_verdict_if_applicable
 
             _write_verdict_if_applicable(loop)
@@ -240,7 +246,9 @@ class TestReviewDriverVerdictWriting:
             current_head_sha="sha_ghi789",
         )
 
-        with patch("bid_euchre.ops.review_queue.DEFAULT_QUEUE_DIR", tmp_path):
+        with patch(
+            "bid_euchre.ops.review_queue.shared_queue_root", return_value=tmp_path
+        ):
             from review_driver import _write_verdict_if_applicable
 
             _write_verdict_if_applicable(loop)
@@ -260,7 +268,9 @@ class TestReviewDriverVerdictWriting:
             stop_reason="Codex output unparseable (degraded pass)",
         )
 
-        with patch("bid_euchre.ops.review_queue.DEFAULT_QUEUE_DIR", tmp_path):
+        with patch(
+            "bid_euchre.ops.review_queue.shared_queue_root", return_value=tmp_path
+        ):
             from review_driver import _write_verdict_if_applicable
 
             _write_verdict_if_applicable(loop, override_status=STATUS_PASSED)
@@ -342,35 +352,35 @@ class TestBashGuardIntegration:
             capture_output=True,
             text=True,
             env=env,
-            timeout=5,
+            timeout=10,
         )
         return result.returncode
 
     def test_blocks_when_no_verdict_file(self, tmp_path: Path) -> None:
         """Guard should block (exit 2) when verdict file is missing."""
-        # Point CLAUDE_PROJECT_DIR to tmp_path so the guard looks for
-        # verdict files in tmp_path/.claude/runtime/review_queue/
+        # Use BID_EUCHRE_REVIEW_QUEUE_DIR to point guard at empty tmp dir
+        queue_dir = tmp_path / "empty_queue"
+        queue_dir.mkdir()
         exit_code = self._run_guard(
             "gh pr merge 42 --squash",
-            env_override={"CLAUDE_PROJECT_DIR": str(tmp_path)},
+            env_override={"BID_EUCHRE_REVIEW_QUEUE_DIR": str(queue_dir)},
         )
         assert exit_code == 2
 
     def test_blocks_when_verdict_status_not_passed(self, tmp_path: Path) -> None:
         """Guard should block when verdict status is 'blocked'."""
+        queue_dir = tmp_path / "queue"
         v = ReviewVerdict(
             pr_number=42,
             reviewed_sha="abc1234567890",
             status=STATUS_BLOCKED,
             reason="Blocking findings",
         )
-        write_verdict(
-            v, tmp_path / ".claude" / "runtime" / "review_queue", emit_event=False
-        )
+        write_verdict(v, queue_dir, emit_event=False)
 
         exit_code = self._run_guard(
             "gh pr merge 42 --squash",
-            env_override={"CLAUDE_PROJECT_DIR": str(tmp_path)},
+            env_override={"BID_EUCHRE_REVIEW_QUEUE_DIR": str(queue_dir)},
         )
         assert exit_code == 2
 
@@ -386,7 +396,7 @@ class TestBashGuardIntegration:
             status=STATUS_PASSED,
             reason="clean review",
         )
-        queue_dir = tmp_path / ".claude" / "runtime" / "review_queue"
+        queue_dir = tmp_path / "queue"
         write_verdict(v, queue_dir, emit_event=False)
 
         # Read the verdict file and verify the jq-queried fields exist
@@ -401,3 +411,87 @@ class TestBashGuardIntegration:
         assert "reason" in data, "Guard queries .reason"
         assert data["reviewed_sha"] == "abc1234567890"
         assert data["status"] == "passed"
+
+
+# ---------------------------------------------------------------------------
+# Cross-worktree merge guard tests
+# ---------------------------------------------------------------------------
+
+
+class TestCrossWorktreeMergeGuard:
+    """Verify the merge guard uses the shared queue root.
+
+    The guard resolves the queue root via Python's shared_queue_root(),
+    which respects BID_EUCHRE_REVIEW_QUEUE_DIR. This simulates verdicts
+    being written from one worktree and the guard running from another.
+    """
+
+    def test_guard_blocks_when_no_shared_verdict(self, tmp_path: Path) -> None:
+        """Guard from worktree B should block when shared queue has no verdict."""
+        shared_queue = tmp_path / "shared_queue"
+        shared_queue.mkdir()
+
+        # Pure-Python guard check against empty shared queue
+        allowed, reason = _guard_check(42, "abc123", "success", shared_queue)
+        assert allowed is False
+        assert "No review verdict" in reason
+
+    def test_guard_allows_with_shared_passed_verdict(self, tmp_path: Path) -> None:
+        """Guard from worktree B should allow when worktree A wrote a passed verdict."""
+        shared_queue = tmp_path / "shared_queue"
+        sha = "abc1234567890"
+
+        # Simulate worktree A writing a verdict to the shared queue
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha=sha,
+            status=STATUS_PASSED,
+            reason="Clean review from worktree A",
+        )
+        write_verdict(v, shared_queue, emit_event=False)
+
+        # Simulate worktree B checking the guard against the same shared queue
+        allowed, reason = _guard_check(42, sha, "success", shared_queue)
+        assert allowed is True
+        assert "Ready" in reason
+
+    def test_guard_blocks_stale_shared_verdict(self, tmp_path: Path) -> None:
+        """Guard should block when shared verdict SHA doesn't match current HEAD."""
+        shared_queue = tmp_path / "shared_queue"
+
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="old_sha_1234",
+            status=STATUS_PASSED,
+            reason="Clean",
+        )
+        write_verdict(v, shared_queue, emit_event=False)
+
+        # Current HEAD is different — guard should block
+        allowed, reason = _guard_check(42, "new_sha_5678", "success", shared_queue)
+        assert allowed is False
+        assert "Stale" in reason
+
+    def test_write_from_worktree_a_read_from_worktree_b(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: write via shared_queue_root(), read via shared_queue_root()."""
+        shared_dir = tmp_path / "shared"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(shared_dir))
+
+        sha = "sha_cross_wt"
+
+        # "Worktree A" writes a verdict (no explicit queue_dir)
+        v = ReviewVerdict(
+            pr_number=77,
+            reviewed_sha=sha,
+            status=STATUS_PASSED,
+            reason="Review from A",
+        )
+        write_verdict(v, emit_event=False)
+
+        # "Worktree B" reads and checks (no explicit queue_dir)
+        loaded = read_verdict(77)
+        assert loaded is not None
+        assert loaded.status == STATUS_PASSED
+        assert loaded.reviewed_sha == sha

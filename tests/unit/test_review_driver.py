@@ -1252,7 +1252,9 @@ class TestRuntimeLimitTimeout:
         except Exception:
             loop.state = ReviewState.STOPPED_REVIEW_FAILURE.value
 
-        with patch("bid_euchre.ops.review_queue.DEFAULT_QUEUE_DIR", tmp_path):
+        with patch(
+            "bid_euchre.ops.review_queue.shared_queue_root", return_value=tmp_path
+        ):
             from review_driver import _write_verdict_if_applicable
 
             _write_verdict_if_applicable(loop)

@@ -1282,7 +1282,12 @@ def cmd_skills_disable(args: argparse.Namespace) -> int:
 
 
 def cmd_queue(args: argparse.Namespace) -> int:
-    """Show local review queue state (request + verdict packets)."""
+    """Show shared review queue state (request + verdict packets).
+
+    Uses the canonical shared queue root (derived from git common dir)
+    so that all worktrees see the same queue.
+    """
+    from bid_euchre.ops.review_queue import shared_queue_root
     from bid_euchre.ops.reviews import (
         format_queue_json,
         format_queue_text,
@@ -1290,7 +1295,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
         get_queue_entry,
     )
 
-    queue_dir = args.runtime_dir / "review_queue"
+    queue_dir = shared_queue_root()
     pr_number = getattr(args, "pr", None)
 
     if pr_number is not None:

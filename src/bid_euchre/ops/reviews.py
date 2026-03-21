@@ -841,15 +841,18 @@ def get_queue_entries(
 
     Gracefully handles a missing queue directory (returns empty list).
 
+    When ``queue_dir`` is ``None``, uses :func:`~bid_euchre.ops.review_queue.shared_queue_root`
+    so that all worktrees for the same repo see the same queue.
+
     Args:
         queue_dir: Override for queue root directory.
 
     Returns:
         List of :class:`QueueEntry`, sorted by PR number.
     """
-    from bid_euchre.ops.review_queue import DEFAULT_QUEUE_DIR
+    from bid_euchre.ops.review_queue import shared_queue_root
 
-    root = queue_dir or DEFAULT_QUEUE_DIR
+    root = queue_dir if queue_dir is not None else shared_queue_root()
     if not root.is_dir():
         return []
 

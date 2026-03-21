@@ -2463,6 +2463,18 @@ class TestBoundaryRejection:
 class TestCmdQueue:
     """Tests for the queue subcommand."""
 
+    @pytest.fixture(autouse=True)
+    def _use_test_queue(
+        self, runtime_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Point shared_queue_root() at the test's runtime queue dir.
+
+        cmd_queue uses shared_queue_root() to find the canonical queue.
+        In tests we redirect it to the test runtime dir via env override.
+        """
+        queue_dir = runtime_dir / "review_queue"
+        monkeypatch.setenv("BID_EUCHRE_REVIEW_QUEUE_DIR", str(queue_dir))
+
     def test_queue_empty_text(
         self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
