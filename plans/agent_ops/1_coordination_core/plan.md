@@ -19,8 +19,8 @@ architecture. These three slices form Batch A (foundation) and Batch B
 | Slice | Goal | Status | Batch | Depends On |
 |-------|------|--------|-------|------------|
 | `Platform-1` | Lane/session registry foundation | COMPLETE (PR #1218) | A | Phase 0 |
-| `Platform-2` | `orchestrator` lane and task-intake contract | PENDING | B | Platform-1 |
-| `Platform-3` | Communication bus v1, structured work packets, and primary PR review substrate | PENDING | B | Platform-1 |
+| `Platform-2` | `orchestrator` lane and task-intake contract | COMPLETE (PR #1221) | B | Platform-1 |
+| `Platform-3` | Communication bus v1, structured work packets, and primary PR review substrate | IN_PROGRESS (SP-1-03) | B | Platform-1 |
 
 ## Batch A Pass Gate
 
@@ -98,6 +98,8 @@ Active sub-plans are tracked in `plans/agent_ops/sub_plan_registry.md`.
 | ID | Slice | Status |
 |----|-------|--------|
 | SP-1-01 | Platform-1 | completed |
+| SP-1-02 | Platform-2 | completed |
+| SP-1-03 | Platform-3 | in_progress |
 
 ## Step Sequence
 
