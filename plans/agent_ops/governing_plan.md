@@ -41,7 +41,7 @@ they ship, rather than forming one monolithic prerequisite wall.
 | Phase | Directory | Description | Depends On |
 |-------|-----------|-------------|------------|
 | 0 | `0_bootstrap` | Governed-plan scaffolding, discovery wiring, and Platform-1 entry gating | PR-5 closed; bridge gate satisfied (2026-03-21) |
-| 1 | `1_coordination_core` | `Platform-1` through `Platform-3`: lane registry, intake contract, communication substrate | Phase 0 |
+| 1 | `1_coordination_core` | `Platform-1` through `Platform-3`: lane registry, intake contract, communication substrate, and primary PR review architecture | Phase 0 |
 | 2 | `2_visible_operating_model` | `Platform-4` through `Platform-5`: dashboard-first stewardship, canonical prompts, first skills | Phase 1 |
 | 3 | `3_supervision_and_scaling` | `Platform-6` through `Platform-7`: supervisor routines and worker-pool manager | Phase 2 |
 | 4 | `4_remote_channel` | `Platform-8` through `Platform-9`: Telegram/Discord integration and idle-attention flow | Phase 3 |
@@ -429,6 +429,13 @@ Only later should the system attempt bounded self-improvement of already approve
 
 ## Cross-Model Reviewer And Maintainer Lanes
 
+> **Architecture note:** The primary PR review architecture (durable review
+> request/verdict state and merge-safety gate) belongs to `Platform-3`, not
+> here. This section defines second-model service lanes that operate as
+> advisory participants on top of that substrate. `SendMessage`-style
+> lane-to-lane delivery is a later convenience layer on the durable review
+> bus — it is not the source of review truth.
+
 The platform should later support bounded second-model service lanes so Claude
 can remain the primary executor while another model such as Codex handles
 background review and maintenance work.
@@ -727,12 +734,12 @@ The orchestrator platform is an enabling layer, not a prerequisite wall.
 | Batch | Primary consumer value |
 |------|-------------------------|
 | Batch A (`Platform-1`) | Better lane identity and resume semantics for current infra work; low direct browser-game value by itself |
-| Batch B (`Platform-2` + `Platform-3`) | Browser-game and other in-repo implementation can start benefiting from orchestrated intake, durable handoff, and clearer delegation |
+| Batch B (`Platform-2` + `Platform-3`) | Browser-game and other in-repo implementation can start benefiting from orchestrated intake, durable handoff, clearer delegation, and the primary PR review substrate (review requests, verdicts, merge-safety state) |
 | Batch C (`Platform-4` + `Platform-5`) | Browser-game Phase 0-3 style work can use dashboard-first supervision and prompt-first author/review flows daily |
 | Batch D (`Platform-6` + `Platform-7`) | Sustained multi-lane application work benefits from automatic supervision, worker reuse, and bounded scaling |
 | Batch E (`Platform-8` + `Platform-9`) | Remote supervision helps longer-running game/app sprints but is not a prerequisite for starting browser-game work |
 | Batch F (`Platform-10` + `Platform-11`) | Portability and learning-loop value mainly benefits future repos and later-stage reuse |
-| Batch G (`Platform-12` + `Platform-13`) | Cross-model review/maintenance plus second-project validation strengthen long-run confidence and portability more than first browser-game implementation |
+| Batch G (`Platform-12` + `Platform-13`) | Cross-model review/maintenance (extending Platform-3's review substrate with second-model service lanes) plus second-project validation strengthen long-run confidence and portability |
 | Batch H (`Platform-14`) | Hardening and closeout consolidate the platform after the major capabilities have landed |
 
 ### Platform PRs
@@ -741,7 +748,7 @@ The orchestrator platform is an enabling layer, not a prerequisite wall.
 |----|------|------------|----------------------|
 | `Platform-1` | Lane/session registry foundation | PR-5 closeout or near-closeout | none |
 | `Platform-2` | `orchestrator` lane and task-intake contract | Platform-1 | partial overlap with Platform-3 docs only |
-| `Platform-3` | Communication bus v1 and structured work packets | Platform-1 | partial overlap with Platform-2 prompt/docs work |
+| `Platform-3` | Communication bus v1, structured work packets, and primary PR review substrate (review request/verdict state, merge-safety gate) | Platform-1 | partial overlap with Platform-2 prompt/docs work |
 | `Platform-4` | Dashboard-first steward session | Platform-1, Platform-2 | partial overlap with Platform-5 prompt authoring |
 | `Platform-5` | Canonical lane prompts and first skill set | Platform-2, Platform-3 | partial overlap with Platform-4 |
 | `Platform-6` | `ops` supervisor routines and delta summaries | Platform-3, Platform-4 | partial overlap with Platform-7 if write scopes are split |
@@ -831,6 +838,9 @@ shift or larger autonomy step as trustworthy.
   than reconstructed from terminal history
 - one real author-lane completion is acknowledged back into durable
   coordination state
+- one real PR review request is stored durably as a `ReviewRequest`, receives
+  a `ReviewVerdict`, and drives merge-safety state without relying on
+  hook-coupled subprocess parsing
 
 #### Batch C pass gate
 
@@ -910,7 +920,8 @@ workflow actually works under realistic conditions.
   - two real tasks run at once with distinct ownership and visible supervision
 - **PR / review / CI proving run**
   - one real PR moves through author -> review -> CI -> resolution using the
-    new operating model
+    new operating model and Platform-3 review substrate (durable review
+    request/verdict state, merge-safety gate)
 - **Restart / resume proving run**
   - an interrupted lane or session is resumed from durable state rather than
     reconstructed manually
@@ -1080,21 +1091,34 @@ These are the short names future handoffs should use.
   - `orchestrator` can assign that packet to an existing author lane and record
     acknowledgment/completion without manual pane inspection
 
-### `Platform-3` — Communication Bus V1
+### `Platform-3` — Communication Bus V1 And Primary PR Review Substrate
 
 - define message schema
 - add inbox/outbox storage
 - add durable lane-to-lane message logging
 - add query surface for unresolved items
+- **primary PR review architecture:**
+  - durable review request / verdict state (extends the `ReviewRequest` /
+    `ReviewVerdict` models introduced in the review queue substrate, #1176)
+  - merge-safety gate driven by verdict state, not hook-coupled subprocess
+    parsing
+  - review status as a first-class communication bus participant
+  - `SendMessage`-style lane delivery is **not** required here — it is a
+    later convenience layer on top of the durable review bus, not the source
+    of review truth
 - expected shape:
   - likely `Platform-3a` schema/logging
   - `Platform-3b` inbox/query surface
   - `Platform-3c` delivery semantics and hardening
+  - `Platform-3d` review request/verdict state and merge-safety gate
 - done when:
   - durable messages can be stored, queried, and replayed locally without
     relying on transient pane history
   - acknowledgement, retry, TTL, and dead-letter behavior are defined and
     covered by at least one unhappy-path test each
+  - review requests and verdicts are stored durably and drive the merge-safety
+    gate without relying on hook-coupled subprocess parsing or transient
+    terminal output
 
 ### `Platform-4` — Dashboard-First Steward
 
@@ -1188,6 +1212,13 @@ These are the short names future handoffs should use.
 
 ### `Platform-12` — Cross-Model Review And Maintenance
 
+> **Relationship to Platform-3:** Platform-3 owns the primary PR review
+> architecture — durable review request/verdict state and the merge-safety
+> gate. Platform-12 extends that substrate by adding second-model service
+> lanes (Codex or equivalent) that operate as advisory participants on top
+> of the same durable review bus. Platform-12 does not redefine the review
+> truth model; it adds cross-model execution as a consumer of it.
+
 - add bounded `codex-review` service lane
 - add optional `codex-maint` bounded maintenance lane
 - route work through task packets and durable messages, not hook-coupled local
@@ -1197,6 +1228,8 @@ These are the short names future handoffs should use.
 - done when:
   - a second-model reviewer can consume assigned review work and emit durable
     findings without becoming a hidden blocking loop
+  - second-model findings are recorded as verdicts in the Platform-3 review
+    substrate, not as a separate review truth model
   - second-model failures degrade into explicit service-lane health signals
     rather than silent stalls
 
@@ -1246,6 +1279,8 @@ that naturally produce them rather than deferred to a vague future dashboard:
 - `Platform-3`
   - message backlog size
   - unresolved blocker count
+  - review request → verdict latency
+  - merge-safety gate accuracy (false blocks, missed blocks)
 - `Platform-6`
   - manual interventions per PR
   - stale-lane false positive rate
