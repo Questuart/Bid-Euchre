@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase/Rung:** `0_bootstrap`
-**Last updated:** 2026-03-21 by author-b
+**Last updated:** 2026-03-21 by Opus
 
 ---
 
@@ -21,6 +21,7 @@
 
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
+| SP-0-02 | `plans/agent_ops/0_bootstrap/sub/2026-03-20_platform1-prep-pr-handoff.md` | in_progress | -- (non-blocking) |
 
 ## Blockers
 
@@ -99,3 +100,13 @@
 - Step 3 (Platform-1 handoff) is now unblocked.
 - PR #1140 superseded by this reconciliation; #1141 confirmed duplicate
   of #1138 (already closed).
+
+### 2026-03-21 -- Opus (SP-0-02: control-plane cleanup)
+- Executing SP-0-02 (Platform-1 prep PR handoff).
+- Made `bid_euchre.__init__` import-light: replaced eager `from . import experiments`
+  with lazy `__getattr__` — ops entrypoints no longer import strategy/ML tree.
+- Reduced runtime hygiene noise: protected steward worktrees no longer appear
+  as "unknown" cleanup candidates when unregistered. Added regression test.
+- Reconciled entry checklist with control-plane cleanup.
+- SP-0-01 remains superseded; SP-0-02 is the active plan.
+- No new Platform-1 blockers discovered.
