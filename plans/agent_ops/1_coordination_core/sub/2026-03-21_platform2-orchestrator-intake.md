@@ -125,4 +125,12 @@ pending -> previewing -> approved -> dispatched -> completed
 
 ## Outcome
 
-_To be filled after implementation._
+- Status: completed
+- PR: #1221 ("ops: add orchestrator intake and task packet contract (Platform-2)")
+- Merged: 2026-03-21
+- Shipped: TaskPacket/TaskAck/TaskResult frozen dataclasses, file-based queue I/O
+  with flock + atomic writes, steward-orchestrator agent profile, orchestrator pane
+  in steward session, status enrichment, `ops task list/show` CLI subcommands, unit
+  tests.
+- Deviations: Minor field naming (`packet_id` vs `task_id`); archive subdirectory
+  pattern; status flow expanded to 7 states.

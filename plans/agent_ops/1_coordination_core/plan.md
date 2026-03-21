@@ -2,8 +2,8 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase:** `1_coordination_core`
-**Status:** ACTIVE
-**Last updated:** 2026-03-21 by author-a
+**Status:** COMPLETE
+**Last updated:** 2026-03-21 by author-a (Phase 1 closeout)
 
 ---
 
@@ -19,31 +19,31 @@ architecture. These three slices form Batch A (foundation) and Batch B
 | Slice | Goal | Status | Batch | Depends On |
 |-------|------|--------|-------|------------|
 | `Platform-1` | Lane/session registry foundation | COMPLETE (PR #1218) | A | Phase 0 |
-| `Platform-2` | `orchestrator` lane and task-intake contract | PENDING | B | Platform-1 |
-| `Platform-3` | Communication bus v1, structured work packets, and primary PR review substrate | PENDING | B | Platform-1 |
+| `Platform-2` | `orchestrator` lane and task-intake contract | COMPLETE (PR #1221) | B | Platform-1 |
+| `Platform-3` | Communication bus v1, structured work packets, and primary PR review substrate | COMPLETE (PR #1225) | B | Platform-1 |
 
 ## Batch A Pass Gate
 
 Before treating Batch B as trustworthy, verify Batch A (Platform-1) in a live
 steward environment:
 
-- [ ] Lane/session identity survives restart without lane collisions
-- [ ] Resume-by-name works in a live steward smoke check
-- [ ] `ops` can summarize worker visibility from registry state without pane
+- [x] Lane/session identity survives restart without lane collisions
+- [x] Resume-by-name works in a live steward smoke check
+- [x] `ops` can summarize worker visibility from registry state without pane
   guesswork
 
 ## Batch B Pass Gate
 
 Before treating Phase 2 as ready, verify Batch B (Platform-2 + Platform-3):
 
-- [ ] `orchestrator` can take one real task, preview the proposed delegation
+- [x] `orchestrator` can take one real task, preview the proposed delegation
   prompt or task packet, receive approval/edit/redirect, and dispatch it
   successfully
-- [ ] One real task thread can be replayed end to end from durable state
+- [x] One real task thread can be replayed end to end from durable state
   rather than reconstructed from terminal history
-- [ ] One real author-lane completion is acknowledged back into durable
+- [x] One real author-lane completion is acknowledged back into durable
   coordination state
-- [ ] One real PR review request is stored durably as a `ReviewRequest`,
+- [x] One real PR review request is stored durably as a `ReviewRequest`,
   receives a `ReviewVerdict`, and drives merge-safety state without
   relying on hook-coupled subprocess parsing
 
@@ -60,28 +60,36 @@ Shipped:
 - Operator CLI surfaces new fields in JSON and text output
 - 11 new tests, 346 total passed
 
-## Platform-2 Design Notes
+## Platform-2 Summary (Complete)
 
-Platform-2 introduces the `orchestrator` lane and task-intake contract:
-- Single user-facing intake point for normal work
-- Task packet schema for delegation
-- Delegation preview for non-trivial tasks (user approval before dispatch)
-- Spawns plan review, assesses safe parallelism
-- Tracks dependencies and user-facing state
+**PR:** #1221 ("ops: add orchestrator intake and task packet contract (Platform-2)")
+**Review fix:** #1222 ("fix: address all review findings from Platform-2 review (F1-F5)")
+**Merged:** 2026-03-21
+**Sub-plan:** SP-1-02
 
-Requires a sub-plan before implementation (>3 files, new code, design choices
-not specified in the governing plan).
+Shipped:
+- `TaskPacket`, `TaskAck`, `TaskResult` frozen dataclasses
+- File-based queue I/O with atomic writes
+- Orchestrator agent profile
+- Task status enrichment and CLI surface
+- Unit tests
 
-## Platform-3 Design Notes
+## Platform-3 Summary (Complete)
 
-Platform-3 introduces the communication bus v1 and primary PR review substrate:
-- Durable lane-to-lane communication (events, messages, summaries)
-- Structured work packets
-- Review request/verdict state and merge-safety gate
-- SQLite for queryable current state + JSONL for immutable audit trail
+**PR:** #1225 ("ops: add communication bus v1 foundation (Platform-3)")
+**Follow-up fix:** #1226 ("fix: unique temp paths in atomic writes and normalize registry status")
+**Merged:** 2026-03-21
+**Sub-plan:** SP-1-03
 
-Can overlap with Platform-2 in docs/contracts but must avoid overlapping
-writes to the same registry/message modules.
+Shipped:
+- `BusMessage` frozen dataclass (16-field governing-plan contract)
+- JSONL append-only audit trail with flock-protected writes
+- Per-lane JSONL inbox files with filtered query
+- Delivery semantics: ack, retry, TTL expiry, dead-letter
+- Task packet linkage via `task_id` field
+- 4 new event types in `events.py`
+- CLI surface: `inbox`, `message show`, `inbox stats` subcommands
+- Comprehensive unit test suite
 
 ## Key Constraints
 
@@ -98,6 +106,8 @@ Active sub-plans are tracked in `plans/agent_ops/sub_plan_registry.md`.
 | ID | Slice | Status |
 |----|-------|--------|
 | SP-1-01 | Platform-1 | completed |
+| SP-1-02 | Platform-2 | completed |
+| SP-1-03 | Platform-3 | completed |
 
 ## Step Sequence
 

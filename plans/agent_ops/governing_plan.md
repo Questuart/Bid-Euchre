@@ -101,7 +101,12 @@ Each active phase maintains a checkpoint file at:
 
 Current active phase:
 
-- `plans/agent_ops/0_bootstrap/checkpoints.md`
+- `plans/agent_ops/2_visible_operating_model/checkpoints.md`
+
+Completed phases:
+
+- `plans/agent_ops/0_bootstrap/checkpoints.md` (Phase 0 — COMPLETE)
+- `plans/agent_ops/1_coordination_core/checkpoints.md` (Phase 1 — COMPLETE, 2026-03-21)
 
 Agents should treat checkpoints as the human-readable source of current step
 status, blockers, and session handoff state.
