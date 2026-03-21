@@ -227,7 +227,7 @@ def _aggregate_prechecks(
         return
 
     for f in findings:
-        check_id = f.get("check_id") or "unknown"
+        check_id = f.get("check_id") or "unstructured"
         entry = _get_or_create(agg, check_id, "deterministic_precheck")
         entry.total += 1
         sev = f.get("severity", "P2")
