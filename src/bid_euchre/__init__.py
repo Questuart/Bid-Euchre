@@ -20,7 +20,7 @@ def __getattr__(name: str):
     ``import bid_euchre; bid_euchre.experiments`` both work as before.
     """
     if name == "experiments":
-        from . import experiments  # noqa: F811
+        import importlib
 
-        return experiments
+        return importlib.import_module(f".{name}", __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
