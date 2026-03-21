@@ -442,3 +442,122 @@ class TestRequirePath:
         runtime = repo_layout["runtime_dirs"][0]
         result = require_path(runtime, boundaries=repo_layout, emit_event=False)
         assert result == PathClass.MANAGED_RUNTIME
+
+    def test_require_path_with_exception(self, repo_layout: dict[str, str]) -> None:
+        """Explicit exception should allow an otherwise-external path."""
+        external = repo_layout["external"]
+        result = require_path(
+            external,
+            boundaries=repo_layout,
+            exceptions=[external],
+            emit_event=False,
+        )
+        assert result == PathClass.EXPLICIT_EXCEPTION
+
+
+# ---------------------------------------------------------------------------
+# Auto-discovery tests (check_path / require_path with boundaries=None)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckPathAutoDiscovery:
+    """Tests for check_path() when boundaries are auto-discovered (#1120)."""
+
+    def test_auto_discovers_boundaries(self, repo_layout: dict[str, str]) -> None:
+        """check_path() calls get_repo_boundaries() when boundaries=None."""
+        from unittest.mock import patch
+
+        subpath = Path(repo_layout["repo_root"]) / "src" / "app.py"
+        with patch(
+            "bid_euchre.ops.fs_boundary.get_repo_boundaries",
+            return_value=repo_layout,
+        ) as mock_get:
+            result = check_path(str(subpath))
+
+        mock_get.assert_called_once()
+        assert result == PathClass.REPO_ROOT
+
+    def test_auto_discovers_external(self, repo_layout: dict[str, str]) -> None:
+        """check_path() correctly classifies external path via auto-discovery."""
+        from unittest.mock import patch
+
+        with patch(
+            "bid_euchre.ops.fs_boundary.get_repo_boundaries",
+            return_value=repo_layout,
+        ) as mock_get:
+            result = check_path(repo_layout["external"])
+
+        mock_get.assert_called_once()
+        assert result == PathClass.EXTERNAL
+
+    def test_skips_auto_discovery_when_boundaries_provided(
+        self, repo_layout: dict[str, str]
+    ) -> None:
+        """check_path() does not call get_repo_boundaries() when boundaries given."""
+        from unittest.mock import patch
+
+        subpath = Path(repo_layout["repo_root"]) / "src" / "file.py"
+        with patch(
+            "bid_euchre.ops.fs_boundary.get_repo_boundaries",
+        ) as mock_get:
+            result = check_path(str(subpath), boundaries=repo_layout)
+
+        mock_get.assert_not_called()
+        assert result == PathClass.REPO_ROOT
+
+    def test_check_path_with_exceptions(self, repo_layout: dict[str, str]) -> None:
+        """check_path() forwards exceptions parameter correctly."""
+        external = repo_layout["external"]
+        result = check_path(external, boundaries=repo_layout, exceptions=[external])
+        assert result == PathClass.EXPLICIT_EXCEPTION
+
+
+class TestRequirePathAutoDiscovery:
+    """Tests for require_path() when boundaries are auto-discovered (#1120)."""
+
+    def test_auto_discovers_boundaries(self, repo_layout: dict[str, str]) -> None:
+        """require_path() calls get_repo_boundaries() when boundaries=None."""
+        from unittest.mock import patch
+
+        subpath = Path(repo_layout["repo_root"]) / "src" / "app.py"
+        with patch(
+            "bid_euchre.ops.fs_boundary.get_repo_boundaries",
+            return_value=repo_layout,
+        ) as mock_get:
+            result = require_path(str(subpath), emit_event=False)
+
+        mock_get.assert_called_once()
+        assert result == PathClass.REPO_ROOT
+
+    def test_auto_discovers_and_rejects_external(
+        self, repo_layout: dict[str, str]
+    ) -> None:
+        """require_path() raises BoundaryViolationError for external via auto-discovery."""
+        from unittest.mock import patch
+
+        with patch(
+            "bid_euchre.ops.fs_boundary.get_repo_boundaries",
+            return_value=repo_layout,
+        ) as mock_get:
+            with pytest.raises(BoundaryViolationError) as exc_info:
+                require_path(repo_layout["external"], emit_event=False)
+
+        mock_get.assert_called_once()
+        assert exc_info.value.classification == PathClass.EXTERNAL
+
+    def test_skips_auto_discovery_when_boundaries_provided(
+        self, repo_layout: dict[str, str]
+    ) -> None:
+        """require_path() does not call get_repo_boundaries() when boundaries given."""
+        from unittest.mock import patch
+
+        subpath = Path(repo_layout["repo_root"]) / "src" / "bar.py"
+        with patch(
+            "bid_euchre.ops.fs_boundary.get_repo_boundaries",
+        ) as mock_get:
+            result = require_path(
+                str(subpath), boundaries=repo_layout, emit_event=False
+            )
+
+        mock_get.assert_not_called()
+        assert result == PathClass.REPO_ROOT

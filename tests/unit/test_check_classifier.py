@@ -134,3 +134,60 @@ class TestDriftDetection:
                 )
         finally:
             sys.path.pop(0)
+
+    def test_fallback_actually_exercises_fallback_path(self) -> None:
+        """Force ImportError to exercise the inline fallback classifier (#1094).
+
+        The normal import succeeds because bid_euchre is installed in test env,
+        so test_fallback_denylist_matches_non_ci_contexts tests the canonical
+        path, not the fallback.  This test reloads the module with bid_euchre
+        blocked to verify the inline fallback logic.
+        """
+        from unittest.mock import patch
+
+        scripts_dir = Path(__file__).resolve().parents[2] / "scripts" / "internal"
+        sys.path.insert(0, str(scripts_dir))
+        try:
+            # Remove cached module so reimport picks up the patched import
+            if "github_pr_state" in sys.modules:
+                saved_module = sys.modules.pop("github_pr_state")
+            else:
+                saved_module = None
+
+            # Block bid_euchre.ops import to trigger the fallback branch
+            original_import = (
+                __builtins__.__import__
+                if hasattr(__builtins__, "__import__")
+                else __import__
+            )
+
+            def blocking_import(name, *args, **kwargs):
+                if name == "bid_euchre.ops":
+                    raise ImportError("Simulated: bid_euchre not installed")
+                return original_import(name, *args, **kwargs)
+
+            with patch("builtins.__import__", side_effect=blocking_import):
+                import github_pr_state as gps_fallback
+
+            fallback_classify = gps_fallback._classify_check
+
+            # Verify fallback returns "non_ci" for all NON_CI_CONTEXTS
+            for ctx in NON_CI_CONTEXTS:
+                result = fallback_classify(ctx)
+                assert (
+                    result != "ci"
+                ), f"Fallback _classify_check classified {ctx!r} as 'ci'"
+                # Fallback returns "non_ci" (not "review_gate"/"advisory")
+                assert (
+                    result == "non_ci"
+                ), f"Fallback should return 'non_ci' for {ctx!r}, got {result!r}"
+
+            # Verify fallback returns "ci" for unknown checks
+            assert fallback_classify("tests") == "ci"
+            assert fallback_classify("some-unknown-job") == "ci"
+        finally:
+            # Restore original module
+            sys.modules.pop("github_pr_state", None)
+            if saved_module is not None:
+                sys.modules["github_pr_state"] = saved_module
+            sys.path.pop(0)
