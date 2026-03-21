@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -266,22 +268,25 @@ def shared_task_root(runtime_dir: Path | None = None) -> Path:
 
 
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
-    """Write JSON data atomically using a temporary file + rename.
+    """Write JSON data atomically using a unique temporary file + rename.
 
-    Relies on POSIX ``rename()`` atomicity for crash safety.
+    Uses ``tempfile.mkstemp`` to create a unique temp file in the target
+    directory, avoiding races when multiple writers target the same path
+    concurrently.  Relies on POSIX ``rename()`` atomicity for crash safety.
     No cross-process locking — last writer wins in concurrent scenarios.
-    Platform-3 may add a lockfile protocol if needed.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
-        with open(tmp_path, "w") as f:
+        with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2, default=str)
             f.write("\n")
-        tmp_path.rename(path)
+        Path(tmp_name).rename(path)
     except Exception:
-        if tmp_path.exists():
-            tmp_path.unlink()
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
         raise
 
 
