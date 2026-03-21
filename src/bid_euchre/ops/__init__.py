@@ -20,6 +20,8 @@ Modules:
     memory      -- Curated memory for stable operator facts
     context_safety -- Content scanning for memory/summary/skill promotion
     compaction  -- Session compaction and non-lossy context archival
+    message_bus -- Durable lane-to-lane communication bus (Platform-3)
+    task_queue  -- Durable task packet queue (Platform-2)
 """
 
 # Shared constant: GitHub status/check context names that represent
