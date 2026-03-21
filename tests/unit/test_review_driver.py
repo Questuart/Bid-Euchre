@@ -1307,30 +1307,36 @@ class TestRuntimeLimitTimeout:
         If the review decision has already been made (passed verdict written),
         the timeout should let _step_ready_to_merge() complete the MERGED
         transition rather than overwriting the passed verdict with blocked.
+        The grace period is measured from state entry, not from loop start.
         """
         from review_state import ReviewState
 
-        # elapsed > max_runtime_s but within grace period → no timeout
-        assert _should_timeout(901.0, 900, ReviewState.READY_TO_MERGE) is False, (
-            "Timeout must not fire when state is READY_TO_MERGE within grace period — "
+        # elapsed > max_runtime_s but time_in_ready is small → no timeout
+        assert _should_timeout(901.0, 900, ReviewState.READY_TO_MERGE, 5.0) is False, (
+            "Timeout must not fire when READY_TO_MERGE is fresh — "
             "the passed verdict must not be overwritten"
         )
+        # Even with very high elapsed, fresh READY_TO_MERGE is safe
+        assert (
+            _should_timeout(2000.0, 900, ReviewState.READY_TO_MERGE, 10.0) is False
+        ), "Total elapsed is irrelevant for READY_TO_MERGE; only time_in_ready matters"
 
     def test_timeout_grace_period_cap_forces_stop(self) -> None:
-        """Grace-period cap must fire even when state is READY_TO_MERGE.
+        """Grace-period cap must fire when stuck in READY_TO_MERGE too long.
 
-        If _step_ready_to_merge() stalls, the hard cap (max_runtime_s + 60s)
-        prevents an unbounded loop.
+        If _step_ready_to_merge() stalls (returns without advancing for >60s),
+        the grace cap prevents an unbounded loop.  The cap is measured from
+        when READY_TO_MERGE was entered, not from loop start.
         """
         from review_state import ReviewState
 
-        # elapsed > max_runtime_s + 60 → always timeout, even from READY_TO_MERGE
+        # time_in_ready > 60 → timeout even from READY_TO_MERGE
         assert (
-            _should_timeout(961.0, 900, ReviewState.READY_TO_MERGE) is True
-        ), "Grace-period cap must force-stop even from READY_TO_MERGE"
+            _should_timeout(961.0, 900, ReviewState.READY_TO_MERGE, 61.0) is True
+        ), "Grace-period cap must force-stop when stuck in READY_TO_MERGE"
         # Boundary: exactly at cap should not timeout (> not >=)
         assert (
-            _should_timeout(960.0, 900, ReviewState.READY_TO_MERGE) is False
+            _should_timeout(960.0, 900, ReviewState.READY_TO_MERGE, 60.0) is False
         ), "Exactly at grace boundary should not timeout (strict >)"
 
     def test_timeout_from_waiting_for_codex_transitions_cleanly(self) -> None:
