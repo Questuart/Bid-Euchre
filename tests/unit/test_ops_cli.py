@@ -753,6 +753,149 @@ class TestCmdReviews:
         assert "#42" in captured
 
 
+class TestCmdComments:
+    """Tests for the comments subcommand."""
+
+    def test_comments_requires_pr(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """comments without --pr should fail."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "comments",
+            ]
+        )
+        assert rc == 1
+        assert "--pr" in capsys.readouterr().err
+
+    def test_comments_json_output(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """comments --pr N --json returns JSON overlay (mocked gh)."""
+        import subprocess
+
+        from bid_euchre.ops import reviews as rev_mod
+
+        raw_comments = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "LGTM",
+            },
+            {
+                "id": 2,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body": "Thanks!",
+            },
+        ]
+        monkeypatch.setattr(
+            rev_mod,
+            "_run_gh",
+            lambda *a, **kw: subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(raw_comments), stderr=""
+            ),
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "comments",
+                "--pr",
+                "42",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 1
+        assert data[0]["total_comments"] == 2
+        assert data[0]["trusted_bot_comments"] == 1
+
+    def test_comments_ingest_writes_sidecar(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """comments --pr N --ingest writes sidecar JSONL and emits event."""
+        import subprocess
+
+        from bid_euchre.ops import reviews as rev_mod
+
+        raw_comments = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "Review done",
+            },
+        ]
+        monkeypatch.setattr(
+            rev_mod,
+            "_run_gh",
+            lambda *a, **kw: subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(raw_comments), stderr=""
+            ),
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "comments",
+                "--pr",
+                "42",
+                "--ingest",
+            ]
+        )
+        assert rc == 0
+
+        sidecar = runtime_dir / "pr_comments" / "pr_42.jsonl"
+        assert sidecar.exists()
+        lines = sidecar.read_text().strip().split("\n")
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["author_login"] == "chatgpt-codex-connector[bot]"
+        assert record["author_type"] == "trusted_bot"
+
+        # Verify event was emitted
+        from bid_euchre.ops.events import read_events
+
+        events = read_events(runtime_dir / "events")
+        assert len(events) == 1
+        event = events[0]
+        assert event["event_type"] == "pr_comment_ingested"
+        assert event["payload"]["pr_number"] == 42
+
+
 class TestCmdCI:
     """Tests for the ci subcommand."""
 

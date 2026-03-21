@@ -702,8 +702,9 @@ The full checklist is at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.
   - [x] Codex Cloud proving-run behavior is recorded accurately
   - [ ] PR comment ingestion bridge lands so Codex Cloud comments are
     operationally visible (not speculative check/status plumbing)
-- [ ] **repo-bounded filesystem access** is the default, with only narrow
+- [x] **repo-bounded filesystem access** is the default, with only narrow
   managed exceptions and explicit operator approval for outside-repo access
+  — shipped in #1115 (`src/bid_euchre/ops/fs_boundary.py`)
 
 > **Bridge queue (2026-03-20):** The remaining unchecked items are tracked in
 > `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`.

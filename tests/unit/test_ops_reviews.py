@@ -11,15 +11,21 @@ import pytest
 
 from bid_euchre.ops.reviews import (
     DEFAULT_REVIEW_CONTEXTS,
+    TRUSTED_BOT_LOGINS,
+    CommentOverlay,
     ReviewOutcome,
     _classify_ci_status,
     _get_advisory_status,
     _get_review_status,
     _has_precheck_ci,
+    classify_comment_author,
     emit_review_event,
+    format_comment_overlays_json,
+    format_comment_overlays_text,
     format_reviews_json,
     format_reviews_text,
     get_open_pr_reviews,
+    get_pr_comment_overlay,
     get_pr_review_detail,
 )
 
@@ -681,3 +687,199 @@ class TestEmitReviewEvent:
         assert len(events) == 1
         assert events[0]["event_type"] == "review_outcome"
         assert events[0]["payload"]["pr_number"] == 42
+
+
+# --- Comment-Based Review Overlay tests ---
+
+
+class TestClassifyCommentAuthor:
+    """Tests for classify_comment_author() identity classification."""
+
+    def test_trusted_bot(self) -> None:
+        assert classify_comment_author("chatgpt-codex-connector[bot]") == "trusted_bot"
+
+    def test_trusted_bot_ignores_user_type(self) -> None:
+        # Even if user_type says "User", login takes precedence
+        assert (
+            classify_comment_author("chatgpt-codex-connector[bot]", "User")
+            == "trusted_bot"
+        )
+
+    def test_other_bot_by_user_type(self) -> None:
+        assert classify_comment_author("dependabot[bot]", "Bot") == "other_bot"
+
+    def test_other_bot_by_login_suffix(self) -> None:
+        assert classify_comment_author("some-other[bot]") == "other_bot"
+
+    def test_human_with_user_type(self) -> None:
+        assert classify_comment_author("octocat", "User") == "human"
+
+    def test_human_default(self) -> None:
+        assert classify_comment_author("octocat") == "human"
+
+    def test_empty_login(self) -> None:
+        assert classify_comment_author("") == "human"
+
+
+class TestTrustedBotLogins:
+    """Test TRUSTED_BOT_LOGINS constant."""
+
+    def test_contains_codex_connector(self) -> None:
+        assert "chatgpt-codex-connector[bot]" in TRUSTED_BOT_LOGINS
+
+    def test_is_frozenset(self) -> None:
+        assert isinstance(TRUSTED_BOT_LOGINS, frozenset)
+
+
+class TestCommentOverlay:
+    """Tests for CommentOverlay dataclass."""
+
+    def test_defaults(self) -> None:
+        overlay = CommentOverlay(pr_number=42)
+        assert overlay.pr_number == 42
+        assert overlay.total_comments == 0
+        assert overlay.trusted_bot_comments == 0
+        assert overlay.human_comments == 0
+        assert overlay.other_bot_comments == 0
+        assert overlay.latest_trusted_bot_excerpt is None
+        assert overlay.comments == []
+
+    def test_to_dict(self) -> None:
+        overlay = CommentOverlay(pr_number=42, total_comments=3)
+        d = overlay.to_dict()
+        assert d["pr_number"] == 42
+        assert d["total_comments"] == 3
+
+
+class TestGetPRCommentOverlay:
+    """Tests for get_pr_comment_overlay() with pre-fetched data."""
+
+    def test_empty_comments(self) -> None:
+        overlay = get_pr_comment_overlay(42, raw_comments=[])
+        assert overlay.pr_number == 42
+        assert overlay.total_comments == 0
+        assert overlay.trusted_bot_comments == 0
+        assert overlay.human_comments == 0
+        assert overlay.comments == []
+
+    def test_mixed_authors(self) -> None:
+        raw = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "Review complete: LGTM",
+            },
+            {
+                "id": 2,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body": "Thanks for the review!",
+            },
+            {
+                "id": 3,
+                "login": "dependabot[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T09:00:00Z",
+                "body": "Dependency update available",
+            },
+        ]
+        overlay = get_pr_comment_overlay(42, raw_comments=raw)
+        assert overlay.total_comments == 3
+        assert overlay.trusted_bot_comments == 1
+        assert overlay.human_comments == 1
+        assert overlay.other_bot_comments == 1
+        assert overlay.latest_trusted_bot_author == "chatgpt-codex-connector[bot]"
+        assert overlay.latest_trusted_bot_time == "2026-03-20T10:00:00Z"
+        assert "Review complete" in (overlay.latest_trusted_bot_excerpt or "")
+
+    def test_latest_trusted_bot_chronological(self) -> None:
+        """Should pick the latest trusted bot comment by timestamp."""
+        raw = [
+            {
+                "id": 1,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T08:00:00Z",
+                "body": "First review",
+            },
+            {
+                "id": 2,
+                "login": "chatgpt-codex-connector[bot]",
+                "user_type": "Bot",
+                "created_at": "2026-03-20T12:00:00Z",
+                "body": "Second review",
+            },
+        ]
+        overlay = get_pr_comment_overlay(42, raw_comments=raw)
+        assert overlay.trusted_bot_comments == 2
+        assert overlay.latest_trusted_bot_time == "2026-03-20T12:00:00Z"
+        assert "Second review" in (overlay.latest_trusted_bot_excerpt or "")
+
+    def test_comment_records_populated(self) -> None:
+        raw = [
+            {
+                "id": 100,
+                "login": "octocat",
+                "user_type": "User",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body": "Nice work!",
+            },
+        ]
+        overlay = get_pr_comment_overlay(42, raw_comments=raw)
+        assert len(overlay.comments) == 1
+        c = overlay.comments[0]
+        assert c["comment_id"] == 100
+        assert c["author_login"] == "octocat"
+        assert c["author_type"] == "human"
+        assert c["body_excerpt"] == "Nice work!"
+
+
+class TestFormatCommentOverlaysText:
+    """Tests for format_comment_overlays_text()."""
+
+    def test_empty(self) -> None:
+        text = format_comment_overlays_text([])
+        assert "No comment data" in text
+
+    def test_with_trusted_bot(self) -> None:
+        overlay = CommentOverlay(
+            pr_number=42,
+            total_comments=2,
+            trusted_bot_comments=1,
+            human_comments=1,
+            latest_trusted_bot_author="chatgpt-codex-connector[bot]",
+            latest_trusted_bot_time="2026-03-20T10:00:00Z",
+            latest_trusted_bot_excerpt="Review complete",
+        )
+        text = format_comment_overlays_text([overlay])
+        assert "#42" in text
+        assert "Trusted=[+:1]" in text
+        assert "chatgpt-codex-connector[bot]" in text
+
+    def test_without_trusted_bot(self) -> None:
+        overlay = CommentOverlay(
+            pr_number=42,
+            total_comments=1,
+            human_comments=1,
+        )
+        text = format_comment_overlays_text([overlay])
+        assert "Trusted=[-:0]" in text
+
+
+class TestFormatCommentOverlaysJSON:
+    """Tests for format_comment_overlays_json()."""
+
+    def test_empty(self) -> None:
+        assert format_comment_overlays_json([]) == []
+
+    def test_serializable(self) -> None:
+        overlay = CommentOverlay(pr_number=42, total_comments=1, human_comments=1)
+        result = format_comment_overlays_json([overlay])
+        assert len(result) == 1
+        assert result[0]["pr_number"] == 42
+        assert result[0]["total_comments"] == 1
+        # Verify JSON-serializable
+        json.dumps(result)
