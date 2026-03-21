@@ -333,6 +333,57 @@ class TestRequireInBoundary:
         assert event["payload"]["action"] == "denied"
         assert repo_layout["external"] in event["payload"]["path"]
 
+    def test_emits_audit_event_on_explicit_exception(
+        self, repo_layout: dict[str, str]
+    ) -> None:
+        """Allowing a path via explicit exception should emit an audit event (#1151)."""
+        events_dir = Path(repo_layout["events_dir"])
+
+        result = require_in_boundary(
+            repo_layout["external"],
+            repo_root=repo_layout["repo_root"],
+            worktree_paths=repo_layout["worktree_paths"],
+            runtime_dirs=repo_layout["runtime_dirs"],
+            exceptions=[repo_layout["external"]],
+            emit_event=True,
+            events_dir=events_dir,
+        )
+        assert result == PathClass.EXPLICIT_EXCEPTION
+
+        # Verify audit event was written
+        events_file = events_dir / "events.jsonl"
+        assert events_file.exists(), "Expected events.jsonl to be created"
+
+        lines = events_file.read_text().strip().splitlines()
+        assert len(lines) >= 1
+
+        event = json.loads(lines[-1])
+        assert event["event_type"] == "fs_boundary_exception"
+        assert event["payload"]["classification"] == "explicit_exception"
+        assert event["payload"]["action"] == "allowed_exception"
+        assert repo_layout["external"] in event["payload"]["path"]
+
+    def test_no_audit_event_when_emit_event_false(
+        self, repo_layout: dict[str, str]
+    ) -> None:
+        """Explicit exception with emit_event=False should not write an event."""
+        events_dir = Path(repo_layout["events_dir"])
+
+        result = require_in_boundary(
+            repo_layout["external"],
+            repo_root=repo_layout["repo_root"],
+            worktree_paths=repo_layout["worktree_paths"],
+            runtime_dirs=repo_layout["runtime_dirs"],
+            exceptions=[repo_layout["external"]],
+            emit_event=False,
+            events_dir=events_dir,
+        )
+        assert result == PathClass.EXPLICIT_EXCEPTION
+
+        # No event file should exist (no events emitted)
+        events_file = events_dir / "events.jsonl"
+        assert not events_file.exists()
+
 
 # ---------------------------------------------------------------------------
 # PathClass enum tests

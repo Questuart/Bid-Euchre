@@ -249,6 +249,14 @@ def require_in_boundary(
             )
         raise BoundaryViolationError(str(path), classification)
 
+    if classification == PathClass.EXPLICIT_EXCEPTION and emit_event:
+        _emit_exception_event(
+            str(path),
+            events_dir=events_dir,
+            source=source,
+            lane_id=lane_id,
+        )
+
     return classification
 
 
@@ -353,3 +361,33 @@ def _emit_violation_event(
         )
     except Exception:  # noqa: BLE001
         logger.warning("Failed to emit boundary violation event for %s", path)
+
+
+def _emit_exception_event(
+    path: str,
+    *,
+    events_dir: Path | None = None,
+    source: str = "ops.fs_boundary",
+    lane_id: str = "ops",
+) -> None:
+    """Emit an audit event when a path is allowed via explicit exception.
+
+    This provides audit visibility for paths that bypass the default-deny
+    boundary policy. Best-effort: failures are logged but do not propagate.
+    """
+    try:
+        from bid_euchre.ops.events import append_event
+
+        append_event(
+            "fs_boundary_exception",
+            source,
+            lane_id,
+            {
+                "path": path,
+                "classification": PathClass.EXPLICIT_EXCEPTION.value,
+                "action": "allowed_exception",
+            },
+            events_dir,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to emit boundary exception event for %s", path)
