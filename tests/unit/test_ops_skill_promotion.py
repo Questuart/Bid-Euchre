@@ -7,6 +7,7 @@ context-safety integration, malformed candidates, and edge cases.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -1004,3 +1005,224 @@ class TestAtomicWrite:
         assert path.exists()
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["name"] == "dir-test"
+
+    def test_save_candidate_overwrites_existing(self, candidates_dir: Path) -> None:
+        """Verify _save_candidate() replaces an existing file (os.replace semantics)."""
+        cid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        c1 = SkillCandidate(
+            candidate_id=cid,
+            name="overwrite-v1",
+            description="Version 1",
+            content="# V1\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            proposed_at="2026-03-20T00:00:00Z",
+            provenance={},
+        )
+        path = _save_candidate(c1, candidates_dir)
+        assert json.loads(path.read_text())["name"] == "overwrite-v1"
+
+        c2 = SkillCandidate(
+            candidate_id=cid,
+            name="overwrite-v2",
+            description="Version 2",
+            content="# V2\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            proposed_at="2026-03-20T00:00:00Z",
+            provenance={},
+        )
+        path2 = _save_candidate(c2, candidates_dir)
+        assert path == path2
+        data = json.loads(path.read_text())
+        assert data["name"] == "overwrite-v2"
+
+    def test_save_candidate_error_cleans_temp(
+        self, candidates_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If os.fsync raises, the temp file is cleaned up."""
+        import glob as glob_mod
+
+        c = SkillCandidate(
+            candidate_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            name="error-test",
+            description="Error path",
+            content="# Error\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            proposed_at="2026-03-20T00:00:00Z",
+            provenance={},
+        )
+
+        original_fsync = os.fsync
+
+        def boom(fd: int) -> None:
+            original_fsync(fd)
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "fsync", boom)
+
+        with pytest.raises(OSError, match="disk full"):
+            _save_candidate(c, candidates_dir)
+
+        # No .tmp files should remain
+        tmp_files = glob_mod.glob(str(candidates_dir / "*.tmp"))
+        assert tmp_files == [], f"Leaked temp files: {tmp_files}"
+
+    def test_save_candidate_fdopen_failure_closes_fd(
+        self, candidates_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If os.fdopen fails, the raw fd is closed (no fd leak)."""
+        import io
+
+        closed_fds: list[int] = []
+        original_close = os.close
+
+        def tracking_close(fd: int) -> None:
+            closed_fds.append(fd)
+            original_close(fd)
+
+        monkeypatch.setattr(os, "close", tracking_close)
+
+        def bad_fdopen(fd: int, *args: object, **kwargs: object) -> io.TextIOWrapper:
+            raise MemoryError("simulated fdopen failure")
+
+        monkeypatch.setattr(os, "fdopen", bad_fdopen)
+
+        c = SkillCandidate(
+            candidate_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            name="fd-test",
+            description="fd leak test",
+            content="# FD\n",
+            source_workflow="test",
+            proposed_by="author-b",
+            proposed_at="2026-03-20T00:00:00Z",
+            provenance={},
+        )
+
+        with pytest.raises(MemoryError, match="simulated fdopen failure"):
+            _save_candidate(c, candidates_dir)
+
+        # The fd should have been closed by the except branch
+        assert len(closed_fds) >= 1
+
+
+# ── Promote atomic write (SKILL.md) ─────────────────────────
+
+
+class TestPromoteAtomicWrite:
+    """Verify promote_skill() produces valid SKILL.md via the atomic write path."""
+
+    def test_promote_skill_md_content(
+        self, candidates_dir: Path, skills_dir: Path, events_dir: Path
+    ) -> None:
+        """promote_skill writes SKILL.md with correct front matter and body."""
+        c = _propose(candidates_dir)
+        review_skill(
+            c.candidate_id,
+            approve=True,
+            reviewed_by="operator",
+            candidates_dir=candidates_dir,
+        )
+        promoted, skill_path = promote_skill(
+            c.candidate_id,
+            candidates_dir=candidates_dir,
+            skills_dir=skills_dir,
+            events_dir=events_dir,
+        )
+        content = skill_path.read_text(encoding="utf-8")
+
+        # Front matter section
+        assert content.startswith("---\n")
+        assert 'name: "my-skill"' in content
+        assert 'description: "A useful skill"' in content
+
+        # Provenance comment block
+        assert "candidate_id:" in content
+        assert "proposed_by: author-b" in content
+        assert "source_workflow:" in content
+
+        # Skill body (the original content)
+        assert "# My Skill" in content
+        assert "Do the thing." in content
+
+    def test_promote_error_cleans_temp(
+        self, candidates_dir: Path, skills_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If os.fsync raises during promote, temp file is cleaned up."""
+        import glob as glob_mod
+
+        c = _propose(candidates_dir)
+        review_skill(
+            c.candidate_id,
+            approve=True,
+            reviewed_by="operator",
+            candidates_dir=candidates_dir,
+        )
+
+        original_fsync = os.fsync
+        call_count = 0
+
+        def boom_on_second(fd: int) -> None:
+            nonlocal call_count
+            call_count += 1
+            # The promote_skill path calls _save_candidate first (which uses
+            # fsync internally during the scan-reject branch), so we need to
+            # target the fsync that happens during SKILL.md write. We fail on
+            # any call since the first fsync in promote_skill is for SKILL.md.
+            original_fsync(fd)
+            raise OSError("disk full")
+
+        monkeypatch.setattr(os, "fsync", boom_on_second)
+
+        with pytest.raises(OSError, match="disk full"):
+            promote_skill(
+                c.candidate_id,
+                candidates_dir=candidates_dir,
+                skills_dir=skills_dir,
+            )
+
+        # Skill directory may or may not exist, but no .tmp files should remain
+        skill_dir = skills_dir / "my-skill"
+        if skill_dir.exists():
+            tmp_files = glob_mod.glob(str(skill_dir / "*.tmp"))
+            assert tmp_files == [], f"Leaked temp files: {tmp_files}"
+
+    def test_promote_fdopen_failure_closes_fd(
+        self, candidates_dir: Path, skills_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If os.fdopen fails during promote SKILL.md write, the fd is closed."""
+        import io
+
+        c = _propose(candidates_dir)
+        review_skill(
+            c.candidate_id,
+            approve=True,
+            reviewed_by="operator",
+            candidates_dir=candidates_dir,
+        )
+
+        closed_fds: list[int] = []
+        original_close = os.close
+
+        def tracking_close(fd: int) -> None:
+            closed_fds.append(fd)
+            original_close(fd)
+
+        # Only fail fdopen during promote_skill, not during the _save_candidate
+        # call that happens inside propose_skill. We monkeypatch after proposal.
+        monkeypatch.setattr(os, "close", tracking_close)
+
+        def bad_fdopen(fd: int, *args: object, **kwargs: object) -> io.TextIOWrapper:
+            raise MemoryError("simulated fdopen failure")
+
+        monkeypatch.setattr(os, "fdopen", bad_fdopen)
+
+        with pytest.raises(MemoryError, match="simulated fdopen failure"):
+            promote_skill(
+                c.candidate_id,
+                candidates_dir=candidates_dir,
+                skills_dir=skills_dir,
+            )
+
+        assert len(closed_fds) >= 1
