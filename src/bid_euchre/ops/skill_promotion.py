@@ -27,6 +27,7 @@ Integration:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -145,9 +146,10 @@ def _save_candidate(candidate: SkillCandidate, candidates_dir: Path) -> Path:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
-        Path(tmp_path).rename(path)
+        os.replace(tmp_path, str(path))
     except BaseException:
-        Path(tmp_path).unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
         raise
     return path
 
@@ -350,11 +352,21 @@ def promote_skill(
             f"{findings_summary}"
         )
 
-    # Write the skill
+    # Write the skill atomically (temp + fsync + rename)
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_md = skill_dir / "SKILL.md"
     skill_content = _render_skill_md(candidate)
-    skill_md.write_text(skill_content, encoding="utf-8")
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(skill_dir), suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(skill_content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, str(skill_md))
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
 
     # Update candidate status
     candidate.status = "promoted"
