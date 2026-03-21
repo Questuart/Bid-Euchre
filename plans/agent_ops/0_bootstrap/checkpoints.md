@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase/Rung:** `0_bootstrap`
-**Last updated:** 2026-03-20 by Codex
+**Last updated:** 2026-03-21 by author-b
 
 ---
 
@@ -12,8 +12,8 @@
 |------|--------|------|---------------|-------|
 | Step 0: Create governing-plan scaffold | COMPLETE | 2026-03-19 | Codex | Added canonical governing plan path, sub-plan registry, amendments log, and phase files. |
 | Step 1: Normalize discovery and references | COMPLETE | 2026-03-19 | Codex | Registered `agent_ops` in `CLAUDE.md` and updated plan references to the canonical governing-plan path. |
-| Step 2: Track Platform-1 entry criteria | COMPLETE | 2026-03-20 | author-d | PR-5 closed: all slices done — slice 5 (#1054), slice 6 (#1068, #1091), slice 7 (#1098, liveness #1104, retries #1112). Review-gate stabilizer shipped (#1017, #1025, #1030). Next gate: post-PR-5 bridge (filesystem boundary + PR comment ingestion) before Platform-1. Entry checklist published at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`. |
-| Step 3: Open Platform-1 implementation handoff / sub-plan | PENDING | -- | -- | Create the first execution handoff once Step 2 is clear. |
+| Step 2: Track Platform-1 entry criteria | COMPLETE | 2026-03-20 | author-d | PR-5 closed: all slices done — slice 5 (#1054), slice 6 (#1068, #1091), slice 7 (#1098, liveness #1104, retries #1112). Review-gate stabilizer shipped (#1017, #1025, #1030). Bridge gate satisfied (2026-03-21): filesystem boundary (#1115), PR comment ingestion (#1122), local review coordinator reset (#1123), repair lane (#1138), precheck hardening (#1126, #1132). Trusted command handling deferred to Platform-1 (N/A for bridge). Entry checklist at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`. |
+| Step 3: Open Platform-1 implementation handoff / sub-plan | PENDING | -- | -- | Bridge gate is now satisfied. Ready for Platform-1 implementation handoff. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -27,11 +27,14 @@
 - [x] ~~PR-5 slice 7 is not yet complete~~ — **CLOSED** (2026-03-20). All
   slices done: #1054 (slice 5), #1068/#1091 (slice 6), #1098/#1104/#1112
   (slice 7).
-- [ ] Review surfaces need bridge work before Platform-1:
-  `claude-review` is stable. Codex Cloud comments from
-  `chatgpt-codex-connector[bot]` need ingestion/surfacing as operational
-  signals (not CI or merge-gate artifacts). See bridge plan:
-  `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`.
+- [x] ~~Review surfaces need bridge work before Platform-1~~ —
+  **CLOSED** (2026-03-21). PR comment ingestion bridge shipped in #1122
+  (`src/bid_euchre/ops/reviews.py`, `scripts/internal/github_pr_state.py`).
+  Local review coordinator reset shipped in #1123. `claude-review` remains
+  advisory; `reviewing-changes` remains merge-relevant. Codex Cloud
+  comments are now queryable as operational signals without CI/merge-gate
+  side effects. Trusted command handling deferred to Platform-1 (N/A for
+  bridge — filesystem + comment bridges provide sufficient control).
 - [x] ~~Filesystem access needs bridge work before Platform-1~~ —
   **CLOSED** (2026-03-20). Repo-bounded filesystem access policy shipped
   in #1115 (`src/bid_euchre/ops/fs_boundary.py`). Allowed: repo root,
@@ -81,3 +84,16 @@
 - Fixed `get_retry_summary()` follow-up counting: was not chronology-aware
   (#1112 fixed `get_pending_retries()` but missed the summary function).
   Applied same string-comparison approach. 2 regression tests added.
+
+### 2026-03-21 -- author-b (bridge gate finalization)
+- Closed review-surfaces blocker: PR comment ingestion shipped (#1122),
+  local review coordinator reset shipped (#1123).
+- Marked trusted command handling N/A for bridge (deferred to Platform-1).
+- Verified all bridge PRs merged: #1115 (filesystem), #1122 (comment
+  ingestion), #1123 (review coordinator reset), #1126/#1132 (precheck
+  hardening), #1133 (post-merge review fixes), #1138 (repair lane).
+- All blockers now CLOSED. Bridge gate satisfied.
+- Updated entry checklist, checkpoints, governing plan, session plans.
+- Step 3 (Platform-1 handoff) is now unblocked.
+- PR #1140 superseded by this reconciliation; #1141 confirmed duplicate
+  of #1138 (already closed).

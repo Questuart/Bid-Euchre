@@ -40,7 +40,7 @@ they ship, rather than forming one monolithic prerequisite wall.
 
 | Phase | Directory | Description | Depends On |
 |-------|-----------|-------------|------------|
-| 0 | `0_bootstrap` | Governed-plan scaffolding, discovery wiring, and Platform-1 entry gating | PR-5 closed; bridge gate pending |
+| 0 | `0_bootstrap` | Governed-plan scaffolding, discovery wiring, and Platform-1 entry gating | PR-5 closed; bridge gate satisfied (2026-03-21) |
 | 1 | `1_coordination_core` | `Platform-1` through `Platform-3`: lane registry, intake contract, communication substrate | Phase 0 |
 | 2 | `2_visible_operating_model` | `Platform-4` through `Platform-5`: dashboard-first stewardship, canonical prompts, first skills | Phase 1 |
 | 3 | `3_supervision_and_scaling` | `Platform-6` through `Platform-7`: supervisor routines and worker-pool manager | Phase 2 |
@@ -81,7 +81,7 @@ Before `Platform-1` implementation begins:
 - [x] PR-5 slices 3-7 complete (2026-03-20)
 - [x] `ops.py status` is trustworthy enough to support dashboard-first work
 - [x] worktree/session registry behavior is stable enough to extend
-- [ ] post-PR-5 bridge gate satisfied (see `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`)
+- [x] post-PR-5 bridge gate satisfied (2026-03-21) — filesystem boundary (#1115), PR comment ingestion (#1122), review coordinator reset (#1123), repair lane (#1138), precheck hardening (#1126, #1132). Trusted command handling deferred to Platform-1. See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.
 
 ## 5. Sub-Plan Governance
 

@@ -1,7 +1,7 @@
 # Post-PR-5 Bridge: Controls and Review Surfaces
 
 **Date:** 2026-03-20
-**Status:** proposed
+**Status:** complete
 **Goal:** Finish the small bridge work that should land after PR-5 closeout and
 before `Platform-1`: repo-bounded filesystem controls, PR comment ingestion for
 review overlays, and the operator-facing acceptance/checklist docs that define
@@ -460,3 +460,38 @@ The bridge is complete when:
 - docs/checkpoints/governing plan define a clear Platform-1 entry checklist
 - the repo can begin `Platform-1` without unresolved ambiguity about review
   surfaces or filesystem access boundaries
+
+## Outcome
+
+**Bridge gate satisfied** (2026-03-21). All exit criteria met.
+
+### Lane A: Filesystem Boundary Bridge
+- Shipped in #1115 (`src/bid_euchre/ops/fs_boundary.py`)
+- Repo root, registered worktrees, managed runtime dirs allowed; external
+  paths denied by default with explicit exception + audit path
+
+### Lane B: PR Comment Ingestion Bridge
+- Shipped in #1122 (`src/bid_euchre/ops/reviews.py`,
+  `scripts/internal/github_pr_state.py`)
+- Codex Cloud comments queryable as operational signals
+- Does not change CI truth or merge-gate behavior
+- Local review coordinator reset shipped in #1123
+
+### Lane C: Docs / Acceptance / Platform-1 Entry Checklist
+- Entry checklist published in earlier PR by author-d
+- Final reconciliation and gate closure in this PR by author-b
+
+### Additional Bridge Work (Beyond Original Plan)
+- Bounded post-merge repair lane shipped in #1138
+- Deterministic precheck hardening shipped in #1126, #1132
+- Post-merge review fixes (batch 6) shipped in #1133
+
+### Trusted Command Handling
+- Deferred to Platform-1 (N/A for bridge). Rationale: filesystem boundary
+  + comment ingestion together provide sufficient pre-Platform-1 control.
+
+### Superseded PRs
+- #1140 (docs: reconcile post-1122 review-surface terminology) — superseded
+  by this finalization; conflicting with main after bridge PRs merged
+- #1141 (ops: add bounded post-merge repair lane) — duplicate of merged
+  #1138; already closed

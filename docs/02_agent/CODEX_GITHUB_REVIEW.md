@@ -74,9 +74,9 @@ The coordinator:
 
 Codex Cloud does **not** flow through the repo's existing review
 classification hooks (`classify_check()`, `ADVISORY_CONTEXTS`,
-`ops.reviews`).  If the repo later wants Codex Cloud findings surfaced in
-ops tooling, that is a comment-ingestion capability (tracked as Lane B
-bridge work) — not a review-gate change.
+`ops.reviews`).  Codex Cloud findings are now surfaceable in ops tooling
+via the PR comment ingestion bridge shipped in #1122 — this is a
+comment-ingestion capability, not a review-gate change.
 
 Do not add a speculative `codex-review.yml` workflow or speculative advisory
 check-name registration for the ChatGPT-subscription path.
