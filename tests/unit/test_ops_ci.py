@@ -412,6 +412,54 @@ class TestPollCIStatus:
         assert report.overall == "unknown"
         assert report.checks == []
 
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_success_plus_skipped(self, mock_run: object) -> None:
+        """SUCCESS + SKIPPED mix → success (path-filtered CI jobs, #1191)."""
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "notebooks", "state": "SKIPPED"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(1001)
+        assert report.overall == "success"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_all_skipped(self, mock_run: object) -> None:
+        """All SKIPPED → success (docs-only PR, #1191)."""
+        checks = [
+            {"name": "tests", "state": "SKIPPED"},
+            {"name": "checks", "state": "SKIPPED"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(1002)
+        assert report.overall == "success"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_failure_plus_skipped(self, mock_run: object) -> None:
+        """FAILURE + SKIPPED → failure (failure takes precedence, #1191)."""
+        checks = [
+            {"name": "tests", "state": "FAILURE"},
+            {"name": "notebooks", "state": "SKIPPED"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(1003)
+        assert report.overall == "failure"
+
+    @patch("bid_euchre.ops.ci.subprocess.run")
+    def test_pending_plus_skipped(self, mock_run: object) -> None:
+        """PENDING + SKIPPED → pending (pending takes precedence, #1191)."""
+        checks = [
+            {"name": "tests", "state": "PENDING"},
+            {"name": "notebooks", "state": "SKIPPED"},
+        ]
+        mock_run.return_value = _mock_result(stdout=json.dumps(checks))
+
+        report = poll_ci_status(1004)
+        assert report.overall == "pending"
+
 
 # --- Formatting tests ---
 
