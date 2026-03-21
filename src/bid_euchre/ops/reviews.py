@@ -165,7 +165,7 @@ def _classify_ci_status(
         return "failure"
     if any(s in ("PENDING", "IN_PROGRESS") for s in states):
         return "pending"
-    if all(s == "SUCCESS" for s in states):
+    if all(s in ("SUCCESS", "SKIPPED") for s in states):
         return "success"
     return "unknown"
 
@@ -200,7 +200,7 @@ def _get_review_status(
         return "failure"
     if any(s in ("PENDING", "IN_PROGRESS") for s in states):
         return "pending"
-    if all(s == "SUCCESS" for s in states):
+    if all(s in ("SUCCESS", "SKIPPED") for s in states):
         return "success"
     return "unknown"
 
@@ -241,7 +241,7 @@ def _get_advisory_status(
         return "failure"
     if any(s in ("PENDING", "IN_PROGRESS") for s in states):
         return "pending"
-    if all(s == "SUCCESS" for s in states):
+    if all(s in ("SUCCESS", "SKIPPED") for s in states):
         return "success"
     return "unknown"
 

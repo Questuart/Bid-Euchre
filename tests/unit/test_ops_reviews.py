@@ -102,6 +102,38 @@ class TestClassifyCIStatus:
         checks = [{"name": "tests", "state": "CANCELLED"}]
         assert _classify_ci_status(checks) == "unknown"
 
+    def test_success_plus_skipped(self) -> None:
+        """SUCCESS + SKIPPED mix → success (path-filtered CI jobs)."""
+        checks = [
+            {"name": "tests", "state": "SUCCESS"},
+            {"name": "notebooks", "state": "SKIPPED"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_all_skipped(self) -> None:
+        """All SKIPPED → success (docs-only PR)."""
+        checks = [
+            {"name": "tests", "state": "SKIPPED"},
+            {"name": "checks", "state": "SKIPPED"},
+        ]
+        assert _classify_ci_status(checks) == "success"
+
+    def test_failure_plus_skipped(self) -> None:
+        """FAILURE + SKIPPED → failure (failure takes precedence)."""
+        checks = [
+            {"name": "tests", "state": "FAILURE"},
+            {"name": "notebooks", "state": "SKIPPED"},
+        ]
+        assert _classify_ci_status(checks) == "failure"
+
+    def test_pending_plus_skipped(self) -> None:
+        """PENDING + SKIPPED → pending (pending takes precedence)."""
+        checks = [
+            {"name": "tests", "state": "PENDING"},
+            {"name": "notebooks", "state": "SKIPPED"},
+        ]
+        assert _classify_ci_status(checks) == "pending"
+
 
 class TestGetReviewStatus:
     """Tests for _get_review_status()."""
@@ -183,6 +215,45 @@ class TestGetReviewStatus:
             )
             == "pending"
         )
+
+
+class TestGetReviewStatusSkipped:
+    """Tests for _get_review_status() with SKIPPED checks (#1191)."""
+
+    def test_skipped_review_treated_as_success(self) -> None:
+        """A SKIPPED review-gate check → success (defensive)."""
+        checks = [{"name": "reviewing-changes", "state": "SKIPPED"}]
+        assert _get_review_status(checks) == "success"
+
+    def test_success_plus_skipped_review(self) -> None:
+        """SUCCESS + SKIPPED review checks → success."""
+        checks = [
+            {"name": "reviewing-changes", "state": "SUCCESS"},
+            {"name": "codex-review", "state": "SKIPPED"},
+        ]
+        assert (
+            _get_review_status(
+                checks, review_contexts=("reviewing-changes", "codex-review")
+            )
+            == "success"
+        )
+
+
+class TestGetAdvisoryStatusSkipped:
+    """Tests for _get_advisory_status() with SKIPPED checks (#1191)."""
+
+    def test_skipped_advisory_treated_as_success(self) -> None:
+        """A SKIPPED advisory check → success (defensive)."""
+        checks = [{"name": "claude-review", "state": "SKIPPED"}]
+        assert _get_advisory_status(checks) == "success"
+
+    def test_success_plus_skipped_advisory(self) -> None:
+        """SUCCESS + SKIPPED advisory checks → success."""
+        checks = [
+            {"name": "claude-review", "state": "SUCCESS"},
+            {"name": "enable-auto-merge", "state": "SKIPPED"},
+        ]
+        assert _get_advisory_status(checks) == "success"
 
 
 class TestClassifyCIStatusDefaultExcludesAdvisory:

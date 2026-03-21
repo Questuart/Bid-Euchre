@@ -316,7 +316,7 @@ def poll_ci_status(
         overall = "failure"
     elif any(c.state in ("PENDING", "IN_PROGRESS") for c in check_results):
         overall = "pending"
-    elif all(c.state == "SUCCESS" for c in check_results):
+    elif all(c.state in ("SUCCESS", "SKIPPED") for c in check_results):
         overall = "success"
     else:
         overall = "unknown"
