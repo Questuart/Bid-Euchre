@@ -111,7 +111,10 @@ def get_repo_boundaries(
                 break
             p = p.parent
         if repo_root is None:
-            repo_root = Path.cwd().resolve()
+            raise RuntimeError(
+                "Cannot discover repo root: no .git directory found "
+                f"walking up from {Path.cwd().resolve()}"
+            )
 
     repo_root = _resolve_no_symlink(repo_root)
 

@@ -14,8 +14,11 @@ import pytest
 from bid_euchre.ops.fs_boundary import (
     BoundaryViolationError,
     PathClass,
+    check_path,
     classify_path,
+    get_repo_boundaries,
     require_in_boundary,
+    require_path,
 )
 
 # ---------------------------------------------------------------------------
@@ -355,3 +358,87 @@ class TestPathClassEnum:
         assert err.path == "/tmp/evil"
         assert err.classification == PathClass.EXTERNAL
         assert "outside the repo boundary" in str(err)
+
+
+# ---------------------------------------------------------------------------
+# get_repo_boundaries tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetRepoBoundaries:
+    """Tests for get_repo_boundaries()."""
+
+    def test_raises_when_no_git_found(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Running from a directory with no .git anywhere above should raise RuntimeError."""
+        no_git = tmp_path / "empty"
+        no_git.mkdir()
+        monkeypatch.chdir(no_git)
+
+        with pytest.raises(RuntimeError, match="Cannot discover repo root"):
+            get_repo_boundaries()
+
+    def test_explicit_repo_root_skips_discovery(self, tmp_path: Path) -> None:
+        """Passing repo_root explicitly should bypass .git discovery."""
+        fake_root = tmp_path / "fake-repo"
+        fake_root.mkdir()
+
+        boundaries = get_repo_boundaries(repo_root=fake_root)
+        assert boundaries["repo_root"] == str(fake_root.resolve())
+
+
+# ---------------------------------------------------------------------------
+# check_path tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckPath:
+    """Tests for the check_path() convenience wrapper."""
+
+    def test_check_path_in_repo(self, repo_layout: dict[str, str]) -> None:
+        """A path inside repo_root should return REPO_ROOT."""
+        subpath = Path(repo_layout["repo_root"]) / "src" / "foo.py"
+        result = check_path(str(subpath), boundaries=repo_layout)
+        assert result == PathClass.REPO_ROOT
+
+    def test_check_path_external(self, repo_layout: dict[str, str]) -> None:
+        """A path outside all boundaries should return EXTERNAL."""
+        result = check_path(repo_layout["external"], boundaries=repo_layout)
+        assert result == PathClass.EXTERNAL
+
+    def test_check_path_with_boundaries(self, repo_layout: dict[str, str]) -> None:
+        """Pre-computed boundaries should be used without calling get_repo_boundaries()."""
+        wt = repo_layout["worktree_paths"][1]
+        subpath = Path(wt) / "some_file.py"
+        result = check_path(str(subpath), boundaries=repo_layout)
+        assert result == PathClass.REGISTERED_WORKTREE
+
+
+# ---------------------------------------------------------------------------
+# require_path tests
+# ---------------------------------------------------------------------------
+
+
+class TestRequirePath:
+    """Tests for the require_path() convenience wrapper."""
+
+    def test_require_path_allows_repo(self, repo_layout: dict[str, str]) -> None:
+        """A path inside repo_root should be allowed and return REPO_ROOT."""
+        subpath = Path(repo_layout["repo_root"]) / "src" / "bar.py"
+        result = require_path(str(subpath), boundaries=repo_layout, emit_event=False)
+        assert result == PathClass.REPO_ROOT
+
+    def test_require_path_rejects_external(self, repo_layout: dict[str, str]) -> None:
+        """An external path should raise BoundaryViolationError."""
+        with pytest.raises(BoundaryViolationError) as exc_info:
+            require_path(
+                repo_layout["external"], boundaries=repo_layout, emit_event=False
+            )
+        assert exc_info.value.classification == PathClass.EXTERNAL
+
+    def test_require_path_with_boundaries(self, repo_layout: dict[str, str]) -> None:
+        """Pre-computed boundaries should be used; runtime dir should return MANAGED_RUNTIME."""
+        runtime = repo_layout["runtime_dirs"][0]
+        result = require_path(runtime, boundaries=repo_layout, emit_event=False)
+        assert result == PathClass.MANAGED_RUNTIME
