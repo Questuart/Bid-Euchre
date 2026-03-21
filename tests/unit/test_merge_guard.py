@@ -415,10 +415,10 @@ class TestBashGuardIntegration:
     def test_allows_merge_when_ci_has_skipped_checks(self, tmp_path: Path) -> None:
         """Guard should allow merge when CI has SUCCESS+SKIPPED (no FAILURE/PENDING).
 
-        The bash guard's inline Python classifier (line 140 of
-        pre-merge-review-guard.sh) treats ``all(s in ('SUCCESS', 'SKIPPED'))``
-        as "success".  This test exercises that path through the real bash
-        script with mock ``gh`` and ``uv`` binaries on PATH.
+        The bash guard's inline Python classifier treats
+        ``all(s in ('SUCCESS', 'SKIPPED'))`` as "success".  This test
+        exercises that path through the real bash script with mock ``gh``
+        and ``uv`` binaries on PATH.
         """
         import json
         import os

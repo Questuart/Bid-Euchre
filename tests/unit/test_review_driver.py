@@ -1359,13 +1359,14 @@ class TestRuntimeLimitTimeout:
         assert loop.current_state in TERMINAL_STATES
         assert "Runtime limit" in loop.stop_reason
 
-    def test_timeout_integration_calls_save_and_publish(
+    def test_timeout_side_effects_save_and_publish(
         self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
     ) -> None:
-        """Integration: timeout path must call save_state and _publish_status.
+        """Timeout path components: _should_timeout, transition, save_state, publish.
 
-        Patches time.monotonic to force timeout, then exercises the
-        exact timeout code path from main() and verifies side effects.
+        Exercises each step of the timeout code path in isolation (not via
+        main()) and verifies that save_state persists terminal state and
+        _publish_status receives the correct arguments.
         """
         from review_state import ReviewLoopState, ReviewState
 
@@ -1379,7 +1380,7 @@ class TestRuntimeLimitTimeout:
         max_runtime_s = 900
         elapsed = 901.0
 
-        # Simulate the timeout code path from main() (lines 1548-1579)
+        # Step 1: _should_timeout detects the timeout
         assert _should_timeout(elapsed, max_runtime_s, loop.current_state)
 
         loop.stop_reason = f"Runtime limit reached ({elapsed:.0f}s > {max_runtime_s}s)"
