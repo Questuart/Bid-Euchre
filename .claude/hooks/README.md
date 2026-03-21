@@ -64,18 +64,40 @@ Then restart your Claude session in that directory.
 
 **Trigger:** After any Bash tool call
 
-**Purpose:** Auto-invokes `/reviewing-changes` skill after successful `gh pr create`
+**Purpose:** Enqueues a durable review request after successful `gh pr create`
 
 **Behavior:**
 1. Checks if the Bash command contained `gh pr create` and exit code was 0
-2. If yes: emits structured JSON with `additionalContext` directive
-3. Claude reads the injected context and auto-invokes the `/reviewing-changes` skill
-4. The skill reviews code quality, convention compliance, and generates a handoff summary
+2. If yes: writes a `ReviewRequest` to the shared review queue
+   (`bid_euchre.ops.review_queue`) with the PR number, HEAD SHA, and branch
+3. Emits an informational `additionalContext` message telling the agent that
+   a review has been enqueued (no manual `/reviewing-changes` needed)
+4. A dedupe sentinel prevents double-trigger when registered in both
+   `settings.json` and `settings.local.json`
 
-**How it works:**
-- PostToolUse hooks can return JSON with a `hookSpecificOutput.additionalContext` field
-- This text is injected into Claude's conversation context on the next turn
-- The directive instructs Claude to invoke the skill without waiting for user input
+**Note:** This hook formerly triggered the `/reviewing-changes` skill.  Under
+the queue-backed model, it enqueues a request instead.  The review driver
+(launched by `post-pr-review-loop.sh`) runs the review loop independently
+and writes a verdict that the merge guard checks before allowing merge.
+
+### `pre-merge-review-guard.sh` (PreToolUse)
+
+**Trigger:** Before any Bash tool call containing `gh pr merge`
+
+**Purpose:** Hard local merge guard — blocks merge unless review is complete
+
+**Behavior:**
+1. Extracts the PR number from the `gh pr merge` command
+2. Resolves the shared review queue root (canonical across worktrees)
+3. Checks four conditions (all must pass):
+   - A verdict file exists for the PR
+   - The verdict's `reviewed_sha` matches the PR's current HEAD
+   - The verdict status is `passed`
+   - CI checks are green
+4. If any check fails: blocks the command (exit 2) with an explanatory message
+5. If all pass: allows the merge (exit 0)
+
+**Timeout:** 10s (needs `gh` API calls for SHA and CI status)
 
 ### `post-plan-review.sh` (DEPRECATED)
 
@@ -123,6 +145,7 @@ Hooks are registered across two files:
 **`.claude/settings.json`** (committed, shared):
 - `SessionStart` → `compact-context.sh`
 - `PostToolUse` (Write) → `post-write-check.sh`
+- `PreToolUse` (Bash) → `pre-merge-review-guard.sh`
 
 **`.claude/settings.local.json`** (gitignored, per-machine):
 - `SessionStart` → `worktree-reminder.sh`
@@ -191,6 +214,12 @@ Additional fields are script-specific but the four above are the baseline.
 | `scripts/internal/ci_poller.sh` | `.claude/runtime/ci_polls/pr_<N>/` | `status.json` | `poller.log` |
 | `scripts/internal/review_driver.py` | `.claude/runtime/review_loops/pr_<N>/` | `state.json` | Per-round artifacts |
 | `scripts/internal/plan_review_driver.py` | `.claude/runtime/plan_reviews/<key>/` | `state.json` | Per-round artifacts |
+
+### Synchronous hooks (no state file needed)
+
+| Script | Type | Latency |
+|--------|------|---------|
+| `.claude/hooks/pre-merge-review-guard.sh` | PreToolUse (blocking) | ~5-10s (gh API calls) |
 
 ### Non-conforming scripts (audit)
 

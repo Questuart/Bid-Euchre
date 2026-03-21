@@ -804,15 +804,21 @@ operates within a lane worktree bootstrapped by this workflow.
 ### Review Coordinator (AUTONOMOUS_REVIEW_LOOP.md)
 
 The **review coordinator** (`scripts/internal/review_driver.py`) is the
-single reviewer of record for all PRs.  It runs from the main checkout
-(not from lane worktrees) and is triggered by PR creation hooks.  The
-`review` lane worktree is for manual or agent-driven review work, not
-for the automated review coordinator.
+single reviewer of record for all PRs.  It is triggered by PR creation
+hooks and writes SHA-bound verdicts to a shared review queue that is
+visible across all worktrees.  The `review` lane worktree is for manual
+or agent-driven review work, not for the automated review coordinator.
 
-The coordinator owns the `reviewing-changes` commit status and the single
-upserted machine-owned PR summary comment.  Hosted review surfaces
-(`claude-review`, Codex Cloud) are advisory overlays — they do not
-publish the merge-relevant status or canonical review comment.
+The coordinator owns:
+- **SHA-bound verdict** in the shared review queue (merge-relevant)
+- **`reviewing-changes` commit status** (advisory — not required by
+  branch protection)
+- **Machine-owned PR summary comment** (upserted with
+  `<!-- review-loop-comment -->` marker)
+
+The local merge guard (`pre-merge-review-guard.sh`) checks the verdict
+before allowing `gh pr merge`.  Hosted review surfaces (`claude-review`,
+Codex Cloud) are advisory overlays.
 
 See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full coordinator
 contract, operator UX, and recovery procedures.

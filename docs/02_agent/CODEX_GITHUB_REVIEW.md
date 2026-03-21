@@ -1,10 +1,11 @@
 # Review Architecture — Coordinator + Advisory Overlays
 
 > The **local review coordinator** (`review_driver.py`) is the single
-> reviewer of record.  `reviewing-changes` is the merge-relevant review
-> gate (advisory — not required by branch protection; see note below).
-> `claude-review` is an advisory GitHub check.  Codex Cloud is an optional
-> overlay via `@codex review`.
+> reviewer of record.  The queue-backed **verdict file** is the
+> merge-relevant artifact, checked by the local merge guard before
+> `gh pr merge`.  `reviewing-changes` is an advisory commit status
+> (not required by branch protection).  `claude-review` is an advisory
+> GitHub check.  Codex Cloud is an optional overlay via `@codex review`.
 >
 > **Terminology note:** "advisory" is used in two senses in this repo:
 > (1) *branch-protection sense* -- `reviewing-changes` is not required for
@@ -24,7 +25,8 @@ The coordinator owns:
 
 | Artifact | Details |
 |----------|---------|
-| `reviewing-changes` commit status | Merge-relevant gate; published by `review_driver.py` only |
+| SHA-bound verdict file | Durable pass/fail record in the shared review queue (merge-relevant) |
+| `reviewing-changes` commit status | Advisory review signal; published by `review_driver.py` only |
 | Canonical PR summary comment | Single upserted comment with `<!-- review-loop-comment -->` marker |
 
 The coordinator:
@@ -33,9 +35,9 @@ The coordinator:
 3. Invokes Codex CLI for code review
 4. Auto-fixes safe patterns (convention fixes)
 5. Iterates (max 3 rounds) until clean or stopped
-6. Publishes `reviewing-changes` commit status
-7. Posts the canonical PR summary comment
-8. Enables auto-merge (squash) when review passes
+6. Writes a SHA-bound verdict to the shared review queue
+7. Publishes `reviewing-changes` commit status (advisory)
+8. Posts the canonical PR summary comment
 
 ### Codex CLI Details
 
@@ -96,7 +98,8 @@ check-name registration for the ChatGPT-subscription path.
 |---------|------|-----------|-----------|------|
 | `tests` | GitHub Actions check | Yes (branch protection) | CI | Build truth |
 | `governance` | GitHub Actions check | Yes (branch protection) | CI | Repo policy |
-| `reviewing-changes` | Commit status | No (advisory) | Review coordinator | **Reviewer of record** |
+| Review queue verdict | Verdict file | N/A (local merge guard) | Review coordinator | **Merge-relevant review truth** |
+| `reviewing-changes` | Commit status | No (advisory) | Review coordinator | Advisory review signal |
 | `claude-review` | GitHub Actions check | No (advisory) | Claude Code Review workflow | Advisory overlay |
 | Codex Cloud | PR issue comment | No (overlay) | `chatgpt-codex-connector[bot]` | Advisory overlay |
 
@@ -130,20 +133,32 @@ PRs are classified by review mode based on changed file types:
 ## Merge Flow
 
 1. Claude opens a PR via `gh pr create`
-2. PostToolUse hooks dispatch `/reviewing-changes` and launch
-   `review_driver.py` in the background
-3. The review coordinator runs prechecks and waits for CI
-4. The coordinator invokes Codex CLI and scores findings
-5. On success, the coordinator publishes `reviewing-changes=success`,
-   posts the canonical summary comment, and enables auto-merge
-6. GitHub merges automatically once CI and branch protection are satisfied
+2. `post-pr-review.sh` enqueues a durable `ReviewRequest` to the shared
+   review queue
+3. `post-pr-review-loop.sh` launches `review_driver.py` asynchronously
+4. The review coordinator runs prechecks and waits for CI
+5. The coordinator invokes Codex CLI and scores findings
+6. On success, the coordinator writes a `passed` verdict to the review
+   queue and publishes `reviewing-changes=success` (advisory)
+7. The coordinator posts the canonical summary comment
+8. Claude (or an operator) runs `gh pr merge` — the local merge guard
+   (`pre-merge-review-guard.sh`) verifies the verdict + SHA + CI before
+   allowing the merge
 
-No human merge step required.  If auto-merge fails (e.g., conflicts, repo
-setting disabled), the coordinator publishes success and the PR can be merged
-manually.
+**Merge guard checks (all must pass):**
+- A verdict file exists for the PR
+- The verdict's `reviewed_sha` matches the PR's current HEAD
+- The verdict status is `passed`
+- CI checks are green
 
 Codex Cloud, when used, is additive commentary.  It does not publish a
 merge-blocking artifact for this repo.
+
+**GitHub auto-merge caveat:** GitHub auto-merge acts on branch-protection
+requirements only (`tests`, `governance`).  Because `reviewing-changes` is
+advisory, GitHub auto-merge can race the review coordinator and merge a PR
+before the coordinator finishes.  The local merge guard cannot prevent this
+because it only governs `gh pr merge` invoked from the CLI.
 
 ## Changes for Daily Usage
 
@@ -152,26 +167,40 @@ what the operator should do differently.
 
 ### What Changed
 
-1. **One reviewer of record:** `review_driver.py` is explicitly declared as
+1. **Queue-backed merge gate:** PR creation enqueues a durable review
+   request.  The review coordinator writes a SHA-bound verdict.  The local
+   merge guard checks the verdict before allowing `gh pr merge`.
+2. **One reviewer of record:** `review_driver.py` is explicitly declared as
    the single reviewer of record.  Previously, multiple review surfaces
    (local loop, `claude-review`, Codex Cloud) coexisted without a clear
    hierarchy.
-2. **One canonical summary comment:** The PR summary comment with the
+3. **Shared queue across worktrees:** The review queue is derived from
+   `git rev-parse --git-common-dir`, so a verdict written in any worktree
+   is visible to the merge guard in any other worktree.
+4. **One canonical summary comment:** The PR summary comment with the
    `<!-- review-loop-comment -->` marker is the single machine-owned review
    comment.  It is upserted (updated in place), not duplicated.
-3. **Advisory surfaces are explicitly demoted:** `claude-review` and Codex
+5. **Advisory surfaces are explicitly demoted:** `claude-review` and Codex
    Cloud are documented as advisory overlays, not review truth.
-4. **Fallback is degraded pass:** If Codex CLI is unavailable, the
-   coordinator publishes a degraded pass instead of blocking indefinitely.
+   `reviewing-changes` is advisory with respect to branch protection.
+6. **Fallback is degraded pass:** If Codex CLI is unavailable, the
+   coordinator writes a `passed` verdict with a degraded reason instead of
+   blocking indefinitely.
 
 ### What the Operator Should Do
 
+- **Check the review queue verdict first:**
+  ```bash
+  uv run python scripts/internal/ops.py reviews queue
+  ```
+  A `passed` verdict with a matching SHA means the merge guard will allow
+  `gh pr merge`.
 - **Stop treating `claude-review` as canonical.** It is advisory only.
 - **Stop treating `@codex review` as part of the normal merge path.** It is
   an optional overlay.
-- **Use the canonical review comment + `reviewing-changes` as the source of
-  truth.** The comment with `<!-- review-loop-comment -->` is the only
-  machine review that matters for merge decisions.
+- **Use the canonical review comment + verdict as the source of truth.**
+  The comment with `<!-- review-loop-comment -->` summarizes findings.
+  The verdict file is the merge-relevant artifact.
 - **Use the documented rerun path when review is stuck:**
   ```bash
   python scripts/internal/review_driver.py --pr <N> --trigger manual
@@ -183,9 +212,10 @@ what the operator should do differently.
 
 ### What to Look At First on a PR
 
-1. `reviewing-changes` status (green/red/pending)
-2. The canonical summary comment (findings, stop reason, recovery)
-3. CI checks (`tests`, `governance`)
+1. Review queue verdict (via `ops.py reviews queue`)
+2. `reviewing-changes` status (green/red/pending — advisory)
+3. The canonical summary comment (findings, stop reason, recovery)
+4. CI checks (`tests`, `governance`)
 
 ### What to Ignore Unless Troubleshooting
 
