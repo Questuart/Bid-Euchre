@@ -9,6 +9,7 @@ Usage:
     uv run python scripts/internal/ops.py health [--json]
     uv run python scripts/internal/ops.py watchdogs [--json]
     uv run python scripts/internal/ops.py reviews [--json]
+    uv run python scripts/internal/ops.py [--json] queue [--pr N]
     uv run python scripts/internal/ops.py comments --pr N [--ingest] [--json]
     uv run python scripts/internal/ops.py ci [--json]
     uv run python scripts/internal/ops.py ci --pr N [--json]
@@ -1280,6 +1281,36 @@ def cmd_skills_disable(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_queue(args: argparse.Namespace) -> int:
+    """Show local review queue state (request + verdict packets)."""
+    from bid_euchre.ops.reviews import (
+        format_queue_json,
+        format_queue_text,
+        get_queue_entries,
+        get_queue_entry,
+    )
+
+    queue_dir = args.runtime_dir / "review_queue"
+    pr_number = getattr(args, "pr", None)
+
+    if pr_number is not None:
+        entry = get_queue_entry(pr_number, queue_dir)
+        if args.json:
+            print(json.dumps(entry.to_dict(), indent=2))
+        else:
+            print(format_queue_text([entry]))
+        return 0
+
+    entries = get_queue_entries(queue_dir)
+
+    if args.json:
+        print(json.dumps(format_queue_json(entries), indent=2))
+    else:
+        print(format_queue_text(entries))
+
+    return 0
+
+
 def cmd_repairs(args: argparse.Namespace) -> int:
     """Show the post-merge repair queue (eligible issues for autonomous fix)."""
     from bid_euchre.ops.repairs import build_repair_queue
@@ -1645,6 +1676,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--disabled-by", type=str, default="operator", help="Who is disabling"
     )
 
+    # queue (review queue visibility)
+    queue_parser = subparsers.add_parser(
+        "queue", help="Local review queue state (request + verdict packets)"
+    )
+    queue_parser.add_argument(
+        "--pr", type=int, default=None, help="Show queue entry for a specific PR number"
+    )
+
     # repairs
     subparsers.add_parser(
         "repairs", help="Post-merge repair queue — eligible issues for autonomous fix"
@@ -1694,6 +1733,7 @@ def main(argv: list[str] | None = None) -> int:
         "scope": cmd_scope,
         "snapshot": cmd_snapshot,
         "skills": cmd_skills,
+        "queue": cmd_queue,
         "repairs": cmd_repairs,
     }
 

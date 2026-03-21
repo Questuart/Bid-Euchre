@@ -11,10 +11,20 @@ import pytest
 
 from bid_euchre.ops.reviews import (
     DEFAULT_REVIEW_CONTEXTS,
+    QUEUE_BLOCKED,
+    QUEUE_ERROR,
+    QUEUE_FAILED,
+    QUEUE_NO_REQUEST,
+    QUEUE_PASSED,
+    QUEUE_PENDING,
+    QUEUE_RUNNING,
+    QUEUE_STALE,
     TRUSTED_BOT_LOGINS,
     CommentOverlay,
+    QueueEntry,
     ReviewOutcome,
     _classify_ci_status,
+    _compute_effective_status,
     _get_advisory_status,
     _get_review_status,
     _has_precheck_ci,
@@ -22,11 +32,15 @@ from bid_euchre.ops.reviews import (
     emit_review_event,
     format_comment_overlays_json,
     format_comment_overlays_text,
+    format_queue_json,
+    format_queue_text,
     format_reviews_json,
     format_reviews_text,
     get_open_pr_reviews,
     get_pr_comment_overlay,
     get_pr_review_detail,
+    get_queue_entries,
+    get_queue_entry,
 )
 
 # --- Helper to create mock subprocess results ---
@@ -882,4 +896,374 @@ class TestFormatCommentOverlaysJSON:
         assert result[0]["pr_number"] == 42
         assert result[0]["total_comments"] == 1
         # Verify JSON-serializable
+        json.dumps(result)
+
+
+# ---------------------------------------------------------------------------
+# Review Queue Visibility tests (PR3)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeEffectiveStatus:
+    """Tests for _compute_effective_status()."""
+
+    def test_no_request(self) -> None:
+        status, stale = _compute_effective_status(None, None)
+        assert status == QUEUE_NO_REQUEST
+        assert stale is False
+
+    def test_request_no_verdict(self) -> None:
+        from bid_euchre.ops.review_queue import ReviewRequest
+
+        req = ReviewRequest(pr_number=1, head_sha="abc", branch="b", requester="a")
+        status, stale = _compute_effective_status(req, None)
+        assert status == QUEUE_PENDING
+        assert stale is False
+
+    def test_matching_passed_verdict(self) -> None:
+        from bid_euchre.ops.review_queue import ReviewRequest, ReviewVerdict
+
+        req = ReviewRequest(pr_number=1, head_sha="abc", branch="b", requester="a")
+        verdict = ReviewVerdict(
+            pr_number=1, reviewed_sha="abc", status="passed", reason="ok"
+        )
+        status, stale = _compute_effective_status(req, verdict)
+        assert status == QUEUE_PASSED
+        assert stale is False
+
+    def test_matching_blocked_verdict(self) -> None:
+        from bid_euchre.ops.review_queue import ReviewRequest, ReviewVerdict
+
+        req = ReviewRequest(pr_number=1, head_sha="abc", branch="b", requester="a")
+        verdict = ReviewVerdict(
+            pr_number=1, reviewed_sha="abc", status="blocked", reason="blocker"
+        )
+        status, stale = _compute_effective_status(req, verdict)
+        assert status == QUEUE_BLOCKED
+        assert stale is False
+
+    def test_matching_failed_verdict(self) -> None:
+        from bid_euchre.ops.review_queue import ReviewRequest, ReviewVerdict
+
+        req = ReviewRequest(pr_number=1, head_sha="abc", branch="b", requester="a")
+        verdict = ReviewVerdict(
+            pr_number=1, reviewed_sha="abc", status="failed", reason="fail"
+        )
+        status, stale = _compute_effective_status(req, verdict)
+        assert status == QUEUE_FAILED
+        assert stale is False
+
+    def test_matching_running_verdict(self) -> None:
+        from bid_euchre.ops.review_queue import ReviewRequest, ReviewVerdict
+
+        req = ReviewRequest(pr_number=1, head_sha="abc", branch="b", requester="a")
+        verdict = ReviewVerdict(
+            pr_number=1, reviewed_sha="abc", status="running", reason="in progress"
+        )
+        status, stale = _compute_effective_status(req, verdict)
+        assert status == QUEUE_RUNNING
+        assert stale is False
+
+    def test_stale_verdict(self) -> None:
+        from bid_euchre.ops.review_queue import ReviewRequest, ReviewVerdict
+
+        req = ReviewRequest(pr_number=1, head_sha="new_sha", branch="b", requester="a")
+        verdict = ReviewVerdict(
+            pr_number=1, reviewed_sha="old_sha", status="passed", reason="ok"
+        )
+        status, stale = _compute_effective_status(req, verdict)
+        assert status == QUEUE_STALE
+        assert stale is True
+
+
+class TestGetQueueEntry:
+    """Tests for get_queue_entry() with real file system."""
+
+    def test_no_request_or_verdict(self, tmp_path: Path) -> None:
+        """Empty queue slot → no_request."""
+        entry = get_queue_entry(999, tmp_path / "queue")
+        assert entry.pr_number == 999
+        assert entry.effective_status == QUEUE_NO_REQUEST
+        assert entry.has_request is False
+        assert entry.has_verdict is False
+
+    def test_request_only_pending(self, tmp_path: Path) -> None:
+        """Request with no verdict → pending."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc123", branch="feat/x", requester="author-a"
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entry = get_queue_entry(42, queue_dir)
+        assert entry.effective_status == QUEUE_PENDING
+        assert entry.has_request is True
+        assert entry.has_verdict is False
+        assert entry.request_sha == "abc123"
+        assert entry.request_branch == "feat/x"
+
+    def test_matching_passed_verdict(self, tmp_path: Path) -> None:
+        """Request + matching passed verdict → passed."""
+        from bid_euchre.ops.review_queue import (
+            ReviewRequest,
+            ReviewVerdict,
+            write_request,
+            write_verdict,
+        )
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc123", branch="feat/x", requester="author-a"
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        verdict = ReviewVerdict(
+            pr_number=42, reviewed_sha="abc123", status="passed", reason="Clean"
+        )
+        write_verdict(verdict, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entry = get_queue_entry(42, queue_dir)
+        assert entry.effective_status == QUEUE_PASSED
+        assert entry.has_request is True
+        assert entry.has_verdict is True
+        assert entry.verdict_sha == "abc123"
+        assert entry.verdict_status == "passed"
+        assert entry.is_stale is False
+
+    def test_stale_verdict_detected(self, tmp_path: Path) -> None:
+        """Request + stale verdict → stale."""
+        from bid_euchre.ops.review_queue import (
+            ReviewRequest,
+            ReviewVerdict,
+            write_request,
+            write_verdict,
+        )
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+        req = ReviewRequest(
+            pr_number=42, head_sha="new_sha", branch="feat/x", requester="author-a"
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        verdict = ReviewVerdict(
+            pr_number=42, reviewed_sha="old_sha", status="passed", reason="Clean"
+        )
+        write_verdict(verdict, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entry = get_queue_entry(42, queue_dir)
+        assert entry.effective_status == QUEUE_STALE
+        assert entry.is_stale is True
+        assert entry.request_sha == "new_sha"
+        assert entry.verdict_sha == "old_sha"
+
+    def test_blocked_verdict(self, tmp_path: Path) -> None:
+        """Request + blocked verdict → blocked."""
+        from bid_euchre.ops.review_queue import (
+            ReviewRequest,
+            ReviewVerdict,
+            write_request,
+            write_verdict,
+        )
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc", branch="feat/x", requester="review"
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        verdict = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="abc",
+            status="blocked",
+            reason="C1 blocker",
+            findings=[{"check_id": "C1", "severity": "BLOCK", "message": "bad"}],
+        )
+        write_verdict(verdict, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entry = get_queue_entry(42, queue_dir)
+        assert entry.effective_status == QUEUE_BLOCKED
+        assert entry.verdict_findings_count == 1
+
+    def test_corrupt_verdict_surfaces_as_error(self, tmp_path: Path) -> None:
+        """Corrupt verdict.json → error status, not hidden as pending."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+        req = ReviewRequest(
+            pr_number=42, head_sha="abc", branch="feat/x", requester="author-a"
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        # Write corrupt verdict
+        verdict_file = queue_dir / "pr_42" / "verdict.json"
+        verdict_file.write_text("not json {{{")
+
+        entry = get_queue_entry(42, queue_dir)
+        # Corrupt verdict must surface as error so operators see the problem
+        assert entry.has_request is True
+        assert entry.has_verdict is False
+        assert entry.effective_status == QUEUE_ERROR
+
+    def test_corrupt_request_surfaces_as_error(self, tmp_path: Path) -> None:
+        """Corrupt request.json → error status, not hidden as no_request."""
+        from bid_euchre.ops.review_queue import ReviewVerdict, write_verdict
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+
+        # Write corrupt request
+        pr_slot = queue_dir / "pr_42"
+        pr_slot.mkdir(parents=True)
+        (pr_slot / "request.json").write_text("not json {{{")
+
+        # Write valid verdict
+        verdict = ReviewVerdict(
+            pr_number=42, reviewed_sha="abc", status="passed", reason="Clean"
+        )
+        write_verdict(verdict, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entry = get_queue_entry(42, queue_dir)
+        # Corrupt request must surface as error
+        assert entry.has_request is False
+        assert entry.has_verdict is True
+        assert entry.effective_status == QUEUE_ERROR
+
+
+class TestGetQueueEntries:
+    """Tests for get_queue_entries() scanning the queue directory."""
+
+    def test_empty_queue_dir(self, tmp_path: Path) -> None:
+        """Empty or missing dir → empty list."""
+        entries = get_queue_entries(tmp_path / "nonexistent")
+        assert entries == []
+
+    def test_multiple_prs_sorted(self, tmp_path: Path) -> None:
+        """Multiple PR slots → sorted by number."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+
+        for pr in [200, 100, 150]:
+            req = ReviewRequest(
+                pr_number=pr, head_sha=f"sha_{pr}", branch=f"b/{pr}", requester="a"
+            )
+            write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entries = get_queue_entries(queue_dir)
+        assert len(entries) == 3
+        assert [e.pr_number for e in entries] == [100, 150, 200]
+
+    def test_skips_non_pr_dirs(self, tmp_path: Path) -> None:
+        """Non-pr_ directories are skipped."""
+        queue_dir = tmp_path / "queue"
+        queue_dir.mkdir(parents=True)
+        (queue_dir / "not_a_pr").mkdir()
+        (queue_dir / "temp_file.json").write_text("{}")
+
+        entries = get_queue_entries(queue_dir)
+        assert entries == []
+
+
+class TestQueueEntry:
+    """Tests for QueueEntry dataclass."""
+
+    def test_to_dict(self) -> None:
+        entry = QueueEntry(
+            pr_number=42,
+            has_request=True,
+            request_sha="abc123",
+            effective_status=QUEUE_PASSED,
+        )
+        d = entry.to_dict()
+        assert d["pr_number"] == 42
+        assert d["request_sha"] == "abc123"
+        assert d["effective_status"] == QUEUE_PASSED
+        # Verify JSON-serializable
+        json.dumps(d)
+
+    def test_defaults(self) -> None:
+        entry = QueueEntry(pr_number=1, has_request=False)
+        assert entry.effective_status == QUEUE_NO_REQUEST
+        assert entry.is_stale is False
+        assert entry.verdict_findings_count == 0
+
+
+class TestFormatQueueText:
+    """Tests for format_queue_text()."""
+
+    def test_empty(self) -> None:
+        text = format_queue_text([])
+        assert "No queued reviews" in text
+
+    def test_pending_entry(self) -> None:
+        entry = QueueEntry(
+            pr_number=42,
+            has_request=True,
+            request_sha="abc12345",
+            request_branch="feat/x",
+            request_requester="author-a",
+            effective_status=QUEUE_PENDING,
+        )
+        text = format_queue_text([entry])
+        assert "#42" in text
+        assert "pending" in text
+        assert "abc12345" in text
+        assert "feat/x" in text
+
+    def test_stale_entry_shows_warning(self) -> None:
+        entry = QueueEntry(
+            pr_number=42,
+            has_request=True,
+            request_sha="new_sha1",
+            request_branch="feat/x",
+            has_verdict=True,
+            verdict_sha="old_sha1",
+            verdict_status="passed",
+            is_stale=True,
+            effective_status=QUEUE_STALE,
+        )
+        text = format_queue_text([entry])
+        assert "STALE" in text
+        assert "old_sha1" in text
+        assert "new_sha1" in text
+
+    def test_summary_counts(self) -> None:
+        entries = [
+            QueueEntry(pr_number=1, has_request=True, effective_status=QUEUE_PENDING),
+            QueueEntry(pr_number=2, has_request=True, effective_status=QUEUE_PASSED),
+            QueueEntry(pr_number=3, has_request=True, effective_status=QUEUE_PENDING),
+        ]
+        text = format_queue_text(entries)
+        assert "pending=2" in text
+        assert "passed=1" in text
+        assert "3 PR(s)" in text
+
+
+class TestFormatQueueJSON:
+    """Tests for format_queue_json()."""
+
+    def test_empty(self) -> None:
+        assert format_queue_json([]) == []
+
+    def test_serializable(self) -> None:
+        entries = [
+            QueueEntry(
+                pr_number=42,
+                has_request=True,
+                request_sha="abc",
+                effective_status=QUEUE_PASSED,
+            )
+        ]
+        result = format_queue_json(entries)
+        assert len(result) == 1
+        assert result[0]["pr_number"] == 42
+        assert result[0]["effective_status"] == "passed"
         json.dumps(result)

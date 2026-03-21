@@ -631,3 +631,307 @@ def format_comment_overlays_json(overlays: list[CommentOverlay]) -> list[dict]:
         }
         for o in overlays
     ]
+
+
+# ---------------------------------------------------------------------------
+# Review Queue Visibility (PR3)
+# ---------------------------------------------------------------------------
+# Read-only view into the local review_queue substrate.  This surfaces
+# request + verdict packet state so operators can see pending / blocked /
+# clean / stale / error states before the PR4 cutover.
+#
+# Conceptually separate from the online GitHub-based ReviewOutcome above.
+# ---------------------------------------------------------------------------
+
+# Effective status values for queue entries
+QUEUE_NO_REQUEST = "no_request"
+QUEUE_PENDING = "pending"
+QUEUE_RUNNING = "running"
+QUEUE_PASSED = "passed"
+QUEUE_BLOCKED = "blocked"
+QUEUE_FAILED = "failed"
+QUEUE_STALE = "stale"
+QUEUE_ERROR = "error"
+
+
+@dataclass
+class QueueEntry:
+    """Summary of a single PR's review queue state.
+
+    Combines request + verdict packet data into a single operator-facing
+    view with an ``effective_status`` that makes the state obvious.
+    """
+
+    pr_number: int
+    has_request: bool
+    request_sha: str | None = None
+    request_branch: str | None = None
+    request_requester: str | None = None
+    request_created_at: str | None = None
+    has_verdict: bool = False
+    verdict_status: str | None = None
+    verdict_sha: str | None = None
+    verdict_reason: str | None = None
+    verdict_created_at: str | None = None
+    verdict_findings_count: int = 0
+    is_stale: bool = False
+    effective_status: str = QUEUE_NO_REQUEST
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pr_number": self.pr_number,
+            "has_request": self.has_request,
+            "request_sha": self.request_sha,
+            "request_branch": self.request_branch,
+            "request_requester": self.request_requester,
+            "request_created_at": self.request_created_at,
+            "has_verdict": self.has_verdict,
+            "verdict_status": self.verdict_status,
+            "verdict_sha": self.verdict_sha,
+            "verdict_reason": self.verdict_reason,
+            "verdict_created_at": self.verdict_created_at,
+            "verdict_findings_count": self.verdict_findings_count,
+            "is_stale": self.is_stale,
+            "effective_status": self.effective_status,
+        }
+
+
+def _compute_effective_status(
+    request: Any | None,
+    verdict: Any | None,
+) -> tuple[str, bool]:
+    """Compute effective status and staleness from request + verdict.
+
+    Args:
+        request: A ``ReviewRequest`` or ``None``.
+        verdict: A ``ReviewVerdict`` or ``None``.
+
+    Returns:
+        (effective_status, is_stale) tuple.
+    """
+    if request is None:
+        return (QUEUE_NO_REQUEST, False)
+
+    if verdict is None:
+        return (QUEUE_PENDING, False)
+
+    # Check staleness: verdict covers a different SHA than the request
+    is_stale = verdict.reviewed_sha != request.head_sha
+    if is_stale:
+        return (QUEUE_STALE, True)
+
+    # Fresh verdict — map status
+    status_map = {
+        "pending": QUEUE_PENDING,
+        "running": QUEUE_RUNNING,
+        "passed": QUEUE_PASSED,
+        "blocked": QUEUE_BLOCKED,
+        "failed": QUEUE_FAILED,
+    }
+    effective = status_map.get(verdict.status, QUEUE_ERROR)
+    return (effective, False)
+
+
+def get_queue_entry(
+    pr_number: int,
+    queue_dir: Path | None = None,
+) -> QueueEntry:
+    """Build a queue entry for a single PR by reading its packet state.
+
+    Gracefully handles missing or corrupt files — never raises on bad data.
+
+    Args:
+        pr_number: PR number.
+        queue_dir: Override for queue root directory.
+
+    Returns:
+        :class:`QueueEntry` summarizing the PR's queue state.
+    """
+    from bid_euchre.ops.review_queue import read_request, read_verdict
+
+    request = None
+    verdict = None
+    request_corrupt = False
+    verdict_corrupt = False
+
+    try:
+        request = read_request(pr_number, queue_dir)
+    except Exception:
+        logger.warning("PR #%d: failed to read request packet", pr_number)
+        request_corrupt = True
+
+    try:
+        verdict = read_verdict(pr_number, queue_dir)
+    except Exception:
+        logger.warning("PR #%d: failed to read verdict packet", pr_number)
+        verdict_corrupt = True
+
+    has_request = request is not None
+    has_verdict = verdict is not None
+
+    # If both files are missing (not corrupt), the slot is empty
+    if (
+        not has_request
+        and not has_verdict
+        and not request_corrupt
+        and not verdict_corrupt
+    ):
+        return QueueEntry(
+            pr_number=pr_number,
+            has_request=False,
+            effective_status=QUEUE_NO_REQUEST,
+        )
+
+    # Corrupt files → surface as error so operators see the problem
+    if request_corrupt or verdict_corrupt:
+        return QueueEntry(
+            pr_number=pr_number,
+            has_request=has_request,
+            request_sha=request.head_sha if request else None,
+            request_branch=request.branch if request else None,
+            request_requester=request.requester if request else None,
+            request_created_at=request.created_at if request else None,
+            has_verdict=has_verdict,
+            verdict_status=verdict.status if verdict else None,
+            verdict_sha=verdict.reviewed_sha if verdict else None,
+            verdict_reason=verdict.reason if verdict else None,
+            verdict_created_at=verdict.created_at if verdict else None,
+            verdict_findings_count=len(verdict.findings) if verdict else 0,
+            is_stale=False,
+            effective_status=QUEUE_ERROR,
+        )
+
+    effective_status, is_stale = _compute_effective_status(request, verdict)
+
+    # Verdict without request is an anomalous state
+    if not has_request and has_verdict:
+        effective_status = QUEUE_ERROR
+
+    return QueueEntry(
+        pr_number=pr_number,
+        has_request=has_request,
+        request_sha=request.head_sha if request else None,
+        request_branch=request.branch if request else None,
+        request_requester=request.requester if request else None,
+        request_created_at=request.created_at if request else None,
+        has_verdict=has_verdict,
+        verdict_status=verdict.status if verdict else None,
+        verdict_sha=verdict.reviewed_sha if verdict else None,
+        verdict_reason=verdict.reason if verdict else None,
+        verdict_created_at=verdict.created_at if verdict else None,
+        verdict_findings_count=len(verdict.findings) if verdict else 0,
+        is_stale=is_stale,
+        effective_status=effective_status,
+    )
+
+
+def get_queue_entries(
+    queue_dir: Path | None = None,
+) -> list[QueueEntry]:
+    """Scan the review queue directory and return entries for all PRs.
+
+    Discovers PR slots by scanning for ``pr_<N>/`` directories under the
+    queue root. Returns an entry for each discovered slot, sorted by PR
+    number.
+
+    Gracefully handles a missing queue directory (returns empty list).
+
+    Args:
+        queue_dir: Override for queue root directory.
+
+    Returns:
+        List of :class:`QueueEntry`, sorted by PR number.
+    """
+    from bid_euchre.ops.review_queue import DEFAULT_QUEUE_DIR
+
+    root = queue_dir or DEFAULT_QUEUE_DIR
+    if not root.is_dir():
+        return []
+
+    pr_numbers: list[int] = []
+    for child in root.iterdir():
+        if not child.is_dir() or not child.name.startswith("pr_"):
+            continue
+        try:
+            pr_numbers.append(int(child.name.removeprefix("pr_")))
+        except ValueError:
+            logger.warning("Skipping non-numeric queue dir: %s", child.name)
+
+    return [get_queue_entry(pr, queue_dir) for pr in sorted(pr_numbers)]
+
+
+# --- Queue formatting ---
+
+_QUEUE_STATUS_ICONS: dict[str, str] = {
+    QUEUE_NO_REQUEST: " ",
+    QUEUE_PENDING: "~",
+    QUEUE_RUNNING: "⟳",
+    QUEUE_PASSED: "+",
+    QUEUE_BLOCKED: "!",
+    QUEUE_FAILED: "x",
+    QUEUE_STALE: "?",
+    QUEUE_ERROR: "E",
+}
+
+
+def format_queue_text(entries: list[QueueEntry]) -> str:
+    """Format queue entries as human-readable text.
+
+    Shows request SHA and verdict SHA side by side so staleness is
+    visually obvious.
+    """
+    if not entries:
+        return "=== Review Queue ===\n\nNo queued reviews."
+
+    lines = ["=== Review Queue ===", ""]
+    for e in entries:
+        icon = _QUEUE_STATUS_ICONS.get(e.effective_status, "?")
+        lines.append(f"  [{icon}] #{e.pr_number:<5d} {e.effective_status}")
+
+        if e.has_request:
+            lines.append(
+                f"         request:  {_short_sha(e.request_sha)} "
+                f"branch={e.request_branch or '?'} "
+                f"by={e.request_requester or '?'}"
+            )
+        else:
+            lines.append("         request:  (none)")
+
+        if e.has_verdict:
+            lines.append(
+                f"         verdict:  {_short_sha(e.verdict_sha)} "
+                f"status={e.verdict_status or '?'} "
+                f"findings={e.verdict_findings_count}"
+            )
+            if e.verdict_reason:
+                lines.append(f"         reason:   {e.verdict_reason}")
+        else:
+            lines.append("         verdict:  (none)")
+
+        if e.is_stale:
+            lines.append(
+                f"         ⚠ STALE: verdict covers {_short_sha(e.verdict_sha)}"
+                f" but request is {_short_sha(e.request_sha)}"
+            )
+
+        lines.append("")
+
+    # Summary counts
+    status_counts: dict[str, int] = {}
+    for e in entries:
+        status_counts[e.effective_status] = status_counts.get(e.effective_status, 0) + 1
+    summary_parts = [f"{k}={v}" for k, v in sorted(status_counts.items())]
+    lines.append(f"Total: {len(entries)} PR(s) — {', '.join(summary_parts)}")
+    return "\n".join(lines)
+
+
+def format_queue_json(entries: list[QueueEntry]) -> list[dict]:
+    """Format queue entries as JSON-serializable list."""
+    return [e.to_dict() for e in entries]
+
+
+def _short_sha(sha: str | None) -> str:
+    """Return first 8 chars of a SHA, or '(none)' if missing."""
+    if sha is None:
+        return "(none)"
+    return sha[:8]

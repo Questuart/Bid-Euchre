@@ -2453,3 +2453,177 @@ class TestBoundaryRejection:
         assert rc == 0
         captured = capsys.readouterr()
         assert "outside the repo boundary" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Queue subcommand (review queue visibility — PR3)
+# ---------------------------------------------------------------------------
+
+
+class TestCmdQueue:
+    """Tests for the queue subcommand."""
+
+    def test_queue_empty_text(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "No queued reviews" in captured.out
+
+    def test_queue_empty_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data == []
+
+    def test_queue_with_entries_text(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Queue with a request shows pending status in text output."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        queue_dir = runtime_dir / "review_queue"
+        events_dir = runtime_dir / "events"
+
+        req = ReviewRequest(
+            pr_number=42,
+            head_sha="abc12345",
+            branch="feat/test",
+            requester="author-a",
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "#42" in captured.out
+        assert "pending" in captured.out
+        assert "abc12345" in captured.out
+
+    def test_queue_with_entries_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Queue with a request shows pending status in JSON output."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        queue_dir = runtime_dir / "review_queue"
+        events_dir = runtime_dir / "events"
+
+        req = ReviewRequest(
+            pr_number=42,
+            head_sha="abc12345",
+            branch="feat/test",
+            requester="author-a",
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 1
+        assert data[0]["pr_number"] == 42
+        assert data[0]["effective_status"] == "pending"
+        assert data[0]["request_sha"] == "abc12345"
+
+    def test_queue_single_pr(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--pr flag shows entry for a specific PR."""
+        from bid_euchre.ops.review_queue import ReviewRequest, write_request
+
+        queue_dir = runtime_dir / "review_queue"
+        events_dir = runtime_dir / "events"
+
+        req = ReviewRequest(
+            pr_number=99,
+            head_sha="def456",
+            branch="fix/bug",
+            requester="review",
+        )
+        write_request(req, queue_dir, emit_event=False, events_dir=events_dir)
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+                "--pr",
+                "99",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "#99" in captured.out
+        assert "pending" in captured.out
+
+    def test_queue_single_pr_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--pr flag with --json shows single entry."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "queue",
+                "--pr",
+                "999",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["pr_number"] == 999
+        assert data["effective_status"] == "no_request"
