@@ -10,8 +10,9 @@ and review artifacts. Two systems coordinate on every PR:
 1. **`/reviewing-changes` skill** — Fast dispatcher (~5s): publishes `pending` status,
    generates handoff summary. No file reading, no Codex polling, no follow-up issues.
 2. **Autonomous review coordinator** — State machine (`scripts/internal/review_driver.py`)
-   that runs asynchronously: deterministic prechecks, `make check`, Codex CLI review,
-   auto-fix, retesting, status publishing, auto-merge, and follow-up issue creation.
+   that runs asynchronously: deterministic prechecks, Codex CLI review,
+   auto-fix, status publishing, auto-merge, and follow-up issue creation.
+   GitHub CI (not local `make check`) is the authoritative build gate.
 
 Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscription
 (no API billing). The GitHub Codex plugin has been retired.
@@ -73,18 +74,18 @@ Aligned with `/reviewing-changes` CHECKLIST.md check IDs:
 
 - **C1** — Unseeded randomness (`random.Random()` without seed, global `random.*`)
 - **C2** — Falsy numeric guard (`x = x or fallback` on numeric metric)
-- **N1** — Missing contract-type facet in notebook visualization
-- **N2** — Collapsed matchup table (team0/team1 in single row)
 - **X3** — Merge artifacts (conflict markers, TODO-remove, large commented-out blocks)
 
 ### WARN checks (non-blocking, follow-up issue)
 
 - **C3** — Gate check ordering (most-restrictive first)
 - **C4** — Function complexity (>50 lines or nesting >4)
+- **C5** — Redundant except clause (`except (Specific, ..., Exception)`)
+- **N1** — Missing contract-type facet in notebook visualization
+- **N2** — Collapsed matchup table (team0/team1 in single row)
 - **N3** — Inference claim without statistical test
 - **T1** — Untested behavior change
 - **X1** — Scope drift (3+ unrelated modules)
-- **C5** — Redundant except clause (`except (Specific, ..., Exception)`)
 - **X2** — Undocumented contract change
 
 ## Follow-up Issue Labels

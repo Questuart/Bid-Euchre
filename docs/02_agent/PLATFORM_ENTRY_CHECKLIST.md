@@ -50,7 +50,8 @@
 
 ## 5. Operator Substrate
 
-- [x] `ops.py status` provides trustworthy lane/health/review visibility
+- [x] `ops.py status` provides trustworthy lane/health visibility
+  - review state: use `ops.py reviews`, `ops.py ci`, `ops.py comments`
 - [x] Worktree/session registry is stable enough to extend (not re-litigate)
 - [x] Lane-activity view shows current work per lane
 - [x] Bounded post-merge repair lane shipped (#1138)
