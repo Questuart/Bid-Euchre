@@ -117,6 +117,5 @@ exit 1
         "776",
         "--repo-root",
         str(project_dir),
-        "--auto-merge",
     ]
     assert "PR #776" in result.stdout
