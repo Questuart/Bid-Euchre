@@ -46,6 +46,7 @@ PROGRESS_EVENT_TYPES = frozenset(
         "task_started",
         "task_completed",
         "task_failed",
+        "task_blocked",
         "retry_attempted",
         "task_rerouted",
         "escalation",
@@ -54,6 +55,8 @@ PROGRESS_EVENT_TYPES = frozenset(
         "pr_opened",
         "pr_merged",
         "commit_pushed",
+        "review_outcome",
+        "plan_review_outcome",
         "skill_promoted",
         "skill_disabled",
         "session_started",
@@ -794,10 +797,12 @@ def synthesize_lane_activity(
             attention_reason = f"blocked: {blockers}" if blockers else "blocked"
         elif state == "active" and last_progress:
             lp_dt = _parse_iso_timestamp(last_progress)
-            if lp_dt and (now - lp_dt).total_seconds() / 60 > stale_minutes:
-                age_min = int((now - lp_dt).total_seconds() / 60)
-                attention_needed = True
-                attention_reason = f"stale: no progress for {age_min}min"
+            if lp_dt:
+                age_seconds = max(0.0, (now - lp_dt).total_seconds())
+                if age_seconds / 60 > stale_minutes:
+                    age_min = int(age_seconds / 60)
+                    attention_needed = True
+                    attention_reason = f"stale: no progress for {age_min}min"
         elif state == "stale":
             # Stale lanes have evidence of past activity but it's aging.
             # Flag for operator attention — the process may have died.
