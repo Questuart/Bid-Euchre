@@ -85,8 +85,14 @@ class TestConsistencyWithGithubPrState:
                     pr_state_classify(ctx) != "ci"
                 ), f"Non-CI context {ctx!r} classified as 'ci' by github_pr_state"
 
-            # Known CI checks must be included by both
-            for name in ("tests", "prechecks", "governance"):
+            # Known CI checks must be included by both (sharded CI job names)
+            for name in (
+                "tests",
+                "checks",
+                "tests-shard",
+                "notebooks",
+                "promotion-gate",
+            ):
                 assert (
                     pr_state_classify(name) == "ci"
                 ), f"CI check {name!r} not classified as 'ci' by github_pr_state"

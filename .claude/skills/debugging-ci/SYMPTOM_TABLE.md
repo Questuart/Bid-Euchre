@@ -18,7 +18,7 @@ Full lookup table for common CI and validation failures.
 |---------|-----------|-----|
 | CI red after push | One or more jobs failed | `gh pr checks <PR>` — identify which job, read its log |
 | CI not triggered | Workflow not matching paths | Check `.github/workflows/ci.yml` path filters |
-| CI passes but status missing | `dorny/paths-filter` skipped all steps | Expected for docs-only PRs — tests job still posts green status |
+| CI passes but status missing | `dorny/paths-filter` skipped heavy jobs | Expected for docs-only PRs — `tests` aggregation gate still posts green status |
 
 ## Review Loop Issues
 

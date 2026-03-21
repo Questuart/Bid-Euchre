@@ -629,13 +629,25 @@ class TestCICheckNamesConsistency:
     """Verify CI classification constants are consistent."""
 
     def test_ci_check_names_accessible(self) -> None:
-        """CI_CHECK_NAMES allowlist is importable and has expected members."""
+        """CI_CHECK_NAMES allowlist is importable and has expected members.
+
+        Updated for sharded CI (#1086): old jobs (prechecks, governance)
+        replaced by checks, tests-shard, notebooks, promotion-gate.
+        """
         from bid_euchre.ops import CI_CHECK_NAMES
 
+        # Current sharded CI job names
         assert "tests" in CI_CHECK_NAMES
-        assert "prechecks" in CI_CHECK_NAMES
-        assert "governance" in CI_CHECK_NAMES
+        assert "checks" in CI_CHECK_NAMES
+        assert "tests-shard" in CI_CHECK_NAMES
+        assert "tests-shard (1)" in CI_CHECK_NAMES
+        assert "tests-shard (2)" in CI_CHECK_NAMES
+        assert "notebooks" in CI_CHECK_NAMES
+        assert "promotion-gate" in CI_CHECK_NAMES
+        # Non-CI checks must NOT be in the set
         assert "reviewing-changes" not in CI_CHECK_NAMES
+        assert "claude-review" not in CI_CHECK_NAMES
+        assert "enable-auto-merge" not in CI_CHECK_NAMES
 
     def test_classify_check_consistent_with_non_ci(self) -> None:
         """classify_check categorizes review/advisory contexts as non-CI."""
@@ -643,5 +655,11 @@ class TestCICheckNamesConsistency:
 
         assert classify_check("reviewing-changes") == "review_gate"
         assert classify_check("claude-review") == "advisory"
+        assert classify_check("enable-auto-merge") == "advisory"
+        # Current sharded CI job names all classify as "ci"
         assert classify_check("tests") == "ci"
-        assert classify_check("prechecks") == "ci"
+        assert classify_check("checks") == "ci"
+        assert classify_check("tests-shard") == "ci"
+        assert classify_check("tests-shard (1)") == "ci"
+        assert classify_check("notebooks") == "ci"
+        assert classify_check("promotion-gate") == "ci"
