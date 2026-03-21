@@ -38,6 +38,29 @@ LANE_STATES = frozenset(
     {"active", "likely_active", "stale", "blocked", "idle", "unknown"}
 )
 
+# Event types that indicate genuine lane progress/activity.
+# Infrastructure events (watchdog_finding, scheduler_tick, etc.) are excluded
+# because they are emitted by the ops subsystem, not by the lane itself.
+PROGRESS_EVENT_TYPES = frozenset(
+    {
+        "task_started",
+        "task_completed",
+        "task_failed",
+        "retry_attempted",
+        "task_rerouted",
+        "escalation",
+        "ci_success",
+        "ci_failure",
+        "pr_opened",
+        "pr_merged",
+        "commit_pushed",
+        "skill_promoted",
+        "skill_disabled",
+        "session_started",
+        "session_ended",
+    }
+)
+
 
 @dataclass
 class LaneStatus:
@@ -299,20 +322,25 @@ def _find_last_event_for_lane(
     events: list[dict[str, Any]],
     lane_id: str,
 ) -> dict[str, Any] | None:
-    """Find the most recent event for a given lane.
+    """Find the most recent progress event for a given lane.
 
-    Scans events (assumed most-recent-first) and returns the first match.
+    Scans events (assumed most-recent-first) and returns the first match
+    whose ``event_type`` is in :data:`PROGRESS_EVENT_TYPES`.  Infrastructure
+    events (``watchdog_finding``, ``scheduler_tick``, etc.) are skipped
+    because they do not indicate genuine lane activity.
 
     Args:
         events: List of event dicts, most recent first.
         lane_id: Lane to filter by.
 
     Returns:
-        The most recent event dict for the lane, or None.
+        The most recent progress event dict for the lane, or None.
     """
     for event in events:
         if event.get("lane_id") == lane_id:
-            return event
+            event_type = event.get("event_type", "")
+            if event_type in PROGRESS_EVENT_TYPES:
+                return event
     return None
 
 
@@ -456,12 +484,15 @@ def _probe_fallback_liveness(
     """
     threshold_seconds = stale_minutes * 60
 
+    stale_candidate: _LivenessProbe | None = None
+    stale_age: float = float("inf")
+
     # --- Signal 1: Recent events for this lane ---
     last_event = _find_last_event_for_lane(events, lane_id)
     if last_event:
         event_dt = _parse_iso_timestamp(last_event.get("timestamp"))
         if event_dt is not None:
-            age = (now - event_dt).total_seconds()
+            age = max(0.0, (now - event_dt).total_seconds())
             event_type = last_event.get("event_type", "unknown")
             if age <= threshold_seconds:
                 return _LivenessProbe(
@@ -472,19 +503,17 @@ def _probe_fallback_liveness(
                 )
             # Event exists but is stale — record as candidate
             # (may be overridden by fresher signals below)
-            stale_candidate = _LivenessProbe(
-                is_likely_live=False,
-                is_stale=True,
-                source="events",
-                detail=(
-                    f"last event '{event_type}' {int(age / 60)}m ago "
-                    f"(>{stale_minutes}m threshold)"
-                ),
-            )
-        else:
-            stale_candidate = None
-    else:
-        stale_candidate = None
+            if stale_candidate is None or age < stale_age:
+                stale_age = age
+                stale_candidate = _LivenessProbe(
+                    is_likely_live=False,
+                    is_stale=True,
+                    source="events",
+                    detail=(
+                        f"last event '{event_type}' {int(age / 60)}m ago "
+                        f"(>{stale_minutes}m threshold)"
+                    ),
+                )
 
     # --- Signal 2: In-progress tasks with recent progress ---
     for task in lane_tasks:
@@ -495,7 +524,7 @@ def _probe_fallback_liveness(
             progress_ts = progress.get("last_forward_progress_at")
             progress_dt = _parse_iso_timestamp(progress_ts)
             if progress_dt is not None:
-                age = (now - progress_dt).total_seconds()
+                age = max(0.0, (now - progress_dt).total_seconds())
                 subject = task.get("subject", "?")
                 if age <= threshold_seconds:
                     return _LivenessProbe(
@@ -507,7 +536,8 @@ def _probe_fallback_liveness(
                             f"progressed {int(age / 60)}m ago"
                         ),
                     )
-                if stale_candidate is None:
+                if stale_candidate is None or age < stale_age:
+                    stale_age = age
                     stale_candidate = _LivenessProbe(
                         is_likely_live=False,
                         is_stale=True,
@@ -522,7 +552,7 @@ def _probe_fallback_liveness(
     if session:
         session_dt = _parse_iso_timestamp(session.get("started_at"))
         if session_dt is not None:
-            age = (now - session_dt).total_seconds()
+            age = max(0.0, (now - session_dt).total_seconds())
             if age <= threshold_seconds:
                 return _LivenessProbe(
                     is_likely_live=True,
@@ -530,7 +560,8 @@ def _probe_fallback_liveness(
                     source="session_metadata",
                     detail=f"session started {int(age / 60)}m ago",
                 )
-            if stale_candidate is None:
+            if stale_candidate is None or age < stale_age:
+                stale_age = age
                 stale_candidate = _LivenessProbe(
                     is_likely_live=False,
                     is_stale=True,
@@ -545,7 +576,7 @@ def _probe_fallback_liveness(
     if last_active_ts:
         la_dt = _parse_iso_timestamp(last_active_ts)
         if la_dt is not None:
-            age = (now - la_dt).total_seconds()
+            age = max(0.0, (now - la_dt).total_seconds())
             if age <= threshold_seconds:
                 return _LivenessProbe(
                     is_likely_live=True,
@@ -553,7 +584,8 @@ def _probe_fallback_liveness(
                     source="last_active",
                     detail=f"registry last_active {int(age / 60)}m ago",
                 )
-            if stale_candidate is None:
+            if stale_candidate is None or age < stale_age:
+                stale_age = age
                 stale_candidate = _LivenessProbe(
                     is_likely_live=False,
                     is_stale=True,

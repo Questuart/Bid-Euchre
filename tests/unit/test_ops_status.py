@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from bid_euchre.ops.status import (
+    PROGRESS_EVENT_TYPES,
     STALE_MINUTES,
     LaneStatus,
     StatusReport,
@@ -330,7 +331,9 @@ class TestAggregateStatus:
         assert lane.has_active_session is False
         # Old evidence → stale (not active, not idle)
         assert lane.state == "stale"
-        assert lane.liveness_source == "session_metadata"
+        # last_active (12:00) is fresher than session started_at (10:00),
+        # so the freshest-stale-signal logic picks last_active.
+        assert lane.liveness_source == "last_active"
         # Session task available for context
         assert lane.session_task == "Previous task"
 
@@ -2871,3 +2874,165 @@ class TestEmitScopeSnapshot:
         touched = result["scope"]["touched_files"]
         # existing.py should not be duplicated
         assert touched == ["src/existing.py", "src/new.py"]
+
+
+# ---- Issue #1101: Liveness probe edge cases ----
+
+
+class TestLivenessClockSkew:
+    """Tests for clock-skew handling in _probe_fallback_liveness()."""
+
+    def test_future_timestamp_clamped_to_zero(self) -> None:
+        """Event timestamp 5 minutes in the future should be treated as recent.
+
+        Age is clamped to 0, so the detail string says '0m ago', not '-5m ago'.
+        """
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        # Event 5 minutes in the future (clock skew)
+        events = [
+            {
+                "lane_id": "author-b",
+                "event_type": "ci_success",
+                "timestamp": "2026-03-20T12:05:00+00:00",
+            },
+        ]
+        probe = _probe_fallback_liveness(
+            "author-b",
+            session=None,
+            lane_tasks=[],
+            events=events,
+            last_active_ts=None,
+            now=now,
+            stale_minutes=30,
+        )
+        assert probe.is_likely_live is True
+        assert probe.is_stale is False
+        assert probe.source == "events"
+        assert "0m ago" in probe.detail
+        assert "-" not in probe.detail  # No negative age in display
+
+    def test_future_stale_timestamp_also_clamped(self) -> None:
+        """A future session timestamp is clamped to 0 and treated as recent."""
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        # Session started 10 minutes in the future (clock skew)
+        session = {"started_at": "2026-03-20T12:10:00+00:00", "task": "Work"}
+        probe = _probe_fallback_liveness(
+            "author-b",
+            session=session,
+            lane_tasks=[],
+            events=[],
+            last_active_ts=None,
+            now=now,
+            stale_minutes=30,
+        )
+        # Age clamped to 0 → within threshold → likely live
+        assert probe.is_likely_live is True
+        assert probe.is_stale is False
+        assert probe.source == "session_metadata"
+        assert "0m ago" in probe.detail
+
+
+class TestStaleCandidateFreshest:
+    """Tests that stale_candidate keeps the freshest (smallest age) signal."""
+
+    def test_freshest_stale_signal_wins(self) -> None:
+        """When multiple signals are stale, the freshest one is reported.
+
+        events=120m stale, session=45m stale → stale_candidate should report
+        session (45m ago), not events (120m ago).
+        """
+        now = datetime(2026, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+        # Signal 1: event 120 minutes ago
+        events = [
+            {
+                "lane_id": "author-b",
+                "event_type": "ci_success",
+                "timestamp": "2026-03-20T10:00:00+00:00",  # 120m ago
+            },
+        ]
+        # Signal 3: session started 45 minutes ago
+        session = {
+            "started_at": "2026-03-20T11:15:00+00:00",  # 45m ago
+            "task": "Recent work",
+        }
+        probe = _probe_fallback_liveness(
+            "author-b",
+            session=session,
+            lane_tasks=[],
+            events=events,
+            last_active_ts=None,
+            now=now,
+            stale_minutes=30,
+        )
+        assert probe.is_likely_live is False
+        assert probe.is_stale is True
+        # Should prefer session_metadata (45m) over events (120m)
+        assert probe.source == "session_metadata"
+        assert "45m ago" in probe.detail
+
+
+# ---- Issue #1055: Progress event filter ----
+
+
+class TestProgressEventFilter:
+    """Tests that _find_last_event_for_lane filters non-progress events."""
+
+    def test_infrastructure_events_skipped(self) -> None:
+        """_find_last_event_for_lane with only infrastructure events returns None."""
+        events = [
+            {
+                "lane_id": "author-a",
+                "event_type": "watchdog_finding",
+                "timestamp": "2026-03-20T12:00:00Z",
+            },
+            {
+                "lane_id": "author-a",
+                "event_type": "scheduler_tick",
+                "timestamp": "2026-03-20T11:55:00Z",
+            },
+        ]
+        result = _find_last_event_for_lane(events, "author-a")
+        assert result is None
+
+    def test_progress_events_found(self) -> None:
+        """_find_last_event_for_lane with a task_completed event returns it."""
+        events = [
+            {
+                "lane_id": "author-a",
+                "event_type": "task_completed",
+                "timestamp": "2026-03-20T12:00:00Z",
+            },
+        ]
+        result = _find_last_event_for_lane(events, "author-a")
+        assert result is not None
+        assert result["event_type"] == "task_completed"
+
+    def test_progress_event_selected_over_infrastructure(self) -> None:
+        """When lane has both infrastructure and progress events, progress wins.
+
+        Events are most-recent-first. An infrastructure event that is newer
+        than a progress event should be skipped.
+        """
+        events = [
+            {
+                "lane_id": "author-a",
+                "event_type": "watchdog_finding",
+                "timestamp": "2026-03-20T12:05:00Z",
+            },
+            {
+                "lane_id": "author-a",
+                "event_type": "ci_success",
+                "timestamp": "2026-03-20T12:00:00Z",
+            },
+        ]
+        result = _find_last_event_for_lane(events, "author-a")
+        assert result is not None
+        assert result["event_type"] == "ci_success"
+
+    def test_progress_event_types_constant_is_frozenset(self) -> None:
+        """PROGRESS_EVENT_TYPES is a frozenset with expected members."""
+        assert isinstance(PROGRESS_EVENT_TYPES, frozenset)
+        assert "task_completed" in PROGRESS_EVENT_TYPES
+        assert "ci_success" in PROGRESS_EVENT_TYPES
+        assert "watchdog_finding" not in PROGRESS_EVENT_TYPES
+        assert "scheduler_tick" not in PROGRESS_EVENT_TYPES

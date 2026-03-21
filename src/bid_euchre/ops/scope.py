@@ -61,6 +61,12 @@ def _matches_any_pattern(path: str, patterns: list[str]) -> bool:
     Supports both basename matching (``*.py``) and path matching
     (``src/bid_euchre/ops/*.py``).  Uses ``fnmatch.fnmatch`` which
     handles ``*``, ``?``, and ``[…]`` wildcards.
+
+    Note: ``fnmatch`` does not handle ``**`` the same way as
+    ``pathlib.glob``.  ``fnmatch('src/a.py', 'src/**/*.py')`` is
+    ``False`` because ``**/`` requires at least one directory segment.
+    As a workaround, patterns containing ``**/`` are also tested with
+    the ``**/`` segment removed so that direct children match too.
     """
     for pattern in patterns:
         if fnmatch.fnmatch(path, pattern):
@@ -69,6 +75,13 @@ def _matches_any_pattern(path: str, patterns: list[str]) -> bool:
         # like "*.py" against full paths like "src/foo/bar.py"
         if "/" not in pattern and fnmatch.fnmatch(Path(path).name, pattern):
             return True
+        # fnmatch does not treat ** like pathlib.glob: "src/**/*.py"
+        # won't match "src/a.py" (direct child).  Collapse the **/
+        # segment and retry so direct children are included.
+        if "**/" in pattern:
+            collapsed = pattern.replace("**/", "")
+            if fnmatch.fnmatch(path, collapsed):
+                return True
     return False
 
 
