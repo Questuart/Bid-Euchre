@@ -146,6 +146,71 @@ class TestListWorktreesRegistry:
         entries = list_worktrees_registry(registry_dir)
         assert len(entries) == 1
 
+    # --- Platform-1 additive field tests ---
+
+    def test_v2_entry_defaults_additive_fields(self, registry_dir: Path) -> None:
+        """v2 entry written before session_handle/visibility gets null defaults."""
+        _write_registry_entry(registry_dir, "author-a.json", lane_id="author-a")
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["session_handle"] is None
+        assert entry["visibility"] is None
+
+    def test_v2_entry_preserves_additive_fields(self, registry_dir: Path) -> None:
+        """v2 entry with session_handle/visibility preserves them."""
+        _write_registry_entry(
+            registry_dir,
+            "author-a.json",
+            lane_id="author-a",
+            session_handle="steward:author-a",
+            visibility="foreground",
+        )
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["session_handle"] == "steward:author-a"
+        assert entry["visibility"] == "foreground"
+
+    def test_v1_entry_defaults_additive_fields(self, registry_dir: Path) -> None:
+        """v1 entry gets null defaults for session_handle/visibility."""
+        v1_entry = {
+            "schema_version": 1,
+            "role": "author",
+            "worktree_path": "/tmp/wt-author",
+            "branch": "role/author",
+            "class": "persistent",
+            "created_at": "2026-03-16T22:00:00Z",
+            "last_active": "2026-03-16T22:00:00Z",
+            "session_id": None,
+            "ttl_hours": None,
+        }
+        (registry_dir / "author.json").write_text(json.dumps(v1_entry))
+
+        entries = list_worktrees_registry(registry_dir)
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["session_handle"] is None
+        assert entry["visibility"] is None
+        # Also verify other v1→v2 inference still works
+        assert entry["lane_id"] == "author-a"
+
+    def test_background_visibility_preserved(self, registry_dir: Path) -> None:
+        """Background visibility round-trips through read."""
+        _write_registry_entry(
+            registry_dir,
+            "author-c.json",
+            lane_id="author-c",
+            session_handle="steward:author-c",
+            visibility="background",
+        )
+
+        entries = list_worktrees_registry(registry_dir)
+        assert entries[0]["visibility"] == "background"
+        assert entries[0]["session_handle"] == "steward:author-c"
+
 
 class TestIsProtected:
     """Tests for is_protected()."""

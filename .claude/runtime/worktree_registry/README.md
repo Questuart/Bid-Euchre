@@ -31,7 +31,9 @@ lanes) or `<role>.json` (for legacy role worktrees, backward compatible).
   "tmux_pane": "1",
   "cmux_workspace_ref": null,
   "cmux_surface_ref": null,
-  "legacy_role": null
+  "legacy_role": null,
+  "session_handle": "steward:author-a",
+  "visibility": "foreground"
 }
 ```
 
@@ -55,7 +57,9 @@ lanes) or `<role>.json` (for legacy role worktrees, backward compatible).
   "tmux_pane": null,
   "cmux_workspace_ref": null,
   "cmux_surface_ref": null,
-  "legacy_role": "author"
+  "legacy_role": "author",
+  "session_handle": "role:author-a",
+  "visibility": null
 }
 ```
 
@@ -80,6 +84,8 @@ lanes) or `<role>.json` (for legacy role worktrees, backward compatible).
 | `cmux_workspace_ref` | string/null | no | v2 | cmux workspace reference (future use) |
 | `cmux_surface_ref` | string/null | no | v2 | cmux surface reference (future use) |
 | `legacy_role` | string/null | no | v2 | Legacy role name (`author`, `review`, `ops`) if created by legacy scripts. Null for steward lanes. |
+| `session_handle` | string/null | no | v2 | Resume-targeting handle (e.g., `steward:author-a`, `role:author-a`). Null for ephemeral or legacy entries without a stable handle. |
+| `visibility` | string/null | no | v2 | Worker visibility class: `foreground` (dashboard panes), `background` (off-dashboard windows), or null (unknown/legacy). |
 
 ### Field Semantics
 
@@ -106,6 +112,19 @@ commands or navigate to a lane, but are not primary identity.
 the legacy `start-role-worktree.sh` script. It enables backward compatibility
 during the transition period. Null for worktrees created by the steward
 launcher.
+
+**`session_handle`** is a stable resume-targeting key. Format is
+`<transport>:<lane_id>` (e.g., `steward:author-a` for steward lanes,
+`role:author-a` for legacy role worktrees). Null for ephemeral worktrees or
+entries written before this field was introduced. Used by follow-on
+resume-by-name tooling.
+
+**`visibility`** is the worker visibility class, written by the launcher based
+on tmux layout. Values: `foreground` (dashboard panes visible in the main
+tmux window), `background` (off-dashboard windows like author-c, author-d,
+author-scratch). Null for legacy entries or entries written before this field
+was introduced. Not used for routing or scheduling — purely informational for
+operator tooling.
 
 ### Lifecycle Class Values
 
@@ -159,9 +178,12 @@ v1 entries are accepted by v2 readers. Missing v2 fields are inferred:
 | `tmux_*` | null |
 | `cmux_*` | null |
 | `legacy_role` | Same as `role` |
+| `session_handle` | null |
+| `visibility` | null |
 
 Writers should produce v2 entries. v1 entries will not be actively migrated
-but remain readable.
+but remain readable. Older v2 entries written before `session_handle` and
+`visibility` were introduced are also accepted — readers default both to null.
 
 ## v1 Schema (Deprecated)
 
