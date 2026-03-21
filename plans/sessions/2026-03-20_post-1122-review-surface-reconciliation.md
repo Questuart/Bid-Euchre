@@ -148,6 +148,6 @@ confirmed via `gh api repos/{owner}/{repo}/branches/main/protection`.
 **Validation:** `make check-quiet` — 5129 passed, 5 failed (pre-existing matplotlib
 font environment issue on main, unrelated to docs changes).
 
-**PR:** `docs/review-surface-reconciliation`
+**PR:** `docs/review-surface-reconciliation-v2` (#1140, replaces #1125)
 
 **Remaining review-surface inconsistencies:** None identified.
