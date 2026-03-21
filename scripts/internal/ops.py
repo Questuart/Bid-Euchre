@@ -30,6 +30,7 @@ Usage:
     uv run python scripts/internal/ops.py skills review CANDIDATE_ID --approve|--reject --reviewed-by LANE [--notes TEXT] [--json]
     uv run python scripts/internal/ops.py skills promote CANDIDATE_ID [--json]
     uv run python scripts/internal/ops.py skills disable NAME [--reason TEXT] [--disabled-by LANE] [--json]
+    uv run python scripts/internal/ops.py repairs [--json]
 """
 
 from __future__ import annotations
@@ -1277,6 +1278,24 @@ def cmd_skills_disable(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_repairs(args: argparse.Namespace) -> int:
+    """Show the post-merge repair queue (eligible issues for autonomous fix)."""
+    from bid_euchre.ops.repairs import build_repair_queue
+
+    try:
+        queue = build_repair_queue()
+    except RuntimeError as exc:
+        print(f"Error querying repair queue: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(queue.to_dict(), indent=2))
+    else:
+        print(queue.format_text())
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -1610,6 +1629,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--disabled-by", type=str, default="operator", help="Who is disabling"
     )
 
+    # repairs
+    subparsers.add_parser(
+        "repairs", help="Post-merge repair queue — eligible issues for autonomous fix"
+    )
+
     return parser
 
 
@@ -1654,6 +1678,7 @@ def main(argv: list[str] | None = None) -> int:
         "scope": cmd_scope,
         "snapshot": cmd_snapshot,
         "skills": cmd_skills,
+        "repairs": cmd_repairs,
     }
 
     handler = commands.get(args.command)
