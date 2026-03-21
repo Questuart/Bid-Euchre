@@ -10,22 +10,30 @@ after restarts, and bounded (max 3 iterations).
 
 The coordinator runs asynchronously after PR creation, triggered by the
 `post-pr-review-loop.sh` PostToolUse hook.  When the loop reaches
-`ready_to_merge`, it enables GitHub auto-merge (squash) and transitions
-to `merged`.  GitHub merges once CI + branch protection pass.
+`ready_to_merge`, it writes a SHA-bound verdict to the shared review queue
+and transitions to `merged`.  The local merge guard
+(`pre-merge-review-guard.sh`) checks this verdict before allowing
+`gh pr merge`.
 
 ## Review Coordinator Contract
 
-The review coordinator owns exactly two public artifacts per PR:
+The review coordinator owns these public artifacts per PR:
 
 | Artifact | Owner | Details |
 |----------|-------|---------|
-| `reviewing-changes` commit status | `review_driver.py` | The merge-relevant review gate |
+| SHA-bound verdict file | `review_driver.py` via `write_verdict` | Durable pass/fail record in the shared review queue |
+| `reviewing-changes` commit status | `review_driver.py` | Advisory review signal (not required by branch protection) |
 | Machine-owned PR summary comment | `review_driver.py` via `upsert_review_comment` | Single upserted comment with `<!-- review-loop-comment -->` marker |
 
-**No other system** may publish the `reviewing-changes` status or claim to
-be the canonical review truth.  Hosted surfaces (`claude-review`, Codex
-Cloud) are advisory overlays — they may post their own comments or checks,
-but those are not part of the merge gate.
+The **verdict file** is the merge-relevant artifact: the local merge guard
+(`pre-merge-review-guard.sh`) checks it before allowing `gh pr merge`.
+The `reviewing-changes` status is an advisory signal — it is useful for
+ops monitoring and GitHub UI, but it is not enforced by branch protection
+and is not consulted by the merge guard.
+
+Hosted surfaces (`claude-review`, Codex Cloud) are advisory overlays —
+they may post their own comments or checks, but those are not part of the
+merge gate.
 
 ### Fallback Behavior
 
@@ -34,9 +42,9 @@ unparseable output:
 
 1. The coordinator publishes a **degraded pass** — GitHub `success` with a
    description containing "degraded" (e.g., `"Review passed — degraded
-   (unparseable)"`).
+   (unparseable)"`) and writes a `passed` verdict with a degraded reason.
 2. The PR summary comment notes the degraded state.
-3. The PR proceeds to merge (review is advisory in degraded mode).
+3. The merge guard will allow `gh pr merge` (the verdict is `passed`).
 
 This ensures a broken reviewer never silently blocks the merge queue.
 
@@ -54,16 +62,26 @@ This ensures a broken reviewer never silently blocks the merge queue.
 | `scripts/internal/codex_review_adapter.py` | Codex CLI invocation + output parsing |
 | `scripts/internal/claude_fix_adapter.py` | Deterministic fix application from Codex findings |
 
-### Dispatcher Integration
+### Hook Integration
 
-The `/reviewing-changes` skill acts as a fast dispatcher (~5s):
-1. Publishes `pending` status immediately
-2. Generates a handoff summary for the session
-3. Does NOT read files, run checks, or poll for Codex — the loop handles all of that
+Two PostToolUse hooks fire on `gh pr create`:
 
-The dispatcher and the loop hook both fire on `gh pr create`:
-- `post-pr-review.sh` triggers `/reviewing-changes` (in-session dispatcher)
-- `post-pr-review-loop.sh` launches `review_driver.py` (async background)
+1. **`post-pr-review.sh`** — enqueues a durable `ReviewRequest` to the
+   shared review queue (`bid_euchre.ops.review_queue`).  This replaces
+   the former `/reviewing-changes` dispatcher.  The hook is fast (~2s)
+   and does not read files, run checks, or invoke Codex.
+2. **`post-pr-review-loop.sh`** — launches `review_driver.py`
+   asynchronously in the background.  The driver processes the queued
+   request, runs the review loop, and writes a SHA-bound verdict.
+
+A third hook governs merge:
+
+3. **`pre-merge-review-guard.sh`** (PreToolUse) — blocks `gh pr merge`
+   unless a verdict exists, matches the current HEAD SHA, is `passed`,
+   and CI is green.  This is the hard local merge gate.
+
+Operators do **not** need to invoke `/reviewing-changes` manually — the
+queue-backed system handles review startup automatically.
 
 ### State Machine
 
@@ -72,7 +90,7 @@ initialized → pr_open → waiting_for_ci → waiting_for_codex → scoring_fin
                                  ↑                                  ↓
                                  └── retesting ← applying_fixes
                                                       ↓
-                                 ready_to_merge → merged (auto-merge enabled)
+                                 ready_to_merge → merged (verdict written)
 ```
 
 **Note:** `pr_open` runs deterministic prechecks (diff-based, no build needed)
@@ -95,6 +113,32 @@ Terminal (stop) states: `merged`, `stopped_max_iterations`, `stopped_no_progress
 State files and per-round artifacts are stored under
 `.claude/runtime/review_loops/pr_<N>/` (gitignored). Durable validation
 evidence is committed under `docs/04_reports/codex_validation/`.
+
+### Shared Review Queue
+
+The review queue (`bid_euchre.ops.review_queue`) provides durable
+request/verdict storage shared across all git worktrees:
+
+```
+<main_repo>/.claude/runtime/review_queue/
+    pr_<N>/
+        request.json    -- current review request (written by hook)
+        verdict.json    -- latest verdict (written by driver)
+```
+
+The queue root is derived from `git rev-parse --git-common-dir`, so a
+verdict written in one worktree (e.g., the review lane) is visible to
+the merge guard running in any other worktree (e.g., the author lane).
+
+**Verdict fields:**
+- `pr_number` — PR number
+- `reviewed_sha` — the HEAD SHA the review covered
+- `status` — `passed` or `failed`
+- `reason` — human-readable explanation
+
+**Stale verdict detection:** The merge guard compares `verdict.reviewed_sha`
+against the PR's current HEAD.  If they differ, the verdict is stale and
+the merge is blocked until a new review runs.
 
 ### Review Backend
 
@@ -228,7 +272,7 @@ The coordinator publishes GitHub commit status at key transitions:
 | Warnings only | `success` | "Review passed — N warnings (follow-up issues created)" |
 | Degraded pass | `success` | "Review passed — degraded (unparseable)" |
 | Blockers found | `failure` | "Review blocked — N blockers" |
-| Auto-merge enabled | `success` | (status already published at ready_to_merge) |
+| Verdict written | `success` | (status already published at ready_to_merge) |
 | Loop crash | `failure` | "Review loop crashed: {error}. Rerun: ..." |
 
 ### Follow-up Issues
@@ -298,10 +342,16 @@ command in the description, so the PR is never silently stuck.
 
 ### What to Look At on a PR
 
-1. **`reviewing-changes` status** — the merge-relevant gate.  Green = review
+1. **Review queue state** — check the verdict file for the PR:
+   ```bash
+   uv run python scripts/internal/ops.py reviews queue
+   ```
+   A `passed` verdict with a matching SHA means the merge guard will allow
+   `gh pr merge`.
+2. **`reviewing-changes` status** — advisory review signal.  Green = review
    passed.  Red = review blocked (check findings in the PR summary comment).
-   Pending = loop still running.
-2. **The canonical PR summary comment** — the single comment with the
+   Pending = loop still running.  Not enforced by branch protection.
+3. **The canonical PR summary comment** — the single comment with the
    `<!-- review-loop-comment -->` marker.  Contains findings, stop reason,
    and recovery command.  This comment is upserted (updated in place) on
    each rerun.
@@ -331,13 +381,22 @@ scripts/internal/set_review_status.sh success "Manual override"
 If Codex CLI fails or returns unparseable output:
 
 1. The coordinator publishes a **degraded pass** (`success` with "degraded"
-   in the description).
+   in the description) and writes a `passed` verdict with a degraded reason.
 2. The PR summary comment notes the degradation.
-3. The PR proceeds to auto-merge — review is advisory in degraded mode.
+3. The merge guard will allow `gh pr merge` (the verdict is `passed`).
 4. No manual intervention required unless you want to rerun.
 
 The coordinator never silently blocks the merge queue due to reviewer
 unavailability.
+
+### GitHub Auto-Merge Caveat
+
+GitHub auto-merge (if enabled on a PR) acts on GitHub-required checks only
+(`tests`, `governance`).  Because `reviewing-changes` is advisory with
+respect to branch protection, GitHub auto-merge can race the review
+coordinator — merging a PR before the coordinator finishes.  The local
+merge guard cannot prevent this because it only governs `gh pr merge`
+invoked from the CLI.  This was confirmed during Proving Run 2.
 
 ## Governing Plan
 

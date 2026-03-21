@@ -4,14 +4,19 @@
 
 ## Operating Model
 
-Claude is the default authoring agent. GitHub is the system of record for merge gates
-and review artifacts. Two systems coordinate on every PR:
+Claude is the default authoring agent. GitHub is the system of record for CI gates.
+The local review queue is the system of record for review verdicts.  Three hooks
+coordinate on every PR:
 
-1. **`/reviewing-changes` skill** — Fast dispatcher (~5s): publishes `pending` status,
-   generates handoff summary. No file reading, no Codex polling, no follow-up issues.
-2. **Autonomous review coordinator** — State machine (`scripts/internal/review_driver.py`)
-   that runs asynchronously: deterministic prechecks, `make check`, Codex CLI review,
-   auto-fix, retesting, status publishing, auto-merge, and follow-up issue creation.
+1. **`post-pr-review.sh`** (PostToolUse) — enqueues a durable `ReviewRequest` to
+   the shared review queue after `gh pr create`.  Fast (~2s), no file reading,
+   no Codex polling.
+2. **`post-pr-review-loop.sh`** (PostToolUse) — launches `review_driver.py`
+   asynchronously.  The driver processes the request: deterministic prechecks,
+   CI wait, Codex CLI review, auto-fix, retesting, verdict writing, status
+   publishing, and follow-up issue creation.
+3. **`pre-merge-review-guard.sh`** (PreToolUse) — blocks `gh pr merge` unless
+   a verdict exists, matches the current HEAD SHA, is `passed`, and CI is green.
 
 Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscription
 (no API billing). The GitHub Codex plugin has been retired.
@@ -20,7 +25,8 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 
 | Context | Publisher | Required by branch protection? | Purpose |
 |---------|-----------|-------------------------------|---------|
-| `reviewing-changes` | Review coordinator (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Pre-merge code review signal |
+| `reviewing-changes` | Review coordinator (`review_driver.py`) | **No** (advisory only) | Advisory review signal for ops/GitHub UI |
+| Review queue verdict | `review_driver.py` via `write_verdict` | N/A (local merge guard) | Merge-relevant review truth |
 
 > **Note (2026-03-12):** `reviewing-changes` was demoted from required to advisory
 > after the review coordinator hook was found to be unregistered (PR #624).
@@ -30,32 +36,45 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 > polling). The status remains advisory — it should now progress from `pending`
 > to `success`/`failure` automatically, but is not required for merge.
 
-### Status Values
+### Status Values (reviewing-changes — advisory)
 
 | Status | GitHub API `state` | `description` pattern | When |
 |--------|-------------------|----------------------|------|
-| PENDING | `pending` | "Review coordinator starting" | Dispatcher publishes immediately |
+| PENDING | `pending` | "Review loop starting" | Review driver starts |
 | IN_PROGRESS | `pending` | "Codex CLI review in progress (round N)" | Each Codex invocation |
 | FAIL | `failure` | "Review blocked — N blockers" | Blocking prechecks, CI failure, loop crash |
 | WARN | `success` | "Review passed — N warnings (follow-up issues created)" | Non-blocking findings only |
 | READY | `success` | "Review passed — clean" | No findings |
 
+### Verdict Values (review queue — merge-relevant)
+
+| Verdict `status` | Merge guard effect | When |
+|------------------|--------------------|------|
+| `passed` | Allows `gh pr merge` (if SHA matches and CI green) | Clean pass, warnings-only, or degraded pass |
+| `failed` | Blocks `gh pr merge` | Blocking findings found |
+| (absent) | Blocks `gh pr merge` | Review not yet complete |
+
 ## Merge Protocol
 
-1. Claude opens PR
-2. `post-pr-review.sh` hook triggers `/reviewing-changes` dispatcher
-3. Dispatcher publishes `pending` status and generates handoff summary (~5s)
-4. `post-pr-review-loop.sh` hook launches `review_driver.py` asynchronously
-5. Coordinator runs deterministic prechecks (C1/C2/C5/N1/N2/N3/T1/X2/X3 + convention patterns)
-6. Coordinator waits for GitHub CI to pass (polls `gh pr checks`)
-7. Loop invokes Codex CLI (`codex review --base main`)
-8. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
-9. Auto-fixable findings (convention patterns) are applied and committed
-10. Non-auto-fixable findings are recorded
-11. Coordinator iterates (max 3 rounds) until clean or stopped
-12. Coordinator publishes final status (`success` or `failure`)
+1. Claude opens PR via `gh pr create`
+2. `post-pr-review.sh` enqueues a durable `ReviewRequest` to the shared review queue
+3. `post-pr-review-loop.sh` launches `review_driver.py` asynchronously
+4. Coordinator runs deterministic prechecks (C1/C2/C5/N1/N2/N3/T1/X2/X3 + convention patterns)
+5. Coordinator waits for GitHub CI to pass (polls `gh pr checks`)
+6. Loop invokes Codex CLI (`codex review --base main`)
+7. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
+8. Auto-fixable findings (convention patterns) are applied and committed
+9. Non-auto-fixable findings are recorded
+10. Coordinator iterates (max 3 rounds) until clean or stopped
+11. Coordinator writes a SHA-bound verdict to the review queue
+12. Coordinator publishes final `reviewing-changes` status (advisory)
 13. Coordinator creates follow-up issues for non-blocking (P2) findings
-14. Coordinator enables auto-merge (squash) — GitHub merges when CI + branch protection pass
+14. Claude (or operator) runs `gh pr merge` — the merge guard verifies
+    verdict + SHA + CI before allowing the merge
+
+**GitHub auto-merge caveat:** GitHub auto-merge acts on branch-protection
+requirements only (`tests`, `governance`).  Because `reviewing-changes` is
+advisory, auto-merge can race the coordinator and merge before it finishes.
 
 See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full state machine design.
 
