@@ -313,15 +313,19 @@ def invalidate_stale_verdict(
     Returns:
         ``True`` if a stale verdict was removed, ``False`` otherwise.
     """
-    if not is_verdict_stale(pr_number, current_head_sha, queue_dir):
+    verdict = read_verdict(pr_number, queue_dir)
+    if verdict is None:
+        return False
+    if verdict.reviewed_sha == current_head_sha:
         return False
 
+    stale_sha = verdict.reviewed_sha
     path = verdict_path(pr_number, queue_dir)
     path.unlink(missing_ok=True)
     logger.info(
         "Stale verdict removed for PR #%d (reviewed %s, current %s)",
         pr_number,
-        "?",
+        stale_sha,
         current_head_sha,
     )
     return True
@@ -333,7 +337,7 @@ def invalidate_stale_verdict(
 
 # Precheck IDs aligned with the review gate definitions in
 # docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md and .claude/rules/deferred/60_review_gate.md.
-PRECHECK_IDS = frozenset({"C1", "C2", "C5", "N1", "N2", "N3", "T1", "X2", "X3"})
+PRECHECK_IDS = frozenset({"C1", "C2", "N1", "N2", "N3", "T1", "X2", "X3"})
 
 
 @dataclass(frozen=True)
@@ -365,6 +369,16 @@ class PrecheckFinding:
         if self.line is not None:
             d["line"] = self.line
         return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PrecheckFinding:
+        return cls(
+            check_id=str(data["check_id"]),
+            severity=str(data["severity"]),
+            message=str(data["message"]),
+            file=data.get("file"),
+            line=data.get("line"),
+        )
 
 
 def precheck_to_verdict(

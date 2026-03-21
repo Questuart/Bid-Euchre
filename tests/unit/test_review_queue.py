@@ -473,3 +473,22 @@ class TestPrecheckFinding:
         d = f.to_dict()
         assert d["file"] == "src/foo.py"
         assert d["line"] == 10
+
+    def test_from_dict_round_trip(self) -> None:
+        f = PrecheckFinding(
+            check_id="C1",
+            severity="BLOCK",
+            message="unseeded randomness",
+            file="src/strategy.py",
+            line=42,
+        )
+        d = f.to_dict()
+        restored = PrecheckFinding.from_dict(d)
+        assert restored == f
+
+    def test_from_dict_minimal(self) -> None:
+        d = {"check_id": "N1", "severity": "WARN", "message": "missing facet"}
+        f = PrecheckFinding.from_dict(d)
+        assert f.check_id == "N1"
+        assert f.file is None
+        assert f.line is None
