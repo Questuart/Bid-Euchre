@@ -227,7 +227,7 @@ def _aggregate_prechecks(
         return
 
     for f in findings:
-        check_id = f.get("check_id") or "unknown"
+        check_id = f.get("check_id") or "unstructured"
         entry = _get_or_create(agg, check_id, "deterministic_precheck")
         entry.total += 1
         sev = f.get("severity", "P2")
@@ -280,7 +280,7 @@ def _aggregate_scoring(
 
     for f in findings:
         if f.get("filtered"):
-            check_id = f.get("check_id") or "unknown"
+            check_id = f.get("check_id") or "unstructured"
             # Try to infer source — scoring happens after codex review
             entry = _get_or_create(agg, check_id, "codex_cli")
             entry.filtered += 1
@@ -353,8 +353,11 @@ def classify_fix_pr(title: str) -> str | None:
 
     # Pattern: "fix(fix:category): ..."
     if title_lower.startswith("fix(fix:"):
-        end = title_lower.index(")")
-        return title_lower[8:end].strip() or "general"
+        try:
+            end = title_lower.index(")")
+            return title_lower[8:end].strip() or "general"
+        except ValueError:
+            return "general"
 
     # Pattern: "fix: ..."
     if title_lower.startswith("fix:"):

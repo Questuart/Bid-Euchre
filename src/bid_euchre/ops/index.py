@@ -114,6 +114,7 @@ SOURCE_TYPES = frozenset(
         "execution_log",
         "review",
         "plan_review",
+        "pr_comment",
     }
 )
 
