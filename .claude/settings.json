@@ -37,6 +37,16 @@
             "statusMessage": "Re-injecting critical context..."
           }
         ]
+      },
+      {
+        "matcher": "worktree-sync",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-sync-worktree.sh",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PostToolUse": [
