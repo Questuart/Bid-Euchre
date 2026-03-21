@@ -44,8 +44,8 @@ class TestClaudeReviewWorkflow:
         step = self._review_step()
         claude_args = step["with"]["claude_args"]
         assert (
-            "--max-turns 10" in claude_args
-        ), f"expected '--max-turns 10' in claude_args, got {claude_args!r}"
+            "--max-turns 15" in claude_args
+        ), f"expected '--max-turns 15' in claude_args, got {claude_args!r}"
 
     def test_no_continue_on_error(self):
         """Review step must NOT use continue-on-error — failures must be visible."""
@@ -84,6 +84,28 @@ class TestClaudeReviewWorkflow:
             assert (
                 tool in claude_args
             ), f"write tool '{tool}' must be in --disallowedTools list"
+
+    def test_disallowed_tools_blocks_network_and_agent_tools(self):
+        """Agent, WebFetch, WebSearch, and LSP must be disallowed.
+
+        These tools are denied by the CI sandbox and waste turns when
+        attempted. Blocking them upfront saves ~36% of the turn budget.
+        """
+        step = self._review_step()
+        claude_args = step["with"]["claude_args"]
+        for tool in ("Agent", "WebFetch", "WebSearch", "LSP"):
+            assert (
+                tool in claude_args
+            ), f"'{tool}' must be in --disallowedTools to prevent wasted turns"
+
+    def test_full_git_history_for_diff(self):
+        """Checkout must use fetch-depth 0 so git diff origin/main works."""
+        steps = self.cfg["jobs"]["claude-review"]["steps"]
+        checkout = next(s for s in steps if "checkout" in s.get("uses", ""))
+        assert checkout["with"]["fetch-depth"] == 0, (
+            "fetch-depth must be 0 for full git history — "
+            "the reviewer needs git diff origin/main...HEAD"
+        )
 
     # -- infra-failure classifier constraints --
 
