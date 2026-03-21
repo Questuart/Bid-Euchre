@@ -244,6 +244,153 @@ Agent-created triage issues should use a consistent body format:
 
 ---
 
+## Repair Eligibility Contract
+
+### Purpose
+
+Post-merge review and the review loop create follow-up issues for shipped
+mistakes. This section defines when those issues (and any other triage issues)
+are eligible for **autonomous repair** — bounded follow-up PRs that fix the
+identified problem.
+
+Repair eligibility builds on the [Execution Gate](#execution-gate) above. It
+does not create a separate authority path. An issue must pass the execution
+gate **and** the additional repair-specific criteria below.
+
+### Eligibility Criteria
+
+An issue is eligible for autonomous repair when **all** of the following are
+true:
+
+| # | Criterion | Rationale |
+|---|-----------|-----------|
+| R1 | Issue is **open** | Closed issues are not actionable |
+| R2 | Issue has the **`agent-ready`** label | Human or reviewer has confirmed the fix is bounded and safe |
+| R3 | Issue is **assigned** to a specific lane (GitHub assignee or `claimed: <lane>` comment) | Prevents multiple lanes from racing on the same fix |
+| R4 | Issue does **not** have the **`needs-human`** label | Human decision is required before work can begin |
+| R5 | **No open repair PR** already exists for this issue | One active repair PR per issue at a time |
+| R6 | Issue has **sufficient repro context** (error message, failing test, or reproduction command) | Bounded execution requires bounded input |
+| R7 | Issue scope fits within a **single follow-up PR** (≤5 files, no architectural changes) | Repairs must be small and focused |
+
+### What Is NOT Repair-Eligible
+
+| Situation | Action Instead |
+|-----------|---------------|
+| Issue lacks `agent-ready` | Leave in backlog; add a comment if you believe it's ready |
+| Issue has `needs-human` | Wait for human decision |
+| Repair PR is already open | Wait for it to resolve or be closed |
+| Fix requires >5 files or architectural change | Escalate to a governed plan step or session plan |
+| Fix touches protected review/bridge files | Escalate to ops or the human operator |
+| Repro context is unclear or missing | Add a comment requesting more context; do not attempt |
+
+### Claiming an Issue
+
+To claim an issue for repair:
+
+1. Verify all eligibility criteria (R1–R7) are met
+2. Assign yourself (or your lane) via GitHub assignee or a comment:
+   `claimed: author-a`
+3. Begin the [Repair Execution Path](#repair-execution-path) below
+
+If the issue is already claimed by another lane, do not override the claim.
+Wait for the existing claim to resolve.
+
+---
+
+## Repair Execution Path
+
+### The Flow
+
+An agent executing a repair follows this sequence:
+
+| Step | Action | Validation |
+|------|--------|------------|
+| 1 | **Claim** the issue (see above) | R1–R7 all pass |
+| 2 | **Branch** from fresh `origin/main` | `git fetch origin main && git checkout -b fix/<issue>-<slug> origin/main` |
+| 3 | **Reproduce** the problem locally | Run the repro command from the issue; confirm the failure |
+| 4 | **Patch** the identified code | Minimal fix targeting the root cause |
+| 5 | **Validate** with targeted tests + full suite | `uv run pytest tests/unit/test_<module>.py` then `make check-quiet` |
+| 6 | **Open follow-up PR** linked to the issue and source PR | Use the PR template; include `Fixes #<issue>` in the body |
+| 7 | **Update issue** with a comment noting the repair PR | Link the PR and summarize the fix |
+
+### Branch Naming
+
+Repair branches follow the pattern:
+
+```
+fix/<issue_number>-<short_slug>
+```
+
+Examples:
+- `fix/1045-unseeded-random`
+- `fix/1052-missing-assertion`
+
+### PR Requirements
+
+Repair PRs must:
+
+- Use the standard PR template (`.github/pull_request_template.md`)
+- Include `Fixes #<issue_number>` in the body (auto-closes the issue on merge)
+- Reference the source PR that introduced the problem (if known)
+- Include the exact reproduction command and validation output
+- Pass `make check-quiet` before opening
+
+### What Happens After
+
+- The repair PR enters the normal review loop (`reviewing-changes`)
+- If the review loop finds additional issues, those become separate follow-up
+  issues — not scope expansions of the current repair
+- On merge, the linked issue is auto-closed via `Fixes #<N>`
+
+---
+
+## Stop Rules and Escalation
+
+### Hard Stop Rules
+
+These rules are non-negotiable. Violation means the repair attempt must stop
+immediately.
+
+| Rule | Rationale |
+|------|-----------|
+| **No direct `main` mutation** | All repairs land via follow-up PRs |
+| **One active repair PR per issue** | Prevents racing and conflicting fixes |
+| **Maximum 2 repair attempts per issue** | Prevents infinite retry loops |
+| **No scope expansion** | Repair fixes the identified issue only; new findings become new issues |
+
+### Escalation Triggers
+
+A repair agent must **stop and escalate** (not retry) when any of the
+following occur:
+
+| Trigger | Action |
+|---------|--------|
+| **Reproduction fails** — the issue cannot be confirmed locally | Add a comment: "Could not reproduce — needs investigation". Remove the lane claim. |
+| **Scope drift** — the fix requires changes beyond the issue's identified subsystem | Stop. File a new issue or session plan for the broader fix. |
+| **Protected files** — the fix would modify review infrastructure, bridge files, or CI workflows | Stop. Escalate to the operator or ops lane. |
+| **Validation failure on second attempt** — `make check-quiet` fails after the second patch attempt | Stop. Add a comment: "Repair blocked after 2 attempts — needs human review". Add `needs-human` label. |
+| **Conflict with existing work** — the repair would conflict with an open PR on the same files | Stop. Wait for the conflicting PR to merge, then retry from fresh `main`. |
+
+### Retry Policy
+
+| Attempt | What happens |
+|---------|-------------|
+| 1st | Normal repair flow. If validation fails, diagnose and try a different approach. |
+| 2nd | Second attempt with a different fix strategy. If this also fails, escalate. |
+| 3rd+ | **Not permitted.** Add `needs-human` and stop. |
+
+### Escalation Destinations
+
+| Situation | Escalate to |
+|-----------|-------------|
+| Reproduction unclear | Issue comment + remove claim |
+| Scope too broad | New session plan or governed plan step |
+| Protected files involved | Operator (ops lane or human) |
+| Repeated failure | `needs-human` label on the issue |
+| Conflict with open work | Wait and retry after conflicting PR merges |
+
+---
+
 ## Relationship to Existing Systems
 
 | System | Creates Issues? | This Workflow Applies? |
@@ -253,9 +400,11 @@ Agent-created triage issues should use a consistent body format:
 | Post-merge review | No (creates PRs) | No |
 | Steward periodic review | Yes (manual) | No — manual, free-form |
 | **Agent triage (this doc)** | Yes | **Yes** |
+| **Agent repair (this doc)** | No (creates PRs from issues) | **Yes** (eligibility + execution) |
 
 The agent triage workflow is additive. It does not replace, modify, or
-interfere with any existing issue-creation system.
+interfere with any existing issue-creation system. The repair lane consumes
+issues created by any of the systems above — it does not create new issues.
 
 ---
 
@@ -276,8 +425,10 @@ no code enforcement and no hooks. To disable or roll back:
 ## References
 
 - `plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` — PR-5 governing plan
-- `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` — canonical operator workflow
+- `plans/sessions/2026-03-20_post-merge-repair-lane.md` — repair lane session plan
+- `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` — canonical operator workflow (includes repair UX)
 - `scripts/internal/review_driver.py` — existing review-loop issue creation
+- `scripts/internal/ops.py` — operator CLI (`repairs` subcommand for queue visibility)
 - `.github/workflows/infra_incident_dedupe.yml` — existing infra-incident dedupe
 - `.claude/rules/deferred/60_review_gate.md` — follow-up issue labels and severity
 - `.claude/agents/issues.md` — agent profile for triage work

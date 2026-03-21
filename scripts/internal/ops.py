@@ -30,6 +30,7 @@ Usage:
     uv run python scripts/internal/ops.py skills review CANDIDATE_ID --approve|--reject --reviewed-by LANE [--notes TEXT] [--json]
     uv run python scripts/internal/ops.py skills promote CANDIDATE_ID [--json]
     uv run python scripts/internal/ops.py skills disable NAME [--reason TEXT] [--disabled-by LANE] [--json]
+    uv run python scripts/internal/ops.py repairs [--json]
 """
 
 from __future__ import annotations
@@ -1277,6 +1278,39 @@ def cmd_skills_disable(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_repairs(args: argparse.Namespace) -> int:
+    """Show repair-eligible issues from GitHub."""
+    from bid_euchre.ops.repairs import (
+        format_repair_table,
+        query_repair_candidates,
+    )
+
+    candidates = query_repair_candidates()
+
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "number": c.number,
+                        "title": c.title,
+                        "url": c.url,
+                        "labels": c.labels,
+                        "assignees": c.assignees,
+                        "status": c.status_summary,
+                        "eligible": c.is_eligible,
+                    }
+                    for c in candidates
+                ],
+                indent=2,
+            )
+        )
+    else:
+        print(format_repair_table(candidates))
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -1610,6 +1644,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--disabled-by", type=str, default="operator", help="Who is disabling"
     )
 
+    # repairs — repair-eligible issue queue
+    subparsers.add_parser("repairs", help="Show repair-eligible issues from GitHub")
+
     return parser
 
 
@@ -1654,6 +1691,7 @@ def main(argv: list[str] | None = None) -> int:
         "scope": cmd_scope,
         "snapshot": cmd_snapshot,
         "skills": cmd_skills,
+        "repairs": cmd_repairs,
     }
 
     handler = commands.get(args.command)

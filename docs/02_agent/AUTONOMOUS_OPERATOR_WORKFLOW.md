@@ -445,6 +445,99 @@ user:
 
 ---
 
+## Post-Merge Repair Queue
+
+### Overview
+
+When the review loop or post-merge review creates follow-up issues for
+shipped mistakes, those issues may be eligible for **autonomous repair** by
+an author lane. The repair lane is bounded, issue-driven, and lands fixes
+via follow-up PRs only.
+
+The full repair contract lives in
+`docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` (sections: Repair Eligibility
+Contract, Repair Execution Path, Stop Rules and Escalation). This section
+covers the **operator-facing UX** — what changes for the person supervising
+agents.
+
+### What Changed
+
+| Before | After |
+|--------|-------|
+| Follow-up issues sat in backlog until manually addressed | Eligible issues can be claimed and repaired autonomously |
+| Repair intent was sometimes expressed via PR comments | Repair queue is the issue tracker, not PR comments |
+| No bounded retry or escalation policy | Max 2 attempts per issue, then `needs-human` |
+
+### Operator Responsibilities
+
+#### Where to look for repair work
+
+```bash
+# View repair-eligible issues (issues meeting all R1–R7 criteria)
+uv run python scripts/internal/ops.py repairs [--json]
+```
+
+The `repairs` command queries GitHub for issues that are:
+- Open
+- Labeled `agent-ready`
+- Labeled `follow-up` or `triage` (repair sources)
+- Not labeled `needs-human`
+
+It cross-checks for existing open repair PRs and shows which issues are
+claimable vs already claimed.
+
+#### What counts as ready vs blocked
+
+| State | Meaning | Operator action |
+|-------|---------|-----------------|
+| **Eligible** | All R1–R7 criteria met, no active repair PR | Assign to an available author lane |
+| **Claimed** | Assigned to a lane, repair in progress | Monitor — expect a follow-up PR |
+| **Blocked** | Has `needs-human` or failed 2 repair attempts | Investigate and decide: fix manually, refine the issue, or close |
+| **Stale claim** | Claimed but no PR opened within a reasonable time | Check if the lane is alive; reclaim or release |
+
+#### What to expect
+
+- Repairs produce **follow-up PRs**, not silent hotfixes
+- Each follow-up PR links to the source issue via `Fixes #<N>`
+- The follow-up PR enters the normal review loop
+- One issue = one active repair PR at a time
+
+#### When repair is stuck
+
+| Symptom | Operator action |
+|---------|-----------------|
+| Issue has `needs-human` after failed attempts | Read the agent's failure comments; decide whether to refine the issue, fix manually, or close |
+| Repair PR is open but failing CI | Treat like any other PR — check CI, help unblock, or close |
+| No lanes available for repair work | Backlog is fine — issues wait until a lane is free |
+| Repair scope too broad for a follow-up PR | Convert to a session plan or governed plan step |
+
+### Lane Assignment for Repairs
+
+The preferred repair assignment order:
+
+1. **Same author lane** that shipped the original PR (if available)
+2. **Any available author lane** (`author-a` through `author-d`)
+3. **Never** the `review`, `ops`, or `scratch` lanes
+
+The operator assigns repair work. Lanes do not self-assign unless the issue
+is already assigned to them via GitHub.
+
+### Repair Queue vs Other Work
+
+Repair work is **lower priority** than:
+- Active governed plan steps
+- In-progress session plans
+- Blocking CI fixes
+
+Repair work is **higher priority** than:
+- Unassigned backlog issues without `agent-ready`
+- Exploratory or convenience improvements
+
+The operator balances repair work against current priorities. There is no
+automatic scheduler — repair assignment is a deliberate operator decision.
+
+---
+
 ## Task Discipline and Lane Governance
 
 ### One Task Per Lane
@@ -863,6 +956,7 @@ workspace health monitoring, event inspection, and operational management.
 | `snapshot list` | List shadow snapshots | `ops.py snapshot list --worktree /path` |
 | `snapshot rollback` | Roll back to a snapshot | `ops.py snapshot rollback snap-abc123` |
 | `snapshot prune` | Prune old snapshots | `ops.py snapshot prune --max-per-worktree 10` |
+| `repairs` | Show repair-eligible issues from GitHub | `ops.py repairs --json` |
 
 All commands support `--json` for machine-readable output. Use
 `--runtime-dir` and `--plans-dir` to override default paths.
