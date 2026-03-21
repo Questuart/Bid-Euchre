@@ -695,20 +695,21 @@ The full checklist is at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.
 - [x] `ops.py status` is trustworthy enough to support dashboard-first work
 - [x] worktree/session registry behavior is stable enough to extend rather
   than re-litigate
-- [ ] **review surfaces dialed in** — Platform-1 must not begin on top of
+- [x] **review surfaces dialed in** — Platform-1 must not begin on top of
   unstable PR-review plumbing:
   - [x] `reviewing-changes` remains the merge-relevant gate
   - [x] `claude-review` remains visible without poisoning CI
   - [x] Codex Cloud proving-run behavior is recorded accurately
-  - [ ] PR comment ingestion bridge lands so Codex Cloud comments are
-    operationally visible (not speculative check/status plumbing)
+  - [x] PR comment ingestion bridge lands so Codex Cloud comments are
+    operationally visible (not speculative check/status plumbing) — shipped
+    in #1122
 - [x] **repo-bounded filesystem access** is the default, with only narrow
   managed exceptions and explicit operator approval for outside-repo access
   — shipped in #1115 (`src/bid_euchre/ops/fs_boundary.py`)
 
-> **Bridge queue (2026-03-20):** The remaining unchecked items are tracked in
-> `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`.
-> Platform-1 (Step 3) opens once the bridge gate is satisfied.
+> **Bridge gate satisfied (2026-03-21).** All items resolved. See
+> `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md` for the full entry checklist.
+> Platform-1 (Step 3) is now open.
 
 ### Sequencing principle
 
@@ -1403,6 +1404,7 @@ _To be filled after implementation._
 - Notes:
   - Governing-plan scaffold created on 2026-03-19.
   - PR-5 closed on 2026-03-20; all slices complete.
-  - Phase 0 remains active: post-PR-5 bridge gate (filesystem boundary +
-    PR comment ingestion) must be satisfied before Platform-1 begins.
+  - Post-PR-5 bridge gate satisfied (2026-03-21): filesystem boundary
+    (#1115), PR comment ingestion (#1122), and related hardening all landed.
+    Platform-1 is now open.
   - Entry checklist published at `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`.
