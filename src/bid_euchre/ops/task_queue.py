@@ -14,7 +14,6 @@ Storage is file-based under ``.claude/runtime/task_queue/``:
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import shutil
@@ -60,6 +59,22 @@ KNOWN_AUTHOR_LANES = frozenset(
         "author-scratch",
     }
 )
+
+# Valid state transitions for the task packet lifecycle.
+# Enforced by transition_status() to prevent incoherent state from
+# misbehaving agents.
+#
+# The pending state allows both preview (non-trivial) and direct approval
+# (trivial tasks that skip preview per orchestrator profile guidelines).
+VALID_TRANSITIONS: dict[str, frozenset[str]] = {
+    "pending": frozenset({"previewing", "approved", "rejected", "redirected"}),
+    "previewing": frozenset({"approved", "rejected", "redirected"}),
+    "approved": frozenset({"dispatched", "rejected"}),
+    "dispatched": frozenset({"completed"}),
+    "completed": frozenset(),  # terminal
+    "rejected": frozenset(),  # terminal
+    "redirected": frozenset(),  # terminal
+}
 
 
 # ---------------------------------------------------------------------------
@@ -251,15 +266,18 @@ def shared_task_root(runtime_dir: Path | None = None) -> Path:
 
 
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
-    """Write JSON data atomically using a temporary file + rename."""
+    """Write JSON data atomically using a temporary file + rename.
+
+    Relies on POSIX ``rename()`` atomicity for crash safety.
+    No cross-process locking — last writer wins in concurrent scenarios.
+    Platform-3 may add a lockfile protocol if needed.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".tmp")
     try:
         with open(tmp_path, "w") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             json.dump(data, f, indent=2, default=str)
             f.write("\n")
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         tmp_path.rename(path)
     except Exception:
         if tmp_path.exists():
@@ -469,6 +487,15 @@ def transition_status(
         logger.warning("Cannot transition: packet %s not found", packet_id)
         return None
 
+    # Validate the transition against the state machine
+    allowed = VALID_TRANSITIONS.get(pkt.status, frozenset())
+    if new_status not in allowed:
+        raise ValueError(
+            f"Invalid transition {pkt.status!r} -> {new_status!r} for "
+            f"packet {packet_id!r}; allowed targets from {pkt.status!r}: "
+            f"{sorted(allowed) if allowed else '(terminal state)'}"
+        )
+
     # Build updated packet (frozen dataclass — reconstruct)
     data = asdict(pkt)
     data["status"] = new_status
@@ -542,10 +569,10 @@ def apply_ack(
         return new_pkt
 
     elif ack.action == "reject":
-        transition_status(ack.packet_id, "rejected", root)
+        rejected_pkt = transition_status(ack.packet_id, "rejected", root)
         archive_packet(ack.packet_id, root)
         logger.info("Rejected and archived %s", ack.packet_id)
-        return load_packet(ack.packet_id, root)  # Will be None (archived)
+        return rejected_pkt  # Return the final state before archive
 
     return None
 

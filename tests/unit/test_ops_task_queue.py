@@ -18,6 +18,7 @@ from bid_euchre.ops.task_queue import (
     VALID_PRIORITIES,
     VALID_RESULT_STATUSES,
     VALID_STATUSES,
+    VALID_TRANSITIONS,
     TaskPacket,
     apply_ack,
     archive_packet,
@@ -331,7 +332,8 @@ class TestListPackets:
     def test_list_filter_by_status(self, tmp_path: Path) -> None:
         pkt1 = create_packet("Task 1", "Desc 1")
         save_packet(pkt1, tmp_path)
-        # Transition one to approved
+        # Transition through valid flow: pending -> previewing -> approved
+        transition_status(pkt1.packet_id, "previewing", tmp_path)
         transition_status(pkt1.packet_id, "approved", tmp_path)
         pkt2 = create_packet("Task 2", "Desc 2")
         save_packet(pkt2, tmp_path)
@@ -375,6 +377,12 @@ class TestLifecycleTransitions:
         pkt = create_packet("Task", "d")
         save_packet(pkt, tmp_path)
 
+        # pending -> previewing (valid)
+        updated = transition_status(pkt.packet_id, "previewing", tmp_path)
+        assert updated is not None
+        assert updated.status == "previewing"
+
+        # previewing -> approved (valid)
         updated = transition_status(pkt.packet_id, "approved", tmp_path)
         assert updated is not None
         assert updated.status == "approved"
@@ -384,6 +392,34 @@ class TestLifecycleTransitions:
         assert reloaded is not None
         assert reloaded.status == "approved"
 
+    def test_transition_pending_to_approved_direct(self, tmp_path: Path) -> None:
+        """Trivial tasks can skip preview: pending -> approved."""
+        pkt = create_packet("Trivial fix", "d")
+        save_packet(pkt, tmp_path)
+
+        updated = transition_status(pkt.packet_id, "approved", tmp_path)
+        assert updated is not None
+        assert updated.status == "approved"
+
+    def test_transition_invalid_from_terminal_raises(self, tmp_path: Path) -> None:
+        """Terminal states (completed, rejected, redirected) cannot transition."""
+        pkt = create_packet("Task", "d")
+        save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "rejected", tmp_path)
+
+        with pytest.raises(ValueError, match="Invalid transition"):
+            transition_status(pkt.packet_id, "approved", tmp_path)
+
+    def test_transition_dispatched_to_pending_raises(self, tmp_path: Path) -> None:
+        """Backward transitions are not allowed."""
+        pkt = create_packet("Task", "d")
+        save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
+        transition_status(pkt.packet_id, "dispatched", tmp_path)
+
+        with pytest.raises(ValueError, match="Invalid transition"):
+            transition_status(pkt.packet_id, "pending", tmp_path)
+
     def test_transition_nonexistent_returns_none(self, tmp_path: Path) -> None:
         shared_task_root(tmp_path)
         assert transition_status("nonexistent", "approved", tmp_path) is None
@@ -391,6 +427,26 @@ class TestLifecycleTransitions:
     def test_transition_invalid_status_raises(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Invalid target status"):
             transition_status("any", "bogus", tmp_path)
+
+    def test_valid_transitions_covers_all_statuses(self) -> None:
+        """Every valid status has an entry in the transition map."""
+        assert set(VALID_TRANSITIONS.keys()) == VALID_STATUSES
+
+    def test_transition_map_targets_are_valid(self) -> None:
+        """All transition targets are themselves valid statuses."""
+        for source, targets in VALID_TRANSITIONS.items():
+            for target in targets:
+                assert (
+                    target in VALID_STATUSES
+                ), f"Transition {source!r} -> {target!r}: target is not a valid status"
+
+    def test_terminal_states_have_no_transitions(self) -> None:
+        """Terminal states (completed, rejected, redirected) cannot transition."""
+        for terminal in ("completed", "rejected", "redirected"):
+            assert VALID_TRANSITIONS[terminal] == frozenset(), (
+                f"{terminal!r} should be terminal but allows: "
+                f"{VALID_TRANSITIONS[terminal]}"
+            )
 
     def test_archive_packet(self, tmp_path: Path) -> None:
         pkt = create_packet("Task", "d")
@@ -490,7 +546,11 @@ class TestApplyAck:
         save_packet(pkt, tmp_path)
 
         ack = create_ack(pkt.packet_id, "reject")
-        apply_ack(ack, tmp_path)
+        rejected = apply_ack(ack, tmp_path)
+
+        # Return value should be the rejected packet (not None)
+        assert rejected is not None
+        assert rejected.status == "rejected"
 
         # After reject, packet is archived (not loadable from queue root)
         assert load_packet(pkt.packet_id, tmp_path) is None
@@ -517,6 +577,7 @@ class TestCompletePacket:
     def test_complete_and_archive(self, tmp_path: Path) -> None:
         pkt = create_packet("Task", "d", owner="author-b")
         save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
         transition_status(pkt.packet_id, "dispatched", tmp_path)
 
         result = create_result(
@@ -531,9 +592,49 @@ class TestCompletePacket:
         archive_dir = tmp_path / "archive"
         assert (archive_dir / f"{pkt.packet_id}.result.json").exists()
 
+    def test_complete_with_failed_result(self, tmp_path: Path) -> None:
+        """Failed result archives packet with dispatched status + result sidecar."""
+        pkt = create_packet("Task", "d", owner="author-a")
+        save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
+        transition_status(pkt.packet_id, "dispatched", tmp_path)
+
+        result = create_result(pkt.packet_id, "failed", "Tests failed")
+        final = complete_packet(result, tmp_path)
+
+        # Packet returned with its last valid status (dispatched)
+        assert final is not None
+        assert final.status == "dispatched"
+
+        # Packet is archived
+        assert load_packet(pkt.packet_id, tmp_path) is None
+
+        # Result sidecar in archive records the actual failure
+        archive_dir = tmp_path / "archive"
+        result_path = archive_dir / f"{pkt.packet_id}.result.json"
+        assert result_path.exists()
+        result_data = json.loads(result_path.read_text())
+        assert result_data["status"] == "failed"
+
+    def test_complete_with_blocked_result(self, tmp_path: Path) -> None:
+        """Blocked result archives packet with dispatched status + result sidecar."""
+        pkt = create_packet("Task", "d", owner="author-b")
+        save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
+        transition_status(pkt.packet_id, "dispatched", tmp_path)
+
+        result = create_result(pkt.packet_id, "blocked", "Blocked by dependency")
+        final = complete_packet(result, tmp_path)
+
+        assert final is not None
+        assert final.status == "dispatched"
+        assert load_packet(pkt.packet_id, tmp_path) is None
+
     def test_complete_without_archive(self, tmp_path: Path) -> None:
         pkt = create_packet("Task", "d", owner="author-a")
         save_packet(pkt, tmp_path)
+        transition_status(pkt.packet_id, "approved", tmp_path)
+        transition_status(pkt.packet_id, "dispatched", tmp_path)
 
         result = create_result(pkt.packet_id, "completed", "Done")
         complete_packet(result, tmp_path, archive=False)
@@ -565,6 +666,8 @@ class TestQueueSummary:
         save_packet(create_packet("T2", "d", owner="author-b"), tmp_path)
         pkt3 = create_packet("T3", "d", owner="author-a")
         save_packet(pkt3, tmp_path)
+        # Valid transition: pending -> approved -> dispatched
+        transition_status(pkt3.packet_id, "approved", tmp_path)
         transition_status(pkt3.packet_id, "dispatched", tmp_path)
 
         summary = queue_summary(tmp_path)
