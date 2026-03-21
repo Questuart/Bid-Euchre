@@ -52,5 +52,5 @@ Discard: exploration tangents, superseded plans, verbose file contents already s
 ## Docs-Only CI (Resolved)
 - CI now uses `dorny/paths-filter` instead of `paths-ignore` (PR #635)
 - The `tests` job always triggers and posts a status
-- Docs/plans-only PRs skip heavy steps via per-step `if` conditions
+- Docs/plans-only PRs skip heavy jobs via path-filter gating
 - No more deadlock — no need for `# trigger CI` workarounds

@@ -73,8 +73,22 @@ def classify_check(name: str) -> str:
 
 # DEPRECATED fail-closed allowlist — prefer classify_check() (fail-open denylist).
 # New CI jobs are included by default via classify_check(); this set is retained
-# for backward compat only. Update both when adding workflow jobs. See #1036, #1041.
-CI_CHECK_NAMES: frozenset[str] = frozenset({"tests", "prechecks", "governance"})
+# for backward compat only.  Updated for sharded CI (PR #1086): the old
+# "prechecks" and "governance" jobs were removed; the new jobs are "checks",
+# "tests-shard" (matrix: "tests-shard (1)", "tests-shard (2)"), "notebooks",
+# "promotion-gate", and the "tests" aggregation gate.  See #1036, #1041, #1093.
+CI_CHECK_NAMES: frozenset[str] = frozenset(
+    {
+        "changes",
+        "checks",
+        "tests-shard",
+        "tests-shard (1)",
+        "tests-shard (2)",
+        "notebooks",
+        "promotion-gate",
+        "tests",
+    }
+)
 
 # Default timeout (seconds) for gh CLI subprocess calls.
 # Operator surfaces must never hang indefinitely.

@@ -176,7 +176,8 @@ overlap or replace each other.
 
 ## Known Issue: Docs-Only PRs and CI
 
-**Resolved (PR #635):** The CI workflow now uses `dorny/paths-filter` instead of
-`paths-ignore`. The `tests` job always triggers and posts a status. For docs/plans-only
-PRs, heavy steps (checkout, install, lint, test) are skipped via per-step `if` conditions,
-so the job completes in seconds with a green status. No more deadlock.
+**Resolved (PR #635, updated PR #1086):** The CI workflow uses `dorny/paths-filter`
+to gate job execution. The `tests` aggregation gate always triggers and posts a status.
+For docs/plans-only PRs, heavy jobs (`checks`, `tests-shard`, `notebooks`,
+`promotion-gate`) are skipped entirely via path-filter gating, and the `tests`
+aggregation gate passes on all-skipped upstream. No more deadlock.
