@@ -3,7 +3,9 @@ name: Auto-merge
 on:
   pull_request:
     branches: [main]
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
+  check_suite:
+    types: [completed]
 
 permissions:
   contents: write
@@ -11,12 +13,56 @@ permissions:
 
 jobs:
   enable-auto-merge:
-    # Only auto-merge PRs from the repo owner (not external contributors)
-    if: github.event.pull_request.user.login == github.repository_owner
     runs-on: ubuntu-latest
+    # pull_request events: must be owner-authored (gate immediately)
+    # check_suite events: must have succeeded (eligibility checked in step)
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login == github.repository_owner)
+      ||
+      (github.event_name == 'check_suite' &&
+       github.event.check_suite.conclusion == 'success')
     steps:
       - name: Enable auto-merge (squash)
-        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.check_suite.head_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "::group::Enable auto-merge for PR #${PR_NUMBER} (${EVENT_ACTION})"
+            gh pr merge "$PR_NUMBER" --auto --squash \
+              && echo "Auto-merge enabled for PR #${PR_NUMBER}" \
+              || echo "::notice::Auto-merge attempt returned non-zero (may already be enabled or PR not eligible)"
+            echo "::endgroup::"
+
+          elif [ "$EVENT_NAME" = "check_suite" ]; then
+            echo "::group::Check suite completed for ${HEAD_SHA:0:12}"
+
+            # Find open, owner-authored PRs targeting main for this head SHA
+            prs=$(gh pr list \
+              --state open \
+              --base main \
+              --json number,author,headRefOid \
+              --jq ".[] | select(.headRefOid == \"${HEAD_SHA}\" and .author.login == \"${REPO_OWNER}\") | .number")
+
+            if [ -z "$prs" ]; then
+              echo "No eligible open PRs found for SHA ${HEAD_SHA:0:12}"
+              echo "::endgroup::"
+              exit 0
+            fi
+
+            for pr in $prs; do
+              echo "Retrying auto-merge for PR #${pr}"
+              gh pr merge "$pr" --auto --squash \
+                && echo "Auto-merge enabled for PR #${pr}" \
+                || echo "::notice::Auto-merge attempt for PR #${pr} returned non-zero (may already be enabled)"
+            done
+            echo "::endgroup::"
+          fi
