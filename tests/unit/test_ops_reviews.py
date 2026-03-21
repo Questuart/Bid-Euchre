@@ -240,20 +240,33 @@ class TestGetReviewStatusSkipped:
 
 
 class TestGetAdvisoryStatusSkipped:
-    """Tests for _get_advisory_status() with SKIPPED checks (#1191)."""
+    """Tests for _get_advisory_status() with SKIPPED checks (#1191).
 
-    def test_skipped_advisory_treated_as_success(self) -> None:
-        """A SKIPPED advisory check → success (defensive)."""
+    SKIPPED advisory checks are filtered out — they represent "not
+    applicable" (e.g., enable-auto-merge skips for non-owner PRs),
+    not a positive signal.
+    """
+
+    def test_all_skipped_advisory_returns_none(self) -> None:
+        """All SKIPPED advisory checks → none (no signal)."""
         checks = [{"name": "claude-review", "state": "SKIPPED"}]
-        assert _get_advisory_status(checks) == "success"
+        assert _get_advisory_status(checks) == "none"
 
     def test_success_plus_skipped_advisory(self) -> None:
-        """SUCCESS + SKIPPED advisory checks → success."""
+        """SUCCESS + SKIPPED advisory → success (only non-SKIPPED counted)."""
         checks = [
             {"name": "claude-review", "state": "SUCCESS"},
             {"name": "enable-auto-merge", "state": "SKIPPED"},
         ]
         assert _get_advisory_status(checks) == "success"
+
+    def test_failure_plus_skipped_advisory(self) -> None:
+        """FAILURE + SKIPPED advisory → failure (SKIPPED filtered out)."""
+        checks = [
+            {"name": "claude-review", "state": "FAILURE"},
+            {"name": "enable-auto-merge", "state": "SKIPPED"},
+        ]
+        assert _get_advisory_status(checks) == "failure"
 
 
 class TestClassifyCIStatusDefaultExcludesAdvisory:
