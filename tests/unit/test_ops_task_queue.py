@@ -2,12 +2,13 @@
 
 Covers: TaskPacket/TaskAck/TaskResult creation, validation, serialization,
 queue I/O, lifecycle transitions, ack handling (approve/edit/redirect/reject),
-and queue summary.
+queue summary, and concurrent write safety.
 """
 
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -306,6 +307,45 @@ class TestQueueIO:
         assert data["owner"] == "author-b"
         assert data["scope_declared"] == ["src/foo.py"]
         assert data["metadata"] == {"key": "value"}
+
+    def test_concurrent_saves_no_collision(self, tmp_path: Path) -> None:
+        """Concurrent save_packet calls must not corrupt each other.
+
+        Regression test for #1223: _write_json_atomic previously used a
+        deterministic .tmp path, so two concurrent writers to the same
+        packet_id could race on the shared temp file.
+        """
+        pkt = create_packet("Concurrent", "d", owner="author-a")
+        errors: list[Exception] = []
+        barrier = threading.Barrier(4)
+
+        def writer() -> None:
+            barrier.wait()
+            try:
+                save_packet(pkt, tmp_path)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        assert errors == [], f"Concurrent saves raised: {errors}"
+
+        # The final file should be valid JSON for this packet
+        loaded = load_packet(pkt.packet_id, tmp_path)
+        assert loaded is not None
+        assert loaded.packet_id == pkt.packet_id
+
+    def test_no_leftover_tmp_files_after_save(self, tmp_path: Path) -> None:
+        """Successful saves must not leave .tmp files behind."""
+        pkt = create_packet("Clean", "d")
+        save_packet(pkt, tmp_path)
+
+        tmp_files = list(tmp_path.glob("*.tmp"))
+        assert tmp_files == [], f"Leftover temp files: {tmp_files}"
 
 
 # ---------------------------------------------------------------------------
