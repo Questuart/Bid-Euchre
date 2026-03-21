@@ -1025,6 +1025,41 @@ class TestCreateFollowUpIssuesDedup:
 
         assert len(urls) == 1
 
+    def test_dedup_nonzero_exit_proceeds_with_creation(self) -> None:
+        """Non-zero exit from `gh issue list` logs warning and proceeds (#1082)."""
+
+        call_count = {"n": 0}
+
+        def _side_effect(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "list" in cmd:
+                # gh issue list returns non-zero (e.g., auth failure)
+                result = MagicMock()
+                result.returncode = 1
+                result.stdout = ""
+                return result
+            # The create call succeeds
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "https://github.com/test/repo/issues/104"
+            call_count["n"] += 1
+            return result
+
+        with (
+            patch("review_driver.subprocess.run", side_effect=_side_effect),
+            patch("review_driver.logger") as mock_logger,
+        ):
+            urls = _create_follow_up_issues(42, [_P2_FINDING])
+
+        # Issue should have been created despite dedup lookup failure
+        assert len(urls) == 1
+        assert "issues/104" in urls[0]
+        assert call_count["n"] >= 1
+        # Warning should mention non-zero exit
+        mock_logger.warning.assert_called()
+        warning_msg = mock_logger.warning.call_args[0][0]
+        assert "gh issue list exited" in warning_msg
+
     def test_dedup_does_not_catch_unexpected_error(self) -> None:
         """Unexpected errors (e.g., TypeError) must propagate, not be silently
         swallowed. This is the key behavioral change from #1043."""
