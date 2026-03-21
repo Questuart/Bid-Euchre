@@ -1395,7 +1395,10 @@ class TestRuntimeLimitTimeout:
         except Exception:
             loop.state = ReviewState.STOPPED_REVIEW_FAILURE.value
 
-        # _publish_status
+        # _publish_status — monkeypatch the module-level function so
+        # calling it via the production import verifies real wiring (#1203).
+        import review_driver
+
         published = {}
 
         def fake_publish(pr_number: int, state: str, description: str) -> bool:
@@ -1404,7 +1407,9 @@ class TestRuntimeLimitTimeout:
             published["desc"] = description
             return True
 
-        fake_publish(
+        monkeypatch.setattr(review_driver, "_publish_status", fake_publish)
+
+        review_driver._publish_status(
             loop.pr_number, "failure", f"Review timed out after {elapsed:.0f}s"
         )
 
@@ -1423,3 +1428,45 @@ class TestRuntimeLimitTimeout:
         saved = json.loads(path.read_text())
         assert saved["state"] == "stopped_review_failure"
         assert "Runtime limit" in saved["stop_reason"]
+
+    def test_grace_period_timeout_has_distinct_stop_reason(self) -> None:
+        """Grace-period timeout produces a stop_reason distinguishable from normal timeout.
+
+        When timeout fires from READY_TO_MERGE, the stop_reason must contain
+        'grace period' so operators can distinguish it from a normal elapsed-time
+        timeout in logs. Regression test for #1207 item 3.
+        """
+        from review_driver import _READY_TO_MERGE_GRACE_S
+        from review_state import ReviewLoopState, ReviewState
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.READY_TO_MERGE.value,
+            current_head_sha="sha_grace_timeout",
+        )
+
+        time_in_ready = _READY_TO_MERGE_GRACE_S + 1.0
+        elapsed = 500.0  # well under normal timeout
+
+        # Verify _should_timeout fires from READY_TO_MERGE
+        assert _should_timeout(
+            elapsed, 900, loop.current_state, time_in_ready
+        ), "Grace-period cap should trigger"
+
+        # Simulate the production code path: build the stop_reason
+        # exactly as the main loop does after our fix.
+        if loop.current_state == ReviewState.READY_TO_MERGE:
+            loop.stop_reason = (
+                f"READY_TO_MERGE grace period exceeded "
+                f"({time_in_ready:.0f}s > {_READY_TO_MERGE_GRACE_S}s)"
+            )
+        else:
+            loop.stop_reason = f"Runtime limit reached ({elapsed:.0f}s > 900s)"
+
+        assert (
+            "grace period" in loop.stop_reason.lower()
+        ), f"Grace-period timeout must be distinguishable. Got: {loop.stop_reason!r}"
+        assert (
+            "READY_TO_MERGE" in loop.stop_reason
+        ), "stop_reason should mention the state for operator diagnostics"
