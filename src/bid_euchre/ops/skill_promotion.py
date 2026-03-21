@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -131,13 +133,22 @@ def _load_candidate(path: Path) -> SkillCandidate:
 
 
 def _save_candidate(candidate: SkillCandidate, candidates_dir: Path) -> Path:
-    """Persist a candidate to disk."""
+    """Persist a candidate to disk atomically (temp + rename)."""
     candidates_dir.mkdir(parents=True, exist_ok=True)
     path = candidates_dir / f"{candidate.candidate_id}.json"
-    path.write_text(
-        json.dumps(candidate.to_dict(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    content = json.dumps(candidate.to_dict(), indent=2, ensure_ascii=False) + "\n"
+
+    # Atomic write: write to temp file, fsync, then rename
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(candidates_dir), suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        Path(tmp_path).rename(path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -463,10 +474,13 @@ def get_candidate(
 
 
 def _sanitize_comment(value: object) -> str:
-    """Strip HTML comment close sequence to prevent injection."""
+    """Strip HTML comment close sequences to prevent injection.
+
+    Handles both standard ``-->`` and HTML5 ``--!>`` terminators.
+    """
     if value is None:
         return "None"
-    return str(value).replace("-->", "-- >")
+    return str(value).replace("--!>", "--! >").replace("-->", "-- >")
 
 
 def _render_skill_md(candidate: SkillCandidate) -> str:

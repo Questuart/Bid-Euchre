@@ -15,6 +15,7 @@ from bid_euchre.ops.skill_promotion import (
     SkillCandidate,
     _render_skill_md,
     _sanitize_comment,
+    _save_candidate,
     disable_skill,
     format_candidates_json,
     format_candidates_text,
@@ -942,3 +943,64 @@ class TestRenderingSanitization:
         c = _propose(candidates_dir, description="path\\to\\file")
         content = _render_skill_md(c)
         assert 'description: "path\\\\to\\\\file"' in content
+
+    def test_html5_comment_terminator_sanitized(self, candidates_dir: Path) -> None:
+        """Values containing --!> are sanitized in rendered SKILL.md."""
+        c = _propose(
+            candidates_dir,
+            source_workflow="evil --!> <script>alert(1)</script>",
+        )
+        content = _render_skill_md(c)
+        assert "evil --! > <script>" in content
+        assert "evil --!> <script>" not in content
+
+    def test_sanitize_comment_html5(self) -> None:
+        assert _sanitize_comment("bad --!> value") == "bad --! > value"
+
+    def test_both_terminators_sanitized(self) -> None:
+        assert _sanitize_comment("a --> b --!> c") == "a -- > b --! > c"
+
+
+# ── Atomic write ──────────────────────────────────────────────
+
+
+class TestAtomicWrite:
+    """Verify _save_candidate() atomic write round-trip."""
+
+    def test_save_candidate_atomic_write(self, candidates_dir: Path) -> None:
+        """Verify _save_candidate() writes valid JSON that can be read back."""
+        c = SkillCandidate(
+            candidate_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            name="atomic-test",
+            description="Testing atomic write",
+            content="# Atomic\n",
+            source_workflow="test workflow",
+            proposed_by="author-b",
+            proposed_at="2026-03-20T00:00:00Z",
+            provenance={"prs": ["#1"]},
+        )
+        path = _save_candidate(c, candidates_dir)
+        assert path.exists()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["name"] == "atomic-test"
+        assert data["candidate_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert data["provenance"] == {"prs": ["#1"]}
+
+    def test_save_candidate_creates_dir(self, tmp_path: Path) -> None:
+        """Verify it creates the directory if missing."""
+        new_dir = tmp_path / "does_not_exist" / "nested"
+        c = SkillCandidate(
+            candidate_id="11111111-2222-3333-4444-555555555555",
+            name="dir-test",
+            description="Testing directory creation",
+            content="# Dir\n",
+            source_workflow="test workflow",
+            proposed_by="author-b",
+            proposed_at="2026-03-20T00:00:00Z",
+            provenance={},
+        )
+        path = _save_candidate(c, new_dir)
+        assert new_dir.exists()
+        assert path.exists()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        assert data["name"] == "dir-test"
