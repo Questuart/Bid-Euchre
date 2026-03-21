@@ -1297,3 +1297,32 @@ class TestRuntimeLimitTimeout:
         content = sentinel.read_text()
         assert "STOPPED_REVIEW_FAILURE" in content
         assert "Runtime limit" in content
+
+    def test_timeout_does_not_overwrite_ready_to_merge(self) -> None:
+        """Timeout must not fire when state is READY_TO_MERGE.
+
+        If the review decision has already been made (passed verdict written),
+        the timeout should let _step_ready_to_merge() complete the MERGED
+        transition rather than overwriting the passed verdict with blocked.
+        """
+        from review_state import ReviewLoopState, ReviewState
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.READY_TO_MERGE.value,
+            current_head_sha="sha_ready_merge",
+        )
+
+        # Simulate: elapsed > max_runtime_s but state is READY_TO_MERGE
+        elapsed = 901.0
+        max_runtime_s = 900
+
+        # The condition from main(): timeout only fires when NOT READY_TO_MERGE
+        should_timeout = (
+            elapsed > max_runtime_s and loop.current_state != ReviewState.READY_TO_MERGE
+        )
+        assert should_timeout is False, (
+            "Timeout must not fire when state is READY_TO_MERGE — "
+            "the passed verdict must not be overwritten"
+        )

@@ -1514,7 +1514,10 @@ def main() -> int:
 
     while not loop_state.is_terminal:
         elapsed = time.monotonic() - start_time
-        if elapsed > max_runtime_s:
+        if (
+            elapsed > max_runtime_s
+            and loop_state.current_state != ReviewState.READY_TO_MERGE
+        ):
             logger.warning(
                 "PR #%d: runtime limit reached (%.0fs) — stopping. "
                 "Rerun: python scripts/internal/review_driver.py "
