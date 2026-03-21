@@ -104,7 +104,11 @@ evidence is committed under `docs/04_reports/codex_validation/`.
 ### Deterministic Prechecks
 
 Implemented in `deterministic_prechecks.py`. The loop runs these
-as its first step before invoking Codex CLI. Checks include:
+as its first step before invoking Codex CLI. String literals inside
+triple-quoted blocks are masked before scanning to avoid false
+positives on test fixtures. Checks include:
+
+**Per-file checks (run on each changed `.py` file):**
 
 - Merge conflict markers (P0)
 - `TODO: remove before merge` (P1)
@@ -112,11 +116,18 @@ as its first step before invoking Codex CLI. Checks include:
 - Unseeded `random.Random()` / global random.* (P1, library only)
 - Falsy numeric guard `x = x or fallback` (P1, library only)
 - Import boundary violations (P1, library only)
+- C5: Redundant except — `except (Specific, ..., Exception)` tuple where
+  `Exception` makes specific catches redundant (P2)
 - Convention patterns: `== None`, `== True`, `breakpoint()` (P2)
-- N1: Missing contract-type facet in notebook groupby/plot (P1, notebooks only)
-- N2: Collapsed matchup table without team breakout (P1, notebooks only)
+- N1: Missing contract-type facet in notebook groupby/plot (P2, notebooks only)
+- N2: Collapsed matchup table without team breakout (P2, notebooks only)
 - N3: Inference claim without statistical test (P2, notebooks only)
-- X2: Core/scoring/logging changes without doc update (P2, diff-level)
+
+**Diff-level checks (run once across the full changed-file list):**
+
+- X2: Core/scoring/logging changes without doc update (P2)
+- T1: Library code changed (`src/**/*.py`, excluding `__init__.py`) without
+  corresponding test changes (`tests/**/*.py`) (P2)
 
 ### Plan Validation
 
