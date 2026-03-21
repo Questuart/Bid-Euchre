@@ -1406,6 +1406,39 @@ def _step_ready_to_merge(
     return loop_state
 
 
+# ---------------------------------------------------------------------------
+# Timeout helper
+# ---------------------------------------------------------------------------
+
+# Grace period beyond max_runtime_s for READY_TO_MERGE state.  If
+# _step_ready_to_merge() fails to advance within this window the loop
+# force-stops, preventing unbounded execution.
+_READY_TO_MERGE_GRACE_S = 60
+
+
+def _should_timeout(
+    elapsed: float, max_runtime_s: float, current_state: ReviewState
+) -> bool:
+    """Determine whether the review loop should timeout.
+
+    Normal timeout fires when *elapsed > max_runtime_s*, unless the loop is
+    in ``READY_TO_MERGE`` (the review decision is made; let the merge step
+    complete).  A hard grace-period cap of ``max_runtime_s + 60s`` fires
+    regardless of state to prevent unbounded loops if ``_step_ready_to_merge``
+    stalls.
+
+    Returns:
+        True if the loop should stop.
+    """
+    # Hard cap: always timeout after grace period, regardless of state
+    if elapsed > max_runtime_s + _READY_TO_MERGE_GRACE_S:
+        return True
+    # Normal timeout: skip if READY_TO_MERGE (let merge proceed)
+    if elapsed > max_runtime_s and current_state != ReviewState.READY_TO_MERGE:
+        return True
+    return False
+
+
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Autonomous review coordinator driver")
@@ -1514,10 +1547,7 @@ def main() -> int:
 
     while not loop_state.is_terminal:
         elapsed = time.monotonic() - start_time
-        if (
-            elapsed > max_runtime_s
-            and loop_state.current_state != ReviewState.READY_TO_MERGE
-        ):
+        if _should_timeout(elapsed, max_runtime_s, loop_state.current_state):
             logger.warning(
                 "PR #%d: runtime limit reached (%.0fs) — stopping. "
                 "Rerun: python scripts/internal/review_driver.py "

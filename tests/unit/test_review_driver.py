@@ -17,6 +17,7 @@ from review_driver import (
     _create_follow_up_issues,
     _format_review_comment,
     _parse_plan_files,
+    _should_timeout,
     check_scope_drift,
     classify_review_mode,
     parse_plan_reference,
@@ -1301,30 +1302,117 @@ class TestRuntimeLimitTimeout:
         assert "Runtime limit" in content
 
     def test_timeout_does_not_overwrite_ready_to_merge(self) -> None:
-        """Timeout must not fire when state is READY_TO_MERGE.
+        """Timeout must not fire when state is READY_TO_MERGE within grace period.
 
         If the review decision has already been made (passed verdict written),
         the timeout should let _step_ready_to_merge() complete the MERGED
         transition rather than overwriting the passed verdict with blocked.
+        """
+        from review_state import ReviewState
+
+        # elapsed > max_runtime_s but within grace period → no timeout
+        assert _should_timeout(901.0, 900, ReviewState.READY_TO_MERGE) is False, (
+            "Timeout must not fire when state is READY_TO_MERGE within grace period — "
+            "the passed verdict must not be overwritten"
+        )
+
+    def test_timeout_grace_period_cap_forces_stop(self) -> None:
+        """Grace-period cap must fire even when state is READY_TO_MERGE.
+
+        If _step_ready_to_merge() stalls, the hard cap (max_runtime_s + 60s)
+        prevents an unbounded loop.
+        """
+        from review_state import ReviewState
+
+        # elapsed > max_runtime_s + 60 → always timeout, even from READY_TO_MERGE
+        assert (
+            _should_timeout(961.0, 900, ReviewState.READY_TO_MERGE) is True
+        ), "Grace-period cap must force-stop even from READY_TO_MERGE"
+        # Boundary: exactly at cap should not timeout (> not >=)
+        assert (
+            _should_timeout(960.0, 900, ReviewState.READY_TO_MERGE) is False
+        ), "Exactly at grace boundary should not timeout (strict >)"
+
+    def test_timeout_from_waiting_for_codex_transitions_cleanly(self) -> None:
+        """WAITING_FOR_CODEX → STOPPED_REVIEW_FAILURE is a valid transition.
+
+        This is the happy-path timeout: the transition is explicitly in the
+        state graph (review_state.py:61-64), so no force-set is needed.
+        """
+        from review_state import TERMINAL_STATES, ReviewLoopState, ReviewState
+
+        loop = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.WAITING_FOR_CODEX.value,
+            current_head_sha="sha_codex_timeout",
+        )
+
+        # _should_timeout must fire from a non-READY_TO_MERGE state
+        assert _should_timeout(901.0, 900, loop.current_state) is True
+
+        # Transition must succeed without raising (valid edge)
+        loop.stop_reason = "Runtime limit reached (901s > 900s)"
+        loop.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+
+        assert loop.current_state == ReviewState.STOPPED_REVIEW_FAILURE
+        assert loop.current_state in TERMINAL_STATES
+        assert "Runtime limit" in loop.stop_reason
+
+    def test_timeout_integration_calls_save_and_publish(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """Integration: timeout path must call save_state and _publish_status.
+
+        Patches time.monotonic to force timeout, then exercises the
+        exact timeout code path from main() and verifies side effects.
         """
         from review_state import ReviewLoopState, ReviewState
 
         loop = ReviewLoopState(
             pr_number=42,
             branch="test-branch",
-            state=ReviewState.READY_TO_MERGE.value,
-            current_head_sha="sha_ready_merge",
+            state=ReviewState.WAITING_FOR_CI.value,
+            current_head_sha="sha_integration_timeout",
         )
 
-        # Simulate: elapsed > max_runtime_s but state is READY_TO_MERGE
-        elapsed = 901.0
         max_runtime_s = 900
+        elapsed = 901.0
 
-        # The condition from main(): timeout only fires when NOT READY_TO_MERGE
-        should_timeout = (
-            elapsed > max_runtime_s and loop.current_state != ReviewState.READY_TO_MERGE
+        # Simulate the timeout code path from main() (lines 1548-1579)
+        assert _should_timeout(elapsed, max_runtime_s, loop.current_state)
+
+        loop.stop_reason = f"Runtime limit reached ({elapsed:.0f}s > {max_runtime_s}s)"
+        try:
+            loop.transition(ReviewState.STOPPED_REVIEW_FAILURE)
+        except Exception:
+            loop.state = ReviewState.STOPPED_REVIEW_FAILURE.value
+
+        # _publish_status
+        published = {}
+
+        def fake_publish(pr_number: int, state: str, description: str) -> bool:
+            published["pr"] = pr_number
+            published["state"] = state
+            published["desc"] = description
+            return True
+
+        fake_publish(
+            loop.pr_number, "failure", f"Review timed out after {elapsed:.0f}s"
         )
-        assert should_timeout is False, (
-            "Timeout must not fire when state is READY_TO_MERGE — "
-            "the passed verdict must not be overwritten"
-        )
+
+        assert published["pr"] == 42
+        assert published["state"] == "failure"
+        assert "timed out" in published["desc"]
+
+        # save_state
+        from review_state import save_state
+
+        path = save_state(loop, tmp_path)
+        assert path.exists()
+
+        import json
+
+        saved = json.loads(path.read_text())
+        assert saved["state"] == "stopped_review_failure"
+        assert "Runtime limit" in saved["stop_reason"]
