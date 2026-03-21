@@ -29,22 +29,34 @@ if [[ "$COMMAND" != *"gh pr merge"* ]]; then
   exit 0
 fi
 
-# Extract PR number from the command (gh pr merge <N> or gh pr merge --squash etc.)
+# Extract PR number from the command. Supports:
+#   gh pr merge 123 --squash
+#   gh pr merge https://github.com/.../pull/123 --squash
+#   gh pr merge feature-branch --squash  (falls back to gh pr view)
+#   gh pr merge --squash  (falls back to gh pr view for current branch)
 PR_NUM=$(echo "$COMMAND" | grep -oE 'gh pr merge[[:space:]]+[0-9]+' | grep -oE '[0-9]+' || true)
 
-# If no explicit PR number, try to get it for the current branch
+# Try URL pattern: /pull/<N>
+if [ -z "$PR_NUM" ]; then
+  PR_NUM=$(echo "$COMMAND" | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+' || true)
+fi
+
+# Fallback: use gh pr view for current branch or branch argument
 if [ -z "$PR_NUM" ]; then
   PR_NUM=$(gh pr view --json number --jq .number 2>/dev/null || true)
 fi
 
 if [ -z "$PR_NUM" ]; then
-  # Cannot determine PR number — let the command through
-  # (gh will fail on its own if there's no PR)
-  exit 0
+  cat <<BLOCK
+BLOCKED: Cannot determine PR number for merge command.
+
+Specify the PR number explicitly: gh pr merge <number> --squash
+BLOCK
+  exit 2
 fi
 
 # --- Check 1: Verdict exists ---
-VERDICT_FILE=".claude/runtime/review_queue/pr_${PR_NUM}/verdict.json"
+VERDICT_FILE="${CLAUDE_PROJECT_DIR:-.}/.claude/runtime/review_queue/pr_${PR_NUM}/verdict.json"
 if [ ! -f "$VERDICT_FILE" ]; then
   cat <<BLOCK
 BLOCKED: No review verdict found for PR #${PR_NUM}.

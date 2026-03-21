@@ -283,9 +283,107 @@ class TestStepReadyToMergeNoAutoMerge:
         with patch("review_driver.save_state"):
             result = _step_ready_to_merge(loop, tmp_path)
 
-        # Should NOT have called enable_auto_merge (no import even happens)
-        assert result.current_state == ReviewState.READY_TO_MERGE
+        # Should transition to MERGED (terminal) — no enable_auto_merge call
+        assert result.current_state == ReviewState.MERGED
         # The publish_status should have been called with success
         mock_publish.assert_called_once()
         args = mock_publish.call_args[0]
         assert args[1] == "success"
+
+
+# ---------------------------------------------------------------------------
+# Bash guard integration test (H5)
+# ---------------------------------------------------------------------------
+
+
+class TestBashGuardIntegration:
+    """Test the actual bash guard script to catch field-name mismatches."""
+
+    def _guard_script(self) -> Path:
+        return (
+            Path(__file__).resolve().parents[2]
+            / ".claude"
+            / "hooks"
+            / "pre-merge-review-guard.sh"
+        )
+
+    def _run_guard(self, command: str, env_override: dict | None = None) -> int:
+        """Run the bash guard with a fake PreToolUse JSON on stdin.
+
+        Returns the exit code.
+        """
+        import json
+        import os
+        import subprocess
+
+        stdin_payload = json.dumps({"tool_input": {"command": command}})
+
+        env = os.environ.copy()
+        if env_override:
+            env.update(env_override)
+
+        result = subprocess.run(
+            ["bash", str(self._guard_script())],
+            input=stdin_payload,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=5,
+        )
+        return result.returncode
+
+    def test_blocks_when_no_verdict_file(self, tmp_path: Path) -> None:
+        """Guard should block (exit 2) when verdict file is missing."""
+        # Point CLAUDE_PROJECT_DIR to tmp_path so the guard looks for
+        # verdict files in tmp_path/.claude/runtime/review_queue/
+        exit_code = self._run_guard(
+            "gh pr merge 42 --squash",
+            env_override={"CLAUDE_PROJECT_DIR": str(tmp_path)},
+        )
+        assert exit_code == 2
+
+    def test_blocks_when_verdict_status_not_passed(self, tmp_path: Path) -> None:
+        """Guard should block when verdict status is 'blocked'."""
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="abc1234567890",
+            status=STATUS_BLOCKED,
+            reason="Blocking findings",
+        )
+        write_verdict(
+            v, tmp_path / ".claude" / "runtime" / "review_queue", emit_event=False
+        )
+
+        exit_code = self._run_guard(
+            "gh pr merge 42 --squash",
+            env_override={"CLAUDE_PROJECT_DIR": str(tmp_path)},
+        )
+        assert exit_code == 2
+
+    def test_verdict_field_names_match_jq_queries(self, tmp_path: Path) -> None:
+        """Verify write_verdict() field names match what the bash guard reads with jq.
+
+        This is the key regression test: if ReviewVerdict.to_dict() changes
+        field names, the guard's jq queries would silently return empty strings.
+        """
+        v = ReviewVerdict(
+            pr_number=42,
+            reviewed_sha="abc1234567890",
+            status=STATUS_PASSED,
+            reason="clean review",
+        )
+        queue_dir = tmp_path / ".claude" / "runtime" / "review_queue"
+        write_verdict(v, queue_dir, emit_event=False)
+
+        # Read the verdict file and verify the jq-queried fields exist
+        import json
+
+        vfile = queue_dir / "pr_42" / "verdict.json"
+        data = json.loads(vfile.read_text())
+
+        # These are the exact field names the bash guard queries with jq
+        assert "reviewed_sha" in data, "Guard queries .reviewed_sha"
+        assert "status" in data, "Guard queries .status"
+        assert "reason" in data, "Guard queries .reason"
+        assert data["reviewed_sha"] == "abc1234567890"
+        assert data["status"] == "passed"

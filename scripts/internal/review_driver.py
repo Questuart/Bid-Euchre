@@ -1149,10 +1149,9 @@ def _step_scoring_findings(
         desc = f"Review degraded -- Codex output {parse_confidence} (advisory)"
         _publish_status(loop_state.pr_number, "success", desc[:140])
         loop_state.transition(ReviewState.READY_TO_MERGE)
-        # Write "passed" verdict (degraded reviews still allow merge —
-        # the merge guard treats "passed" as mergeable).
+        # Verdict is written centrally by step() when it sees READY_TO_MERGE.
+        # Set stop_reason so the verdict carries context about the degraded pass.
         loop_state.stop_reason = f"Codex output {parse_confidence} (degraded pass)"
-        _write_verdict_if_applicable(loop_state)
         _post_review_comment(loop_state, [], "passed")
         save_state(loop_state, base_dir)
         logger.warning(
@@ -1379,7 +1378,7 @@ def _step_ready_to_merge(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
 ) -> ReviewLoopState:
-    """READY_TO_MERGE: Publish clean status and stay.
+    """READY_TO_MERGE → MERGED: Publish clean status and transition.
 
     Under the queue-backed merge model, the review driver does NOT
     call enable_auto_merge.  Merge authority is delegated to the local
@@ -1388,17 +1387,19 @@ def _step_ready_to_merge(
     ``gh pr merge``.
 
     The verdict file is written centrally by ``_write_verdict_if_applicable``
-    (called from ``step()``), so this function only publishes the final
-    status and saves state.
+    (called from ``step()``).  This function publishes the final status,
+    transitions to MERGED (terminal), and saves state so the driver
+    exits cleanly.
     """
     _publish_status(
         loop_state.pr_number,
         "success",
         "Review passed -- ready to merge (verdict written)",
     )
+    loop_state.transition(ReviewState.MERGED)
     save_state(loop_state, base_dir)
     logger.info(
-        "PR #%d: ready_to_merge -- verdict written, merge guard will allow",
+        "PR #%d: ready_to_merge -> merged -- verdict written, merge guard will allow",
         loop_state.pr_number,
     )
     return loop_state

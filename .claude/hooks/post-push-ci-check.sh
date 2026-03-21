@@ -63,17 +63,20 @@ if [[ "$COMMAND" == *"git push"* ]] && [[ "$EXIT_CODE" == "0" ]] \
         exit 0
     fi
 
-    # Launch CI poller in background with auto-merge enabled
+    # Launch CI poller in background (monitoring only — no auto-merge).
+    # Auto-merge authority has been moved to the merge guard
+    # (pre-merge-review-guard.sh). The poller now only monitors CI status
+    # and writes status files; it does not attempt to merge.
     (
         cd "$REPO_ROOT"
-        bash "$POLLER" --pr "$PR_NUM" --repo-root "$REPO_ROOT" --auto-merge
+        bash "$POLLER" --pr "$PR_NUM" --repo-root "$REPO_ROOT"
     ) &
 
     cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
-    "additionalContext": "CI has been triggered on branch '${BRANCH}' (PR #${PR_NUM}). A background CI poller is monitoring checks and will auto-merge (squash) when all pass. Status file: .claude/runtime/ci_polls/pr_${PR_NUM}/status.json — Log: .claude/runtime/ci_polls/pr_${PR_NUM}/poller.log — No action needed unless you want to check progress."
+    "additionalContext": "CI has been triggered on branch '${BRANCH}' (PR #${PR_NUM}). A background CI poller is monitoring checks. Merge requires a clean review verdict — use 'gh pr merge' which the merge guard will validate. Status file: .claude/runtime/ci_polls/pr_${PR_NUM}/status.json — Log: .claude/runtime/ci_polls/pr_${PR_NUM}/poller.log"
   }
 }
 EOF
