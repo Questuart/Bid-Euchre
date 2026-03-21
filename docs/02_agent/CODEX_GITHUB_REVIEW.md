@@ -87,9 +87,26 @@ check-name registration for the ChatGPT-subscription path.
 |---------|------|-----------|-----------|------|
 | `tests` | GitHub Actions check | Yes (branch protection) | CI | Build truth |
 | `governance` | GitHub Actions check | Yes (branch protection) | CI | Repo policy |
-| `reviewing-changes` | Commit status | Yes (branch protection) | Review coordinator | **Reviewer of record** |
+| `reviewing-changes` | Commit status | No (advisory) | Review coordinator | **Reviewer of record** |
 | `claude-review` | GitHub Actions check | No (advisory) | Claude Code Review workflow | Advisory overlay |
 | Codex Cloud | PR issue comment | No (overlay) | `chatgpt-codex-connector[bot]` | Advisory overlay |
+
+### Terminology Note: "Advisory" vs "Advisory"
+
+Two distinct senses of "advisory" appear in this repo:
+
+1. **Branch-protection advisory** — `reviewing-changes` is not enforced by
+   GitHub branch protection rules. Only `tests` and `governance` are required.
+   The coordinator's status is advisory in the branch-protection sense: GitHub
+   will allow a merge even if `reviewing-changes` is pending or failed.
+
+2. **Ops classification `advisory`** — In `classify_check()` and ops tooling,
+   `advisory` is a category for checks that provide supplementary signal
+   (e.g., `claude-review`). The coordinator's `reviewing-changes` status is
+   classified as `review_gate`, not `advisory`, in the ops taxonomy.
+
+The coordinator is the **reviewer of record** — its review is the one that
+matters for merge quality — but it is not enforced by GitHub branch protection.
 
 ## Review Modes
 

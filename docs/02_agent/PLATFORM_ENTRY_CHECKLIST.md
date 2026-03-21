@@ -19,7 +19,7 @@
 
 ## 2. Review Surfaces
 
-- [x] `reviewing-changes` is the merge-relevant gate (branch protection)
+- [x] `reviewing-changes` is the reviewer-of-record gate (advisory, not branch protection)
 - [x] `claude-review` is advisory only, visible without poisoning CI
   - stabilized in #1017, #1025, #1030
 - [x] Codex Cloud proving-run behavior recorded in `docs/02_agent/CODEX_GITHUB_REVIEW.md`
