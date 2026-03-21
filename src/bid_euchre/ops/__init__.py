@@ -93,3 +93,15 @@ CI_CHECK_NAMES: frozenset[str] = frozenset(
 # Default timeout (seconds) for gh CLI subprocess calls.
 # Operator surfaces must never hang indefinitely.
 GH_TIMEOUT_SECONDS: int = 30
+
+# ---------------------------------------------------------------------------
+# Task queue event types (Platform-2)
+# ---------------------------------------------------------------------------
+# These extend VALID_EVENT_TYPES in events.py for task lifecycle signals.
+TASK_QUEUE_EVENT_TYPES: tuple[str, ...] = (
+    "task_packet_created",
+    "task_packet_dispatched",
+    "task_packet_completed",
+    "task_packet_rejected",
+    "task_packet_redirected",
+)

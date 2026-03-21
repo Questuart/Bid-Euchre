@@ -2390,6 +2390,7 @@ class TestJsonOutputStability:
             "blocked_tasks",
             "completed_tasks",
             "warnings",
+            "task_queue",
         }
 
         # Summary always present with stable fields
