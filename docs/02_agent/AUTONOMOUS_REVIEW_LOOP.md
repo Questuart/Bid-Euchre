@@ -2,22 +2,43 @@
 
 ## Overview
 
-The autonomous review loop is a local state machine where Claude (author)
-writes/fixes code and Codex CLI (reviewer) reviews it. The loop is persisted
-to disk, resumable after restarts, and bounded (max 3 iterations).
+The **review coordinator** (`scripts/internal/review_driver.py`) is the
+single reviewer of record for all PRs in this repository.  It is a local
+state machine where Claude (author) writes/fixes code and Codex CLI
+(reviewer backend) reviews it.  The loop is persisted to disk, resumable
+after restarts, and bounded (max 3 iterations).
 
-The loop is the sole review mechanism for all PRs. It runs asynchronously
-after PR creation, triggered by the `post-pr-review-loop.sh` PostToolUse hook.
-When the loop reaches `ready_to_merge`, it enables GitHub auto-merge (squash)
-and transitions to `merged`. GitHub merges once CI + branch protection pass.
+The coordinator runs asynchronously after PR creation, triggered by the
+`post-pr-review-loop.sh` PostToolUse hook.  When the loop reaches
+`ready_to_merge`, it enables GitHub auto-merge (squash) and transitions
+to `merged`.  GitHub merges once CI + branch protection pass.
 
-**Transitional status:** The local review loop infrastructure
-(`.claude/runtime/review_loops/`) is transitional. PR review is planned to
-migrate to an online-first model where GitHub is the source of truth for
-review state and deterministic prechecks run as GitHub Actions. Do not build
-new first-class dependencies on the local review loop directories. See
-`docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md` (§ Autonomous Review Loop)
-for the migration context.
+## Review Coordinator Contract
+
+The review coordinator owns exactly two public artifacts per PR:
+
+| Artifact | Owner | Details |
+|----------|-------|---------|
+| `reviewing-changes` commit status | `review_driver.py` | The merge-relevant review gate |
+| Machine-owned PR summary comment | `review_driver.py` via `upsert_review_comment` | Single upserted comment with `<!-- review-loop-comment -->` marker |
+
+**No other system** may publish the `reviewing-changes` status or claim to
+be the canonical review truth.  Hosted surfaces (`claude-review`, Codex
+Cloud) are advisory overlays — they may post their own comments or checks,
+but those are not part of the merge gate.
+
+### Fallback Behavior
+
+When the preferred review backend (Codex CLI) is unavailable or returns
+unparseable output:
+
+1. The coordinator publishes a **degraded pass** — GitHub `success` with a
+   description containing "degraded" (e.g., `"Review passed — degraded
+   (unparseable)"`).
+2. The PR summary comment notes the degraded state.
+3. The PR proceeds to merge (review is advisory in degraded mode).
+
+This ensures a broken reviewer never silently blocks the merge queue.
 
 ## Architecture
 
@@ -26,7 +47,7 @@ for the migration context.
 | Module | Purpose |
 |--------|---------|
 | `scripts/internal/review_state.py` | State schema, persistence, state enum, SHA tracking |
-| `scripts/internal/review_driver.py` | Main orchestrator (state transitions, dispatch, status publishing, crash recovery) |
+| `scripts/internal/review_driver.py` | Review coordinator (state transitions, dispatch, status publishing, crash recovery) |
 | `scripts/internal/deterministic_prechecks.py` | Fast local checks (merge markers, RNG, imports, N1/N2/N3/X2 heuristics) |
 | `scripts/internal/confidence_scorer.py` | Confidence-based filtering of P2 findings (diff-aware, heuristic) |
 | `scripts/internal/github_pr_state.py` | GitHub CLI wrappers (CI status, PR metadata, status publishing) |
@@ -77,7 +98,7 @@ evidence is committed under `docs/04_reports/codex_validation/`.
 
 ### Review Backend
 
-- **Codex CLI** (sole reviewer): `codex review --base main`, local,
+- **Codex CLI** (preferred backend): `codex review --base main`, local,
   ~60s latency, uses ChatGPT subscription (no API billing)
 
 ### Deterministic Prechecks
@@ -186,7 +207,7 @@ and round_N/claude_fix_summary.md.
 
 ### Status Publishing
 
-The loop publishes GitHub commit status at key transitions:
+The coordinator publishes GitHub commit status at key transitions:
 
 | Transition | Status | Description |
 |------------|--------|-------------|
@@ -194,6 +215,7 @@ The loop publishes GitHub commit status at key transitions:
 | Codex invoked | `pending` | "Codex CLI review in progress (round N)" |
 | Clean pass | `success` | "Review passed — clean" |
 | Warnings only | `success` | "Review passed — N warnings (follow-up issues created)" |
+| Degraded pass | `success` | "Review passed — degraded (unparseable)" |
 | Blockers found | `failure` | "Review blocked — N blockers" |
 | Auto-merge enabled | `success` | (status already published at ready_to_merge) |
 | Loop crash | `failure` | "Review loop crashed: {error}. Rerun: ..." |
@@ -204,18 +226,21 @@ At `ready_to_merge`, the loop creates GitHub issues for non-blocking (P2)
 findings, grouped by category. Issues are labeled with `follow-up` plus
 the appropriate category label (`fix:bug`, `fix:convention`, etc.).
 
-### Blocker PR Comments
+### Canonical PR Summary Comment
 
-On terminal states, the review loop posts a structured PR comment
-summarizing the outcome. Comments use a `<!-- review-loop-comment -->`
+On terminal states, the review coordinator posts a single structured PR
+comment summarizing the outcome.  This is the **canonical machine-owned
+review comment** for the PR.  Comments use a `<!-- review-loop-comment -->`
 HTML marker for idempotent upsert (existing comment is updated rather
 than duplicated on rerun).
 
 Comment contents:
+- **Coordinator identity** — identifies this as the canonical review summary
 - **Status header** — pass/fail with emoji indicator
 - **Stop reason** — why the loop terminated (e.g., blockers found, max iterations)
 - **Findings table** — severity, file, check ID, and message for each finding
 - **Recovery command** — exact command to rerun the review loop manually
+- **Advisory note** — other review comments are overlays, not review truth
 
 ## Usage
 
@@ -257,6 +282,51 @@ If the loop crashes or gets stuck:
 
 The loop's crash recovery publishes a `failure` status with a recovery
 command in the description, so the PR is never silently stuck.
+
+## Operator UX
+
+### What to Look At on a PR
+
+1. **`reviewing-changes` status** — the merge-relevant gate.  Green = review
+   passed.  Red = review blocked (check findings in the PR summary comment).
+   Pending = loop still running.
+2. **The canonical PR summary comment** — the single comment with the
+   `<!-- review-loop-comment -->` marker.  Contains findings, stop reason,
+   and recovery command.  This comment is upserted (updated in place) on
+   each rerun.
+
+### What to Ignore Unless Troubleshooting
+
+- **`claude-review` check** — advisory GitHub Actions check.  Does not
+  affect merge.  May carry useful signal but is not the reviewer of record.
+- **Codex Cloud comments** — comments from `chatgpt-codex-connector[bot]`.
+  These are overlay feedback from an optional `@codex review` invocation.
+  Not part of the merge gate.
+- **Other bot comments** — unless from the review coordinator marker, other
+  machine comments are informational only.
+
+### How to Rerun Review
+
+```bash
+# Rerun the review coordinator for a specific PR
+python scripts/internal/review_driver.py --pr <N> --trigger manual
+
+# Override the status directly (admin escape hatch)
+scripts/internal/set_review_status.sh success "Manual override"
+```
+
+### What Happens if the Preferred Reviewer is Unavailable
+
+If Codex CLI fails or returns unparseable output:
+
+1. The coordinator publishes a **degraded pass** (`success` with "degraded"
+   in the description).
+2. The PR summary comment notes the degradation.
+3. The PR proceeds to auto-merge — review is advisory in degraded mode.
+4. No manual intervention required unless you want to rerun.
+
+The coordinator never silently blocks the merge queue due to reviewer
+unavailability.
 
 ## Governing Plan
 

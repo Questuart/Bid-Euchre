@@ -252,7 +252,7 @@ via **Terminal > Run Task** or `Ctrl+Shift+P > Tasks: Run Task`.
 |------|---------------|
 | **Rung status** | State of all rungs (r0-r3) |
 | **Rung status (single)** | State of a selected rung (pick list) |
-| **Review loop state (legacy)** | Local review loop state.json files (transitional -- prefer GitHub PR checks) |
+| **Review coordinator state** | Local review coordinator state.json files (`.claude/runtime/review_loops/`) |
 | **Heartbeat check** | Agent heartbeat files in plans/ |
 | **Worktree list** | All git worktrees |
 | **Git status (all worktrees)** | Short status for every worktree |
@@ -801,21 +801,21 @@ complements it by defining:
 The two systems are compatible: an agent following the Agent Execution Protocol
 operates within a lane worktree bootstrapped by this workflow.
 
-### Autonomous Review Loop (AUTONOMOUS_REVIEW_LOOP.md)
+### Review Coordinator (AUTONOMOUS_REVIEW_LOOP.md)
 
-The local review loop runs from the main checkout (not from lane worktrees).
-It is triggered by PR creation hooks and operates independently. The `review`
-lane worktree is for manual or agent-driven review work, not for the
-automated review loop.
+The **review coordinator** (`scripts/internal/review_driver.py`) is the
+single reviewer of record for all PRs.  It runs from the main checkout
+(not from lane worktrees) and is triggered by PR creation hooks.  The
+`review` lane worktree is for manual or agent-driven review work, not
+for the automated review coordinator.
 
-**Transitional status:** The local review loop infrastructure
-(`.claude/runtime/review_loops/`, `.claude/runtime/plan_reviews/`) is
-transitional. PR review is migrating to an online-first model where GitHub
-is the source of truth for review state and deterministic prechecks run as
-GitHub Actions. Do not build new first-class dependencies on the local
-review loop directories. See
-`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md` for the
-review architecture migration plan.
+The coordinator owns the `reviewing-changes` commit status and the single
+upserted machine-owned PR summary comment.  Hosted review surfaces
+(`claude-review`, Codex Cloud) are advisory overlays — they do not
+publish the merge-relevant status or canonical review comment.
+
+See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full coordinator
+contract, operator UX, and recovery procedures.
 
 ### Existing Worktree Scripts
 
