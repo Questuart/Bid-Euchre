@@ -855,6 +855,52 @@ class TestEvaluateRetriesForFindings:
         emitted = _evaluate_retries_for_findings(findings, events_dir)
         assert emitted == 0, "Should skip t1 -- escalation event already exists"
 
+    def test_non_dict_events_skipped(
+        self, events_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-dict event entries must be skipped gracefully (#1081)."""
+        from bid_euchre.ops import events as events_mod
+        from bid_euchre.ops.watchdogs import WatchdogFinding
+
+        real_read = events_mod.read_events
+
+        def patched_read(events_dir_arg, limit=200):
+            results = real_read(events_dir_arg, limit=limit)
+            # Inject non-dict entries (simulating corrupt data)
+            return results + ["not a dict", 42, None]  # type: ignore[list-item]
+
+        monkeypatch.setattr(events_mod, "read_events", patched_read)
+
+        # Pre-populate with a valid failure event
+        events_file = events_dir / "events.jsonl"
+        events_file.write_text(
+            json.dumps(
+                {
+                    "timestamp": "2026-03-20T10:00:00Z",
+                    "event_type": "task_failed",
+                    "source": "hook",
+                    "lane_id": "author-a",
+                    "payload": {"task_id": "t1", "details": "error 1"},
+                }
+            )
+            + "\n"
+        )
+
+        findings = [
+            WatchdogFinding(
+                watchdog_name="subagent_failure_check",
+                severity="warning",
+                target="author-a:t1",
+                message="Task t1 failed",
+                threshold="3 failures",
+                recommended_action="Retry",
+            ),
+        ]
+
+        # Should not crash despite non-dict events in the log
+        emitted = _evaluate_retries_for_findings(findings, events_dir)
+        assert isinstance(emitted, int)
+
     def test_events_are_always_dicts(self, events_dir: Path) -> None:
         """Verify read_events() returns list[dict], validating dead-branch removal (#1042)."""
         from bid_euchre.ops.events import append_event, read_events

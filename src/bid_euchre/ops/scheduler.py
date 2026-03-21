@@ -153,6 +153,8 @@ def _evaluate_retries_for_findings(
     # to prevent cascading re-emission on every tick for persistent failures.
     already_retried: set[str] = set()
     for evt in events:
+        if not isinstance(evt, dict):
+            continue
         etype = evt.get("event_type", "")
         payload = evt.get("payload", {})
         if etype in ("retry_attempted", "task_rerouted", "escalation"):

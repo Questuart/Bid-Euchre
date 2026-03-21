@@ -55,6 +55,23 @@ class TestMatchesAnyPattern:
         assert _matches_any_pattern("src/a.py", ["src/[abc].py"]) is True
         assert _matches_any_pattern("src/d.py", ["src/[abc].py"]) is False
 
+    def test_double_star_direct_child(self) -> None:
+        """'src/**/*.py' should match direct children like 'src/a.py'."""
+        assert _matches_any_pattern("src/a.py", ["src/**/*.py"]) is True
+
+    def test_double_star_nested_child(self) -> None:
+        """'src/**/*.py' should still match nested children."""
+        assert _matches_any_pattern("src/ops/scope.py", ["src/**/*.py"]) is True
+
+    def test_double_star_no_false_positive(self) -> None:
+        """'src/**/*.py' should not match files outside the prefix."""
+        assert _matches_any_pattern("tests/a.py", ["src/**/*.py"]) is False
+
+    def test_double_star_multiple_levels(self) -> None:
+        """'**/*.py' should match any .py file at any depth."""
+        assert _matches_any_pattern("src/ops/deep/file.py", ["**/*.py"]) is True
+        assert _matches_any_pattern("file.py", ["**/*.py"]) is True
+
 
 # --- ScopeDriftReport dataclass ---
 
