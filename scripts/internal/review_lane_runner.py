@@ -8,7 +8,7 @@ The runner is the only writer of final verdicts via the ``review`` lane.
 
 Entry point::
 
-    python scripts/internal/review_lane_runner.py [--queue-dir DIR] [--once] [--dry-run]
+    uv run python scripts/internal/review_lane_runner.py [--queue-dir DIR] [--once] [--dry-run]
 
 Design invariants:
 
@@ -29,14 +29,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Allow running from scripts/internal/ with sibling imports and src/ imports.
-_SCRIPTS_DIR = Path(__file__).resolve().parent
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-_SRC = _REPO_ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 from bid_euchre.ops.review_queue import (
     DEFAULT_QUEUE_DIR,
