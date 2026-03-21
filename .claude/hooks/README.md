@@ -77,8 +77,8 @@ Then restart your Claude session in that directory.
 
 **Note:** This hook formerly triggered the `/reviewing-changes` skill.  Under
 the queue-backed model, it enqueues a request instead.  The review driver
-(launched by `post-pr-review-loop.sh`) processes the request and writes a
-verdict that the merge guard checks before allowing merge.
+(launched by `post-pr-review-loop.sh`) runs the review loop independently
+and writes a verdict that the merge guard checks before allowing merge.
 
 ### `pre-merge-review-guard.sh` (PreToolUse)
 

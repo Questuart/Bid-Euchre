@@ -71,8 +71,9 @@ Two PostToolUse hooks fire on `gh pr create`:
    the former `/reviewing-changes` dispatcher.  The hook is fast (~2s)
    and does not read files, run checks, or invoke Codex.
 2. **`post-pr-review-loop.sh`** — launches `review_driver.py`
-   asynchronously in the background.  The driver processes the queued
-   request, runs the review loop, and writes a SHA-bound verdict.
+   asynchronously in the background.  The driver runs the review loop
+   (prechecks, CI wait, Codex CLI, auto-fix) and writes a SHA-bound
+   verdict on completion.
 
 A third hook governs merge:
 
@@ -266,7 +267,7 @@ The coordinator publishes GitHub commit status at key transitions:
 
 | Transition | Status | Description |
 |------------|--------|-------------|
-| Loop starts | `pending` | "Review loop starting" |
+| Loop starts | `pending` | "Review coordinator started" |
 | Codex invoked | `pending` | "Codex CLI review in progress (round N)" |
 | Clean pass | `success` | "Review passed — clean" |
 | Warnings only | `success` | "Review passed — N warnings (follow-up issues created)" |

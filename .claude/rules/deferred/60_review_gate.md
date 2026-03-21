@@ -12,9 +12,9 @@ coordinate on every PR:
    the shared review queue after `gh pr create`.  Fast (~2s), no file reading,
    no Codex polling.
 2. **`post-pr-review-loop.sh`** (PostToolUse) — launches `review_driver.py`
-   asynchronously.  The driver processes the request: deterministic prechecks,
-   CI wait, Codex CLI review, auto-fix, retesting, verdict writing, status
-   publishing, and follow-up issue creation.
+   asynchronously.  The driver runs the full review loop: deterministic
+   prechecks, CI wait, Codex CLI review, auto-fix, retesting, verdict
+   writing, status publishing, and follow-up issue creation.
 3. **`pre-merge-review-guard.sh`** (PreToolUse) — blocks `gh pr merge` unless
    a verdict exists, matches the current HEAD SHA, is `passed`, and CI is green.
 
@@ -40,7 +40,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 
 | Status | GitHub API `state` | `description` pattern | When |
 |--------|-------------------|----------------------|------|
-| PENDING | `pending` | "Review loop starting" | Review driver starts |
+| PENDING | `pending` | "Review coordinator started" | Review driver starts |
 | IN_PROGRESS | `pending` | "Codex CLI review in progress (round N)" | Each Codex invocation |
 | FAIL | `failure` | "Review blocked — N blockers" | Blocking prechecks, CI failure, loop crash |
 | WARN | `success` | "Review passed — N warnings (follow-up issues created)" | Non-blocking findings only |
@@ -51,7 +51,8 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 | Verdict `status` | Merge guard effect | When |
 |------------------|--------------------|------|
 | `passed` | Allows `gh pr merge` (if SHA matches and CI green) | Clean pass, warnings-only, or degraded pass |
-| `failed` | Blocks `gh pr merge` | Blocking findings found |
+| `blocked` | Blocks `gh pr merge` | Precheck blocker or review coordinator failure |
+| `failed` | Blocks `gh pr merge` | Review lane runner error / agent failure |
 | (absent) | Blocks `gh pr merge` | Review not yet complete |
 
 ## Merge Protocol
