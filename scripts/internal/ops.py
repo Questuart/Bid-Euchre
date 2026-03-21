@@ -144,6 +144,8 @@ def cmd_worktrees(args: argparse.Namespace) -> int:
                     "branch": wt.branch,
                     "lane_id": entry.get("lane_id", "?"),
                     "class": entry.get("class", "?"),
+                    "visibility": entry.get("visibility"),
+                    "session_handle": entry.get("session_handle"),
                 }
                 for wt, entry in report.matched
             ],
@@ -161,13 +163,18 @@ def cmd_worktrees(args: argparse.Namespace) -> int:
         }
         print(json.dumps(data, indent=2))
     else:
+        _VIS_BADGES = {"foreground": "fg", "background": "bg"}
+
         print("=== Worktree Registry ===")
         print()
         print(f"Registered & matched: {len(report.matched)}")
         for wt, entry in report.matched:
+            vis = entry.get("visibility")
+            vis_badge = _VIS_BADGES.get(vis, "\u2014") if vis else "\u2014"
             print(
                 f"  {entry.get('lane_id', '?'):15s} "
                 f"[{entry.get('class', '?'):10s}] "
+                f"[{vis_badge:3s}] "
                 f"{wt.branch}"
             )
 

@@ -440,6 +440,116 @@ class TestCmdWorktrees:
         assert "matched" in data
         assert "unregistered" in data
 
+    def test_worktrees_json_includes_visibility(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Worktrees JSON output includes visibility and session_handle fields."""
+        from bid_euchre.ops import worktrees as wt_mod
+
+        # Create a registry entry with additive fields
+        reg_dir = runtime_dir / "worktree_registry"
+        reg_dir.mkdir(parents=True, exist_ok=True)
+        (reg_dir / "author-a.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "lane_id": "author-a",
+                    "lane_class": "author",
+                    "worktree_path": "/tmp/wt-a",
+                    "branch": "codex/steward-author",
+                    "class": "persistent",
+                    "last_active": "2026-03-21T10:00:00Z",
+                    "session_handle": "steward:author-a",
+                    "visibility": "foreground",
+                }
+            )
+        )
+
+        # Mock git to return a matching worktree
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [
+                wt_mod.GitWorktree(
+                    path="/tmp/wt-a", head="abc", branch="codex/steward-author"
+                )
+            ],
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["matched"]) == 1
+        matched = data["matched"][0]
+        assert matched["visibility"] == "foreground"
+        assert matched["session_handle"] == "steward:author-a"
+
+    def test_worktrees_json_null_visibility_for_old_entries(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Old entries without visibility get null in JSON output."""
+        from bid_euchre.ops import worktrees as wt_mod
+
+        reg_dir = runtime_dir / "worktree_registry"
+        reg_dir.mkdir(parents=True, exist_ok=True)
+        (reg_dir / "ops.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "lane_id": "ops",
+                    "lane_class": "ops",
+                    "worktree_path": "/tmp/wt-ops",
+                    "branch": "--",
+                    "class": "persistent",
+                    "last_active": "2026-03-21T10:00:00Z",
+                }
+            )
+        )
+
+        monkeypatch.setattr(
+            wt_mod,
+            "list_worktrees_git",
+            lambda: [wt_mod.GitWorktree(path="/tmp/wt-ops", head="def", branch="--")],
+        )
+
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "worktrees",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data["matched"]) == 1
+        matched = data["matched"][0]
+        assert matched["visibility"] is None
+        assert matched["session_handle"] is None
+
 
 class TestCmdWorktreesPrune:
     """Tests for the worktrees prune subcommand."""

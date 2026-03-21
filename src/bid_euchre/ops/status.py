@@ -115,6 +115,10 @@ class LaneStatus:
     last_event_type: str | None = None
     last_event_at: str | None = None
 
+    # --- Worker visibility & resume (Platform-1 additive fields) ---
+    visibility: str | None = None
+    session_handle: str | None = None
+
 
 @dataclass
 class StatusReport:
@@ -850,6 +854,8 @@ def synthesize_lane_activity(
             liveness_source=liveness_source,
             last_event_type=last_event_type,
             last_event_at=last_event_at,
+            visibility=lane.get("visibility"),
+            session_handle=lane.get("session_handle"),
         )
         results.append(lane_status)
 
@@ -1214,6 +1220,8 @@ def format_status_json(report: StatusReport) -> dict[str, Any]:
                 "last_checkpoint": lane.last_checkpoint,
                 "last_event_type": lane.last_event_type,
                 "last_event_at": lane.last_event_at,
+                "visibility": lane.visibility,
+                "session_handle": lane.session_handle,
             }
             for lane in report.lanes
         ],

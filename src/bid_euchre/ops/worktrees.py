@@ -184,6 +184,11 @@ def list_worktrees_registry(
             ]:
                 data.setdefault(transport_field, None)
 
+        # Additive v2 fields — default for entries written before these
+        # fields were introduced (both v1 entries and older v2 entries).
+        data.setdefault("session_handle", None)
+        data.setdefault("visibility", None)
+
         entries.append(data)
 
     return entries

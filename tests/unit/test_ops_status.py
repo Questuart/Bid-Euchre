@@ -506,6 +506,40 @@ class TestFormatters:
         assert lane_json["attention_needed"] is False
         assert lane_json["attention_reason"] is None
 
+    def test_json_includes_visibility_and_session_handle(self) -> None:
+        """JSON output includes Platform-1 additive fields."""
+        lane = LaneStatus(
+            lane_id="author-a",
+            lane_class="author",
+            worktree_path="/tmp/wt-a",
+            branch="codex/steward-author",
+            lifecycle_class="persistent",
+            has_active_session=False,
+            visibility="foreground",
+            session_handle="steward:author-a",
+        )
+        report = StatusReport(lanes=[lane])
+        data = format_status_json(report)
+        lane_json = data["lanes"][0]
+        assert lane_json["visibility"] == "foreground"
+        assert lane_json["session_handle"] == "steward:author-a"
+
+    def test_json_null_visibility_when_absent(self) -> None:
+        """JSON output shows null for missing visibility/session_handle."""
+        lane = LaneStatus(
+            lane_id="ops",
+            lane_class="ops",
+            worktree_path="/tmp/wt-ops",
+            branch="--",
+            lifecycle_class="persistent",
+            has_active_session=False,
+        )
+        report = StatusReport(lanes=[lane])
+        data = format_status_json(report)
+        lane_json = data["lanes"][0]
+        assert lane_json["visibility"] is None
+        assert lane_json["session_handle"] is None
+
     def test_text_shows_warnings(self) -> None:
         report = StatusReport(warnings=["Something is wrong"])
         text = format_status_text(report)
@@ -656,6 +690,42 @@ class TestSynthesizeLaneActivity:
         lane = result[0]
         assert lane.state == "idle"
         assert lane.attention_needed is False
+
+    # --- Platform-1 additive field tests ---
+
+    def test_visibility_and_session_handle_from_registry(self) -> None:
+        """Lane with visibility/session_handle in registry data surfaces in LaneStatus."""
+        lane_data = _make_lane("author-a", session_id="s1")
+        lane_data["visibility"] = "foreground"
+        lane_data["session_handle"] = "steward:author-a"
+
+        result = synthesize_lane_activity(
+            [lane_data],
+            {"author-a": {"task": "Test", "started_at": "2026-03-19T10:00:00Z"}},
+            {},
+            [],
+        )
+        assert result[0].visibility == "foreground"
+        assert result[0].session_handle == "steward:author-a"
+
+    def test_missing_visibility_defaults_to_none(self) -> None:
+        """Lane without visibility in registry data gets None in LaneStatus."""
+        lane_data = _make_lane("author-b")
+        # No visibility or session_handle keys in lane_data
+
+        result = synthesize_lane_activity([lane_data], {}, {}, [])
+        assert result[0].visibility is None
+        assert result[0].session_handle is None
+
+    def test_background_visibility_surfaces(self) -> None:
+        """Background visibility is surfaced correctly."""
+        lane_data = _make_lane("author-c")
+        lane_data["visibility"] = "background"
+        lane_data["session_handle"] = "steward:author-c"
+
+        result = synthesize_lane_activity([lane_data], {}, {}, [])
+        assert result[0].visibility == "background"
+        assert result[0].session_handle == "steward:author-c"
 
     def test_session_with_pending_task_is_active(self) -> None:
         """Lane with session + pending task → active.
@@ -2370,6 +2440,8 @@ class TestJsonOutputStability:
             "last_checkpoint",
             "last_event_type",
             "last_event_at",
+            "visibility",
+            "session_handle",
         }
         assert set(lane_json.keys()) == expected_fields
         assert lane_json["last_event_type"] == "ci_success"

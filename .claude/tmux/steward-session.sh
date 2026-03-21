@@ -133,7 +133,7 @@ now_iso() {
 }
 
 # Write a v2 worktree registry entry for a steward lane.
-# Args: lane_id lane_class worktree_path branch tmux_window [tmux_pane]
+# Args: lane_id lane_class worktree_path branch tmux_window [tmux_pane] [visibility] [display_name]
 write_lane_metadata() {
     local lane_id="$1"
     local lane_class="$2"
@@ -141,6 +141,8 @@ write_lane_metadata() {
     local branch="$4"
     local tmux_window="$5"
     local tmux_pane="${6:-null}"
+    local visibility="${7:-null}"
+    local display_name="${8:-null}"
     local now
     now="$(now_iso)"
 
@@ -169,6 +171,21 @@ except Exception:
         pane_val="\"${tmux_pane}\""
     fi
 
+    # Quote visibility if it's not null
+    local vis_val="null"
+    if [ "$visibility" != "null" ]; then
+        vis_val="\"${visibility}\""
+    fi
+
+    # Quote display_name if it's not null
+    local dn_val="null"
+    if [ "$display_name" != "null" ]; then
+        dn_val="\"${display_name}\""
+    fi
+
+    # Derive session_handle from lane_id
+    local session_handle="\"steward:${lane_id}\""
+
     cat > "$REGISTRY_DIR/${lane_id}.json" <<EOJSON
 {
   "schema_version": 2,
@@ -181,13 +198,15 @@ except Exception:
   "last_active": "${now}",
   "session_id": null,
   "ttl_hours": null,
-  "display_name": null,
+  "display_name": ${dn_val},
   "tmux_session": "${SESSION}",
   "tmux_window": "${tmux_window}",
   "tmux_pane": ${pane_val},
   "cmux_workspace_ref": null,
   "cmux_surface_ref": null,
-  "legacy_role": null
+  "legacy_role": null,
+  "session_handle": ${session_handle},
+  "visibility": ${vis_val}
 }
 EOJSON
 }
@@ -215,13 +234,14 @@ ensure_worktree "$AUTHOR_SCRATCH" "codex/steward-author-scratch"
 ensure_review_worktree
 
 # Write v2 registry metadata for each lane
-write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-author"         "dashboard" "1"
-write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "dashboard" "2"
-write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "dashboard" "3"
-write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "dashboard" "4"
-write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"
-write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"
-write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch"
+# Dashboard panes: visibility=foreground; off-dashboard windows: visibility=background
+write_lane_metadata "author-a"       "author"  "$AUTHOR_A"       "codex/steward-author"         "dashboard" "1"    "foreground" "Author A"
+write_lane_metadata "author-b"       "author"  "$AUTHOR_B"       "codex/steward-author-b"       "dashboard" "2"    "foreground" "Author B"
+write_lane_metadata "review"         "review"  "$REVIEW"         "detached"                     "dashboard" "3"    "foreground" "Review"
+write_lane_metadata "ops"            "ops"     "$MAIN_DIR"       "--"                           "dashboard" "4"    "foreground" "Ops"
+write_lane_metadata "author-c"       "author"  "$AUTHOR_C"       "codex/steward-author-c"       "author-c"  "null" "background" "Author C"
+write_lane_metadata "author-d"       "author"  "$AUTHOR_D"       "codex/steward-author-d"       "author-d"  "null" "background" "Author D"
+write_lane_metadata "author-scratch" "scratch" "$AUTHOR_SCRATCH" "codex/steward-author-scratch"  "author-scratch" "null" "background" "Scratch"
 
 tmux new-session -d -s "$SESSION" -n dashboard -c "$AUTHOR_A" \
     "$CLAUDE_BIN" --name author-a --agent steward-author-a

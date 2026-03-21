@@ -99,7 +99,9 @@ write_registry() {
   "tmux_pane": null,
   "cmux_workspace_ref": null,
   "cmux_surface_ref": null,
-  "legacy_role": "${role}"
+  "legacy_role": "${role}",
+  "session_handle": "role:${lane_id}",
+  "visibility": null
 }
 EOJSON
 }
