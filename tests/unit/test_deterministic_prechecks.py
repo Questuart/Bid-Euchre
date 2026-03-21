@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "intern
 from deterministic_prechecks import (
     Finding,
     _check_undocumented_contract_change,
+    _check_untested_behavior_change,
     check_diff,
     check_file,
     get_blocking_findings,
@@ -580,3 +581,202 @@ class TestCheckDiffChangedFiles:
         )
         p1 = [f for f in findings if f.check_id == "P1"]
         assert len(p1) == 0
+
+
+# ---------------------------------------------------------------------------
+# Fixtures: C5 redundant except catch
+# ---------------------------------------------------------------------------
+
+C5_REDUNDANT_EXCEPT = """\
+import json
+
+try:
+    data = json.loads(raw)
+except (json.JSONDecodeError, Exception) as e:
+    logger.warning("Failed: %s", e)
+"""
+
+C5_REDUNDANT_EXCEPT_REVERSED = """\
+try:
+    data = process()
+except (Exception, ValueError):
+    pass
+"""
+
+C5_SINGLE_EXCEPTION = """\
+try:
+    data = process()
+except Exception as e:
+    logger.error("Failed: %s", e)
+"""
+
+C5_SPECIFIC_ONLY = """\
+try:
+    data = json.loads(raw)
+except (json.JSONDecodeError, ValueError) as e:
+    logger.warning("Failed: %s", e)
+"""
+
+C5_COMMENTED = """\
+# except (json.JSONDecodeError, Exception) as e:
+#     pass
+"""
+
+
+# ---------------------------------------------------------------------------
+# C5 tests — Redundant except catch
+# ---------------------------------------------------------------------------
+
+
+class TestC5RedundantExcept:
+    """C5: except tuple containing Exception alongside specific types."""
+
+    def test_detects_redundant_except_tuple(self) -> None:
+        findings = check_file("src/foo.py", C5_REDUNDANT_EXCEPT)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 1
+        assert c5[0].severity == "P2"
+        assert c5[0].category == "correctness"
+
+    def test_detects_exception_first_in_tuple(self) -> None:
+        findings = check_file("src/foo.py", C5_REDUNDANT_EXCEPT_REVERSED)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 1
+
+    def test_single_exception_not_flagged(self) -> None:
+        """Bare `except Exception:` is not redundant (just broad)."""
+        findings = check_file("src/foo.py", C5_SINGLE_EXCEPTION)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 0
+
+    def test_specific_exceptions_not_flagged(self) -> None:
+        """Tuple of specific exceptions (no Exception) is fine."""
+        findings = check_file("src/foo.py", C5_SPECIFIC_ONLY)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 0
+
+    def test_commented_not_flagged(self) -> None:
+        """Commented-out code should not trigger C5."""
+        findings = check_file("src/foo.py", C5_COMMENTED)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 0
+
+    def test_base_exception_not_flagged(self) -> None:
+        """BaseException in tuple is a different pattern, not C5."""
+        code = """\
+try:
+    data = process()
+except (ValueError, BaseException):
+    pass
+"""
+        findings = check_file("src/foo.py", code)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 0
+
+    def test_works_in_non_library_code(self) -> None:
+        """C5 applies to all Python files, not just library code."""
+        findings = check_file("scripts/runner.py", C5_REDUNDANT_EXCEPT)
+        c5 = [f for f in findings if f.check_id == "C5"]
+        assert len(c5) == 1
+
+
+# ---------------------------------------------------------------------------
+# T1 tests — Untested behavior change
+# ---------------------------------------------------------------------------
+
+
+class TestT1UntestedBehaviorChange:
+    """T1: library code changed without corresponding test changes."""
+
+    def test_detects_src_without_tests(self) -> None:
+        changed = [
+            "src/bid_euchre/ops/scheduler.py",
+            "src/bid_euchre/ops/memory.py",
+        ]
+        findings = _check_untested_behavior_change(changed)
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 1
+        assert t1[0].severity == "P2"
+        assert t1[0].category == "process"
+
+    def test_no_finding_with_test_changes(self) -> None:
+        changed = [
+            "src/bid_euchre/ops/scheduler.py",
+            "tests/unit/test_ops_scheduler.py",
+        ]
+        findings = _check_untested_behavior_change(changed)
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 0
+
+    def test_no_finding_init_only(self) -> None:
+        """Changes to only __init__.py are exempt (re-exports, not behavior)."""
+        changed = [
+            "src/bid_euchre/ops/__init__.py",
+            "src/bid_euchre/strategy/__init__.py",
+        ]
+        findings = _check_untested_behavior_change(changed)
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 0
+
+    def test_no_finding_no_src(self) -> None:
+        """No src/ changes at all — no finding."""
+        changed = [
+            "scripts/internal/ops.py",
+            "docs/01_core/RULES.md",
+        ]
+        findings = _check_untested_behavior_change(changed)
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 0
+
+    def test_init_plus_real_src_still_flags(self) -> None:
+        """__init__.py exemption only applies when ALL src changes are __init__.py."""
+        changed = [
+            "src/bid_euchre/ops/__init__.py",
+            "src/bid_euchre/ops/scheduler.py",
+        ]
+        findings = _check_untested_behavior_change(changed)
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 1
+
+    def test_finding_points_to_first_src_file(self) -> None:
+        """The finding should reference the first changed src file."""
+        changed = [
+            "src/bid_euchre/core/rules.py",
+            "src/bid_euchre/scoring.py",
+        ]
+        findings = _check_untested_behavior_change(changed)
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 1
+        assert t1[0].file == "src/bid_euchre/core/rules.py"
+
+    def test_integration_via_check_diff(self, tmp_path: Path) -> None:
+        """T1 fires through check_diff when src changes lack test changes."""
+        src_file = tmp_path / "src" / "bid_euchre" / "ops" / "status.py"
+        src_file.parent.mkdir(parents=True, exist_ok=True)
+        src_file.write_text("def get_status(): pass\n")
+        findings = check_diff(
+            mode="standard",
+            repo_root=tmp_path,
+            changed_files=["src/bid_euchre/ops/status.py"],
+        )
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 1
+
+    def test_integration_suppressed_with_tests(self, tmp_path: Path) -> None:
+        """T1 does NOT fire through check_diff when tests are also changed."""
+        src_file = tmp_path / "src" / "bid_euchre" / "ops" / "status.py"
+        src_file.parent.mkdir(parents=True, exist_ok=True)
+        src_file.write_text("def get_status(): pass\n")
+        test_file = tmp_path / "tests" / "unit" / "test_status.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("def test_get_status(): pass\n")
+        findings = check_diff(
+            mode="standard",
+            repo_root=tmp_path,
+            changed_files=[
+                "src/bid_euchre/ops/status.py",
+                "tests/unit/test_status.py",
+            ],
+        )
+        t1 = [f for f in findings if f.check_id == "T1"]
+        assert len(t1) == 0

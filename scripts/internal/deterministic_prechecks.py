@@ -83,6 +83,12 @@ _N3_STATS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- C5: Redundant except catch ---
+# Detects `except (Specific, ..., Exception)` where Exception makes the
+# specific catches redundant.  Observed in PR #1075 where
+# `except (json.JSONDecodeError, Exception)` silently swallowed all errors.
+_EXCEPT_TUPLE_RE = re.compile(r"except\s*\(([^)]+)\)")
+
 # --- X2: Undocumented contract change (diff-level) ---
 _X2_CONTRACT_PATHS = (
     "src/bid_euchre/core/rules.py",
@@ -279,6 +285,30 @@ def check_file(
                         )
                     )
 
+    # --- C5: Redundant except catch (P2 — non-blocking) ---
+    # Catches `except (Specific, ..., Exception)` where Exception renders
+    # the specific catches redundant.  See PR #1075.
+    for i, line in enumerate(lines, 1):
+        if line.strip().startswith("#"):
+            continue
+        match = _EXCEPT_TUPLE_RE.search(line)
+        if match:
+            types_str = match.group(1)
+            if "," in types_str and re.search(r"\bException\b", types_str):
+                findings.append(
+                    Finding(
+                        severity="P2",
+                        file=file_path,
+                        line=i,
+                        category="correctness",
+                        check_id="C5",
+                        message=(
+                            "Redundant except — Exception in tuple makes "
+                            "specific catches redundant"
+                        ),
+                    )
+                )
+
     # --- Convention checks (P2 — non-blocking) ---
     for i, line in enumerate(lines, 1):
         if line.strip().startswith("#"):
@@ -366,6 +396,9 @@ def check_diff(
     # X2: Undocumented contract change (diff-level)
     all_findings.extend(_check_undocumented_contract_change(changed_files))
 
+    # T1: Untested behavior change (diff-level)
+    all_findings.extend(_check_untested_behavior_change(changed_files))
+
     # Plan-audit mode: check referenced file paths exist
     if mode == "plan-audit":
         all_findings.extend(_check_plan_paths(changed_files, repo_root))
@@ -404,6 +437,46 @@ def _check_undocumented_contract_change(
             ),
         )
         for cf in contract_files
+    ]
+
+
+def _check_untested_behavior_change(
+    changed_files: list[str],
+) -> list[Finding]:
+    """T1: Flag library behavior changes without corresponding test changes.
+
+    If any ``.py`` file under ``src/`` (excluding ``__init__.py``) is changed
+    but no ``.py`` file under ``tests/`` is changed, emit a P2 advisory
+    finding.  This pattern has been a repeated real miss across fix-batch
+    PRs #977, #1000, and #1015 where post-merge reviews added missing tests.
+    """
+    src_py_files = [
+        f
+        for f in changed_files
+        if f.startswith("src/") and f.endswith(".py") and not f.endswith("__init__.py")
+    ]
+    if not src_py_files:
+        return []
+
+    has_test_changes = any(
+        f.startswith("tests/") and f.endswith(".py") for f in changed_files
+    )
+    if has_test_changes:
+        return []
+
+    # Emit one finding pointing at the first changed library file
+    return [
+        Finding(
+            severity="P2",
+            file=src_py_files[0],
+            line=0,
+            category="process",
+            check_id="T1",
+            message=(
+                "Library code changed without test changes — "
+                "verify behavior is covered by existing tests"
+            ),
+        )
     ]
 
 
