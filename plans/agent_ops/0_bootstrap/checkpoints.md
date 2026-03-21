@@ -32,10 +32,11 @@
   `chatgpt-codex-connector[bot]` need ingestion/surfacing as operational
   signals (not CI or merge-gate artifacts). See bridge plan:
   `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`.
-- [ ] Filesystem access needs bridge work before Platform-1:
-  agents should default to repo-bounded reads/writes, with outside-repo access
-  requiring explicit managed exceptions or operator approval. See bridge plan
-  Lane A.
+- [x] ~~Filesystem access needs bridge work before Platform-1~~ —
+  **CLOSED** (2026-03-20). Repo-bounded filesystem access policy shipped
+  in #1115 (`src/bid_euchre/ops/fs_boundary.py`). Allowed: repo root,
+  registered worktrees, managed runtime dirs. Denied: external paths by
+  default with explicit exception + audit path.
 
 ## Session Log
 

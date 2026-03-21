@@ -1,7 +1,8 @@
 """Provider-neutral PR review outcome aggregation.
 
 Queries GitHub for open PRs and enriches each with CI status,
-review commit-status, and deterministic precheck status.
+review commit-status, deterministic precheck status, and
+comment-based review overlays (e.g., Codex Cloud bot comments).
 
 GitHub is the source of truth for review outcomes (online-first).
 This module does NOT depend on .claude/runtime/review_loops/** —
@@ -13,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -424,4 +425,209 @@ def format_reviews_json(outcomes: list[ReviewOutcome]) -> list[dict]:
             "url": o.url,
         }
         for o in outcomes
+    ]
+
+
+# --- Comment-Based Review Overlays ---
+# PR issue comments are a separate signal channel from checks/statuses.
+# Codex Cloud arrives as issue comments, not checks — these overlays surface
+# comment-derived signals without conflating them with CI or the merge gate.
+# This is the SINGLE canonical location for comment-author classification.
+
+# Trusted bot logins for comment-based review signals (never speculative).
+TRUSTED_BOT_LOGINS: frozenset[str] = frozenset(
+    {
+        "chatgpt-codex-connector[bot]",
+    }
+)
+
+# GitHub user types that indicate bot accounts.
+_BOT_USER_TYPES: frozenset[str] = frozenset({"Bot", "bot"})
+
+# Maximum body excerpt length for comment overlay summaries.
+_MAX_EXCERPT_LEN: int = 200
+
+
+def classify_comment_author(login: str, user_type: str = "") -> str:
+    """Classify a comment author as human, trusted_bot, or other_bot.
+
+    Args:
+        login: GitHub username (e.g., ``"octocat"`` or
+            ``"chatgpt-codex-connector[bot]"``).
+        user_type: GitHub user type field (e.g., ``"User"``, ``"Bot"``).
+            When empty, classification falls back to login pattern matching.
+
+    Returns:
+        ``"trusted_bot"`` if login is in ``TRUSTED_BOT_LOGINS``,
+        ``"other_bot"`` if user_type is ``"Bot"`` or login ends with ``[bot]``,
+        ``"human"`` otherwise.
+    """
+    if login in TRUSTED_BOT_LOGINS:
+        return "trusted_bot"
+    if user_type in _BOT_USER_TYPES or login.endswith("[bot]"):
+        return "other_bot"
+    return "human"
+
+
+@dataclass
+class CommentOverlay:
+    """Per-PR summary of comment-based review signals.
+
+    Surfaces PR issue comments as operational overlays, separate from
+    CI checks and the ``reviewing-changes`` status gate.
+    """
+
+    pr_number: int
+    total_comments: int = 0
+    trusted_bot_comments: int = 0
+    human_comments: int = 0
+    other_bot_comments: int = 0
+    latest_trusted_bot_excerpt: str | None = None
+    latest_trusted_bot_author: str | None = None
+    latest_trusted_bot_time: str | None = None
+    comments: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def _get_pr_issue_comments(pr_number: int) -> list[dict]:
+    """Fetch issue comments for a PR via gh API.
+
+    Returns:
+        List of dicts with keys: id, login, user_type, created_at, body.
+        Returns empty list on failure (graceful degradation).
+    """
+    jq_expr = (
+        "[.[] | {id: .id, login: .user.login, user_type: .user.type, "
+        "created_at: .created_at, body: .body}]"
+    )
+    result = _run_gh(
+        [
+            "api",
+            f"repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
+            "--jq",
+            jq_expr,
+        ]
+    )
+    if result.returncode != 0:
+        logger.warning(
+            "PR #%d: failed to fetch comments: %s",
+            pr_number,
+            result.stderr[:200],
+        )
+        return []
+
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        logger.warning(
+            "PR #%d: invalid JSON from comment fetch: %s",
+            pr_number,
+            result.stdout[:200],
+        )
+        return []
+
+
+def get_pr_comment_overlay(
+    pr_number: int,
+    *,
+    raw_comments: list[dict] | None = None,
+) -> CommentOverlay:
+    """Build a comment overlay for a single PR.
+
+    Fetches issue comments from GitHub (or accepts pre-fetched data),
+    classifies each by author identity, and produces an overlay summary.
+
+    Args:
+        pr_number: PR number.
+        raw_comments: Pre-fetched comment dicts (for testing or batching).
+            When ``None``, fetches from GitHub.
+
+    Returns:
+        :class:`CommentOverlay` summarizing comment signals.
+    """
+    if raw_comments is None:
+        raw_comments = _get_pr_issue_comments(pr_number)
+
+    overlay = CommentOverlay(pr_number=pr_number)
+    overlay.total_comments = len(raw_comments)
+
+    latest_trusted: dict | None = None
+
+    for raw in raw_comments:
+        login = raw.get("login", "")
+        user_type = raw.get("user_type", "")
+        author_type = classify_comment_author(login, user_type)
+
+        comment_record = {
+            "comment_id": raw.get("id", 0),
+            "author_login": login,
+            "author_type": author_type,
+            "created_at": raw.get("created_at", ""),
+            "body_excerpt": (raw.get("body", "") or "")[:_MAX_EXCERPT_LEN],
+        }
+        overlay.comments.append(comment_record)
+
+        if author_type == "trusted_bot":
+            overlay.trusted_bot_comments += 1
+            if latest_trusted is None or raw.get("created_at", "") > latest_trusted.get(
+                "created_at", ""
+            ):
+                latest_trusted = raw
+        elif author_type == "other_bot":
+            overlay.other_bot_comments += 1
+        else:
+            overlay.human_comments += 1
+
+    if latest_trusted is not None:
+        body = latest_trusted.get("body", "") or ""
+        overlay.latest_trusted_bot_excerpt = body[:_MAX_EXCERPT_LEN]
+        overlay.latest_trusted_bot_author = latest_trusted.get("login", "")
+        overlay.latest_trusted_bot_time = latest_trusted.get("created_at", "")
+
+    return overlay
+
+
+def format_comment_overlays_text(overlays: list[CommentOverlay]) -> str:
+    """Format comment overlays as human-readable text."""
+    if not overlays:
+        return "=== PR Comment Overlays ===\n\nNo comment data."
+
+    lines = ["=== PR Comment Overlays ===", ""]
+    for o in overlays:
+        trusted_icon = "+" if o.trusted_bot_comments > 0 else "-"
+        lines.append(
+            f"  #{o.pr_number:<5d} Comments={o.total_comments} "
+            f"Trusted=[{trusted_icon}:{o.trusted_bot_comments}] "
+            f"Human={o.human_comments} OtherBot={o.other_bot_comments}"
+        )
+        if o.latest_trusted_bot_author:
+            lines.append(
+                f"         Latest trusted: {o.latest_trusted_bot_author} "
+                f"@ {o.latest_trusted_bot_time}"
+            )
+            if o.latest_trusted_bot_excerpt:
+                excerpt = o.latest_trusted_bot_excerpt.replace("\n", " ")[:80]
+                lines.append(f"         > {excerpt}...")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_comment_overlays_json(overlays: list[CommentOverlay]) -> list[dict]:
+    """Format comment overlays as JSON-serializable list."""
+    return [
+        {
+            "pr_number": o.pr_number,
+            "total_comments": o.total_comments,
+            "trusted_bot_comments": o.trusted_bot_comments,
+            "human_comments": o.human_comments,
+            "other_bot_comments": o.other_bot_comments,
+            "latest_trusted_bot_excerpt": o.latest_trusted_bot_excerpt,
+            "latest_trusted_bot_author": o.latest_trusted_bot_author,
+            "latest_trusted_bot_time": o.latest_trusted_bot_time,
+            "comments": o.comments,
+        }
+        for o in overlays
     ]

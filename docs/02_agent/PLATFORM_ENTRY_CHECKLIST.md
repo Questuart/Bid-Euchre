@@ -32,11 +32,11 @@
 
 ## 3. Filesystem Boundary
 
-- [ ] **Repo-bounded filesystem access** is the default in repo-owned entrypoints
+- [x] **Repo-bounded filesystem access** is the default in repo-owned entrypoints
+  - shipped in #1115 (`src/bid_euchre/ops/fs_boundary.py`)
   - allowed: repo root, registered worktrees, managed runtime dirs
   - denied: external paths (by default)
   - override: explicit exception path with audit visibility
-  - bridge plan: Lane A of `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
 
 ## 4. Trusted Command Handling
 

@@ -1079,3 +1079,89 @@ class TestStalenessCache:
         # idx2's cache should still be valid
         stats2 = get_stats(idx2)
         assert isinstance(stats2.stale_sources, int)
+
+
+class TestPRCommentIngestion:
+    """Tests for PR comment JSONL sidecar ingestion."""
+
+    def test_pr_comments_ingested_into_index(self, tmp_path: Path) -> None:
+        """PR comment sidecars should be ingested during build_index."""
+        idx = tmp_path / "index"
+        idx.mkdir()
+        rt = tmp_path / "runtime"
+        (rt / "events").mkdir(parents=True)
+        (rt / "worktree_registry").mkdir(parents=True)
+        (rt / "session_metadata").mkdir(parents=True)
+        (rt / "task_state").mkdir(parents=True)
+        (rt / "scheduler").mkdir(parents=True)
+
+        # Create a PR comment sidecar
+        pr_comments_dir = rt / "pr_comments"
+        pr_comments_dir.mkdir()
+        sidecar = pr_comments_dir / "pr_42.jsonl"
+        records = [
+            {
+                "pr_number": 42,
+                "comment_id": 1,
+                "author_login": "chatgpt-codex-connector[bot]",
+                "author_type": "trusted_bot",
+                "created_at": "2026-03-20T10:00:00Z",
+                "body_excerpt": "LGTM",
+            },
+            {
+                "pr_number": 42,
+                "comment_id": 2,
+                "author_login": "octocat",
+                "author_type": "human",
+                "created_at": "2026-03-20T11:00:00Z",
+                "body_excerpt": "Thanks!",
+            },
+        ]
+        sidecar.write_text(
+            "\n".join(json.dumps(r, sort_keys=True) for r in records) + "\n"
+        )
+
+        plans = tmp_path / "plans"
+        plans.mkdir()
+
+        result = build_index(idx, runtime_dir=rt, plans_dir=plans, repo_root=tmp_path)
+        assert result.entries_indexed >= 2
+
+        # Query for the comment content
+        resp = query(idx, "LGTM")
+        assert resp.total_matches >= 1
+
+    def test_pr_comments_empty_dir_ok(self, tmp_path: Path) -> None:
+        """Empty pr_comments directory should not cause errors."""
+        idx = tmp_path / "index"
+        idx.mkdir()
+        rt = tmp_path / "runtime"
+        (rt / "events").mkdir(parents=True)
+        (rt / "worktree_registry").mkdir(parents=True)
+        (rt / "session_metadata").mkdir(parents=True)
+        (rt / "task_state").mkdir(parents=True)
+        (rt / "scheduler").mkdir(parents=True)
+        (rt / "pr_comments").mkdir()
+
+        plans = tmp_path / "plans"
+        plans.mkdir()
+
+        result = build_index(idx, runtime_dir=rt, plans_dir=plans, repo_root=tmp_path)
+        assert "pr_comments" not in str(result.errors)
+
+    def test_pr_comments_missing_dir_ok(self, tmp_path: Path) -> None:
+        """Missing pr_comments directory should not cause errors."""
+        idx = tmp_path / "index"
+        idx.mkdir()
+        rt = tmp_path / "runtime"
+        (rt / "events").mkdir(parents=True)
+        (rt / "worktree_registry").mkdir(parents=True)
+        (rt / "session_metadata").mkdir(parents=True)
+        (rt / "task_state").mkdir(parents=True)
+        (rt / "scheduler").mkdir(parents=True)
+
+        plans = tmp_path / "plans"
+        plans.mkdir()
+
+        result = build_index(idx, runtime_dir=rt, plans_dir=plans, repo_root=tmp_path)
+        assert "pr_comments" not in str(result.errors)
