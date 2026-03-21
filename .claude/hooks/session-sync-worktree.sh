@@ -43,8 +43,16 @@ if [[ "$CURRENT_BRANCH" == "main" ]]; then
   exit 0
 fi
 
-# Check if current branch has an open PR (skip if so — active work)
-PR_STATE="$(gh pr view "$CURRENT_BRANCH" --repo Questuart/Bid-Euchre --json state --jq '.state' 2>/dev/null || echo "NONE")"
+# Check if current branch has an open PR (skip if so — active work).
+# Fail closed: if gh is unavailable or auth fails, skip sync rather than
+# risk resetting a branch that has an open PR we can't see.
+PR_STATE="$(gh pr view "$CURRENT_BRANCH" --repo Questuart/Bid-Euchre --json state --jq '.state' 2>/dev/null)" || {
+  echo "${LOG_PREFIX} WARNING: Could not query PR state (gh unavailable or auth error) — skipping auto-sync."
+  exit 0
+}
+
+# Treat empty output (no PR found) as "NONE"
+PR_STATE="${PR_STATE:-NONE}"
 
 if [[ "$PR_STATE" == "OPEN" ]]; then
   echo "${LOG_PREFIX} Branch '$CURRENT_BRANCH' has an open PR — skipping auto-sync."
@@ -52,12 +60,21 @@ if [[ "$PR_STATE" == "OPEN" ]]; then
 fi
 
 # --------------------------------------------------------------------------
-# Safe to sync: branch has no open PR (merged, closed, or never had one)
+# Guard: skip if branch has unpushed commits
+# --------------------------------------------------------------------------
+# Fetch first so origin/main is current for the comparison.
+git -C "$PROJECT_DIR" fetch origin main --quiet 2>/dev/null || true
+
+AHEAD="$(git -C "$PROJECT_DIR" rev-list origin/main..HEAD --count 2>/dev/null || echo "unknown")"
+if [[ "$AHEAD" != "0" ]]; then
+  echo "${LOG_PREFIX} WARNING: Branch '$CURRENT_BRANCH' is ${AHEAD} commit(s) ahead of origin/main — skipping auto-sync to avoid losing unpushed work."
+  exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Safe to sync: no open PR, no unpushed commits, clean working tree
 # --------------------------------------------------------------------------
 echo "${LOG_PREFIX} Syncing '$CURRENT_BRANCH' → main (PR state: ${PR_STATE})"
-
-# Fetch latest main
-git -C "$PROJECT_DIR" fetch origin main --quiet 2>/dev/null || true
 
 # Switch to tracking origin/main. We can't checkout 'main' directly because
 # it's used by the primary worktree — instead reset the current branch to
