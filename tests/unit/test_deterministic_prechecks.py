@@ -11,6 +11,7 @@ from deterministic_prechecks import (
     Finding,
     _check_undocumented_contract_change,
     _check_untested_behavior_change,
+    _mask_string_literals,
     check_diff,
     check_file,
     get_blocking_findings,
@@ -780,3 +781,48 @@ class TestT1UntestedBehaviorChange:
         )
         t1 = [f for f in findings if f.check_id == "T1"]
         assert len(t1) == 0
+
+
+# ---------------------------------------------------------------------------
+# String-literal masking tests
+# ---------------------------------------------------------------------------
+
+
+class TestMaskStringLiterals:
+    """Verify _mask_string_literals strips triple-quoted string interiors."""
+
+    def test_masks_triple_double_quotes(self) -> None:
+        code = 'x = 1\nFIXTURE = """\n<<<<<<< HEAD\n=======\n>>>>>>>\n"""\ny = 2\n'
+        masked = _mask_string_literals(code)
+        assert "<<<<<<< HEAD" not in masked
+        # Line count preserved
+        assert masked.count("\n") == code.count("\n")
+
+    def test_masks_triple_single_quotes(self) -> None:
+        code = "x = 1\nFIXTURE = '''\nbreakpoint()\n'''\ny = 2\n"
+        masked = _mask_string_literals(code)
+        assert "breakpoint()" not in masked
+        assert masked.count("\n") == code.count("\n")
+
+    def test_preserves_non_string_code(self) -> None:
+        code = "def foo():\n    breakpoint()\n    x = None\n"
+        masked = _mask_string_literals(code)
+        assert masked == code
+
+    def test_no_false_positives_on_test_fixtures(self) -> None:
+        """Scanning a file with test fixtures should not produce blocking findings."""
+        content = (
+            'MERGE = """\n'
+            "<<<<<<< HEAD\n"
+            "x = 1\n"
+            "=======\n"
+            "x = 2\n"
+            ">>>>>>> branch\n"
+            '"""\n'
+            'TODO = """\n'
+            "# TODO: remove before merge\n"
+            '"""\n'
+        )
+        findings = check_file("tests/unit/test_example.py", content)
+        blockers = get_blocking_findings(findings)
+        assert len(blockers) == 0

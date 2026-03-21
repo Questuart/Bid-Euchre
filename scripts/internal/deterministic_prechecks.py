@@ -1,8 +1,8 @@
 """Deterministic prechecks for code review.
 
-Fast, local checks extracted from /reviewing-changes Phases 0-2.
-Both the /reviewing-changes skill AND the autonomous review loop
-state machine call this module.
+Fast, local checks extracted from /reviewing-changes Phases 0-2.  Both the
+/reviewing-changes skill AND the autonomous review loop state machine call
+this module.
 
 Returns structured findings in the same schema as Codex findings,
 enabling uniform treatment downstream.
@@ -83,6 +83,19 @@ _N3_STATS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# --- String-literal masking ---
+# Replace content inside triple-quoted strings with blank lines so that test
+# fixture strings (containing merge markers, TODO, breakpoint, etc.) do not
+# trigger false-positive findings.  Line count is preserved for accurate
+# line-number reporting.
+_TRIPLE_QUOTE_RE = re.compile(r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')')
+
+
+def _mask_string_literals(content: str) -> str:
+    """Replace triple-quoted string interiors with blank lines."""
+    return _TRIPLE_QUOTE_RE.sub(lambda m: "\n" * m.group().count("\n"), content)
+
+
 # --- C5: Redundant except catch ---
 # Detects `except (Specific, ..., Exception)` where Exception makes the
 # specific catches redundant.  Observed in PR #1075 where
@@ -117,7 +130,9 @@ def check_file(
         List of Finding objects.
     """
     findings: list[Finding] = []
-    lines = content.split("\n")
+    # Mask triple-quoted string interiors to avoid false positives on test fixtures
+    masked = _mask_string_literals(content)
+    lines = masked.split("\n")
 
     # --- P0: Merge conflict markers ---
     for i, line in enumerate(lines, 1):
@@ -148,8 +163,8 @@ def check_file(
             )
 
     # --- P1: Large commented-out blocks ---
-    for match in _COMMENT_BLOCK_RE.finditer(content):
-        block_start = content[: match.start()].count("\n") + 1
+    for match in _COMMENT_BLOCK_RE.finditer(masked):
+        block_start = masked[: match.start()].count("\n") + 1
         block_lines = match.group().count("\n")
         findings.append(
             Finding(
