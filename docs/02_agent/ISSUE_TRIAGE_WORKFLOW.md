@@ -167,6 +167,117 @@ If an agent believes an issue is `agent-ready` but it lacks the label:
 
 ---
 
+## Repair Execution
+
+### Overview
+
+When a post-merge review or follow-up issue identifies a shipped mistake,
+the **repair lane** provides a bounded, issue-driven path for autonomous
+agents to fix it through a follow-up PR. Repair execution builds on the
+[Execution Gate](#execution-gate) above — it does not bypass or replace it.
+
+### Repair Eligibility Contract
+
+An issue is eligible for autonomous repair when **all** of the following
+are true:
+
+| # | Condition | Rationale |
+|---|-----------|-----------|
+| 1 | Issue is **open** | Closed issues are not actionable |
+| 2 | Issue has the `agent-ready` label | Explicit readiness signal |
+| 3 | Issue does **not** have `needs-human` | Human decision pending blocks autonomy |
+| 4 | Issue is **assigned** to a lane or person | Prevents racing / duplicate work |
+| 5 | No **open repair PR** already targets this issue | One active repair PR per issue |
+| 6 | Issue has enough **repro context** (evidence, commands, file paths) | Bounded execution requires bounded scope |
+
+The helper `src/bid_euchre/ops/repairs.py` implements conditions 1–5
+programmatically. Condition 6 is a judgment call made by the claiming
+agent before starting work.
+
+### Repair Execution Path
+
+Once an issue passes the eligibility contract:
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 1 | **Claim** | Assign yourself to the issue (or confirm existing assignment) |
+| 2 | **Branch** | Create a branch from fresh `origin/main` in your worktree |
+| 3 | **Reproduce** | Confirm the problem locally using the issue's repro context |
+| 4 | **Patch** | Implement the minimal bounded fix |
+| 5 | **Validate** | Run targeted tests (Tier 1), then `make check-quiet` (Tier 2) |
+| 6 | **PR** | Open a follow-up PR with `fix(repair):` title prefix, linking the issue and source PR |
+| 7 | **Update issue** | Add a comment with the PR link; do not close the issue (the PR merge closes it) |
+
+**PR conventions for repair PRs:**
+
+- Title prefix: `fix(repair): <short description>`
+- Label: `follow-up`
+- Body must reference: the issue number (`Fixes #N`) and the source PR
+- Scope must stay within the issue's identified subsystem
+
+### Lane Ownership
+
+| Priority | Owner | When |
+|----------|-------|------|
+| 1st | **Same author lane** that shipped the original PR | Traceable, context-rich |
+| 2nd | **Any available author lane** | Original lane busy or unavailable |
+| — | **Triage agent** | Never — triage files issues, does not fix them |
+
+### Stop Rules
+
+Repair execution is explicitly bounded. An agent **must stop** and
+escalate when any of the following occur:
+
+| Condition | Action |
+|-----------|--------|
+| Cannot reproduce the issue locally | Add comment, remove assignment, add `needs-human` |
+| Scope drifts beyond the issue's subsystem | Stop, split into a new issue, escalate |
+| Protected files involved (review driver, bridge controls, hooks) | Escalate — these require human review |
+| Repair PR fails CI or review twice | Add comment, add `needs-human`, stop |
+| Already 2 failed repair attempts on this issue | Escalate to human with full context |
+
+**Hard rules:**
+
+- **No direct pushes to `main`.** All repairs go through follow-up PRs.
+- **One active repair PR per issue.** Do not open a second PR while one
+  is still open.
+- **Maximum 2 repair attempts** per issue before mandatory human
+  escalation.
+
+### Escalation Path
+
+When repair is blocked or fails:
+
+1. Add a comment to the issue explaining what was tried and what failed
+2. Add the `needs-human` label
+3. Remove assignment (or reassign to human)
+4. Do **not** silently abandon the issue — the comment trail is the
+   audit record
+
+### Relationship to Triage
+
+| Role | Creates issues? | Fixes issues? | Profile |
+|------|----------------|---------------|---------|
+| **Triage agent** | Yes | No | `.claude/agents/issues.md` |
+| **Repair agent** | No (may file sub-issues) | Yes | `.claude/agents/repair.md` |
+
+Triage and repair are separate roles even when the same steward
+coordinates both. The triage agent files; the repair agent fixes.
+
+### Operator Visibility
+
+View the repair queue:
+
+```bash
+uv run python scripts/internal/ops.py repairs [--json]
+```
+
+This shows all `agent-ready` issues, their eligibility status, and any
+active repair PRs. See `docs/02_agent/AUTONOMOUS_OPERATOR_WORKFLOW.md`
+for the full operator repair UX.
+
+---
+
 ## Anti-Spam Rules
 
 | Rule | Threshold | Rationale |
@@ -281,3 +392,5 @@ no code enforcement and no hooks. To disable or roll back:
 - `.github/workflows/infra_incident_dedupe.yml` — existing infra-incident dedupe
 - `.claude/rules/deferred/60_review_gate.md` — follow-up issue labels and severity
 - `.claude/agents/issues.md` — agent profile for triage work
+- `.claude/agents/repair.md` — agent profile for repair execution
+- `src/bid_euchre/ops/repairs.py` — repair eligibility helper and queue visibility

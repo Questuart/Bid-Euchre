@@ -863,6 +863,7 @@ workspace health monitoring, event inspection, and operational management.
 | `snapshot list` | List shadow snapshots | `ops.py snapshot list --worktree /path` |
 | `snapshot rollback` | Roll back to a snapshot | `ops.py snapshot rollback snap-abc123` |
 | `snapshot prune` | Prune old snapshots | `ops.py snapshot prune --max-per-worktree 10` |
+| `repairs` | Post-merge repair queue (eligible issues) | `ops.py repairs --json` |
 
 All commands support `--json` for machine-readable output. Use
 `--runtime-dir` and `--plans-dir` to override default paths.
@@ -929,6 +930,7 @@ All operator stack features are designed to be independently disablable:
 | Watchdog checks | Pass `checks={"heartbeats"}` to run only specific checks |
 | Scheduler daemon | Do not run `ops.py daemon` — all checks are on-demand via `ops.py tick` |
 | Full stack | Remove `.claude/hooks/post-task-event.sh` and stop running `ops.py` |
+| Repair lane | Delete `.claude/agents/repair.md` and ignore `ops.py repairs` — issues remain as backlog |
 
 No feature alters core simulation, strategy, or experiment behavior.
 
@@ -964,6 +966,7 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 - Repo-bounded filesystem access as default in repo-owned entrypoints
 - PR comment ingestion for trusted-bot operational signals (Codex Cloud)
 - Bounded trusted command handling (conditional — only if still needed)
+- ~~Bounded post-merge repair lane~~ → Shipped (see § Post-Merge Repair Lane above)
 
 See `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
 for the bridge implementation plan.
@@ -1142,3 +1145,107 @@ directory manually.
 - Promotion module: `src/bid_euchre/ops/skill_promotion.py`
 - CLI surface: `scripts/internal/ops.py` (`skills` subcommand)
 - Tests: `tests/unit/test_ops_skill_promotion.py`
+
+---
+
+## Post-Merge Repair Lane
+
+### Overview
+
+When a post-merge review or follow-up issue identifies a shipped mistake,
+the **repair lane** provides a bounded, issue-driven path for agents to fix
+it through follow-up PRs. Repair is not a separate authority path — it
+builds on the existing issue-triage execution gate (see
+`docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md`).
+
+### Key Principles
+
+1. **Issue-driven, not comment-driven.** The repair queue is GitHub issues
+   with explicit readiness markers, not raw PR comments.
+2. **Follow-up PRs only.** Repairs never push directly to `main`.
+3. **One repair at a time.** One active repair PR per issue.
+4. **Bounded retry.** Maximum 2 attempts before mandatory human escalation.
+5. **Same lane first.** The author lane that shipped the original PR owns
+   the repair when available.
+
+### Operator Repair UX
+
+#### Viewing the Repair Queue
+
+```bash
+# Human-readable summary
+uv run python scripts/internal/ops.py repairs
+
+# Machine-readable JSON
+uv run python scripts/internal/ops.py repairs --json
+```
+
+The command shows all `agent-ready` issues, whether each is eligible for
+autonomous repair, and any active repair PRs. Issues that fail eligibility
+show the specific reason (missing assignment, `needs-human`, etc.).
+
+#### What to Look For
+
+| Signal | Meaning | Action |
+|--------|---------|--------|
+| Issue is eligible, unassigned | Ready for an author lane to claim | Assign a lane or let a lane self-assign |
+| Issue is eligible, assigned | Repair in progress or queued | Monitor for PR creation |
+| Issue has `needs-human` | Repair is blocked | Human decision required |
+| Issue has an active repair PR | Repair already in flight | Wait for PR review/merge |
+| Issue hit 2 failed attempts | Escalated | Human must investigate |
+
+#### What Changed for the Operator
+
+Before this repair lane:
+- Post-merge findings landed as PR comments or review-loop issues with
+  no clear execution path
+- Agents might react to PR comments ad hoc, with no bounds or audit trail
+
+After this repair lane:
+- Findings are durable GitHub issues with explicit readiness markers
+- `ops.py repairs` shows the repair backlog at a glance
+- Agents claim eligible issues and ship follow-up PRs
+- Failed repairs escalate with `needs-human` rather than looping silently
+- The issue comment trail is the audit record
+
+#### When Repair Is Stuck
+
+If a repair issue shows `needs-human` or has 2+ failed attempts:
+
+1. Read the issue comment trail for prior repair attempts
+2. Determine whether the fix is actually bounded / automatable
+3. Either:
+   - Remove `needs-human`, add context, and reassign for another attempt
+   - Fix it manually as a human-authored PR
+   - Close the issue as wontfix with an explanation
+
+### Eligibility Contract (Summary)
+
+Full contract: `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` §Repair Execution.
+
+| Condition | Required |
+|-----------|----------|
+| Issue is open | Yes |
+| Has `agent-ready` label | Yes |
+| Does not have `needs-human` | Yes |
+| Assigned to a lane or person | Yes |
+| No open repair PR for this issue | Yes |
+| Sufficient repro context | Yes (agent judgment) |
+
+### Stop Rules (Summary)
+
+| Trigger | Action |
+|---------|--------|
+| Cannot reproduce | Comment, add `needs-human`, unassign |
+| Scope drifts | Split issue, escalate |
+| Protected files involved | Escalate to human |
+| 2 failed repair attempts | Add `needs-human`, escalate |
+| Repair PR fails CI/review twice | Add `needs-human`, stop |
+
+### Implementation
+
+- Eligibility helper: `src/bid_euchre/ops/repairs.py`
+- CLI surface: `scripts/internal/ops.py` (`repairs` subcommand)
+- Agent profile: `.claude/agents/repair.md`
+- Full contract: `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md` §Repair Execution
+- Tests: `tests/unit/test_ops_repairs.py`
