@@ -357,6 +357,74 @@ def initialize_state(
     )
 
 
+# States that should trigger a verdict write (terminal + READY_TO_MERGE).
+# READY_TO_MERGE is not terminal but is the point where the review loop
+# has made a decision and the merge guard needs a verdict to proceed.
+_VERDICT_STATES = TERMINAL_STATES | {ReviewState.READY_TO_MERGE}
+
+
+def _write_verdict_if_applicable(
+    loop_state: ReviewLoopState,
+    *,
+    override_status: str | None = None,
+) -> None:
+    """Write a durable review verdict via the review queue substrate.
+
+    Called centrally from ``step()`` after any dispatch that reaches a
+    verdict-worthy state. This ensures the merge guard always has a
+    verdict file to check.
+
+    Verdict mapping:
+    - READY_TO_MERGE / MERGED → ``"passed"``
+    - STOPPED_* (failure states) → ``"blocked"``
+    - ``override_status`` for special cases (e.g., degraded pass).
+    """
+    from bid_euchre.ops.review_queue import (
+        STATUS_BLOCKED,
+        STATUS_PASSED,
+        ReviewVerdict,
+        write_verdict,
+    )
+
+    current = loop_state.current_state
+    if current not in _VERDICT_STATES:
+        return
+
+    sha = loop_state.current_head_sha or loop_state.initial_head_sha or ""
+    if not sha:
+        logger.warning(
+            "PR #%d: no SHA available for verdict -- skipping",
+            loop_state.pr_number,
+        )
+        return
+
+    if override_status:
+        status = override_status
+    elif current in (ReviewState.READY_TO_MERGE, ReviewState.MERGED):
+        status = STATUS_PASSED
+    elif current in _FAILURE_STATES:
+        status = STATUS_BLOCKED
+    else:
+        status = STATUS_BLOCKED
+
+    reason = loop_state.stop_reason or current.value
+
+    try:
+        verdict = ReviewVerdict(
+            pr_number=loop_state.pr_number,
+            reviewed_sha=sha,
+            status=status,
+            reason=reason,
+        )
+        write_verdict(verdict, emit_event=True, lane_id="review_driver")
+    except Exception:
+        logger.exception(
+            "PR #%d: failed to write verdict at %s",
+            loop_state.pr_number,
+            current.value,
+        )
+
+
 def step(
     loop_state: ReviewLoopState,
     *,
@@ -366,6 +434,9 @@ def step(
 
     This is the main dispatch function. Each call makes bounded progress
     (one transition) and returns the updated state.
+
+    After each dispatch, if the state is verdict-worthy (terminal or
+    READY_TO_MERGE), a durable verdict file is written for the merge guard.
 
     Args:
         loop_state: Current state.
@@ -396,6 +467,7 @@ def step(
         loop_state.stop_reason = f"Hit max iterations ({loop_state.max_iterations})"
         _post_review_comment(loop_state, [], "blocked")
         save_state(loop_state, base_dir)
+        _write_verdict_if_applicable(loop_state)
         logger.warning(
             "PR #%d: stopped -- max iterations (%d)",
             loop_state.pr_number,
@@ -405,21 +477,21 @@ def step(
 
     # Dispatch by current state
     if current == ReviewState.INITIALIZED:
-        return _step_initialized(loop_state, base_dir)
+        result = _step_initialized(loop_state, base_dir)
     elif current == ReviewState.PR_OPEN:
-        return _step_pr_open(loop_state, base_dir)
+        result = _step_pr_open(loop_state, base_dir)
     elif current == ReviewState.WAITING_FOR_CI:
-        return _step_waiting_for_ci(loop_state, base_dir)
+        result = _step_waiting_for_ci(loop_state, base_dir)
     elif current == ReviewState.WAITING_FOR_CODEX:
-        return _step_waiting_for_codex(loop_state, base_dir)
+        result = _step_waiting_for_codex(loop_state, base_dir)
     elif current == ReviewState.SCORING_FINDINGS:
-        return _step_scoring_findings(loop_state, base_dir)
+        result = _step_scoring_findings(loop_state, base_dir)
     elif current == ReviewState.APPLYING_FIXES:
-        return _step_applying_fixes(loop_state, base_dir)
+        result = _step_applying_fixes(loop_state, base_dir)
     elif current == ReviewState.RETESTING:
-        return _step_retesting(loop_state, base_dir)
+        result = _step_retesting(loop_state, base_dir)
     elif current == ReviewState.READY_TO_MERGE:
-        return _step_ready_to_merge(loop_state, base_dir)
+        result = _step_ready_to_merge(loop_state, base_dir)
     else:
         logger.error(
             "PR #%d: unexpected state %s",
@@ -427,6 +499,12 @@ def step(
             current.value,
         )
         return loop_state
+
+    # Write durable verdict at verdict-worthy states so the merge guard can check
+    if result.current_state in _VERDICT_STATES:
+        _write_verdict_if_applicable(result)
+
+    return result
 
 
 def _step_initialized(
@@ -1068,9 +1146,13 @@ def _step_scoring_findings(
     # publish advisory status and proceed to merge — CI is the real gate.
     # This prevents "I don't know" from being treated as "clean pass" or "blocked".
     if parse_confidence in ("unparseable", "backend_error"):
-        desc = f"Review degraded — Codex output {parse_confidence} (advisory)"
+        desc = f"Review degraded -- Codex output {parse_confidence} (advisory)"
         _publish_status(loop_state.pr_number, "success", desc[:140])
         loop_state.transition(ReviewState.READY_TO_MERGE)
+        # Write "passed" verdict (degraded reviews still allow merge —
+        # the merge guard treats "passed" as mergeable).
+        loop_state.stop_reason = f"Codex output {parse_confidence} (degraded pass)"
+        _write_verdict_if_applicable(loop_state)
         _post_review_comment(loop_state, [], "passed")
         save_state(loop_state, base_dir)
         logger.warning(
@@ -1297,31 +1379,28 @@ def _step_ready_to_merge(
     loop_state: ReviewLoopState,
     base_dir: Path | None,
 ) -> ReviewLoopState:
-    """READY_TO_MERGE → MERGED: Enable auto-merge and transition.
+    """READY_TO_MERGE: Publish clean status and stay.
 
-    Enables GitHub auto-merge (squash) on the PR. GitHub will merge
-    once all branch protection requirements (CI, required statuses)
-    are satisfied.
+    Under the queue-backed merge model, the review driver does NOT
+    call enable_auto_merge.  Merge authority is delegated to the local
+    merge guard (pre-merge-review-guard.sh), which checks for a clean
+    verdict file matching the current HEAD SHA before allowing
+    ``gh pr merge``.
+
+    The verdict file is written centrally by ``_write_verdict_if_applicable``
+    (called from ``step()``), so this function only publishes the final
+    status and saves state.
     """
-    from github_pr_state import enable_auto_merge
-
-    ok = enable_auto_merge(loop_state.pr_number)
-    if ok:
-        loop_state.transition(ReviewState.MERGED)
-        save_state(loop_state, base_dir)
-        logger.info(
-            "PR #%d: auto-merge enabled → merged",
-            loop_state.pr_number,
-        )
-    else:
-        # Auto-merge not available (e.g., repo setting disabled, conflicts).
-        # Stay at READY_TO_MERGE — human can merge manually.
-        logger.warning(
-            "PR #%d: auto-merge failed — manual merge required",
-            loop_state.pr_number,
-        )
-        save_state(loop_state, base_dir)
-
+    _publish_status(
+        loop_state.pr_number,
+        "success",
+        "Review passed -- ready to merge (verdict written)",
+    )
+    save_state(loop_state, base_dir)
+    logger.info(
+        "PR #%d: ready_to_merge -- verdict written, merge guard will allow",
+        loop_state.pr_number,
+    )
     return loop_state
 
 
@@ -1468,6 +1547,7 @@ def main() -> int:
             except Exception:
                 loop_state.state = ReviewState.STOPPED_REVIEW_FAILURE.value
             save_state(loop_state)
+            _write_verdict_if_applicable(loop_state)
             _write_failure_sentinel(loop_state)
             return 1
 
