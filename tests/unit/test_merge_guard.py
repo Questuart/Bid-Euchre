@@ -162,6 +162,20 @@ class TestMergeGuardLogic:
         assert allowed is False
         assert "CI" in reason
 
+    def test_allows_ci_success_with_skipped(self, tmp_path: Path) -> None:
+        """Guard must allow merge when CI reports 'success' (which now includes SKIPPED)."""
+        sha = "abc1234567890"
+        v = ReviewVerdict(
+            pr_number=42, reviewed_sha=sha, status=STATUS_PASSED, reason="clean"
+        )
+        write_verdict(v, tmp_path, emit_event=False)
+
+        # The guard receives the aggregated CI status, not raw check states.
+        # get_ci_status() now returns "success" for SUCCESS+SKIPPED mixes.
+        allowed, reason = _guard_check(42, sha, "success", tmp_path)
+        assert allowed is True
+        assert "Ready" in reason
+
 
 # ---------------------------------------------------------------------------
 # review_driver._write_verdict_if_applicable integration

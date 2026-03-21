@@ -59,7 +59,16 @@ jobs:
           # - Read/Grep/Glob are allowed by default
           # - Write tools and network/agent tools are disallowed to prevent
           #   wasted turns on permission denials (~36% turn waste before this fix)
+          show_full_output: true
           claude_args: '--max-turns 15 --disallowedTools "Edit,Write,NotebookEdit,Agent,WebFetch,WebSearch,LSP"'
+
+      - name: Upload review execution log
+        if: always() && steps.claude-review.outputs.execution_file
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-review-execution-pr${{ github.event.pull_request.number }}
+          path: ${{ steps.claude-review.outputs.execution_file }}
+          retention-days: 7
 
       - name: Flag reviewer infra failure
         if: always() && steps.claude-review.outcome == 'failure'

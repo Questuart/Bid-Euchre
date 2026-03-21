@@ -315,6 +315,51 @@ class TestGetCIStatus:
         assert get_ci_status(1) == "failure"
 
     @patch("github_pr_state.subprocess.run")
+    def test_skipped_checks_count_as_success(self, mock_run: Mock) -> None:
+        """SKIPPED CI checks (path-filtered jobs) should count as terminal-success."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "SUCCESS"},
+                {"name": "prechecks", "state": "SKIPPED"},
+                {"name": "governance", "state": "SUCCESS"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_all_skipped_counts_as_success(self, mock_run: Mock) -> None:
+        """All SKIPPED CI checks (docs-only PR) should count as success."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "SKIPPED"},
+                {"name": "prechecks", "state": "SKIPPED"},
+            ]
+        )
+        assert get_ci_status(1) == "success"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_skipped_with_failure_still_fails(self, mock_run: Mock) -> None:
+        """SKIPPED checks don't mask a real CI failure."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "FAILURE"},
+                {"name": "prechecks", "state": "SKIPPED"},
+            ]
+        )
+        assert get_ci_status(1) == "failure"
+
+    @patch("github_pr_state.subprocess.run")
+    def test_skipped_with_pending_still_pending(self, mock_run: Mock) -> None:
+        """SKIPPED checks don't mask pending CI."""
+        mock_run.return_value = _mock_checks_result(
+            [
+                {"name": "tests", "state": "PENDING"},
+                {"name": "prechecks", "state": "SKIPPED"},
+            ]
+        )
+        assert get_ci_status(1) == "pending"
+
+    @patch("github_pr_state.subprocess.run")
     def test_only_non_ci_checks_returns_pending(self, mock_run: Mock) -> None:
         """If no CI checks exist, treat as pending."""
         mock_run.return_value = _mock_checks_result(
