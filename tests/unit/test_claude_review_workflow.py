@@ -98,14 +98,41 @@ class TestClaudeReviewWorkflow:
                 tool in claude_args
             ), f"'{tool}' must be in --disallowedTools to prevent wasted turns"
 
-    def test_full_git_history_for_diff(self):
-        """Checkout must use fetch-depth 0 so git diff origin/main works."""
+    def test_shallow_clone_sufficient(self):
+        """Checkout uses shallow clone — reviewer uses gh pr diff (not git diff)."""
         steps = self.cfg["jobs"]["claude-review"]["steps"]
         checkout = next(s for s in steps if "checkout" in s.get("uses", ""))
-        assert checkout["with"]["fetch-depth"] == 0, (
-            "fetch-depth must be 0 for full git history — "
-            "the reviewer needs git diff origin/main...HEAD"
+        assert checkout["with"]["fetch-depth"] == 1, (
+            "fetch-depth must be 1 (shallow) — reviewer uses gh pr diff, "
+            "not git diff, so full history is unnecessary"
         )
+
+    def test_prompt_uses_gh_pr_diff(self):
+        """Reviewer prompt must use `gh pr diff` not `git diff`.
+
+        The allowed-tools only grant scoped Bash for `gh` commands.
+        Unrestricted `git diff` may be denied by the sandbox (#1146).
+        """
+        step = self._review_step()
+        prompt = step["with"]["prompt"]
+        assert "gh pr diff" in prompt, "prompt must use gh pr diff (not git diff)"
+        assert "git diff" not in prompt, "prompt must not reference git diff"
+
+    def test_threshold_alerting_for_blank_execution(self):
+        """Consecutive blank-execution failures must escalate to an issue.
+
+        After BLANK_EXEC_THRESHOLD consecutive failures, the classifier
+        creates an infra issue instead of silently warning (#1092).
+        """
+        flag_step = self._flag_step()
+        script = flag_step["run"]
+        assert "BLANK_EXEC_THRESHOLD" in script, (
+            "classifier must define BLANK_EXEC_THRESHOLD for consecutive "
+            "blank-execution alerting"
+        )
+        assert (
+            "CONSECUTIVE_FAILURES" in script
+        ), "classifier must count consecutive failures"
 
     # -- infra-failure classifier constraints --
 
@@ -123,10 +150,11 @@ class TestClaudeReviewWorkflow:
         assert "GH_TOKEN" in str(flag_step.get("env", {}))
 
     def test_classifier_suppresses_blank_execution_file(self):
-        """Blank EXECUTION_FILE must warn and exit 0, not create an issue.
+        """Blank EXECUTION_FILE below threshold must warn and exit 0.
 
         The action does not set execution_file on error_max_turns exits.
-        Creating an issue for every blank file would spam the repo.
+        Below the threshold, blank files exit 0 (suppressed). Above the
+        threshold, consecutive failures escalate to an issue (#1092).
         """
         flag_step = self._flag_step()
         script = flag_step["run"]
@@ -134,14 +162,19 @@ class TestClaudeReviewWorkflow:
         assert (
             '-z "$EXECUTION_FILE"' in script
         ), "classifier must check for blank EXECUTION_FILE"
-        # Must exit 0 (no issue creation) on blank path
-        # Find the blank-file branch and verify it has exit 0 before gh issue create
+        # The blank-execution branch must contain both:
+        # - exit 0 (below threshold, suppress)
+        # - exit 1 (above threshold, escalate)
         blank_idx = script.index('-z "$EXECUTION_FILE"')
-        exit_idx = script.index("exit 0", blank_idx)
-        issue_idx = script.index("gh issue create")
+        # Find the elif that ends the blank-execution branch
+        elif_idx = script.index("elif", blank_idx)
+        blank_section = script[blank_idx:elif_idx]
         assert (
-            exit_idx < issue_idx
-        ), "blank EXECUTION_FILE path must exit 0 before reaching gh issue create"
+            "exit 0" in blank_section
+        ), "blank EXECUTION_FILE path must exit 0 below threshold"
+        assert (
+            "exit 1" in blank_section
+        ), "blank EXECUTION_FILE path must exit 1 above threshold"
 
     def test_classifier_suppresses_max_turns(self):
         """error_max_turns must warn and exit 0, not create an issue.
@@ -154,13 +187,15 @@ class TestClaudeReviewWorkflow:
         assert (
             "error_max_turns" in script
         ), "classifier must check for error_max_turns subtype"
-        # The error_max_turns guard must exit 0 before gh issue create
+        # The error_max_turns guard must exit 0 before the final gh issue create
+        # (the one for genuine infra failures, not the threshold alerting one)
         max_turns_idx = script.index("error_max_turns")
         exit_idx = script.index("exit 0", max_turns_idx)
-        issue_idx = script.index("gh issue create")
+        # Find the last gh issue create (genuine failure path)
+        last_issue_idx = script.rindex("gh issue create")
         assert (
-            exit_idx < issue_idx
-        ), "error_max_turns path must exit 0 before reaching gh issue create"
+            exit_idx < last_issue_idx
+        ), "error_max_turns path must exit 0 before the genuine-failure issue create"
 
     def test_classifier_handles_file_not_found(self):
         """Classifier must handle EXECUTION_FILE path set but file absent."""

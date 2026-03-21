@@ -29,8 +29,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Full history so the reviewer can run git diff origin/main...HEAD
-          fetch-depth: 0
+          # Shallow clone is sufficient — reviewer uses `gh pr diff` (not git diff)
+          fetch-depth: 1
 
       - name: Run Claude Code Review
         id: claude-review
@@ -44,7 +44,7 @@ jobs:
             DO NOT attempt to modify files, create commits, push branches, or
             perform any implementation work. You may only read and comment.
 
-            Start by running `git diff origin/main...HEAD --stat` to understand
+            Start by running `gh pr diff ${{ github.event.pull_request.number }}` to understand
             the change scope, then read the changed files for detailed review.
 
             Review this pull request for:
@@ -55,7 +55,7 @@ jobs:
             Post your findings as review comments on the PR.
 
           # Tool access strategy:
-          # - Bash is ALLOWED (read-only: git diff, ruff check, pytest --collect-only)
+          # - Bash is scoped to gh commands via allowed-tools in the action config
           # - Read/Grep/Glob are allowed by default
           # - Write tools and network/agent tools are disallowed to prevent
           #   wasted turns on permission denials (~36% turn waste before this fix)
@@ -75,7 +75,39 @@ jobs:
           if [ -z "$EXECUTION_FILE" ]; then
             # Output was never set — action crashed before producing metadata.
             # The action does not set execution_file on error_max_turns exits,
-            # so this is the most common case. Warn but do not create an issue.
+            # so this is the most common case. Usually harmless, but consecutive
+            # blank-execution failures may indicate a persistent infra problem.
+            #
+            # Threshold alerting: count recent consecutive blank-execution runs
+            # by querying workflow run conclusions. If >= BLANK_EXEC_THRESHOLD
+            # consecutive failures, escalate to an issue instead of just warning.
+            BLANK_EXEC_THRESHOLD=3
+            RECENT_RUNS=$(gh run list \
+              --workflow "claude-code-review.yml" \
+              --limit "$((BLANK_EXEC_THRESHOLD + 1))" \
+              --json conclusion,status \
+              --jq '[.[] | select(.status == "completed")] | .[0:'"$BLANK_EXEC_THRESHOLD"'] | map(.conclusion)' \
+              2>/dev/null || echo "[]")
+
+            # Count consecutive failures (all recent runs failed)
+            CONSECUTIVE_FAILURES=$(echo "$RECENT_RUNS" | jq '[.[] | select(. == "failure")] | length' 2>/dev/null || echo "0")
+
+            if [ "$CONSECUTIVE_FAILURES" -ge "$BLANK_EXEC_THRESHOLD" ]; then
+              echo "::error::claude-review has $CONSECUTIVE_FAILURES consecutive blank-execution failures — creating infra issue"
+              gh issue create \
+                --title "claude-review: $CONSECUTIVE_FAILURES consecutive blank-execution failures" \
+                --body "The Claude Code Review action has failed $CONSECUTIVE_FAILURES consecutive times without producing an \`execution_file\`. This pattern suggests a persistent infrastructure problem (not intermittent max-turns noise).
+
+          **Consecutive failures:** $CONSECUTIVE_FAILURES
+          **Threshold:** $BLANK_EXEC_THRESHOLD
+          **Latest run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Investigate: OOM, token expiry, auth failure, or action version regression." \
+                --label "follow-up"
+              # Exit non-zero so the check stays failed as a visible signal
+              exit 1
+            fi
+
             echo "::warning::claude-review exited without execution_file (likely max-turns exhaustion)"
             exit 0
           elif [ ! -f "$EXECUTION_FILE" ]; then
