@@ -107,6 +107,38 @@ class TestClaudeReviewWorkflow:
             "not git diff, so full history is unnecessary"
         )
 
+    def test_prompt_does_not_instruct_manual_posting(self):
+        """Prompt must NOT tell Claude to post comments via gh pr comment.
+
+        Claude Code's sandbox heuristics block multi-line bodies containing
+        #-prefixed lines (markdown headers) as potential obfuscation. When
+        the prompt says "post findings as review comments", Claude attempts
+        gh pr comment with markdown, gets blocked repeatedly, and exhausts
+        all turns without producing output. The action framework handles
+        posting automatically — Claude just needs to produce text output.
+
+        Regression test for run 23388128292 (PR #1211).
+        """
+        step = self._review_step()
+        prompt = step["with"]["prompt"].lower()
+        assert "post" not in prompt or "do not" in prompt.split("post")[0][-30:], (
+            "prompt must not instruct Claude to post comments — "
+            "the action framework handles posting automatically"
+        )
+
+    def test_prompt_prohibits_gh_pr_comment(self):
+        """Prompt must explicitly forbid gh pr comment and gh api posting.
+
+        Without an explicit prohibition, Claude may still attempt to use
+        these tools to post review findings, wasting turns on sandbox
+        errors.
+        """
+        step = self._review_step()
+        prompt = step["with"]["prompt"].lower()
+        assert (
+            "do not" in prompt and "gh pr comment" in prompt
+        ), "prompt must explicitly prohibit gh pr comment"
+
     def test_prompt_uses_gh_pr_diff(self):
         """Reviewer prompt must use `gh pr diff` not `git diff`.
 
