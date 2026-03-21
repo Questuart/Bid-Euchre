@@ -1,48 +1,34 @@
-# Codex Review — Local Gate + Cloud Overlay
+# Review Architecture — Coordinator + Advisory Overlays
 
-> `reviewing-changes` from the local autonomous review loop is the
-> merge-relevant review gate. `claude-review` is an advisory GitHub check.
-> Codex Cloud is an optional manual overlay via `@codex review` and, as of the
-> 2026-03-20 proving run, currently lands as an issue comment from
-> `chatgpt-codex-connector[bot]` rather than as a check, status, or PR review.
+> The **local review coordinator** (`review_driver.py`) is the single
+> reviewer of record.  `reviewing-changes` is the merge-relevant gate.
+> `claude-review` is an advisory GitHub check.  Codex Cloud is an optional
+> overlay via `@codex review`.
 
-## Overview
+## Review Coordinator (Reviewer of Record)
 
-This repo currently has three distinct review surfaces:
+All merge-relevant automated review is handled by the **review
+coordinator** (`scripts/internal/review_driver.py`), which invokes Codex
+CLI (`codex review --base main`) locally as its preferred review backend.
 
-1. **Autonomous review loop** (`reviewing-changes`)
-   - merge-relevant
-   - local/background
-   - driven by `scripts/internal/review_driver.py`
-   - invokes Codex CLI locally
+The coordinator owns:
 
-2. **Claude Code Review** (`claude-review`)
-   - advisory only
-   - GitHub Actions check
-   - must remain visible without poisoning CI
+| Artifact | Details |
+|----------|---------|
+| `reviewing-changes` commit status | Merge-relevant gate; published by `review_driver.py` only |
+| Canonical PR summary comment | Single upserted comment with `<!-- review-loop-comment -->` marker |
 
-3. **Codex Cloud** (`@codex review`)
-   - optional manual overlay
-   - uses the user's ChatGPT subscription plus Codex Cloud repo enablement
-   - not part of branch protection
-   - not currently integrated into ops check/review classification
-
-## Autonomous Review Loop
-
-All merge-relevant automated review is handled by the autonomous review loop
-(`review_driver.py`), which invokes **Codex CLI** (`codex review --base main`)
-locally.
-
-The review loop:
+The coordinator:
 1. Runs deterministic prechecks
-2. Runs `make check-quiet`
+2. Waits for GitHub CI to pass
 3. Invokes Codex CLI for code review
 4. Auto-fixes safe patterns (convention fixes)
 5. Iterates (max 3 rounds) until clean or stopped
 6. Publishes `reviewing-changes` commit status
-7. Enables auto-merge (squash) when review passes
+7. Posts the canonical PR summary comment
+8. Enables auto-merge (squash) when review passes
 
-## Codex CLI Details
+### Codex CLI Details
 
 | Property | Value |
 |----------|-------|
@@ -53,28 +39,30 @@ The review loop:
 | Retry policy | Up to 3 attempts before `stopped_review_failure` |
 | Custom launcher | `CODEX_REVIEW_CMD` env var (optional) |
 
-## Relationship To Other Gates
+## Advisory Overlays (Not Reviewer of Record)
 
-| Surface | Type | Required? | Publisher |
-|---------|------|-----------|-----------|
-| `tests` | GitHub Actions check | Yes (branch protection) | CI |
-| `governance` | GitHub Actions check | Yes (branch protection) | CI |
-| `reviewing-changes` | Commit status | Yes (branch protection) | Review loop (`review_driver.py`) |
-| `claude-review` | GitHub Actions check | No (advisory) | Claude Code Review workflow |
-| Codex Cloud `@codex review` | PR issue comment | No (overlay only) | `chatgpt-codex-connector[bot]` |
+### Claude Code Review (`claude-review`)
 
-## Codex Cloud Review
+- **Type:** GitHub Actions check (advisory)
+- **Required for merge?** No
+- **Published by:** Claude Code Review workflow (`.github/workflows/claude-code-review.yml`)
+- **Use case:** May carry useful code-quality signal, but is not part of the
+  merge decision
+- **Operator guidance:** Ignore unless troubleshooting or looking for
+  supplementary feedback
 
-Codex Cloud review uses the user's ChatGPT subscription plus repo enablement in
-Codex settings. It is not driven by a repo-local GitHub Actions workflow for
-this repo.
+### Codex Cloud (`@codex review`)
 
-### Trigger
+- **Type:** PR issue comment (overlay)
+- **Required for merge?** No
+- **Published by:** `chatgpt-codex-connector[bot]`
+- **Trigger:** Manual — comment `@codex review` on a PR
+- **Use case:** Optional second opinion from Codex Cloud, delivered as a PR
+  comment
+- **Operator guidance:** Treat as supplementary feedback.  Do not treat as
+  the canonical review or as part of the merge gate.
 
-- Enable the repository in Codex Cloud settings
-- Comment `@codex review` on a PR
-
-### Observed Delivery Mechanism (2026-03-20 proving run)
+#### Observed Delivery Mechanism (2026-03-20 proving run)
 
 | Artifact | Present? | Details |
 |----------|----------|---------|
@@ -84,47 +72,24 @@ this repo.
 | PR issue comment | Yes | Posted by `chatgpt-codex-connector[bot]` |
 | Reaction on trigger comment | Yes | `eyes` reaction acknowledging `@codex review` |
 
-Observed identity:
-
-| Field | Value |
-|-------|-------|
-| GitHub App slug | `chatgpt-codex-connector` |
-| Bot login | `chatgpt-codex-connector[bot]` |
-| App display name | `ChatGPT Codex Connector` |
-| Delivery mechanism | PR issue comment |
-
-### Current Implication
-
-Codex Cloud does **not** currently flow through the repo's existing review
-classification hooks:
-
-- not `classify_check()` / `ADVISORY_CONTEXTS`
-- not `ops.reviews` PR-review aggregation
-
-If the repo later wants Codex Cloud findings surfaced in ops tooling, that is a
-new comment-ingestion capability:
-
-- detect PR issue comments from `chatgpt-codex-connector[bot]`
-- parse or summarize those findings
-- present them separately from checks and PR reviews
-
-This comment-ingestion bridge is tracked as pre-Platform-1 work in
-`plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
-(Lane B). See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md` for the full
-entry gate.
+Codex Cloud does **not** flow through the repo's existing review
+classification hooks (`classify_check()`, `ADVISORY_CONTEXTS`,
+`ops.reviews`).  If the repo later wants Codex Cloud findings surfaced in
+ops tooling, that is a comment-ingestion capability (tracked as Lane B
+bridge work) — not a review-gate change.
 
 Do not add a speculative `codex-review.yml` workflow or speculative advisory
 check-name registration for the ChatGPT-subscription path.
 
-## PR Comments
+## Relationship To Other Gates
 
-The autonomous review loop posts structured PR comments on terminal states (not
-just commit statuses). Comments use an HTML marker for idempotent upsert and
-include the stop reason, findings table, and a recovery command. See
-`docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for details.
-
-Codex Cloud comments are separate from those loop comments and should be
-treated as overlay feedback, not as the branch-protection gate.
+| Surface | Type | Required? | Publisher | Role |
+|---------|------|-----------|-----------|------|
+| `tests` | GitHub Actions check | Yes (branch protection) | CI | Build truth |
+| `governance` | GitHub Actions check | Yes (branch protection) | CI | Repo policy |
+| `reviewing-changes` | Commit status | Yes (branch protection) | Review coordinator | **Reviewer of record** |
+| `claude-review` | GitHub Actions check | No (advisory) | Claude Code Review workflow | Advisory overlay |
+| Codex Cloud | PR issue comment | No (overlay) | `chatgpt-codex-connector[bot]` | Advisory overlay |
 
 ## Review Modes
 
@@ -141,15 +106,64 @@ PRs are classified by review mode based on changed file types:
 1. Claude opens a PR via `gh pr create`
 2. PostToolUse hooks dispatch `/reviewing-changes` and launch
    `review_driver.py` in the background
-3. The review loop runs prechecks, `make check-quiet`, and Codex CLI review
-4. On success, the loop publishes `reviewing-changes=success` and enables
-   auto-merge
-5. GitHub merges automatically once CI and branch protection are satisfied
+3. The review coordinator runs prechecks and waits for CI
+4. The coordinator invokes Codex CLI and scores findings
+5. On success, the coordinator publishes `reviewing-changes=success`,
+   posts the canonical summary comment, and enables auto-merge
+6. GitHub merges automatically once CI and branch protection are satisfied
 
-Codex Cloud, when used, is additive commentary. It does not currently publish a
+Codex Cloud, when used, is additive commentary.  It does not publish a
 merge-blocking artifact for this repo.
+
+## Changes for Daily Usage
+
+This section describes what changed with the review-architecture reset and
+what the operator should do differently.
+
+### What Changed
+
+1. **One reviewer of record:** `review_driver.py` is explicitly declared as
+   the single reviewer of record.  Previously, multiple review surfaces
+   (local loop, `claude-review`, Codex Cloud) coexisted without a clear
+   hierarchy.
+2. **One canonical summary comment:** The PR summary comment with the
+   `<!-- review-loop-comment -->` marker is the single machine-owned review
+   comment.  It is upserted (updated in place), not duplicated.
+3. **Advisory surfaces are explicitly demoted:** `claude-review` and Codex
+   Cloud are documented as advisory overlays, not review truth.
+4. **Fallback is degraded pass:** If Codex CLI is unavailable, the
+   coordinator publishes a degraded pass instead of blocking indefinitely.
+
+### What the Operator Should Do
+
+- **Stop treating `claude-review` as canonical.** It is advisory only.
+- **Stop treating `@codex review` as part of the normal merge path.** It is
+  an optional overlay.
+- **Use the canonical review comment + `reviewing-changes` as the source of
+  truth.** The comment with `<!-- review-loop-comment -->` is the only
+  machine review that matters for merge decisions.
+- **Use the documented rerun path when review is stuck:**
+  ```bash
+  python scripts/internal/review_driver.py --pr <N> --trigger manual
+  ```
+- **Use the admin override only as a last resort:**
+  ```bash
+  scripts/internal/set_review_status.sh success "Manual override"
+  ```
+
+### What to Look At First on a PR
+
+1. `reviewing-changes` status (green/red/pending)
+2. The canonical summary comment (findings, stop reason, recovery)
+3. CI checks (`tests`, `governance`)
+
+### What to Ignore Unless Troubleshooting
+
+- `claude-review` check
+- Codex Cloud comments (`chatgpt-codex-connector[bot]`)
+- Other bot comments without the `<!-- review-loop-comment -->` marker
 
 ## Recovery
 
-See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for crash recovery procedures for
-the merge-relevant local review loop.
+See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for crash recovery procedures
+for the review coordinator.

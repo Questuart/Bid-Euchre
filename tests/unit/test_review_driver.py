@@ -508,7 +508,7 @@ class TestFormatReviewComment:
         )
         state.stop_reason = "CI failed"
         body = _format_review_comment(state, [], "blocked")
-        assert "## Review Loop -- Blocked" in body
+        assert "Review Coordinator -- Blocked" in body
         assert "abc1234567890" in body
         assert "CI failed" in body
         assert "<!-- review-loop-comment -->" in body
@@ -523,7 +523,7 @@ class TestFormatReviewComment:
             current_head_sha="def4567890abc",
         )
         body = _format_review_comment(state, [], "passed")
-        assert "## Review Loop -- Passed" in body
+        assert "Review Coordinator -- Passed" in body
         assert "No findings." in body
 
     def test_blockers_rendered_as_table(self) -> None:
@@ -1068,3 +1068,90 @@ class TestCreateFollowUpIssuesDedup:
         mock_logger.warning.assert_called()
         warning_msg = mock_logger.warning.call_args[0][0]
         assert "Dedup check failed" in warning_msg
+
+
+# ---------------------------------------------------------------------------
+# Coordinator contract tests
+# ---------------------------------------------------------------------------
+
+
+class TestCoordinatorContract:
+    """Verify the COORDINATOR_CONTRACT constant and its integration.
+
+    The coordinator-of-record model requires a stable, inspectable contract
+    that other modules and docs can reference.
+    """
+
+    def test_contract_exists_and_has_required_keys(self) -> None:
+        from review_driver import COORDINATOR_CONTRACT
+
+        required_keys = {
+            "status_context",
+            "status_publisher",
+            "comment_marker",
+            "comment_publisher",
+            "preferred_backend",
+            "fallback_behavior",
+            "advisory_surfaces",
+            "rerun_command",
+        }
+        assert set(COORDINATOR_CONTRACT.keys()) == required_keys
+
+    def test_status_context_is_reviewing_changes(self) -> None:
+        from review_driver import COORDINATOR_CONTRACT
+
+        assert COORDINATOR_CONTRACT["status_context"] == "reviewing-changes"
+
+    def test_comment_marker_matches_github_pr_state(self) -> None:
+        from github_pr_state import REVIEW_COMMENT_MARKER
+        from review_driver import COORDINATOR_CONTRACT
+
+        assert COORDINATOR_CONTRACT["comment_marker"] == REVIEW_COMMENT_MARKER
+
+    def test_advisory_surfaces_lists_known_overlays(self) -> None:
+        from review_driver import COORDINATOR_CONTRACT
+
+        advisory = COORDINATOR_CONTRACT["advisory_surfaces"]
+        assert "claude-review" in advisory
+        assert "codex-cloud" in advisory
+
+    def test_format_review_comment_includes_coordinator_identity(self) -> None:
+        from review_state import ReviewLoopState, ReviewState
+
+        state = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.READY_TO_MERGE.value,
+            current_head_sha="abc1234567890",
+        )
+        body = _format_review_comment(state, [], "passed")
+        assert "Canonical review summary" in body
+        assert "single machine-owned review comment" in body
+        assert "advisory only" in body
+
+    def test_format_review_comment_blocked_includes_coordinator_identity(self) -> None:
+        from review_state import ReviewLoopState, ReviewState
+
+        state = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.STOPPED_CI_FAILURE.value,
+            current_head_sha="abc1234567890",
+        )
+        state.stop_reason = "CI failed"
+        body = _format_review_comment(state, [], "blocked")
+        assert "Canonical review summary" in body
+        assert "Review Coordinator -- Blocked" in body
+
+    def test_format_review_comment_marker_is_stable(self) -> None:
+        """The dedup marker must be stable so upsert works across versions."""
+        from github_pr_state import REVIEW_COMMENT_MARKER
+        from review_state import ReviewLoopState, ReviewState
+
+        state = ReviewLoopState(
+            pr_number=42,
+            branch="test-branch",
+            state=ReviewState.READY_TO_MERGE.value,
+        )
+        body = _format_review_comment(state, [], "passed")
+        assert REVIEW_COMMENT_MARKER in body
