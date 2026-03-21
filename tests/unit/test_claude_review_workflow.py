@@ -216,6 +216,63 @@ class TestClaudeReviewWorkflow:
             "unparseable_execution_file" in script
         ), "must classify empty jq output as 'unparseable_execution_file'"
 
+    def test_threshold_dedup_guard(self):
+        """Threshold-breach issue creation must check for existing open issues.
+
+        Without dedup, the 4th, 5th, etc. consecutive failures each create
+        a new issue. The guard searches for an existing open issue and skips
+        creation if one exists (#1164).
+        """
+        flag_step = self._flag_step()
+        script = flag_step["run"]
+        # Dedup guard must appear before the threshold gh issue create
+        assert "gh issue list --search" in script, (
+            "threshold-breach path must search for existing open issues "
+            "before creating a new one"
+        )
+        # The search must look for the same title pattern used in creation
+        assert (
+            "consecutive blank-execution" in script
+        ), "dedup search must match the threshold-breach issue title pattern"
+        # Dedup guard must come before the threshold issue create
+        dedup_idx = script.index("gh issue list --search")
+        # Find the threshold issue create (first one, not the genuine-failure one)
+        threshold_create_idx = script.index("gh issue create")
+        assert (
+            dedup_idx < threshold_create_idx
+        ), "dedup guard must appear before the threshold gh issue create"
+
+    def test_consecutive_count_uses_reduce(self):
+        """Failure count must be truly consecutive — stop at first non-failure.
+
+        The original implementation counted all failures in the window, not
+        consecutive ones from the start. The fix uses a jq reduce that stops
+        counting at the first non-failure (#1164).
+        """
+        flag_step = self._flag_step()
+        script = flag_step["run"]
+        assert "reduce" in script, (
+            "consecutive failure count must use jq reduce for true "
+            "sequential counting (not filter-then-length)"
+        )
+
+    def test_bash_scoping_comment_mentions_blocklist(self):
+        """The Bash scoping comment must reference --disallowedTools blocklist.
+
+        The action does NOT use an allowed-tools allowlist — it uses
+        --disallowedTools in claude_args (#1167).
+        """
+        # Check the raw YAML text for the comment; step dict won't include it
+        workflow_text = WORKFLOW.read_text()
+        assert "scoped via --disallowedTools blocklist" in workflow_text, (
+            "Bash scoping comment must mention --disallowedTools blocklist, "
+            "not allowed-tools allowlist"
+        )
+        # The old misleading phrasing must not be present
+        assert (
+            "allowed-tools in the action config" not in workflow_text
+        ), "old misleading comment about allowed-tools must be removed"
+
     # -- helpers --
 
     def _review_step(self):
