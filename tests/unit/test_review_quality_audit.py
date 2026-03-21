@@ -508,6 +508,14 @@ class TestClassifyFixPr:
     def test_empty_category(self):
         assert classify_fix_pr("fix(): empty parens") == "general"
 
+    def test_fix_fix_missing_paren(self):
+        """fix(fix:convention without closing paren should not raise ValueError."""
+        assert classify_fix_pr("fix(fix:convention: missing paren") == "general"
+
+    def test_fix_category_missing_paren(self):
+        """fix(ops without closing paren should not raise ValueError."""
+        assert classify_fix_pr("fix(ops: missing paren") == "general"
+
 
 # ---------------------------------------------------------------------------
 # extract_missed_blocker_signals

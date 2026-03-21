@@ -9,7 +9,7 @@ and review artifacts. Two systems coordinate on every PR:
 
 1. **`/reviewing-changes` skill** — Fast dispatcher (~5s): publishes `pending` status,
    generates handoff summary. No file reading, no Codex polling, no follow-up issues.
-2. **Autonomous review loop** — State machine (`scripts/internal/review_driver.py`)
+2. **Autonomous review coordinator** — State machine (`scripts/internal/review_driver.py`)
    that runs asynchronously: deterministic prechecks, `make check`, Codex CLI review,
    auto-fix, retesting, status publishing, auto-merge, and follow-up issue creation.
 
@@ -20,10 +20,10 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 
 | Context | Publisher | Required by branch protection? | Purpose |
 |---------|-----------|-------------------------------|---------|
-| `reviewing-changes` | Review loop (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Post-merge code review signal |
+| `reviewing-changes` | Review coordinator (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Post-merge code review signal |
 
 > **Note (2026-03-12):** `reviewing-changes` was demoted from required to advisory
-> after the review loop hook was found to be unregistered (PR #624).
+> after the review coordinator hook was found to be unregistered (PR #624).
 >
 > **Fix (2026-03-13):** Hook registration added to `.claude/settings.json` and
 > driver converted from single-step to looping execution (15min timeout, 30s CI
@@ -34,7 +34,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 
 | Status | GitHub API `state` | `description` pattern | When |
 |--------|-------------------|----------------------|------|
-| PENDING | `pending` | "Review loop starting" | Dispatcher publishes immediately |
+| PENDING | `pending` | "Review coordinator starting" | Dispatcher publishes immediately |
 | IN_PROGRESS | `pending` | "Codex CLI review in progress (round N)" | Each Codex invocation |
 | FAIL | `failure` | "Review blocked — N blockers" | Blocking prechecks, CI failure, loop crash |
 | WARN | `success` | "Review passed — N warnings (follow-up issues created)" | Non-blocking findings only |
@@ -46,16 +46,16 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 2. `post-pr-review.sh` hook triggers `/reviewing-changes` dispatcher
 3. Dispatcher publishes `pending` status and generates handoff summary (~5s)
 4. `post-pr-review-loop.sh` hook launches `review_driver.py` asynchronously
-5. Loop runs deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
-6. Loop waits for GitHub CI to pass (polls `gh pr checks`)
+5. Coordinator runs deterministic prechecks (C1/C2/N1/N2/N3/X2/X3)
+6. Coordinator waits for GitHub CI to pass (polls `gh pr checks`)
 7. Loop invokes Codex CLI (`codex review --base main`)
 8. Codex CLI findings are parsed into normalized schema (P0/P1/P2)
 9. Auto-fixable findings (convention patterns) are applied and committed
 10. Non-auto-fixable findings are recorded
-11. Loop iterates (max 3 rounds) until clean or stopped
-12. Loop publishes final status (`success` or `failure`)
-13. Loop creates follow-up issues for non-blocking (P2) findings
-14. Loop enables auto-merge (squash) — GitHub merges when CI + branch protection pass
+11. Coordinator iterates (max 3 rounds) until clean or stopped
+12. Coordinator publishes final status (`success` or `failure`)
+13. Coordinator creates follow-up issues for non-blocking (P2) findings
+14. Coordinator enables auto-merge (squash) — GitHub merges when CI + branch protection pass
 
 See `docs/02_agent/AUTONOMOUS_REVIEW_LOOP.md` for the full state machine design.
 
@@ -103,9 +103,9 @@ Use `scripts/internal/set_review_status.sh`:
 
 ```bash
 # Initial pending (from dispatcher)
-scripts/internal/set_review_status.sh pending "Review loop starting"
+scripts/internal/set_review_status.sh pending "Review coordinator starting"
 
-# Final statuses (from review loop)
+# Final statuses (from review coordinator)
 scripts/internal/set_review_status.sh success "Review passed — 0 blockers, N warnings"
 scripts/internal/set_review_status.sh failure "Review blocked — N blockers found"
 
@@ -115,7 +115,7 @@ scripts/internal/set_review_status.sh success "Manual override"
 
 ## Recovery
 
-If the review loop crashes or gets stuck:
+If the review coordinator crashes or gets stuck:
 
 1. Check state: `cat .claude/runtime/review_loops/pr_<N>/state.json`
 2. Manual rerun: `python scripts/internal/review_driver.py --pr <N> --trigger manual`
@@ -124,7 +124,7 @@ If the review loop crashes or gets stuck:
 
 ## Codex Review
 
-Codex CLI is the sole reviewer, invoked locally by the autonomous review loop:
+Codex CLI is the sole reviewer, invoked locally by the autonomous review coordinator:
 
 | Property | Value |
 |----------|-------|
@@ -139,11 +139,11 @@ Findings are normalized into the P0/P1/P2 schema and recorded in per-round artif
 
 After every `gh pr merge`, a PostToolUse hook (`post-merge-review.sh`)
 triggers a comprehensive background review of the merged code. This
-complements the pre-merge review loop:
+complements the pre-merge review coordinator:
 
 | Phase | Trigger | Reviewer | Scope |
 |-------|---------|----------|-------|
-| Pre-merge | `gh pr create` | Review loop (Codex CLI) | Convention, prechecks |
+| Pre-merge | `gh pr create` | Review coordinator (Codex CLI) | Convention, prechecks |
 | Post-merge | `gh pr merge` | Background Explore agent | Correctness, contracts, architecture |
 
 Post-merge review is advisory — it does not block future merges. But
@@ -156,14 +156,14 @@ overlap or replace each other.
 
 | System | Trigger | Scope | Where |
 |--------|---------|-------|-------|
-| **Local review loop** | `gh pr create` (PostToolUse hook) | Convention prechecks, Codex CLI review, auto-fix | `scripts/internal/review_driver.py` |
+| **Local review coordinator** | `gh pr create` (PostToolUse hook) | Convention prechecks, Codex CLI review, auto-fix | `scripts/internal/review_driver.py` |
 | **Claude GitHub Action (assistant)** | `@claude` mention on issue/PR/comment | Ad-hoc tasks, questions, investigation | `.github/workflows/claude.yml` |
 | **Claude GitHub Action (review)** | PR opened/updated (code paths only) | Prompt-based automated code review via Claude Code action | `.github/workflows/claude-code-review.yml` |
 | **Post-merge review** | `gh pr merge` (PostToolUse hook) | Correctness, contracts, architecture | Background Explore agent |
 
 **Boundary rules:**
-- The local review loop and Claude GitHub Action review may both comment on the
-  same PR. Their scopes differ: local loop runs prechecks + Codex; GitHub Action
+- The local review coordinator and Claude GitHub Action review may both comment on the
+  same PR. Their scopes differ: local coordinator runs prechecks + Codex; GitHub Action
   runs prompt-based Claude Code review.
 - Neither GitHub Action workflow modifies `review_driver.py`, status contexts,
   or branch protection rules.
