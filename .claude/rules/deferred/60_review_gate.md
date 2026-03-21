@@ -73,12 +73,12 @@ Aligned with `/reviewing-changes` CHECKLIST.md check IDs:
 
 - **C1** — Unseeded randomness (`random.Random()` without seed, global `random.*`)
 - **C2** — Falsy numeric guard (`x = x or fallback` on numeric metric)
-- **N1** — Missing contract-type facet in notebook visualization
-- **N2** — Collapsed matchup table (team0/team1 in single row)
 - **X3** — Merge artifacts (conflict markers, TODO-remove, large commented-out blocks)
 
 ### WARN checks (non-blocking, follow-up issue)
 
+- **N1** — Missing contract-type facet in notebook visualization
+- **N2** — Collapsed matchup table (team0/team1 in single row)
 - **C3** — Gate check ordering (most-restrictive first)
 - **C4** — Function complexity (>50 lines or nesting >4)
 - **N3** — Inference claim without statistical test

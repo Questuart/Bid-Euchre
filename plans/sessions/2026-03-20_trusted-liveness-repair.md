@@ -107,4 +107,4 @@ Cover all paths:
 
 ## Outcome
 
-(filled after implementation)
+PR #1091 merged. Trusted lane liveness repair shipped: fallback probe, new lane states (likely_active, stale), liveness_source field, and full test coverage.
