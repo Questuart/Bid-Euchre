@@ -9,7 +9,7 @@ Usage:
     uv run python scripts/internal/ops.py health [--json]
     uv run python scripts/internal/ops.py watchdogs [--json]
     uv run python scripts/internal/ops.py reviews [--json]
-    uv run python scripts/internal/ops.py queue [--pr N] [--json]
+    uv run python scripts/internal/ops.py [--json] queue [--pr N]
     uv run python scripts/internal/ops.py comments --pr N [--ingest] [--json]
     uv run python scripts/internal/ops.py ci [--json]
     uv run python scripts/internal/ops.py ci --pr N [--json]

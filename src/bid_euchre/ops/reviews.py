@@ -751,37 +751,60 @@ def get_queue_entry(
 
     request = None
     verdict = None
+    request_corrupt = False
+    verdict_corrupt = False
 
     try:
         request = read_request(pr_number, queue_dir)
     except Exception:
         logger.warning("PR #%d: failed to read request packet", pr_number)
+        request_corrupt = True
 
     try:
         verdict = read_verdict(pr_number, queue_dir)
     except Exception:
         logger.warning("PR #%d: failed to read verdict packet", pr_number)
+        verdict_corrupt = True
 
-    # Handle corrupt-read edge case
     has_request = request is not None
     has_verdict = verdict is not None
 
-    if not has_request and not has_verdict:
+    # If both files are missing (not corrupt), the slot is empty
+    if (
+        not has_request
+        and not has_verdict
+        and not request_corrupt
+        and not verdict_corrupt
+    ):
         return QueueEntry(
             pr_number=pr_number,
             has_request=False,
             effective_status=QUEUE_NO_REQUEST,
         )
 
+    # Corrupt files → surface as error so operators see the problem
+    if request_corrupt or verdict_corrupt:
+        return QueueEntry(
+            pr_number=pr_number,
+            has_request=has_request,
+            request_sha=request.head_sha if request else None,
+            request_branch=request.branch if request else None,
+            request_requester=request.requester if request else None,
+            request_created_at=request.created_at if request else None,
+            has_verdict=has_verdict,
+            verdict_status=verdict.status if verdict else None,
+            verdict_sha=verdict.reviewed_sha if verdict else None,
+            verdict_reason=verdict.reason if verdict else None,
+            verdict_created_at=verdict.created_at if verdict else None,
+            verdict_findings_count=len(verdict.findings) if verdict else 0,
+            is_stale=False,
+            effective_status=QUEUE_ERROR,
+        )
+
     effective_status, is_stale = _compute_effective_status(request, verdict)
 
-    # If we couldn't read one of the files but the other exists, flag error
-    if has_request and has_verdict:
-        pass  # Normal path
-    elif has_request and not has_verdict:
-        effective_status = QUEUE_PENDING
-    elif not has_request and has_verdict:
-        # Verdict without request is an anomalous state
+    # Verdict without request is an anomalous state
+    if not has_request and has_verdict:
         effective_status = QUEUE_ERROR
 
     return QueueEntry(
@@ -825,18 +848,16 @@ def get_queue_entries(
     if not root.is_dir():
         return []
 
-    entries: list[QueueEntry] = []
-    for child in sorted(root.iterdir()):
+    pr_numbers: list[int] = []
+    for child in root.iterdir():
         if not child.is_dir() or not child.name.startswith("pr_"):
             continue
         try:
-            pr_number = int(child.name.removeprefix("pr_"))
+            pr_numbers.append(int(child.name.removeprefix("pr_")))
         except ValueError:
             logger.warning("Skipping non-numeric queue dir: %s", child.name)
-            continue
-        entries.append(get_queue_entry(pr_number, queue_dir))
 
-    return sorted(entries, key=lambda e: e.pr_number)
+    return [get_queue_entry(pr, queue_dir) for pr in sorted(pr_numbers)]
 
 
 # --- Queue formatting ---

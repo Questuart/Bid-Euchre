@@ -12,6 +12,7 @@ import pytest
 from bid_euchre.ops.reviews import (
     DEFAULT_REVIEW_CONTEXTS,
     QUEUE_BLOCKED,
+    QUEUE_ERROR,
     QUEUE_FAILED,
     QUEUE_NO_REQUEST,
     QUEUE_PASSED,
@@ -1089,8 +1090,8 @@ class TestGetQueueEntry:
         assert entry.effective_status == QUEUE_BLOCKED
         assert entry.verdict_findings_count == 1
 
-    def test_corrupt_verdict_degrades_gracefully(self, tmp_path: Path) -> None:
-        """Corrupt verdict.json → error status, no crash."""
+    def test_corrupt_verdict_surfaces_as_error(self, tmp_path: Path) -> None:
+        """Corrupt verdict.json → error status, not hidden as pending."""
         from bid_euchre.ops.review_queue import ReviewRequest, write_request
 
         queue_dir = tmp_path / "queue"
@@ -1105,10 +1106,34 @@ class TestGetQueueEntry:
         verdict_file.write_text("not json {{{")
 
         entry = get_queue_entry(42, queue_dir)
-        # Should degrade gracefully — request found, verdict read fails
+        # Corrupt verdict must surface as error so operators see the problem
         assert entry.has_request is True
         assert entry.has_verdict is False
-        assert entry.effective_status == QUEUE_PENDING
+        assert entry.effective_status == QUEUE_ERROR
+
+    def test_corrupt_request_surfaces_as_error(self, tmp_path: Path) -> None:
+        """Corrupt request.json → error status, not hidden as no_request."""
+        from bid_euchre.ops.review_queue import ReviewVerdict, write_verdict
+
+        queue_dir = tmp_path / "queue"
+        events_dir = tmp_path / "events"
+
+        # Write corrupt request
+        pr_slot = queue_dir / "pr_42"
+        pr_slot.mkdir(parents=True)
+        (pr_slot / "request.json").write_text("not json {{{")
+
+        # Write valid verdict
+        verdict = ReviewVerdict(
+            pr_number=42, reviewed_sha="abc", status="passed", reason="Clean"
+        )
+        write_verdict(verdict, queue_dir, emit_event=False, events_dir=events_dir)
+
+        entry = get_queue_entry(42, queue_dir)
+        # Corrupt request must surface as error
+        assert entry.has_request is False
+        assert entry.has_verdict is True
+        assert entry.effective_status == QUEUE_ERROR
 
 
 class TestGetQueueEntries:

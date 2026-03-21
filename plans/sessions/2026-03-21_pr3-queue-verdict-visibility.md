@@ -3,7 +3,7 @@
 **Date:** 2026-03-21
 **Status:** in-progress
 **Lane:** author-c
-**Parent Plan:** `plans/sessions/2026-03-20_pre-merge-review-redesign.md`
+**Parent Plan:** Pre-merge review redesign (coordinated across author lanes, plan not yet committed to main)
 **Depends on:** PR1 (#1176, merged)
 
 ## Goal
