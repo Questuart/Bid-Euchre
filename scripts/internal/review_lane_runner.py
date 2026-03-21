@@ -159,11 +159,11 @@ def find_pending_requests(queue_dir: Path | None = None) -> list[ReviewRequest]:
         except ValueError:
             continue
 
-        req = read_request(pr_number, queue_dir)
+        req = read_request(pr_number, root)
         if req is None:
             continue
 
-        verdict = read_verdict(pr_number, queue_dir)
+        verdict = read_verdict(pr_number, root)
         if verdict is not None and verdict.status not in (STATUS_PENDING,):
             # Re-claimable if running and stale (#1183)
             if verdict.status == STATUS_RUNNING and _is_verdict_stale_running(verdict):
