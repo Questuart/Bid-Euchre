@@ -951,9 +951,9 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 | PR-5 (slice 2) | Issue-triage workflow, agent profile, conventions | Shipped |
 | PR-5 (slices 3-7) | Context safety, shadow snapshots, skill promotion, lane-activity, scope/retry/CI closeout | Shipped (#1024, #1016, #1054, #1068, #1091, #1098, #1104, #1112) |
 
-> **Note:** PR-5 is now **closed** (2026-03-20). All slices have shipped. The
-> remaining pre-Platform-1 work is the post-PR-5 bridge (filesystem boundary
-> + PR comment ingestion). See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`
+> **Note:** PR-5 is now **closed** (2026-03-20). All slices have shipped.
+> The post-PR-5 bridge gate is now **satisfied** (2026-03-21). Platform-1
+> implementation is unblocked. See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`
 > for the full entry gate. The larger single-entry orchestrator /
 > dashboard-first / remote-channel / exportable-platform architecture is
 > tracked in the governed follow-on plan
@@ -961,12 +961,15 @@ workflow (`plans/sessions/2026-03-15_autonomous-agent-ops-workflow.md`):
 > Issue-triage details:
 > `docs/02_agent/ISSUE_TRIAGE_WORKFLOW.md`.
 
-### Remaining Pre-Platform-1 Work (Post-PR-5 Bridge)
+### Post-PR-5 Bridge (Complete)
 
-- Repo-bounded filesystem access as default in repo-owned entrypoints
-- PR comment ingestion for trusted-bot operational signals (Codex Cloud)
-- Bounded trusted command handling (conditional — only if still needed)
-- ~~Bounded post-merge repair lane~~ → Shipped (see § Post-Merge Repair Lane above)
+All bridge items have shipped. Platform-1 is unblocked.
+
+- ~~Repo-bounded filesystem access~~ → Shipped in #1115 (`src/bid_euchre/ops/fs_boundary.py`)
+- ~~PR comment ingestion for trusted-bot operational signals~~ → Shipped in #1122, local review coordinator reset in #1123
+- ~~Bounded trusted command handling~~ → Deferred to Platform-1 (N/A — filesystem + comment bridges provide sufficient control)
+- ~~Bounded post-merge repair lane~~ → Shipped in #1138 (see § Post-Merge Repair Lane above)
+- ~~Deterministic precheck hardening~~ → Shipped in #1126, #1132
 
 See `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
 for the bridge implementation plan.

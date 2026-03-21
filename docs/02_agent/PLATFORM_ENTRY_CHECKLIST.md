@@ -4,7 +4,7 @@
 > An agent or operator should verify every item before opening the Platform-1
 > implementation handoff.
 
-**Last updated:** 2026-03-20
+**Last updated:** 2026-03-21
 
 ## 1. PR-5 Closeout
 
@@ -25,10 +25,11 @@
 - [x] Codex Cloud proving-run behavior recorded in `docs/02_agent/CODEX_GITHUB_REVIEW.md`
   - `@codex review` lands as PR issue comment from `chatgpt-codex-connector[bot]`
   - does not create check runs, commit statuses, or PR review objects
-- [ ] **PR comment ingestion bridge** — Codex Cloud comments (and other
+- [x] **PR comment ingestion bridge** — Codex Cloud comments (and other
   trusted-bot comments) are queryable as repo-local operational signals
-  - bridge plan: Lane B of `plans/sessions/2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md`
-  - must not change CI truth or merge-gate behavior
+  - shipped in #1122 (`src/bid_euchre/ops/reviews.py`, `scripts/internal/github_pr_state.py`)
+  - does not change CI truth or merge-gate behavior
+  - local review coordinator reset shipped in #1123
 
 ## 3. Filesystem Boundary
 
@@ -40,20 +41,23 @@
 
 ## 4. Trusted Command Handling
 
-- [ ] If trusted command execution is needed, it is bounded and
-  ingestion-first (parse/prepare only, broad execution deferred)
-- [x] If not needed after filesystem and comment bridges land, this item
-  may be marked N/A with rationale
-
-> **Note:** This item is conditional. If the filesystem bridge and comment
-> ingestion bridge together provide sufficient control, trusted command
-> handling may be deferred to Platform-1 or later.
+- [x] **N/A — deferred to Platform-1 or later.** Both the filesystem
+  boundary bridge (#1115) and the PR comment ingestion bridge (#1122) have
+  shipped. Together they provide sufficient pre-Platform-1 control:
+  filesystem access is repo-bounded by default, and trusted-bot comments
+  are queryable as operational signals without CI/merge-gate side effects.
+  Broad trusted-command execution is explicitly deferred (see §6 below).
 
 ## 5. Operator Substrate
 
 - [x] `ops.py status` provides trustworthy lane/health/review visibility
 - [x] Worktree/session registry is stable enough to extend (not re-litigate)
 - [x] Lane-activity view shows current work per lane
+- [x] Bounded post-merge repair lane shipped (#1138)
+  - `ops.py repairs` shows eligible repair work
+  - issue-driven execution with explicit stop rules
+- [x] Deterministic precheck hardening shipped (#1126, #1132)
+  - string-literal masking for C5/T1 checks
 
 ## 6. Intentionally Deferred to Platform-1 or Later
 
@@ -68,6 +72,12 @@ The following are explicitly **not** required for the bridge gate:
 - Portability to other repos (Platform-10)
 - Autonomous public replies to PR comments
 - Broad trusted-command execution beyond bounded parse/prepare
+
+## Gate Status
+
+**All sections checked as of 2026-03-21.** The bridge gate is satisfied.
+Platform-1 implementation (Step 3 in `plans/agent_ops/0_bootstrap/checkpoints.md`)
+is now unblocked.
 
 ## How To Use This Checklist
 

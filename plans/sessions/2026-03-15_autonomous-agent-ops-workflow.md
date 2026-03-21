@@ -819,17 +819,17 @@ Recommended sequencing after slices 3 and 4:
 4. ~~take `PR-5 slice 6` with trusted liveness/heartbeat repair~~ **DONE** (#1068)
 5. ~~finish `PR-5 slice 7`~~ **DONE** (#1098, liveness #1104, retries #1112)
 6. ~~**PR-5 CLOSED** (2026-03-20)~~ — all slices complete, closeout docs aligned
-7. take the post-PR-5 bridge slices before Platform-1:
-   a. **filesystem boundary bridge** — repo-bounded file access as default,
-      narrow managed exceptions, explicit operator approval for outside-repo
-   b. **PR comment ingestion bridge** — surface Codex Cloud and trusted-bot
-      PR comments as operational signals without changing CI or merge gate
-   c. **bounded trusted command handling** — only if still needed after (a)
-      and (b) land; ingestion-first, execution deferred
-8. keep any additional review-surface work narrow and compatible with the
-   shipped `ci` / `review_gate` / `advisory` split
-9. begin Platform-1 after the bridge gate is satisfied (see
-   `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`)
+7. ~~take the post-PR-5 bridge slices before Platform-1~~ **DONE** (2026-03-21):
+   a. ~~**filesystem boundary bridge**~~ → #1115
+   b. ~~**PR comment ingestion bridge**~~ → #1122, coordinator reset #1123
+   c. ~~**bounded trusted command handling**~~ → deferred to Platform-1
+      (N/A — filesystem + comment bridges provide sufficient control)
+   d. ~~**bounded post-merge repair lane**~~ → #1138
+   e. ~~**deterministic precheck hardening**~~ → #1126, #1132
+8. ~~keep any additional review-surface work narrow~~ — done; `claude-review`
+   remains advisory, `reviewing-changes` remains merge-relevant
+9. ~~begin Platform-1 after the bridge gate is satisfied~~ — **bridge gate
+   satisfied** (2026-03-21). See `docs/02_agent/PLATFORM_ENTRY_CHECKLIST.md`
 
 Operational note (2026-03-20): recent ops review showed multiple live Claude
 agent processes while `ops.py` lane-activity reported all lanes as idle. Slice
@@ -849,10 +849,11 @@ an explicit exception path.
 
 ##### Practical delivery expectation
 
-**PR-5 is now complete** (2026-03-20). All slices (3-7) have shipped. The
-remaining work before Platform-1 is the post-PR-5 bridge (filesystem boundary
-+ PR comment ingestion), tracked in
-[2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md](2026-03-20_post-pr5-bridge-controls-and-review-surfaces.md).
+**PR-5 is now complete** (2026-03-20). All slices (3-7) have shipped.
+**The post-PR-5 bridge gate is satisfied** (2026-03-21). All bridge items
+(filesystem boundary, PR comment ingestion, review coordinator reset,
+repair lane, precheck hardening) have shipped. Trusted command handling
+is deferred to Platform-1. Platform-1 implementation is unblocked.
 The follow-on governed initiative is a larger multi-PR platform effort and
 should not be treated as a same-day stack.
 
