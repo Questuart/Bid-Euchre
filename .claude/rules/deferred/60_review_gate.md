@@ -20,7 +20,7 @@ Codex CLI is the sole reviewer — local, ~60s latency, uses ChatGPT subscriptio
 
 | Context | Publisher | Required by branch protection? | Purpose |
 |---------|-----------|-------------------------------|---------|
-| `reviewing-changes` | Review coordinator (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Post-merge code review signal |
+| `reviewing-changes` | Review coordinator (`review_driver.py`), initial `pending` from dispatcher | **No** (advisory only) | Pre-merge code review signal |
 
 > **Note (2026-03-12):** `reviewing-changes` was demoted from required to advisory
 > after the review coordinator hook was found to be unregistered (PR #624).
