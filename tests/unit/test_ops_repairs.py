@@ -237,6 +237,16 @@ class TestPrTargetsIssue:
         # #4 is a substring of #42's text but "#42" is not present
         assert _pr_targets_issue(pr, 42) is False
 
+    def test_superstring_number_no_false_positive(self) -> None:
+        """#42 should not match when the PR references #421."""
+        pr = _make_pr(title="fix(repair): issue #421", body="Closes #421")
+        assert _pr_targets_issue(pr, 42) is False
+
+    def test_superstring_number_in_body_no_false_positive(self) -> None:
+        """#42 should not match #4200 in body."""
+        pr = _make_pr(body="Fixes #4200\n\nMore context")
+        assert _pr_targets_issue(pr, 42) is False
+
 
 # ── EligibilityResult.to_dict ──────────────────────────────────
 
