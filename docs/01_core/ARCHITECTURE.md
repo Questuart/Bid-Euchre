@@ -105,6 +105,7 @@ that import typed schemas and paths from `bid_euchre.arc_d_v2`.
 - `play_policy_gate.py` — Play policy stability gate
 - `review_common.py` — Shared severity constants and predicates for the review pipeline
 - `review_driver.py` — Autonomous review loop orchestrator (state machine)
+- `review_lane_runner.py` — Shadow-mode review lane queue processor (claims requests, invokes steward-review, writes SHA-bound verdicts)
 - `review_state.py` — Review loop state schema, persistence, and transitions
 - `run_arc_d_gate.py` — Arc D promotion gate runner
 - `run_arc_d_h2h_battery.py` — H2H all-vs-all battery runner (competitive validation)
@@ -277,6 +278,7 @@ Every experiment run creates a standardized directory under `data/runs/<run_id>/
 | `scripts/internal/test_review_infra.py` | Tiered (SMOKE/QUICK/FULL) end-to-end review infrastructure test harness |
 | `scripts/internal/review_common.py` | Shared severity constants and predicates for the review pipeline |
 | `scripts/internal/review_driver.py` | Autonomous review loop orchestrator (state machine) |
+| `scripts/internal/review_lane_runner.py` | Shadow-mode review lane queue processor (claims requests, invokes steward-review, writes SHA-bound verdicts) |
 | `scripts/internal/review_quality_audit.py` | Review-quality audit: scan loop artifacts, report missed blockers, noisy findings, deterministic-check candidates |
 | `scripts/internal/review_state.py` | Review loop state schema, persistence, and transitions |
 | `scripts/internal/rung_state.py` | Rung orchestrator state management (RunState persistence, step/model tracking) |
