@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
@@ -255,8 +256,6 @@ def _parse_review_output(raw_output: str) -> dict[str, Any]:
         pass
 
     # Try extracting JSON from within the output (agent may wrap it in text)
-    import re
-
     json_match = re.search(r"\{[^{}]*\"status\"\s*:", raw_output, re.DOTALL)
     if json_match:
         # Find the matching closing brace
@@ -398,7 +397,19 @@ def process_request(
 
     # Step 4: Verify SHA hasn't changed during review
     post_review_sha = get_pr_head_sha(pr)
-    if post_review_sha is not None and post_review_sha != req.head_sha:
+    if post_review_sha is None:
+        logger.error(
+            "Could not verify HEAD SHA after review of PR #%d — discarding result",
+            pr,
+        )
+        return _write_error_verdict(
+            pr,
+            req.head_sha,
+            "Could not verify HEAD SHA after review (API failure)",
+            queue_dir=queue_dir,
+            events_dir=events_dir,
+        )
+    if post_review_sha != req.head_sha:
         logger.warning(
             "SHA changed during review of PR #%d: %s -> %s — discarding result",
             pr,
