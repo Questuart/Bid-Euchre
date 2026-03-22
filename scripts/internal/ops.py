@@ -1514,7 +1514,11 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "approve":
-        updated = transition_status(args.packet_id, "approved", task_queue_root)
+        try:
+            updated = transition_status(args.packet_id, "approved", task_queue_root)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
         if updated is None:
             print(f"Packet {args.packet_id!r} not found.", file=sys.stderr)
             return 1
