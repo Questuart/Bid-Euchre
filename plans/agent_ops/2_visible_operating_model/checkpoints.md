@@ -12,8 +12,8 @@
 |------|--------|------|---------------|-------|
 | Step 0: Platform-4 scope lock and sub-plan | COMPLETE | 2026-03-21 | author-b | SP-2-01 created and plan-reviewed (PASS). |
 | Step 1: Platform-4 implementation | COMPLETE | 2026-03-21 | author-b | dashboard.py module, CLI subcommand, visibility mgmt, 34 tests. PR pending. |
-| Step 2: Platform-5 scope lock and sub-plan | PENDING | -- | -- | Canonical prompts and skills. Can overlap with Platform-4 if write scopes are disjoint. |
-| Step 3: Platform-5 implementation | PENDING | -- | -- | Blocked by Step 2. |
+| Step 2: Platform-5 scope lock and sub-plan | COMPLETE | 2026-03-21 | author-a | SP-2-02 finalized. 5 author enrichments, 1 ops polish, 3 skills, 1 doc. Discovery-grounded. |
+| Step 3: Platform-5 implementation | COMPLETE | 2026-03-22 | author-a | 8 agent edits, 3 skills, 1 doc, README update. make check passes. |
 | Step 4: Batch C pass gate verification | PENDING | -- | -- | Dashboard-first supervision + prompt-first orchestrator/review flow. |
 | Step 5: Phase 2 handoff | PENDING | -- | -- | Update governing plan, prepare Phase 3 entry. |
 
@@ -24,6 +24,7 @@
 | Sub-Plan ID | File | Status | Blocking Step |
 |-------------|------|--------|---------------|
 | SP-2-01 | `2_visible_operating_model/sub/2026-03-21_platform4-dashboard-layout.md` | completed | Step 0-1 |
+| SP-2-02 | `2_visible_operating_model/sub/2026-03-21_platform5-canonical-prompts-and-skills.md` | in_progress | Step 2-3 |
 
 ## Blockers
 
@@ -49,3 +50,16 @@ None currently.
 - Tier 2: `make check-quiet` all checks passed.
 - Steps 0+1 COMPLETE. PR pending.
 - Next: Step 2 (Platform-5 scope lock) or await PR merge.
+
+### 2026-03-22 -- author-a (Platform-5 scope lock + implementation)
+- Created SP-2-02 sub-plan, grounded in author-scratch discovery report.
+- Scope: 5 author prompt enrichments, 1 ops polish, 3 skills, 1 doc, README.
+- Deferred: recover-stalled-lane, summarize-worker-pool, prepare-review,
+  specialist agent rewrites, remote notification.
+- Overlap guard: skills consume ops.py dashboard, don't format own views.
+- Implemented all files: 8 agent edits, 3 new skills (start-task,
+  delegate-task, monitor-pr), 1 new doc (PROMPT_FIRST_WORKFLOW.md),
+  1 README update. Orchestrator touched minimally (dashboard + skill ref).
+  Review prompt verified — no gap, left intact.
+- Validation: make check-quiet passes, all YAML frontmatter valid.
+- Steps 2+3 COMPLETE. PR pending.

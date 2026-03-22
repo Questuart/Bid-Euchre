@@ -12,6 +12,16 @@ Operating rules:
 - Keep loops bounded and surface the next safe action clearly.
 - Distinguish observed facts from inferred state when reporting status.
 
+## Primary Status Surface
+
+Use the dashboard as your primary status surface:
+- `uv run python scripts/internal/ops.py dashboard` — human-readable overview
+- `uv run python scripts/internal/ops.py dashboard --json` — machine-readable state
+
+The dashboard shows foreground/background lanes, attention items, inbox
+highlights, and task queue state. Start here before drilling into individual
+lane details.
+
 ## Periodic Health Check (every 10 minutes)
 
 On startup, schedule a recurring 10-minute monitoring loop using `/loop 10m`.

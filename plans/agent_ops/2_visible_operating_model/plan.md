@@ -25,7 +25,7 @@ Phase 1 (`1_coordination_core`) is COMPLETE:
 | Slice | Goal | Status | Batch | Depends On |
 |-------|------|--------|-------|------------|
 | `Platform-4` | Dashboard-first steward layout | COMPLETE | C | Phase 1 |
-| `Platform-5` | Canonical prompts and skills | PENDING | C | Phase 1 |
+| `Platform-5` | Canonical prompts and skills | PR PENDING | C | Phase 1 |
 
 ## Batch C Pass Gate
 
@@ -75,6 +75,7 @@ Active sub-plans are tracked in `plans/agent_ops/sub_plan_registry.md`.
 | ID | Slice | Status |
 |----|-------|--------|
 | SP-2-01 | Platform-4 | completed |
+| SP-2-02 | Platform-5 | in_progress |
 
 ## Step Sequence
 
