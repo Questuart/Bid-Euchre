@@ -1480,16 +1480,27 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "create":
+        scope = (
+            [s.strip() for s in args.scope_declared.split(",")]
+            if args.scope_declared
+            else None
+        )
+        validation = (
+            [v.strip() for v in args.validation.split(",")] if args.validation else None
+        )
+        if not scope:
+            print(
+                "Warning: no --scope-declared provided. "
+                "The orchestrator contract requires declared file scope.",
+                file=sys.stderr,
+            )
         pkt = create_packet(
             title=args.title,
             description=args.description or "",
             owner=args.owner,
             priority=args.priority or "normal",
-            scope_declared=(
-                [s.strip() for s in args.scope_declared.split(",")]
-                if args.scope_declared
-                else None
-            ),
+            scope_declared=scope,
+            validation=validation,
         )
         save_packet(pkt, task_queue_root)
         if args.json:
@@ -2072,6 +2083,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--scope-declared",
         default=None,
         help="Comma-separated file patterns (e.g. 'src/foo.py,tests/test_foo.py')",
+    )
+    task_create_parser.add_argument(
+        "--validation",
+        default=None,
+        help=(
+            "Comma-separated validation commands "
+            "(e.g. 'uv run pytest tests/unit/test_foo.py,make lint')"
+        ),
     )
 
     # inbox (Platform-3 message bus)

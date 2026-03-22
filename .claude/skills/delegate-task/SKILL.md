@@ -63,7 +63,8 @@ intake-to-dispatch flow into a reusable workflow.
      --description "<description with acceptance criteria>" \
      --owner "<lane>" \
      --priority "<priority>" \
-     --scope-declared "<comma-separated file patterns>"
+     --scope-declared "<comma-separated file patterns>" \
+     --validation "<comma-separated validation commands>"
    ```
 
 7. **Verify dispatch:**

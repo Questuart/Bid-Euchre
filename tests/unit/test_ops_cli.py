@@ -2846,14 +2846,73 @@ class TestTaskCreate:
                 "Test JSON output",
                 "--owner",
                 "author-b",
+                "--scope-declared",
+                "src/foo.py",
             ]
         )
         assert rc == 0
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
         assert data["title"] == "Test JSON output"
         assert data["owner"] == "author-b"
         assert data["priority"] == "normal"
         assert data["status"] == "pending"
+        assert data["scope_declared"] == ["src/foo.py"]
+
+    def test_task_create_with_validation(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "With validation",
+                "--owner",
+                "author-a",
+                "--scope-declared",
+                "src/foo.py",
+                "--validation",
+                "uv run pytest tests/unit/test_foo.py,make lint",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["validation"] == [
+            "uv run pytest tests/unit/test_foo.py",
+            "make lint",
+        ]
+
+    def test_task_create_warns_without_scope(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "No scope",
+                "--owner",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert "scope" in captured.err.lower()
 
     def test_task_create_then_list(
         self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
