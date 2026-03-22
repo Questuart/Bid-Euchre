@@ -952,6 +952,11 @@ def aggregate_status(
     # Also include dispatched task packets from the orchestrator task queue.
     # These are the durable packets created by Platform-2 intake — they may
     # not yet have a corresponding task_state entry.
+    #
+    # NOTE: Injected packets feed per-lane views (tasks_by_lane) but do NOT
+    # appear in report.active_tasks — that list is populated separately from
+    # task_state files.  This is intentional: task_queue packets represent
+    # orchestrator-level dispatch, not lane-level task_state entries.
     try:
         from bid_euchre.ops.task_queue import list_packets
 
