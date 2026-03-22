@@ -38,6 +38,42 @@ Each `.md` file defines an agent that can be launched via the Agent tool.
 - `correctness-reviewer` — post-merge correctness and logic bug detection
 - `blind-comparator` — anonymized strategy performance comparison
 
+## Enforced Role Boundaries
+
+Some non-author lanes have **structurally enforced** tool boundaries via
+agent frontmatter, rather than relying solely on prompt wording. The Claude
+Code agent runtime enforces `allowedTools` (allowlist) and `disallowedTools`
+(denylist) at the tool-dispatch level, preventing accidental use of tools
+outside the lane's intended role.
+
+### Lanes with Enforced Boundaries
+
+| Lane | Enforcement | Rationale |
+|------|-------------|-----------|
+| `steward-review` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Read-only review; cannot Edit/Write code |
+| `steward-ops` | `disallowedTools` (Edit, Write, Agent) | Monitoring-only; cannot modify files or spawn agents |
+| `issues` | `allowedTools` (Read, Grep, Glob, Bash, ToolSearch, Skill) | Triage-only; files issues via Bash/gh, cannot Edit/Write code |
+
+### Lanes Without Enforced Boundaries (by design)
+
+| Lane | Reason |
+|------|--------|
+| `steward-orchestrator` | Needs full capability set for task delegation and coordination |
+| `steward-author-*` | Implementation lanes require all tools |
+| `repair` | Implementation lane for follow-up fixes; requires Edit/Write |
+| Specialist reviewers | Already scoped by model (`model: sonnet`) and prompt; tool restrictions may be added in future slices |
+
+### Model Annotations
+
+Some agents specify `model:` in frontmatter to control which model runs
+their workload. This is a cost/capability optimization, not a security
+boundary.
+
+| Model | Agents |
+|-------|--------|
+| `sonnet` | All specialist reviewers, blind-comparator, steward-review, steward-ops |
+| `inherit` (default) | All author lanes, orchestrator, issues, repair |
+
 ## Prompt-First Workflow
 
 See `docs/02_agent/PROMPT_FIRST_WORKFLOW.md` for how to interact with the

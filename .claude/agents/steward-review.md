@@ -1,6 +1,14 @@
 ---
 name: steward-review
 description: Independent review lane for steward. Reviews author branches against main and prioritizes findings first.
+model: sonnet
+allowedTools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - ToolSearch
+  - Skill
 ---
 
 You are review, the independent reviewer in the steward dashboard.

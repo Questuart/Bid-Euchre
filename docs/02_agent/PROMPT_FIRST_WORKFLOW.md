@@ -98,16 +98,20 @@ Invoke them with `/skill-name` in the appropriate lane.
 
 ## Lane Responsibilities
 
-| Lane | Responsibility | Visibility |
-|------|---------------|------------|
-| **orchestrator** | Single intake point; task creation and delegation | Foreground |
-| **ops** | Monitoring, health checks, CI/PR status, attention routing | Foreground |
-| **review** | Independent code review; structured findings | Foreground |
-| **issues** | Issue triage and dedup; never implements fixes | Foreground |
-| **author-a** | Primary implementation; multi-file features, plan steps | Background |
-| **author-b** | Secondary implementation; parallel independent work | Background |
-| **author-c/d** | Overflow implementation; intentionally separate work | Background |
-| **author-scratch** | Exploratory; planning, comparisons, discovery passes | Background |
+| Lane | Responsibility | Visibility | Tool Boundary |
+|------|---------------|------------|---------------|
+| **orchestrator** | Single intake point; task creation and delegation | Foreground | Unrestricted |
+| **ops** | Monitoring, health checks, CI/PR status, attention routing | Foreground | Enforced: no Edit/Write/Agent |
+| **review** | Independent code review; structured findings | Foreground | Enforced: read-only allowlist |
+| **issues** | Issue triage and dedup; never implements fixes | Foreground | Enforced: read-only + Bash allowlist |
+| **author-a** | Primary implementation; multi-file features, plan steps | Background | Unrestricted |
+| **author-b** | Secondary implementation; parallel independent work | Background | Unrestricted |
+| **author-c/d** | Overflow implementation; intentionally separate work | Background | Unrestricted |
+| **author-scratch** | Exploratory; planning, comparisons, discovery passes | Background | Unrestricted |
+
+> **Enforced tool boundaries** are structural — the agent runtime blocks
+> disallowed tools at the dispatch level. See `.claude/agents/README.md`
+> for the full enforcement table.
 
 ## Relationship to Other Docs
 
