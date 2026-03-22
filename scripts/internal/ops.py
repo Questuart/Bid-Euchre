@@ -34,6 +34,7 @@ Usage:
     uv run python scripts/internal/ops.py repairs [--json]
     uv run python scripts/internal/ops.py task list [--status STATUS] [--owner LANE] [--json]
     uv run python scripts/internal/ops.py task show PACKET_ID [--json]
+    uv run python scripts/internal/ops.py task approve PACKET_ID [--json]
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
@@ -1405,6 +1406,7 @@ def cmd_task(args: argparse.Namespace) -> int:
         load_packet,
         load_result,
         save_packet,
+        transition_status,
     )
 
     task_queue_root = args.runtime_dir / "task_queue"
@@ -1511,8 +1513,22 @@ def cmd_task(args: argparse.Namespace) -> int:
                 print(f"  Validation: {', '.join(pkt.validation)}")
         return 0
 
+    elif action == "approve":
+        updated = transition_status(args.packet_id, "approved", task_queue_root)
+        if updated is None:
+            print(f"Packet {args.packet_id!r} not found.", file=sys.stderr)
+            return 1
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(updated), indent=2, default=str))
+        else:
+            print(f"Approved: {updated.packet_id}")
+            print(f"  Status: {updated.status}")
+        return 0
+
     else:
-        print("Usage: ops.py task {list|show|create}", file=sys.stderr)
+        print("Usage: ops.py task {list|show|create|approve}", file=sys.stderr)
         return 1
 
 
@@ -2219,6 +2235,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Validation command (repeatable)",
     )
+
+    task_approve_parser = task_sub.add_parser(
+        "approve", help="Transition a task packet to 'approved' status"
+    )
+    task_approve_parser.add_argument("packet_id", help="The packet ID to approve")
 
     # inbox (Platform-3 message bus)
     inbox_parser = subparsers.add_parser(

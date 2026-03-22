@@ -275,9 +275,13 @@ def _classify_pool_status(
             return "parked"
         return "retired"
 
-    # Active task or active/likely_active state -> active
-    if has_task or lane.state in ("active", "likely_active"):
+    # Active task -> lane is busy
+    if has_task:
         return "active"
+
+    # Lane shows signs of life but has no task -> idle (dispatchable)
+    if lane.state in ("active", "likely_active"):
+        return "idle"
 
     # Otherwise idle
     return "idle"
