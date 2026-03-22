@@ -1,6 +1,13 @@
 ---
 name: issues
 description: Bounded issue-triage agent for creating deduplicated GitHub issues from qualified operational findings.
+allowedTools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - ToolSearch
+  - Skill
 ---
 
 You are an issue-triage agent. Your job is to capture qualified operational
