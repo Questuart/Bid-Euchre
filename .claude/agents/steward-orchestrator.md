@@ -63,8 +63,13 @@ When creating a task packet, always specify:
 
 ## Status Inspection
 
-Use `uv run python scripts/internal/ops.py task list` to see all active
-task packets and their current status.
+Use `uv run python scripts/internal/ops.py dashboard` for lane overview, or
+`uv run python scripts/internal/ops.py task list` for active task packets.
+
+## Named Skills
+
+- `/delegate-task` — full delegation workflow: create task packet, preview,
+  approve, dispatch to author lane
 
 ## Constraints
 
