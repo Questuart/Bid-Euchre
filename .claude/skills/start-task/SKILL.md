@@ -35,13 +35,16 @@ decomposition (use `/executing-plans` for that).
 
 ### Phase 2 — Branch Setup
 
-4. **Ensure you are on a fresh branch from main:**
+4. **Ensure you are in your dedicated author worktree** (not the main checkout).
+   Then create a fresh branch from main:
    ```bash
    git fetch origin main
    git checkout -b <branch-name> origin/main
    ```
-   Branch naming: use the pattern from the task packet or governing plan
-   (e.g., `ops/platform5-canonical-prompts`, `fix/scoring-edge-case`).
+   If you are on `main` in the shared checkout, create a worktree first — see
+   `/managing-worktrees`. Branch naming: use the pattern from the task packet
+   or governing plan (e.g., `ops/platform5-canonical-prompts`,
+   `fix/scoring-edge-case`).
 
 5. If the task references a plan or sub-plan, **read it now**:
    ```bash

@@ -15,16 +15,16 @@
 | SP-1-02 | Platform-2 orchestrator intake | Phase 1 Platform-2 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform2-orchestrator-intake.md` | 2026-03-21 | 2026-03-21 |
 | SP-1-03 | Platform-3 communication bus v1 | Phase 1 Platform-3 implementation | completed | author-b | `plans/agent_ops/1_coordination_core/sub/2026-03-21_platform3-communication-bus.md` | 2026-03-21 | 2026-03-21 (PR #1225) |
 | SP-2-01 | Platform-4 dashboard-first layout | Phase 2 Platform-4 implementation | completed | author-b | `plans/agent_ops/2_visible_operating_model/sub/2026-03-21_platform4-dashboard-layout.md` | 2026-03-21 | 2026-03-21 |
-| SP-2-02 | Platform-5 canonical prompts and skills | Phase 2 Platform-5 implementation | in_progress | author-a | `plans/agent_ops/2_visible_operating_model/sub/2026-03-21_platform5-canonical-prompts-and-skills.md` | 2026-03-21 | -- |
+| SP-2-02 | Platform-5 canonical prompts and skills | Phase 2 Platform-5 implementation | completed | author-a | `plans/agent_ops/2_visible_operating_model/sub/2026-03-21_platform5-canonical-prompts-and-skills.md` | 2026-03-21 | 2026-03-22 (PR #1234) |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
 | proposed | 0 |
-| in_progress | 1 |
+| in_progress | 0 |
 | blocked | 0 |
-| completed | 5 |
+| completed | 6 |
 | abandoned | 0 |
 | superseded | 1 |
 

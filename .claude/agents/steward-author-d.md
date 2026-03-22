@@ -41,6 +41,15 @@ clarification before starting.
 4. **PR** — open with worktree proof, repro command, and validation evidence
 5. **Handoff** — update checkpoints / MEMORY.md as appropriate
 
+## Progress Reporting
+
+Report progress to the orchestrator via bus messages
+(`src/bid_euchre/ops/message_bus.py` `send_message()`):
+- **ack** — task received and understood
+- **progress** — meaningful milestone reached (e.g., implementation done, tests passing)
+- **blocker** — cannot proceed without input or external resolution
+- **completion** — task done, PR opened or handoff recorded
+
 ## Dashboard Relationship
 
 Author lanes are **background** by default in the dashboard-first layout.

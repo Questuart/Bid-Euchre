@@ -3,7 +3,7 @@
 **ID:** SP-2-02
 **Date:** 2026-03-21
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 2 / Platform-5
-**Status:** proposed
+**Status:** completed
 **Owner:** author-a
 **Discovery input:** author-scratch Platform-5 discovery pass (inline, 2026-03-21)
 
@@ -294,12 +294,27 @@ Update `.claude/agents/README.md` per scope § F.
 
 ## Observed Outputs
 
-_Filled during/after execution._
+- 5 enriched author agent definitions (a/b/c/d/scratch) — PR #1234
+- 1 polished ops agent definition (dashboard reference) — PR #1234
+- 1 minimal orchestrator touch (dashboard + skill ref) — PR #1234
+- 3 new orchestration workflow skills (start-task, delegate-task, monitor-pr) — PR #1234
+- 1 new prompt-first workflow doc (PROMPT_FIRST_WORKFLOW.md) — PR #1234
+- 1 updated agents README — PR #1234
+- Review prompt verified, no gap, left intact — PR #1234
+- Follow-up fix PR for 4 post-merge findings (task create CLI, progress
+  reporting section, worktree workflow, plan statuses)
 
 ## Outcome
 
-_Filled after completion._
+- Status: completed
+- PR: #1234 (main implementation), follow-up PR for post-merge findings
+- Deviations from plan: orchestrator touched minimally (dashboard + skill
+  reference, not listed as confirmed edit in plan). Progress Reporting section
+  was listed in plan scope § A item 4 but omitted from initial implementation —
+  added in follow-up PR.
+- Issues discovered: `delegate-task` skill referenced nonexistent `task create`
+  CLI subcommand — fixed by adding the subcommand to `ops.py`.
 
 ## Handoff
 
-_Filled at session end if work is incomplete._
+All work complete. Next: Step 4 (Batch C pass gate verification).
