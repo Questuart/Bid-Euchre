@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase/Rung:** `3_supervision_and_scaling`
-**Last updated:** 2026-03-22 by author-b (Batch D proving run IN_PROGRESS)
+**Last updated:** 2026-03-22 by orchestrator (Batch D COMPLETE, Step 5 blocked on BD-004)
 
 ---
 
@@ -14,8 +14,8 @@
 | Step 1: Platform-6 implementation | COMPLETE | 2026-03-22 | author-b | PR #1242 merged. Delta summaries, escalation/recovery recommendations, attention routing. |
 | Step 2: Platform-7 scope lock and sub-plan | COMPLETE | 2026-03-22 | author-c | SP-3-02 created and plan-reviewed. Worker-pool manager: idle reuse, bounded dynamic author creation, parking/retirement. |
 | Step 3: Platform-7 implementation | COMPLETE | 2026-03-22 | author-d | worker_pool.py module, CLI subcommand, 69 tests. PR #1250 + fix PR #1252. |
-| Step 4: Batch D pass gate verification | IN_PROGRESS | 2026-03-22 | orchestrator (Batch D proving run) | Verify: ops delta summaries reliable, worker reuse works in multi-lane proving run, stale/blocked lane handling auditable. |
-| Step 5: Phase 3 handoff | PENDING | -- | -- | Update governing plan, prepare Phase 4/5 entry. |
+| Step 4: Batch D pass gate verification | COMPLETE | 2026-03-22 | orchestrator (Batch D proving run) | Batch D pass gate PASSED. All 3 criteria met. PRs #1256, #1257, #1258. 5 findings (BD-001--BD-005). Phase 3 exit blocked on BD-004 (#1259). |
+| Step 5: Phase 3 handoff | PENDING | -- | -- | Update governing plan, prepare Phase 4/5 entry. Blocked on BD-004 (end-to-end pane delivery, #1259). |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
 
@@ -27,7 +27,7 @@
 
 ## Blockers
 
-None currently.
+- **BD-004** (#1259): End-to-end tmux pane delivery not proven. Phase 3 exit gate.
 
 ## Session Log
 
@@ -62,3 +62,16 @@ None currently.
   `task_queue/`, so orchestrator task packets do not appear in dashboard
   lane status.
 - Next: dispatch fix tasks to author lanes, then re-verify pass gate criteria.
+
+### 2026-03-22 -- orchestrator (Batch D proving run completion)
+- Step 4 → COMPLETE. Batch D pass gate PASSED (all 3 criteria satisfied).
+- 3 tasks dispatched and completed: #1256 (dashboard regen, author-a),
+  #1257 (checkpoints update, author-b), #1258 (QA log, author-c).
+- 5 findings recorded: BD-001 (pool_status classifier), BD-002 (dashboard
+  task_queue disconnect), BD-003 (no CLI approve), BD-004 (pane delivery
+  gap, #1259), BD-005 (no completion callback).
+- Post-merge review of #1256/#1257/#1258: all PASSED. Two WARN findings
+  on #1258: BD-002 field name inaccuracy and BD-003 missing from checkpoints.
+- Phase 3 exit gate: BD-004 — end-to-end tmux pane delivery must be proven
+  before Step 5 can complete.
+- Fix PR dispatched for BD-001 + BD-002 (author-a).
