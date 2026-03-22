@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -3019,3 +3020,48 @@ class TestTaskCreate:
         assert "Text output task" in out
         assert "src/*.py" in out
         assert "make check-quiet" in out
+
+
+class TestPriorityChoicesContract:
+    """Verify CLI --priority choices stay in sync with VALID_PRIORITIES."""
+
+    def test_cli_priority_choices_match_valid_priorities(self) -> None:
+        """The argparse choices for --priority must equal VALID_PRIORITIES from task_queue."""
+        import ops
+
+        from bid_euchre.ops.task_queue import VALID_PRIORITIES
+
+        parser = ops.build_parser()
+
+        # Walk subparsers to find 'task create' and its --priority action
+        task_subparser = None
+        for action in parser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                task_subparser = action.choices.get("task")
+                break
+
+        assert task_subparser is not None, "Expected 'task' subcommand"
+
+        create_subparser = None
+        for action in task_subparser._subparsers._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                create_subparser = action.choices.get("create")
+                break
+
+        assert create_subparser is not None, "Expected 'task create' subcommand"
+
+        priority_action = None
+        for action in create_subparser._actions:
+            if (
+                hasattr(action, "option_strings")
+                and "--priority" in action.option_strings
+            ):
+                priority_action = action
+                break
+
+        assert (
+            priority_action is not None
+        ), "Expected --priority argument on task create"
+        assert (
+            set(priority_action.choices) == set(VALID_PRIORITIES)
+        ), f"CLI choices {priority_action.choices} != VALID_PRIORITIES {VALID_PRIORITIES}"

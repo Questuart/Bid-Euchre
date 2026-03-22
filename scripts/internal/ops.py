@@ -1480,15 +1480,13 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "create":
-        scope = getattr(args, "scope_declared", None)
-        validation = getattr(args, "validation", None)
         pkt = create_packet(
             title=args.title,
             description=args.description or "",
             owner=args.owner,
-            priority=args.priority or "normal",
-            scope_declared=scope,
-            validation=validation,
+            priority=args.priority,
+            scope_declared=args.scope_declared,
+            validation=args.validation,
         )
         save_packet(pkt, task_queue_root)
         if args.json:
@@ -2068,8 +2066,8 @@ def build_parser() -> argparse.ArgumentParser:
     task_create_parser.add_argument(
         "--priority",
         default="normal",
-        choices=["low", "normal", "high", "critical"],
-        help="Priority: low / normal / high / critical (default: normal)",
+        choices=["low", "normal", "high"],
+        help="Priority: low / normal / high (default: normal)",
     )
     task_create_parser.add_argument(
         "--description", default="", help="Full task description"
