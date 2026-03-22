@@ -1480,16 +1480,15 @@ def cmd_task(args: argparse.Namespace) -> int:
         return 0
 
     elif action == "create":
+        scope = getattr(args, "scope_declared", None)
+        validation = getattr(args, "validation", None)
         pkt = create_packet(
             title=args.title,
             description=args.description or "",
             owner=args.owner,
             priority=args.priority or "normal",
-            scope_declared=(
-                [s.strip() for s in args.scope_declared.split(",")]
-                if args.scope_declared
-                else None
-            ),
+            scope_declared=scope,
+            validation=validation,
         )
         save_packet(pkt, task_queue_root)
         if args.json:
@@ -1501,6 +1500,10 @@ def cmd_task(args: argparse.Namespace) -> int:
             print(f"  Title:    {pkt.title}")
             print(f"  Owner:    {pkt.owner or '(unassigned)'}")
             print(f"  Priority: {pkt.priority}")
+            if pkt.scope_declared:
+                print(f"  Scope:    {', '.join(pkt.scope_declared)}")
+            if pkt.validation:
+                print(f"  Validation: {', '.join(pkt.validation)}")
         return 0
 
     else:
@@ -2063,15 +2066,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--owner", default=None, help="Target author lane (e.g. author-a)"
     )
     task_create_parser.add_argument(
-        "--priority", default="normal", help="Priority: low / normal / high"
+        "--priority",
+        default="normal",
+        choices=["low", "normal", "high", "critical"],
+        help="Priority: low / normal / high / critical (default: normal)",
     )
     task_create_parser.add_argument(
         "--description", default="", help="Full task description"
     )
     task_create_parser.add_argument(
-        "--scope-declared",
+        "--scope",
+        action="append",
         default=None,
-        help="Comma-separated file patterns (e.g. 'src/foo.py,tests/test_foo.py')",
+        dest="scope_declared",
+        help="Declared scope file pattern (repeatable)",
+    )
+    task_create_parser.add_argument(
+        "--validation",
+        action="append",
+        default=None,
+        help="Validation command (repeatable)",
     )
 
     # inbox (Platform-3 message bus)
