@@ -2,7 +2,7 @@
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Phase/Rung:** `3_supervision_and_scaling`
-**Last updated:** 2026-03-22 by author-b (Platform-7 COMPLETE)
+**Last updated:** 2026-03-22 by author-b (Batch D proving run IN_PROGRESS)
 
 ---
 
@@ -14,7 +14,7 @@
 | Step 1: Platform-6 implementation | COMPLETE | 2026-03-22 | author-b | PR #1242 merged. Delta summaries, escalation/recovery recommendations, attention routing. |
 | Step 2: Platform-7 scope lock and sub-plan | COMPLETE | 2026-03-22 | author-c | SP-3-02 created and plan-reviewed. Worker-pool manager: idle reuse, bounded dynamic author creation, parking/retirement. |
 | Step 3: Platform-7 implementation | COMPLETE | 2026-03-22 | author-d | worker_pool.py module, CLI subcommand, 69 tests. PR #1250 + fix PR #1252. |
-| Step 4: Batch D pass gate verification | PENDING | -- | -- | Verify: ops delta summaries reliable, worker reuse works in multi-lane proving run, stale/blocked lane handling auditable. |
+| Step 4: Batch D pass gate verification | IN_PROGRESS | 2026-03-22 | orchestrator (Batch D proving run) | Verify: ops delta summaries reliable, worker reuse works in multi-lane proving run, stale/blocked lane handling auditable. |
 | Step 5: Phase 3 handoff | PENDING | -- | -- | Update governing plan, prepare Phase 4/5 entry. |
 
 **Status values:** `PENDING`, `IN_PROGRESS`, `COMPLETE`, `BLOCKED`, `SKIPPED`
@@ -50,3 +50,15 @@ None currently.
   dispatch_to_worker, run_pool_maintenance), CLI `workers` subcommand, 69 unit
   tests. Fix PR #1252 merged: task_queue root path and test isolation fixes.
 - Next: Step 4 (Batch D pass gate verification).
+
+### 2026-03-22 -- orchestrator (Batch D proving run start)
+- Step 4 moved to IN_PROGRESS. Beginning Batch D pass gate verification.
+- Proving run scope: validate Platform-6 (supervisor routines) and Platform-7
+  (worker pool lifecycle) in a multi-lane coordinated session.
+- Initial finding 1: `_classify_pool_status()` in `worker_pool.py` treats
+  `likely_active` + no-task as "active", blocking dispatch to idle lanes.
+  Should return "idle" when `has_task=False`.
+- Initial finding 2: Dashboard `active_tasks` reads from `task_state/` not
+  `task_queue/`, so orchestrator task packets do not appear in dashboard
+  lane status.
+- Next: dispatch fix tasks to author lanes, then re-verify pass gate criteria.
