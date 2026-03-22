@@ -19,6 +19,7 @@ from bid_euchre.ops.worker_pool import (
     PoolSnapshot,
     WorkerState,
     _classify_pool_status,
+    _get_lane_task_id,
     _managed_lanes,
     _minutes_since,
     _probe_tmux_pane,
@@ -220,6 +221,61 @@ class TestClassifyPoolStatus:
     def test_no_task_background_is_idle(self) -> None:
         lane = MagicMock(state="idle")
         assert _classify_pool_status(lane, "idle", False, True, "background") == "idle"
+
+
+# ---------------------------------------------------------------------------
+# _get_lane_task_id — task_queue_root correctness
+# ---------------------------------------------------------------------------
+
+
+class TestGetLaneTaskId:
+    """Test _get_lane_task_id() passes task_queue subdirectory, not runtime_dir."""
+
+    @patch(f"{_TASK_QUEUE}.list_packets", return_value=[])
+    def test_passes_task_queue_subdir(
+        self,
+        mock_list: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Verify list_packets receives runtime_dir/'task_queue', not runtime_dir."""
+        result = _get_lane_task_id("author-a", runtime_dir)
+        assert result is None
+        mock_list.assert_called_once()
+        actual_root = mock_list.call_args[0][0]
+        assert actual_root == runtime_dir / "task_queue"
+
+    @patch(f"{_TASK_QUEUE}.list_packets", return_value=[])
+    def test_none_runtime_dir_passes_none(
+        self,
+        mock_list: MagicMock,
+    ) -> None:
+        """When runtime_dir is None, pass None so shared_task_root() defaults."""
+        _get_lane_task_id("author-a", None)
+        mock_list.assert_called_once()
+        actual_root = mock_list.call_args[0][0]
+        assert actual_root is None
+
+    @patch(f"{_TASK_QUEUE}.list_packets")
+    def test_returns_packet_id(
+        self,
+        mock_list: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_list.return_value = [
+            TaskPacket(
+                packet_id="pkt42",
+                title="Test",
+                description="d",
+                owner="author-a",
+                created_by="orchestrator",
+                created_at="2026-03-22T12:00:00Z",
+                status="dispatched",
+            )
+        ]
+        result = _get_lane_task_id("author-a", runtime_dir)
+        assert result == "pkt42"
 
 
 # ---------------------------------------------------------------------------
@@ -866,6 +922,53 @@ class TestDispatchToWorker:
         result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
         assert result.executed is True
         mock_wake.assert_called_once()
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_uses_task_queue_subdir(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Verify load_packet/save_packet/transition_status receive task_queue subdir."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test",
+            description="Test task",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool(
+            [
+                _make_worker("author-a", "idle"),
+            ]
+        )
+
+        dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+
+        expected_tq = runtime_dir / "task_queue"
+
+        # load_packet should receive task_queue subdir
+        mock_load.assert_called_once_with("pkt1", expected_tq)
+
+        # save_packet should receive task_queue subdir
+        assert mock_save.call_count == 1
+        actual_save_root = mock_save.call_args[0][1]
+        assert actual_save_root == expected_tq
+
+        # transition_status should receive task_queue subdir
+        mock_transition.assert_called_once_with("pkt1", "dispatched", expected_tq)
 
 
 # ---------------------------------------------------------------------------

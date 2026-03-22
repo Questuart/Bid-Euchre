@@ -298,9 +298,14 @@ def _get_lane_task_id(
     """
     from bid_euchre.ops.task_queue import list_packets
 
+    # task_queue functions expect the task_queue subdirectory, not the
+    # runtime root.  When runtime_dir is provided (e.g. ".claude/runtime"),
+    # derive the correct path; when None, let shared_task_root() default.
+    task_queue_root = (runtime_dir / "task_queue") if runtime_dir else None
+
     # Check dispatched packets owned by this lane
     dispatched = list_packets(
-        runtime_dir, status_filter="dispatched", owner_filter=lane_id
+        task_queue_root, status_filter="dispatched", owner_filter=lane_id
     )
     if dispatched:
         return dispatched[0].packet_id
@@ -666,20 +671,6 @@ def retire_worker(
             subprocess.run(
                 [
                     "tmux",
-                    "send-keys",
-                    "-t",
-                    f"{tmux_session}:{lane_id}",
-                    "",
-                    "",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            # Kill the window
-            subprocess.run(
-                [
-                    "tmux",
                     "kill-window",
                     "-t",
                     f"{tmux_session}:{lane_id}",
@@ -744,8 +735,12 @@ def dispatch_to_worker(
     if runtime_dir is None:
         runtime_dir = Path(".claude/runtime")
 
+    # task_queue functions expect the task_queue subdirectory, not the
+    # runtime root.
+    task_queue_root = runtime_dir / "task_queue"
+
     # 1. Verify packet exists and is approved
-    packet = load_packet(packet_id, runtime_dir)
+    packet = load_packet(packet_id, task_queue_root)
     if packet is None:
         return PoolAction(
             action="dispatch",
@@ -789,6 +784,9 @@ def dispatch_to_worker(
             error="lane_busy",
         )
 
+    # An idle lane is already counted as non-active, so dispatching it does
+    # not consume additional capacity.  Only reject when there is truly no
+    # room (capacity exhausted AND the lane would need to be woken/promoted).
     if pool.available_capacity <= 0 and worker.pool_status not in ("idle",):
         return PoolAction(
             action="dispatch",
@@ -826,9 +824,9 @@ def dispatch_to_worker(
         pkt_data["owner"] = lane_id
         pkt_data["status"] = "approved"  # keep current status for re-save
         updated_pkt = TaskPacket(**pkt_data)
-        save_packet(updated_pkt, runtime_dir)
+        save_packet(updated_pkt, task_queue_root)
 
-        transition_status(packet_id, "dispatched", runtime_dir)
+        transition_status(packet_id, "dispatched", task_queue_root)
     except (ValueError, OSError) as exc:
         return PoolAction(
             action="dispatch",
