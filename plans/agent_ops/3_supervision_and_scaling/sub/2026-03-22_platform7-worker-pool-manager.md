@@ -4,8 +4,8 @@
 **ID:** SP-3-02
 **Date:** 2026-03-22
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 3 (`3_supervision_and_scaling`), `Platform-7`
-**Status:** proposed
-**Owner:** (unassigned)
+**Status:** completed
+**Owner:** author-d
 
 ---
 
@@ -494,17 +494,18 @@ Unit tests should cover:
 
 ## Observed Outputs
 
-_Filled during/after execution._
+- `src/bid_euchre/ops/worker_pool.py` -- worker pool lifecycle module (all planned functions delivered)
+- `tests/unit/test_ops_worker_pool.py` -- 69 unit tests
+- Updated `scripts/internal/ops.py` with `workers` subcommand
+- Updated `src/bid_euchre/ops/__init__.py` with module docstring entry
 
 ## Outcome
 
-_Filled after completion._
-
-- Status: (pending)
-- PR: (pending)
-- Deviations from plan: ...
-- Issues discovered: ...
+- Status: **completed**
+- PR: #1250 (main implementation) + #1252 (fix: task_queue root path and test isolation)
+- Deviations from plan: Single PR (no two-PR split needed). Design question #1 resolved: retire_worker sends SIGTERM after verifying no active task. Design question #2 resolved: PoolSnapshot computed on demand (no persistence). Design question #3 resolved: agent profile approach for task discovery. Design question #4 resolved: scope fit in one PR.
+- Issues discovered: task_queue root path needed fixing for proper queue directory resolution (addressed in fix PR #1252).
 
 ## Handoff
 
-_Filled at session end if work is incomplete._
+Work is complete. Next: Step 4 (Batch D pass gate verification).
