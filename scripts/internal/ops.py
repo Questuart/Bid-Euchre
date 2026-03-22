@@ -38,6 +38,12 @@ Usage:
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
     uv run python scripts/internal/ops.py supervisor [--json] [--save] [--diff SNAPSHOT_PATH]
+    uv run python scripts/internal/ops.py workers [--json]
+    uv run python scripts/internal/ops.py workers wake LANE_ID [--json]
+    uv run python scripts/internal/ops.py workers park LANE_ID [--json]
+    uv run python scripts/internal/ops.py workers retire LANE_ID [--json]
+    uv run python scripts/internal/ops.py workers dispatch PACKET_ID LANE_ID [--json]
+    uv run python scripts/internal/ops.py workers maintain [--dry-run] [--json]
 """
 
 from __future__ import annotations
@@ -1699,6 +1705,91 @@ def cmd_supervisor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_workers(args: argparse.Namespace) -> int:
+    """Worker pool lifecycle management (Platform-7)."""
+    from bid_euchre.ops.worker_pool import (
+        dispatch_to_worker,
+        format_action_text,
+        format_actions_json,
+        format_pool_json,
+        format_pool_text,
+        park_worker,
+        retire_worker,
+        run_pool_maintenance,
+        take_pool_snapshot,
+        wake_worker,
+    )
+
+    action = getattr(args, "workers_action", None)
+
+    if action == "wake":
+        lane_id = args.lane_id
+        result = wake_worker(lane_id, runtime_dir=args.runtime_dir)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2))
+        else:
+            print(format_action_text(result))
+        return 0 if result.executed else 1
+
+    elif action == "park":
+        lane_id = args.lane_id
+        result = park_worker(lane_id, runtime_dir=args.runtime_dir)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2))
+        else:
+            print(format_action_text(result))
+        return 0 if result.executed else 1
+
+    elif action == "retire":
+        lane_id = args.lane_id
+        result = retire_worker(lane_id, runtime_dir=args.runtime_dir)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2))
+        else:
+            print(format_action_text(result))
+        return 0 if result.executed else 1
+
+    elif action == "dispatch":
+        packet_id = args.packet_id
+        lane_id = args.lane_id
+        result = dispatch_to_worker(packet_id, lane_id, runtime_dir=args.runtime_dir)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(result), indent=2))
+        else:
+            print(format_action_text(result))
+        return 0 if result.executed else 1
+
+    elif action == "maintain":
+        dry_run = getattr(args, "dry_run", False)
+        actions = run_pool_maintenance(runtime_dir=args.runtime_dir, dry_run=dry_run)
+        if args.json:
+            print(json.dumps(format_actions_json(actions), indent=2))
+        else:
+            if actions:
+                for a in actions:
+                    print(format_action_text(a))
+            else:
+                print("No maintenance actions needed.")
+        return 0
+
+    else:
+        # Default: show pool snapshot
+        pool = take_pool_snapshot(args.runtime_dir)
+        if args.json:
+            print(json.dumps(format_pool_json(pool), indent=2))
+        else:
+            print(format_pool_text(pool))
+        return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -2171,6 +2262,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to a previous snapshot JSON file to diff against",
     )
 
+    # workers (Platform-7: worker pool lifecycle management)
+    workers_parser = subparsers.add_parser(
+        "workers", help="Worker pool lifecycle management (Platform-7)"
+    )
+    workers_sub = workers_parser.add_subparsers(dest="workers_action")
+
+    workers_wake = workers_sub.add_parser(
+        "wake", help="Wake (open/resume) an author pane"
+    )
+    workers_wake.add_argument("lane_id", help="Lane ID to wake")
+
+    workers_park = workers_sub.add_parser("park", help="Park an idle author lane")
+    workers_park.add_argument("lane_id", help="Lane ID to park")
+
+    workers_retire = workers_sub.add_parser(
+        "retire", help="Retire a parked author lane"
+    )
+    workers_retire.add_argument("lane_id", help="Lane ID to retire")
+
+    workers_dispatch = workers_sub.add_parser(
+        "dispatch", help="Dispatch a task packet to an author lane"
+    )
+    workers_dispatch.add_argument("packet_id", help="Task packet ID to dispatch")
+    workers_dispatch.add_argument("lane_id", help="Target lane ID")
+
+    workers_maintain = workers_sub.add_parser(
+        "maintain", help="Run periodic maintenance (park idle, retire parked)"
+    )
+    workers_maintain.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Only propose actions without executing them",
+    )
+
     return parser
 
 
@@ -2226,6 +2352,7 @@ def main(argv: list[str] | None = None) -> int:
         "inbox": cmd_inbox,
         "message": cmd_message,
         "supervisor": cmd_supervisor,
+        "workers": cmd_workers,
     }
 
     handler = commands.get(args.command)

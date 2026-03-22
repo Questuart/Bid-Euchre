@@ -1,0 +1,1003 @@
+"""Worker pool lifecycle management (Platform-7).
+
+Enables the orchestrator to reuse idle author lanes, open/resume author
+panes on demand when delegating work, and park or retire lanes when idle.
+All state flows through repo-owned artifacts (worktree registry, task queue);
+tmux is used for pane lifecycle only.
+
+Uses subprocess ``tmux`` commands (not libtmux) for the first version,
+matching the pattern in ``steward-session.sh``.  libtmux migration is
+deferred to Platform-10 (portability layer).
+
+Usage::
+
+    from bid_euchre.ops.worker_pool import (
+        take_pool_snapshot,
+        select_worker,
+        wake_worker,
+        park_worker,
+        retire_worker,
+        dispatch_to_worker,
+        run_pool_maintenance,
+    )
+
+    pool = take_pool_snapshot()
+    lane = select_worker(pool)
+    if lane:
+        action = dispatch_to_worker(packet_id, lane)
+"""
+
+from __future__ import annotations
+
+import logging
+import shutil
+import subprocess
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("ops.worker_pool")
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+#: Maximum number of simultaneously active (non-idle) author lanes.
+#: Matches the 5 persistent author worktrees in steward-session.sh.
+MAX_ACTIVE_AUTHORS: int = 5
+
+#: Idle threshold (minutes) before a lane is eligible for parking.
+IDLE_PARK_MINUTES: int = 15
+
+#: Parked threshold (minutes) before a parked lane is eligible for retirement.
+PARKED_RETIRE_MINUTES: int = 60
+
+#: Default tmux session name (matches steward-session.sh default).
+DEFAULT_TMUX_SESSION: str = "steward"
+
+#: Pool status values.
+POOL_STATUSES: frozenset[str] = frozenset({"active", "idle", "parked", "retired"})
+
+
+def _managed_lanes() -> frozenset[str]:
+    """Return the set of lane IDs managed by the worker pool.
+
+    Imports KNOWN_AUTHOR_LANES from task_queue to avoid duplication.
+    """
+    from bid_euchre.ops.task_queue import KNOWN_AUTHOR_LANES
+
+    return KNOWN_AUTHOR_LANES
+
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WorkerState:
+    """Snapshot of one author lane's pool state."""
+
+    lane_id: str
+    pool_status: str  # "active", "idle", "parked", "retired"
+    health: str  # from supervisor: "healthy", "idle", "degraded", "critical"
+    current_task_id: str | None
+    last_activity: str | None  # ISO 8601
+    visibility: str  # "foreground", "background", "hidden"
+    tmux_alive: bool  # whether the tmux pane/window exists and has a process
+    session_handle: str | None
+
+
+@dataclass
+class PoolSnapshot:
+    """Point-in-time summary of the worker pool."""
+
+    timestamp: str
+    workers: list[WorkerState] = field(default_factory=list)
+    active_count: int = 0
+    idle_count: int = 0
+    parked_count: int = 0
+    retired_count: int = 0
+    available_capacity: int = MAX_ACTIVE_AUTHORS
+
+
+@dataclass
+class PoolAction:
+    """A single lifecycle action proposed or executed by the pool manager."""
+
+    action: str  # "wake", "park", "retire", "reuse", "dispatch"
+    lane_id: str
+    reason: str
+    executed: bool = False
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _probe_tmux_pane(
+    lane_id: str,
+    tmux_session: str,
+) -> bool:
+    """Check if a tmux window for lane_id exists in the session.
+
+    Uses ``tmux list-windows`` to check for a window whose name matches
+    the lane_id.
+
+    Args:
+        lane_id: Lane identifier to look for.
+        tmux_session: tmux session name.
+
+    Returns:
+        True if a window named *lane_id* exists in the session.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "tmux",
+                "list-windows",
+                "-t",
+                tmux_session,
+                "-F",
+                "#{window_name}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+        window_names = result.stdout.strip().splitlines()
+        return lane_id in window_names
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _create_tmux_window(
+    lane_id: str,
+    worktree_path: str,
+    tmux_session: str,
+) -> bool:
+    """Create a new tmux window for the lane.
+
+    Creates a window in the steward session pointed at the lane's worktree.
+    The window runs the claude CLI with the lane's agent profile.
+
+    Args:
+        lane_id: Lane identifier (becomes the window name).
+        worktree_path: Path to the lane's worktree directory.
+        tmux_session: tmux session name.
+
+    Returns:
+        True on success, False on failure.
+    """
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        logger.error("Cannot find 'claude' binary in PATH")
+        return False
+
+    agent_name = _resolve_agent_name(lane_id)
+
+    try:
+        result = subprocess.run(
+            [
+                "tmux",
+                "new-window",
+                "-t",
+                tmux_session,
+                "-n",
+                lane_id,
+                "-c",
+                worktree_path,
+                claude_bin,
+                "--name",
+                lane_id,
+                "--agent",
+                agent_name,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.error(
+                "tmux new-window failed for %s: %s",
+                lane_id,
+                result.stderr.strip(),
+            )
+            return False
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        logger.error("tmux new-window error for %s: %s", lane_id, exc)
+        return False
+
+
+def _resolve_agent_name(lane_id: str) -> str:
+    """Map lane_id to the canonical agent profile name.
+
+    Examples:
+        "author-a"       -> "steward-author-a"
+        "author-scratch" -> "steward-author-scratch"
+    """
+    return f"steward-{lane_id}"
+
+
+def _resolve_worktree_path(
+    lane_id: str,
+    runtime_dir: Path | None = None,
+) -> str | None:
+    """Look up the worktree path for a lane from the registry.
+
+    Args:
+        lane_id: Lane to look up.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        Worktree path string, or None if not found.
+    """
+    from bid_euchre.ops.status import aggregate_status
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    report = aggregate_status(runtime_dir, check_worktree=False)
+    for lane in report.lanes:
+        if lane.lane_id == lane_id:
+            return lane.worktree_path
+    return None
+
+
+def _classify_pool_status(
+    lane: Any,
+    health: str,
+    has_task: bool,
+    tmux_alive: bool,
+    visibility: str,
+) -> str:
+    """Derive pool_status from lane state, health, task presence, and visibility.
+
+    Args:
+        lane: LaneStatus object.
+        health: Health classification from supervisor.
+        has_task: Whether the lane has an active/dispatched task.
+        tmux_alive: Whether the tmux pane is alive.
+        visibility: Effective visibility.
+
+    Returns:
+        One of "active", "idle", "parked", "retired".
+    """
+    # Hidden lanes are parked or retired depending on tmux state
+    if visibility == "hidden":
+        if tmux_alive:
+            return "parked"
+        return "retired"
+
+    # Active task or active/likely_active state -> active
+    if has_task or lane.state in ("active", "likely_active"):
+        return "active"
+
+    # Otherwise idle
+    return "idle"
+
+
+def _get_lane_task_id(
+    lane_id: str,
+    runtime_dir: Path | None = None,
+) -> str | None:
+    """Find the active/dispatched task ID for a lane, if any.
+
+    Args:
+        lane_id: Lane to check.
+        runtime_dir: Override for the task queue root directory.
+
+    Returns:
+        Packet ID of the active task, or None.
+    """
+    from bid_euchre.ops.task_queue import list_packets
+
+    # Check dispatched packets owned by this lane
+    dispatched = list_packets(
+        runtime_dir, status_filter="dispatched", owner_filter=lane_id
+    )
+    if dispatched:
+        return dispatched[0].packet_id
+    return None
+
+
+def _minutes_since(iso_timestamp: str | None, now: datetime) -> float | None:
+    """Calculate minutes elapsed since an ISO 8601 timestamp.
+
+    Returns None if the timestamp is None or unparseable.
+    """
+    if not iso_timestamp:
+        return None
+    try:
+        # Handle various ISO formats
+        ts_str = iso_timestamp.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(ts_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = now - dt
+        return delta.total_seconds() / 60.0
+    except (ValueError, TypeError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Core functions
+# ---------------------------------------------------------------------------
+
+
+def take_pool_snapshot(
+    runtime_dir: Path | None = None,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    now: datetime | None = None,
+) -> PoolSnapshot:
+    """Build a point-in-time worker pool snapshot.
+
+    Reads from:
+    - worktree registry (via status.aggregate_status)
+    - supervisor snapshot (via supervisor.take_snapshot)
+    - tmux session state (via _probe_tmux_pane)
+
+    Filters to managed lanes only.
+
+    Args:
+        runtime_dir: Override for the runtime directory root.
+        tmux_session: tmux session name to probe.
+        now: Override current time for testing.
+
+    Returns:
+        A new :class:`PoolSnapshot`.
+    """
+    from bid_euchre.ops.dashboard import effective_visibility
+    from bid_euchre.ops.status import aggregate_status
+    from bid_euchre.ops.supervisor import take_snapshot as supervisor_snapshot
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    managed = _managed_lanes()
+
+    # Gather lane status
+    report = aggregate_status(runtime_dir, check_worktree=False)
+
+    # Gather supervisor health assessments
+    try:
+        sup_snap = supervisor_snapshot(runtime_dir, now=now)
+        health_by_lane = {la.lane_id: la.health for la in sup_snap.lane_assessments}
+    except Exception as exc:
+        logger.debug("Supervisor snapshot failed: %s", exc)
+        health_by_lane = {}
+
+    workers: list[WorkerState] = []
+    counts = {"active": 0, "idle": 0, "parked": 0, "retired": 0}
+
+    for lane in report.lanes:
+        if lane.lane_id not in managed:
+            continue
+
+        visibility = effective_visibility(lane)
+        health = health_by_lane.get(lane.lane_id, "idle")
+        tmux_alive = _probe_tmux_pane(lane.lane_id, tmux_session)
+        task_id = _get_lane_task_id(lane.lane_id, runtime_dir)
+
+        pool_status = _classify_pool_status(
+            lane, health, task_id is not None, tmux_alive, visibility
+        )
+
+        # Determine last activity time
+        last_activity = lane.last_progress or lane.last_active
+
+        workers.append(
+            WorkerState(
+                lane_id=lane.lane_id,
+                pool_status=pool_status,
+                health=health,
+                current_task_id=task_id,
+                last_activity=last_activity,
+                visibility=visibility,
+                tmux_alive=tmux_alive,
+                session_handle=lane.session_handle,
+            )
+        )
+        counts[pool_status] = counts.get(pool_status, 0) + 1
+
+    return PoolSnapshot(
+        timestamp=now.isoformat(),
+        workers=workers,
+        active_count=counts["active"],
+        idle_count=counts["idle"],
+        parked_count=counts["parked"],
+        retired_count=counts["retired"],
+        available_capacity=max(0, MAX_ACTIVE_AUTHORS - counts["active"]),
+    )
+
+
+def select_worker(
+    pool: PoolSnapshot,
+    *,
+    preferred_lane: str | None = None,
+) -> str | None:
+    """Choose the best lane for new work.
+
+    Priority order:
+    1. preferred_lane (if idle or parked and healthy)
+    2. idle lanes (already running, no active task)
+    3. parked lanes (need waking, but worktree exists)
+    4. retired lanes (need full resume)
+    5. None if at MAX_ACTIVE_AUTHORS
+
+    Args:
+        pool: Current pool snapshot.
+        preferred_lane: Preferred lane ID, if any.
+
+    Returns:
+        Lane ID or None if no capacity.
+    """
+    if pool.available_capacity <= 0:
+        return None
+
+    workers_by_id = {w.lane_id: w for w in pool.workers}
+
+    # 1. Check preferred lane
+    if preferred_lane and preferred_lane in workers_by_id:
+        w = workers_by_id[preferred_lane]
+        if w.pool_status in ("idle", "parked", "retired"):
+            return preferred_lane
+
+    # 2. Idle lanes (already running)
+    idle_workers = [
+        w for w in pool.workers if w.pool_status == "idle" and w.health != "critical"
+    ]
+    if idle_workers:
+        return idle_workers[0].lane_id
+
+    # 3. Parked lanes
+    parked_workers = [
+        w for w in pool.workers if w.pool_status == "parked" and w.health != "critical"
+    ]
+    if parked_workers:
+        return parked_workers[0].lane_id
+
+    # 4. Retired lanes
+    retired_workers = [
+        w for w in pool.workers if w.pool_status == "retired" and w.health != "critical"
+    ]
+    if retired_workers:
+        return retired_workers[0].lane_id
+
+    return None
+
+
+def wake_worker(
+    lane_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Open or resume an author pane for the given lane.
+
+    Steps:
+    1. Check if tmux window already exists for lane_id.
+       - If alive: set visibility to "foreground", return.
+    2. If window does not exist: create a new tmux window in the
+       steward session, pointed at the lane's worktree.
+    3. Update registry: visibility -> "foreground".
+    4. Return PoolAction with executed=True.
+
+    Args:
+        lane_id: Lane to wake.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` describing what happened.
+    """
+    from bid_euchre.ops.dashboard import set_lane_visibility
+
+    if lane_id not in _managed_lanes():
+        return PoolAction(
+            action="wake",
+            lane_id=lane_id,
+            reason=f"Lane {lane_id!r} is not a managed author lane",
+            executed=False,
+            error="not_managed",
+        )
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    # Check if already alive
+    if _probe_tmux_pane(lane_id, tmux_session):
+        # Already running -- just ensure visibility
+        set_lane_visibility(lane_id, "foreground", runtime_dir)
+        return PoolAction(
+            action="wake",
+            lane_id=lane_id,
+            reason="Pane already alive; set visibility to foreground",
+            executed=True,
+        )
+
+    # Need to create a new tmux window
+    worktree_path = _resolve_worktree_path(lane_id, runtime_dir)
+    if not worktree_path:
+        return PoolAction(
+            action="wake",
+            lane_id=lane_id,
+            reason=f"Could not resolve worktree path for {lane_id!r}",
+            executed=False,
+            error="no_worktree",
+        )
+
+    success = _create_tmux_window(lane_id, worktree_path, tmux_session)
+    if not success:
+        return PoolAction(
+            action="wake",
+            lane_id=lane_id,
+            reason="Failed to create tmux window",
+            executed=False,
+            error="tmux_failed",
+        )
+
+    # Update visibility
+    set_lane_visibility(lane_id, "foreground", runtime_dir)
+
+    return PoolAction(
+        action="wake",
+        lane_id=lane_id,
+        reason="Created tmux window and set visibility to foreground",
+        executed=True,
+    )
+
+
+def park_worker(
+    lane_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Move an idle author lane to parked state.
+
+    Sets visibility to "hidden" but does NOT kill the tmux pane.
+    The claude process may still be running but idle.
+
+    Args:
+        lane_id: Lane to park.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` describing what happened.
+    """
+    from bid_euchre.ops.dashboard import set_lane_visibility
+
+    if lane_id not in _managed_lanes():
+        return PoolAction(
+            action="park",
+            lane_id=lane_id,
+            reason=f"Lane {lane_id!r} is not a managed author lane",
+            executed=False,
+            error="not_managed",
+        )
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    # Verify no active task
+    task_id = _get_lane_task_id(lane_id, runtime_dir)
+    if task_id:
+        return PoolAction(
+            action="park",
+            lane_id=lane_id,
+            reason=f"Lane has active task {task_id!r}; cannot park",
+            executed=False,
+            error="has_active_task",
+        )
+
+    # Set visibility to hidden
+    set_lane_visibility(lane_id, "hidden", runtime_dir)
+
+    return PoolAction(
+        action="park",
+        lane_id=lane_id,
+        reason="Set visibility to hidden; tmux pane left running",
+        executed=True,
+    )
+
+
+def retire_worker(
+    lane_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Fully retire a parked lane.
+
+    Sets visibility to "hidden" and sends SIGTERM to the tmux pane's
+    process (if alive).  The worktree is never removed (per worktree
+    protection rules).
+
+    Args:
+        lane_id: Lane to retire.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` describing what happened.
+    """
+    from bid_euchre.ops.dashboard import set_lane_visibility
+
+    if lane_id not in _managed_lanes():
+        return PoolAction(
+            action="retire",
+            lane_id=lane_id,
+            reason=f"Lane {lane_id!r} is not a managed author lane",
+            executed=False,
+            error="not_managed",
+        )
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    # Verify no active task
+    task_id = _get_lane_task_id(lane_id, runtime_dir)
+    if task_id:
+        return PoolAction(
+            action="retire",
+            lane_id=lane_id,
+            reason=f"Lane has active task {task_id!r}; cannot retire",
+            executed=False,
+            error="has_active_task",
+        )
+
+    # Set visibility to hidden
+    set_lane_visibility(lane_id, "hidden", runtime_dir)
+
+    # Terminate the tmux pane if alive
+    if _probe_tmux_pane(lane_id, tmux_session):
+        try:
+            subprocess.run(
+                [
+                    "tmux",
+                    "send-keys",
+                    "-t",
+                    f"{tmux_session}:{lane_id}",
+                    "",
+                    "",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            # Kill the window
+            subprocess.run(
+                [
+                    "tmux",
+                    "kill-window",
+                    "-t",
+                    f"{tmux_session}:{lane_id}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            logger.info("Terminated tmux window for %s", lane_id)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning(
+                "Failed to terminate tmux window for %s: %s",
+                lane_id,
+                exc,
+            )
+            return PoolAction(
+                action="retire",
+                lane_id=lane_id,
+                reason=f"Visibility set to hidden but tmux kill failed: {exc}",
+                executed=True,
+                error="tmux_kill_failed",
+            )
+
+    return PoolAction(
+        action="retire",
+        lane_id=lane_id,
+        reason="Set visibility to hidden and terminated tmux pane",
+        executed=True,
+    )
+
+
+def dispatch_to_worker(
+    packet_id: str,
+    lane_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+) -> PoolAction:
+    """Complete lifecycle: wake worker, assign task packet, update state.
+
+    Steps:
+    1. Load task packet, verify it is in "approved" status.
+    2. Take pool snapshot, verify lane_id has capacity.
+    3. If lane is parked/retired: wake_worker() first.
+    4. Transition packet to "dispatched" with owner = lane_id.
+    5. Set lane visibility to "foreground".
+    6. Return PoolAction.
+
+    This is the high-level entry point the orchestrator calls.
+
+    Args:
+        packet_id: Task packet ID to dispatch.
+        lane_id: Target lane for the work.
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+
+    Returns:
+        A :class:`PoolAction` describing what happened.
+    """
+    from bid_euchre.ops.task_queue import load_packet, transition_status
+
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+
+    # 1. Verify packet exists and is approved
+    packet = load_packet(packet_id, runtime_dir)
+    if packet is None:
+        return PoolAction(
+            action="dispatch",
+            lane_id=lane_id,
+            reason=f"Task packet {packet_id!r} not found",
+            executed=False,
+            error="packet_not_found",
+        )
+
+    if packet.status != "approved":
+        return PoolAction(
+            action="dispatch",
+            lane_id=lane_id,
+            reason=(
+                f"Packet {packet_id!r} is in {packet.status!r} status; "
+                f"expected 'approved'"
+            ),
+            executed=False,
+            error="wrong_status",
+        )
+
+    # 2. Take snapshot and verify capacity
+    pool = take_pool_snapshot(runtime_dir, tmux_session=tmux_session)
+    worker = next((w for w in pool.workers if w.lane_id == lane_id), None)
+
+    if worker is None:
+        return PoolAction(
+            action="dispatch",
+            lane_id=lane_id,
+            reason=f"Lane {lane_id!r} not found in pool snapshot",
+            executed=False,
+            error="lane_not_found",
+        )
+
+    if worker.pool_status == "active":
+        return PoolAction(
+            action="dispatch",
+            lane_id=lane_id,
+            reason=f"Lane {lane_id!r} is already active with a task",
+            executed=False,
+            error="lane_busy",
+        )
+
+    if pool.available_capacity <= 0 and worker.pool_status not in ("idle",):
+        return PoolAction(
+            action="dispatch",
+            lane_id=lane_id,
+            reason="No available capacity in the worker pool",
+            executed=False,
+            error="no_capacity",
+        )
+
+    # 3. Wake if parked/retired
+    if worker.pool_status in ("parked", "retired"):
+        wake_result = wake_worker(
+            lane_id,
+            tmux_session=tmux_session,
+            runtime_dir=runtime_dir,
+        )
+        if not wake_result.executed:
+            return PoolAction(
+                action="dispatch",
+                lane_id=lane_id,
+                reason=f"Failed to wake lane: {wake_result.reason}",
+                executed=False,
+                error=f"wake_failed:{wake_result.error}",
+            )
+
+    # 4. Transition packet to dispatched
+    try:
+        # Update packet owner to lane_id before transitioning
+        # (TaskPacket is frozen, so we re-save with owner set)
+        from dataclasses import asdict as _asdict
+
+        from bid_euchre.ops.task_queue import TaskPacket, save_packet
+
+        pkt_data = _asdict(packet)
+        pkt_data["owner"] = lane_id
+        pkt_data["status"] = "approved"  # keep current status for re-save
+        updated_pkt = TaskPacket(**pkt_data)
+        save_packet(updated_pkt, runtime_dir)
+
+        transition_status(packet_id, "dispatched", runtime_dir)
+    except (ValueError, OSError) as exc:
+        return PoolAction(
+            action="dispatch",
+            lane_id=lane_id,
+            reason=f"Failed to transition packet: {exc}",
+            executed=False,
+            error="transition_failed",
+        )
+
+    # 5. Ensure visibility is foreground
+    from bid_euchre.ops.dashboard import set_lane_visibility
+
+    set_lane_visibility(lane_id, "foreground", runtime_dir)
+
+    return PoolAction(
+        action="dispatch",
+        lane_id=lane_id,
+        reason=f"Dispatched packet {packet_id!r} to {lane_id!r}",
+        executed=True,
+    )
+
+
+def run_pool_maintenance(
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+    runtime_dir: Path | None = None,
+    now: datetime | None = None,
+    dry_run: bool = False,
+) -> list[PoolAction]:
+    """Periodic maintenance: park idle workers, retire parked ones.
+
+    Scans all managed lanes and applies lifecycle transitions:
+    - idle > IDLE_PARK_MINUTES -> park
+    - parked > PARKED_RETIRE_MINUTES -> retire
+
+    Args:
+        tmux_session: tmux session name.
+        runtime_dir: Override for the runtime directory root.
+        now: Override current time for testing.
+        dry_run: If True, only propose actions without executing them.
+
+    Returns:
+        List of proposed (dry_run=True) or executed actions.
+    """
+    if runtime_dir is None:
+        runtime_dir = Path(".claude/runtime")
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    pool = take_pool_snapshot(runtime_dir, tmux_session=tmux_session, now=now)
+    actions: list[PoolAction] = []
+
+    for worker in pool.workers:
+        idle_minutes = _minutes_since(worker.last_activity, now)
+
+        if worker.pool_status == "idle" and idle_minutes is not None:
+            if idle_minutes > IDLE_PARK_MINUTES:
+                action = PoolAction(
+                    action="park",
+                    lane_id=worker.lane_id,
+                    reason=(
+                        f"Idle for {idle_minutes:.0f} min "
+                        f"(threshold: {IDLE_PARK_MINUTES} min)"
+                    ),
+                    executed=False,
+                )
+                if not dry_run:
+                    result = park_worker(
+                        worker.lane_id,
+                        tmux_session=tmux_session,
+                        runtime_dir=runtime_dir,
+                    )
+                    action.executed = result.executed
+                    action.error = result.error
+                actions.append(action)
+
+        elif worker.pool_status == "parked" and idle_minutes is not None:
+            if idle_minutes > PARKED_RETIRE_MINUTES:
+                action = PoolAction(
+                    action="retire",
+                    lane_id=worker.lane_id,
+                    reason=(
+                        f"Parked for {idle_minutes:.0f} min "
+                        f"(threshold: {PARKED_RETIRE_MINUTES} min)"
+                    ),
+                    executed=False,
+                )
+                if not dry_run:
+                    result = retire_worker(
+                        worker.lane_id,
+                        tmux_session=tmux_session,
+                        runtime_dir=runtime_dir,
+                    )
+                    action.executed = result.executed
+                    action.error = result.error
+                actions.append(action)
+
+    return actions
+
+
+# ---------------------------------------------------------------------------
+# Formatters
+# ---------------------------------------------------------------------------
+
+
+def format_pool_text(pool: PoolSnapshot) -> str:
+    """Format a pool snapshot as human-readable text.
+
+    Args:
+        pool: Pool snapshot to format.
+
+    Returns:
+        Multi-line text summary.
+    """
+    lines: list[str] = []
+    lines.append("=== Worker Pool ===")
+    lines.append(f"Timestamp: {pool.timestamp}")
+    lines.append(
+        f"Active: {pool.active_count}  Idle: {pool.idle_count}  "
+        f"Parked: {pool.parked_count}  Retired: {pool.retired_count}  "
+        f"Capacity: {pool.available_capacity}"
+    )
+    lines.append("")
+
+    if pool.workers:
+        lines.append("Workers:")
+        for w in pool.workers:
+            tmux_str = "tmux:up" if w.tmux_alive else "tmux:down"
+            task_str = f"  task:{w.current_task_id}" if w.current_task_id else ""
+            lines.append(
+                f"  {w.lane_id:15s} [{w.pool_status:8s}] "
+                f"health:{w.health:8s} vis:{w.visibility:10s} "
+                f"{tmux_str}{task_str}"
+            )
+    else:
+        lines.append("  (no managed workers found)")
+
+    return "\n".join(lines)
+
+
+def format_pool_json(pool: PoolSnapshot) -> dict[str, Any]:
+    """Format a pool snapshot as a JSON-serializable dict.
+
+    Args:
+        pool: Pool snapshot to format.
+
+    Returns:
+        Dict suitable for JSON serialization.
+    """
+    return {
+        "timestamp": pool.timestamp,
+        "summary": {
+            "active": pool.active_count,
+            "idle": pool.idle_count,
+            "parked": pool.parked_count,
+            "retired": pool.retired_count,
+            "available_capacity": pool.available_capacity,
+        },
+        "workers": [asdict(w) for w in pool.workers],
+    }
+
+
+def format_action_text(action: PoolAction) -> str:
+    """Format a single pool action as human-readable text."""
+    status = "OK" if action.executed else "SKIPPED"
+    error_str = f" (error: {action.error})" if action.error else ""
+    return f"[{status}] {action.action} {action.lane_id}: {action.reason}{error_str}"
+
+
+def format_actions_json(actions: list[PoolAction]) -> list[dict[str, Any]]:
+    """Format pool actions as JSON-serializable list."""
+    return [asdict(a) for a in actions]
