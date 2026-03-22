@@ -3,7 +3,7 @@
 **Parent:** Phase 2 — Visible Operating Model
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Amendment:** A3 (agent frontmatter hardening and lane-boundary enforcement)
-**Status:** in_progress
+**Status:** completed
 **Owner:** author-b
 **Created:** 2026-03-22
 
@@ -66,4 +66,12 @@ dangerous tools is the right model.
 
 ## Outcome
 
-(to be filled after implementation)
+**PR:** #1239 ("ops: add agent frontmatter boundaries (Amendment A3)")
+**Merged:** 2026-03-22
+
+Shipped:
+- `steward-review.md`: `allowedTools` allowlist + `model: sonnet` annotation
+- `steward-ops.md`: `disallowedTools` denylist + `model: sonnet` annotation
+- `issues.md`: `allowedTools` allowlist for issue-management scope
+- `README.md`: Added section on enforced tool boundaries
+- `PROMPT_FIRST_WORKFLOW.md`: Added note about enforced tool boundaries

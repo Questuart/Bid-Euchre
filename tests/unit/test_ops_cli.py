@@ -3065,3 +3065,129 @@ class TestPriorityChoicesContract:
         assert (
             set(priority_action.choices) == set(VALID_PRIORITIES)
         ), f"CLI choices {priority_action.choices} != VALID_PRIORITIES {VALID_PRIORITIES}"
+
+
+class TestCmdSupervisor:
+    """Tests for the supervisor subcommand (Platform-6)."""
+
+    def test_supervisor_text(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Basic supervisor invocation produces text output."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "supervisor",
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "Supervisor Report" in captured.out
+
+    def test_supervisor_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The --json flag produces valid JSON with expected keys."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "supervisor",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert "timestamp" in data
+        assert "summary" in data
+        assert "lane_assessments" in data
+        assert "recommendations" in data
+
+    def test_supervisor_save(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The --save flag persists a snapshot to disk."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "supervisor",
+                "--save",
+            ]
+        )
+        assert rc == 0
+
+        snap_dir = runtime_dir / "supervisor_snapshots"
+        assert snap_dir.exists()
+        snapshots = list(snap_dir.glob("snapshot_*.json"))
+        assert len(snapshots) >= 1
+
+    def test_supervisor_diff_valid(
+        self,
+        runtime_dir: Path,
+        plans_dir: Path,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The --diff flag loads a previous snapshot and computes a delta."""
+        import ops
+
+        from bid_euchre.ops.supervisor import (
+            _snapshot_to_dict,
+            take_snapshot,
+        )
+
+        # Take a snapshot and write it to a file for --diff
+        snap = take_snapshot(runtime_dir, plans_dir)
+        snap_file = tmp_path / "prev_snapshot.json"
+        snap_file.write_text(json.dumps(_snapshot_to_dict(snap), indent=2))
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "supervisor",
+                "--diff",
+                str(snap_file),
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert "delta" in data
+
+    def test_supervisor_diff_invalid_path(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The --diff flag with a nonexistent file returns error code 1."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "supervisor",
+                "--diff",
+                "/nonexistent/path/snapshot.json",
+            ]
+        )
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "Error loading snapshot" in captured.err

@@ -1673,14 +1673,11 @@ def cmd_supervisor(args: argparse.Namespace) -> int:
     prev_snapshot: SupervisorSnapshot | None = None
     diff_path = getattr(args, "diff", None)
     if diff_path:
-        import json as _json
-
-        from bid_euchre.ops.supervisor import _dict_to_snapshot
+        from bid_euchre.ops.supervisor import load_snapshot_from_file
 
         try:
-            data = _json.loads(Path(diff_path).read_text())
-            prev_snapshot = _dict_to_snapshot(data)
-        except (OSError, _json.JSONDecodeError, KeyError) as exc:
+            prev_snapshot = load_snapshot_from_file(diff_path)
+        except (OSError, json.JSONDecodeError, KeyError) as exc:
             print(f"Error loading snapshot: {exc}", file=sys.stderr)
             return 1
     elif save:

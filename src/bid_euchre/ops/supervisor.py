@@ -544,20 +544,46 @@ def save_snapshot(
     fd, tmp_path = tempfile.mkstemp(dir=str(snap_dir), suffix=".tmp")
     try:
         os.write(fd, json.dumps(data, indent=2, default=str).encode())
-        os.close(fd)
-        Path(tmp_path).rename(target)
     except Exception:
         try:
             Path(tmp_path).unlink(missing_ok=True)
         except OSError:
             pass
         raise
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    Path(tmp_path).rename(target)
 
     # Prune old snapshots
     _prune_snapshots(snap_dir)
 
     logger.debug("Saved supervisor snapshot: %s", target)
     return target
+
+
+def load_snapshot_from_file(path: Path | str) -> SupervisorSnapshot:
+    """Load a supervisor snapshot from a JSON file.
+
+    This is the public API for deserializing a snapshot from an arbitrary
+    file path.  Use it in CLI tooling and scripts instead of the private
+    ``_dict_to_snapshot`` helper.
+
+    Args:
+        path: Path to a snapshot JSON file.
+
+    Returns:
+        The deserialized :class:`SupervisorSnapshot`.
+
+    Raises:
+        OSError: If the file cannot be read.
+        json.JSONDecodeError: If the file is not valid JSON.
+        KeyError: If required fields are missing.
+    """
+    data = json.loads(Path(path).read_text())
+    return _dict_to_snapshot(data)
 
 
 def load_latest_snapshot(
