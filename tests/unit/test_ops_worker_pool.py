@@ -204,18 +204,32 @@ class TestClassifyPoolStatus:
             _classify_pool_status(lane, "healthy", True, True, "foreground") == "active"
         )
 
-    def test_active_state_is_active(self) -> None:
+    def test_active_state_no_task_is_idle(self) -> None:
+        """BD-001: active state without a task should be idle (dispatchable)."""
         lane = MagicMock(state="active")
         assert (
-            _classify_pool_status(lane, "healthy", False, True, "foreground")
-            == "active"
+            _classify_pool_status(lane, "healthy", False, True, "foreground") == "idle"
         )
 
-    def test_likely_active_is_active(self) -> None:
+    def test_likely_active_no_task_is_idle(self) -> None:
+        """BD-001: likely_active state without a task should be idle (dispatchable)."""
         lane = MagicMock(state="likely_active")
         assert (
-            _classify_pool_status(lane, "healthy", False, True, "background")
-            == "active"
+            _classify_pool_status(lane, "healthy", False, True, "background") == "idle"
+        )
+
+    def test_active_state_with_task_is_active(self) -> None:
+        """Active state WITH a task should still be active."""
+        lane = MagicMock(state="active")
+        assert (
+            _classify_pool_status(lane, "healthy", True, True, "foreground") == "active"
+        )
+
+    def test_likely_active_with_task_is_active(self) -> None:
+        """likely_active state WITH a task should still be active."""
+        lane = MagicMock(state="likely_active")
+        assert (
+            _classify_pool_status(lane, "healthy", True, True, "background") == "active"
         )
 
     def test_no_task_background_is_idle(self) -> None:

@@ -949,6 +949,29 @@ def aggregate_status(
         if status != "completed":
             tasks_by_lane.setdefault(owner, []).append(task)
 
+    # Also include dispatched task packets from the orchestrator task queue.
+    # These are the durable packets created by Platform-2 intake — they may
+    # not yet have a corresponding task_state entry.
+    try:
+        from bid_euchre.ops.task_queue import list_packets
+
+        dispatched = list_packets(
+            runtime_dir / "task_queue", status_filter="dispatched"
+        )
+        for pkt in dispatched:
+            if pkt.owner:
+                tasks_by_lane.setdefault(pkt.owner, []).append(
+                    {
+                        "task_id": pkt.packet_id,
+                        "subject": pkt.title,
+                        "status": "in_progress",
+                        "owner_lane": pkt.owner,
+                        "schema_version": 2,
+                    }
+                )
+    except Exception:
+        logger.debug("Could not load task_queue packets", exc_info=True)
+
     # Synthesize lane activity from all data sources
     report.lanes = synthesize_lane_activity(
         lanes_data,
