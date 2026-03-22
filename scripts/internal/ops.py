@@ -37,6 +37,7 @@ Usage:
     uv run python scripts/internal/ops.py inbox [--lane LANE] [--status STATUS] [--type TYPE] [--thread THREAD] [--json]
     uv run python scripts/internal/ops.py inbox stats [--json]
     uv run python scripts/internal/ops.py message show MSG_ID [--json]
+    uv run python scripts/internal/ops.py supervisor [--json] [--save] [--diff SNAPSHOT_PATH]
 """
 
 from __future__ import annotations
@@ -1658,6 +1659,51 @@ def cmd_message(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_supervisor(args: argparse.Namespace) -> int:
+    """Run a supervisor cycle: snapshot, delta, recommend (Platform-6)."""
+    from bid_euchre.ops.supervisor import (
+        SupervisorSnapshot,
+        format_supervisor_json,
+        format_supervisor_text,
+        load_latest_snapshot,
+        run_supervisor_cycle,
+    )
+
+    save = getattr(args, "save", False)
+
+    # Load an explicit previous snapshot for diffing, if specified
+    prev_snapshot: SupervisorSnapshot | None = None
+    diff_path = getattr(args, "diff", None)
+    if diff_path:
+        import json as _json
+
+        from bid_euchre.ops.supervisor import _dict_to_snapshot
+
+        try:
+            data = _json.loads(Path(diff_path).read_text())
+            prev_snapshot = _dict_to_snapshot(data)
+        except (OSError, _json.JSONDecodeError, KeyError) as exc:
+            print(f"Error loading snapshot: {exc}", file=sys.stderr)
+            return 1
+    elif save:
+        # If saving, try to load previous for delta
+        prev_snapshot = load_latest_snapshot(args.runtime_dir)
+
+    result = run_supervisor_cycle(
+        runtime_dir=args.runtime_dir,
+        plans_dir=args.plans_dir,
+        prev_snapshot=prev_snapshot,
+        save=save,
+    )
+
+    if args.json:
+        print(json.dumps(format_supervisor_json(result), indent=2))
+    else:
+        print(format_supervisor_text(result))
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser."""
     parser = argparse.ArgumentParser(
@@ -2112,6 +2158,24 @@ def build_parser() -> argparse.ArgumentParser:
     message_show_parser = message_sub.add_parser("show", help="Show a message by ID")
     message_show_parser.add_argument("message_id", help="The message ID to show")
 
+    # supervisor (Platform-6: supervisor routines and delta summaries)
+    supervisor_parser = subparsers.add_parser(
+        "supervisor", help="Supervisor cycle: snapshot, delta, recommend (Platform-6)"
+    )
+    supervisor_parser.add_argument(
+        "--save",
+        action="store_true",
+        default=False,
+        help="Persist snapshot for future delta computation",
+    )
+    supervisor_parser.add_argument(
+        "--diff",
+        type=str,
+        default=None,
+        metavar="SNAPSHOT_PATH",
+        help="Path to a previous snapshot JSON file to diff against",
+    )
+
     return parser
 
 
@@ -2166,6 +2230,7 @@ def main(argv: list[str] | None = None) -> int:
         "task": cmd_task,
         "inbox": cmd_inbox,
         "message": cmd_message,
+        "supervisor": cmd_supervisor,
     }
 
     handler = commands.get(args.command)
