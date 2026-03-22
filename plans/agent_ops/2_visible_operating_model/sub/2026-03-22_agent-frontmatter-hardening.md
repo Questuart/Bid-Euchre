@@ -3,7 +3,7 @@
 **Parent:** Phase 2 — Visible Operating Model
 **Governing plan:** `plans/agent_ops/governing_plan.md`
 **Amendment:** A3 (agent frontmatter hardening and lane-boundary enforcement)
-**Status:** in_progress
+**Status:** completed
 **Owner:** author-b
 **Created:** 2026-03-22
 
@@ -66,4 +66,14 @@ dangerous tools is the right model.
 
 ## Outcome
 
-(to be filled after implementation)
+PR #1239: `ops: add structural frontmatter hardening to non-author agent lanes`
+
+All three non-author lanes hardened:
+- `steward-review`: `allowedTools` allowlist (Read, Grep, Glob, Bash, ToolSearch, Skill)
+- `steward-ops`: `disallowedTools` denylist (Edit, Write, Agent)
+- `issues`: `allowedTools` allowlist (Read, Grep, Glob, Bash, ToolSearch, Skill)
+
+Runtime verification confirmed `allowedTools` and `disallowedTools` are
+supported frontmatter keys in the Claude Code agent runtime (extracted from
+binary documentation strings). YAML frontmatter parses correctly for all
+three files. `make check-quiet` passes. No Batch C acceptance behavior changed.
