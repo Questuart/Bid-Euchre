@@ -2820,8 +2820,6 @@ class TestTaskCreate:
                 "normal",
                 "--description",
                 "Fix the edge case in scoring",
-                "--scope-declared",
-                "src/bid_euchre/scoring.py,tests/unit/test_scoring.py",
             ]
         )
         assert rc == 0
@@ -2895,3 +2893,129 @@ class TestTaskCreate:
         packets = json.loads(capsys.readouterr().out)
         ids = [p["packet_id"] for p in packets]
         assert created["packet_id"] in ids
+
+    def test_task_create_with_scope(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--scope flags are persisted as scope_declared list."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Scoped task",
+                "--scope",
+                "src/bid_euchre/ops/*.py",
+                "--scope",
+                "tests/unit/test_ops_*.py",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["scope_declared"] == [
+            "src/bid_euchre/ops/*.py",
+            "tests/unit/test_ops_*.py",
+        ]
+
+    def test_task_create_with_validation(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--validation flags are persisted as validation list."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Validated task",
+                "--validation",
+                "uv run python -m pytest tests/unit/test_ops_cli.py -v",
+                "--validation",
+                "make check-quiet",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["validation"] == [
+            "uv run python -m pytest tests/unit/test_ops_cli.py -v",
+            "make check-quiet",
+        ]
+
+    def test_task_create_with_scope_and_validation(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Both --scope and --validation are persisted together."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Full task",
+                "--description",
+                "A task with everything",
+                "--owner",
+                "author-a",
+                "--priority",
+                "high",
+                "--scope",
+                "scripts/internal/ops.py",
+                "--validation",
+                "uv run python -m pytest tests/ -v",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["title"] == "Full task"
+        assert data["description"] == "A task with everything"
+        assert data["owner"] == "author-a"
+        assert data["priority"] == "high"
+        assert data["scope_declared"] == ["scripts/internal/ops.py"]
+        assert data["validation"] == ["uv run python -m pytest tests/ -v"]
+
+    def test_task_create_text_shows_scope_and_validation(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Text output includes scope and validation when present."""
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Text output task",
+                "--scope",
+                "src/*.py",
+                "--validation",
+                "make check-quiet",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Text output task" in out
+        assert "src/*.py" in out
+        assert "make check-quiet" in out
