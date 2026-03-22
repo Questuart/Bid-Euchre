@@ -279,11 +279,9 @@ def _classify_pool_status(
     if has_task:
         return "active"
 
-    # Lane shows signs of life but has no task -> idle (dispatchable)
-    if lane.state in ("active", "likely_active"):
-        return "idle"
-
-    # Otherwise idle
+    # Alive but no task -> idle (dispatchable).  This covers both lanes
+    # with evidence of recent activity ("active", "likely_active") and
+    # lanes with no recent evidence — either way, no task means idle.
     return "idle"
 
 
