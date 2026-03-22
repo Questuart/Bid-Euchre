@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-22 by author-b (SP-2-03 completed, Phase 3 plan)
+**Last updated:** 2026-03-22 by author-c (SP-3-02 registered)
 
 ---
 
@@ -17,12 +17,13 @@
 | SP-2-01 | Platform-4 dashboard-first layout | Phase 2 Platform-4 implementation | completed | author-b | `plans/agent_ops/2_visible_operating_model/sub/2026-03-21_platform4-dashboard-layout.md` | 2026-03-21 | 2026-03-21 |
 | SP-2-02 | Platform-5 canonical prompts and skills | Phase 2 Platform-5 implementation | completed | author-a | `plans/agent_ops/2_visible_operating_model/sub/2026-03-21_platform5-canonical-prompts-and-skills.md` | 2026-03-21 | 2026-03-22 (PR #1234) |
 | SP-2-03 | Agent frontmatter hardening | Phase 2 post-Batch-C follow-up (Amendment A3) | completed | author-b | `plans/agent_ops/2_visible_operating_model/sub/2026-03-22_agent-frontmatter-hardening.md` | 2026-03-22 | 2026-03-22 (PR #1239) |
+| SP-3-02 | Platform-7 worker pool manager | Phase 3 Platform-7 implementation | proposed | (unassigned) | `plans/agent_ops/3_supervision_and_scaling/sub/2026-03-22_platform7-worker-pool-manager.md` | 2026-03-22 | -- |
 
 ## Status Summary
 
 | Status | Count |
 |--------|-------|
-| proposed | 0 |
+| proposed | 1 |
 | in_progress | 0 |
 | blocked | 0 |
 | completed | 7 |
