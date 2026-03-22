@@ -18,6 +18,7 @@ Usage::
         park_worker,
         retire_worker,
         dispatch_to_worker,
+        nudge_pane,
         run_pool_maintenance,
     )
 
@@ -706,6 +707,60 @@ def retire_worker(
     )
 
 
+def nudge_pane(
+    lane_id: str,
+    packet_id: str,
+    *,
+    tmux_session: str = DEFAULT_TMUX_SESSION,
+) -> PoolAction:
+    """Send a short command to the lane's tmux pane to trigger task consumption.
+
+    Uses ``tmux send-keys`` to inject ``/start-task <packet_id>`` into the
+    target pane.  The command is a Claude Code slash-command that loads the
+    dispatched task packet from durable state and begins execution.
+
+    Args:
+        lane_id: Target lane whose pane should receive the command.
+        packet_id: Task packet ID to pass to the ``/start-task`` skill.
+        tmux_session: tmux session name.
+
+    Returns:
+        A :class:`PoolAction` with ``action="nudge"`` describing the outcome.
+    """
+    target = f"{tmux_session}:{lane_id}"
+    cmd = f"/start-task {packet_id}"
+
+    try:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", target, cmd, "Enter"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        return PoolAction(
+            action="nudge",
+            lane_id=lane_id,
+            reason=f"Sent '{cmd}' to pane {target}",
+            executed=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return PoolAction(
+            action="nudge",
+            lane_id=lane_id,
+            reason=f"Failed to nudge pane: {exc}",
+            executed=False,
+            error="nudge_failed",
+        )
+    except (FileNotFoundError, OSError) as exc:
+        return PoolAction(
+            action="nudge",
+            lane_id=lane_id,
+            reason=f"Failed to nudge pane: {exc}",
+            executed=False,
+            error="nudge_failed",
+        )
+
+
 def dispatch_to_worker(
     packet_id: str,
     lane_id: str,
@@ -713,15 +768,18 @@ def dispatch_to_worker(
     tmux_session: str = DEFAULT_TMUX_SESSION,
     runtime_dir: Path | None = None,
 ) -> PoolAction:
-    """Complete lifecycle: wake worker, assign task packet, update state.
+    """Complete lifecycle: wake worker, assign task packet, nudge pane.
 
     Steps:
     1. Load task packet, verify it is in "approved" status.
     2. Take pool snapshot, verify lane_id has capacity.
     3. If lane is parked/retired: wake_worker() first.
     4. Transition packet to "dispatched" with owner = lane_id.
-    5. Set lane visibility to "foreground".
-    6. Return PoolAction.
+    5. Write inbox message via message_bus (audit trail).
+    6. Nudge the target pane with ``/start-task <packet_id>``.
+    7. Record delivery outcome (update inbox message status).
+    8. Set lane visibility to "foreground".
+    9. Return PoolAction.
 
     This is the high-level entry point the orchestrator calls.
 
@@ -840,7 +898,50 @@ def dispatch_to_worker(
             error="transition_failed",
         )
 
-    # 5. Ensure visibility is foreground
+    # 5. Write inbox message via message_bus
+    message_id: str | None = None
+    try:
+        from bid_euchre.ops.message_bus import create_message, send_message
+
+        msg = create_message(
+            from_lane="orchestrator",
+            to_lane=lane_id,
+            message_type="assignment",
+            summary=f"Task dispatched: {packet.title}",
+            task_id=packet_id,
+            payload={"packet_id": packet_id, "title": packet.title},
+        )
+        message_id = send_message(msg)
+    except Exception as exc:
+        # Inbox message is best-effort; dispatch still succeeds
+        logger.warning(
+            "Failed to send inbox message for dispatch %s: %s",
+            packet_id,
+            exc,
+        )
+
+    # 6. Nudge the target pane
+    nudge_result = nudge_pane(lane_id, packet_id, tmux_session=tmux_session)
+
+    # 7. Record delivery outcome
+    if message_id is not None:
+        try:
+            from bid_euchre.ops.message_bus import (
+                _update_inbox_status,
+                shared_bus_root,
+            )
+
+            if nudge_result.executed:
+                bus_root = shared_bus_root()
+                _update_inbox_status(message_id, lane_id, "delivered", bus_root)
+        except Exception as exc:
+            logger.warning(
+                "Failed to update delivery status for message %s: %s",
+                message_id,
+                exc,
+            )
+
+    # 8. Ensure visibility is foreground
     from bid_euchre.ops.dashboard import set_lane_visibility
 
     set_lane_visibility(lane_id, "foreground", runtime_dir)
