@@ -148,3 +148,32 @@ not the operational bootstrap, sender-gating, or debugging realities surfaced
 by Claude's official Channels docs. Capturing these details now makes the slice
 more likely to prove cleanly without confusing channel transport failure,
 operator access failure, and architecture failure.
+
+---
+
+## A6 — BD-004 staged delivery-adapter roadmap (2026-03-22)
+
+**PR:** pending follow-up
+
+**What changed:**
+1. **Batch D gate aligned with the real Phase 3 blocker** -- The governing and
+   Phase 3 plans now state explicitly that, for the shipped tmux-first steward
+   layout, a dispatched task must be able to land in the target live author
+   session through a repo-owned delivery adapter.
+2. **`v1` delivery path made explicit** -- Phase 3 closes BD-004 with the
+   narrowest adapter that fits the current runtime: durable task/message state
+   plus a packet-specific tmux pane nudge into the already-running lane session.
+3. **`v2` upgrade path recorded** -- Platform-8 may later replace that pane
+   nudge with a Claude Channels sidecar that watches durable state and pushes
+   lane-local events into the running session, while keeping repo-owned state as
+   truth.
+4. **`v3` transport upgrade recorded** -- If `cmux` workspace/surface metadata
+   becomes live and stable, the delivery adapter may later move from tmux
+   targeting to `cmux` surface targeting without changing the durable contract.
+
+**Rationale:** The discussion around BD-004 established a three-stage answer:
+close the current gate cheaply with the existing tmux session model, preserve a
+clean upgrade path to Claude Channels once remote-channel prerequisites exist,
+and treat `cmux` as a later transport/presentation upgrade rather than as
+control-plane truth. Recording the full ladder now prevents future slices from
+re-litigating the same architectural boundary.
