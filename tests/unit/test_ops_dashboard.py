@@ -673,3 +673,46 @@ class TestDashboardIntegration:
             lane.lane_id for lane in view.background.lanes
         }
         assert "author-a" not in all_ids
+
+    def test_inbox_highlights_with_messages(self, runtime_dir: Path) -> None:
+        """Send messages via bus, build dashboard, verify highlights."""
+        from bid_euchre.ops.message_bus import create_message, send_message
+
+        # Set up a bus root inside the runtime_dir so it's isolated
+        bus_root = runtime_dir / "message_bus"
+        bus_root.mkdir(parents=True, exist_ok=True)
+        (bus_root / "inbox").mkdir(exist_ok=True)
+
+        # Send two pending messages to orchestrator
+        for i in range(2):
+            msg = create_message(
+                from_lane="author-a",
+                to_lane="orchestrator",
+                message_type="completion",
+                summary=f"Task {i} done",
+            )
+            send_message(msg, bus_root, events_dir=runtime_dir / "events")
+
+        # Send one message to ops
+        msg = create_message(
+            from_lane="author-b",
+            to_lane="ops",
+            message_type="blocker",
+            summary="CI failing",
+        )
+        send_message(msg, bus_root, events_dir=runtime_dir / "events")
+
+        now = datetime(2026, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+        view = build_dashboard_view(runtime_dir, bus_root=bus_root, now=now)
+
+        # Should have inbox highlights for orchestrator (2) and ops (1)
+        highlight_map = {h.lane_id: h.unacked_count for h in view.inbox_highlights}
+        assert "orchestrator" in highlight_map
+        assert highlight_map["orchestrator"] == 2
+        assert "ops" in highlight_map
+        assert highlight_map["ops"] == 1
+
+        # Text output should mention inbox
+        text = format_dashboard_text(view, now=now)
+        assert "Inbox" in text
+        assert "unacked" in text

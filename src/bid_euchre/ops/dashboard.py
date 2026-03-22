@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,9 +34,9 @@ from typing import Any
 from bid_euchre.ops.status import (
     LaneStatus,
     StatusReport,
-    _branch_short,
-    _format_relative_time,
     aggregate_status,
+    branch_short,
+    format_relative_time,
 )
 
 logger = logging.getLogger("ops.dashboard")
@@ -132,12 +134,8 @@ def set_lane_visibility(
         if data.get("lane_id") == lane_id:
             data["visibility"] = visibility
             # Atomic write via temp + rename
-            import tempfile
-
             tmp_fd, tmp_path = tempfile.mkstemp(dir=str(registry_dir), suffix=".tmp")
             try:
-                import os
-
                 os.write(tmp_fd, json.dumps(data, indent=2).encode())
                 os.close(tmp_fd)
                 Path(tmp_path).rename(entry_file)
@@ -330,7 +328,7 @@ def _derive_inbox_highlights(
                         default="",
                     )
                     if oldest_ts:
-                        oldest_age = _format_relative_time(oldest_ts, now=now)
+                        oldest_age = format_relative_time(oldest_ts, now=now)
             except Exception:
                 pass
 
@@ -459,11 +457,11 @@ def _format_lane_line(
     pr_info = f"  PR #{lane.linked_pr}" if lane.linked_pr else ""
 
     # Branch info
-    branch_short = _branch_short(lane.branch) if lane.branch else ""
-    branch_info = f"  @{branch_short}" if branch_short else ""
+    short_branch = branch_short(lane.branch) if lane.branch else ""
+    branch_info = f"  @{short_branch}" if short_branch else ""
 
     # Time
-    time_info = f"  {_format_relative_time(lane.last_progress, now=now)}"
+    time_info = f"  {format_relative_time(lane.last_progress, now=now)}"
 
     return (
         f"  {lane.lane_id:15s} {state_badge:16s} "

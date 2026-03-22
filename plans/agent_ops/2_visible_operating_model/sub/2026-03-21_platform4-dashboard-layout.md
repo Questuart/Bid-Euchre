@@ -1,7 +1,7 @@
 # SP-2-01: Platform-4 Dashboard-First Steward Layout
 
 **Parent:** Phase 2, Step 0-1 (Platform-4 scope lock + implementation)
-**Status:** in_progress
+**Status:** completed
 **Owner:** author-b
 **Created:** 2026-03-21
 
