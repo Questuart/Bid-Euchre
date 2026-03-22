@@ -172,7 +172,7 @@ def create_message(
     Delivery policy defaults (max_retries, ttl_seconds) are stored in
     ``payload`` to keep the core schema stable.
     """
-    base_payload = payload or {}
+    base_payload = {**(payload or {})}
     # Inject delivery policy defaults if not already set
     if "max_retries" not in base_payload:
         base_payload["max_retries"] = DEFAULT_MAX_RETRIES
@@ -633,6 +633,8 @@ def resolve_message(
     message_id: str,
     lane_id: str,
     bus_root: Path | None = None,
+    *,
+    events_dir: Path | None = None,
 ) -> dict[str, Any] | None:
     """Resolve a message (mark as completed/handled).
 
@@ -641,13 +643,29 @@ def resolve_message(
     Returns the updated record, or None if not found.
     """
     root = shared_bus_root(bus_root)
-    return _update_inbox_status(
+    updated = _update_inbox_status(
         message_id,
         lane_id,
         "resolved",
         root,
         extra_fields={"resolved_at": _now_iso()},
     )
+
+    if updated is not None:
+        try:
+            from bid_euchre.ops.events import append_event
+
+            append_event(
+                "message_resolved",
+                "ops.message_bus",
+                lane_id,
+                {"message_id": message_id},
+                events_dir=events_dir,
+            )
+        except Exception:
+            logger.warning("Failed to emit message_resolved event for %s", message_id)
+
+    return updated
 
 
 def check_expired(
