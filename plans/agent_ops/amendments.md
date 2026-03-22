@@ -119,3 +119,32 @@ model later, while keeping the current runtime architecture unchanged.
 pane dispatch. Agent teams may be a useful implementation mechanism for that,
 but the coordination contract stays repo-owned. This amendment prevents future
 scope creep where team messaging replaces the durable bus.
+
+---
+
+## A5 — Platform-8 channel preflight, safety gates, and operator fallback (2026-03-22)
+
+**PR:** pending follow-up
+
+**What changed:**
+1. **Platform-8 preflight made explicit** — The governing plan now calls out
+   the Claude Channels prerequisites that can block the slice before design
+   proving begins: compatible Claude Code version, claude.ai login, channel
+   enablement, `--channels` startup, and plugin/runtime dependencies.
+2. **Security boundary tightened** — Platform-8 now requires pairing/allowlist
+   handling for two-way channels and keeps permission relay disabled by default
+   until a later bounded-command proving step explicitly enables it.
+3. **Fallback adapter clarified** — The plan now distinguishes:
+   - a **channel fallback adapter** that still satisfies Platform-8
+     (for example fakechat or a minimal repo-owned webhook channel server), and
+   - an **operator-side SSH/Termius fallback** that helps with debugging and
+     recovery but does not itself satisfy the remote-channel slice.
+4. **Operator-side runbook recorded** — The plan now includes a brief
+   post-Platform-8 SSH/Termius walkthrough and smoke test for recovering access
+   to the steward machine when the Telegram path fails.
+
+**Rationale:** The original Platform-8 definition captured the product goal but
+not the operational bootstrap, sender-gating, or debugging realities surfaced
+by Claude's official Channels docs. Capturing these details now makes the slice
+more likely to prove cleanly without confusing channel transport failure,
+operator access failure, and architecture failure.

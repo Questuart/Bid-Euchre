@@ -1179,6 +1179,29 @@ These are the short names future handoffs should use.
 - Telegram-first plugin path
 - Discord-compatible contract
 - notifications and bounded remote commands
+- preflight:
+  - verify Claude Code version supports Channels
+  - verify claude.ai login is active
+  - verify the organization/session allows channels when applicable
+  - verify the steward session is launched with the needed `--channels` entries
+  - verify plugin/runtime prerequisites before proving (for example Bun for
+    official plugins)
+- proving ladder:
+  - prove the channel shape locally first with a non-production path
+    (for example fakechat or a minimal webhook channel server)
+  - then prove the Telegram-first production path
+  - keep Discord compatibility contract-level in this slice unless a second
+    channel is needed immediately
+- security boundary:
+  - require pairing and sender allowlists before enabling two-way use
+  - keep permission relay disabled by default in Platform-8
+  - treat inbound remote messages as transport only until they are recorded or
+    reflected in repo-owned state
+- fallback boundary:
+  - a documented repo-owned channel adapter still counts for Platform-8 if the
+    official plugin path fails
+  - operator-side SSH/Termius access is a debugging and recovery path only; it
+    does not satisfy the remote-channel slice by itself
 - done when:
   - one remote channel can deliver summarized alerts and accept bounded replies
   - the implementation path is validated against either an official plugin or a
@@ -1194,6 +1217,41 @@ These are the short names future handoffs should use.
   - idle-attention alerts are deduplicated and rate-limited
   - an acknowledgement or bounded reply can be recorded back into the durable
     coordination state
+
+### Post-`Platform-8` operator fallback — SSH/Termius (out-of-repo)
+
+This is a user-side recovery/debugging path, not a governed repo slice and not
+a substitute for the Platform-8 channel transport.
+
+- purpose:
+  - regain direct access to the steward machine if Telegram or another channel
+    path fails
+  - inspect the live Claude/tmux session
+  - recover enough observability to debug channel setup, pairing, or plugin
+    failure
+- timing:
+  - set up after Platform-8 proves the primary channel path
+  - keep credentials, host config, and mobile client setup outside the repo
+- minimal walkthrough:
+  1. connect to the steward host with SSH from a trusted client such as
+     Termius
+  2. verify the `steward` tmux session exists (`tmux ls`)
+  3. attach or inspect non-destructively (`tmux attach -t steward` or
+     `tmux capture-pane`)
+  4. verify repo-side status surfaces still work:
+     - `uv run python scripts/internal/ops.py dashboard`
+     - `uv run python scripts/internal/ops.py supervisor --json`
+  5. inspect channel/plugin state and logs from the live session rather than
+     guessing from the remote symptom
+- smoke test:
+  - from the SSH/Termius client, reach the steward host successfully
+  - confirm the steward tmux session is visible
+  - run the dashboard and supervisor commands above successfully
+  - detach cleanly without disturbing active lane work
+- boundary:
+  - do not count SSH/Termius access as satisfying Batch E
+  - do not route normal task intake through SSH when the channel path is meant
+    to be the validated operator experience
 
 ### `Platform-10` — Portability Layer
 
