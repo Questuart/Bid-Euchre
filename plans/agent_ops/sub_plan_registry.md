@@ -1,7 +1,7 @@
 # Sub-Plan Registry — Agentic Orchestration Platform
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-22 by author-b (SP-2-03 agent frontmatter hardening)
+**Last updated:** 2026-03-22 by author-scratch (Phase 2 closeout, Phase 3 scaffold)
 
 ---
 
