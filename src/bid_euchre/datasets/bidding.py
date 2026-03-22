@@ -9,37 +9,56 @@ import json
 import os
 from typing import IO, Any, Dict, List, Optional
 
-import pyarrow as pa
-import pyarrow.parquet as pq
-
 from ..core.cards import Card
 from ..features.hand_eval import get_hand_features
 from ..strategy.bidding import BidAction, BiddingObservation
 
 # Explicit schema for nullable string columns to avoid null-type inference
-# when first flush contains all-pass rows (all None values)
-BIDDING_DATASET_SCHEMA = pa.schema([
-    ("hand_id", pa.int64()),
-    ("seat", pa.int64()),
-    ("dealer_seat", pa.int64()),
-    ("deal_id", pa.int64()),
-    ("current_high_bid", pa.int64()),
-    ("hand_cards", pa.list_(pa.string())),
-    ("hand_features", pa.map_(pa.string(), pa.float64())),
-    ("hand_feature_schema_version", pa.int64()),
-    # Nullable string columns - MUST be string, not null
-    ("attempted_bid_n", pa.int64()),
-    ("attempted_bid_contract", pa.string()),      # nullable: None for pass
-    ("attempted_bid_trump_suit", pa.string()),    # nullable: None for pass/HIGH/LOW
-    ("effective_bid_n", pa.int64()),
-    ("effective_bid_contract", pa.string()),      # nullable: None for pass
-    ("effective_bid_trump_suit", pa.string()),    # nullable: None for pass/HIGH/LOW
-    ("is_legal_raise", pa.bool_()),
-    ("auction_outcome", pa.string()),             # nullable: "won" | "all_pass_redeal" | None
-    ("winning_seat", pa.int64()),                 # nullable: None for redeals
-    ("winning_bid_n", pa.int64()),                # nullable: None for redeals
-    ("winning_bid_contract", pa.string()),        # nullable: None for redeals
-])
+# when first flush contains all-pass rows (all None values).
+# Lazily constructed so the module can be imported without pyarrow installed.
+_BIDDING_DATASET_SCHEMA: Optional[Any] = None
+
+
+def _get_bidding_dataset_schema() -> Any:
+    """Return the pyarrow schema for bidding datasets, lazily constructing it."""
+    global _BIDDING_DATASET_SCHEMA  # noqa: PLW0603
+    if _BIDDING_DATASET_SCHEMA is None:
+        import pyarrow as pa
+
+        _BIDDING_DATASET_SCHEMA = pa.schema(
+            [
+                ("hand_id", pa.int64()),
+                ("seat", pa.int64()),
+                ("dealer_seat", pa.int64()),
+                ("deal_id", pa.int64()),
+                ("current_high_bid", pa.int64()),
+                ("hand_cards", pa.list_(pa.string())),
+                ("hand_features", pa.map_(pa.string(), pa.float64())),
+                ("hand_feature_schema_version", pa.int64()),
+                # Nullable string columns - MUST be string, not null
+                ("attempted_bid_n", pa.int64()),
+                ("attempted_bid_contract", pa.string()),  # nullable: None for pass
+                (
+                    "attempted_bid_trump_suit",
+                    pa.string(),
+                ),  # nullable: None for pass/HIGH/LOW
+                ("effective_bid_n", pa.int64()),
+                ("effective_bid_contract", pa.string()),  # nullable: None for pass
+                (
+                    "effective_bid_trump_suit",
+                    pa.string(),
+                ),  # nullable: None for pass/HIGH/LOW
+                ("is_legal_raise", pa.bool_()),
+                (
+                    "auction_outcome",
+                    pa.string(),
+                ),  # nullable: "won" | "all_pass_redeal" | None
+                ("winning_seat", pa.int64()),  # nullable: None for redeals
+                ("winning_bid_n", pa.int64()),  # nullable: None for redeals
+                ("winning_bid_contract", pa.string()),  # nullable: None for redeals
+            ]
+        )
+    return _BIDDING_DATASET_SCHEMA
 
 
 class BiddingDatasetCollector:
@@ -74,10 +93,7 @@ class BiddingDatasetCollector:
         self._winning_bid_contract: Optional[str] = None
 
     def record_decision(
-        self,
-        obs: BiddingObservation,
-        action: BidAction,
-        deal_id: Optional[int] = None
+        self, obs: BiddingObservation, action: BidAction, deal_id: Optional[int] = None
     ) -> None:
         """
         Record a single bidding decision.
@@ -159,7 +175,9 @@ class BiddingDatasetCollector:
         if self._hand_snapshot is None:
             self._hand_snapshot = list(obs.hand)
 
-    def set_final_contract(self, contract_type: Optional[str], trump_suit: Optional[str]) -> None:
+    def set_final_contract(
+        self, contract_type: Optional[str], trump_suit: Optional[str]
+    ) -> None:
         """Record the final contract for this hand (used when computing features)."""
         self._final_contract_type = contract_type
         self._final_trump_suit = trump_suit
@@ -170,7 +188,7 @@ class BiddingDatasetCollector:
         auction_outcome: str,
         winning_seat: Optional[int] = None,
         winning_bid_n: Optional[int] = None,
-        winning_bid_contract: Optional[str] = None
+        winning_bid_contract: Optional[str] = None,
     ) -> None:
         """
         Record auction outcome metadata for debugging redeals.
@@ -200,7 +218,7 @@ class BiddingDatasetCollector:
                 "offsuit_aces": 0,
                 "offsuit_length_3plus_count": 0,
                 "hand_value": 0.0,
-                "is_bidder": 0
+                "is_bidder": 0,
             }
         else:
             features = get_hand_features(
@@ -272,19 +290,17 @@ class BiddingDatasetCollector:
         metadata = {
             "run_id": actual_run_id,
             "bidding_dataset_schema_version": "1",
-            "hand_feature_schema_version": "1"
+            "hand_feature_schema_version": "1",
         }
         # Convert metadata dict to bytes for Parquet
-        metadata_bytes = {k: v.encode('utf-8') for k, v in metadata.items()}
+        metadata_bytes = {k: v.encode("utf-8") for k, v in metadata.items()}
         table = table.replace_schema_metadata(metadata_bytes)
 
         pq.write_table(table, output_path)
 
 
 def emit_bidding_dataset(
-    collectors: List[BiddingDatasetCollector],
-    output_dir: str,
-    format: str = "parquet"
+    collectors: List[BiddingDatasetCollector], output_dir: str, format: str = "parquet"
 ) -> str:
     """
     Emit combined bidding dataset from multiple hand collectors.
@@ -344,7 +360,7 @@ def emit_bidding_dataset(
         "bidding_dataset_schema_version": 1,
         "hand_feature_schema_version": 1,
         "parquet_path": "bidding.parquet",
-        "jsonl_path": "bidding.jsonl"
+        "jsonl_path": "bidding.jsonl",
     }
     with open(meta_path, "w") as f:
         json.dump(meta_data, f, indent=2)
@@ -355,7 +371,13 @@ def emit_bidding_dataset(
 class BiddingDatasetWriter:
     """Streaming writer for bidding datasets - writes incrementally to avoid memory accumulation."""
 
-    def __init__(self, run_dir: str, run_id: str, format: str = "parquet", flush_rows: int = 50_000):
+    def __init__(
+        self,
+        run_dir: str,
+        run_id: str,
+        format: str = "parquet",
+        flush_rows: int = 50_000,
+    ):
         """
         Initialize streaming writer.
 
@@ -374,7 +396,7 @@ class BiddingDatasetWriter:
         # Buffer and state
         self._buffer: List[Dict[str, Any]] = []
         self._row_count = 0
-        self._parquet_writer: Optional[pq.ParquetWriter] = None
+        self._parquet_writer: Optional[Any] = None
         self._jsonl_file: Optional[IO[str]] = None
 
     def append_rows(self, rows: List[Dict[str, Any]]) -> None:
@@ -402,6 +424,10 @@ class BiddingDatasetWriter:
 
     def _write_parquet_chunk(self, rows: List[Dict[str, Any]]) -> None:
         """Write rows as parquet row group using explicit schema."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        schema = _get_bidding_dataset_schema()
         if self._parquet_writer is None:
             # Add run_id and schema versions to parquet metadata
             metadata = {
@@ -409,11 +435,11 @@ class BiddingDatasetWriter:
                 b"bidding_dataset_schema_version": b"1",
                 b"hand_feature_schema_version": b"1",
             }
-            schema_with_meta = BIDDING_DATASET_SCHEMA.with_metadata(metadata)
+            schema_with_meta = schema.with_metadata(metadata)
             parquet_path = os.path.join(self.datasets_dir, "bidding.parquet")
             self._parquet_writer = pq.ParquetWriter(parquet_path, schema_with_meta)
 
-        table = pa.Table.from_pylist(rows, schema=BIDDING_DATASET_SCHEMA)
+        table = pa.Table.from_pylist(rows, schema=schema)
         self._parquet_writer.write_table(table)
 
     def _write_jsonl_debug_chunk(self, rows: List[Dict[str, Any]]) -> None:

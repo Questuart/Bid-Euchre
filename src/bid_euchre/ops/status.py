@@ -1012,7 +1012,7 @@ def _format_time_short(ts: str | None) -> str:
     return dt.strftime("%H:%M")
 
 
-def _format_relative_time(
+def format_relative_time(
     ts: str | None,
     *,
     now: datetime | None = None,
@@ -1020,8 +1020,11 @@ def _format_relative_time(
     """Format a timestamp as a human-readable relative time.
 
     Produces output like ``"5m ago"``, ``"2h ago"``, ``"1d ago"``, or
-    ``"3d+"`` for longer durations. Falls back to ``"—"`` if the
+    ``"3d+"`` for longer durations. Falls back to ``"\u2014"`` if the
     timestamp is missing or unparseable.
+
+    Promoted from private ``_format_relative_time`` in Platform-4 since
+    ``dashboard.py`` uses it as a cross-module formatting helper.
 
     Args:
         ts: ISO 8601 timestamp string.
@@ -1031,10 +1034,10 @@ def _format_relative_time(
         Short relative time string.
     """
     if not ts:
-        return "—"
+        return "\u2014"
     dt = _parse_iso_timestamp(ts)
     if dt is None:
-        return "—"
+        return "\u2014"
     if now is None:
         now = datetime.now(timezone.utc)
     delta_seconds = (now - dt).total_seconds()
@@ -1054,15 +1057,26 @@ def _format_relative_time(
     return f"{days}d+"
 
 
-def _branch_short(branch: str) -> str:
+# Backward-compat alias (internal callers may still reference the old name).
+_format_relative_time = format_relative_time
+
+
+def branch_short(branch: str) -> str:
     """Shorten a branch name for display.
 
     Strips common prefixes like ``codex/steward-`` to save horizontal space.
+
+    Promoted from private ``_branch_short`` in Platform-4 since
+    ``dashboard.py`` uses it as a cross-module formatting helper.
     """
     for prefix in ("codex/steward-", "codex/", "refs/heads/"):
         if branch.startswith(prefix):
             return branch[len(prefix) :]
     return branch
+
+
+# Backward-compat alias (internal callers may still reference the old name).
+_branch_short = branch_short
 
 
 def format_status_text(

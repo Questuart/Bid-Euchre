@@ -22,6 +22,7 @@ Modules:
     compaction  -- Session compaction and non-lossy context archival
     message_bus -- Durable lane-to-lane communication bus (Platform-3)
     task_queue  -- Durable task packet queue (Platform-2)
+    dashboard   -- Dashboard-first supervision surface (Platform-4)
 """
 
 # Shared constant: GitHub status/check context names that represent

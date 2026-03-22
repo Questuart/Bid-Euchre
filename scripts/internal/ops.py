@@ -119,6 +119,42 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Dashboard-first steward supervision surface."""
+    dashboard_action = getattr(args, "dashboard_action", None)
+
+    if dashboard_action == "set-visibility":
+        from bid_euchre.ops.dashboard import set_lane_visibility
+
+        lane_id = args.lane
+        visibility = args.visibility
+        ok = set_lane_visibility(lane_id, visibility, args.runtime_dir)
+        if ok:
+            print(f"Set {lane_id} visibility to {visibility}")
+            return 0
+        else:
+            print(f"Lane {lane_id!r} not found in registry", file=sys.stderr)
+            return 1
+
+    from bid_euchre.ops.dashboard import (
+        build_dashboard_view,
+        format_dashboard_json,
+        format_dashboard_text,
+    )
+
+    view = build_dashboard_view(
+        args.runtime_dir,
+        check_worktree=not getattr(args, "no_probe", False),
+    )
+
+    if args.json:
+        print(json.dumps(format_dashboard_json(view), indent=2))
+    else:
+        print(format_dashboard_text(view))
+
+    return 0
+
+
 def cmd_worktrees(args: argparse.Namespace) -> int:
     """Show worktree registry and reconciliation, or dispatch sub-action."""
     # Dispatch to sub-action if present
@@ -1632,6 +1668,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip dirty-worktree subprocess probes (faster with many idle lanes)",
     )
 
+    # dashboard (Platform-4: dashboard-first supervision surface)
+    dash_parser = subparsers.add_parser(
+        "dashboard", help="Dashboard-first steward supervision"
+    )
+    dash_parser.add_argument(
+        "--no-probe",
+        action="store_true",
+        default=False,
+        help="Skip dirty-worktree subprocess probes (faster)",
+    )
+    dash_sub = dash_parser.add_subparsers(dest="dashboard_action")
+    set_vis = dash_sub.add_parser(
+        "set-visibility", help="Set lane visibility (foreground/background/hidden)"
+    )
+    set_vis.add_argument("lane", help="Lane ID to update")
+    set_vis.add_argument(
+        "visibility",
+        choices=["foreground", "background", "hidden"],
+        help="Visibility level",
+    )
+
     # worktrees (with nested prune/quarantine/archive subcommands)
     wt_parser = subparsers.add_parser(
         "worktrees", help="Worktree registry and reconciliation"
@@ -2026,6 +2083,7 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch
     commands = {
         "status": cmd_status,
+        "dashboard": cmd_dashboard,
         "worktrees": cmd_worktrees,
         "events": cmd_events,
         "tick": cmd_tick,
