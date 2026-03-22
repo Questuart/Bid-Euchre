@@ -21,11 +21,13 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
 
 if [ -z "$COMMAND" ]; then
+  echo '{"suppressOutput": true}'
   exit 0
 fi
 
 # Only guard gh pr merge commands
 if [[ "$COMMAND" != *"gh pr merge"* ]]; then
+  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -174,4 +176,5 @@ BLOCK
 fi
 
 # All checks passed — allow the merge
+echo '{"suppressOutput": true}'
 exit 0

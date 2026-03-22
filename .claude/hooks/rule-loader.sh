@@ -26,13 +26,13 @@ case "$TOOL_NAME" in
     ;;
   *)
     # No match — exit with empty response
-    echo '{}'
+    echo '{"suppressOutput": true}'
     exit 0
     ;;
 esac
 
 if [ -z "$FILE_PATH" ]; then
-  echo '{}'
+  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -71,7 +71,7 @@ fi
 
 # No rules matched
 if [ ${#RULES_TO_LOAD[@]} -eq 0 ]; then
-  echo '{}'
+  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -97,7 +97,7 @@ done
 
 # Nothing new to load
 if [ ${#NEW_RULES[@]} -eq 0 ]; then
-  echo '{}'
+  echo '{"suppressOutput": true}'
   exit 0
 fi
 
@@ -115,9 +115,7 @@ done
 # Output additionalContext JSON
 if [ -n "$CONTEXT" ]; then
   # Use jq to safely encode the content as JSON
-  echo "$CONTEXT" | jq -Rs '{additionalContext: .}' 2>/dev/null || echo '{}'
+  echo "$CONTEXT" | jq -Rs '{additionalContext: ., suppressOutput: true}' 2>/dev/null || echo '{"suppressOutput": true}'
 else
-  echo '{}'
+  echo '{"suppressOutput": true}'
 fi
-
-exit 0

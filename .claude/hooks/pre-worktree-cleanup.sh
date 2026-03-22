@@ -21,6 +21,7 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
 
 if [ -z "$COMMAND" ]; then
+    echo '{"suppressOutput": true}'
     exit 0
 fi
 
@@ -36,6 +37,7 @@ elif echo "$COMMAND" | grep -q "git worktree prune"; then
 fi
 
 if [ -z "$MATCHED" ]; then
+    echo '{"suppressOutput": true}'
     exit 0
 fi
 
