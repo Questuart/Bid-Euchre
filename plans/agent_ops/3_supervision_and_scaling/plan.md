@@ -35,6 +35,9 @@ Before treating Phase 4 as ready, verify Batch D (Platform-6 + Platform-7):
 - [ ] Worker reuse/open-on-demand behavior works in a live multi-lane proving run
 - [ ] Stale/blocked/degraded lane handling is auditable and does not require pane
   archaeology
+- [ ] In the current tmux-first steward layout, a dispatched task can land in the
+  target live author session through a repo-owned delivery adapter without
+  manual pane inspection
 
 ## Platform-6 Summary (Complete)
 
@@ -62,6 +65,12 @@ From governing plan:
 - Worker-pool dashboard state
 - Open/resume author panes on delegation and return them to background/hidden
   state when idle
+- BD-004 closure path for this phase:
+  - use a thin tmux-backed delivery adapter on top of durable task/message state
+  - dispatch should wake the target lane if needed, then invoke a packet-specific
+    repo-owned consumer entrypoint in the live pane
+  - do not introduce channel-sidecar or `cmux` delivery as the required Phase 3
+    fix; those are later adapter upgrades
 - Note: if scaling and retirement logic do not fit cleanly, this slice may
   land as two PRs under the same parent label
 - Done when:
@@ -70,6 +79,15 @@ From governing plan:
     demand without requiring all author panes to be pre-opened
   - Dynamic worker creation and retirement obey repo-owned concurrency and
     cleanup limits
+
+## Later Delivery Upgrades
+
+After the Phase 3 gate is closed with the tmux-backed v1 delivery adapter:
+
+- `v2` (later, Platform-8-capable): optional Claude channel sidecar that watches
+  repo-owned task/inbox state and pushes events into the running session
+- `v3` (later, optional): `cmux` transport upgrade if workspace/surface refs are
+  populated and stable enough to replace raw tmux targeting cleanly
 
 ## Key Constraints
 

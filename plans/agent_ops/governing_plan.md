@@ -862,6 +862,9 @@ shift or larger autonomy step as trustworthy.
 - worker reuse/open-on-demand behavior works in a live multi-lane proving run
 - stale/blocked/degraded lane handling is auditable and does not require pane
   archaeology
+- for the current tmux-first steward layout, a dispatched task can land in the
+  target live author session through a repo-owned delivery adapter rather than
+  manual pane inspection
 
 #### Batch E pass gate
 
@@ -1167,12 +1170,41 @@ These are the short names future handoffs should use.
 - note:
   - if scaling and retirement logic do not fit cleanly, this slice may land as
     two PRs under the same parent label
+  - BD-004 closure for the shipped tmux-first layout should use the thinnest
+    possible delivery adapter: after `dispatch_to_worker()` writes durable task
+    and bus state and wakes the target lane if needed, nudge the live pane to
+    invoke a packet-specific repo-owned entrypoint (for example
+    `/start-task <packet_id>`). The task queue and message bus remain the
+    source of truth.
 - done when:
   - `orchestrator` can reuse idle authors before creating new workers
   - a delegated task can cause the needed author lane to open or resume on
     demand without requiring all author panes to be pre-opened
   - dynamic worker creation and retirement obey repo-owned concurrency and
     cleanup limits
+  - the current tmux-backed steward layout can deliver a specific dispatched
+    packet into the live target lane without pasting full task bodies into pane
+    history or requiring manual pane inspection
+
+### Delivery Adapter Roadmap (BD-004)
+
+- `v1` -- Phase 3 gate fix for the current tmux-first steward layout
+  - keep task queue + message bus as durable truth
+  - wake or resume the target author pane if needed
+  - explicitly nudge the live pane to invoke a packet-specific repo-owned
+    consumer entrypoint
+  - record delivery or nudge outcome durably enough for supervisor follow-up
+- `v2` -- Platform-8-capable channel-sidecar upgrade
+  - a Claude channel server may watch durable task or inbox state and push the
+    event into the running lane session
+  - this replaces only the delivery adapter, not the repo-owned task/message
+    contract
+  - keep it optional until channel preflight, security gating, and proving are
+    satisfied
+- `v3` -- optional `cmux` transport upgrade
+  - if `cmux_workspace_ref` / `cmux_surface_ref` become live and stable, the
+    pane nudge adapter may move from tmux targeting to `cmux` surface targeting
+  - `cmux` remains presentation and transport metadata, not control-plane truth
 
 ### `Platform-8` — Remote Operator Channel
 
@@ -1202,6 +1234,14 @@ These are the short names future handoffs should use.
     official plugin path fails
   - operator-side SSH/Termius access is a debugging and recovery path only; it
     does not satisfy the remote-channel slice by itself
+- delivery-adapter upgrade path:
+  - the Platform-7 tmux nudge remains the compatibility baseline until a
+    channel-backed adapter proves stable
+  - a local channel sidecar may replace the pane-nudge adapter once the steward
+    session is launched with the required Claude Channels support and the
+    repo-owned task/message contract remains canonical
+  - any channel-backed lane delivery path must be treated as an adapter on top
+    of repo-owned state, not as a second source of task truth
 - done when:
   - one remote channel can deliver summarized alerts and accept bounded replies
   - the implementation path is validated against either an official plugin or a
