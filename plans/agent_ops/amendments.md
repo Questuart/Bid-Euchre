@@ -1,7 +1,7 @@
 # Agentic Orchestration Platform — Amendments
 
 **Governing plan:** `plans/agent_ops/governing_plan.md`
-**Last updated:** 2026-03-20
+**Last updated:** 2026-03-22
 
 ---
 
@@ -61,3 +61,61 @@ experience with autonomous agents accessing paths outside the repo tree.
 the start. Deferring the primary review architecture to Platform-12 would
 force interim work to rely on hook-coupled subprocess parsing and transient
 terminal output — the exact failure mode the platform is designed to replace.
+
+---
+
+## A3 — Agent frontmatter hardening and lane-boundary enforcement (2026-03-22)
+
+**PR:** pending follow-up
+
+**What changed:**
+1. **Agent definitions recognized as platform substrate** — The governing plan
+   now treats `.claude/agents/` as more than prompt text. Frontmatter
+   capabilities such as `tools:`, `model:`, and later lane-scoped `memory:`
+   are explicit platform inputs rather than incidental implementation detail.
+2. **Structural role-boundary note added** — Future worker-pool and service-lane
+   design should prefer enforced capability boundaries where the agent runtime
+   supports them, instead of relying only on prompt wording.
+3. **Future-slice mapping captured** — Platform-7 now carries the note that
+   worker classes should reuse agent-profile tool restrictions; Platform-11
+   carries the note that any memory layer should remain lane-scoped; and
+   Platform-12 carries the note that per-lane `model:` selection is a service-
+   lane configuration concern rather than a new review truth model.
+4. **Narrow follow-up path allowed** — A small post-Batch-C hardening PR may add
+   agent-frontmatter restrictions and low-risk model annotations without
+   reopening Batch C acceptance or changing task/message/review runtime truth.
+
+**Rationale:** Platform-5 shipped canonical prompts, but non-author role
+boundaries are still mostly honor-system. The native agent feature set already
+supports stronger structure than prompts alone. Capturing that now prevents
+Platform-7, Platform-11, and Platform-12 from inventing a parallel capability
+model later, while keeping the current runtime architecture unchanged.
+
+---
+
+## A4 — Agent teams terminology and boundary (2026-03-22)
+
+**PR:** pending follow-up
+
+**What changed:**
+1. **Terminology correction** — The plan uses "agent swarm" informally in some
+   contexts. The correct Claude Code term is "agent teams" (experimental,
+   enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`). Plan text should use
+   "agent teams" where referring to Claude's multi-agent display/communication
+   feature.
+2. **Subagent resume capability noted** — Stopped subagents can be resumed via
+   `SendMessage` using the agent ID. This is not team-exclusive. The platform's
+   current subprocess dispatch model can leverage resume without requiring full
+   team mode.
+3. **Boundary clarification** — Agent teams provide direct teammate messaging
+   and split-pane display. These are a **convenience execution layer**, not a
+   coordination truth model. The platform must not move durable coordination
+   (task packets, message bus, review state, dashboard state) into
+   team-session-scoped communication. Repo-owned state remains authoritative
+   regardless of whether execution uses subagents, agent teams, or manual tmux
+   panes.
+
+**Rationale:** Platform-7 (worker pool manager) will introduce open-on-demand
+pane dispatch. Agent teams may be a useful implementation mechanism for that,
+but the coordination contract stays repo-owned. This amendment prevents future
+scope creep where team messaging replaces the durable bus.
