@@ -29,6 +29,7 @@ from bid_euchre.ops.worker_pool import (
     format_actions_json,
     format_pool_json,
     format_pool_text,
+    nudge_pane,
     park_worker,
     retire_worker,
     run_pool_maintenance,
@@ -1178,3 +1179,349 @@ class TestFormatters:
         assert len(data) == 1
         assert data[0]["action"] == "park"
         assert data[0]["executed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Nudge pane
+# ---------------------------------------------------------------------------
+
+
+class TestNudgePane:
+    """Test nudge_pane() with mocked subprocess."""
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_success(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = nudge_pane("author-a", "pkt123")
+        assert result.executed is True
+        assert result.action == "nudge"
+        assert result.error is None
+        assert "/start-task pkt123" in result.reason
+        assert "steward:author-a" in result.reason
+        mock_run.assert_called_once_with(
+            [
+                "tmux",
+                "send-keys",
+                "-t",
+                "steward:author-a",
+                "/start-task pkt123",
+                "Enter",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_custom_session(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0)
+        result = nudge_pane("author-b", "pkt456", tmux_session="custom")
+        assert result.executed is True
+        mock_run.assert_called_once_with(
+            [
+                "tmux",
+                "send-keys",
+                "-t",
+                "custom:author-b",
+                "/start-task pkt456",
+                "Enter",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_subprocess_error(self, mock_run: MagicMock) -> None:
+        import subprocess as sp
+
+        mock_run.side_effect = sp.CalledProcessError(1, "tmux")
+        result = nudge_pane("author-a", "pkt123")
+        assert result.executed is False
+        assert result.error == "nudge_failed"
+        assert result.action == "nudge"
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_timeout(self, mock_run: MagicMock) -> None:
+        import subprocess as sp
+
+        mock_run.side_effect = sp.TimeoutExpired("tmux", 5)
+        result = nudge_pane("author-a", "pkt123")
+        assert result.executed is False
+        assert result.error == "nudge_failed"
+
+    @patch(f"{_WORKER_POOL}.subprocess.run")
+    def test_nudge_tmux_not_found(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError("tmux not found")
+        result = nudge_pane("author-a", "pkt123")
+        assert result.executed is False
+        assert result.error == "nudge_failed"
+
+
+# ---------------------------------------------------------------------------
+# Dispatch with nudge and inbox message
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchNudgeIntegration:
+    """Test that dispatch_to_worker() calls nudge_pane and writes inbox message."""
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_calls_nudge(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should call nudge_pane after transitioning the packet."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="nudged",
+            executed=True,
+        )
+
+        with patch("bid_euchre.ops.message_bus.send_message", return_value="msg123"):
+            with patch("bid_euchre.ops.message_bus.create_message") as mock_cm:
+                mock_cm.return_value = MagicMock(message_id="msg123")
+                result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+
+        assert result.executed is True
+        mock_nudge.assert_called_once_with(
+            "author-a", "pkt1", tmux_session=DEFAULT_TMUX_SESSION
+        )
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_writes_inbox_message(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should write an inbox message via message_bus."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test Task",
+            description="Do the thing",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="nudged",
+            executed=True,
+        )
+
+        with patch(
+            "bid_euchre.ops.message_bus.send_message", return_value="msg123"
+        ) as mock_send:
+            with patch("bid_euchre.ops.message_bus.create_message") as mock_cm:
+                from bid_euchre.ops.message_bus import BusMessage
+
+                fake_msg = BusMessage(
+                    message_id="msg123",
+                    thread_id=None,
+                    task_id="pkt1",
+                    from_lane="orchestrator",
+                    to_lane="author-a",
+                    message_type="assignment",
+                    priority="normal",
+                    status="pending",
+                    created_at="2026-03-22T12:00:00Z",
+                    acked_at=None,
+                    resolved_at=None,
+                    requires_human=False,
+                    summary="Task dispatched: Test Task",
+                    payload={"packet_id": "pkt1", "title": "Test Task"},
+                )
+                mock_cm.return_value = fake_msg
+                result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+
+        assert result.executed is True
+        mock_cm.assert_called_once()
+        mock_send.assert_called_once_with(fake_msg)
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_succeeds_even_if_nudge_fails(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should succeed even if nudge fails (nudge is best-effort)."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test",
+            description="Test",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="tmux failed",
+            executed=False,
+            error="nudge_failed",
+        )
+
+        with patch("bid_euchre.ops.message_bus.send_message", return_value="msg123"):
+            with patch("bid_euchre.ops.message_bus.create_message") as mock_cm:
+                mock_cm.return_value = MagicMock(message_id="msg123")
+                result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+
+        # Dispatch itself still succeeds — nudge is best-effort
+        assert result.executed is True
+        assert result.error is None
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_succeeds_even_if_inbox_fails(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """Dispatch should succeed even if inbox message fails (best-effort)."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test",
+            description="Test",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="nudged",
+            executed=True,
+        )
+
+        with patch(
+            "bid_euchre.ops.message_bus.send_message",
+            side_effect=RuntimeError("bus down"),
+        ):
+            with patch("bid_euchre.ops.message_bus.create_message") as mock_cm:
+                mock_cm.return_value = MagicMock(message_id="msg123")
+                result = dispatch_to_worker("pkt1", "author-a", runtime_dir=runtime_dir)
+
+        # Dispatch itself still succeeds
+        assert result.executed is True
+        assert result.error is None
+
+    @patch(f"{_DASHBOARD}.set_lane_visibility")
+    @patch(f"{_WORKER_POOL}.nudge_pane")
+    @patch(f"{_WORKER_POOL}.take_pool_snapshot")
+    @patch(f"{_TASK_QUEUE}.transition_status")
+    @patch(f"{_TASK_QUEUE}.save_packet")
+    @patch(f"{_TASK_QUEUE}.load_packet")
+    def test_dispatch_records_delivery_on_nudge_success(
+        self,
+        mock_load: MagicMock,
+        mock_save: MagicMock,
+        mock_transition: MagicMock,
+        mock_snapshot: MagicMock,
+        mock_nudge: MagicMock,
+        mock_vis: MagicMock,
+        runtime_dir: Path,
+    ) -> None:
+        """On nudge success, dispatch should update inbox message to delivered."""
+        from bid_euchre.ops.task_queue import TaskPacket
+
+        mock_load.return_value = TaskPacket(
+            packet_id="pkt1",
+            title="Test",
+            description="Test",
+            owner=None,
+            created_by="orchestrator",
+            created_at="2026-03-22T12:00:00Z",
+            status="approved",
+        )
+        mock_snapshot.return_value = _make_pool([_make_worker("author-a", "idle")])
+        mock_nudge.return_value = PoolAction(
+            action="nudge",
+            lane_id="author-a",
+            reason="nudged",
+            executed=True,
+        )
+
+        with patch("bid_euchre.ops.message_bus.send_message", return_value="msg123"):
+            with patch("bid_euchre.ops.message_bus.create_message") as mock_cm:
+                mock_cm.return_value = MagicMock(message_id="msg123")
+                with patch(
+                    "bid_euchre.ops.message_bus._update_inbox_status"
+                ) as mock_update:
+                    with patch(
+                        "bid_euchre.ops.message_bus.shared_bus_root"
+                    ) as mock_root:
+                        mock_root.return_value = Path("/tmp/bus")
+                        result = dispatch_to_worker(
+                            "pkt1", "author-a", runtime_dir=runtime_dir
+                        )
+
+        assert result.executed is True
+        mock_update.assert_called_once_with(
+            "msg123", "author-a", "delivered", Path("/tmp/bus")
+        )
