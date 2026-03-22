@@ -24,6 +24,7 @@ Modules:
     task_queue  -- Durable task packet queue (Platform-2)
     dashboard   -- Dashboard-first supervision surface (Platform-4)
     supervisor  -- Supervisor routines and delta summaries (Platform-6)
+    worker_pool -- Worker pool lifecycle management (Platform-7)
 """
 
 # Shared constant: GitHub status/check context names that represent
