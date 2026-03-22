@@ -3,7 +3,7 @@
 **ID:** SP-0-02
 **Date:** 2026-03-20
 **Parent:** `plans/agent_ops/governing_plan.md` -- Phase 0 dependencies (§4.3) and `Platform-1` handoff boundary
-**Status:** in_progress
+**Status:** completed
 **Owner:** Opus
 
 ---

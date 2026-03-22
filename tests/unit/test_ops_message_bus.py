@@ -216,6 +216,19 @@ class TestBusMessageCreation:
         assert msg.payload["ttl_seconds"] == 600
         assert msg.payload["retry_count"] == 0
 
+    def test_create_message_does_not_mutate_caller_payload(self) -> None:
+        """Regression test for #1227: create_message must not mutate the caller's dict."""
+        caller_payload = {"pr_number": 42}
+        original_keys = set(caller_payload.keys())
+
+        create_message("a", "b", "assignment", "test", payload=caller_payload)
+
+        # Caller's dict must be unchanged — no delivery policy keys injected
+        assert set(caller_payload.keys()) == original_keys
+        assert "max_retries" not in caller_payload
+        assert "retry_count" not in caller_payload
+        assert "ttl_seconds" not in caller_payload
+
 
 # ---------------------------------------------------------------------------
 # Shared bus root
@@ -543,10 +556,25 @@ class TestResolveMessage:
         send_message(msg, bus_root, events_dir=events_dir)
         ack_message(msg.message_id, "b", bus_root, events_dir=events_dir)
 
-        result = resolve_message(msg.message_id, "b", bus_root)
+        result = resolve_message(msg.message_id, "b", bus_root, events_dir=events_dir)
         assert result is not None
         assert result["status"] == "resolved"
         assert result["resolved_at"] is not None
+
+    def test_resolve_emits_event(self, bus_root: Path, events_dir: Path) -> None:
+        """Regression test for #1228: resolve_message must emit message_resolved."""
+        msg = create_message("a", "b", "assignment", "Task")
+        send_message(msg, bus_root, events_dir=events_dir)
+        ack_message(msg.message_id, "b", bus_root, events_dir=events_dir)
+        resolve_message(msg.message_id, "b", bus_root, events_dir=events_dir)
+
+        events_file = events_dir / "events.jsonl"
+        lines = events_file.read_text().strip().split("\n")
+        # Expect: message_sent, message_acked, message_resolved
+        assert len(lines) == 3
+        resolve_event = json.loads(lines[2])
+        assert resolve_event["event_type"] == "message_resolved"
+        assert resolve_event["payload"]["message_id"] == msg.message_id
 
     def test_resolve_without_ack_raises(self, bus_root: Path, events_dir: Path) -> None:
         """Cannot resolve a pending message (must ack first)."""
@@ -562,10 +590,10 @@ class TestResolveMessage:
         msg = create_message("a", "b", "assignment", "Task")
         send_message(msg, bus_root, events_dir=events_dir)
         ack_message(msg.message_id, "b", bus_root, events_dir=events_dir)
-        resolve_message(msg.message_id, "b", bus_root)
+        resolve_message(msg.message_id, "b", bus_root, events_dir=events_dir)
 
         with pytest.raises(ValueError, match="Invalid transition"):
-            resolve_message(msg.message_id, "b", bus_root)
+            resolve_message(msg.message_id, "b", bus_root, events_dir=events_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -835,7 +863,9 @@ class TestE2ESmoke:
         assert len(unresolved) == 1
 
         # 6. Author-a resolves (work done)
-        resolve_result = resolve_message(mid, "author-a", bus_root)
+        resolve_result = resolve_message(
+            mid, "author-a", bus_root, events_dir=events_dir
+        )
         assert resolve_result is not None
         assert resolve_result["status"] == "resolved"
 
