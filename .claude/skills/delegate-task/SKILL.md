@@ -60,8 +60,10 @@ intake-to-dispatch flow into a reusable workflow.
    ```bash
    uv run python scripts/internal/ops.py task create \
      --title "<title>" \
+     --description "<description with acceptance criteria>" \
      --owner "<lane>" \
-     --priority "<priority>"
+     --priority "<priority>" \
+     --scope-declared "<comma-separated file patterns>"
    ```
 
 7. **Verify dispatch:**

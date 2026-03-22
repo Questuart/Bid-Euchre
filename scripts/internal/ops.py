@@ -1392,10 +1392,12 @@ def cmd_repairs(args: argparse.Namespace) -> int:
 def cmd_task(args: argparse.Namespace) -> int:
     """Orchestrator task queue inspection (Platform-2)."""
     from bid_euchre.ops.task_queue import (
+        create_packet,
         list_packets,
         load_ack,
         load_packet,
         load_result,
+        save_packet,
     )
 
     task_queue_root = args.runtime_dir / "task_queue"
@@ -1477,8 +1479,32 @@ def cmd_task(args: argparse.Namespace) -> int:
                     print(f"    PR: #{result.pr_number}")
         return 0
 
+    elif action == "create":
+        pkt = create_packet(
+            title=args.title,
+            description=args.description or "",
+            owner=args.owner,
+            priority=args.priority or "normal",
+            scope_declared=(
+                [s.strip() for s in args.scope_declared.split(",")]
+                if args.scope_declared
+                else None
+            ),
+        )
+        save_packet(pkt, task_queue_root)
+        if args.json:
+            from dataclasses import asdict
+
+            print(json.dumps(asdict(pkt), indent=2, default=str))
+        else:
+            print(f"Created task packet: {pkt.packet_id}")
+            print(f"  Title:    {pkt.title}")
+            print(f"  Owner:    {pkt.owner or '(unassigned)'}")
+            print(f"  Priority: {pkt.priority}")
+        return 0
+
     else:
-        print("Usage: ops.py task {list|show}", file=sys.stderr)
+        print("Usage: ops.py task {list|show|create}", file=sys.stderr)
         return 1
 
 
@@ -2028,6 +2054,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     task_show_parser = task_sub.add_parser("show", help="Show a task packet by ID")
     task_show_parser.add_argument("packet_id", help="The packet ID to show")
+
+    task_create_parser = task_sub.add_parser("create", help="Create a new task packet")
+    task_create_parser.add_argument(
+        "--title", required=True, help="Short imperative task title"
+    )
+    task_create_parser.add_argument(
+        "--owner", default=None, help="Target author lane (e.g. author-a)"
+    )
+    task_create_parser.add_argument(
+        "--priority", default="normal", help="Priority: low / normal / high"
+    )
+    task_create_parser.add_argument(
+        "--description", default="", help="Full task description"
+    )
+    task_create_parser.add_argument(
+        "--scope-declared",
+        default=None,
+        help="Comma-separated file patterns (e.g. 'src/foo.py,tests/test_foo.py')",
+    )
 
     # inbox (Platform-3 message bus)
     inbox_parser = subparsers.add_parser(

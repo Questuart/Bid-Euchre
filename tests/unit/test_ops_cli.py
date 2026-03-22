@@ -2794,3 +2794,104 @@ class TestCmdQueue:
         assert len(data) == 1
         assert data[0]["pr_number"] == 77
         assert data[0]["request_sha"] == "override123"
+
+
+class TestTaskCreate:
+    """Tests for ops.py task create subcommand."""
+
+    def test_task_create_basic(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Fix scoring edge case",
+                "--owner",
+                "author-a",
+                "--priority",
+                "normal",
+                "--description",
+                "Fix the edge case in scoring",
+                "--scope-declared",
+                "src/bid_euchre/scoring.py,tests/unit/test_scoring.py",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Fix scoring edge case" in out
+
+    def test_task_create_json(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Test JSON output",
+                "--owner",
+                "author-b",
+            ]
+        )
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["title"] == "Test JSON output"
+        assert data["owner"] == "author-b"
+        assert data["priority"] == "normal"
+        assert data["status"] == "pending"
+
+    def test_task_create_then_list(
+        self, runtime_dir: Path, plans_dir: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        import ops
+
+        # Create a packet
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "create",
+                "--title",
+                "Roundtrip test",
+                "--owner",
+                "author-a",
+            ]
+        )
+        assert rc == 0
+        created = json.loads(capsys.readouterr().out)
+
+        # List and verify it appears
+        rc = ops.main(
+            [
+                "--json",
+                "--runtime-dir",
+                str(runtime_dir),
+                "--plans-dir",
+                str(plans_dir),
+                "task",
+                "list",
+            ]
+        )
+        assert rc == 0
+        packets = json.loads(capsys.readouterr().out)
+        ids = [p["packet_id"] for p in packets]
+        assert created["packet_id"] in ids
